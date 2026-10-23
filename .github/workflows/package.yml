@@ -56,6 +56,10 @@ jobs:
           echo "CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++"                 >> $GITHUB_ENV
           echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar"                   >> $GITHUB_ENV
 
+      # Fleet VM images maintain rustup; only update it here for the other runners in this matrix.
+      - name: Check and update rustup
+        if: ${{ matrix.runner != 'spacetimedb-windows-runner' }}
+        uses: ./.github/actions/ensure-rustup
       - name: Install Rust
         uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
@@ -157,7 +161,7 @@ jobs:
         id: extract_branch
 
       - name: Upload to AWS S3
-        uses: shallwefootball/s3-upload-action@master
+        uses: shallwefootball/s3-upload-action@0d261a6f15b3b2e209dfebdecace4b100c04f95b # master
         with:
           aws_key_id: ${{ secrets.AWS_KEY_ID }}
           aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}

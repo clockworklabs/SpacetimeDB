@@ -29,7 +29,7 @@ This compiles your module and validates its structure.
 If you're publishing your module, you don't need to run `spacetime build` separately - `spacetime publish` will automatically build your module if needed.
 :::
 
-For all build options, see the [`spacetime build` CLI reference](../../00300-resources/00200-reference/00100-cli-reference/00100-cli-reference.md#spacetime-build).
+For all build options, see the [`spacetime build` CLI reference](../../00300-resources/00100-cli-reference/00100-cli-reference.md#spacetime-build).
 
 ## Publishing Modules
 
@@ -88,21 +88,27 @@ spacetime publish --break-clients <DATABASE_NAME>
 
 ⚠️ **Warning:** This will break existing clients that haven't been updated to match your new schema.
 
-If this publish is a major upgrade from 1.x to 2.0, read [1.x to 2.0 Upgrade Notes](../../00300-resources/00100-how-to/00600-migrating-to-2.0.md) first.
+If this publish is a major upgrade from 1.x to 2.0, read [1.x to 2.0 Upgrade Notes](../../00250-how-to/00600-migrating-to-2.0.md) first.
 
 #### Clearing Data
 
 To completely reset your database and delete all data:
 
 ```bash
-spacetime publish --delete-data <DATABASE_NAME>
+spacetime publish <DATABASE_NAME> --delete-data
 ```
 
 ⚠️ **Warning:** This permanently deletes all data in your database!
 
 ### Publishing Options
 
-For all available publishing options and flags, see the [`spacetime publish` CLI reference](../../00300-resources/00200-reference/00100-cli-reference/00100-cli-reference.md#spacetime-publish).
+For all available publishing options and flags, see the [`spacetime publish` CLI reference](../../00300-resources/00100-cli-reference/00100-cli-reference.md#spacetime-publish).
+
+### Environment Variables
+
+Modules can declare environment variables for configuration and secrets. Each publish supplies the complete set of values from the target's `env` configuration and declared shell variables. Required values must be supplied on every publish; omitted optional values are removed. The module and its environment update atomically.
+
+See [Environment Variables](./00700-environment-variables.md) for declarations, reading values in module code, publishing examples, and private tables for secrets that need to change without republishing.
 
 ## Next Steps
 

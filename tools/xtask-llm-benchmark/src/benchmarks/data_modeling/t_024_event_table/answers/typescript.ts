@@ -1,6 +1,6 @@
 import { schema, table, t } from 'spacetimedb/server';
 
-const damageEvent = table({
+const damage_event = table({
   name: 'damage_event',
   public: true,
   event: true,
@@ -10,12 +10,12 @@ const damageEvent = table({
   source: t.string(),
 });
 
-const spacetimedb = schema({ damageEvent });
+const spacetimedb = schema({ damage_event });
 export default spacetimedb;
 
 export const deal_damage = spacetimedb.reducer(
   { entityId: t.u64(), damage: t.u32(), source: t.string() },
   (ctx, { entityId, damage, source }) => {
-    ctx.db.damageEvent.insert({ entityId, damage, source });
+    ctx.db.damage_event.insert({ entityId, damage, source });
   }
 );

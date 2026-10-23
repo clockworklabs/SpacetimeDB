@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "spacetimedb": {
+      "command": "spacetime",
+      "args": ["mcp"]
+    }
+  }
+}

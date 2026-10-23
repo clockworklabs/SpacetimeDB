@@ -14,19 +14,20 @@ import { fileURLToPath } from 'node:url';
 import {
   runStressPostgres,
   runStressSpacetime,
-  type StressOpts,
+  runStressMongo,
 } from './scenarios/stress-throughput.ts';
 import {
   runRealisticPostgres,
   runRealisticSpacetime,
-  type RealisticOpts,
+  runRealisticMongo,
 } from './scenarios/realistic-chat.ts';
 import type { ScenarioResult } from './metrics.ts';
 
 interface CliArgs {
-  backend: 'pg' | 'stdb';
+  backend: 'pg' | 'stdb' | 'mongo';
   scenario: 'stress' | 'realistic' | 'all';
   pgUrl: string;
+  mongoUrl: string;
   stdbUri: string;
   stdbModule: string;
   writers: number;
@@ -40,6 +41,7 @@ function parseArgs(argv: string[]): CliArgs {
     backend: 'pg',
     scenario: 'stress',
     pgUrl: 'http://localhost:6001',
+    mongoUrl: 'http://localhost:6001',
     stdbUri: 'ws://localhost:3000',
     stdbModule: '',
     writers: 20,
@@ -51,9 +53,10 @@ function parseArgs(argv: string[]): CliArgs {
     const k = argv[i];
     const v = argv[i + 1];
     switch (k) {
-      case '--backend': a.backend = v as 'pg' | 'stdb'; i++; break;
+      case '--backend': a.backend = v as CliArgs['backend']; i++; break;
       case '--scenario': a.scenario = v as CliArgs['scenario']; i++; break;
       case '--pg-url': a.pgUrl = v!; i++; break;
+      case '--mongo-url': a.mongoUrl = v!; i++; break;
       case '--stdb-uri': a.stdbUri = v!; i++; break;
       case '--module': a.stdbModule = v!; i++; break;
       case '--writers': a.writers = parseInt(v!); i++; break;
@@ -70,6 +73,10 @@ async function runOne(args: CliArgs, scenario: 'stress' | 'realistic'): Promise<
     const cfg = { baseUrl: args.pgUrl };
     if (scenario === 'stress') return runStressPostgres(cfg, { writers: args.writers, durationSec: args.duration });
     return runRealisticPostgres(cfg, { users: args.users, durationSec: args.duration, minIntervalMs: 5000, maxIntervalMs: 15000 });
+  } else if (args.backend === 'mongo') {
+    const cfg = { baseUrl: args.mongoUrl };
+    if (scenario === 'stress') return runStressMongo(cfg, { writers: args.writers, durationSec: args.duration });
+    return runRealisticMongo(cfg, { users: args.users, durationSec: args.duration, minIntervalMs: 5000, maxIntervalMs: 15000 });
   } else {
     if (!args.stdbModule) throw new Error('--module is required for stdb');
     const cfg = { uri: args.stdbUri, moduleName: args.stdbModule };

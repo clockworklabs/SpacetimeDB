@@ -1,0 +1,15 @@
+Update the existing SpacetimeDB backend module in C# to add a migration-safe default value.
+
+TABLE
+- Widget (public, accessor Widget)
+  - Preserve the existing table and fields
+  - Keep Id: ulong as the primary key
+  - Add Enabled: bool as the trailing field
+  - Give Enabled a default value of true
+
+REDUCERS
+- Preserve Seed and Touch without renaming them
+- Update new Widget values to set Enabled to true
+
+MIGRATION
+- A compatible republish must backfill existing rows

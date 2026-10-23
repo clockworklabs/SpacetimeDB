@@ -16,7 +16,7 @@ type IntArray =
   | BigUint64Array;
 
 /**
- * A collection of random-number-generating functions, seeded based on `ctx.timestamp`.
+ * A collection of random-number-generating functions.
  *
  * ## Usage
  *
@@ -24,6 +24,7 @@ type IntArray =
  * const floatOneToTen = ctx.random() * 10;
  * const randomBytes = ctx.random.fill(new Uint8Array(16));
  * const intOneToTen = ctx.random.integerInRange(0, 10);
+ * const shuffledCards = ctx.random.shuffle(cards);
  * ```
  */
 export interface Random {
@@ -39,6 +40,12 @@ export interface Random {
    * in a uniform distribution, mutating and returning it.
    */
   fill<T extends IntArray>(array: T): T;
+
+  /**
+   * Shuffles an array in place using an unbiased Fisher-Yates shuffle, then
+   * returns the same array.
+   */
+  shuffle<T>(array: T[]): T[];
 
   /**
    * Returns a random unsigned 32-bit integer in a uniform distribution in the
@@ -79,24 +86,40 @@ function generateFloat64(rng: RandomGenerator): number {
   return value;
 }
 
-export function makeRandom(seed: Timestamp): Random {
+export function makeRandomFromSeed(
+  seed: Timestamp | number | bigint | Uint8Array
+): Random {
   // Use PCG32 to turn a 64-bit seed into a 32-bit seed, as the Rust `rand` crate does.
-  const rng = xoroshiro128plus(pcg32(seed.microsSinceUnixEpoch));
+  const rng = xoroshiro128plus(pcg32(seedToBigInt(seed)));
 
   const random: Random = () => generateFloat64(rng);
 
   random.fill = array => {
-    const elem = array.at(0);
-    if (typeof elem === 'bigint') {
+    if (isBigIntArray(array)) {
       const upper = (1n << BigInt(array.BYTES_PER_ELEMENT * 8)) - 1n;
       for (let i = 0; i < array.length; i++) {
         array[i] = unsafeUniformBigIntDistribution(0n, upper, rng);
       }
-    } else if (typeof elem === 'number') {
-      const upper = (1 << (array.BYTES_PER_ELEMENT * 8)) - 1;
+    } else {
+      const upper = Math.pow(2, array.BYTES_PER_ELEMENT * 8) - 1;
       for (let i = 0; i < array.length; i++) {
         array[i] = unsafeUniformIntDistribution(0, upper, rng);
       }
+    }
+    return array;
+  };
+
+  random.shuffle = array => {
+    for (
+      let currentIndex = array.length - 1;
+      currentIndex > 0;
+      currentIndex--
+    ) {
+      const swapIndex = random.integerInRange(0, currentIndex);
+      [array[currentIndex], array[swapIndex]] = [
+        array[swapIndex],
+        array[currentIndex],
+      ];
     }
     return array;
   };
@@ -110,4 +133,28 @@ export function makeRandom(seed: Timestamp): Random {
     unsafeUniformBigIntDistribution(min, max, rng);
 
   return random;
+}
+
+export function makeRandom(seed: Timestamp): Random {
+  return makeRandomFromSeed(seed);
+}
+
+function seedToBigInt(seed: Timestamp | number | bigint | Uint8Array): bigint {
+  if (typeof seed === 'bigint') return seed;
+  if (typeof seed === 'number') return BigInt(seed);
+  if (seed instanceof Uint8Array) {
+    let value = 0n;
+    const len = Math.min(seed.byteLength, 8);
+    for (let i = 0; i < len; i++) {
+      value |= BigInt(seed[i]) << BigInt(i * 8);
+    }
+    return value;
+  }
+  return seed.microsSinceUnixEpoch;
+}
+
+function isBigIntArray(
+  array: IntArray
+): array is BigInt64Array | BigUint64Array {
+  return array instanceof BigInt64Array || array instanceof BigUint64Array;
 }

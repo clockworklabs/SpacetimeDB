@@ -19,6 +19,18 @@ pub struct VecEveryVecStructTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `vec_every_vec_struct`.
+pub struct VecEveryVecStructTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for VecEveryVecStructTableAccessor {
+    type Row = VecEveryVecStruct;
+    type Handle<'db> = VecEveryVecStructTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.vec_every_vec_struct()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `vec_every_vec_struct`.
 ///
@@ -40,6 +52,18 @@ impl VecEveryVecStructTableAccess for super::RemoteTables {
 
 pub struct VecEveryVecStructInsertCallbackId(__sdk::CallbackId);
 pub struct VecEveryVecStructDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for VecEveryVecStructTableHandle<'ctx> {
+    type Row = VecEveryVecStruct;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = VecEveryVecStruct> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for VecEveryVecStructTableHandle<'ctx> {
     type Row = VecEveryVecStruct;
@@ -65,6 +89,36 @@ impl<'ctx> __sdk::Table for VecEveryVecStructTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = VecEveryVecStructDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> VecEveryVecStructDeleteCallbackId {
+        VecEveryVecStructDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: VecEveryVecStructDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for VecEveryVecStructTableHandle<'ctx> {
+    type InsertCallbackId = VecEveryVecStructInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> VecEveryVecStructInsertCallbackId {
+        VecEveryVecStructInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: VecEveryVecStructInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for VecEveryVecStructTableHandle<'ctx> {
     type DeleteCallbackId = VecEveryVecStructDeleteCallbackId;
 
     fn on_delete(

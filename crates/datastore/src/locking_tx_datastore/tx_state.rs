@@ -1,9 +1,11 @@
-use super::{delete_table::DeleteTable, sequence::Sequence};
+use super::delete_table::DeleteTable;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::db::auth::StAccess;
-use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
+use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
-use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema};
+use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
+use spacetimedb_schema::identifier::{Identifier, NamespacedIdentifier};
+use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, SequenceSchema};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
@@ -76,7 +78,7 @@ pub(super) struct TxState {
     pub(super) pending_schema_changes: ThinVec<PendingSchemaChange>,
 }
 
-static_assert_size!(TxState, 88);
+static_assert_size!(TxState, 96);
 
 impl MemoryUsage for TxState {
     fn heap_usage(&self) -> usize {
@@ -111,6 +113,15 @@ pub enum PendingSchemaChange {
     /// If adding this index caused the pointer map to be removed,
     /// it will be present here.
     IndexAdded(TableId, IndexId, Option<PointerMap>),
+    /// The source-name alias of the index with [`IndexId`] changed.
+    /// The old alias is stored for rollback.
+    IndexAlterSourceName(TableId, IndexId, Option<RawNamespacedIdentifier>),
+    /// The accessor name alias of the table with [`TableId`] changed.
+    /// The old alias is stored for rollback.
+    TableAlterAccessorName(TableId, Option<NamespacedIdentifier>),
+    /// The accessor name alias of the column with [`ColId`] in the table with [`TableId`] changed.
+    /// The old alias is stored for rollback.
+    ColumnAlterAccessorName(TableId, ColId, Option<Identifier>),
     /// The [`Table`] with [`TableId`] was removed.
     TableRemoved(TableId, Table),
     /// The table with [`TableId`] was added.
@@ -132,12 +143,17 @@ pub enum PendingSchemaChange {
     /// The primary key of the table with [`TableId`] was changed.
     /// The old primary key was stored.
     TableAlterPrimaryKey(TableId, Option<ColList>),
-    /// The constraint with [`ConstraintSchema`] was added to the table with [`TableId`].
-    ConstraintRemoved(TableId, ConstraintSchema),
+    /// The outbox metadata of the table with [`TableId`] was changed.
+    /// The old outbox metadata was stored.
+    TableAlterOutbox(TableId, Option<OutboxSchema>),
+    /// The constraint with [`ConstraintSchema`] was removed from the table with [`TableId`].
+    /// If indices were made non-unique, their [`IndexId`]s are stored.
+    ConstraintRemoved(TableId, ConstraintSchema, Vec<IndexId>),
     /// The constraint with [`ConstraintId`] was added to the table with [`TableId`].
-    ConstraintAdded(TableId, ConstraintId),
-    /// The [`Sequence`] with [`SequenceSchema`] was added to the table with [`TableId`].
-    SequenceRemoved(TableId, Sequence, SequenceSchema),
+    /// If indices were made unique, their [`IndexId`]s and the taken [`PointerMap`] are stored.
+    ConstraintAdded(TableId, ConstraintId, Vec<IndexId>, Option<PointerMap>),
+    /// The sequence with [`SequenceSchema`] was added to the table with [`TableId`].
+    SequenceRemoved(TableId, SequenceSchema),
     /// The sequence with [`SequenceId`] was added to the table with [`TableId`].
     SequenceAdded(TableId, SequenceId),
 }
@@ -151,19 +167,47 @@ impl MemoryUsage for PendingSchemaChange {
             Self::IndexAdded(table_id, index_id, pointer_map) => {
                 table_id.heap_usage() + index_id.heap_usage() + pointer_map.heap_usage()
             }
+            Self::IndexAlterSourceName(table_id, index_id, alias) => {
+                table_id.heap_usage() + index_id.heap_usage() + alias.as_ref().map(|a| a.as_ref().len()).unwrap_or(0)
+            }
             Self::TableRemoved(table_id, table) => table_id.heap_usage() + table.heap_usage(),
             Self::TableAdded(table_id) => table_id.heap_usage(),
             Self::TableAlterAccess(table_id, st_access) => table_id.heap_usage() + st_access.heap_usage(),
             Self::TableAlterRowType(table_id, column_schemas) => table_id.heap_usage() + column_schemas.heap_usage(),
             Self::TableAlterPrimaryKey(table_id, pk) => table_id.heap_usage() + pk.heap_usage(),
-            Self::ConstraintRemoved(table_id, constraint_schema) => {
-                table_id.heap_usage() + constraint_schema.heap_usage()
+            Self::TableAlterOutbox(table_id, outbox) => {
+                table_id.heap_usage()
+                    + outbox
+                        .as_ref()
+                        .map(|outbox| {
+                            outbox.remote_reducer.as_ref().heap_usage()
+                                + outbox.target_column.heap_usage()
+                                + outbox.arg_columns.heap_usage()
+                                + outbox
+                                    .on_result_reducer
+                                    .as_ref()
+                                    .map(|name| name.as_ref().heap_usage())
+                                    .unwrap_or(0)
+                                + outbox.signature_hash.heap_usage()
+                        })
+                        .unwrap_or(0)
             }
-            Self::ConstraintAdded(table_id, constraint_id) => table_id.heap_usage() + constraint_id.heap_usage(),
-            Self::SequenceRemoved(table_id, sequence, sequence_schema) => {
-                table_id.heap_usage() + sequence.heap_usage() + sequence_schema.heap_usage()
+            Self::ConstraintRemoved(table_id, constraint_schema, index_ids) => {
+                table_id.heap_usage() + constraint_schema.heap_usage() + index_ids.heap_usage()
             }
+            Self::ConstraintAdded(table_id, constraint_id, index_ids, pointer_map) => {
+                table_id.heap_usage() + constraint_id.heap_usage() + index_ids.heap_usage() + pointer_map.heap_usage()
+            }
+            Self::SequenceRemoved(table_id, sequence_schema) => table_id.heap_usage() + sequence_schema.heap_usage(),
             Self::SequenceAdded(table_id, sequence_id) => table_id.heap_usage() + sequence_id.heap_usage(),
+            Self::TableAlterAccessorName(table_id, alias) => {
+                table_id.heap_usage() + alias.as_ref().map(|a| a.as_ref().len()).unwrap_or(0)
+            }
+            Self::ColumnAlterAccessorName(table_id, col_id, alias) => {
+                table_id.heap_usage()
+                    + col_id.heap_usage()
+                    + alias.as_ref().map(|a| a.as_raw().heap_usage()).unwrap_or(0)
+            }
             Self::ReschemaEventTable(table_id, column_schemas) => table_id.heap_usage() + column_schemas.heap_usage(),
         }
     }

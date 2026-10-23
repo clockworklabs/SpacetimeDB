@@ -6,6 +6,11 @@ partial struct CustomStruct
     : System.IEquatable<CustomStruct>,
         SpacetimeDB.BSATN.IStructuralReadWrite
 {
+#if NET10_0_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
+#endif
     public void ReadFields(System.IO.BinaryReader reader)
     {
         IntField = BSATN.IntFieldRW.Read(reader);
@@ -50,7 +55,7 @@ partial struct CustomStruct
                 new SpacetimeDB.BSATN.AggregateElement[]
                 {
                     new("IntField", IntFieldRW.GetAlgebraicType(registrar)),
-                    new("StringField", StringFieldRW.GetAlgebraicType(registrar))
+                    new("StringField", StringFieldRW.GetAlgebraicType(registrar)),
                 }
             ));
 
@@ -79,16 +84,7 @@ partial struct CustomStruct
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as CustomStruct?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is CustomStruct t && Equals(t);
     }
 
     public static bool operator ==(CustomStruct this_, CustomStruct that)

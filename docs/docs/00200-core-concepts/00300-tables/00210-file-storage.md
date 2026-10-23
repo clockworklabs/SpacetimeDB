@@ -33,7 +33,7 @@ const userAvatar = table(
 const spacetimedb = schema({ userAvatar });
 export default spacetimedb;
 
-export const upload_avatar = spacetimedb.reducer({
+export const uploadAvatar = spacetimedb.reducer({
   userId: t.u64(),
   mimeType: t.string(),
   data: t.array(t.u8()),
@@ -204,7 +204,7 @@ const spacetimedb = schema({ document });
 export default spacetimedb;
 
 // Called after uploading file to external storage
-export const register_document = spacetimedb.reducer({
+export const registerDocument = spacetimedb.reducer({
   filename: t.string(),
   mimeType: t.string(),
   sizeBytes: t.u64(),
@@ -332,7 +332,7 @@ SPACETIMEDB_REDUCER(register_document, ReducerContext ctx,
     std::string filename, std::string mime_type, uint64_t size_bytes, std::string storage_url) {
     ctx.db[document].insert(Document{
         .id = 0,  // auto-increment
-        .owner_id = ctx.sender,
+        .owner_id = ctx.sender(),
         .filename = filename,
         .mime_type = mime_type,
         .size_bytes = size_bytes,
@@ -394,7 +394,7 @@ const spacetimedb = schema({ document });
 export default spacetimedb;
 
 // Upload file to S3 and register in database
-export const upload_to_s3 = spacetimedb.procedure(
+export const uploadToS3 = spacetimedb.procedure(
   {
     filename: t.string(),
     contentType: t.string(),
@@ -405,7 +405,7 @@ export const upload_to_s3 = spacetimedb.procedure(
   t.string(),  // Returns the S3 key
   (ctx, { filename, contentType, data, s3Bucket, s3Region }) => {
     // Generate a unique S3 key
-    const s3Key = `uploads/${Date.now()}-${filename}`;
+    const s3Key = `uploads/${ctx.timestamp.microsSinceUnixEpoch}-${filename}`;
     const url = `https://${s3Bucket}.s3.${s3Region}.amazonaws.com/${s3Key}`;
 
     // Upload to S3 (simplified - add AWS4 signature in production)
@@ -579,7 +579,7 @@ pub fn upload_to_s3(
     ctx.with_tx(|tx_ctx| {
         tx_ctx.db.document().insert(Document {
             id: 0,
-            owner_id: tx_ctx.sender,
+            owner_id: tx_ctx.sender(),
             filename: filename_clone.clone(),
             s3_key: s3_key_clone.clone(),
             uploaded_at: tx_ctx.timestamp,
@@ -606,11 +606,11 @@ For larger files, generate a pre-signed URL and let the client upload directly:
 
 ```typescript
 // Procedure returns a pre-signed URL for client-side upload
-export const get_upload_url = spacetimedb.procedure(
+export const getUploadUrl = spacetimedb.procedure(
   { filename: t.string(), contentType: t.string() },
   t.object('UploadInfo', { uploadUrl: t.string(), s3Key: t.string() }),
   (ctx, { filename, contentType }) => {
-    const s3Key = `uploads/${Date.now()}-${filename}`;
+    const s3Key = `uploads/${ctx.timestamp.microsSinceUnixEpoch}-${filename}`;
 
     // Generate pre-signed URL (requires AWS credentials and signing logic)
     const uploadUrl = generatePresignedUrl(s3Key, contentType);
@@ -620,7 +620,7 @@ export const get_upload_url = spacetimedb.procedure(
 );
 
 // Client uploads directly to S3 using the pre-signed URL, then calls:
-export const confirm_upload = spacetimedb.reducer({ filename: t.string(), s3Key: t.string() }, (ctx, { filename, s3Key }) => {
+export const confirmUpload = spacetimedb.reducer({ filename: t.string(), s3Key: t.string() }, (ctx, { filename, s3Key }) => {
   ctx.db.document.insert({
     id: 0n,
     ownerId: ctx.sender,
@@ -719,7 +719,7 @@ pub fn get_upload_url(
 pub fn confirm_upload(ctx: &ReducerContext, filename: String, s3_key: String) {
     ctx.db.document().insert(Document {
         id: 0,
-        owner_id: ctx.sender,
+        owner_id: ctx.sender(),
         filename,
         s3_key,
         uploaded_at: ctx.timestamp,
@@ -765,7 +765,7 @@ const image = table(
 ```csharp
 using SpacetimeDB;
 
-public partial class Module
+public static partial class Module
 {
     [SpacetimeDB.Table(Accessor = "Image", Public = true)]
     public partial struct Image

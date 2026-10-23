@@ -28,6 +28,18 @@ async function resolveWS(): Promise<typeof WebSocket> {
 
 export interface WebSocketAdapter {
   readonly protocol: string;
+  /**
+   * The underlying socket's `readyState`, using the standard `WebSocket`
+   * constants: `CONNECTING` (0), `OPEN` (1), `CLOSING` (2), `CLOSED` (3). Used
+   * to detect sockets that died silently, for example after the tab was frozen
+   * or the machine slept, without a clean `onclose` having fired.
+   *
+   * Optional so existing custom adapters stay valid without changes. When an
+   * adapter does not expose it, the resume handler cannot detect a
+   * silently-closed socket for that adapter and leaves it to the normal
+   * `onclose` path.
+   */
+  readonly readyState?: number;
   send(msg: Uint8Array<ArrayBuffer>): void;
   close(): void;
 
@@ -35,6 +47,16 @@ export interface WebSocketAdapter {
   set onopen(handler: () => void);
   set onmessage(handler: (msg: { data: Uint8Array }) => void);
   set onerror(handler: (msg: ErrorEvent) => void);
+}
+
+export class WebSocketTokenError extends Error {
+  constructor(
+    readonly status: number,
+    statusText: string
+  ) {
+    super(`Failed to verify token: ${status} ${statusText}`);
+    this.name = 'WebSocketTokenError';
+  }
 }
 
 export interface WebSocketArgs {
@@ -45,6 +67,10 @@ export interface WebSocketArgs {
   compression: 'gzip' | 'brotli' | 'none';
   lightMode: boolean;
   confirmedReads?: boolean;
+  /** Hex-encoded id for this socket. */
+  connectionId?: string;
+  /** Stable session id, sent only when automatic reconnection is enabled. */
+  sessionId?: string;
 }
 export type WebSocketFactory = (
   args: WebSocketArgs
@@ -62,6 +88,8 @@ export async function openWebSocket({
   compression,
   lightMode,
   confirmedReads,
+  connectionId,
+  sessionId,
 }: WebSocketArgs): Promise<WebSocket> {
   const headers = new Headers();
 
@@ -80,7 +108,7 @@ export async function openWebSocket({
       const { token } = await response.json();
       temporaryAuthToken = token;
     } else {
-      throw new Error(`Failed to verify token: ${response.statusText}`);
+      throw new WebSocketTokenError(response.status, response.statusText);
     }
   }
 
@@ -97,6 +125,14 @@ export async function openWebSocket({
   }
   if (confirmedReads !== undefined) {
     databaseUrl.searchParams.set('confirmed', confirmedReads.toString());
+  }
+  // Note that `url`'s own query parameters are not carried over by the `URL`
+  // constructor above, so these must be set here.
+  if (connectionId) {
+    databaseUrl.searchParams.set('connection_id', connectionId);
+  }
+  if (sessionId) {
+    databaseUrl.searchParams.set('session_id', sessionId);
   }
 
   const ws = new WS(databaseUrl.toString(), wsProtocol);

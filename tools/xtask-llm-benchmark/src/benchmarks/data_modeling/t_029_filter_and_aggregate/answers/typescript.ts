@@ -9,7 +9,7 @@ const order = table({
   fulfilled: t.bool(),
 });
 
-const categoryStats = table({
+const category_stats = table({
   name: 'category_stats',
 }, {
   category: t.string().primaryKey(),
@@ -17,7 +17,7 @@ const categoryStats = table({
   orderCount: t.u32(),
 });
 
-const spacetimedb = schema({ order, categoryStats });
+const spacetimedb = schema({ order, category_stats });
 export default spacetimedb;
 
 export const compute_stats = spacetimedb.reducer(
@@ -32,8 +32,8 @@ export const compute_stats = spacetimedb.reducer(
     }
 
     // Upsert: delete existing then insert
-    ctx.db.categoryStats.category.delete(category);
-    ctx.db.categoryStats.insert({
+    ctx.db.category_stats.category.delete(category);
+    ctx.db.category_stats.insert({
       category,
       totalAmount,
       orderCount,

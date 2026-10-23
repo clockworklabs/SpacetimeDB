@@ -201,7 +201,7 @@ void URemoteProcedures::InvalidRequest(FOnInvalidRequestComplete Callback)
 	Conn->CallProcedureTyped(TEXT("invalid_request"), FInvalidRequestArgs(), Wrapper);
 }
 
-void URemoteProcedures::ReadMySchema(FOnReadMySchemaComplete Callback)
+void URemoteProcedures::ReadMySchema(const FString& ServerUrl, FOnReadMySchemaComplete Callback)
 {
     if (!Conn)
     {
@@ -227,7 +227,7 @@ void URemoteProcedures::ReadMySchema(FOnReadMySchemaComplete Callback)
             // Fire the user's typed delegate
             Callback.ExecuteIfBound(Context, ResultValue, bSuccess);
         });
-	Conn->CallProcedureTyped(TEXT("read_my_schema"), FReadMySchemaArgs(), Wrapper);
+	Conn->CallProcedureTyped(TEXT("read_my_schema"), FReadMySchemaArgs(ServerUrl), Wrapper);
 }
 
 void URemoteProcedures::ReturnEnumA(const uint32 A, FOnReturnEnumAComplete Callback)
@@ -557,6 +557,12 @@ USubscriptionBuilder* USubscriptionBuilder::OnError(FOnSubscriptionError Callbac
 	OnErrorDelegateInternal = Callback;
 	return this;
 }
+USubscriptionHandle* USubscriptionBuilder::Subscribe()
+{
+	const TArray<FString> SqlQueries = PendingSqlQueries;
+	PendingSqlQueries.Empty();
+	return Subscribe(SqlQueries);
+}
 USubscriptionHandle* USubscriptionBuilder::Subscribe(const TArray<FString>& SQL)
 {
 	USubscriptionHandle* Handle = NewObject<USubscriptionHandle>();
@@ -584,7 +590,37 @@ USubscriptionHandle* USubscriptionBuilder::Subscribe(const TArray<FString>& SQL)
 }
 USubscriptionHandle* USubscriptionBuilder::SubscribeToAllTables()
 {
-	return Subscribe({ "SELECT * FROM * " });
+	return Subscribe(FQueryBuilder::AllTablesSqlQueries());
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddBlueprintQuery(const FBlueprintQuery& Query)
+{
+	PendingSqlQueries.Add(Query.Sql);
+	return this;
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddMyTableQuery(const FMyTableQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkUuidQuery(const FPkUuidQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddProcInsertsIntoQuery(const FProcInsertsIntoQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
 }
 
 USubscriptionHandle::USubscriptionHandle(UDbConnection* InConn)
@@ -667,7 +703,7 @@ void UDbConnection::ForwardOnConnect(UDbConnectionBase* BaseConnection, FSpaceti
 {
 	if (OnConnectDelegate.IsBound())
 	{
-		OnConnectDelegate.Execute(this, Identity, Token);
+		OnConnectDelegate.Execute(this, InIdentity, InToken);
 	}
 }
 void UDbConnection::ForwardOnDisconnect(UDbConnectionBase* BaseConnection, const FString& Error)

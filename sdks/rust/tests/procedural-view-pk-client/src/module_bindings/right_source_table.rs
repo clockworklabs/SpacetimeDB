@@ -18,6 +18,18 @@ pub struct RightSourceTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `right_source`.
+pub struct RightSourceTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for RightSourceTableAccessor {
+    type Row = RightSource;
+    type Handle<'db> = RightSourceTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.right_source()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `right_source`.
 ///
@@ -39,6 +51,18 @@ impl RightSourceTableAccess for super::RemoteTables {
 
 pub struct RightSourceInsertCallbackId(__sdk::CallbackId);
 pub struct RightSourceDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for RightSourceTableHandle<'ctx> {
+    type Row = RightSource;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = RightSource> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for RightSourceTableHandle<'ctx> {
     type Row = RightSource;
@@ -78,9 +102,54 @@ impl<'ctx> __sdk::Table for RightSourceTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for RightSourceTableHandle<'ctx> {
+    type InsertCallbackId = RightSourceInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> RightSourceInsertCallbackId {
+        RightSourceInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: RightSourceInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for RightSourceTableHandle<'ctx> {
+    type DeleteCallbackId = RightSourceDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> RightSourceDeleteCallbackId {
+        RightSourceDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: RightSourceDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct RightSourceUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for RightSourceTableHandle<'ctx> {
+    type UpdateCallbackId = RightSourceUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> RightSourceUpdateCallbackId {
+        RightSourceUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: RightSourceUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for RightSourceTableHandle<'ctx> {
     type UpdateCallbackId = RightSourceUpdateCallbackId;
 
     fn on_update(

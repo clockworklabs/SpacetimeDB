@@ -6,8 +6,8 @@
     at least it simplifies workflow for editing and testing C# code itself.
   -->
   <ItemGroup>
-    <ProjectReference Include="../../crates/bindings-csharp/Codegen/Codegen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="../../crates/bindings-csharp/Runtime/Runtime.csproj" />
+    <ProjectReference Include="../../crates/bindings-csharp/Codegen/Codegen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" SetTargetFramework="TargetFramework=netstandard2.0;TargetFrameworks=netstandard2.0" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained;TargetFramework;TargetFrameworks" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="../../crates/bindings-csharp/Runtime/Runtime.csproj" SetTargetFramework="TargetFramework=$(TargetFramework);TargetFrameworks=$(TargetFramework)" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
 
 </Project>

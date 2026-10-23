@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Identity } from '../src/lib/identity';
 import {
   makeQueryBuilder,
+  makeFromBuilder,
   and,
   or,
   not,
@@ -391,5 +392,43 @@ describe('TableScan.toSql', () => {
     expect(sql).toBe(
       `SELECT * FROM "renamed_columns" WHERE ("renamed_columns"."display_name" = 'Alice') AND ("renamed_columns"."age_years" > 30)`
     );
+  });
+});
+
+describe('makeFromBuilder', () => {
+  // Exercises the query builder used by `subscriptionBuilder().subscribe(tables => ...)`:
+  // root tables (no dot in `sourceName`) are exposed directly, while namespaced/submodule
+  // tables (dotted `sourceName`, e.g. `"lib.orders"`) are grouped under a sub-object keyed
+  // by the namespace, so two tables with the same accessor name in different namespaces
+  // don't collide.
+  it('exposes root-level tables (no dot in sourceName) directly', () => {
+    const from = makeFromBuilder(schemaDef.tables);
+    const sql = toSql(from.person.build());
+
+    expect(sql).toBe('SELECT * FROM "person"');
+  });
+
+  it('groups a namespaced table (dotted sourceName) under its namespace', () => {
+    const namespacedTables = {
+      ...schemaDef.tables,
+      orders: { ...schemaDef.tables.orders, sourceName: 'lib.orders' },
+    };
+    const from = makeFromBuilder(namespacedTables) as any;
+
+    expect(from.orders).toBeUndefined();
+    const sql = toSql(from.lib.orders.build());
+    expect(sql).toBe('SELECT * FROM "lib"."orders"');
+  });
+
+  it('keeps a root table with the same accessor name distinct from a namespaced one', () => {
+    const namespacedTables = {
+      ...schemaDef.tables,
+      orders: { ...schemaDef.tables.orders, sourceName: 'lib.orders' },
+    };
+    const from = makeFromBuilder(namespacedTables) as any;
+
+    // Root `person` is unaffected by the `lib.orders` namespace grouping.
+    expect(toSql(from.person.build())).toBe('SELECT * FROM "person"');
+    expect(toSql(from.lib.orders.build())).toBe('SELECT * FROM "lib"."orders"');
   });
 });

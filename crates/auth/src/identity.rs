@@ -9,8 +9,9 @@ use std::time::SystemTime;
 
 #[derive(Debug, Clone)]
 pub struct ConnectionAuthCtx {
-    pub claims: SpacetimeIdentityClaims,
-    pub jwt_payload: Box<str>,
+    pub identity: Identity,
+    /// Client JWT claims, absent for host-authenticated database calls.
+    pub jwt_payload: Option<Box<str>>,
 }
 
 impl TryFrom<SpacetimeIdentityClaims> for ConnectionAuthCtx {
@@ -18,8 +19,8 @@ impl TryFrom<SpacetimeIdentityClaims> for ConnectionAuthCtx {
     fn try_from(claims: SpacetimeIdentityClaims) -> Result<Self, Self::Error> {
         let payload = serde_json::to_string(&claims).map_err(|e| anyhow::anyhow!("Failed to serialize claims: {e}"))?;
         Ok(ConnectionAuthCtx {
-            claims,
-            jwt_payload: payload.into(),
+            identity: claims.identity,
+            jwt_payload: Some(payload.into()),
         })
     }
 }
@@ -40,7 +41,10 @@ pub struct SpacetimeIdentityClaims {
     /// The unix timestamp the token was issued at
     #[serde_as(as = "serde_with::TimestampSeconds")]
     pub iat: SystemTime,
+    // Older no-expiration tokens were serialized as `"exp": null`.
+    // Keep accepting those during validation, but omit the claim for new no-expiration tokens.
     #[serde_as(as = "Option<serde_with::TimestampSeconds>")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub exp: Option<SystemTime>,
 
     #[serde(flatten)]
@@ -86,7 +90,9 @@ pub struct IncomingClaims {
     /// The unix timestamp the token was issued at
     #[serde_as(as = "serde_with::TimestampSeconds")]
     pub iat: SystemTime,
+    // See `SpacetimeIdentityClaims::exp`: absent and null both mean no expiration.
     #[serde_as(as = "Option<serde_with::TimestampSeconds>")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub exp: Option<SystemTime>,
 
     /// All remaining claims from the JWT payload

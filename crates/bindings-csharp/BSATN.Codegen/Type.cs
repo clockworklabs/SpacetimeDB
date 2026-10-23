@@ -470,7 +470,7 @@ public static class SpacetimeDbFieldDiscovery
         typeSyntax
             .Members.OfType<FieldDeclarationSyntax>()
             .SelectMany(f => f.Declaration.Variables)
-            .Select(v => type.GetMembers(v.Identifier.Text).OfType<IFieldSymbol>().Single())
+            .Select(v => type.GetMembers(v.Identifier.ValueText).OfType<IFieldSymbol>().Single())
             .Where(f => !f.IsStatic);
 
     public static IFieldSymbol? FindSpacetimeDbField(ITypeSymbol rowType, string fieldName)
@@ -563,7 +563,13 @@ public abstract record BaseTypeDeclaration<M>
                 is not INamedTypeSymbol { IsTupleType: true, TupleElements: var taggedEnumVariants }
             )
             {
-                diag.Report(ErrorDescriptor.TaggedEnumInlineTuple, type.BaseType);
+                diag.Report(
+                    ErrorDescriptor.TaggedEnumInlineTuple,
+                    (
+                        type.BaseType,
+                        (SyntaxNode?)typeSyntax.BaseList?.Types.FirstOrDefault()?.Type ?? typeSyntax
+                    )
+                );
             }
 
             if (fields.FirstOrDefault() is { } field)
@@ -688,6 +694,9 @@ public abstract record BaseTypeDeclaration<M>
 
             extensions.Contents.Append(
                 $$"""
+                #if NET10_0_OR_GREATER
+                [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+                #endif
                 public void ReadFields(System.IO.BinaryReader reader) {
             {{string.Join(
                     "\n",
@@ -734,13 +743,13 @@ public abstract record BaseTypeDeclaration<M>
 
             write = "value.WriteFields(writer);";
 
-            var declHashName = (MemberDeclaration decl) => $"___hash{decl.Name}";
+            static string DeclHashName(MemberDeclaration decl) => $"___hash{decl.Name}";
 
             getHashCode = $$"""
-                {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.GetHashCodeStatement(decl.Identifier, declHashName(decl))))}}
+                {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.GetHashCodeStatement(decl.Identifier, DeclHashName(decl))))}}
                 return {{JoinOrValue(
                     " ^\n            ",
-                    bsatnDecls.Select(declHashName),
+                    bsatnDecls.Select(DeclHashName),
                     "0" // if there are no members, the hash is 0.
                 )}};
                 """;
@@ -783,7 +792,7 @@ public abstract record BaseTypeDeclaration<M>
             // If we are a reference type, various equality methods need to take nullable references.
             // If we are a value type, everything is pleasantly by-value.
             var fullNameMaybeRef = $"{FullName}{(Scope.IsStruct ? "" : "?")}";
-            var declEqualsName = (MemberDeclaration decl) => $"___eq{decl.Name}";
+            static string DeclEqualsName(MemberDeclaration decl) => $"___eq{decl.Name}";
 
             extensions.Contents.Append(
                 $$"""
@@ -792,23 +801,16 @@ public abstract record BaseTypeDeclaration<M>
                 public bool Equals({{fullNameMaybeRef}} that)
                 {
                     {{(Scope.IsStruct ? "" : "if (((object?)that) == null) { return false; }\n        ")}}
-                    {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.EqualsStatement($"this.{decl.Identifier}", $"that.{decl.Identifier}", declEqualsName(decl))))}}
+                    {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.EqualsStatement($"this.{decl.Identifier}", $"that.{decl.Identifier}", DeclEqualsName(decl))))}}
                     return {{JoinOrValue(
                         " &&\n        ",
-                        bsatnDecls.Select(declEqualsName),
+                        bsatnDecls.Select(DeclEqualsName),
                         "true" // if there are no elements, the structs are equal :)
                     )}};
                 }
 
                 public override bool Equals(object? that) {
-                    if (that == null) {
-                        return false;
-                    }
-                    var that_ = that as {{FullName}}{{(Scope.IsStruct ? "?" : "")}};
-                    if (((object?)that_) == null) {
-                        return false;
-                    }
-                    return Equals(that_);
+                    return that is {{FullName}} t && Equals(t);
                 }
 
                 public static bool operator == ({{fullNameMaybeRef}} this_, {{fullNameMaybeRef}} that) {

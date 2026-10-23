@@ -1,8 +1,8 @@
 import { schema, table, t } from 'spacetimedb/server';
 
-const emptyTable = table({ name: 'empty_table' }, { id: t.i32().primaryKey() });
+const empty_table = table({ name: 'empty_table' }, { id: t.i32().primaryKey() });
 
-const spacetimedb = schema({ emptyTable });
+const spacetimedb = schema({ empty_table });
 export default spacetimedb;
 
 export const emptyReducerNoArgs = spacetimedb.reducer({}, ctx => {

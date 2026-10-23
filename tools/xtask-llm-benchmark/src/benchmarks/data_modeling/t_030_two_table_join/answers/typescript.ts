@@ -16,7 +16,7 @@ const order = table({
   amount: t.u32(),
 });
 
-const orderDetail = table({
+const order_detail = table({
   name: 'order_detail',
 }, {
   orderId: t.u64().primaryKey(),
@@ -25,7 +25,7 @@ const orderDetail = table({
   amount: t.u32(),
 });
 
-const spacetimedb = schema({ customer, order, orderDetail });
+const spacetimedb = schema({ customer, order, order_detail });
 export default spacetimedb;
 
 export const build_order_details = spacetimedb.reducer(
@@ -33,7 +33,7 @@ export const build_order_details = spacetimedb.reducer(
     for (const o of ctx.db.order.iter()) {
       const c = ctx.db.customer.id.find(o.customerId);
       if (c) {
-        ctx.db.orderDetail.insert({
+        ctx.db.order_detail.insert({
           orderId: o.id,
           customerName: c.name,
           product: o.product,

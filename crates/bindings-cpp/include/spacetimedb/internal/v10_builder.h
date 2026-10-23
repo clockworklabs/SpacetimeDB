@@ -26,6 +26,7 @@
 #include "autogen/RawReducerDefV10.g.h"
 #include "autogen/RawProcedureDefV10.g.h"
 #include "autogen/RawViewDefV10.g.h"
+#include "autogen/RawViewPrimaryKeyDefV10.g.h"
 #include "autogen/RawScheduleDefV10.g.h"
 #include "autogen/RawLifeCycleReducerDefV10.g.h"
 #include "autogen/RawHttpHandlerDefV10.g.h"
@@ -632,6 +633,10 @@ public:
         row_level_security_.push_back(RawRowLevelSecurityDefV9{sql_query});
     }
 
+    void RegisterViewPrimaryKey(const std::string& view_source_name, std::vector<std::string> columns) {
+        view_primary_keys_.push_back(RawViewPrimaryKeyDefV10{view_source_name, std::move(columns)});
+    }
+
     void SetTableIsEventFlag(const std::string& table_name, bool is_event);
     bool GetTableIsEventFlag(const std::string& table_name) const;
 
@@ -686,6 +691,7 @@ private:
     std::vector<RawReducerDefV10> reducers_;
     std::vector<RawProcedureDefV10> procedures_;
     std::vector<RawViewDefV10> views_;
+    std::vector<RawViewPrimaryKeyDefV10> view_primary_keys_;
     std::vector<RawHttpHandlerDefV10> http_handlers_;
     std::vector<RawHttpRouteDefV10> http_routes_;
     std::vector<RawScheduleDefV10> schedules_;
@@ -704,4 +710,3 @@ V10Builder& getV10Builder();
 } // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_V10_BUILDER_H
-

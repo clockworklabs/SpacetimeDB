@@ -17,6 +17,8 @@ mod rng;
 pub mod rt;
 #[doc(hidden)]
 pub mod table;
+#[cfg(feature = "test-utils")]
+pub mod test_utils;
 
 #[doc(hidden)]
 pub use spacetimedb_query_builder as query_builder;
@@ -24,9 +26,11 @@ pub use spacetimedb_query_builder as query_builder;
 #[cfg(feature = "unstable")]
 pub use client_visibility_filter::Filter;
 pub use log;
-#[cfg(feature = "rand")]
+#[cfg(feature = "rand08")]
+use rand::distributions::{Distribution, Standard};
+#[cfg(feature = "rand08")]
 pub use rand08 as rand;
-#[cfg(feature = "rand")]
+#[cfg(feature = "rand08")]
 use rand08::RngCore;
 #[cfg(feature = "rand08")]
 pub use rng::StdbRng;
@@ -42,6 +46,9 @@ pub use spacetimedb_lib::ser::Serialize;
 pub use spacetimedb_lib::AlgebraicValue;
 pub use spacetimedb_lib::ConnectionId;
 // `FilterableValue` re-exported purely for rustdoc.
+#[cfg(feature = "unstable")]
+use crate::http::HandlerContext;
+use crate::http::HttpClient;
 pub use spacetimedb_lib::FilterableValue;
 pub use spacetimedb_lib::Identity;
 pub use spacetimedb_lib::ScheduleAt;
@@ -700,7 +707,7 @@ pub use spacetimedb_bindings_macro::table;
 /// <!-- TODO: SLAs? -->
 ///
 /// [`&ReducerContext`]: `ReducerContext`
-/// [clients]: https://spacetimedb.com/docs/#client
+/// [clients]: https://spacetimedb.com/docs/intro/key-architecture#client
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::reducer;
 
@@ -770,7 +777,7 @@ pub use spacetimedb_bindings_macro::reducer;
 /// Scheduled procedures are called on a best-effort basis and may be slightly delayed in their execution
 /// when a database is under heavy load.
 ///
-/// [clients]: https://spacetimedb.com/docs/#client
+/// [clients]: https://spacetimedb.com/docs/intro/key-architecture#client
 // TODO(procedure-async): update docs and examples with `async`-ness.
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::procedure;
@@ -863,6 +870,12 @@ pub use spacetimedb_bindings_macro::procedure;
 ///     })
 /// }
 ///
+/// // An example of a parameterized view
+/// #[view(accessor = players_at_level, public)]
+/// fn players_at_level(ctx: &AnonymousViewContext, level: u32) -> Vec<Player> {
+///     ctx.db.player().level().filter(level).collect()
+/// }
+///
 /// // An example that is analogous to a semijoin in sql
 /// #[view(accessor = players_at_coordinates, public)]
 /// fn players_at_coordinates(ctx: &AnonymousViewContext) -> Vec<Player> {
@@ -912,10 +925,96 @@ pub use spacetimedb_bindings_macro::view;
 pub struct QueryBuilder {}
 pub use query_builder::{Query, RawQuery};
 
+/// Declare the complete publish-time environment schema and generate named accessors.
+///
+/// Fields may be `String`, enums deriving [`EnvironmentValue`], or `Option` of
+/// either, including type aliases. Values are supplied on every publish, never
+/// in metadata. The macro generates an `EnvAccess` extension trait for a struct
+/// named `Env`; import that trait if the declaration lives in another module.
+/// The name `get` is reserved for generic checked access.
+///
+/// ```no_run
+/// #[derive(spacetimedb::EnvironmentValue)]
+/// pub enum LogLevel {
+///     #[env(value = "debug")]
+///     Debug,
+///     #[env(value = "info")]
+///     Info,
+/// }
+/// #[spacetimedb::env]
+/// pub struct Env {
+///     pub API_KEY: String,
+///     pub LOG_LEVEL: Option<LogLevel>,
+/// }
+/// fn read(ctx: &spacetimedb::ReducerContext) {
+///     let _: String = ctx.env.API_KEY();
+///     let _: Option<LogLevel> = ctx.env.LOG_LEVEL();
+/// }
+/// ```
+///
+/// Existing `#[env(values("a", "b"))]` field constraints remain supported for
+/// `String` and `Option<String>`; enum constraints come from their variants.
+#[doc(inline)]
+pub use spacetimedb_bindings_macro::env;
+
+/// Derive a typed environment value from an enum with unit variants.
+///
+/// Each variant accepts its exact Rust name by default. Use
+/// `#[env(value = "in progress")]` to map a variant to an arbitrary string,
+/// including spaces, capitalization, Unicode or the empty string. Mappings must
+/// be distinct, with 1 to 256 variants and at most 8192 UTF-8 bytes per string.
+/// Generic enums and variants with payloads are not supported.
+///
+/// The schema contains only allowed strings. A named environment accessor returns
+/// this enum, or `Option<Enum>` for an optional field; generic `env.get` still
+/// returns `Option<String>`. Missing required values and unmapped strings panic
+/// with the key name only. Other derives and the enum's ordinary serialization
+/// are unaffected.
+#[doc(inline)]
+pub use spacetimedb_bindings_macro::EnvironmentValue;
+
+/// Read-only access to this database's environment store.
+///
+/// Reads use the current transaction. In a procedure outside a transaction,
+/// each read uses a short snapshot; use `with_tx` to read related keys together.
+/// Values are stored in plaintext and may be read by database collaborators.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Environment {
+    /// In native unit tests, reads come from this `TestContext` environment instead of the host.
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    test: Option<test_utils::TestEnvironmentId>,
+    _private: (),
+}
+
+impl Environment {
+    /// Return `None` for an absent declared optional key and `Some("")` for a present empty value.
+    /// Keys must be POSIX environment names of at most 256 bytes.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the key is undeclared, invalid, or inaccessible in the current host call.
+    pub fn get(&self, key: &str) -> Option<String> {
+        #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+        if let Some(test) = self.test {
+            return test.get(key);
+        }
+        rt::env_get(key)
+    }
+
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    fn __test(test: test_utils::TestEnvironmentId) -> Self {
+        Self {
+            test: Some(test),
+            _private: (),
+        }
+    }
+}
+
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
 /// The other is [`ViewContext`].
 /// Use this type if the view does not depend on the caller's identity.
 pub struct AnonymousViewContext {
+    pub env: Environment,
     pub db: LocalReadOnly,
     pub from: QueryBuilder,
 }
@@ -923,7 +1022,20 @@ pub struct AnonymousViewContext {
 impl Default for AnonymousViewContext {
     fn default() -> Self {
         Self {
-            db: LocalReadOnly {},
+            env: Environment::default(),
+            db: LocalReadOnly::__host(),
+            from: QueryBuilder {},
+        }
+    }
+}
+
+impl AnonymousViewContext {
+    #[doc(hidden)]
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    pub fn __test(env: Environment, db: LocalReadOnly) -> Self {
+        Self {
+            env,
+            db,
             from: QueryBuilder {},
         }
     }
@@ -932,6 +1044,7 @@ impl Default for AnonymousViewContext {
 /// The other is [`AnonymousViewContext`].
 /// Use this type if the view depends on the caller's identity.
 pub struct ViewContext {
+    pub env: Environment,
     sender: Identity,
     pub db: LocalReadOnly,
     pub from: QueryBuilder,
@@ -941,7 +1054,8 @@ impl ViewContext {
     pub fn new(sender: Identity) -> Self {
         Self {
             sender,
-            db: LocalReadOnly {},
+            env: Environment::default(),
+            db: LocalReadOnly::__host(),
             from: QueryBuilder {},
         }
     }
@@ -949,6 +1063,17 @@ impl ViewContext {
     /// The `Identity` of the client that invoked the view.
     pub fn sender(&self) -> Identity {
         self.sender
+    }
+
+    #[doc(hidden)]
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    pub fn __test(env: Environment, sender: Identity, db: LocalReadOnly) -> Self {
+        Self {
+            sender,
+            env,
+            db,
+            from: QueryBuilder {},
+        }
     }
 
     /// Obtain an [`AnonymousViewContext`] by dropping `sender`.
@@ -971,6 +1096,8 @@ impl ViewContext {
 /// Implements the `DbContext` trait for accessing views into a database.
 #[non_exhaustive]
 pub struct ReducerContext {
+    /// Read-only access to the database environment in this transaction.
+    pub env: Environment,
     /// The `Identity` of the client that invoked the reducer.
     sender: Identity,
 
@@ -984,6 +1111,9 @@ pub struct ReducerContext {
     connection_id: Option<ConnectionId>,
 
     sender_auth: AuthCtx,
+
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    module_identity: Identity,
 
     /// Allows accessing the local database attached to a module.
     ///
@@ -1011,7 +1141,7 @@ pub struct ReducerContext {
     ///
     /// #[reducer]
     /// fn find_books_by(ctx: &ReducerContext, author: String) {
-    ///     let book: &book__TableHandle = ctx.db.book();
+    ///     let book: book__TableHandle = ctx.db.book();
     ///
     ///     log::debug!("looking up books by {author}...");
     ///     for book in book.author().filter(&author) {
@@ -1027,7 +1157,7 @@ pub struct ReducerContext {
     rng: std::cell::OnceCell<StdbRng>,
     /// A counter used for generating UUIDv7 values.
     /// **Note:** must be 0..=u32::MAX
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     counter_uuid: Cell<u32>,
 }
 
@@ -1035,14 +1165,17 @@ impl ReducerContext {
     #[doc(hidden)]
     pub fn __dummy() -> Self {
         Self {
-            db: Local {},
+            env: Environment::default(),
+            db: Local::__host(),
             sender: Identity::__dummy(),
             timestamp: Timestamp::UNIX_EPOCH,
             connection_id: None,
             sender_auth: AuthCtx::internal(),
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            module_identity: Identity::ZERO,
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
-            #[cfg(feature = "rand")]
+            #[cfg(feature = "rand08")]
             counter_uuid: Cell::new(0),
         }
     }
@@ -1050,13 +1183,44 @@ impl ReducerContext {
     #[doc(hidden)]
     fn new(db: Local, sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
         Self {
+            env: Environment::default(),
             db,
             sender,
             timestamp,
             connection_id,
-            sender_auth: AuthCtx::from_connection_id_opt(connection_id),
+            sender_auth: AuthCtx::for_sender(sender, move || connection_id.and_then(rt::get_jwt)),
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            module_identity: Identity::ZERO,
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
+            #[cfg(feature = "rand08")]
+            counter_uuid: Cell::new(0),
+        }
+    }
+
+    #[doc(hidden)]
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    #[allow(clippy::too_many_arguments)]
+    pub fn __test(
+        env: Environment,
+        db: Local,
+        sender: Identity,
+        sender_auth: AuthCtx,
+        connection_id: Option<ConnectionId>,
+        timestamp: Timestamp,
+        module_identity: Identity,
+        #[cfg(feature = "rand08")] rng_seed: Option<u64>,
+    ) -> Self {
+        Self {
+            env,
+            db,
+            sender,
+            timestamp,
+            connection_id,
+            sender_auth,
+            module_identity,
+            #[cfg(feature = "rand08")]
+            rng: StdbRng::seeded_cell(rng_seed),
             #[cfg(feature = "rand")]
             counter_uuid: Cell::new(0),
         }
@@ -1082,15 +1246,28 @@ impl ReducerContext {
 
     /// Read the current module's [`Identity`].
     pub fn database_identity(&self) -> Identity {
-        // Hypothetically, we *could* read the module identity out of the system tables.
-        // However, this would be:
-        // - Onerous, because we have no tooling to inspect the system tables from module code.
-        // - Slow (at least relatively),
-        //   because it would involve multiple host calls which hit the datastore,
-        //   as compared to a single host call which does not.
-        // As such, we've just defined a host call
-        // which reads the module identity out of the `InstanceEnv`.
-        Identity::from_byte_array(spacetimedb_bindings_sys::identity())
+        #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+        {
+            self.module_identity
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            // Hypothetically, we *could* read the module identity out of the system tables.
+            // However, this would be:
+            // - Onerous, because we have no tooling to inspect the system tables from module code.
+            // - Slow (at least relatively),
+            //   because it would involve multiple host calls which hit the datastore,
+            //   as compared to a single host call which does not.
+            // As such, we've just defined a host call
+            // which reads the module identity out of the `InstanceEnv`.
+            Identity::from_byte_array(spacetimedb_bindings_sys::identity())
+        }
+
+        #[cfg(all(not(feature = "test-utils"), not(target_arch = "wasm32")))]
+        {
+            panic!("ReducerContext::identity() is only available in wasm or native test-utils contexts")
+        }
     }
 
     /// Read the current module's [`Identity`].
@@ -1123,7 +1300,7 @@ impl ReducerContext {
     /// }
     /// # }
     /// ```
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     pub fn new_uuid_v4(&self) -> anyhow::Result<Uuid> {
         let mut bytes = [0u8; 16];
         self.rng().try_fill_bytes(&mut bytes)?;
@@ -1145,7 +1322,7 @@ impl ReducerContext {
     /// }
     /// # }
     /// ```
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     pub fn new_uuid_v7(&self) -> anyhow::Result<Uuid> {
         let mut random_bytes = [0u8; 4];
         self.rng().try_fill_bytes(&mut random_bytes)?;
@@ -1181,12 +1358,15 @@ impl Deref for TxContext {
 }
 
 /// We need to passthrough identity and connection_id because procedures can be invoked by users.
-/// For [HttpContext] this is always anonymous ([Identity::ZERO]).
+/// For [HttpContext] this is the random identity the host created for the request,
+/// whose JWT is `sender_auth`, since there is no connection to look it up by.
 /// Construct the inner [ReducerContext] with the appropriate caller information.
+#[cfg(feature = "unstable")]
 fn try_with_tx<T, E>(
     body: impl Fn(&TxContext) -> Result<T, E>,
     identity: Identity,
     connection_id: Option<ConnectionId>,
+    sender_auth: &AuthCtx,
 ) -> Result<T, E> {
     let abort = || {
         crate::sys::procedure::procedure_abort_mut_tx()
@@ -1198,7 +1378,8 @@ fn try_with_tx<T, E>(
             .expect("holding `&mut HandlerContext`, so should not be in a tx already; called manually elsewhere?");
         let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
 
-        let tx = ReducerContext::new(crate::Local {}, identity, connection_id, timestamp);
+        let mut tx = ReducerContext::new(crate::Local::__host(), identity, connection_id, timestamp);
+        tx.sender_auth = sender_auth.clone();
         let tx = TxContext(tx);
 
         struct DoOnDrop<F: Fn()>(F);
@@ -1231,9 +1412,15 @@ fn try_with_tx<T, E>(
     res
 }
 
-fn with_tx<T>(body: impl Fn(&TxContext) -> T, identity: Identity, connection_id: Option<ConnectionId>) -> T {
+#[cfg(feature = "unstable")]
+fn with_tx<T>(
+    body: impl Fn(&TxContext) -> T,
+    identity: Identity,
+    connection_id: Option<ConnectionId>,
+    sender_auth: &AuthCtx,
+) -> T {
     use core::convert::Infallible;
-    match try_with_tx::<T, Infallible>(|tx| Ok(body(tx)), identity, connection_id) {
+    match try_with_tx::<T, Infallible>(|tx| Ok(body(tx)), identity, connection_id, sender_auth) {
         Ok(v) => v,
         Err(e) => match e {},
     }
@@ -1247,6 +1434,8 @@ fn with_tx<T>(body: impl Fn(&TxContext) -> T, identity: Identity, connection_id:
 /// and exposes methods for running transactions and performing side-effecting operations.
 #[non_exhaustive]
 pub struct ProcedureContext {
+    /// Read-only access to the database environment.
+    pub env: Environment,
     /// The `Identity` of the client that invoked the procedure.
     sender: Identity,
 
@@ -1258,6 +1447,24 @@ pub struct ProcedureContext {
     /// Will be `None` for certain scheduled procedures.
     connection_id: Option<ConnectionId>,
 
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    sender_auth: AuthCtx,
+
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    module_identity: Identity,
+
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    test_datastore: Option<std::sync::Arc<spacetimedb_test_datastore::TestDatastore>>,
+
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    test_context: Option<crate::test_utils::TestContext>,
+
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    test_hooks: Option<crate::test_utils::ProcedureTestHooks>,
+
+    #[cfg(all(feature = "test-utils", feature = "rand08", not(target_arch = "wasm32")))]
+    test_child_seed_rng: Option<RefCell<rand08::rngs::StdRng>>,
+
     /// Methods for performing HTTP requests.
     pub http: crate::http::HttpClient,
     // TODO: Change rng?
@@ -1268,7 +1475,7 @@ pub struct ProcedureContext {
     /// A counter used for generating UUIDv7 values.
     /// **Note:** must be 0..=u32::MAX
     // Disabled when compiling without `rand`, as both v4 and v7 UUIDs have random components.
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     counter_uuid: Cell<u32>,
 }
 
@@ -1278,9 +1485,62 @@ impl ProcedureContext {
             sender,
             timestamp,
             connection_id,
-            http: http::HttpClient {},
+            env: Environment::default(),
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            sender_auth: AuthCtx::for_sender(sender, move || connection_id.and_then(rt::get_jwt)),
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            module_identity: Identity::ZERO,
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            test_datastore: None,
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            test_context: None,
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            test_hooks: None,
+            #[cfg(all(feature = "test-utils", feature = "rand08", not(target_arch = "wasm32")))]
+            test_child_seed_rng: None,
+            http: http::HttpClient::host(),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
+            #[cfg(feature = "rand08")]
+            counter_uuid: Cell::new(0),
+        }
+    }
+
+    #[doc(hidden)]
+    #[allow(clippy::too_many_arguments)]
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    pub fn __test(
+        env: Environment,
+        datastore: std::sync::Arc<spacetimedb_test_datastore::TestDatastore>,
+        sender: Identity,
+        sender_auth: AuthCtx,
+        connection_id: Option<ConnectionId>,
+        timestamp: Timestamp,
+        module_identity: Identity,
+        http: http::HttpClient,
+        test_context: crate::test_utils::TestContext,
+        hooks: crate::test_utils::ProcedureTestHooks,
+        #[cfg(feature = "rand08")] rng_seed: Option<u64>,
+    ) -> Self {
+        Self {
+            sender,
+            timestamp,
+            connection_id,
+            env,
+            sender_auth,
+            module_identity,
+            test_datastore: Some(datastore),
+            test_context: Some(test_context),
+            test_hooks: Some(hooks),
+            #[cfg(feature = "rand08")]
+            test_child_seed_rng: rng_seed.map(|seed| {
+                RefCell::new(<rand08::rngs::StdRng as rand08::SeedableRng>::seed_from_u64(
+                    seed ^ 0xa53d_5eed_c01d_ca11,
+                ))
+            }),
+            http,
+            #[cfg(feature = "rand08")]
+            rng: StdbRng::seeded_cell(rng_seed),
             #[cfg(feature = "rand")]
             counter_uuid: Cell::new(0),
         }
@@ -1306,15 +1566,28 @@ impl ProcedureContext {
 
     /// Read the current module's [`Identity`].
     pub fn database_identity(&self) -> Identity {
-        // Hypothetically, we *could* read the module identity out of the system tables.
-        // However, this would be:
-        // - Onerous, because we have no tooling to inspect the system tables from module code.
-        // - Slow (at least relatively),
-        //   because it would involve multiple host calls which hit the datastore,
-        //   as compared to a single host call which does not.
-        // As such, we've just defined a host call
-        // which reads the module identity out of the `InstanceEnv`.
-        Identity::from_byte_array(spacetimedb_bindings_sys::identity())
+        #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+        {
+            self.module_identity
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            // Hypothetically, we *could* read the module identity out of the system tables.
+            // However, this would be:
+            // - Onerous, because we have no tooling to inspect the system tables from module code.
+            // - Slow (at least relatively),
+            //   because it would involve multiple host calls which hit the datastore,
+            //   as compared to a single host call which does not.
+            // As such, we've just defined a host call
+            // which reads the module identity out of the `InstanceEnv`.
+            Identity::from_byte_array(spacetimedb_bindings_sys::identity())
+        }
+
+        #[cfg(all(not(feature = "test-utils"), not(target_arch = "wasm32")))]
+        {
+            panic!("ProcedureContext::database_identity() is only available in wasm or native test-utils contexts")
+        }
     }
 
     /// Suspend execution until approximately `Timestamp`.
@@ -1339,9 +1612,29 @@ impl ProcedureContext {
     /// ```
     // TODO(procedure-sleep-until): remove this method
     pub fn sleep_until(&mut self, timestamp: Timestamp) {
-        let new_time = sys::procedure::sleep_until(timestamp.to_micros_since_unix_epoch());
-        let new_time = Timestamp::from_micros_since_unix_epoch(new_time);
-        self.timestamp = new_time;
+        #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+        if let Some(test_context) = self.test_context.as_ref() {
+            if let Some(hooks) = self.test_hooks.as_mut() {
+                hooks.__run_on_sleep(test_context, timestamp);
+            }
+
+            let wake_time = test_context.clock.now().max(timestamp);
+            test_context.clock.set(wake_time);
+            self.timestamp = wake_time;
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            let new_time = sys::procedure::sleep_until(timestamp.to_micros_since_unix_epoch());
+            let new_time = Timestamp::from_micros_since_unix_epoch(new_time);
+            self.timestamp = new_time;
+        }
+
+        #[cfg(all(not(feature = "test-utils"), not(target_arch = "wasm32")))]
+        {
+            let _ = timestamp;
+            panic!("ProcedureContext::sleep_until() is only available in wasm or native test-utils contexts")
+        }
     }
 
     /// Acquire a mutable transaction
@@ -1371,7 +1664,11 @@ impl ProcedureContext {
     /// callers should avoid writing to any captured mutable state within `body`,
     /// This includes interior mutability through types like [`std::cell::Cell`].
     pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
-        with_tx(body, self.sender(), self.connection_id())
+        use core::convert::Infallible;
+        match self.try_with_tx::<T, Infallible>(|tx| Ok(body(tx))) {
+            Ok(v) => v,
+            Err(e) => match e {},
+        }
     }
 
     /// Acquire a mutable transaction
@@ -1404,7 +1701,144 @@ impl ProcedureContext {
     /// callers should avoid writing to any captured mutable state within `body`,
     /// This includes interior mutability through types like [`std::cell::Cell`].
     pub fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
-        try_with_tx(body, self.sender(), self.connection_id())
+        #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+        if let Some(datastore) = self.test_datastore.clone() {
+            #[cfg(feature = "rand08")]
+            let tx_rng_seed = self
+                .test_child_seed_rng
+                .as_ref()
+                .map(|rng| rand08::RngCore::next_u64(&mut *rng.borrow_mut()));
+
+            let run = || {
+                use core::mem;
+
+                let test_tx = std::rc::Rc::new(datastore.begin_mut_tx());
+                let tx = ReducerContext::__test(
+                    self.env,
+                    Local::__test_tx(test_tx.clone()),
+                    self.sender,
+                    self.sender_auth.clone(),
+                    self.connection_id,
+                    self.timestamp,
+                    self.module_identity,
+                    #[cfg(feature = "rand08")]
+                    tx_rng_seed,
+                );
+                let tx = TxContext(tx);
+
+                struct DoOnDrop<F: Fn()>(F);
+                impl<F: Fn()> Drop for DoOnDrop<F> {
+                    fn drop(&mut self) {
+                        (self.0)();
+                    }
+                }
+
+                let rollback_tx = test_tx.clone();
+                let rollback_guard = DoOnDrop(move || {
+                    rollback_tx
+                        .rollback()
+                        .expect("should have a pending mutable test transaction")
+                });
+                let res = body(&tx);
+                mem::forget(rollback_guard);
+                (res, test_tx)
+            };
+
+            let (mut res, tx) = run();
+            match res {
+                Ok(_) if tx.commit().is_err() => {
+                    log::warn!("committing test anonymous transaction failed");
+                    let (retry_res, retry_tx) = run();
+                    res = retry_res;
+                    match res {
+                        Ok(_) => {
+                            retry_tx.commit().expect("test transaction retry failed again");
+                            if let (Some(hooks), Some(test_context)) =
+                                (self.test_hooks.as_mut(), self.test_context.as_ref())
+                            {
+                                hooks.__run_after_tx_commit(test_context);
+                            }
+                        }
+                        Err(_) => retry_tx
+                            .rollback()
+                            .expect("should have a pending mutable test transaction"),
+                    }
+                }
+                Ok(_) => {
+                    if let (Some(hooks), Some(test_context)) = (self.test_hooks.as_mut(), self.test_context.as_ref()) {
+                        hooks.__run_after_tx_commit(test_context);
+                    }
+                }
+                Err(_) => tx.rollback().expect("should have a pending mutable test transaction"),
+            }
+
+            return res;
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            let abort = || {
+                sys::procedure::procedure_abort_mut_tx()
+                    .expect("should have a pending mutable anon tx as `procedure_start_mut_tx` preceded")
+            };
+
+            let run = || {
+                // Start the transaction.
+
+                use core::mem;
+                let timestamp = sys::procedure::procedure_start_mut_tx().expect(
+                    "holding `&mut ProcedureContext`, so should not be in a tx already; called manually elsewhere?",
+                );
+                let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
+
+                // We've resumed, so let's do the work, but first prepare the context.
+                let tx = ReducerContext::new(Local::__host(), self.sender, self.connection_id, timestamp);
+                let tx = TxContext(tx);
+
+                // Guard the execution of `body` with a scope-guard that `abort`s on panic.
+                // Wasmtime now supports unwinding, so we need to protect against that.
+                // We're not using `scopeguard::guard` here to avoid an extra dependency.
+                struct DoOnDrop<F: Fn()>(F);
+                impl<F: Fn()> Drop for DoOnDrop<F> {
+                    fn drop(&mut self) {
+                        (self.0)();
+                    }
+                }
+                let abort_guard = DoOnDrop(abort);
+                let res = body(&tx);
+                // Defuse the bomb.
+                mem::forget(abort_guard);
+                res
+            };
+
+            let mut res = run();
+
+            // Commit or roll back?
+            match res {
+                Ok(_) if sys::procedure::procedure_commit_mut_tx().is_err() => {
+                    // Tried to commit, but couldn't. Retry once.
+                    log::warn!("committing anonymous transaction failed");
+                    // NOTE(procedure,centril): there's no actual guarantee that `body`
+                    // does the exact same as the time before, as the timestamps differ
+                    // and due to interior mutability.
+                    res = run();
+                    match res {
+                        Ok(_) => sys::procedure::procedure_commit_mut_tx().expect("transaction retry failed again"),
+                        Err(_) => abort(),
+                    }
+                }
+                Ok(_) => {}
+                Err(_) => abort(),
+            }
+
+            res
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = body;
+            panic!("ProcedureContext::try_with_tx() is only available in wasm or native test-utils contexts")
+        }
     }
 
     ///  Create a new random [`Uuid`] `v4` using the built-in RNG.
@@ -1421,7 +1855,7 @@ impl ProcedureContext {
     /// }
     /// # }
     /// ```
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     pub fn new_uuid_v4(&self) -> anyhow::Result<Uuid> {
         let mut bytes = [0u8; 16];
         self.rng().try_fill_bytes(&mut bytes)?;
@@ -1443,7 +1877,7 @@ impl ProcedureContext {
     /// }
     /// # }
     /// ```
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     pub fn new_uuid_v7(&self) -> anyhow::Result<Uuid> {
         let mut random_bytes = [0u8; 4];
         self.rng().try_fill_bytes(&mut random_bytes)?;
@@ -1452,6 +1886,7 @@ impl ProcedureContext {
 }
 
 /// A handle on a database with a particular table schema.
+#[deprecated(note = "Use the capability based traits (CtxDbRead, CtxDbWrite) instead!")]
 pub trait DbContext {
     /// A view into the tables of a database.
     ///
@@ -1473,6 +1908,7 @@ pub trait DbContext {
     fn db_read_only(&self) -> &LocalReadOnly;
 }
 
+#[allow(deprecated)]
 impl DbContext for AnonymousViewContext {
     type DbView = LocalReadOnly;
 
@@ -1485,6 +1921,7 @@ impl DbContext for AnonymousViewContext {
     }
 }
 
+#[allow(deprecated)]
 impl DbContext for ReducerContext {
     type DbView = Local;
 
@@ -1497,6 +1934,7 @@ impl DbContext for ReducerContext {
     }
 }
 
+#[allow(deprecated)]
 impl DbContext for TxContext {
     type DbView = Local;
 
@@ -1509,6 +1947,7 @@ impl DbContext for TxContext {
     }
 }
 
+#[allow(deprecated)]
 impl DbContext for ViewContext {
     type DbView = LocalReadOnly;
 
@@ -1530,11 +1969,333 @@ impl DbContext for ViewContext {
 /// The `#[table]` macro uses the trait system to add table accessors to this type.
 /// These are generated methods that allow you to access specific tables.
 #[non_exhaustive]
-pub struct Local {}
+#[derive(Clone)]
+pub struct Local {
+    read_only: LocalReadOnly,
+}
+
+impl Local {
+    #[doc(hidden)]
+    pub fn __host() -> Self {
+        Self {
+            read_only: LocalReadOnly::__host(),
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn __table_backend(&self) -> table::TableHandleBackend {
+        self.read_only.__table_backend()
+    }
+
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    fn __test(datastore: std::sync::Arc<spacetimedb_test_datastore::TestDatastore>) -> Self {
+        Self {
+            read_only: LocalReadOnly::__test(datastore),
+        }
+    }
+
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    fn __test_tx(tx: std::rc::Rc<spacetimedb_test_datastore::TestTransaction>) -> Self {
+        Self {
+            read_only: LocalReadOnly {
+                backend: table::LocalBackend::TestTx { tx },
+            },
+        }
+    }
+}
 
 impl Local {
     fn get_read_only(&self) -> &LocalReadOnly {
-        &LocalReadOnly {}
+        &self.read_only
+    }
+}
+
+/// Contexts which provide read access to the database.
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from views, reducers, and transactions started by procedures and HTTP handlers.
+///
+/// When operating on a concrete-typed [`ViewContext`], [`ReducerContext`] or [`TxContext`],
+/// this trait is not necessary, as the context's `db` field provides the same (or greater, read-write) access.
+pub trait CtxDbRead {
+    fn db_read_only(&self) -> &LocalReadOnly;
+}
+
+impl CtxDbRead for TxContext {
+    fn db_read_only(&self) -> &LocalReadOnly {
+        self.0.db.get_read_only()
+    }
+}
+
+impl CtxDbRead for ReducerContext {
+    fn db_read_only(&self) -> &LocalReadOnly {
+        self.db.get_read_only()
+    }
+}
+
+impl CtxDbRead for ViewContext {
+    fn db_read_only(&self) -> &LocalReadOnly {
+        &self.db
+    }
+}
+
+impl CtxDbRead for AnonymousViewContext {
+    fn db_read_only(&self) -> &LocalReadOnly {
+        &self.db
+    }
+}
+
+/// Contexts which provide read-write access to the database.
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from reducers and from transactions started by procedures and HTTP handlers.
+///
+/// When operating on a concrete-typed [`ReducerContext`] or [`TxContext`], this trait is not necessary,
+/// as the context's `db` field provides the same access.
+pub trait CtxDbWrite: CtxDbRead {
+    fn db(&self) -> &Local;
+}
+
+impl CtxDbWrite for TxContext {
+    fn db(&self) -> &Local {
+        &self.0.db
+    }
+}
+
+impl CtxDbWrite for ReducerContext {
+    fn db(&self) -> &Local {
+        &self.db
+    }
+}
+
+/// Contexts which can retrieve the sender [`Identity`].
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from views, reducers, and transactions started by procedures and HTTP handlers.
+///
+/// When operating on a concrete-typed [`ViewContext`], [`ReducerContext`], [`ProcedureContext`] or [`TxContext`],
+/// this trait is not necessary, as the context's inherent `sender` method provides the same access.
+pub trait CtxWithSender {
+    fn sender(&self) -> Identity;
+}
+
+impl CtxWithSender for ViewContext {
+    fn sender(&self) -> Identity {
+        self.sender
+    }
+}
+
+impl CtxWithSender for ReducerContext {
+    fn sender(&self) -> Identity {
+        self.sender
+    }
+}
+
+impl CtxWithSender for TxContext {
+    fn sender(&self) -> Identity {
+        self.0.sender
+    }
+}
+
+impl CtxWithSender for ProcedureContext {
+    fn sender(&self) -> Identity {
+        self.sender
+    }
+}
+
+/// Contexts which can retrieve the current [`Timestamp`].
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from reducers, procedures, HTTP handlers,
+/// and transactions started by procedures and HTTP handlers.
+///
+/// When operating on a concrete-typed [`ReducerContext`], [`ProcedureContext`]
+#[cfg_attr(feature = "unstable", doc = ", [`HandlerContext`]")]
+/// or [`TxContext`],
+/// this trait is not necessary, as the context's `timestamp` field provides the same access.
+pub trait CtxWithTimestamp {
+    fn timestamp(&self) -> Timestamp;
+}
+
+impl CtxWithTimestamp for ReducerContext {
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+}
+
+impl CtxWithTimestamp for TxContext {
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+}
+
+impl CtxWithTimestamp for ProcedureContext {
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+}
+
+#[cfg(feature = "unstable")]
+impl CtxWithTimestamp for HandlerContext {
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+}
+
+/// Contexts which can retrieve the current [`AuthCtx`].
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from reducers and procedures.
+///
+/// When operating on a concrete-typed [`ReducerContext`], [`ProcedureContext`], [`TxContext`],
+/// this trait is not necessary, as the context's sender_auth method provides the same access.
+pub trait CtxWithSenderAuth {
+    fn sender_auth(&self) -> &AuthCtx;
+}
+
+impl CtxWithSenderAuth for ReducerContext {
+    fn sender_auth(&self) -> &AuthCtx {
+        self.sender_auth()
+    }
+}
+
+impl CtxWithSenderAuth for TxContext {
+    fn sender_auth(&self) -> &AuthCtx {
+        self.0.sender_auth()
+    }
+}
+
+/// Contexts which can enter a start a transaction with a [`TxContext`] inside the function.
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from reducers and procedures.
+///
+/// When operating on a concrete-typed
+#[cfg_attr(feature = "unstable", doc = "[`HandlerContext`] or")]
+/// [`ProcedureContext`],
+/// this trait is not necessary, as the context's methods provide the same access.
+pub trait CtxWithTxManagement {
+    fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T;
+    fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E>;
+}
+
+impl CtxWithTxManagement for ProcedureContext {
+    fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
+        self.with_tx(body)
+    }
+
+    fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
+        self.try_with_tx(body)
+    }
+}
+
+#[cfg(feature = "unstable")]
+impl CtxWithTxManagement for HandlerContext {
+    fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
+        self.with_tx(body)
+    }
+
+    fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
+        self.try_with_tx(body)
+    }
+}
+
+/// Contexts which can retrieve the current [`StdbRng`] state.
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from reducers and procedures.
+///
+/// When operating on a concrete-typed
+#[cfg_attr(feature = "unstable", doc = "[`HandlerContext`],")]
+/// [`ProcedureContext`], [`ReducerContext`], [`TxContext`]
+/// this trait is not necessary, as the context's methods provide the same access.
+#[cfg(feature = "rand08")]
+pub trait CtxWithRng {
+    fn rng(&self) -> &StdbRng;
+    fn random<T>(&self) -> T
+    where
+        Standard: Distribution<T>;
+}
+
+#[cfg(feature = "rand08")]
+impl CtxWithRng for ProcedureContext {
+    fn rng(&self) -> &StdbRng {
+        self.rng()
+    }
+
+    fn random<T>(&self) -> T
+    where
+        Standard: Distribution<T>,
+    {
+        self.random()
+    }
+}
+
+#[cfg(all(feature = "unstable", feature = "rand08"))]
+impl CtxWithRng for HandlerContext {
+    fn rng(&self) -> &StdbRng {
+        self.rng()
+    }
+
+    fn random<T>(&self) -> T
+    where
+        Standard: Distribution<T>,
+    {
+        self.random()
+    }
+}
+
+#[cfg(feature = "rand08")]
+impl CtxWithRng for ReducerContext {
+    fn rng(&self) -> &StdbRng {
+        self.rng()
+    }
+
+    fn random<T>(&self) -> T
+    where
+        Standard: Distribution<T>,
+    {
+        self.random()
+    }
+}
+
+#[cfg(feature = "rand08")]
+impl CtxWithRng for TxContext {
+    fn rng(&self) -> &StdbRng {
+        self.0.rng()
+    }
+
+    fn random<T>(&self) -> T
+    where
+        Standard: Distribution<T>,
+    {
+        self.0.random()
+    }
+}
+
+/// Contexts which can perform outgoing HTTP requests.
+///
+/// This type is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from procedures and HTTP handlers.
+///
+/// When operating on a concrete-typed [`ProcedureContext`]
+#[cfg_attr(feature = "unstable", doc = "or [`HandlerContext`],")]
+/// this trait is not necessary,
+/// as the context's `http` field provides the same access.
+pub trait CtxWithHttp {
+    fn http(&self) -> &HttpClient;
+}
+
+#[cfg(feature = "unstable")]
+impl CtxWithHttp for HandlerContext {
+    fn http(&self) -> &HttpClient {
+        &self.http
+    }
+}
+
+impl CtxWithHttp for ProcedureContext {
+    fn http(&self) -> &HttpClient {
+        &self.http
     }
 }
 
@@ -1551,22 +2312,31 @@ pub struct JwtClaims {
 /// Authentication information for the caller of a reducer.
 #[derive(Clone)]
 pub struct AuthCtx {
-    is_internal: bool,
+    // Computed on first use, since comparing the sender with the database's `Identity` needs a host call.
+    is_internal: Rc<dyn Deref<Target = bool>>,
     // NOTE(jsdt): cannot directly use a `LazyCell` without making this struct generic,
     // which would cause `ReducerContext` to become generic as well.
     jwt: Rc<dyn Deref<Target = Option<JwtClaims>>>,
 }
 
 impl AuthCtx {
-    /// Creates an [`AuthCtx`] both for cases where there's a [`ConnectionId`]
-    /// and for when there isn't.
-    fn from_connection_id_opt(conn_id: Option<ConnectionId>) -> Self {
-        conn_id.map(Self::from_connection_id).unwrap_or_else(Self::internal)
+    /// Creates the [`AuthCtx`] of an invocation by `sender`,
+    /// which is internal when `sender` is this database,
+    /// and whose [JWT] payload, if any, `jwt_fn` reads.
+    ///
+    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
+    fn for_sender(sender: Identity, jwt_fn: impl FnOnce() -> Option<String> + 'static) -> Self {
+        AuthCtx {
+            is_internal: Rc::new(LazyCell::new(move || {
+                sender == Identity::from_byte_array(spacetimedb_bindings_sys::identity())
+            })),
+            jwt: Rc::new(LazyCell::new(move || jwt_fn().map(JwtClaims::new))),
+        }
     }
 
     fn new(is_internal: bool, jwt_fn: impl FnOnce() -> Option<JwtClaims> + 'static) -> Self {
         AuthCtx {
-            is_internal,
+            is_internal: Rc::new(Box::new(is_internal)),
             jwt: Rc::new(LazyCell::new(jwt_fn)),
         }
     }
@@ -1579,24 +2349,25 @@ impl AuthCtx {
         Self::new(true, || None)
     }
 
-    /// Creates an [`AuthCtx`] using the json claims from a [JWT].
-    /// This can be used to write unit tests.
+    /// Creates an [`AuthCtx`] using already-validated JSON claims from a [JWT].
+    ///
+    /// This is infallible because host reducer calls receive claims only after
+    /// the server has validated them. Native unit tests should use
+    /// `test_utils::TestAuth::from_jwt_payload`
+    /// so invalid test payloads are rejected before constructing a reducer context.
     ///
     /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn from_jwt_payload(jwt_payload: String) -> AuthCtx {
         Self::new(false, move || Some(JwtClaims::new(jwt_payload)))
     }
 
-    /// Creates an [`AuthCtx`] that reads the [JWT] for the given connection id.
+    /// Returns whether the sender of this invocation is this database,
+    /// as it is for scheduled reducers and procedures.
     ///
-    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
-    fn from_connection_id(connection_id: ConnectionId) -> AuthCtx {
-        Self::new(false, move || rt::get_jwt(connection_id).map(JwtClaims::new))
-    }
-
-    /// Returns whether this reducer was spawned from inside the database.
+    /// This is equivalent to `ctx.sender() == ctx.database_identity()`.
+    /// It is false in `init`, whose sender is the database's owner.
     pub fn is_internal(&self) -> bool {
-        self.is_internal
+        **self.is_internal
     }
 
     /// Checks if there is a [JWT] without loading it.
@@ -1604,13 +2375,19 @@ impl AuthCtx {
     ///
     /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn has_jwt(&self) -> bool {
-        self.jwt.is_some()
+        self.jwt().is_some()
     }
 
     /// Loads the [JWT].
+    /// If [`AuthCtx::is_internal`] returns true, this will return `None`.
     ///
     /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn jwt(&self) -> Option<&JwtClaims> {
+        // Internal invocations have no JWT, even when they arrive over a connection that has one.
+        // A container connected as its database has a token, but its claims describe the container, not the database.
+        if self.is_internal() {
+            return None;
+        }
         self.jwt.as_ref().deref().as_ref()
     }
 }
@@ -1675,7 +2452,32 @@ impl JwtClaims {
 }
 /// The read-only version of [`Local`]
 #[non_exhaustive]
-pub struct LocalReadOnly {}
+#[derive(Clone)]
+pub struct LocalReadOnly {
+    backend: table::LocalBackend,
+}
+
+impl LocalReadOnly {
+    #[doc(hidden)]
+    pub fn __host() -> Self {
+        Self {
+            backend: table::LocalBackend::Host,
+        }
+    }
+
+    #[doc(hidden)]
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    fn __test(datastore: std::sync::Arc<spacetimedb_test_datastore::TestDatastore>) -> Self {
+        Self {
+            backend: table::LocalBackend::Test { datastore },
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn __table_backend(&self) -> table::TableHandleBackend {
+        self.backend.as_table_handle_backend()
+    }
+}
 
 // #[cfg(target_arch = "wasm32")]
 // #[global_allocator]

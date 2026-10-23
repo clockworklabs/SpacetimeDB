@@ -21,14 +21,14 @@ Side-by-side results give a direct comparison of AI-generation cost across backe
 ## Directory contents
 
 - `run.sh`: orchestrates generation, upgrade, and fix sessions. Supports `--upgrade`, `--fix`, `--composed-prompt`, `--resume-session`.
-- `grade.sh` / `grade-agents.sh` / `grade-playwright.sh`: grading harnesses (manual + automated)
+- `grade.sh`: interactive grading harness (manual, Chrome MCP)
+- `templates/`: canonical `BUG_REPORT.md` / `ITERATION_LOG.md` formats for grading
 - `benchmark.sh` / `run-loop.sh`: batch runners for parallel or sequential benchmark execution
 - `cleanup.sh` / `reset-app.sh`: dev utilities
 - `benchmark-viewer.html`: local viewer for METRICS_DATA.json files (open in browser, drop JSON)
 - `generate-report.mjs`: aggregate per-session cost-summary.json into a markdown report
 - `parse-telemetry.mjs`: parse OTel log stream into per-session cost-summary.json
-- `parse-playwright-results.mjs`: convert Playwright JSON output to grading markdown
-- `docker-compose.otel.yaml` / `otel-collector-config.yaml`: OTel collector + PostgreSQL
+- `docker-compose.otel.yaml` / `otel-collector-config.yaml`: OTel collector + PostgreSQL + MongoDB
 - `backends/`: per-backend setup / SDK reference documents given to the AI
 - `perf-benchmark/`: runtime throughput benchmark (msgs/sec) for the AI-generated apps
 - `CLAUDE.md` / `DEVELOP.md` / `GRADING.md` / `GRADING_WORKFLOW.md`: process documentation

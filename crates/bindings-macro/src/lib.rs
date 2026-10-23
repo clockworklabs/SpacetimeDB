@@ -8,6 +8,18 @@
 //
 // (private documentation for the macro authors is totally fine here and you SHOULD write that!)
 
+mod environment;
+
+#[proc_macro_attribute]
+pub fn env(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| environment::expand(args.into(), syn::parse(item)?))
+}
+
+#[proc_macro_derive(EnvironmentValue, attributes(env))]
+pub fn derive_environment_value(item: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| environment::value::derive(syn::parse(item)?))
+}
+
 mod http;
 mod procedure;
 
@@ -109,7 +121,7 @@ use quote::quote;
 use std::time::Duration;
 use syn::{parse::ParseStream, Attribute};
 use syn::{ItemConst, ItemFn};
-use util::{cvt_attr, ok_or_compile_error};
+use util::{cvt_attr, native_test_utils_registration, ok_or_compile_error};
 
 mod sym {
     /// A symbol known at compile-time against
@@ -305,6 +317,9 @@ pub fn client_visibility_filter(args: StdTokenStream, item: StdTokenStream) -> S
         let item: ItemConst = syn::parse(item)?;
         let rls_ident = item.ident.clone();
         let register_rls_symbol = format!("__preinit__20_register_row_level_security_{rls_ident}");
+        let test_utils_registration = native_test_utils_registration(quote! {
+            spacetimedb::rt::register_row_level_security(#rls_ident.sql_text())
+        });
 
         Ok(quote! {
             #item
@@ -314,6 +329,8 @@ pub fn client_visibility_filter(args: StdTokenStream, item: StdTokenStream) -> S
                 extern "C" fn __register_client_visibility_filter() {
                     spacetimedb::rt::register_row_level_security(#rls_ident.sql_text())
                 }
+
+                #test_utils_registration
             };
         })
     })
@@ -357,6 +374,7 @@ pub fn settings(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
             },
             _ => unreachable!("validated above"),
         };
+        let test_utils_registration = native_test_utils_registration(register_call.clone());
 
         Ok(quote! {
             #item
@@ -366,6 +384,8 @@ pub fn settings(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
                 extern "C" fn __register_setting() {
                     #register_call
                 }
+
+                #test_utils_registration
             };
         })
     })

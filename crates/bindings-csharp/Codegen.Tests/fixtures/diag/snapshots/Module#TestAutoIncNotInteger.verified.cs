@@ -6,6 +6,11 @@ partial struct TestAutoIncNotInteger
     : System.IEquatable<TestAutoIncNotInteger>,
         SpacetimeDB.BSATN.IStructuralReadWrite
 {
+#if NET10_0_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
+#endif
     public void ReadFields(System.IO.BinaryReader reader)
     {
         AutoIncField = BSATN.AutoIncFieldRW.Read(reader);
@@ -51,7 +56,7 @@ partial struct TestAutoIncNotInteger
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
                         new("AutoIncField", AutoIncFieldRW.GetAlgebraicType(registrar)),
-                        new("IdentityField", IdentityFieldRW.GetAlgebraicType(registrar))
+                        new("IdentityField", IdentityFieldRW.GetAlgebraicType(registrar)),
                     }
                 )
             );
@@ -81,16 +86,7 @@ partial struct TestAutoIncNotInteger
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as TestAutoIncNotInteger?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is TestAutoIncNotInteger t && Equals(t);
     }
 
     public static bool operator ==(TestAutoIncNotInteger this_, TestAutoIncNotInteger that)

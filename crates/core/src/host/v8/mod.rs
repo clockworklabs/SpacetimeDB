@@ -65,8 +65,8 @@ use self::syscall::{
 };
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{
-    CallHttpHandlerParams, CallProcedureParams, CallReducerParams, InstanceManagerMetrics, ModuleInfo,
-    ModuleWithInstance,
+    CallHttpHandlerParams, CallProcedureParams, CallReducerParams, IdcDeliveryFailure, IdcMessageParams,
+    IdcReducerCallOutcome, InstanceManagerMetrics, ModuleInfo, ModuleWithInstance, UpdateEnvironmentResult,
 };
 use super::UpdateDatabaseResult;
 use crate::client::{ClientActorId, MeteredUnboundedReceiver, MeteredUnboundedSender};
@@ -82,13 +82,16 @@ use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
     AnonymousViewOp, DescribeError, EnergyStats, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings,
     HttpHandlerExecuteResult, HttpHandlerOp, InstanceCommon, InstanceOp, ProcedureExecuteResult, ProcedureOp,
-    ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp, WasmInstance,
+    ReducerExecuteResult, ReducerOp, ReducerSuccessAction, ViewExecuteResult, ViewOp, WasmInstance,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
-use crate::host::{ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
+use crate::host::{
+    InitDatabaseResult, ModuleHost, ReducerCallError, ReducerCallResult, ReducerCallResultWithTxOffset, Scheduler,
+};
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
+use crate::resource::ModuleInstanceMemoryTracker;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::jobs::{AllocatedJobCore, CorePinner, LoadBalanceOnDropGuard};
 use crate::worker_metrics::WORKER_METRICS;
@@ -103,7 +106,7 @@ use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use spacetimedb_schema::def::ModuleDef;
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::identifier::NamespacedIdentifier;
 use spacetimedb_table::static_assert_size;
 use std::cell::Cell;
 use std::num::NonZeroUsize;
@@ -292,6 +295,10 @@ impl JsModule {
         self.common.scheduler()
     }
 
+    pub fn idc_sender(&self) -> super::idc_actor::IdcActorSender {
+        self.common.idc_sender()
+    }
+
     pub fn info(&self) -> Arc<ModuleInfo> {
         self.common.info().clone()
     }
@@ -380,7 +387,7 @@ impl JsInstanceEnv {
     ///
     /// Returns the handle used by reducers to read from `args`
     /// as well as the handle used to write the error message, if any.
-    fn start_funcall(&mut self, name: Identifier, ts: Timestamp, func_type: FuncCallType) {
+    fn start_funcall(&mut self, name: NamespacedIdentifier, ts: Timestamp, func_type: FuncCallType) {
         self.instance_env.start_funcall(name, ts, func_type);
     }
 
@@ -399,18 +406,19 @@ impl JsInstanceEnv {
     /// This resets all of the state associated to a single function call,
     /// and returns instrumentation records.
     fn finish_funcall(&mut self) -> ExecutionTimings {
+        self.instance_env.finish_funcall();
         let total_duration = self.reducer_start().elapsed();
         let func_name = self.log_record_function().unwrap_or("<unknown>").to_owned();
 
         let leftover_iters = self.iters.len();
         if leftover_iters > 0 {
-            log::warn!("force-clearing {leftover_iters} row iterator(s) left open by JS call `{func_name}`");
+            log::debug!("force-clearing {leftover_iters} row iterator(s) left open by JS call `{func_name}`");
             self.iters.clear();
         }
 
         let leftover_timing_spans = self.timing_spans.len();
         if leftover_timing_spans > 0 {
-            log::warn!("force-clearing {leftover_timing_spans} timing span(s) left open by JS call `{func_name}`");
+            log::debug!("force-clearing {leftover_timing_spans} timing span(s) left open by JS call `{func_name}`");
             self.timing_spans.clear();
         }
 
@@ -423,7 +431,9 @@ impl JsInstanceEnv {
         }
     }
 
-    fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
+    fn set_module_def(&mut self, module_def: Arc<ModuleDef>, module_hash: spacetimedb_lib::Hash) {
+        self.instance_env
+            .bind_environment_module(module_hash, module_def.clone());
         self.module_def = Some(module_def);
     }
 
@@ -474,17 +484,45 @@ impl JsMainInstance {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         self.request(UpdateDatabaseRequest {
             program,
             old_module_info,
             policy,
+            environment,
         })
         .await
     }
 
+    pub async fn update_environment(
+        &self,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> anyhow::Result<UpdateEnvironmentResult> {
+        self.request(UpdateEnvironmentRequest { environment }).await
+    }
+
     pub async fn call_reducer(&self, params: CallReducerParams) -> ReducerCallResult {
+        self.request(CallReducerRequest { params }).await.result
+    }
+
+    /// Like [`Self::call_reducer`], but also returns the offset of the reducer's transaction.
+    pub async fn call_reducer_with_offset(&self, params: CallReducerParams) -> ReducerCallResultWithTxOffset {
         self.request(CallReducerRequest { params }).await
+    }
+
+    pub(in crate::host) async fn call_idc_reducer(
+        &self,
+        params: CallReducerParams,
+        delivery: IdcMessageParams,
+        on_success: ReducerSuccessAction,
+    ) -> Result<IdcReducerCallOutcome, IdcDeliveryFailure> {
+        self.request(CallIdcReducerRequest {
+            params,
+            delivery,
+            on_success,
+        })
+        .await
     }
 
     pub(in crate::host) async fn call_scheduled_reducer(
@@ -492,6 +530,13 @@ impl JsMainInstance {
         params: ScheduledFunctionParams,
     ) -> CallScheduledFunctionResult {
         self.request(ScheduledReducerRequest { params }).await
+    }
+
+    pub(in crate::host) async fn run_idc_callback_and_cleanup(
+        &self,
+        msg: crate::host::idc_actor::DeliveredMessage,
+    ) -> anyhow::Result<()> {
+        self.request(RunIdcCallbackAndCleanupRequest { msg }).await
     }
 
     pub(in crate::host) async fn enqueue_reducer(&self, params: CallReducerParams, on_panic: JsFatalHook) {
@@ -534,8 +579,12 @@ impl JsMainInstance {
         self.request(DisconnectClientRequest { client_id }).await
     }
 
-    pub async fn init_database(&self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
-        self.request(InitDatabaseRequest { program }).await
+    pub async fn init_database(
+        &self,
+        program: Program,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> anyhow::Result<InitDatabaseResult> {
+        self.request(InitDatabaseRequest { program, environment }).await
     }
 
     pub async fn call_view(&self, cmd: ViewCommand) -> ViewCommandResult {
@@ -619,19 +668,40 @@ js_main_request! {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
     } => "update_database", anyhow::Result<UpdateDatabaseResult>, UpdateDatabase
+}
+
+js_main_request! {
+    UpdateEnvironmentRequest {
+        environment: std::collections::BTreeMap<String, String>,
+    } => "update_environment", anyhow::Result<UpdateEnvironmentResult>, UpdateEnvironment
 }
 
 js_main_request! {
     CallReducerRequest {
         params: CallReducerParams,
-    } => "call_reducer", ReducerCallResult, CallReducer
+    } => "call_reducer", ReducerCallResultWithTxOffset, CallReducer
 }
 
 js_main_request! {
     ScheduledReducerRequest {
         params: ScheduledFunctionParams,
     } => "scheduled_reducer", CallScheduledFunctionResult, ScheduledReducer
+}
+
+js_main_request! {
+    CallIdcReducerRequest {
+        params: CallReducerParams,
+        delivery: IdcMessageParams,
+        on_success: ReducerSuccessAction,
+    } => "call_idc_reducer", Result<IdcReducerCallOutcome, IdcDeliveryFailure>, CallIdcReducer
+}
+
+js_main_request! {
+    RunIdcCallbackAndCleanupRequest {
+        msg: crate::host::idc_actor::DeliveredMessage,
+    } => "run_idc_callback_and_cleanup", anyhow::Result<()>, RunIdcCallbackAndCleanup
 }
 
 js_main_request! {
@@ -661,7 +731,8 @@ js_main_request! {
 js_main_request! {
     InitDatabaseRequest {
         program: Program,
-    } => "init_database", anyhow::Result<Option<ReducerCallResult>>, InitDatabase
+        environment: std::collections::BTreeMap<String, String>,
+    } => "init_database", anyhow::Result<InitDatabaseResult>, InitDatabase
 }
 
 js_main_request! {
@@ -803,11 +874,24 @@ enum JsMainWorkerRequest {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
+    },
+    /// See [`JsMainInstance::update_environment`].
+    UpdateEnvironment {
+        reply_tx: JsReplyTx<anyhow::Result<UpdateEnvironmentResult>>,
+        environment: std::collections::BTreeMap<String, String>,
     },
     /// See [`JsMainInstance::call_reducer`].
     CallReducer {
-        reply_tx: JsReplyTx<ReducerCallResult>,
+        reply_tx: JsReplyTx<ReducerCallResultWithTxOffset>,
         params: CallReducerParams,
+    },
+    /// See [`JsMainInstance::call_idc_reducer`].
+    CallIdcReducer {
+        reply_tx: JsReplyTx<Result<IdcReducerCallOutcome, IdcDeliveryFailure>>,
+        params: CallReducerParams,
+        delivery: IdcMessageParams,
+        on_success: ReducerSuccessAction,
     },
     /// See [`JsMainInstance::enqueue_reducer`].
     CallReducerDetached {
@@ -818,6 +902,10 @@ enum JsMainWorkerRequest {
     ScheduledReducer {
         reply_tx: JsReplyTx<CallScheduledFunctionResult>,
         params: ScheduledFunctionParams,
+    },
+    RunIdcCallbackAndCleanup {
+        reply_tx: JsReplyTx<anyhow::Result<()>>,
+        msg: crate::host::idc_actor::DeliveredMessage,
     },
     /// See [`JsMainInstance::call_view`].
     CallView {
@@ -861,8 +949,9 @@ enum JsMainWorkerRequest {
     },
     /// See [`JsMainInstance::init_database`].
     InitDatabase {
-        reply_tx: JsReplyTx<anyhow::Result<Option<ReducerCallResult>>>,
+        reply_tx: JsReplyTx<anyhow::Result<InitDatabaseResult>>,
         program: Program,
+        environment: std::collections::BTreeMap<String, String>,
     },
 }
 
@@ -889,13 +978,13 @@ static_assert_size!(CallReducerParams, 192);
 
 fn send_worker_reply<T>(ctx: &str, reply_tx: JsReplyTx<T>, value: T) {
     if reply_tx.send(Ok(value)).is_err() {
-        log::error!("should have receiver for `{ctx}` response");
+        log::warn!("should have receiver for `{ctx}` response");
     }
 }
 
 fn send_worker_panic_reply<T>(ctx: &str, reply_tx: JsReplyTx<T>, panic: JsPanicPayload) {
     if reply_tx.send(Err(panic)).is_err() {
-        log::error!("should have receiver for `{ctx}` response");
+        log::warn!("should have receiver for `{ctx}` response");
     }
 }
 
@@ -949,7 +1038,7 @@ fn handle_detached_worker_request(
             }
         }
         Err(_) => {
-            log::warn!("detached JS worker request `{ctx}` panicked");
+            log::error!("detached JS worker request `{ctx}` panicked");
             on_panic();
             WorkerRequestOutcome::Fatal
         }
@@ -965,6 +1054,7 @@ pub(in crate::host) struct V8HeapMetrics {
     external_memory_bytes: IntGauge,
     native_contexts: IntGauge,
     detached_contexts: IntGauge,
+    module_instance_memory_tracker: ModuleInstanceMemoryTracker,
 
     /// Previous values observed by this instance.
     ///
@@ -1035,7 +1125,7 @@ impl V8HeapMetrics {
         }
     }
 
-    fn new(database_identity: &Identity, worker_kind: JsWorkerKind) -> Self {
+    fn new(database_identity: &Identity, worker_kind: JsWorkerKind, mem_tracker: ModuleInstanceMemoryTracker) -> Self {
         Self {
             total_heap_size_bytes: WORKER_METRICS
                 .v8_total_heap_size_bytes
@@ -1061,6 +1151,7 @@ impl V8HeapMetrics {
             detached_contexts: WORKER_METRICS
                 .v8_detached_contexts
                 .with_label_values(database_identity, &worker_kind),
+            module_instance_memory_tracker: mem_tracker,
             last_observed: V8HeapSnapshot::default(),
         }
     }
@@ -1077,6 +1168,11 @@ impl V8HeapMetrics {
         adjust_gauge(&self.external_memory_bytes, delta.external_memory_bytes);
         adjust_gauge(&self.native_contexts, delta.native_contexts);
         adjust_gauge(&self.detached_contexts, delta.detached_contexts);
+        // Each live V8 isolate reports only the delta from its last heap sample.
+        // The shared tracker folds those deltas into a database-wide aggregate
+        // used tor memory-limit enforcement.
+        self.module_instance_memory_tracker
+            .adjust_v8_physical(delta.total_physical_size_bytes);
     }
 
     fn observe(&mut self, stats: &v8::HeapStatistics) {
@@ -1390,17 +1486,31 @@ fn handle_main_worker_request(
             program,
             old_module_info,
             policy,
+            environment,
         } => handle_worker_request("update_database", reply_tx, || {
-            let res = instance_common.update_database(program, old_module_info, policy, inst);
+            let res = instance_common.update_database(program, old_module_info, policy, environment, inst);
             (res, false)
         }),
+        JsMainWorkerRequest::UpdateEnvironment { reply_tx, environment } => {
+            handle_worker_request("update_environment", reply_tx, || {
+                let res = instance_common.update_environment(environment, inst);
+                (res, false)
+            })
+        }
         JsMainWorkerRequest::CallReducer { reply_tx, params } => {
             handle_worker_request("call_reducer", reply_tx, || {
                 let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
-                let (res, trapped) = call_reducer(None, params);
-                (res, trapped)
+                call_reducer(None, params)
             })
         }
+        JsMainWorkerRequest::CallIdcReducer {
+            reply_tx,
+            params,
+            delivery,
+            on_success,
+        } => handle_worker_request("call_idc_reducer", reply_tx, || {
+            instance_common.call_idc_reducer(params, delivery, inst, on_success)
+        }),
         JsMainWorkerRequest::CallReducerDetached { params, on_panic } => {
             handle_detached_worker_request("call_reducer", on_panic, || {
                 let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
@@ -1412,6 +1522,11 @@ fn handle_main_worker_request(
             handle_worker_request("scheduled_reducer", reply_tx, || {
                 let (res, trapped) = instance_common.call_scheduled_reducer(params, inst);
                 (res, trapped)
+            })
+        }
+        JsMainWorkerRequest::RunIdcCallbackAndCleanup { reply_tx, msg } => {
+            handle_worker_request("run_idc_callback_and_cleanup", reply_tx, || {
+                instance_common.run_idc_callback_and_cleanup(msg, inst)
             })
         }
         JsMainWorkerRequest::CallView { reply_tx, cmd } => handle_worker_request("call_view", reply_tx, || {
@@ -1450,7 +1565,10 @@ fn handle_main_worker_request(
             caller_auth,
             caller_connection_id,
         } => handle_worker_request("call_identity_connected", reply_tx, || {
-            let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+            let call_reducer = |tx, params| {
+                let (res, trapped) = instance_common.call_reducer_with_tx(tx, params, inst);
+                (res.result, trapped)
+            };
             let mut trapped = false;
             let res = call_identity_connected(caller_auth, caller_connection_id, &info, call_reducer, &mut trapped);
             (res, trapped)
@@ -1460,7 +1578,10 @@ fn handle_main_worker_request(
             caller_identity,
             caller_connection_id,
         } => handle_worker_request("call_identity_disconnected", reply_tx, || {
-            let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+            let call_reducer = |tx, params| {
+                let (res, trapped) = instance_common.call_reducer_with_tx(tx, params, inst);
+                (res.result, trapped)
+            };
             let mut trapped = false;
             let res = ModuleHost::call_identity_disconnected_inner(
                 caller_identity,
@@ -1473,20 +1594,25 @@ fn handle_main_worker_request(
         }),
         JsMainWorkerRequest::DisconnectClient { reply_tx, client_id } => {
             handle_worker_request("disconnect_client", reply_tx, || {
-                let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+                let call_reducer = |tx, params| {
+                    let (res, trapped) = instance_common.call_reducer_with_tx(tx, params, inst);
+                    (res.result, trapped)
+                };
                 let mut trapped = false;
                 let res = ModuleHost::disconnect_client_inner(client_id, &info, call_reducer, &mut trapped);
                 (res, trapped)
             })
         }
-        JsMainWorkerRequest::InitDatabase { reply_tx, program } => {
-            handle_worker_request("init_database", reply_tx, || {
-                let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
-                let (res, trapped): (Result<Option<ReducerCallResult>, anyhow::Error>, bool) =
-                    init_database(replica_ctx, &info.module_def, program, call_reducer);
-                (res, trapped)
-            })
-        }
+        JsMainWorkerRequest::InitDatabase {
+            reply_tx,
+            program,
+            environment,
+        } => handle_worker_request("init_database", reply_tx, || {
+            let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+            let (res, trapped): (Result<InitDatabaseResult, anyhow::Error>, bool) =
+                init_database(replica_ctx, &info.module_def, program, environment, call_reducer);
+            (res, trapped)
+        }),
     }
 }
 
@@ -1615,7 +1741,11 @@ where
                     Either::Left(module) => (module.replica_ctx(), module.scheduler()),
                     Either::Right(mcc) => (&mcc.replica_ctx, &mcc.scheduler),
                 };
-                let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler.clone());
+                let idc_sender = match &generation_module_or_mcc {
+                    Either::Left(module) => module.idc_sender(),
+                    Either::Right(mcc) => mcc.idc_sender.clone(),
+                };
+                let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler.clone(), idc_sender);
                 scope.set_slot(JsInstanceEnv::new(instance_env));
 
                 let startup_result = panic::catch_unwind(AssertUnwindSafe(|| {
@@ -1633,7 +1763,7 @@ where
                                 .send(Err(anyhow::anyhow!("JS worker panicked during startup")))
                                 .is_err()
                             {
-                                log::error!("startup result receiver disconnected");
+                                log::warn!("startup result receiver disconnected");
                             }
                         } else {
                             log::error!("JS worker panicked while recreating isolate");
@@ -1643,7 +1773,7 @@ where
                     Ok(Err(err)) => {
                         if let Some(result_tx) = startup_result_tx.take() {
                             if result_tx.send(Err(err)).is_err() {
-                                log::error!("startup result receiver disconnected");
+                                log::warn!("startup result receiver disconnected");
                             }
                         } else {
                             log::error!("failed to restart JS worker: {err:#}");
@@ -1651,12 +1781,15 @@ where
                         return;
                     }
                     Ok(Ok((crf, module_common))) => {
-                        env_on_isolate_unwrap(scope).set_module_def(module_common.info().module_def.clone());
+                        env_on_isolate_unwrap(scope).set_module_def(
+                            module_common.info().module_def.clone(),
+                            module_common.info().module_hash,
+                        );
 
                         if let Some(result_tx) = startup_result_tx.take()
                             && result_tx.send(Ok(module_common.clone())).is_err()
                         {
-                            log::error!("startup result receiver disconnected");
+                            log::warn!("startup result receiver disconnected");
                             return;
                         }
 
@@ -1679,7 +1812,11 @@ where
                 let info = &module_common.info();
                 let mut instance_common = InstanceCommon::new(&module_common);
                 let replica_ctx: &Arc<ReplicaContext> = module_common.replica_ctx();
-                let mut heap_metrics = V8HeapMetrics::new(&info.database_identity, worker_kind);
+                let mut heap_metrics = V8HeapMetrics::new(
+                    &info.database_identity,
+                    worker_kind,
+                    replica_ctx.module_instance_memory_tracker.clone(),
+                );
 
                 let mut inst = V8Instance {
                     scope,
@@ -1851,8 +1988,8 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
         self.scope.get_slot::<JsInstanceEnv>().unwrap().instance_env.tx.clone()
     }
 
-    fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
-        env_on_isolate_unwrap(self.scope).set_module_def(module_def);
+    fn set_module_def(&mut self, module_def: Arc<ModuleDef>, module_hash: spacetimedb_lib::Hash) {
+        env_on_isolate_unwrap(self.scope).set_module_def(module_def, module_hash);
     }
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {

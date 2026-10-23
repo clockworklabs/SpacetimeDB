@@ -1,0 +1,27 @@
+name: Keynote Bench Setup
+description: Shared setup for the keynote benchmark job
+
+inputs:
+  public_root:
+    description: Path to the public SpacetimeDB checkout in the caller workspace
+    required: false
+    default: .
+
+runs:
+  using: composite
+  steps:
+    - uses: dsherret/rust-toolchain-file@v1
+
+    - name: Set default rust toolchain
+      shell: bash
+      run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+    - name: Build public keynote benchmark binaries
+      shell: bash
+      run: cargo build --release -p spacetimedb-cli -p spacetimedb-standalone
+      working-directory: ${{ inputs.public_root }}
+
+    - name: Build TypeScript SDK
+      shell: bash
+      run: pnpm build
+      working-directory: ${{ inputs.public_root }}/crates/bindings-typescript

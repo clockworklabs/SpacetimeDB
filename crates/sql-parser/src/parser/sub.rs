@@ -162,6 +162,15 @@ mod tests {
             "",
             "select distinct a from t",
             "select * from (select * from t) join (select * from s) on a = b",
+            // View arguments must be positional literals
+            "select * from v(x)",
+            "select * from v(1 + 1)",
+            "select * from v(:sender)",
+            "select * from v(id => 1)",
+            "select * from v(*)",
+            // View calls with arguments can't be joined
+            "select t.* from t join v(42) on t.a = v.a",
+            "select v.* from v(42) join t on v.a = t.a",
         ] {
             assert!(parse_subscription(sql).is_err());
         }
@@ -178,6 +187,17 @@ mod tests {
             "select t.* from t join s on t.c = s.d",
             "select a.* from t as a join s as b on a.c = b.d",
             "select * from t where x = :sender",
+            // Qualified columns of namespaced tables: last part is the column
+            "select * from ns.t where ns.t.a = 1",
+            r#"SELECT ns.t.* FROM "ns"."s" JOIN "ns"."t" ON "ns"."s"."a" = "ns"."t"."a""#,
+            // View calls with positional literal arguments
+            "select * from v()",
+            "select * from v(42)",
+            "select * from v(-1, 'a', true, 0x01)",
+            r#"select * from "v"(42)"#,
+            "select * from v(42) as x",
+            // Empty parens are no arguments, so they can be joined
+            "select t.* from t join v() on t.a = v.a",
         ] {
             assert!(parse_subscription(sql).is_ok());
         }

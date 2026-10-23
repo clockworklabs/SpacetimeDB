@@ -14,7 +14,7 @@ public abstract class IndexBase<Row>
     public IndexBase(string name)
     {
         var name_bytes = System.Text.Encoding.UTF8.GetBytes(name);
-        FFI.index_id_from_name(name_bytes, (uint)name_bytes.Length, out indexId);
+        FFI.index_id_from_name(name_bytes, name_bytes.Length, out indexId);
     }
 
     private static void ToParams<Bounds>(
@@ -44,7 +44,7 @@ public abstract class IndexBase<Row>
     }
 
     protected IEnumerable<Row> DoFilter<Bounds>(Bounds bounds)
-        where Bounds : IBTreeIndexBounds => new RawTableIter<Bounds>(indexId, bounds).Parse();
+        where Bounds : IBTreeIndexBounds => new RawTableIter<Bounds>(indexId, bounds);
 
     protected uint DoDelete<Bounds>(Bounds bounds)
         where Bounds : IBTreeIndexBounds
@@ -53,12 +53,12 @@ public abstract class IndexBase<Row>
         FFI.datastore_delete_by_index_scan_range_bsatn(
             indexId,
             prefix,
-            (uint)prefix.Length,
+            prefix.Length,
             prefixElems,
             rstart,
-            (uint)rstart.Length,
+            rstart.Length,
             rend,
-            (uint)rend.Length,
+            rend.Length,
             out var out_
         );
         return out_;
@@ -73,12 +73,12 @@ public abstract class IndexBase<Row>
             FFI.datastore_index_scan_range_bsatn(
                 indexId,
                 prefix,
-                (uint)prefix.Length,
+                prefix.Length,
                 prefixElems,
                 rstart,
-                (uint)rstart.Length,
+                rstart.Length,
                 rend,
-                (uint)rend.Length,
+                rend.Length,
                 out handle
             );
         }
@@ -102,7 +102,7 @@ public abstract class UniqueIndex<Handle, Row, T, RW>(string name) : IndexBase<R
     private sealed class RawPointIter(FFI.IndexId indexId, byte[] point) : RawTableIterBase<Row>
     {
         protected override void IterStart(out FFI.RowIter handle) =>
-            FFI.datastore_index_scan_point_bsatn(indexId, point, (uint)point.Length, out handle);
+            FFI.datastore_index_scan_point_bsatn(indexId, point, point.Length, out handle);
     }
 
     protected IEnumerable<Row> DoFilter(T key) => DoFilter(ToBounds(key));
@@ -116,7 +116,7 @@ public abstract class UniqueIndex<Handle, Row, T, RW>(string name) : IndexBase<R
         FFI.datastore_delete_by_index_scan_point_bsatn(
             indexId,
             point,
-            (uint)point.Length,
+            point.Length,
             out var numDeleted
         );
         return numDeleted > 0;
@@ -129,7 +129,7 @@ public abstract class UniqueIndex<Handle, Row, T, RW>(string name) : IndexBase<R
         new RW().Write(w, key);
         var point = s.ToArray();
 
-        using var e = new RawPointIter(indexId, point).Parse().GetEnumerator();
+        using var e = new RawPointIter(indexId, point).GetEnumerator();
         if (!e.MoveNext())
         {
             return null;
@@ -144,12 +144,16 @@ public abstract class UniqueIndex<Handle, Row, T, RW>(string name) : IndexBase<R
         return row;
     }
 
-    protected Row DoUpdate(Row row)
+    protected Row DoUpdate(Row row) => UpdateRow(row, ITableView<Handle, Row>.tableId);
+
+    protected Row DoUpdate(Row row, TableHandle table) => UpdateRow(row, table.Id);
+
+    private Row UpdateRow(Row row, FFI.TableId tableId)
     {
         // Insert the row.
         var bytes = IStructuralReadWrite.ToBytes(row);
-        var bytes_len = (uint)bytes.Length;
-        FFI.datastore_update_bsatn(ITableView<Handle, Row>.tableId, indexId, bytes, ref bytes_len);
+        var bytes_len = bytes.Length;
+        FFI.datastore_update_bsatn(tableId, indexId, bytes, ref bytes_len);
 
         return ITableView<Handle, Row>.IntegrateGeneratedColumns(row, bytes, bytes_len);
     }
@@ -165,7 +169,7 @@ public abstract class RefUniqueIndex<Handle, Row, T, RW>(string name) : IndexBas
     private sealed class RawPointIter(FFI.IndexId indexId, byte[] point) : RawTableIterBase<Row>
     {
         protected override void IterStart(out FFI.RowIter handle) =>
-            FFI.datastore_index_scan_point_bsatn(indexId, point, (uint)point.Length, out handle);
+            FFI.datastore_index_scan_point_bsatn(indexId, point, point.Length, out handle);
     }
 
     protected IEnumerable<Row> DoFilter(T key) => DoFilter(ToBounds(key));
@@ -179,7 +183,7 @@ public abstract class RefUniqueIndex<Handle, Row, T, RW>(string name) : IndexBas
         FFI.datastore_delete_by_index_scan_point_bsatn(
             indexId,
             point,
-            (uint)point.Length,
+            point.Length,
             out var numDeleted
         );
         return numDeleted > 0;
@@ -192,7 +196,7 @@ public abstract class RefUniqueIndex<Handle, Row, T, RW>(string name) : IndexBas
         new RW().Write(w, key);
         var point = s.ToArray();
 
-        using var e = new RawPointIter(indexId, point).Parse().GetEnumerator();
+        using var e = new RawPointIter(indexId, point).GetEnumerator();
         if (!e.MoveNext())
         {
             return null;
@@ -207,12 +211,16 @@ public abstract class RefUniqueIndex<Handle, Row, T, RW>(string name) : IndexBas
         return row;
     }
 
-    protected Row DoUpdate(Row row)
+    protected Row DoUpdate(Row row) => UpdateRow(row, ITableView<Handle, Row>.tableId);
+
+    protected Row DoUpdate(Row row, TableHandle table) => UpdateRow(row, table.Id);
+
+    private Row UpdateRow(Row row, FFI.TableId tableId)
     {
         // Insert the row.
         var bytes = IStructuralReadWrite.ToBytes(row);
-        var bytes_len = (uint)bytes.Length;
-        FFI.datastore_update_bsatn(ITableView<Handle, Row>.tableId, indexId, bytes, ref bytes_len);
+        var bytes_len = bytes.Length;
+        FFI.datastore_update_bsatn(tableId, indexId, bytes, ref bytes_len);
 
         return ITableView<Handle, Row>.IntegrateGeneratedColumns(row, bytes, bytes_len);
     }
@@ -229,7 +237,7 @@ public abstract class ReadOnlyUniqueIndex<Handle, Row, T, RW>(string name)
     private sealed class RawPointIter(FFI.IndexId indexId, byte[] point) : RawTableIterBase<Row>
     {
         protected override void IterStart(out FFI.RowIter handle) =>
-            FFI.datastore_index_scan_point_bsatn(indexId, point, (uint)point.Length, out handle);
+            FFI.datastore_index_scan_point_bsatn(indexId, point, point.Length, out handle);
     }
 
     protected IEnumerable<Row> Filter(T key) => Filter(ToBounds(key));
@@ -241,7 +249,7 @@ public abstract class ReadOnlyUniqueIndex<Handle, Row, T, RW>(string name)
         new RW().Write(w, key);
         var point = s.ToArray();
 
-        using var e = new RawPointIter(indexId, point).Parse().GetEnumerator();
+        using var e = new RawPointIter(indexId, point).GetEnumerator();
         if (!e.MoveNext())
         {
             return null;
@@ -268,7 +276,7 @@ public abstract class ReadOnlyRefUniqueIndex<Handle, Row, T, RW>(string name)
     private sealed class RawPointIter(FFI.IndexId indexId, byte[] point) : RawTableIterBase<Row>
     {
         protected override void IterStart(out FFI.RowIter handle) =>
-            FFI.datastore_index_scan_point_bsatn(indexId, point, (uint)point.Length, out handle);
+            FFI.datastore_index_scan_point_bsatn(indexId, point, point.Length, out handle);
     }
 
     protected IEnumerable<Row> Filter(T key) => Filter(ToBounds(key));
@@ -280,7 +288,7 @@ public abstract class ReadOnlyRefUniqueIndex<Handle, Row, T, RW>(string name)
         new RW().Write(w, key);
         var point = s.ToArray();
 
-        using var e = new RawPointIter(indexId, point).Parse().GetEnumerator();
+        using var e = new RawPointIter(indexId, point).GetEnumerator();
         if (!e.MoveNext())
         {
             return null;
@@ -310,7 +318,7 @@ public abstract class ReadOnlyTableView<Row>
     protected ReadOnlyTableView(string tableName)
     {
         var nameBytes = Encoding.UTF8.GetBytes(tableName);
-        FFI.table_id_from_name(nameBytes, (uint)nameBytes.Length, out tableId);
+        FFI.table_id_from_name(nameBytes, nameBytes.Length, out tableId);
     }
 
     protected ulong DoCount()
@@ -319,5 +327,5 @@ public abstract class ReadOnlyTableView<Row>
         return count;
     }
 
-    protected IEnumerable<Row> DoIter() => new TableIter(tableId).Parse();
+    protected IEnumerable<Row> DoIter() => new TableIter(tableId);
 }

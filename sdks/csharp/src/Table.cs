@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using System.Threading.Tasks;
+#if UNITY_5_3_OR_NEWER
+using UnityEngine;
+#endif
 using SpacetimeDB.BSATN;
 using SpacetimeDB.ClientApi;
 using SpacetimeDB.EventHandling;
@@ -35,6 +37,7 @@ namespace SpacetimeDB
         /// </summary>
         /// <returns>An <see cref="IParsedTableUpdate"/> representing the parsed update.</returns>
         internal IParsedTableUpdate MakeParsedTableUpdate();
+        internal void AddSnapshotDeletes(ParsedDatabaseUpdate update);
 
         /// <summary>
         /// Parses an insert-only table update and applies the results to the specified parsed database update.
@@ -100,13 +103,15 @@ namespace SpacetimeDB
         // and therefore avoids using reflection when initializing the row object.
 
         public abstract class IndexBase<Column>
-            where Column : IEquatable<Column>
+            // where Column : IEquatable<Column> // TODO: Revisit. Enums don't satisfy the `IEquatable<Column>` constraint. It shouldn't be needed though.
+            where Column : notnull
         {
             protected abstract Column GetKey(Row row);
         }
 
         public abstract class UniqueIndexBase<Column> : IndexBase<Column>
-            where Column : IEquatable<Column>
+            // where Column : IEquatable<Column> // TODO: Revisit. Enums don't satisfy the `IEquatable<Column>` constraint. It shouldn't be needed though: `Dictionary<TKey, TValue>` does not require `TKey : IEquatable<TKey>`; it uses `EqualityComparer<TKey>.Default`.
+            where Column : notnull
         {
             private readonly Dictionary<Column, Row> cache = new();
 
@@ -120,7 +125,8 @@ namespace SpacetimeDB
         }
 
         public abstract class BTreeIndexBase<Column> : IndexBase<Column>
-            where Column : IEquatable<Column>, IComparable<Column>
+            // where Column : IEquatable<Column>, IComparable<Column> // TODO: Revisit. Enums don't satisfy the `IEquatable<Column>` constraint. It shouldn't be needed though: `Dictionary<TKey, TValue>` does not require `TKey : IEquatable<TKey>`; it uses `EqualityComparer<TKey>.Default`. And if we change it to `SortedDictionary<TKey, TValue>`, it uses `Comparer<SimpleEnum>.Default`.
+            where Column : notnull
         {
             // TODO: change to SortedDictionary when adding support for range queries.
             private readonly Dictionary<Column, HashSet<Row>> cache = new();
@@ -151,7 +157,7 @@ namespace SpacetimeDB
             }
 
             public IEnumerable<Row> Filter(Column value) =>
-                cache.TryGetValue(value, out var rows) ? rows : Enumerable.Empty<Row>();
+                cache.TryGetValue(value, out var rows) ? rows : Array.Empty<Row>();
         }
 
         /// <summary>
@@ -171,8 +177,11 @@ namespace SpacetimeDB
             internal List<Row>? EventRows;
         }
 
-        protected abstract string RemoteTableName { get; }
+        public abstract string RemoteTableName { get; }
         string IRemoteTableHandle.RemoteTableName => RemoteTableName;
+
+        /// <summary>The SQL identifier, separate from the wire/cache key.</summary>
+        protected virtual SqlTableName RemoteSqlTableName => new(RemoteTableName);
 
         /// <summary>
         /// Whether this table is an event table.
@@ -184,6 +193,22 @@ namespace SpacetimeDB
         {
             IsEventTable = isEventTable;
         }
+
+#if UNITY_5_3_OR_NEWER
+        /// <summary>
+        /// Resets the static instance to prevent data persistence when Enter Play Mode Options (Disable Domain Reloading) is active.
+        /// RuntimeInitializeOnLoadMethod can't be used here since this is a generic class, so we have to handle it ourselves.
+        /// AutoStaticsCleanup and NoAutoStaticsCleanup is only supported in Unity 6+
+        /// </summary>
+        /// <remarks>
+        /// See the <see href="https://docs.unity3d.com/6000.5/Documentation/Manual/domain-reloading.html">Unity Domain Reloading Manual</see>
+        /// and the <see href="https://docs.unity3d.com/6000.5/Documentation/ScriptReference/RuntimeInitializeOnLoadMethodAttribute.html">RuntimeInitializeOnLoadMethodAttribute API Docs</see> for details.
+        /// </remarks>
+        static RemoteTableHandleBase()
+        {
+            RemoteTableHandleStaticReset.Register(() => _serializer = null);
+        }
+#endif
 
         // This method needs to be overridden by autogen.
         protected virtual object? GetPrimaryKey(Row row) => null;
@@ -274,6 +299,22 @@ namespace SpacetimeDB
         IParsedTableUpdate IRemoteTableHandle.MakeParsedTableUpdate()
         {
             return new ParsedTableUpdate();
+        }
+
+        void IRemoteTableHandle.AddSnapshotDeletes(ParsedDatabaseUpdate update)
+        {
+            if (IsEventTable)
+            {
+                return;
+            }
+            var delta = ((ParsedTableUpdate)update.UpdateForTable(this)).Delta;
+            foreach (var entry in Entries.Entries)
+            {
+                for (var i = 0u; i < Entries.Multiplicity(entry.Key); i++)
+                {
+                    delta.Remove(entry.Key, entry.Value);
+                }
+            }
         }
 
         /// <summary>
@@ -396,10 +437,10 @@ namespace SpacetimeDB
 
         public int Count => (int)Entries.CountDistinct;
 
-        public IEnumerable<Row> Iter() => Entries.Entries.Select(entry => (Row)entry.Value);
+        public IEnumerable<Row> Iter() => Entries.Values;
 
         public Task<Row[]> RemoteQuery(string query) =>
-            conn.RemoteQuery<Row>($"SELECT {RemoteTableName}.* FROM {RemoteTableName} {query}");
+            conn.RemoteQuery<Row>($"SELECT {RemoteSqlTableName}.* FROM {RemoteSqlTableName} {query}");
 
         void InvokeInsert(IEventContext context, IStructuralReadWrite row)
         {
@@ -431,8 +472,13 @@ namespace SpacetimeDB
         /// </summary>
         void IRemoteTableHandle.PreApply(IEventContext context, IParsedTableUpdate parsedTableUpdate)
         {
-            Debug.Assert(wasInserted.Count == 0 && wasUpdated.Count == 0 && wasRemoved.Count == 0, "Call Apply and PostApply before calling PreApply again");
-            if (IsEventTable) return; // Event tables have no deletes.
+            // Fully qualified to avoid clash with UnityEngine.Debug
+            System.Diagnostics.Debug.Assert(wasInserted.Count == 0 && wasUpdated.Count == 0 && wasRemoved.Count == 0, "Call Apply and PostApply before calling PreApply again");
+            if (IsEventTable)
+            {
+                return; // Event tables have no deletes.
+            }
+
             var delta = (ParsedTableUpdate)parsedTableUpdate;
             foreach (var (_, value) in Entries.WillRemove(delta.Delta))
             {
@@ -484,42 +530,16 @@ namespace SpacetimeDB
             // in order to avoid keys an error with the same key already added.
             foreach (var (_, value) in wasRemoved)
             {
-                if (value is Row oldRow)
-                {
-                    OnInternalDeleteHandler.Invoke(oldRow);
-                }
+                OnInternalDeleteHandler.Invoke(value);
             }
             foreach (var (_, value) in wasInserted)
             {
-                if (value is Row newRow)
-                {
-                    OnInternalInsertHandler.Invoke(newRow);
-                }
-                else
-                {
-                    throw new Exception($"Invalid row type for table {RemoteTableName}: {value.GetType().Name}");
-                }
+                OnInternalInsertHandler.Invoke(value);
             }
             foreach (var (_, oldValue, newValue) in wasUpdated)
             {
-                if (oldValue is Row oldRow)
-                {
-                    OnInternalDeleteHandler.Invoke(oldRow);
-                }
-                else
-                {
-                    throw new Exception($"Invalid row type for table {RemoteTableName}: {oldValue.GetType().Name}");
-                }
-
-
-                if (newValue is Row newRow)
-                {
-                    OnInternalInsertHandler.Invoke(newRow);
-                }
-                else
-                {
-                    throw new Exception($"Invalid row type for table {RemoteTableName}: {newValue.GetType().Name}");
-                }
+                OnInternalDeleteHandler.Invoke(oldValue);
+                OnInternalInsertHandler.Invoke(newValue);
             }
         }
 
@@ -661,5 +681,37 @@ namespace SpacetimeDB
     {
         protected RemoteEventTableHandle(IDbConnection conn) : base(conn, isEventTable: true) { }
     }
+
+#if UNITY_5_3_OR_NEWER
+    /// <summary>
+    /// Provides a mechanism for registering and invoking static reset callbacks
+    /// during Unity's subsystem registration phase.
+    /// This is because Unity's RuntimeInitializeOnLoadMethod can't be used in generic classes
+    /// One way we can get around this in the future is using <see href="https://docs.unity3d.com/6000.5/Documentation/ScriptReference/Unity.Scripting.LifecycleManagement.AutoStaticsCleanupAttribute.html">AutoStaticsCleanup</see>
+    /// But that requires Unity 6.5
+    /// </summary>
+    /// <remarks>
+    /// Our generic static constructor doesn't necessarily execute for every table type before Unity's SubsystemRegistration callback runs
+    /// So this will only reset types that have already been initialized/registered. Which should be okay.
+    /// </remarks>
+    internal static class RemoteTableHandleStaticReset
+    {
+        private static readonly List<Action> Resets = new();
+
+        internal static void Register(Action reset)
+        {
+            Resets.Add(reset);
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void Reset()
+        {
+            foreach (var reset in Resets)
+            {
+                reset();
+            }
+        }
+    }
+#endif
 }
 #nullable disable

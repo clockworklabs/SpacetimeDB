@@ -48,6 +48,31 @@ export type Values<T> = T[keyof T];
  */
 export type CollapseTuple<A extends any[]> = A extends [infer T] ? T : A;
 
+/**
+ * Conditional-type helper for distinguishing a single type from a union.
+ */
+export type IsUnion<T, U = T> = [T] extends [never]
+  ? false
+  : T extends any
+    ? [U] extends [T]
+      ? false
+      : true
+    : false;
+
+/**
+ * True when an object type has exactly one known key.
+ *
+ * If keys widen to plain `string`, the exact count is no longer knowable, so
+ * treat it as valid and let narrower call sites or runtime checks handle it.
+ */
+export type HasExactlyOneKnownKey<T> = [keyof T] extends [never]
+  ? false
+  : string extends keyof T
+    ? true
+    : IsUnion<keyof T> extends true
+      ? false
+      : true;
+
 type CamelCaseImpl<S extends string> = S extends `${infer Head}_${infer Tail}`
   ? `${Head}${Capitalize<CamelCaseImpl<Tail>>}`
   : S extends `${infer Head}-${infer Tail}`
@@ -60,6 +85,19 @@ type CamelCaseImpl<S extends string> = S extends `${infer Head}_${infer Tail}`
  * - Normalizes the *first* character to lowercase (e.g. "User_Name" -> "userName")
  */
 export type CamelCase<S extends string> = Uncapitalize<CamelCaseImpl<S>>;
+
+type AccessorHead<K extends string> = K extends `${infer H}.${string}` ? H : K;
+type AccessorTail<
+  K extends string,
+  H extends string,
+> = K extends `${H}.${infer R}` ? R : never;
+
+/** Splits dotted keys into nested objects: `{ 'a.b': X, c: Y }` becomes `{ a: { b: X }, c: Y }`. */
+export type NestAccessors<T extends Record<string, unknown>> = {
+  readonly [H in AccessorHead<keyof T & string>]: H extends keyof T
+    ? T[H]
+    : NestAccessors<{ [K in keyof T & string as AccessorTail<K, H>]: T[K] }>;
+};
 
 /** Type safe conversion from "some_identifier-name" to "some_identifier_name"
  * - No spaces; allowed separators: "_" and "-"

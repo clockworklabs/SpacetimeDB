@@ -45,8 +45,8 @@ public readonly record struct U128 : IEquatable<U128>, IComparable, IComparable<
             );
         }
 
-        var upper = BinaryPrimitives.ReadUInt64BigEndian(bytes.Slice(0, 8));
-        var lower = BinaryPrimitives.ReadUInt64BigEndian(bytes.Slice(8, 8));
+        var upper = BinaryPrimitives.ReadUInt64BigEndian(bytes[..8]);
+        var lower = BinaryPrimitives.ReadUInt64BigEndian(bytes[8..16]);
 
         return new U128(upper, lower);
     }

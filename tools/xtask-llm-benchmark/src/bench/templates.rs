@@ -131,11 +131,11 @@ fn inject_rust(root: &Path, llm_code: &str) -> anyhow::Result<()> {
     if !sdk_path.is_dir() {
         bail!("local Rust SDK not found at {}", sdk_path.display());
     }
-    let replacement = format!(r#"spacetimedb = {{ path = "{}" }}"#, relative);
+    let replacement = format!(r#"spacetimedb = {{ path = "{}", features = ["unstable"] }}"#, relative);
     let cargo_toml = root.join("Cargo.toml");
     let mut toml = fs::read_to_string(&cargo_toml).with_context(|| format!("read {}", cargo_toml.display()))?;
     toml = toml.replace(
-        "spacetimedb = { path = \"../../../../../../sdks/rust/\" }",
+        "spacetimedb = { path = \"../../../../../../sdks/rust/\", features = [\"unstable\"] }",
         &replacement,
     );
     fs::write(&cargo_toml, toml).with_context(|| format!("write {}", cargo_toml.display()))?;
@@ -159,20 +159,107 @@ fn inject_csharp(root: &Path, llm_code: &str) -> anyhow::Result<()> {
     }
     fs::write(&prog, contents).with_context(|| format!("write {}", prog.display()))?;
 
-    let base_rel = relative_to_workspace(root, "crates/bindings-csharp")?;
     let runtime_csproj = workspace_root().join("crates/bindings-csharp/Runtime/Runtime.csproj");
     if !runtime_csproj.is_file() {
         bail!("local C# Runtime not found at {}", runtime_csproj.display());
     }
-    let runtime_ref = format!("{}/Runtime/Runtime.csproj", base_rel);
-    let runtime_dir = format!("{}/Runtime", base_rel);
-    let codegen_ref = format!("{}/Codegen/Codegen.csproj", base_rel);
+    let runtime_version = read_csharp_package_version(&runtime_csproj)?;
     let csproj_path = root.join("StdbModule.csproj");
     let mut csproj = fs::read_to_string(&csproj_path).with_context(|| format!("read {}", csproj_path.display()))?;
-    csproj = csproj.replace("{SPACETIME_CSHARP_RUNTIME_DIR}", &runtime_dir);
-    csproj = csproj.replace("{SPACETIME_CSHARP_RUNTIME_REF}", &runtime_ref);
-    csproj = csproj.replace("{SPACETIME_CSHARP_CODEGEN_REF}", &codegen_ref);
+    csproj = csproj.replace("{SPACETIME_CSHARP_RUNTIME_VERSION}", &runtime_version);
     fs::write(&csproj_path, csproj).with_context(|| format!("write {}", csproj_path.display()))?;
+
+    write_csharp_nuget_config(root)?;
+    Ok(())
+}
+
+fn read_csharp_package_version(csproj_path: &Path) -> Result<String> {
+    let contents = fs::read_to_string(csproj_path).with_context(|| format!("read {}", csproj_path.display()))?;
+    let version = contents
+        .split("<Version>")
+        .nth(1)
+        .and_then(|rest| rest.split("</Version>").next())
+        .map(str::trim)
+        .filter(|version| !version.is_empty())
+        .with_context(|| format!("missing <Version> in {}", csproj_path.display()))?;
+    Ok(version.to_owned())
+}
+
+fn normalize_nuget_path(path: &Path) -> String {
+    path.display()
+        .to_string()
+        .replace('\\', "/")
+        .trim_end_matches('/')
+        .to_string()
+}
+
+fn ensure_csharp_package_source(path: &Path, package_id: &str, version: &str) -> Result<()> {
+    if !path.join(format!("{package_id}.{version}.nupkg")).is_file() {
+        bail!(
+            "local C# package {} version {} not found in {}. Run: dotnet pack -c Release crates/bindings-csharp/{}",
+            package_id,
+            version,
+            path.display(),
+            package_id.strip_prefix("SpacetimeDB.").unwrap_or(package_id)
+        );
+    }
+    Ok(())
+}
+
+fn write_csharp_nuget_config(root: &Path) -> Result<()> {
+    let workspace = workspace_root();
+    let runtime_source = workspace.join("crates/bindings-csharp/Runtime/bin/Release");
+    let bsatn_source = workspace.join("crates/bindings-csharp/BSATN.Runtime/bin/Release");
+
+    let runtime_version =
+        read_csharp_package_version(&workspace.join("crates/bindings-csharp/Runtime/Runtime.csproj"))?;
+    let bsatn_version =
+        read_csharp_package_version(&workspace.join("crates/bindings-csharp/BSATN.Runtime/BSATN.Runtime.csproj"))?;
+    ensure_csharp_package_source(&runtime_source, "SpacetimeDB.Runtime", &runtime_version)?;
+    ensure_csharp_package_source(&bsatn_source, "SpacetimeDB.BSATN.Runtime", &bsatn_version)?;
+
+    let package_cache = root.join(".nuget/packages");
+    if package_cache.exists() {
+        fs::remove_dir_all(&package_cache).with_context(|| format!("remove {}", package_cache.display()))?;
+    }
+    fs::create_dir_all(&package_cache).with_context(|| format!("create {}", package_cache.display()))?;
+
+    let nuget_config = format!(
+        r#"<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <config>
+    <add key="globalPackagesFolder" value=".nuget/packages" />
+  </config>
+  <packageSources>
+    <clear />
+    <add key="spacetimedb-runtime" value="{}" />
+    <add key="spacetimedb-bsatn-runtime" value="{}" />
+    <add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+  <packageSourceMapping>
+    <packageSource key="spacetimedb-runtime">
+      <package pattern="SpacetimeDB.Runtime" />
+    </packageSource>
+    <packageSource key="spacetimedb-bsatn-runtime">
+      <package pattern="SpacetimeDB.BSATN.Runtime" />
+    </packageSource>
+    <packageSource key="dotnet-experimental">
+      <package pattern="Microsoft.DotNet.ILCompiler.LLVM" />
+      <package pattern="runtime.*" />
+    </packageSource>
+    <packageSource key="nuget.org">
+      <package pattern="*" />
+    </packageSource>
+  </packageSourceMapping>
+</configuration>
+"#,
+        normalize_nuget_path(&runtime_source),
+        normalize_nuget_path(&bsatn_source),
+    );
+
+    fs::write(root.join("nuget.config"), nuget_config)
+        .with_context(|| format!("write {}", root.join("nuget.config").display()))?;
     Ok(())
 }
 
@@ -245,4 +332,20 @@ fn ensure_parent(p: &Path) -> io::Result<()> {
         fs::create_dir_all(dir)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn csharp_package_source_requires_the_requested_version() {
+        let root = std::env::temp_dir().join(format!("llm-nuget-version-{}", std::process::id()));
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("SpacetimeDB.Runtime.1.0.0.nupkg"), []).unwrap();
+        assert!(ensure_csharp_package_source(&root, "SpacetimeDB.Runtime", "2.0.0").is_err());
+        fs::write(root.join("SpacetimeDB.Runtime.2.0.0.nupkg"), []).unwrap();
+        assert!(ensure_csharp_package_source(&root, "SpacetimeDB.Runtime", "2.0.0").is_ok());
+        fs::remove_dir_all(&root).unwrap();
+    }
 }

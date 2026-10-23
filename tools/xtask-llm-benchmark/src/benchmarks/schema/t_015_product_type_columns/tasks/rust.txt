@@ -11,7 +11,7 @@ TYPES
     - y: i32
 
 TABLE
-- profile
+- profile (public)
   - Struct: Profile
   - Fields:
     - id: u64 (primary key, auto_inc)

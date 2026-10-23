@@ -1,4 +1,4 @@
-use spacetimedb_codegen::{generate, CodegenOptions, Csharp, Rust, TypeScript};
+use spacetimedb_codegen::{generate, CodegenOptions, Csharp, ImportExtension, Rust, TypeScript};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
@@ -8,6 +8,11 @@ fn compiled_module() -> &'static ModuleDef {
     static COMPILED_MODULE: OnceLock<ModuleDef> = OnceLock::new();
     COMPILED_MODULE
         .get_or_init(|| CompiledModule::compile("module-test", CompilationMode::Debug).extract_schema_blocking())
+}
+
+fn compiled_typescript_module() -> &'static ModuleDef {
+    static MODULE: OnceLock<ModuleDef> = OnceLock::new();
+    MODULE.get_or_init(|| CompiledModule::compile("module-test-ts", CompilationMode::Debug).extract_schema_blocking())
 }
 
 macro_rules! declare_tests {
@@ -36,6 +41,230 @@ macro_rules! declare_tests {
 
 declare_tests! {
     test_codegen_csharp => Csharp { namespace: "SpacetimeDB" },
-    test_codegen_typescript => TypeScript,
+    test_codegen_typescript => TypeScript::default(),
     test_codegen_rust => Rust,
+}
+
+#[test]
+fn test_typescript_table_handles_are_camel_case() {
+    let module = compiled_module();
+    let index = generate(module, &TypeScript::default(), &CodegenOptions::default())
+        .into_iter()
+        .find(|file| file.filename == "index.ts")
+        .expect("typescript codegen should emit index.ts")
+        .code;
+
+    assert!(index.contains("loggedOutPlayer: __table({"));
+    assert!(!index.contains("logged_out_player: __table({"));
+    assert!(index.contains("myPlayer: __table({"));
+    assert!(!index.contains("my_player: __table({"));
+    assert!(index.contains(r#""logged_out_player": "loggedOutPlayer""#));
+    assert!(index.contains(r#"readonly "logged_out_player": __TablesBase["loggedOutPlayer"];"#));
+    assert!(index.contains(r#"readonly "logged_out_player": __DbViewBase["loggedOutPlayer"];"#));
+    assert!(index.contains(
+        r#"/** @deprecated Use `loggedOutPlayer` instead. This alias will be removed in the next major version. */"#
+    ));
+}
+
+/// A submodule reducer's wire name must be qualified exactly once, with the canonical
+/// namespace, while everything client code touches uses the accessor namespace.
+///
+/// `module-test-ts` mounts its library as `myLib`, which canonicalizes to `my_lib`.
+/// `ReducerDef::name` is fully qualified, so any code that also prepends the namespace
+/// path would emit `my_lib.my_lib.lib_insert`. Nothing in the snapshot fixtures mounts a
+/// submodule, so this checks the TypeScript output of one that does.
+#[test]
+fn submodule_names_use_canonical_wire_names_and_accessor_paths() {
+    let module = compiled_typescript_module();
+    let files = generate(module, &TypeScript::default(), &CodegenOptions::default());
+    let filenames: Vec<_> = files.iter().map(|f| f.filename.clone()).collect();
+    let code = files.into_iter().map(|f| f.code).collect::<Vec<_>>().join("\n");
+
+    // Wire names are canonical: snake_case namespace, singly qualified.
+    let reducer_lines: Vec<_> = code.lines().filter(|l| l.contains("__reducerSchema(")).collect();
+    assert!(
+        code.contains(r#"__reducerSchema("my_lib.lib_insert""#),
+        "expected a singly-qualified canonical wire name for the submodule reducer; got:\n{}",
+        reducer_lines.join("\n")
+    );
+    assert!(
+        !code.contains("my_lib.my_lib.") && !code.contains("myLib.my_lib") && !code.contains("my_lib.myLib"),
+        "namespace was applied twice or mixed forms somewhere in the generated bindings"
+    );
+    assert!(
+        code.contains(r#""myLib.libData": __table({"#) && code.contains("name: 'my_lib.libData',"),
+        "submodule tables must be keyed by their accessor path and carry the canonical wire name"
+    );
+    assert!(
+        !code.contains(r#"__reducerSchema("myLib."#) && !code.contains("name: 'myLib."),
+        "the accessor namespace must not leak into wire names"
+    );
+
+    // Client-facing names follow the accessor namespace.
+    assert!(
+        code.contains("myLib: {"),
+        "generated `tables`/`reducers` trees must be keyed by the accessor namespace"
+    );
+    assert!(
+        !code.contains("my_lib: {"),
+        "the canonical namespace must not be used as an accessor key"
+    );
+    // The schema entry registers the reducer under an explicit accessor key, the accessor
+    // path plus the camelCase accessor name, and the tree entry looks it up by that same key.
+    assert!(
+        code.contains(r#", "myLib.libInsert"),"#),
+        "submodule reducer schema should pass its accessor key explicitly"
+    );
+    assert!(
+        code.contains(r#"libInsert: __reducerAccessors["myLib.libInsert"]"#),
+        "namespace tree entries must use the SDK's accessor-map key for the canonical wire name"
+    );
+    assert!(
+        code.contains("MyLib_LibData"),
+        "generated row type names must use the accessor namespace"
+    );
+    assert!(
+        filenames.iter().any(|f| f.starts_with("myLib/")) && !filenames.iter().any(|f| f.starts_with("my_lib/")),
+        "generated files must live under the accessor namespace directory; got {filenames:?}"
+    );
+}
+
+#[test]
+fn csharp_client_for_typescript_submodule_compiles_and_runs() {
+    let typescript = compiled_typescript_module();
+    compile_csharp_client(
+        generate(
+            typescript,
+            &Csharp {
+                namespace: "SpacetimeDB",
+            },
+            &CodegenOptions::default(),
+        ),
+        r#"class Program { static void Main() {
+            var conn = new SpacetimeDB.DbConnection();
+            try {
+                if (conn.Db.myLib.LibData.RemoteTableName != "my_lib.libData") throw new System.Exception(conn.Db.myLib.LibData.RemoteTableName);
+                if (((SpacetimeDB.IReducerArgs)new SpacetimeDB.myLib.Reducer.LibInsert("value")).ReducerName != "my_lib.lib_insert") throw new System.Exception("wrong reducer name");
+                if (((SpacetimeDB.IProcedureArgs)new SpacetimeDB.myLib.Procedure.LibCountArgs()).ProcedureName != "my_lib.lib_count") throw new System.Exception("wrong procedure name");
+                var sql = new SpacetimeDB.QueryBuilder().From.myLib.LibData().ToSql();
+                if (!sql.Contains("\"my_lib\".\"libData\"") || sql.Contains("myLib")) throw new System.Exception(sql);
+                if (!System.Linq.Enumerable.Contains(SpacetimeDB.QueryBuilder.AllTablesSqlQueries(), sql)) throw new System.Exception("missing namespace subscription");
+            } finally { conn.Disconnect(); }
+        } }"#,
+    );
+}
+
+fn compile_csharp_client(files: Vec<spacetimedb_codegen::OutputFile>, program: &str) {
+    let project = tempfile::tempdir().unwrap();
+    for file in files {
+        let path = project.path().join(file.filename);
+        fs_err::create_dir_all(path.parent().unwrap()).unwrap();
+        fs_err::write(path, file.code).unwrap();
+    }
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap();
+    // Use the local runtime, never a published package or an old NuGet cache entry.
+    let config = project.path().join("NuGet.Config");
+    fs_err::write(
+        &config,
+        format!(
+            r#"<configuration>
+  <packageSources>
+    <clear />
+    <add key="local" value="{}/crates/bindings-csharp/BSATN.Runtime/bin/Release" />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+  <packageSourceMapping>
+    <packageSource key="local"><package pattern="SpacetimeDB.BSATN.Runtime" /></packageSource>
+    <packageSource key="nuget.org"><package pattern="*" /></packageSource>
+  </packageSourceMapping>
+</configuration>"#,
+            repo.display()
+        ),
+    )
+    .unwrap();
+    {
+        let result = std::process::Command::new("dotnet")
+            .arg("pack")
+            .arg(repo.join("crates/bindings-csharp/BSATN.Runtime"))
+            .args(["-c", "Release"])
+            .arg(format!("-p:RestoreConfigFile={}", config.display()))
+            .output()
+            .expect("dotnet SDK is required for generated C# compilation");
+        assert!(
+            result.status.success(),
+            "local BSATN pack failed:\n{}\n{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+    fs_err::write(project.path().join("Program.cs"), program).unwrap();
+    fs_err::write(
+        project.path().join("client.csproj"),
+        format!(
+            r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>9</LangVersion>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <AssemblyName>SpacetimeDB.Tests</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="{}/sdks/csharp/SpacetimeDB.ClientSDK.csproj" /></ItemGroup>
+</Project>"#,
+            repo.display()
+        ),
+    )
+    .unwrap();
+    let result = std::process::Command::new("dotnet")
+        .args(["run", "--project"])
+        .arg(project.path().join("client.csproj"))
+        .arg("-p:TreatWarningsAsErrors=true")
+        .arg(format!("-p:RestorePackagesPath={}/packages", project.path().display()))
+        .arg(format!("-p:RestoreConfigFile={}", config.display()))
+        .output()
+        .expect("dotnet SDK is required for generated C# compilation");
+    assert!(
+        result.status.success(),
+        "generated client failed:\n{}\n{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+/// The relative module specifiers in `import … from "./…"` and `"../…"` lines.
+fn relative_imports(code: &str) -> Vec<&str> {
+    code.lines()
+        .filter_map(|line| line.split("from \"").nth(1)?.split('"').next())
+        .filter(|spec| spec.starts_with('.'))
+        .collect()
+}
+
+#[test]
+fn typescript_import_extension_applies_to_every_relative_import() {
+    let module = compiled_module();
+    for (import_extension, suffix) in [
+        (ImportExtension::None, ""),
+        (ImportExtension::Js, ".js"),
+        (ImportExtension::Ts, ".ts"),
+    ] {
+        let files = generate(module, &TypeScript { import_extension }, &CodegenOptions::default());
+        let specs: Vec<String> = files
+            .iter()
+            .flat_map(|file| relative_imports(&file.code))
+            .map(String::from)
+            .collect();
+        assert!(!specs.is_empty(), "the module's bindings import each other");
+        for spec in specs {
+            let stem = spec
+                .strip_suffix(suffix)
+                .unwrap_or_else(|| panic!("{spec:?} should end with {suffix:?}"));
+            assert!(
+                !stem.ends_with(".js") && !stem.ends_with(".ts"),
+                "{spec:?} has more than one extension"
+            );
+        }
+    }
 }

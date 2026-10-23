@@ -7,6 +7,14 @@ using System.Diagnostics.CodeAnalysis;
 public abstract class HandlerContextBase
 {
     public Random Rng => txState.Rng;
+    public DatabaseEnvironment Env { get; } = DatabaseEnvironment.Instance;
+
+    /// <summary>
+    /// The random Identity that the host created for this request.
+    ///
+    /// Each request has a different sender, which is also the sender of the transactions it opens.
+    /// </summary>
+    public Identity Sender { get; }
     public Timestamp Timestamp => txState.Timestamp;
 
     // NOTE: The host rejects procedure HTTP requests while a mut transaction is open
@@ -15,19 +23,38 @@ public abstract class HandlerContextBase
 
     // **Note:** must be 0..=u32::MAX
     protected int CounterUuid = 0;
+#if NET10_0_OR_GREATER
+    private protected HandlerContextBase? SelectionSource;
+    protected ref int SharedCounterUuid => ref (SelectionSource ?? this).CounterUuid;
+
+    protected virtual HandlerTxContextBase SelectTxContext(HandlerTxContextBase tx) => tx;
+
+    // Keep captured callbacks off the ordinary, unselected transaction path.
+    private TResult WithSelectedTx<TResult>(Func<HandlerTxContextBase, TResult> body) =>
+        SelectionSource!.WithTx(tx => body(SelectTxContext(tx)));
+
+    private TxOutcome<TResult> TryWithSelectedTx<TResult, TError>(
+        Func<HandlerTxContextBase, Result<TResult, TError>> body
+    )
+        where TError : Exception =>
+        SelectionSource!.TryWithTx<TResult, TError>(tx => body(SelectTxContext(tx)));
+#endif
+
     private readonly TransactionalContextState<HandlerTxContextBase> txState;
 
-    protected HandlerContextBase(Random random, Timestamp time)
+    protected HandlerContextBase(Identity sender, string? senderJwt, Random random, Timestamp time)
     {
+        Sender = sender;
+        var senderAuth = AuthCtx.FromJwt(senderJwt, sender);
         txState = new(
             random,
             time,
             timestamp => new Internal.TxContext(
                 CreateLocal(),
-                default,
+                Sender,
                 null,
                 timestamp,
-                AuthCtx.BuildFromSystemTables(null, default),
+                senderAuth,
                 random
             ),
             inner => CreateTxContext(inner)
@@ -35,7 +62,7 @@ public abstract class HandlerContextBase
     }
 
     protected abstract HandlerTxContextBase CreateTxContext(Internal.TxContext inner);
-    protected internal abstract LocalBase CreateLocal();
+    protected abstract LocalBase CreateLocal();
 
     public Internal.TxContext EnterTxContext(long timestampMicros) =>
         txState.EnterTxContext(timestampMicros);
@@ -62,8 +89,16 @@ public abstract class HandlerContextBase
     }
 
     [Experimental("STDB_UNSTABLE")]
-    public TResult WithTx<TResult>(Func<HandlerTxContextBase, TResult> body) =>
-        txState.WithTx(body);
+    public TResult WithTx<TResult>(Func<HandlerTxContextBase, TResult> body)
+    {
+#if NET10_0_OR_GREATER
+        if (SelectionSource is not null)
+        {
+            return WithSelectedTx(body);
+        }
+#endif
+        return txState.WithTx(body);
+    }
 
     [Experimental("STDB_UNSTABLE")]
     public TxOutcome<TResult> TryWithTx<TResult, TError>(
@@ -71,6 +106,12 @@ public abstract class HandlerContextBase
     )
         where TError : Exception
     {
+#if NET10_0_OR_GREATER
+        if (SelectionSource is not null)
+        {
+            return TryWithSelectedTx<TResult, TError>(body);
+        }
+#endif
         var outcome = txState.TryWithTx(body);
         return outcome.IsSuccess
             ? TxOutcome<TResult>.Success(outcome.Value!)
@@ -83,23 +124,49 @@ public abstract class HandlerContextBase
 
 public abstract class HandlerTxContextBase(Internal.TxContext inner) : IRefreshableTxContext
 {
+#if NET10_0_OR_GREATER
+    private protected HandlerTxContextBase? SelectionSource;
+    private protected LocalBase LocalDb = (LocalBase)inner.Db;
+    private Internal.TxContext currentInner = inner;
+
+    // Selected wrappers must observe refreshes of the original transaction context.
+    internal Internal.TxContext Inner => SelectionSource?.Inner ?? currentInner;
+
+    internal void Refresh(Internal.TxContext inner)
+    {
+        currentInner = inner;
+        LocalDb = (LocalBase)inner.Db;
+    }
+#else
     internal Internal.TxContext Inner { get; private set; } = inner;
 
     internal void Refresh(Internal.TxContext inner) => Inner = inner;
+#endif
 
     void IRefreshableTxContext.Refresh(Internal.TxContext inner) => Refresh(inner);
 
+#if NET10_0_OR_GREATER
+    public LocalBase Db => LocalDb;
+#else
     public LocalBase Db => (LocalBase)Inner.Db;
+#endif
+    public DatabaseEnvironment Env { get; } = DatabaseEnvironment.Instance;
+    public Identity Sender => Inner.Sender;
     public Timestamp Timestamp => Inner.Timestamp;
+    public AuthCtx SenderAuth => Inner.SenderAuth;
     public Random Rng => Inner.Rng;
 }
 
-internal sealed partial class RuntimeHandlerContext(Random random, Timestamp timestamp)
-    : HandlerContextBase(random, timestamp)
+internal sealed partial class RuntimeHandlerContext(
+    Identity sender,
+    string? senderJwt,
+    Random random,
+    Timestamp timestamp
+) : HandlerContextBase(sender, senderJwt, random, timestamp)
 {
     private readonly RuntimeLocal _db = new();
 
-    protected internal override LocalBase CreateLocal() => _db;
+    protected override LocalBase CreateLocal() => _db;
 
     protected override HandlerTxContextBase CreateTxContext(Internal.TxContext inner) =>
         _cached ??= new RuntimeHandlerTxContext(inner);

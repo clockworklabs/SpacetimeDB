@@ -484,6 +484,4238 @@ void URemoteTables::Initialize()
 	/**/
 }
 
+void URemoteReducers::DeleteAllOneBool(const bool B)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneBoolArgs ReducerArgs(B);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_bool"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneBool(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneBool(const FReducerEventContext& Context, const UDeleteAllOneBoolReducer* Args)
+{
+    if (!OnDeleteAllOneBool.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneBool"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneBool.Broadcast(Context, Args->B);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneBoolWithArgs(const FReducerEventContext& Context, const FDeleteAllOneBoolArgs& Args)
+{
+    if (!OnDeleteAllOneBool.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneBool"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneBool.Broadcast(Context, Args.B);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneByteStruct(const FByteStructType& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneByteStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_byte_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneByteStruct(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneByteStruct(const FReducerEventContext& Context, const UDeleteAllOneByteStructReducer* Args)
+{
+    if (!OnDeleteAllOneByteStruct.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneByteStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneByteStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneByteStructWithArgs(const FReducerEventContext& Context, const FDeleteAllOneByteStructArgs& Args)
+{
+    if (!OnDeleteAllOneByteStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneByteStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneByteStruct.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneEnumWithPayload(const FEnumWithPayloadType& E)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneEnumWithPayloadArgs ReducerArgs(E);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_enum_with_payload"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneEnumWithPayload(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneEnumWithPayload(const FReducerEventContext& Context, const UDeleteAllOneEnumWithPayloadReducer* Args)
+{
+    if (!OnDeleteAllOneEnumWithPayload.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneEnumWithPayload"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneEnumWithPayload.Broadcast(Context, Args->E);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneEnumWithPayloadWithArgs(const FReducerEventContext& Context, const FDeleteAllOneEnumWithPayloadArgs& Args)
+{
+    if (!OnDeleteAllOneEnumWithPayload.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneEnumWithPayload"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneEnumWithPayload.Broadcast(Context, Args.E);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneEveryPrimitiveStruct(const FEveryPrimitiveStructType& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneEveryPrimitiveStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_every_primitive_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneEveryPrimitiveStruct(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneEveryPrimitiveStruct(const FReducerEventContext& Context, const UDeleteAllOneEveryPrimitiveStructReducer* Args)
+{
+    if (!OnDeleteAllOneEveryPrimitiveStruct.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneEveryPrimitiveStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneEveryPrimitiveStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneEveryPrimitiveStructWithArgs(const FReducerEventContext& Context, const FDeleteAllOneEveryPrimitiveStructArgs& Args)
+{
+    if (!OnDeleteAllOneEveryPrimitiveStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneEveryPrimitiveStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneEveryPrimitiveStruct.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneEveryVecStruct(const FEveryVecStructType& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneEveryVecStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_every_vec_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneEveryVecStruct(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneEveryVecStruct(const FReducerEventContext& Context, const UDeleteAllOneEveryVecStructReducer* Args)
+{
+    if (!OnDeleteAllOneEveryVecStruct.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneEveryVecStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneEveryVecStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneEveryVecStructWithArgs(const FReducerEventContext& Context, const FDeleteAllOneEveryVecStructArgs& Args)
+{
+    if (!OnDeleteAllOneEveryVecStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneEveryVecStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneEveryVecStruct.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneF32(const float F)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneF32Args ReducerArgs(F);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_f_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneF32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneF32(const FReducerEventContext& Context, const UDeleteAllOneF32Reducer* Args)
+{
+    if (!OnDeleteAllOneF32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneF32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneF32.Broadcast(Context, Args->F);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneF32WithArgs(const FReducerEventContext& Context, const FDeleteAllOneF32Args& Args)
+{
+    if (!OnDeleteAllOneF32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneF32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneF32.Broadcast(Context, Args.F);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneF64(const double F)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneF64Args ReducerArgs(F);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_f_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneF64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneF64(const FReducerEventContext& Context, const UDeleteAllOneF64Reducer* Args)
+{
+    if (!OnDeleteAllOneF64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneF64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneF64.Broadcast(Context, Args->F);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneF64WithArgs(const FReducerEventContext& Context, const FDeleteAllOneF64Args& Args)
+{
+    if (!OnDeleteAllOneF64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneF64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneF64.Broadcast(Context, Args.F);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneI128(const FSpacetimeDBInt128& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneI128Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_i_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneI128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI128(const FReducerEventContext& Context, const UDeleteAllOneI128Reducer* Args)
+{
+    if (!OnDeleteAllOneI128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI128.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI128WithArgs(const FReducerEventContext& Context, const FDeleteAllOneI128Args& Args)
+{
+    if (!OnDeleteAllOneI128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI128.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneI16(const int16 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneI16Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_i_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneI16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI16(const FReducerEventContext& Context, const UDeleteAllOneI16Reducer* Args)
+{
+    if (!OnDeleteAllOneI16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI16.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI16WithArgs(const FReducerEventContext& Context, const FDeleteAllOneI16Args& Args)
+{
+    if (!OnDeleteAllOneI16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI16.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneI256(const FSpacetimeDBInt256& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneI256Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_i_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneI256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI256(const FReducerEventContext& Context, const UDeleteAllOneI256Reducer* Args)
+{
+    if (!OnDeleteAllOneI256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI256.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI256WithArgs(const FReducerEventContext& Context, const FDeleteAllOneI256Args& Args)
+{
+    if (!OnDeleteAllOneI256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI256.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneI32(const int32 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneI32Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneI32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI32(const FReducerEventContext& Context, const UDeleteAllOneI32Reducer* Args)
+{
+    if (!OnDeleteAllOneI32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI32.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI32WithArgs(const FReducerEventContext& Context, const FDeleteAllOneI32Args& Args)
+{
+    if (!OnDeleteAllOneI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI32.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneI64(const int64 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneI64Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_i_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneI64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI64(const FReducerEventContext& Context, const UDeleteAllOneI64Reducer* Args)
+{
+    if (!OnDeleteAllOneI64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI64.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI64WithArgs(const FReducerEventContext& Context, const FDeleteAllOneI64Args& Args)
+{
+    if (!OnDeleteAllOneI64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI64.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneI8(const int8 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneI8Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_i_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneI8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI8(const FReducerEventContext& Context, const UDeleteAllOneI8Reducer* Args)
+{
+    if (!OnDeleteAllOneI8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI8.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI8WithArgs(const FReducerEventContext& Context, const FDeleteAllOneI8Args& Args)
+{
+    if (!OnDeleteAllOneI8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI8.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneIdentity(const FSpacetimeDBIdentity& I)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneIdentityArgs ReducerArgs(I);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneIdentity(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneIdentity(const FReducerEventContext& Context, const UDeleteAllOneIdentityReducer* Args)
+{
+    if (!OnDeleteAllOneIdentity.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneIdentity.Broadcast(Context, Args->I);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneIdentityWithArgs(const FReducerEventContext& Context, const FDeleteAllOneIdentityArgs& Args)
+{
+    if (!OnDeleteAllOneIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneIdentity.Broadcast(Context, Args.I);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneSimpleEnum(const ESimpleEnumType& E)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneSimpleEnumArgs ReducerArgs(E);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_simple_enum"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneSimpleEnum(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneSimpleEnum(const FReducerEventContext& Context, const UDeleteAllOneSimpleEnumReducer* Args)
+{
+    if (!OnDeleteAllOneSimpleEnum.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneSimpleEnum"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneSimpleEnum.Broadcast(Context, Args->E);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneSimpleEnumWithArgs(const FReducerEventContext& Context, const FDeleteAllOneSimpleEnumArgs& Args)
+{
+    if (!OnDeleteAllOneSimpleEnum.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneSimpleEnum"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneSimpleEnum.Broadcast(Context, Args.E);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneString(const FString& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneStringArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneString(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneString(const FReducerEventContext& Context, const UDeleteAllOneStringReducer* Args)
+{
+    if (!OnDeleteAllOneString.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneString"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneString.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneStringWithArgs(const FReducerEventContext& Context, const FDeleteAllOneStringArgs& Args)
+{
+    if (!OnDeleteAllOneString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneString"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneString.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneTimestamp(const FSpacetimeDBTimestamp& T)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneTimestampArgs ReducerArgs(T);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_timestamp"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneTimestamp(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneTimestamp(const FReducerEventContext& Context, const UDeleteAllOneTimestampReducer* Args)
+{
+    if (!OnDeleteAllOneTimestamp.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneTimestamp"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneTimestamp.Broadcast(Context, Args->T);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneTimestampWithArgs(const FReducerEventContext& Context, const FDeleteAllOneTimestampArgs& Args)
+{
+    if (!OnDeleteAllOneTimestamp.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneTimestamp"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneTimestamp.Broadcast(Context, Args.T);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneU128(const FSpacetimeDBUInt128& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneU128Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_u_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneU128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU128(const FReducerEventContext& Context, const UDeleteAllOneU128Reducer* Args)
+{
+    if (!OnDeleteAllOneU128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU128.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU128WithArgs(const FReducerEventContext& Context, const FDeleteAllOneU128Args& Args)
+{
+    if (!OnDeleteAllOneU128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU128.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneU16(const uint16 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneU16Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_u_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneU16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU16(const FReducerEventContext& Context, const UDeleteAllOneU16Reducer* Args)
+{
+    if (!OnDeleteAllOneU16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU16.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU16WithArgs(const FReducerEventContext& Context, const FDeleteAllOneU16Args& Args)
+{
+    if (!OnDeleteAllOneU16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU16.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneU256(const FSpacetimeDBUInt256& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneU256Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_u_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneU256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU256(const FReducerEventContext& Context, const UDeleteAllOneU256Reducer* Args)
+{
+    if (!OnDeleteAllOneU256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU256.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU256WithArgs(const FReducerEventContext& Context, const FDeleteAllOneU256Args& Args)
+{
+    if (!OnDeleteAllOneU256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU256.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneU32(const uint32 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneU32Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneU32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU32(const FReducerEventContext& Context, const UDeleteAllOneU32Reducer* Args)
+{
+    if (!OnDeleteAllOneU32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU32.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU32WithArgs(const FReducerEventContext& Context, const FDeleteAllOneU32Args& Args)
+{
+    if (!OnDeleteAllOneU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU32.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneU64(const uint64 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneU64Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_u_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneU64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU64(const FReducerEventContext& Context, const UDeleteAllOneU64Reducer* Args)
+{
+    if (!OnDeleteAllOneU64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU64.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU64WithArgs(const FReducerEventContext& Context, const FDeleteAllOneU64Args& Args)
+{
+    if (!OnDeleteAllOneU64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU64.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneU8(const uint8 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneU8Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_u_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneU8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU8(const FReducerEventContext& Context, const UDeleteAllOneU8Reducer* Args)
+{
+    if (!OnDeleteAllOneU8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU8.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU8WithArgs(const FReducerEventContext& Context, const FDeleteAllOneU8Args& Args)
+{
+    if (!OnDeleteAllOneU8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU8.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneUnitStruct(const FUnitStructType& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneUnitStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_unit_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneUnitStruct(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneUnitStruct(const FReducerEventContext& Context, const UDeleteAllOneUnitStructReducer* Args)
+{
+    if (!OnDeleteAllOneUnitStruct.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneUnitStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneUnitStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneUnitStructWithArgs(const FReducerEventContext& Context, const FDeleteAllOneUnitStructArgs& Args)
+{
+    if (!OnDeleteAllOneUnitStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneUnitStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneUnitStruct.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneUuid(const FSpacetimeDBUuid& U)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneUuidArgs ReducerArgs(U);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneUuid(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneUuid(const FReducerEventContext& Context, const UDeleteAllOneUuidReducer* Args)
+{
+    if (!OnDeleteAllOneUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneUuid.Broadcast(Context, Args->U);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneUuidWithArgs(const FReducerEventContext& Context, const FDeleteAllOneUuidArgs& Args)
+{
+    if (!OnDeleteAllOneUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneUuid.Broadcast(Context, Args.U);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOptionEveryPrimitiveStruct(const FTestClientOptionalEveryPrimitiveStruct& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOptionEveryPrimitiveStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_option_every_primitive_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOptionEveryPrimitiveStruct(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionEveryPrimitiveStruct(const FReducerEventContext& Context, const UDeleteAllOptionEveryPrimitiveStructReducer* Args)
+{
+    if (!OnDeleteAllOptionEveryPrimitiveStruct.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionEveryPrimitiveStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionEveryPrimitiveStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionEveryPrimitiveStructWithArgs(const FReducerEventContext& Context, const FDeleteAllOptionEveryPrimitiveStructArgs& Args)
+{
+    if (!OnDeleteAllOptionEveryPrimitiveStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionEveryPrimitiveStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionEveryPrimitiveStruct.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOptionI32(const FTestClientOptionalInt32 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOptionI32Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_option_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOptionI32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionI32(const FReducerEventContext& Context, const UDeleteAllOptionI32Reducer* Args)
+{
+    if (!OnDeleteAllOptionI32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionI32.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionI32WithArgs(const FReducerEventContext& Context, const FDeleteAllOptionI32Args& Args)
+{
+    if (!OnDeleteAllOptionI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionI32.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOptionIdentity(const FTestClientOptionalIdentity& I)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOptionIdentityArgs ReducerArgs(I);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_option_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOptionIdentity(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionIdentity(const FReducerEventContext& Context, const UDeleteAllOptionIdentityReducer* Args)
+{
+    if (!OnDeleteAllOptionIdentity.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionIdentity.Broadcast(Context, Args->I);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionIdentityWithArgs(const FReducerEventContext& Context, const FDeleteAllOptionIdentityArgs& Args)
+{
+    if (!OnDeleteAllOptionIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionIdentity.Broadcast(Context, Args.I);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOptionSimpleEnum(const FTestClientOptionalSimpleEnum& E)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOptionSimpleEnumArgs ReducerArgs(E);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_option_simple_enum"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOptionSimpleEnum(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionSimpleEnum(const FReducerEventContext& Context, const UDeleteAllOptionSimpleEnumReducer* Args)
+{
+    if (!OnDeleteAllOptionSimpleEnum.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionSimpleEnum"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionSimpleEnum.Broadcast(Context, Args->E);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionSimpleEnumWithArgs(const FReducerEventContext& Context, const FDeleteAllOptionSimpleEnumArgs& Args)
+{
+    if (!OnDeleteAllOptionSimpleEnum.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionSimpleEnum"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionSimpleEnum.Broadcast(Context, Args.E);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOptionString(const FTestClientOptionalString& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOptionStringArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_option_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOptionString(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionString(const FReducerEventContext& Context, const UDeleteAllOptionStringReducer* Args)
+{
+    if (!OnDeleteAllOptionString.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionString"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionString.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionStringWithArgs(const FReducerEventContext& Context, const FDeleteAllOptionStringArgs& Args)
+{
+    if (!OnDeleteAllOptionString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionString"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionString.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOptionUuid(const FTestClientOptionalUuid& U)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOptionUuidArgs ReducerArgs(U);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_option_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOptionUuid(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionUuid(const FReducerEventContext& Context, const UDeleteAllOptionUuidReducer* Args)
+{
+    if (!OnDeleteAllOptionUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionUuid.Broadcast(Context, Args->U);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionUuidWithArgs(const FReducerEventContext& Context, const FDeleteAllOptionUuidArgs& Args)
+{
+    if (!OnDeleteAllOptionUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionUuid.Broadcast(Context, Args.U);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOptionVecOptionI32(const FTestClientOptionalVecOptionalInt32& V)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOptionVecOptionI32Args ReducerArgs(V);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_option_vec_option_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOptionVecOptionI32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionVecOptionI32(const FReducerEventContext& Context, const UDeleteAllOptionVecOptionI32Reducer* Args)
+{
+    if (!OnDeleteAllOptionVecOptionI32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionVecOptionI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionVecOptionI32.Broadcast(Context, Args->V);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionVecOptionI32WithArgs(const FReducerEventContext& Context, const FDeleteAllOptionVecOptionI32Args& Args)
+{
+    if (!OnDeleteAllOptionVecOptionI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionVecOptionI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionVecOptionI32.Broadcast(Context, Args.V);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkBool(const bool B, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkBoolArgs ReducerArgs(B, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_bool"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkBool(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkBool(const FReducerEventContext& Context, const UDeleteAllPkBoolReducer* Args)
+{
+    if (!OnDeleteAllPkBool.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkBool"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkBool.Broadcast(Context, Args->B, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkBoolWithArgs(const FReducerEventContext& Context, const FDeleteAllPkBoolArgs& Args)
+{
+    if (!OnDeleteAllPkBool.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkBool"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkBool.Broadcast(Context, Args.B, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkConnectionId(const FSpacetimeDBConnectionId& A, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkConnectionIdArgs ReducerArgs(A, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_connection_id"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkConnectionId(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkConnectionId(const FReducerEventContext& Context, const UDeleteAllPkConnectionIdReducer* Args)
+{
+    if (!OnDeleteAllPkConnectionId.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkConnectionId"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkConnectionId.Broadcast(Context, Args->A, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkConnectionIdWithArgs(const FReducerEventContext& Context, const FDeleteAllPkConnectionIdArgs& Args)
+{
+    if (!OnDeleteAllPkConnectionId.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkConnectionId"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkConnectionId.Broadcast(Context, Args.A, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkI128(const FSpacetimeDBInt128& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkI128Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_i_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkI128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI128(const FReducerEventContext& Context, const UDeleteAllPkI128Reducer* Args)
+{
+    if (!OnDeleteAllPkI128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI128.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI128WithArgs(const FReducerEventContext& Context, const FDeleteAllPkI128Args& Args)
+{
+    if (!OnDeleteAllPkI128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI128.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkI16(const int16 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkI16Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_i_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkI16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI16(const FReducerEventContext& Context, const UDeleteAllPkI16Reducer* Args)
+{
+    if (!OnDeleteAllPkI16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI16.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI16WithArgs(const FReducerEventContext& Context, const FDeleteAllPkI16Args& Args)
+{
+    if (!OnDeleteAllPkI16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI16.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkI256(const FSpacetimeDBInt256& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkI256Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_i_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkI256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI256(const FReducerEventContext& Context, const UDeleteAllPkI256Reducer* Args)
+{
+    if (!OnDeleteAllPkI256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI256.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI256WithArgs(const FReducerEventContext& Context, const FDeleteAllPkI256Args& Args)
+{
+    if (!OnDeleteAllPkI256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI256.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkI32(const int32 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkI32Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkI32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI32(const FReducerEventContext& Context, const UDeleteAllPkI32Reducer* Args)
+{
+    if (!OnDeleteAllPkI32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI32.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI32WithArgs(const FReducerEventContext& Context, const FDeleteAllPkI32Args& Args)
+{
+    if (!OnDeleteAllPkI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI32.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkI64(const int64 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkI64Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_i_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkI64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI64(const FReducerEventContext& Context, const UDeleteAllPkI64Reducer* Args)
+{
+    if (!OnDeleteAllPkI64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI64.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI64WithArgs(const FReducerEventContext& Context, const FDeleteAllPkI64Args& Args)
+{
+    if (!OnDeleteAllPkI64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI64.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkI8(const int8 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkI8Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_i_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkI8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI8(const FReducerEventContext& Context, const UDeleteAllPkI8Reducer* Args)
+{
+    if (!OnDeleteAllPkI8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI8.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI8WithArgs(const FReducerEventContext& Context, const FDeleteAllPkI8Args& Args)
+{
+    if (!OnDeleteAllPkI8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI8.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkIdentity(const FSpacetimeDBIdentity& I, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkIdentityArgs ReducerArgs(I, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkIdentity(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkIdentity(const FReducerEventContext& Context, const UDeleteAllPkIdentityReducer* Args)
+{
+    if (!OnDeleteAllPkIdentity.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkIdentity.Broadcast(Context, Args->I, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkIdentityWithArgs(const FReducerEventContext& Context, const FDeleteAllPkIdentityArgs& Args)
+{
+    if (!OnDeleteAllPkIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkIdentity.Broadcast(Context, Args.I, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkString(const FString& S, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkStringArgs ReducerArgs(S, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkString(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkString(const FReducerEventContext& Context, const UDeleteAllPkStringReducer* Args)
+{
+    if (!OnDeleteAllPkString.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkString"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkString.Broadcast(Context, Args->S, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkStringWithArgs(const FReducerEventContext& Context, const FDeleteAllPkStringArgs& Args)
+{
+    if (!OnDeleteAllPkString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkString"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkString.Broadcast(Context, Args.S, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkU128(const FSpacetimeDBUInt128& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkU128Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_u_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkU128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU128(const FReducerEventContext& Context, const UDeleteAllPkU128Reducer* Args)
+{
+    if (!OnDeleteAllPkU128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU128.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU128WithArgs(const FReducerEventContext& Context, const FDeleteAllPkU128Args& Args)
+{
+    if (!OnDeleteAllPkU128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU128.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkU16(const uint16 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkU16Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_u_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkU16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU16(const FReducerEventContext& Context, const UDeleteAllPkU16Reducer* Args)
+{
+    if (!OnDeleteAllPkU16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU16.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU16WithArgs(const FReducerEventContext& Context, const FDeleteAllPkU16Args& Args)
+{
+    if (!OnDeleteAllPkU16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU16.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkU256(const FSpacetimeDBUInt256& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkU256Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_u_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkU256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU256(const FReducerEventContext& Context, const UDeleteAllPkU256Reducer* Args)
+{
+    if (!OnDeleteAllPkU256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU256.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU256WithArgs(const FReducerEventContext& Context, const FDeleteAllPkU256Args& Args)
+{
+    if (!OnDeleteAllPkU256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU256.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkU32(const uint32 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkU32Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkU32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU32(const FReducerEventContext& Context, const UDeleteAllPkU32Reducer* Args)
+{
+    if (!OnDeleteAllPkU32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU32.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU32WithArgs(const FReducerEventContext& Context, const FDeleteAllPkU32Args& Args)
+{
+    if (!OnDeleteAllPkU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU32.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkU32Two(const uint32 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkU32TwoArgs ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_u_32_two"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkU32Two(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU32Two(const FReducerEventContext& Context, const UDeleteAllPkU32TwoReducer* Args)
+{
+    if (!OnDeleteAllPkU32Two.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU32Two"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU32Two.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU32TwoWithArgs(const FReducerEventContext& Context, const FDeleteAllPkU32TwoArgs& Args)
+{
+    if (!OnDeleteAllPkU32Two.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU32Two"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU32Two.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkU64(const uint64 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkU64Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_u_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkU64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU64(const FReducerEventContext& Context, const UDeleteAllPkU64Reducer* Args)
+{
+    if (!OnDeleteAllPkU64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU64.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU64WithArgs(const FReducerEventContext& Context, const FDeleteAllPkU64Args& Args)
+{
+    if (!OnDeleteAllPkU64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU64.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkU8(const uint8 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkU8Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_u_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkU8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU8(const FReducerEventContext& Context, const UDeleteAllPkU8Reducer* Args)
+{
+    if (!OnDeleteAllPkU8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU8.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU8WithArgs(const FReducerEventContext& Context, const FDeleteAllPkU8Args& Args)
+{
+    if (!OnDeleteAllPkU8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU8.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkUuid(const FSpacetimeDBUuid& U, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkUuidArgs ReducerArgs(U, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkUuid(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkUuid(const FReducerEventContext& Context, const UDeleteAllPkUuidReducer* Args)
+{
+    if (!OnDeleteAllPkUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkUuid.Broadcast(Context, Args->U, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkUuidWithArgs(const FReducerEventContext& Context, const FDeleteAllPkUuidArgs& Args)
+{
+    if (!OnDeleteAllPkUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkUuid.Broadcast(Context, Args.U, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueBool(const bool B, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueBoolArgs ReducerArgs(B, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_bool"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueBool(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueBool(const FReducerEventContext& Context, const UDeleteAllUniqueBoolReducer* Args)
+{
+    if (!OnDeleteAllUniqueBool.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueBool"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueBool.Broadcast(Context, Args->B, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueBoolWithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueBoolArgs& Args)
+{
+    if (!OnDeleteAllUniqueBool.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueBool"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueBool.Broadcast(Context, Args.B, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueConnectionId(const FSpacetimeDBConnectionId& A, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueConnectionIdArgs ReducerArgs(A, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_connection_id"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueConnectionId(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueConnectionId(const FReducerEventContext& Context, const UDeleteAllUniqueConnectionIdReducer* Args)
+{
+    if (!OnDeleteAllUniqueConnectionId.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueConnectionId"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueConnectionId.Broadcast(Context, Args->A, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueConnectionIdWithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueConnectionIdArgs& Args)
+{
+    if (!OnDeleteAllUniqueConnectionId.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueConnectionId"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueConnectionId.Broadcast(Context, Args.A, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueI128(const FSpacetimeDBInt128& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueI128Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_i_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueI128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI128(const FReducerEventContext& Context, const UDeleteAllUniqueI128Reducer* Args)
+{
+    if (!OnDeleteAllUniqueI128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI128.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI128WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueI128Args& Args)
+{
+    if (!OnDeleteAllUniqueI128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI128.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueI16(const int16 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueI16Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_i_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueI16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI16(const FReducerEventContext& Context, const UDeleteAllUniqueI16Reducer* Args)
+{
+    if (!OnDeleteAllUniqueI16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI16.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI16WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueI16Args& Args)
+{
+    if (!OnDeleteAllUniqueI16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI16.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueI256(const FSpacetimeDBInt256& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueI256Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_i_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueI256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI256(const FReducerEventContext& Context, const UDeleteAllUniqueI256Reducer* Args)
+{
+    if (!OnDeleteAllUniqueI256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI256.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI256WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueI256Args& Args)
+{
+    if (!OnDeleteAllUniqueI256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI256.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueI32(const int32 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueI32Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueI32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI32(const FReducerEventContext& Context, const UDeleteAllUniqueI32Reducer* Args)
+{
+    if (!OnDeleteAllUniqueI32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI32.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI32WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueI32Args& Args)
+{
+    if (!OnDeleteAllUniqueI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI32.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueI64(const int64 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueI64Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_i_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueI64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI64(const FReducerEventContext& Context, const UDeleteAllUniqueI64Reducer* Args)
+{
+    if (!OnDeleteAllUniqueI64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI64.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI64WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueI64Args& Args)
+{
+    if (!OnDeleteAllUniqueI64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI64.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueI8(const int8 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueI8Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_i_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueI8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI8(const FReducerEventContext& Context, const UDeleteAllUniqueI8Reducer* Args)
+{
+    if (!OnDeleteAllUniqueI8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI8.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI8WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueI8Args& Args)
+{
+    if (!OnDeleteAllUniqueI8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI8.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueIdentity(const FSpacetimeDBIdentity& I, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueIdentityArgs ReducerArgs(I, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueIdentity(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueIdentity(const FReducerEventContext& Context, const UDeleteAllUniqueIdentityReducer* Args)
+{
+    if (!OnDeleteAllUniqueIdentity.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueIdentity.Broadcast(Context, Args->I, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueIdentityWithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueIdentityArgs& Args)
+{
+    if (!OnDeleteAllUniqueIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueIdentity.Broadcast(Context, Args.I, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueString(const FString& S, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueStringArgs ReducerArgs(S, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueString(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueString(const FReducerEventContext& Context, const UDeleteAllUniqueStringReducer* Args)
+{
+    if (!OnDeleteAllUniqueString.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueString"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueString.Broadcast(Context, Args->S, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueStringWithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueStringArgs& Args)
+{
+    if (!OnDeleteAllUniqueString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueString"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueString.Broadcast(Context, Args.S, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueU128(const FSpacetimeDBUInt128& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueU128Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_u_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueU128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU128(const FReducerEventContext& Context, const UDeleteAllUniqueU128Reducer* Args)
+{
+    if (!OnDeleteAllUniqueU128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU128.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU128WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueU128Args& Args)
+{
+    if (!OnDeleteAllUniqueU128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU128.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueU16(const uint16 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueU16Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_u_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueU16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU16(const FReducerEventContext& Context, const UDeleteAllUniqueU16Reducer* Args)
+{
+    if (!OnDeleteAllUniqueU16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU16.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU16WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueU16Args& Args)
+{
+    if (!OnDeleteAllUniqueU16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU16.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueU256(const FSpacetimeDBUInt256& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueU256Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_u_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueU256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU256(const FReducerEventContext& Context, const UDeleteAllUniqueU256Reducer* Args)
+{
+    if (!OnDeleteAllUniqueU256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU256.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU256WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueU256Args& Args)
+{
+    if (!OnDeleteAllUniqueU256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU256.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueU32(const uint32 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueU32Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueU32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU32(const FReducerEventContext& Context, const UDeleteAllUniqueU32Reducer* Args)
+{
+    if (!OnDeleteAllUniqueU32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU32.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU32WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueU32Args& Args)
+{
+    if (!OnDeleteAllUniqueU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU32.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueU64(const uint64 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueU64Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_u_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueU64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU64(const FReducerEventContext& Context, const UDeleteAllUniqueU64Reducer* Args)
+{
+    if (!OnDeleteAllUniqueU64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU64.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU64WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueU64Args& Args)
+{
+    if (!OnDeleteAllUniqueU64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU64.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueU8(const uint8 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueU8Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_u_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueU8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU8(const FReducerEventContext& Context, const UDeleteAllUniqueU8Reducer* Args)
+{
+    if (!OnDeleteAllUniqueU8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU8.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU8WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueU8Args& Args)
+{
+    if (!OnDeleteAllUniqueU8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU8.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueUuid(const FSpacetimeDBUuid& U, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueUuidArgs ReducerArgs(U, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueUuid(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueUuid(const FReducerEventContext& Context, const UDeleteAllUniqueUuidReducer* Args)
+{
+    if (!OnDeleteAllUniqueUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueUuid.Broadcast(Context, Args->U, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueUuidWithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueUuidArgs& Args)
+{
+    if (!OnDeleteAllUniqueUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueUuid.Broadcast(Context, Args.U, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecBool(const TArray<bool>& B)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecBoolArgs ReducerArgs(B);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_bool"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecBool(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecBool(const FReducerEventContext& Context, const UDeleteAllVecBoolReducer* Args)
+{
+    if (!OnDeleteAllVecBool.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecBool"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecBool.Broadcast(Context, Args->B);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecBoolWithArgs(const FReducerEventContext& Context, const FDeleteAllVecBoolArgs& Args)
+{
+    if (!OnDeleteAllVecBool.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecBool"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecBool.Broadcast(Context, Args.B);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecByteStruct(const TArray<FByteStructType>& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecByteStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_byte_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecByteStruct(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecByteStruct(const FReducerEventContext& Context, const UDeleteAllVecByteStructReducer* Args)
+{
+    if (!OnDeleteAllVecByteStruct.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecByteStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecByteStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecByteStructWithArgs(const FReducerEventContext& Context, const FDeleteAllVecByteStructArgs& Args)
+{
+    if (!OnDeleteAllVecByteStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecByteStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecByteStruct.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecEnumWithPayload(const TArray<FEnumWithPayloadType>& E)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecEnumWithPayloadArgs ReducerArgs(E);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_enum_with_payload"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecEnumWithPayload(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecEnumWithPayload(const FReducerEventContext& Context, const UDeleteAllVecEnumWithPayloadReducer* Args)
+{
+    if (!OnDeleteAllVecEnumWithPayload.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecEnumWithPayload"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecEnumWithPayload.Broadcast(Context, Args->E);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecEnumWithPayloadWithArgs(const FReducerEventContext& Context, const FDeleteAllVecEnumWithPayloadArgs& Args)
+{
+    if (!OnDeleteAllVecEnumWithPayload.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecEnumWithPayload"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecEnumWithPayload.Broadcast(Context, Args.E);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecEveryPrimitiveStruct(const TArray<FEveryPrimitiveStructType>& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecEveryPrimitiveStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_every_primitive_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecEveryPrimitiveStruct(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecEveryPrimitiveStruct(const FReducerEventContext& Context, const UDeleteAllVecEveryPrimitiveStructReducer* Args)
+{
+    if (!OnDeleteAllVecEveryPrimitiveStruct.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecEveryPrimitiveStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecEveryPrimitiveStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecEveryPrimitiveStructWithArgs(const FReducerEventContext& Context, const FDeleteAllVecEveryPrimitiveStructArgs& Args)
+{
+    if (!OnDeleteAllVecEveryPrimitiveStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecEveryPrimitiveStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecEveryPrimitiveStruct.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecEveryVecStruct(const TArray<FEveryVecStructType>& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecEveryVecStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_every_vec_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecEveryVecStruct(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecEveryVecStruct(const FReducerEventContext& Context, const UDeleteAllVecEveryVecStructReducer* Args)
+{
+    if (!OnDeleteAllVecEveryVecStruct.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecEveryVecStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecEveryVecStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecEveryVecStructWithArgs(const FReducerEventContext& Context, const FDeleteAllVecEveryVecStructArgs& Args)
+{
+    if (!OnDeleteAllVecEveryVecStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecEveryVecStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecEveryVecStruct.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecF32(const TArray<float>& F)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecF32Args ReducerArgs(F);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_f_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecF32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecF32(const FReducerEventContext& Context, const UDeleteAllVecF32Reducer* Args)
+{
+    if (!OnDeleteAllVecF32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecF32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecF32.Broadcast(Context, Args->F);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecF32WithArgs(const FReducerEventContext& Context, const FDeleteAllVecF32Args& Args)
+{
+    if (!OnDeleteAllVecF32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecF32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecF32.Broadcast(Context, Args.F);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecF64(const TArray<double>& F)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecF64Args ReducerArgs(F);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_f_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecF64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecF64(const FReducerEventContext& Context, const UDeleteAllVecF64Reducer* Args)
+{
+    if (!OnDeleteAllVecF64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecF64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecF64.Broadcast(Context, Args->F);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecF64WithArgs(const FReducerEventContext& Context, const FDeleteAllVecF64Args& Args)
+{
+    if (!OnDeleteAllVecF64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecF64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecF64.Broadcast(Context, Args.F);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecI128(const TArray<FSpacetimeDBInt128>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecI128Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_i_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecI128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI128(const FReducerEventContext& Context, const UDeleteAllVecI128Reducer* Args)
+{
+    if (!OnDeleteAllVecI128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI128.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI128WithArgs(const FReducerEventContext& Context, const FDeleteAllVecI128Args& Args)
+{
+    if (!OnDeleteAllVecI128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI128.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecI16(const TArray<int16>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecI16Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_i_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecI16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI16(const FReducerEventContext& Context, const UDeleteAllVecI16Reducer* Args)
+{
+    if (!OnDeleteAllVecI16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI16.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI16WithArgs(const FReducerEventContext& Context, const FDeleteAllVecI16Args& Args)
+{
+    if (!OnDeleteAllVecI16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI16.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecI256(const TArray<FSpacetimeDBInt256>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecI256Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_i_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecI256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI256(const FReducerEventContext& Context, const UDeleteAllVecI256Reducer* Args)
+{
+    if (!OnDeleteAllVecI256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI256.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI256WithArgs(const FReducerEventContext& Context, const FDeleteAllVecI256Args& Args)
+{
+    if (!OnDeleteAllVecI256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI256.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecI32(const TArray<int32>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecI32Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecI32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI32(const FReducerEventContext& Context, const UDeleteAllVecI32Reducer* Args)
+{
+    if (!OnDeleteAllVecI32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI32.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI32WithArgs(const FReducerEventContext& Context, const FDeleteAllVecI32Args& Args)
+{
+    if (!OnDeleteAllVecI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI32.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecI64(const TArray<int64>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecI64Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_i_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecI64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI64(const FReducerEventContext& Context, const UDeleteAllVecI64Reducer* Args)
+{
+    if (!OnDeleteAllVecI64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI64.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI64WithArgs(const FReducerEventContext& Context, const FDeleteAllVecI64Args& Args)
+{
+    if (!OnDeleteAllVecI64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI64.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecI8(const TArray<int8>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecI8Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_i_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecI8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI8(const FReducerEventContext& Context, const UDeleteAllVecI8Reducer* Args)
+{
+    if (!OnDeleteAllVecI8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI8.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI8WithArgs(const FReducerEventContext& Context, const FDeleteAllVecI8Args& Args)
+{
+    if (!OnDeleteAllVecI8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI8.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecIdentity(const TArray<FSpacetimeDBIdentity>& I)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecIdentityArgs ReducerArgs(I);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecIdentity(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecIdentity(const FReducerEventContext& Context, const UDeleteAllVecIdentityReducer* Args)
+{
+    if (!OnDeleteAllVecIdentity.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecIdentity.Broadcast(Context, Args->I);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecIdentityWithArgs(const FReducerEventContext& Context, const FDeleteAllVecIdentityArgs& Args)
+{
+    if (!OnDeleteAllVecIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecIdentity.Broadcast(Context, Args.I);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecSimpleEnum(const TArray<ESimpleEnumType>& E)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecSimpleEnumArgs ReducerArgs(E);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_simple_enum"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecSimpleEnum(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecSimpleEnum(const FReducerEventContext& Context, const UDeleteAllVecSimpleEnumReducer* Args)
+{
+    if (!OnDeleteAllVecSimpleEnum.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecSimpleEnum"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecSimpleEnum.Broadcast(Context, Args->E);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecSimpleEnumWithArgs(const FReducerEventContext& Context, const FDeleteAllVecSimpleEnumArgs& Args)
+{
+    if (!OnDeleteAllVecSimpleEnum.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecSimpleEnum"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecSimpleEnum.Broadcast(Context, Args.E);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecString(const TArray<FString>& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecStringArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecString(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecString(const FReducerEventContext& Context, const UDeleteAllVecStringReducer* Args)
+{
+    if (!OnDeleteAllVecString.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecString"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecString.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecStringWithArgs(const FReducerEventContext& Context, const FDeleteAllVecStringArgs& Args)
+{
+    if (!OnDeleteAllVecString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecString"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecString.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecTimestamp(const TArray<FSpacetimeDBTimestamp>& T)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecTimestampArgs ReducerArgs(T);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_timestamp"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecTimestamp(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecTimestamp(const FReducerEventContext& Context, const UDeleteAllVecTimestampReducer* Args)
+{
+    if (!OnDeleteAllVecTimestamp.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecTimestamp"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecTimestamp.Broadcast(Context, Args->T);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecTimestampWithArgs(const FReducerEventContext& Context, const FDeleteAllVecTimestampArgs& Args)
+{
+    if (!OnDeleteAllVecTimestamp.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecTimestamp"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecTimestamp.Broadcast(Context, Args.T);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecU128(const TArray<FSpacetimeDBUInt128>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecU128Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_u_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecU128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU128(const FReducerEventContext& Context, const UDeleteAllVecU128Reducer* Args)
+{
+    if (!OnDeleteAllVecU128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU128.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU128WithArgs(const FReducerEventContext& Context, const FDeleteAllVecU128Args& Args)
+{
+    if (!OnDeleteAllVecU128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU128.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecU16(const TArray<uint16>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecU16Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_u_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecU16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU16(const FReducerEventContext& Context, const UDeleteAllVecU16Reducer* Args)
+{
+    if (!OnDeleteAllVecU16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU16.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU16WithArgs(const FReducerEventContext& Context, const FDeleteAllVecU16Args& Args)
+{
+    if (!OnDeleteAllVecU16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU16.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecU256(const TArray<FSpacetimeDBUInt256>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecU256Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_u_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecU256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU256(const FReducerEventContext& Context, const UDeleteAllVecU256Reducer* Args)
+{
+    if (!OnDeleteAllVecU256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU256.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU256WithArgs(const FReducerEventContext& Context, const FDeleteAllVecU256Args& Args)
+{
+    if (!OnDeleteAllVecU256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU256.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecU32(const TArray<uint32>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecU32Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecU32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU32(const FReducerEventContext& Context, const UDeleteAllVecU32Reducer* Args)
+{
+    if (!OnDeleteAllVecU32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU32.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU32WithArgs(const FReducerEventContext& Context, const FDeleteAllVecU32Args& Args)
+{
+    if (!OnDeleteAllVecU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU32.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecU64(const TArray<uint64>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecU64Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_u_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecU64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU64(const FReducerEventContext& Context, const UDeleteAllVecU64Reducer* Args)
+{
+    if (!OnDeleteAllVecU64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU64.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU64WithArgs(const FReducerEventContext& Context, const FDeleteAllVecU64Args& Args)
+{
+    if (!OnDeleteAllVecU64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU64.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecU8(const TArray<uint8>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecU8Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_u_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecU8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU8(const FReducerEventContext& Context, const UDeleteAllVecU8Reducer* Args)
+{
+    if (!OnDeleteAllVecU8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU8.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU8WithArgs(const FReducerEventContext& Context, const FDeleteAllVecU8Args& Args)
+{
+    if (!OnDeleteAllVecU8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU8.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecUnitStruct(const TArray<FUnitStructType>& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecUnitStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_unit_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecUnitStruct(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecUnitStruct(const FReducerEventContext& Context, const UDeleteAllVecUnitStructReducer* Args)
+{
+    if (!OnDeleteAllVecUnitStruct.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecUnitStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecUnitStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecUnitStructWithArgs(const FReducerEventContext& Context, const FDeleteAllVecUnitStructArgs& Args)
+{
+    if (!OnDeleteAllVecUnitStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecUnitStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecUnitStruct.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecUuid(const TArray<FSpacetimeDBUuid>& U)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecUuidArgs ReducerArgs(U);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecUuid(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecUuid(const FReducerEventContext& Context, const UDeleteAllVecUuidReducer* Args)
+{
+    if (!OnDeleteAllVecUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecUuid.Broadcast(Context, Args->U);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecUuidWithArgs(const FReducerEventContext& Context, const FDeleteAllVecUuidArgs& Args)
+{
+    if (!OnDeleteAllVecUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecUuid.Broadcast(Context, Args.U);
+    return true;
+}
+
 void URemoteReducers::DeleteFromBtreeU32(const TArray<FBTreeU32Type>& Rows)
 {
     if (!Conn)
@@ -9679,6 +13911,558 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
     // Dispatch by typed reducer metadata
     const FString& ReducerName = ReducerEvent.Reducer.ReducerName;
 
+    if (ReducerName == TEXT("delete_all_one_bool"))
+    {
+        FDeleteAllOneBoolArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOneBool();
+        Reducers->InvokeDeleteAllOneBoolWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_byte_struct"))
+    {
+        FDeleteAllOneByteStructArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOneByteStruct();
+        Reducers->InvokeDeleteAllOneByteStructWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_enum_with_payload"))
+    {
+        FDeleteAllOneEnumWithPayloadArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOneEnumWithPayload();
+        Reducers->InvokeDeleteAllOneEnumWithPayloadWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_every_primitive_struct"))
+    {
+        FDeleteAllOneEveryPrimitiveStructArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOneEveryPrimitiveStruct();
+        Reducers->InvokeDeleteAllOneEveryPrimitiveStructWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_every_vec_struct"))
+    {
+        FDeleteAllOneEveryVecStructArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOneEveryVecStruct();
+        Reducers->InvokeDeleteAllOneEveryVecStructWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_f_32"))
+    {
+        FDeleteAllOneF32Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneF32();
+        Reducers->InvokeDeleteAllOneF32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_f_64"))
+    {
+        FDeleteAllOneF64Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneF64();
+        Reducers->InvokeDeleteAllOneF64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_i_128"))
+    {
+        FDeleteAllOneI128Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneI128();
+        Reducers->InvokeDeleteAllOneI128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_i_16"))
+    {
+        FDeleteAllOneI16Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneI16();
+        Reducers->InvokeDeleteAllOneI16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_i_256"))
+    {
+        FDeleteAllOneI256Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneI256();
+        Reducers->InvokeDeleteAllOneI256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_i_32"))
+    {
+        FDeleteAllOneI32Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneI32();
+        Reducers->InvokeDeleteAllOneI32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_i_64"))
+    {
+        FDeleteAllOneI64Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneI64();
+        Reducers->InvokeDeleteAllOneI64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_i_8"))
+    {
+        FDeleteAllOneI8Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneI8();
+        Reducers->InvokeDeleteAllOneI8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_identity"))
+    {
+        FDeleteAllOneIdentityArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOneIdentity();
+        Reducers->InvokeDeleteAllOneIdentityWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_simple_enum"))
+    {
+        FDeleteAllOneSimpleEnumArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOneSimpleEnum();
+        Reducers->InvokeDeleteAllOneSimpleEnumWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_string"))
+    {
+        FDeleteAllOneStringArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOneString();
+        Reducers->InvokeDeleteAllOneStringWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_timestamp"))
+    {
+        FDeleteAllOneTimestampArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOneTimestamp();
+        Reducers->InvokeDeleteAllOneTimestampWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_u_128"))
+    {
+        FDeleteAllOneU128Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneU128();
+        Reducers->InvokeDeleteAllOneU128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_u_16"))
+    {
+        FDeleteAllOneU16Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneU16();
+        Reducers->InvokeDeleteAllOneU16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_u_256"))
+    {
+        FDeleteAllOneU256Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneU256();
+        Reducers->InvokeDeleteAllOneU256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_u_32"))
+    {
+        FDeleteAllOneU32Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneU32();
+        Reducers->InvokeDeleteAllOneU32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_u_64"))
+    {
+        FDeleteAllOneU64Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneU64();
+        Reducers->InvokeDeleteAllOneU64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_u_8"))
+    {
+        FDeleteAllOneU8Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneU8();
+        Reducers->InvokeDeleteAllOneU8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_unit_struct"))
+    {
+        FDeleteAllOneUnitStructArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOneUnitStruct();
+        Reducers->InvokeDeleteAllOneUnitStructWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_uuid"))
+    {
+        FDeleteAllOneUuidArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOneUuid();
+        Reducers->InvokeDeleteAllOneUuidWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_option_every_primitive_struct"))
+    {
+        FDeleteAllOptionEveryPrimitiveStructArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOptionEveryPrimitiveStruct();
+        Reducers->InvokeDeleteAllOptionEveryPrimitiveStructWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_option_i_32"))
+    {
+        FDeleteAllOptionI32Args Args = ReducerEvent.Reducer.GetAsDeleteAllOptionI32();
+        Reducers->InvokeDeleteAllOptionI32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_option_identity"))
+    {
+        FDeleteAllOptionIdentityArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOptionIdentity();
+        Reducers->InvokeDeleteAllOptionIdentityWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_option_simple_enum"))
+    {
+        FDeleteAllOptionSimpleEnumArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOptionSimpleEnum();
+        Reducers->InvokeDeleteAllOptionSimpleEnumWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_option_string"))
+    {
+        FDeleteAllOptionStringArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOptionString();
+        Reducers->InvokeDeleteAllOptionStringWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_option_uuid"))
+    {
+        FDeleteAllOptionUuidArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOptionUuid();
+        Reducers->InvokeDeleteAllOptionUuidWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_option_vec_option_i_32"))
+    {
+        FDeleteAllOptionVecOptionI32Args Args = ReducerEvent.Reducer.GetAsDeleteAllOptionVecOptionI32();
+        Reducers->InvokeDeleteAllOptionVecOptionI32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_bool"))
+    {
+        FDeleteAllPkBoolArgs Args = ReducerEvent.Reducer.GetAsDeleteAllPkBool();
+        Reducers->InvokeDeleteAllPkBoolWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_connection_id"))
+    {
+        FDeleteAllPkConnectionIdArgs Args = ReducerEvent.Reducer.GetAsDeleteAllPkConnectionId();
+        Reducers->InvokeDeleteAllPkConnectionIdWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_i_128"))
+    {
+        FDeleteAllPkI128Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkI128();
+        Reducers->InvokeDeleteAllPkI128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_i_16"))
+    {
+        FDeleteAllPkI16Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkI16();
+        Reducers->InvokeDeleteAllPkI16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_i_256"))
+    {
+        FDeleteAllPkI256Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkI256();
+        Reducers->InvokeDeleteAllPkI256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_i_32"))
+    {
+        FDeleteAllPkI32Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkI32();
+        Reducers->InvokeDeleteAllPkI32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_i_64"))
+    {
+        FDeleteAllPkI64Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkI64();
+        Reducers->InvokeDeleteAllPkI64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_i_8"))
+    {
+        FDeleteAllPkI8Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkI8();
+        Reducers->InvokeDeleteAllPkI8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_identity"))
+    {
+        FDeleteAllPkIdentityArgs Args = ReducerEvent.Reducer.GetAsDeleteAllPkIdentity();
+        Reducers->InvokeDeleteAllPkIdentityWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_string"))
+    {
+        FDeleteAllPkStringArgs Args = ReducerEvent.Reducer.GetAsDeleteAllPkString();
+        Reducers->InvokeDeleteAllPkStringWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_u_128"))
+    {
+        FDeleteAllPkU128Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkU128();
+        Reducers->InvokeDeleteAllPkU128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_u_16"))
+    {
+        FDeleteAllPkU16Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkU16();
+        Reducers->InvokeDeleteAllPkU16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_u_256"))
+    {
+        FDeleteAllPkU256Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkU256();
+        Reducers->InvokeDeleteAllPkU256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_u_32"))
+    {
+        FDeleteAllPkU32Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkU32();
+        Reducers->InvokeDeleteAllPkU32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_u_32_two"))
+    {
+        FDeleteAllPkU32TwoArgs Args = ReducerEvent.Reducer.GetAsDeleteAllPkU32Two();
+        Reducers->InvokeDeleteAllPkU32TwoWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_u_64"))
+    {
+        FDeleteAllPkU64Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkU64();
+        Reducers->InvokeDeleteAllPkU64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_u_8"))
+    {
+        FDeleteAllPkU8Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkU8();
+        Reducers->InvokeDeleteAllPkU8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_uuid"))
+    {
+        FDeleteAllPkUuidArgs Args = ReducerEvent.Reducer.GetAsDeleteAllPkUuid();
+        Reducers->InvokeDeleteAllPkUuidWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_bool"))
+    {
+        FDeleteAllUniqueBoolArgs Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueBool();
+        Reducers->InvokeDeleteAllUniqueBoolWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_connection_id"))
+    {
+        FDeleteAllUniqueConnectionIdArgs Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueConnectionId();
+        Reducers->InvokeDeleteAllUniqueConnectionIdWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_i_128"))
+    {
+        FDeleteAllUniqueI128Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueI128();
+        Reducers->InvokeDeleteAllUniqueI128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_i_16"))
+    {
+        FDeleteAllUniqueI16Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueI16();
+        Reducers->InvokeDeleteAllUniqueI16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_i_256"))
+    {
+        FDeleteAllUniqueI256Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueI256();
+        Reducers->InvokeDeleteAllUniqueI256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_i_32"))
+    {
+        FDeleteAllUniqueI32Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueI32();
+        Reducers->InvokeDeleteAllUniqueI32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_i_64"))
+    {
+        FDeleteAllUniqueI64Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueI64();
+        Reducers->InvokeDeleteAllUniqueI64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_i_8"))
+    {
+        FDeleteAllUniqueI8Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueI8();
+        Reducers->InvokeDeleteAllUniqueI8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_identity"))
+    {
+        FDeleteAllUniqueIdentityArgs Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueIdentity();
+        Reducers->InvokeDeleteAllUniqueIdentityWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_string"))
+    {
+        FDeleteAllUniqueStringArgs Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueString();
+        Reducers->InvokeDeleteAllUniqueStringWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_u_128"))
+    {
+        FDeleteAllUniqueU128Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueU128();
+        Reducers->InvokeDeleteAllUniqueU128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_u_16"))
+    {
+        FDeleteAllUniqueU16Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueU16();
+        Reducers->InvokeDeleteAllUniqueU16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_u_256"))
+    {
+        FDeleteAllUniqueU256Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueU256();
+        Reducers->InvokeDeleteAllUniqueU256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_u_32"))
+    {
+        FDeleteAllUniqueU32Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueU32();
+        Reducers->InvokeDeleteAllUniqueU32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_u_64"))
+    {
+        FDeleteAllUniqueU64Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueU64();
+        Reducers->InvokeDeleteAllUniqueU64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_u_8"))
+    {
+        FDeleteAllUniqueU8Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueU8();
+        Reducers->InvokeDeleteAllUniqueU8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_uuid"))
+    {
+        FDeleteAllUniqueUuidArgs Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueUuid();
+        Reducers->InvokeDeleteAllUniqueUuidWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_bool"))
+    {
+        FDeleteAllVecBoolArgs Args = ReducerEvent.Reducer.GetAsDeleteAllVecBool();
+        Reducers->InvokeDeleteAllVecBoolWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_byte_struct"))
+    {
+        FDeleteAllVecByteStructArgs Args = ReducerEvent.Reducer.GetAsDeleteAllVecByteStruct();
+        Reducers->InvokeDeleteAllVecByteStructWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_enum_with_payload"))
+    {
+        FDeleteAllVecEnumWithPayloadArgs Args = ReducerEvent.Reducer.GetAsDeleteAllVecEnumWithPayload();
+        Reducers->InvokeDeleteAllVecEnumWithPayloadWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_every_primitive_struct"))
+    {
+        FDeleteAllVecEveryPrimitiveStructArgs Args = ReducerEvent.Reducer.GetAsDeleteAllVecEveryPrimitiveStruct();
+        Reducers->InvokeDeleteAllVecEveryPrimitiveStructWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_every_vec_struct"))
+    {
+        FDeleteAllVecEveryVecStructArgs Args = ReducerEvent.Reducer.GetAsDeleteAllVecEveryVecStruct();
+        Reducers->InvokeDeleteAllVecEveryVecStructWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_f_32"))
+    {
+        FDeleteAllVecF32Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecF32();
+        Reducers->InvokeDeleteAllVecF32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_f_64"))
+    {
+        FDeleteAllVecF64Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecF64();
+        Reducers->InvokeDeleteAllVecF64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_i_128"))
+    {
+        FDeleteAllVecI128Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecI128();
+        Reducers->InvokeDeleteAllVecI128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_i_16"))
+    {
+        FDeleteAllVecI16Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecI16();
+        Reducers->InvokeDeleteAllVecI16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_i_256"))
+    {
+        FDeleteAllVecI256Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecI256();
+        Reducers->InvokeDeleteAllVecI256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_i_32"))
+    {
+        FDeleteAllVecI32Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecI32();
+        Reducers->InvokeDeleteAllVecI32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_i_64"))
+    {
+        FDeleteAllVecI64Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecI64();
+        Reducers->InvokeDeleteAllVecI64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_i_8"))
+    {
+        FDeleteAllVecI8Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecI8();
+        Reducers->InvokeDeleteAllVecI8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_identity"))
+    {
+        FDeleteAllVecIdentityArgs Args = ReducerEvent.Reducer.GetAsDeleteAllVecIdentity();
+        Reducers->InvokeDeleteAllVecIdentityWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_simple_enum"))
+    {
+        FDeleteAllVecSimpleEnumArgs Args = ReducerEvent.Reducer.GetAsDeleteAllVecSimpleEnum();
+        Reducers->InvokeDeleteAllVecSimpleEnumWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_string"))
+    {
+        FDeleteAllVecStringArgs Args = ReducerEvent.Reducer.GetAsDeleteAllVecString();
+        Reducers->InvokeDeleteAllVecStringWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_timestamp"))
+    {
+        FDeleteAllVecTimestampArgs Args = ReducerEvent.Reducer.GetAsDeleteAllVecTimestamp();
+        Reducers->InvokeDeleteAllVecTimestampWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_u_128"))
+    {
+        FDeleteAllVecU128Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecU128();
+        Reducers->InvokeDeleteAllVecU128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_u_16"))
+    {
+        FDeleteAllVecU16Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecU16();
+        Reducers->InvokeDeleteAllVecU16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_u_256"))
+    {
+        FDeleteAllVecU256Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecU256();
+        Reducers->InvokeDeleteAllVecU256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_u_32"))
+    {
+        FDeleteAllVecU32Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecU32();
+        Reducers->InvokeDeleteAllVecU32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_u_64"))
+    {
+        FDeleteAllVecU64Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecU64();
+        Reducers->InvokeDeleteAllVecU64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_u_8"))
+    {
+        FDeleteAllVecU8Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecU8();
+        Reducers->InvokeDeleteAllVecU8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_unit_struct"))
+    {
+        FDeleteAllVecUnitStructArgs Args = ReducerEvent.Reducer.GetAsDeleteAllVecUnitStruct();
+        Reducers->InvokeDeleteAllVecUnitStructWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_uuid"))
+    {
+        FDeleteAllVecUuidArgs Args = ReducerEvent.Reducer.GetAsDeleteAllVecUuid();
+        Reducers->InvokeDeleteAllVecUuidWithArgs(Context, Args);
+        return;
+    }
     if (ReducerName == TEXT("delete_from_btree_u_32"))
     {
         FDeleteFromBtreeU32Args Args = ReducerEvent.Reducer.GetAsDeleteFromBtreeU32();
@@ -10921,6 +15705,12 @@ USubscriptionBuilder* USubscriptionBuilder::OnError(FOnSubscriptionError Callbac
 	OnErrorDelegateInternal = Callback;
 	return this;
 }
+USubscriptionHandle* USubscriptionBuilder::Subscribe()
+{
+	const TArray<FString> SqlQueries = PendingSqlQueries;
+	PendingSqlQueries.Empty();
+	return Subscribe(SqlQueries);
+}
 USubscriptionHandle* USubscriptionBuilder::Subscribe(const TArray<FString>& SQL)
 {
 	USubscriptionHandle* Handle = NewObject<USubscriptionHandle>();
@@ -10948,7 +15738,869 @@ USubscriptionHandle* USubscriptionBuilder::Subscribe(const TArray<FString>& SQL)
 }
 USubscriptionHandle* USubscriptionBuilder::SubscribeToAllTables()
 {
-	return Subscribe({ "SELECT * FROM * " });
+	return Subscribe(FQueryBuilder::AllTablesSqlQueries());
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddBlueprintQuery(const FBlueprintQuery& Query)
+{
+	PendingSqlQueries.Add(Query.Sql);
+	return this;
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddBtreeU32Query(const FBtreeU32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddIndexedSimpleEnumQuery(const FIndexedSimpleEnumQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddLargeTableQuery(const FLargeTableQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneBoolQuery(const FOneBoolQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneByteStructQuery(const FOneByteStructQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneConnectionIdQuery(const FOneConnectionIdQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneEnumWithPayloadQuery(const FOneEnumWithPayloadQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneEveryPrimitiveStructQuery(const FOneEveryPrimitiveStructQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneEveryVecStructQuery(const FOneEveryVecStructQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneF32Query(const FOneF32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneF64Query(const FOneF64Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneI128Query(const FOneI128Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneI16Query(const FOneI16Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneI256Query(const FOneI256Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneI32Query(const FOneI32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneI64Query(const FOneI64Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneI8Query(const FOneI8Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneIdentityQuery(const FOneIdentityQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneSimpleEnumQuery(const FOneSimpleEnumQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneStringQuery(const FOneStringQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneTimestampQuery(const FOneTimestampQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneU128Query(const FOneU128Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneU16Query(const FOneU16Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneU256Query(const FOneU256Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneU32Query(const FOneU32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneU64Query(const FOneU64Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneU8Query(const FOneU8Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneUnitStructQuery(const FOneUnitStructQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneUuidQuery(const FOneUuidQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOptionEveryPrimitiveStructQuery(const FOptionEveryPrimitiveStructQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOptionI32Query(const FOptionI32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOptionIdentityQuery(const FOptionIdentityQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOptionSimpleEnumQuery(const FOptionSimpleEnumQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOptionStringQuery(const FOptionStringQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOptionUuidQuery(const FOptionUuidQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOptionVecOptionI32Query(const FOptionVecOptionI32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkBoolQuery(const FPkBoolQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkConnectionIdQuery(const FPkConnectionIdQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkI128Query(const FPkI128Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkI16Query(const FPkI16Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkI256Query(const FPkI256Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkI32Query(const FPkI32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkI64Query(const FPkI64Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkI8Query(const FPkI8Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkIdentityQuery(const FPkIdentityQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkSimpleEnumQuery(const FPkSimpleEnumQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkStringQuery(const FPkStringQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkU128Query(const FPkU128Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkU16Query(const FPkU16Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkU256Query(const FPkU256Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkU32Query(const FPkU32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkU32TwoQuery(const FPkU32TwoQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkU64Query(const FPkU64Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkU8Query(const FPkU8Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkUuidQuery(const FPkUuidQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddResultEveryPrimitiveStructStringQuery(const FResultEveryPrimitiveStructStringQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddResultI32StringQuery(const FResultI32StringQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddResultIdentityStringQuery(const FResultIdentityStringQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddResultSimpleEnumI32Query(const FResultSimpleEnumI32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddResultStringI32Query(const FResultStringI32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddResultVecI32StringQuery(const FResultVecI32StringQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddScheduledTableQuery(const FScheduledTableQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddTableHoldsTableQuery(const FTableHoldsTableQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueBoolQuery(const FUniqueBoolQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueConnectionIdQuery(const FUniqueConnectionIdQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueI128Query(const FUniqueI128Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueI16Query(const FUniqueI16Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueI256Query(const FUniqueI256Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueI32Query(const FUniqueI32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueI64Query(const FUniqueI64Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueI8Query(const FUniqueI8Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueIdentityQuery(const FUniqueIdentityQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueStringQuery(const FUniqueStringQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueU128Query(const FUniqueU128Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueU16Query(const FUniqueU16Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueU256Query(const FUniqueU256Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueU32Query(const FUniqueU32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueU64Query(const FUniqueU64Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueU8Query(const FUniqueU8Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueUuidQuery(const FUniqueUuidQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUsersQuery(const FUsersQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecBoolQuery(const FVecBoolQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecByteStructQuery(const FVecByteStructQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecConnectionIdQuery(const FVecConnectionIdQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecEnumWithPayloadQuery(const FVecEnumWithPayloadQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecEveryPrimitiveStructQuery(const FVecEveryPrimitiveStructQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecEveryVecStructQuery(const FVecEveryVecStructQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecF32Query(const FVecF32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecF64Query(const FVecF64Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecI128Query(const FVecI128Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecI16Query(const FVecI16Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecI256Query(const FVecI256Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecI32Query(const FVecI32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecI64Query(const FVecI64Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecI8Query(const FVecI8Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecIdentityQuery(const FVecIdentityQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecSimpleEnumQuery(const FVecSimpleEnumQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecStringQuery(const FVecStringQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecTimestampQuery(const FVecTimestampQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecU128Query(const FVecU128Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecU16Query(const FVecU16Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecU256Query(const FVecU256Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecU32Query(const FVecU32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecU64Query(const FVecU64Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecU8Query(const FVecU8Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecUnitStructQuery(const FVecUnitStructQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecUuidQuery(const FVecUuidQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
 }
 
 USubscriptionHandle::USubscriptionHandle(UDbConnection* InConn)
@@ -11031,7 +16683,7 @@ void UDbConnection::ForwardOnConnect(UDbConnectionBase* BaseConnection, FSpaceti
 {
 	if (OnConnectDelegate.IsBound())
 	{
-		OnConnectDelegate.Execute(this, Identity, Token);
+		OnConnectDelegate.Execute(this, InIdentity, InToken);
 	}
 }
 void UDbConnection::ForwardOnDisconnect(UDbConnectionBase* BaseConnection, const FString& Error)

@@ -1,4 +1,4 @@
-use spacetimedb_lib::sats::raw_identifier::RawIdentifier;
+use spacetimedb_lib::sats::raw_identifier::RawNamespacedIdentifier;
 use spacetimedb_lib::Identity;
 use sqlparser::ast::Ident;
 use std::fmt::{Display, Formatter};
@@ -7,9 +7,13 @@ pub mod sql;
 pub mod sub;
 
 /// The FROM clause is either a relvar or a JOIN
+///
+/// A lone relvar carries its view call arguments, e.g. `42` in `FROM v(42)`.
+/// These are empty for a table, or for a view referenced without arguments.
+/// Relvars in a JOIN can't take arguments.
 #[derive(Debug)]
 pub enum SqlFrom {
-    Expr(SqlIdent, SqlIdent),
+    Expr(SqlIdent, SqlIdent, Vec<SqlLiteral>),
     Join(SqlIdent, SqlIdent, Vec<SqlJoin>),
 }
 
@@ -186,13 +190,17 @@ pub enum Parameter {
 
 /// A SQL identifier or named reference.
 /// Currently case sensitive.
+///
+/// This holds a [`RawNamespacedIdentifier`] rather than a [`RawIdentifier`] because a
+/// name written in SQL may be namespace-qualified (e.g. `lib.library_table`), and such
+/// a name can never be validated into a single `Identifier`.
 #[derive(Debug, Clone)]
-pub struct SqlIdent(pub RawIdentifier);
+pub struct SqlIdent(pub RawNamespacedIdentifier);
 
 /// Case insensitivity should be implemented here if at all
 impl From<Ident> for SqlIdent {
     fn from(Ident { value, .. }: Ident) -> Self {
-        SqlIdent(RawIdentifier::new(value))
+        SqlIdent(RawNamespacedIdentifier::new(value))
     }
 }
 

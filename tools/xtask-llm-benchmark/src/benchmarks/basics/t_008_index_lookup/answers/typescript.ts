@@ -15,6 +15,7 @@ const user = table(
 const result = table(
   {
     name: 'result',
+    public: true,
   },
   {
     id: t.u64().primaryKey(),

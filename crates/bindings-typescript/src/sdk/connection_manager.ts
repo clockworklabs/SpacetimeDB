@@ -25,6 +25,16 @@
  * Result: Single WebSocket survives ✓
  * ```
  *
+ * ## Reconnection:
+ *
+ * The manager forces {@link DbConnectionBuilder.withAutomaticReconnect} on
+ * every builder it builds from, so a connection lost mid-session reconnects
+ * *inside* the `DbConnection`: the object, its table handles and its callbacks
+ * all survive, and the manager merely mirrors the lifecycle events into its
+ * state snapshots. The manager itself rebuilds a connection only when the SDK
+ * reports it will not retry (a failed initial connection, or another terminal
+ * failure), preserving the frameworks' historical keep-trying behavior.
+ *
  * @module connection_manager
  */
 import type {
@@ -50,9 +60,13 @@ export const CONNECTION_MANAGER_RECONNECT_BASE_DELAY_MS = 1000;
 export const CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS = 30_000;
 
 /**
- * Computes the reconnect delay for the given attempt (0-based) using
+ * Computes the rebuild delay for the given attempt (0-based) using
  * exponential backoff: the base delay doubles with each consecutive failed
  * attempt, capped at the maximum delay.
+ *
+ * This paces only the manager's own rebuild loop for failures the SDK will
+ * not retry; reconnects after a mid-session drop are paced by the SDK's own
+ * policy (see `computeReconnectDelayMs` in `db_connection_impl`).
  */
 export function connectionManagerReconnectDelayMs(attempt: number): number {
   return Math.min(
@@ -71,8 +85,18 @@ type ManagedConnection = {
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   reconnectAttempt: number;
   onConnect?: (conn: DbConnectionImpl<any>) => void;
-  onDisconnect?: (ctx: ErrorContextInterface<any>, error?: Error) => void;
-  onConnectError?: (ctx: ErrorContextInterface<any>, error: Error) => void;
+  onDisconnect?: (
+    ctx: ErrorContextInterface<any>,
+    error?: Error,
+    nextReconnectAttempt?: number,
+    nextReconnectDelayMs?: number
+  ) => void;
+  onConnectError?: (
+    ctx: ErrorContextInterface<any>,
+    error: Error,
+    nextReconnectAttempt?: number,
+    nextReconnectDelayMs?: number
+  ) => void;
 };
 
 function defaultState(): ConnectionState {
@@ -154,7 +178,12 @@ class ConnectionManagerImpl {
       });
     };
 
-    managed.onDisconnect = (ctx, error) => {
+    // With automatic reconnection forced on, a non-undefined
+    // `nextReconnectAttempt` means the SDK is retrying inside the same
+    // connection object: mirror the event into state and leave the connection
+    // alone. Only when the SDK reports it will not retry does the manager
+    // rebuild a replacement (see #scheduleRebuild).
+    managed.onDisconnect = (ctx, error, nextReconnectAttempt) => {
       if (ctx !== managed.connection) {
         return;
       }
@@ -162,10 +191,12 @@ class ConnectionManagerImpl {
         isActive: false,
         connectionError: error ?? undefined,
       });
-      this.#scheduleReconnect(managed);
+      if (nextReconnectAttempt === undefined) {
+        this.#scheduleRebuild(managed);
+      }
     };
 
-    managed.onConnectError = (ctx, error) => {
+    managed.onConnectError = (ctx, error, nextReconnectAttempt) => {
       if (ctx !== managed.connection) {
         return;
       }
@@ -173,7 +204,9 @@ class ConnectionManagerImpl {
         isActive: false,
         connectionError: error,
       });
-      this.#scheduleReconnect(managed);
+      if (nextReconnectAttempt === undefined) {
+        this.#scheduleRebuild(managed);
+      }
     };
   }
 
@@ -183,6 +216,7 @@ class ConnectionManagerImpl {
   ): void {
     this.#ensureCallbacks(managed);
     builder.onConnect(managed.onConnect!);
+    builder.onAutomaticReconnect(managed.onConnect!);
     builder.onDisconnect(managed.onDisconnect!);
     builder.onConnectError(managed.onConnectError!);
   }
@@ -192,21 +226,28 @@ class ConnectionManagerImpl {
     connection: DbConnectionImpl<any>
   ): void {
     if (managed.onConnect) {
-      connection.removeOnConnect(managed.onConnect as any);
+      connection.removeOnConnect(managed.onConnect);
+      connection.removeOnAutomaticReconnect(managed.onConnect);
     }
     if (managed.onDisconnect) {
-      connection.removeOnDisconnect(managed.onDisconnect as any);
+      connection.removeOnDisconnect(managed.onDisconnect);
     }
     if (managed.onConnectError) {
-      connection.removeOnConnectError(managed.onConnectError as any);
+      connection.removeOnConnectError(managed.onConnectError);
     }
   }
 
+  /** Reuse the latest session token when rebuilding from the retained builder. */
   #buildManagedConnection<T extends DbConnectionImpl<any>>(
     managed: ManagedConnection,
-    builder: DbConnectionBuilder<T>
+    builder: DbConnectionBuilder<T>,
+    { resumeSession = true }: { resumeSession?: boolean } = {}
   ): T {
     managed.builder = builder;
+    builder.withAutomaticReconnect();
+    if (resumeSession && managed.state.token) {
+      builder.withToken(managed.state.token);
+    }
     const connection = builder.build();
     managed.connection = connection;
     this.#attachCallbacks(managed, builder);
@@ -222,7 +263,8 @@ class ConnectionManagerImpl {
     return connection as T;
   }
 
-  #scheduleReconnect(managed: ManagedConnection): void {
+  /** Preserve framework retries for failures the core connection will not retry. */
+  #scheduleRebuild(managed: ManagedConnection): void {
     if (
       managed.refCount <= 0 ||
       managed.pendingRelease ||
@@ -292,6 +334,77 @@ class ConnectionManagerImpl {
     }
 
     return this.#buildManagedConnection(managed, builder);
+  }
+
+  /**
+   * Tears down the current connection and builds a fresh one from `builder`,
+   * preserving the entry's ref count and listener set.
+   *
+   * `retain()` deliberately ignores the builder once a connection is live —
+   * the right behaviour for ref-counting, but it blocks "reconnect with a
+   * fresh token" flows (e.g. swapping an anonymous session for a signed-in one
+   * after an auth change). `rebuild()` is the supported escape hatch: pass a
+   * builder carrying the new token and the pool swaps the live connection
+   * under the same subscribers, so framework hooks (`useTable`, `useReducer`,
+   * …) re-bind to the new connection automatically.
+   *
+   * The old connection's callbacks are detached before it is closed, so its
+   * disconnect event never leaks into pool state, and any pending rebuild is
+   * cancelled (the caller is driving the replacement explicitly). Returns the
+   * newly-built connection, or `null` if the key has no retained entry.
+   *
+   * @param key - Unique identifier for the connection (use getKey to generate)
+   * @param builder - Fresh connection builder; its handlers are rewired into the pool
+   */
+  rebuild<T extends DbConnectionImpl<any>>(
+    key: string,
+    builder: DbConnectionBuilder<T>
+  ): T | null {
+    const managed = this.#connections.get(key);
+    if (!managed || managed.refCount <= 0) {
+      return null;
+    }
+
+    // The caller is taking over the connection lifecycle explicitly; cancel a
+    // deferred release or a pending rebuild so neither races the fresh
+    // connection, and reset the backoff so the next terminal failure starts over.
+    if (managed.pendingRelease) {
+      clearTimeout(managed.pendingRelease);
+      managed.pendingRelease = null;
+    }
+    if (managed.reconnectTimer) {
+      clearTimeout(managed.reconnectTimer);
+      managed.reconnectTimer = null;
+    }
+    managed.reconnectAttempt = 0;
+
+    const connection = managed.connection;
+    if (connection) {
+      this.#detachCallbacks(managed, connection);
+      connection.disconnect();
+    }
+    managed.connection = undefined;
+
+    try {
+      // `resumeSession: false`: this is the one path that exists precisely to
+      // *change* identity, so the replacement builder's token must win over the
+      // outgoing session's.
+      return this.#buildManagedConnection(managed, builder, {
+        resumeSession: false,
+      }) as T;
+    } catch (error) {
+      // The old connection is already torn down, so a failed rebuild would
+      // otherwise leave the pool reporting a stale "live" connection. Surface
+      // the failure into pool state (matching the onConnectError shape) so
+      // subscribers see a disconnected/errored connection, then re-throw so
+      // the caller can handle it.
+      this.#updateState(managed, {
+        isActive: false,
+        connectionError:
+          error instanceof Error ? error : new Error(String(error)),
+      });
+      throw error;
+    }
   }
 
   release(key: string): void {

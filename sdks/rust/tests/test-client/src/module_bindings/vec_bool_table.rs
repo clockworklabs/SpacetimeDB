@@ -18,6 +18,18 @@ pub struct VecBoolTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `vec_bool`.
+pub struct VecBoolTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for VecBoolTableAccessor {
+    type Row = VecBool;
+    type Handle<'db> = VecBoolTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.vec_bool()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `vec_bool`.
 ///
@@ -39,6 +51,18 @@ impl VecBoolTableAccess for super::RemoteTables {
 
 pub struct VecBoolInsertCallbackId(__sdk::CallbackId);
 pub struct VecBoolDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for VecBoolTableHandle<'ctx> {
+    type Row = VecBool;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = VecBool> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for VecBoolTableHandle<'ctx> {
     type Row = VecBool;
@@ -64,6 +88,36 @@ impl<'ctx> __sdk::Table for VecBoolTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = VecBoolDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> VecBoolDeleteCallbackId {
+        VecBoolDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: VecBoolDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for VecBoolTableHandle<'ctx> {
+    type InsertCallbackId = VecBoolInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> VecBoolInsertCallbackId {
+        VecBoolInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: VecBoolInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for VecBoolTableHandle<'ctx> {
     type DeleteCallbackId = VecBoolDeleteCallbackId;
 
     fn on_delete(

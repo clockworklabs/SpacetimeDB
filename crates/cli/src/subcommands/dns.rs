@@ -1,5 +1,6 @@
 use crate::common_args;
 use crate::config::Config;
+use crate::subcommands::db_arg_resolution::resolve_config_server;
 use crate::util::{add_auth_header_opt, get_auth_header, ResponseExt};
 use clap::ArgMatches;
 use clap::{Arg, Command};
@@ -22,14 +23,28 @@ pub fn cli() -> Command {
         )
         .arg(common_args::server().help("The nickname, host name or URL of the server on which to set the name"))
         .arg(common_args::yes())
+        .arg(
+            Arg::new("no_config")
+                .long("no-config")
+                .action(clap::ArgAction::SetTrue)
+                .help("Ignore spacetime.json configuration"),
+        )
         .after_help("Run `spacetime rename --help` for more detailed information.\n")
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let domain = args.get_one::<String>("new-name").unwrap();
     let database_identity = args.get_one::<String>("database-identity").unwrap();
-    let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let force = args.get_flag("force");
+    let no_config = args.get_flag("no_config");
+
+    // `rename` addresses the database by identity, so there is no database name to
+    // resolve against the config -- take the project's server directly.
+    let config_server = resolve_config_server(no_config)?;
+    let server = args
+        .get_one::<String>("server")
+        .map(|s| s.as_str())
+        .or(config_server.as_deref());
     let auth_header = get_auth_header(&mut config, false, server, !force).await?;
 
     let domain: DomainName = domain.parse()?;

@@ -1,0 +1,18 @@
+Write a SpacetimeDB backend module in TypeScript that defines a procedural view with a primary key.
+
+TABLE
+- source_row (public)
+  - Fields:
+    - id: u64 (primary key)
+    - value: string
+    - visible: boolean (btree index)
+
+REDUCERS
+- seed()
+  - Insert row 1 with value "shown" and visible true
+  - Insert row 2 with value "hidden" and visible false
+
+VIEW
+- source_view (anonymous procedural, public)
+  - Return visible source_row rows
+  - The returned row type declares id as its primary key

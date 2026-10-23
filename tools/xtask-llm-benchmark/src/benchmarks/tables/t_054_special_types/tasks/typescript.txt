@@ -1,0 +1,15 @@
+Write a SpacetimeDB backend module in TypeScript defining one public table with special value types.
+
+TABLE
+- special_value (public)
+  - Fields:
+    - id: u64 (primary key)
+    - uuid: Uuid
+    - connectionId: ConnectionId
+    - duration: TimeDuration
+    - unsigned128: u128
+    - signed128: i128
+    - unsigned256: u256
+    - signed256: i256
+
+No reducers are required.

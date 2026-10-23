@@ -1,14 +1,14 @@
 Write a SpacetimeDB backend module in Rust that defines a task table and a result table, with a reducer that finds the first incomplete task and writes it to the result table.
 
 TABLES
-- task
+- task (private)
   - Struct: Task
   - Fields:
     - id: u64 (primary key, auto_inc)
     - title: String
     - completed: bool
 
-- first_incomplete
+- first_incomplete (private)
   - Struct: FirstIncomplete
   - Fields:
     - task_id: u64 (primary key)

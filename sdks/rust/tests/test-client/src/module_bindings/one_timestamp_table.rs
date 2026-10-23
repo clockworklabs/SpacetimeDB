@@ -18,6 +18,18 @@ pub struct OneTimestampTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `one_timestamp`.
+pub struct OneTimestampTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for OneTimestampTableAccessor {
+    type Row = OneTimestamp;
+    type Handle<'db> = OneTimestampTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.one_timestamp()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `one_timestamp`.
 ///
@@ -39,6 +51,18 @@ impl OneTimestampTableAccess for super::RemoteTables {
 
 pub struct OneTimestampInsertCallbackId(__sdk::CallbackId);
 pub struct OneTimestampDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for OneTimestampTableHandle<'ctx> {
+    type Row = OneTimestamp;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = OneTimestamp> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for OneTimestampTableHandle<'ctx> {
     type Row = OneTimestamp;
@@ -64,6 +88,36 @@ impl<'ctx> __sdk::Table for OneTimestampTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = OneTimestampDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OneTimestampDeleteCallbackId {
+        OneTimestampDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: OneTimestampDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for OneTimestampTableHandle<'ctx> {
+    type InsertCallbackId = OneTimestampInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OneTimestampInsertCallbackId {
+        OneTimestampInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: OneTimestampInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for OneTimestampTableHandle<'ctx> {
     type DeleteCallbackId = OneTimestampDeleteCallbackId;
 
     fn on_delete(

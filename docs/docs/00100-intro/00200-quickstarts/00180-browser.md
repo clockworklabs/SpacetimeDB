@@ -56,6 +56,10 @@ npm run build
       :::tip
       The browser IIFE bundle also exposes the generated `tables` query builders, so you can use query-builder subscriptions here too.
       :::
+
+      :::warning
+      With no token, SpacetimeDB issues a server-issued identity and a non-expiring token; persist it and pass it back on reconnect to keep the same identity. A lost token can't be recovered, so self-issued identities are for development. For production, authenticate with an OIDC provider such as SpacetimeAuth, which handles token lifecycle. See [Authentication](../../00200-core-concepts/00500-authentication.md).
+      :::
     </StepText>
     <StepCode>
 ```html
@@ -97,7 +101,7 @@ npm run build
     <StepCode>
 ```javascript
 // Call a reducer with named arguments
-conn.reducers.add({ name: 'Alice' });
+conn.reducers.add({ name: 'Alice' }).catch(console.error);
 ```
     </StepCode>
   </Step>

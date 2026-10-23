@@ -7,7 +7,7 @@ TYPES
     - right: i32
 
 TABLE
-- result
+- result (public)
   - Struct: ResultRow
   - Fields:
     - id: i32 (primary key)

@@ -126,6 +126,7 @@ fn test_decode() -> ResultTest<()> {
         owner_identity: id,
         host_type: HostType::Wasm,
         initial_program: Hash::ZERO,
+        bootstrap_generation: 0,
     };
 
     cdb.insert_database(db.clone())?;

@@ -1,0 +1,14 @@
+Write a SpacetimeDB backend module in C# that performs outbound HTTP in a procedure.
+
+TYPES
+- FetchSummary
+  - Status: ushort
+  - HtmlContentType: bool
+  - HasExampleDomain: bool
+
+PROCEDURE
+- FetchPageSummary(url: string) -> FetchSummary
+  - Perform an outbound GET to the supplied public URL
+  - Set Status from the response status
+  - Set HtmlContentType based on whether Content-Type contains "text/html"
+  - Set HasExampleDomain based on whether the body contains "Example Domain"

@@ -19,7 +19,6 @@
 //! This module is internal, and may incompatibly change without warning.
 
 use crate::{
-    Event, ReducerEvent, Status,
     __codegen::{InternalError, Reducer},
     callbacks::{
         CallbackId, DbCallbacks, ProcedureCallback, ProcedureCallbacks, ReducerCallback, ReducerCallbacks, RowCallback,
@@ -29,6 +28,7 @@ use crate::{
     spacetime_module::{AbstractEventContext, AppliedDiff, DbConnection, DbUpdate, InModule, SpacetimeModule},
     subscription::{PendingUnsubscribeResult, SubscriptionHandleImpl, SubscriptionManager},
     websocket::{WsConnection, WsParams},
+    Event, ReducerEvent, Status,
 };
 use bytes::Bytes;
 use futures::StreamExt;
@@ -1478,6 +1478,11 @@ async fn parse_loop<M: SpacetimeModule>(
                 query_set_id: e.query_set_id,
                 error: e.error.to_string(),
             },
+            // This SDK negotiates v2 and never sends `SubscribeBatch`,
+            // so the server should never send this response.
+            ws::v2::ServerMessage::SubscribeBatchApplied(_) => ParsedMessage::Error(
+                InternalError::new("Received SubscribeBatchApplied, which this client never requests").into(),
+            ),
             ws::v2::ServerMessage::ProcedureResult(procedure_result) => ParsedMessage::ProcedureResult {
                 request_id: procedure_result.request_id,
                 result: match procedure_result.status {

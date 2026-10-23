@@ -210,6 +210,7 @@ async fn web_login(remote: &Url, open_browser: bool) -> Result<String, anyhow::E
         .post(remote.join("/api/auth/cli/login/request-token")?)
         .send()
         .await?
+        .error_for_status()?
         .json()
         .await?;
 
@@ -240,7 +241,7 @@ async fn web_login(remote: &Url, open_browser: bool) -> Result<String, anyhow::E
         status_url
             .query_pairs_mut()
             .append_pair("token", web_login_request_token);
-        let response: WebLoginSessionResponse = client.get(status_url).send().await?.json().await?;
+        let response: WebLoginSessionResponse = client.get(status_url).send().await?.error_for_status()?.json().await?;
         if let Some(approved) = response.approved()? {
             println!("Login successful!");
             return Ok(approved.session_token.clone());
@@ -268,6 +269,7 @@ async fn spacetimedb_login(remote: &Url, web_session_token: &String) -> Result<S
         .header("Authorization", format!("Bearer {web_session_token}"))
         .send()
         .await?
+        .error_for_status()?
         .json()
         .await?;
 

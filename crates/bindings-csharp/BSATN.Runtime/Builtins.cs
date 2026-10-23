@@ -357,7 +357,7 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
         DateTimeOffset.UnixEpoch.AddTicks(t.MicrosecondsSinceUnixEpoch * Util.TicksPerMicrosecond);
 
     public static implicit operator Timestamp(DateTimeOffset offset) =>
-        new Timestamp(offset.Subtract(DateTimeOffset.UnixEpoch).Ticks / Util.TicksPerMicrosecond);
+        new(offset.Subtract(DateTimeOffset.UnixEpoch).Ticks / Util.TicksPerMicrosecond);
 
     // For backwards-compatibility.
     public readonly DateTimeOffset ToStd() => this;
@@ -373,7 +373,7 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
     public static readonly Timestamp UNIX_EPOCH = new(0);
 
     public static Timestamp FromTimeDurationSinceUnixEpoch(TimeDuration timeDuration) =>
-        new Timestamp(timeDuration.Microseconds);
+        new(timeDuration.Microseconds);
 
     public readonly TimeDuration ToTimeDurationSinceUnixEpoch() => TimeDurationSince(UNIX_EPOCH);
 
@@ -383,13 +383,13 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
     public readonly TimeSpan ToTimeSpanSinceUnixEpoch() => (TimeSpan)ToTimeDurationSinceUnixEpoch();
 
     public readonly TimeDuration TimeDurationSince(Timestamp earlier) =>
-        new TimeDuration(checked(MicrosecondsSinceUnixEpoch - earlier.MicrosecondsSinceUnixEpoch));
+        new(checked(MicrosecondsSinceUnixEpoch - earlier.MicrosecondsSinceUnixEpoch));
 
     public static Timestamp operator +(Timestamp point, TimeDuration interval) =>
-        new Timestamp(checked(point.MicrosecondsSinceUnixEpoch + interval.Microseconds));
+        new(checked(point.MicrosecondsSinceUnixEpoch + interval.Microseconds));
 
     public static Timestamp operator -(Timestamp point, TimeDuration interval) =>
-        new Timestamp(checked(point.MicrosecondsSinceUnixEpoch - interval.Microseconds));
+        new(checked(point.MicrosecondsSinceUnixEpoch - interval.Microseconds));
 
     public readonly int CompareTo(Timestamp that)
     {
@@ -492,10 +492,10 @@ public record struct TimeDuration(long Microseconds) : IStructuralReadWrite
         new(timeSpan.Ticks / Util.TicksPerMicrosecond);
 
     public static TimeDuration operator +(TimeDuration lhs, TimeDuration rhs) =>
-        new TimeDuration(checked(lhs.Microseconds + rhs.Microseconds));
+        new(checked(lhs.Microseconds + rhs.Microseconds));
 
     public static TimeDuration operator -(TimeDuration lhs, TimeDuration rhs) =>
-        new TimeDuration(checked(lhs.Microseconds + rhs.Microseconds));
+        new(checked(lhs.Microseconds + rhs.Microseconds));
 
     // For backwards-compatibility.
     public readonly TimeSpan ToStd() => this;
@@ -574,7 +574,7 @@ public partial record ScheduleAt : TaggedEnum<(TimeDuration Interval, Timestamp 
     // --- auto-generated ---
     private ScheduleAt() { }
 
-    internal enum @enum : byte
+    internal enum ScheduleAtVariant : byte
     {
         Interval,
         Time,
@@ -586,15 +586,15 @@ public partial record ScheduleAt : TaggedEnum<(TimeDuration Interval, Timestamp 
 
     public readonly partial struct BSATN : IReadWrite<ScheduleAt>
     {
-        internal static readonly SpacetimeDB.BSATN.Enum<@enum> __enumTag = new();
+        internal static readonly SpacetimeDB.BSATN.Enum<ScheduleAtVariant> __enumTag = new();
         internal static readonly TimeDuration.BSATN Interval = new();
         internal static readonly Timestamp.BSATN Time = new();
 
         public ScheduleAt Read(BinaryReader reader) =>
             __enumTag.Read(reader) switch
             {
-                @enum.Interval => new Interval(Interval.Read(reader)),
-                @enum.Time => new Time(Time.Read(reader)),
+                ScheduleAtVariant.Interval => new Interval(Interval.Read(reader)),
+                ScheduleAtVariant.Time => new Time(Time.Read(reader)),
                 _ => throw new InvalidOperationException(
                     "Invalid tag value, this state should be unreachable."
                 ),
@@ -605,12 +605,12 @@ public partial record ScheduleAt : TaggedEnum<(TimeDuration Interval, Timestamp 
             switch (value)
             {
                 case Interval(var inner):
-                    __enumTag.Write(writer, @enum.Interval);
+                    __enumTag.Write(writer, ScheduleAtVariant.Interval);
                     Interval.Write(writer, inner);
                     break;
 
                 case Time(var inner):
-                    __enumTag.Write(writer, @enum.Time);
+                    __enumTag.Write(writer, ScheduleAtVariant.Time);
                     Time.Write(writer, inner);
                     break;
             }
@@ -682,7 +682,7 @@ public partial record Result<T, E> : TaggedEnum<(T Ok, E Err)>
 
     private Result() { }
 
-    internal enum @enum : byte
+    internal enum ResultVariant : byte
     {
         Ok,
         Err,
@@ -702,15 +702,15 @@ public partial record Result<T, E> : TaggedEnum<(T Ok, E Err)>
         where OkRW : struct, IReadWrite<T>
         where ErrRW : struct, IReadWrite<E>
     {
-        private static readonly SpacetimeDB.BSATN.Enum<@enum> __enumTag = new();
+        private static readonly SpacetimeDB.BSATN.Enum<ResultVariant> __enumTag = new();
         private static readonly OkRW okRW = new();
         private static readonly ErrRW errRW = new();
 
         public Result<T, E> Read(BinaryReader reader) =>
             __enumTag.Read(reader) switch
             {
-                @enum.Ok => new OkR(okRW.Read(reader)),
-                @enum.Err => new ErrR(errRW.Read(reader)),
+                ResultVariant.Ok => new OkR(okRW.Read(reader)),
+                ResultVariant.Err => new ErrR(errRW.Read(reader)),
                 _ => throw new InvalidOperationException(),
             };
 
@@ -719,12 +719,12 @@ public partial record Result<T, E> : TaggedEnum<(T Ok, E Err)>
             switch (value)
             {
                 case OkR(var v):
-                    __enumTag.Write(writer, @enum.Ok);
+                    __enumTag.Write(writer, ResultVariant.Ok);
                     okRW.Write(writer, v);
                     break;
 
                 case ErrR(var e):
-                    __enumTag.Write(writer, @enum.Err);
+                    __enumTag.Write(writer, ResultVariant.Err);
                     errRW.Write(writer, e);
                     break;
             }

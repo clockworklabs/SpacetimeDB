@@ -6,7 +6,7 @@ TABLES
   - Fields:
     - id: u64 (primary key, auto_inc)
 
-- position
+- position (public)
   - Struct: Position
   - Fields:
     - entity_id: i32 (primary key) — NOT auto_inc, this is a foreign key to entity
@@ -20,7 +20,7 @@ TABLES
     - vx: i32
     - vy: i32
 
-- next_position
+- next_position (public)
   - Struct: NextPosition
   - Fields:
     - entity_id: i32 (primary key) — NOT auto_inc, this is a foreign key to entity

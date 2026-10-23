@@ -2,12 +2,14 @@ use std::fmt::Display;
 
 use sqlparser::{
     ast::{
-        BinaryOperator, Expr, Function, ObjectName, Query, Select, SelectItem, SetExpr, TableFactor, TableWithJoins,
+        BinaryOperator, Expr, Function, FunctionArg, Query, Select, SelectItem, SetExpr, TableFactor, TableWithJoins,
         Value,
     },
     parser::ParserError,
 };
 use thiserror::Error;
+
+use crate::ast::SqlIdent;
 
 // FIXME: reduce type size
 #[expect(clippy::large_enum_variant)]
@@ -49,6 +51,12 @@ pub enum SqlUnsupported {
     AggregateWithoutAlias,
     #[error("Unsupported FROM expression: {0}")]
     From(TableFactor),
+    #[error("Unsupported view argument: {0}. View arguments must be literals")]
+    ViewArg(Expr),
+    #[error("Unsupported view argument: {0}. View arguments must be positional literals")]
+    ViewArgKind(FunctionArg),
+    #[error("Unsupported view call in a JOIN: `{}`. A view that takes arguments can only be queried by itself", .0.0)]
+    JoinViewArgs(SqlIdent),
     #[error("Unsupported set operation: {0}")]
     SetOp(Box<SetExpr>),
     #[error("Unsupported INSERT expression: {0}")]
@@ -59,8 +67,6 @@ pub enum SqlUnsupported {
     DeleteTable(TableWithJoins),
     #[error("Unsupported column/variable assignment expression: {0}")]
     Assignment(Expr),
-    #[error("Multi-part names are not supported: {0}")]
-    MultiPartName(ObjectName),
     #[error("Unsupported: {0}")]
     Feature(String),
     #[error("Non-inner joins are not supported")]

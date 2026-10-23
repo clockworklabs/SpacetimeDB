@@ -1,11 +1,15 @@
 use super::{
-    committed_state::CommittedState, mut_tx::MutTxId, sequence::SequencesState, state_view::StateView, tx::TxId,
-    tx_state::TxState,
+    committed_state::CommittedState, mut_tx::MutTxId, state_view::StateView, time::Instant, tx::TxId, tx_state::TxState,
 };
+#[cfg(feature = "metrics")]
+use crate::db_metrics::DB_METRICS;
 use crate::execution_context::{Workload, WorkloadType};
-use crate::locking_tx_datastore::replay::{build_sequence_state, ErrorBehavior, Replay};
+#[cfg(feature = "durability")]
+use crate::locking_tx_datastore::replay::{ErrorBehavior, Replay};
+#[cfg(feature = "durability")]
+use crate::system_tables::system_table_schema;
+use crate::traits::TxOffset;
 use crate::{
-    db_metrics::DB_METRICS,
     error::{DatastoreError, TableError},
     locking_tx_datastore::{
         state_view::{IterByColEqMutTx, IterByColRangeMutTx, IterMutTx},
@@ -16,8 +20,8 @@ use crate::{
 use crate::{
     execution_context::ExecutionContext,
     system_tables::{
-        read_hash_from_col, read_identity_from_col, system_table_schema, StClientRow, StModuleFields, StModuleRow,
-        StTableFields, ST_CLIENT_ID, ST_MODULE_ID, ST_TABLE_ID,
+        read_hash_from_col, read_identity_from_col, StClientRow, StModuleFields, StModuleRow, StTableFields,
+        ST_CLIENT_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_MODULE_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
     },
     traits::{
         DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, Program, RowTypeForTable, Tx, TxData, TxDatastore,
@@ -25,9 +29,8 @@ use crate::{
 };
 use anyhow::anyhow;
 use core::ops::RangeBounds;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
-use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId, ViewId};
@@ -36,8 +39,9 @@ use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_schema::{
     reducer_name::ReducerName,
-    schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema},
+    schema::{ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, SequenceSchema, TableSchema},
 };
+#[cfg(feature = "durability")]
 use spacetimedb_snapshot::{BoxedPendingSnapshot, DynSnapshotRepo, ReconstructedSnapshot};
 use spacetimedb_table::{
     indexes::RowPointer,
@@ -46,7 +50,7 @@ use spacetimedb_table::{
 };
 use std::borrow::Cow;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 pub type Result<T> = std::result::Result<T, DatastoreError>;
 
@@ -57,7 +61,6 @@ pub type Result<T> = std::result::Result<T, DatastoreError>;
 /// Lock Acquisition Order:
 /// 1. `memory`
 /// 2. `committed_state`
-/// 3. `sequence_state`
 ///
 /// All locking mechanisms are encapsulated within the struct through local methods.
 #[derive(Clone)]
@@ -66,8 +69,6 @@ pub struct Locking {
     // TODO(cloutiertyler): This was made `pub` for the datastore split. This should be
     // made private again.
     pub committed_state: Arc<RwLock<CommittedState>>,
-    /// The state of sequence generation in this database.
-    pub(super) sequence_state: Arc<Mutex<SequencesState>>,
     /// The identity of this database.
     pub(crate) database_identity: Identity,
 }
@@ -76,14 +77,9 @@ impl MemoryUsage for Locking {
     fn heap_usage(&self) -> usize {
         let Self {
             committed_state,
-            sequence_state,
             database_identity,
         } = self;
-        std::mem::size_of_val(&**committed_state)
-            + committed_state.read().heap_usage()
-            + std::mem::size_of_val(&**sequence_state)
-            + sequence_state.lock().heap_usage()
-            + database_identity.heap_usage()
+        std::mem::size_of_val(&**committed_state) + committed_state.read().heap_usage() + database_identity.heap_usage()
     }
 }
 
@@ -91,7 +87,6 @@ impl Locking {
     pub fn new(database_identity: Identity, page_pool: PagePool) -> Self {
         Self {
             committed_state: Arc::new(RwLock::new(CommittedState::new(page_pool))),
-            sequence_state: <_>::default(),
             database_identity,
         }
     }
@@ -114,9 +109,6 @@ impl Locking {
 
         // Create the system tables and insert information about themselves into
         commit_state.bootstrap_system_tables(database_identity)?;
-        // The database tables are now initialized with the correct data.
-        // Now we have to build our in memory structures.
-        build_sequence_state(&datastore, &mut commit_state)?;
 
         // We don't want to build indexes here; we'll build those later,
         // in `rebuild_state_after_replay`.
@@ -133,9 +125,45 @@ impl Locking {
     /// The provided closure will be called for each transaction found in the
     /// history, the parameter is the transaction's offset. The closure is called
     /// _before_ the transaction is applied to the database state.
+    #[cfg(feature = "durability")]
     pub fn replay<F: FnMut(u64)>(&self, progress: F, error_behavior: ErrorBehavior) -> Replay<'_, F> {
         let committed_state = self.committed_state.write();
         Replay::new(self.database_identity, committed_state, progress, error_behavior)
+    }
+
+    /// Reserve the first transaction offset for the durable system-schema
+    /// bootstrap record.
+    ///
+    /// The bootstrap record describes rows already installed by
+    /// [`Self::bootstrap`], so this only advances the offset counter. Returns
+    /// `None` if any transaction has already consumed an offset.
+    pub fn reserve_system_schema_bootstrap_tx_offset(&self) -> Option<TxOffset> {
+        let mut committed_state = self.committed_state.write();
+        if committed_state.next_tx_offset == 0 {
+            committed_state.next_tx_offset = 1;
+            Some(0)
+        } else {
+            None
+        }
+    }
+
+    /// Read the committed rows which describe built-in system table schemas.
+    ///
+    /// These are the rows installed directly by [`Self::bootstrap`] before any
+    /// transaction exists. Durable databases write these rows into the commit
+    /// log at offset 0 so replay from the beginning can reconstruct system
+    /// tables added after the replaying binary was built.
+    pub fn committed_system_table_schema_rows(&self) -> Result<Vec<(TableId, ProductValue)>> {
+        let committed_state = self.committed_state.read();
+        let mut rows = Vec::new();
+
+        for table_id in [ST_TABLE_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SEQUENCE_ID] {
+            for row in committed_state.iter(table_id)? {
+                rows.push((table_id, row.to_product_value()));
+            }
+        }
+
+        Ok(rows)
     }
 
     /// Construct a new [`Locking`] datastore containing the state stored in `snapshot`.
@@ -148,6 +176,7 @@ impl Locking {
     /// - Notably, **do not** construct indexes or sequences.
     ///   This should be done by [`Self::rebuild_state_after_replay`],
     ///   after replaying the suffix of the commitlog.
+    #[cfg(feature = "durability")]
     pub fn restore_from_snapshot(snapshot: ReconstructedSnapshot, page_pool: PagePool) -> Result<Self> {
         let ReconstructedSnapshot {
             database_identity,
@@ -198,14 +227,10 @@ impl Locking {
                 .with_label_values(&database_identity, &table_id.into(), &schema.table_name)
                 .set(table_size as i64);
         }
+        committed_state.rebuild_datastore_page_bytes();
 
         // Double check that our in-memory system table ids match the on-disk schemas.
         // committed_state.assert_system_table_schemas_match()?;
-
-        // Set the sequence state. In practice we will end up doing this again after replaying
-        // the commit log, but we do it here too just to avoid having an incorrectly restored
-        // snapshot.
-        build_sequence_state(&datastore, &mut committed_state)?;
 
         // The next TX offset after restoring from a snapshot is one greater than the snapshotted offset.
         committed_state.next_tx_offset = tx_offset + 1;
@@ -226,11 +251,11 @@ impl Locking {
     ///
     /// Returns an error if [`DynSnapshotRepo::create_snapshot`] returns an
     /// error.
+    #[cfg(feature = "durability")]
     pub fn take_snapshot(&self, repo: &DynSnapshotRepo) -> Result<Option<TxOffset>> {
         Self::take_snapshot_internal(&self.committed_state, repo)?
-            .map(|(_offset, snap)| snap.sync_all())
+            .map(|(_offset, snap)| snap.sync_all().map_err(Into::into))
             .transpose()
-            .map_err(Into::into)
     }
 
     pub fn assert_system_tables_match(&self) -> Result<()> {
@@ -238,6 +263,21 @@ impl Locking {
         committed_state.assert_system_table_schemas_match()
     }
 
+    /// Returns committed datastore table page bytes.
+    ///
+    /// This reads the cached committed-state aggregate.
+    pub fn datastore_page_bytes(&self) -> u64 {
+        self.committed_state.read().datastore_page_bytes()
+    }
+
+    /// Returns committed datastore bytes.
+    ///
+    /// Currently just page and blobstore bytes.
+    pub fn datastore_memory_bytes(&self) -> u64 {
+        self.committed_state.read().datastore_memory_bytes()
+    }
+
+    #[cfg(feature = "durability")]
     pub fn take_snapshot_internal(
         committed_state: &RwLock<CommittedState>,
         repo: &DynSnapshotRepo,
@@ -294,6 +334,34 @@ impl Locking {
         tx.alter_table_primary_key(table_id, primary_key)
     }
 
+    pub fn alter_index_source_name_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        index_id: IndexId,
+        source_name: spacetimedb_sats::raw_identifier::RawNamespacedIdentifier,
+    ) -> Result<()> {
+        tx.alter_index_source_name(index_id, source_name)
+    }
+
+    pub fn alter_table_accessor_name_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        new_alias: spacetimedb_schema::identifier::NamespacedIdentifier,
+    ) -> Result<()> {
+        tx.alter_table_accessor_name(table_id, new_alias)
+    }
+
+    pub fn alter_column_accessor_name_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        col_id: ColId,
+        new_alias: spacetimedb_schema::identifier::Identifier,
+    ) -> Result<()> {
+        tx.alter_column_accessor_name(table_id, col_id, new_alias)
+    }
+
     pub fn alter_table_row_type_mut_tx(
         &self,
         tx: &mut MutTxId,
@@ -301,6 +369,15 @@ impl Locking {
         column_schemas: Vec<ColumnSchema>,
     ) -> Result<()> {
         tx.alter_table_row_type(table_id, column_schemas)
+    }
+
+    pub fn alter_table_outbox_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        outbox: Option<OutboxSchema>,
+    ) -> Result<()> {
+        tx.alter_table_outbox(table_id, outbox)
     }
 
     pub fn alter_event_table_row_type_mut_tx(
@@ -536,6 +613,34 @@ impl MutTxDatastore for Locking {
         tx.drop_index(index_id)
     }
 
+    fn alter_index_source_name_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        index_id: IndexId,
+        source_name: spacetimedb_sats::raw_identifier::RawNamespacedIdentifier,
+    ) -> Result<()> {
+        tx.alter_index_source_name(index_id, source_name)
+    }
+
+    fn alter_table_accessor_name_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        table_id: TableId,
+        new_alias: spacetimedb_schema::identifier::NamespacedIdentifier,
+    ) -> Result<()> {
+        tx.alter_table_accessor_name(table_id, new_alias)
+    }
+
+    fn alter_column_accessor_name_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        table_id: TableId,
+        col_id: ColId,
+        new_alias: spacetimedb_schema::identifier::Identifier,
+    ) -> Result<()> {
+        tx.alter_column_accessor_name(table_id, col_id, new_alias)
+    }
+
     fn index_id_from_name_mut_tx(&self, tx: &Self::MutTx, index_name: &str) -> Result<Option<IndexId>> {
         tx.index_id_from_name_or_alias(index_name)
     }
@@ -554,6 +659,10 @@ impl MutTxDatastore for Locking {
 
     fn sequence_id_from_name_mut_tx(&self, tx: &Self::MutTx, sequence_name: &str) -> Result<Option<SequenceId>> {
         tx.sequence_id_from_name(sequence_name)
+    }
+
+    fn create_constraint_mut_tx(&self, tx: &mut Self::MutTx, constraint: ConstraintSchema) -> Result<ConstraintId> {
+        tx.create_constraint(constraint)
     }
 
     fn drop_constraint_mut_tx(&self, tx: &mut Self::MutTx, constraint_id: ConstraintId) -> Result<()> {
@@ -686,6 +795,7 @@ impl MutTxDatastore for Locking {
 
 /// Various measurements, needed for metrics, of the work performed by a transaction.
 #[must_use = "TxMetrics should be reported"]
+#[cfg_attr(not(feature = "metrics"), allow(dead_code))]
 pub struct TxMetrics {
     /// The transaction metrics for a particular table.
     /// The value `None` for a [`TableId`] means that it was deleted.
@@ -698,6 +808,7 @@ pub struct TxMetrics {
     exec_metrics: ExecutionMetrics,
 }
 
+#[cfg_attr(not(feature = "metrics"), allow(dead_code))]
 struct TableStats {
     /// The number of rows in the table after this transaction.
     ///
@@ -760,6 +871,7 @@ impl TxMetrics {
     }
 
     /// Reports the metrics for `reducer` using `get_exec_counter` to retrieve the metrics counters.
+    #[cfg(feature = "metrics")]
     pub fn report<'a, R: MetricsRecorder + 'a>(
         &self,
         tx_data: Option<&TxData>,
@@ -904,15 +1016,14 @@ impl MutTx for Locking {
 
         let timer = Instant::now();
         let committed_state_write_lock = self.committed_state.write_arc();
-        let sequence_state_lock = self.sequence_state.lock_arc();
         let lock_wait_time = timer.elapsed();
 
         MutTxId {
             committed_state_write_lock,
-            sequence_state_lock,
             tx_state: TxState::default(),
             lock_wait_time,
             read_sets: <_>::default(),
+            view_instances: <_>::default(),
             timer,
             ctx,
             metrics,
@@ -939,15 +1050,14 @@ impl Locking {
 
         let timer = Instant::now();
         let committed_state_write_lock = self.committed_state.try_write_arc()?;
-        let sequence_state_lock = self.sequence_state.try_lock_arc()?;
         let lock_wait_time = timer.elapsed();
 
         Some(MutTxId {
             committed_state_write_lock,
-            sequence_state_lock,
             tx_state: TxState::default(),
             lock_wait_time,
             read_sets: <_>::default(),
+            view_instances: <_>::default(),
             timer,
             ctx,
             metrics,
@@ -971,7 +1081,7 @@ impl Locking {
         &self,
         tx: MutTxId,
         before_release: impl FnOnce(&Arc<TxData>),
-    ) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>)>> {
+    ) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>, u64)>> {
         Ok(Some(tx.commit_and_then(before_release)))
     }
 
@@ -982,7 +1092,7 @@ impl Locking {
         tx: MutTxId,
         workload: Workload,
         before_downgrade: impl FnOnce(&Arc<TxData>),
-    ) -> (Arc<TxData>, TxMetrics, TxId) {
+    ) -> (Arc<TxData>, TxMetrics, TxId, u64) {
         tx.commit_downgrade_and_then(workload, before_downgrade)
     }
 }
@@ -1003,20 +1113,27 @@ pub(crate) mod tests {
     use crate::error::IndexError;
     use crate::locking_tx_datastore::tx_state::PendingSchemaChange;
     use crate::system_tables::{
-        system_tables, StColumnRow, StConnectionCredentialsFields, StConstraintData, StConstraintFields,
-        StConstraintRow, StEventTableFields, StIndexAlgorithm, StIndexFields, StIndexRow, StRowLevelSecurityFields,
-        StScheduledFields, StSequenceFields, StSequenceRow, StTableRow, StVarFields, StViewArgFields, StViewFields,
-        ST_CLIENT_ID, ST_CLIENT_NAME, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ACCESSOR_NAME, ST_COLUMN_ID, ST_COLUMN_NAME,
-        ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME,
-        ST_EVENT_TABLE_ID, ST_EVENT_TABLE_NAME, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_NAME, ST_INDEX_ID,
-        ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID,
+        system_tables, IdentityViaU256, StColumnRow, StConnectionCredentialsFields, StConstraintData,
+        StConstraintFields, StConstraintRow, StEventTableFields, StInboundMsgResultStatus, StInboundMsgRow,
+        StInboundStreamRow, StIndexAlgorithm, StIndexFields, StIndexRow, StOutboundMsgRow, StOutboundStreamRow,
+        StRowLevelSecurityFields, StScheduledFields, StSequenceFields, StSequenceRow, StTableRow, StVarFields,
+        StViewArgFields, StViewFields, ST_CLIENT_ID, ST_CLIENT_NAME, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ACCESSOR_NAME,
+        ST_COLUMN_ID, ST_COLUMN_NAME, ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_NAME, ST_CONSTRAINT_ID,
+        ST_CONSTRAINT_NAME, ST_EVENT_TABLE_ID, ST_EVENT_TABLE_NAME, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_NAME,
+        ST_INDEX_ID, ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID,
         ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME,
         ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_NAME, ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME, ST_VIEW_ARG_ID,
         ST_VIEW_ARG_NAME, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME, ST_VIEW_PARAM_ID,
         ST_VIEW_PARAM_NAME, ST_VIEW_SUB_ID, ST_VIEW_SUB_NAME,
     };
+    use crate::system_tables::{
+        ST_ENV_ID, ST_ENV_NAME, ST_INBOUND_MSG_ID, ST_INBOUND_MSG_NAME, ST_INBOUND_STREAM_ID, ST_INBOUND_STREAM_NAME,
+        ST_OUTBOUND_MSG_ID, ST_OUTBOUND_MSG_NAME, ST_OUTBOUND_STREAM_ID, ST_OUTBOUND_STREAM_NAME, ST_OUTBOX_ID,
+        ST_OUTBOX_NAME,
+    };
     use crate::traits::{IsolationLevel, MutTx};
     use crate::Result;
+    use bytes::Bytes;
     use core::{fmt, mem};
     use itertools::Itertools;
     use pretty_assertions::{assert_eq, assert_matches};
@@ -1025,18 +1142,19 @@ pub(crate) mod tests {
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::st_var::StVarValue;
-    use spacetimedb_lib::{resolved_type_via_v9, ScheduleAt, TimeDuration};
-    use spacetimedb_primitives::{col_list, ArgId, ColId, ScheduleId, ViewId};
+    use spacetimedb_lib::{resolved_type_via_v9, Identity, ScheduleAt, TimeDuration};
+    use spacetimedb_primitives::{col_list, ArgId, ColId, ColSet, ScheduleId, TableId, ViewId};
     use spacetimedb_sats::algebraic_value::ser::value_serialize;
     use spacetimedb_sats::bsatn::{to_vec, ToBsatn};
     use spacetimedb_sats::layout::RowTypeLayout;
-    use spacetimedb_sats::raw_identifier::RawIdentifier;
+    use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
     use spacetimedb_sats::{product, AlgebraicType, GroundSpacetimeType, SumTypeVariant, SumValue};
     use spacetimedb_schema::def::BTreeAlgorithm;
-    use spacetimedb_schema::identifier::Identifier;
+    use spacetimedb_schema::identifier::{Identifier, NamespacedIdentifier};
+    use spacetimedb_schema::reducer_name::ReducerName;
     use spacetimedb_schema::schema::{
-        columns_to_row_type, ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema,
-        SequenceSchema,
+        columns_to_row_type, ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, RowLevelSecuritySchema,
+        ScheduleSchema, SequenceSchema,
     };
     use spacetimedb_schema::table_name::TableName;
 
@@ -1158,7 +1276,7 @@ pub(crate) mod tests {
             Self {
                 index_id: value.id.into(),
                 table_id: value.table.into(),
-                index_name: RawIdentifier::new(value.name),
+                index_name: RawNamespacedIdentifier::new(value.name),
                 index_algorithm: StIndexAlgorithm::BTree { columns: value.col },
             }
         }
@@ -1228,7 +1346,7 @@ pub(crate) mod tests {
         fn from(value: SequenceRow<'_>) -> Self {
             Self {
                 sequence_id: value.id.into(),
-                sequence_name: RawIdentifier::new(value.name),
+                sequence_name: RawNamespacedIdentifier::new(value.name),
                 table_id: value.table.into(),
                 col_pos: value.col_pos.into(),
                 increment: 1,
@@ -1244,13 +1362,10 @@ pub(crate) mod tests {
         fn from(value: SequenceRow<'_>) -> Self {
             Self {
                 sequence_id: value.id.into(),
-                sequence_name: RawIdentifier::new(value.name),
+                sequence_name: RawNamespacedIdentifier::new(value.name),
                 table_id: value.table.into(),
                 col_pos: value.col_pos.into(),
-                increment: 1,
                 start: value.start,
-                min_value: 1,
-                max_value: i128::MAX,
             }
         }
     }
@@ -1265,7 +1380,7 @@ pub(crate) mod tests {
         fn from(value: ConstraintRow<'_>) -> Self {
             Self {
                 constraint_id: value.constraint_id.into(),
-                constraint_name: RawIdentifier::new(value.constraint_name),
+                constraint_name: RawNamespacedIdentifier::new(value.constraint_name),
                 table_id: value.table_id.into(),
                 constraint_data: StConstraintData::Unique {
                     columns: value.unique_columns.into(),
@@ -1345,6 +1460,7 @@ pub(crate) mod tests {
             pk,
             false,
             None,
+            None,
         )
     }
 
@@ -1358,9 +1474,6 @@ pub(crate) mod tests {
             col_pos: 0.into(),
             sequence_name: "Foo_id_seq".into(),
             start: 1,
-            increment: 1,
-            min_value: 1,
-            max_value: i128::MAX,
         };
         user_public_table(
             map_array(basic_table_schema_cols()),
@@ -1481,6 +1594,12 @@ pub(crate) mod tests {
             TableRow { id: ST_TABLE_ACCESSOR_ID.into(), name: ST_TABLE_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
             TableRow { id: ST_INDEX_ACCESSOR_ID.into(), name: ST_INDEX_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
             TableRow { id: ST_COLUMN_ACCESSOR_ID.into(), name: ST_COLUMN_ACCESSOR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
+            TableRow { id: ST_ENV_ID.into(), name: ST_ENV_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
+            TableRow { id: ST_OUTBOUND_STREAM_ID.into(), name: ST_OUTBOUND_STREAM_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
+            TableRow { id: ST_OUTBOUND_MSG_ID.into(), name: ST_OUTBOUND_MSG_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
+            TableRow { id: ST_INBOUND_STREAM_ID.into(), name: ST_INBOUND_STREAM_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
+            TableRow { id: ST_INBOUND_MSG_ID.into(), name: ST_INBOUND_MSG_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
+            TableRow { id: ST_OUTBOX_ID.into(), name: ST_OUTBOX_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
 
         ]));
         #[rustfmt::skip]
@@ -1578,6 +1697,39 @@ pub(crate) mod tests {
             ColRow { table: ST_COLUMN_ACCESSOR_ID.into(), pos: 0, name: "table_name", ty: AlgebraicType::String },
             ColRow { table: ST_COLUMN_ACCESSOR_ID.into(), pos: 1, name: "col_name", ty: AlgebraicType::String },
             ColRow { table: ST_COLUMN_ACCESSOR_ID.into(), pos: 2, name: "accessor_name", ty: AlgebraicType::String },
+            ColRow { table: ST_ENV_ID.into(), pos: 0, name: "key", ty: AlgebraicType::String },
+            ColRow { table: ST_ENV_ID.into(), pos: 1, name: "value", ty: AlgebraicType::String },
+
+            ColRow { table: ST_OUTBOUND_STREAM_ID.into(), pos: 0, name: "stream_id", ty: AlgebraicType::U64 },
+            ColRow { table: ST_OUTBOUND_STREAM_ID.into(), pos: 1, name: "outbox_table_id", ty: TableId::get_type() },
+            ColRow { table: ST_OUTBOUND_STREAM_ID.into(), pos: 2, name: "target_identity", ty: AlgebraicType::U256 },
+            ColRow { table: ST_OUTBOUND_STREAM_ID.into(), pos: 3, name: "next_seq", ty: AlgebraicType::U64 },
+            ColRow { table: ST_OUTBOUND_STREAM_ID.into(), pos: 4, name: "ack_prefix", ty: AlgebraicType::U64 },
+
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 0, name: "stream_id", ty: AlgebraicType::U64 },
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 1, name: "msg_id", ty: AlgebraicType::U64 },
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 2, name: "seq", ty: AlgebraicType::U64 },
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 3, name: "retry_count", ty: AlgebraicType::U32 },
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 4, name: "last_transport_error", ty: AlgebraicType::option(AlgebraicType::String) },
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 5, name: "result_status", ty: AlgebraicType::option(AlgebraicType::U8) },
+            ColRow { table: ST_OUTBOUND_MSG_ID.into(), pos: 6, name: "result_payload", ty: AlgebraicType::option(AlgebraicType::bytes()) },
+
+            ColRow { table: ST_INBOUND_STREAM_ID.into(), pos: 0, name: "sender_identity", ty: AlgebraicType::U256 },
+            ColRow { table: ST_INBOUND_STREAM_ID.into(), pos: 1, name: "stream_id", ty: AlgebraicType::U64 },
+            ColRow { table: ST_INBOUND_STREAM_ID.into(), pos: 2, name: "applied_prefix", ty: AlgebraicType::U64 },
+
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 0, name: "sender_identity", ty: AlgebraicType::U256 },
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 1, name: "stream_id", ty: AlgebraicType::U64 },
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 2, name: "seq", ty: AlgebraicType::U64 },
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 3, name: "result_status", ty: AlgebraicType::U8 },
+            ColRow { table: ST_INBOUND_MSG_ID.into(), pos: 4, name: "result_payload", ty: AlgebraicType::bytes() },
+
+            ColRow { table: ST_OUTBOX_ID.into(), pos: 0, name: "table_id", ty: TableId::get_type() },
+            ColRow { table: ST_OUTBOX_ID.into(), pos: 1, name: "remote_reducer", ty: resolved_type_via_v9::<NamespacedIdentifier>() },
+            ColRow { table: ST_OUTBOX_ID.into(), pos: 2, name: "target_column", ty: ColId::get_type() },
+            ColRow { table: ST_OUTBOX_ID.into(), pos: 3, name: "arg_columns", ty: resolved_type_via_v9::<Vec<ColId>>() },
+            ColRow { table: ST_OUTBOX_ID.into(), pos: 4, name: "on_result_reducer", ty: AlgebraicType::option(resolved_type_via_v9::<NamespacedIdentifier>()) },
+            ColRow { table: ST_OUTBOX_ID.into(), pos: 5, name: "signature_hash", ty: AlgebraicType::String },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
@@ -1610,6 +1762,14 @@ pub(crate) mod tests {
             IndexRow { id: 27, table: ST_INDEX_ACCESSOR_ID.into(), col: col(1), name: "st_index_accessor_accessor_name_idx_btree", },
             IndexRow { id: 28, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 1], name: "st_column_accessor_table_name_col_name_idx_btree", },
             IndexRow { id: 29, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 2], name: "st_column_accessor_table_name_accessor_name_idx_btree", },
+            IndexRow { id: 30, table: ST_ENV_ID.into(), col: col_list![0], name: "st_env_key_idx_btree", },
+            IndexRow { id: 31, table: ST_OUTBOUND_STREAM_ID.into(), col: col(0), name: "st_outbound_stream_stream_id_idx_btree", },
+            IndexRow { id: 32, table: ST_OUTBOUND_STREAM_ID.into(), col: col_list![1, 2], name: "st_outbound_stream_outbox_table_id_target_identity_idx_btree", },
+            IndexRow { id: 33, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 2], name: "st_outbound_msg_stream_id_seq_idx_btree", },
+            IndexRow { id: 34, table: ST_INBOUND_STREAM_ID.into(), col: col_list![0, 1], name: "st_inbound_stream_sender_identity_stream_id_idx_btree", },
+            IndexRow { id: 35, table: ST_INBOUND_MSG_ID.into(), col: col_list![0, 1, 2], name: "st_inbound_msg_sender_identity_stream_id_seq_idx_btree", },
+            IndexRow { id: 36, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 1], name: "st_outbound_msg_stream_id_msg_id_idx_btree", },
+            IndexRow { id: 37, table: ST_OUTBOX_ID.into(), col: col(0), name: "st_outbox_table_id_idx_btree", },
         ]));
         let start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
         #[rustfmt::skip]
@@ -1622,6 +1782,7 @@ pub(crate) mod tests {
                 SequenceRow { id: 4, table: ST_SCHEDULED_ID.into(), col_pos: 0, name: "st_scheduled_schedule_id_seq", start },
                 SequenceRow { id: 6, table: ST_VIEW_ID.into(), col_pos: 0, name: "st_view_view_id_seq", start },
                 SequenceRow { id: 7, table: ST_VIEW_ARG_ID.into(), col_pos: 0, name: "st_view_arg_id_seq", start },
+                SequenceRow { id: 8, table: ST_OUTBOUND_STREAM_ID.into(), col_pos: 0, name: "st_outbound_stream_stream_id_seq", start },
             ],
             |row| StSequenceRow {
                 allocated: start - 1,
@@ -1655,6 +1816,14 @@ pub(crate) mod tests {
             ConstraintRow { constraint_id: 23, table_id: ST_INDEX_ACCESSOR_ID.into(), unique_columns: col(1), constraint_name: "st_index_accessor_accessor_name_key", },
             ConstraintRow { constraint_id: 24, table_id: ST_COLUMN_ACCESSOR_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_column_accessor_table_name_col_name_key", },
             ConstraintRow { constraint_id: 25, table_id: ST_COLUMN_ACCESSOR_ID.into(), unique_columns: col_list![0, 2], constraint_name: "st_column_accessor_table_name_accessor_name_key", },
+            ConstraintRow { constraint_id: 26, table_id: ST_ENV_ID.into(), unique_columns: col_list![0], constraint_name: "st_env_key_key", },
+            ConstraintRow { constraint_id: 27, table_id: ST_OUTBOUND_STREAM_ID.into(), unique_columns: col(0), constraint_name: "st_outbound_stream_stream_id_key", },
+            ConstraintRow { constraint_id: 28, table_id: ST_OUTBOUND_STREAM_ID.into(), unique_columns: col_list![1, 2], constraint_name: "st_outbound_stream_outbox_table_id_target_identity_key", },
+            ConstraintRow { constraint_id: 29, table_id: ST_OUTBOUND_MSG_ID.into(), unique_columns: col_list![0, 2], constraint_name: "st_outbound_msg_stream_id_seq_key", },
+            ConstraintRow { constraint_id: 30, table_id: ST_INBOUND_STREAM_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_inbound_stream_sender_identity_stream_id_key", },
+            ConstraintRow { constraint_id: 31, table_id: ST_INBOUND_MSG_ID.into(), unique_columns: col_list![0, 1, 2], constraint_name: "st_inbound_msg_sender_identity_stream_id_seq_key", },
+            ConstraintRow { constraint_id: 32, table_id: ST_OUTBOUND_MSG_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_outbound_msg_stream_id_msg_id_key", },
+            ConstraintRow { constraint_id: 33, table_id: ST_OUTBOX_ID.into(), unique_columns: col(0), constraint_name: "st_outbox_table_id_key", },
             ]));
 
         // Verify we get back the tables correctly with the proper ids...
@@ -1789,6 +1958,43 @@ pub(crate) mod tests {
         let s1 = tx.get_schema(table_id).expect("should exist");
         let s2 = tx.schema_for_table_raw(table_id).expect("should exist");
         assert_eq!(**s1, s2);
+    }
+
+    /// A view's params must be the same whether its schema was built from the module def
+    /// or reloaded from `st_view_param`.
+    #[test]
+    fn test_view_params_consistent_with_st_view_param() -> ResultTest<()> {
+        use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+        use spacetimedb_sats::ProductType;
+        use spacetimedb_schema::def::ModuleDef;
+
+        let mut builder = RawModuleDefV10Builder::new();
+        let row = builder.add_algebraic_type(
+            [],
+            "row",
+            AlgebraicType::Product(ProductType::from_iter([("x", AlgebraicType::U8)])),
+            true,
+        );
+        let params = ProductType::from_iter([("id", AlgebraicType::U32)]);
+        builder.add_view(
+            "v",
+            0,
+            true,
+            true,
+            params.clone(),
+            AlgebraicType::array(AlgebraicType::Ref(row)),
+        );
+        let module_def: ModuleDef = builder.finish().try_into()?;
+        let view_def = module_def.view("v").expect("view should exist");
+
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let (_, table_id) = tx.create_view(&module_def, view_def)?;
+
+        verify_schemas_consistent(&mut tx, table_id);
+        let schema = tx.get_schema(table_id).expect("should exist");
+        assert_eq!(schema.view_info.as_ref().expect("should be a view").params, params);
+        Ok(())
     }
 
     #[test]
@@ -2050,9 +2256,40 @@ pub(crate) mod tests {
         let _ = datastore.rollback_mut_tx(tx);
         let mut tx = begin_mut_tx(&datastore);
         insert(&datastore, &mut tx, table_id, &row)?;
+        // The rolled-back insert did not consume the first auto-inc value.
         #[rustfmt::skip]
-        assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(2, "Foo", 18)]);
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
         Ok(())
+    }
+
+    #[test]
+    fn sequence_occasionally_skips_values_to_simulate_reallocation() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let mut schema = basic_table_schema_with_indices(basic_indices(), basic_constraints());
+        schema.primary_key = Some(0.into());
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        let mut previous_value = 0;
+
+        // Determined experimentally;
+        // the fixed seed we use for tests first hits a simulated reallocation point
+        // somewhere between rows 8192 and 16384.
+        const MAX_ROWS: u32 = 16384;
+
+        for row_number in 0..MAX_ROWS {
+            let row = product![0_u32, format!("row_{row_number}"), 0_u32];
+            let (_, row_ref) = insert(&datastore, &mut tx, table_id, &row)?;
+            let value = row_ref.read_col::<u32>(0).unwrap();
+            if value != previous_value + 1 {
+                return Ok(());
+            }
+            previous_value = value;
+        }
+
+        panic!("did not simulate a sequence reallocation after inserting {MAX_ROWS} rows");
     }
 
     fn assert_st_indices(tx: &MutTxId, include_age: bool) -> ResultTest<()> {
@@ -2088,6 +2325,14 @@ pub(crate) mod tests {
             IndexRow { id: 27, table: ST_INDEX_ACCESSOR_ID.into(), col: col(1), name: "st_index_accessor_accessor_name_idx_btree", },
             IndexRow { id: 28, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 1], name: "st_column_accessor_table_name_col_name_idx_btree", },
             IndexRow { id: 29, table: ST_COLUMN_ACCESSOR_ID.into(), col: col_list![0, 2], name: "st_column_accessor_table_name_accessor_name_idx_btree", },
+            IndexRow { id: 30, table: ST_ENV_ID.into(), col: col_list![0], name: "st_env_key_idx_btree", },
+            IndexRow { id: 31, table: ST_OUTBOUND_STREAM_ID.into(), col: col(0), name: "st_outbound_stream_stream_id_idx_btree", },
+            IndexRow { id: 32, table: ST_OUTBOUND_STREAM_ID.into(), col: col_list![1, 2], name: "st_outbound_stream_outbox_table_id_target_identity_idx_btree", },
+            IndexRow { id: 33, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 2], name: "st_outbound_msg_stream_id_seq_idx_btree", },
+            IndexRow { id: 34, table: ST_INBOUND_STREAM_ID.into(), col: col_list![0, 1], name: "st_inbound_stream_sender_identity_stream_id_idx_btree", },
+            IndexRow { id: 35, table: ST_INBOUND_MSG_ID.into(), col: col_list![0, 1, 2], name: "st_inbound_msg_sender_identity_stream_id_seq_idx_btree", },
+            IndexRow { id: 36, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 1], name: "st_outbound_msg_stream_id_msg_id_idx_btree", },
+            IndexRow { id: 37, table: ST_OUTBOX_ID.into(), col: col(0), name: "st_outbox_table_id_idx_btree", },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree",  },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree",  },
@@ -2248,9 +2493,6 @@ pub(crate) mod tests {
             col_pos: 0.into(),
             sequence_name: "seq".into(),
             start: 1,
-            increment: 1,
-            min_value: 1,
-            max_value: i128::MAX,
         };
         let seq_id = datastore.create_sequence_mut_tx(&mut tx, sequence.clone())?;
         assert_matches!(
@@ -2309,7 +2551,8 @@ pub(crate) mod tests {
         let _ = datastore.rollback_mut_tx(tx);
         let mut tx = begin_mut_tx(&datastore);
         assert_eq!(tx.pending_schema_changes(), []);
-        insert_assert_and_remove(&mut tx, &zero, &product![2])?;
+        // The auto-inc value generated before the rollback remains available.
+        insert_assert_and_remove(&mut tx, &zero, &one)?;
 
         // Drop the seq and commit this time around. In the next tx, we witness that there's no seq.
         datastore.drop_sequence_mut_tx(&mut tx, seq_id)?;
@@ -2873,6 +3116,238 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn test_outbox_insert_records_stream_sequence() -> ResultTest<()> {
+        let mut schema = user_public_table(
+            [
+                ColumnSchema::for_test(0, "msg_id", AlgebraicType::U64),
+                ColumnSchema::for_test(1, "target", AlgebraicType::identity()),
+            ],
+            [],
+            [],
+            [],
+            None,
+            Some(ColId(0)),
+        );
+        schema.outbox = Some(OutboxSchema {
+            remote_reducer: ReducerName::for_test("receive"),
+            target_column: ColId(1),
+            arg_columns: vec![ColId(2)],
+            on_result_reducer: None,
+            signature_hash: "test-signature".into(),
+        });
+
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let target = Identity::ONE;
+
+        for msg_id in [10u64, 11] {
+            let row = to_vec(&product![msg_id, target]).unwrap();
+            let (row_ptr, insert_flags) = {
+                let (_, row_ref, insert_flags) = datastore.insert_mut_tx(&mut tx, table_id, &row)?;
+                (row_ref.pointer(), insert_flags)
+            };
+            assert!(insert_flags.is_outbox_table);
+            tx.record_outbox_insert(table_id, row_ptr)?;
+            tx.record_outbox_insert(table_id, row_ptr)?;
+        }
+
+        let stream_rows = tx
+            .iter(ST_OUTBOUND_STREAM_ID)?
+            .map(StOutboundStreamRow::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        assert_eq!(stream_rows.len(), 1);
+        assert_eq!(stream_rows[0].outbox_table_id, table_id);
+        assert_eq!(stream_rows[0].target_identity, IdentityViaU256(target));
+        assert_eq!(stream_rows[0].next_seq, 3);
+        assert_eq!(stream_rows[0].ack_prefix, 0);
+
+        let stream_id = stream_rows[0].stream_id;
+        let mut outbound_rows = tx
+            .iter(ST_OUTBOUND_MSG_ID)?
+            .map(StOutboundMsgRow::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        outbound_rows.sort_by_key(|row| row.seq);
+        assert_eq!(outbound_rows.iter().map(|row| row.seq).collect::<Vec<_>>(), vec![1, 2]);
+        assert_eq!(
+            outbound_rows.iter().map(|row| row.msg_id).collect::<Vec<_>>(),
+            vec![10, 11]
+        );
+
+        // Reads in a write transaction include uncommitted rows and isolate each stream.
+        let row = to_vec(&product![20u64, Identity::ZERO]).unwrap();
+        let row_ptr = datastore.insert_mut_tx(&mut tx, table_id, &row)?.1.pointer();
+        let other = tx.record_outbox_insert(table_id, row_ptr)?;
+        assert_ne!(stream_id, other.stream_id);
+        assert_eq!(
+            StOutboundMsgRow::try_from(tx.outbound_msg_by_stream_seq(stream_id, 1)?.unwrap())?.msg_id,
+            10
+        );
+        assert_eq!(
+            StOutboundMsgRow::try_from(tx.outbound_msg_by_stream_seq(other.stream_id, 1)?.unwrap())?.msg_id,
+            20
+        );
+        assert!(tx.outbound_msg_by_stream_seq(stream_id, 3)?.is_none());
+
+        // The same helpers work after commit through a read-only transaction.
+        datastore.commit_mut_tx(tx)?;
+        let tx = begin_tx(&datastore);
+        assert_eq!(tx.st_outbound_stream_by_id(stream_id)?.unwrap().next_seq, 3);
+        assert_eq!(
+            StOutboundMsgRow::try_from(tx.outbound_msg_by_stream_seq(stream_id, 2)?.unwrap())?.msg_id,
+            11
+        );
+        drop(tx);
+
+        let mut tx = begin_mut_tx(&datastore);
+        tx.record_outbound_idc_transport_error(stream_id, 1, "connection reset".into())?;
+        let row = StOutboundMsgRow::try_from(tx.outbound_msg_by_stream_seq(stream_id, 1)?.unwrap())?;
+        assert_eq!(row.retry_count, 1);
+        assert_eq!(row.last_transport_error.as_deref(), Some("connection reset"));
+        let payload = Bytes::from_static(b"reducer failed");
+        tx.record_outbound_idc_result(stream_id, 1, StInboundMsgResultStatus::Err, payload.clone())?;
+        let row = StOutboundMsgRow::try_from(tx.outbound_msg_by_stream_seq(stream_id, 1)?.unwrap())?;
+        assert_eq!(row.result_status, Some(StInboundMsgResultStatus::Err));
+        assert_eq!(row.result_payload, Some(payload));
+        assert_eq!(row.last_transport_error, None);
+
+        // Reject out-of-order acknowledgments before changing either the stream or its messages.
+        let stream_before = tx.st_outbound_stream_by_id(stream_id)?;
+        assert!(tx.ack_outbound_idc_msg(stream_id, 2).is_err());
+        assert_eq!(tx.st_outbound_stream_by_id(stream_id)?, stream_before);
+        assert!(tx.outbound_msg_by_stream_seq(stream_id, 1)?.is_some());
+        assert!(tx.outbound_msg_by_stream_seq(stream_id, 2)?.is_some());
+
+        // Repeated acknowledgments leave later messages and other streams alone.
+        let mut expected_stream = tx.st_outbound_stream_by_id(stream_id)?.unwrap();
+        expected_stream.ack_prefix = 1;
+        tx.ack_outbound_idc_msg(stream_id, 1)?;
+        tx.ack_outbound_idc_msg(stream_id, 1)?;
+        assert_eq!(tx.st_outbound_stream_by_id(stream_id)?, Some(expected_stream));
+        assert!(tx.outbound_msg_by_stream_seq(stream_id, 1)?.is_none());
+        assert!(tx.outbound_msg_by_stream_seq(stream_id, 2)?.is_some());
+        assert!(tx.outbound_msg_by_stream_seq(other.stream_id, 1)?.is_some());
+
+        tx.ack_outbound_idc_msg(stream_id, 2)?;
+        assert_eq!(tx.st_outbound_stream_by_id(stream_id)?.unwrap().ack_prefix, 2);
+        assert!(tx.outbound_msg_by_stream_seq(stream_id, 2)?.is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_inbound_idc_records_replays_and_trims_outcomes() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        // Bootstrap defers indexes until replay completes; duplicate checks require this one.
+        tx.create_index(crate::system_tables::st_inbound_msg_schema().indexes[0].clone(), true)?;
+        let sender = Identity::ONE;
+        let stream_id = 7;
+
+        assert_eq!(tx.inbound_idc_applied_prefix(sender, stream_id)?, 0);
+        assert!(tx.inbound_idc_outcome(sender, stream_id, 1)?.is_none());
+
+        tx.record_inbound_idc_outcome(
+            sender,
+            stream_id,
+            1,
+            StInboundMsgResultStatus::Ok,
+            Bytes::from_static(b"ok"),
+        )?;
+        assert_eq!(tx.inbound_idc_applied_prefix(sender, stream_id)?, 1);
+
+        let outcome = tx
+            .inbound_idc_outcome(sender, stream_id, 1)?
+            .expect("outcome should be retained for replay");
+        assert_eq!(outcome.result_status, StInboundMsgResultStatus::Ok);
+        assert_eq!(&outcome.result_payload[..], b"ok");
+        for (status, payload) in [
+            (StInboundMsgResultStatus::Ok, Bytes::from_static(b"ok")),
+            (StInboundMsgResultStatus::Err, Bytes::from_static(b"changed")),
+        ] {
+            assert!(
+                tx.record_inbound_idc_outcome(sender, stream_id, 1, status, payload)
+                    .is_err(),
+                "IDC outcomes are immutable and retries must replay the first decision ({status:?})",
+            );
+            assert_eq!(tx.inbound_idc_outcome(sender, stream_id, 1)?, Some(outcome.clone()));
+        }
+
+        tx.trim_inbound_idc_outcomes(sender, stream_id, 1)?;
+        assert_eq!(tx.inbound_idc_applied_prefix(sender, stream_id)?, 1);
+        assert!(tx.inbound_idc_outcome(sender, stream_id, 1)?.is_none());
+
+        let stream_rows = tx
+            .iter(ST_INBOUND_STREAM_ID)?
+            .map(StInboundStreamRow::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        assert_eq!(stream_rows.len(), 1);
+        assert_eq!(stream_rows[0].sender_identity, IdentityViaU256(sender));
+        assert_eq!(stream_rows[0].stream_id, stream_id);
+        assert_eq!(stream_rows[0].applied_prefix, 1);
+
+        let msg_rows = tx
+            .iter(ST_INBOUND_MSG_ID)?
+            .map(StInboundMsgRow::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        assert!(msg_rows.is_empty());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_inbound_idc_trim_range_and_repeated_acknowledgments() -> ResultTest<()> {
+        // The range scan must handle both the committed index and transaction-local rows.
+        for commit_before_trim in [false, true] {
+            let datastore = get_datastore()?;
+            let mut tx = begin_mut_tx(&datastore);
+            let sender = Identity::ONE;
+            let stream_id = 7;
+            let streams = [
+                (sender, stream_id),
+                (sender, 6),
+                (sender, 8),
+                (Identity::ZERO, stream_id),
+            ];
+            for (sender, stream_id) in streams {
+                for seq in 1..=3 {
+                    tx.record_inbound_idc_outcome(sender, stream_id, seq, StInboundMsgResultStatus::Ok, Bytes::new())?;
+                }
+            }
+            if commit_before_trim {
+                datastore.commit_mut_tx(tx)?;
+                tx = begin_mut_tx(&datastore);
+            }
+
+            // Zero acknowledges nothing; repeated or older acknowledgments are harmless.
+            tx.trim_inbound_idc_outcomes(sender, stream_id, 0)?;
+            assert!(tx.inbound_idc_outcome(sender, stream_id, 1)?.is_some());
+            for ack_prefix in [1, 1, 0] {
+                tx.trim_inbound_idc_outcomes(sender, stream_id, ack_prefix)?;
+                assert!(tx.inbound_idc_outcome(sender, stream_id, 1)?.is_none());
+                assert!(tx.inbound_idc_outcome(sender, stream_id, 2)?.is_some());
+                assert!(tx.inbound_idc_outcome(sender, stream_id, 3)?.is_some());
+            }
+
+            // Even the largest bound must stay within this sender and stream.
+            tx.trim_inbound_idc_outcomes(sender, stream_id, u64::MAX)?;
+            tx.trim_inbound_idc_outcomes(sender, stream_id, u64::MAX)?;
+            for (other_sender, other_stream) in streams {
+                let retained = (other_sender, other_stream) != (sender, stream_id);
+                for seq in 1..=3 {
+                    assert_eq!(
+                        tx.inbound_idc_outcome(other_sender, other_stream, seq)?.is_some(),
+                        retained
+                    );
+                }
+                // Trimming results must not allow an old sequence to execute again.
+                assert_eq!(tx.inbound_idc_applied_prefix(other_sender, other_stream)?, 3);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn test_row_level_security() -> ResultTest<()> {
         let (_, mut tx, table_id) = setup_table()?;
 
@@ -2893,6 +3368,51 @@ pub(crate) mod tests {
 
         tx.drop_row_level_security(rls.sql)?;
         assert_eq!(tx.row_level_security_for_table_id(table_id)?, []);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_alter_table_outbox_updates_insert_flags() -> ResultTest<()> {
+        let schema = user_public_table(
+            [
+                ColumnSchema::for_test(0, "msg_id", AlgebraicType::U64),
+                ColumnSchema::for_test(1, "target", AlgebraicType::U256),
+            ],
+            [],
+            [],
+            [],
+            None,
+            Some(ColId(0)),
+        );
+
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        let outbox = OutboxSchema {
+            remote_reducer: ReducerName::for_test("receive"),
+            target_column: ColId(1),
+            arg_columns: vec![],
+            on_result_reducer: None,
+            signature_hash: "test-signature".into(),
+        };
+        let row = to_vec(&product![1u64, IdentityViaU256(Identity::ONE)]).unwrap();
+
+        let mut tx = begin_mut_tx(&datastore);
+        let (_, _, insert_flags) = datastore.insert_mut_tx(&mut tx, table_id, &row)?;
+        assert!(!insert_flags.is_outbox_table);
+
+        tx.alter_table_outbox(table_id, Some(outbox.clone()))?;
+        assert_eq!(tx.get_schema(table_id).unwrap().outbox, Some(outbox));
+        assert_eq!(
+            tx.schema_for_table_raw(table_id)?.outbox,
+            tx.get_schema(table_id).unwrap().outbox
+        );
+        let row = to_vec(&product![2u64, IdentityViaU256(Identity::ONE)]).unwrap();
+        let (_, _, insert_flags) = datastore.insert_mut_tx(&mut tx, table_id, &row)?;
+        assert!(insert_flags.is_outbox_table);
 
         Ok(())
     }
@@ -2937,7 +3457,7 @@ pub(crate) mod tests {
 
         fn assert_rows(datastore: &Locking, table_id: TableId, rows: Vec<ProductValue>) -> ResultTest<()> {
             let tx = begin_tx(datastore);
-            for (actual, expected) in datastore.iter_tx(&tx, table_id)?.zip_eq(rows.into_iter()) {
+            for (actual, expected) in datastore.iter_tx(&tx, table_id)?.zip_eq(rows) {
                 assert_eq!(actual.to_bsatn_vec()?, expected.to_bsatn_vec()?);
             }
             Ok(())
@@ -3184,7 +3704,7 @@ pub(crate) mod tests {
             table_id: TableId::SENTINEL,
             schedule_id: ScheduleId::SENTINEL,
             schedule_name: Identifier::for_test("schedule"),
-            function_name: Identifier::for_test("reducer"),
+            function_name: Identifier::for_test("reducer").into(),
             at_column: 1.into(),
         };
         let sum_ty = AlgebraicType::sum([("foo", AlgebraicType::Bool), ("bar", AlgebraicType::U16)]);
@@ -3423,10 +3943,12 @@ pub(crate) mod tests {
             "Unexpected delete entries after altering the table"
         );
 
+        // The rolled-back migration did not consume 7, so the committed migration uses it
+        // after the two initial committed rows with IDs 5 and 6.
         let inserted_rows = [
             product![5u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
             product![6u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
-            product![8u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
+            product![7u64, AlgebraicValue::sum(0, 1u16.into()), 42u8],
         ];
 
         let new_entry = tx_data
@@ -3670,6 +4192,405 @@ pub(crate) mod tests {
         assert!(
             result.is_ok(),
             "same PK in a new TX should succeed for event tables (no committed state)"
+        );
+        Ok(())
+    }
+
+    /// Creates a table with a non-unique btree index on `cols` but no constraints.
+    fn table_with_non_unique_index(cols: impl Into<ColList>) -> TableSchema {
+        let indices = vec![IndexSchema::for_test(
+            "Foo_idx_btree",
+            BTreeAlgorithm { columns: cols.into() },
+        )];
+        basic_table_schema_with_indices(indices, Vec::<ConstraintSchema>::new())
+    }
+
+    #[test]
+    fn test_create_constraint_makes_index_unique() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with non-unique index on col 0.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = table_with_non_unique_index(0u16);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: insert unique rows and commit.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(2, "Bob", 25))?;
+        commit(&datastore, tx)?;
+
+        // TX3: add unique constraint — should succeed since data is unique.
+        let mut tx = begin_mut_tx(&datastore);
+        let mut constraint = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint.table_id = table_id;
+        datastore.create_constraint_mut_tx(&mut tx, constraint)?;
+
+        // Inserting a duplicate should now fail (index is unique).
+        let dup_result = insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Charlie", 20));
+        assert!(
+            dup_result.is_err(),
+            "duplicate insert should fail after adding unique constraint"
+        );
+        commit(&datastore, tx)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_constraint_rollback_restores_non_unique() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with non-unique index on col 0.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = table_with_non_unique_index(0u16);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: insert unique rows and commit.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(2, "Bob", 25))?;
+        commit(&datastore, tx)?;
+
+        // TX3: add unique constraint, then rollback.
+        let mut tx = begin_mut_tx(&datastore);
+        let mut constraint = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint.table_id = table_id;
+        datastore.create_constraint_mut_tx(&mut tx, constraint)?;
+        let _ = datastore.rollback_mut_tx(tx);
+
+        // TX4: after rollback, duplicates should be allowed again.
+        let mut tx = begin_mut_tx(&datastore);
+        let result = insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Charlie", 20));
+        assert!(
+            result.is_ok(),
+            "duplicate insert should succeed after rollback of unique constraint"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_constraint_fails_with_duplicates() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with non-unique index on col 0.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = table_with_non_unique_index(0u16);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: insert duplicate rows and commit.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Bob", 25))?; // duplicate id=1
+        commit(&datastore, tx)?;
+
+        // TX3: try to add unique constraint — should fail.
+        let mut tx = begin_mut_tx(&datastore);
+        let mut constraint = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint.table_id = table_id;
+        let result = datastore.create_constraint_mut_tx(&mut tx, constraint);
+        assert!(result.is_err(), "create_constraint should fail when duplicates exist");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_constraint_multi_col() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with non-unique multi-column index on (col 0, col 2).
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = table_with_non_unique_index(col_list![0, 2]);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: insert rows unique on (id, age) and commit.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Bob", 25))?; // same id, different age
+        commit(&datastore, tx)?;
+
+        // TX3: add unique constraint on (col 0, col 2) — should succeed.
+        let mut tx = begin_mut_tx(&datastore);
+        let mut constraint = ConstraintSchema::unique_for_test("Foo_id_age_unique", ColSet::from(col_list![0, 2]));
+        constraint.table_id = table_id;
+        datastore.create_constraint_mut_tx(&mut tx, constraint)?;
+        commit(&datastore, tx)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_drop_constraint_makes_index_non_unique() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with unique constraint.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = basic_table_schema_with_indices(basic_indices(), basic_constraints());
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: insert a row.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
+        commit(&datastore, tx)?;
+
+        // TX3: drop the unique constraint on col 0.
+        let mut tx = begin_mut_tx(&datastore);
+        let constraint_id = tx
+            .constraint_id_from_name("Foo_id_key")?
+            .expect("constraint should exist");
+        datastore.drop_constraint_mut_tx(&mut tx, constraint_id)?;
+
+        // Inserting a duplicate on col 0 should now succeed.
+        let result = insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Bob", 25));
+        assert!(
+            result.is_ok(),
+            "duplicate insert should succeed after dropping unique constraint"
+        );
+        commit(&datastore, tx)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_drop_constraint_rollback_keeps_unique() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with unique constraint.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = basic_table_schema_with_indices(basic_indices(), basic_constraints());
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: insert a row.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
+        commit(&datastore, tx)?;
+
+        // TX3: drop constraint, then rollback.
+        let mut tx = begin_mut_tx(&datastore);
+        let constraint_id = tx
+            .constraint_id_from_name("Foo_id_key")?
+            .expect("constraint should exist");
+        datastore.drop_constraint_mut_tx(&mut tx, constraint_id)?;
+        let _ = datastore.rollback_mut_tx(tx);
+
+        // TX4: after rollback, constraint should be back — duplicates should fail.
+        let mut tx = begin_mut_tx(&datastore);
+        let dup_result = insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Bob", 25));
+        assert!(
+            dup_result.is_err(),
+            "duplicate insert should fail after rollback of drop constraint"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_constraint_merge_error_reverts_uniqueness() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with non-unique index on col 0.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = table_with_non_unique_index(0u16);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: insert a row into committed state.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Alice", 30))?;
+        commit(&datastore, tx)?;
+
+        // TX3: insert a conflicting row in the tx state, then try adding a unique constraint.
+        // The committed table has id=1 and the tx state also has id=1.
+        // The committed index check passes (no duplicates within committed data alone),
+        // but `can_merge` should fail because tx + committed have the same key.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Bob", 25))?;
+        let mut constraint = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint.table_id = table_id;
+        let result = datastore.create_constraint_mut_tx(&mut tx, constraint);
+        assert!(
+            result.is_err(),
+            "create_constraint should fail when tx state conflicts with committed state"
+        );
+
+        // Before rolling back, verify the merge-error revert path already restored the
+        // index to non-unique within the still-open failing tx: a further duplicate
+        // insert on the same key must succeed.
+        let pre_rollback_dup = insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Dave", 19));
+        assert!(
+            pre_rollback_dup.is_ok(),
+            "index must be non-unique inside the failing tx: the merge-error path should revert `make_unique` before returning",
+        );
+
+        // Rollback and verify the index is still non-unique.
+        let _ = datastore.rollback_mut_tx(tx);
+        let mut tx = begin_mut_tx(&datastore);
+        let dup_result = insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Charlie", 20));
+        assert!(
+            dup_result.is_ok(),
+            "index should be non-unique after merge-error rollback: duplicates must be allowed"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_drop_constraint_rollback_restores_pointer_map_invariant() -> ResultTest<()> {
+        // Invariant (table.rs): a table holds a pointer map iff it has no unique index.
+        //
+        // Forward `drop_constraint` on a table with EXACTLY ONE unique constraint makes
+        // the backing index non-unique and rebuilds the pointer map (because no unique
+        // index remains to enforce set semantics). On rollback we must (a) restore the
+        // index to unique AND (b) drop the rebuilt pointer map — otherwise the table
+        // ends up with BOTH a unique index AND a pointer map, breaking the invariant.
+        //
+        // The schema must have exactly one unique constraint, otherwise the forward
+        // path's `!has_unique_index()` check short-circuits the rebuild and the test
+        // would pass trivially on broken code.
+        let datastore = get_datastore()?;
+
+        // TX1: create table with a single unique constraint on col 0.
+        let mut tx = begin_mut_tx(&datastore);
+        let indices = vec![IndexSchema::for_test("Foo_id_idx_btree", BTreeAlgorithm::from(0))];
+        let constraints = vec![ConstraintSchema::unique_for_test("Foo_id_key", 0u16)];
+        let schema = basic_table_schema_with_indices(indices, constraints);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // Baseline: with a unique index in place there should be no pointer map.
+        {
+            let committed = datastore.committed_state.read();
+            let table = committed.tables.get(&table_id).expect("table should exist");
+            assert!(table.has_unique_index(), "baseline: table should have a unique index");
+            assert!(
+                !table.has_pointer_map(),
+                "baseline: a unique index subsumes the pointer map",
+            );
+        }
+
+        // TX2: drop the only unique constraint, then rollback. Forward drop rebuilds the
+        // pointer map; rollback must drop it.
+        let mut tx = begin_mut_tx(&datastore);
+        let constraint_id = tx
+            .constraint_id_from_name("Foo_id_key")?
+            .expect("constraint should exist");
+        datastore.drop_constraint_mut_tx(&mut tx, constraint_id)?;
+        let _ = datastore.rollback_mut_tx(tx);
+
+        // After rollback: the unique index must be restored AND the pointer map that the
+        // forward path rebuilt must be discarded.
+        let committed = datastore.committed_state.read();
+        let table = committed.tables.get(&table_id).expect("table should exist");
+        assert!(
+            table.has_unique_index(),
+            "rollback of drop_constraint must restore the unique index",
+        );
+        assert!(
+            !table.has_pointer_map(),
+            "rollback must discard the pointer map rebuilt by forward drop_constraint — having both a unique index and a pointer map breaks the table invariant",
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_constraint_is_idempotent_and_does_not_clobber_pending_changes() -> ResultTest<()> {
+        // `create_st_constraint` short-circuits when the exact `st_constraint` row already
+        // exists in the tx insert table (`RowRefInsertion::Existed`), and in that case does
+        // NOT push a `PendingSchemaChange`. Previously `create_constraint` would then
+        // blindly overwrite `pending_schema_changes.last_mut()`, clobbering whichever
+        // unrelated change happened to be at the end of the list.
+        //
+        // This test drives that exact scenario: run `create_constraint` once on a fresh
+        // schema, inject an unrelated marker `PendingSchemaChange` at the end of the tx
+        // pending list, then call `create_constraint` again with a byte-identical
+        // `ConstraintSchema` (same constraint_id). The second call must hit the Existed
+        // path and leave the marker untouched.
+        use super::super::tx_state::PendingSchemaChange;
+
+        let datastore = get_datastore()?;
+
+        // TX1: create table with a non-unique index on col 0.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = table_with_non_unique_index(0u16);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: first call — adds the constraint, makes the index unique.
+        let mut tx = begin_mut_tx(&datastore);
+        let mut constraint_a = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint_a.table_id = table_id;
+        let constraint_id = datastore.create_constraint_mut_tx(&mut tx, constraint_a)?;
+
+        // Inject an unrelated marker at the end of the pending-changes list.
+        // If `create_constraint` clobbers `last_mut()` on the Existed path, this marker
+        // gets overwritten with a ConstraintAdded; otherwise it stays a TableAdded.
+        tx.tx_state
+            .pending_schema_changes
+            .push(PendingSchemaChange::TableAdded(TableId::SENTINEL));
+        let expected_len = tx.tx_state.pending_schema_changes.len();
+
+        // Second call — identical ConstraintSchema with the now-known constraint_id.
+        // The row bytes match the one just inserted, so `create_st_constraint` takes the
+        // `RowRefInsertion::Existed` short-circuit and pushes nothing.
+        let mut constraint_b = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint_b.table_id = table_id;
+        constraint_b.constraint_id = constraint_id;
+        let returned_id = datastore.create_constraint_mut_tx(&mut tx, constraint_b)?;
+        assert_eq!(
+            returned_id, constraint_id,
+            "idempotent re-add must return the existing constraint id",
+        );
+
+        // Length unchanged (no new push), and — critically — the marker is still the last
+        // element (not clobbered into a ConstraintAdded).
+        assert_eq!(
+            tx.tx_state.pending_schema_changes.len(),
+            expected_len,
+            "Existed path must not push a new pending schema change",
+        );
+        assert_eq!(
+            tx.tx_state.pending_schema_changes.last(),
+            Some(&PendingSchemaChange::TableAdded(TableId::SENTINEL)),
+            "Existed path must not overwrite an unrelated trailing pending schema change",
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_constraint_fails_without_backing_index() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // TX1: create table with ZERO indices.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = basic_table_schema_with_indices(Vec::<IndexSchema>::new(), Vec::<ConstraintSchema>::new());
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // TX2: try to add a unique constraint on col 0 — no backing index exists.
+        let mut tx = begin_mut_tx(&datastore);
+        let mut constraint = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint.table_id = table_id;
+        let result = datastore.create_constraint_mut_tx(&mut tx, constraint);
+        assert!(
+            result.is_err(),
+            "create_constraint must fail when no backing index covers the constrained columns"
+        );
+        let err_msg = format!("{:#}", result.unwrap_err());
+        assert!(
+            err_msg.contains("requires at least one backing index"),
+            "error message should mention the missing backing index, got: {err_msg}",
+        );
+
+        // Verify no orphan st_constraint row was persisted: `constraint_id_from_name`
+        // must return `None` because pre-validation fired before `create_st_constraint`.
+        let orphan = tx.constraint_id_from_name("Foo_id_unique")?;
+        assert!(
+            orphan.is_none(),
+            "pre-validation must run before create_st_constraint; no st_constraint row may be written on failure",
         );
         Ok(())
     }

@@ -1,0 +1,13 @@
+Implement this SpacetimeDB module in csharp. Return only the module source.
+
+Maintain category totals after arbitrary sale inserts, updates, moves and deletes. A category row exists exactly when its sale_count is nonzero, even if total_amount is zero. Negative and zero sale amounts are valid. All source and aggregate changes must be atomic. This is a correctness test, not a scan-cost benchmark.
+
+Tables (the first field is the primary key):
+- public Sale: Id: ulong, Category: string, Amount: long
+- public CategoryTotal: Category: string, TotalAmount: long, SaleCount: ulong
+
+Reducers (argument order is part of the contract):
+- set_sale(Id: ulong, Category: string, Amount: long): Insert or replace a sale. Remove its old contribution and add its new contribution. Reject empty category with 'invalid category'.
+- remove_sale(Id: ulong): Delete a sale and its contribution. Missing IDs are a no-op. Remove a category only when its last sale is deleted.
+
+Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged.

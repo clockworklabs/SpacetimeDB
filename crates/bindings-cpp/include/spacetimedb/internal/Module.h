@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <optional>
+#include <utility>
 #include "../bsatn/types.h"
 #include "../reducer_macros.h"
 #include "../reducer_context.h"
@@ -78,6 +79,8 @@ public:
 
     static int16_t __call_http_handler__(
         uint32_t id,
+        uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
+        BytesSource sender_jwt,
         uint64_t timestamp_microseconds,
         BytesSource request_source,
         BytesSource request_body_source,
@@ -120,6 +123,7 @@ public:
     static void RegisterExplicitTableName(const std::string& source_name, const std::string& canonical_name);
     static void RegisterExplicitFunctionName(const std::string& source_name, const std::string& canonical_name);
     static void RegisterExplicitIndexName(const std::string& source_name, const std::string& canonical_name);
+    static void RegisterViewPrimaryKey(const std::string& view_source_name, std::vector<std::string> columns);
 };
 
 // Helper functions for module description
@@ -177,6 +181,10 @@ public:
 
     static void RegisterExplicitIndexName(const char* source_name, const char* canonical_name) {
         Internal::Module::RegisterExplicitIndexName(source_name, canonical_name);
+    }
+
+    static void RegisterViewPrimaryKey(const char* view_source_name, std::vector<std::string> columns) {
+        Internal::Module::RegisterViewPrimaryKey(view_source_name, std::move(columns));
     }
 };
 

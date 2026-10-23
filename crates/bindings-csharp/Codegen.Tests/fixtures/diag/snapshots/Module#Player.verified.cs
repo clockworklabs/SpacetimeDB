@@ -4,6 +4,11 @@
 
 partial struct Player : System.IEquatable<Player>, SpacetimeDB.BSATN.IStructuralReadWrite
 {
+#if NET10_0_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
+#endif
     public void ReadFields(System.IO.BinaryReader reader)
     {
         Identity = BSATN.IdentityRW.Read(reader);
@@ -44,7 +49,7 @@ partial struct Player : System.IEquatable<Player>, SpacetimeDB.BSATN.IStructural
             registrar.RegisterType<Player>(_ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                 new SpacetimeDB.BSATN.AggregateElement[]
                 {
-                    new("Identity", IdentityRW.GetAlgebraicType(registrar))
+                    new("Identity", IdentityRW.GetAlgebraicType(registrar)),
                 }
             ));
 
@@ -68,16 +73,7 @@ partial struct Player : System.IEquatable<Player>, SpacetimeDB.BSATN.IStructural
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as Player?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is Player t && Equals(t);
     }
 
     public static bool operator ==(Player this_, Player that)

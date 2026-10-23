@@ -169,6 +169,24 @@ pub(super) fn sys_v2_1<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
     )
 }
 
+pub(super) fn sys_v2_2<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
+    create_synthetic_module!(scope, "spacetime:sys@2.2", (with_sys_result, AbiCall::EnvGet, env_get),)
+}
+
+fn env_get<'s>(
+    scope: &mut PinScope<'s, '_>,
+    args: FunctionCallbackArguments<'s>,
+) -> SysCallResult<Local<'s, v8::Value>> {
+    let key: String = deserialize_js(scope, args.get(0))?;
+    match get_env(scope)?.instance_env.env_get(&key)? {
+        Some(value) => Ok(value
+            .into_string(scope)
+            .map_err(|_| RangeError("environment value could not be represented").throw(scope))?
+            .into()),
+        None => Ok(v8::null(scope).into()),
+    }
+}
+
 /// Registers a function in `module`
 /// where the function has `name` and does `body`.
 fn register_module_fun(
@@ -536,6 +554,7 @@ pub(super) fn call_call_view(
         sender,
         timestamp: _,
         args: view_args,
+        view_call: _,
     } = op;
     // Serialize the arguments.
     let view_id = serialize_to_js(scope, &view_id)?;
@@ -585,6 +604,7 @@ pub(super) fn call_call_view_anon(
         name: _,
         timestamp: _,
         args: view_args,
+        view_call: _,
     } = op;
     // Serialize the arguments.
     let view_id = serialize_to_js(scope, &view_id)?;

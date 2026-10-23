@@ -1,3 +1,4 @@
+import type { EnvironmentFor } from './environment';
 import type { DbView } from '../server/db_view';
 import type { Random } from '../server/rng';
 import type { ConnectionId } from './connection_id';
@@ -60,11 +61,20 @@ export type Reducer<S extends UntypedSchemaDef, Params extends ParamsObj> = (
  * Authentication information for the caller of a reducer.
  */
 export type AuthCtx = Readonly<{
-  /** Whether the caller is an internal system process. */
+  /**
+   * Whether the sender of this invocation is this database,
+   * as it is for scheduled reducers and procedures.
+   *
+   * This is equivalent to `ctx.sender.isEqual(ctx.databaseIdentity)`.
+   * It is false in `init`, whose sender is the database's owner.
+   */
   isInternal: boolean;
   /** Whether the caller has authenticated with a JWT token. */
   hasJWT: boolean;
-  /** The JWT claims associated with the caller, or null if hasJWT == false. */
+  /**
+   * The JWT claims associated with the caller, or null if hasJWT == false.
+   * If isInternal is true, this is null.
+   */
   jwt: JwtClaims | null;
 }>;
 
@@ -98,6 +108,12 @@ export interface JwtClaims {
   readonly fullPayload: JsonObject;
 }
 
+export type AliasViews<SchemaDef extends UntypedSchemaDef> = SchemaDef extends {
+  namespaces: infer NS extends Record<string, UntypedSchemaDef>;
+}
+  ? { readonly [K in keyof NS]: ReducerCtx<NS[K]> }
+  : {};
+
 /**
  * Reducer context parametrized by the inferred Schema
  */
@@ -109,8 +125,10 @@ export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
   timestamp: Timestamp;
   connectionId: ConnectionId | null;
   db: DbView<SchemaDef>;
+  env: EnvironmentFor<SchemaDef>;
   senderAuth: AuthCtx;
   newUuidV4(): Uuid;
   newUuidV7(): Uuid;
   random: Random;
+  as: AliasViews<SchemaDef>;
 }>;

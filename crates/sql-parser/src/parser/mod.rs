@@ -5,6 +5,8 @@ use sqlparser::ast::{
     WildcardAdditionalOptions,
 };
 
+use spacetimedb_lib::sats::raw_identifier::RawNamespacedIdentifier;
+
 use crate::ast::{
     BinOp, LogOp, Parameter, Project, ProjectElem, ProjectExpr, SqlExpr, SqlFrom, SqlIdent, SqlJoin, SqlLiteral,
 };
@@ -34,10 +36,11 @@ trait RelParser {
             return Err(SqlUnsupported::ImplicitJoins.into());
         }
         let TableWithJoins { relation, joins } = tables.swap_remove(0);
-        let (name, alias) = Self::parse_relvar(relation)?;
         if joins.is_empty() {
-            return Ok(SqlFrom::Expr(name, alias));
+            let (name, alias, args) = Self::parse_relvar(relation)?;
+            return Ok(SqlFrom::Expr(name, alias, args));
         }
+        let (name, alias) = Self::parse_join_relvar(relation)?;
         Ok(SqlFrom::Join(name, alias, Self::parse_joins(joins)?))
     }
 
@@ -48,7 +51,7 @@ trait RelParser {
 
     /// Parse a single JOIN clause
     fn parse_join(join: Join) -> SqlParseResult<SqlJoin> {
-        let (var, alias) = Self::parse_relvar(join.relation)?;
+        let (var, alias) = Self::parse_join_relvar(join.relation)?;
         match join.join_operator {
             JoinOperator::CrossJoin => Ok(SqlJoin { var, alias, on: None }),
             JoinOperator::Inner(JoinConstraint::None) => Ok(SqlJoin { var, alias, on: None }),
@@ -76,35 +79,45 @@ trait RelParser {
         }
     }
 
-    /// Parse a table reference in a FROM clause
-    fn parse_relvar(expr: TableFactor) -> SqlParseResult<(SqlIdent, SqlIdent)> {
+    /// Parse a table reference in a FROM clause,
+    /// along with its view call arguments, e.g. `42` in `v(42)`.
+    fn parse_relvar(expr: TableFactor) -> SqlParseResult<(SqlIdent, SqlIdent, Vec<SqlLiteral>)> {
         match expr {
             // Relvar no alias
             TableFactor::Table {
                 name,
                 alias: None,
-                args: None,
+                args,
                 with_hints,
                 version: None,
                 partitions,
             } if with_hints.is_empty() && partitions.is_empty() => {
                 let name = parse_ident(name)?;
                 let alias = name.clone();
-                Ok((name, alias))
+                Ok((name, alias, parse_view_args(args)?))
             }
             // Relvar with alias
             TableFactor::Table {
                 name,
                 alias: Some(TableAlias { name: alias, columns }),
-                args: None,
+                args,
                 with_hints,
                 version: None,
                 partitions,
             } if with_hints.is_empty() && partitions.is_empty() && columns.is_empty() => {
-                Ok((parse_ident(name)?, alias.into()))
+                Ok((parse_ident(name)?, alias.into(), parse_view_args(args)?))
             }
             _ => Err(SqlUnsupported::From(expr).into()),
         }
+    }
+
+    /// Parse a table reference in a JOIN, which can't take view call arguments
+    fn parse_join_relvar(expr: TableFactor) -> SqlParseResult<(SqlIdent, SqlIdent)> {
+        let (name, alias, args) = Self::parse_relvar(expr)?;
+        if !args.is_empty() {
+            return Err(SqlUnsupported::JoinViewArgs(name).into());
+        }
+        Ok((name, alias))
     }
 }
 
@@ -198,13 +211,21 @@ pub(crate) fn parse_project_elem(item: SelectItem) -> SqlParseResult<ProjectElem
 pub(crate) fn parse_proj(expr: Expr) -> SqlParseResult<ProjectExpr> {
     match expr {
         Expr::Identifier(ident) => Ok(ProjectExpr::Var(ident.into())),
-        Expr::CompoundIdentifier(mut idents) if idents.len() == 2 => {
-            let table = idents.swap_remove(0).into();
-            let field = idents.swap_remove(0).into();
+        Expr::CompoundIdentifier(idents) if idents.len() >= 2 => {
+            let (table, field) = parse_qualified_field(idents)?;
             Ok(ProjectExpr::Field(table, field))
         }
         _ => Err(SqlUnsupported::ProjectionExpr(expr).into()),
     }
+}
+
+/// Parse a qualified column reference.
+/// The last part is the column; the rest is the (possibly namespaced) table name or alias,
+/// joined with dots to match [`parse_parts`].
+pub(crate) fn parse_qualified_field(mut idents: Vec<Ident>) -> SqlParseResult<(SqlIdent, SqlIdent)> {
+    let field = idents.pop().expect("caller checked idents.len() >= 2").into();
+    let table = parse_parts(idents)?;
+    Ok((table, field))
 }
 
 // These types determine the size of [`parse_expr`]'s stack frame on 64-bit targets.
@@ -239,9 +260,8 @@ fn parse_expr(expr: Expr, depth: usize) -> SqlParseResult<SqlExpr> {
             SqlUnsupported::Expr,
         )?)),
         Expr::Identifier(ident) => Ok(SqlExpr::Var(ident.into())),
-        Expr::CompoundIdentifier(mut idents) if idents.len() == 2 => {
-            let table = idents.swap_remove(0).into();
-            let field = idents.swap_remove(0).into();
+        Expr::CompoundIdentifier(idents) if idents.len() >= 2 => {
+            let (table, field) = parse_qualified_field(idents)?;
             Ok(SqlExpr::Field(table, field))
         }
         Expr::BinaryOp {
@@ -291,6 +311,20 @@ fn parse_signed_literal_expr(
         })
         .into()),
     }
+}
+
+/// Parse the arguments of a view call.
+///
+/// `v` (`None`) and `v()` (`Some(vec![])`) both mean no arguments.
+/// Only positional literals are allowed.
+fn parse_view_args(args: Option<Vec<FunctionArg>>) -> SqlParseResult<Vec<SqlLiteral>> {
+    args.into_iter()
+        .flatten()
+        .map(|arg| match arg {
+            FunctionArg::Unnamed(FunctionArgExpr::Expr(expr)) => parse_literal_expr(expr, SqlUnsupported::ViewArg),
+            arg => Err(SqlUnsupported::ViewArgKind(arg).into()),
+        })
+        .collect()
 }
 
 /// Parse a literal expression.
@@ -343,10 +377,17 @@ pub(crate) fn parse_ident(ObjectName(parts): ObjectName) -> SqlParseResult<SqlId
     parse_parts(parts)
 }
 
-/// Parse an identifier
+/// Parse an identifier.
+///
+/// Multi-part names are joined back together with dots, because submodule tables are stored
+/// in the catalog under namespace-prefixed names (e.g. `lib.library_table`). Nesting means
+/// arbitrarily many parts are legal: `auth.baz.baz_items` is a single catalog name, not a
+/// three-level qualification. Note that qualified *column* references (`t.a`) never reach
+/// here — they are parsed as `Expr::CompoundIdentifier` instead.
 pub(crate) fn parse_parts(mut parts: Vec<Ident>) -> SqlParseResult<SqlIdent> {
     if parts.len() == 1 {
         return Ok(parts.swap_remove(0).into());
     }
-    Err(SqlUnsupported::MultiPartName(ObjectName(parts)).into())
+    let joined = parts.iter().map(|p| p.value.as_str()).collect::<Vec<_>>().join(".");
+    Ok(SqlIdent(RawNamespacedIdentifier::new(joined)))
 }

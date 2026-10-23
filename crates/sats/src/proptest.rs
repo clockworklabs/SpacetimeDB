@@ -224,6 +224,12 @@ pub fn generate_typed_row() -> impl Strategy<Value = (ProductType, ProductValue)
     gen_with(generate_row_type(0..=SIZE), generate_product_value)
 }
 
+pub fn generate_two_typed_rows() -> impl Strategy<Value = (ProductType, (ProductValue, ProductValue))> {
+    gen_with(generate_row_type(0..=SIZE), |ty| {
+        (generate_product_value(ty.clone()), generate_product_value(ty))
+    })
+}
+
 pub fn generate_typed_row_vec(
     size: impl Into<SizeRange>,
     num_rows_min: usize,

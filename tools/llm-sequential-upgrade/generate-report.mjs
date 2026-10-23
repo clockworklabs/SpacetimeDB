@@ -22,20 +22,24 @@ if (!runBaseDir) {
   process.exit(1);
 }
 
-// Find all cost-summary.json files
-const telemetryDir = path.join(runBaseDir, 'telemetry');
-if (!fs.existsSync(telemetryDir)) {
-  console.error(`Telemetry directory not found: ${telemetryDir}`);
+// Find all cost-summary.json files. Layout is per-backend:
+//   <runBaseDir>/<backend>/telemetry/<run-id>/cost-summary.json
+if (!fs.existsSync(runBaseDir)) {
+  console.error(`Run base directory not found: ${runBaseDir}`);
   process.exit(1);
 }
 
 const summaries = [];
-for (const entry of fs.readdirSync(telemetryDir)) {
-  const summaryPath = path.join(telemetryDir, entry, 'cost-summary.json');
-  if (fs.existsSync(summaryPath)) {
-    const data = JSON.parse(fs.readFileSync(summaryPath, 'utf-8'));
-    data._dir = entry;
-    summaries.push(data);
+for (const backendEntry of fs.readdirSync(runBaseDir)) {
+  const telemetryDir = path.join(runBaseDir, backendEntry, 'telemetry');
+  if (!fs.existsSync(telemetryDir) || !fs.statSync(telemetryDir).isDirectory()) continue;
+  for (const entry of fs.readdirSync(telemetryDir)) {
+    const summaryPath = path.join(telemetryDir, entry, 'cost-summary.json');
+    if (fs.existsSync(summaryPath)) {
+      const data = JSON.parse(fs.readFileSync(summaryPath, 'utf-8'));
+      data._dir = entry;
+      summaries.push(data);
+    }
   }
 }
 
@@ -79,7 +83,7 @@ function calcTotals(runs) {
 
 // Read GRADING_RESULTS.md for feature scores
 function readGradingScores(backend) {
-  const resultsDir = path.join(runBaseDir, 'results', backend);
+  const resultsDir = path.join(runBaseDir, backend, 'results');
   if (!fs.existsSync(resultsDir)) return null;
 
   const appDirs = fs.readdirSync(resultsDir)
@@ -96,13 +100,20 @@ function readGradingScores(backend) {
 
   const content = fs.readFileSync(gradingPath, 'utf-8');
 
-  // Extract total score from "**TOTAL** | **N** | **M**"
-  const totalMatch = content.match(/\*\*TOTAL\*\*.*?\*\*(\d+)\*\*.*?\*\*(\d+)\*\*/);
-  if (totalMatch) {
-    return { max: parseInt(totalMatch[1]), score: parseInt(totalMatch[2]) };
+  // Primary (canonical GRADING_RESULTS.md): "| **TOTAL** | **X/Y** | |"
+  // — score / max combined in one cell.
+  const slashMatch = content.match(/\*\*TOTAL\*\*.*?\*\*(\d+)\s*\/\s*(\d+)\*\*/);
+  if (slashMatch) {
+    return { score: parseInt(slashMatch[1]), max: parseInt(slashMatch[2]) };
   }
 
-  // Fallback: look for "Total Feature Score" in metrics
+  // Legacy: "**TOTAL** | **MAX** | **SCORE**" — two separate numeric cells.
+  const twoCellMatch = content.match(/\*\*TOTAL\*\*.*?\*\*(\d+)\*\*.*?\*\*(\d+)\*\*/);
+  if (twoCellMatch) {
+    return { max: parseInt(twoCellMatch[1]), score: parseInt(twoCellMatch[2]) };
+  }
+
+  // Fallback: prose "Total Feature Score: X / Y".
   const scoreMatch = content.match(/Total Feature Score.*?(\d+)\s*\/\s*(\d+)/);
   if (scoreMatch) {
     return { score: parseInt(scoreMatch[1]), max: parseInt(scoreMatch[2]) };
@@ -113,7 +124,7 @@ function readGradingScores(backend) {
 
 // Count lines of code in app dir
 function countLoc(backend) {
-  const resultsDir = path.join(runBaseDir, 'results', backend);
+  const resultsDir = path.join(runBaseDir, backend, 'results');
   if (!fs.existsSync(resultsDir)) return null;
 
   const appDirs = fs.readdirSync(resultsDir)
@@ -149,10 +160,10 @@ function countLoc(backend) {
     backendLoc = countLines(stdbBackend);
   }
 
-  // PostgreSQL backend
-  const pgServer = path.join(appDir, 'server');
-  if (fs.existsSync(pgServer)) {
-    backendLoc = countLines(pgServer);
+  // Express backend (postgres + mongodb both use a server/ dir)
+  const expressServer = path.join(appDir, 'server');
+  if (fs.existsSync(expressServer)) {
+    backendLoc = countLines(expressServer);
   }
 
   // Frontend

@@ -8,15 +8,17 @@ use std::ops::Deref;
 use super::code_indenter::CodeIndenter;
 use super::Lang;
 use crate::util::{
-    collect_case, is_reducer_invokable, iter_indexes, iter_reducers, iter_table_names_and_types,
-    print_auto_generated_file_comment, print_auto_generated_version_comment, type_ref_name,
+    collect_case, is_parameterized_view, is_reducer_invokable, iter_indexes, iter_reducers, iter_table_names_and_types,
+    iter_unique_cols, print_auto_generated_file_comment, print_auto_generated_version_comment, type_ref_name,
 };
 use crate::{indent_scope, CodegenOptions, OutputFile};
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_primitives::ColId;
-use spacetimedb_schema::def::{BTreeAlgorithm, IndexAlgorithm, ModuleDef, TableDef, TypeDef};
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::def::{
+    BTreeAlgorithm, IndexAlgorithm, ModuleDef, ProcedureDef, ReducerDef, TableDef, TypeDef, ViewDef,
+};
+use spacetimedb_schema::identifier::{Identifier, NamespacePath};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::type_for_generate::{
     AlgebraicTypeDef, AlgebraicTypeUse, PlainEnumTypeDef, ProductTypeDef, SumTypeDef, TypespaceForGenerate,
@@ -457,7 +459,7 @@ const REDUCER_EVENTS: &str = r#"
         /// Data from all the provided queries will be returned at the same time.
         ///
         /// See the SpacetimeDB SQL docs for more information on SQL syntax:
-        /// <a href="https://spacetimedb.com/docs/sql">https://spacetimedb.com/docs/sql</a>
+        /// <a href="https://spacetimedb.com/docs/reference/sql">https://spacetimedb.com/docs/reference/sql</a>
         /// </summary>
         public SubscriptionHandle Subscribe(
             string[] querySqls
@@ -504,8 +506,251 @@ pub struct Csharp<'opts> {
 
 impl Lang for Csharp<'_> {
     fn generate_table_file_from_schema(&self, module: &ModuleDef, table: &TableDef, schema: TableSchema) -> OutputFile {
+        self.scope(module)
+            .generate_table_file_from_schema(module, table, schema)
+    }
+
+    fn generate_type_files(&self, module: &ModuleDef, typ: &TypeDef) -> Vec<OutputFile> {
+        self.scope(module).generate_type_files(module, typ)
+    }
+
+    fn generate_reducer_file(&self, module: &ModuleDef, reducer: &ReducerDef) -> OutputFile {
+        self.scope(module).generate_reducer_file(module, reducer)
+    }
+
+    fn generate_procedure_file(&self, module: &ModuleDef, procedure: &ProcedureDef) -> OutputFile {
+        self.scope(module).generate_procedure_file(module, procedure)
+    }
+
+    fn generate_submodule_table_file(&self, module: &ModuleDef, table: &TableDef) -> OutputFile {
+        scoped_file(
+            module.accessor_path(),
+            self.scope(module).generate_table_file(module, table),
+        )
+    }
+
+    fn generate_submodule_view_file(&self, module: &ModuleDef, view: &ViewDef) -> OutputFile {
+        scoped_file(
+            module.accessor_path(),
+            self.scope(module).generate_view_file(module, view),
+        )
+    }
+
+    fn generate_submodule_reducer_file(&self, module: &ModuleDef, reducer: &ReducerDef) -> OutputFile {
+        scoped_file(
+            module.accessor_path(),
+            self.scope(module).generate_reducer_file(module, reducer),
+        )
+    }
+
+    fn generate_submodule_procedure_file(&self, module: &ModuleDef, procedure: &ProcedureDef) -> OutputFile {
+        scoped_file(
+            module.accessor_path(),
+            self.scope(module).generate_procedure_file(module, procedure),
+        )
+    }
+
+    fn generate_global_files(&self, module: &ModuleDef, options: &CodegenOptions) -> Vec<OutputFile> {
+        let mut files = self.scope(module).generate_global_files(module, options);
+        self.child_files(module, &mut files);
+        files
+    }
+}
+
+impl Csharp<'_> {
+    fn scope(&self, module: &ModuleDef) -> CsharpScope<'_> {
+        let namespace = clr_namespace(self.namespace, module.accessor_path());
+        CsharpScope {
+            namespace,
+            root_namespace: self.namespace,
+            path: module.path().clone(),
+        }
+    }
+
+    fn child_files(&self, module: &ModuleDef, files: &mut Vec<OutputFile>) {
+        for child in module.submodules().values() {
+            let path = child.accessor_path();
+            let scope = self.scope(child);
+            // Child typespaces are independent, including types used only by functions.
+            for typ in child.types() {
+                files.extend(
+                    scope
+                        .generate_type_files(child, typ)
+                        .into_iter()
+                        .map(|file| scoped_file(path, file)),
+                );
+            }
+            files.push(scoped_file(path, scope.child_globals(child)));
+            self.child_files(child, files);
+        }
+    }
+}
+
+struct CsharpScope<'a> {
+    namespace: String,
+    root_namespace: &'a str,
+    // Canonical database path, never a C# member or CLR namespace path.
+    path: NamespacePath,
+}
+
+fn scoped_file(path: &NamespacePath, mut file: OutputFile) -> OutputFile {
+    file.filename = format!("{}/{}", path.join_segments("/"), file.filename);
+    file
+}
+
+fn clr_namespace(root: &str, path: &NamespacePath) -> String {
+    let mut namespace = root.to_owned();
+    for segment in path.segments() {
+        // Keep namespace accessors verbatim; @ also handles keyword identifiers.
+        write!(namespace, ".@{segment}").unwrap();
+    }
+    namespace
+}
+
+fn member_path(path: &NamespacePath) -> String {
+    path.segments().iter().map(|segment| format!("@{segment}.")).collect()
+}
+
+impl CsharpScope<'_> {
+    fn root_type(&self, name: &str) -> String {
+        if self.path.is_empty() {
+            name.to_owned()
+        } else {
+            format!("global::{}.{name}", self.root_namespace)
+        }
+    }
+
+    fn sql_name(&self, name: &Identifier) -> String {
+        match self.path.segments() {
+            [] => format!("new global::SpacetimeDB.SqlTableName({:?})", name.deref()),
+            [namespace] => format!(
+                "new global::SpacetimeDB.SqlTableName({namespace:?}, {:?})",
+                name.deref()
+            ),
+            namespaces => format!(
+                "new global::SpacetimeDB.SqlTableName(new string[] {{ {} }}, {:?})",
+                namespaces
+                    .iter()
+                    .map(|segment| format!("{segment:?}"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                name.deref()
+            ),
+        }
+    }
+
+    fn child_members(&self, output: &mut CodeIndenter<String>, module: &ModuleDef, container: &str) {
+        for child in module.submodules().values() {
+            let name = child.mount_accessor_name().unwrap();
+            let namespace = clr_namespace(self.root_namespace, child.accessor_path());
+            if container == "From" {
+                writeln!(output, "public global::{namespace}.From @{name} {{ get; }} = new();");
+            } else {
+                writeln!(output, "public global::{namespace}.{container} @{name} {{ get; }}");
+            }
+        }
+    }
+
+    fn function_container(&self, output: &mut CodeIndenter<String>, module: &ModuleDef, container: &str) {
+        writeln!(output, "public sealed partial class {container} : RemoteBase");
+        indented_block(output, |output| {
+            self.child_members(output, module, container);
+            let conn = self.root_type("DbConnection");
+            if module.submodules().is_empty() {
+                writeln!(output, "internal {container}({conn} conn) : base(conn) {{ }}");
+            } else {
+                writeln!(output, "internal {container}({conn} conn) : base(conn)");
+                indented_block(output, |output| {
+                    for child in module.submodules().values() {
+                        let name = child.mount_accessor_name().unwrap();
+                        writeln!(output, "@{name} = new(conn);");
+                        if container == "RemoteReducers" {
+                            writeln!(output, "@{name}.InternalOnUnhandledReducerError += (ctx, error) => InternalOnUnhandledReducerError?.Invoke(ctx, error);");
+                        }
+                    }
+                });
+            }
+            if container == "RemoteReducers" {
+                let context = self.root_type("ReducerEventContext");
+                if !self.path.is_empty()
+                    && module.submodules().is_empty()
+                    && iter_reducers(module, crate::CodegenVisibility::OnlyPublic)
+                        .next()
+                        .is_none()
+                {
+                    // An empty namespace cannot raise an error; avoid an unused backing event.
+                    writeln!(output, "internal event Action<{context}, Exception>? InternalOnUnhandledReducerError {{ add {{ }} remove {{ }} }}");
+                } else {
+                    writeln!(
+                        output,
+                        "internal event Action<{context}, Exception>? InternalOnUnhandledReducerError;"
+                    );
+                }
+            }
+        });
+        writeln!(output);
+    }
+
+    fn from(&self, output: &mut CodeIndenter<String>, module: &ModuleDef, options: &CodegenOptions) {
+        writeln!(output, "public sealed class From");
+        indented_block(output, |output| {
+            self.child_members(output, module, "From");
+            for (name, accessor_name, product_type_ref) in iter_table_names_and_types(module, options.visibility) {
+                let method_name = accessor_name.deref().to_case(Case::Pascal);
+                let row_type = type_ref_name(module, product_type_ref);
+                let table_name_lit = if self.path.is_empty() {
+                    format!("{:?}", name.deref())
+                } else {
+                    format!("RemoteTables.{method_name}Handle.SqlName")
+                };
+                writeln!(output, "public global::SpacetimeDB.Table<{row_type}, {method_name}Cols, {method_name}IxCols> {method_name}() => new({table_name_lit}, new {method_name}Cols({table_name_lit}), new {method_name}IxCols({table_name_lit}));");
+            }
+        });
+        writeln!(output);
+    }
+
+    fn child_globals(&self, module: &ModuleDef) -> OutputFile {
+        let mut output = CsharpAutogen::new(&self.namespace, &["System.Collections.Generic"], false);
+        self.function_container(&mut output, module, "RemoteReducers");
+        self.function_container(&mut output, module, "RemoteProcedures");
+        writeln!(output, "public sealed partial class RemoteTables");
+        indented_block(&mut output, |output| {
+            self.child_members(output, module, "RemoteTables");
+            writeln!(
+                output,
+                "internal RemoteTables(global::{}.DbConnection conn, Action<IRemoteTableHandle> register)",
+                self.root_namespace
+            );
+            indented_block(output, |output| {
+                for (_, accessor, _) in iter_table_names_and_types(module, crate::CodegenVisibility::OnlyPublic) {
+                    writeln!(
+                        output,
+                        "register({} = new(conn));",
+                        accessor.deref().to_case(Case::Pascal)
+                    );
+                }
+                for child in module.submodules().values() {
+                    let name = child.mount_accessor_name().unwrap();
+                    writeln!(output, "@{name} = new(conn, register);");
+                }
+            });
+        });
+        self.from(&mut output, module, &CodegenOptions::default());
+        writeln!(output, "public abstract partial class Reducer");
+        indented_block(&mut output, |output| writeln!(output, "private Reducer() {{ }}"));
+        writeln!(output, "public abstract partial class Procedure");
+        indented_block(&mut output, |output| writeln!(output, "private Procedure() {{ }}"));
+        OutputFile {
+            filename: "Namespace.g.cs".to_owned(),
+            code: output.into_inner(),
+        }
+    }
+}
+
+impl Lang for CsharpScope<'_> {
+    fn generate_table_file_from_schema(&self, module: &ModuleDef, table: &TableDef, schema: TableSchema) -> OutputFile {
         let mut output = CsharpAutogen::new(
-            self.namespace,
+            &self.namespace,
             &[
                 "SpacetimeDB.BSATN",
                 "SpacetimeDB.ClientApi",
@@ -520,6 +765,7 @@ impl Lang for Csharp<'_> {
             let csharp_table_name = table.accessor_name.deref().to_case(Case::Pascal);
             let csharp_table_class_name = csharp_table_name.clone() + "Handle";
             let table_type = type_ref_name(module, table.product_type_ref);
+            let context = self.root_type("EventContext");
 
             let base_class = if table.is_event {
                 "RemoteEventTableHandle"
@@ -528,14 +774,25 @@ impl Lang for Csharp<'_> {
             };
             writeln!(
                 output,
-                "public sealed class {csharp_table_class_name} : {base_class}<EventContext, {table_type}>"
+                "public sealed class {csharp_table_class_name} : {base_class}<{context}, {table_type}>"
             );
             indented_block(output, |output| {
                 writeln!(
                     output,
-                    "protected override string RemoteTableName => \"{}\";",
-                    table.name
+                    "public override string RemoteTableName => \"{}{}\";",
+                    self.path, table.name
                 );
+                if !self.path.is_empty() {
+                    writeln!(
+                        output,
+                        "internal static readonly global::SpacetimeDB.SqlTableName SqlName = {};",
+                        self.sql_name(&table.name)
+                    );
+                    writeln!(
+                        output,
+                        "protected override global::SpacetimeDB.SqlTableName RemoteSqlTableName => SqlName;"
+                    );
+                }
                 writeln!(output);
 
                 // If this is a table, we want to generate event accessor and indexes
@@ -544,6 +801,41 @@ impl Lang for Csharp<'_> {
                     .unwrap();
 
                 let mut index_names = Vec::new();
+
+                let emit_unique_index = |output: &mut CodeIndenter<String>,
+                                         index_names: &mut Vec<String>,
+                                         csharp_index_name: String,
+                                         field_name: &Identifier,
+                                         field_type: &AlgebraicTypeUse| {
+                    if index_names.contains(&csharp_index_name) {
+                        return;
+                    }
+
+                    let csharp_index_class_name = csharp_index_name.clone() + "UniqueIndex";
+                    let csharp_field_name_pascal = field_name.deref().to_case(Case::Pascal);
+                    let csharp_field_type = ty_fmt(module, field_type).to_string();
+
+                    writeln!(
+                        output,
+                        "public sealed class {csharp_index_class_name} : UniqueIndexBase<{csharp_field_type}>"
+                    );
+                    indented_block(output, |output| {
+                        writeln!(
+                                output,
+                                "protected override {csharp_field_type} GetKey({table_type} row) => row.{csharp_field_name_pascal};"
+                            );
+                        writeln!(output);
+                        writeln!(
+                            output,
+                            "public {csharp_index_class_name}({csharp_table_class_name} table) : base(table) {{ }}"
+                        );
+                    });
+                    writeln!(output);
+                    writeln!(output, "public readonly {csharp_index_class_name} {csharp_index_name};");
+                    writeln!(output);
+
+                    index_names.push(csharp_index_name);
+                };
 
                 for idx in iter_indexes(table) {
                     let Some(accessor_name) = idx.accessor_name.as_ref() else {
@@ -582,18 +874,42 @@ impl Lang for Csharp<'_> {
 
                     let csharp_index_name = accessor_name.deref().to_case(Case::Pascal);
 
-                    let mut csharp_index_class_name = csharp_index_name.clone();
-                    let csharp_index_base_class_name = if schema.is_unique(&columns) {
-                        csharp_index_class_name += "UniqueIndex";
-                        "UniqueIndexBase"
-                    } else {
-                        csharp_index_class_name += "Index";
-                        "BTreeIndexBase"
-                    };
+                    if schema.is_unique(&columns) {
+                        if let Some(col_pos) = columns.as_singleton() {
+                            let (field_name, field_type) = &product_type.elements[col_pos.idx()];
+                            emit_unique_index(output, &mut index_names, csharp_index_name, field_name, field_type);
+                        } else {
+                            let csharp_index_class_name = csharp_index_name.clone() + "UniqueIndex";
+
+                            writeln!(
+                                output,
+                                "public sealed class {csharp_index_class_name} : UniqueIndexBase<{key_type}>"
+                            );
+                            indented_block(output, |output| {
+                                writeln!(
+                                    output,
+                                    "protected override {key_type} GetKey({table_type} row) => {row_to_key};"
+                                );
+                                writeln!(output);
+                                writeln!(
+                                    output,
+                                    "public {csharp_index_class_name}({csharp_table_class_name} table) : base(table) {{ }}"
+                                );
+                            });
+                            writeln!(output);
+                            writeln!(output, "public readonly {csharp_index_class_name} {csharp_index_name};");
+                            writeln!(output);
+
+                            index_names.push(csharp_index_name);
+                        }
+                        continue;
+                    }
+
+                    let csharp_index_class_name = csharp_index_name.clone() + "Index";
 
                     writeln!(
                         output,
-                        "public sealed class {csharp_index_class_name} : {csharp_index_base_class_name}<{key_type}>"
+                        "public sealed class {csharp_index_class_name} : BTreeIndexBase<{key_type}>"
                     );
                     indented_block(output, |output| {
                         writeln!(
@@ -613,9 +929,21 @@ impl Lang for Csharp<'_> {
                     index_names.push(csharp_index_name);
                 }
 
+                for (field_name, field_type) in iter_unique_cols(module.typespace_for_generate(), &schema, product_type)
+                {
+                    emit_unique_index(
+                        output,
+                        &mut index_names,
+                        field_name.deref().to_case(Case::Pascal),
+                        field_name,
+                        field_type,
+                    );
+                }
+
+                let connection = self.root_type("DbConnection");
                 writeln!(
                     output,
-                    "internal {csharp_table_class_name}(DbConnection conn) : base(conn)"
+                    "internal {csharp_table_class_name}({connection} conn) : base(conn)"
                 );
                 indented_block(output, |output| {
                     for csharp_index_name in &index_names {
@@ -675,7 +1003,12 @@ impl Lang for Csharp<'_> {
                 );
             }
             writeln!(output);
-            writeln!(output, "public {cols_owner_name}Cols(string tableName)");
+            let name_type = if self.path.is_empty() {
+                "string"
+            } else {
+                "global::SpacetimeDB.SqlTableName"
+            };
+            writeln!(output, "public {cols_owner_name}Cols({name_type} tableName)");
             indented_block(output, |output| {
                 for (field_name, field_type) in &product_type.elements {
                     let prop = field_name.deref().to_case(Case::Pascal);
@@ -710,7 +1043,12 @@ impl Lang for Csharp<'_> {
                 );
             }
             writeln!(output);
-            writeln!(output, "public {cols_owner_name}IxCols(string tableName)");
+            let name_type = if self.path.is_empty() {
+                "string"
+            } else {
+                "global::SpacetimeDB.SqlTableName"
+            };
+            writeln!(output, "public {cols_owner_name}IxCols({name_type} tableName)");
             indented_block(output, |output| {
                 for (i, (field_name, field_type)) in product_type.elements.iter().enumerate() {
                     if !ix_col_positions.contains(&i) {
@@ -740,10 +1078,10 @@ impl Lang for Csharp<'_> {
         let name = collect_case(Case::Pascal, typ.accessor_name.name_segments());
         let filename = format!("Types/{name}.g.cs");
         let code = match &module.typespace_for_generate()[typ.ty] {
-            AlgebraicTypeDef::Sum(sum) => autogen_csharp_sum(module, name.clone(), sum, self.namespace),
-            AlgebraicTypeDef::Product(prod) => autogen_csharp_tuple(module, name.clone(), prod, self.namespace),
+            AlgebraicTypeDef::Sum(sum) => autogen_csharp_sum(module, name.clone(), sum, &self.namespace),
+            AlgebraicTypeDef::Product(prod) => autogen_csharp_tuple(module, name.clone(), prod, &self.namespace),
             AlgebraicTypeDef::PlainEnum(plain_enum) => {
-                autogen_csharp_plain_enum(name.clone(), plain_enum, self.namespace)
+                autogen_csharp_plain_enum(name.clone(), plain_enum, &self.namespace)
             }
         };
 
@@ -752,7 +1090,7 @@ impl Lang for Csharp<'_> {
 
     fn generate_reducer_file(&self, module: &ModuleDef, reducer: &spacetimedb_schema::def::ReducerDef) -> OutputFile {
         let mut output = CsharpAutogen::new(
-            self.namespace,
+            &self.namespace,
             &[
                 "SpacetimeDB.ClientApi",
                 "System.Collections.Generic",
@@ -763,6 +1101,7 @@ impl Lang for Csharp<'_> {
 
         writeln!(output, "public sealed partial class RemoteReducers : RemoteBase");
         indented_block(&mut output, |output| {
+            let context = self.root_type("ReducerEventContext");
             let func_name_pascal_case = reducer.accessor_name.deref().to_case(Case::Pascal);
             let delegate_separator = if reducer.params_for_generate.elements.is_empty() {
                 ""
@@ -771,11 +1110,11 @@ impl Lang for Csharp<'_> {
             };
 
             let (func_params, func_args) =
-                build_func_params_and_args(module, reducer.params_for_generate.into_iter(), self.namespace);
+                build_func_params_and_args(module, reducer.params_for_generate.into_iter(), &self.namespace);
 
             writeln!(
                 output,
-                "public delegate void {func_name_pascal_case}Handler(ReducerEventContext ctx{delegate_separator}{func_params});"
+                "public delegate void {func_name_pascal_case}Handler({context} ctx{delegate_separator}{func_params});"
             );
             writeln!(
                 output,
@@ -796,7 +1135,7 @@ impl Lang for Csharp<'_> {
 
             writeln!(
                 output,
-                "public bool Invoke{func_name_pascal_case}(ReducerEventContext ctx, Reducer.{func_name_pascal_case} args)"
+                "public bool Invoke{func_name_pascal_case}({context} ctx, Reducer.{func_name_pascal_case} args)"
             );
             indented_block(output, |output| {
                 writeln!(output, "if (On{func_name_pascal_case} == null)");
@@ -807,6 +1146,7 @@ impl Lang for Csharp<'_> {
                         indented_block(output, |output| {
                             writeln!(output, "case Status.Failed(var reason): InternalOnUnhandledReducerError(ctx, new Exception(reason)); break;");
                             writeln!(output, "case Status.OutOfEnergy(var _): InternalOnUnhandledReducerError(ctx, new Exception(\"out of energy\")); break;");
+                            writeln!(output, "case Status.UnknownResult(var _): InternalOnUnhandledReducerError(ctx, new UnknownResultException()); break;");
                         });
                     });
                     writeln!(output, "return false;");
@@ -833,12 +1173,17 @@ impl Lang for Csharp<'_> {
 
         writeln!(output, "public abstract partial class Reducer");
         indented_block(&mut output, |output| {
+            let base_type = if self.path.is_empty() {
+                "Reducer, IReducerArgs".to_owned()
+            } else {
+                format!("global::{}.Reducer, IReducerArgs", self.root_namespace)
+            };
             autogen_csharp_product_common(
                 module,
                 output,
                 reducer.accessor_name.deref().to_case(Case::Pascal),
                 &reducer.params_for_generate,
-                "Reducer, IReducerArgs",
+                &base_type,
                 |output| {
                     if !reducer.params_for_generate.elements.is_empty() {
                         writeln!(output);
@@ -860,7 +1205,7 @@ impl Lang for Csharp<'_> {
         procedure: &spacetimedb_schema::def::ProcedureDef,
     ) -> OutputFile {
         let mut output = CsharpAutogen::new(
-            self.namespace,
+            &self.namespace,
             &[
                 "SpacetimeDB.ClientApi",
                 "System.Collections.Generic",
@@ -879,8 +1224,8 @@ impl Lang for Csharp<'_> {
             };
 
             let (func_params, func_args) =
-                build_func_params_and_args(module, procedure.params_for_generate.into_iter(), self.namespace);
-            let return_type_str = ty_fmt_with_ns(module, &procedure.return_type_for_generate, self.namespace);
+                build_func_params_and_args(module, procedure.params_for_generate.into_iter(), &self.namespace);
+            let return_type_str = ty_fmt_with_ns(module, &procedure.return_type_for_generate, &self.namespace);
             // Generate the clean public API that users call to allow us of BSATN.Decode<> then reflect to the proper return type
             writeln!(
                 output,
@@ -934,7 +1279,7 @@ impl Lang for Csharp<'_> {
                 output,
                 procedure.accessor_name.deref().to_case(Case::Pascal).to_string(),
                 &procedure.return_type_for_generate,
-                self.namespace,
+                &self.namespace,
             );
             autogen_csharp_product_common(
                 module,
@@ -946,7 +1291,11 @@ impl Lang for Csharp<'_> {
                     if !procedure.params_for_generate.elements.is_empty() {
                         writeln!(output);
                     }
-                    writeln!(output, "string IProcedureArgs.ProcedureName => \"{}\";", procedure.name);
+                    writeln!(
+                        output,
+                        "string IProcedureArgs.ProcedureName => \"{}{}\";",
+                        self.path, procedure.name
+                    );
                 },
             );
             writeln!(output);
@@ -963,7 +1312,7 @@ impl Lang for Csharp<'_> {
 
     fn generate_global_files(&self, module: &ModuleDef, options: &CodegenOptions) -> Vec<OutputFile> {
         let mut output = CsharpAutogen::new(
-            self.namespace,
+            &self.namespace,
             &[
                 "SpacetimeDB.ClientApi",
                 "System.Collections.Generic",
@@ -972,27 +1321,12 @@ impl Lang for Csharp<'_> {
             true, // print the version in the globals file
         );
 
-        writeln!(output, "public sealed partial class RemoteReducers : RemoteBase");
-        indented_block(&mut output, |output| {
-            writeln!(output, "internal RemoteReducers(DbConnection conn) : base(conn) {{ }}");
-            writeln!(
-                output,
-                "internal event Action<ReducerEventContext, Exception>? InternalOnUnhandledReducerError;"
-            )
-        });
-        writeln!(output);
-
-        writeln!(output, "public sealed partial class RemoteProcedures : RemoteBase");
-        indented_block(&mut output, |output| {
-            writeln!(
-                output,
-                "internal RemoteProcedures(DbConnection conn) : base(conn) {{ }}"
-            );
-        });
-        writeln!(output);
+        self.function_container(&mut output, module, "RemoteReducers");
+        self.function_container(&mut output, module, "RemoteProcedures");
 
         writeln!(output, "public sealed partial class RemoteTables : RemoteTablesBase");
         indented_block(&mut output, |output| {
+            self.child_members(output, module, "RemoteTables");
             writeln!(output, "public RemoteTables(DbConnection conn)");
             indented_block(output, |output| {
                 for (_, accessor_name, _) in iter_table_names_and_types(module, options.visibility) {
@@ -1001,6 +1335,10 @@ impl Lang for Csharp<'_> {
                         "AddTable({} = new(conn));",
                         accessor_name.deref().to_case(Case::Pascal)
                     );
+                }
+                for child in module.submodules().values() {
+                    let name = child.mount_accessor_name().unwrap();
+                    writeln!(output, "@{name} = new(conn, AddTable);");
                 }
             });
         });
@@ -1014,28 +1352,44 @@ impl Lang for Csharp<'_> {
             writeln!(output);
             writeln!(output, "internal static string[] AllTablesSqlQueries() => new string[]");
             indented_block(output, |output| {
-                for (_, accessor_name, _) in iter_table_names_and_types(module, options.visibility) {
+                for (_, accessor_name, _) in iter_table_names_and_types(module, options.visibility)
+                    .filter(|(name, _, _)| !is_parameterized_view(module, name))
+                {
                     let method_name = accessor_name.deref().to_case(Case::Pascal);
                     writeln!(output, "new QueryBuilder().From.{method_name}().ToSql(),");
+                }
+                let mut child_tables = module.all_tables_with_prefix();
+                child_tables.sort_by(|(a_path, _, a), (b_path, _, b)| {
+                    (a_path, &a.accessor_name).cmp(&(b_path, &b.accessor_name))
+                });
+                for (_, owner, table) in child_tables.into_iter().filter(|(path, _, table)| {
+                    !path.is_empty() && table.table_access == spacetimedb_lib::db::raw_def::v9::TableAccess::Public
+                }) {
+                    writeln!(
+                        output,
+                        "new QueryBuilder().From.{}{}().ToSql(),",
+                        member_path(owner.accessor_path()),
+                        table.accessor_name.deref().to_case(Case::Pascal)
+                    );
+                }
+                for (_, owner, view) in module
+                    .all_views_with_prefix()
+                    .into_iter()
+                    .filter(|(path, _, view)| !path.is_empty() && view.params.elements.is_empty())
+                {
+                    writeln!(
+                        output,
+                        "new QueryBuilder().From.{}{}().ToSql(),",
+                        member_path(owner.accessor_path()),
+                        view.accessor_name.deref().to_case(Case::Pascal)
+                    );
                 }
             });
             writeln!(output, ";");
         });
         writeln!(output);
 
-        writeln!(output, "public sealed class From");
-        indented_block(&mut output, |output| {
-            for (name, accessor_name, product_type_ref) in iter_table_names_and_types(module, options.visibility) {
-                let method_name = accessor_name.deref().to_case(Case::Pascal);
-                let row_type = type_ref_name(module, product_type_ref);
-                let table_name_lit = format!("{:?}", name.deref());
-                writeln!(
-                    output,
-                    "public global::SpacetimeDB.Table<{row_type}, {method_name}Cols, {method_name}IxCols> {method_name}() => new({table_name_lit}, new {method_name}Cols({table_name_lit}), new {method_name}IxCols({table_name_lit}));"
-                );
-            }
-        });
-        writeln!(output);
+        self.from(&mut output, module, options);
 
         writeln!(output, "public sealed class TypedSubscriptionBuilder");
         indented_block(&mut output, |output| {
@@ -1094,7 +1448,12 @@ impl Lang for Csharp<'_> {
         writeln!(output, "public abstract partial class Reducer");
         indented_block(&mut output, |output| {
             // Prevent instantiation of this class from outside.
-            writeln!(output, "private Reducer() {{ }}");
+            let visibility = if module.submodules().is_empty() {
+                "private"
+            } else {
+                "private protected"
+            };
+            writeln!(output, "{visibility} Reducer() {{ }}");
         });
         writeln!(output);
 
@@ -1174,6 +1533,16 @@ impl Lang for Csharp<'_> {
                             output,
                             "Reducer.{reducer_name} args => Reducers.Invoke{reducer_name}(eventContext, args),"
                         );
+                    }
+                    for (_, owner, reducer) in module
+                        .all_reducers_with_prefix()
+                        .into_iter()
+                        .filter(|(path, _, reducer)| !path.is_empty() && !reducer.visibility.is_private())
+                    {
+                        let namespace = clr_namespace(self.root_namespace, owner.accessor_path());
+                        let member = member_path(owner.accessor_path());
+                        let name = reducer.accessor_name.deref().to_case(Case::Pascal);
+                        writeln!(output, "global::{namespace}.Reducer.{name} args => Reducers.{member}Invoke{name}(eventContext, args),");
                     }
                     writeln!(
                         output,

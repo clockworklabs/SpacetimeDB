@@ -1,32 +1,116 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use serde_json::json;
 
-use crate::bench::normalize::{canonical_mode, normalize_model_names};
+use crate::bench::normalize::{canonical_mode, ensure_lang, ensure_mode, ensure_model};
 use crate::bench::types::{Results, RunOutcome};
+use crate::llm::types::Vendor;
+use crate::llm::ModelRoute;
+
+#[derive(Debug)]
+struct RemoteModelRouteRow {
+    display_name: String,
+    vendor: String,
+    api_model: String,
+    openrouter_model: Option<String>,
+    active: Option<bool>,
+    available: Option<bool>,
+}
+
+fn read_string_field(row: &serde_json::Map<String, serde_json::Value>, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| row.get(*key).and_then(|value| value.as_str()))
+        .map(str::to_string)
+}
+
+fn read_bool_field(row: &serde_json::Map<String, serde_json::Value>, keys: &[&str]) -> Option<bool> {
+    keys.iter()
+        .find_map(|key| row.get(*key).and_then(|value| value.as_bool()))
+}
+
+fn parse_model_route_value(value: serde_json::Value) -> Result<RemoteModelRouteRow> {
+    let row = value
+        .as_object()
+        .ok_or_else(|| anyhow!("remote model row must be an object"))?;
+
+    Ok(RemoteModelRouteRow {
+        display_name: read_string_field(row, &["display_name", "displayName", "name"]).unwrap_or_default(),
+        vendor: read_string_field(row, &["vendor"]).unwrap_or_default(),
+        api_model: read_string_field(row, &["api_model", "apiModel"]).unwrap_or_default(),
+        openrouter_model: read_string_field(row, &["openrouter_model", "openrouterModel"]),
+        active: read_bool_field(row, &["active"]),
+        available: read_bool_field(row, &["available"]),
+    })
+}
+
+fn parse_model_route_row(row: RemoteModelRouteRow) -> Result<Option<ModelRoute>> {
+    if row.active == Some(false) || row.available == Some(false) {
+        return Ok(None);
+    }
+
+    let vendor = Vendor::parse(&row.vendor).ok_or_else(|| anyhow!("unknown model vendor '{}'", row.vendor))?;
+    let display_name = row.display_name.trim();
+    let api_model = row.api_model.trim();
+
+    if display_name.is_empty() {
+        anyhow::bail!("remote model row is missing display_name");
+    }
+    if api_model.is_empty() {
+        anyhow::bail!("remote model row '{}' is missing api_model", display_name);
+    }
+
+    Ok(Some(ModelRoute::new(
+        display_name,
+        vendor,
+        api_model,
+        row.openrouter_model.as_deref().filter(|s| !s.trim().is_empty()),
+    )))
+}
+
+pub fn parse_model_routes_response(body: &serde_json::Value) -> Result<Vec<ModelRoute>> {
+    let models = body.get("models").unwrap_or(body);
+    let rows: Vec<serde_json::Value> =
+        serde_json::from_value(models.clone()).context("parse llm benchmark model rows")?;
+
+    let mut routes = Vec::new();
+    for row in rows.into_iter().map(parse_model_route_value) {
+        let row = row?;
+        if let Some(route) = parse_model_route_row(row)? {
+            routes.push(route);
+        }
+    }
+
+    if routes.is_empty() {
+        anyhow::bail!("no active available LLM benchmark models returned by website");
+    }
+
+    Ok(routes)
+}
 
 /// HTTP client for the SpacetimeDB LLM benchmark API (spacetime-web Postgres).
 ///
-/// Supports two POST endpoints that already exist in spacetime-web:
-/// - `POST /api/llm-benchmark-upload` — upload benchmark results
-/// - `POST /api/llm-benchmark-tasks` — upload task catalog
+/// Supports endpoints owned by spacetime-web:
+/// - `POST /api/llm-benchmark-upload` - upload benchmark results
+/// - `POST /api/llm-benchmark-tasks` - upload task catalog
+/// - `GET /api/llm-benchmark-models?active=true` - fetch active benchmark models
 #[derive(Clone)]
 pub struct ApiClient {
-    client: reqwest::blocking::Client,
     base_url: String,
     api_key: String,
 }
 
 impl ApiClient {
     pub fn new(base_url: &str, api_key: &str) -> Result<Self> {
-        let client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(120))
-            .build()
-            .context("failed to build HTTP client")?;
         Ok(Self {
-            client,
             base_url: base_url.trim_end_matches('/').to_string(),
             api_key: api_key.to_string(),
         })
+    }
+
+    fn client(&self) -> Result<reqwest::blocking::Client> {
+        reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .build()
+            .context("failed to build HTTP client")
     }
 
     /// Build from environment variables `LLM_BENCHMARK_UPLOAD_URL` and `LLM_BENCHMARK_API_KEY`.
@@ -42,7 +126,7 @@ impl ApiClient {
     }
 
     /// Upload a batch of run outcomes for a single (lang, mode) combination.
-    /// Normalizes model names and sanitizes volatile fields before upload.
+    /// Preserves model IDs and sanitizes volatile fields before upload.
     /// If `analysis` is provided, it is stored in the `llm_benchmark_analysis` table.
     pub fn upload_batch(&self, mode: &str, outcomes: &[RunOutcome], analysis: Option<&str>) -> Result<usize> {
         if outcomes.is_empty() {
@@ -51,26 +135,20 @@ impl ApiClient {
 
         let mode = canonical_mode(mode);
 
-        // Build in-memory Results so we can normalize model names
         let mut results = Results::default();
-        {
-            use crate::bench::normalize::{canonical_model_name, ensure_lang, ensure_mode, ensure_model};
+        for r in outcomes {
+            let lang_v = ensure_lang(&mut results, &r.lang);
+            let mode_v = ensure_mode(lang_v, mode, Some(r.hash.clone()));
+            let model_v = ensure_model(mode_v, &r.model_name);
+            model_v.route_api_model = r.route_api_model.clone();
 
-            for r in outcomes {
-                let lang_v = ensure_lang(&mut results, &r.lang);
-                let mode_v = ensure_mode(lang_v, mode, Some(r.hash.clone()));
-                let canonical_name = canonical_model_name(&r.model_name);
-                let model_v = ensure_model(mode_v, &canonical_name);
-                model_v.route_api_model = r.route_api_model.clone();
-
-                let mut sanitized = r.clone();
-                sanitized.sanitize_for_commit();
-                model_v.tasks.insert(r.task.clone(), sanitized);
-            }
+            let mut sanitized = r.clone();
+            sanitized.sanitize_for_commit();
+            model_v.tasks.insert(r.task.clone(), sanitized);
         }
-        normalize_model_names(&mut results);
 
         let url = format!("{}/api/llm-benchmark-upload", self.base_url);
+        let client = self.client()?;
         let mut total_uploaded = 0usize;
 
         for lang_entry in &results.languages {
@@ -92,8 +170,7 @@ impl ApiClient {
                     "models": models_json,
                 });
 
-                let resp = self
-                    .client
+                let resp = client
                     .post(&url)
                     .header("Authorization", format!("Bearer {}", self.api_key))
                     .header("Content-Type", "application/json")
@@ -113,7 +190,7 @@ impl ApiClient {
                     let status = resp.status();
                     let body = resp.text().unwrap_or_default();
                     anyhow::bail!(
-                        "upload failed for {}/{}: {} — {}",
+                        "upload failed for {}/{}: {} - {}",
                         lang_entry.lang,
                         mode_entry.mode,
                         status,
@@ -124,6 +201,26 @@ impl ApiClient {
         }
 
         Ok(total_uploaded)
+    }
+
+    /// Fetch active/available benchmark models from the website model registry.
+    pub fn fetch_model_routes(&self) -> Result<Vec<ModelRoute>> {
+        let url = format!("{}/api/llm-benchmark-models?active=true", self.base_url);
+        let resp = self
+            .client()?
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .context("fetch LLM benchmark models failed")?;
+
+        if resp.status().is_success() {
+            let body: serde_json::Value = resp.json().context("parse model registry response")?;
+            parse_model_routes_response(&body)
+        } else {
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            anyhow::bail!("fetch LLM benchmark models failed: {} - {}", status, body);
+        }
     }
 
     /// Upload the task catalog to `POST /api/llm-benchmark-tasks`, derived from
@@ -152,9 +249,10 @@ impl ApiClient {
                 }
                 let task_name = task_entry.file_name().to_string_lossy().to_string();
 
-                // Humanize task_name for title
                 let title = task_name
-                    .trim_start_matches(|c: char| c == 't' || c == '_' || c.is_ascii_digit())
+                    .strip_prefix("t_")
+                    .and_then(|name| name.split_once('_'))
+                    .map_or(task_name.as_str(), |(_, name)| name)
                     .replace('_', " ")
                     .trim()
                     .to_string();
@@ -207,7 +305,7 @@ impl ApiClient {
         let payload = json!({ "categories": categories });
 
         let resp = self
-            .client
+            .client()?
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
@@ -239,7 +337,7 @@ impl ApiClient {
         let url = format!("{}/api/llm-benchmark-results?{}", self.base_url, params.join("&"));
 
         let resp = self
-            .client
+            .client()?
             .get(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .send()
@@ -282,7 +380,7 @@ impl ApiClient {
         let url = format!("{}/api/llm-benchmark-results?{}", self.base_url, params.join("&"));
 
         let resp = self
-            .client
+            .client()?
             .get(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .send()
@@ -316,7 +414,7 @@ impl ApiClient {
 
         let url = format!("{}/api/llm-benchmark-upload", self.base_url);
         let resp = self
-            .client
+            .client()?
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
@@ -332,5 +430,141 @@ impl ApiClient {
             let body = resp.text().unwrap_or_default();
             anyhow::bail!("upload analysis failed: {} \u{2014} {}", status, body);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn uploads_api_ids_without_converting_them_to_display_names() {
+        use std::io::{BufRead, BufReader, Read, Write};
+        use std::net::TcpListener;
+        use std::time::{Duration, Instant};
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        listener.set_nonblocking(true).unwrap();
+        let server = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock && Instant::now() < deadline => {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(e) => panic!("upload request was not received: {e}"),
+                }
+            };
+            stream.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+            stream.set_write_timeout(Some(Duration::from_secs(10))).unwrap();
+            let mut reader = BufReader::new(&stream);
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            assert_eq!(line, "POST /api/llm-benchmark-upload HTTP/1.1\r\n");
+            let mut length = 0;
+            loop {
+                line.clear();
+                assert_ne!(reader.read_line(&mut line).unwrap(), 0);
+                if line == "\r\n" {
+                    break;
+                }
+                if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    length = value.trim().parse().unwrap();
+                }
+            }
+            let mut body = vec![0; length];
+            reader.read_exact(&mut body).unwrap();
+            stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 14\r\nConnection: close\r\n\r\n{\"inserted\":2}").unwrap();
+            serde_json::from_slice::<serde_json::Value>(&body).unwrap()
+        });
+
+        let outcomes: Vec<RunOutcome> = ["t_001", "t_002"]
+            .into_iter()
+            .map(|task| {
+                serde_json::from_value(json!({
+                    "hash": "test", "task": task, "lang": "rust", "golden_published": true,
+                    "model_name": "openai/gpt-5.5", "route_api_model": "gpt-5.5",
+                    "total_tests": 1, "passed_tests": 1,
+                }))
+                .unwrap()
+            })
+            .collect();
+        assert_eq!(
+            ApiClient::new(&url, "test")
+                .unwrap()
+                .upload_batch("guidelines", &outcomes, Some("analysis"))
+                .unwrap(),
+            2
+        );
+        let payload = server.join().unwrap();
+        let models = payload["models"].as_array().unwrap();
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0]["name"], "openai/gpt-5.5");
+        assert_eq!(models[0]["route_api_model"], "gpt-5.5");
+        assert_eq!(models[0]["analysis"], "analysis");
+        for task in ["t_001", "t_002"] {
+            assert_eq!(models[0]["tasks"][task]["model_name"], "openai/gpt-5.5");
+        }
+    }
+
+    #[test]
+    fn parses_active_available_model_routes() {
+        let body = json!({
+            "models": [
+                {
+                    "displayName": "GPT Test",
+                    "vendor": "openai",
+                    "apiModel": "gpt-test",
+                    "openrouterModel": "openai/gpt-test",
+                    "active": true,
+                    "available": true
+                },
+                {
+                    "displayName": "Inactive",
+                    "vendor": "openai",
+                    "apiModel": "inactive",
+                    "active": false,
+                    "available": true
+                },
+                {
+                    "displayName": "Unavailable",
+                    "vendor": "openai",
+                    "apiModel": "unavailable",
+                    "active": true,
+                    "available": false
+                }
+            ]
+        });
+
+        let routes = parse_model_routes_response(&body).unwrap();
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].display_name, "GPT Test");
+        assert_eq!(routes[0].vendor, Vendor::OpenAi);
+        assert_eq!(routes[0].api_model, "gpt-test");
+        assert_eq!(routes[0].openrouter_model.as_deref(), Some("openai/gpt-test"));
+    }
+
+    #[test]
+    fn parses_snake_case_model_route_fields() {
+        let body = json!({
+            "models": [
+                {
+                    "display_name": "GPT Test",
+                    "vendor": "openai",
+                    "api_model": "gpt-test",
+                    "openrouter_model": "openai/gpt-test",
+                    "active": true,
+                    "available": true
+                }
+            ]
+        });
+
+        let routes = parse_model_routes_response(&body).unwrap();
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].display_name, "GPT Test");
+        assert_eq!(routes[0].api_model, "gpt-test");
+        assert_eq!(routes[0].openrouter_model.as_deref(), Some("openai/gpt-test"));
     }
 }

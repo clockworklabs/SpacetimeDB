@@ -213,8 +213,7 @@ fn unreal_insert_primitives_as_strings() {
 #[test]
 #[serial(Group4)]
 fn unreal_reauth() {
-    make_test("ReauthPart1Test").run();
-    make_test("ReauthPart2Test").run();
+    make_test("ReauthTest").run();
 }
 
 #[test]
@@ -308,4 +307,10 @@ fn unreal_overlapping_subscriptions() {
 #[serial(Group6)]
 fn unreal_insert_result_okay() {
     make_test("InsertResultOkTest").run();
+}
+
+#[test]
+#[serial(Group6)]
+fn unreal_blueprint_query_builder_basic_flow() {
+    make_test("BlueprintQueryBuilderBasicFlowTest").run();
 }

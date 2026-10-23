@@ -53,6 +53,14 @@ pub const SERVER_MSG_COMPRESSION_TAG_BROTLI: u8 = 1;
 /// The tag recognized by the host and SDKs to mean gzip compression of a `ServerMessage`.
 pub const SERVER_MSG_COMPRESSION_TAG_GZIP: u8 = 2;
 
+/// Websocket close code sent when a connection supplies a `session_id`
+/// which another live connection of the same identity still holds.
+///
+/// The server stops that connection and tears it down. The refused client
+/// should retry after a short delay, without counting this as a failed
+/// connection attempt for backoff purposes.
+pub const SESSION_BUSY_CLOSE_CODE: u16 = 4000;
+
 pub type RowSize = u16;
 pub type RowOffset = u64;
 

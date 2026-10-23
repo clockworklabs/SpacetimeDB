@@ -2,19 +2,24 @@ use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::bsatn::Deserializer;
 use spacetimedb_lib::db::raw_def::v10::*;
+use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::de::DeserializeSeed as _;
 use spacetimedb_lib::http::character_is_acceptable_for_route_path;
-use spacetimedb_sats::{Typespace, WithTypespace};
+use spacetimedb_primitives::ReducerId;
+use spacetimedb_sats::{AlgebraicType, Typespace, WithTypespace};
 
 use crate::def::validate::v9::{
-    check_function_names_are_unique, check_scheduled_functions_exist, generate_schedule_name,
+    check_function_names_are_unique, check_scheduled_functions_exist, convert, generate_schedule_name,
     generate_unique_constraint_name, identifier, CoreValidator, TableValidator, ViewValidator,
 };
 use crate::def::*;
 use crate::error::ValidationError;
+use crate::identifier::{NamespacePath, NamespacedIdentifier};
+use crate::reducer_name::ReducerName;
 use crate::type_for_generate::ProductTypeDef;
 use crate::{def::validate::Result, error::TypeLocation};
+use spacetimedb_sats::raw_identifier::{RawIdentifier, RawNamespacedIdentifier};
 // Utitility struct to look up canonical names for tables, functions, and indexes based on the
 // explicit names provided in the `RawModuleDefV10`.
 #[derive(Default)]
@@ -22,6 +27,7 @@ pub struct ExplicitNamesLookup {
     pub tables: HashMap<RawIdentifier, RawIdentifier>,
     pub functions: HashMap<RawIdentifier, RawIdentifier>,
     pub indexes: HashMap<RawIdentifier, RawIdentifier>,
+    pub namespaces: HashMap<RawIdentifier, RawIdentifier>,
 }
 
 impl ExplicitNamesLookup {
@@ -29,6 +35,7 @@ impl ExplicitNamesLookup {
         let mut tables = HashMap::default();
         let mut functions = HashMap::default();
         let mut indexes = HashMap::default();
+        let mut namespaces = HashMap::default();
 
         for entry in ex.into_entries() {
             match entry {
@@ -41,6 +48,9 @@ impl ExplicitNamesLookup {
                 ExplicitNameEntry::Index(m) => {
                     indexes.insert(m.source_name, m.canonical_name);
                 }
+                ExplicitNameEntry::Namespace(m) => {
+                    namespaces.insert(m.source_name, m.canonical_name);
+                }
                 _ => {}
             }
         }
@@ -49,6 +59,7 @@ impl ExplicitNamesLookup {
             tables,
             functions,
             indexes,
+            namespaces,
         }
     }
 }
@@ -71,9 +82,10 @@ impl From<CaseConversionPolicy> for ValidationCase {
         }
     }
 }
-/// Validate a `RawModuleDefV9` and convert it into a `ModuleDef`,
+/// Validate a `RawModuleDefV10` and convert it into a `ModuleDef`,
 /// or return a stream of errors if the definition is invalid.
 pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
+    let environment = validate_environment(&def);
     let mut typespace = def.typespace().cloned().unwrap_or_else(|| Typespace::EMPTY.clone());
     let known_type_definitions = def.types().into_iter().flatten().map(|def| def.ty);
     let case_policy = def.case_conversion_policy().into();
@@ -83,6 +95,13 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .map(ExplicitNamesLookup::new)
         .unwrap_or_default();
     let view_primary_keys = def.view_primary_keys().cloned().unwrap_or_default();
+    // The parent chooses the namespaces its submodules are mounted under, so the parent's
+    // naming policy and explicit names decide their canonical form.
+    let submodules = validate_submodules(
+        def.submodules().into_iter().flat_map(|s| s.iter().cloned()).collect(),
+        case_policy,
+        &explicit_names,
+    );
 
     // Original `typespace` needs to be preserved to be assign `accesor_name`s to columns.
     let typespace_with_accessor_names = typespace.clone();
@@ -202,6 +221,8 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         })
         .unwrap_or_else(|| Ok(Vec::new()));
 
+    let raw_outboxes = def.outboxes().cloned().unwrap_or_default();
+
     // Validate lifecycle reducers - they reference reducers by name
     let lifecycle_validations = reducers
         .as_ref()
@@ -270,6 +291,8 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 // Attach schedules to their respective tables
                 attach_schedules_to_tables(&mut tables, schedules)?;
 
+                attach_outboxes_to_tables(&mut tables, raw_outboxes)?;
+
                 check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
                 change_scheduled_functions_and_lifetimes_visibility(&tables, &mut reducers, &mut procedures)?;
                 attach_view_primary_keys(&mut views, view_primary_keys)?;
@@ -292,18 +315,22 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .map(|rls| (rls.sql.clone(), rls.to_owned()))
         .collect();
 
-    let (tables, types, reducers, procedures, views, http_handlers, http_routes) =
-        tables_types_reducers_procedures_views
-            .map(
-                |(tables, types, reducers, procedures, views, (http_handlers, http_routes))| {
-                    (tables, types, reducers, procedures, views, http_handlers, http_routes)
-                },
-            )
+    let ((tables, types, reducers, procedures, views, (http_handlers, http_routes)), submodules, environment) =
+        (tables_types_reducers_procedures_views, submodules, environment)
+            .combine_errors()
+            .and_then(|(defs, submodules, environment)| {
+                let (tables, _, reducers, procedures, views, _) = &defs;
+                check_names_do_not_conflict_with_namespaces(tables, reducers, procedures, views, &submodules)?;
+                Ok((defs, submodules, environment))
+            })
             .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
 
     let typespace_for_generate = typespace_for_generate.finish();
 
-    Ok(ModuleDef {
+    let mut module_def = ModuleDef {
+        // Set by `apply_namespace` below.
+        path: NamespacePath::root(),
+        accessor_path: NamespacePath::root(),
         tables,
         reducers,
         views,
@@ -318,7 +345,186 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         http_handlers,
         http_routes,
         raw_module_def_version: RawModuleDefVersion::V10,
-    })
+        submodules,
+        environment,
+    };
+
+    // Submodules were validated in isolation, so their defs carry root-relative names.
+    // Now that the tree is assembled, qualify every name by the namespace it is mounted
+    // under. This recurses, so nesting resolves at whichever level ends up outermost.
+    module_def.apply_namespace(&NamespacePath::root(), &NamespacePath::root());
+    #[cfg(debug_assertions)]
+    module_def.assert_namespaces_applied(&NamespacePath::root());
+
+    Ok(module_def)
+}
+
+fn validate_environment(def: &RawModuleDefV10) -> Result<Option<spacetimedb_lib::environment::EnvironmentSchema>> {
+    let Some(declarations) = def.sections.iter().find_map(|section| match section {
+        RawModuleDefV10Section::Environment(declarations) => Some(declarations),
+        _ => None,
+    }) else {
+        return Ok(None);
+    };
+    let declarations = declarations.iter().map(|x| x.clone().into()).collect();
+    let schema = spacetimedb_lib::environment::EnvironmentSchema::from_declarations(declarations)
+        .map_err(ValidationError::from)?;
+    Ok(Some(schema))
+}
+
+/// The canonical form of a submodule namespace: the explicit name if one was given,
+/// otherwise the source name with the parent's case conversion policy applied.
+/// This mirrors how table and function names are resolved.
+fn resolve_namespace_ident(
+    source: &RawIdentifier,
+    case_policy: ValidationCase,
+    explicit_names: &ExplicitNamesLookup,
+) -> Result<Identifier> {
+    let canonical = match explicit_names.namespaces.get(source) {
+        Some(canonical) => canonical.clone(),
+        None => convert(source.clone(), case_policy).into(),
+    };
+    Identifier::new(canonical).map_err(|error| ValidationError::IdentifierError { error }.into())
+}
+
+/// Validate that each submodule's namespace is a valid identifier of at most 63 characters
+/// in both its accessor and canonical forms, that no two submodules share the same canonical
+/// namespace, and that no submodule declares lifecycle reducers (lifecycle reducers are only
+/// permitted in the root module).
+/// This function will inspect each sub-submodule and recursively collect errors.
+///
+/// The returned map is keyed by canonical namespace; each def's `accessor_path` is seeded
+/// with the accessor namespace it was mounted under, to be completed by `apply_namespace`.
+fn validate_submodules(
+    submodules: Vec<RawSubmoduleV10>,
+    case_policy: ValidationCase,
+    explicit_names: &ExplicitNamesLookup,
+) -> Result<IndexMap<Identifier, ModuleDef>> {
+    let mut errors = vec![];
+    let mut map = IndexMap::with_capacity(submodules.len());
+    let mut accessors = std::collections::HashSet::with_capacity(submodules.len());
+
+    for submodule in submodules {
+        let source = RawIdentifier::from(submodule.namespace.clone());
+        let accessor = match Identifier::new(source.clone()) {
+            Ok(accessor) => accessor,
+            Err(error) => {
+                errors.push(ValidationError::IdentifierError { error });
+                continue;
+            }
+        };
+        let namespace = match resolve_namespace_ident(&source, case_policy, explicit_names) {
+            Ok(namespace) => namespace,
+            Err(e) => {
+                errors.extend(e);
+                continue;
+            }
+        };
+
+        let mut too_long = false;
+        let mut checked: Vec<&Identifier> = vec![&accessor];
+        if namespace != accessor {
+            checked.push(&namespace);
+        }
+        for name in checked {
+            if name.len() > 63 {
+                errors.push(ValidationError::NamespaceTooLong {
+                    namespace: name.as_raw().clone(),
+                    len: name.len(),
+                });
+                too_long = true;
+            }
+        }
+        if too_long {
+            continue;
+        }
+
+        if !accessors.insert(accessor.clone()) {
+            errors.push(ValidationError::DuplicateName {
+                name: accessor.as_raw().clone(),
+            });
+        } else if map.contains_key(&namespace) {
+            errors.push(ValidationError::DuplicateName {
+                name: namespace.as_raw().clone(),
+            });
+        } else {
+            match validate(submodule.module) {
+                Ok(mut def) => {
+                    if !def.environment().is_empty() {
+                        errors.push(ValidationError::EnvironmentInSubmodule {
+                            namespace: submodule.namespace.clone(),
+                        });
+                    }
+                    for (lifecycle, opt_id) in def.lifecycle_reducers_map() {
+                        if opt_id.is_some() {
+                            errors.push(ValidationError::LifecycleInSubmodule {
+                                lifecycle,
+                                namespace: submodule.namespace.clone(),
+                            });
+                        }
+                    }
+                    def.accessor_path = NamespacePath::root().child(accessor);
+                    map.insert(namespace, def);
+                }
+                Err(e) => errors.extend(e),
+            }
+        }
+    }
+
+    ValidationErrors::add_extra_errors(Ok(map), errors)
+}
+
+/// Reject any table, view, reducer or procedure whose accessor name is also the accessor
+/// name of a submodule mounted in this module.
+///
+/// Generated client bindings expose both under the same key (`conn.reducers.auth` for the
+/// reducer, `conn.reducers.auth.login` for the namespace), so one would shadow the other.
+/// Only accessor names can collide this way. Canonical names can't. On the wire a function
+/// `auth` and a namespace's functions `auth.*` are distinct, and `validate_submodules` already
+/// rejects two namespaces with the same canonical name.
+///
+/// `validate` runs this at every level of the module tree, so a submodule's own functions
+/// are checked against the namespaces it mounts in turn.
+fn check_names_do_not_conflict_with_namespaces(
+    tables: &IdentifierMap<TableDef>,
+    reducers: &IndexMap<Identifier, ReducerDef>,
+    procedures: &IndexMap<Identifier, ProcedureDef>,
+    views: &IndexMap<Identifier, ViewDef>,
+    submodules: &IndexMap<Identifier, ModuleDef>,
+) -> Result<()> {
+    let namespaces: HashMap<&str, &Identifier> = submodules
+        .values()
+        .filter_map(|submodule| submodule.mount_accessor_name())
+        .map(|accessor| (&**accessor, accessor))
+        .collect();
+    if namespaces.is_empty() {
+        return Ok(());
+    }
+
+    let mut errors = vec![];
+    let mut check = |kind: &'static str, accessor_name: &Identifier| {
+        if let Some(namespace) = namespaces.get(&**accessor_name) {
+            errors.push(ValidationError::NamespaceNameConflict {
+                kind,
+                name: accessor_name.as_raw().clone(),
+                namespace: namespace.as_raw().clone(),
+            });
+        }
+    };
+    for table in tables.values() {
+        check("table", &table.accessor_name);
+    }
+    for view in views.values() {
+        check("view", &view.accessor_name);
+    }
+    for reducer in reducers.values() {
+        check("reducer", reducer.accessor_name.local());
+    }
+    for procedure in procedures.values() {
+        check("procedure", &procedure.accessor_name);
+    }
+
+    ValidationErrors::add_extra_errors(Ok(()), errors)
 }
 
 /// Change the visibility of scheduled functions and lifecycle reducers to Internal.
@@ -586,8 +792,11 @@ impl<'a> ModuleValidatorV10<'a> {
         )
             .combine_errors()?;
 
+        let name = identifier(name)?;
         Ok(TableDef {
-            name: identifier(name)?,
+            // Set by `ModuleDef::apply_namespace` once the module tree is assembled.
+            namespace: NamespacePath::root(),
+            name,
             product_type_ref,
             primary_key,
             columns,
@@ -599,6 +808,7 @@ impl<'a> ModuleValidatorV10<'a> {
             table_access,
             is_event,
             accessor_name: identifier(raw_table_name)?,
+            outbox: None,
         })
     }
 
@@ -886,10 +1096,26 @@ impl<'a> ModuleValidatorV10<'a> {
             .map(|id| view_validator.validate_param_column_def(id.into()))
             .collect_all_errors();
 
-        let (return_type_for_generate, return_columns, param_columns) =
-            (return_type_for_generate, return_columns, param_columns).combine_errors()?;
+        // Float params are disallowed for now, see `ValidationError::ViewFloatParam`.
+        let float_params = params
+            .elements
+            .iter()
+            .enumerate()
+            .filter(|(_, param)| param.algebraic_type.is_float())
+            .map(|(pos, param)| {
+                Err(ValidationError::ViewFloatParam {
+                    view: accessor_name.clone(),
+                    param: param.name.clone().unwrap_or_else(|| pos.to_string().into()),
+                }
+                .into())
+            })
+            .collect_all_errors::<()>();
+
+        let (return_type_for_generate, return_columns, param_columns, ()) =
+            (return_type_for_generate, return_columns, param_columns, float_params).combine_errors()?;
 
         Ok(ViewDef {
+            namespace: NamespacePath::root(),
             name,
             accessor_name: identifier(accessor_name)?,
             is_anonymous,
@@ -953,7 +1179,103 @@ fn attach_schedules_to_tables(
             .into());
         }
 
+        if table.is_event {
+            return Err(ValidationError::ScheduledEventTable {
+                table: table.name.clone(),
+            }
+            .into());
+        }
+
         table.schedule = Some(schedule);
+    }
+
+    Ok(())
+}
+
+fn attach_outboxes_to_tables(tables: &mut HashMap<Identifier, TableDef>, outboxes: Vec<RawOutboxDefV10>) -> Result<()> {
+    for outbox in outboxes {
+        let table_ident = identifier(outbox.table_name.clone())?;
+        let raw_table_name = outbox.table_name.clone();
+        let table = tables
+            .values_mut()
+            .find(|table| table.accessor_name == table_ident)
+            .ok_or_else(|| ValidationError::TableNotFound {
+                table: raw_table_name.clone(),
+            })?;
+
+        if table.outbox.is_some() {
+            return Err(ValidationError::DuplicateOutbox {
+                table: table.name.clone(),
+            }
+            .into());
+        }
+        if table.is_event {
+            return Err(ValidationError::OutboxEventTable {
+                table: table.name.clone(),
+            }
+            .into());
+        }
+        if table.schedule.is_some() {
+            return Err(ValidationError::OutboxScheduledTable {
+                table: table.name.clone(),
+            }
+            .into());
+        }
+
+        let primary_key = table
+            .primary_key
+            .ok_or_else(|| ValidationError::OutboxMissingPrimaryKey {
+                table: table.name.clone(),
+            })?;
+        let primary_key_ty = &table.columns[primary_key.idx()].ty;
+        if *primary_key_ty != AlgebraicType::U64 {
+            return Err(ValidationError::OutboxInvalidPrimaryKey {
+                table: table.name.clone(),
+                found: primary_key_ty.clone().into(),
+            }
+            .into());
+        }
+
+        let Some(target_col) = table.columns.get(outbox.target_column.idx()) else {
+            return Err(ValidationError::OutboxTargetColumnMissing {
+                table: table.name.clone(),
+            }
+            .into());
+        };
+        if target_col.col_id == primary_key || !(target_col.ty == AlgebraicType::U256 || target_col.ty.is_identity()) {
+            return Err(ValidationError::OutboxTargetColumnMissing {
+                table: table.name.clone(),
+            }
+            .into());
+        }
+
+        for arg_column in &outbox.arg_columns {
+            if table.columns.get(arg_column.idx()).is_none() {
+                return Err(ValidationError::OutboxArgumentColumnNotFound {
+                    table: table.name.clone(),
+                    column: *arg_column,
+                }
+                .into());
+            }
+        }
+
+        table.outbox = Some(OutboxDef {
+            remote_reducer: ReducerName::new(
+                NamespacedIdentifier::new(&RawNamespacedIdentifier::new(outbox.remote_reducer.into_inner()))
+                    .map_err(|error| ValidationError::IdentifierError { error })?,
+            ),
+            target_column: outbox.target_column,
+            arg_columns: outbox.arg_columns,
+            on_result_reducer: outbox
+                .on_result_reducer
+                .map(|name| {
+                    NamespacedIdentifier::new(&RawNamespacedIdentifier::new(name.into_inner()))
+                        .map(ReducerName::new)
+                        .map_err(|error| ErrorStream::from(ValidationError::IdentifierError { error }))
+                })
+                .transpose()?,
+            signature_hash: outbox.signature_hash,
+        });
     }
 
     Ok(())
@@ -1021,6 +1343,13 @@ fn attach_view_primary_keys(
             continue;
         };
 
+        // Rows from every instance of a parameterized view share one client
+        // cache, so the same key can arrive from more than one instance.
+        if !view.params.elements.is_empty() {
+            errors.push(ValidationError::ViewPrimaryKeyWithParams { view: view_source_name });
+            continue;
+        }
+
         // Match return columns by accessor/source name for the same reason. For
         // raw schemas produced from a validated `ModuleDef`, the accessor name
         // may already be canonical; in both cases it must agree with the return
@@ -1070,6 +1399,8 @@ fn assign_query_view_primary_keys(tables: &IdentifierMap<TableDef>, views: &mut 
     for view in views.values_mut() {
         view.primary_key = match extract_view_return_product_type_ref(&view.return_type) {
             Some((_, ViewKind::Procedural)) => view.primary_key,
+            // Parameterized views don't inherit one, see `attach_view_primary_keys`.
+            Some((_, ViewKind::Query)) if !view.params.elements.is_empty() => view.primary_key,
             Some((product_type_ref, ViewKind::Query)) => view
                 .primary_key
                 .or_else(|| primary_key_for_product_type_ref(product_type_ref)),
@@ -1090,16 +1421,22 @@ mod tests {
     };
     use crate::error::*;
     use crate::identifier::Identifier;
+    use crate::identifier::NamespacePath;
     use crate::type_for_generate::ClientCodegenError;
 
     use itertools::Itertools;
     use spacetimedb_data_structures::expect_error_matching;
-    use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, MethodOrAny, RawModuleDefV10Builder};
+    use spacetimedb_lib::db::raw_def::v10::{
+        CaseConversionPolicy, ExplicitNames, MethodOrAny, RawModuleDefV10, RawModuleDefV10Builder,
+        RawModuleDefV10Section, RawSubmoduleV10,
+    };
     use spacetimedb_lib::db::raw_def::v9::{btree, direct, hash};
     use spacetimedb_lib::db::raw_def::*;
+    use spacetimedb_lib::db::view::QUERY_VIEW_RETURN_TAG;
     use spacetimedb_lib::http::Method as HttpMethod;
     use spacetimedb_lib::ScheduleAt;
     use spacetimedb_primitives::{ColId, ColList, ColSet};
+    use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, SumValue};
     use v9::{Lifecycle, TableAccess, TableType};
 
@@ -1250,6 +1587,8 @@ mod tests {
             [
                 &IndexDef {
                     name: "apples_apple_name_count_fresh_idx_btree".into(),
+
+                    namespace: NamespacePath::root(),
                     source_name: "apples_id".into(),
                     accessor_name: None,
                     algorithm: BTreeAlgorithm {
@@ -1259,12 +1598,16 @@ mod tests {
                 },
                 &IndexDef {
                     name: "apples_count_fresh_idx_direct".into(),
+
+                    namespace: NamespacePath::root(),
                     accessor_name: None,
                     source_name: "Apples_count_direct".into(),
                     algorithm: DirectAlgorithm { column: ColId(2) }.into()
                 },
                 &IndexDef {
                     name: "apples_type_idx_btree".into(),
+
+                    namespace: NamespacePath::root(),
                     source_name: "Apples_type_btree".into(),
                     accessor_name: None,
                     algorithm: BTreeAlgorithm {
@@ -1391,6 +1734,82 @@ mod tests {
     }
 
     #[test]
+    fn outbox_flows_from_module_def_to_table_schema() {
+        use crate::schema::{Schema, TableSchema};
+        use spacetimedb_primitives::TableId;
+
+        let mut builder = RawModuleDefV10Builder::new();
+        builder
+            .build_table_with_new_type(
+                "outbound_pings",
+                ProductType::from([
+                    ("msg_id", AlgebraicType::U64),
+                    ("target", AlgebraicType::identity()),
+                    ("payload", AlgebraicType::String),
+                ]),
+                true,
+            )
+            .with_auto_inc_primary_key(0)
+            .with_index_no_accessor_name(direct(0), "outbound_pings_msg_id_idx_btree")
+            .finish();
+        builder.add_reducer("receive_ping", ProductType::from([("payload", AlgebraicType::String)]));
+        builder.add_outbox(
+            "outbound_pings",
+            "receive_ping",
+            ColId(1),
+            [ColId(2)],
+            Option::<&str>::None,
+            "test-signature",
+        );
+
+        let module: ModuleDef = builder.finish().try_into().expect("valid outbox module");
+        let table = module.table("outbound_pings").expect("outbox table exists");
+        let outbox = table.outbox.as_ref().expect("TableDef carries outbox metadata");
+        assert_eq!(&outbox.remote_reducer[..], "receive_ping");
+        assert_eq!(outbox.target_column, ColId(1));
+        assert_eq!(outbox.arg_columns, vec![ColId(2)]);
+        assert_eq!(outbox.signature_hash, "test-signature");
+
+        let schema = TableSchema::from_module_def(&module, table, (), TableId::SENTINEL);
+        let outbox = schema.outbox.expect("TableSchema carries outbox metadata");
+        assert_eq!(&outbox.remote_reducer[..], "receive_ping");
+        assert_eq!(outbox.target_column, ColId(1));
+    }
+
+    #[test]
+    fn outbox_rejects_event_table() {
+        let mut builder = RawModuleDefV10Builder::new();
+        builder
+            .build_table_with_new_type(
+                "outbound_pings",
+                ProductType::from([
+                    ("msg_id", AlgebraicType::U64),
+                    ("target", AlgebraicType::identity()),
+                    ("payload", AlgebraicType::String),
+                ]),
+                true,
+            )
+            .with_event(true)
+            .with_auto_inc_primary_key(0)
+            .with_index_no_accessor_name(direct(0), "outbound_pings_msg_id_idx_btree")
+            .finish();
+        builder.add_reducer("receive_ping", ProductType::from([("payload", AlgebraicType::String)]));
+        builder.add_outbox(
+            "outbound_pings",
+            "receive_ping",
+            ColId(1),
+            [ColId(2)],
+            Option::<&str>::None,
+            "test-signature",
+        );
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+        expect_error_matching!(result, ValidationError::OutboxEventTable { table } => {
+            table == &expect_identifier("outbound_pings")
+        });
+    }
+
+    #[test]
     fn invalid_product_type_ref() {
         let mut builder = RawModuleDefV10Builder::new();
 
@@ -1471,6 +1890,383 @@ mod tests {
             &table[..] == "Bananas" &&
             &def[..] == "bananas_b_col_55_idx_btree" &&
             column == &55.into()
+        });
+    }
+
+    /// Defs in a submodule must carry namespace-qualified keys, and `lookup` must round-trip
+    /// through them. Nesting resolves at whichever level ends up outermost.
+    #[test]
+    fn submodule_defs_have_namespaced_keys() {
+        use crate::def::{ModuleDefLookup, TableDef};
+
+        let mut inner = RawModuleDefV10Builder::new();
+        inner
+            .build_table_with_new_type("sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .finish();
+
+        let mut middle = RawModuleDefV10Builder::new().finish();
+        middle
+            .sections
+            .push(RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "inner".to_string(),
+                module: inner.finish(),
+            }]));
+
+        let mut root = RawModuleDefV10Builder::new().finish();
+        root.sections
+            .push(RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "outer".to_string(),
+                module: middle,
+            }]));
+
+        let def: ModuleDef = root.try_into().expect("should validate");
+
+        let (_, _, table) = def
+            .all_tables_with_prefix()
+            .into_iter()
+            .next()
+            .expect("nested submodule table should exist");
+
+        // The recorded namespace is the full mount path, not just the innermost segment,
+        // and the local name is untouched.
+        assert_eq!(table.namespace.to_string(), "outer.inner.");
+        assert_eq!(&*table.name, "sessions");
+        // The joined form is built on demand from the two.
+        assert_eq!(&*table.namespace.join(table.name.clone()), "outer.inner.sessions");
+
+        // And the key round-trips through `lookup` from the root.
+        let found = <TableDef as ModuleDefLookup>::lookup(&def, table.key()).expect("lookup by key");
+        assert_eq!(found.key(), table.key());
+
+        // A namespace that does not resolve to a real mount yields nothing.
+        let bogus = NamespacePath::root()
+            .child(Identifier::for_test("outer"))
+            .child(Identifier::for_test("nope"));
+        assert!(<TableDef as ModuleDefLookup>::lookup(&def, (&bogus, &table.name)).is_none());
+    }
+
+    #[test]
+    fn validates_submodules_recursively() {
+        let mut submodule_builder = RawModuleDefV10Builder::new();
+        submodule_builder
+            .build_table_with_new_type("Sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .finish();
+
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "authlib".to_string(),
+                module: submodule_builder.finish(),
+            }])],
+        };
+
+        let def: ModuleDef = raw.try_into().expect("submodule should validate");
+        let submodules = def.submodules();
+
+        assert_eq!(submodules.len(), 1);
+        let submodule = submodules.get("authlib").expect("authlib submodule should exist");
+        assert!(submodule.table(&expect_identifier("sessions")).is_some());
+    }
+
+    fn sessions_submodule() -> RawModuleDefV10 {
+        let mut sub = RawModuleDefV10Builder::new();
+        sub.build_table_with_new_type("sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .finish();
+        sub.add_reducer("cleanExpiredSessions", ProductType::unit());
+        sub.finish()
+    }
+
+    /// The key a submodule is mounted under is its accessor namespace. Its canonical
+    /// namespace follows the parent's case conversion policy, exactly like a table name.
+    #[test]
+    fn submodule_namespace_is_case_converted() {
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("myAuth", sessions_submodule());
+        let def: ModuleDef = root.finish().try_into().expect("submodule should validate");
+
+        assert!(
+            def.submodules().get("myAuth").is_none(),
+            "accessor name must not be the key"
+        );
+        let sub = def
+            .submodules()
+            .get("my_auth")
+            .expect("submodule should be keyed by its snake_case canonical namespace");
+        assert_eq!(sub.mount_accessor_name().map(|n| &**n), Some("myAuth"));
+        assert_eq!(sub.path().to_string(), "my_auth.");
+        assert_eq!(sub.accessor_path().to_string(), "myAuth.");
+
+        // Every def under it is keyed by the canonical path, while its alias uses the accessor path.
+        let (prefix, owning, table) = def.all_tables_with_prefix().into_iter().next().expect("table");
+        assert_eq!(prefix.to_string(), "my_auth.");
+        assert_eq!(&*prefix.join(table.name.clone()), "my_auth.sessions");
+        assert_eq!(
+            &*owning.accessor_path().join(table.accessor_name.clone()),
+            "myAuth.sessions"
+        );
+
+        assert!(def.reducer_by_name("my_auth.clean_expired_sessions").is_some());
+        assert!(def.reducer_by_name("myAuth.clean_expired_sessions").is_none());
+    }
+
+    /// An explicit namespace name is stored verbatim, bypassing the case conversion policy.
+    /// This is the escape hatch for modules that published a camelCase namespace before
+    /// namespaces were case-converted.
+    #[test]
+    fn submodule_namespace_explicit_name_overrides_policy() {
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("myAuth", sessions_submodule());
+        let mut explicit = ExplicitNames::default();
+        explicit.insert_namespace("myAuth", "myAuth");
+        root.add_explicit_names(explicit);
+        let def: ModuleDef = root.finish().try_into().expect("submodule should validate");
+
+        assert!(def.submodules().get("my_auth").is_none());
+        let sub = def.submodules().get("myAuth").expect("explicit canonical namespace");
+        assert_eq!(sub.mount_accessor_name().map(|n| &**n), Some("myAuth"));
+        assert_eq!(sub.path().to_string(), "myAuth.");
+        assert_eq!(sub.accessor_path().to_string(), "myAuth.");
+        assert!(def.reducer_by_name("myAuth.clean_expired_sessions").is_some());
+
+        // The explicit name need not resemble the accessor at all.
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("myAuth", sessions_submodule());
+        let mut explicit = ExplicitNames::default();
+        explicit.insert_namespace("myAuth", "AuthLib");
+        root.add_explicit_names(explicit);
+        let def: ModuleDef = root.finish().try_into().expect("submodule should validate");
+        let sub = def.submodules().get("AuthLib").expect("explicit canonical namespace");
+        assert_eq!(sub.mount_accessor_name().map(|n| &**n), Some("myAuth"));
+        assert_eq!(sub.accessor_path().to_string(), "myAuth.");
+    }
+
+    /// Explicit namespace names are validated like any other identifier.
+    #[test]
+    fn submodule_namespace_explicit_name_must_be_valid() {
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("myAuth", sessions_submodule());
+        let mut explicit = ExplicitNames::default();
+        explicit.insert_namespace("myAuth", "");
+        root.add_explicit_names(explicit);
+        let result: Result<ModuleDef> = root.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::IdentifierError { error } => {
+            error == &IdentifierError::Empty {}
+        });
+    }
+
+    /// `CaseConversionPolicy::None` keeps namespaces verbatim, like every other name.
+    #[test]
+    fn submodule_namespace_none_policy_keeps_source_name() {
+        let mut root = RawModuleDefV10Builder::new();
+        root.set_case_conversion_policy(CaseConversionPolicy::None);
+        root.add_submodule("myAuth", sessions_submodule());
+        let def: ModuleDef = root.finish().try_into().expect("submodule should validate");
+
+        let sub = def.submodules().get("myAuth").expect("verbatim canonical namespace");
+        assert_eq!(sub.mount_accessor_name().map(|n| &**n), Some("myAuth"));
+        assert_eq!(sub.path().to_string(), "myAuth.");
+    }
+
+    #[test]
+    fn duplicate_submodule_accessor_namespaces_are_rejected() {
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("myAuth", sessions_submodule());
+        root.add_submodule("myAuth", sessions_submodule());
+        let result: Result<ModuleDef> = root.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateName { name } => {
+            &name[..] == "myAuth"
+        });
+    }
+
+    /// Two accessor namespaces that canonicalize to the same name are a duplicate.
+    #[test]
+    fn submodule_namespaces_colliding_after_conversion_are_rejected() {
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("myAuth", sessions_submodule());
+        root.add_submodule("my_auth", sessions_submodule());
+        let result: Result<ModuleDef> = root.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateName { name } => {
+            &name[..] == "my_auth"
+        });
+    }
+
+    /// A function or table cannot share its accessor name with a namespace mounted beside it,
+    /// since generated client bindings would expose both under the same key.
+    #[test]
+    fn names_conflicting_with_submodule_namespaces_are_rejected() {
+        let conflict = |kind: &str, result: Result<ModuleDef>| {
+            expect_error_matching!(
+                result,
+                ValidationError::NamespaceNameConflict { kind: k, name, namespace } => {
+                    *k == kind && &name[..] == "auth" && &namespace[..] == "auth"
+                }
+            );
+        };
+
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("auth", sessions_submodule());
+        root.add_reducer("auth", ProductType::unit());
+        conflict("reducer", root.finish().try_into());
+
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("auth", sessions_submodule());
+        root.add_procedure("auth", ProductType::unit(), AlgebraicType::unit());
+        conflict("procedure", root.finish().try_into());
+
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("auth", sessions_submodule());
+        let row = root.add_algebraic_type([], "Row", AlgebraicType::product([("id", AlgebraicType::U64)]), true);
+        root.add_view(
+            "auth",
+            0,
+            true,
+            true,
+            ProductType::unit(),
+            AlgebraicType::array(AlgebraicType::Ref(row)),
+        );
+        conflict("view", root.finish().try_into());
+
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("auth", sessions_submodule());
+        root.build_table_with_new_type("auth", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .finish();
+        conflict("table", root.finish().try_into());
+    }
+
+    /// The conflict is on accessor names. A function whose canonical name happens to match a
+    /// namespace's canonical name is fine: the two are distinct on the wire.
+    #[test]
+    fn canonical_names_matching_a_namespace_are_allowed() {
+        // Reducer `myAuth` canonicalizes to `my_auth`, which is also the canonical form of the
+        // `authLib` namespace once pinned, but the accessor names `myAuth` and `authLib` differ.
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("authLib", sessions_submodule());
+        let mut explicit = ExplicitNames::default();
+        explicit.insert_namespace("authLib", "my_auth");
+        root.add_explicit_names(explicit);
+        root.add_reducer("myAuth", ProductType::unit());
+        let def: ModuleDef = root
+            .finish()
+            .try_into()
+            .expect("canonical name overlap should validate");
+
+        assert!(def.submodules().contains_key("my_auth"));
+        assert!(def.reducer_by_name("my_auth").is_some());
+        assert!(def.reducer_by_name("my_auth.clean_expired_sessions").is_some());
+    }
+
+    /// The check applies at every level: a submodule's own functions are checked against the
+    /// namespaces it mounts.
+    #[test]
+    fn names_conflicting_with_nested_submodule_namespaces_are_rejected() {
+        let mut middle = RawModuleDefV10Builder::new();
+        middle.add_submodule("audit", sessions_submodule());
+        middle.add_reducer("audit", ProductType::unit());
+
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("auth", middle.finish());
+        let result: Result<ModuleDef> = root.finish().try_into();
+
+        expect_error_matching!(
+            result,
+            ValidationError::NamespaceNameConflict { kind, name, namespace } => {
+                *kind == "reducer" && &name[..] == "audit" && &namespace[..] == "audit"
+            }
+        );
+    }
+
+    /// Nested mounts carry both paths through every level.
+    #[test]
+    fn nested_submodule_namespaces_carry_both_paths() {
+        let mut outer = RawModuleDefV10Builder::new();
+        outer.add_submodule("myInner", sessions_submodule());
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("myOuter", outer.finish());
+        let def: ModuleDef = root.finish().try_into().expect("submodule should validate");
+
+        let inner = def
+            .submodules()
+            .get("my_outer")
+            .and_then(|outer| outer.submodules().get("my_inner"))
+            .expect("nested submodule keyed by canonical names");
+        assert_eq!(inner.path().to_string(), "my_outer.my_inner.");
+        assert_eq!(inner.accessor_path().to_string(), "myOuter.myInner.");
+
+        let (prefix, owning, table) = def.all_tables_with_prefix().into_iter().next().expect("table");
+        assert_eq!(&*prefix.join(table.name.clone()), "my_outer.my_inner.sessions");
+        assert_eq!(
+            &*owning.accessor_path().join(table.accessor_name.clone()),
+            "myOuter.myInner.sessions"
+        );
+        assert!(def
+            .reducer_by_name("my_outer.my_inner.clean_expired_sessions")
+            .is_some());
+    }
+
+    /// Converting a `ModuleDef` back to a raw def and validating it again must preserve
+    /// both the canonical and the accessor namespace (the CLI does this for `describe`).
+    #[test]
+    fn submodule_namespaces_round_trip_through_raw_def() {
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("myAuth", sessions_submodule());
+        root.add_submodule("pinned", sessions_submodule());
+        let mut explicit = ExplicitNames::default();
+        explicit.insert_namespace("pinned", "PinnedLib");
+        root.add_explicit_names(explicit);
+        let def: ModuleDef = root.finish().try_into().expect("submodule should validate");
+
+        let raw: RawModuleDefV10 = def.into();
+        let def: ModuleDef = raw.try_into().expect("round-tripped def should validate");
+
+        let keys: Vec<_> = def.submodules().keys().map(|k| k.to_string()).collect();
+        assert_eq!(keys, ["my_auth", "PinnedLib"]);
+        assert_eq!(
+            def.submodules()["my_auth"].mount_accessor_name().map(|n| &**n),
+            Some("myAuth")
+        );
+        assert_eq!(
+            def.submodules()["PinnedLib"].mount_accessor_name().map(|n| &**n),
+            Some("pinned")
+        );
+    }
+
+    #[test]
+    fn invalid_submodule_namespace() {
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "".to_string(),
+                module: RawModuleDefV10::default(),
+            }])],
+        };
+
+        let result: Result<ModuleDef> = raw.try_into();
+
+        expect_error_matching!(result, ValidationError::IdentifierError { error } => {
+            error == &IdentifierError::Empty {}
+        });
+    }
+
+    #[test]
+    fn duplicate_submodule_namespace() {
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![
+                RawSubmoduleV10 {
+                    namespace: "authlib".to_string(),
+                    module: RawModuleDefV10::default(),
+                },
+                RawSubmoduleV10 {
+                    namespace: "authlib".to_string(),
+                    module: RawModuleDefV10::default(),
+                },
+            ])],
+        };
+
+        let result: Result<ModuleDef> = raw.try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateName { name } => {
+            name == &RawIdentifier::from("authlib")
         });
     }
 
@@ -2191,7 +2987,7 @@ mod tests {
             def.reducers.contains_key(&do_delivery),
             "reducer 'do_delivery' not found"
         );
-        assert_eq!(def.reducers[&do_delivery].name.as_identifier(), &do_delivery);
+        assert_eq!(def.reducers[&do_delivery].name.local(), &do_delivery);
 
         // "ProcessItem" (PascalCase) → "process_item"
         let process_item = id("process_item");
@@ -2199,7 +2995,7 @@ mod tests {
             def.reducers.contains_key(&process_item),
             "reducer 'process_item' not found"
         );
-        assert_eq!(def.reducers[&process_item].name.as_identifier(), &process_item);
+        assert_eq!(def.reducers[&process_item].name.local(), &process_item);
 
         // ═══════════════════════════════════════════════════════════════════════════
         // TYPE NAMES — PascalCase; scoped names keep their scope segments unchanged
@@ -2460,7 +3256,7 @@ mod tests {
             !def.reducers.contains_key(&id("do_delivery")),
             "'do_delivery' must not exist when overridden"
         );
-        assert_eq!(def.reducers[&deliver_ident].name.as_identifier(), &deliver_ident);
+        assert_eq!(def.reducers[&deliver_ident].name.local(), &deliver_ident);
 
         // Non-overridden reducer still follows SnakeCase.
         assert!(def.reducers.contains_key(&id("process_item")));
@@ -2515,5 +3311,220 @@ mod tests {
         assert_eq!(view.accessor_name, id("PersonAtLevel2"));
         assert_eq!(view.return_columns[0].view_name, id("Level2Person"));
         assert_eq!(view.param_columns[0].view_name, id("Level2Person"));
+    }
+
+    #[test]
+    fn view_primary_key_with_params_is_rejected() {
+        let mut builder = RawModuleDefV10Builder::new();
+        let return_type_ref =
+            builder.add_algebraic_type([], "Person", AlgebraicType::product([("id", AlgebraicType::U64)]), true);
+        builder.add_view(
+            "person_by_id",
+            0,
+            true,
+            true,
+            ProductType::from([("id", AlgebraicType::U64)]),
+            AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+        );
+        builder.add_view_primary_key("person_by_id", ["id"]);
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+        expect_error_matching!(result, ValidationError::ViewPrimaryKeyWithParams { view } => {
+            view == &RawIdentifier::from("person_by_id")
+        });
+    }
+
+    #[test]
+    fn view_float_param_is_rejected() {
+        let mut builder = RawModuleDefV10Builder::new();
+        let return_type_ref =
+            builder.add_algebraic_type([], "Person", AlgebraicType::product([("id", AlgebraicType::U64)]), true);
+        builder.add_view(
+            "people_near",
+            0,
+            true,
+            true,
+            ProductType::from([("x", AlgebraicType::F64)]),
+            AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+        );
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+        expect_error_matching!(result, ValidationError::ViewFloatParam { view, param } => {
+            view == &RawIdentifier::from("people_near") && param == &RawIdentifier::from("x")
+        });
+    }
+
+    #[test]
+    fn query_view_with_params_has_no_primary_key() {
+        let mut builder = RawModuleDefV10Builder::new();
+        let person_ref = builder
+            .build_table_with_new_type("person", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .with_unique_constraint(ColId(0))
+            .with_primary_key(0)
+            .with_index_no_accessor_name(btree(0), "person_id")
+            .finish();
+        let query_type = AlgebraicType::product([(QUERY_VIEW_RETURN_TAG, AlgebraicType::Ref(person_ref))]);
+        builder.add_view("all_people", 0, true, true, ProductType::unit(), query_type.clone());
+        builder.add_view(
+            "person_by_id",
+            1,
+            true,
+            true,
+            ProductType::from([("id", AlgebraicType::U64)]),
+            query_type,
+        );
+
+        let def: ModuleDef = builder.finish().try_into().unwrap();
+        assert_eq!(def.view("all_people").unwrap().primary_key, Some(ColId(0)));
+        assert_eq!(def.view("person_by_id").unwrap().primary_key, None);
+    }
+
+    #[test]
+    fn namespace_exactly_63_chars_is_ok() {
+        let namespace = "a".repeat(63);
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace,
+                module: RawModuleDefV10::default(),
+            }])],
+        };
+        let result: Result<ModuleDef> = raw.try_into();
+        assert!(result.is_ok(), "63-char namespace should be valid");
+    }
+
+    #[test]
+    fn namespace_64_chars_is_rejected() {
+        let namespace = "a".repeat(64);
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: namespace.clone(),
+                module: RawModuleDefV10::default(),
+            }])],
+        };
+        let expected_ns = RawIdentifier::from(namespace.clone());
+        let result: Result<ModuleDef> = raw.try_into();
+        expect_error_matching!(result, ValidationError::NamespaceTooLong { namespace: ns, len } => {
+            ns == &expected_ns && len == &64usize
+        });
+    }
+
+    fn make_module_with_lifecycle(lifecycle: Lifecycle) -> RawModuleDefV10 {
+        let mut b = RawModuleDefV10Builder::new();
+        b.add_lifecycle_reducer(lifecycle, "lifecycle_fn", ProductType::unit());
+        b.finish()
+    }
+
+    #[test]
+    fn lifecycle_in_submodule_is_rejected() {
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "auth".to_string(),
+                module: make_module_with_lifecycle(Lifecycle::Init),
+            }])],
+        };
+
+        let result: Result<ModuleDef> = raw.try_into();
+        expect_error_matching!(result, ValidationError::LifecycleInSubmodule { lifecycle, namespace } => {
+            lifecycle == &Lifecycle::Init && namespace == "auth"
+        });
+    }
+
+    #[test]
+    fn lifecycle_in_root_with_submodule_is_ok() {
+        // Root declares Init; the submodule has no lifecycle — this is valid.
+        let consumer_raw = make_module_with_lifecycle(Lifecycle::Init);
+        let mut sections = consumer_raw.sections;
+        sections.push(RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+            namespace: "auth".to_string(),
+            module: RawModuleDefV10::default(),
+        }]));
+
+        let result: Result<ModuleDef> = RawModuleDefV10 { sections }.try_into();
+        assert!(
+            result.is_ok(),
+            "lifecycle in root with a lifecycle-free submodule should be valid"
+        );
+    }
+
+    #[test]
+    fn lifecycle_in_nested_submodule_is_rejected() {
+        // Root uses auth as submodule; auth uses baz as submodule; baz declares a lifecycle. Should be rejected.
+        let auth = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "baz".to_string(),
+                module: make_module_with_lifecycle(Lifecycle::Init),
+            }])],
+        };
+
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "auth".to_string(),
+                module: auth,
+            }])],
+        };
+
+        let result: Result<ModuleDef> = raw.try_into();
+        expect_error_matching!(result, ValidationError::LifecycleInSubmodule { lifecycle, namespace } => {
+            lifecycle == &Lifecycle::Init && namespace == "baz"
+        });
+    }
+}
+
+#[cfg(test)]
+mod environment_tests {
+    use super::*;
+
+    fn declared(name: &str) -> RawModuleDefV10 {
+        RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Environment(vec![
+                RawEnvironmentDeclarationV10 {
+                    name: name.into(),
+                    ty: RawEnvVarTypeV10::String,
+                    optional: true,
+                },
+            ])],
+        }
+    }
+
+    #[test]
+    fn environment_schema_round_trip_preserves_exact_keys() {
+        let module = validate(declared("Mixed_CASE")).unwrap();
+        assert!(module.environment().get("Mixed_CASE").is_some());
+        assert!(module.environment().get("mixed_case").is_none());
+        let raw: RawModuleDefV10 = module.into();
+        assert!(validate(raw).unwrap().environment().get("Mixed_CASE").is_some());
+        assert_eq!(
+            spacetimedb_lib::bsatn::to_vec(&RawModuleDefV10Section::Environment(vec![])).unwrap(),
+            vec![15, 0, 0, 0, 0]
+        );
+    }
+
+    #[test]
+    fn environment_rejects_ambiguous_sections_and_nested_declarations() {
+        let nested = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "outer".into(),
+                module: RawModuleDefV10 {
+                    sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                        namespace: "inner".into(),
+                        module: declared("SECRET"),
+                    }])],
+                },
+            }])],
+        };
+        assert!(validate(nested)
+            .unwrap_err()
+            .into_iter()
+            .any(|error| matches!(error, ValidationError::EnvironmentInSubmodule { .. })));
+        let empty = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "allowed".into(),
+                module: RawModuleDefV10 {
+                    sections: vec![RawModuleDefV10Section::Environment(vec![])],
+                },
+            }])],
+        };
+        assert!(validate(empty).is_ok());
+        assert!(validate(declared("INVALID-NAME")).is_err());
     }
 }

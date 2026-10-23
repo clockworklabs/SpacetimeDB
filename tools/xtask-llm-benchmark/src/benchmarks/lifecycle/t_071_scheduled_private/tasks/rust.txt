@@ -1,0 +1,20 @@
+Write a SpacetimeDB backend module in Rust with a private scheduled table that is not client-callable.
+
+TABLES
+- job_result (public), struct JobResult
+  - Fields:
+    - id: u64 (primary key)
+    - status: String
+- private_job (private, scheduled for run_private_job), struct PrivateJob
+  - Fields, in this order:
+    - scheduled_id: u64 (primary key, auto-increment)
+    - scheduled_at: ScheduleAt
+    - result_id: u64
+
+REDUCERS
+- enqueue_private(id: u64)
+  - Write job_result status "queued"
+  - Schedule that id for one millisecond later
+- run_private_job(job: PrivateJob) (scheduled reducer)
+  - Must be scheduler-only and not client-callable
+  - Update the matching job_result status to "complete"

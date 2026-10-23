@@ -449,15 +449,11 @@ async fn update_test_file<T: std::io::Write, D: AsyncDB, M: MakeConnection<Conn 
                     continue;
                 }
                 match &record {
-                    Record::Statement { sql, .. } => {
-                        if sql.contains("NOT_REWRITE") {
-                            continue;
-                        }
+                    Record::Statement { sql, .. } if sql.contains("NOT_REWRITE") => {
+                        continue;
                     }
-                    Record::Query { sql, .. } => {
-                        if sql.contains("NOT_REWRITE") {
-                            continue;
-                        }
+                    Record::Query { sql, .. } if sql.contains("NOT_REWRITE") => {
+                        continue;
                     }
                     _ => (),
                 }

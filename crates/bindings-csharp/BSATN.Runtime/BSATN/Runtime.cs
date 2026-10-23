@@ -56,6 +56,12 @@ public interface IStructuralReadWrite
     /// <typeparam name="T"></typeparam>
     /// <param name="reader"></param>
     /// <returns></returns>
+#if NET10_0_OR_GREATER
+    // Avoid an extra per-row call in NativeAOT scan iterators.
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
+#endif
     static T Read<T>(BinaryReader reader)
         where T : IStructuralReadWrite, new()
     {
@@ -129,7 +135,9 @@ public readonly struct Enum<T> : IReadWrite<T>
     /// Note: the [Type] macro rejects enums with explicitly set values (see Codegen.Tests),
     /// so this array is guaranteed to be continuous and indexed starting from 0.
     /// </summary>
+#pragma warning disable CA2263, IDE0305 // netstandard2.1 lacks the generic Enum overloads.
     private static readonly T[] TagToValue = Enum.GetValues(typeof(T)).Cast<T>().ToArray();
+#pragma warning restore CA2263, IDE0305
 
     public T Read(BinaryReader reader)
     {
@@ -177,9 +185,12 @@ public readonly struct Enum<T> : IReadWrite<T>
         registrar.RegisterType<T>(
             (_) =>
                 new AlgebraicType.Sum(
-                    Enum.GetNames(typeof(T))
-                        .Select(name => new AggregateElement(name, AlgebraicType.Unit))
-                        .ToArray()
+#pragma warning disable CA2263 // netstandard2.1 lacks the generic Enum overloads.
+                    [
+                        .. Enum.GetNames(typeof(T))
+                            .Select(name => new AggregateElement(name, AlgebraicType.Unit)),
+                    ]
+#pragma warning restore CA2263
                 )
         );
 }

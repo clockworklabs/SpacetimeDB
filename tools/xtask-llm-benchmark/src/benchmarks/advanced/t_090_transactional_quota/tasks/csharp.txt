@@ -1,0 +1,12 @@
+Implement this SpacetimeDB module in csharp. Return only the module source.
+
+Implement a per-identity lifetime quota of 3 accepted units. The sender, not a caller-supplied identity, owns each request. This is a transaction/quota test, not a timed-window rate limiter. Invalid requests and failed transactions must not consume quota or reserve request IDs. Exact replay is a no-op; changing owner or amount for an existing request ID is a conflict.
+
+Tables (the first field is the primary key):
+- public Quota: Owner: Identity, Used: ulong
+- public AcceptedRequest: RequestId: string, Owner: Identity, Units: ulong
+
+Reducers (argument order is part of the contract):
+- submit(RequestId: string, Units: long): If request ID exists, identical owner+units returns success; otherwise fail 'request conflict'. For new IDs, require nonempty request ID and units>0 ('invalid request'). Require used+units<=3 ('quota exceeded'), starting at used=0. Insert request and update quota atomically.
+
+Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged.

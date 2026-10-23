@@ -1,0 +1,15 @@
+Write a SpacetimeDB backend module in TypeScript that routes two HTTP methods on the same path.
+
+HANDLERS
+- GET /items
+  - Return status 200
+  - Return body "list"
+- POST /items
+  - Read the request body
+  - Return status 201
+  - Return body "created:" followed by the request body
+
+ROUTER
+- Register both handlers for /items
+- Reject unsupported methods on /items
+- Reject unknown paths

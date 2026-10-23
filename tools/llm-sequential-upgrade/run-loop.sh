@@ -25,7 +25,6 @@ BACKEND="spacetime"
 VARIANT="one-shot"
 LEVEL=7
 RULES="guided"
-TEST_MODE=""
 RUN_INDEX=0
 MAX_FIX_ITERATIONS=5
 
@@ -35,17 +34,11 @@ while [[ $# -gt 0 ]]; do
     --variant) VARIANT="$2"; shift 2 ;;
     --level) LEVEL="$2"; shift 2 ;;
     --rules) RULES="$2"; shift 2 ;;
-    --test) TEST_MODE="$2"; shift 2 ;;
     --run-index) RUN_INDEX="$2"; shift 2 ;;
     --max-fixes) MAX_FIX_ITERATIONS="$2"; shift 2 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
-
-TEST_FLAG=""
-if [[ -n "$TEST_MODE" ]]; then
-  TEST_FLAG="--test $TEST_MODE"
-fi
 
 LOCK_FILE="$SCRIPT_DIR/.grade-lock"
 LOG_PREFIX="[run-$RUN_INDEX/$BACKEND]"
@@ -112,7 +105,6 @@ fix_bugs() {
     --fix "$app_dir" \
     --variant "$VARIANT" \
     --rules "$RULES" \
-    $TEST_FLAG \
     --run-index "$RUN_INDEX" \
     --level "$LEVEL" \
     --resume-session \
@@ -128,7 +120,6 @@ if [[ "$VARIANT" == "one-shot" ]]; then
   "$SCRIPT_DIR/run.sh" \
     --variant "$VARIANT" \
     --rules "$RULES" \
-    $TEST_FLAG \
     --backend "$BACKEND" \
     --run-index "$RUN_INDEX" \
     --level "$LEVEL"
@@ -202,7 +193,6 @@ else
     "$SCRIPT_DIR/run.sh" \
       --variant "$VARIANT" \
       --rules "$RULES" \
-      $TEST_FLAG \
       --backend "$BACKEND" \
       --run-index "$RUN_INDEX" \
       --upgrade "$APP_DIR" \

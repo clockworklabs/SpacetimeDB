@@ -1,0 +1,22 @@
+Write a SpacetimeDB backend module in TypeScript that performs atomic, idempotent transfers between accounts.
+
+TABLES
+- account (public)
+  - Fields:
+    - id: u64 (primary key)
+    - balance: i64
+- transfer_request (public)
+  - Fields:
+    - requestId: string (primary key)
+    - fromId: u64
+    - toId: u64
+    - amount: i64
+
+REDUCERS
+- create_account(id: u64, balance: i64)
+  - Insert an account with the supplied values
+- transfer(requestId: string, fromId: u64, toId: u64, amount: i64)
+  - Reject invalid or insufficient transfers
+  - Update both account balances atomically
+  - Record requestId in transfer_request
+  - If requestId is already recorded, make no changes

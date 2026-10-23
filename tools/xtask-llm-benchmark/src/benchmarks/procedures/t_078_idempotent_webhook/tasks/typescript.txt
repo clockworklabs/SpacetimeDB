@@ -1,0 +1,22 @@
+Write a SpacetimeDB backend module in TypeScript that handles idempotent, ordered webhook events.
+
+TABLES
+- processed_event (private)
+  - Fields:
+    - eventId: string (primary key)
+- webhook_state (public)
+  - Fields:
+    - key: string (primary key)
+    - lastSequence: u64
+    - value: string
+
+HANDLER
+- POST /webhook
+  - Accept a pipe-delimited body: event_id|sequence|value
+  - Store state under key "account"
+  - For a newly applied event, return status 200 and body "applied"
+  - For a duplicate eventId, return status 200 and body "duplicate" without applying twice
+  - When sequence is not newer, return status 200 and body "stale" without replacing state
+
+ROUTER
+- Register POST /webhook through an HTTP router

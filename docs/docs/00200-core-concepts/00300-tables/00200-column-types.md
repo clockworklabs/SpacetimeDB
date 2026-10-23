@@ -195,19 +195,19 @@ const player = table(
     experience: t.u32(),
     health: t.f32(),
     score: t.i64(),
-    is_online: t.bool(),
+    isOnline: t.bool(),
 
     // Composite types
     position: Coordinates,
     status: Status,
     inventory: t.array(t.u32()),
-    guild_id: t.option(t.u64()),
+    guildId: t.option(t.u64()),
 
     // Special types
     owner: t.identity(),
     connection: t.option(t.connectionId()),
-    created_at: t.timestamp(),
-    play_time: t.timeDuration(),
+    createdAt: t.timestamp(),
+    playTime: t.timeDuration(),
   }
 );
 ```

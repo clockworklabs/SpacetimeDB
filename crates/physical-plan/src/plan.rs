@@ -3,13 +3,11 @@ use derive_more::From;
 use either::Either;
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_expr::{
-    expr::{AggType, CollectViews},
+    expr::{AggType, CollectViews, ViewArgs, ViewCall},
     StatementSource,
 };
-use spacetimedb_lib::{
-    empty_view_arg_hash_value, query::Delta, sats::size_of::SizeOf, AlgebraicType, AlgebraicValue, ProductValue,
-};
-use spacetimedb_primitives::{ColId, ColOrCols, ColSet, IndexId, TableId, ViewId};
+use spacetimedb_lib::{query::Delta, sats::size_of::SizeOf, AlgebraicType, AlgebraicValue, ProductValue};
+use spacetimedb_primitives::{ColId, ColOrCols, ColSet, IndexId, TableId};
 use spacetimedb_schema::schema::{IndexSchema, TableSchema, VIEW_ARG_HASH_COL};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use spacetimedb_table::table::RowRef;
@@ -42,7 +40,8 @@ pub trait ParamResolver {
 pub struct ParamSlot(pub u16);
 
 pub const PARAM_SENDER: ParamSlot = ParamSlot(0);
-pub const PARAM_VIEW_ARG_HASH: ParamSlot = ParamSlot(1);
+pub const PARAM_VIEW_ARG_HASH_EMPTY: ParamSlot = ParamSlot(1);
+pub const PARAM_VIEW_ARG_HASH_SENDER: ParamSlot = ParamSlot(2);
 
 /// Physical plans always terminate with a projection.
 /// This type of projection returns row ids.
@@ -89,7 +88,7 @@ impl DerefMut for ProjectPlan {
 }
 
 impl CollectViews for ProjectPlan {
-    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewCall>) {
         match self {
             Self::None(plan) | Self::Name(plan, ..) => plan.collect_views(views),
         }
@@ -299,16 +298,25 @@ pub enum PhysicalPlan {
 }
 
 impl CollectViews for PhysicalPlan {
-    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewCall>) {
         self.visit(&mut |plan| {
-            let view_info = match plan {
-                Self::TableScan(scan, _) => &scan.schema.view_info,
-                Self::IxScan(scan, _) => &scan.schema.view_info,
-                Self::IxJoin(join, _) => &join.rhs.view_info,
+            let (view_info, view_args) = match plan {
+                Self::TableScan(scan, _) => (&scan.schema.view_info, Some(&scan.view_args)),
+                Self::IxScan(scan, _) => (&scan.schema.view_info, None),
+                Self::IxJoin(join, _) => (&join.rhs.view_info, None),
                 _ => return,
             };
             if let Some(info) = view_info {
-                views.insert(info.view_id);
+                // An optimized scan has lost the call's args, so never fill in empty args for them.
+                assert!(
+                    view_args.is_some() || info.params.elements.is_empty(),
+                    "parameterized view calls must be collected before optimization",
+                );
+                let args = view_args.and_then(Option::as_ref).map(|v| v.args.clone());
+                views.insert(ViewCall {
+                    view_id: info.view_id,
+                    args: args.unwrap_or_default(),
+                });
             }
         });
     }
@@ -553,9 +561,10 @@ impl PhysicalPlan {
     /// If a view has private arguments, its backing table has an `arg_hash` column.
     /// This column tracks which rows belong to which argument tuple.
     ///
-    /// As a result, queries over such views cannot read the entire backing table.
-    /// They must only select the rows corresponding to the caller of the query.
-    /// Hence we must add an implicit selection over these types of views.
+    /// As a result, queries over views cannot read the entire backing table.
+    /// They must only select the rows corresponding to the view arguments used
+    /// by each view reference. Hence we must add an implicit selection over
+    /// these types of views.
     ///
     /// Ex.
     /// ```sql
@@ -569,10 +578,22 @@ impl PhysicalPlan {
     fn expand_views(self) -> Self {
         match self {
             Self::TableScan(scan, label) if scan.schema.is_view() => {
-                let arg_hash = if scan.schema.is_anonymous_view() {
-                    PhysicalExpr::Value(empty_view_arg_hash_value())
-                } else {
-                    PhysicalExpr::Param(PARAM_VIEW_ARG_HASH, AlgebraicType::U256)
+                let arg_hash = match &scan.view_args {
+                    // A parameterized call's hash was bound at compile time
+                    Some(view_args) => PhysicalExpr::Value(
+                        view_args
+                            .arg_hash
+                            .clone()
+                            .expect("bind_view_arg_hashes must run before physical compilation"),
+                    ),
+                    None => {
+                        let param = if scan.schema.is_anonymous_view() {
+                            PARAM_VIEW_ARG_HASH_EMPTY
+                        } else {
+                            PARAM_VIEW_ARG_HASH_SENDER
+                        };
+                        PhysicalExpr::Param(param, AlgebraicType::U256)
+                    }
                 };
                 Self::Filter(
                     Box::new(Self::TableScan(scan, label)),
@@ -1189,6 +1210,9 @@ pub struct TableScan {
     pub limit: Option<u64>,
     /// Is this a delta table?
     pub delta: Option<Delta>,
+    /// The arguments of a parameterized view call, with its bound `arg_hash`.
+    /// `None` for tables and for views without parameters.
+    pub view_args: Option<ViewArgs>,
 }
 
 /// Fetch and return row ids from a btree index
@@ -1596,21 +1620,22 @@ mod tests {
     use std::sync::Arc;
 
     use pretty_assertions::assert_eq;
+    use spacetimedb_data_structures::map::HashSet;
     use spacetimedb_expr::{
         check::{SchemaView, TypingResult},
-        expr::ProjectName,
+        expr::{CollectViews, ProjectName, ViewCall},
         statement::{parse_and_type_sql, Statement},
     };
     use spacetimedb_lib::{
         db::auth::{StAccess, StTableType},
         identity::AuthCtx,
-        AlgebraicType, AlgebraicValue,
+        view_instance_arg_hash_value, AlgebraicType, AlgebraicValue, Identity, ProductType, ProductValue,
     };
-    use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
+    use spacetimedb_primitives::{ColId, ColList, ColSet, TableId, ViewId};
     use spacetimedb_schema::{
         def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData},
         identifier::Identifier,
-        schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableOrViewSchema, TableSchema},
+        schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableOrViewSchema, TableSchema, ViewDefInfo},
         table_name::TableName,
     };
     use spacetimedb_sql_parser::ast::BinOp;
@@ -1697,6 +1722,7 @@ mod tests {
             None,
             primary_key.map(ColId::from),
             false,
+            None,
             None,
         )))
     }
@@ -2387,5 +2413,58 @@ mod tests {
 
         assert!(plan.plan_iter().any(|plan| plan.has_filter()));
         assert!(plan.plan_iter().any(|plan| plan.has_table_scan(None)));
+    }
+
+    /// A parameterized view call's bound `arg_hash` scopes the optimized scan to that call,
+    /// and collecting from the unoptimized plan returns the call's args.
+    #[test]
+    fn view_call_arg_hash_scopes_scan() {
+        let caller = Identity::ONE;
+        let args = ProductValue::from_iter([AlgebraicValue::U32(42)]);
+
+        for is_anonymous in [true, false] {
+            // A view's backing table: the hidden `arg_hash` column, indexed, then its row columns.
+            let mut v = TableSchema::clone(
+                &schema(
+                    TableId(1),
+                    "v",
+                    &[("arg_hash", AlgebraicType::U256), ("x", AlgebraicType::U8)],
+                    &[&[0]],
+                    &[],
+                    None,
+                )
+                .inner(),
+            );
+            v.view_info = Some(ViewDefInfo {
+                view_id: ViewId(1),
+                is_anonymous,
+                params: ProductType::from_iter([("id", AlgebraicType::U32)]),
+            });
+            let db = SchemaViewer {
+                schemas: vec![Arc::new(TableOrViewSchema::from(Arc::new(v)))],
+            };
+
+            let mut lp = parse_and_type_sub("select * from v(42)", &db).unwrap();
+            lp.bind_view_arg_hashes(caller);
+            let pp = compile_select(lp);
+
+            let mut calls = HashSet::default();
+            pp.collect_views(&mut calls);
+            let expected_calls: HashSet<_> = [ViewCall {
+                view_id: ViewId(1),
+                args: args.clone(),
+            }]
+            .into_iter()
+            .collect();
+            assert_eq!(calls, expected_calls);
+
+            let expected_hash = view_instance_arg_hash_value((!is_anonymous).then_some(caller), &args);
+            match pp.optimize().unwrap() {
+                ProjectPlan::None(PhysicalPlan::IxScan(IxScan { probe, .. }, _)) => {
+                    assert_eq!(probe, IndexProbe::Point(value(expected_hash)));
+                }
+                plan => panic!("unexpected plan: {plan:#?}"),
+            }
+        }
     }
 }

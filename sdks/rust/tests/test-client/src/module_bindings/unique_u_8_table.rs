@@ -18,6 +18,18 @@ pub struct UniqueU8TableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `unique_u_8`.
+pub struct UniqueU8TableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for UniqueU8TableAccessor {
+    type Row = UniqueU8;
+    type Handle<'db> = UniqueU8TableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.unique_u_8()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `unique_u_8`.
 ///
@@ -39,6 +51,18 @@ impl UniqueU8TableAccess for super::RemoteTables {
 
 pub struct UniqueU8InsertCallbackId(__sdk::CallbackId);
 pub struct UniqueU8DeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for UniqueU8TableHandle<'ctx> {
+    type Row = UniqueU8;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = UniqueU8> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for UniqueU8TableHandle<'ctx> {
     type Row = UniqueU8;
@@ -64,6 +88,36 @@ impl<'ctx> __sdk::Table for UniqueU8TableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = UniqueU8DeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> UniqueU8DeleteCallbackId {
+        UniqueU8DeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: UniqueU8DeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for UniqueU8TableHandle<'ctx> {
+    type InsertCallbackId = UniqueU8InsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> UniqueU8InsertCallbackId {
+        UniqueU8InsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: UniqueU8InsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for UniqueU8TableHandle<'ctx> {
     type DeleteCallbackId = UniqueU8DeleteCallbackId;
 
     fn on_delete(

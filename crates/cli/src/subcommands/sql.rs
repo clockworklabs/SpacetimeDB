@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use crate::api::{from_json_seed, ClientApi, Connection, SqlStmtResult, StmtStats};
 use crate::common_args;
+use crate::common_args::Format;
 use crate::config::Config;
 use crate::subcommands::db_arg_resolution::{
     load_config_db_targets, resolve_database_arg, resolve_optional_database_parts, ResolvedDbArgs,
@@ -33,6 +34,7 @@ pub fn cli() -> clap::Command {
         .arg(common_args::confirmed())
         .arg(common_args::anonymous())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
+        .arg(common_args::format().help("Output format for the SQL results"))
         .arg(common_args::yes())
         .arg(
             Arg::new("no_config")
@@ -143,7 +145,12 @@ fn print_stmt_result(
     Ok(())
 }
 
-pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool) -> Result<(), anyhow::Error> {
+pub(crate) async fn run_sql(
+    builder: RequestBuilder,
+    sql: &str,
+    with_stats: bool,
+    format: Format,
+) -> Result<(), anyhow::Error> {
     let now = Instant::now();
 
     let json = builder
@@ -154,6 +161,11 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool
         .await?
         .text()
         .await?;
+
+    if format == Format::Json {
+        println!("{json}");
+        return Ok(());
+    }
 
     let stmt_result_json: Vec<SqlStmtResult> = serde_json::from_str(&json).context("malformed sql response")?;
 
@@ -182,6 +194,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     eprintln!("{UNSTABLE_WARNING}\n");
     let interactive = args.get_one::<bool>("interactive").unwrap_or(&false);
     let no_config = args.get_flag("no_config");
+    let format = *args.get_one::<Format>("format").unwrap();
     let raw_parts: Vec<String> = args
         .get_many::<String>("sql_parts")
         .map(|vals| vals.cloned().collect())
@@ -201,7 +214,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         )?;
         let con = parse_req(config, args, &resolved.database, resolved.server.as_deref()).await?;
 
-        crate::repl::exec(con).await?;
+        crate::repl::exec(con, format).await?;
     } else {
         let resolved = resolve_optional_database_parts(
             &raw_parts,
@@ -243,13 +256,13 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             api = api.query(&[("confirmed", if confirmed { "true" } else { "false" })]);
         }
 
-        run_sql(api, &query, false).await?;
+        run_sql(api, &query, false, format).await?;
     }
     Ok(())
 }
 
 /// Generates a [`tabled::Table`] from a schema and rows, using the style of a psql table.
-fn build_table<E>(
+pub(super) fn build_table<E>(
     client: PsqlClient,
     schema: &ProductType,
     rows: impl Iterator<Item = Result<ProductValue, E>>,

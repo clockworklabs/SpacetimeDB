@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in TypeScript that defines one table with a multi-column B-Tree index and seeds rows.
 
 TABLE
-- log
+- log (public)
   - Fields:
     - id: number (u64, primary key, autoInc)
     - userId: number (i32)

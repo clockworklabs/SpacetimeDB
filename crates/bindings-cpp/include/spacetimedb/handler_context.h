@@ -8,6 +8,7 @@
 #include <spacetimedb/abi/FFI.h>
 #include <spacetimedb/bsatn/timestamp.h>
 #include <spacetimedb/bsatn/uuid.h>
+#include <spacetimedb/environment.h>
 #include <spacetimedb/http.h>
 #include <spacetimedb/internal/tx_execution.h>
 #include <spacetimedb/random.h>
@@ -23,15 +24,26 @@ namespace SpacetimeDB {
 
 struct HandlerContext {
     Timestamp timestamp;
+    Environment env;
     HttpClient http;
 
 private:
     mutable std::shared_ptr<StdbRng> rng_instance;
     mutable uint32_t counter_uuid_ = 0;
+    Identity sender_;
+    AuthCtx sender_auth_ = AuthCtx::from_connection_id_opt(std::nullopt, Identity{});
 
 public:
     HandlerContext() = default;
     explicit HandlerContext(Timestamp t) : timestamp(t) {}
+    HandlerContext(Identity sender, BytesSource sender_jwt, Timestamp t)
+        : timestamp(t), sender_(sender), sender_auth_(AuthCtx::from_jwt_source(sender_jwt, sender)) {}
+
+    // The random Identity that the host created for this request.
+    // Each request has a different sender, which is also the sender of the transactions it opens.
+    Identity sender() const {
+        return sender_;
+    }
 
     Identity identity() const {
         std::array<uint8_t, 32> id_bytes;
@@ -61,12 +73,12 @@ public:
 #ifdef SPACETIMEDB_UNSTABLE_FEATURES
     template<typename Func>
     auto with_tx(Func&& body) -> decltype(body(std::declval<TxContext&>())) {
-        auto make_reducer_ctx = [](Timestamp tx_timestamp) {
+        auto make_reducer_ctx = [this](Timestamp tx_timestamp) {
             return ReducerContext(
-                Identity{},
+                sender_,
                 std::nullopt,
                 tx_timestamp,
-                AuthCtx::internal()
+                sender_auth_
             );
         };
         return Internal::with_tx(make_reducer_ctx, body);
@@ -74,12 +86,12 @@ public:
 
     template<typename Func>
     auto try_with_tx(Func&& body) -> decltype(body(std::declval<TxContext&>())) {
-        auto make_reducer_ctx = [](Timestamp tx_timestamp) {
+        auto make_reducer_ctx = [this](Timestamp tx_timestamp) {
             return ReducerContext(
-                Identity{},
+                sender_,
                 std::nullopt,
                 tx_timestamp,
-                AuthCtx::internal()
+                sender_auth_
             );
         };
         return Internal::try_with_tx(make_reducer_ctx, body);

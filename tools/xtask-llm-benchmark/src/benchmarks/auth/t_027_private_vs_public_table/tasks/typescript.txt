@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in TypeScript that defines a private table for sensitive data and a public table for client-visible data, with a reducer that copies safe fields from private to public.
 
 TABLES
-- userInternal
+- user_internal
   - private table (do not set public: true)
   - Fields:
     - id: number (u64, primary key, autoInc)
@@ -9,7 +9,7 @@ TABLES
     - email: string
     - passwordHash: string
 
-- userPublic
+- user_public
   - public table (set public: true)
   - Fields:
     - id: number (u64, primary key)
@@ -17,5 +17,5 @@ TABLES
 
 REDUCERS
 - register_user(ctx, { name: string, email: string, passwordHash: string })
-  - Insert into userInternal (id: 0n for autoInc)
-  - Also insert into userPublic with just the id and name (safe fields only)
+  - Insert into user_internal (id: 0n for autoInc)
+  - Also insert into user_public with just the id and name (safe fields only)

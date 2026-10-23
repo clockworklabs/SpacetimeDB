@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in C# that defines one table with a multi-column B-Tree index and seeds rows.
 
 TABLE
-- Log
+- Log (public)
   - Struct: Log
   - Fields:
     - Id: ulong (primary key, auto-increment)

@@ -1,3 +1,4 @@
+#include "spacetimedb/environment.h"
 #include "spacetimedb/internal/v10_builder.h"
 #include "spacetimedb/internal/autogen/AlgebraicType.g.h"
 #include "spacetimedb/internal/autogen/ProductType.g.h"
@@ -38,6 +39,7 @@ void V10Builder::Clear() {
     reducers_.clear();
     procedures_.clear();
     views_.clear();
+    view_primary_keys_.clear();
     http_handlers_.clear();
     http_routes_.clear();
     schedules_.clear();
@@ -303,12 +305,21 @@ RawModuleDefV10 V10Builder::BuildModuleDef() const {
         section_http_routes.set<12>(http_routes_);
         v10_module.sections.push_back(std::move(section_http_routes));
     }
+    if (!view_primary_keys_.empty()) {
+        RawModuleDefV10Section section_view_primary_keys;
+        section_view_primary_keys.set<13>(view_primary_keys_);
+        v10_module.sections.push_back(std::move(section_view_primary_keys));
+    }
     if (!row_level_security_.empty()) {
         RawModuleDefV10Section section_rls;
         section_rls.set<8>(row_level_security_);
         v10_module.sections.push_back(std::move(section_rls));
     }
 
+    validate_environment_declarations();
+    RawModuleDefV10Section section_environment;
+    section_environment.set<15>(environment_declarations());
+    v10_module.sections.push_back(std::move(section_environment));
     return v10_module;
 }
 

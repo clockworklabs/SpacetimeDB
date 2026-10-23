@@ -1,13 +1,13 @@
 Write a SpacetimeDB backend module in C# that defines a Customer table, an Order table with a foreign key to Customer, and a denormalized result table. Include a reducer that joins the two tables and writes results.
 
 TABLES
-- Customer
+- Customer (private)
   - Struct: Customer
   - Fields:
     - Id: ulong (primary key, AutoInc)
     - Name: string
 
-- Order
+- Order (private)
   - Struct: Order
   - Fields:
     - Id: ulong (primary key, AutoInc)
@@ -15,7 +15,7 @@ TABLES
     - Product: string
     - Amount: uint
 
-- OrderDetail
+- OrderDetail (private)
   - Struct: OrderDetail
   - Fields:
     - OrderId: ulong (primary key)

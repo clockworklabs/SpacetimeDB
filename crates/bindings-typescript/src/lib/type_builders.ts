@@ -1449,12 +1449,21 @@ export class ProductBuilder<Elements extends ElementsObj>
   }
 }
 
+/**
+ * The TypeScript value of a `t.result(ok, err)` type: an object with either an
+ * `ok` or an `err` field.
+ */
+export type InferTypeOfResult<
+  Ok extends TypeBuilder<any, any>,
+  Err extends TypeBuilder<any, any>,
+> = { ok: InferTypeOfTypeBuilder<Ok> } | { err: InferTypeOfTypeBuilder<Err> };
+
 export class ResultBuilder<
     Ok extends TypeBuilder<any, any>,
     Err extends TypeBuilder<any, any>,
   >
   extends TypeBuilder<
-    InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>,
+    InferTypeOfResult<Ok, Err>,
     ResultAlgebraicType<
       InferSpacetimeTypeOfTypeBuilder<Ok>,
       InferSpacetimeTypeOfTypeBuilder<Err>
@@ -1462,7 +1471,7 @@ export class ResultBuilder<
   >
   implements
     Defaultable<
-      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>,
+      InferTypeOfResult<Ok, Err>,
       ResultAlgebraicType<
         InferSpacetimeTypeOfTypeBuilder<Ok>,
         InferSpacetimeTypeOfTypeBuilder<Err>
@@ -1478,24 +1487,16 @@ export class ResultBuilder<
     this.err = err;
   }
   default(
-    value: InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+    value: InferTypeOfResult<Ok, Err>
   ): ResultColumnBuilder<
     Ok,
     Err,
-    SetField<
-      DefaultMetadata,
-      'defaultValue',
-      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
-    >
+    SetField<DefaultMetadata, 'defaultValue', InferTypeOfResult<Ok, Err>>
   > {
     return new ResultColumnBuilder<
       Ok,
       Err,
-      SetField<
-        DefaultMetadata,
-        'defaultValue',
-        InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
-      >
+      SetField<DefaultMetadata, 'defaultValue', InferTypeOfResult<Ok, Err>>
     >(this, set(defaultMetadata, { defaultValue: value }));
   }
 }
@@ -1568,7 +1569,9 @@ class SumBuilderImpl<Variants extends VariantsObj>
   extends TypeBuilder<EnumType<Variants>, VariantsToSumType<Variants>>
   implements
     Defaultable<EnumType<Variants>, VariantsToSumType<Variants>>,
-    Nameable<EnumType<Variants>, VariantsToSumType<Variants>>
+    Nameable<EnumType<Variants>, VariantsToSumType<Variants>>,
+    Indexable<EnumType<Variants>, VariantsToSumType<Variants>>,
+    PrimaryKeyable<EnumType<Variants>, VariantsToSumType<Variants>>
 {
   readonly variants: Variants;
   readonly typeName: string | undefined;
@@ -1673,6 +1676,33 @@ class SumBuilderImpl<Variants extends VariantsObj>
   ): SumColumnBuilder<Variants, SetField<DefaultMetadata, 'name', Name>> {
     return new SumColumnBuilder(this, set(defaultMetadata, { name }));
   }
+  index(): SumColumnBuilder<
+    Variants,
+    SetField<DefaultMetadata, 'indexType', 'btree'>
+  >;
+  index<N extends NonNullable<IndexTypes>>(
+    algorithm: N
+  ): SumColumnBuilder<Variants, SetField<DefaultMetadata, 'indexType', N>>;
+  index(
+    algorithm: IndexTypes = 'btree'
+  ): SumColumnBuilder<
+    Variants,
+    SetField<DefaultMetadata, 'indexType', IndexTypes>
+  > {
+    return new SumColumnBuilder(
+      this,
+      set(defaultMetadata, { indexType: algorithm })
+    );
+  }
+  primaryKey(): SumColumnBuilder<
+    Variants,
+    SetField<DefaultMetadata, 'isPrimaryKey', true>
+  > {
+    return new SumColumnBuilder(
+      this,
+      set(defaultMetadata, { isPrimaryKey: true })
+    );
+  }
 }
 
 export const SumBuilder: {
@@ -1732,6 +1762,9 @@ class SimpleSumBuilderImpl<Variants extends SimpleVariantsObj>
     );
   }
 }
+
+// Named so declaration files can refer to enum and unit builder instances.
+export type { SumBuilderImpl, SimpleSumBuilderImpl, UnitBuilder };
 
 export const SimpleSumBuilder: {
   new <Variants extends SimpleVariantsObj>(
@@ -3187,12 +3220,10 @@ export class OptionColumnBuilder<
 export class ResultColumnBuilder<
     Ok extends TypeBuilder<any, any>,
     Err extends TypeBuilder<any, any>,
-    M extends ColumnMetadata<
-      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
-    > = DefaultMetadata,
+    M extends ColumnMetadata<InferTypeOfResult<Ok, Err>> = DefaultMetadata,
   >
   extends ColumnBuilder<
-    InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>,
+    InferTypeOfResult<Ok, Err>,
     ResultAlgebraicType<
       InferSpacetimeTypeOfTypeBuilder<Ok>,
       InferSpacetimeTypeOfTypeBuilder<Err>
@@ -3201,7 +3232,7 @@ export class ResultColumnBuilder<
   >
   implements
     Defaultable<
-      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>,
+      InferTypeOfResult<Ok, Err>,
       ResultAlgebraicType<
         InferSpacetimeTypeOfTypeBuilder<Ok>,
         InferSpacetimeTypeOfTypeBuilder<Err>
@@ -3213,15 +3244,11 @@ export class ResultColumnBuilder<
   }
 
   default(
-    value: InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+    value: InferTypeOfResult<Ok, Err>
   ): ResultColumnBuilder<
     Ok,
     Err,
-    SetField<
-      M,
-      'defaultValue',
-      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
-    >
+    SetField<M, 'defaultValue', InferTypeOfResult<Ok, Err>>
   > {
     return new ResultColumnBuilder(
       this.typeBuilder,
@@ -3273,7 +3300,9 @@ export class SumColumnBuilder<
   extends ColumnBuilder<EnumType<Variants>, VariantsToSumType<Variants>, M>
   implements
     Defaultable<EnumType<Variants>, VariantsToSumType<Variants>>,
-    Nameable<EnumType<Variants>, VariantsToSumType<Variants>>
+    Nameable<EnumType<Variants>, VariantsToSumType<Variants>>,
+    Indexable<EnumType<Variants>, VariantsToSumType<Variants>>,
+    PrimaryKeyable<EnumType<Variants>, VariantsToSumType<Variants>>
 {
   default(
     value: EnumType<Variants>
@@ -3292,6 +3321,33 @@ export class SumColumnBuilder<
     return new SumColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { name })
+    );
+  }
+  index(): SumColumnBuilder<
+    Variants,
+    SetField<DefaultMetadata, 'indexType', 'btree'>
+  >;
+  index<N extends NonNullable<IndexTypes>>(
+    algorithm: N
+  ): SumColumnBuilder<Variants, SetField<DefaultMetadata, 'indexType', N>>;
+  index(
+    algorithm: IndexTypes = 'btree'
+  ): SumColumnBuilder<
+    Variants,
+    SetField<DefaultMetadata, 'indexType', IndexTypes>
+  > {
+    return new SumColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, { indexType: algorithm })
+    );
+  }
+  primaryKey(): SumColumnBuilder<
+    Variants,
+    SetField<DefaultMetadata, 'isPrimaryKey', true>
+  > {
+    return new SumColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, { isPrimaryKey: true })
     );
   }
 }

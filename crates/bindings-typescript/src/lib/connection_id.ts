@@ -1,5 +1,10 @@
 import { AlgebraicType } from './algebraic_type';
-import { hexStringToU128, u128ToHexString, u128ToUint8Array } from './util';
+import {
+  coerceToBigInt,
+  hexStringToU128,
+  u128ToHexString,
+  u128ToUint8Array,
+} from './util';
 
 export type ConnectionIdAlgebraicType = {
   tag: 'Product';
@@ -18,7 +23,10 @@ export class ConnectionId {
    * Creates a new `ConnectionId`.
    */
   constructor(data: bigint) {
-    this.__connection_id__ = data;
+    // Coerce so callers who arrive via JSON (e.g. HTTP responses or
+    // custom state caches that lose bigint precision) get a clear early
+    // failure instead of silent field corruption.
+    this.__connection_id__ = coerceToBigInt(data, 'ConnectionId');
   }
 
   /**

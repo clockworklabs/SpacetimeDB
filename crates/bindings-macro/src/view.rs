@@ -7,7 +7,7 @@ use syn::{FnArg, ItemFn, LitStr};
 
 use crate::reducer::generate_explicit_names_impl;
 use crate::sym;
-use crate::util::{check_duplicate_msg, match_meta};
+use crate::util::{check_duplicate_msg, match_meta, native_test_utils_registration};
 
 pub(crate) struct ViewArgs {
     name: Option<LitStr>,
@@ -94,6 +94,22 @@ impl ViewArgs {
             accessor,
         })
     }
+}
+
+/// Is `ty` a view context, `ViewContext` or `AnonymousViewContext`
+fn is_view_context(ty: &syn::Type) -> bool {
+    let ty = if let syn::Type::Reference(reference) = ty {
+        &*reference.elem
+    } else {
+        ty
+    };
+    let syn::Type::Path(path) = ty else {
+        return false;
+    };
+    path.path
+        .segments
+        .last()
+        .is_some_and(|seg| seg.ident == "ViewContext" || seg.ident == "AnonymousViewContext")
 }
 
 /// If `ty` is `impl Query<T>`, returns `Some(T)`. Otherwise `None`.
@@ -185,11 +201,12 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
         ));
     };
 
-    // TODO: Re-enable parameterized views once we can pass args from sql
-    if !arg_tys.is_empty() {
+    // Views can take params after the context, so a context out of place would otherwise
+    // only surface as trait errors in the generated code.
+    if let Some(misplaced) = arg_tys.iter().find(|ty| is_view_context(ty)) {
         return Err(syn::Error::new_spanned(
-            &original_function.sig,
-            "Views do not take parameters other than `&ViewContext` or `&AnonymousViewContext`",
+            misplaced,
+            "The context must be the first parameter of a view: `&ViewContext` or `&AnonymousViewContext`",
         ));
     }
 
@@ -226,6 +243,9 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
             spacetimedb::rt::ViewRegistrar::<#ctx_ty>::register::<_, #func_name, _, _>(#func_name)
         }
     };
+    let test_utils_registration = native_test_utils_registration(quote! {
+        __register_describer()
+    });
 
     let explicit_name = args.name.as_ref();
     let generate_explicit_names = generate_explicit_names_impl(&view_name, func_name, explicit_name);
@@ -306,7 +326,10 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
     Ok(quote! {
         #emitted_fn
 
-        const _: () = { #generated_describe_function };
+        const _: () = {
+            #generated_describe_function
+            #test_utils_registration
+        };
 
         #[allow(non_camel_case_types)]
         #vis struct #func_name { _never: ::core::convert::Infallible }

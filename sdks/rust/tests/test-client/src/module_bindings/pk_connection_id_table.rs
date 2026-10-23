@@ -18,6 +18,18 @@ pub struct PkConnectionIdTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `pk_connection_id`.
+pub struct PkConnectionIdTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for PkConnectionIdTableAccessor {
+    type Row = PkConnectionId;
+    type Handle<'db> = PkConnectionIdTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.pk_connection_id()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `pk_connection_id`.
 ///
@@ -39,6 +51,18 @@ impl PkConnectionIdTableAccess for super::RemoteTables {
 
 pub struct PkConnectionIdInsertCallbackId(__sdk::CallbackId);
 pub struct PkConnectionIdDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for PkConnectionIdTableHandle<'ctx> {
+    type Row = PkConnectionId;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = PkConnectionId> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for PkConnectionIdTableHandle<'ctx> {
     type Row = PkConnectionId;
@@ -78,9 +102,54 @@ impl<'ctx> __sdk::Table for PkConnectionIdTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for PkConnectionIdTableHandle<'ctx> {
+    type InsertCallbackId = PkConnectionIdInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PkConnectionIdInsertCallbackId {
+        PkConnectionIdInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: PkConnectionIdInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for PkConnectionIdTableHandle<'ctx> {
+    type DeleteCallbackId = PkConnectionIdDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PkConnectionIdDeleteCallbackId {
+        PkConnectionIdDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: PkConnectionIdDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct PkConnectionIdUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkConnectionIdTableHandle<'ctx> {
+    type UpdateCallbackId = PkConnectionIdUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> PkConnectionIdUpdateCallbackId {
+        PkConnectionIdUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: PkConnectionIdUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for PkConnectionIdTableHandle<'ctx> {
     type UpdateCallbackId = PkConnectionIdUpdateCallbackId;
 
     fn on_update(

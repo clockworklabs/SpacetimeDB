@@ -146,6 +146,9 @@ fn run_inner<I: WasmInstance>(
             if !auth.has_write_access() {
                 return Err(anyhow!("Caller {} is not authorized to run SQL DML statements", auth.caller()).into());
             }
+            if stmt.table_id() == spacetimedb_datastore::system_tables::ST_ENV_ID {
+                return Err(anyhow!("Database environment variables can only be changed by publishing").into());
+            }
 
             // Evaluate the mutation
             let (mut tx, _) = db.with_auto_rollback(tx, |tx| execute_dml_stmt(&auth, stmt, tx, &mut metrics))?;
@@ -154,9 +157,9 @@ fn run_inner<I: WasmInstance>(
             tx.metrics.merge(metrics);
 
             // Update views
-            let (result, trapped) = match instance {
+            let (result, _num_views_evaluated, trapped) = match instance {
                 Some(instance) => ModuleHost::call_views_with_tx(tx, instance, auth.caller()),
-                None => (ViewCallResult::default(tx), false),
+                None => (ViewCallResult::default(tx), 0, false),
             };
 
             // Rollback transaction and report metrics if view execution failed
@@ -236,12 +239,70 @@ pub(crate) mod tests {
     use spacetimedb_lib::bsatn::ToBsatn;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::{ResultTest, TestError};
-    use spacetimedb_lib::{AlgebraicValue, Identity};
+    use spacetimedb_lib::{AlgebraicValue, Identity, ScheduleAt, TimeDuration};
     use spacetimedb_primitives::{col_list, ColId, TableId};
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue, ProductType};
     use spacetimedb_schema::identifier::Identifier;
-    use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
+    use spacetimedb_schema::reducer_name::ReducerName;
+    use spacetimedb_schema::schema::{ColumnSchema, OutboxSchema, ScheduleSchema, TableSchema};
     use spacetimedb_schema::table_name::TableName;
+
+    #[test]
+    fn environment_sql_is_read_only_including_for_owner() {
+        use spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration, EnvironmentSchema};
+        use spacetimedb_lib::identity::SqlPermission;
+        use std::collections::BTreeMap;
+        let db = TestDB::in_memory().unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let owner = AuthCtx::for_current(Identity::ZERO);
+        let viewer = AuthCtx::with_permissions(
+            Identity::ONE,
+            Arc::new(|permission| matches!(permission, SqlPermission::Read(_))),
+        );
+        let outsider = AuthCtx::new(Identity::ZERO, Identity::ONE);
+        let value = "secret-marker";
+        let schema = EnvironmentSchema::new(vec![EnvironmentDeclaration {
+            name: "TOKEN".into(),
+            ty: EnvVarType::String,
+            optional: false,
+        }])
+        .unwrap();
+        db.with_auto_commit(Workload::ForTests, |tx| {
+            crate::db::environment::replace(&db, tx, &schema, &BTreeMap::from([("TOKEN".into(), value.into())]))
+        })
+        .unwrap();
+        let execute = |statement: &str, auth: AuthCtx| {
+            runtime.block_on(run(db.clone(), statement.to_string(), auth, None, None, &mut vec![]))
+        };
+        assert_eq!(
+            execute("SELECT value FROM st_env WHERE key = 'TOKEN'", viewer.clone())
+                .unwrap()
+                .rows,
+            vec![product![value]]
+        );
+        assert!(execute("SELECT * FROM st_env", outsider.clone()).is_err());
+        for auth in [owner.clone(), viewer, outsider] {
+            for statement in [
+                "SET env.TOKEN = 'forbidden'",
+                "DELETE env.TOKEN",
+                "INSERT INTO st_env (key, value) VALUES ('BYPASS', 'value')",
+                "UPDATE st_env SET value = 'bypass'",
+                "DELETE FROM st_env",
+            ] {
+                assert!(
+                    execute(statement, auth.clone()).is_err(),
+                    "unexpectedly accepted {statement}"
+                );
+            }
+        }
+        // Rejected writes must release their transactions and preserve data.
+        assert_eq!(
+            execute("SELECT value FROM st_env WHERE key = 'TOKEN'", owner)
+                .unwrap()
+                .rows,
+            vec![product![value]]
+        );
+    }
 
     /// Short-cut for simplify test execution
     pub(crate) fn run_for_testing(db: &Arc<RelationalDB>, sql_text: &str) -> Result<Vec<ProductValue>, DBError> {
@@ -340,6 +401,7 @@ pub(crate) mod tests {
                 None,
                 false,
                 None,
+                None,
             ),
         )?;
         let schema = db.schema_for_table_mut(tx, table_id)?;
@@ -363,6 +425,69 @@ pub(crate) mod tests {
             create_table_with_rows(&stdb, tx, "inventory", head.clone(), &rows, StAccess::Public)
         })?;
         Ok((stdb, TestRows { data: rows }))
+    }
+
+    fn create_outbox_table() -> ResultTest<(TestDB, TableId)> {
+        let stdb = TestDB::durable()?;
+        let table_id = with_auto_commit(&stdb, |tx| {
+            let mut schema = TableSchema::new(
+                TableId::SENTINEL,
+                TableName::for_test("outbound"),
+                None,
+                vec![
+                    ColumnSchema::for_test(0, "msg_id", AlgebraicType::U64),
+                    ColumnSchema::for_test(1, "target", AlgebraicType::identity()),
+                ],
+                vec![],
+                vec![],
+                vec![],
+                StTableType::User,
+                StAccess::Public,
+                None,
+                Some(ColId(0)),
+                false,
+                None,
+                None,
+            );
+            schema.outbox = Some(OutboxSchema {
+                remote_reducer: ReducerName::for_test("receive"),
+                target_column: ColId(1),
+                arg_columns: vec![],
+                on_result_reducer: None,
+                signature_hash: "test-signature".into(),
+            });
+            stdb.create_table(tx, schema)
+        })?;
+        Ok((stdb, table_id))
+    }
+
+    fn create_scheduled_table() -> ResultTest<(TestDB, TableId)> {
+        let stdb = TestDB::durable()?;
+        let table_id = with_auto_commit(&stdb, |tx| {
+            stdb.create_table(
+                tx,
+                TableSchema::new(
+                    TableId::SENTINEL,
+                    TableName::for_test("scheduled"),
+                    None,
+                    vec![
+                        ColumnSchema::for_test(0, "id", AlgebraicType::U64),
+                        ColumnSchema::for_test(1, "at", ScheduleAt::get_type()),
+                    ],
+                    vec![],
+                    vec![],
+                    vec![],
+                    StTableType::User,
+                    StAccess::Public,
+                    Some(ScheduleSchema::for_test("schedule", "reducer", 1)),
+                    Some(ColId(0)),
+                    false,
+                    None,
+                    None,
+                ),
+            )
+        })?;
+        Ok((stdb, table_id))
     }
 
     fn create_identity_table(table_name: &str) -> ResultTest<(TestDB, TestRows)> {
@@ -1387,6 +1512,56 @@ pub(crate) mod tests {
             .map(|x| x.field_as_str(1, None).unwrap().to_string())
             .collect();
         assert_eq!(vec!["c3"; 3], updated);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_sql_dml_rejects_outbox_tables() -> ResultTest<()> {
+        let (db, table_id) = create_outbox_table()?;
+        insert_rows(&db, table_id, [product![1u64, Identity::ZERO]]).unwrap();
+        let target = "0".repeat(63) + "1";
+
+        for sql in [
+            format!("INSERT INTO outbound (msg_id, target) VALUES (2, 0x{target})"),
+            format!("UPDATE outbound SET target = 0x{target} WHERE msg_id = 1"),
+            "DELETE FROM outbound WHERE msg_id = 1".to_string(),
+        ] {
+            let err = run_for_testing(&db, &sql).unwrap_err().to_string();
+            assert!(
+                err.contains("SQL writes to outbox tables are not supported"),
+                "expected `{err}` to reject SQL writes to outbox tables"
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_sql_dml_rejects_scheduled_tables() -> ResultTest<()> {
+        let (db, table_id) = create_scheduled_table()?;
+        insert_rows(
+            &db,
+            table_id,
+            [product![
+                1u64,
+                spacetimedb_sats::algebraic_value::ser::value_serialize(&ScheduleAt::Interval(
+                    TimeDuration::from_micros(42)
+                ))
+            ]],
+        )
+        .unwrap();
+
+        for sql in [
+            "UPDATE scheduled SET id = 2 WHERE id = 1".to_string(),
+            "DELETE FROM scheduled WHERE id = 1".to_string(),
+        ] {
+            let err = run_for_testing(&db, &sql).unwrap_err().to_string();
+            assert!(
+                err.contains("SQL writes to scheduled tables are not supported"),
+                "expected `{err}` to reject SQL writes to scheduled tables"
+            );
+        }
 
         Ok(())
     }

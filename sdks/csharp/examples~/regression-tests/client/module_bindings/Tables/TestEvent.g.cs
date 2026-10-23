@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class TestEventHandle : RemoteEventTableHandle<EventContext, TestEvent>
         {
-            protected override string RemoteTableName => "test_event";
+            public override string RemoteTableName => "test_event";
 
             internal TestEventHandle(DbConnection conn) : base(conn)
             {

@@ -6,6 +6,11 @@ partial struct MultiTableRow
     : System.IEquatable<MultiTableRow>,
         SpacetimeDB.BSATN.IStructuralReadWrite
 {
+#if NET10_0_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
+#endif
     public void ReadFields(System.IO.BinaryReader reader)
     {
         Name = BSATN.NameRW.Read(reader);
@@ -54,7 +59,7 @@ partial struct MultiTableRow
                 {
                     new("Name", NameRW.GetAlgebraicType(registrar)),
                     new("Foo", FooRW.GetAlgebraicType(registrar)),
-                    new("Bar", BarRW.GetAlgebraicType(registrar))
+                    new("Bar", BarRW.GetAlgebraicType(registrar)),
                 }
             ));
 
@@ -82,16 +87,7 @@ partial struct MultiTableRow
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as MultiTableRow?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is MultiTableRow t && Equals(t);
     }
 
     public static bool operator ==(MultiTableRow this_, MultiTableRow that)

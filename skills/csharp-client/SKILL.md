@@ -15,6 +15,8 @@ metadata:
 
 Install: `dotnet add package SpacetimeDB.ClientSDK`
 
+Generated bindings convert snake_case names to PascalCase, including row fields: a server column `trip_id` is `TripId` on client rows.
+
 ## Connection
 
 ```csharp
@@ -25,6 +27,7 @@ var conn = DbConnection.Builder()
     .WithUri("http://localhost:3000")
     .WithDatabaseName("my-database")
     .WithToken(savedToken)
+    .WithCompression(Compression.Brotli) // optional; this is the default
     .OnConnect((conn, identity, token) =>
     {
         Console.WriteLine($"Connected as: {identity}");
@@ -42,6 +45,20 @@ var conn = DbConnection.Builder()
     })
     .Build();
 ```
+
+Compression options are `Compression.Brotli`, `Compression.Gzip`, and `Compression.None`. The SDK uses Brotli when `WithCompression` is omitted.
+
+## Automatic Reconnect and Token Refresh
+
+Automatic reconnect is opt-in: add `.WithAutomaticReconnect()` to the builder. Initial connection failures do not retry. After an established connection is lost, the SDK retries with exponential backoff and jitter from `MinDelay` (default 1 s) up to `MaxDelay` (default 30 s); tune them with `.WithAutomaticReconnect(new AutomaticReconnectOptions { MinDelay = ..., MaxDelay = ... })`. Values below the 500 ms and 1 s floors are raised with a warning, so that retrying clients cannot overwhelm the database. `Disconnect()` permanently stops recovery.
+
+Keep calling `FrameTick()` while `IsActive` is false. `IsReconnecting` is true while recovering before the next handshake. Use `.OnDisconnect((conn, error, next) => ...)` and `.OnConnectError((error, next) => ...)` to inspect `NextReconnect?`: a non-null value provides `Attempt` and `Delay`; null means no retry is scheduled. Existing callback overloads still work.
+
+`OnConnect` runs on every successful reconnect, so create the subscription in the example above only on the first connection, or move it after `Build()`. Register row callbacks once as well. The same connection, identity, table handles, and subscriptions survive; each attempt gets a fresh `ConnectionId`. Cached rows stay readable but stale during outages. The SDK replays subscriptions in one batch and emits only net row changes. Subscription `OnApplied` runs again after replay; use it to mark data ready, not for repeated one-time setup.
+
+For expiring credentials, combine `.WithToken(initialToken)` with `.WithTokenProvider(() => RefreshTokenAsync())`, where your provider returns `Task<string>` for the same identity. The provider is not called for the initial connection. Before retries, it is called when remaining validity is at most 30 seconds or 5% of the token lifetime, whichever is greater, when expiry cannot be read, or after a reused token is rejected. Provider failures retry; rejection of a freshly provided token is terminal. No periodic refresh runs while connected. Disconnecting ignores a pending provider result but does not cancel the provider's own work.
+
+Calls made while disconnected fail immediately. Pending reducer calls receive `Status.UnknownResult`; pending procedures and one-off queries fail with `UnknownResultException`. These calls may already have executed and are never replayed. Regenerate bindings so unhandled unknown reducer outcomes reach `OnUnhandledReducerError`.
 
 ## Event Loop (Critical)
 
@@ -137,6 +154,8 @@ conn.Reducers.MovePlayer(10.0f, 20.0f);
 conn.Reducers.SendMessage("Hello!");
 ```
 
+Reducer calls return `void`; observe failures via the reducer callbacks below (`Status.Failed`).
+
 ## Reducer Callbacks
 
 ```csharp
@@ -146,6 +165,8 @@ conn.Reducers.OnSendMessage += (ReducerEventContext ctx, string text) =>
         Console.WriteLine($"Message sent: {text}");
     else if (ctx.Event.Status is Status.Failed(var reason))
         Console.Error.WriteLine($"Send failed: {reason}");
+    else if (ctx.Event.Status is Status.UnknownResult)
+        Console.Error.WriteLine("Connection lost before the result arrived; the message may have been sent.");
 };
 ```
 

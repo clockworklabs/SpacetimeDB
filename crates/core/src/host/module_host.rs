@@ -1,6 +1,6 @@
 use super::{
-    ArgsTuple, FunctionArgs, InvalidProcedureArguments, InvalidReducerArguments, ReducerCallResult, ReducerId,
-    ReducerOutcome, Scheduler,
+    ArgsTuple, FunctionArgs, InvalidProcedureArguments, InvalidReducerArguments, ReducerCallResult,
+    ReducerCallResultWithTxOffset, ReducerId, ReducerOutcome, Scheduler,
 };
 use crate::client::messages::{OneOffQueryResponseMessage, ProcedureResultMessage, SerializableMessage};
 use crate::client::{ClientActorId, ClientConnectionSender, WsVersion};
@@ -13,6 +13,7 @@ use crate::hash::Hash;
 use crate::host::host_controller::{CallProcedureReturn, ProcedureCallResult};
 use crate::host::scheduler::{CallScheduledFunctionError, CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::v8::{JsFatalHook, JsMainInstance, JsProcedureCallCompletion, JsProcedureInstance};
+use crate::host::wasm_common::module_host_actor::ReducerSuccessAction;
 pub use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
 use crate::host::wasmtime::ModuleInstance;
 use crate::host::{InvalidFunctionArguments, InvalidViewArguments};
@@ -21,8 +22,8 @@ use crate::messages::control_db::{Database, HostType};
 use crate::replica_context::ReplicaContext;
 use crate::sql::execute::SqlResult;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
-use crate::subscription::module_subscription_manager::BroadcastError;
 pub use crate::subscription::module_subscription_manager::TransactionOffset;
+use crate::subscription::module_subscription_manager::{from_tx_offset, BroadcastError};
 use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRowListBuilderFakePool};
 use crate::subscription::tx::DeltaTx;
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
@@ -36,6 +37,7 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use parking_lot::Mutex;
 use prometheus::{Histogram, HistogramTimer, IntGauge};
+use rustc_hash::FxHashMap;
 use scopeguard::ScopeGuard;
 use smallvec::SmallVec;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
@@ -47,35 +49,40 @@ use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_datastore::error::DatastoreError;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
-use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo};
+use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo, ViewInstanceArgs};
+use spacetimedb_datastore::system_tables::{StInboundMsgResultStatus, StInboundMsgRow};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 pub use spacetimedb_durability::{DurabilityExited, DurableOffset};
 use spacetimedb_engine::sql::rls::RowLevelExpr;
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_execution::ExecutionParams;
 use spacetimedb_execution::RelValue;
-use spacetimedb_expr::expr::CollectViews;
+use spacetimedb_expr::expr::{CollectViews, ViewCall};
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::http::{Request as HttpRequest, Response as HttpResponse};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{bsatn, ConnectionId, TimeDuration, Timestamp};
-use spacetimedb_primitives::{ArgId, HttpHandlerId, ProcedureId, TableId, ViewFnPtr, ViewId};
+use spacetimedb_primitives::{HttpHandlerId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
-use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue};
+use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue, Typespace};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
-use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, ViewDef};
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::def::{reducer_signature_hash, ModuleDef, ProcedureDef, ReducerDef, ViewDef};
+use spacetimedb_schema::identifier::{Identifier, NamespacedIdentifier};
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::table_name::TableName;
 use std::collections::VecDeque;
 use std::fmt;
 use std::num::NonZeroUsize;
+use std::ops::ControlFlow;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, OnceLock, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
+
+/// Maximum duration of a transaction durability confirmation wait.
+pub const TRANSACTION_CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
@@ -223,6 +230,9 @@ pub struct ModuleInfo {
     /// Loaded by loading the module's program from the system tables, extracting its definition,
     /// and validating.
     pub module_def: Arc<ModuleDef>,
+    /// Signature hashes computed on first IDC use, keyed by fully qualified reducer name.
+    /// A new module gets a fresh cache on update or restart.
+    reducer_signature_hashes: FxHashMap<ReducerName, OnceLock<Hash>>,
     /// The identity of the module.
     pub owner_identity: Identity,
     /// The identity of the database.
@@ -254,6 +264,46 @@ pub struct ModuleMetrics {
     pub request_round_trip_subscribe: Histogram,
     pub request_round_trip_unsubscribe: Histogram,
     pub request_round_trip_sql: Histogram,
+    scheduled_function_delay: ScheduledFunctionDelayMetrics,
+    idc_callback_failures: Mutex<FxHashMap<TableName, prometheus::IntCounter>>,
+}
+
+#[derive(Debug)]
+struct ScheduledFunctionDelayMetrics {
+    database_identity: Identity,
+    metrics_by_function: Mutex<FxHashMap<Box<str>, Histogram>>,
+}
+
+impl ScheduledFunctionDelayMetrics {
+    fn new(database_identity: &Identity) -> Self {
+        Self {
+            database_identity: *database_identity,
+            metrics_by_function: Mutex::new(FxHashMap::default()),
+        }
+    }
+
+    fn observe(&self, function_name: &str, delay: Duration) {
+        let mut metrics_by_function = self.metrics_by_function.lock();
+        let metric = metrics_by_function
+            .entry(Box::<str>::from(function_name))
+            .or_insert_with(|| {
+                WORKER_METRICS
+                    .scheduled_function_delay
+                    .with_label_values(&self.database_identity, function_name)
+            });
+        metric.observe(delay.as_secs_f64());
+    }
+}
+
+impl Drop for ScheduledFunctionDelayMetrics {
+    fn drop(&mut self) {
+        let metrics_by_function = std::mem::take(self.metrics_by_function.get_mut());
+        for function_name in metrics_by_function.keys() {
+            let _ = WORKER_METRICS
+                .scheduled_function_delay
+                .remove_label_values(&self.database_identity, function_name);
+        }
+    }
 }
 
 impl ModuleMetrics {
@@ -272,6 +322,7 @@ impl ModuleMetrics {
         let request_round_trip_sql = WORKER_METRICS
             .request_round_trip
             .with_label_values(&WorkloadType::Sql, db, "");
+        let scheduled_function_delay = ScheduledFunctionDelayMetrics::new(db);
         Self {
             connected_clients,
             ws_clients_spawned,
@@ -279,7 +330,21 @@ impl ModuleMetrics {
             request_round_trip_subscribe,
             request_round_trip_unsubscribe,
             request_round_trip_sql,
+            scheduled_function_delay,
+            idc_callback_failures: Mutex::new(FxHashMap::default()),
         }
+    }
+
+    pub(in crate::host) fn record_idc_callback_failure(&self, db: Identity, table_name: &TableName) {
+        self.idc_callback_failures
+            .lock()
+            .entry(table_name.clone())
+            .or_insert_with(|| WORKER_METRICS.idc_callback_failures.with_label_values(&db, table_name))
+            .inc();
+    }
+
+    pub(in crate::host) fn observe_scheduled_function_delay(&self, function_name: &str, delay: Duration) {
+        self.scheduled_function_delay.observe(function_name, delay);
     }
 }
 
@@ -294,8 +359,14 @@ impl ModuleInfo {
         subscriptions: ModuleSubscriptions,
     ) -> Arc<Self> {
         let metrics = ModuleMetrics::new(&database_identity);
+        let reducer_signature_hashes = module_def
+            .reducer_ids_and_defs()
+            .into_iter()
+            .map(|(_, reducer)| (reducer.name.clone(), OnceLock::new()))
+            .collect();
         Arc::new(ModuleInfo {
             module_def: Arc::new(module_def),
+            reducer_signature_hashes,
             owner_identity,
             database_identity,
             module_hash,
@@ -306,6 +377,22 @@ impl ModuleInfo {
 
     pub fn relational_db(&self) -> &Arc<RelationalDB> {
         self.subscriptions.relational_db()
+    }
+
+    /// Returns the reducer's signature hash, computing it on first use.
+    pub fn reducer_signature_hash(&self, reducer_name: &ReducerName) -> Hash {
+        *self.reducer_signature_hashes[reducer_name].get_or_init(|| {
+            let (_, reducer, owning_def) = self
+                .module_def
+                .reducer_by_name_with_module(reducer_name)
+                .expect("reducer belongs to this module");
+            reducer_signature_hash(
+                &reducer.params(),
+                &reducer.ok_return_type,
+                &reducer.err_return_type,
+                owning_def.typespace(),
+            )
+        })
     }
 }
 
@@ -434,7 +521,7 @@ impl WasmtimeModuleHost {
         let label = label.to_owned();
         self.executor.enqueue_sync_job(move |state| {
             scopeguard::defer_on_unwind!({
-                log::warn!("wasm main operation {label} panicked");
+                log::error!("wasm main operation {label} panicked");
                 on_panic();
             });
 
@@ -460,7 +547,7 @@ impl WasmtimeModuleHost {
         let label = label.to_owned();
         self.executor.enqueue_async_job(async move || {
             scopeguard::defer_on_unwind!({
-                log::warn!("wasm procedure {label} panicked");
+                log::error!("wasm procedure {label} panicked");
                 on_panic();
             });
 
@@ -549,18 +636,6 @@ impl GenericModuleInstance for super::v8::JsProcedureInstance {
     }
 }
 
-/// Creates the table for `view_def` in `stdb`.
-pub fn create_table_from_view_def(
-    stdb: &RelationalDB,
-    tx: &mut MutTxId,
-    module_def: &ModuleDef,
-    view_def: &ViewDef,
-) -> anyhow::Result<()> {
-    stdb.create_view(tx, module_def, view_def)
-        .with_context(|| format!("failed to create table for view {}", &view_def.name))?;
-    Ok(())
-}
-
 /// Moves out the `trapped: bool` from `res`.
 fn extract_trapped<T, E>(res: Result<(T, bool), E>) -> (Result<T, E>, bool) {
     match res {
@@ -574,17 +649,25 @@ pub(crate) fn init_database(
     replica_ctx: &ReplicaContext,
     module_def: &ModuleDef,
     program: Program,
-    call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResult, bool),
-) -> (anyhow::Result<Option<ReducerCallResult>>, bool) {
-    extract_trapped(init_database_inner(replica_ctx, module_def, program, call_reducer))
+    environment: std::collections::BTreeMap<String, String>,
+    call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResultWithTxOffset, bool),
+) -> (anyhow::Result<InitDatabaseResult>, bool) {
+    extract_trapped(init_database_inner(
+        replica_ctx,
+        module_def,
+        program,
+        environment,
+        call_reducer,
+    ))
 }
 
 fn init_database_inner(
     replica_ctx: &ReplicaContext,
     module_def: &ModuleDef,
     program: Program,
-    call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResult, bool),
-) -> anyhow::Result<(Option<ReducerCallResult>, bool)> {
+    environment: std::collections::BTreeMap<String, String>,
+    call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResultWithTxOffset, bool),
+) -> anyhow::Result<(InitDatabaseResult, bool)> {
     log::debug!("init database");
     let timestamp = Timestamp::now();
     let stdb = replica_ctx.relational_db();
@@ -595,21 +678,37 @@ fn init_database_inner(
     let auth_ctx = AuthCtx::for_current(owner_identity);
     let (tx, ()) = stdb
         .with_auto_rollback(tx, |tx| {
-            // Create all in-memory tables defined by the module,
-            // with IDs ordered lexicographically by the table names.
-            let mut table_defs: Vec<_> = module_def.tables().collect();
-            table_defs.sort_by_key(|x| &x.name);
-            for def in table_defs {
-                logger.info(&format!("Creating table `{}`", &def.name));
-                spacetimedb_engine::update::create_table_from_def(stdb, tx, module_def, def)?;
+            // Create all in-memory tables defined by the module (including submodules),
+            // with IDs ordered lexicographically by their full namespaced names.
+            let mut table_defs = module_def.all_tables_with_prefix();
+            table_defs.sort_by(|(p1, _, d1), (p2, _, d2)| {
+                let n1 = format!("{}{}", p1, d1.name);
+                let n2 = format!("{}{}", p2, d2.name);
+                n1.cmp(&n2)
+            });
+            for (prefix, owning_def, def) in table_defs {
+                let display_name = format!("{}{}", prefix, def.name);
+                logger.info(&format!("Creating table `{}`", display_name));
+                spacetimedb_engine::update::create_table_from_def_with_prefix(stdb, tx, owning_def, def, &prefix)?;
             }
 
-            // Create all in-memory views defined by the module.
-            let mut view_defs: Vec<_> = module_def.views().collect();
-            view_defs.sort_by_key(|x| &x.name);
-            for def in view_defs {
-                logger.info(&format!("Creating table for view `{}`", &def.name));
-                create_table_from_view_def(stdb, tx, module_def, def)?;
+            // Create all in-memory views defined by the module (root + submodule).
+            let mut view_defs = module_def.all_views_with_prefix();
+            view_defs.sort_by(|(p1, _, d1), (p2, _, d2)| {
+                let n1 = format!("{}{}", p1, d1.name);
+                let n2 = format!("{}{}", p2, d2.name);
+                n1.cmp(&n2)
+            });
+            for (prefix, owning_def, def) in view_defs {
+                let display_name = format!("{}{}", prefix, def.name);
+                logger.info(&format!("Creating table for view `{}`", display_name));
+                if prefix.is_empty() {
+                    spacetimedb_engine::update::create_table_from_view_def(stdb, tx, owning_def, def)?;
+                } else {
+                    spacetimedb_engine::update::create_table_from_view_def_with_prefix(
+                        stdb, tx, owning_def, def, &prefix,
+                    )?;
+                }
             }
 
             // Insert the late-bound row-level security expressions.
@@ -624,6 +723,7 @@ fn init_database_inner(
                     .with_context(|| format!("failed to create row-level security for table `{table_id}`: `{sql}`",))?;
             }
 
+            crate::db::environment::replace(stdb, tx, module_def.environment(), &environment)?;
             stdb.set_initialized(tx, program)?;
 
             anyhow::Ok(())
@@ -632,22 +732,40 @@ fn init_database_inner(
 
     let rcr = match module_def.lifecycle_reducer(Lifecycle::Init) {
         None => {
-            if let Some((_tx_offset, tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
-                stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
-            }
-            (None, false)
+            let (tx_offset, tx_data, tx_metrics, reducer) = stdb
+                .commit_tx(tx)?
+                .context("database initialization did not commit a transaction")?;
+            stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
+            (
+                InitDatabaseResult {
+                    reducer: None,
+                    tx_offset: from_tx_offset(tx_offset),
+                },
+                false,
+            )
         }
 
         Some((reducer_id, _)) => {
             logger.info("Invoking `init` reducer");
             let params = CallReducerParams::from_system(timestamp, owner_identity, reducer_id, ArgsTuple::nullary());
             let (res, trapped) = call_reducer(Some(tx), params);
-            (Some(res), trapped)
+            (
+                InitDatabaseResult {
+                    reducer: Some(res.result),
+                    tx_offset: res.tx_offset,
+                },
+                trapped,
+            )
         }
     };
 
     logger.info("Database initialized");
     Ok(rcr)
+}
+
+pub struct InitDatabaseResult {
+    pub reducer: Option<ReducerCallResult>,
+    pub tx_offset: TransactionOffset,
 }
 
 pub fn call_identity_connected(
@@ -660,8 +778,8 @@ pub fn call_identity_connected(
     let reducer_lookup = module.module_def.lifecycle_reducer(Lifecycle::OnConnect);
     let stdb = module.relational_db();
     let workload = Workload::reducer_no_args(
-        ReducerName::new(Identifier::new_assume_valid("call_identity_connected".into())),
-        caller_auth.claims.identity,
+        ReducerName::new(Identifier::new_unsafe_assume_valid("call_identity_connected".into())),
+        caller_auth.identity,
         caller_connection_id,
     );
     let mut_tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload);
@@ -675,9 +793,9 @@ pub fn call_identity_connected(
 
     mut_tx
         .insert_st_client(
-            caller_auth.claims.identity,
+            caller_auth.identity,
             caller_connection_id,
-            &caller_auth.jwt_payload,
+            caller_auth.jwt_payload.as_deref(),
         )
         .map_err(DBError::from)
         .map_err(Box::new)?;
@@ -689,8 +807,8 @@ pub fn call_identity_connected(
         // abort the connection: we can't really recover.
         let tx = Some(ScopeGuard::into_inner(mut_tx));
         let params = ModuleHost::call_reducer_params(
-            module,
-            caller_auth.claims.identity,
+            &module.module_def,
+            caller_auth.identity,
             Some(caller_connection_id),
             None,
             None,
@@ -808,6 +926,12 @@ pub enum ViewCommand {
         request: ws_v2::Subscribe,
         _timer: Instant,
     },
+    AddBatchSubscription {
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: ws_v2::SubscribeBatch,
+        _timer: Instant,
+    },
     RemoveSingleSubscription {
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
@@ -848,6 +972,13 @@ pub(in crate::host) enum ViewCommandErrorTarget {
         request_id: Option<RequestId>,
         query_set_id: ws_v2::QuerySetId,
     },
+    /// A [`ViewCommand::AddBatchSubscription`] which failed as a whole.
+    /// Every set in the batch is reported as failed with the same error.
+    Batch {
+        sender: Arc<ClientConnectionSender>,
+        request_id: RequestId,
+        query_set_ids: Box<[ws_v2::QuerySetId]>,
+    },
 }
 
 impl ViewCommand {
@@ -856,7 +987,8 @@ impl ViewCommand {
             Self::AddSingleSubscription { _timer, .. }
             | Self::AddMultiSubscription { _timer, .. }
             | Self::AddLegacySubscription { _timer, .. }
-            | Self::AddSubscriptionV2 { _timer, .. } => ViewCommandMetric {
+            | Self::AddSubscriptionV2 { _timer, .. }
+            | Self::AddBatchSubscription { _timer, .. } => ViewCommandMetric {
                 workload: WorkloadType::Subscribe,
                 timer: *_timer,
             },
@@ -930,6 +1062,11 @@ impl ViewCommand {
                 request_id: Some(request.request_id),
                 query_set_id: request.query_set_id,
             },
+            Self::AddBatchSubscription { sender, request, .. } => ViewCommandErrorTarget::Batch {
+                sender: sender.clone(),
+                request_id: request.request_id,
+                query_set_ids: request.sets.iter().map(|set| set.query_set_id).collect(),
+            },
         }
     }
 }
@@ -957,6 +1094,16 @@ impl ViewCommandErrorTarget {
                 sender.clone(),
                 *request_id,
                 *query_set_id,
+                err.to_string().into(),
+            ),
+            Self::Batch {
+                sender,
+                request_id,
+                query_set_ids,
+            } => subscriptions.send_batch_subscription_error(
+                sender.clone(),
+                *request_id,
+                query_set_ids,
                 err.to_string().into(),
             ),
         };
@@ -1057,7 +1204,7 @@ impl ProcedureResultTarget {
 }
 
 pub struct CallViewParams {
-    pub view_name: Identifier,
+    pub view_name: NamespacedIdentifier,
     pub view_id: ViewId,
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
@@ -1068,14 +1215,30 @@ pub struct CallViewParams {
     pub caller: Identity,
     pub sender: Option<Identity>,
     pub args: ArgsTuple,
+    /// The key of the instance being evaluated: its rows are stored, and its reads tracked, under it.
+    pub view_call: ViewCallInfo,
     pub row_type: AlgebraicTypeRef,
     pub timestamp: Timestamp,
+    /// The typespace of the module that owns this view.
+    /// For root views this equals the top-level typespace;
+    /// for submodule views this is the submodule's own typespace.
+    ///
+    /// Wrapped in an `Arc` so per-instance view calls don't deep-clone the typespace.
+    pub view_typespace: Arc<Typespace>,
 }
 
 pub(crate) struct ResolvedViewForRefresh<'a> {
     pub view_id: ViewId,
     pub table_id: TableId,
     pub view_def: &'a ViewDef,
+    /// The full namespaced view name as stored in `st_view` (e.g. `"lib.library_view"`).
+    pub view_name: NamespacedIdentifier,
+    /// The globally-offset fn_ptr expected by the guest dispatch layer.
+    /// For submodule views this differs from `view_def.fn_ptr`, which is local to the owning module.
+    pub global_fn_ptr: ViewFnPtr,
+    /// The `ModuleDef` that owns this view. Use this (not the root def) to resolve
+    /// type-index references in the `ViewDef`.
+    pub owning_def: &'a ModuleDef,
 }
 
 /// Lookup a module's [`ViewDef`] and check for consistency among
@@ -1094,25 +1257,15 @@ pub(crate) fn resolve_view_for_refresh<'a>(
         .table_id
         .ok_or_else(|| anyhow::anyhow!("view {:?} does not have a backing table", view_id))?;
 
-    let view_name: Identifier = st_view.view_name.into();
-    let view_def = module_def.view(&view_name).ok_or_else(|| {
-        anyhow::anyhow!(
-            "view `{}` for view id `{}` not found in current module",
-            view_name,
-            view_id
-        )
-    })?;
-
-    let is_anonymous = view_call.sender.is_none();
-
-    if st_view.is_anonymous != is_anonymous {
-        return Err(anyhow::anyhow!(
-            "found is_anonymous={} in st_view, but {} in readset when updating view `{}`",
-            st_view.is_anonymous,
-            is_anonymous,
-            view_name,
-        ));
-    }
+    let (global_fn_ptr, view_def, owning_def) = module_def
+        .view_by_name_with_global_fn_ptr(&st_view.view_name.clone().into())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "view `{}` for view id `{}` not found in current module",
+                st_view.view_name,
+                view_id
+            )
+        })?;
 
     let is_anonymous = view_def.is_anonymous;
 
@@ -1121,7 +1274,7 @@ pub(crate) fn resolve_view_for_refresh<'a>(
             "found is_anonymous={} in st_view, but {} in module when updating view `{}`",
             st_view.is_anonymous,
             is_anonymous,
-            view_name,
+            st_view.view_name,
         ));
     }
 
@@ -1129,6 +1282,9 @@ pub(crate) fn resolve_view_for_refresh<'a>(
         view_id,
         table_id,
         view_def,
+        view_name: st_view.view_name.into(),
+        global_fn_ptr,
+        owning_def,
     })
 }
 
@@ -1139,6 +1295,9 @@ pub struct CallProcedureParams {
     pub timer: Option<Instant>,
     pub procedure_id: ProcedureId,
     pub args: ArgsTuple,
+    /// Inherited from the calling connection/request.
+    /// Scheduled procedures default to true.
+    pub confirmed_reads: bool,
 }
 
 impl CallProcedureParams {
@@ -1157,12 +1316,15 @@ impl CallProcedureParams {
             timer: None,
             procedure_id,
             args,
+            confirmed_reads: true,
         }
     }
 }
 
 pub struct CallHttpHandlerParams {
     pub timestamp: Timestamp,
+    /// The random identity the host created for this request, and its token.
+    pub caller_auth: ConnectionAuthCtx,
     pub handler_id: HttpHandlerId,
     pub request: HttpRequest,
     pub request_body: Bytes,
@@ -1485,9 +1647,112 @@ impl UpdateDatabaseResult {
     }
 }
 
+#[derive(Debug)]
+pub enum UpdateEnvironmentResult {
+    NoUpdateNeeded,
+    UpdatePerformed {
+        /// The transaction offset of the successful database update.
+        tx_offset: TransactionOffset,
+        /// The durable transaction offset of the database.
+        /// `None` if the database is in-memory only.
+        durable_offset: Option<DurableOffset>,
+    },
+    ErrorExecutingMigration(anyhow::Error),
+}
+impl UpdateEnvironmentResult {
+    /// Check if an environment update was successful.
+    pub fn was_successful(&self) -> bool {
+        matches!(self, Self::UpdatePerformed { .. })
+    }
+}
+
+impl From<UpdateEnvironmentResult> for UpdateDatabaseResult {
+    fn from(value: UpdateEnvironmentResult) -> Self {
+        match value {
+            UpdateEnvironmentResult::NoUpdateNeeded => Self::NoUpdateNeeded,
+            UpdateEnvironmentResult::UpdatePerformed {
+                tx_offset,
+                durable_offset,
+            } => Self::UpdatePerformed {
+                tx_offset,
+                durable_offset,
+            },
+            UpdateEnvironmentResult::ErrorExecutingMigration(e) => Self::ErrorExecutingMigration(e),
+        }
+    }
+}
+
 #[derive(thiserror::Error, Debug)]
 #[error("no such module")]
 pub struct NoSuchModule;
+
+/// Result of processing an IDC delivery, including retransmissions.
+/// New and replayed results must be durable before the transport replies.
+pub enum IdcReducerCallOutcome {
+    /// Recorded a new terminal result, either from reducer execution or validation failure.
+    /// The transaction offset identifies the commit that must become durable.
+    Recorded(ReducerCallResultWithTxOffset),
+    /// Returned the stored result of an earlier delivery without invoking the reducer again.
+    Replayed(IdcStoredReducerOutcome),
+    /// The sender already acknowledged this delivery, so its stored result was removed.
+    /// The reducer is not invoked again.
+    AlreadyAcked,
+}
+
+#[derive(Debug)]
+pub struct IdcStoredReducerOutcome {
+    pub result_status: StInboundMsgResultStatus,
+    pub result_payload: Bytes,
+    /// Committed prefix containing the stored outcome; the transport waits for durability.
+    pub tx_offset: u64,
+}
+
+/// The receiver's state for an ordered delivery.
+#[derive(Debug)]
+pub(super) enum IdcSequenceState {
+    /// This is the next sequence. Execute or record its failure in the checking transaction.
+    Ready,
+    /// This message was already processed. Return its stored outcome without running it again.
+    Replayed(StInboundMsgRow),
+    /// The sender acknowledged this message, so its stored outcome has been removed.
+    AlreadyAcked,
+}
+
+/// The sender, stream, and sequence of an IDC request.
+#[derive(Clone, Copy)]
+pub(super) struct IdcMessageParams {
+    pub sender_identity: Identity,
+    pub stream_id: u64,
+    pub seq: u64,
+}
+
+/// A validation failure that must be recorded before replying to the sender.
+#[derive(Debug, thiserror::Error)]
+enum IdcTerminalError {
+    #[error(transparent)]
+    InvalidArgs(#[from] InvalidReducerArguments),
+    #[error("IDC reducer does not exist: {0}")]
+    NoSuchReducer(String),
+    #[error("IDC reducer signature mismatch for {reducer}: expected {expected}, got {actual}")]
+    SignatureMismatch {
+        reducer: String,
+        expected: Hash,
+        actual: Hash,
+    },
+}
+
+/// A receiver failure that leaves the message pending for retry.
+#[derive(Debug, thiserror::Error)]
+pub enum IdcDeliveryFailure {
+    #[error(transparent)]
+    NoSuchModule(#[from] NoSuchModule),
+    #[error("IDC delivery is out of order: expected seq {expected}, got {actual}")]
+    OutOfOrder { expected: u64, actual: u64 },
+    #[error(transparent)]
+    Datastore(#[from] DBError),
+    #[error("internal IDC reducer call error: {0}")]
+    Internal(String),
+}
 
 #[derive(thiserror::Error, Debug)]
 pub enum ReducerCallError {
@@ -1527,6 +1792,9 @@ pub struct ViewCallResult {
     pub tx: MutTxId,
     pub execution_budget_used: FunctionBudget,
     pub total_duration: Duration,
+    // Includes the time spent calling the user-defined view function, but not the time spent materializing the view
+    // after that function returns.
+    pub call_duration: Duration,
     pub abi_duration: Duration,
 }
 
@@ -1536,6 +1804,7 @@ impl fmt::Debug for ViewCallResult {
             .field("outcome", &self.outcome)
             .field("execution_budget_used", &self.execution_budget_used)
             .field("total_duration", &self.total_duration)
+            .field("call_duration", &self.call_duration)
             .field("abi_duration", &self.abi_duration)
             .finish()
     }
@@ -1547,6 +1816,7 @@ impl ViewCallResult {
             outcome: ViewOutcome::Success,
             execution_budget_used: FunctionBudget::ZERO,
             total_duration: Duration::ZERO,
+            call_duration: Duration::ZERO,
             abi_duration: Duration::ZERO,
             tx,
         }
@@ -1816,7 +2086,7 @@ impl ModuleHost {
         let timer_guard = self.start_call_timer(label);
 
         scopeguard::defer_on_unwind!({
-            log::warn!("module operation {label} panicked");
+            log::error!("module operation {label} panicked");
             (self.on_panic)();
         });
 
@@ -1860,7 +2130,7 @@ impl ModuleHost {
         let timer_guard = self.start_call_timer(label);
 
         scopeguard::defer_on_unwind!({
-            log::warn!("pooled operation {label} panicked");
+            log::error!("pooled operation {label} panicked");
             (self.on_panic)();
         });
 
@@ -1906,7 +2176,7 @@ impl ModuleHost {
     {
         let panic_label = label.to_owned();
         scopeguard::defer_on_unwind!({
-            log::warn!("{panic_kind} {panic_label} panicked");
+            log::error!("{panic_kind} {panic_label} panicked");
             (self.on_panic)();
         });
 
@@ -1952,6 +2222,7 @@ impl ModuleHost {
                         let result = inst.call_view(cmd);
                         ModuleHost::record_view_command_round_trip(&info, metric);
                         if let Err(err) = result {
+                            // TODO: Review log level after guest view errors can be distinguished from internal database failures.
                             log::warn!("websocket view operation failed: {err:#}");
                         }
                     },
@@ -2061,7 +2332,9 @@ impl ModuleHost {
         let reducer_name = reducer_lookup
             .as_ref()
             .map(|(_, def)| def.name.clone())
-            .unwrap_or_else(|| ReducerName::new(Identifier::new_assume_valid("__identity_disconnected__".into())));
+            .unwrap_or_else(|| {
+                ReducerName::new(Identifier::new_unsafe_assume_valid("__identity_disconnected__".into()))
+            });
 
         let is_client_exist = |mut_tx: &MutTxId| mut_tx.st_client_row(caller_identity, caller_connection_id).is_some();
 
@@ -2111,7 +2384,7 @@ impl ModuleHost {
             // that `st_client` is updated appropriately.
             let tx = Some(mut_tx);
             let result = Self::call_reducer_params(
-                info,
+                &info.module_def,
                 caller_identity,
                 Some(caller_connection_id),
                 None,
@@ -2198,7 +2471,7 @@ impl ModuleHost {
     }
 
     fn call_reducer_params(
-        module: &ModuleInfo,
+        owning_def: &ModuleDef,
         caller_identity: Identity,
         caller_connection_id: Option<ConnectionId>,
         client: Option<Arc<ClientConnectionSender>>,
@@ -2209,7 +2482,7 @@ impl ModuleHost {
         args: FunctionArgs,
     ) -> Result<CallReducerParams, InvalidReducerArguments> {
         let args = args
-            .into_tuple_for_def(&module.module_def, reducer_def)
+            .into_tuple_for_def(owning_def, reducer_def)
             .map_err(InvalidReducerArguments)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
         Ok(CallReducerParams {
@@ -2234,10 +2507,10 @@ impl ModuleHost {
         reducer_name: &str,
         args: FunctionArgs,
     ) -> Result<(&'a ReducerDef, CallReducerParams), ReducerCallError> {
-        let (reducer_id, reducer_def) = self
+        let (reducer_id, reducer_def, owning_def) = self
             .info
             .module_def
-            .reducer_full(reducer_name)
+            .reducer_by_name_with_module(reducer_name)
             .ok_or(ReducerCallError::NoSuchReducer)?;
         if let Some(lifecycle) = reducer_def.lifecycle {
             return Err(ReducerCallError::LifecycleReducer(lifecycle));
@@ -2250,7 +2523,7 @@ impl ModuleHost {
         Ok((
             reducer_def,
             Self::call_reducer_params(
-                &self.info,
+                owning_def,
                 caller_identity,
                 caller_connection_id,
                 client,
@@ -2263,6 +2536,50 @@ impl ModuleHost {
         ))
     }
 
+    /// Validate the requested reducer against module def,
+    /// prepare its arguments by calling `call_reducer_params`.
+    /// Failures must be considered as terminal outcomes.
+    fn call_idc_reducer_param(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: ConnectionId,
+        reducer_name: &str,
+        args: FunctionArgs,
+        expected_signature_hash: Hash,
+    ) -> Result<(&ReducerDef, CallReducerParams), IdcTerminalError> {
+        let Some((reducer_id, reducer_def, owning_def)) =
+            self.info.module_def.reducer_by_name_with_module(reducer_name)
+        else {
+            return Err(IdcTerminalError::NoSuchReducer(reducer_name.to_string()));
+        };
+
+        if reducer_def.lifecycle.is_some() || reducer_def.visibility.is_private() {
+            return Err(IdcTerminalError::NoSuchReducer(reducer_name.to_string()));
+        }
+
+        let actual_signature_hash = self.info.reducer_signature_hash(&reducer_def.name);
+        if actual_signature_hash != expected_signature_hash {
+            return Err(IdcTerminalError::SignatureMismatch {
+                reducer: reducer_name.to_string(),
+                expected: expected_signature_hash,
+                actual: actual_signature_hash,
+            });
+        }
+
+        let params = Self::call_reducer_params(
+            owning_def,
+            caller_identity,
+            Some(caller_connection_id),
+            None,
+            None,
+            None,
+            reducer_id,
+            reducer_def,
+            args,
+        )?;
+        Ok((reducer_def, params))
+    }
+
     async fn call_reducer_with_params(
         &self,
         reducer_name: &ReducerName,
@@ -2272,6 +2589,213 @@ impl ModuleHost {
             inst.call_reducer(p).await
         },)
         .map_err(Into::into)
+    }
+
+    async fn call_reducer_with_params_and_offset(
+        &self,
+        reducer_name: &ReducerName,
+        params: CallReducerParams,
+    ) -> Result<ReducerCallResultWithTxOffset, ReducerCallError> {
+        call_instance!(
+            self,
+            reducer_name,
+            params,
+            |p, inst| inst.call_reducer_with_offset(p),
+            |p, inst| { inst.call_reducer_with_offset(p).await },
+        )
+        .map_err(Into::into)
+    }
+
+    /// Check an inbound IDC delivery for the ordered configuration
+    /// against the receiver's stream state without mutating it.
+    ///
+    /// Algorithm:
+    ///
+    /// 1. Read `applied_prefix`, the highest contiguous `seq` whose terminal
+    ///    outcome has already been decided for `(sender_identity, stream_id)`.
+    /// 2. If `seq <= applied_prefix`, this is a duplicate or delayed delivery.
+    ///    Return the retained outcome when it still exists; otherwise the sender
+    ///    has already acknowledged it and the delivery is `AlreadyAcked`.
+    /// 3. If `seq == applied_prefix + 1`, the delivery is the next message in
+    ///    the stream and may run the reducer.
+    /// 4. Otherwise, an earlier message is still missing, so report the expected
+    ///    sequence and make the sender retry later.
+    pub(super) fn check_idc_stream_seq(
+        tx: &MutTxId,
+        delivery: IdcMessageParams,
+    ) -> Result<IdcSequenceState, IdcDeliveryFailure> {
+        let IdcMessageParams {
+            sender_identity,
+            stream_id,
+            seq,
+        } = delivery;
+        let applied_prefix = tx
+            .inbound_idc_applied_prefix(sender_identity, stream_id)
+            .map_err(DBError::from)?;
+
+        // This sequence was already processed. Replay its result if retained;
+        // otherwise it was acknowledged. Neither case executes the reducer again.
+        if seq <= applied_prefix {
+            let state = match tx
+                .inbound_idc_outcome(sender_identity, stream_id, seq)
+                .map_err(DBError::from)?
+            {
+                Some(row) => IdcSequenceState::Replayed(row),
+                None => IdcSequenceState::AlreadyAcked,
+            };
+            return Ok(state);
+        }
+
+        // Only the next sequence may execute; later deliveries must wait for
+        // the missing messages to be processed first.
+        let expected = applied_prefix + 1;
+        if seq == expected {
+            return Ok(IdcSequenceState::Ready);
+        }
+        Err(IdcDeliveryFailure::OutOfOrder { expected, actual: seq })
+    }
+
+    /// Keep the checking transaction open for a new delivery, or roll it back and
+    /// return the existing outcome. Delivery failures also roll back the transaction.
+    pub(super) fn check_idc_delivery(
+        db: &RelationalDB,
+        tx: MutTxId,
+        delivery: IdcMessageParams,
+    ) -> Result<ControlFlow<IdcReducerCallOutcome, MutTxId>, IdcDeliveryFailure> {
+        let (tx, state) = db.with_auto_rollback(tx, |tx| Self::check_idc_stream_seq(tx, delivery))?;
+        let outcome = match state {
+            IdcSequenceState::Ready => return Ok(ControlFlow::Continue(tx)),
+            IdcSequenceState::Replayed(row) => {
+                let tx_offset = ModuleSubscriptions::rollback_mut_tx(db, tx);
+                IdcReducerCallOutcome::Replayed(IdcStoredReducerOutcome {
+                    result_status: row.result_status,
+                    result_payload: row.result_payload,
+                    tx_offset,
+                })
+            }
+            IdcSequenceState::AlreadyAcked => {
+                ModuleSubscriptions::rollback_mut_tx(db, tx);
+                IdcReducerCallOutcome::AlreadyAcked
+            }
+        };
+        Ok(ControlFlow::Break(outcome))
+    }
+
+    async fn call_idc_reducer_with_params(
+        &self,
+        msg: IdcMessageParams,
+        reducer_name: &ReducerName,
+        params: CallReducerParams,
+    ) -> Result<IdcReducerCallOutcome, IdcDeliveryFailure> {
+        let IdcMessageParams {
+            sender_identity,
+            stream_id,
+            seq,
+            ..
+        } = msg;
+
+        let on_success: ReducerSuccessAction = Box::new(move |tx, reducer_return_value| {
+            tx.record_inbound_idc_outcome(
+                sender_identity,
+                stream_id,
+                seq,
+                StInboundMsgResultStatus::Ok,
+                reducer_return_value.clone().unwrap_or_default(),
+            )?;
+            Ok(())
+        });
+
+        self.guard_closed()?;
+        let timer_guard = self.start_call_timer(reducer_name);
+        match &*self.inner {
+            ModuleHostInner::Wasm(host) => {
+                let executor = host.executor.clone();
+                executor
+                    .run_sync_job(move |state| {
+                        state.with_instance(move |inst| {
+                            drop(timer_guard);
+                            inst.call_idc_reducer(params, msg, on_success)
+                        })
+                    })
+                    .await
+            }
+            ModuleHostInner::Js(host) => {
+                drop(timer_guard);
+                host.main_instance
+                    .with_instance(|inst| async move { inst.call_idc_reducer(params, msg, on_success).await })
+                    .await
+            }
+        }
+    }
+
+    /// Record a validation failure or a reducer failure after its transaction rolled back.
+    ///
+    /// Opens a new transaction and checks the stream before writing. Only the next
+    /// unapplied sequence can be recorded. The check and write share a transaction,
+    /// so another request cannot record an outcome between them.
+    ///
+    /// If another request already processed this message, returns its stored outcome
+    /// as [`IdcReducerCallOutcome::Replayed`], or [`IdcReducerCallOutcome::AlreadyAcked`]
+    /// if the sender acknowledged it and the outcome was removed. Neither case writes
+    /// a new failure. An out-of-order sequence returns [`IdcDeliveryFailure::OutOfOrder`]
+    /// without recording anything.
+    ///
+    /// For both newly recorded and replayed outcomes, the caller must wait for the
+    /// returned transaction offset to become durable before replying.
+    pub(super) fn record_idc_terminal_error(
+        stdb: &RelationalDB,
+        delivery: IdcMessageParams,
+        status: StInboundMsgResultStatus,
+        payload: Bytes,
+    ) -> Result<IdcReducerCallOutcome, IdcDeliveryFailure> {
+        let IdcMessageParams {
+            sender_identity,
+            stream_id,
+            seq,
+            ..
+        } = delivery;
+
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Idc);
+
+        let tx = match Self::check_idc_delivery(stdb, tx, delivery)? {
+            ControlFlow::Continue(tx) => tx,
+            ControlFlow::Break(outcome) => return Ok(outcome),
+        };
+
+        // The checking transaction stays open, so no other request can record this sequence.
+        let (tx, ()) = stdb
+            .with_auto_rollback(tx, |tx| {
+                tx.record_inbound_idc_outcome(sender_identity, stream_id, seq, status, payload.clone())
+            })
+            .inspect_err(|error| {
+                log::error!(
+                    "Unexpected failure recording IDC outcome after sequence check: database_identity={} sender_identity={} stream_id={stream_id} sequence={seq}: {error:#}",
+                    stdb.database_identity().to_hex(),
+                    sender_identity.to_hex(),
+                );
+            })
+            .map_err(DBError::from)?;
+
+        let (tx_offset, tx_data, tx_metrics, reducer) = stdb
+            .commit_tx(tx)?
+            .ok_or_else(|| IdcDeliveryFailure::Internal("IDC transaction was not committed".into()))?;
+        stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
+
+        let outcome = if status == StInboundMsgResultStatus::BudgetExceeded {
+            ReducerOutcome::BudgetExceeded
+        } else {
+            let message = String::from_utf8_lossy(&payload).into_owned().into_boxed_str();
+            ReducerOutcome::Failed(Box::new(message))
+        };
+        let result = ReducerCallResult {
+            outcome,
+            execution_budget_used: FunctionBudget::ZERO,
+            execution_duration: Duration::ZERO,
+        };
+        Ok(IdcReducerCallOutcome::Recorded(ReducerCallResultWithTxOffset {
+            result,
+            tx_offset: from_tx_offset(tx_offset),
+        }))
     }
 
     fn log_reducer_submit_error(&self, reducer_name: &str, err: &ReducerCallError) {
@@ -2345,6 +2869,133 @@ impl ModuleHost {
         .await
     }
 
+    /// Like [`Self::call_reducer`], but also returns the offset of the reducer's transaction,
+    /// so that the caller can wait for it to become durable.
+    pub async fn call_reducer_with_offset(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        client: Option<Arc<ClientConnectionSender>>,
+        request_id: Option<RequestId>,
+        timer: Option<Instant>,
+        reducer_name: &str,
+        args: FunctionArgs,
+    ) -> Result<ReducerCallResultWithTxOffset, ReducerCallError> {
+        self.with_reducer_call(
+            caller_identity,
+            caller_connection_id,
+            client,
+            request_id,
+            timer,
+            reducer_name,
+            args,
+            async |call| self.call_reducer_with_params_and_offset(&call.name, call.params).await,
+        )
+        .await
+    }
+
+    /// Remove acknowledged outcomes in a separate transaction so a reducer rollback
+    /// does not undo cleanup.
+    fn trim_idc_outcomes(
+        &self,
+        sender_identity: Identity,
+        stream_id: u64,
+        ack_prefix: u64,
+    ) -> Result<(), IdcDeliveryFailure> {
+        if ack_prefix == 0 {
+            return Ok(());
+        }
+        let db = self.relational_db();
+        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Idc);
+        let (tx, ()) = db
+            .with_auto_rollback(tx, |tx| {
+                tx.trim_inbound_idc_outcomes(sender_identity, stream_id, ack_prefix)
+            })
+            .map_err(DBError::from)?;
+        let (_, tx_data, tx_metrics, reducer) = db
+            .commit_tx(tx)?
+            .ok_or_else(|| IdcDeliveryFailure::Internal("IDC transaction was not committed".into()))?;
+        db.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
+        Ok(())
+    }
+
+    pub(super) async fn run_idc_callback_and_cleanup(
+        &self,
+        msg: super::idc_actor::DeliveredMessage,
+    ) -> anyhow::Result<()> {
+        call_instance!(
+            self,
+            "IDC result",
+            msg,
+            |msg, inst| inst.run_idc_callback_and_cleanup(msg),
+            |msg, inst| inst.run_idc_callback_and_cleanup(msg).await,
+        )?
+    }
+
+    /// Processes an ordered IDC message and returns its recorded outcome.
+    ///
+    /// New messages are checked against the current module before running the reducer.
+    /// Successful changes and their outcome commit together. If validation or the
+    /// reducer fails, the error is recorded separately, with any reducer changes rolled back.
+    ///
+    /// Both success and recorded failure return [`IdcReducerCallOutcome::Recorded`].
+    /// Retries return [`IdcReducerCallOutcome::Replayed`] without running the reducer
+    /// again. Once the sender acknowledges the outcome and it is removed, later
+    /// retries return [`IdcReducerCallOutcome::AlreadyAcked`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`IdcDeliveryFailure`] if delivery cannot finish, including when an
+    /// outcome cannot be recorded. The sender should retry the same message.
+    ///
+    /// # Caller Requirements
+    ///
+    /// The caller handles authentication and the connection lifecycle. Send messages
+    /// in sequence order. Overlapping retries are safe, but out-of-order deliveries
+    /// are rejected rather than buffered for pipelining. Before replying, the caller
+    /// must wait for the returned transaction offset to become durable, including for replays.
+    pub async fn call_idc_reducer(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: ConnectionId,
+        reducer_name: &str,
+        args: FunctionArgs,
+        stream_id: u64,
+        seq: u64,
+        ack_prefix: u64,
+        expected_signature_hash: Hash,
+    ) -> Result<IdcReducerCallOutcome, IdcDeliveryFailure> {
+        self.trim_idc_outcomes(caller_identity, stream_id, ack_prefix)?;
+        let msg = IdcMessageParams {
+            sender_identity: caller_identity,
+            stream_id,
+            seq,
+        };
+
+        let reducer_params = self.call_idc_reducer_param(
+            caller_identity,
+            caller_connection_id,
+            reducer_name,
+            args,
+            expected_signature_hash,
+        );
+
+        let (reducer_def, params) = match reducer_params {
+            Ok(params) => params,
+            Err(err) => {
+                // Only a recorded failure becomes a terminal response. If this
+                // write fails, return a delivery failure so the sender retries.
+                return Self::record_idc_terminal_error(
+                    self.relational_db(),
+                    msg,
+                    StInboundMsgResultStatus::Err,
+                    Bytes::from(err.to_string()),
+                );
+            }
+        };
+        self.call_idc_reducer_with_params(msg, &reducer_def.name, params).await
+    }
+
     pub async fn enqueue_reducer(
         &self,
         caller_identity: Identity,
@@ -2413,6 +3064,21 @@ impl ModuleHost {
             request: ws_v2::Subscribe,
             timer: Instant,
         ) -> "call_view_add_multi_subscription" => AddSubscriptionV2 {
+            sender,
+            auth,
+            request,
+            _timer: timer,
+        }
+    }
+
+    call_view_command_method! {
+        pub async fn call_view_add_batch_subscription(
+            &self,
+            sender: Arc<ClientConnectionSender>,
+            auth: AuthCtx,
+            request: ws_v2::SubscribeBatch,
+            timer: Instant,
+        ) -> "call_view_add_batch_subscription" => AddBatchSubscription {
             sender,
             auth,
             request,
@@ -2523,10 +3189,17 @@ impl ModuleHost {
         timer: Option<Instant>,
         procedure_name: &str,
         args: FunctionArgs,
+        confirmed_reads: bool,
     ) -> CallProcedureReturn {
         let res = async {
-            let call =
-                self.prepare_procedure_call(caller_identity, caller_connection_id, timer, procedure_name, args)?;
+            let call = self.prepare_procedure_call(
+                caller_identity,
+                caller_connection_id,
+                timer,
+                procedure_name,
+                args,
+                confirmed_reads,
+            )?;
             self.call_procedure_with_params(&call.name, call.params)
                 .await
                 .map_err(Into::into)
@@ -2549,18 +3222,24 @@ impl ModuleHost {
         args: FunctionArgs,
         target: ProcedureResultTarget,
     ) -> Result<(), BroadcastError> {
-        let PreparedProcedureCall { name, params } =
-            match self.prepare_procedure_call(caller_identity, caller_connection_id, timer, procedure_name, args) {
-                Ok(value) => value,
-                Err(err) => {
-                    return self.send_procedure_error(procedure_name, timer, target, err);
-                }
-            };
+        let PreparedProcedureCall { name, params } = match self.prepare_procedure_call(
+            caller_identity,
+            caller_connection_id,
+            timer,
+            procedure_name,
+            args,
+            target.sender.config.confirmed_reads,
+        ) {
+            Ok(value) => value,
+            Err(err) => {
+                return self.send_procedure_error(procedure_name, timer, target, err);
+            }
+        };
         let procedure_name = name;
 
         let guard_procedure_name = procedure_name.clone();
         scopeguard::defer_on_unwind!({
-            log::warn!("websocket procedure operation {guard_procedure_name} panicked");
+            log::error!("websocket procedure operation {guard_procedure_name} panicked");
             (self.on_panic)();
         });
 
@@ -2582,7 +3261,7 @@ impl ModuleHost {
                             }
                         }
                         JsProcedureCallCompletion::Panicked | JsProcedureCallCompletion::WorkerExited => {
-                            log::warn!("detached JS procedure worker failed before returning a result");
+                            log::error!("detached JS procedure worker failed before returning a result");
                             (module.on_panic)();
                         }
                     }
@@ -2730,9 +3409,11 @@ impl ModuleHost {
         timer: Option<Instant>,
         procedure_name: &str,
         args: FunctionArgs,
+        confirmed_reads: bool,
     ) -> Result<PreparedProcedureCall, ProcedureCallError> {
-        let (procedure_def, params) =
+        let (procedure_def, mut params) =
             self.procedure_call_params(caller_identity, caller_connection_id, timer, procedure_name, args)?;
+        params.confirmed_reads = confirmed_reads;
         Ok(PreparedProcedureCall {
             name: procedure_def.name.to_string(),
             params,
@@ -2747,10 +3428,10 @@ impl ModuleHost {
         procedure_name: &str,
         args: FunctionArgs,
     ) -> Result<(&'a ProcedureDef, CallProcedureParams), ProcedureCallError> {
-        let (procedure_id, procedure_def) = self
+        let (procedure_id, procedure_def, owning_def) = self
             .info
             .module_def
-            .procedure_full(procedure_name)
+            .procedure_by_name_with_module(procedure_name)
             .ok_or(ProcedureCallError::NoSuchProcedure)?;
 
         if procedure_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
@@ -2758,7 +3439,7 @@ impl ModuleHost {
         }
 
         let args = args
-            .into_tuple_for_def(&self.info.module_def, procedure_def)
+            .into_tuple_for_def(owning_def, procedure_def)
             .map_err(InvalidProcedureArguments)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
 
@@ -2771,6 +3452,7 @@ impl ModuleHost {
                 timer,
                 procedure_id,
                 args,
+                confirmed_reads: true,
             },
         ))
     }
@@ -2796,6 +3478,7 @@ impl ModuleHost {
 
     pub async fn call_http_handler(
         &self,
+        caller_auth: ConnectionAuthCtx,
         handler_id: HttpHandlerId,
         request: HttpRequest,
         request_body: Bytes,
@@ -2806,6 +3489,7 @@ impl ModuleHost {
 
         let params = CallHttpHandlerParams {
             timestamp: Timestamp::now(),
+            caller_auth,
             handler_id,
             request,
             request_body,
@@ -2849,11 +3533,10 @@ impl ModuleHost {
     }
 
     /// Materializes the views return by the `view_collector`, if not already materialized,
-    /// and updates `st_view_sub` accordingly.
+    /// and updates view lifecycle state accordingly.
     ///
-    /// Passing [`Workload::Sql`] will update `st_view_sub.last_called`.
-    /// Passing [`Workload::Subscribe`] will also increment `st_view_sub.num_subscribers`,
-    /// in addition to updating `st_view_sub.last_called`.
+    /// Passing [`Workload::Sql`] will update the instance's last-used timestamp.
+    /// Passing [`Workload::Subscribe`] will also increment the subscriber's refcount.
     pub fn materialize_views<I: WasmInstance>(
         mut tx: MutTxId,
         instance: &mut RefInstance<'_, I>,
@@ -2861,24 +3544,30 @@ impl ModuleHost {
         caller: Identity,
         workload: Workload,
     ) -> Result<(MutTxId, bool), ViewCallError> {
-        use FunctionArgs::*;
-        let mut view_ids = HashSet::new();
-        view_collector.collect_views(&mut view_ids);
-        for view_id in view_ids {
+        let mut view_calls = HashSet::new();
+        view_collector.collect_views(&mut view_calls);
+        for ViewCall { view_id, args } in view_calls {
             let st_view_row = tx.lookup_st_view(view_id)?;
-            let view_name = st_view_row.view_name.into();
+            let view_name: NamespacedIdentifier = st_view_row.view_name.into();
             let view_id = st_view_row.view_id;
             let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
             let is_anonymous = st_view_row.is_anonymous;
-            let sender = if is_anonymous { None } else { Some(caller) };
-            let is_materialized = if is_anonymous {
-                tx.is_anonymous_view_materialized(view_id)?
-            } else {
-                tx.is_view_materialized(view_id, ArgId::SENTINEL, caller)?
-            };
+            let args = ViewInstanceArgs::for_schema(is_anonymous, caller, args);
+            let view_call = ViewCallInfo::from_args(view_id, &args);
+            let sender = args.sender();
+            let is_materialized = tx.is_view_materialized(&view_call)?;
             if !is_materialized {
-                let (res, trapped) =
-                    Self::call_view(instance, tx, &view_name, view_id, table_id, Nullary, caller, sender)?;
+                let (res, trapped) = Self::call_view(
+                    instance,
+                    tx,
+                    &view_name,
+                    view_id,
+                    table_id,
+                    FunctionArgs::from_view_args(args.args()),
+                    view_call.clone(),
+                    caller,
+                    sender,
+                )?;
                 tx = res.tx;
                 if trapped {
                     return Ok((tx, true));
@@ -2886,11 +3575,11 @@ impl ModuleHost {
             }
             // If this is a sql call, we only update this view's "last called" timestamp
             if let Workload::Sql = workload {
-                tx.update_view_timestamp(view_id, ArgId::SENTINEL, caller)?;
+                tx.update_view_timestamp(view_call.clone(), args.clone())?;
             }
             // If this is a subscribe call, we also increment this view's subscriber count
             if let Workload::Subscribe = workload {
-                tx.subscribe_view(view_id, ArgId::SENTINEL, caller)?;
+                tx.subscribe_view(view_call, args, caller)?;
             }
         }
         Ok((tx, false))
@@ -2900,11 +3589,12 @@ impl ModuleHost {
     ///
     /// The returned transaction contains both the original writes and any backing-table
     /// updates produced by re-materializing the affected views.
+    /// This returns the number of views that were evaluated, and whether any of them trapped.
     pub fn call_views_with_tx<I: WasmInstance>(
         tx: MutTxId,
         instance: &mut RefInstance<'_, I>,
         caller: Identity,
-    ) -> (ViewCallResult, bool) {
+    ) -> (ViewCallResult, u32, bool) {
         Self::call_views_with_tx_at(tx, instance, caller, Timestamp::now())
     }
 
@@ -2917,16 +3607,17 @@ impl ModuleHost {
         instance: &mut RefInstance<'_, I>,
         caller: Identity,
         timestamp: Timestamp,
-    ) -> (ViewCallResult, bool) {
+    ) -> (ViewCallResult, u32, bool) {
         let mut tx = tx;
         let module_def = &instance.common.info().module_def;
         let mut outcome = ViewOutcome::Success;
         let mut energy_used = FunctionBudget::ZERO;
         let mut total_duration = Duration::ZERO;
+        let mut call_duration = Duration::ZERO;
         let mut abi_duration = Duration::ZERO;
         let mut trapped = false;
+        let mut num_views_evaluated = 0;
         for view_call in tx.views_for_refresh().cloned().collect::<Vec<_>>() {
-            let sender = view_call.sender;
             let resolved = match resolve_view_for_refresh(&tx, module_def, &view_call) {
                 Ok(resolved) => resolved,
                 Err(err) => {
@@ -2934,13 +3625,27 @@ impl ModuleHost {
                     break;
                 }
             };
+            let instance_args = match tx.view_instance_args(&view_call) {
+                Some(args) => args,
+                None => {
+                    outcome = ViewOutcome::Failed(format!(
+                        "failed to look up materialized view args for view {}",
+                        view_call.view_id
+                    ));
+                    break;
+                }
+            };
             let ResolvedViewForRefresh {
                 view_id,
                 table_id,
                 view_def,
+                view_name,
+                global_fn_ptr,
+                owning_def,
             } = resolved;
-            let view_name = &view_def.name;
-            let args = match FunctionArgs::Nullary.into_tuple_for_def(module_def, view_def) {
+            let sender = instance_args.sender();
+            let args = match FunctionArgs::from_view_args(instance_args.args()).into_tuple_for_def(owning_def, view_def)
+            {
                 Ok(args) => args,
                 Err(err) => {
                     outcome = ViewOutcome::Failed(format!("failed to build view args: {err}"));
@@ -2951,16 +3656,19 @@ impl ModuleHost {
             let (result, trap) = Self::call_view_inner(
                 instance,
                 tx,
-                view_name,
+                &view_name,
                 view_id,
                 table_id,
-                view_def.fn_ptr,
+                global_fn_ptr,
                 caller,
                 sender,
                 args,
+                view_call,
                 view_def.product_type_ref,
                 timestamp,
+                Arc::new(owning_def.typespace().clone()),
             );
+            num_views_evaluated += 1;
 
             // Increment execution stats
             tx = result.tx;
@@ -2968,6 +3676,7 @@ impl ModuleHost {
             energy_used += result.execution_budget_used;
             total_duration += result.total_duration;
             abi_duration += result.abi_duration;
+            call_duration += result.call_duration;
             trapped |= trap;
 
             // Terminate early if execution failed
@@ -2982,7 +3691,9 @@ impl ModuleHost {
                 execution_budget_used: energy_used,
                 total_duration,
                 abi_duration,
+                call_duration,
             },
+            num_views_evaluated,
             trapped,
         )
     }
@@ -2990,10 +3701,11 @@ impl ModuleHost {
     fn call_view<I: WasmInstance>(
         instance: &mut RefInstance<'_, I>,
         tx: MutTxId,
-        view_name: &Identifier,
+        view_name: &NamespacedIdentifier,
         view_id: ViewId,
         table_id: TableId,
         args: FunctionArgs,
+        view_call: ViewCallInfo,
         caller: Identity,
         sender: Option<Identity>,
     ) -> Result<(ViewCallResult, bool), ViewCallError> {
@@ -3004,6 +3716,7 @@ impl ModuleHost {
             view_id,
             table_id,
             args,
+            view_call,
             caller,
             sender,
             Timestamp::now(),
@@ -3013,39 +3726,55 @@ impl ModuleHost {
     fn call_view_at<I: WasmInstance>(
         instance: &mut RefInstance<'_, I>,
         tx: MutTxId,
-        view_name: &Identifier,
+        view_name: &NamespacedIdentifier,
         view_id: ViewId,
         table_id: TableId,
         args: FunctionArgs,
+        view_call: ViewCallInfo,
         caller: Identity,
         sender: Option<Identity>,
         timestamp: Timestamp,
     ) -> Result<(ViewCallResult, bool), ViewCallError> {
         let module_def = &instance.common.info().module_def;
-        let view_def = module_def.view(view_name).ok_or(ViewCallError::NoSuchView)?;
-        let fn_ptr = view_def.fn_ptr;
+        let (global_fn_ptr, view_def, owning_def) = module_def
+            .view_by_name_with_global_fn_ptr(view_name)
+            .ok_or(ViewCallError::NoSuchView)?;
         let row_type = view_def.product_type_ref;
         let args = args
-            .into_tuple_for_def(module_def, view_def)
+            .into_tuple_for_def(owning_def, view_def)
             .map_err(InvalidViewArguments)?;
 
         Ok(Self::call_view_inner(
-            instance, tx, view_name, view_id, table_id, fn_ptr, caller, sender, args, row_type, timestamp,
+            instance,
+            tx,
+            view_name,
+            view_id,
+            table_id,
+            global_fn_ptr,
+            caller,
+            sender,
+            args,
+            view_call,
+            row_type,
+            timestamp,
+            Arc::new(owning_def.typespace().clone()),
         ))
     }
 
     fn call_view_inner<I: WasmInstance>(
         instance: &mut RefInstance<'_, I>,
         tx: MutTxId,
-        name: &Identifier,
+        name: &NamespacedIdentifier,
         view_id: ViewId,
         table_id: TableId,
         fn_ptr: ViewFnPtr,
         caller: Identity,
         sender: Option<Identity>,
         args: ArgsTuple,
+        view_call: ViewCallInfo,
         row_type: AlgebraicTypeRef,
         timestamp: Timestamp,
+        view_typespace: Arc<Typespace>,
     ) -> (ViewCallResult, bool) {
         let view_name = name.clone();
         let params = CallViewParams {
@@ -3057,19 +3786,29 @@ impl ModuleHost {
             caller,
             sender,
             args,
+            view_call,
             row_type,
+            view_typespace,
         };
 
         instance.common.call_view_with_tx(tx, params, instance.instance)
     }
 
-    pub async fn init_database(&self, program: Program) -> Result<Option<ReducerCallResult>, InitDatabaseError> {
+    pub async fn init_database(&self, program: Program) -> Result<InitDatabaseResult, InitDatabaseError> {
+        self.init_database_with_environment(program, Default::default()).await
+    }
+
+    pub async fn init_database_with_environment(
+        &self,
+        program: Program,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> Result<InitDatabaseResult, InitDatabaseError> {
         call_instance!(
             self,
             "<init_database>",
-            program,
-            |p, inst| inst.init_database(p),
-            |p, inst| inst.init_database(p).await,
+            (program, environment),
+            |(program, environment), inst| inst.init_database(program, environment),
+            |(program, environment), inst| inst.init_database(program, environment).await,
         )?
         .map_err(InitDatabaseError::Other)
     }
@@ -3080,12 +3819,36 @@ impl ModuleHost {
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        self.update_database_with_environment(program, old_module_info, policy, Default::default())
+            .await
+    }
+
+    pub async fn update_database_with_environment(
+        &self,
+        program: Program,
+        old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> Result<UpdateDatabaseResult, anyhow::Error> {
         call_instance!(
             self,
             "<update_database>",
-            (program, old_module_info, policy),
-            |(a, b, c), inst| inst.update_database(a, b, c),
-            |(a, b, c), inst| inst.update_database(a, b, c).await,
+            (program, old_module_info, policy, environment),
+            |(a, b, c, d), inst| inst.update_database(a, b, c, d),
+            |(a, b, c, d), inst| inst.update_database(a, b, c, d).await,
+        )?
+    }
+
+    pub async fn update_environment(
+        &self,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> Result<UpdateEnvironmentResult, anyhow::Error> {
+        call_instance!(
+            self,
+            "<update_environment>",
+            environment,
+            |environment, inst| inst.update_environment(environment),
+            |environment, inst| inst.update_environment(environment).await,
         )?
     }
 
@@ -3093,11 +3856,13 @@ impl ModuleHost {
         // As in `Self::marked_closed`, `Relaxed` is sufficient because we're not synchronizing any external state.
         self.closed.store(true, std::sync::atomic::Ordering::Relaxed);
         self.scheduler().close();
+        self.idc_sender().close();
         self.exited().await;
     }
 
     pub async fn exited(&self) {
-        self.scheduler().closed().await;
+        let idc_sender = self.idc_sender();
+        tokio::join!(self.scheduler().closed(), idc_sender.closed());
     }
 
     pub fn inject_logs(&self, log_level: LogLevel, function_name: &str, message: &str) {
@@ -3176,7 +3941,7 @@ impl ModuleHost {
                 let label = label.to_owned();
                 executor.enqueue_sync_job(move |_| {
                     scopeguard::defer_on_unwind!({
-                        log::warn!("websocket one-off query operation {label} panicked");
+                        log::error!("websocket one-off query operation {label} panicked");
                         on_panic();
                     });
 
@@ -3291,7 +4056,10 @@ impl ModuleHost {
             .map(PipelinedProject::from)
             .collect::<Vec<_>>();
 
-        let table_name = table_name.into();
+        // The v1/v2 wire types carry table names as a plain `RawIdentifier`. A submodule
+        // table's name is namespaced, but the protocol has always sent it as an opaque
+        // string, so narrow here rather than changing those message types.
+        let table_name = RawIdentifier::new(&*table_name);
         let delta_tx = DeltaTx::from(tx);
         let params = ExecutionParams::from_auth(auth);
         let plan_fragments = optimized.iter();
@@ -3498,6 +4266,13 @@ impl ModuleHost {
             ModuleHostInner::Js(js) => js.module.scheduler(),
         }
     }
+
+    fn idc_sender(&self) -> super::idc_actor::IdcActorSender {
+        match &*self.inner {
+            ModuleHostInner::Wasm(wasm) => wasm.module.idc_sender(),
+            ModuleHostInner::Js(js) => js.module.idc_sender(),
+        }
+    }
 }
 
 impl WeakModuleHost {
@@ -3527,7 +4302,7 @@ fn args_error_log_message(function_kind: &str, function_name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::ModuleHost;
+    use super::{ModuleHost, ModuleInfo};
     use crate::client::{
         ClientActorId, ClientConfig, ClientConnectionReceiver, ClientConnectionSender, OutboundMessage, Protocol,
         WsVersion,
@@ -3539,6 +4314,210 @@ mod tests {
     use spacetimedb_lib::{AlgebraicType, Identity};
     use spacetimedb_sats::product;
     use std::sync::Arc;
+
+    #[tokio::test]
+    async fn idc_failure_recording_preserves_a_concurrent_outcome() -> anyhow::Result<()> {
+        use super::{IdcMessageParams, IdcReducerCallOutcome, IdcSequenceState};
+        use bytes::Bytes;
+        use spacetimedb_datastore::execution_context::Workload;
+        use spacetimedb_datastore::system_tables::StInboundMsgResultStatus;
+        use spacetimedb_datastore::traits::IsolationLevel;
+
+        for status in [
+            StInboundMsgResultStatus::Ok,
+            StInboundMsgResultStatus::Err,
+            StInboundMsgResultStatus::BudgetExceeded,
+        ] {
+            let db = TestDB::in_memory()?;
+            let delivery = IdcMessageParams {
+                sender_identity: Identity::ONE,
+                stream_id: 1,
+                seq: 1,
+            };
+
+            // The first attempt checks the stream, then rolls back its reducer.
+            let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
+            assert!(matches!(
+                ModuleHost::check_idc_stream_seq(&tx, delivery)?,
+                IdcSequenceState::Ready
+            ));
+            let _ = db.rollback_mut_tx(tx);
+
+            // A retry commits in the gap before the first attempt records its error.
+            let payload = Bytes::from_static(b"winning outcome");
+            with_auto_commit(&db, |tx| {
+                tx.record_inbound_idc_outcome(
+                    delivery.sender_identity,
+                    delivery.stream_id,
+                    delivery.seq,
+                    status,
+                    payload.clone(),
+                )
+                .map_err(crate::error::DBError::from)
+            })?;
+            let result = ModuleHost::record_idc_terminal_error(
+                &db,
+                delivery,
+                StInboundMsgResultStatus::Err,
+                Bytes::from_static(b"late error"),
+            )?;
+            let IdcReducerCallOutcome::Replayed(result) = result else {
+                panic!("failure recording must return the winning outcome");
+            };
+            assert_eq!(result.result_status, status);
+            assert_eq!(result.result_payload, payload);
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn idc_failure_recording_checks_the_applied_prefix() -> anyhow::Result<()> {
+        use super::{IdcDeliveryFailure, IdcMessageParams, IdcReducerCallOutcome, ReducerOutcome};
+        use bytes::Bytes;
+        use spacetimedb_datastore::system_tables::StInboundMsgResultStatus;
+
+        for status in [StInboundMsgResultStatus::Err, StInboundMsgResultStatus::BudgetExceeded] {
+            let db = TestDB::in_memory()?;
+            let record = |seq| {
+                ModuleHost::record_idc_terminal_error(
+                    &db,
+                    IdcMessageParams {
+                        sender_identity: Identity::ONE,
+                        stream_id: 1,
+                        seq,
+                    },
+                    status,
+                    Bytes::from_static(b"rejected"),
+                )
+            };
+            let IdcReducerCallOutcome::Recorded(recorded) = record(1)? else {
+                panic!("first delivery must record a failure");
+            };
+            // The first response and retries must agree on the failure's classification.
+            assert!(matches!(
+                (status, recorded.result.outcome),
+                (StInboundMsgResultStatus::Err, ReducerOutcome::Failed(_))
+                    | (StInboundMsgResultStatus::BudgetExceeded, ReducerOutcome::BudgetExceeded)
+            ));
+            let offset = recorded.tx_offset.await?;
+            let IdcReducerCallOutcome::Replayed(replayed) = record(1)? else {
+                panic!("duplicate delivery must replay the failure");
+            };
+            assert_eq!(replayed.result_status, status);
+            assert_eq!(replayed.result_payload, Bytes::from_static(b"rejected"));
+            assert!(replayed.tx_offset >= offset);
+            assert!(matches!(record(2)?, IdcReducerCallOutcome::Recorded(_)));
+            with_auto_commit(&db, |tx| {
+                tx.trim_inbound_idc_outcomes(Identity::ONE, 1, 1)
+                    .map_err(crate::error::DBError::from)
+            })?;
+
+            // Sequence 1 has been acknowledged and trimmed. A late failure must not
+            // recreate it or move the prefix backward, even without an outcome row.
+            assert!(matches!(record(1)?, IdcReducerCallOutcome::AlreadyAcked));
+            assert!(matches!(
+                record(4),
+                Err(IdcDeliveryFailure::OutOfOrder { expected: 3, actual: 4 })
+            ));
+            assert!(matches!(record(3)?, IdcReducerCallOutcome::Recorded(_)));
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn reducer_signature_hash_cache_is_lazy_and_scoped_to_module() -> anyhow::Result<()> {
+        use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+        use spacetimedb_lib::{hash_bytes, ProductType};
+        use spacetimedb_schema::def::reducer_signature_hash;
+        use spacetimedb_schema::reducer_name::ReducerName;
+
+        let TestDB { db, .. } = TestDB::in_memory()?;
+        let subscriptions = ModuleSubscriptions::for_test_enclosing_runtime(db);
+        let make_info = |child_type| {
+            let mut child = RawModuleDefV10Builder::new();
+            let payload =
+                child.add_algebraic_type([], "Payload", AlgebraicType::product([("value", child_type)]), false);
+            child.add_reducer("receive", ProductType::from([("payload", payload.into())]));
+
+            let mut nested = RawModuleDefV10Builder::new();
+            nested.add_reducer("receive", ProductType::from([("payload", AlgebraicType::U8)]));
+            child.add_submodule("nested", nested.finish());
+
+            let mut sibling = RawModuleDefV10Builder::new();
+            sibling.add_reducer("receive", ProductType::from([("payload", AlgebraicType::U32)]));
+
+            let mut parent = RawModuleDefV10Builder::new();
+            let payload = parent.add_algebraic_type(
+                [],
+                "Payload",
+                AlgebraicType::product([("value", AlgebraicType::U64)]),
+                false,
+            );
+            parent.add_reducer("receive", ProductType::from([("payload", payload.into())]));
+            parent.add_submodule("child", child.finish());
+            parent.add_submodule("sibling", sibling.finish());
+            ModuleInfo::new(
+                parent.finish().try_into().unwrap(),
+                Identity::ZERO,
+                Identity::ONE,
+                hash_bytes(b"test module"),
+                subscriptions.clone(),
+            )
+        };
+        let hash_for = |info: &ModuleInfo, name| {
+            let (_, reducer, owning) = info.module_def.reducer_by_name_with_module(name).unwrap();
+            let hash = info.reducer_signature_hash(&reducer.name);
+            assert_eq!(
+                hash,
+                reducer_signature_hash(
+                    &reducer.params(),
+                    &reducer.ok_return_type,
+                    &reducer.err_return_type,
+                    owning.typespace(),
+                )
+            );
+            assert_eq!(info.reducer_signature_hashes[&reducer.name].get(), Some(&hash));
+            hash
+        };
+
+        let info = make_info(AlgebraicType::String);
+        assert_eq!(info.reducer_signature_hashes.len(), 4);
+        assert!(info.reducer_signature_hashes.values().all(|slot| slot.get().is_none()));
+        let child_hash = hash_for(&info, "child.receive");
+        for name in ["receive", "sibling.receive", "child.nested.receive"] {
+            assert!(info.reducer_signature_hashes[&ReducerName::for_test(name)]
+                .get()
+                .is_none());
+        }
+        assert_eq!(hash_for(&info.clone(), "child.receive"), child_hash);
+        let parent_hash = hash_for(&info, "receive");
+        assert_ne!(parent_hash, child_hash);
+        let sibling_hash = hash_for(&info, "sibling.receive");
+        let nested_hash = hash_for(&info, "child.nested.receive");
+        assert_ne!(sibling_hash, child_hash);
+        assert_ne!(nested_hash, child_hash);
+
+        // Reloading the same definition starts empty and produces the same hash.
+        let reloaded = make_info(AlgebraicType::String);
+        assert!(reloaded
+            .reducer_signature_hashes
+            .values()
+            .all(|slot| slot.get().is_none()));
+        assert_eq!(hash_for(&reloaded, "child.receive"), child_hash);
+
+        // A changed module must not reuse a hash cached for the same reducer name.
+        let updated = make_info(AlgebraicType::Bool);
+        assert!(updated
+            .reducer_signature_hashes
+            .values()
+            .all(|slot| slot.get().is_none()));
+        assert_ne!(hash_for(&updated, "child.receive"), child_hash);
+        assert_eq!(hash_for(&updated, "receive"), parent_hash);
+        assert_eq!(hash_for(&updated, "sibling.receive"), sibling_hash);
+        assert_eq!(hash_for(&updated, "child.nested.receive"), nested_hash);
+        assert_eq!(hash_for(&info, "child.receive"), child_hash);
+        Ok(())
+    }
 
     fn v2_client_config() -> ClientConfig {
         ClientConfig {

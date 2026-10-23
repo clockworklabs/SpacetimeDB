@@ -1,0 +1,23 @@
+Write a SpacetimeDB backend module in C# that schedules a procedure which writes inside a transaction.
+
+TABLES
+- ProcedureResult (public, accessor ProcedureResult)
+  - Fields:
+    - Id: ulong (primary key)
+    - Value: uint
+- ProcedureJob (private, scheduled for RunScheduledProcedure, accessor ProcedureJob)
+  - Fields, in this order:
+    - ScheduledId: ulong (primary key, auto-increment)
+    - ScheduledAt: ScheduleAt
+    - Id: ulong
+    - Lhs: uint
+    - Rhs: uint
+
+REDUCERS
+- ScheduleProcedure(id: ulong, lhs: uint, rhs: uint)
+  - Enqueue RunScheduledProcedure for one millisecond later
+
+PROCEDURE
+- RunScheduledProcedure(job: ProcedureJob) -> void (scheduled procedure)
+  - Open a transaction
+  - Insert Id and Value lhs + rhs into ProcedureResult

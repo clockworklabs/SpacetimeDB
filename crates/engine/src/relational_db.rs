@@ -2,12 +2,14 @@ use crate::durability::{request_durability, spawn_close as spawn_durability_clos
 use crate::error::{DBError, RestoreSnapshotError};
 use crate::metrics::ExecutionCounters;
 use crate::metrics::ENGINE_METRICS;
+use crate::resource::{DatabaseMemoryType, MemoryObservation, MemoryObserver};
 use crate::util::asyncify;
 use crate::MetricsRecorderQueue;
 use anyhow::{anyhow, Context};
 use enum_map::EnumMap;
+use spacetimedb_commitlog::payload::txdata::{Mutations, Ops};
 use spacetimedb_commitlog::repo::OnNewSegmentFn;
-use spacetimedb_commitlog::{self as commitlog, Commitlog, SizeOnDisk};
+use spacetimedb_commitlog::{self as commitlog, SizeOnDisk};
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
@@ -20,7 +22,8 @@ use spacetimedb_datastore::locking_tx_datastore::{
     ApplyHistoryCounters, IndexScanPointOrRange, MutTxId, TxId, ViewCallInfo,
 };
 use spacetimedb_datastore::system_tables::{
-    system_tables, StModuleRow, ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_SUB_ID,
+    system_tables, StModuleRow, StOutboundStreamRow, ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_OUTBOUND_STREAM_ID,
+    ST_VIEW_SUB_ID,
 };
 use spacetimedb_datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
 use spacetimedb_datastore::traits::{
@@ -34,7 +37,8 @@ use spacetimedb_datastore::{
     },
     traits::TxData,
 };
-use spacetimedb_durability::{self as durability, History};
+use spacetimedb_durability::local::LocalHistory;
+use spacetimedb_durability::{self as durability, History, Transaction};
 use spacetimedb_lib::bsatn::ToBsatn;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
@@ -49,9 +53,11 @@ use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
+use spacetimedb_schema::identifier::NamespacePath;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{
-    ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema, VIEW_ARG_HASH_COL,
+    ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
+    VIEW_ARG_HASH_COL,
 };
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_snapshot::{DynSnapshotRepo, ReconstructedSnapshot, SnapshotError, SnapshotRepository};
@@ -114,6 +120,9 @@ pub struct RelationalDB {
 
     /// An async queue for recording transaction metrics off the main thread
     metrics_recorder_queue: Option<MetricsRecorderQueue>,
+
+    /// An observer for memory usage changes in this database.
+    memory_observer: Arc<dyn MemoryObserver>,
 }
 
 /// Perform a snapshot every `SNAPSHOT_FREQUENCY` transactions.
@@ -169,7 +178,22 @@ impl RelationalDB {
 
             workload_type_to_exec_counters,
             metrics_recorder_queue,
+            memory_observer: Arc::new(()),
         }
+    }
+
+    pub fn with_memory_observer(mut self, memory_observer: Arc<dyn MemoryObserver>) -> Self {
+        self.memory_observer = memory_observer;
+        self.observe_datastore_memory(self.inner.datastore_memory_bytes());
+        self
+    }
+
+    fn observe_datastore_memory(&self, bytes: u64) {
+        self.memory_observer.memory_observed(MemoryObservation {
+            database_identity: self.database_identity,
+            kind: DatabaseMemoryType::Datastore,
+            bytes,
+        });
     }
 
     /// Open a database, which may or may not already exist.
@@ -274,7 +298,7 @@ impl RelationalDB {
             .map(|p| p.durable_tx_offset())
             .transpose()?
             .flatten();
-        let (min_commitlog_offset, _) = history.tx_range_hint();
+        let (min_commitlog_offset, max_commitlog_offset) = history.tx_range_hint();
 
         log::info!("[{database_identity}] DATABASE: durable_tx_offset is {durable_tx_offset:?}");
 
@@ -315,6 +339,9 @@ impl RelationalDB {
             persistence,
             metrics_recorder_queue,
         );
+        if max_commitlog_offset.is_none() {
+            db.persist_system_table_schemas_to_empty_commitlog()?;
+        }
         db.migrate_system_tables()?;
 
         if let Some(meta) = db.metadata()? {
@@ -380,17 +407,65 @@ impl RelationalDB {
                     self.database_identity,
                     schema.table_name
                 );
-                // FIXME: `create_table` of tables with sequences
-                // gives a different initial allocation than is given by `CommittedState::bootstrap_system_tables`.
-                // See comment in that method.
-                // This results in requiring `CommittedState::fixup_delete_duplicate_system_sequence_rows`.
-                // Fix `migrate_system_tables` to create new system sequences
-                // with the same initial allocation as `bootstrap_system_tables`.
+                // `create_sequence` matches the initial allocation in `bootstrap_system_tables`.
+                // Replay still repairs duplicate sequence rows written by older migrations.
                 let _ = self.create_table(&mut tx, schema.clone())?;
             }
         }
         let _ = self.commit_tx(tx)?;
         self.inner.assert_system_tables_match()?;
+        Ok(())
+    }
+
+    /// If we have a durability layer, and we have no commits yet, persist the
+    /// system table schemas to the commitlog, so that replay will be aware of them.
+    /// This ensures that we can add new system tables while being able to roll back
+    /// to previous code versions before the new system tables were added.
+    ///
+    /// Persist the built-in system table schema rows before the first ordinary
+    /// transaction in a new durable database.
+    ///
+    /// [`Locking::bootstrap`] has already installed these rows in memory
+    /// outside a transaction. This method writes a synthetic durable
+    /// transaction for that already-applied state, so replay from offset 0 can
+    /// learn the schemas of system tables which are newer than the replaying
+    /// binary. Existing databases are left alone because offset 0 has already
+    /// been consumed.
+    fn persist_system_table_schemas_to_empty_commitlog(&self) -> Result<(), DBError> {
+        let Some(durability) = &self.durability else {
+            return Ok(());
+        };
+        let system_schema_rows = self.inner.committed_system_table_schema_rows()?;
+        let Some(tx_offset) = self.inner.reserve_system_schema_bootstrap_tx_offset() else {
+            return Ok(());
+        };
+
+        let mut rows_by_table = std::collections::BTreeMap::<_, Vec<_>>::new();
+        for (table_id, row) in system_schema_rows {
+            rows_by_table.entry(table_id).or_default().push(row);
+        }
+        let inserts: Box<[_]> = rows_by_table
+            .into_iter()
+            .map(|(table_id, rows)| Ops {
+                table_id,
+                rowdata: rows.into(),
+            })
+            .collect();
+
+        let txdata = Txdata {
+            inputs: None,
+            outputs: None,
+            mutations: Some(Mutations {
+                inserts,
+                deletes: Box::new([]),
+                truncates: Box::new([]),
+            }),
+        };
+
+        durability.append_tx(Box::new(move || Transaction {
+            offset: tx_offset,
+            txdata,
+        }));
         Ok(())
     }
 
@@ -448,6 +523,19 @@ impl RelationalDB {
         Ok(self.with_read_only(Workload::Internal, |tx| self.inner.program(tx))?)
     }
 
+    /// Obtain the module associated with this database and the transaction
+    /// offset visible to the read.
+    ///
+    /// Waiting for the returned offset to become durable proves that the
+    /// `st_module` row observed by this read is durable.
+    pub fn program_with_tx_offset(&self) -> Result<(Option<Program>, TxOffset), DBError> {
+        self.with_read_only(Workload::Internal, |tx| {
+            let program = self.inner.program(tx)?;
+            let tx_offset = tx.tx_offset().into_inner().saturating_sub(1);
+            Ok((program, tx_offset))
+        })
+    }
+
     /// Read the set of clients currently connected to the database.
     pub fn connected_clients(&self) -> Result<ConnectedClients, DBError> {
         self.with_read_only(Workload::Internal, |tx| {
@@ -486,6 +574,10 @@ impl RelationalDB {
             snapshot_offset: TxOffset,
             page_pool: &PagePool,
         ) -> Result<ReconstructedSnapshot, Box<SnapshotError>> {
+            fn u64_to_i64(value: u64) -> i64 {
+                value.min(i64::MAX as u64) as i64
+            }
+
             log::info!("[{database_identity}] DATABASE: restoring snapshot of tx_offset {snapshot_offset}");
             let start = std::time::Instant::now();
 
@@ -496,9 +588,28 @@ impl RelationalDB {
             let elapsed_time = start.elapsed();
 
             ENGINE_METRICS
-                .replay_snapshot_read_time_seconds
+                .replay_snapshot_num_absent_pages
                 .with_label_values(database_identity)
-                .set(elapsed_time.as_secs_f64());
+                .set(u64_to_i64(snapshot.read_metrics.absent_pages));
+
+            for (kind, metrics) in snapshot.read_metrics.iter() {
+                ENGINE_METRICS
+                    .replay_snapshot_read_time_seconds
+                    .with_label_values(database_identity, kind)
+                    .set(metrics.read_time.as_secs_f64());
+                ENGINE_METRICS
+                    .replay_snapshot_num_objects_read
+                    .with_label_values(database_identity, kind)
+                    .set(u64_to_i64(metrics.files));
+                ENGINE_METRICS
+                    .replay_snapshot_bytes_read_from_disk
+                    .with_label_values(database_identity, kind)
+                    .set(u64_to_i64(metrics.disk_bytes));
+                ENGINE_METRICS
+                    .replay_snapshot_read_hash_seconds
+                    .with_label_values(database_identity, kind)
+                    .set(metrics.hash_time.as_secs_f64());
+            }
 
             log::info!(
                 "[{database_identity}] DATABASE: read snapshot of tx_offset {snapshot_offset} in {elapsed_time:?}",
@@ -569,13 +680,10 @@ impl RelationalDB {
             // Try to restore from any snapshot that was taken within the
             // range `(min_commitlog_offset + 1)..=durable_tx_offset`.
             let mut upper_bound = durable_tx_offset;
-            loop {
-                let Some(snapshot_offset) = snapshot_repo
-                    .latest_snapshot_older_than(upper_bound)
-                    .map_err(Box::new)?
-                else {
-                    break;
-                };
+            while let Some(snapshot_offset) = snapshot_repo
+                .latest_snapshot_older_than(upper_bound)
+                .map_err(Box::new)?
+            {
                 if min_commitlog_offset > 0 && min_commitlog_offset > snapshot_offset + 1 {
                     log::debug!("snapshot_offset={snapshot_offset} min_commitlog_offset={min_commitlog_offset}");
                     break;
@@ -822,14 +930,16 @@ impl RelationalDB {
 
         let reducer_context = tx.ctx.reducer_context().cloned();
         // TODO: Never returns `None` -- should it?
-        let Some((tx_offset, tx_data, tx_metrics, reducer)) = self.inner.commit_mut_tx_and_then(tx, |tx_data| {
-            self.request_durability(reducer_context, tx_data);
-        })?
+        let Some((tx_offset, tx_data, tx_metrics, reducer, datastore_memory_bytes)) =
+            self.inner.commit_mut_tx_and_then(tx, |tx_data| {
+                self.request_durability(reducer_context, tx_data);
+            })?
         else {
             return Ok(None);
         };
 
         self.maybe_do_snapshot(&tx_data);
+        self.observe_datastore_memory(datastore_memory_bytes);
 
         Ok(Some((tx_offset, tx_data, tx_metrics, reducer)))
     }
@@ -839,11 +949,13 @@ impl RelationalDB {
         log::trace!("COMMIT MUT TX");
 
         let reducer_context = tx.ctx.reducer_context().cloned();
-        let (tx_data, tx_metrics, tx) = self.inner.commit_mut_tx_downgrade_and_then(tx, workload, |tx_data| {
-            self.request_durability(reducer_context, tx_data);
-        });
+        let (tx_data, tx_metrics, tx, datastore_memory_bytes) =
+            self.inner.commit_mut_tx_downgrade_and_then(tx, workload, |tx_data| {
+                self.request_durability(reducer_context, tx_data);
+            });
 
         self.maybe_do_snapshot(&tx_data);
+        self.observe_datastore_memory(datastore_memory_bytes);
 
         (tx_data, tx_metrics, tx)
     }
@@ -881,18 +993,19 @@ impl RelationalDB {
     fn maybe_do_snapshot(&self, tx_data: &TxData) {
         if let Some(snapshot_worker) = &self.snapshot_worker
             && let Some(tx_offset) = tx_data.tx_offset()
-            && tx_offset % SNAPSHOT_FREQUENCY == 0
+            // We shift by 1 because the 0th tx has the system table info, and the next one has the module info.
+            && tx_offset % SNAPSHOT_FREQUENCY == 1
         {
             snapshot_worker.request_snapshot();
         }
     }
 
-    /// Subscribe to a channel of snapshot offsets.
+    /// Subscribe to a channel of snapshot candidate offsets.
     ///
     /// If a `snapshot_repo` was provided when this database was opened, this method
     /// returns a `watch::Receiver` that updates with the latest [`TxOffset`] a snapshot
-    /// was taken at.
-    pub fn subscribe_to_snapshots(&self) -> Option<watch::Receiver<TxOffset>> {
+    /// was taken at, if one is known.
+    pub fn subscribe_to_snapshots(&self) -> Option<watch::Receiver<Option<TxOffset>>> {
         self.snapshot_worker.as_ref().map(|snap| snap.subscribe())
     }
 
@@ -1015,6 +1128,36 @@ impl RelationalDB {
         Ok(self.inner.alter_table_primary_key_mut_tx(tx, name, primary_key)?)
     }
 
+    pub(crate) fn alter_index_source_name(
+        &self,
+        tx: &mut MutTx,
+        index_id: IndexId,
+        source_name: spacetimedb_sats::raw_identifier::RawNamespacedIdentifier,
+    ) -> Result<(), DBError> {
+        Ok(self.inner.alter_index_source_name_mut_tx(tx, index_id, source_name)?)
+    }
+
+    pub(crate) fn alter_table_accessor_name(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        new_alias: spacetimedb_schema::identifier::NamespacedIdentifier,
+    ) -> Result<(), DBError> {
+        Ok(self.inner.alter_table_accessor_name_mut_tx(tx, table_id, new_alias)?)
+    }
+
+    pub(crate) fn alter_column_accessor_name(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        col_id: ColId,
+        new_alias: spacetimedb_schema::identifier::Identifier,
+    ) -> Result<(), DBError> {
+        Ok(self
+            .inner
+            .alter_column_accessor_name_mut_tx(tx, table_id, col_id, new_alias)?)
+    }
+
     pub(crate) fn alter_table_row_type(
         &self,
         tx: &mut MutTx,
@@ -1022,6 +1165,15 @@ impl RelationalDB {
         column_schemas: Vec<ColumnSchema>,
     ) -> Result<(), DBError> {
         Ok(self.inner.alter_table_row_type_mut_tx(tx, table_id, column_schemas)?)
+    }
+
+    pub(crate) fn alter_table_outbox(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        outbox: Option<spacetimedb_schema::schema::OutboxSchema>,
+    ) -> Result<(), DBError> {
+        Ok(self.inner.alter_table_outbox_mut_tx(tx, table_id, outbox)?)
     }
 
     pub(crate) fn alter_event_table_row_type(
@@ -1084,31 +1236,48 @@ impl RelationalDB {
 /// Value is chosen arbitrarily; can be tuned later if needed.
 const VIEWS_EXPIRATION: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
+/// Normal interval between view cleanup runs.
+const VIEW_CLEANUP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// Lower bound for adaptive cleanup retries when expired views remain.
+const MIN_VIEW_CLEANUP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// Duration to budget for each view cleanup job,
-/// so that it doesn't hold transaction lock for to long.
+/// so that it doesn't hold transaction lock for too long.
 //TODO: Make this value configurable
 const VIEW_CLEANUP_BUDGET: std::time::Duration = std::time::Duration::from_millis(10);
 
-/// Spawn a background task that periodically cleans up expired views
+/// Number of expired view calls to clean before checking the time budget.
+const VIEW_CLEANUP_BATCH_SIZE: usize = 1024;
+
+/// Spawn a background task that periodically cleans up expired views.
+///
+/// Each cleanup run has a fixed lock-hold budget. If a run leaves expired
+/// views behind, the next run is scheduled sooner, down to
+/// [`MIN_VIEW_CLEANUP_INTERVAL`]. Once cleanup catches up, the interval resets.
 pub fn spawn_view_cleanup_loop(
     db: Arc<RelationalDB>,
     handle: &spacetimedb_runtime::Handle,
 ) -> spacetimedb_runtime::AbortHandle {
-    fn run_view_cleanup(db: &RelationalDB) {
+    fn shorten_cleanup_interval(current: std::time::Duration) -> std::time::Duration {
+        (current / 2).max(MIN_VIEW_CLEANUP_INTERVAL)
+    }
+
+    fn run_view_cleanup(db: &RelationalDB) -> bool {
         match db.with_auto_commit(Workload::Internal, |tx| {
-            tx.clear_expired_views(VIEWS_EXPIRATION, VIEW_CLEANUP_BUDGET)
+            tx.clear_expired_views(VIEWS_EXPIRATION, VIEW_CLEANUP_BUDGET, VIEW_CLEANUP_BATCH_SIZE)
                 .map_err(DBError::from)
         }) {
-            Ok((cleared, total_expired)) => {
-                if cleared != total_expired {
+            Ok(result) => {
+                if result.backlog {
                     // TODO: metrics
                     log::info!(
-                        "[{}] DATABASE: cleared {} expired views ({} remaining)",
+                        "[{}] DATABASE: cleared {} expired views (more pending)",
                         db.database_identity(),
-                        cleared,
-                        total_expired - cleared
+                        result.cleaned,
                     );
                 }
+                result.backlog
             }
             Err(e) => {
                 log::error!(
@@ -1116,6 +1285,7 @@ pub fn spawn_view_cleanup_loop(
                     db.database_identity(),
                     e
                 );
+                false
             }
         }
     }
@@ -1123,13 +1293,20 @@ pub fn spawn_view_cleanup_loop(
     let handle_clone = handle.clone();
     handle
         .spawn(async move {
+            let mut interval = VIEW_CLEANUP_INTERVAL;
             loop {
                 // Offload actual cleanup to blocking thread pool, as `VIEW_CLEANUP_BUDGET` is defined
                 // in milliseconds, which may be too long for async tasks.
                 let db = db.clone();
-                handle_clone.spawn_blocking(move || run_view_cleanup(&db)).await;
+                let backlog = handle_clone.spawn_blocking(move || run_view_cleanup(&db)).await;
 
-                handle_clone.sleep(VIEWS_EXPIRATION).await;
+                interval = if backlog {
+                    shorten_cleanup_interval(interval)
+                } else {
+                    VIEW_CLEANUP_INTERVAL
+                };
+
+                handle_clone.sleep(interval).await;
             }
         })
         .abort_handle()
@@ -1159,6 +1336,16 @@ impl RelationalDB {
         view_def: &ViewDef,
     ) -> Result<(ViewId, TableId), DBError> {
         Ok(tx.create_view(module_def, view_def)?)
+    }
+
+    pub fn create_view_with_prefix(
+        &self,
+        tx: &mut MutTx,
+        owning_def: &ModuleDef,
+        view_def: &ViewDef,
+        name_prefix: &NamespacePath,
+    ) -> Result<(ViewId, TableId), DBError> {
+        Ok(tx.create_view_with_prefix(owning_def, view_def, name_prefix)?)
     }
 
     pub fn drop_view(&self, tx: &mut MutTx, view_id: ViewId) -> Result<(), DBError> {
@@ -1368,6 +1555,52 @@ impl RelationalDB {
         Ok(tx.row_level_security_for_table_id(table_id)?)
     }
 
+    /// Read sender streams to discover pending IDC deliveries.
+    pub fn st_outbound_streams<'a>(
+        &'a self,
+        tx: &'a Tx,
+    ) -> Result<impl Iterator<Item = Result<StOutboundStreamRow, DBError>> + 'a, DBError> {
+        Ok(self
+            .iter(tx, ST_OUTBOUND_STREAM_ID)?
+            .map(|row| StOutboundStreamRow::try_from(row).map_err(DBError::from)))
+    }
+
+    /// Find a sender stream by its durable id.
+    pub fn st_outbound_stream_by_id(
+        &self,
+        tx: &impl StateView,
+        stream_id: u64,
+    ) -> Result<Option<StOutboundStreamRow>, DBError> {
+        Ok(tx.st_outbound_stream_by_id(stream_id)?)
+    }
+
+    /// Find a pending delivery by stream and sequence.
+    pub fn outbound_msg_by_stream_seq<'a>(
+        &self,
+        tx: &'a impl StateView,
+        stream_id: u64,
+        seq: u64,
+    ) -> Result<Option<RowRef<'a>>, DBError> {
+        Ok(tx.outbound_msg_by_stream_seq(stream_id, seq)?)
+    }
+
+    /// Find the user outbox row by its message id.
+    pub fn outbox_row(
+        &self,
+        tx: &impl StateView,
+        table_id: TableId,
+        msg_id: u64,
+    ) -> Result<Option<ProductValue>, DBError> {
+        let schema = tx.schema_for_table(table_id)?;
+        let msg_column = schema
+            .primary_key
+            .ok_or_else(|| anyhow!("outbox table {table_id} has no primary key"))?;
+        Ok(tx
+            .iter_by_col_eq(table_id, msg_column, &msg_id.into())?
+            .next()
+            .map(|row| row.to_product_value()))
+    }
+
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`.
     pub fn iter_mut<'a>(&'a self, tx: &'a MutTx, table_id: TableId) -> Result<IterMutTx<'a>, DBError> {
@@ -1517,6 +1750,11 @@ impl RelationalDB {
         Ok(self.inner.drop_sequence_mut_tx(tx, seq_id)?)
     }
 
+    /// Creates a new constraint in the database instance.
+    pub fn create_constraint(&self, tx: &mut MutTx, constraint: ConstraintSchema) -> Result<ConstraintId, DBError> {
+        Ok(self.inner.create_constraint_mut_tx(tx, constraint)?)
+    }
+
     ///Removes the [Constraints] from database instance
     pub fn drop_constraint(&self, tx: &mut MutTx, constraint_id: ConstraintId) -> Result<(), DBError> {
         Ok(self.inner.drop_constraint_mut_tx(tx, constraint_id)?)
@@ -1610,11 +1848,7 @@ impl RelationalDB {
         view_call: ViewCallInfo,
         rows: Vec<ProductValue>,
     ) -> Result<(), DBError> {
-        let arg_hash = match view_call.sender {
-            Some(sender) => MutTxId::view_arg_hash(sender),
-            None => MutTxId::anonymous_view_arg_hash(),
-        };
-        self.materialize_view_arg_hash(tx, table_id, arg_hash, rows)?;
+        self.materialize_view_arg_hash(tx, table_id, view_call.arg_hash.clone(), rows)?;
         tx.replace_view_read_set(view_call);
 
         Ok(())
@@ -1724,7 +1958,7 @@ pub async fn local_history(
     runtime: &Handle,
 ) -> io::Result<impl History<TxData = Txdata> + use<>> {
     let commitlog_dir = replica_dir.commit_log();
-    asyncify(runtime, move || Commitlog::open(commitlog_dir, <_>::default(), None)).await
+    asyncify(runtime, move || LocalHistory::open(commitlog_dir)).await
 }
 
 /// Watches snapshot creation events and compresses all commitlog segments older
@@ -1732,7 +1966,7 @@ pub async fn local_history(
 ///
 /// Suitable **only** for non-replicated databases.
 pub async fn snapshot_watching_commitlog_compressor(
-    mut snapshot_rx: watch::Receiver<u64>,
+    mut snapshot_rx: watch::Receiver<Option<u64>>,
     mut clog_tx: Option<spacetimedb_runtime::sync::mpsc::Sender<u64>>,
     mut snap_tx: Option<spacetimedb_runtime::sync::mpsc::Sender<u64>>,
     durability: LocalDurability,
@@ -1740,7 +1974,9 @@ pub async fn snapshot_watching_commitlog_compressor(
 ) {
     let mut prev_snapshot_offset = *snapshot_rx.borrow_and_update();
     while snapshot_rx.changed().await.is_ok() {
-        let snapshot_offset = *snapshot_rx.borrow_and_update();
+        let Some(snapshot_offset) = *snapshot_rx.borrow_and_update() else {
+            continue;
+        };
         let durability = durability.clone();
 
         if let Some(snap_tx) = &mut snap_tx
@@ -1749,10 +1985,14 @@ pub async fn snapshot_watching_commitlog_compressor(
             tracing::warn!("failed to send offset {snapshot_offset} after snapshot creation: {err}");
         }
 
+        let Some(prev) = prev_snapshot_offset.replace(snapshot_offset) else {
+            continue;
+        };
+
         let res: io::Result<_> = asyncify(&runtime, move || {
             let segment_offsets = durability.existing_segment_offsets()?;
             let start_idx = segment_offsets
-                .binary_search(&prev_snapshot_offset)
+                .binary_search(&prev)
                 // if the snapshot is in the middle of a segment, we want to round down.
                 // [0, 2].binary_search(1) will return Err(1), so we subtract 1.
                 .unwrap_or_else(|i| i.saturating_sub(1));
@@ -1777,8 +2017,6 @@ pub async fn snapshot_watching_commitlog_compressor(
                 continue;
             }
         };
-        prev_snapshot_offset = snapshot_offset;
-
         if let Some((clog_tx, last_compressed_segment)) = clog_tx.as_mut().zip(last_compressed_segment)
             && let Err(err) = clog_tx.try_send(last_compressed_segment)
         {
@@ -2306,6 +2544,7 @@ mod tests {
     #![allow(clippy::disallowed_macros)]
 
     use std::cell::RefCell;
+    use std::collections::BTreeMap;
     use std::fs::OpenOptions;
     use std::path::PathBuf;
     use std::rc::Rc;
@@ -2322,11 +2561,13 @@ mod tests {
     use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_datastore::error::{DatastoreError, IndexError};
     use spacetimedb_datastore::execution_context::ReducerContext;
+    use spacetimedb_datastore::locking_tx_datastore::ViewInstanceArgs;
     use spacetimedb_datastore::system_tables::{
-        system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
-        ST_SEQUENCE_ID, ST_TABLE_ID,
+        system_table_schema_rows, system_tables, AlgebraicTypeViaBytes, StColumnRow, StConstraintRow, StIndexRow,
+        StSequenceRow, StTableRow, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
     };
     use spacetimedb_fs_utils::compression::CompressType;
+    use spacetimedb_lib::db::auth::StTableType;
     use spacetimedb_lib::db::raw_def::v9::{btree, RawTableDefBuilder};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
@@ -2335,6 +2576,7 @@ mod tests {
     use spacetimedb_paths::FromPathUnchecked;
     use spacetimedb_sats::buffer::BufReader;
     use spacetimedb_sats::product;
+    use spacetimedb_schema::identifier::Identifier;
     use spacetimedb_schema::schema::RowLevelSecuritySchema;
     use spacetimedb_snapshot::CompressionStats;
     #[cfg(unix)]
@@ -2477,7 +2719,11 @@ mod tests {
         let row_pv = |v: u8| product![v];
 
         let mut tx = begin_mut_tx(stdb);
-        tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
+        let args = ViewInstanceArgs::Sender {
+            sender,
+            args: ProductValue::default(),
+        };
+        tx.subscribe_view(ViewCallInfo::from_args(view_id, &args), args, sender)?;
         stdb.materialize_view(&mut tx, table_id, sender, vec![row_pv(v)])?;
         stdb.commit_tx(tx)?;
 
@@ -2514,9 +2760,12 @@ mod tests {
             .collect()
     }
 
-    fn update_last_called(stdb: &TestDB, view_id: ViewId, sender: Identity, last_called: Timestamp) -> ResultTest<()> {
+    fn update_last_called(stdb: &TestDB, view_call: ViewCallInfo, last_called: Timestamp) -> ResultTest<()> {
         let mut tx = begin_mut_tx(stdb);
-        tx.update_view_timestamp_at(view_id, ArgId::SENTINEL, sender, last_called)?;
+        let args = tx
+            .view_instance_args(&view_call)
+            .expect("view instance should exist before updating last_called");
+        tx.update_view_timestamp_at(view_call, args, last_called)?;
         stdb.commit_tx(tx)?;
         Ok(())
     }
@@ -2546,10 +2795,10 @@ mod tests {
         );
 
         let tx = begin_mut_tx(&stdb);
-        let subs_rows = tx.lookup_st_view_subs(view_id)?;
+        let subscribers = tx.active_subscribers_for_view(view_id);
         assert!(
-            subs_rows.is_empty(),
-            "st_view_subs should be empty after reopening the database"
+            subscribers.is_empty(),
+            "view lifecycle subscribers should be empty after reopening the database"
         );
         Ok(())
     }
@@ -2571,7 +2820,11 @@ mod tests {
         };
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.subscribe_view(view_id, ArgId::SENTINEL, Identity::ONE)?;
+        let args = ViewInstanceArgs::Sender {
+            sender: Identity::ONE,
+            args: ProductValue::default(),
+        };
+        tx.subscribe_view(ViewCallInfo::from_args(view_id, &args), args, Identity::ONE)?;
         stdb.materialize_view(&mut tx, table_id, Identity::ONE, vec![product![10u8]])?;
         let (tx_offset_2, tx_data, ..) = stdb.commit_tx(tx)?.unwrap();
 
@@ -2613,10 +2866,10 @@ mod tests {
         );
 
         let tx = begin_mut_tx(&stdb);
-        let subs_rows = tx.lookup_st_view_subs(view_id)?;
+        let subscribers = tx.active_subscribers_for_view(view_id);
         assert!(
-            subs_rows.is_empty(),
-            "st_view_subs should be empty after reopening the database"
+            subscribers.is_empty(),
+            "view lifecycle subscribers should be empty after reopening the database"
         );
         Ok(())
     }
@@ -2662,8 +2915,11 @@ mod tests {
         );
 
         let tx = begin_mut_tx(&stdb);
-        let st = tx.lookup_st_view_subs(view_id)?;
-        assert!(st.is_empty(), "st_view_subs should also be cleared after restart");
+        let subscribers = tx.active_subscribers_for_view(view_id);
+        assert!(
+            subscribers.is_empty(),
+            "view lifecycle subscribers should also be cleared after restart"
+        );
         stdb.commit_tx(tx)?;
 
         // Reinsert after restart
@@ -2679,6 +2935,7 @@ mod tests {
         tx.clear_expired_views(
             Instant::now().saturating_duration_since(before_sender2),
             VIEW_CLEANUP_BUDGET,
+            VIEW_CLEANUP_BATCH_SIZE,
         )?;
         stdb.commit_tx(tx)?;
 
@@ -2693,11 +2950,11 @@ mod tests {
             "Sender 2 row should remain"
         );
 
-        // And st_view_subs must reflect only sender2
+        // And lifecycle state must reflect only sender2.
         let tx = begin_mut_tx(&stdb);
-        let st_after = tx.lookup_st_view_subs(view_id)?;
-        assert_eq!(st_after.len(), 1);
-        assert_eq!(st_after[0].identity.0, sender2);
+        let mut subscribers = tx.active_subscribers_for_view(view_id);
+        subscribers.sort_by_key(|(identity, _)| identity.to_u256());
+        assert_eq!(subscribers, vec![(sender2, 1)]);
 
         Ok(())
     }
@@ -2716,31 +2973,44 @@ mod tests {
         let live_sender = Identity::ZERO;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.subscribe_view(view_id, ArgId::SENTINEL, stale_sender)?;
-        tx.subscribe_view(view_id, ArgId::SENTINEL, live_sender)?;
-        stdb.materialize_view_call(
-            &mut tx,
-            table_id,
-            ViewCallInfo { view_id, sender: None },
-            vec![product![42u8]],
+        let view_call = ViewCallInfo::anonymous(view_id);
+        tx.subscribe_view(
+            view_call.clone(),
+            ViewInstanceArgs::Anonymous {
+                args: ProductValue::default(),
+            },
+            stale_sender,
         )?;
+        tx.subscribe_view(
+            view_call.clone(),
+            ViewInstanceArgs::Anonymous {
+                args: ProductValue::default(),
+            },
+            live_sender,
+        )?;
+        stdb.materialize_view_call(&mut tx, table_id, view_call, vec![product![42u8]])?;
         stdb.commit_tx(tx)?;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.unsubscribe_view(view_id, ArgId::SENTINEL, stale_sender)?;
+        tx.unsubscribe_view(ViewCallInfo::anonymous(view_id), stale_sender)?;
         stdb.commit_tx(tx)?;
 
         // Make one row definitely expired without relying on wall-clock sleeps.
-        update_last_called(&stdb, view_id, stale_sender, Timestamp::UNIX_EPOCH)?;
+        update_last_called(&stdb, ViewCallInfo::anonymous(view_id), Timestamp::UNIX_EPOCH)?;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.update_view_timestamp(view_id, ArgId::SENTINEL, live_sender)?;
+        tx.update_view_timestamp(
+            ViewCallInfo::anonymous(view_id),
+            ViewInstanceArgs::Anonymous {
+                args: ProductValue::default(),
+            },
+        )?;
         stdb.commit_tx(tx)?;
 
         // Cleanup should remove only the stale subscriber row and keep the shared
         // anonymous materialization because another subscriber is still live.
         let mut tx = begin_mut_tx(&stdb);
-        let (_cleaned, _total_expired) = tx.clear_expired_views(Duration::from_secs(1), VIEW_CLEANUP_BUDGET)?;
+        let _result = tx.clear_expired_views(Duration::from_secs(1), VIEW_CLEANUP_BUDGET, VIEW_CLEANUP_BATCH_SIZE)?;
         stdb.commit_tx(tx)?;
 
         assert_eq!(
@@ -2750,11 +3020,9 @@ mod tests {
         );
 
         let tx = begin_mut_tx(&stdb);
-        let st_after = tx.lookup_st_view_subs(view_id)?;
-        assert_eq!(st_after.len(), 1);
-        assert_eq!(st_after[0].identity.0, live_sender);
-        assert!(st_after[0].has_subscribers);
-        assert_eq!(st_after[0].num_subscribers, 1);
+        let mut subscribers = tx.active_subscribers_for_view(view_id);
+        subscribers.sort_by_key(|(identity, _)| identity.to_u256());
+        assert_eq!(subscribers, vec![(live_sender, 1)]);
 
         Ok(())
     }
@@ -2771,26 +3039,28 @@ mod tests {
         let sender = Identity::ONE;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
-        stdb.materialize_view_call(
-            &mut tx,
-            table_id,
-            ViewCallInfo { view_id, sender: None },
-            vec![product![42u8]],
+        let view_call = ViewCallInfo::anonymous(view_id);
+        tx.subscribe_view(
+            view_call.clone(),
+            ViewInstanceArgs::Anonymous {
+                args: ProductValue::default(),
+            },
+            sender,
         )?;
+        stdb.materialize_view_call(&mut tx, table_id, view_call, vec![product![42u8]])?;
         stdb.commit_tx(tx)?;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.unsubscribe_view(view_id, ArgId::SENTINEL, sender)?;
+        tx.unsubscribe_view(ViewCallInfo::anonymous(view_id), sender)?;
         stdb.commit_tx(tx)?;
 
         // Mark the unsubscribed row as expired so cleanup can process it immediately.
-        update_last_called(&stdb, view_id, sender, Timestamp::UNIX_EPOCH)?;
+        update_last_called(&stdb, ViewCallInfo::anonymous(view_id), Timestamp::UNIX_EPOCH)?;
 
         // With no remaining subscriber rows, cleanup should drop the shared
         // anonymous materialization and remove the bookkeeping row.
         let mut tx = begin_mut_tx(&stdb);
-        let (_cleaned, _total_expired) = tx.clear_expired_views(Duration::from_secs(1), VIEW_CLEANUP_BUDGET)?;
+        let _result = tx.clear_expired_views(Duration::from_secs(1), VIEW_CLEANUP_BUDGET, VIEW_CLEANUP_BATCH_SIZE)?;
         stdb.commit_tx(tx)?;
 
         assert!(
@@ -2799,8 +3069,8 @@ mod tests {
         );
 
         let tx = begin_mut_tx(&stdb);
-        let st_after = tx.lookup_st_view_subs(view_id)?;
-        assert!(st_after.is_empty());
+        let subscribers = tx.active_subscribers_for_view(view_id);
+        assert!(subscribers.is_empty());
 
         Ok(())
     }
@@ -3034,16 +3304,17 @@ mod tests {
         let mut tx = begin_mut_tx(&stdb);
         insert(&stdb, &mut tx, table_id, &product![0i64]).unwrap();
 
-        // Check the second row start after `SEQUENCE_PREALLOCATION_AMOUNT`
-        assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1, 4097]);
+        // Check the second row is directly after the first, as we perform no preallocation.
+        // The property we actually care about is that the next value is greater than the previous.
+        assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1, 2]);
         stdb.commit_tx(tx)?;
 
         let stdb = stdb.reopen()?;
         let mut tx = begin_mut_tx(&stdb);
         insert(&stdb, &mut tx, table_id, &product![0i64]).unwrap();
-        // The next value will have a gap because we preallocate, but asserting the specific number
-        // seems brittle.
-        assert!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?[2] > 4097);
+        // The next value will not have a gap because we do not preallocate.
+        // The property we actually care about is that it is larger than the previous two values.
+        assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?[2], 3);
         Ok(())
     }
 
@@ -3426,6 +3697,8 @@ mod tests {
             inputs: Vec<txdata::Inputs>,
             // The number of transactions seen during traversal of the log.
             num_txs: usize,
+            current_tx_offset: Option<u64>,
+            saw_system_schema_bootstrap: bool,
             // System tables, needed to be able to consume transaction records.
             sys: IntMap<TableId, ProductType>,
             // The table created above, needed to be able to consume transaction
@@ -3445,6 +3718,9 @@ mod tests {
                 let ty = self.sys.get(&table_id).unwrap_or(&self.row_ty);
                 let row = ProductValue::decode(ty, reader)?;
                 log::debug!("insert: {table_id} {row:?}");
+                if self.current_tx_offset == Some(0) && table_id == ST_TABLE_ID {
+                    self.saw_system_schema_bootstrap = true;
+                }
                 Ok(())
             }
 
@@ -3480,6 +3756,7 @@ mod tests {
 
             fn visit_tx_start(&mut self, offset: u64) -> Result<(), Self::Error> {
                 log::debug!("tx start: {offset}");
+                self.current_tx_offset = Some(offset);
                 self.num_txs += 1;
                 Ok(())
             }
@@ -3529,6 +3806,8 @@ mod tests {
         let inputs = Rc::new(RefCell::new(Inputs {
             inputs: Vec::new(),
             num_txs: 0,
+            current_tx_offset: None,
+            saw_system_schema_bootstrap: false,
             sys: system_tables()
                 .into_iter()
                 .map(|schema| (schema.table_id, schema.into_row_type()))
@@ -3547,13 +3826,15 @@ mod tests {
         let inputs = Rc::into_inner(inputs).unwrap().into_inner();
         log::debug!("collected inputs: {:?}", inputs.inputs);
 
-        // We should've seen four transactions:
+        // We should've seen five transactions:
         //
+        // - the synthetic tx which persists the built-in system table schemas
         // - the internal tx which initializes `st_module`
         // - three non-empty transactions here
         //
         // The empty transaction should've been ignored.
-        assert_eq!(inputs.num_txs, 4);
+        assert_eq!(inputs.num_txs, 5);
+        assert!(inputs.saw_system_schema_bootstrap);
         // Two of the transactions should yield inputs.
         assert_eq!(inputs.inputs.len(), 2);
 
@@ -3579,6 +3860,228 @@ mod tests {
             assert_eq!(caller_connection_id, ConnectionId::ZERO);
             assert_eq!(reducer_timestamp, timestamp);
         }
+    }
+
+    fn durable_commitlog_inserts_by_offset(stdb: TestDB) -> BTreeMap<u64, BTreeMap<TableId, Vec<ProductValue>>> {
+        struct InsertsByOffset {
+            rows: BTreeMap<u64, BTreeMap<TableId, Vec<ProductValue>>>,
+            current_tx_offset: Option<u64>,
+            sys: IntMap<TableId, ProductType>,
+        }
+
+        impl txdata::Visitor for InsertsByOffset {
+            type Row = ProductValue;
+            type Error = anyhow::Error;
+
+            fn visit_insert<'a, R: BufReader<'a>>(
+                &mut self,
+                table_id: TableId,
+                reader: &mut R,
+            ) -> Result<Self::Row, Self::Error> {
+                let ty = self
+                    .sys
+                    .get(&table_id)
+                    .with_context(|| format!("no test decoder schema for table {table_id}"))?;
+                let row = ProductValue::decode(ty, reader)?;
+                let tx_offset = self.current_tx_offset.expect("visit_insert called outside a tx");
+                self.rows
+                    .entry(tx_offset)
+                    .or_default()
+                    .entry(table_id)
+                    .or_default()
+                    .push(row.clone());
+                Ok(row)
+            }
+
+            fn visit_delete<'a, R: BufReader<'a>>(
+                &mut self,
+                table_id: TableId,
+                reader: &mut R,
+            ) -> Result<Self::Row, Self::Error> {
+                let ty = self
+                    .sys
+                    .get(&table_id)
+                    .with_context(|| format!("no test decoder schema for table {table_id}"))?;
+                Ok(ProductValue::decode(ty, reader)?)
+            }
+
+            fn skip_row<'a, R: BufReader<'a>>(&mut self, table_id: TableId, reader: &mut R) -> Result<(), Self::Error> {
+                let ty = self
+                    .sys
+                    .get(&table_id)
+                    .with_context(|| format!("no test decoder schema for table {table_id}"))?;
+                ProductValue::decode(ty, reader).map(drop).map_err(Into::into)
+            }
+
+            fn visit_tx_start(&mut self, offset: u64) -> Result<(), Self::Error> {
+                self.current_tx_offset = Some(offset);
+                Ok(())
+            }
+        }
+
+        struct Decoder(Rc<RefCell<InsertsByOffset>>);
+
+        impl spacetimedb_commitlog::Decoder for Decoder {
+            type Record = txdata::Txdata<ProductValue>;
+            type Error = txdata::DecoderError<anyhow::Error>;
+
+            fn decode_record<'a, R: BufReader<'a>>(
+                &self,
+                version: u8,
+                tx_offset: u64,
+                reader: &mut R,
+            ) -> Result<Self::Record, Self::Error> {
+                txdata::decode_record_fn(&mut *self.0.borrow_mut(), version, tx_offset, reader)
+            }
+
+            fn skip_record<'a, R: BufReader<'a>>(
+                &self,
+                version: u8,
+                _tx_offset: u64,
+                reader: &mut R,
+            ) -> Result<(), Self::Error> {
+                txdata::skip_record_fn(&mut *self.0.borrow_mut(), version, reader)
+            }
+        }
+
+        let replica_dir = {
+            let (db, _, rt, dir) = stdb.into_parts();
+            let rt = rt.expect("Durable TestDB must have a runtime");
+            rt.block_on(db.shutdown()).expect("should have durable offset");
+            drop(db);
+            dir.expect("Durable TestDB must have a database directory")
+        };
+
+        let rows = Rc::new(RefCell::new(InsertsByOffset {
+            rows: BTreeMap::new(),
+            current_tx_offset: None,
+            sys: system_tables()
+                .into_iter()
+                .map(|schema| (schema.table_id, schema.into_row_type()))
+                .collect(),
+        }));
+        {
+            let clog = Commitlog::<()>::open(replica_dir.commit_log(), Default::default(), None)
+                .expect("failed to open commitlog");
+            clog.fold_transactions(Decoder(Rc::clone(&rows))).unwrap();
+        }
+        drop(replica_dir);
+
+        Rc::into_inner(rows).unwrap().into_inner().rows
+    }
+
+    #[test]
+    fn new_database_commitlog_starts_with_system_schema_bootstrap() -> ResultTest<()> {
+        let stdb = TestDB::durable_without_snapshot_repo()?;
+        let rows_by_offset = durable_commitlog_inserts_by_offset(stdb);
+
+        let bootstrap_rows = rows_by_offset
+            .get(&0)
+            .expect("offset 0 should contain the bootstrap tx");
+        let expected = system_table_schema_rows().into_iter().fold(
+            BTreeMap::<TableId, Vec<ProductValue>>::new(),
+            |mut rows, (table_id, row)| {
+                rows.entry(table_id).or_default().push(row);
+                rows
+            },
+        );
+
+        assert_eq!(bootstrap_rows, &expected);
+        let mut expected_table_ids = vec![ST_TABLE_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SEQUENCE_ID];
+        expected_table_ids.sort();
+        assert_eq!(bootstrap_rows.keys().copied().collect::<Vec<_>>(), expected_table_ids);
+        Ok(())
+    }
+
+    #[test]
+    fn committed_system_table_schema_rows_match_schema_helper() -> ResultTest<()> {
+        let stdb = TestDB::in_memory()?;
+
+        assert_eq!(
+            stdb.inner.committed_system_table_schema_rows()?,
+            system_table_schema_rows(),
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn reopening_new_database_does_not_append_system_schema_bootstrap_again() -> ResultTest<()> {
+        let stdb = TestDB::durable_without_snapshot_repo()?.reopen()?.reopen()?;
+        let rows_by_offset = durable_commitlog_inserts_by_offset(stdb);
+
+        let bootstrap_offsets = rows_by_offset
+            .iter()
+            .filter(|(_, rows)| rows.contains_key(&ST_TABLE_ID))
+            .map(|(offset, _)| *offset)
+            .collect::<Vec<_>>();
+        assert_eq!(bootstrap_offsets, vec![0]);
+        Ok(())
+    }
+
+    #[test]
+    fn replay_from_commitlog_preserves_unknown_future_system_table() -> ResultTest<()> {
+        let highest_id = system_tables().iter().map(|schema| schema.table_id).max().unwrap();
+        let future_table_id = TableId(highest_id.0 + 1);
+        assert!(system_tables().iter().all(|schema| schema.table_id != future_table_id));
+
+        let future_table_row = StTableRow {
+            table_id: future_table_id,
+            table_name: TableName::for_test("st_future"),
+            table_type: StTableType::System,
+            table_access: StAccess::Private,
+            table_primary_key: None,
+        };
+        let future_column_row = StColumnRow {
+            table_id: future_table_id,
+            col_pos: ColId(0),
+            col_name: Identifier::for_test("value"),
+            col_type: AlgebraicTypeViaBytes(AlgebraicType::U32),
+        };
+        let future_row = product![42u32];
+
+        // Add the new table in the first commit, then add a row to it in the second commit.
+        let history = TestHistory::from_txes([
+            Txdata {
+                inputs: None,
+                outputs: None,
+                mutations: Some(txdata::Mutations {
+                    inserts: Box::new([
+                        txdata::Ops {
+                            table_id: ST_TABLE_ID,
+                            rowdata: Arc::new([future_table_row.into()]),
+                        },
+                        txdata::Ops {
+                            table_id: ST_COLUMN_ID,
+                            rowdata: Arc::new([future_column_row.into()]),
+                        },
+                    ]),
+                    deletes: Box::new([]),
+                    truncates: Box::new([]),
+                }),
+            },
+            Txdata {
+                inputs: None,
+                outputs: None,
+                mutations: Some(txdata::Mutations {
+                    inserts: Box::new([txdata::Ops {
+                        table_id: future_table_id,
+                        rowdata: Arc::new([future_row.clone()]),
+                    }]),
+                    deletes: Box::new([]),
+                    truncates: Box::new([]),
+                }),
+            },
+        ]);
+
+        let stdb = TestDB::in_memory_with_history(history, 0)?;
+        let tx = begin_tx(&stdb);
+        let rows = stdb
+            .iter(&tx, future_table_id)?
+            .map(|row_ref| row_ref.to_product_value())
+            .collect::<Vec<_>>();
+        assert_eq!(rows, vec![future_row]);
+        let _ = stdb.release_tx(tx);
+        Ok(())
     }
 
     /// This tests that we are able to correctly replay mutations to system tables,
@@ -3698,11 +4201,11 @@ mod tests {
         );
         let mut offsets = repo.all_snapshots()?.collect::<Vec<_>>();
         offsets.sort();
-        assert_eq!(&offsets, &[1, 2, 3]);
+        assert_eq!(&offsets, &[2, 3, 4]);
         // Simulate we take except the last snapshot
-        let last_compress = 2;
+        let last_compress = 3;
         let mut stats = CompressionStats::default();
-        repo.compress_snapshots(&mut stats, ..3)?;
+        repo.compress_snapshots(&mut stats, ..4)?;
         assert_eq!(stats.compressed(), 2);
         let size_compress_on = repo.size_on_disk()?;
         assert!(size_compress_on.total_size < size_compress_off.total_size);
@@ -4004,7 +4507,7 @@ mod tests {
         assert_eq!(user_table_names, expected_table_names);
 
         db.with_auto_commit(Workload::ForTests, |tx| {
-            tx.insert_st_client(Identity::ZERO, ConnectionId::ZERO, "invalid_jwt")
+            tx.insert_st_client(Identity::ZERO, ConnectionId::ZERO, Some("invalid_jwt"))
                 .unwrap();
             Ok::<(), DBError>(())
         })?;

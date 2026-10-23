@@ -64,7 +64,8 @@ namespace SpacetimeDB
 
             foreach (var wrapper in wrappers)
             {
-                wrapper.InvokeFailure(ctx, error);
+                try { wrapper.InvokeFailure(ctx, error); }
+                catch (Exception e) { Log.Exception(e); }
             }
         }
 
@@ -98,7 +99,7 @@ namespace SpacetimeDB
             var callbackResult = result.Status switch
             {
                 ProcedureStatus.Returned(var bytes) =>
-                    ProcedureCallbackResult<T>.Success(BSATNHelpers.Decode<T>(bytes.ToArray())),
+                    ProcedureCallbackResult<T>.Success(BSATNHelpers.Decode<T>(bytes)),
                 ProcedureStatus.InternalError(var error) =>
                     ProcedureCallbackResult<T>.Failure(new Exception($"Procedure failed: {error}")),
                 _ => ProcedureCallbackResult<T>.Failure(new Exception("Unknown procedure status"))

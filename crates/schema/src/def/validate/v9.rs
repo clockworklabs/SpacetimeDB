@@ -153,7 +153,10 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
 
     let typespace_for_generate = typespace_for_generate.finish();
 
-    Ok(ModuleDef {
+    let mut module_def = ModuleDef {
+        // V9 has no submodules, so every def is at the root.
+        path: NamespacePath::root(),
+        accessor_path: NamespacePath::root(),
         tables,
         reducers,
         views,
@@ -168,7 +171,15 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         http_handlers: IndexMap::new(),
         http_routes: Vec::new(),
         raw_module_def_version: RawModuleDefVersion::V9OrEarlier,
-    })
+        submodules: IndexMap::new(),
+        environment: None,
+    };
+
+    // Records each def's namespace. V9 has no submodules, so this just resolves everything at
+    // the root, but the defs still need their `namespace` populated for keys to work.
+    module_def.apply_namespace(&NamespacePath::root(), &NamespacePath::root());
+
+    Ok(module_def)
 }
 
 struct ModuleValidatorV9<'a> {
@@ -319,6 +330,8 @@ impl ModuleValidatorV9<'_> {
             .combine_errors()?;
 
         Ok(TableDef {
+            // Set by `ModuleDef::apply_namespace` once the module tree is assembled.
+            namespace: NamespacePath::root(),
             name: name.clone(),
             product_type_ref,
             primary_key,
@@ -331,6 +344,7 @@ impl ModuleValidatorV9<'_> {
             table_access,
             is_event: false, // V9 does not support event tables
             accessor_name: name,
+            outbox: None,
         })
     }
 
@@ -519,6 +533,7 @@ impl ModuleValidatorV9<'_> {
             (name, return_type_for_generate, return_columns, param_columns).combine_errors()?;
 
         Ok(ViewDef {
+            namespace: NamespacePath::root(),
             name: name.clone(),
             is_anonymous,
             is_public,
@@ -914,8 +929,11 @@ impl CoreValidator<'_> {
 
         let (_, (at_column, id_column), function_name) = (name_res, at_id, function_name).combine_errors()?;
 
+        let name = Identifier::new(name).map_err(|error| ValidationError::IdentifierError { error })?;
         Ok(ScheduleDef {
-            name: Identifier::new(name).map_err(|error| ValidationError::IdentifierError { error })?,
+            // Set by `ModuleDef::apply_namespace` once the module tree is assembled.
+            namespace: NamespacePath::root(),
+            name,
             at_column,
             id_column,
             function_name,
@@ -1139,39 +1157,53 @@ impl<'a, 'b> TableValidator<'a, 'b> {
             }
         });
 
-        /// Compare two `Option<i128>` values, returning `true` if `lo <= hi`,
-        /// or if either is `None`.
-        pub(crate) fn le(lo: Option<i128>, hi: Option<i128>) -> bool {
-            match (lo, hi) {
-                (Some(lo), Some(hi)) => lo <= hi,
-                _ => true,
-            }
-        }
-        let valid = le(min_value, start) && le(start, max_value) && le(min_value, max_value);
-
-        let min_start_max = if valid {
-            Ok((min_value, start, max_value))
+        let increment_is_one: Result<()> = if increment == 1 {
+            Ok(())
         } else {
-            Err(ValidationError::InvalidSequenceRange {
+            Err(ValidationError::InvalidSequenceDefOption {
                 sequence: name.clone(),
-                min_value,
-                start,
-                max_value,
+                option: "increment",
+                supplied_value: increment,
+                expected_value: "1",
             }
             .into())
         };
 
+        fn validate_option_typed_option_is_none(
+            name: &RawIdentifier,
+            option_name: &'static str,
+            supplied_value: Option<i128>,
+        ) -> Result<()> {
+            if let Some(supplied_value) = supplied_value {
+                Err(ValidationError::InvalidSequenceDefOption {
+                    sequence: name.clone(),
+                    option: option_name,
+                    supplied_value,
+                    expected_value: "None",
+                }
+                .into())
+            } else {
+                Ok(())
+            }
+        }
+
+        let no_supplied_removed_options = (
+            validate_option_typed_option_is_none(&name, "start", start),
+            validate_option_typed_option_is_none(&name, "min_value", min_value),
+            validate_option_typed_option_is_none(&name, "max_value", max_value),
+            increment_is_one,
+        )
+            .combine_errors();
+
         let name = self.add_to_global_namespace(name);
 
-        let (name, column, (min_value, start, max_value)) = (name, column, min_start_max).combine_errors()?;
+        let (name, column, ((), (), (), ())) = (name, column, no_supplied_removed_options).combine_errors()?;
 
         Ok(SequenceDef {
+            // Set by `ModuleDef::apply_namespace` once the module tree is assembled.
+            namespace: NamespacePath::root(),
             name,
             column,
-            min_value,
-            start,
-            max_value,
-            increment,
         })
     }
 
@@ -1195,6 +1227,8 @@ impl<'a, 'b> TableValidator<'a, 'b> {
             .transpose()?;
 
         Ok(IndexDef {
+            // Set by `ModuleDef::apply_namespace` once the module tree is assembled.
+            namespace: NamespacePath::root(),
             name: name.clone(),
             accessor_name: codegen_name,
             source_name: name,
@@ -1234,6 +1268,8 @@ impl<'a, 'b> TableValidator<'a, 'b> {
         let algorithm = self.validate_algorithm(&name, algorithm_raw.clone())?;
 
         Ok(IndexDef {
+            // Set by `ModuleDef::apply_namespace` once the module tree is assembled.
+            namespace: NamespacePath::root(),
             name: name.clone(),
             accessor_name: accessor_name.map(identifier).transpose()?,
             source_name,
@@ -1302,6 +1338,8 @@ impl<'a, 'b> TableValidator<'a, 'b> {
             let (name, columns) = (name, columns).combine_errors()?;
             let columns: ColSet = columns.into();
             Ok(ConstraintDef {
+                // Stamped by `ModuleDef::apply_namespace` once the module tree is assembled.
+                namespace: NamespacePath::root(),
                 name,
                 data: ConstraintData::Unique(UniqueConstraintData { columns }),
             })
@@ -1514,7 +1552,7 @@ pub(crate) fn check_scheduled_functions_exist(
             if let Some(schedule) = &mut table.schedule {
                 if let Some(reducer) = reducers.get(&schedule.function_name) {
                     schedule.function_kind = FunctionKind::Reducer;
-                    validate_params(&reducer.params, table.product_type_ref, reducer.name.clone().into())
+                    validate_params(&reducer.params, table.product_type_ref, reducer.name.local().clone())
                         .map_err(Into::into)
                 } else if let Some(procedure) = procedures.get(&schedule.function_name) {
                     schedule.function_kind = FunctionKind::Procedure;
@@ -1649,6 +1687,7 @@ mod tests {
         SequenceDef, UniqueConstraintData,
     };
     use crate::error::*;
+    use crate::identifier::NamespacePath;
     use crate::type_for_generate::ClientCodegenError;
 
     use itertools::Itertools;
@@ -1802,18 +1841,24 @@ mod tests {
             [
                 &IndexDef {
                     name: "Apples_count_idx_direct".into(),
+
+                    namespace: NamespacePath::root(),
                     accessor_name: Some(expect_identifier("Apples_count_direct")),
                     algorithm: DirectAlgorithm { column: 2.into() }.into(),
                     source_name: "Apples_count_idx_direct".into(),
                 },
                 &IndexDef {
                     name: "Apples_name_count_idx_btree".into(),
+
+                    namespace: NamespacePath::root(),
                     accessor_name: Some(expect_identifier("apples_id")),
                     algorithm: BTreeAlgorithm { columns: [1, 2].into() }.into(),
                     source_name: "Apples_name_count_idx_btree".into(),
                 },
                 &IndexDef {
                     name: "Apples_type_idx_btree".into(),
+
+                    namespace: NamespacePath::root(),
                     accessor_name: Some(expect_identifier("Apples_type_btree")),
                     algorithm: BTreeAlgorithm { columns: 3.into() }.into(),
                     source_name: "Apples_type_idx_btree".into(),
@@ -2393,9 +2438,25 @@ mod tests {
         raw_def.tables[0].sequences[0].name = Some("wacky.sequence()".into());
 
         let def: ModuleDef = raw_def.try_into().unwrap();
-        assert!(def.lookup::<ConstraintDef>(&"wacky.constraint()".into()).is_some());
-        assert!(def.lookup::<IndexDef>(&"wacky.index()".into()).is_some());
-        assert!(def.lookup::<SequenceDef>(&"wacky.sequence()".into()).is_some());
+        // Sub-object names may themselves contain dots, which is exactly why their keys are
+        // (namespace, local name) pairs rather than a dot-joined name.
+        let root = NamespacePath::root();
+        assert!(def
+            .lookup::<ConstraintDef>((&root, &"wacky.constraint()".into()))
+            .is_some());
+        assert!(def.lookup::<IndexDef>((&root, &"wacky.index()".into())).is_some());
+        assert!(def.lookup::<SequenceDef>((&root, &"wacky.sequence()".into())).is_some());
+
+        // The same hazard bites when recovering a local name from a stored one. Splitting on
+        // the last `.` turns `"wacky.index()"` into `"index()"`, which matches no def, so
+        // republishing such a module fails with "Index 0 not found in definition". The local
+        // name must be recovered by stripping the known namespace prefix instead.
+        use crate::schema::{Schema, TableSchema};
+        let table_def = def.table("Deliveries").expect("table should exist");
+        let schema = TableSchema::from_module_def(&def, table_def, (), spacetimedb_primitives::TableId::SENTINEL);
+        schema
+            .check_compatible(&def, table_def)
+            .expect("dotted V9 sub-object names must not break compatibility checking");
     }
 
     #[test]

@@ -18,6 +18,26 @@ cargo smoketest test_sql_format
 cargo smoketest "cli::"  # Run all CLI tests
 ```
 
+### Remote Servers
+
+Run against a standalone-compatible remote server with:
+
+```bash
+cargo ci smoketests --server https://example.spacetimedb.com
+```
+
+Maincloud and maincloud staging require SpacetimeAuth-issued tokens rather than
+server-issued tokens. Use `--auth-host` for those:
+
+```bash
+cargo ci smoketests --server https://maincloud.staging.spacetimedb.com --auth-host
+```
+
+The runner invokes `spacetime login` once, then copies that logged-in config
+into each isolated smoketest config. Tests that need throwaway server-issued
+identities should call `require_server_issued_login!()` so they skip in
+SpacetimeAuth mode.
+
 ### WARNING: Stale Binary Risk
 
 **Smoketests use pre-built binaries and DO NOT automatically rebuild them.**

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{io, sync::Arc};
 
 use bitflags::bitflags;
 use spacetimedb_sats::buffer::{BufReader, BufWriter, DecodeError};
@@ -528,6 +528,8 @@ pub enum DecoderError<V> {
     Visitor(V),
     #[error(transparent)]
     Traverse(#[from] error::Traversal),
+    #[error(transparent)]
+    Io(#[from] io::Error),
 }
 
 /// A free standing implementation of [`crate::Decoder::skip_record`]

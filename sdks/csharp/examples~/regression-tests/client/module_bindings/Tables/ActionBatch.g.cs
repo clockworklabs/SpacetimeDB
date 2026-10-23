@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class ActionBatchHandle : RemoteTableHandle<EventContext, ActionBatch>
         {
-            protected override string RemoteTableName => "action_batch";
+            public override string RemoteTableName => "action_batch";
 
             public sealed class IdUniqueIndex : UniqueIndexBase<uint>
             {

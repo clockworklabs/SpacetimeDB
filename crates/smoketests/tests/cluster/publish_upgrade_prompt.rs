@@ -1,0 +1,70 @@
+use std::path::PathBuf;
+
+use spacetimedb_smoketests::{random_string, workspace_root, Smoketest};
+
+fn old_fixture_wasm() -> PathBuf {
+    workspace_root()
+        .join("crates")
+        .join("smoketests")
+        .join("fixtures")
+        .join("upgrade_old_module_v1.wasm")
+}
+
+#[test]
+fn upgrade_prompt_on_publish() {
+    let mut test = Smoketest::builder().autopublish(false).build();
+
+    let old_wasm = old_fixture_wasm();
+    assert!(old_wasm.exists(), "expected old fixture wasm at {}", old_wasm.display());
+
+    let db_name = format!("upgrade-smoke-{}", random_string());
+
+    test.use_precompiled_wasm_path(&old_wasm).unwrap();
+    let initial_identity = test.publish().name(&db_name).run().unwrap();
+    assert_eq!(test.database_identity.as_deref(), Some(initial_identity.as_str()));
+
+    // Switch to a module precompiled with the current bindings.
+    test.use_precompiled_module("noop");
+
+    let deny_err = test
+        .publish()
+        .name(&db_name)
+        // Needed when running smoketests against a remote server.
+        .force(Some("remote"))
+        .run()
+        .unwrap_err()
+        .to_string();
+    assert!(deny_err.contains("major version upgrade from 1.0 to 2.0"));
+    assert!(deny_err.contains("Please type 'upgrade' to accept this change:"));
+
+    let accepted_identity = test
+        .publish()
+        .name(&db_name)
+        .stdin("upgrade\n")
+        // Needed when running smoketests against a remote server.
+        .force(Some("remote"))
+        .run()
+        .unwrap();
+    assert_eq!(accepted_identity, initial_identity);
+}
+
+#[test]
+fn upgrade_prompt_suppressed_by_yes_flag() {
+    let mut test = Smoketest::builder().autopublish(false).build();
+
+    let old_wasm = old_fixture_wasm();
+    assert!(old_wasm.exists(), "expected old fixture wasm at {}", old_wasm.display());
+
+    let db_name = format!("upgrade-smoke-yes-{}", random_string());
+
+    test.use_precompiled_wasm_path(&old_wasm).unwrap();
+    let initial_identity = test.publish().name(&db_name).run().unwrap();
+    assert_eq!(test.database_identity.as_deref(), Some(initial_identity.as_str()));
+
+    // Switch to a module precompiled with the current bindings.
+    test.use_precompiled_module("noop");
+
+    // With --yes, the upgrade prompt should be suppressed and publish should succeed.
+    let accepted_identity = test.publish().name(&db_name).run().unwrap();
+    assert_eq!(accepted_identity, initial_identity);
+}

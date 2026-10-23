@@ -1,0 +1,11 @@
+Write a SpacetimeDB backend module in C# that defines a procedure with a typed return value.
+
+TYPES
+- Summary
+  - Total: uint
+  - Label: string
+
+PROCEDURE
+- CalculateSummary(lhs: uint, rhs: uint) -> Summary
+  - Return Total as lhs + rhs
+  - Return Label as "calculated"

@@ -1,0 +1,11 @@
+Write a SpacetimeDB backend module in TypeScript that defines a procedure with a typed return value.
+
+TYPES
+- Summary
+  - total: u32
+  - label: string
+
+PROCEDURE
+- calculate_summary(lhs: u32, rhs: u32) -> Summary
+  - Return total as lhs + rhs
+  - Return label as "calculated"

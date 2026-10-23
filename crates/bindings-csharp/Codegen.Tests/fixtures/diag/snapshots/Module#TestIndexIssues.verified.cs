@@ -6,6 +6,11 @@ partial struct TestIndexIssues
     : System.IEquatable<TestIndexIssues>,
         SpacetimeDB.BSATN.IStructuralReadWrite
 {
+#if NET10_0_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
+#endif
     public void ReadFields(System.IO.BinaryReader reader)
     {
         SelfIndexingColumn = BSATN.SelfIndexingColumnRW.Read(reader);
@@ -54,7 +59,7 @@ partial struct TestIndexIssues
                         new(
                             "SecondaryIndexingColumn",
                             SecondaryIndexingColumnRW.GetAlgebraicType(registrar)
-                        )
+                        ),
                     }
                 )
             );
@@ -83,16 +88,7 @@ partial struct TestIndexIssues
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as TestIndexIssues?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is TestIndexIssues t && Equals(t);
     }
 
     public static bool operator ==(TestIndexIssues this_, TestIndexIssues that)

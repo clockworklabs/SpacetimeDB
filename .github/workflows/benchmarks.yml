@@ -68,6 +68,14 @@ jobs:
         if: ${{ env.PR_NUMBER }}
         run: echo "PR_REF=$(gh pr view $PR_NUMBER --json headRefName --jq .headRefName)" >>"$GITHUB_ENV"
 
+      - name: Checkout trusted rustup action
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Check and update rustup
+        uses: ./.github/actions/ensure-rustup
+
       - name: Checkout sources
         uses: actions/checkout@v4
         with:
@@ -132,7 +140,7 @@ jobs:
 
       # this will work for both PR and master
       - name: Upload criterion results to DO spaces
-        uses: shallwefootball/s3-upload-action@master
+        uses: shallwefootball/s3-upload-action@0d261a6f15b3b2e209dfebdecace4b100c04f95b # master
         with:
           aws_key_id: ${{ secrets.AWS_KEY_ID }}
           aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}
@@ -181,10 +189,11 @@ jobs:
     # Fortunately, we can run on standard GitHub Actions infra because we don't care
     # about other stuff running on the machine!
     # runs-on: benchmarks-runner
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-linux
     timeout-minutes: 20 # on a successful run, runs in 8 minutes
     container:
-      image: rust:1.93.0
+      # !rust-toolchain-sync
+      image: rust:1.97.1
       options: --privileged
     # disable until we fix the benchmarks
     if: false
@@ -199,11 +208,10 @@ jobs:
         run: |
           rm -fr /stdb/*
 
-      - name: Install valgrind & iai-callgrind-runner
+      - name: Install benchmark system dependencies
         run: |
           apt-get update
           apt-get install -y valgrind protobuf-compiler bash sudo curl gh
-          cargo install --git https://github.com/clockworklabs/iai-callgrind.git --branch main iai-callgrind-runner
           git config --global --add safe.directory /__w/SpacetimeDB/SpacetimeDB
 
       # can't do this off self hosted:
@@ -229,6 +237,18 @@ jobs:
         if: ${{ env.PR_NUMBER }}
         shell: bash
         run: echo "PR_REF=$(gh pr view $PR_NUMBER --json headRefName --jq .headRefName)" >>"$GITHUB_ENV"
+
+      - name: Checkout trusted rustup action
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      # Rustup comes from the job container, so updating the fleet VM image does not update it.
+      - name: Check and update rustup
+        uses: ./.github/actions/ensure-rustup
+
+      - name: Install iai-callgrind-runner
+        run: cargo install --git https://github.com/clockworklabs/iai-callgrind.git --branch main iai-callgrind-runner
 
       - name: Checkout sources
         uses: actions/checkout@v3
@@ -308,7 +328,7 @@ jobs:
 
       # this will work for both PR and master
       - name: Upload callgrind results to DO spaces
-        uses: shallwefootball/s3-upload-action@master
+        uses: shallwefootball/s3-upload-action@0d261a6f15b3b2e209dfebdecace4b100c04f95b # master
         with:
           aws_key_id: ${{ secrets.AWS_KEY_ID }}
           aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}

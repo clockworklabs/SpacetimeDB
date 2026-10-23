@@ -371,6 +371,35 @@ impl AlgebraicType {
         Self::deserialize(ValueDeserializer::from_ref(value))
     }
 
+    /// Constructs an `AlgebraicValue` of this type from an `i128`
+    /// using saturating conversion.
+    ///
+    /// Returns `None` if this is not an integer type.
+    /// If `value` does not fit in this type,
+    /// it is saturated to the type's range.
+    /// Negative values convert to `0` for unsigned types.
+    pub fn saturating_value_from_i128(&self, value: i128) -> Option<AlgebraicValue> {
+        let signed = |min, max| value.clamp(min, max);
+        let unsigned = |max| value.clamp(0, max);
+
+        match self {
+            Self::I8 => Some((signed(i8::MIN as i128, i8::MAX as i128) as i8).into()),
+            Self::I16 => Some((signed(i16::MIN as i128, i16::MAX as i128) as i16).into()),
+            Self::I32 => Some((signed(i32::MIN as i128, i32::MAX as i128) as i32).into()),
+            Self::I64 => Some((signed(i64::MIN as i128, i64::MAX as i128) as i64).into()),
+            Self::I128 => Some(value.into()),
+            Self::I256 => Some(i256::from(value).into()),
+
+            Self::U8 => Some((unsigned(u8::MAX as i128) as u8).into()),
+            Self::U16 => Some((unsigned(u16::MAX as i128) as u16).into()),
+            Self::U32 => Some((unsigned(u32::MAX as i128) as u32).into()),
+            Self::U64 => Some((unsigned(u64::MAX as i128) as u64).into()),
+            Self::U128 => Some((value.max(0) as u128).into()),
+            Self::U256 => Some(u256::from(value.max(0) as u128).into()),
+            _ => None,
+        }
+    }
+
     #[inline]
     /// Given an AlgebraicType, returns the min value for that type.
     pub fn min_value(&self) -> Option<AlgebraicValue> {

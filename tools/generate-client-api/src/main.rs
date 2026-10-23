@@ -3,7 +3,7 @@ use anyhow::{anyhow, Context, Result};
 use replace_spacetimedb::{replace_in_tree, ReplaceOptions};
 use std::ffi::OsStr;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use tempfile::NamedTempFile;
 
@@ -23,6 +23,14 @@ fn run_inherit(cmd: impl AsRef<OsStr>, args: &[&str], cwd: Option<&Path>) -> Res
         return Err(anyhow!("Command failed: {cmd:?} {args:?} (exit {status})"));
     }
     Ok(())
+}
+
+fn cargo_target_dir(workspace_dir: &Path) -> PathBuf {
+    match std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from) {
+        Some(path) if path.is_absolute() => path,
+        Some(path) => workspace_dir.join(path),
+        None => workspace_dir.join("target"),
+    }
 }
 
 /// Run a command and return captured stdout as UTF-8 string.
@@ -75,8 +83,8 @@ fn main() -> Result<()> {
 
     // 4) Generate TS client
     run_inherit(
-        workspace_dir
-            .join("target/debug/spacetimedb-cli")
+        cargo_target_dir(workspace_dir)
+            .join("debug/spacetimedb-cli")
             .with_extension(std::env::consts::EXE_EXTENSION),
         &[
             "generate",

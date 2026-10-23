@@ -18,6 +18,18 @@ pub struct VecU64TableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `vec_u_64`.
+pub struct VecU64TableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for VecU64TableAccessor {
+    type Row = VecU64;
+    type Handle<'db> = VecU64TableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.vec_u_64()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `vec_u_64`.
 ///
@@ -39,6 +51,18 @@ impl VecU64TableAccess for super::RemoteTables {
 
 pub struct VecU64InsertCallbackId(__sdk::CallbackId);
 pub struct VecU64DeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for VecU64TableHandle<'ctx> {
+    type Row = VecU64;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = VecU64> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for VecU64TableHandle<'ctx> {
     type Row = VecU64;
@@ -64,6 +88,36 @@ impl<'ctx> __sdk::Table for VecU64TableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = VecU64DeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> VecU64DeleteCallbackId {
+        VecU64DeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: VecU64DeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for VecU64TableHandle<'ctx> {
+    type InsertCallbackId = VecU64InsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> VecU64InsertCallbackId {
+        VecU64InsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: VecU64InsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for VecU64TableHandle<'ctx> {
     type DeleteCallbackId = VecU64DeleteCallbackId;
 
     fn on_delete(

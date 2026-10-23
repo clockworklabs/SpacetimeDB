@@ -26,22 +26,31 @@ import { DbConnection, tables } from './module_bindings';
 const connection = DbConnection.builder()
   .withUri('ws://localhost:3000')
   .withDatabaseName('MODULE_NAME')
-  .onDisconnect(() => {
-    console.log('disconnected');
+  .withAutomaticReconnect()
+  .onConnect((_connection, identity) => {
+    console.log('Connected:', identity.toHexString());
   })
-  .onConnectError(() => {
-    console.log('client_error');
+  .onAutomaticReconnect((_connection, identity) => {
+    console.log('Reconnected:', identity.toHexString());
   })
-  .onConnect((connection, identity, _token) => {
+  .onDisconnect((_ctx, error, attempt, delayMs) => {
     console.log(
-      'Connected to SpacetimeDB with identity:',
-      identity.toHexString()
+      attempt === undefined
+        ? 'Disconnected'
+        : `Retry ${attempt} in ${delayMs} ms`,
+      error
     );
-
-    connection.subscriptionBuilder().subscribe(tables.player);
+  })
+  .onConnectError((_ctx, error, attempt) => {
+    console.error(
+      attempt === undefined ? 'Connection failed' : 'Retry failed',
+      error
+    );
   })
   .withToken('TOKEN')
   .build();
+
+connection.subscriptionBuilder().subscribe(tables.player);
 ```
 
 If you need to disconnect the client:
@@ -49,6 +58,10 @@ If you need to disconnect the client:
 ```ts
 connection.disconnect();
 ```
+
+Automatic reconnection preserves the connection, cache, handles, and callbacks. Register subscriptions and row callbacks once after `build()` or inside `onConnect`, which fires once per connection object. Successful automatic reconnects fire `onAutomaticReconnect(connection, identity, token)` instead. This callback runs before subscription replay; wait for subscription `onApplied` callbacks when you need refreshed data. Cache reads remain available during outages. Initial connection failures are not retried by the core SDK.
+
+For expiring credentials, pass the initial token with `withToken` and add `withTokenProvider(() => auth.getAccessToken())`. The SDK asks for a fresh token before reconnecting when the retained token is near expiry. The provider must return a token for the same identity. If your application persists tokens, save the token from both `onConnect` and `onAutomaticReconnect` to include refreshed credentials.
 
 Typically, you will use the SDK with types generated from SpacetimeDB module. For example, given a table named `Player` you can subscribe to player updates like this:
 
@@ -209,3 +222,29 @@ To run the tests, do:
 ```sh
 pnpm build && pnpm test
 ```
+
+### Declared environment
+
+Pass the complete environment schema to `schema`. Values are supplied at publish
+time, not embedded in the module:
+
+```ts
+const db = schema(tables, {
+  env: {
+    API_URL: t.string(),
+    MODE: t.enum('Mode', ['prod', 'dev']),
+    LOG_LEVEL: t.enum('LogLevel', ['info', 'debug']).optional(),
+  },
+});
+```
+
+`ctx.env.MODE` has type `'prod' | 'dev'`; `ctx.env.LOG_LEVEL` also permits
+`undefined`. Simple enum cases mean allowed strings only in this declaration;
+ordinary enum values elsewhere retain their tagged representation. Payload enums
+are rejected. The checked `ctx.env.get('LOG_LEVEL')` returns `null` for an omitted
+optional value. A declared key named `get` remains accessible through the generic
+method. Omitted or empty schemas allow no keys. Undeclared reads and reads entered
+by the host in a submodule fail at runtime; ordinary helpers retain their caller's
+scope. Values are private, durable database configuration for secrets and other settings.
+Database owners and authorized collaborators can read them; module code can expose
+them through its own outputs.

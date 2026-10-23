@@ -6,22 +6,22 @@ use clap::Arg;
 use clap::ArgAction::{Set, SetTrue};
 use fs_err as fs;
 use spacetimedb_codegen::{
-    generate, private_table_names, CodegenOptions, CodegenVisibility, Csharp, Lang, OutputFile, Rust, TypeScript,
-    UnrealCpp, AUTO_GENERATED_PREFIX,
+    generate, private_table_names, CodegenOptions, CodegenVisibility, Csharp, ImportExtension, Lang, OutputFile, Rust,
+    TypeScript, UnrealCpp, AUTO_GENERATED_PREFIX,
 };
 use spacetimedb_lib::de::serde::DeserializeWrapper;
-use spacetimedb_lib::{sats, RawModuleDef};
+use spacetimedb_lib::RawModuleDef;
 use spacetimedb_schema;
 use spacetimedb_schema::def::ModuleDef;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 
+use crate::common_args::parse_optional_dotnet_version;
 use crate::spacetime_config::{
     find_and_load_with_env, CommandConfig, CommandSchema, CommandSchemaBuilder, Key, LoadedConfig, SpacetimeConfig,
 };
 use crate::tasks::csharp::dotnet_format;
 use crate::tasks::rust::rustfmt;
-use crate::util::{resolve_sibling_binary, y_or_n};
+use crate::util::y_or_n;
 use crate::Config;
 use crate::{build, common_args};
 use clap::builder::PossibleValue;
@@ -49,7 +49,9 @@ fn build_generate_config_schema(command: &clap::Command) -> Result<CommandSchema
         .key(Key::new("namespace").generate_entry_specific())
         .key(Key::new("unreal_module_name").generate_entry_specific())
         .key(Key::new("module_prefix").generate_entry_specific())
+        .key(Key::new("import_extension").generate_entry_specific())
         .key(Key::new("build_options").module_specific())
+        .key(Key::new("dotnet_version").module_specific())
         .key(Key::new("include_private"))
         .exclude("json_module")
         .exclude("force")
@@ -241,6 +243,12 @@ pub fn cli() -> clap::Command {
                 .help("The module prefix to use for generated types (only used with --lang unrealcpp)")
         )
         .arg(
+            Arg::new("import_extension")
+                .long("import-extension")
+                .value_parser(["none", "js", "ts"])
+                .help("The extension TypeScript bindings add to their imports of each other: `none` (the default) for bundlers, `js` for `moduleResolution: \"nodenext\"`, `ts` for runtimes that run TypeScript directly (only used with --lang typescript)"),
+        )
+        .arg(
             Arg::new("lang")
                 .long("lang")
                 .short('l')
@@ -254,6 +262,11 @@ pub fn cli() -> clap::Command {
                 .action(Set)
                 .default_value("")
                 .help("Options to pass to the build command, for example --build-options='--lint-dir='"),
+        )
+        .arg(
+            common_args::dotnet_version()
+                .conflicts_with("wasm_file")
+                .conflicts_with("js_file"),
         )
         .arg(
             Arg::new("include_private")
@@ -293,8 +306,10 @@ pub struct GenerateRunConfig {
     pub module_name: Option<String>,
     pub module_prefix: Option<String>,
     pub build_options: String,
+    pub dotnet_version: Option<u8>,
     pub out_dir: PathBuf,
     pub include_private: bool,
+    pub import_extension: Option<ImportExtension>,
 }
 
 fn prepare_generate_run_configs<'a>(
@@ -324,6 +339,12 @@ fn prepare_generate_run_configs<'a>(
         let build_options = command_config
             .get_one::<String>("build_options")?
             .unwrap_or_else(String::new);
+        let dotnet_version = if command_config.is_from_cli("dotnet_version") {
+            command_config.get_one::<u8>("dotnet_version")?
+        } else {
+            let dotnet_version = command_config.get_one::<String>("dotnet_version")?;
+            parse_optional_dotnet_version(dotnet_version.as_deref())?
+        };
 
         // Validate Unreal-specific args first to preserve focused errors for this mode.
         if requested_lang == Some(Language::UnrealCpp) {
@@ -371,6 +392,17 @@ fn prepare_generate_run_configs<'a>(
             .ok_or_else(|| anyhow::anyhow!("Either --out-dir or --uproject-dir is required"))?;
 
         let include_private = command_config.get_one::<bool>("include_private")?.unwrap_or(false);
+        let import_extension = command_config
+            .get_one::<String>("import_extension")?
+            .map(|ext| match ext.as_str() {
+                "none" => Ok(ImportExtension::None),
+                "js" => Ok(ImportExtension::Js),
+                "ts" => Ok(ImportExtension::Ts),
+                other => Err(anyhow::anyhow!(
+                    "Unknown import extension {other:?}: use none, js or ts"
+                )),
+            })
+            .transpose()?;
 
         runs.push(GenerateRunConfig {
             project_path,
@@ -381,8 +413,10 @@ fn prepare_generate_run_configs<'a>(
             module_name,
             module_prefix,
             build_options,
+            dotnet_version,
             out_dir,
             include_private,
+            import_extension,
         });
     }
 
@@ -470,6 +504,11 @@ pub async fn run_prepared_generate_configs(
         if namespace_from_cli && run.lang != Language::Csharp {
             return Err(anyhow::anyhow!("--namespace is only supported with --lang csharp"));
         }
+        if run.import_extension.is_some() && run.lang != Language::TypeScript {
+            return Err(anyhow::anyhow!(
+                "--import-extension is only supported with --lang typescript"
+            ));
+        }
 
         let module: ModuleDef = if let Some(paths) = &json_module {
             let DeserializeWrapper::<RawModuleDef>(module) = if let Some(path) = paths.first() {
@@ -486,7 +525,9 @@ pub async fn run_prepared_generate_configs(
                 println!("Skipping build. Instead we are inspecting {}", path.display());
                 path.clone()
             } else {
-                let (path, _) = build::exec_with_argstring(&run.project_path, &run.build_options).await?;
+                let (path, _) =
+                    build::exec_with_argstring(&run.project_path, &run.build_options, false, run.dotnet_version)
+                        .await?;
                 path
             };
             let spinner = indicatif::ProgressBar::new_spinner();
@@ -509,6 +550,7 @@ pub async fn run_prepared_generate_configs(
 
         let csharp_lang;
         let unreal_cpp_lang;
+        let typescript_lang;
         let gen_lang = match run.lang {
             Language::Csharp => {
                 csharp_lang = Csharp {
@@ -525,7 +567,12 @@ pub async fn run_prepared_generate_configs(
                 &unreal_cpp_lang as &dyn Lang
             }
             Language::Rust => &Rust,
-            Language::TypeScript => &TypeScript,
+            Language::TypeScript => {
+                typescript_lang = TypeScript {
+                    import_extension: run.import_extension.unwrap_or_default(),
+                };
+                &typescript_lang as &dyn Lang
+            }
         };
 
         for OutputFile { filename, code } in generate(&module, gen_lang, &options) {
@@ -733,15 +780,7 @@ impl Language {
 
 pub type ExtractDescriptions = fn(&Path) -> anyhow::Result<ModuleDef>;
 pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<ModuleDef> {
-    let bin_path = resolve_sibling_binary("spacetimedb-standalone")?;
-    let child = Command::new(&bin_path)
-        .arg("extract-schema")
-        .arg(wasm_file)
-        .stdout(Stdio::piped())
-        .spawn()
-        .with_context(|| format!("failed to spawn {}", bin_path.display()))?;
-    let sats::serde::SerdeWrapper::<RawModuleDef>(module) = serde_json::from_reader(child.stdout.unwrap())?;
-    Ok(module.try_into()?)
+    crate::schema_extract::from_path(wasm_file)
 }
 
 #[cfg(test)]
@@ -1217,6 +1256,22 @@ mod tests {
 
         assert_eq!(uproject_dir, Some(PathBuf::from("/config/path")));
         assert_eq!(module_name, Some("MyModule".to_string()));
+    }
+
+    #[test]
+    fn test_generate_cli_parses_dotnet_version_as_supported_sdk_major() {
+        let matches = cli()
+            .try_get_matches_from(["generate", "--dotnet-version", "10"])
+            .unwrap();
+
+        assert_eq!(matches.get_one::<u8>("dotnet_version").copied(), Some(10));
+    }
+
+    #[test]
+    fn test_generate_cli_rejects_unsupported_dotnet_version() {
+        assert!(cli()
+            .try_get_matches_from(["generate", "--dotnet-version", "9"])
+            .is_err());
     }
 
     #[test]

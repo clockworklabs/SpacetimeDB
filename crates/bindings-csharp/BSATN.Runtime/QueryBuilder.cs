@@ -1,9 +1,49 @@
-#nullable enable
-
 namespace SpacetimeDB;
 
 using System;
 using System.Globalization;
+using System.Linq;
+
+/// <summary>A table identifier with separately quoted namespace segments and local name.</summary>
+public readonly struct SqlTableName
+{
+    private readonly string? quotedNamespace;
+
+    /// <summary>The namespace path, without SQL quoting.</summary>
+    public string? Namespace { get; }
+    public string LocalName { get; }
+
+    public SqlTableName(string localName)
+    {
+        LocalName = localName;
+        Namespace = null;
+        quotedNamespace = null;
+    }
+
+    public SqlTableName(string @namespace, string localName)
+    {
+        Namespace = @namespace ?? throw new ArgumentNullException(nameof(@namespace));
+        LocalName = localName;
+        quotedNamespace = SqlFormat.QuoteIdent(@namespace);
+    }
+
+    public SqlTableName(string[] namespaceSegments, string localName)
+    {
+        namespaceSegments =
+            namespaceSegments ?? throw new ArgumentNullException(nameof(namespaceSegments));
+        Namespace = namespaceSegments.Length == 0 ? null : string.Join(".", namespaceSegments);
+        LocalName = localName;
+        quotedNamespace =
+            namespaceSegments.Length == 0
+                ? null
+                : string.Join(".", namespaceSegments.Select(SqlFormat.QuoteIdent));
+    }
+
+    public override string ToString() =>
+        quotedNamespace is null
+            ? SqlFormat.QuoteIdent(LocalName)
+            : quotedNamespace + "." + SqlFormat.QuoteIdent(LocalName);
+}
 
 public readonly struct SqlLiteral<T>
 {
@@ -68,14 +108,9 @@ public interface IQuery<TRow>
     string ToSql();
 }
 
-public readonly struct BoolExpr<TRow>
+public readonly struct BoolExpr<TRow>(string sql)
 {
-    public string Sql { get; }
-
-    public BoolExpr(string sql)
-    {
-        Sql = sql;
-    }
+    public string Sql { get; } = sql;
 
     public BoolExpr<TRow> And(BoolExpr<TRow> other) => new($"({Sql} AND {other.Sql})");
 
@@ -120,20 +155,13 @@ public readonly struct IxJoinEq<TLeftRow, TRightRow>
     }
 }
 
-public readonly struct Col<TRow, TValue>
+public readonly struct Col<TRow, TValue>(SqlTableName tableName, string columnName)
     where TValue : notnull
 {
-    private readonly string tableName;
-    private readonly string columnName;
-
     public Col(string tableName, string columnName)
-    {
-        this.tableName = tableName;
-        this.columnName = columnName;
-    }
+        : this(new SqlTableName(tableName), columnName) { }
 
-    internal string RefSql =>
-        $"{SqlFormat.QuoteIdent(tableName)}.{SqlFormat.QuoteIdent(columnName)}";
+    internal string RefSql => $"{tableName}.{SqlFormat.QuoteIdent(columnName)}";
 
     public BoolExpr<TRow> Eq(SqlLiteral<TValue> value) => new($"({RefSql} = {value.Sql})");
 
@@ -162,20 +190,13 @@ public readonly struct Col<TRow, TValue>
     public override string ToString() => RefSql;
 }
 
-public readonly struct IxCol<TRow, TValue>
+public readonly struct IxCol<TRow, TValue>(SqlTableName tableName, string columnName)
     where TValue : notnull
 {
-    private readonly string tableName;
-    private readonly string columnName;
-
     public IxCol(string tableName, string columnName)
-    {
-        this.tableName = tableName;
-        this.columnName = columnName;
-    }
+        : this(new SqlTableName(tableName), columnName) { }
 
-    internal string RefSql =>
-        $"{SqlFormat.QuoteIdent(tableName)}.{SqlFormat.QuoteIdent(columnName)}";
+    internal string RefSql => $"{tableName}.{SqlFormat.QuoteIdent(columnName)}";
 
     public BoolExpr<TRow> Eq(SqlLiteral<TValue> value) => new($"({RefSql} = {value.Sql})");
 
@@ -187,26 +208,19 @@ public readonly struct IxCol<TRow, TValue>
     public override string ToString() => RefSql;
 }
 
-public sealed class Table<TRow, TCols, TIxCols> : IQuery<TRow>
+public sealed class Table<TRow, TCols, TIxCols>(SqlTableName tableName, TCols cols, TIxCols ixCols)
+    : IQuery<TRow>
 {
-    private readonly string tableName;
-    private readonly TCols cols;
-    private readonly TIxCols ixCols;
-
     public Table(string tableName, TCols cols, TIxCols ixCols)
-    {
-        this.tableName = tableName;
-        this.cols = cols;
-        this.ixCols = ixCols;
-    }
+        : this(new SqlTableName(tableName), cols, ixCols) { }
 
-    internal string TableRefSql => SqlFormat.QuoteIdent(tableName);
+    internal string TableRefSql => tableName.ToString();
 
     internal TCols Cols => cols;
 
     internal TIxCols IxCols => ixCols;
 
-    public string ToSql() => $"SELECT * FROM {SqlFormat.QuoteIdent(tableName)}";
+    public string ToSql() => $"SELECT * FROM {TableRefSql}";
 
     public FromWhere<TRow, TCols, TIxCols> Where<TPredicate>(Func<TCols, TPredicate> predicate) =>
         new(this, QueryPredicate.ToBoolExpr<TRow>(predicate(cols)!));
@@ -229,7 +243,7 @@ public sealed class Table<TRow, TCols, TIxCols> : IQuery<TRow>
     >(
         Table<TRightRow, TRightCols, TRightIxCols> right,
         Func<TIxCols, TRightIxCols, IxJoinEq<TRow, TRightRow>> on
-    ) => new(this, right, on(ixCols, right.ixCols), whereExpr: null);
+    ) => new(this, right, on(ixCols, right.IxCols), whereExpr: null);
 
     public RightSemiJoin<TRow, TCols, TIxCols, TRightRow, TRightCols, TRightIxCols> RightSemijoin<
         TRightRow,
@@ -238,7 +252,7 @@ public sealed class Table<TRow, TCols, TIxCols> : IQuery<TRow>
     >(
         Table<TRightRow, TRightCols, TRightIxCols> right,
         Func<TIxCols, TRightIxCols, IxJoinEq<TRow, TRightRow>> on
-    ) => new(this, right, on(ixCols, right.ixCols), leftWhereExpr: null);
+    ) => new(this, right, on(ixCols, right.IxCols), leftWhereExpr: null);
 }
 
 public sealed class FromWhere<TRow, TCols, TIxCols> : IQuery<TRow>
@@ -889,7 +903,7 @@ internal static class SqlFormat
         var s = hex;
         if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
         {
-            s = s.Substring(2);
+            s = s[2..];
         }
 
         s = s.Replace("-", string.Empty);

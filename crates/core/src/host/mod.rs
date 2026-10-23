@@ -12,6 +12,8 @@ use spacetimedb_schema::def::ModuleDef;
 
 mod disk_storage;
 mod host_controller;
+mod idc;
+pub mod idc_actor;
 mod module_common;
 #[allow(clippy::too_many_arguments)]
 pub mod module_host;
@@ -25,10 +27,15 @@ mod wasm_common;
 
 pub use disk_storage::DiskStorage;
 pub use host_controller::{
-    extract_schema, CallProcedureReturn, CallResult, ExternalDurability, ExternalStorage, HostController,
-    HostRuntimeConfig, MigratePlanResult, ProcedureCallResult, ProgramStorage, ReducerCallResult, ReducerOutcome,
+    extract_schema, BootstrapCompletion, CallProcedureReturn, CallResult, ExternalDurability, ExternalStorage,
+    HostController, HostRuntimeConfig, InitialEnvironmentSource, MigratePlanResult, ModuleHostWithBootstrap,
+    ProcedureCallResult, ProgramStorage, ReducerCallResult, ReducerCallResultWithTxOffset, ReducerOutcome,
 };
-pub use module_host::{ModuleHost, NoSuchModule, ProcedureCallError, ReducerCallError, UpdateDatabaseResult};
+pub use idc_actor::IdcConfig;
+pub use module_host::{
+    IdcDeliveryFailure, IdcReducerCallOutcome, InitDatabaseResult, ModuleHost, NoSuchModule, ProcedureCallError,
+    ReducerCallError, UpdateDatabaseResult,
+};
 pub use scheduler::Scheduler;
 
 /// Encoded arguments to a database function.
@@ -42,6 +49,12 @@ pub enum FunctionArgs {
 }
 
 impl FunctionArgs {
+    /// Encodes a view instance's stored args,
+    /// so they are decoded and type-checked against the view's params like any other args.
+    pub(crate) fn from_view_args(args: &ProductValue) -> Self {
+        Self::Bsatn(bsatn::to_vec(args).expect("view args should encode").into())
+    }
+
     fn into_tuple_for_def<Def: FunctionDef>(
         self,
         module: &ModuleDef,
@@ -53,7 +66,7 @@ impl FunctionArgs {
     fn into_tuple<Def: FunctionDef>(self, seed: ArgsSeed<'_, Def>) -> Result<ArgsTuple, InvalidFunctionArguments> {
         self._into_tuple(seed).map_err(|err| InvalidFunctionArguments {
             err,
-            function_name: seed.name().clone(),
+            function_name: seed.name().clone().into(),
         })
     }
     fn _into_tuple<Def: FunctionDef>(self, seed: ArgsSeed<'_, Def>) -> anyhow::Result<ArgsTuple> {
@@ -92,6 +105,11 @@ impl ArgsTuple {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn tuple(&self) -> &ProductValue {
+        &self.tuple
+    }
+
     pub fn get_bsatn(&self) -> &Bytes {
         self.bsatn.get_or_init(|| bsatn::to_vec(&self.tuple).unwrap().into())
     }
@@ -113,7 +131,7 @@ impl Default for ArgsTuple {
 
 // TODO(noa): replace imports from this module with imports straight from primitives.
 pub use spacetimedb_primitives::ReducerId;
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::identifier::NamespacedIdentifier;
 
 /// Inner error type for [`InvalidReducerArguments`] and [`InvalidProcedureArguments`].
 #[derive(thiserror::Error, Debug)]
@@ -121,7 +139,8 @@ use spacetimedb_schema::identifier::Identifier;
 pub struct InvalidFunctionArguments {
     #[source]
     err: anyhow::Error,
-    function_name: Identifier,
+    /// Qualified for a function in a submodule.
+    function_name: NamespacedIdentifier,
 }
 
 /// Newtype over [`InvalidFunctionArguments`] which renders with the word "reducer".
@@ -187,6 +206,7 @@ pub enum AbiCall {
     Identity,
     JwtLength,
     GetJwt,
+    EnvGet,
 
     VolatileNonatomicScheduleImmediate,
 

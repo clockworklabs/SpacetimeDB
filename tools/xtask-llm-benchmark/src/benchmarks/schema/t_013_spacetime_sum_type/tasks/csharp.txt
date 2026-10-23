@@ -11,7 +11,7 @@ TYPES
 - Sum: Shape = Circle | Rectangle
 
 TABLE
-- Result
+- Result (public)
   - Struct: Result
   - Fields:
     - Id: int (primary key)

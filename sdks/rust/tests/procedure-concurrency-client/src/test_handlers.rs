@@ -11,9 +11,10 @@ pub async fn dispatch(test: &str, db_name: &str) {
         "procedure-concurrent-with-scheduled-reducer" => {
             exec_procedure_concurrent_with_scheduled_reducer(db_name).await
         }
-        "scheduled-procedure-scheduled-reducer-not-interleaved" => {
-            exec_scheduled_procedure_scheduled_reducer_not_interleaved(db_name).await
+        "scheduled-procedure-scheduled-reducer-interleaved" => {
+            exec_scheduled_procedure_scheduled_reducer_interleaved(db_name).await
         }
+        "scheduled-procedure-update-while-inflight" => exec_scheduled_procedure_update_while_inflight(db_name).await,
         _ => panic!("Unknown test: {test}"),
     }
 }
@@ -91,6 +92,8 @@ struct ConnectionRowObservation {
     procedure_before: Option<u32>,
     reducer: Option<u32>,
     scheduled_reducer: Option<u32>,
+    scheduled_reducer_1: Option<u32>,
+    scheduled_reducer_2: Option<u32>,
     procedure_after: Option<u32>,
     scheduled_procedure_before: Option<u32>,
     scheduled_procedure_after: Option<u32>,
@@ -467,8 +470,7 @@ async fn exec_procedure_concurrent_with_scheduled_reducer(db_name: &str) {
 }
 
 /// Like [`exec_procedure_reducer_same_client_not_interleaved`], but with the scheduler instead of a client.
-/// Tracks a behavior that we'd like to change.
-async fn exec_scheduled_procedure_scheduled_reducer_not_interleaved(db_name: &str) {
+async fn exec_scheduled_procedure_scheduled_reducer_interleaved(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
     let mut reducer_callback_result = Some(test_counter.add_test("schedule_procedure_then_reducer_callback"));
@@ -496,9 +498,15 @@ async fn exec_scheduled_procedure_scheduled_reducer_not_interleaved(db_name: &st
                                     .replace(row.insertion_order)
                                     .is_none());
                             }
-                            "scheduled_reducer" => {
+                            "scheduled_reducer_1" => {
                                 assert!(observation
-                                    .scheduled_reducer
+                                    .scheduled_reducer_1
+                                    .replace(row.insertion_order)
+                                    .is_none());
+                            }
+                            "scheduled_reducer_2" => {
+                                assert!(observation
+                                    .scheduled_reducer_2
                                     .replace(row.insertion_order)
                                     .is_none());
                             }
@@ -506,26 +514,27 @@ async fn exec_scheduled_procedure_scheduled_reducer_not_interleaved(db_name: &st
                         }
                         match (
                             observation.scheduled_procedure_before,
-                            observation.scheduled_reducer,
+                            observation.scheduled_reducer_1,
+                            observation.scheduled_reducer_2,
                             observation.scheduled_procedure_after,
                         ) {
-                            (Some(before), Some(scheduled_reducer), Some(after))
+                            (Some(before), Some(reducer_1), Some(reducer_2), Some(after))
                                 if !observation.ordering_checked =>
                             {
                                 observation.ordering_checked = true;
-                                Some((before, scheduled_reducer, after))
+                                Some((before, reducer_1, reducer_2, after))
                             }
                             _ => None,
                         }
                     };
 
-                    if let Some((before, scheduled_reducer, after)) = maybe_ordering {
+                    if let Some((before, reducer_1, reducer_2, after)) = maybe_ordering {
                         (ordering_result.take().expect("Ordering result should only be reported once"))(
                             #[allow(clippy::redundant_closure_call)]
                             (|| {
                                 anyhow::ensure!(
-                                    before < after && after < scheduled_reducer,
-                                    "Expected scheduled procedure insertion order scheduled_procedure_before < scheduled_procedure_after < scheduled_reducer, got {before} < {after} < {scheduled_reducer}"
+                                    before < reducer_1 && reducer_1 < reducer_2 && reducer_2 < after,
+                                    "Expected scheduled procedure/reducer insertion order scheduled_procedure_before < scheduled_reducer_1 < scheduled_reducer_2 < scheduled_procedure_after, got {before} < {reducer_1} < {reducer_2} < {after}"
                                 );
                                 Ok(())
                             })(),
@@ -549,6 +558,64 @@ async fn exec_scheduled_procedure_scheduled_reducer_not_interleaved(db_name: &st
                             Err(internal_error) => Err(anyhow::anyhow!(
                                 "`schedule_procedure_then_reducer` reducer panicked: {internal_error:?}"
                             )),
+                        });
+                    })
+                    .unwrap();
+            });
+        }
+    })
+    .await;
+
+    test_counter.wait_for_all().await;
+}
+
+async fn exec_scheduled_procedure_update_while_inflight(db_name: &str) {
+    let test_counter = TestCounter::new();
+    let subscription_result = test_counter.add_test("on_subscription_applied_nothing");
+    let mut reducer_result = Some(test_counter.add_test("schedule_procedure_update_while_inflight_callback"));
+    let mut regression_result = Some(test_counter.add_test("updated_schedule_wins"));
+    let seen = Arc::new(Mutex::new(Vec::new()));
+
+    connect_then(db_name, &test_counter, {
+        let seen = Arc::clone(&seen);
+        move |ctx| {
+            ctx.db().procedure_concurrency_row().on_insert(move |_ctx, row| {
+                let mut seen = seen.lock().expect("seen mutex is poisoned");
+                match row.insertion_context.as_str() {
+                    event @ ("scheduled_procedure_update_first_before"
+                    | "scheduled_procedure_update_first_after"
+                    | "scheduled_procedure_update_second_before"
+                    | "scheduled_procedure_update_second_after") => seen.push(event.to_owned()),
+                    "scheduled_procedure_update_verifier" => {
+                        (regression_result.take().expect("verifier should run once"))((|| {
+                            anyhow::ensure!(
+                                seen.as_slice()
+                                    == [
+                                        "scheduled_procedure_update_first_before",
+                                        "scheduled_procedure_update_second_before",
+                                        "scheduled_procedure_update_second_after",
+                                        "scheduled_procedure_update_first_after",
+                                    ],
+                                "updated procedure did not run at its scheduled time: {seen:?}"
+                            );
+                            Ok(())
+                        })());
+                    }
+                    unexpected => panic!("Unexpected insertion context: {unexpected}"),
+                }
+            });
+
+            subscribe_all_then(ctx, move |ctx| {
+                subscription_result(assert_all_tables_empty(ctx));
+                let reducer_result = reducer_result
+                    .take()
+                    .expect("reducer callback should only be registered once");
+                ctx.reducers
+                    .schedule_procedure_update_while_inflight_then(move |_ctx, outcome| {
+                        reducer_result(match outcome {
+                            Ok(Ok(())) => Ok(()),
+                            Ok(Err(msg)) => Err(anyhow::anyhow!("reducer returned error: {msg}")),
+                            Err(err) => Err(anyhow::anyhow!("reducer panicked: {err:?}")),
                         });
                     })
                     .unwrap();

@@ -7,6 +7,12 @@ import { InstallCardLink } from "@site/src/components/InstallCardLink";
 import { QuickstartLinks } from "@site/src/components/QuickstartLinks";
 
 
+:::tip Coming from Convex?
+
+Most Convex concepts have a direct SpacetimeDB counterpart: mutations are [reducers](/docs/functions/reducers), actions are [procedures](/docs/functions/procedures), queries are [views](/docs/functions/views) and [subscriptions](/docs/clients/subscriptions), HTTP actions are [HTTP handlers](/docs/functions/http-handlers), scheduled functions are [schedule tables](/docs/tables/schedule-tables), and components are [submodules](/docs/submodules). [Migrating from Convex](/docs/migrating-from-convex) maps the rest and walks through a migration.
+
+:::
+
 ## Installation
 
 You can get started by first installing the `spacetime` CLI tool. The `spacetime` CLI tool makes it extremely easy to manage your databases and deployments.
@@ -15,13 +21,13 @@ You can get started by first installing the `spacetime` CLI tool. The `spacetime
 
 ## Log in to SpacetimeDB
 
-SpacetimeDB authenticates users using a GitHub login, to prevent unauthorized access (e.g. somebody else publishing over your module). Log in to SpacetimeDB using:
+SpacetimeDB authenticates users using a GitHub or Google login, to prevent unauthorized access (e.g. somebody else publishing over your module). Log in to SpacetimeDB using:
 
 ```bash
 spacetime login
 ```
 
-This will open a browser and ask you to log in via GitHub. If you forget this step, any commands that require login (like `spacetime publish`) will ask you to log in when you run them.
+This will open a browser and ask you to log in via GitHub or Google. If you forget this step, any commands that require login (like `spacetime publish`) will ask you to log in when you run them.
 
 ## Quickstart Guides
 

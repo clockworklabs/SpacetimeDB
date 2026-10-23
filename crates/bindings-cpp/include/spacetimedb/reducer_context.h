@@ -13,6 +13,8 @@
 // Include database for DatabaseContext
 #include <spacetimedb/database.h>
 
+#include <spacetimedb/environment.h>
+
 namespace SpacetimeDB {
 
 // Enhanced ReducerContext with database access - matches Rust pattern
@@ -21,6 +23,7 @@ private:
     Identity sender_;
 
 public:
+    Environment env;
     // Core fields - sender is exposed via sender() like Rust, other fields remain directly accessible
     std::optional<ConnectionId> connection_id;
     Timestamp timestamp;

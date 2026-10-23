@@ -20,7 +20,7 @@ import type {
   UntypedIndex,
 } from './indexes';
 import ScheduleAt from './schedule_at';
-import type { TableSchema } from './table_schema';
+import type { TableSchema, TableSchedule } from './table_schema';
 import {
   RowBuilder,
   type ColumnBuilder,
@@ -194,6 +194,11 @@ export type TableOpts<Row extends RowObj> = {
   public?: boolean;
   indexes?: IndexOpts<keyof Row & string>[]; // declarative multi‑column indexes
   constraints?: ConstraintOpts<keyof Row & string>[];
+  /**
+   * @deprecated Prefer `spacetime.reducer({ onSchedule: table }, ...)` or
+   * `spacetime.procedure({ onSchedule: table }, ...)` so table definitions can
+   * live in a separate module from reducer/procedure definitions.
+   */
   scheduled?: () =>
     | ReducerExport<any, { [k: string]: RowBuilder<RowObj> }>
     | ProcedureExport<
@@ -422,11 +427,9 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     }
 
     // If this column is shaped like ScheduleAtAlgebraicType, mark it as the schedule‑at column
-    if (scheduled) {
-      const algebraicType = builder.typeBuilder.algebraicType;
-      if (ScheduleAt.isScheduleAt(algebraicType)) {
-        scheduleAtCol = colIds.get(name)!;
-      }
+    const algebraicType = builder.typeBuilder.algebraicType;
+    if (ScheduleAt.isScheduleAt(algebraicType)) {
+      scheduleAtCol = colIds.get(name)!;
     }
   }
 
@@ -492,7 +495,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     CoerceRow<Row>
   >['algebraicType']['value'];
 
-  const schedule =
+  const schedule: TableSchedule | undefined =
     scheduled && scheduleAtCol !== undefined
       ? { scheduleAtCol, reducer: scheduled }
       : undefined;
@@ -543,6 +546,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     // can expose them without type-smuggling.
     idxs: userIndexes as OptsIndices<Opts>,
     constraints: constraints as OptsConstraints<Opts>,
+    scheduleAtCol,
     schedule,
   };
 }

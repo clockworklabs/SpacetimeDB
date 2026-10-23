@@ -7,7 +7,7 @@ pub struct Entity {
     pub id: u64,
 }
 
-#[table(accessor = position)]
+#[table(accessor = position, public)]
 pub struct Position {
     #[primary_key]
     pub entity_id: i32,
@@ -23,7 +23,7 @@ pub struct Velocity {
     pub vy: i32,
 }
 
-#[table(accessor = next_position)]
+#[table(accessor = next_position, public)]
 pub struct NextPosition {
     #[primary_key]
     pub entity_id: i32,

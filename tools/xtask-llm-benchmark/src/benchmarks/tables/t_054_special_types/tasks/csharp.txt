@@ -1,0 +1,15 @@
+Write a SpacetimeDB backend module in C# defining one public table with special value types.
+
+TABLE
+- SpecialValue (public, accessor SpecialValue)
+  - Fields:
+    - Id: ulong (primary key)
+    - Uuid: Uuid
+    - ConnectionId: ConnectionId
+    - Duration: TimeDuration
+    - Unsigned128: U128
+    - Signed128: I128
+    - Unsigned256: U256
+    - Signed256: I256
+
+No reducers are required.

@@ -98,11 +98,11 @@ See [`spacetime publish`](./00100-databases/00300-spacetime-publish.md) for deta
 
 When you republish to an existing database, SpacetimeDB attempts to automatically migrate the schema. For details on what changes are supported and migration strategies:
 
-- [1.x to 2.0 Upgrade Notes](../00300-resources/00100-how-to/00600-migrating-to-2.0.md) - Required reading before major-version upgrades.
+- [1.x to 2.0 Upgrade Notes](../00250-how-to/00600-migrating-to-2.0.md) - Required reading before major-version upgrades.
 - [Automatic Migrations](./00100-databases/00500-migrations/00200-automatic-migrations.md) - Learn which schema changes are safe, breaking, or forbidden.
 - [Incremental Migrations](./00100-databases/00500-migrations/00300-incremental-migrations.md) - Advanced pattern for complex schema changes.
 
-For all available publish options, see the [`spacetime publish` CLI reference](../00300-resources/00200-reference/00100-cli-reference/00100-cli-reference.md#spacetime-publish).
+For all available publish options, see the [`spacetime publish` CLI reference](../00300-resources/00100-cli-reference/00100-cli-reference.md#spacetime-publish).
 
 ### Deleting a Database
 
@@ -118,7 +118,7 @@ You'll be prompted to confirm the deletion. Use `--yes` to skip the confirmation
 Deleting a database is permanent and cannot be undone. All data will be lost.
 :::
 
-For more options, see the [`spacetime delete` CLI reference](../00300-resources/00200-reference/00100-cli-reference/00100-cli-reference.md#spacetime-delete).
+For more options, see the [`spacetime delete` CLI reference](../00300-resources/00100-cli-reference/00100-cli-reference.md#spacetime-delete).
 
 ### Querying with SQL
 
@@ -140,7 +140,7 @@ spacetime sql --anonymous <DATABASE_NAME> "SELECT * FROM user"
 
 This executes the query as an anonymous client, respecting table visibility rules.
 
-For more SQL options, see the [`spacetime sql` CLI reference](../00300-resources/00200-reference/00100-cli-reference/00100-cli-reference.md#spacetime-sql).
+For more SQL options, see the [`spacetime sql` CLI reference](../00300-resources/00100-cli-reference/00100-cli-reference.md#spacetime-sql).
 
 ### Viewing Logs
 
@@ -166,7 +166,7 @@ To view only the last N lines:
 spacetime logs --num-lines 100 <DATABASE_NAME>
 ```
 
-For more logging options, see the [`spacetime logs` CLI reference](../00300-resources/00200-reference/00100-cli-reference/00100-cli-reference.md#spacetime-logs).
+For more logging options, see the [`spacetime logs` CLI reference](../00300-resources/00100-cli-reference/00100-cli-reference.md#spacetime-logs).
 
 ### Listing Your Databases
 
@@ -219,7 +219,7 @@ Once you have the basics down, explore these essential topics:
 - **[Error Handling](./00200-functions/00300-reducers/00600-error-handling.md)** - Handle errors gracefully in reducers
 - **[Lifecycle Reducers](./00200-functions/00300-reducers/00500-lifecycle.md)** - Respond to system events like initialization and client connections
 - **[Automatic Migrations](./00100-databases/00500-migrations/00200-automatic-migrations.md)** - Understand how schema changes work
-- **[Logging](../00300-resources/00100-how-to/00300-logging.md)** - Debug and monitor your module with logging
+- **[Logging](../00250-how-to/00300-logging.md)** - Debug and monitor your module with logging
 
 ### Advanced Features
 
@@ -229,18 +229,18 @@ Ready to level up? Dive into these advanced capabilities:
 - **[Views](./00200-functions/00500-views.md)** - Create computed, subscribable queries
 - **[Schedule Tables](./00300-tables/00500-schedule-tables.md)** - Schedule reducers to run at specific times
 - **[Incremental Migrations](./00100-databases/00500-migrations/00300-incremental-migrations.md)** - Handle complex schema changes
-- **[SQL Queries](../00300-resources/00200-reference/00400-sql-reference.md)** - Query your database with SQL
+- **[SQL Queries](../00300-resources/00400-sql-reference.md)** - Query your database with SQL
 
 ### Deployment
 
 When you're ready to go live:
 
-- **[Deploy to MainCloud](../00300-resources/00100-how-to/00100-deploy/00100-maincloud.md)** - Host your database on SpacetimeDB's managed service
-- **[Self-Hosting](../00300-resources/00100-how-to/00100-deploy/00200-self-hosting.md)** - Run your own SpacetimeDB instance
+- **[Deploy to MainCloud](../00250-how-to/00100-deploy/00100-maincloud.md)** - Host your database on SpacetimeDB's managed service
+- **[Self-Hosting](../00250-how-to/00100-deploy/00200-self-hosting.md)** - Run your own SpacetimeDB instance
 
 ## Next Steps
 
 - Learn about [Tables](./00300-tables.md) to define your database schema
 - Create [Reducers](./00200-functions/00300-reducers/00300-reducers.md) to modify database state
 - Understand [Subscriptions](./00400-subscriptions.md) for real-time data sync
-- Review the [CLI Reference](../00300-resources/00200-reference/00100-cli-reference/00100-cli-reference.md) for all available commands
+- Review the [CLI Reference](../00300-resources/00100-cli-reference/00100-cli-reference.md) for all available commands

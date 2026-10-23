@@ -11,7 +11,7 @@ TYPES
 - Sum: Shape = Circle | Rectangle
 
 TABLE
-- Drawing
+- Drawing (public)
   - Struct: Drawing
   - Fields:
     - Id: ulong (primary key, auto-increment)

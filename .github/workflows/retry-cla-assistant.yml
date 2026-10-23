@@ -31,7 +31,8 @@ permissions:
 jobs:
   retry-cla:
     name: Retry CLA Assistant if it is the only blocker
-    runs-on: ubuntu-latest
+    # This builds a small CI helper and only queries or retries CLA checks.
+    runs-on: spacetimedb-linux-small
 
     steps:
       - name: Check out trusted base code
@@ -77,6 +78,6 @@ jobs:
         run: |
           while read -r pr_number; do
             if [ -n "${pr_number}" ]; then
-              cargo ci cla-assistant retry --pr-number "${pr_number}"
+              cargo ci other-workflows cla-assistant retry --pr-number "${pr_number}"
             fi
           done < "${{ steps.prs.outputs.path }}"

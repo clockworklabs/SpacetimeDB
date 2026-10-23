@@ -1,0 +1,11 @@
+Write a SpacetimeDB backend module in TypeScript that defines and routes an inbound HTTP handler.
+
+HANDLER
+- POST /echo
+  - Read the request body
+  - Return status 201
+  - Return Content-Type text/plain
+  - Return body "echo:" followed by the input body
+
+ROUTER
+- Register the POST /echo handler through an HTTP router

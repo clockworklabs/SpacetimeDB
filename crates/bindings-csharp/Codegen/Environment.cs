@@ -1,0 +1,218 @@
+namespace SpacetimeDB.Codegen;
+
+using System;
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+
+/// <summary>Compile-time declarations and read-only accessors, never live values.</summary>
+[Generator]
+public sealed class EnvironmentGenerator : IIncrementalGenerator
+{
+    public void Initialize(IncrementalGeneratorInitializationContext context)
+    {
+        var declarations = Declarations(context);
+        var assembly = context.CompilationProvider.Select(
+            (compilation, _) =>
+                (
+                    SharedContexts: Module.UsesSharedContexts(compilation),
+                    Namespace: Module.AssemblyNamespace(compilation.Assembly)
+                )
+        );
+        context.RegisterSourceOutput(
+            declarations.Combine(assembly),
+            (ctx, input) =>
+                Generate(ctx, input.Left, input.Right.SharedContexts, input.Right.Namespace)
+        );
+    }
+
+    internal static IncrementalValueProvider<ImmutableArray<INamedTypeSymbol>> Declarations(
+        IncrementalGeneratorInitializationContext context
+    ) =>
+        context
+            .SyntaxProvider.ForAttributeWithMetadataName(
+                "SpacetimeDB.EnvAttribute",
+                (_, _) => true,
+                (ctx, _) => (INamedTypeSymbol)ctx.TargetSymbol
+            )
+            .Collect();
+
+    internal static string RegistrationCode(ImmutableArray<INamedTypeSymbol> types) =>
+        string.Join("\n", Parse(types, true, (_, _) => { }).Registrations);
+
+    private static (List<string> Properties, List<string> Registrations) Parse(
+        ImmutableArray<INamedTypeSymbol> types,
+        bool sharedContexts,
+        Action<ISymbol, string> Report
+    )
+    {
+        if (types.Length > 1)
+        {
+            foreach (var type in types)
+                Report(type, "A module may have only one [SpacetimeDB.Env] declaration struct.");
+        }
+        var fields = types
+            .SelectMany(type => type.GetMembers().OfType<IFieldSymbol>())
+            .Where(field => !field.IsImplicitlyDeclared)
+            .ToArray();
+        if (fields.Length > 256 && types.Length != 0)
+        {
+            Report(types[0], "An environment schema may declare at most 256 variables.");
+        }
+
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        var properties = new List<string>();
+        var registrations = new List<string>();
+        foreach (var field in fields)
+        {
+            var name = field.Name;
+            if (field.IsStatic || field.Type.SpecialType != SpecialType.System_String)
+            {
+                Report(
+                    field,
+                    "Environment fields must be instance string or nullable string declarations."
+                );
+                continue;
+            }
+            if (
+                !Regex.IsMatch(name, "^[A-Za-z_][A-Za-z0-9_]*$")
+                || Encoding.UTF8.GetByteCount(name) > 256
+                || !keys.Add(name)
+            )
+            {
+                Report(
+                    field,
+                    "Environment names must be unique POSIX identifiers of at most 256 UTF-8 bytes."
+                );
+                continue;
+            }
+            var optional = field.NullableAnnotation == NullableAnnotation.Annotated;
+            var attr = field
+                .GetAttributes()
+                .FirstOrDefault(a =>
+                    a.AttributeClass?.ToDisplayString() == "SpacetimeDB.EnvValuesAttribute"
+                );
+            var constraint = "new global::SpacetimeDB.Internal.RawEnvVarTypeV10.String(default)";
+            if (attr is not null)
+            {
+                var values = attr.ConstructorArguments.FirstOrDefault();
+                if (
+                    values.Kind != TypedConstantKind.Array
+                    || values.IsNull
+                    || values.Values.Length == 0
+                    || values.Values.Any(value =>
+                        value.Value is not string text || Encoding.UTF8.GetByteCount(text) > 8192
+                    )
+                )
+                {
+                    Report(
+                        field,
+                        "EnvValues requires a nonempty list of string literals of at most 8192 UTF-8 bytes each."
+                    );
+                    continue;
+                }
+                var strings = values.Values.Select(value => (string)value.Value!).ToArray();
+                if (strings.Distinct(StringComparer.Ordinal).Count() != strings.Length)
+                {
+                    Report(field, "EnvValues must not repeat an allowed literal.");
+                    continue;
+                }
+                constraint =
+                    strings.Length == 1
+                        ? $"new global::SpacetimeDB.Internal.RawEnvVarTypeV10.StringLiteral({Literal(strings[0])})"
+                        : $"new global::SpacetimeDB.Internal.RawEnvVarTypeV10.Union(new global::System.Collections.Generic.List<string> {{ {string.Join(", ", strings.Select(Literal))} }})";
+            }
+            registrations.Add(
+                $"{(sharedContexts ? "builder" : "global::SpacetimeDB.Internal.Module")}.RegisterEnvironment(new({Literal(name)}, {constraint}, {(optional ? "true" : "false")}));"
+            );
+            // Preserve the checked generic method, including a key literally
+            // named Get, and inherited object members. Keywords are escaped
+            // without renaming stored keys.
+            if (
+                name
+                is "Get"
+                    or "ModuleEnvironment"
+                    or "Equals"
+                    or "GetHashCode"
+                    or "ToString"
+                    or "Finalize"
+                    or "GetType"
+                    or "MemberwiseClone"
+            )
+            {
+                continue;
+            }
+
+            var read = $"{(sharedContexts ? "env." : "")}Get({Literal(name)})";
+            if (!optional)
+            {
+                read +=
+                    " ?? throw new global::System.InvalidOperationException(\"Required environment value is absent\")";
+            }
+
+            properties.Add($"public string{(optional ? "?" : "")} @{name} => {read};");
+        }
+        return (properties, registrations);
+    }
+
+    private static void Generate(
+        SourceProductionContext context,
+        ImmutableArray<INamedTypeSymbol> types,
+        bool sharedContexts,
+        string assemblyNamespace
+    )
+    {
+        var (properties, registrations) = Parse(
+            types,
+            sharedContexts,
+            (symbol, message) =>
+                context.ReportDiagnostic(
+                    ErrorDescriptor.InvalidEnvironmentDeclaration.ToDiag((symbol, message))
+                )
+        );
+        if (sharedContexts)
+        {
+            context.AddSource(
+                "Environment.g.cs",
+                $$"""
+                // <auto-generated />
+                #nullable enable
+                namespace {{assemblyNamespace}} {
+                    public static class EnvironmentExtensions {
+                        extension(global::SpacetimeDB.DatabaseEnvironment env) {
+                            {{string.Join("\n", properties)}}
+                        }
+                    }
+                }
+                """
+            );
+            return;
+        }
+        context.AddSource(
+            "Environment.g.cs",
+            $$"""
+            // <auto-generated />
+            #nullable enable
+            #pragma warning disable CS0436
+            namespace SpacetimeDB {
+                public readonly struct ModuleEnvironment {
+                    public string? Get(string key) => default(global::SpacetimeDB.DatabaseEnvironment).Get(key);
+                    {{string.Join("\n", properties)}}
+                }
+                internal static class EnvironmentRegistration {
+                    [global::System.Runtime.CompilerServices.ModuleInitializer]
+                    internal static void Register() {
+                        {{string.Join("\n", registrations)}}
+                    }
+                }
+            }
+            """
+        );
+    }
+
+    private static string Literal(string value) => SymbolDisplay.FormatLiteral(value, quote: true);
+}

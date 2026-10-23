@@ -13,8 +13,8 @@
 #include "../autogen_base.h"
 #include "spacetimedb/bsatn/bsatn.h"
 #include "RawModuleDefV8.g.h"
-#include "RawModuleDefV9.g.h"
 #include "RawModuleDefV10.g.h"
+#include "RawModuleDefV9.g.h"
 
 namespace SpacetimeDB::Internal {
 

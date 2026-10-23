@@ -59,13 +59,13 @@ impl DeletePlan {
 
     /// Logical to physical conversion
     pub(crate) fn compile(delete: TableDelete) -> Self {
-        let TableDelete { table, filter } = delete;
+        let TableDelete { table, alias, filter } = delete;
         let schema = table.clone();
-        let alias = table.table_name.clone().into();
         let relvar = RelExpr::RelVar(Relvar {
             schema,
             alias,
             delta: None,
+            view_args: None,
         });
         let project = match filter {
             None => ProjectName::None(relvar),
@@ -93,13 +93,18 @@ impl UpdatePlan {
 
     /// Logical to physical conversion
     pub(crate) fn compile(update: TableUpdate) -> Self {
-        let TableUpdate { table, columns, filter } = update;
+        let TableUpdate {
+            table,
+            alias,
+            columns,
+            filter,
+        } = update;
         let schema = table.clone();
-        let alias = table.table_name.clone().into();
         let relvar = RelExpr::RelVar(Relvar {
             schema,
             alias,
             delta: None,
+            view_args: None,
         });
         let project = match filter {
             None => ProjectName::None(relvar),

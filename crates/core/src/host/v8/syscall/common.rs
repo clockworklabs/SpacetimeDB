@@ -4,8 +4,8 @@ use super::super::{
     de::scratch_buf,
     env_on_isolate,
     error::{
-        exception_already_thrown, ErrorOrException, ExceptionThrown, JsStackTrace, SysCallError, SysCallResult,
-        Throwable, TypeError,
+        collapse_exc_thrown, exception_already_thrown, terminate_execution, ErrorOrException, ExceptionThrown,
+        JsStackTrace, SysCallError, SysCallResult, Throwable, TypeError,
     },
     from_value::cast,
     ser::serialize_to_js,
@@ -28,7 +28,7 @@ use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{ColId, IndexId, ProcedureId, TableId, ViewFnPtr};
 use spacetimedb_sats::bsatn;
 use spacetimedb_schema::def::ModuleDef;
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::identifier::NamespacedIdentifier;
 use v8::{FunctionCallbackArguments, Isolate, Local, PinScope, Value};
 
 /// Calls the `__call_procedure__` function `fun`.
@@ -46,7 +46,12 @@ pub fn call_call_procedure(
         caller_connection_id: connection_id,
         timestamp,
         arg_bytes: procedure_args,
+        confirmed_reads,
     } = op;
+    env_on_isolate(scope)
+        .context("procedure instance environment missing")?
+        .instance_env
+        .procedure_confirmed_reads = confirmed_reads;
     // Serialize the arguments.
     let procedure_id = serialize_to_js(scope, &procedure_id)?;
     let sender = serialize_to_js(scope, &sender.to_u256())?;
@@ -79,6 +84,8 @@ pub fn call_call_http_handler(
     let HttpHandlerOp {
         id,
         name: _,
+        caller_identity: sender,
+        caller_jwt_payload: sender_jwt,
         timestamp,
         request_bytes,
         request_body_bytes,
@@ -88,7 +95,10 @@ pub fn call_call_http_handler(
     let timestamp = serialize_to_js(scope, &timestamp.to_micros_since_unix_epoch())?;
     let request = serialize_to_js(scope, &request_bytes)?;
     let request_body = serialize_to_js(scope, &request_body_bytes)?;
-    let args = &[handler_id, timestamp, request, request_body];
+    // The sender and its JWT come last, so that modules built before HTTP handlers had a sender ignore them.
+    let sender = serialize_to_js(scope, &sender.to_u256())?;
+    let sender_jwt = serialize_to_js(scope, &Bytes::from(sender_jwt.into_boxed_bytes()))?;
+    let args = &[handler_id, timestamp, request, request_body, sender, sender_jwt];
 
     let ret = call_recv_fun(scope, fun, hooks.recv, args)?;
     let ret = cast!(scope, ret, v8::Array, "tuple return from `__call_http_handler__`").map_err(|e| e.throw(scope))?;
@@ -466,8 +476,8 @@ pub fn console_log<'scope>(
     };
 
     let env = get_env(scope).inspect_err(|_| {
-        tracing::warn!(
-            "{}:{} {msg}",
+        tracing::error!(
+            "`JsInstanceEnv` unavailable while processing guest log at {}:{}: {msg}",
             filename.as_deref().unwrap_or("unknown"),
             frame.get_line_number()
         );
@@ -728,6 +738,17 @@ pub fn procedure_commit_mut_tx(
     let tx = refresh_views(scope, tx, &hooks, &module_def)?;
     get_env(scope)?.instance_env.commit_procedure_tx(tx)?;
 
+    // The commit and view refresh are synchronous. All transaction guards have
+    // been released before parking this dedicated procedure worker thread.
+    let confirmation = get_env(scope)?.instance_env.procedure_confirmation();
+    let result = tokio::runtime::Handle::current().block_on(confirmation);
+    if let Err(err) = result {
+        // An ordinary exception would be caught by withTx and replay its writes.
+        get_env(scope)?.instance_env.take_procedure_tx_offset();
+        let termination = terminate_execution(scope, err);
+        return Err(collapse_exc_thrown(scope, termination).into());
+    }
+
     Ok(())
 }
 
@@ -761,17 +782,38 @@ fn refresh_views(
 
             let table_id = resolved.table_id;
             let view_def = resolved.view_def;
-            let view_name = &view_def.name;
-            let fn_ptr = view_def.fn_ptr;
+            let view_name = &resolved.view_name;
+            let fn_ptr = resolved.global_fn_ptr;
+            let instance_args = tx
+                .as_ref()
+                .expect("procedure tx missing while looking up refreshed view args")
+                .view_instance_args(&view_call)
+                .ok_or_else(|| {
+                    TypeError(format!(
+                        "failed to look up materialized view args for view {}",
+                        view_call.view_id
+                    ))
+                    .throw(scope)
+                })?;
+            let sender = instance_args.sender();
+            let args = crate::host::FunctionArgs::from_view_args(instance_args.args())
+                .into_tuple_for_def(resolved.owning_def, view_def)
+                .map_err(|err| {
+                    TypeError(format!(
+                        "failed to build args for refreshed view `{}`: {err}",
+                        view_def.name
+                    ))
+                    .throw(scope)
+                })?;
 
             let current_tx = tx.take().expect("procedure tx missing during view refresh");
             let (next_tx, call_result) = tx_slot.set(current_tx, || {
-                call_view(scope, hooks, &view_call, view_name, table_id, fn_ptr)
+                call_view(scope, hooks, &view_call, view_name, table_id, fn_ptr, sender, args)
             });
             tx = Some(next_tx);
             let return_data = call_result?;
 
-            let typespace = module_def.typespace();
+            let typespace = resolved.owning_def.typespace();
             let row_product_type = typespace
                 .resolve(view_def.product_type_ref)
                 .resolve_refs()
@@ -844,21 +886,23 @@ fn refresh_views(
 /// This helper is used by [`refresh_views`] while a procedure transaction is being committed.
 /// It temporarily sets the active function type to the target view for dependency tracking,
 /// invokes the applicable JS hook, restores the previous function type, and returns [`ViewReturnData`].
+#[allow(clippy::too_many_arguments)]
 fn call_view(
     scope: &mut PinScope<'_, '_>,
     hooks: &HookFunctions<'_>,
     view_call: &ViewCallInfo,
-    view_name: &Identifier,
+    view_name: &NamespacedIdentifier,
     table_id: TableId,
     fn_ptr: ViewFnPtr,
+    sender: Option<Identity>,
+    args: crate::host::ArgsTuple,
 ) -> SysCallResult<ViewReturnData> {
-    let prev_func_type = get_env(scope)?
+    let (prev_func_name, prev_func_type) = get_env(scope)?
         .instance_env
-        .swap_func_type(FuncCallType::View(view_call.clone()));
+        .swap_func_context(Some(view_name.clone()), FuncCallType::View(view_call.clone()));
 
     let result = {
-        let args = crate::host::ArgsTuple::nullary();
-        match view_call.sender {
+        match sender {
             Some(sender) => call_call_view(
                 scope,
                 hooks,
@@ -869,6 +913,7 @@ fn call_view(
                     fn_ptr,
                     args: &args,
                     sender: &sender,
+                    view_call,
                     timestamp: Timestamp::now(),
                 },
             ),
@@ -881,13 +926,16 @@ fn call_view(
                     table_id,
                     fn_ptr,
                     args: &args,
+                    view_call,
                     timestamp: Timestamp::now(),
                 },
             ),
         }
     };
 
-    get_env(scope)?.instance_env.swap_func_type(prev_func_type);
+    get_env(scope)?
+        .instance_env
+        .swap_func_context(prev_func_name, prev_func_type);
 
     result.map_err(|err| match err {
         ErrorOrException::Err(err) => TypeError(format!(

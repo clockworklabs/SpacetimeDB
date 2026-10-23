@@ -6,8 +6,13 @@ import type {
 } from './event_context';
 import { EventEmitter } from './event_emitter';
 import type { UntypedRemoteModule } from './spacetime_module';
-import { isRowTypedQuery, toSql, type RowTypedQuery } from '../lib/query';
-import type { Values } from '../lib/type_util';
+import {
+  isRowTypedQuery,
+  toSql,
+  type NamespacedQueryBuilder,
+  type RowTypedQuery,
+} from '../lib/query';
+import type { UntypedSchemaDef } from '../lib/schema';
 
 export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
   #onApplied?: (ctx: SubscriptionEventContextInterface<RemoteModule>) => void =
@@ -86,9 +91,14 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
   subscribe(
     query_sql: Array<string | RowTypedQuery<any, any>>
   ): SubscriptionHandleImpl<RemoteModule>;
+  /**
+   * @param queryFn - Receives the query builder for all tables (root and namespaced), e.g.
+   *   `tables => tables.players.build()` or, for a submodule table,
+   *   `tables => tables.inventory.items.build()`. May return multiple queries as an array.
+   */
   subscribe(
     queryFn: (
-      tables: Values<RemoteModule['tables']>
+      tables: NamespacedQueryBuilder<RemoteModule & UntypedSchemaDef>
     ) => RowTypedQuery<any, any> | RowTypedQuery<any, any>[]
   ): SubscriptionHandleImpl<RemoteModule>;
   subscribe(
@@ -100,8 +110,8 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
   ): SubscriptionHandleImpl<RemoteModule> {
     let queries: Array<string | RowTypedQuery<any, any>>;
     if (typeof query_sql === 'function') {
-      const tablesMap = this.db.getTablesMap?.();
-      const result = query_sql(tablesMap);
+      const tables = this.db.getFromBuilder<RemoteModule & UntypedSchemaDef>();
+      const result = query_sql(tables);
       queries = Array.isArray(result) ? result : [result];
     } else {
       queries = Array.isArray(query_sql) ? query_sql : [query_sql];
@@ -138,26 +148,30 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
    * on a `DbConnection` that has previously used `subscribeToAllTables`,
    * or vice versa, may misbehave in any number of ways,
    * including dropping subscriptions, corrupting the client cache, or throwing errors.
+   *
+   * Views that take arguments are left out, as there are no arguments to pass them.
    */
   subscribeToAllTables(): void {
     const remoteModule = this.db[INTERNAL_REMOTE_MODULE]();
-    const queries = Object.values(remoteModule.tables).map(
-      table => `SELECT * FROM ${table.sourceName}`
-    );
+    const viewsWithArgs = new Set(remoteModule.viewsWithArgs);
+    const queries = Object.values(remoteModule.tables)
+      .filter(table => !viewsWithArgs.has(table.sourceName))
+      .map(table => `SELECT * FROM ${table.sourceName}`);
     this.subscribe(queries);
   }
 }
 
 export type SubscribeEvent = 'applied' | 'error' | 'end';
 
+export type SubscriptionEntry<RemoteModule extends UntypedRemoteModule> = {
+  handle: SubscriptionHandleImpl<RemoteModule>;
+  emitter: EventEmitter<SubscribeEvent>;
+  querySql: string[];
+  unsubscribeRequested?: boolean;
+};
+
 export class SubscriptionManager<RemoteModule extends UntypedRemoteModule> {
-  subscriptions: Map<
-    number,
-    {
-      handle: SubscriptionHandleImpl<RemoteModule>;
-      emitter: EventEmitter<SubscribeEvent>;
-    }
-  > = new Map();
+  subscriptions: Map<number, SubscriptionEntry<RemoteModule>> = new Map();
 }
 
 export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
@@ -200,6 +214,11 @@ export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
     );
   }
 
+  /** @internal Rebind the retained handle to its replayed query set. */
+  rebindQuerySetId(querySetId: number): void {
+    this.#querySetId = querySetId;
+  }
+
   /**
    * Consumes self and issues an `Unsubscribe` message,
    * removing this query from the client's set of subscribed queries.
@@ -210,7 +229,6 @@ export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
       throw new Error('Unsubscribe has already been called');
     }
     this.#unsubscribeCalled = true;
-    this.db.unregisterSubscription(this.#querySetId);
     this.#emitter.on(
       'end',
       (_ctx: SubscriptionEventContextInterface<RemoteModule>) => {
@@ -218,6 +236,7 @@ export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
         this.#activeState = false;
       }
     );
+    this.db.unregisterSubscription(this.#querySetId);
   }
 
   /**
@@ -240,7 +259,6 @@ export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
       throw new Error('Unsubscribe has already been called');
     }
     this.#unsubscribeCalled = true;
-    this.db.unregisterSubscription(this.#querySetId);
     this.#emitter.on(
       'end',
       (ctx: SubscriptionEventContextInterface<RemoteModule>) => {
@@ -249,6 +267,7 @@ export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
         onEnd(ctx);
       }
     );
+    this.db.unregisterSubscription(this.#querySetId);
   }
 
   /**

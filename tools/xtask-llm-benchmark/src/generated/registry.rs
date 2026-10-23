@@ -4,6 +4,78 @@ use std::path::Path;
 
 #[allow(dead_code)]
 #[allow(clippy::all)]
+mod advanced_t_083_atomic_reservation {
+    include!("../benchmarks/advanced/t_083_atomic_reservation/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_084_stable_pagination {
+    include!("../benchmarks/advanced/t_084_stable_pagination/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_085_online_backfill {
+    include!("../benchmarks/advanced/t_085_online_backfill/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_086_incremental_totals {
+    include!("../benchmarks/advanced/t_086_incremental_totals/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_087_webhook_ordering {
+    include!("../benchmarks/advanced/t_087_webhook_ordering/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_088_lease_fencing {
+    include!("../benchmarks/advanced/t_088_lease_fencing/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_089_cancel_reschedule {
+    include!("../benchmarks/advanced/t_089_cancel_reschedule/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_090_transactional_quota {
+    include!("../benchmarks/advanced/t_090_transactional_quota/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_091_scheduled_queue {
+    include!("../benchmarks/advanced/t_091_scheduled_queue/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_092_procedure_cache {
+    include!("../benchmarks/advanced/t_092_procedure_cache/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_093_permission_revocation {
+    include!("../benchmarks/advanced/t_093_permission_revocation/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_094_multi_session_presence {
+    include!("../benchmarks/advanced/t_094_multi_session_presence/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
 mod auth_t_026_auth_identity_check {
     include!("../benchmarks/auth/t_026_auth_identity_check/spec.rs");
 }
@@ -48,6 +120,12 @@ mod auth_t_045_rate_limit {
 #[allow(clippy::all)]
 mod auth_t_046_shared_document {
     include!("../benchmarks/auth/t_046_shared_document/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod auth_t_068_secure_projection {
+    include!("../benchmarks/auth/t_068_secure_projection/spec.rs");
 }
 
 #[allow(dead_code)]
@@ -178,6 +256,90 @@ mod data_modeling_t_031_unique_constraint {
 
 #[allow(dead_code)]
 #[allow(clippy::all)]
+mod lifecycle_t_069_scheduled_materialization {
+    include!("../benchmarks/lifecycle/t_069_scheduled_materialization/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod lifecycle_t_070_connection_scoped_presence {
+    include!("../benchmarks/lifecycle/t_070_connection_scoped_presence/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod lifecycle_t_071_scheduled_private {
+    include!("../benchmarks/lifecycle/t_071_scheduled_private/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod migrations_t_080_automatic_migration {
+    include!("../benchmarks/migrations/t_080_automatic_migration/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod migrations_t_081_incremental_migration {
+    include!("../benchmarks/migrations/t_081_incremental_migration/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod migrations_t_082_hot_swap_compatibility {
+    include!("../benchmarks/migrations/t_082_hot_swap_compatibility/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod procedures_t_072_procedure_return {
+    include!("../benchmarks/procedures/t_072_procedure_return/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod procedures_t_073_http_fetch {
+    include!("../benchmarks/procedures/t_073_http_fetch/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod procedures_t_074_fetch_and_store {
+    include!("../benchmarks/procedures/t_074_fetch_and_store/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod procedures_t_075_scheduled_procedure {
+    include!("../benchmarks/procedures/t_075_scheduled_procedure/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod procedures_t_076_http_handler {
+    include!("../benchmarks/procedures/t_076_http_handler/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod procedures_t_077_http_router {
+    include!("../benchmarks/procedures/t_077_http_router/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod procedures_t_078_idempotent_webhook {
+    include!("../benchmarks/procedures/t_078_idempotent_webhook/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod procedures_t_079_external_upload_flow {
+    include!("../benchmarks/procedures/t_079_external_upload_flow/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
 mod queries_t_022_view_basic {
     include!("../benchmarks/queries/t_022_view_basic/spec.rs");
 }
@@ -222,6 +384,42 @@ mod queries_t_036_count_without_collect {
 #[allow(clippy::all)]
 mod queries_t_037_multi_column_filter {
     include!("../benchmarks/queries/t_037_multi_column_filter/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod reducers_t_055_atomic_idempotent_transfer {
+    include!("../benchmarks/reducers/t_055_atomic_idempotent_transfer/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod reducers_t_056_nested_update {
+    include!("../benchmarks/reducers/t_056_nested_update/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod reducers_t_057_nested_cascade_delete {
+    include!("../benchmarks/reducers/t_057_nested_cascade_delete/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod reducers_t_058_batched_delete {
+    include!("../benchmarks/reducers/t_058_batched_delete/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod reducers_t_059_deterministic_context {
+    include!("../benchmarks/reducers/t_059_deterministic_context/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod reducers_t_060_reducer_result_table {
+    include!("../benchmarks/reducers/t_060_reducer_result_table/spec.rs");
 }
 
 #[allow(dead_code)]
@@ -284,6 +482,96 @@ mod schema_t_021_multi_column_index {
     include!("../benchmarks/schema/t_021_multi_column_index/spec.rs");
 }
 
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod tables_t_047_normalized_collection {
+    include!("../benchmarks/tables/t_047_normalized_collection/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod tables_t_048_heartbeat_isolation {
+    include!("../benchmarks/tables/t_048_heartbeat_isolation/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod tables_t_049_binary_storage {
+    include!("../benchmarks/tables/t_049_binary_storage/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod tables_t_050_normalized_schema {
+    include!("../benchmarks/tables/t_050_normalized_schema/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod tables_t_051_denormalized_index {
+    include!("../benchmarks/tables/t_051_denormalized_index/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod tables_t_052_autoinc_reference {
+    include!("../benchmarks/tables/t_052_autoinc_reference/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod tables_t_053_default_values {
+    include!("../benchmarks/tables/t_053_default_values/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod tables_t_054_special_types {
+    include!("../benchmarks/tables/t_054_special_types/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod views_t_061_three_table_join {
+    include!("../benchmarks/views/t_061_three_table_join/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod views_t_062_semijoin_intersection {
+    include!("../benchmarks/views/t_062_semijoin_intersection/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod views_t_063_timestamp_window {
+    include!("../benchmarks/views/t_063_timestamp_window/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod views_t_064_index_and_filter {
+    include!("../benchmarks/views/t_064_index_and_filter/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod views_t_065_materialized_aggregate {
+    include!("../benchmarks/views/t_065_materialized_aggregate/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod views_t_066_query_builder_view {
+    include!("../benchmarks/views/t_066_query_builder_view/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod views_t_067_view_primary_key {
+    include!("../benchmarks/views/t_067_view_primary_key/spec.rs");
+}
+
 pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
     let task = task_root
         .file_name()
@@ -295,6 +583,18 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         .ok_or_else(|| anyhow!("missing category name"))?;
 
     let ctor = match (category, task) {
+        ("advanced", "t_083_atomic_reservation") => advanced_t_083_atomic_reservation::spec,
+        ("advanced", "t_084_stable_pagination") => advanced_t_084_stable_pagination::spec,
+        ("advanced", "t_085_online_backfill") => advanced_t_085_online_backfill::spec,
+        ("advanced", "t_086_incremental_totals") => advanced_t_086_incremental_totals::spec,
+        ("advanced", "t_087_webhook_ordering") => advanced_t_087_webhook_ordering::spec,
+        ("advanced", "t_088_lease_fencing") => advanced_t_088_lease_fencing::spec,
+        ("advanced", "t_089_cancel_reschedule") => advanced_t_089_cancel_reschedule::spec,
+        ("advanced", "t_090_transactional_quota") => advanced_t_090_transactional_quota::spec,
+        ("advanced", "t_091_scheduled_queue") => advanced_t_091_scheduled_queue::spec,
+        ("advanced", "t_092_procedure_cache") => advanced_t_092_procedure_cache::spec,
+        ("advanced", "t_093_permission_revocation") => advanced_t_093_permission_revocation::spec,
+        ("advanced", "t_094_multi_session_presence") => advanced_t_094_multi_session_presence::spec,
         ("auth", "t_026_auth_identity_check") => auth_t_026_auth_identity_check::spec,
         ("auth", "t_027_private_vs_public_table") => auth_t_027_private_vs_public_table::spec,
         ("auth", "t_041_registered_user_gate") => auth_t_041_registered_user_gate::spec,
@@ -303,6 +603,7 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         ("auth", "t_044_ban_list") => auth_t_044_ban_list::spec,
         ("auth", "t_045_rate_limit") => auth_t_045_rate_limit::spec,
         ("auth", "t_046_shared_document") => auth_t_046_shared_document::spec,
+        ("auth", "t_068_secure_projection") => auth_t_068_secure_projection::spec,
         ("basics", "t_000_empty_reducers") => basics_t_000_empty_reducers::spec,
         ("basics", "t_001_basic_tables") => basics_t_001_basic_tables::spec,
         ("basics", "t_002_scheduled_table") => basics_t_002_scheduled_table::spec,
@@ -324,6 +625,20 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         ("data_modeling", "t_029_filter_and_aggregate") => data_modeling_t_029_filter_and_aggregate::spec,
         ("data_modeling", "t_030_two_table_join") => data_modeling_t_030_two_table_join::spec,
         ("data_modeling", "t_031_unique_constraint") => data_modeling_t_031_unique_constraint::spec,
+        ("lifecycle", "t_069_scheduled_materialization") => lifecycle_t_069_scheduled_materialization::spec,
+        ("lifecycle", "t_070_connection_scoped_presence") => lifecycle_t_070_connection_scoped_presence::spec,
+        ("lifecycle", "t_071_scheduled_private") => lifecycle_t_071_scheduled_private::spec,
+        ("migrations", "t_080_automatic_migration") => migrations_t_080_automatic_migration::spec,
+        ("migrations", "t_081_incremental_migration") => migrations_t_081_incremental_migration::spec,
+        ("migrations", "t_082_hot_swap_compatibility") => migrations_t_082_hot_swap_compatibility::spec,
+        ("procedures", "t_072_procedure_return") => procedures_t_072_procedure_return::spec,
+        ("procedures", "t_073_http_fetch") => procedures_t_073_http_fetch::spec,
+        ("procedures", "t_074_fetch_and_store") => procedures_t_074_fetch_and_store::spec,
+        ("procedures", "t_075_scheduled_procedure") => procedures_t_075_scheduled_procedure::spec,
+        ("procedures", "t_076_http_handler") => procedures_t_076_http_handler::spec,
+        ("procedures", "t_077_http_router") => procedures_t_077_http_router::spec,
+        ("procedures", "t_078_idempotent_webhook") => procedures_t_078_idempotent_webhook::spec,
+        ("procedures", "t_079_external_upload_flow") => procedures_t_079_external_upload_flow::spec,
         ("queries", "t_022_view_basic") => queries_t_022_view_basic::spec,
         ("queries", "t_023_view_per_user") => queries_t_023_view_per_user::spec,
         ("queries", "t_032_range_query") => queries_t_032_range_query::spec,
@@ -332,6 +647,12 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         ("queries", "t_035_select_distinct") => queries_t_035_select_distinct::spec,
         ("queries", "t_036_count_without_collect") => queries_t_036_count_without_collect::spec,
         ("queries", "t_037_multi_column_filter") => queries_t_037_multi_column_filter::spec,
+        ("reducers", "t_055_atomic_idempotent_transfer") => reducers_t_055_atomic_idempotent_transfer::spec,
+        ("reducers", "t_056_nested_update") => reducers_t_056_nested_update::spec,
+        ("reducers", "t_057_nested_cascade_delete") => reducers_t_057_nested_cascade_delete::spec,
+        ("reducers", "t_058_batched_delete") => reducers_t_058_batched_delete::spec,
+        ("reducers", "t_059_deterministic_context") => reducers_t_059_deterministic_context::spec,
+        ("reducers", "t_060_reducer_result_table") => reducers_t_060_reducer_result_table::spec,
         ("schema", "t_012_spacetime_product_type") => schema_t_012_spacetime_product_type::spec,
         ("schema", "t_013_spacetime_sum_type") => schema_t_013_spacetime_sum_type::spec,
         ("schema", "t_014_elementary_columns") => schema_t_014_elementary_columns::spec,
@@ -342,6 +663,21 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         ("schema", "t_019_many_to_many") => schema_t_019_many_to_many::spec,
         ("schema", "t_020_ecs") => schema_t_020_ecs::spec,
         ("schema", "t_021_multi_column_index") => schema_t_021_multi_column_index::spec,
+        ("tables", "t_047_normalized_collection") => tables_t_047_normalized_collection::spec,
+        ("tables", "t_048_heartbeat_isolation") => tables_t_048_heartbeat_isolation::spec,
+        ("tables", "t_049_binary_storage") => tables_t_049_binary_storage::spec,
+        ("tables", "t_050_normalized_schema") => tables_t_050_normalized_schema::spec,
+        ("tables", "t_051_denormalized_index") => tables_t_051_denormalized_index::spec,
+        ("tables", "t_052_autoinc_reference") => tables_t_052_autoinc_reference::spec,
+        ("tables", "t_053_default_values") => tables_t_053_default_values::spec,
+        ("tables", "t_054_special_types") => tables_t_054_special_types::spec,
+        ("views", "t_061_three_table_join") => views_t_061_three_table_join::spec,
+        ("views", "t_062_semijoin_intersection") => views_t_062_semijoin_intersection::spec,
+        ("views", "t_063_timestamp_window") => views_t_063_timestamp_window::spec,
+        ("views", "t_064_index_and_filter") => views_t_064_index_and_filter::spec,
+        ("views", "t_065_materialized_aggregate") => views_t_065_materialized_aggregate::spec,
+        ("views", "t_066_query_builder_view") => views_t_066_query_builder_view::spec,
+        ("views", "t_067_view_primary_key") => views_t_067_view_primary_key::spec,
         _ => return Err(anyhow!("no spec registered for {}/{} (need spec.rs)", category, task)),
     };
 

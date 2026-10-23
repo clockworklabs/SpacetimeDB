@@ -28,4 +28,9 @@ packages:
   - 'modules/sdk-test-ts'
   - 'modules/sdk-test-case-conversion-ts'
   - 'docs'
+  - 'codex-plugin/scripts'
+  - 'modules/spacetime-*-ts'
+  - 'modules/spacetime-*-ts/example'
+  - 'modules/spacetime-*-ts/spacetimedb'
+  - 'modules/spacetime-*-ts/example/spacetimedb'
 minimumReleaseAge: 1440

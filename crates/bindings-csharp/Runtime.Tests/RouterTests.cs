@@ -95,13 +95,14 @@ public class RouterTests
         Assert.Contains("Cannot nest router", ex.Message);
     }
 
-    private sealed class TestHandlerContext() : HandlerContextBase(new System.Random(), default)
+    private sealed class TestHandlerContext()
+        : HandlerContextBase(default, null, new System.Random(), default)
     {
         protected override HandlerTxContextBase CreateTxContext(
             SpacetimeDB.Internal.TxContext inner
         ) => throw new NotSupportedException();
 
-        protected internal override LocalBase CreateLocal() => throw new NotSupportedException();
+        protected override LocalBase CreateLocal() => throw new NotSupportedException();
     }
 
     private static HttpResponse GetHandler(TestHandlerContext _, HttpRequest __) => default;

@@ -12,7 +12,7 @@ pub struct Position {
     pub y: i32,
 }
 
-#[table(accessor = profile)]
+#[table(accessor = profile, public)]
 pub struct Profile {
     #[primary_key]
     #[auto_inc]

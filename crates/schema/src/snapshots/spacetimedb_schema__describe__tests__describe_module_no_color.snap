@@ -1,0 +1,88 @@
+---
+source: crates/schema/src/describe.rs
+expression: "describe_module(&def, PrettyPrintStyle::NoColor)"
+---
+Tables
+  lib.session (private)
+    Columns:
+      id     U64       primary key
+      owner  Identity
+    Indexes:
+      lib.session_id_idx_btree  btree (id)
+
+  match_result (private)
+    Columns:
+      player_id  U64
+      round      U32
+      scores     Array<U32>
+      shape      Shape
+    Unique constraints:
+      (player_id, round)
+    Indexes:
+      match_result_player_id_round_idx_btree  btree (player_id, round)
+
+  player (public)
+    Columns:
+      id         U64             primary key, auto-increment
+      name       String
+      rank       U32             unique
+      nickname   Option<String>
+      joined_at  Timestamp
+      avatar     Thumbnail
+      color      Color           default: (red = ())
+      level      U32             default: 1
+    Indexes:
+      player_id_idx_btree     btree (id)
+      player_name_idx_hash    hash (name)
+      player_rank_idx_direct  direct (rank)
+
+  player_joined (public, event)
+    Columns:
+      player_id  U64
+      name       String
+
+  reminder (private)
+    Columns:
+      scheduled_id  U64         primary key, auto-increment
+      scheduled_at  ScheduleAt
+      message       String
+    Indexes:
+      reminder_scheduled_id_idx_btree  btree (scheduled_id)
+    Schedule: calls procedure send_reminder
+
+Views
+  players_above_rank(min_rank: U32) -> Array<Player>  [public]
+  top_player() -> Option<Player>  [public] [anonymous]
+
+Reducers
+  init()  [lifecycle: init] [private]
+  lib.end_session(id: U64)
+  move_player(player_id: U64, direction: Direction)
+  reset_ranks()  [private]
+
+Procedures
+  lib.session_count() -> U32
+  player_stats(player_id: U64) -> Option<Stats>
+  send_reminder(job: Reminder)  [private]
+
+HTTP routes
+  POST /webhook → webhook
+  ANY /health → health
+
+Environment variables
+  API_KEY    String
+  LOG_LEVEL  "debug" | "info"              optional
+  MODE       "development" | "production"
+  REGION     "eu west"                     optional
+
+Types
+  Color = red | green | blue
+  Direction = north | south | east | west
+  Shape = point | circle(F32) | rect(Size)
+  Size = { width: F32, height: F32 }
+  Stats = { wins: U32, losses: U32 }
+  Thumbnail = { image_url: String, width: U32, height: U32 }
+
+Row-level security
+  SELECT * FROM match_result WHERE round > 0
+  SELECT * FROM player WHERE rank > 0

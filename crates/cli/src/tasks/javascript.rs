@@ -41,14 +41,29 @@ where
     }
 }
 
+fn find_tsc_path(cwd: &Path) -> Option<PathBuf> {
+    if cfg!(windows) {
+        let cmd = cwd.join("node_modules/.bin/tsc.cmd");
+        if cmd.exists() {
+            return Some(cmd);
+        }
+        let exe = cwd.join("node_modules/.bin/tsc.exe");
+        if exe.exists() {
+            return Some(exe);
+        }
+    }
+    let bare = cwd.join("node_modules/.bin/tsc");
+    if bare.exists() {
+        return Some(bare);
+    }
+    None
+}
+
 pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow::Result<PathBuf> {
     let cwd = fs::canonicalize(project_path)?;
 
-    let mut tsc_path = cwd.join("node_modules/.bin/tsc");
-    if cfg!(windows) {
-        tsc_path.set_extension("cmd");
-    }
-    if tsc_path.exists() {
+    let tsc_path = find_tsc_path(&cwd);
+    if let Some(tsc_path) = tsc_path {
         let status = std::process::Command::new(tsc_path)
             .arg("--noEmit")
             .current_dir(&cwd)

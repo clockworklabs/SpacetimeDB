@@ -403,8 +403,6 @@ mod tests {
         for sql in [
             // FROM is required
             "select 1",
-            // Multi-part table names
-            "select a from s.t",
             // Bit-string literals
             "select * from t where a = B'1010'",
             // Wildcard with non-wildcard projections
@@ -430,6 +428,13 @@ mod tests {
     fn supported() {
         for sql in [
             "select a from t",
+            // Multi-part names are joined with dots for namespace-qualified tables
+            "select a from s.t",
+            // Qualified columns of namespaced tables: last part is the column
+            "select a from s.t where s.t.a = 1",
+            "select s.t.a from s.t",
+            "select a from x.s.t where x.s.t.a = 1",
+            r#"SELECT * FROM "s"."t" WHERE "s"."t"."a" = 1"#,
             "select a from t where x = :sender",
             "select count(*) as n from t",
             "select count(*) as n from t join s on t.id = s.id where s.x = 1",
@@ -440,6 +445,9 @@ mod tests {
             "update t set a = 1, b = 2",
             "update t set a = 1, b = 2 where c = 3",
             "update t set a = 1, b = 2 where x = :sender",
+            // View calls with positional literal arguments
+            "select * from v(42)",
+            "select w.* from v(42, 'x') as w",
         ] {
             assert!(parse_sql(sql).is_ok());
         }
@@ -451,6 +459,7 @@ mod tests {
             "select a from t where b = -1",
             "delete from t where a = +1",
             "insert into t values (-1, +2.5)",
+            "insert into t (a, b) values (-1, -2), (+3, -4.5)",
             "update t set a = -1, b = +2 where c = -3",
             "set x = -1",
             "set y to +2.5",
@@ -475,6 +484,9 @@ mod tests {
             // Empty statement
             "",
             " ",
+            // View calls with arguments can't be joined
+            "select t.* from t join v(42) on t.a = v.a",
+            "select v.* from v(42) join t on v.a = t.a",
         ] {
             assert!(parse_sql(sql).is_err());
         }

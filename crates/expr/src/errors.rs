@@ -1,7 +1,7 @@
 use super::statement::InvalidVar;
 use spacetimedb_lib::AlgebraicType;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
-use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_sql_parser::ast::BinOp;
 use spacetimedb_sql_parser::parser::errors::SqlParseError;
@@ -118,7 +118,7 @@ impl UnexpectedType {
 
 #[derive(Debug, Error)]
 #[error("Duplicate name `{0}`")]
-pub struct DuplicateName(pub RawIdentifier);
+pub struct DuplicateName(pub RawNamespacedIdentifier);
 
 #[derive(Debug, Error)]
 #[error("`filter!` does not support column projections; Must return table rows")]
@@ -128,6 +128,26 @@ pub struct FilterReturnType;
 #[error("`{view_name}` is a view; DML on views is not supported")]
 pub struct DmlOnView {
     pub view_name: TableName,
+}
+
+#[derive(Debug, Error)]
+pub enum InvalidViewArgs {
+    #[error("`{name}` is a table, not a view; it does not take arguments")]
+    ArgsOnTable { name: TableName },
+    #[error("View `{name}` takes {expected} argument(s), but {found} were given")]
+    Arity {
+        name: TableName,
+        expected: usize,
+        found: usize,
+    },
+    #[error("Parameter `{param}` of view `{name}` has type {ty}, which cannot be passed from SQL")]
+    UnsupportedParamType {
+        name: TableName,
+        param: Box<str>,
+        ty: Box<str>,
+    },
+    #[error("View `{name}` takes arguments, so it can only be queried as `SELECT * FROM {name}(...)`")]
+    UnsupportedQuery { name: TableName },
 }
 
 #[derive(Error, Debug)]
@@ -147,6 +167,8 @@ pub enum TypingError {
 
     #[error(transparent)]
     DmlOnView(#[from] DmlOnView),
+    #[error(transparent)]
+    ViewArgs(#[from] InvalidViewArgs),
     #[error(transparent)]
     InvalidOp(#[from] InvalidOp),
     #[error(transparent)]

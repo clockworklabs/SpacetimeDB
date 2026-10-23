@@ -9,6 +9,7 @@
 #   ./run.sh --level 5 --backend postgres       # generate from scratch at level 5
 #   ./run.sh --variant one-shot --backend spacetime  # one-shot: all features in one prompt
 #   ./run.sh --rules standard --backend spacetime   # standard: SDK rules only, no templates
+#   ./run.sh --model claude-sonnet-4-6 --backend mongodb  # pin the model (parity)
 #   ./run.sh --run-index 1 --backend spacetime      # parallel run with offset ports
 #   ./run.sh --fix <app-dir>                    # fix bugs in existing app (reads BUG_REPORT.md)
 #   ./run.sh --upgrade <app-dir> --level 3      # add level 3 features to existing level 2 app (incremental feature file)
@@ -24,8 +25,26 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Configurable container name for PostgreSQL backend
+# Configurable container names for the Docker-backed databases
 POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-llm-sequential-upgrade-postgres-1}"
+MONGO_CONTAINER="${MONGO_CONTAINER:-llm-sequential-upgrade-mongodb-1}"
+
+# Detect a generated app's backend via the .benchmark-backend marker, falling back to
+# directory shape. The marker is required since postgres and mongodb both use a server/ dir.
+detect_backend() {
+  local app_dir="$1"
+  if [[ -f "$app_dir/.benchmark-backend" ]]; then
+    tr -d '[:space:]' < "$app_dir/.benchmark-backend"
+    return
+  fi
+  if [[ -d "$app_dir/backend/spacetimedb" ]]; then
+    echo "spacetime"
+  elif [[ -d "$app_dir/server" ]]; then
+    echo "postgres"  # legacy fallback; mongodb apps must carry the marker
+  else
+    echo "unknown"
+  fi
+}
 
 # ─── Parse arguments ─────────────────────────────────────────────────────────
 
@@ -34,7 +53,8 @@ LEVEL_EXPLICIT=""
 BACKEND="spacetime"
 VARIANT="sequential-upgrade"
 RULES="guided"
-TEST_MODE=""  # playwright | chrome-mcp | (empty = no automated testing)
+# Pin the canonical model so unpinned runs don't inherit the CLI default. Override with --model.
+MODEL="${ANTHROPIC_MODEL:-claude-sonnet-4-6}"
 RUN_INDEX=0
 FIX_MODE=""
 FIX_APP_DIR=""
@@ -48,7 +68,7 @@ while [[ $# -gt 0 ]]; do
     --backend) BACKEND="$2"; shift 2 ;;
     --variant) VARIANT="$2"; shift 2 ;;
     --rules) RULES="$2"; shift 2 ;;
-    --test) TEST_MODE="$2"; shift 2 ;;
+    --model) MODEL="$2"; shift 2 ;;
     --run-index) RUN_INDEX="$2"; shift 2 ;;
     --fix) FIX_MODE=1; FIX_APP_DIR="$2"; shift 2 ;;
     --upgrade) UPGRADE_MODE=1; UPGRADE_APP_DIR="$2"; shift 2 ;;
@@ -68,18 +88,26 @@ esac
 # Each backend has a 100-port range. Run-index offsets within that range.
 #   SpacetimeDB: 6173 + run-index  (6173, 6174, 6175, ...)
 #   PostgreSQL:  6273 + run-index  (6273, 6274, 6275, ...)
-#   Express:     6001 + run-index  (6001, 6002, 6003, ...)
+#   MongoDB:     6373 + run-index  (6373, 6374, 6375, ...)
+#   Express:     6001 + run-index  (6001, 6002, 6003, ...)  [postgres & mongodb]
 VITE_PORT_STDB=$((6173 + RUN_INDEX))
 VITE_PORT_PG=$((6273 + RUN_INDEX))
+VITE_PORT_MONGO=$((6373 + RUN_INDEX))
 EXPRESS_PORT=$((6001 + RUN_INDEX))
 PG_PORT=6432  # Shared container, isolation via per-run database names
+MONGO_PORT=6437  # Shared container, isolation via per-run database names
 STDB_PORT=3000  # SpacetimeDB server is shared, modules are isolated by name
 
-if [[ "$BACKEND" == "spacetime" ]]; then
-  VITE_PORT=$VITE_PORT_STDB
-else
-  VITE_PORT=$VITE_PORT_PG
-fi
+# Select VITE_PORT for the current $BACKEND. Called again after fix/upgrade
+# backend detection, since $BACKEND can change once the app dir is inspected.
+select_vite_port() {
+  case "$BACKEND" in
+    spacetime) VITE_PORT=$VITE_PORT_STDB ;;
+    mongodb)   VITE_PORT=$VITE_PORT_MONGO ;;
+    *)         VITE_PORT=$VITE_PORT_PG ;;  # postgres
+  esac
+}
+select_vite_port
 
 # Variant-specific defaults
 if [[ "$VARIANT" == "one-shot" ]]; then
@@ -158,6 +186,8 @@ fi
 
 PG_DATABASE="spacetime"
 PG_CONNECTION_URL="postgresql://spacetime:spacetime@localhost:6432/spacetime"
+MONGO_DATABASE="chat-app"
+MONGO_CONNECTION_URL="mongodb://localhost:6437/chat-app"
 
 if [[ "$BACKEND" == "spacetime" ]]; then
   if spacetime server ping local &>/dev/null; then
@@ -189,6 +219,25 @@ elif [[ "$BACKEND" == "postgres" ]]; then
     echo "[OK] PostgreSQL database: $PG_DATABASE (default)"
   fi
   PG_CONNECTION_URL="postgresql://spacetime:spacetime@localhost:6432/$PG_DATABASE"
+elif [[ "$BACKEND" == "mongodb" ]]; then
+  if docker exec "$MONGO_CONTAINER" mongosh --quiet --eval "db.runCommand({ping:1})" &>/dev/null; then
+    echo "[OK] MongoDB container is running"
+  else
+    echo "[FAIL] MongoDB is not reachable. Check Docker container $MONGO_CONTAINER."
+    exit 1
+  fi
+
+  # Per-run database isolation: each run-index gets its own database.
+  # MongoDB creates databases lazily on first write, so there's nothing to
+  # pre-create — just pick a distinct name. Run 0 uses "chat-app".
+  if [[ $RUN_INDEX -gt 0 ]]; then
+    MONGO_DATABASE="chat-app_run${RUN_INDEX}"
+    echo "[OK] MongoDB database: $MONGO_DATABASE (run-index $RUN_INDEX)"
+  else
+    MONGO_DATABASE="chat-app"
+    echo "[OK] MongoDB database: $MONGO_DATABASE (default)"
+  fi
+  MONGO_CONNECTION_URL="mongodb://localhost:6437/$MONGO_DATABASE"
 fi
 
 if ! docker info &>/dev/null; then
@@ -236,14 +285,13 @@ else
   exit 1
 fi
 
-# Strip UI contracts from prompt if not using Playwright testing
-if [[ "$TEST_MODE" != "playwright" ]]; then
-  STRIPPED_PROMPT="/tmp/seq-upgrade-prompt-${RUN_INDEX}-$(basename "$PROMPT_FILE")"
-  # Remove **UI contract:** blocks (from the line through the next blank line or next ###)
-  sed '/^\*\*UI contract:\*\*/,/^$/d; /^\*\*Important:\*\* Each feature below includes/d' "$PROMPT_FILE" > "$STRIPPED_PROMPT"
-  PROMPT_FILE="$STRIPPED_PROMPT"
-  echo "[OK] UI contracts stripped (test=$TEST_MODE)"
-fi
+# Strip UI contracts from the prompt. They exist only for deterministic automated
+# UI assertions, which we don't use — grading is manual/in-browser.
+STRIPPED_PROMPT="/tmp/seq-upgrade-prompt-${RUN_INDEX}-$(basename "$PROMPT_FILE")"
+# Remove **UI contract:** blocks (from the line through the next blank line or next ###)
+sed '/^\*\*UI contract:\*\*/,/^$/d; /^\*\*Important:\*\* Each feature below includes/d' "$PROMPT_FILE" > "$STRIPPED_PROMPT"
+PROMPT_FILE="$STRIPPED_PROMPT"
+echo "[OK] UI contracts stripped"
 
 echo ""
 
@@ -272,13 +320,13 @@ if [[ -n "$UPGRADE_MODE" || -n "$FIX_MODE" ]]; then
   else
     APP_DIR="$FIX_APP_DIR"
   fi
-  # Detect backend from app directory structure BEFORE deriving paths.
-  # Must happen here so $BACKEND is correct for TELEMETRY_DIR assignment below.
-  if [[ -d "$APP_DIR/backend/spacetimedb" ]]; then
-    BACKEND="spacetime"
-  elif [[ -d "$APP_DIR/server" ]]; then
-    BACKEND="postgres"
-  fi
+  # Detect backend from the app's marker (or directory shape) BEFORE deriving
+  # paths. Must happen here so $BACKEND is correct for TELEMETRY_DIR below.
+  _detected="$(detect_backend "$APP_DIR")"
+  [[ "$_detected" != "unknown" ]] && BACKEND="$_detected"
+  # Backend may have changed — recompute the Vite port so fix/upgrade prompts
+  # reference the correct one (e.g. mongodb 6373, not the pre-detection default).
+  select_vite_port
   # Walk up from app dir: chat-app-* → results → <backend> → <variant>-DATE
   RUN_BASE_DIR="$(cd "$APP_DIR/../../.." 2>/dev/null && pwd)"
   # Validate it looks like a run base dir (has a backend subdirectory)
@@ -318,6 +366,9 @@ else
   RUN_ID="$BACKEND-level$LEVEL-$TIMESTAMP"
   APP_DIR="$RESULTS_DIR/chat-app-$TIMESTAMP"
   mkdir -p "$APP_DIR"
+  # Marker so fix/upgrade mode can reliably re-detect the backend later
+  # (postgres and mongodb both use a server/ dir; this disambiguates them).
+  echo "$BACKEND" > "$APP_DIR/.benchmark-backend"
 fi
 
 RUN_DIR="$TELEMETRY_DIR/$RUN_ID"
@@ -337,6 +388,7 @@ fi
 echo "=== Sequential Upgrade: ${MODE_LABEL^} ==="
 echo "  Variant:   $VARIANT"
 echo "  Rules:     $RULES"
+echo "  Model:     ${MODEL:-(CLI default)}"
 echo "  Level:     $LEVEL"
 echo "  Backend:   $BACKEND"
 echo "  Run index: $RUN_INDEX (Vite=$VITE_PORT)"
@@ -351,6 +403,10 @@ echo ""
 # run.sh is invoked from within a Claude Desktop agent session (Bash tool).
 unset CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST
 unset CLAUDE_CODE_ENTRYPOINT
+
+# Force 5-min cache tier + freeze CLI version for consistent cost billing across runs.
+export FORCE_PROMPT_CACHING_5M=1
+export DISABLE_AUTOUPDATER=1
 
 export CLAUDE_CODE_ENABLE_TELEMETRY=1
 export OTEL_LOGS_EXPORTER=otlp
@@ -389,11 +445,12 @@ cat > "$RUN_DIR/metadata.json" <<EOF
   "phase": "$MODE_LABEL",
   "variant": "$VARIANT",
   "rules": "$RULES",
-  "testMode": "${TEST_MODE:-none}",
+  "model": "${MODEL:-default}",
   "runIndex": $RUN_INDEX,
   "vitePort": $VITE_PORT,
   "expressPort": $EXPRESS_PORT,
   "pgDatabase": "${PG_DATABASE:-}",
+  "mongoDatabase": "${MONGO_DATABASE:-}",
   "sessionId": "$SESSION_ID"
 }
 EOF
@@ -420,7 +477,8 @@ snapshot_inputs() {
   # Backend specs (only relevant backend)
   cp "$SCRIPT_DIR/backends/$BACKEND.md" "$INPUTS_DIR/backends/" 2>/dev/null || true
   if [[ "$BACKEND" == "spacetime" ]]; then
-    cp "$SCRIPT_DIR/backends/spacetime-sdk-rules.md" "$INPUTS_DIR/backends/" 2>/dev/null || true
+    cp "$SCRIPT_DIR/../../skills/typescript-server/SKILL.md" "$INPUTS_DIR/backends/typescript-server-SKILL.md" 2>/dev/null || true
+    cp "$SCRIPT_DIR/../../skills/typescript-client/SKILL.md" "$INPUTS_DIR/backends/typescript-client-SKILL.md" 2>/dev/null || true
     cp "$SCRIPT_DIR/backends/spacetime-templates.md" "$INPUTS_DIR/backends/" 2>/dev/null || true
   fi
 
@@ -464,14 +522,8 @@ if [[ -n "$FIX_MODE" ]]; then
   echo "  Bug report: $APP_DIR_NATIVE/BUG_REPORT.md"
   echo ""
 
-  # Detect backend from existing app directory structure
-  if [[ -d "$APP_DIR/backend/spacetimedb" ]]; then
-    FIX_BACKEND="spacetime"
-  elif [[ -d "$APP_DIR/server" ]]; then
-    FIX_BACKEND="postgres"
-  else
-    FIX_BACKEND="unknown"
-  fi
+  # Detect backend from the app's marker (or directory shape)
+  FIX_BACKEND="$(detect_backend "$APP_DIR")"
 
   PROMPT=$(cat <<PROMPT_EOF
 Fix the bugs in the sequential upgrade app.
@@ -532,14 +584,8 @@ elif [[ -n "$UPGRADE_MODE" ]]; then
     echo "  Saved to $SNAPSHOT_DIR"
   fi
 
-  # Detect backend from existing app directory structure
-  if [[ -d "$APP_DIR/backend/spacetimedb" ]]; then
-    UPGRADE_BACKEND="spacetime"
-  elif [[ -d "$APP_DIR/server" ]]; then
-    UPGRADE_BACKEND="postgres"
-  else
-    UPGRADE_BACKEND="unknown"
-  fi
+  # Detect backend from the app's marker (or directory shape)
+  UPGRADE_BACKEND="$(detect_backend "$APP_DIR")"
 
   # Resolve prompt file path
   if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
@@ -678,44 +724,67 @@ if [[ -z "$FIX_MODE" && -z "$UPGRADE_MODE" ]]; then
   #   standard: SDK rules only (no templates, no step-by-step phases)
   #   minimal:  just the tech stack name (least prescriptive)
   if [[ "$RULES" == "minimal" ]]; then
-    if [[ "$BACKEND" == "spacetime" ]]; then
-      echo "Build this app using the SpacetimeDB TypeScript SDK (npm package: spacetimedb)." > "$APP_DIR/CLAUDE.md"
-      echo "Server module in backend/spacetimedb/, React client in client/." >> "$APP_DIR/CLAUDE.md"
-      echo "Vite dev server port: $VITE_PORT" >> "$APP_DIR/CLAUDE.md"
-    else
-      echo "Build this app using PostgreSQL + Express + Socket.io + Drizzle ORM." > "$APP_DIR/CLAUDE.md"
-      echo "Express server in server/, React client in client/." >> "$APP_DIR/CLAUDE.md"
-      echo "PostgreSQL connection: $PG_CONNECTION_URL" >> "$APP_DIR/CLAUDE.md"
-      echo "Express port: $EXPRESS_PORT | Vite port: $VITE_PORT" >> "$APP_DIR/CLAUDE.md"
-    fi
+    case "$BACKEND" in
+      spacetime)
+        echo "Build this app using the SpacetimeDB TypeScript SDK (npm package: spacetimedb)." > "$APP_DIR/CLAUDE.md"
+        echo "Server module in backend/spacetimedb/, React client in client/." >> "$APP_DIR/CLAUDE.md"
+        echo "Vite dev server port: $VITE_PORT" >> "$APP_DIR/CLAUDE.md"
+        ;;
+      mongodb)
+        echo "Build this app using MongoDB + Express + Socket.io + Mongoose." > "$APP_DIR/CLAUDE.md"
+        echo "Express server in server/, React client in client/." >> "$APP_DIR/CLAUDE.md"
+        echo "MongoDB connection: $MONGO_CONNECTION_URL" >> "$APP_DIR/CLAUDE.md"
+        echo "Express port: $EXPRESS_PORT | Vite port: $VITE_PORT" >> "$APP_DIR/CLAUDE.md"
+        ;;
+      *)  # postgres
+        echo "Build this app using PostgreSQL + Express + Socket.io + Drizzle ORM." > "$APP_DIR/CLAUDE.md"
+        echo "Express server in server/, React client in client/." >> "$APP_DIR/CLAUDE.md"
+        echo "PostgreSQL connection: $PG_CONNECTION_URL" >> "$APP_DIR/CLAUDE.md"
+        echo "Express port: $EXPRESS_PORT | Vite port: $VITE_PORT" >> "$APP_DIR/CLAUDE.md"
+        ;;
+    esac
     echo "Assembled minimal CLAUDE.md (rules=$RULES)"
   elif [[ "$RULES" == "standard" ]]; then
-    if [[ "$BACKEND" == "spacetime" ]]; then
-      cat "$SCRIPT_DIR/backends/spacetime-sdk-rules.md" > "$APP_DIR/CLAUDE.md"
-    else
-      echo "# PostgreSQL Backend" > "$APP_DIR/CLAUDE.md"
-      echo "" >> "$APP_DIR/CLAUDE.md"
-      echo "PostgreSQL connection: \`$PG_CONNECTION_URL\`" >> "$APP_DIR/CLAUDE.md"
-      echo "" >> "$APP_DIR/CLAUDE.md"
-      echo "Use Express (port $EXPRESS_PORT) + Socket.io + Drizzle ORM. Server in \`server/\`, client in \`client/\`." >> "$APP_DIR/CLAUDE.md"
-      echo "Vite dev server port: $VITE_PORT" >> "$APP_DIR/CLAUDE.md"
-    fi
+    case "$BACKEND" in
+      spacetime)
+        _strip='NR==1 && /^---$/ {fm=1; next} fm && /^---$/ {fm=0; next} !fm {print}'
+        { awk "$_strip" "$SCRIPT_DIR/../../skills/typescript-server/SKILL.md"
+          echo ""; echo "---"; echo ""
+          awk "$_strip" "$SCRIPT_DIR/../../skills/typescript-client/SKILL.md"
+        } > "$APP_DIR/CLAUDE.md"
+        ;;
+      mongodb)
+        echo "# MongoDB Backend" > "$APP_DIR/CLAUDE.md"
+        echo "" >> "$APP_DIR/CLAUDE.md"
+        echo "MongoDB connection: \`$MONGO_CONNECTION_URL\`" >> "$APP_DIR/CLAUDE.md"
+        echo "" >> "$APP_DIR/CLAUDE.md"
+        echo "Use Express (port $EXPRESS_PORT) + Socket.io + Mongoose. Server in \`server/\`, client in \`client/\`." >> "$APP_DIR/CLAUDE.md"
+        echo "Vite dev server port: $VITE_PORT" >> "$APP_DIR/CLAUDE.md"
+        ;;
+      *)  # postgres
+        echo "# PostgreSQL Backend" > "$APP_DIR/CLAUDE.md"
+        echo "" >> "$APP_DIR/CLAUDE.md"
+        echo "PostgreSQL connection: \`$PG_CONNECTION_URL\`" >> "$APP_DIR/CLAUDE.md"
+        echo "" >> "$APP_DIR/CLAUDE.md"
+        echo "Use Express (port $EXPRESS_PORT) + Socket.io + Drizzle ORM. Server in \`server/\`, client in \`client/\`." >> "$APP_DIR/CLAUDE.md"
+        echo "Vite dev server port: $VITE_PORT" >> "$APP_DIR/CLAUDE.md"
+        ;;
+    esac
     echo "Assembled standard CLAUDE.md (rules=$RULES)"
   else
-    # guided (default) — full phases + SDK rules + templates
+    # guided (default) — phases + the official customer SDK skills + templates.
     if [[ "$BACKEND" == "spacetime" ]]; then
+      _strip_fm() { awk 'NR==1 && /^---$/ {fm=1; next} fm && /^---$/ {fm=0; next} !fm {print}' "$1"; }
       {
         cat "$SCRIPT_DIR/backends/spacetime.md"
-        echo ""
-        echo "---"
-        echo ""
-        cat "$SCRIPT_DIR/backends/spacetime-sdk-rules.md"
-        echo ""
-        echo "---"
-        echo ""
+        echo ""; echo "---"; echo ""
+        _strip_fm "$SCRIPT_DIR/../../skills/typescript-server/SKILL.md"
+        echo ""; echo "---"; echo ""
+        _strip_fm "$SCRIPT_DIR/../../skills/typescript-client/SKILL.md"
+        echo ""; echo "---"; echo ""
         cat "$SCRIPT_DIR/backends/spacetime-templates.md"
       } > "$APP_DIR/CLAUDE.md"
-      echo "Assembled guided CLAUDE.md from spacetime.md + sdk-rules + templates"
+      echo "Assembled guided CLAUDE.md from spacetime.md + official skills + templates"
     else
       cp "$SCRIPT_DIR/backends/$BACKEND.md" "$APP_DIR/CLAUDE.md"
       echo "Copied backends/$BACKEND.md → app CLAUDE.md"
@@ -731,12 +800,15 @@ if [[ -z "$FIX_MODE" && -z "$UPGRADE_MODE" ]]; then
     sed -i \
       -e "s/6173/$VITE_PORT_STDB/g" \
       -e "s/6273/$VITE_PORT_PG/g" \
+      -e "s/6373/$VITE_PORT_MONGO/g" \
       -e "s/:6001/:$EXPRESS_PORT/g" \
       -e "s/localhost:6001/localhost:$EXPRESS_PORT/g" \
       -e "s|localhost:6432/spacetime|localhost:6432/$PG_DATABASE|g" \
       -e "s|spacetime:spacetime@localhost:6432/spacetime|spacetime:spacetime@localhost:6432/$PG_DATABASE|g" \
+      -e "s|localhost:6437/chat-app|localhost:6437/$MONGO_DATABASE|g" \
       "$APP_DIR/CLAUDE.md"
-    echo "  Patched for run-index=$RUN_INDEX (Vite=$VITE_PORT, Express=$EXPRESS_PORT, DB=$PG_DATABASE)"
+    if [[ "$BACKEND" == "mongodb" ]]; then _DB_LABEL="$MONGO_DATABASE"; else _DB_LABEL="$PG_DATABASE"; fi
+    echo "  Patched for run-index=$RUN_INDEX (Vite=$VITE_PORT, Express=$EXPRESS_PORT, DB=$_DB_LABEL)"
   fi
 fi
 
@@ -780,12 +852,25 @@ if [[ -n "$RESUME_SESSION" && -n "$UPGRADE_MODE" ]]; then
   fi
 fi
 
-# --fork-session creates a new session branched from the prior one (keeps context)
-$CLAUDE_CMD --print --verbose --output-format text --dangerously-skip-permissions \
-  --add-dir "$APP_DIR" \
-  --add-dir "$SCRIPT_DIR" \
-  --add-dir "$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts" \
-  --session-id "$SESSION_ID" $RESUME_FLAG -p "$PROMPT"
+# Pin the model when one is set (via --model or $ANTHROPIC_MODEL); otherwise the
+# CLI default is used. Same model across backends/levels = fair comparison.
+MODEL_FLAG=""
+if [[ -n "$MODEL" ]]; then
+  MODEL_FLAG="--model $MODEL"
+fi
+
+# Build args as an array so empty optional flags (model/resume) can't break the invocation.
+CLAUDE_ARGS=(
+  --print --verbose --output-format text --dangerously-skip-permissions
+  --add-dir "$APP_DIR"
+  --add-dir "$SCRIPT_DIR"
+  --add-dir "$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts"
+  --session-id "$SESSION_ID"
+)
+[[ -n "$MODEL" ]] && CLAUDE_ARGS+=(--model "$MODEL")
+[[ -n "${PREV_SESSION_ID:-}" ]] && CLAUDE_ARGS+=(--resume "$PREV_SESSION_ID" --fork-session)
+CLAUDE_ARGS+=(-p "$PROMPT")
+$CLAUDE_CMD "${CLAUDE_ARGS[@]}"
 EXIT_CODE=$?
 
 echo ""
@@ -812,6 +897,17 @@ m.mode = '$MODE_LABEL';
 m.sessionId = '$SESSION_ID';
 fs.writeFileSync(f, JSON.stringify(m, null, 2));
 " -- "$METADATA_FILE_NATIVE" || echo "WARNING: Failed to update metadata with end time"
+
+# ─── Capture Claude Code session transcript ──────────────────────────────────
+# Copy the session transcript (located by session id) next to the telemetry as a studyable record.
+TRANSCRIPT_SRC=$(find "$HOME/.claude/projects" -name "$SESSION_ID.jsonl" 2>/dev/null | head -1)
+if [[ -n "$TRANSCRIPT_SRC" && -f "$TRANSCRIPT_SRC" ]]; then
+  if cp "$TRANSCRIPT_SRC" "$RUN_DIR/session-transcript.jsonl" 2>/dev/null; then
+    echo "Saved session transcript -> $RUN_DIR/session-transcript.jsonl"
+  fi
+else
+  echo "NOTE: session transcript for $SESSION_ID not found under ~/.claude/projects"
+fi
 
 # ─── Snapshot completed level (upgrade mode) ─────────────────────────────────
 
@@ -877,77 +973,5 @@ if node "$SCRIPT_DIR_NATIVE/parse-telemetry.mjs" "$RUN_DIR_NATIVE" "--logs-file=
   fi
 else
   echo "WARNING: Telemetry parsing failed. Raw logs at: $SHARED_TELEMETRY_DIR/logs.jsonl"
-fi
-
-# ─── Auto-grade with Playwright (if installed) ──────────────────────────────
-
-PLAYWRIGHT_DIR="$SCRIPT_DIR/test-plans/playwright"
-if [[ $EXIT_CODE -eq 0 && "$TEST_MODE" == "playwright" && -f "$PLAYWRIGHT_DIR/node_modules/.bin/playwright" ]]; then
-  echo ""
-  echo "=== Auto-grading with Playwright ==="
-  echo "  App URL: http://localhost:$VITE_PORT"
-
-  # Wait for dev server to be ready
-  READY=0
-  for i in $(seq 1 30); do
-    if curl -s -o /dev/null -w "%{http_code}" "http://localhost:$VITE_PORT" 2>/dev/null | grep -q "200"; then
-      READY=1
-      break
-    fi
-    sleep 1
-  done
-
-  if [[ $READY -eq 1 ]]; then
-    # Reset backend state for a clean test (fresh module or DB)
-    echo "Resetting backend state for clean test..."
-    "$SCRIPT_DIR/reset-app.sh" "$APP_DIR" || echo "WARNING: Backend reset failed — tests may use stale state"
-
-    # Wait for the app to reconnect after reset
-    sleep 3
-
-    # Determine which feature specs to run based on prompt level
-    # Level → max feature number mapping:
-    #   1=4, 2=5, 3=6, 4=7, 5=8, 6=9, 7=10, 8=11, 9=12, 10=13, 11=14, 12=15,
-    #   13=16, 14=17, 15=18, 16=19, 17=20, 18=21, 19=22
-    MAX_FEATURE=$((LEVEL + 3))
-    if [[ $MAX_FEATURE -gt 22 ]]; then MAX_FEATURE=22; fi
-
-    PW_SPEC_FILES=""
-    for feat_num in $(seq 1 $MAX_FEATURE); do
-      FEAT_PAD=$(printf '%02d' "$feat_num")
-      SPEC_FILE=$(ls "$PLAYWRIGHT_DIR/specs/feature-${FEAT_PAD}-"*.spec.ts 2>/dev/null | head -1)
-      if [[ -n "$SPEC_FILE" ]]; then
-        PW_SPEC_FILES="$PW_SPEC_FILES $SPEC_FILE"
-      fi
-    done
-    echo "  Testing features 1-$MAX_FEATURE ($LEVEL prompt level)"
-
-    mkdir -p /tmp/pw-results-$RUN_INDEX
-    cd "$PLAYWRIGHT_DIR"
-    APP_URL="http://localhost:$VITE_PORT" npx playwright test $PW_SPEC_FILES --reporter=json \
-      1>/tmp/pw-results-$RUN_INDEX/results.json 2>/dev/null || true
-    cd "$APP_DIR"
-
-    RESULTS_SIZE=$(wc -c < /tmp/pw-results-$RUN_INDEX/results.json 2>/dev/null || echo "0")
-    if [[ "$RESULTS_SIZE" -gt 100 ]]; then
-      PW_RESULTS="/tmp/pw-results-$RUN_INDEX/results.json"
-      if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
-        PW_RESULTS=$(cygpath -w "$PW_RESULTS")
-      fi
-      node "$SCRIPT_DIR_NATIVE/parse-playwright-results.mjs" "$PW_RESULTS" "$APP_DIR_NATIVE" "$BACKEND"
-      # Copy raw results into telemetry dir for archival
-      cp /tmp/pw-results-$RUN_INDEX/results.json "$RUN_DIR/playwright-results.json" 2>/dev/null || true
-    else
-      echo "WARNING: Playwright produced no results (app may not have loaded)"
-    fi
-  else
-    echo "WARNING: Dev server not responding on port $VITE_PORT — skipping Playwright grading"
-  fi
-elif [[ $EXIT_CODE -eq 0 && "$TEST_MODE" == "agents" ]]; then
-  echo ""
-  echo "=== Auto-grading with Playwright Agents ==="
-  "$SCRIPT_DIR/grade-agents.sh" "$APP_DIR" 2>&1 || echo "WARNING: Agent grading failed"
-elif [[ $EXIT_CODE -ne 0 ]]; then
-  echo "Skipping auto-grade — code generation failed (exit $EXIT_CODE)"
 fi
 

@@ -69,7 +69,6 @@ async function main() {
     'docs',
     'docs',
     '00300-resources',
-    '00200-reference',
     '00100-cli-reference',
     '00100-cli-reference.md',
   );
@@ -81,7 +80,8 @@ async function main() {
 
   // Post-process: escape angle-bracket placeholders outside backtick spans for MDX
   const raw = await fs.readFile(outFile, 'utf8');
-  await fs.writeFile(outFile, escapeAngleBracketsOutsideBackticks(raw), 'utf8');
+  const escaped = escapeAngleBracketsOutsideBackticks(raw);
+  await fs.writeFile(outFile, `${escaped.trimEnd()}\n`, 'utf8');
 }
 
 main().catch(err => {

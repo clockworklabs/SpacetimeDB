@@ -1,23 +1,34 @@
 use spacetimedb_data_structures::map::HashSet;
-use spacetimedb_lib::{query::Delta, AlgebraicType, AlgebraicValue};
+use spacetimedb_lib::{
+    query::Delta, view_instance_arg_hash_value, AlgebraicType, AlgebraicValue, Identity, ProductValue,
+};
 use spacetimedb_primitives::{TableId, ViewId};
-use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::raw_identifier::{RawIdentifier, RawNamespacedIdentifier};
 use spacetimedb_schema::{identifier::Identifier, schema::TableOrViewSchema};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp, Parameter};
 use std::sync::Arc;
 
+/// One call of a view: the view and the arguments it was called with.
+///
+/// `args` is empty for a view without parameters.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ViewCall {
+    pub view_id: ViewId,
+    pub args: ProductValue,
+}
+
 pub trait CollectViews {
-    fn collect_views(&self, views: &mut HashSet<ViewId>);
+    fn collect_views(&self, views: &mut HashSet<ViewCall>);
 }
 
 impl<T: CollectViews> CollectViews for Arc<T> {
-    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewCall>) {
         self.as_ref().collect_views(views);
     }
 }
 
 impl<T: CollectViews> CollectViews for Vec<T> {
-    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewCall>) {
         for item in self {
             item.collect_views(views);
         }
@@ -41,11 +52,11 @@ impl<T: CollectViews> CollectViews for Vec<T> {
 #[derive(Debug, PartialEq, Eq)]
 pub enum ProjectName {
     None(RelExpr),
-    Some(RelExpr, RawIdentifier),
+    Some(RelExpr, RawNamespacedIdentifier),
 }
 
 impl CollectViews for ProjectName {
-    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewCall>) {
         match self {
             Self::None(expr) | Self::Some(expr, _) => expr.collect_views(views),
         }
@@ -53,6 +64,12 @@ impl CollectViews for ProjectName {
 }
 
 impl ProjectName {
+    pub fn bind_view_arg_hashes(&mut self, caller: Identity) {
+        match self {
+            Self::None(expr) | Self::Some(expr, _) => expr.bind_view_arg_hashes(caller),
+        }
+    }
+
     /// Unwrap the outer projection, returning the inner expression
     pub fn unwrap(self) -> RelExpr {
         match self {
@@ -62,7 +79,7 @@ impl ProjectName {
 
     /// What is the name of the return table?
     /// This is either the table name itself or its alias.
-    pub fn return_name(&self) -> Option<&RawIdentifier> {
+    pub fn return_name(&self) -> Option<&RawNamespacedIdentifier> {
         match self {
             Self::None(input) => input.return_name(),
             Self::Some(_, name) => Some(name),
@@ -174,7 +191,7 @@ pub enum AggType {
 }
 
 impl CollectViews for ProjectList {
-    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewCall>) {
         match self {
             Self::Limit(proj, _) => {
                 proj.collect_views(views);
@@ -194,6 +211,16 @@ impl CollectViews for ProjectList {
 }
 
 impl ProjectList {
+    pub fn bind_view_arg_hashes(&mut self, caller: Identity) {
+        match self {
+            Self::Name(exprs) => exprs.iter_mut().for_each(|expr| expr.bind_view_arg_hashes(caller)),
+            Self::List(exprs, _) | Self::Agg(exprs, ..) => {
+                exprs.iter_mut().for_each(|expr| expr.bind_view_arg_hashes(caller))
+            }
+            Self::Limit(input, _) => input.bind_view_arg_hashes(caller),
+        }
+    }
+
     /// Does this expression project a single relvar?
     /// If so, we return it's [`TableOrViewSchema`].
     /// If not, it projects a list of columns, so we return [None].
@@ -256,24 +283,55 @@ pub struct Relvar {
     /// The table schema of this relvar
     pub schema: Arc<TableOrViewSchema>,
     /// The name of this relvar
-    pub alias: RawIdentifier,
+    pub alias: RawNamespacedIdentifier,
     /// Does this relvar represent a delta table?
     pub delta: Option<Delta>,
+    /// The arguments of a parameterized view call.
+    /// `None` for tables and for views without parameters.
+    pub view_args: Option<ViewArgs>,
+}
+
+/// The arguments of one parameterized view call
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ViewArgs {
+    /// The typed arguments
+    pub args: ProductValue,
+    /// The call's `arg_hash`, which depends on the caller for sender-scoped views.
+    pub arg_hash: Option<AlgebraicValue>,
 }
 
 impl CollectViews for RelExpr {
-    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewCall>) {
         self.visit(&mut |expr| {
-            if let Self::RelVar(Relvar { schema, .. }) = expr
+            if let Self::RelVar(Relvar { schema, view_args, .. }) = expr
                 && let Some(info) = &schema.view_info
             {
-                views.insert(info.view_id);
+                views.insert(ViewCall {
+                    view_id: info.view_id,
+                    args: view_args.as_ref().map(|v| v.args.clone()).unwrap_or_default(),
+                });
             }
         });
     }
 }
 
 impl RelExpr {
+    /// Sets the `arg_hash` of every parameterized view call in this expression.
+    /// Sender-scoped views hash the `caller` with their args, and anonymous views hash only their args.
+    pub fn bind_view_arg_hashes(&mut self, caller: Identity) {
+        self.visit_mut(&mut |expr| {
+            if let Self::RelVar(Relvar {
+                schema,
+                view_args: Some(view_args),
+                ..
+            }) = expr
+            {
+                let sender = (!schema.is_anonymous_view()).then_some(caller);
+                view_args.arg_hash = Some(view_instance_arg_hash_value(sender, &view_args.args));
+            }
+        });
+    }
+
     /// Walk the expression tree and call `f` on each node
     pub fn visit(&self, f: &mut impl FnMut(&Self)) {
         f(self);
@@ -356,7 +414,7 @@ impl RelExpr {
 
     /// Does this expression return a single relvar?
     /// If so, return its name or equivalently its alias.
-    pub fn return_name(&self) -> Option<&RawIdentifier> {
+    pub fn return_name(&self) -> Option<&RawNamespacedIdentifier> {
         match self {
             Self::RelVar(Relvar { alias, .. }) => Some(alias),
             Self::Select(input, _) => input.return_name(),
@@ -436,7 +494,7 @@ impl Expr {
 /// A typed qualified field projection
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldProject {
-    pub table: RawIdentifier,
+    pub table: RawNamespacedIdentifier,
     pub field: usize,
     pub ty: AlgebraicType,
 }

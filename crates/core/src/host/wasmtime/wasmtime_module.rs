@@ -20,7 +20,7 @@ use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use spacetimedb_schema::def::ModuleDef;
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::identifier::NamespacedIdentifier;
 use wasmtime::{
     AsContext, AsContextMut, Caller, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace,
     WasmParams, WasmResults,
@@ -55,7 +55,7 @@ impl WasmtimeModule {
         WasmtimeModule { module }
     }
 
-    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(10, 5);
+    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(10, 6);
 
     pub(super) fn link_imports(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::Result<()> {
         link_imports(linker, AsyncImportMode::SyncStub)
@@ -115,6 +115,10 @@ fn link_sync_stub_for_async_function(
     name: &'static str,
 ) -> anyhow::Result<()> {
     match name {
+        "procedure_commit_mut_tx" => {
+            // Preserve the ordinary commit error for accidental use in a reducer.
+            linker.func_wrap(module, name, WasmInstanceEnv::procedure_commit_mut_tx_sync)?;
+        }
         "procedure_sleep_until" => {
             linker.func_wrap(module, name, procedure_sleep_until_sync_stub)?;
         }
@@ -244,7 +248,7 @@ pub(super) fn call_view_export(
     mut ctx: impl AsContextMut<Data = WasmInstanceEnv>,
     call_view: Option<CallViewType>,
     call_view_anon: Option<CallViewAnonType>,
-    view_name: &Identifier,
+    view_name: &NamespacedIdentifier,
     fn_ptr: u32,
     sender: Option<Identity>,
     args_source: u32,
@@ -366,6 +370,18 @@ fn instantiate_wasmtime_instance(
     set_store_fuel(&mut store, FunctionBudget::DEFAULT_BUDGET.into());
     store.set_epoch_deadline(EPOCH_TICKS_PER_SECOND);
 
+    // NativeAOT-LLVM modules are WASI reactors that export `_initialize`
+    // to set up the native runtime. This must be called before any other exports.
+    // Traditional .NET 8 WASI modules export `_start` instead (which is not called here).
+    if let Ok(init) = instance.get_typed_func::<(), ()>(&mut store, "_initialize") {
+        call_sync_typed_func(&init, &mut store, (), supports_async).map_err(|err| {
+            InitializationError::RuntimeError {
+                err,
+                func: "_initialize".to_owned(),
+            }
+        })?;
+    }
+
     for preinit in &func_names.preinits {
         let func = instance.get_typed_func::<(), ()>(&mut store, preinit).unwrap();
         call_sync_typed_func(&func, &mut store, (), supports_async).map_err(|err| {
@@ -479,13 +495,15 @@ fn get_call_view_anon(store: &mut Store<WasmInstanceEnv>, instance: &Instance) -
 /// Similar to [`get_call_procedure`], but for HTTP handlers.
 fn get_call_http_handler(store: &mut Store<WasmInstanceEnv>, instance: &Instance) -> Option<CallHttpHandlerType> {
     let export = instance.get_export(store.as_context_mut(), CALL_HTTP_HANDLER_DUNDER)?;
-    Some(
-        export
-            .into_func()
-            .unwrap_or_else(|| panic!("{CALL_HTTP_HANDLER_DUNDER} export is not a function"))
-            .typed(store)
-            .unwrap_or_else(|err| panic!("{CALL_HTTP_HANDLER_DUNDER} export is a function with incorrect type: {err}")),
-    )
+    let func = export
+        .into_func()
+        .unwrap_or_else(|| panic!("{CALL_HTTP_HANDLER_DUNDER} export is not a function"));
+    Some(match func.typed(&*store) {
+        Ok(func) => CallHttpHandlerType::WithSender(func),
+        Err(_) => CallHttpHandlerType::WithoutSender(func.typed(store).unwrap_or_else(|err| {
+            panic!("{CALL_HTTP_HANDLER_DUNDER} export is a function with incorrect type: {err}")
+        })),
+    })
 }
 
 // `__call_procedure__` takes the same arguments as `__call_reducer__`.
@@ -552,8 +570,44 @@ pub(super) type CallViewAnonType = TypedFunc<
     i32,
 >;
 
+/// The `__call_http_handler__` export, in either of its signatures.
+pub(super) enum CallHttpHandlerType {
+    WithSender(CallHttpHandlerWithSenderType),
+    /// Modules built with libraries from before HTTP handlers had a sender export this signature.
+    WithoutSender(CallHttpHandlerWithoutSenderType),
+}
+
 /// The function signature of `__call_http_handler__`
-pub(super) type CallHttpHandlerType = TypedFunc<
+pub(super) type CallHttpHandlerWithSenderType = TypedFunc<
+    (
+        // HttpHandlerId
+        u32,
+        // sender_0
+        u64,
+        // sender_1
+        u64,
+        // sender_2
+        u64,
+        // sender_3
+        u64,
+        // byte source id for the sender's JWT payload
+        u32,
+        // timestamp
+        u64,
+        // byte source id for request metadata
+        u32,
+        // byte source id for request body
+        u32,
+        // byte sink id for response metadata
+        u32,
+        // byte sink id for response body
+        u32,
+    ),
+    i32,
+>;
+
+/// The function signature of `__call_http_handler__` without a sender.
+pub(super) type CallHttpHandlerWithoutSenderType = TypedFunc<
     (
         // HttpHandlerId
         u32,
@@ -613,8 +667,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         self.store.data().instance_env().tx.clone()
     }
 
-    fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
-        self.store.data_mut().set_module_def(module_def);
+    fn set_module_def(&mut self, module_def: Arc<ModuleDef>, module_hash: spacetimedb_lib::Hash) {
+        self.store.data_mut().set_module_def(module_def, module_hash);
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -630,7 +684,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         // Prepare arguments to the reducer + the error sink & start timings.
         let args_bytes = op.args.get_bsatn().clone();
 
-        let reducer_name = op.name.clone().into();
+        let reducer_name: NamespacedIdentifier = op.name().clone();
         let (args_source, errors_sink) =
             store
                 .data_mut()
@@ -674,7 +728,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, errors_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name.clone(), args_bytes, op.timestamp, op.call_type());
+                .start_funcall(op.name().clone(), args_bytes, op.timestamp, op.call_type());
 
         let call_result = call_view_export(
             &mut *store,
@@ -711,7 +765,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, errors_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name.clone(), args_bytes, op.timestamp, op.call_type());
+                .start_funcall(op.name().clone(), args_bytes, op.timestamp, op.call_type());
 
         let call_result = call_view_export(
             &mut *store,
@@ -757,7 +811,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, result_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name.clone(), op.arg_bytes, op.timestamp, FuncCallType::Procedure);
+                .start_funcall(op.name().clone(), op.arg_bytes, op.timestamp, FuncCallType::Procedure);
+        store.data_mut().set_procedure_confirmed_reads(op.confirmed_reads);
 
         let Some(call_procedure) = self.call_procedure.as_ref() else {
             let res = module_host_actor::ProcedureExecuteResult {
@@ -825,7 +880,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (request_source, response_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name.clone(), op.request_bytes, op.timestamp, call_type);
+                .start_funcall(op.name().clone(), op.request_bytes, op.timestamp, call_type);
         let request_body_source = store
             .data_mut()
             .create_extra_bytes_source(op.request_body_bytes)
@@ -844,19 +899,49 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             return (res, None);
         };
 
-        let call_result = call_http_handler
-            .call_async(
-                &mut *store,
-                (
-                    op.id.0,
-                    op.timestamp.to_micros_since_unix_epoch() as u64,
-                    request_source.0,
-                    request_body_source.0,
-                    response_sink,
-                    response_body_sink,
-                ),
-            )
-            .await;
+        let timestamp = op.timestamp.to_micros_since_unix_epoch() as u64;
+        let call_result = match call_http_handler {
+            CallHttpHandlerType::WithSender(call_http_handler) => {
+                let [sender_0, sender_1, sender_2, sender_3] = prepare_identity_for_call(op.caller_identity);
+                let sender_jwt_source = store
+                    .data_mut()
+                    .create_extra_bytes_source(op.caller_jwt_payload.into_boxed_bytes().into())
+                    .expect("failed to register http handler sender jwt");
+                call_http_handler
+                    .call_async(
+                        &mut *store,
+                        (
+                            op.id.0,
+                            sender_0,
+                            sender_1,
+                            sender_2,
+                            sender_3,
+                            sender_jwt_source.0,
+                            timestamp,
+                            request_source.0,
+                            request_body_source.0,
+                            response_sink,
+                            response_body_sink,
+                        ),
+                    )
+                    .await
+            }
+            CallHttpHandlerType::WithoutSender(call_http_handler) => {
+                call_http_handler
+                    .call_async(
+                        &mut *store,
+                        (
+                            op.id.0,
+                            timestamp,
+                            request_source.0,
+                            request_body_source.0,
+                            response_sink,
+                            response_body_sink,
+                        ),
+                    )
+                    .await
+            }
+        };
 
         store.data_mut().terminate_dangling_anon_tx();
 

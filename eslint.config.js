@@ -20,8 +20,25 @@ export default tseslint.config(
       '**/dist/**',
       '**/build/**',
       '**/coverage/**',
+      '**/public/app.js',
+      '**/src/module_bindings/**',
+      '**/ts-codegen/**',
       '**/templates/angular-ts/.angular/**',
+      '**/src/server/test-utils/portable-datastore-wasm/**',
     ],
+  },
+  {
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'Promise',
+          property: 'withResolvers',
+          message:
+            'Use createDeferred() instead; Promise.withResolvers is ES2024 and not supported in all SDK runtimes.',
+        },
+      ],
+    },
   },
   js.configs.recommended,
   {
@@ -49,6 +66,7 @@ export default tseslint.config(
           './tsconfig.json',
           './crates/bindings-typescript/tsconfig.json',
           './crates/bindings-typescript/test-app/tsconfig.json',
+          './modules/spacetime-example-ui-ts/tsconfig.json',
           './templates/react-ts/tsconfig.json',
           './templates/chat-react-ts/tsconfig.json',
           './templates/money-exchange-react-ts/tsconfig.json',
@@ -103,6 +121,19 @@ export default tseslint.config(
         'error',
         { allowObjectTypes: 'always' },
       ],
+    },
+  },
+  {
+    files: ['modules/spacetime-*-ts/**/example/public/ui.js'],
+    languageOptions: {
+      sourceType: 'script',
+      globals: globals.browser,
+    },
+  },
+  {
+    files: ['modules/spacetime-*-ts/**/*.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'error',
     },
   },
   {

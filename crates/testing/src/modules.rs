@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::env;
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
@@ -9,11 +10,15 @@ use std::time::Instant;
 use bytes::{Bytes, BytesMut};
 use futures::{FutureExt as _, TryStreamExt as _};
 use spacetimedb::config::CertificateAuthority;
+use spacetimedb::host::ModuleHost;
 use spacetimedb::messages::control_db::HostType;
 use spacetimedb::util::jobs::JobCores;
 use spacetimedb::Identity;
 use spacetimedb_client_api::auth::SpacetimeAuth;
 use spacetimedb_client_api::routes::subscribe::{generate_random_connection_id, WebSocketOptions};
+use spacetimedb_lib::environment::{EnvironmentRemove, EnvironmentUpdate};
+use spacetimedb_lib::http as st_http;
+use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_paths::{RootDir, SpacetimePaths};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use spacetimedb_schema::def::ModuleDef;
@@ -64,6 +69,53 @@ pub struct ModuleHandle {
 }
 
 impl ModuleHandle {
+    pub fn env(&self) -> Arc<StandaloneEnv> {
+        self.env.clone()
+    }
+
+    /// Publish a complete configuration through the standalone control API.
+    pub async fn republish_environment(
+        &self,
+        environment: BTreeMap<String, String>,
+    ) -> anyhow::Result<spacetimedb::host::UpdateDatabaseResult> {
+        let program = self
+            .client
+            .module()
+            .relational_db()
+            .program()?
+            .expect("published module");
+        self.republish_program(program.bytes.into(), program.kind.into(), environment)
+            .await
+    }
+
+    /// Publish exact replacement artifact bytes and their complete configuration.
+    pub async fn republish_program(
+        &self,
+        program_bytes: Bytes,
+        host_type: HostType,
+        environment: BTreeMap<String, String>,
+    ) -> anyhow::Result<spacetimedb::host::UpdateDatabaseResult> {
+        self.env
+            .publish_database(
+                &Identity::ZERO,
+                DatabaseDef {
+                    database_identity: self.db_identity,
+                    program_bytes,
+                    num_replicas: None,
+                    host_type,
+                    parent: None,
+                    organization: None,
+                },
+                MigrationPolicy::Compatible,
+                EnvironmentUpdate {
+                    values: environment,
+                    remove: EnvironmentRemove::All,
+                },
+            )
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("expected an update to the existing database"))
+    }
+
     async fn call_reducer_result(&self, reducer: &str, args: FunctionArgs) -> anyhow::Result<ReducerCallResult> {
         let result = self
             .client
@@ -166,6 +218,60 @@ impl ModuleHandle {
             .expect("failed to collect log stream");
         String::from_utf8(bytes.into()).unwrap()
     }
+
+    async fn module_host(&self) -> ModuleHost {
+        let database = self
+            .env
+            .get_database_by_identity(&self.db_identity)
+            .await
+            .unwrap()
+            .unwrap();
+        let host = self.env.leader(database.id).await.expect("host should be running");
+        host.module().await.expect("module should be running")
+    }
+
+    /// Call a procedure by name with JSON-encoded args, returning the raw `AlgebraicValue` on success.
+    pub async fn call_procedure_with_args(&self, procedure: &str, args_json: &str) -> anyhow::Result<AlgebraicValue> {
+        let module = self.module_host().await;
+        let ret = module
+            .call_procedure(
+                Identity::ZERO,
+                None,
+                None,
+                procedure,
+                FunctionArgs::Json(args_json.into()),
+                true,
+            )
+            .await;
+        ret.result
+            .map(|r| r.return_val)
+            .map_err(|e| anyhow::anyhow!("procedure {procedure} failed: {e:#}"))
+    }
+
+    /// Dispatch a GET request to a module HTTP route by path, returning the response body on success.
+    pub async fn call_http_route_get(&self, path: &str) -> anyhow::Result<Bytes> {
+        let module = self.module_host().await;
+        let (handler_id, _, _) = module
+            .info()
+            .module_def
+            .match_http_route(&st_http::Method::Get, path)
+            .ok_or_else(|| anyhow::anyhow!("no GET route registered for {path}"))?;
+        let request = st_http::Request {
+            method: st_http::Method::Get,
+            headers: std::iter::empty::<(Option<Box<str>>, Box<[u8]>)>().collect(),
+            timeout: None,
+            uri: format!("http://localhost{path}"),
+            version: st_http::Version::Http11,
+        };
+        let caller_auth = SpacetimeAuth::alloc(&*self.env)
+            .await
+            .map_err(|_| anyhow::anyhow!("failed to create an identity for the request"))?;
+        let (_response, body) = module
+            .call_http_handler(caller_auth.into(), handler_id, request, Bytes::new())
+            .await
+            .map_err(|e| anyhow::anyhow!("HTTP handler error: {e}"))?;
+        Ok(body)
+    }
 }
 
 pub struct CompiledModule {
@@ -182,20 +288,29 @@ pub enum CompilationMode {
 }
 
 impl CompiledModule {
+    /// Use an artifact built by an external toolchain, such as Linux NativeAOT.
+    /// This changes only compilation; publication and execution still use the
+    /// same in-process standalone server as locally compiled fixtures.
+    pub fn from_artifact(name: &str, host_type: HostType, path: PathBuf) -> Self {
+        Self {
+            name: name.to_owned(),
+            path,
+            host_type,
+            program_bytes: OnceLock::new(),
+        }
+    }
+
     pub fn compile(name: &str, mode: CompilationMode) -> Self {
         let (path, host_type) = spacetimedb_cli::build(
             &module_path(name),
             Some(PathBuf::from("src")).as_deref(),
             mode == CompilationMode::Debug,
             None,
+            false,
+            None,
         )
         .expect("Module compilation failed");
-        Self {
-            name: name.to_owned(),
-            path,
-            host_type: host_type.parse().unwrap(),
-            program_bytes: OnceLock::new(),
-        }
+        Self::from_artifact(name, host_type.parse().unwrap(), path)
     }
 
     pub fn path(&self) -> &Path {
@@ -225,10 +340,22 @@ impl CompiledModule {
         R: FnOnce(ModuleHandle) -> F,
         F: Future<Output = O>,
     {
+        self.with_module_async_with_environment(config, BTreeMap::new(), routine)
+    }
+
+    pub fn with_module_async_with_environment<O, R, F>(
+        &self,
+        config: Config,
+        environment: BTreeMap<String, String>,
+        routine: R,
+    ) where
+        R: FnOnce(ModuleHandle) -> F,
+        F: Future<Output = O>,
+    {
         with_runtime(move |runtime| {
             runtime.block_on(async {
-                let module = self.load_module(config, None).await;
-                let env = module.env.clone();
+                let module = self.load_module_with_environment(config, None, environment).await;
+                let env = module.env();
                 let db_identity = module.db_identity;
                 let routine_result = AssertUnwindSafe(routine(module)).catch_unwind().await.map(drop);
                 finish_module_test(&env, db_identity, routine_result).await;
@@ -242,7 +369,7 @@ impl CompiledModule {
     {
         with_runtime(move |runtime| {
             let module = runtime.block_on(async { self.load_module(config, None).await });
-            let env = module.env.clone();
+            let env = module.env();
             let db_identity = module.db_identity;
             let func_result = std::panic::catch_unwind(AssertUnwindSafe(|| func(runtime, &module)));
             drop(module);
@@ -256,6 +383,16 @@ impl CompiledModule {
     /// without resetting the database.
     /// This is used to speed up benchmarks running under callgrind (it allows them to reuse native-compiled wasm modules).
     pub async fn load_module(&self, config: Config, reuse_db_path: Option<&RootDir>) -> ModuleHandle {
+        self.load_module_with_environment(config, reuse_db_path, BTreeMap::new())
+            .await
+    }
+
+    pub async fn load_module_with_environment(
+        &self,
+        config: Config,
+        reuse_db_path: Option<&RootDir>,
+        environment: BTreeMap<String, String>,
+    ) -> ModuleHandle {
         let paths = match reuse_db_path {
             Some(path) => SpacetimePaths::from_root_dir(path),
             None => {
@@ -275,6 +412,7 @@ impl CompiledModule {
                 db_config: config,
                 durability: Default::default(),
                 websocket: WebSocketOptions::default(),
+                module_http: Default::default(),
                 wasm: Default::default(),
                 v8: Default::default(),
             },
@@ -284,6 +422,8 @@ impl CompiledModule {
         )
         .await
         .unwrap();
+        // These in-process module tests do not run an HTTP listener.
+        env.configure_idc(0).unwrap();
         // TODO: Fix this when we update identity generation.
         let identity = Identity::ZERO;
         let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().claims.identity;
@@ -300,6 +440,7 @@ impl CompiledModule {
                 organization: None,
             },
             MigrationPolicy::Compatible,
+            environment.into(),
         )
         .await
         .unwrap();
