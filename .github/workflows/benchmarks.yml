@@ -68,6 +68,14 @@ jobs:
         if: ${{ env.PR_NUMBER }}
         run: echo "PR_REF=$(gh pr view $PR_NUMBER --json headRefName --jq .headRefName)" >>"$GITHUB_ENV"
 
+      - name: Checkout trusted rustup action
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Check and update rustup
+        uses: ./.github/actions/ensure-rustup
+
       - name: Checkout sources
         uses: actions/checkout@v4
         with:
@@ -200,11 +208,10 @@ jobs:
         run: |
           rm -fr /stdb/*
 
-      - name: Install valgrind & iai-callgrind-runner
+      - name: Install benchmark system dependencies
         run: |
           apt-get update
           apt-get install -y valgrind protobuf-compiler bash sudo curl gh
-          cargo install --git https://github.com/clockworklabs/iai-callgrind.git --branch main iai-callgrind-runner
           git config --global --add safe.directory /__w/SpacetimeDB/SpacetimeDB
 
       # can't do this off self hosted:
@@ -230,6 +237,18 @@ jobs:
         if: ${{ env.PR_NUMBER }}
         shell: bash
         run: echo "PR_REF=$(gh pr view $PR_NUMBER --json headRefName --jq .headRefName)" >>"$GITHUB_ENV"
+
+      - name: Checkout trusted rustup action
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      # Rustup comes from the job container, so updating the fleet VM image does not update it.
+      - name: Check and update rustup
+        uses: ./.github/actions/ensure-rustup
+
+      - name: Install iai-callgrind-runner
+        run: cargo install --git https://github.com/clockworklabs/iai-callgrind.git --branch main iai-callgrind-runner
 
       - name: Checkout sources
         uses: actions/checkout@v3
