@@ -112,6 +112,15 @@ type CoerceArray<X extends IndexOpts<any>[]> = X;
  * An untyped representation of a table's schema.
  */
 export type UntypedTableDef = {
+  /**
+   * The name SQL uses for the table: the `name` option if there is one, else the accessor name.
+   *
+   * In client bindings this is always the table's canonical name.
+   * In a module without an explicit `name` it is the accessor name,
+   * which the database also accepts for the table.
+   */
+  tableName: string;
+  /** @deprecated Use `tableName`. */
   sourceName: string;
   accessorName: string;
   columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;

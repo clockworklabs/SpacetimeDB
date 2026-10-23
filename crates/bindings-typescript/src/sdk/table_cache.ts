@@ -295,7 +295,7 @@ export class TableCacheImpl<
         if (op.type === 'insert') {
           pendingCallbacks.push({
             type: 'insert',
-            table: this.tableDef.sourceName,
+            table: this.tableDef.tableName,
             cb: () => {
               this.emitter.emit('insert', ctx, op.row);
             },
@@ -391,7 +391,7 @@ export class TableCacheImpl<
       // TODO: this should throw an error and kill the connection.
       stdbLogger(
         'error',
-        `Updating a row that was not present in the cache. Table: ${this.tableDef.sourceName}, RowId: ${rowId}`
+        `Updating a row that was not present in the cache. Table: ${this.tableDef.tableName}, RowId: ${rowId}`
       );
       return undefined;
     }
@@ -400,7 +400,7 @@ export class TableCacheImpl<
     if (previousCount + refCountDelta <= 0) {
       stdbLogger(
         'error',
-        `Negative reference count for in table ${this.tableDef.sourceName} row ${rowId} (${previousCount} + ${refCountDelta})`
+        `Negative reference count for in table ${this.tableDef.tableName} row ${rowId} (${previousCount} + ${refCountDelta})`
       );
       return undefined;
     }
@@ -414,11 +414,11 @@ export class TableCacheImpl<
     if (previousCount === 0) {
       stdbLogger(
         'error',
-        `Updating a row id in table ${this.tableDef.sourceName} which was not present in the cache (rowId: ${rowId})`
+        `Updating a row id in table ${this.tableDef.tableName} which was not present in the cache (rowId: ${rowId})`
       );
       return {
         type: 'insert',
-        table: this.tableDef.sourceName,
+        table: this.tableDef.tableName,
         cb: () => {
           this.emitter.emit('insert', ctx, newRow);
         },
@@ -426,7 +426,7 @@ export class TableCacheImpl<
     }
     return {
       type: 'update',
-      table: this.tableDef.sourceName,
+      table: this.tableDef.tableName,
       cb: () => {
         this.emitter.emit('update', ctx, oldRow, newRow);
       },
@@ -448,7 +448,7 @@ export class TableCacheImpl<
     if (previousCount === 0) {
       return {
         type: 'insert',
-        table: this.tableDef.sourceName,
+        table: this.tableDef.tableName,
         cb: () => {
           this.emitter.emit('insert', ctx, operation.row);
         },
@@ -480,7 +480,7 @@ export class TableCacheImpl<
       this.rows.delete(operation.rowId);
       return {
         type: 'delete',
-        table: this.tableDef.sourceName,
+        table: this.tableDef.tableName,
         cb: () => {
           this.emitter.emit('delete', ctx, operation.row);
         },

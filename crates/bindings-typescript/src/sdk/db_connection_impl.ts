@@ -526,7 +526,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   >;
   #reducerNameBytes: Record<string, Uint8Array>;
   #procedureNameBytes: Record<string, Uint8Array>;
-  #sourceNameToTableDef: Record<string, Values<RemoteModule['tables']>>;
+  #tableNameToTableDef: Record<string, Values<RemoteModule['tables']>>;
   #messageReader = new BinaryReader(new Uint8Array());
   #rowListReader = new BinaryReader(new Uint8Array());
   #clientFrameEncoder = new BinaryWriter(1024);
@@ -576,18 +576,18 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
     this.#rowDeserializers = Object.create(null);
     this.#rowIdMetadata = Object.create(null);
-    this.#sourceNameToTableDef = Object.create(null);
+    this.#tableNameToTableDef = Object.create(null);
     for (const table of Object.values(remoteModule.tables)) {
-      this.#rowDeserializers[table.sourceName] = ProductType.makeDeserializer(
+      this.#rowDeserializers[table.tableName] = ProductType.makeDeserializer(
         table.rowType
       );
-      this.#sourceNameToTableDef[table.sourceName] = table as Values<
+      this.#tableNameToTableDef[table.tableName] = table as Values<
         RemoteModule['tables']
       >;
       const primaryKeyColumn = Object.entries(table.columns).find(
         ([, column]) => column.columnMetadata.isPrimaryKey
       );
-      this.#rowIdMetadata[table.sourceName] = primaryKeyColumn
+      this.#rowIdMetadata[table.tableName] = primaryKeyColumn
         ? {
             primaryKeyColName: primaryKeyColumn[0],
             primaryKeyColType: primaryKeyColumn[1].typeBuilder.algebraicType,
@@ -971,7 +971,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #makeDbView(): ClientDbView<RemoteModule> {
     const view = Object.create(null) as ClientDbView<RemoteModule>;
 
-    for (const tbl of Object.values(this.#sourceNameToTableDef)) {
+    for (const tbl of Object.values(this.#tableNameToTableDef)) {
       const [target, key] = accessorSlot(view, tbl.accessorName);
       Object.defineProperty(target, key, {
         enumerable: true,
@@ -1170,13 +1170,13 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
     // The removal half: every row the cache holds from the old connection.
     // Only tables which have been populated exist in the cache. The cache is
-    // keyed by accessor name, but table updates carry the source name.
+    // keyed by accessor name, but table updates carry the canonical name.
     const tableUpdates: CacheTableUpdate<UntypedTableDef>[] = [];
-    for (const tableDef of Object.values(this.#sourceNameToTableDef)) {
+    for (const tableDef of Object.values(this.#tableNameToTableDef)) {
       const table = this.clientCache.tables.get(tableDef.accessorName);
       const operations = table?.snapshotDeleteOperations() ?? [];
       if (operations.length > 0) {
-        tableUpdates.push({ tableName: tableDef.sourceName, operations });
+        tableUpdates.push({ tableName: tableDef.tableName, operations });
       }
     }
 
@@ -1567,7 +1567,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     for (const tableUpdate of tableUpdates) {
       // Get table information for the table being updated
       const tableName = tableUpdate.tableName;
-      const tableDef = this.#sourceNameToTableDef[tableName];
+      const tableDef = this.#tableNameToTableDef[tableName];
       const table = this.clientCache.getOrCreateTable(tableDef);
       const newCallbacks = table.applyOperations(
         tableUpdate.operations as Operation<

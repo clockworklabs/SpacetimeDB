@@ -501,7 +501,7 @@ describe('DbConnection', () => {
   test('subscribeToAllTables() leaves out views that take arguments', async () => {
     const remoteModule = DbConnection.builder()['remoteModule'];
     const [withArgs, ...others] = Object.values(remoteModule.tables).map(
-      table => table.sourceName
+      table => table.tableName
     );
     const wsAdapter = new WebsocketTestAdapter();
     const client = new DbConnectionBuilder(

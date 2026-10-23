@@ -149,11 +149,13 @@ export function tableToSchema<
     }
   );
 
+  // For client,`schama.tableName` will always be there as canonical name.
+  // For module, if explicit name is not provided via `name`, accessor name will
+  // be used, it is stored as alias in database, hence works in query builder.
+  const tableName = schema.tableName || accName;
   return {
-    // For client,`schama.tableName` will always be there as canonical name.
-    // For module, if explicit name is not provided via `name`, accessor name will
-    // be used, it is stored as alias in database, hence works in query builder.
-    sourceName: schema.tableName || accName,
+    tableName,
+    sourceName: tableName,
     accessorName: accName,
     columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
     rowType: schema.rowSpacetimeType,

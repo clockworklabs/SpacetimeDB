@@ -1,3 +1,4 @@
+import { accessorSlot } from './accessor_path';
 import { ConnectionId } from './connection_id';
 import { Identity } from './identity';
 import type { ColumnIndex, IndexColumns, IndexOpts } from './indexes';
@@ -13,7 +14,7 @@ import type {
   RowBuilder,
   TypeBuilder,
 } from './type_builders';
-import type { Values } from './type_util';
+import type { NestAccessors, Values } from './type_util';
 import type { Bool as SatsBool } from './algebraic_type_variants';
 import { Uuid } from './uuid';
 
@@ -114,7 +115,7 @@ class SemijoinImpl<TableDef extends TypedTableDef>
     readonly filterQuery: FromBuilder<any>,
     readonly joinCondition: BooleanExpr<any>
   ) {
-    if (sourceQuery.table.sourceName === filterQuery.table.sourceName) {
+    if (sourceQuery.table.tableName === filterQuery.table.tableName) {
       // TODO: Handle aliasing properly instead of just forbidding it.
       throw new Error('Cannot semijoin a table to itself');
     }
@@ -138,8 +139,8 @@ class SemijoinImpl<TableDef extends TypedTableDef>
   toSql(): string {
     const left = this.filterQuery;
     const right = this.sourceQuery;
-    const leftTable = quoteIdentifier(left.table.sourceName);
-    const rightTable = quoteIdentifier(right.table.sourceName);
+    const leftTable = quoteIdentifier(left.table.tableName);
+    const rightTable = quoteIdentifier(right.table.tableName);
     let sql = `SELECT ${rightTable}.* FROM ${leftTable} JOIN ${rightTable} ON ${booleanExprToSql(this.joinCondition)}`;
 
     const clauses: string[] = [];
@@ -237,7 +238,7 @@ class ViewCallImpl<TableDef extends TypedTableDef>
 {
   readonly [QueryBrand] = true;
   constructor(
-    readonly sourceName: string,
+    readonly tableName: string,
     readonly accessorName: string,
     readonly args: readonly unknown[]
   ) {
@@ -246,7 +247,7 @@ class ViewCallImpl<TableDef extends TypedTableDef>
 
   toSql(): string {
     const args = this.args.map(literalValueToSql).join(', ');
-    return `SELECT * FROM ${quoteIdentifier(this.sourceName)}(${args})`;
+    return `SELECT * FROM ${quoteIdentifier(this.tableName)}(${args})`;
   }
 }
 
@@ -272,24 +273,12 @@ export type QueryBuilder<SchemaDef extends UntypedSchemaDef> = {
 } & {};
 
 /**
- * Like `QueryBuilder`, but with declared namespaces also exposed as sub-objects.
+ * Like `QueryBuilder`, but with a submodule's tables nested by their dotted accessor name,
+ * as in `conn.db`: the table `lib.items` is `tables.lib.items`.
  * This is the type of the `tables` argument in a `subscribe` query-builder callback.
- *
- * Root-level tables appear as direct properties (same as `QueryBuilder`).
- * Declared namespaces appear as sub-objects — each is itself a `QueryBuilder` for that
- * namespace's schema, so `tables.<namespace>.<table>` is fully typed.
- *
- * When `SchemaDef['namespaces']` is absent or `{}`, no namespace properties appear —
- * accessing an undeclared namespace is a compile error.
  */
 export type NamespacedQueryBuilder<SchemaDef extends UntypedSchemaDef> =
-  QueryBuilder<SchemaDef> & {
-    readonly [NS in keyof NonNullable<SchemaDef['namespaces']>]: NonNullable<
-      SchemaDef['namespaces']
-    >[NS] extends UntypedSchemaDef
-      ? QueryBuilder<NonNullable<SchemaDef['namespaces']>[NS]>
-      : never;
-  };
+  NestAccessors<QueryBuilder<SchemaDef>>;
 
 /**
  * A runtime reference to a table. This materializes the RowExpr for us.
@@ -297,7 +286,9 @@ export type NamespacedQueryBuilder<SchemaDef extends UntypedSchemaDef> =
  */
 export type TableRef<TableDef extends TypedTableDef> = Readonly<{
   type: 'table';
-  sourceName: TableDef['sourceName'];
+  tableName: TableDef['tableName'];
+  /** @deprecated Use `tableName`. */
+  sourceName: TableDef['tableName'];
   accessorName: string;
   cols: RowExpr<TableDef>;
   indexedCols: IndexedRowExpr<TableDef>;
@@ -314,7 +305,7 @@ class TableRefImpl<TableDef extends TypedTableDef>
 {
   readonly [QueryBrand] = true;
   readonly type = 'table' as const;
-  sourceName: string;
+  tableName: string;
   accessorName: string;
   cols: RowExpr<TableDef>;
   indexedCols: IndexedRowExpr<TableDef>;
@@ -332,8 +323,12 @@ class TableRefImpl<TableDef extends TypedTableDef>
   get constraints() {
     return (this.tableDef as any).constraints;
   }
+  /** @deprecated Use `tableName`. */
+  get sourceName() {
+    return this.tableName;
+  }
   constructor(tableDef: TableDef) {
-    this.sourceName = tableDef.sourceName;
+    this.tableName = tableDef.tableName;
     this.accessorName = tableDef.accessorName;
     this.cols = createRowExpr(tableDef);
     // this.indexedCols = createIndexedRowExpr(tableDef, this.cols);
@@ -399,7 +394,7 @@ function createViewCaller(
   const names = Object.keys(params);
   return args =>
     new ViewCallImpl(
-      tableDef.sourceName,
+      tableDef.tableName,
       tableDef.accessorName,
       names.map(name => args[name])
     );
@@ -427,36 +422,36 @@ export function makeQueryBuilder<SchemaDef extends UntypedSchemaDef>(
 /**
  * Builds the namespace-aware `tables` object passed to `subscribe`'s query-builder callback.
  *
- * Tables whose `sourceName` contains no `.` are placed at the root.
- * Tables with a dotted `sourceName` (e.g. `"namespace.table"`) are grouped under a
- * sub-object keyed by the namespace alias, with the part after the dot as the
- * property key within that namespace.
+ * Each table is placed at its accessor name, with a dotted one (e.g. `"namespace.table"`)
+ * nested under its namespace, as `conn.db` places it.
  */
 export function makeFromBuilder<SchemaDef extends UntypedSchemaDef>(
   tables: SchemaDef['tables']
 ): NamespacedQueryBuilder<SchemaDef> {
   const result: Record<string, unknown> = Object.create(null);
-  const namespaces: Record<string, Record<string, unknown>> = Object.create(
-    null
-  );
-
   for (const table of Object.values(tables) as UntypedTableDef[]) {
-    const dotIdx = table.sourceName.indexOf('.');
-    if (dotIdx === -1) {
-      result[table.accessorName] = createQueryBuilderEntry(table);
-    } else {
-      const ns = table.sourceName.slice(0, dotIdx);
-      const key = table.sourceName.slice(dotIdx + 1);
-      (namespaces[ns] ??= Object.create(null))[key] =
-        createQueryBuilderEntry(table);
+    const [target, key] = accessorSlot(result, table.accessorName);
+    target[key] = createQueryBuilderEntry(table);
+  }
+  return freezeNamespaces(
+    result
+  ) as unknown as NamespacedQueryBuilder<SchemaDef>;
+}
+
+// Freezes `obj` and the namespace objects, with a null prototype, that `accessorSlot` nested in it.
+function freezeNamespaces(
+  obj: Record<string, unknown>
+): Record<string, unknown> {
+  for (const value of Object.values(obj)) {
+    if (
+      typeof value === 'object' &&
+      value !== null &&
+      Object.getPrototypeOf(value) === null
+    ) {
+      freezeNamespaces(value as Record<string, unknown>);
     }
   }
-
-  for (const [ns, nsTables] of Object.entries(namespaces)) {
-    result[ns] = Object.freeze(nsTables);
-  }
-
-  return Object.freeze(result) as unknown as NamespacedQueryBuilder<SchemaDef>;
+  return Object.freeze(obj);
 }
 
 function createRowExpr<TableDef extends TypedTableDef>(
@@ -468,7 +463,7 @@ function createRowExpr<TableDef extends TypedTableDef>(
   >) {
     const columnBuilder = tableDef.columns[columnName];
     const column = new ColumnExpression<TableDef, typeof columnName>(
-      tableDef.sourceName,
+      tableDef.tableName,
       columnName,
       columnBuilder.typeBuilder.algebraicType as InferSpacetimeTypeOfColumn<
         TableDef,
@@ -486,7 +481,7 @@ function renderSelectSqlWithJoins<Table extends TypedTableDef>(
   where?: BooleanExpr<Table>,
   extraClauses: readonly string[] = []
 ): string {
-  const quotedTable = quoteIdentifier(table.sourceName);
+  const quotedTable = quoteIdentifier(table.tableName);
   const sql = `SELECT * FROM ${quotedTable}`;
   const clauses: string[] = [];
   if (where) clauses.push(booleanExprToSql(where));
@@ -504,7 +499,7 @@ export type TypedTableDef<
     ColumnBuilder<any, any, ColumnMetadata<any>>
   > = Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>,
 > = {
-  sourceName: string;
+  tableName: string;
   accessorName: string;
   columns: Columns;
   indexes: readonly IndexOpts<any>[];
@@ -568,13 +563,13 @@ export class ColumnExpression<
   readonly column: ColumnName;
   // The name of the column in the database.
   readonly columnName: string;
-  readonly table: TableDef['sourceName'];
+  readonly table: TableDef['tableName'];
   // phantom: actual runtime value is undefined
   readonly tsValueType?: RowType<TableDef>[ColumnName];
   readonly spacetimeType: InferSpacetimeTypeOfColumn<TableDef, ColumnName>;
 
   constructor(
-    table: TableDef['sourceName'],
+    table: TableDef['tableName'],
     column: ColumnName,
     spacetimeType: InferSpacetimeTypeOfColumn<TableDef, ColumnName>,
     columnName?: string

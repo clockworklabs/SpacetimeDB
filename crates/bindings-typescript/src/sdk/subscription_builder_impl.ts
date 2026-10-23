@@ -12,7 +12,6 @@ import {
   type NamespacedQueryBuilder,
   type RowTypedQuery,
 } from '../lib/query';
-import type { UntypedSchemaDef } from '../lib/schema';
 
 export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
   #onApplied?: (ctx: SubscriptionEventContextInterface<RemoteModule>) => void =
@@ -98,7 +97,7 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
    */
   subscribe(
     queryFn: (
-      tables: NamespacedQueryBuilder<RemoteModule & UntypedSchemaDef>
+      tables: NamespacedQueryBuilder<RemoteModule>
     ) => RowTypedQuery<any, any> | RowTypedQuery<any, any>[]
   ): SubscriptionHandleImpl<RemoteModule>;
   subscribe(
@@ -110,7 +109,7 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
   ): SubscriptionHandleImpl<RemoteModule> {
     let queries: Array<string | RowTypedQuery<any, any>>;
     if (typeof query_sql === 'function') {
-      const tables = this.db.getFromBuilder<RemoteModule & UntypedSchemaDef>();
+      const tables = this.db.getFromBuilder<RemoteModule>();
       const result = query_sql(tables);
       queries = Array.isArray(result) ? result : [result];
     } else {
@@ -155,8 +154,8 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
     const remoteModule = this.db[INTERNAL_REMOTE_MODULE]();
     const viewsWithArgs = new Set(remoteModule.viewsWithArgs);
     const queries = Object.values(remoteModule.tables)
-      .filter(table => !viewsWithArgs.has(table.sourceName))
-      .map(table => `SELECT * FROM ${table.sourceName}`);
+      .filter(table => !viewsWithArgs.has(table.tableName))
+      .map(table => `SELECT * FROM ${table.tableName}`);
     this.subscribe(queries);
   }
 }
