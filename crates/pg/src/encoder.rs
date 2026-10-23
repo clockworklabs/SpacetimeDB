@@ -2,7 +2,7 @@ use crate::pg_server::PgError;
 use pgwire::api::portal::Format;
 use pgwire::api::results::{DataRowEncoder, FieldInfo};
 use pgwire::api::Type;
-use spacetimedb_lib::sats::satn::{PsqlChars, PsqlClient, PsqlPrintFmt, PsqlType, TypedWriter};
+use spacetimedb_lib::sats::satn::{PsqlChars, PsqlPrintFmt, PsqlType, TypedWriter};
 use spacetimedb_lib::sats::{satn, ArrayValue, ValueWithType};
 use spacetimedb_lib::{
     ser, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, TimeDuration, Timestamp, Uuid,
@@ -224,7 +224,7 @@ impl TypedWriter for PsqlFormatter<'_> {
             ArrayValue::Array(arr) => {
                 // Nested arrays are exposed as JSON arrays for the PostgreSQL wire protocol.
                 let values = collect(arr, |v| {
-                    complex_value(AlgebraicValue::Array(v.clone()), ty, PsqlClient::SpacetimeDB)
+                    complex_value(AlgebraicValue::Array(v.clone()), ty, psql.client)
                 });
                 self.encoder.encode_field(&values)?;
             }
@@ -336,6 +336,41 @@ mod tests {
             row,
             "\0\0\0\u{7}{1,2,3}\0\0\0\t{one,two}\0\0\0\u{13}{\"[1, 2]\",\"[3, 4]\"}\0\0\0\u{6}\\xdead"
         );
+    }
+
+    #[tokio::test]
+    async fn test_complex_array_json() {
+        let record_type = AlgebraicType::Product(ProductType::from([(
+            "values",
+            AlgebraicType::array(AlgebraicType::I32),
+        )]));
+        let record = product![AlgebraicValue::Array(ArrayValue::I32([1, 2].into()))];
+        let cases = [
+            (
+                record_type.clone(),
+                ArrayValue::Product([record.clone()].into()),
+                r#"{"values": [1, 2]}"#,
+            ),
+            (
+                AlgebraicType::array(record_type),
+                ArrayValue::Array([ArrayValue::Product([record].into())].into()),
+                r#"[{"values": [1, 2]}]"#,
+            ),
+            (
+                AlgebraicType::bytes(),
+                ArrayValue::Array([ArrayValue::U8([0xde, 0xad].into())].into()),
+                r#""0xdead""#,
+            ),
+        ];
+        for (element_type, array, expected_json) in cases {
+            let schema = ProductType::from([AlgebraicType::array(element_type)]);
+            assert_eq!(type_of(&schema, &schema.elements[0]), Type::JSON_ARRAY);
+            let row = run(schema, product![AlgebraicValue::Array(array)]).await;
+            // One JSON element inside a native PG array; pgwire owns its quoting.
+            let escaped = expected_json.replace('\\', "\\\\").replace('"', "\\\"");
+            let expected = format!("{{\"{escaped}\"}}");
+            assert_eq!(&row.as_bytes()[4..], expected.as_bytes());
+        }
     }
 
     #[tokio::test]

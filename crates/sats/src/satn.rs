@@ -473,10 +473,12 @@ impl PsqlClient {
             },
             PsqlClient::Postgres => PsqlChars {
                 start: '{',
-                start_array: "{",
+                // This formatter supplies JSON values to the PG row encoder;
+                // native PostgreSQL array delimiters are handled by pgwire.
+                start_array: "[",
                 sep: ":",
                 end: '}',
-                end_array: "}",
+                end_array: "]",
                 quote: "\"",
             },
         }
