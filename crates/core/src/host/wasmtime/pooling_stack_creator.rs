@@ -58,7 +58,7 @@ unsafe impl StackMemory for PooledFiberStack {
 // are never used outside of a wasmtime instance
 // and are not modified elsewhere.
 unsafe impl StackCreator for PoolingStackCreator {
-    fn new_stack(&self, size: usize, zeroed: bool) -> anyhow::Result<Box<dyn wasmtime::StackMemory>, anyhow::Error> {
+    fn new_stack(&self, size: usize, zeroed: bool) -> wasmtime::Result<Box<dyn wasmtime::StackMemory>> {
         assert_eq!(size, ASYNC_STACK_SIZE);
 
         // SAFETY: `self.weak` is fully initialized whenever `new_stack` is called.

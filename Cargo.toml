@@ -217,7 +217,7 @@ bitflags = "2.3.3"
 blake3 = "1.5.1"
 brotli = "3.5"
 bytemuck = { version = "1.16.2", features = ["must_cast"] }
-bytes = "1.10.1"
+bytes = "1.12.1"
 bytestring = { version = "1.2.0", features = ["serde"] }
 cargo_metadata = "0.17.0"
 chrono = { version = "0.4.24", default-features = false }
@@ -268,6 +268,9 @@ is-terminal = "0.4"
 itertools = "0.12"
 itoa = "1"
 json5 = "0.4"
+# RUSTSEC-2023-0071 (Marvin) recovers RSA private keys through decryption timing.
+# Our RSA JWT path only verifies signatures with public keys; our JWT signing
+# uses ES256. Neither operation invokes the affected RSA private-key decryption.
 jsonwebtoken = { version = "11.0.0", features = ["rust_crypto"] }
 junction = "1"
 lazy_static = "1.4.0"
@@ -287,6 +290,10 @@ paste = "1.0"
 percent-encoding = "2.3"
 petgraph = { version = "0.6.5", default-features = false }
 pin-project-lite = "0.2.9"
+# RUSTSEC-2026-0179 lets a malicious PostgreSQL server exhaust a client's CPU
+# with an excessive SCRAM iteration count. This pgwire dependency is server-only:
+# client-api is disabled, so it cannot execute that client authentication path.
+# This assessment does not cover our separate tokio-postgres client dependency.
 pgwire = { version = "0.37", default-features = false, features = ["server-api", "pg-ext-types"] }
 postgres-types = "0.2.5"
 pretty_assertions = { version = "1.4", features = ["unstable"] }
@@ -294,6 +301,9 @@ proc-macro2 = "1.0"
 prometheus = "0.14.0"
 proptest = "1.4"
 proptest-derive = "0.5"
+# quick-xml RUSTSEC-2026-0194/0195 allow CPU/memory exhaustion when parsing
+# crafted attributes/namespaces. quick-junit writes our SQL test reports as XML;
+# it does not parse XML input, so neither vulnerable parser is invoked.
 quick-junit = { version = "0.3.2" }
 quote = "1.0.8"
 rand08 = { package = "rand", version = "0.8" }
@@ -310,6 +320,10 @@ rolldown_error = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0
 rolldown_utils = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-rc.3" }
 ron = "0.8"
 rusqlite = { version = "0.29.0", features = ["bundled", "column_decltype"] }
+# rkyv RUSTSEC-2026-0235 permits out-of-bounds archive reads; RUSTSEC-2026-0001
+# covers undefined behavior when constructing archived Rc/Arc values on OOM.
+# rust_decimal's optional rkyv feature is disabled, so this dependency does not
+# compile or call either affected archive operation.
 rust_decimal = { version = "1.29.1", features = ["db-tokio-postgres"] }
 rustc-demangle = "0.1.21"
 rustc-hash = "2"
@@ -333,17 +347,25 @@ sqllogictest = "0.17"
 sqlparser = "0.38.0"
 strum = { version = "0.25.0", features = ["derive"] }
 syn = { version = "2", features = ["full", "extra-traits"] }
+# syntect -> plist -> quick-xml appears in RUSTSEC-2026-0194/0195 (crafted XML
+# attributes/namespaces exhaust CPU/memory). The REPL uses ThemeSet::load_defaults()
+# and embedded SQL syntax; it does not load user-supplied plist/XML theme files.
 syntect = { version = "5.0.0", default-features = false, features = ["default-fancy"] }
 tabled = "0.14.0"
-tar = "0.4"
+tar = "0.4.46"
+# RUSTSEC-2023-0018: remove_dir_all can follow a symlink swapped in by a local
+# attacker during deletion, removing files outside the intended directory.
+# tempdir is used only by fs-utils tests and benchmarks, not the server runtime.
+# This excludes remote server exposure; those local tools still need temp paths
+# that another user/process cannot modify during cleanup.
 tempdir = "0.3.7"
 tempfile = "3.20"
 termcolor = "1.2.0"
 termtree = "0.5.1"
-thin-vec = "0.2.13"
+thin-vec = "0.2.21"
 thiserror = "1.0.37"
 tokio = { version = "1.37", features = ["full"] }
-tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }
+tokio-postgres = { version = "0.7.18", features = ["with-chrono-0_4"] }
 tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.27.0", features = ["native-tls", "url"] }
 tokio-util = { version = "0.7.4", features = ["time"] }
@@ -367,30 +389,43 @@ uuid = { version = "1.18.1", default-features = false }
 # See librusty_v8.nix for more details.
 # When updating the V8 crate, either update the version and hashes in that file,
 # or ping phoebe @gefjon to do so.
-v8 = "=145.0.0"
+v8 = "=152.2.0"
 # This version is kept in sync with the version of ICU required by v8.
 # When that changes, the `v8::icu::set_common_data_XX()` function is renamed.
-deno_core_icudata = "0.77"
+deno_core_icudata = "0.78"
 
 walkdir = "2.2.5"
 wasmbin = "0.6"
-webbrowser = "1.0.2"
+webbrowser = "1.2.5"
 windows-sys = "0.59"
 xdg = "2.5"
 xmltree = "0.11"
 tikv-jemallocator = { version = "0.6.0", features = ["profiling", "stats"] }
 tikv-jemalloc-ctl = { version = "0.6.0", features = ["stats"] }
+# quick-xml RUSTSEC-2026-0194/0195 allow CPU/memory exhaustion while parsing
+# crafted attributes/namespaces. jemalloc_pprof -> inferno uses quick_xml::Writer
+# to emit SVG flamegraphs; this path never passes input to the affected XML parsers.
 jemalloc_pprof = { version = "0.8", features = ["symbolize", "flamegraph"] }
 zstd-framed = { version = "0.1.1", features = ["tokio"] }
 
 # Vendor the openssl we rely on, rather than depend on a
 # potentially very old system version.
-openssl = { version = "0.10", features = ["vendored"] }
+openssl = { version = "0.10.81", features = ["vendored-4"] }
 
+# Feature-specific advisories excluded by this host's core-Wasm/Cranelift setup:
+# - WASI resource exhaustion and filesystem escape (RUSTSEC-2026-0020, -0021,
+#   -0269) require WASI imports; we do not link wasmtime-wasi or provide those APIs.
+# - Component handle exhaustion, callback overflow, record allocation and string/
+#   flags lifting bugs (RUSTSEC-2026-0363, -0327, -0316, -0093, -0092, -0091,
+#   -0085) require the component-model feature, which is disabled here.
+# - Winch memory escape, table.grow masking, table.fill panic and table-data leaks
+#   (RUSTSEC-2026-0095, -0094, -0089, -0086) require Winch; we compile with Cranelift.
+# These exclusions do not apply to the separate Cranelift/core-Wasm advisories.
 [workspace.dependencies.wasmtime]
-version = "39"
+version = "48.0.7"
 default-features = false
 features = [
+  "anyhow",
   "addr2line",
   "async",
   "cache",
@@ -402,7 +437,7 @@ features = [
 ]
 
 [workspace.dependencies.wasmtime-internal-fiber]
-version = "39"
+version = "48.0.7"
 default-features = false
 features = ["std"]
 
@@ -432,3 +467,9 @@ result_large_err = "allow"
 # This silences a warning in our Nix flake, which otherwise would be upset that our call to `crateNameFromCargoToml`
 # is running against a file that doesn't have a name in it.
 crane.name = "spacetimedb"
+
+# Use the upstream vendored-4 support until it is available in a crates.io release.
+# Remove these patches when openssl / openssl-sys expose vendored-4 there.
+[patch.crates-io]
+openssl = { git = "https://github.com/rust-openssl/rust-openssl", rev = "9e94ed8675853c09e98a86ca3bb99a989f12b674" }
+openssl-sys = { git = "https://github.com/rust-openssl/rust-openssl", rev = "9e94ed8675853c09e98a86ca3bb99a989f12b674" }
