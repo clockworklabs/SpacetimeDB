@@ -1027,11 +1027,11 @@ async function createRoom(name: string) {
 }
 
 function joinRoom(roomId: bigint) {
-  conn.reducers.joinRoom({ roomId });
+  conn.reducers.joinRoom({ roomId }).catch(console.error);
 }
 
 function leaveRoom(roomId: bigint) {
-  conn.reducers.leaveRoom({ roomId });
+  conn.reducers.leaveRoom({ roomId }).catch(console.error);
 }
 
 async function sendToRoom(roomId: bigint, text: string) {
@@ -1055,6 +1055,9 @@ async function sendToPlayer(recipient: Identity, text: string) {
 <TabItem value="csharp" label="C#">
 
 ```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 

@@ -323,7 +323,7 @@ function drawFeed() {
 
 // Call this when the user publishes a post.
 function publish(text: string) {
-  conn.reducers.createPost({ text });
+  conn.reducers.createPost({ text }).catch(console.error);
 }
 ```
 
@@ -331,6 +331,9 @@ function publish(text: string) {
 <TabItem value="csharp" label="C#">
 
 ```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 

@@ -807,12 +807,12 @@ function drawGame() {
 
 // Call this when the player clicks the deck.
 function draw() {
-  conn.reducers.drawCard({});
+  conn.reducers.drawCard({}).catch(console.error);
 }
 
 // Call this when the player clicks a card in their hand.
 function play(cardId: bigint) {
-  conn.reducers.playCard({ cardId });
+  conn.reducers.playCard({ cardId }).catch(console.error);
 }
 ```
 
@@ -820,6 +820,9 @@ function play(cardId: bigint) {
 <TabItem value="csharp" label="C#">
 
 ```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 

@@ -211,7 +211,7 @@ public static partial class Module
 ```rust
 use skillratings::weng_lin::{weng_lin_two_teams, WengLinConfig, WengLinRating};
 use skillratings::Outcomes;
-use spacetimedb::{reducer, table, Identity, ReducerContext, ScheduleAt, Table, Timestamp};
+use spacetimedb::{reducer, table, view, Identity, ReducerContext, ScheduleAt, Table, Timestamp, ViewContext};
 use std::time::Duration;
 
 // Players on each team: 1 for 1v1 matches, 2 for 2v2, and so on.
@@ -911,6 +911,9 @@ conn.db.playerRating.onUpdate((_ctx, _old, player) => showRating(player));
 <TabItem value="csharp" label="C#">
 
 ```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 

@@ -326,13 +326,14 @@ function renderLeaderboard() {
   });
 }
 
-// Re-render when a score enters or leaves the top 100.
+// Re-render when a score enters or leaves the top 100, or changes in it.
 conn.db.top100.onInsert(() => renderLeaderboard());
 conn.db.top100.onDelete(() => renderLeaderboard());
+conn.db.top100.onUpdate(() => renderLeaderboard());
 
 // Call this when a game ends to submit the player's score.
 function onGameOver(name: string, score: bigint) {
-  conn.reducers.submitScore({ name, score });
+  conn.reducers.submitScore({ name, score }).catch(console.error);
 }
 ```
 
@@ -340,6 +341,9 @@ function onGameOver(name: string, score: bigint) {
 <TabItem value="csharp" label="C#">
 
 ```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 
@@ -432,6 +436,8 @@ fn render_leaderboard(db: &RemoteTables) {
 </Tabs>
 
 `onInsert` and `onDelete` run once for each row that changes. When a new score enters the top 100, the client receives one insert for the new row and one delete for the score that dropped out, so the leaderboard is re-rendered twice. If rendering is expensive, re-render at most once per frame instead.
+
+In TypeScript, the rows of `top_100` keep the primary key of `player_score`. So when a player already in the top 100 improves their score, the client receives an update for their row instead of a delete and an insert, and `onUpdate` re-renders the leaderboard.
 
 ## What's next?
 

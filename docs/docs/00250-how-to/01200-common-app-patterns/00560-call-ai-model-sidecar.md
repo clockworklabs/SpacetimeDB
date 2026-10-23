@@ -425,10 +425,10 @@ async function handleRequest(request: AiRequest) {
   inProgress.add(request.id);
   try {
     const text = await callModel(request.prompt);
-    conn.reducers.completeAiRequest({ id: request.id, text, error: '' });
+    conn.reducers.completeAiRequest({ id: request.id, text, error: '' }).catch(console.error);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    conn.reducers.completeAiRequest({ id: request.id, text: '', error: message });
+    conn.reducers.completeAiRequest({ id: request.id, text: '', error: message }).catch(console.error);
   } finally {
     inProgress.delete(request.id);
   }
@@ -453,7 +453,7 @@ const anthropic = new Anthropic();
 async function callModel(prompt: string): Promise<string> {
   const message = await anthropic.beta.messages.create({
     model: 'claude-opus-5-5',
-    max_tokens: 1024,
+    max_tokens: 4096,
     output_config: { effort: 'low' },
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
@@ -481,7 +481,7 @@ async function callModel(prompt: string): Promise<string> {
   const response = await openai.responses.create({
     model: 'gpt-6-astra',
     input: prompt,
-    max_output_tokens: 1024,
+    max_output_tokens: 4096,
   });
   return response.output_text;
 }
@@ -502,7 +502,7 @@ async function callModel(prompt: string): Promise<string> {
   const response = await google.models.generateContent({
     model: 'gemini-3.8-flash',
     contents: prompt,
-    config: { maxOutputTokens: 1024 },
+    config: { maxOutputTokens: 4096 },
   });
   return response.text ?? '';
 }
@@ -570,7 +570,7 @@ const conn = DbConnection.builder()
 
 // Call this when the player sends a message.
 function askModel(prompt: string) {
-  conn.reducers.requestAiReply({ prompt });
+  conn.reducers.requestAiReply({ prompt }).catch(console.error);
 }
 
 // A request's row is updated when the sidecar completes it.
@@ -592,6 +592,9 @@ function showReply(request: AiRequest) {
 <TabItem value="csharp" label="C#">
 
 ```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 
@@ -750,7 +753,7 @@ In the sidecar, give `callModel` an `onText` callback that receives the text gen
 async function callModel(prompt: string, onText: (textSoFar: string) => void): Promise<string> {
   const stream = anthropic.beta.messages.stream({
     model: 'claude-opus-5-5',
-    max_tokens: 1024,
+    max_tokens: 4096,
     output_config: { effort: 'low' },
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
@@ -779,7 +782,7 @@ async function callModel(prompt: string, onText: (textSoFar: string) => void): P
   const stream = await openai.responses.create({
     model: 'gpt-6-astra',
     input: prompt,
-    max_output_tokens: 1024,
+    max_output_tokens: 4096,
     stream: true,
   });
   let text = '';
@@ -801,7 +804,7 @@ async function callModel(prompt: string, onText: (textSoFar: string) => void): P
   const stream = await google.models.generateContentStream({
     model: 'gemini-3.8-flash',
     contents: prompt,
-    config: { maxOutputTokens: 1024 },
+    config: { maxOutputTokens: 4096 },
   });
   let text = '';
   for await (const chunk of stream) {
@@ -823,7 +826,7 @@ const text = await callModel(request.prompt, textSoFar => {
   // Send at most 4 updates per second.
   if (Date.now() - lastUpdate >= 250) {
     lastUpdate = Date.now();
-    conn.reducers.updateAiRequestText({ id: request.id, text: textSoFar });
+    conn.reducers.updateAiRequestText({ id: request.id, text: textSoFar }).catch(console.error);
   }
 });
 ```

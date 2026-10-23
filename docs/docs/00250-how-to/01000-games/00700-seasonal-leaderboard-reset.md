@@ -786,7 +786,7 @@ function drawSeason() {
 
 // Call this when a game ends to submit the player's score.
 function onGameOver(name: string, score: bigint) {
-  conn.reducers.submitScore({ name, score });
+  conn.reducers.submitScore({ name, score }).catch(console.error);
 }
 ```
 
@@ -794,6 +794,9 @@ function onGameOver(name: string, score: bigint) {
 <TabItem value="csharp" label="C#">
 
 ```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 

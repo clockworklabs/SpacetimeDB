@@ -510,12 +510,12 @@ const conn = DbConnection.builder()
 
 // Call this when the player presses "Find match".
 function findMatch() {
-  conn.reducers.joinQueue({});
+  conn.reducers.joinQueue({}).catch(console.error);
 }
 
 // Call this when the player cancels the search.
 function cancelSearch() {
-  conn.reducers.leaveQueue({});
+  conn.reducers.leaveQueue({}).catch(console.error);
 }
 
 // The player's own row arrives once, when their match is created.
@@ -532,6 +532,9 @@ conn.db.myMatch.onInsert((_ctx, player) => {
 <TabItem value="csharp" label="C#">
 
 ```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 

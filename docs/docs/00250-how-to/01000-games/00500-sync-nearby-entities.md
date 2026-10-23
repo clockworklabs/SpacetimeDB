@@ -399,7 +399,7 @@ conn.db.player.onUpdate((_ctx, _old, player) => {
 
 // Call this when the player moves.
 function move(x: number, y: number) {
-  conn.reducers.movePlayer({ x, y });
+  conn.reducers.movePlayer({ x, y }).catch(console.error);
 }
 
 // Each frame, draw the nearby players:
@@ -410,6 +410,9 @@ function move(x: number, y: number) {
 <TabItem value="csharp" label="C#">
 
 ```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 

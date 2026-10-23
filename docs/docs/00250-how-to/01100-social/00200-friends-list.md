@@ -546,11 +546,11 @@ async function follow(target: Identity) {
 }
 
 function unfollow(target: Identity) {
-  conn.reducers.unfollowPlayer({ target });
+  conn.reducers.unfollowPlayer({ target }).catch(console.error);
 }
 
 function removeFollower(follower: Identity) {
-  conn.reducers.removeFollower({ follower });
+  conn.reducers.removeFollower({ follower }).catch(console.error);
 }
 ```
 
@@ -558,6 +558,9 @@ function removeFollower(follower: Identity) {
 <TabItem value="csharp" label="C#">
 
 ```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 

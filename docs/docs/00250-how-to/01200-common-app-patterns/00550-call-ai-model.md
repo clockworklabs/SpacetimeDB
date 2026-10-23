@@ -152,7 +152,7 @@ function callModel(ctx: Ctx, apiKey: string, prompt: string): string {
     },
     body: JSON.stringify({
       model: 'claude-opus-5-5',
-      max_tokens: 1024,
+      max_tokens: 4096,
       output_config: { effort: 'low' },
       fallbacks: 'default',
       messages: [{ role: 'user', content: prompt }],
@@ -186,7 +186,7 @@ public static partial class Module
         var body = new JsonObject
         {
             ["model"] = "claude-opus-5-5",
-            ["max_tokens"] = 1024,
+            ["max_tokens"] = 4096,
             ["output_config"] = new JsonObject { ["effort"] = "low" },
             ["fallbacks"] = "default",
             ["messages"] = new JsonArray(new JsonObject { ["role"] = "user", ["content"] = prompt }),
@@ -230,7 +230,7 @@ public static partial class Module
 fn call_model(ctx: &mut ProcedureContext, api_key: &str, prompt: &str) -> Result<String, String> {
     let body = serde_json::json!({
         "model": "claude-opus-5-5",
-        "max_tokens": 1024,
+        "max_tokens": 4096,
         "output_config": { "effort": "low" },
         "fallbacks": "default",
         "messages": [{ "role": "user", "content": prompt }],
@@ -288,7 +288,7 @@ function callModel(ctx: Ctx, apiKey: string, prompt: string): string {
     body: JSON.stringify({
       model: 'gpt-6-astra',
       input: prompt,
-      max_output_tokens: 1024,
+      max_output_tokens: 4096,
     }),
     timeout: TimeDuration.fromMillis(60_000),
   });
@@ -319,7 +319,7 @@ public static partial class Module
         {
             ["model"] = "gpt-6-astra",
             ["input"] = prompt,
-            ["max_output_tokens"] = 1024,
+            ["max_output_tokens"] = 4096,
         };
         var request = new HttpRequest
         {
@@ -357,7 +357,7 @@ fn call_model(ctx: &mut ProcedureContext, api_key: &str, prompt: &str) -> Result
     let body = serde_json::json!({
         "model": "gpt-6-astra",
         "input": prompt,
-        "max_output_tokens": 1024,
+        "max_output_tokens": 4096,
     });
     let request = Request::builder()
         .uri("https://api.openai.com/v1/responses")
@@ -411,7 +411,7 @@ function callModel(ctx: Ctx, apiKey: string, prompt: string): string {
       },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 1024 },
+        generationConfig: { maxOutputTokens: 4096 },
       }),
       timeout: TimeDuration.fromMillis(60_000),
     }
@@ -441,7 +441,7 @@ public static partial class Module
             {
                 ["parts"] = new JsonArray(new JsonObject { ["text"] = prompt }),
             }),
-            ["generationConfig"] = new JsonObject { ["maxOutputTokens"] = 1024 },
+            ["generationConfig"] = new JsonObject { ["maxOutputTokens"] = 4096 },
         };
         var request = new HttpRequest
         {
@@ -476,7 +476,7 @@ fn call_model(ctx: &mut ProcedureContext, api_key: &str, prompt: &str) -> Result
     let model = "gemini-3.8-flash";
     let body = serde_json::json!({
         "contents": [{ "parts": [{ "text": prompt }] }],
-        "generationConfig": { "maxOutputTokens": 1024 },
+        "generationConfig": { "maxOutputTokens": 4096 },
     });
     let request = Request::builder()
         .uri(format!("https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"))
@@ -735,6 +735,9 @@ async function askModel(prompt: string) {
 <TabItem value="csharp" label="C#">
 
 ```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 

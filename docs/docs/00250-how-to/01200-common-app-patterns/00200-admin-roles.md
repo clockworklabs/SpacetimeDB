@@ -588,12 +588,12 @@ function drawChat() {
 
 // Call this when a moderator clicks a message's delete button.
 function deleteMessage(id: bigint) {
-  conn.reducers.deleteMessage({ id });
+  conn.reducers.deleteMessage({ id }).catch(console.error);
 }
 
 // Call this when an admin clicks the clear chat button.
 function clearChat() {
-  conn.reducers.clearMessages({});
+  conn.reducers.clearMessages({}).catch(console.error);
 }
 ```
 
@@ -601,6 +601,9 @@ function clearChat() {
 <TabItem value="csharp" label="C#">
 
 ```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 

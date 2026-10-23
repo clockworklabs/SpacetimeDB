@@ -27,7 +27,7 @@ The same pattern works for any turn-based game, such as a card game or a strateg
 
 Add two tables and a view:
 
-- `game` has one row per game. It's private: players read their games through the `my_games` view. It has an index on each player column, so the view can find a player's games quickly.
+- `game` has one row per game. It's private: players read their games through the `my_games` view. It has an index on each player column. The view combines the two columns with `or`, and SpacetimeDB can't use an index for an `or`, so it reads every game. That's fine while the table is small. If you expect many games, split the view in two, one for each player column, as the [chat guide does for DMs](../01100-social/00300-chat-rooms-and-dms.md#show-each-player-their-messages): each view then reads only the caller's games through its index.
 - `turn_timer` is the schedule table. It's private too: clients read the deadline from their games instead. Its `game_id` column is unique, so a game never has more than one timer.
 - `my_games` is a public view that returns the caller's games, as X or as O. Keeping tables private and exposing what clients need through views is the recommended practice: see [Hide information from players](./00600-hide-information.md).
 
@@ -758,7 +758,7 @@ conn.db.myGames.onUpdate((_ctx, _old, game) => showGame(game));
 
 // Call this when the player clicks a cell, numbered 0 to 8.
 function play(gameId: bigint, cell: number) {
-  conn.reducers.makeMove({ gameId, cell });
+  conn.reducers.makeMove({ gameId, cell }).catch(console.error);
 }
 ```
 
@@ -766,6 +766,9 @@ function play(gameId: bigint, cell: number) {
 <TabItem value="csharp" label="C#">
 
 ```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 
