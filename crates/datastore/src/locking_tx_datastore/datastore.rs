@@ -3614,7 +3614,7 @@ pub(crate) mod tests {
 
         let row = &product![42];
         let (_, first) = insert(&datastore, &mut tx, table_id, row)?;
-        let first = first.into_pointer();
+        let first = first.pointer();
         // There was a bug where this insertion caused a removal of the first row.
         insert(&datastore, &mut tx, table_id, row)?;
 
@@ -4864,6 +4864,57 @@ pub(crate) mod tests {
         // Rollback must also undo the earlier st_index metadata deletion.
         let tx = begin_mut_tx(&datastore);
         assert_eq!(tx.index_id_from_name("Foo_id_idx")?, Some(index_id));
+        let _ = datastore.rollback_mut_tx(tx);
+        Ok(())
+    }
+
+    #[test]
+    fn test_update_blob_fault_removes_unconfirmed_row() -> ResultTest<()> {
+        // Create an empty committed table, then keep the old row tx-local.
+        // A failed update must preserve that row without leaving an uncounted
+        // replacement that could later be scanned and committed.
+        const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            low_water_bytes: 0,
+            soft_limit_bytes: HARD_LIMIT_BYTES,
+            hard_limit_bytes: HARD_LIMIT_BYTES,
+        })?;
+        let mut config = TieredStorageConfig::new_for_test();
+        config.resident_budget = budget.clone();
+        let datastore = Locking::bootstrap(Identity::ZERO, config)?;
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = basic_table_schema_with_indices(
+            vec![IndexSchema::for_test("Foo_id_idx", BTreeAlgorithm::from(0))],
+            vec![ConstraintSchema::unique_for_test("Foo_id_key", 0u16)],
+        );
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+        let mut tx = begin_mut_tx(&datastore);
+        let old = u32_str_u32(1, &"x".repeat(1024 * 1024), 30);
+        let old_pointer = insert(&datastore, &mut tx, table_id, &old)?.1.pointer();
+        let index_id = tx.index_id_from_name("Foo_id_idx")?.unwrap();
+
+        // The replacement is entirely inline, so serialization and looking up
+        // its integer key succeed. Confirming the update must read the old
+        // row's blob to remove its index entry, which cannot fit in this budget.
+        tx.tx_state.blob_store.evict()?;
+        assert_eq!(tx.tx_state.blob_store.resident_bytes_used_by_blobs(), 0);
+        let reservation = budget.acquire(HARD_LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024)?;
+        let error = update(&datastore, &mut tx, table_id, index_id, &u32_str_u32(1, "new", 31)).unwrap_err();
+        assert!(matches!(error,
+            crate::error::DatastoreError::TableStorage(spacetimedb_table::table::TableError::Blob(error))
+            if matches!(*error, BlobError::MemoryLimitExceeded(_))));
+        drop(reservation);
+
+        // Do not roll back the tx before checking: that would discard the
+        // table and hide an unindexed replacement left by the failed update.
+        let table = &tx.tx_state.insert_tables[&table_id];
+        assert_eq!(table.num_rows(), 1);
+        let index = table.get_index_by_id(index_id).unwrap();
+        let key = index.key_from_algebraic_value(&AlgebraicValue::U32(1));
+        assert_eq!(index.seek_point(&key).collect::<Vec<_>>(), vec![old_pointer]);
+        assert_eq!(table.scan_all_row_ptrs()?.len(), 1);
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![old]);
         let _ = datastore.rollback_mut_tx(tx);
         Ok(())
     }

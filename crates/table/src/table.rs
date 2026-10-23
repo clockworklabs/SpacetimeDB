@@ -221,6 +221,20 @@ impl TableInner {
         unsafe { self.get_row_ref_with_pins(blobs, squashed_offset, ptr) }
     }
 
+    #[inline(always)]
+    unsafe fn get_row_ref_from_pinned_unchecked<'a>(&'a self, pinned: PinnedRow) -> RowRef<'a> {
+        let PinnedRow { pointer, page, blobs } = pinned;
+        if page.is_none() {
+            assert!(self.pages.is_resident());
+        }
+        RowRef {
+            table: self,
+            pointer,
+            page,
+            blobs,
+        }
+    }
+
     /// General row lookup for tiered pages or rows with variable-length members.
     ///
     /// # Safety
@@ -744,7 +758,7 @@ impl Table {
         // Optimistically insert the `row` before checking any constraints
         // under the assumption that errors (unique constraint & set semantic violations) are rare.
         let (row_ref, blob_bytes) = self.insert_physically_pv(blobs, row, reservation)?;
-        let row_ptr = row_ref.into_pointer();
+        let row_pin = row_ref.into_pinned_row();
 
         // Confirm the insertion, checking any constraints, removing the physical row on error.
         // SAFETY: We just inserted `ptr`, so it must be present.
@@ -752,7 +766,7 @@ impl Table {
         // where `insert` is called, we are not dealing with transactions,
         // and we already know there cannot be a duplicate row error,
         // but we check just in case it isn't.
-        let (hash, row_ptr) = unsafe { self.confirm_insertion::<true>(blobs, row_ptr, blob_bytes) }?;
+        let (hash, row_ptr) = unsafe { self.confirm_insertion::<true>(blobs, row_pin, blob_bytes) }?;
         // SAFETY: Per post-condition of `confirm_insertion`, `row_ptr` refers to a valid row.
         let row_ref = unsafe { self.get_row_ref_unchecked(blobs, row_ptr) }?;
         Ok((hash, row_ref))
@@ -771,8 +785,7 @@ impl Table {
                 source_offset,
             } => self.insert_physically_copy_bflatn(blobs, source_page, *source_offset, reservation),
         }?;
-
-        let row_ptr = row_ref.into_pointer();
+        let row_pin = row_ref.into_pinned_row();
 
         // Confirm the insertion, checking any constraints, removing the physical row on error.
         // SAFETY: We just inserted `ptr`, so it must be present.
@@ -780,7 +793,7 @@ impl Table {
         // where `insert` is called, we are not dealing with transactions,
         // and we already know there cannot be a duplicate row error,
         // but we check just in case it isn't.
-        let (hash, row_ptr) = unsafe { self.confirm_insertion::<true>(blobs, row_ptr, blob_bytes) }?;
+        let (hash, row_ptr) = unsafe { self.confirm_insertion::<true>(blobs, row_pin, blob_bytes) }?;
         // SAFETY: Per post-condition of `confirm_insertion`, `row_ptr` refers to a valid row.
         let row_ref = unsafe { self.get_row_ref_unchecked(blobs, row_ptr) }?;
 
@@ -1073,13 +1086,14 @@ impl Table {
     pub unsafe fn confirm_insertion<'a, const CHECK_SAME_ROW: bool>(
         &'a mut self,
         blobs: &'a BlobSet,
-        ptr: RowPointer,
+        pinned_row: PinnedRow,
         blob_bytes: BlobNumBytes,
     ) -> Result<(Option<RowHash>, RowPointer), InsertError> {
+        let ptr = pinned_row.pointer();
         // SAFETY: Caller promised that `self.is_row_present(ptr)` holds.
-        let hash = unsafe { self.insert_into_pointer_map(blobs, ptr) }??;
+        let hash = unsafe { self.insert_into_pointer_map(blobs, pinned_row.clone()) }??;
         // SAFETY: Caller promised that `self.is_row_present(ptr)` holds.
-        unsafe { self.insert_into_indices::<CHECK_SAME_ROW>(blobs, ptr) }?;
+        unsafe { self.insert_into_indices::<CHECK_SAME_ROW>(blobs, pinned_row) }?;
 
         self.update_statistics_added_row(blob_bytes);
         Ok((hash, ptr))
@@ -1101,20 +1115,23 @@ impl Table {
     pub unsafe fn confirm_update<'a>(
         &'a mut self,
         blobs: &'a mut BlobSet,
-        new_ptr: RowPointer,
-        old_ptr: RowPointer,
+        new: PinnedRow,
+        old: PinnedRow,
         blob_bytes_added: BlobNumBytes,
     ) -> Result<RowPointer, InsertError> {
+        let new_ptr = new.pointer();
+        let old_ptr = old.pointer();
+
         // (1) Remove old row from indices.
-        // SAFETY: Caller promised that `self.is_row_present(old_ptr)` holds.
-        unsafe { self.delete_from_indices(blobs, old_ptr) }?;
+        // SAFETY: Caller promised that `self.is_row_present(old)` holds.
+        unsafe { self.delete_from_indices(old.clone()) };
 
         // Insert new row into indices.
-        // SAFETY: Caller promised that `self.is_row_present(ptr)` holds.
-        let res = unsafe { self.insert_into_indices::<true>(blobs, new_ptr) };
+        // SAFETY: Caller promised that `self.is_row_present(new)` holds.
+        let res = unsafe { self.insert_into_indices::<true>(blobs, new) };
         if let Err(e) = res {
             // Undo (1).
-            unsafe { self.insert_into_indices::<true>(blobs, old_ptr) }
+            unsafe { self.insert_into_indices::<true>(blobs, old) }
                 .expect("re-inserting the old row into indices should always work");
             return Err(e);
         }
@@ -1157,19 +1174,20 @@ impl Table {
     unsafe fn insert_into_indices<'a, const CHECK_SAME_ROW: bool>(
         &'a mut self,
         blobs: &'a BlobSet,
-        new: RowPointer,
+        new: PinnedRow,
     ) -> Result<(), InsertError> {
+        // SAFETY: We just inserted `new`, so it must be present.
+        let new_ref = unsafe { self.inner.get_row_ref_from_pinned_unchecked(new.clone()) };
+
         let mut violation = None;
         for (index_id, index) in self.indexes.iter_mut() {
-            // SAFETY: We just inserted `ptr`, so it must be present.
-            let new = unsafe { self.inner.get_row_ref_unchecked(blobs, self.squashed_offset, new) }?;
             // SAFETY: any index in this table was constructed with the same row type as this table.
-            if let Err(old) = unsafe { index.check_and_insert(&new) } {
-                violation = Some((*index_id, old, new));
+            if let Err(old) = unsafe { index.check_and_insert(&new_ref) } {
+                violation = Some((*index_id, old));
                 break;
             }
         }
-        if let Some((index_id, old_ptr, new_ref)) = violation {
+        if let Some((index_id, old_ptr)) = violation {
             // Found unique constraint violation!
             let error = if CHECK_SAME_ROW
                     // If the index was added in this tx,
@@ -1189,13 +1207,12 @@ impl Table {
                 let index = self.indexes.get(&index_id).unwrap();
                 self.build_error_unique(index, index_id, &new_ref).into()
             };
-            drop(new_ref);
 
             // Delete row from indices.
             // Do this before the actual deletion, as `index.delete` needs a `RowRef`
             // so it can extract the appropriate value.
             // SAFETY: We just inserted `new`, so it must be present.
-            unsafe { self.delete_from_indices_until(blobs, new, index_id)? };
+            unsafe { self.delete_from_indices_until(blobs, new.pointer(), index_id)? };
 
             // Cleanup, undo the row insertion of `new`s.
             // SAFETY: We just inserted `new`, so it must be present.
@@ -1269,28 +1286,33 @@ impl Table {
     unsafe fn insert_into_pointer_map<'a>(
         &'a mut self,
         blobs: &'a BlobSet,
-        ptr: RowPointer,
+        pinned_row: PinnedRow,
     ) -> Result<Result<Option<RowHash>, DuplicateError>, TableError> {
         if self.pointer_map.is_none() {
             // No pointer map? Set semantic constraint is checked by a unique index instead.
             return Ok(Ok(None));
         };
+        let ptr = pinned_row.pointer();
 
         // SAFETY:
         // - `self` trivially has the same `row_layout` as `self`.
         // - Caller promised that `self.is_row_present(row)` holds.
-        let (hash, existing_row) = unsafe { Self::find_same_row_via_pointer_map(self, self, blobs, ptr, None) }?;
+        let existing_row = unsafe { Self::find_same_row_via_pointer_map(self, self, blobs, ptr, None) };
+        if !matches!(&existing_row, Ok((_, None))) {
+            // A duplicate row or lookup failure must undo the physical insertion.
+            // The row is pinned, so this cannot fail due to page faults.
 
-        if let Some(existing_row) = existing_row {
-            // If an equal row was already present,
-            // roll back our optimistic insert to avoid violating set semantics.
-
-            // SAFETY: Caller promised that `ptr` is a valid row in `self`.
+            // SAFETY: Caller promised that `pinned_row` is a valid row in `self`.
             unsafe {
                 self.inner
                     .pages
-                    .delete_row(&self.inner.visitor_prog, self.row_size(), ptr, blobs)?
-            };
+                    .delete_row(&self.inner.visitor_prog, self.row_size(), ptr, blobs)
+            }
+            .expect("row is resident");
+        }
+
+        let (hash, existing_row) = existing_row?;
+        if let Some(existing_row) = existing_row {
             return Ok(Err(DuplicateError(existing_row)));
         }
 
@@ -1366,7 +1388,7 @@ impl Table {
     }
 
     /// Returns whether the row `target_ptr` in `target_table`
-    /// is exactly equal to the row `needle_ptr` in `needle_ptr`.
+    /// is exactly equal to the row `needle_ptr` in `needle_table`.
     ///
     /// # Safety
     ///
@@ -1495,6 +1517,15 @@ impl Table {
         unsafe { self.inner.get_row_ref_unchecked(blobs, self.squashed_offset, ptr) }
     }
 
+    pub unsafe fn get_row_ref_from_pinned_unchecked<'a>(&'a self, pinned_row: PinnedRow) -> RowRef<'a> {
+        unsafe { self.inner.get_row_ref_from_pinned_unchecked(pinned_row) }
+    }
+
+    pub unsafe fn pin_row_unchecked(&self, blobs: &BlobSet, ptr: RowPointer) -> Result<PinnedRow, TableError> {
+        let row_ref = unsafe { self.get_row_ref_unchecked(blobs, ptr) }?;
+        Ok(row_ref.into_pinned_row())
+    }
+
     /// Deletes a row in the page manager
     /// without deleting it logically in the pointer map.
     ///
@@ -1535,36 +1566,35 @@ impl Table {
     /// Use `delete_unchecked` or `delete` to delete a row with index updating.
     ///
     /// SAFETY: `self.is_row_present(row)` must hold.
-    unsafe fn delete_internal(&mut self, blobs: &BlobSet, ptr: RowPointer) -> Result<BlobNumBytes, TableError> {
+    unsafe fn delete_internal(&mut self, blobs: &BlobSet, row: PinnedRow) -> Result<BlobNumBytes, TableError> {
         // Remove the set semantic association.
         if let Some(pointer_map) = &mut self.pointer_map {
             // SAFETY: `self.is_row_present(row)` holds.
-            let row = unsafe { self.inner.get_row_ref_unchecked(blobs, self.squashed_offset, ptr) }?;
+            let row_ref = unsafe { self.inner.get_row_ref_from_pinned_unchecked(row.clone()) };
 
-            let _remove_result = pointer_map.remove(row.row_hash(), ptr);
+            let _remove_result = pointer_map.remove(row_ref.row_hash(), row_ref.pointer());
             debug_assert!(_remove_result);
-            drop(row);
         }
 
         // Delete the physical row.
         // SAFETY: `ptr` points to a valid row in this table as `self.is_row_present(row)` holds.
-        unsafe { self.delete_internal_skip_pointer_map(blobs, ptr) }.map_err(Into::into)
+        unsafe { self.delete_internal_skip_pointer_map(blobs, row.pointer()) }.map_err(Into::into)
     }
 
-    /// Deletes the row identified by `ptr` from the table.
+    /// Deletes `row` from the table.
     ///
     /// This method does update statistics.
     ///
     /// SAFETY: `self.is_row_present(row)` must hold.
-    unsafe fn delete_unchecked(&mut self, blobs: &BlobSet, ptr: RowPointer) -> Result<(), TableError> {
+    unsafe fn delete_unchecked(&mut self, blobs: &BlobSet, row: PinnedRow) -> Result<(), TableError> {
         // Delete row from indices.
         // Do this before the actual deletion, as `index.delete` needs a `RowRef`
         // so it can extract the appropriate value.
         // SAFETY: Caller promised that `self.is_row_present(row)` holds.
-        unsafe { self.delete_from_indices(blobs, ptr)? };
+        unsafe { self.delete_from_indices(row.clone()) };
 
         // SAFETY: Caller promised that `self.is_row_present(row)` holds.
-        let blob_bytes_deleted = unsafe { self.delete_internal(blobs, ptr)? };
+        let blob_bytes_deleted = unsafe { self.delete_internal(blobs, row)? };
 
         self.update_statistics_deleted_row(blob_bytes_deleted);
 
@@ -1592,19 +1622,17 @@ impl Table {
         Ok(())
     }
 
-    /// Delete `row_ref` from all the indices of this table.
+    /// Delete `row` from all the indices of this table.
     ///
     /// SAFETY: `self.is_row_present(row)` must hold.
-    unsafe fn delete_from_indices(&mut self, blobs: &BlobSet, ptr: RowPointer) -> Result<(), TableError> {
+    unsafe fn delete_from_indices(&mut self, row: PinnedRow) {
         // SAFETY: Caller promised that `self.is_row_present(row)` holds.
-        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blobs, self.squashed_offset, ptr) }?;
+        let row_ref = unsafe { self.inner.get_row_ref_from_pinned_unchecked(row) };
 
         for index in self.indexes.values_mut() {
             // SAFETY: any index in this table was constructed with the same row type as this table.
             unsafe { index.delete(&row_ref) };
         }
-
-        Ok(())
     }
 
     /// Deletes the row identified by `ptr` from the table.
@@ -1627,11 +1655,12 @@ impl Table {
 
         // SAFETY: We only call `get_row_ref_unchecked` when `is_row_present` holds.
         let row_ref = unsafe { self.get_row_ref_unchecked(blobs, ptr) }?;
+        let row_pin = row_ref.clone().into_pinned_row();
 
         let ret = before(row_ref);
 
         // SAFETY: We've checked above that `self.is_row_present(ptr)`.
-        unsafe { self.delete_unchecked(blobs, ptr) }?;
+        unsafe { self.delete_unchecked(blobs, row_pin) }?;
 
         Ok(Some(ret))
     }
@@ -2579,8 +2608,8 @@ impl<'a> RowRef<'a> {
         }
     }
 
-    pub fn into_pointer(self) -> RowPointer {
-        self.pointer
+    pub fn into_pinned_row(self) -> PinnedRow {
+        PinnedRow::new(self.pointer, self.page, self.blobs)
     }
 }
 
@@ -2685,6 +2714,38 @@ impl Hash for RowRef<'_> {
         // 3. for any `vlr: VarLenRef` stored in the row,
         //    `vlr.first_offset` is either `NULL` or points to a valid granule in `page`.
         page.with_page(|page| unsafe { hash_row_in_page(state, page, &self.blobs, offset, ty) });
+    }
+}
+
+/// An owned reference to a single row, similar to [RowRef].
+///
+/// A [PinnedRow] doesn't borrow from its [Table], but contains a [PageHandle]
+/// that pins the rows page, as well as the row's [BlobReadSet].
+///
+/// Users must ensure that the corresponding table is live, and that a pinned
+/// row is only used within the context of the table it came from.
+#[derive(Clone)]
+pub struct PinnedRow {
+    pointer: RowPointer,
+    page: Option<PageHandle>,
+    blobs: BlobReadSet,
+}
+
+impl PinnedRow {
+    pub const fn new(pointer: RowPointer, page: Option<PageHandle>, blobs: BlobReadSet) -> Self {
+        Self { pointer, page, blobs }
+    }
+
+    pub fn pointer(&self) -> RowPointer {
+        self.pointer
+    }
+
+    pub fn page(&self) -> &Option<PageHandle> {
+        &self.page
+    }
+
+    pub fn blobs(&self) -> &BlobReadSet {
+        &self.blobs
     }
 }
 
@@ -3251,7 +3312,7 @@ pub(crate) mod test {
 
         // Reserve a page so that we can check the hash.
         let (_, row_ref) = table.insert(blob_store, &product![i32::MAX, i32::MAX]).unwrap();
-        let pi = row_ref.into_pointer().page_index();
+        let pi = row_ref.pointer().page_index();
         let hash_pre_ins = table
             .inner
             .pages
@@ -3458,7 +3519,7 @@ pub(crate) mod test {
             let (hash, row) = table.insert(&blob_store, &val).unwrap();
             let hash = hash.unwrap();
             prop_assert_eq!(row.row_hash(), hash);
-            let ptr = row.into_pointer();
+            let ptr = row.pointer();
             prop_assert_eq!(table.pointers_for(hash), &[ptr]);
 
             prop_assert_eq!(table.inner.pages.num_pages(), 1);
@@ -3491,7 +3552,7 @@ pub(crate) mod test {
             let (hash, row) = table.insert(&blob_store, &val).unwrap();
             let hash = hash.unwrap();
             prop_assert_eq!(row.row_hash(), hash);
-            let ptr = row.into_pointer();
+            let ptr = row.pointer();
             prop_assert_eq!(table.inner.pages.num_pages(), 1);
             prop_assert_eq!(table.pointers_for(hash), &[ptr]);
             prop_assert_eq!(table.row_count, 1);
@@ -3614,11 +3675,11 @@ pub(crate) mod test {
         // Optimistically insert the `row` before checking any constraints
         // under the assumption that errors (unique constraint & set semantic violations) are rare.
         let (row_ref, blob_bytes) = table.insert_physically_bsatn(blobs, row)?;
-        let row_ptr = row_ref.into_pointer();
+        let row_pin = row_ref.into_pinned_row();
 
         // Confirm the insertion, checking any constraints, removing the physical row on error.
         // SAFETY: We just inserted `ptr`, so it must be present.
-        let (hash, row_ptr) = unsafe { table.confirm_insertion::<true>(blobs, row_ptr, blob_bytes) }?;
+        let (hash, row_ptr) = unsafe { table.confirm_insertion::<true>(blobs, row_pin, blob_bytes) }?;
         // SAFETY: Per post-condition of `confirm_insertion`, `row_ptr` refers to a valid row.
         let row_ref = unsafe { table.get_row_ref_unchecked(blobs, row_ptr) }?;
         Ok((hash, row_ref))
@@ -4508,5 +4569,59 @@ pub(crate) mod test {
             committed.scan_rows(&blobs).next().unwrap().unwrap().to_product_value(),
             row
         );
+    }
+
+    #[test]
+    fn insert_pointer_map_page_fault_removes_optimistic_row() {
+        use std::sync::atomic::Ordering;
+
+        let (storage, fail_reads) = TieredStorage::with_failing_reads_for_test();
+        let storage = Arc::new(storage);
+        let resident = Arc::new(ResidentObjects::new(ByteBudget::unlimited()));
+        let manager = Arc::new(PageManager::new(
+            resident.clone(),
+            PagePool::new_for_test(),
+            storage.clone(),
+        ));
+        let blobs = BlobSet::new(resident, storage);
+        let schema = TableSchema::from_product_type(ProductType::from([AlgebraicType::U64, AlgebraicType::String]));
+        let mut table = Table::new(
+            schema.into(),
+            SquashedOffset::COMMITTED_STATE,
+            manager,
+            PageEvictionPolicy::Evictable,
+        );
+        // Fill the first page completely. Remove the row that overflowed onto
+        // the second page so the next insertion can allocate a fresh page
+        // without first reading the old one from storage.
+        let inline = "x".repeat(128);
+        let row = product![0_u64, inline.clone()];
+        for id in 0..PAGE_SIZE as u64 {
+            let (_, inserted) = table.insert(&blobs, &product![id, inline.clone()]).unwrap();
+            let pointer = inserted.pointer();
+            if pointer.page_index() == PageIndex(1) {
+                table.delete(&blobs, pointer, |_| ()).unwrap();
+                break;
+            }
+        }
+        assert_eq!(table.inner.pages.num_pages(), 2);
+        assert_eq!(table.inner.pages.num_present_pages(), 1);
+        let count_before = table.num_rows();
+        table.inner.pages.evict().unwrap();
+
+        // Physical serialization of the duplicate succeeds on a new page.
+        // Confirmation then follows the pointer map to the original row;
+        // reading that evicted page is the first operation we force to fail.
+        fail_reads.store(true, Ordering::Relaxed);
+        let error = table.insert(&blobs, &row).unwrap_err();
+        assert!(matches!(error, InsertError::Table(TableError::Page(error))
+            if matches!(*error, PageError::Storage(_))));
+        fail_reads.store(false, Ordering::Relaxed);
+
+        // Replay calls Table::insert directly, with no tx table to discard on
+        // failure. Count physical rows too: the optimistic row is not counted
+        // until confirmation succeeds, so row_count alone cannot detect a leak.
+        assert_eq!(table.num_rows(), count_before);
+        assert_eq!(table.scan_all_row_ptrs().unwrap().len() as u64, count_before);
     }
 }
