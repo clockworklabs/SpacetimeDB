@@ -11,7 +11,6 @@ mod map;
 mod mem;
 mod page_manager;
 mod page_ref;
-pub use page_ref::{PageBorrow, PageRead, PageRef};
 mod page_set;
 mod storage;
 
@@ -21,7 +20,8 @@ pub use self::{
     error::{BlobError, ObjectStoreError, PageError},
     mem::ResidentObjects,
     page_manager::{PageEvictionPolicy, PageHandle, PageManager, ReservedPage},
-    page_set::{DeleteRowError, PageSet, PreparedCommit},
+    page_ref::{PageBorrow, PageRead, PageRef},
+    page_set::{PageSet, PreparedCommit},
     storage::{MemoryObjectStore, ObjectStore, TieredStorage},
 };
 

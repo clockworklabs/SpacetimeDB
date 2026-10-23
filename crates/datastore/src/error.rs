@@ -11,7 +11,7 @@ use spacetimedb_snapshot::SnapshotError;
 use spacetimedb_table::{
     bflatn_to, read_column,
     table::{self, ReadViaBsatnError, UniqueConstraintViolation},
-    tiered::{BlobError, DeleteRowError, PageError},
+    tiered::{BlobError, PageError},
 };
 use thiserror::Error;
 
@@ -160,12 +160,6 @@ impl From<table::InsertError> for DatastoreError {
 impl From<bflatn_to::Error> for DatastoreError {
     fn from(err: bflatn_to::Error) -> Self {
         Self::Table(err.into())
-    }
-}
-
-impl From<DeleteRowError> for DatastoreError {
-    fn from(err: DeleteRowError) -> Self {
-        table::TableError::from(err).into()
     }
 }
 

@@ -902,14 +902,19 @@ impl<'page> VarView<'page> {
     /// SAFETY: `offset` must point to a valid [`VarLenGranule`] or be NULL.
     #[cold]
     #[inline(never)]
-    unsafe fn free_blob(&self, offset: PageOffset, blobs: &BlobSet) -> Result<BlobNumBytes, BlobError> {
+    unsafe fn free_blob(&self, offset: PageOffset, blobs: &BlobSet) -> BlobNumBytes {
         assert!(!offset.is_var_len_null());
 
         // SAFETY: Per caller contract + the assertion above,
         // we know `offset` refers to a valid `VarLenGranule`.
         let granule = unsafe { self.get_granule_ref(offset) };
 
-        blobs.free_ref(granule.blob_hash().into()).map(BlobNumBytes::from)
+        // `free_ref` never faults, and `granule.blob_hash()` must exist in the
+        // blob set.
+        blobs
+            .free_ref(granule.blob_hash().into())
+            .expect("blob with hash in granule must exist")
+            .into()
     }
 
     /// Frees an entire var-len linked-list object.
@@ -948,14 +953,14 @@ impl<'page> VarView<'page> {
     /// Frees an entire var-len linked-list object.
     ///
     /// SAFETY: `var_len_obj.first_granule` must point to a valid [`VarLenGranule`] or be NULL.
-    unsafe fn free_object(&mut self, var_len_obj: VarLenRef, blobs: &BlobSet) -> Result<BlobNumBytes, BlobError> {
+    unsafe fn free_object(&mut self, var_len_obj: VarLenRef, blobs: &BlobSet) -> BlobNumBytes {
         let mut blob_store_deleted_bytes = BlobNumBytes::default();
         // For large blob objects, extract the hash and tell `blob_store` to discard it.
         if var_len_obj.is_large_blob() {
             // SAFETY: `var_len_obj.first_granule` was promised to
             // point to a valid [`VarLenGranule`] or be NULL, as required.
             unsafe {
-                blob_store_deleted_bytes = self.free_blob(var_len_obj.first_granule, blobs)?;
+                blob_store_deleted_bytes = self.free_blob(var_len_obj.first_granule, blobs);
             }
         }
 
@@ -964,7 +969,7 @@ impl<'page> VarView<'page> {
             self.free_object_ignore_blob(var_len_obj);
         }
 
-        Ok(blob_store_deleted_bytes)
+        blob_store_deleted_bytes
     }
 }
 
@@ -1555,7 +1560,7 @@ impl Page {
         fixed_row_size: Size,
         var_len_visitor: &impl VarLenMembers,
         blobs: &BlobSet,
-    ) -> Result<BlobNumBytes, BlobError> {
+    ) -> BlobNumBytes {
         // We're modifying the page, so clear the unmodified hash.
         self.header.unmodified_hash = None;
 
@@ -1572,7 +1577,7 @@ impl Page {
             // which we've justified that the above is,
             // returns an iterator, that will only yield `var_len_ref`s,
             // where `var_len_ref.first_granule` points to a valid `VarLenGranule` or is NULL.
-            blob_store_deleted_bytes += unsafe { var.free_object(*var_len_ref, blobs)? }
+            blob_store_deleted_bytes += unsafe { var.free_object(*var_len_ref, blobs) }
         }
 
         // SAFETY: Caller promised that `fixed_row` points to a valid row in the page.
@@ -1584,7 +1589,7 @@ impl Page {
             fixed.free(fixed_row, fixed_row_size);
         }
 
-        Ok(blob_store_deleted_bytes)
+        blob_store_deleted_bytes
     }
 
     /// Returns the total number of granules used by the fixed row at `fixed_row_offset`
@@ -2303,7 +2308,7 @@ pub(crate) mod tests {
         // Delete rows.
         let blobs = &mut BlobSet::new_for_test();
         for row_offset in odds {
-            unsafe { page.delete_row(row_offset, u64_row_size(), u64_var_len_visitor(), blobs) }.unwrap();
+            unsafe { page.delete_row(row_offset, u64_row_size(), u64_var_len_visitor(), blobs) };
         }
 
         // The hash should have been cleared.
@@ -2351,8 +2356,7 @@ pub(crate) mod tests {
                 u64_var_len_visitor(),
                 &BlobSet::new_for_test(),
             )
-        }
-        .unwrap();
+        };
 
         assert_eq!(page.header.fixed.last, u64_row_size() * 2);
 
@@ -2415,7 +2419,7 @@ pub(crate) mod tests {
 
         for offset in offsets.into_iter().step_by(2) {
             capacity.release_row(one_granule_count);
-            unsafe { page.delete_row(offset, STR_ROW_SIZE, str_var_len_visitor(), blobs) }.unwrap();
+            unsafe { page.delete_row(offset, STR_ROW_SIZE, str_var_len_visitor(), blobs) };
             assert_page_summaries_match(&page, &capacity, STR_ROW_SIZE);
         }
 
@@ -2543,7 +2547,7 @@ pub(crate) mod tests {
 
         let hash_pre_del = hash_unmodified_save_get(&mut page);
 
-        unsafe { page.delete_row(offset_0, STR_ROW_SIZE, str_var_len_visitor(), blobs) }.unwrap();
+        unsafe { page.delete_row(offset_0, STR_ROW_SIZE, str_var_len_visitor(), blobs) };
 
         let hash_pre_ins = hash_unmodified_save_get(&mut page);
 
@@ -2585,7 +2589,7 @@ pub(crate) mod tests {
         assert_eq!(page.header.var.first.idx(), data_sub_n_vlg(4));
 
         // Delete the row.
-        unsafe { page.delete_row(offset_0, STR_ROW_SIZE, str_var_len_visitor(), blobs) }.unwrap();
+        unsafe { page.delete_row(offset_0, STR_ROW_SIZE, str_var_len_visitor(), blobs) };
 
         // Allocate a new 4-granule var-len object.
         // This should use the same storage as the original row.
@@ -2636,7 +2640,7 @@ pub(crate) mod tests {
         assert_ne!(hash_pre_ins, hash_pre_del);
 
         // Delete the first row.
-        unsafe { page.delete_row(offset_0, STR_ROW_SIZE, str_var_len_visitor(), blobs) }.unwrap();
+        unsafe { page.delete_row(offset_0, STR_ROW_SIZE, str_var_len_visitor(), blobs) };
 
         // Hash is cleared by deleting.
         let hash_post_del = hash_unmodified_save_get(&mut page);
@@ -2740,7 +2744,7 @@ pub(crate) mod tests {
 
         // Delete the rows.
         for row_offset in odds {
-            unsafe { page.delete_row(row_offset, STR_ROW_SIZE, str_var_len_visitor(), blobs) }.unwrap();
+            unsafe { page.delete_row(row_offset, STR_ROW_SIZE, str_var_len_visitor(), blobs) };
         }
 
         // Hash was cleared by deleting and is different now.
@@ -2802,7 +2806,7 @@ pub(crate) mod tests {
             .enumerate()
             .filter_map(|(i, offset)| {
                 if i % 2 == 0 {
-                    unsafe { page.delete_row(offset, u64_row_size(), u64_var_len_visitor(), blobs) }.unwrap();
+                    unsafe { page.delete_row(offset, u64_row_size(), u64_var_len_visitor(), blobs) };
                     None
                 } else {
                     Some(offset)

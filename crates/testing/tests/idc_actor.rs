@@ -7,6 +7,7 @@ use axum::routing::post;
 use axum::Router;
 use serde::Deserialize;
 use spacetimedb::db::relational_db::RelationalDB;
+use spacetimedb::error::DatastoreError;
 use spacetimedb::host::idc_actor::{self, IdcConfig};
 use spacetimedb::host::ModuleHost;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
@@ -295,7 +296,7 @@ async fn wait_for_ack(db: &RelationalDB, target: Identity, prefix: u64) -> anyho
         loop {
             let tx = db.begin_tx(Workload::Internal);
             let acked = db.iter(&tx, ST_OUTBOUND_STREAM_ID).unwrap().any(|row| {
-                let stream = StOutboundStreamRow::try_from(row).unwrap();
+                let stream = StOutboundStreamRow::try_from(row.unwrap()).unwrap();
                 stream.target_identity.0 == target && stream.ack_prefix == prefix
             });
             let _ = db.release_tx(tx);
@@ -468,8 +469,11 @@ async fn run_actor_test(host: ModuleHost) -> anyhow::Result<()> {
     let tx = db.begin_tx(Workload::Internal);
     let remaining_ids = db
         .iter(&tx, table_id)?
-        .map(|row| row.read_col::<u64>(ColId(1)))
-        .collect::<Result<HashSet<_>, _>>()?;
+        .map(|row| {
+            let row = row?;
+            Ok(row.read_col::<u64>(ColId(1))?)
+        })
+        .collect::<Result<HashSet<_>, DatastoreError>>()?;
     assert_eq!(
         remaining_ids,
         HashSet::from([first_rejected.msg_id, second_rejected.msg_id])

@@ -193,7 +193,7 @@ impl TestDatastore {
         self.with_auto_commit(|tx| {
             let (table_id, _, iter) = self.db.index_scan_point(tx, index_id, point)?;
             let rows_to_delete = iter
-                .map(|row| row.map(|row_ref| row_ref.into_pointer()))
+                .map(|row| row.map(|row_ref| row_ref.pointer()))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(self.db.delete(tx, table_id, rows_to_delete))
         })
@@ -214,10 +214,10 @@ impl TestDatastore {
                 .index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
             let rows_to_delete = match iter {
                 IndexScanPointOrRange::Point(_, iter) => iter
-                    .map(|row| row.map(|row_ref| row_ref.into_pointer()))
+                    .map(|row| row.map(|row_ref| row_ref.pointer()))
                     .collect::<Result<Vec<_>, _>>()?,
                 IndexScanPointOrRange::Range(iter) => iter
-                    .map(|row| row.map(|row_ref| row_ref.into_pointer()))
+                    .map(|row| row.map(|row_ref| row_ref.pointer()))
                     .collect::<Result<Vec<_>, _>>()?,
             };
             Ok(self.db.delete(tx, table_id, rows_to_delete))
@@ -398,7 +398,7 @@ impl TestTransaction {
         self.with_mut_tx(|tx| {
             let (table_id, _, iter) = self.db.index_scan_point(tx, index_id, point)?;
             let rows_to_delete = iter
-                .map(|row_ref| Ok(row_ref?.into_pointer()))
+                .map(|row_ref| Ok(row_ref?.pointer()))
                 .collect::<Result<Vec<_>, TestDatastoreError>>()?;
             Ok(self.db.delete(tx, table_id, rows_to_delete))
         })
@@ -418,11 +418,12 @@ impl TestTransaction {
                 .db
                 .index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
             let rows_to_delete = match iter {
-                IndexScanPointOrRange::Point(_, iter) => iter
-                    .map(|row_ref| Ok(row_ref?.into_pointer()))
-                    .collect::<Result<Vec<_>, TestDatastoreError>>()?,
+                IndexScanPointOrRange::Point(_, iter) => {
+                    iter.map(|row_ref| Ok(row_ref?.pointer()))
+                        .collect::<Result<Vec<_>, TestDatastoreError>>()?
+                }
                 IndexScanPointOrRange::Range(iter) => iter
-                    .map(|row_ref| Ok(row_ref?.into_pointer()))
+                    .map(|row_ref| Ok(row_ref?.pointer()))
                     .collect::<Result<Vec<_>, TestDatastoreError>>()?,
             };
             Ok(self.db.delete(tx, table_id, rows_to_delete))

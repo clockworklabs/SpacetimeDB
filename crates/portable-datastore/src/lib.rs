@@ -505,7 +505,7 @@ fn row_result_to_bsatn_vec(r: Result<RowRef, DatastoreError>) -> Result<Vec<u8>,
 }
 
 fn row_result_to_row_pointer(r: Result<RowRef, DatastoreError>) -> Result<RowPointer, PortableDatastoreError> {
-    r.map(RowRef::into_pointer).map_err(Into::into)
+    r.map(|row_ref| row_ref.pointer()).map_err(Into::into)
 }
 
 fn decode_relation(row_ty: &ProductType, relation: &[u8]) -> Result<Vec<ProductValue>, PortableDatastoreError> {

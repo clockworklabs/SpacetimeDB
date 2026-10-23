@@ -97,7 +97,7 @@ pub trait StateView {
             StOutboundStreamFields::StreamId,
             &stream_id.into(),
         )?
-        .map(StOutboundStreamRow::try_from)
+        .map(|row| StOutboundStreamRow::try_from(row?))
         .next()
         .transpose()
     }
@@ -105,13 +105,13 @@ pub trait StateView {
     /// Find a pending delivery without decoding its payload.
     fn outbound_msg_by_stream_seq(&self, stream_id: u64, seq: u64) -> Result<Option<RowRef<'_>>> {
         let key = AlgebraicValue::Product(product![stream_id, seq]);
-        Ok(self
-            .iter_by_col_eq(
-                ST_OUTBOUND_MSG_ID,
-                col_list![StOutboundMsgFields::StreamId, StOutboundMsgFields::Seq],
-                &key,
-            )?
-            .next())
+        self.iter_by_col_eq(
+            ST_OUTBOUND_MSG_ID,
+            col_list![StOutboundMsgFields::StreamId, StOutboundMsgFields::Seq],
+            &key,
+        )?
+        .next()
+        .transpose()
     }
 
     /// Look up the `st_table` row which describes `table_id`.
