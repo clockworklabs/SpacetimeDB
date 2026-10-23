@@ -1,5 +1,7 @@
-// esbuild is used only to bundle local sources here, never to serve HTTP.
-// Its development-server file-read issues do not apply to this build path.
+// esbuild GHSA-67mh-4wv8-2f99 allows cross-origin reads from its dev server;
+// GHSA-g7r4-m6w7-qqqr allows arbitrary file reads from that server on Windows.
+// This SDK build only bundles source files and never calls esbuild.serve(),
+// so neither advisory's HTTP endpoint exists in this build path.
 // tsup.config.ts
 import { defineConfig, type Options } from 'tsup';
 

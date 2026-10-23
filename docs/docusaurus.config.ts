@@ -24,8 +24,13 @@ import { InkeepConfig } from '@inkeep/cxkit-docusaurus';
 import { redirects } from './redirects';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
-// MDX/frontmatter parsing and build-cache serialization consume repository files
-// and trusted build configuration, not requests to the static documentation site.
+// Build-time advisory scope: toml GHSA-v5mp-jgw5-2x6j and
+// estree-util-value-to-estree GHSA-f7f6-9jq7-3rqj require crafted frontmatter
+// to cause prototype pollution. serialize-javascript GHSA-5c6j-r48x-rmvq /
+// GHSA-qj8w-gfj5-8c6v require crafted objects to cause code execution/CPU exhaustion.
+// These parsers/serializers consume repository content and build configuration;
+// visitors to the generated static site cannot provide those inputs. This does
+// not make building malicious repository content safe.
 
 const shikiTheme = {
   ...ogTheme,

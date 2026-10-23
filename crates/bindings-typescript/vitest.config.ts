@@ -19,8 +19,12 @@ export default defineConfig({
       { find: 'spacetime:sys@2.2', replacement: sysMock },
     ],
   },
-  // Node tests only: no browser/UI server, and worker options come from this
-  // trusted configuration, not from client requests or module data.
+  // GHSA-5xrq-8626-4rwp requires a listening Vitest UI server (file read/RCE);
+  // GHSA-82fw-gwwq-j7x9 requires a dev-server redirect-mock endpoint (file read).
+  // Our `vitest run` Node tests expose neither UI/browser mode nor mockerPlugin.
+  // Tinypool GHSA-5gmw-xhrv-c9v3 / GHSA-85c8-ppgw-ccpr require prototype-polluted
+  // worker options to execute code. Options here come from checked-in test code;
+  // client requests and uploaded module data cannot supply them.
   test: {
     include: ['tests/**/*.test.ts'],
     setupFiles: ['tests/setup.ts'],

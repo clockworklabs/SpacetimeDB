@@ -20,8 +20,10 @@ ensureSqliteDirExistsSync(SQLITE_FILE, mode);
 const dbFile = new Database(mode === 'fastest' ? ':memory:' : SQLITE_FILE);
 applySqlitePragmas(dbFile, mode);
 
-// SQL identifiers are fixed by this schema, never derived from requests;
-// the Drizzle identifier-escaping issue does not affect these queries.
+// GHSA-gpj5-g38j-94v9: Drizzle fails to escape quotes in SQL identifiers,
+// allowing SQL injection if a request controls a table/column/alias name.
+// These queries use the fixed schema names below; request values are parameters,
+// never identifiers passed to sql.identifier(), .as(), or table constructors.
 const accounts = sqliteTable('accounts', {
   id: integer('id').primaryKey(),
   balance: integer('balance').notNull(),

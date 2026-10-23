@@ -102,7 +102,9 @@ v8.workspace = true
 wasmtime.workspace = true
 wasmtime-internal-fiber.workspace = true
 async_cache = "0.3.1"
-# No rkyv feature: strings are not deserialized from rkyv archives.
+# rkyv RUSTSEC-2026-0233/0234/0235 cover use-after-free and out-of-bounds reads
+# from crafted archives; RUSTSEC-2026-0001 covers Rc/Arc construction on OOM.
+# faststr's rkyv feature is disabled, so its archive support is not compiled.
 faststr = "0.2.23"
 core_affinity = "0.8"
 
