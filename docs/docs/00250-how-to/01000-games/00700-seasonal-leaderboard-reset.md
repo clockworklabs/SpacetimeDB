@@ -919,5 +919,3 @@ To adapt it to your game:
 - **Reset ratings too.** If you use [skill-based matchmaking](./00350-skill-based-matchmaking.md), you can also reset players' ratings in `end_season`, so that everyone starts the new season on equal terms.
 
 To learn more about the features used here, see [Schedule Tables](../../00200-core-concepts/00300-tables/00500-schedule-tables.md), [Indexes](../../00200-core-concepts/00300-tables/00300-indexes.md) and [Views](../../00200-core-concepts/00200-functions/00500-views.md).
-
-Next, you can [keep usernames unique and block offensive ones](../01100-social/00100-unique-usernames.md).

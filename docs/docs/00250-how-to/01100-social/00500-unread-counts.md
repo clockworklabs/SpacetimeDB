@@ -694,4 +694,4 @@ To adapt it to your app:
 
 To learn more about the features used here, see [Views](../../00200-core-concepts/00200-functions/00500-views.md) and [Indexes](../../00200-core-concepts/00300-tables/00300-indexes.md).
 
-Next, you can [paginate or infinite-scroll a large table](../01200-common-app-patterns/00100-pagination.md).
+Next, you can [make a top 100 leaderboard](../01000-games/00100-top-100-leaderboard.md).
