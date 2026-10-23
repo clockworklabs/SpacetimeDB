@@ -2452,6 +2452,8 @@ impl ReducerDef {
     }
 }
 
+// Keep the original typespace references, but use the names resolved by validation so
+// revalidating the raw definition with CaseConversionPolicy::None preserves the schema.
 fn canonical_params(mut params: ProductType, params_for_generate: &ProductTypeDef) -> ProductType {
     assert_eq!(params.elements.len(), params_for_generate.elements.len());
     for (param, (name, _)) in params.elements.iter_mut().zip(params_for_generate.elements.iter()) {
