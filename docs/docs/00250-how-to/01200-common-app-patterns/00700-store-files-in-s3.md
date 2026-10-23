@@ -7,29 +7,29 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 :::note Prerequisites
-You need a module and a client connected to it, and an Amazon S3 bucket, or a bucket on an S3-compatible service such as Cloudflare R2 or MinIO. If you don't have a module yet, follow the [quickstart](../../00100-intro/00100-getting-started/00100-getting-started.md) for your language first.
+You need a module and a client connected to it, and an Amazon S3 bucket, or a bucket on an S3-compatible service such as Cloudflare R2. If you don't have a module yet, follow the [quickstart](../../00100-intro/00100-getting-started/00100-getting-started.md) for your language first.
 :::
 
-In this guide, you'll let players upload files, list them, download them and delete them. The files go straight from the client to your bucket, so large files never pass through SpacetimeDB, and your database only keeps a record of each file. Your module signs short-lived URLs that allow one request each, so your S3 secret key never reaches the client. You'll sign them in [procedures](../../00200-core-concepts/00200-functions/00400-procedures.md), with the keys stored in [environment variables](../../00200-core-concepts/00100-databases/00700-environment-variables.md).
+In this guide, you'll let players upload files, list them, download them and delete them. The files go straight from the client to your bucket, so large files never pass through SpacetimeDB, and your database only keeps a record of each file. Your module signs short-lived URLs that each allow one kind of request on one file, so your S3 secret key never reaches the client. You'll sign them in [procedures](../../00200-core-concepts/00200-functions/00400-procedures.md), with the keys stored in [environment variables](../../00200-core-concepts/00100-databases/00700-environment-variables.md).
 
 ## How it works
 
 - `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` environment variables store your S3 keys on the database.
-- A `presign` function signs a URL for one request on one file, valid for 5 minutes.
-- A `request_upload` procedure chooses where the file goes in the bucket, records it in a private `pending_upload` table, and returns a signed upload URL.
+- A `presign` function signs a URL for one kind of request on one file, such as an upload, valid for 5 minutes.
+- A `request_upload` procedure checks the file's size, chooses where the file goes in the bucket, records it in a private `pending_upload` table, and returns a signed upload URL for a file of that size.
 - The client uploads the file to that URL with an HTTP `PUT`.
 - A `confirm_upload` procedure checks that the file is in the bucket and isn't too big, then moves it to the public `uploaded_file` table.
 - A `request_download` procedure returns a signed download URL, and a `delete_file` procedure deletes a file from the bucket and from `uploaded_file`.
 - Once an hour, a `clean_up_uploads` procedure deletes the uploads that players requested but never confirmed.
 
-The bucket stays private: anyone who wants a file needs a URL that your module signed. A signed upload URL can't limit the size of the file, which is why `confirm_upload` checks it after the upload.
+The bucket stays private: anyone who wants a file needs a URL that your module signed. The upload URL also fixes the file's size and content type, so the bucket rejects a file bigger than the one the player asked to upload.
 
 ## Set up the bucket
 
 In your storage service:
 
 - Create a bucket, and keep it private.
-- Create an access key that can only read, write and delete files in that bucket. On AWS, that's an IAM user with the `s3:GetObject`, `s3:PutObject` and `s3:DeleteObject` permissions on `arn:aws:s3:::your-bucket/*`.
+- Create an access key that can only list, read, write and delete files in that bucket. On AWS, that's an IAM user with the `s3:GetObject`, `s3:PutObject` and `s3:DeleteObject` permissions on `arn:aws:s3:::your-bucket/*`, and the `s3:ListBucket` permission on `arn:aws:s3:::your-bucket`. Without `s3:ListBucket`, S3 answers a request for a file that doesn't exist with an access error, so `confirm_upload` can't tell that the file was never uploaded.
 - If your client runs in a web browser, add a CORS rule to the bucket that allows `PUT` and `GET` requests, and the `Content-Type` header, from your site's origin. Browsers block the upload otherwise.
 
 ## Define the tables and the keys
@@ -231,15 +231,15 @@ The keys stay in the database across later publishes, so you only pass them once
 
 ## Sign requests
 
-Add a `presign` function that signs a URL for one request, such as a `PUT` or a `GET`, on one file. Anyone who has the URL can make that request until it expires, 5 minutes later, without your keys. It uses [AWS Signature Version 4](https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html), which S3-compatible services also accept:
+Add a `presign` function that signs a URL for one kind of request, such as a `PUT` or a `GET`, on one file. Anyone who has the URL can make that request until it expires, 5 minutes later, without your keys. It uses [AWS Signature Version 4](https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html), which S3-compatible services also accept:
 
 1. It builds the request's canonical form: the method, the file's path, the signature's parameters and the signed headers, one per line.
 2. It derives a signing key from your secret key, the date, the region and the service, with HMAC-SHA256.
 3. It signs the canonical request with that key, and adds the signature to the URL.
 
-With a content type, the URL also requires the request to send that exact `Content-Type` header.
+For an upload, the URL also requires the request to send that exact `Content-Type` header, and a body of exactly the size that the module signed. The bucket rejects any other upload.
 
-Set the constants at the top to your bucket's. With AWS, the host includes the bucket's name, and the bucket path is empty. Services that put the bucket in the path instead, such as MinIO or Cloudflare R2, take their own host, and the bucket path `/your-bucket`.
+Set the constants at the top to your bucket's. With AWS, the host includes the bucket's name, and the bucket path is empty. Services that put the bucket in the path instead, such as Cloudflare R2, take their own host, and the bucket path `/your-bucket`.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -251,16 +251,19 @@ const S3_BUCKET_PATH = '';
 const S3_REGION = 'us-east-1';
 const URL_EXPIRY_SECONDS = 300; // 5 minutes
 
-// Returns a URL that allows one `method` request on `key`, until it expires.
-// With a content type, the request must send that `Content-Type` header.
-function presign(ctx: Ctx, method: string, key: string, contentType = ''): string {
+// Returns a URL that allows `method` requests on `key`, until it expires.
+// For an upload, pass the content type and the size: the request must send that
+// `Content-Type` header, and a body of exactly `contentLength` bytes.
+function presign(ctx: Ctx, method: string, key: string, contentType = '', contentLength = 0n): string {
   // For example, 20260115T093000Z.
   const amzDate = ctx.timestamp.toDate().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
   const date = amzDate.slice(0, 8);
   const scope = `${date}/${S3_REGION}/s3/aws4_request`;
   const path = `${S3_BUCKET_PATH}/${key}`;
-  const headers = contentType ? `content-type:${contentType}\nhost:${S3_HOST}\n` : `host:${S3_HOST}\n`;
-  const signedHeaders = contentType ? 'content-type;host' : 'host';
+  const headers = contentType
+    ? `content-length:${contentLength}\ncontent-type:${contentType}\nhost:${S3_HOST}\n`
+    : `host:${S3_HOST}\n`;
+  const signedHeaders = contentType ? 'content-length;content-type;host' : 'host';
   const query = [
     'X-Amz-Algorithm=AWS4-HMAC-SHA256',
     `X-Amz-Credential=${encodeURIComponent(`${ctx.env.S3_ACCESS_KEY_ID}/${scope}`)}`,
@@ -297,17 +300,20 @@ public static partial class Module
     const string S3Region = "us-east-1";
     const int UrlExpirySeconds = 300; // 5 minutes
 
-    // Returns a URL that allows one `method` request on `key`, until it expires.
-    // With a content type, the request must send that `Content-Type` header.
-    static string Presign(ProcedureContext ctx, string method, string key, string contentType = "")
+    // Returns a URL that allows `method` requests on `key`, until it expires.
+    // For an upload, pass the content type and the size: the request must send that
+    // `Content-Type` header, and a body of exactly `contentLength` bytes.
+    static string Presign(ProcedureContext ctx, string method, string key, string contentType = "", ulong contentLength = 0)
     {
         // For example, 20260115T093000Z.
         var amzDate = ((DateTimeOffset)ctx.Timestamp).UtcDateTime.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
         var date = amzDate[..8];
         var scope = $"{date}/{S3Region}/s3/aws4_request";
         var path = $"{S3BucketPath}/{key}";
-        var headers = contentType != "" ? $"content-type:{contentType}\nhost:{S3Host}\n" : $"host:{S3Host}\n";
-        var signedHeaders = contentType != "" ? "content-type;host" : "host";
+        var headers = contentType != ""
+            ? $"content-length:{contentLength}\ncontent-type:{contentType}\nhost:{S3Host}\n"
+            : $"host:{S3Host}\n";
+        var signedHeaders = contentType != "" ? "content-length;content-type;host" : "host";
         var query = string.Join("&",
             "X-Amz-Algorithm=AWS4-HMAC-SHA256",
             $"X-Amz-Credential={Uri.EscapeDataString($"{ctx.Env.S3_ACCESS_KEY_ID}/{scope}")}",
@@ -361,9 +367,10 @@ const S3_BUCKET_PATH: &str = "";
 const S3_REGION: &str = "us-east-1";
 const URL_EXPIRY_SECONDS: u32 = 300; // 5 minutes
 
-/// Returns a URL that allows one `method` request on `key`, until it expires.
-/// With a content type, the request must send that `Content-Type` header.
-fn presign(ctx: &ProcedureContext, method: &str, key: &str, content_type: &str) -> String {
+/// Returns a URL that allows `method` requests on `key`, until it expires.
+/// For an upload, pass the content type and the size: the request must send that
+/// `Content-Type` header, and a body of exactly `content_length` bytes.
+fn presign(ctx: &ProcedureContext, method: &str, key: &str, content_type: &str, content_length: u64) -> String {
     // For example, 20260115T093000Z.
     let now = ctx.timestamp.to_rfc3339().expect("the time can be formatted");
     let amz_date = format!("{}T{}Z", now[..10].replace('-', ""), now[11..19].replace(':', ""));
@@ -373,7 +380,10 @@ fn presign(ctx: &ProcedureContext, method: &str, key: &str, content_type: &str) 
     let (headers, signed_headers) = if content_type.is_empty() {
         (format!("host:{S3_HOST}\n"), "host")
     } else {
-        (format!("content-type:{content_type}\nhost:{S3_HOST}\n"), "content-type;host")
+        (
+            format!("content-length:{content_length}\ncontent-type:{content_type}\nhost:{S3_HOST}\n"),
+            "content-length;content-type;host",
+        )
     };
     let credential = format!("{}/{scope}", ctx.env.S3_ACCESS_KEY_ID());
     let query = [
@@ -419,11 +429,11 @@ The file keys that your module chooses only contain letters, digits and slashes,
 
 ## Request an upload
 
-Add a `request_upload` procedure that clients call with the file's name and content type, such as `image/png`. It:
+Add a `request_upload` procedure that clients call with the file's name, its content type, such as `image/png`, and its size in bytes. It:
 
-- Rejects names that are empty or longer than 200 characters, and content types that aren't a type and a subtype, such as `image/png`.
+- Rejects names that are empty or longer than 200 characters, content types that aren't a type and a subtype, such as `image/png`, and files bigger than 50 MB.
 - Chooses the file's key from the caller's identity and the current time, such as `uploads/c200…/1767864600000000`. Players can't choose where their file goes, so they can't overwrite anyone else's.
-- Records the upload in `pending_upload`, and returns the key and a signed `PUT` URL.
+- Records the upload in `pending_upload`, and returns the key and a signed `PUT` URL. The URL only accepts a file of that size and content type, so a player can't upload a bigger file than the one they asked for.
 
 The procedure returns an `UploadTicket` value with three fields: `key`, `url`, and `error`, which explains what went wrong, or is empty on success. Returning errors this way, instead of throwing, means clients get the same kind of result whichever language your module is written in.
 
@@ -432,6 +442,7 @@ The procedure returns an `UploadTicket` value with three fields: `key`, `url`, a
 
 ```typescript
 const MAX_NAME_LENGTH = 200;
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 
 const uploadTicket = t.object('UploadTicket', {
   key: t.string(),
@@ -440,20 +451,23 @@ const uploadTicket = t.object('UploadTicket', {
 });
 
 export const requestUpload = spacetimedb.procedure(
-  { name: t.string(), contentType: t.string() },
+  { name: t.string(), contentType: t.string(), size: t.u64() },
   uploadTicket,
-  (ctx, { name, contentType }) => {
+  (ctx, { name, contentType, size }) => {
     if (name.length === 0 || name.length > MAX_NAME_LENGTH) {
       return { key: '', url: '', error: `File names must be 1 to ${MAX_NAME_LENGTH} characters long` };
     }
     if (!/^[\w.+-]+\/[\w.+-]+$/.test(contentType)) {
       return { key: '', url: '', error: "That doesn't look like a content type" };
     }
+    if (size > BigInt(MAX_FILE_SIZE)) {
+      return { key: '', url: '', error: `Files must be at most ${MAX_FILE_SIZE / (1024 * 1024)} MB` };
+    }
     const key = `uploads/${ctx.sender.toHexString()}/${ctx.timestamp.microsSinceUnixEpoch}`;
     ctx.withTx(tx => {
       tx.db.pendingUpload.insert({ key, owner: tx.sender, name, contentType, requestedAt: tx.timestamp });
     });
-    return { key, url: presign(ctx, 'PUT', key, contentType), error: '' };
+    return { key, url: presign(ctx, 'PUT', key, contentType, size), error: '' };
   }
 );
 ```
@@ -465,6 +479,7 @@ export const requestUpload = spacetimedb.procedure(
 public static partial class Module
 {
     const int MaxNameLength = 200;
+    const ulong MaxFileSize = 50 * 1024 * 1024; // 50 MB
 
     [SpacetimeDB.Type]
     public partial struct UploadTicket
@@ -475,7 +490,7 @@ public static partial class Module
     }
 
     [SpacetimeDB.Procedure]
-    public static UploadTicket RequestUpload(ProcedureContext ctx, string name, string contentType)
+    public static UploadTicket RequestUpload(ProcedureContext ctx, string name, string contentType, ulong size)
     {
         if (name.Length == 0 || name.Length > MaxNameLength)
         {
@@ -484,6 +499,10 @@ public static partial class Module
         if (!IsContentType(contentType))
         {
             return new UploadTicket { Key = "", Url = "", Error = "That doesn't look like a content type" };
+        }
+        if (size > MaxFileSize)
+        {
+            return new UploadTicket { Key = "", Url = "", Error = $"Files must be at most {MaxFileSize / (1024 * 1024)} MB" };
         }
         var key = $"uploads/{ctx.Sender.ToString().ToLowerInvariant()}/{ctx.Timestamp.MicrosecondsSinceUnixEpoch}";
         ctx.WithTx(tx => tx.Db.PendingUpload.Insert(new PendingUpload
@@ -494,7 +513,7 @@ public static partial class Module
             ContentType = contentType,
             RequestedAt = tx.Timestamp,
         }));
-        return new UploadTicket { Key = key, Url = Presign(ctx, "PUT", key, contentType), Error = "" };
+        return new UploadTicket { Key = key, Url = Presign(ctx, "PUT", key, contentType, size), Error = "" };
     }
 
     // True for a type and a subtype, such as "image/png".
@@ -512,6 +531,7 @@ public static partial class Module
 
 ```rust
 const MAX_NAME_LENGTH: usize = 200;
+const MAX_FILE_SIZE: u64 = 50 * 1024 * 1024; // 50 MB
 
 #[derive(spacetimedb::SpacetimeType)]
 pub struct UploadTicket {
@@ -531,12 +551,15 @@ impl UploadTicket {
 }
 
 #[procedure]
-pub fn request_upload(ctx: &mut ProcedureContext, name: String, content_type: String) -> UploadTicket {
+pub fn request_upload(ctx: &mut ProcedureContext, name: String, content_type: String, size: u64) -> UploadTicket {
     if name.is_empty() || name.chars().count() > MAX_NAME_LENGTH {
         return UploadTicket::error(format!("File names must be 1 to {MAX_NAME_LENGTH} characters long"));
     }
     if !is_content_type(&content_type) {
         return UploadTicket::error("That doesn't look like a content type".to_string());
+    }
+    if size > MAX_FILE_SIZE {
+        return UploadTicket::error(format!("Files must be at most {} MB", MAX_FILE_SIZE / (1024 * 1024)));
     }
     let key = format!(
         "uploads/{}/{}",
@@ -552,7 +575,7 @@ pub fn request_upload(ctx: &mut ProcedureContext, name: String, content_type: St
             requested_at: tx.timestamp,
         });
     });
-    let url = presign(ctx, "PUT", &key, &content_type);
+    let url = presign(ctx, "PUT", &key, &content_type, size);
     UploadTicket {
         key,
         url,
@@ -576,18 +599,18 @@ fn is_content_type(content_type: &str) -> bool {
 </Tabs>
 
 :::note Accepting only some types
-To accept only some kinds of files, such as images, check `content_type` against a list in `request_upload`. The content type is signed into the upload URL, so the bucket rejects an upload with a different `Content-Type` header. It's still the type that the client says the file has: if you need to know what the file really contains, check its content after the upload.
+To accept only some kinds of files, such as images, check the content type against a list in `request_upload`. The content type is signed into the upload URL, so the bucket rejects an upload with a different `Content-Type` header. It's still the type that the client says the file has: if you need to know what the file really contains, check its content after the upload.
 :::
 
 ## Confirm the upload
 
-Add an `s3_request` function that sends a signed request for a file to the bucket, and returns the status of the reply, or 0 if there was no reply. For a `HEAD` request, it also returns the file's size.
+Add an `s3_request` function (`s3Request` in TypeScript, `S3Request` in C#) that sends a signed request for a file to the bucket, and returns the status of the reply, or 0 if there was no reply. For a `HEAD` request, it also returns the file's size.
 
 Then add a `confirm_upload` procedure that clients call once their upload is done. It:
 
 - Rejects keys that aren't one of the caller's pending uploads.
 - Sends a `HEAD` request for the file, which returns its size without downloading it. It rejects the upload if the file isn't in the bucket.
-- If the file is bigger than 50 MB, deletes it from the bucket and from `pending_upload`, and rejects the upload.
+- As a second check, if the file is bigger than 50 MB, deletes it from the bucket and from `pending_upload`, and rejects the upload.
 - Otherwise, moves the upload from `pending_upload` to `uploaded_file`, in one transaction.
 
 It returns an error message, or an empty string on success.
@@ -596,8 +619,6 @@ It returns an error message, or an empty string on success.
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
-
 // Sends a signed request for `key` to the bucket.
 // Returns the status of the reply, or 0 if there was no reply, and the size of the file.
 function s3Request(ctx: Ctx, method: string, key: string) {
@@ -651,8 +672,6 @@ export const confirmUpload = spacetimedb.procedure({ key: t.string() }, t.string
 ```csharp
 public static partial class Module
 {
-    const ulong MaxFileSize = 50 * 1024 * 1024; // 50 MB
-
     // Sends a signed request for `key` to the bucket.
     // Returns the status of the reply, or 0 if there was no reply, and the size of the file.
     static (int Status, ulong Size) S3Request(ProcedureContext ctx, SpacetimeDB.HttpMethod method, string key)
@@ -724,14 +743,12 @@ public static partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
-const MAX_FILE_SIZE: u64 = 50 * 1024 * 1024; // 50 MB
-
 /// Sends a signed request for `key` to the bucket.
 /// Returns the status of the reply, or 0 if there was no reply, and the size of the file.
 fn s3_request(ctx: &mut ProcedureContext, method: &str, key: &str) -> (u16, u64) {
     let request = Request::builder()
         .method(method)
-        .uri(presign(ctx, method, key, ""))
+        .uri(presign(ctx, method, key, "", 0))
         .extension(Timeout(Duration::from_secs(10).into()))
         .body(())
         .expect("the request is valid");
@@ -789,6 +806,8 @@ pub fn confirm_upload(ctx: &mut ProcedureContext, key: String) -> String {
 </Tabs>
 
 Clients can only confirm their own uploads, and only with the size that the bucket reports, so the `uploaded_file` table only lists files that are really in the bucket.
+
+Until the upload URL expires, 5 minutes after `request_upload`, the player can use it again. They can only send a file of the same size and type to the same key, so at most they replace their own file. If they delete the file in that time, they can also put it back in the bucket, without a row in `uploaded_file`.
 
 ## Download and delete files
 
@@ -885,7 +904,7 @@ pub struct DownloadLink {
 pub fn request_download(ctx: &mut ProcedureContext, file_id: u64) -> DownloadLink {
     match ctx.with_tx(|tx| tx.db.uploaded_file().id().find(file_id)) {
         Some(row) => DownloadLink {
-            url: presign(ctx, "GET", &row.key, ""),
+            url: presign(ctx, "GET", &row.key, "", 0),
             error: String::new(),
         },
         None => DownloadLink {
@@ -1034,7 +1053,7 @@ pub fn clean_up_uploads(ctx: &mut ProcedureContext, _cleanup: UploadCleanup) {
 </TabItem>
 </Tabs>
 
-If the bucket can't be reached, `s3_request` logs the error, and the file stays in the bucket without a row. It no longer appears anywhere in your database, so it's harmless, but it still uses storage.
+If the bucket can't be reached, `s3_request` (`s3Request` in TypeScript, `S3Request` in C#) logs the error, and the file stays in the bucket without a row. It no longer appears anywhere in your database, so it's harmless, but it still uses storage.
 
 :::note
 `init` only runs when the database is created. Publishing new code to an existing database doesn't run it again, so the cleanup won't start there. To start it, either republish with `--delete-data`, which erases all data, or insert the row from another reducer. Before inserting, check that `upload_cleanup` is empty: with two rows, `clean_up_uploads` would run twice as often.
@@ -1044,8 +1063,8 @@ If the bucket can't be reached, `s3_request` logs the error, and the file stays 
 
 On the client, subscribe to `uploaded_file` to list the files. To upload a file:
 
-1. Call `request_upload` with the file's name and content type.
-2. Send the file to the returned URL with an HTTP `PUT`, and a `Content-Type` header with the same content type.
+1. Call `request_upload` with the file's name, content type and size.
+2. Send the file to the returned URL with an HTTP `PUT`, and a `Content-Type` header with the same content type. HTTP libraries send the file's size in a `Content-Length` header themselves, and it must match the size you passed.
 3. Call `confirm_upload` with the returned key.
 
 To download a file, call `request_download`, and open or fetch the returned URL within 5 minutes.
@@ -1073,40 +1092,54 @@ function listFiles() {
 // Uploads a file, such as one the player picked in a file input.
 async function uploadFile(file: File) {
   const contentType = file.type || 'application/octet-stream';
-  const ticket = await conn.procedures.requestUpload({ name: file.name, contentType });
-  if (ticket.error) {
-    console.error(`Could not upload the file: ${ticket.error}`);
-    return;
-  }
-  const response = await fetch(ticket.url, {
-    method: 'PUT',
-    headers: { 'content-type': contentType },
-    body: file,
-  });
-  if (!response.ok) {
-    console.error(`The upload failed with status ${response.status}`);
-    return;
-  }
-  const error = await conn.procedures.confirmUpload({ key: ticket.key });
-  if (error) {
+  try {
+    const ticket = await conn.procedures.requestUpload({ name: file.name, contentType, size: BigInt(file.size) });
+    if (ticket.error) {
+      console.error(`Could not upload the file: ${ticket.error}`);
+      return;
+    }
+    const response = await fetch(ticket.url, {
+      method: 'PUT',
+      headers: { 'content-type': contentType },
+      body: file,
+    });
+    if (!response.ok) {
+      console.error(`The upload failed with status ${response.status}`);
+      return;
+    }
+    const error = await conn.procedures.confirmUpload({ key: ticket.key });
+    if (error) {
+      console.error(`Could not upload the file: ${error}`);
+    }
+  } catch (error) {
+    // The procedure call or the upload itself failed, for example because a browser blocked it.
     console.error(`Could not upload the file: ${error}`);
   }
 }
 
 // Returns a URL to download the file from, valid for 5 minutes.
 async function downloadUrl(fileId: bigint) {
-  const link = await conn.procedures.requestDownload({ fileId });
-  if (link.error) {
-    console.error(`Could not download the file: ${link.error}`);
+  try {
+    const link = await conn.procedures.requestDownload({ fileId });
+    if (link.error) {
+      console.error(`Could not download the file: ${link.error}`);
+      return undefined;
+    }
+    return link.url;
+  } catch (error) {
+    console.error(`Could not call the procedure: ${error}`);
     return undefined;
   }
-  return link.url;
 }
 
 async function deleteFile(fileId: bigint) {
-  const error = await conn.procedures.deleteFile({ fileId });
-  if (error) {
-    console.error(`Could not delete the file: ${error}`);
+  try {
+    const error = await conn.procedures.deleteFile({ fileId });
+    if (error) {
+      console.error(`Could not delete the file: ${error}`);
+    }
+  } catch (error) {
+    console.error(`Could not call the procedure: ${error}`);
   }
 }
 ```
@@ -1147,7 +1180,8 @@ void ListFiles()
 // Uploads the file at `path`.
 void UploadFile(string path, string contentType)
 {
-    conn.Procedures.RequestUpload(Path.GetFileName(path), contentType, (ctx, result) =>
+    var size = (ulong)new FileInfo(path).Length;
+    conn.Procedures.RequestUpload(Path.GetFileName(path), contentType, size, (ctx, result) =>
     {
         if (!result.IsSuccess || result.Value is not UploadTicket ticket)
         {
@@ -1166,9 +1200,19 @@ void UploadFile(string path, string contentType)
 
 async Task PutAndConfirm(UploadTicket ticket, string path, string contentType)
 {
-    var content = new ByteArrayContent(await File.ReadAllBytesAsync(path));
-    content.Headers.ContentType = new MediaTypeHeaderValue(contentType);
-    var response = await http.PutAsync(ticket.Url, content);
+    HttpResponseMessage response;
+    try
+    {
+        var content = new ByteArrayContent(await File.ReadAllBytesAsync(path));
+        content.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        response = await http.PutAsync(ticket.Url, content);
+    }
+    catch (Exception error) when (error is HttpRequestException or IOException or TaskCanceledException)
+    {
+        // The file couldn't be read, or the bucket couldn't be reached.
+        Console.WriteLine($"The upload failed: {error.Message}");
+        return;
+    }
     if (!response.IsSuccessStatusCode)
     {
         Console.WriteLine($"The upload failed with status {(int)response.StatusCode}");
@@ -1262,8 +1306,12 @@ fn list_files(conn: &DbConnection) {
 /// Uploads the file at `path`.
 fn upload_file(conn: &Arc<DbConnection>, path: String, content_type: String) {
     let name = Path::new(&path).file_name().unwrap_or_default().to_string_lossy().into_owned();
+    let size = match std::fs::metadata(&path) {
+        Ok(metadata) => metadata.len(),
+        Err(error) => return eprintln!("Could not read the file: {error}"),
+    };
     let conn_for_upload = conn.clone();
-    conn.procedures.request_upload_then(name, content_type.clone(), move |_ctx, result| {
+    conn.procedures.request_upload_then(name, content_type.clone(), size, move |_ctx, result| {
         let ticket = match result {
             Ok(ticket) if ticket.error.is_empty() => ticket,
             Ok(ticket) => return eprintln!("Could not upload the file: {}", ticket.error),
@@ -1320,16 +1368,15 @@ ureq = "3"
 You now store players' files in a bucket, and keep track of them in your database:
 
 - Clients upload and download files directly from the bucket, with URLs that your module signs and that expire after 5 minutes.
-- Your module chooses where each file goes, and checks its size before it lists it.
+- Your module chooses where each file goes and how big it can be, and checks that it's in the bucket before it lists it.
 - A scheduled procedure deletes the uploads that players never confirmed.
 - The bucket stays private, and your S3 keys never leave the database.
 
 To adapt it to your app:
 
 - **Limit who can download.** Check the caller in `request_download`, for example to let only the owner download a file, or the owner's friends, as in [Build a friends or follow list](../01100-social/00200-friends-list.md). To also hide the file list, make `uploaded_file` private and give each player their own files through a [view](../../00200-core-concepts/00200-functions/00500-views.md).
-- **Other S3-compatible services.** With Cloudflare R2, set the host to `<account-id>.r2.cloudflarestorage.com`, the bucket path to `/your-bucket`, and the region to `auto`. With a local MinIO server, use its host and port, the bucket path, and `http` instead of `https` in `presign`.
+- **Other S3-compatible services.** With Cloudflare R2, set the host to `<account-id>.r2.cloudflarestorage.com`, the bucket path to `/your-bucket`, and the region to `auto`.
 - **Public files.** To serve files that anyone can see, such as avatars, make their part of the bucket public, or put a CDN in front of it, and store the public URL in `uploaded_file` instead of signing download URLs.
-- **Limit the size before the upload.** S3's POST policies can reject files above a size before they're stored. They use a different kind of signed form, which `presign` doesn't build.
 
 To learn more about the features used here, see [Procedures](../../00200-core-concepts/00200-functions/00400-procedures.md), [Environment Variables](../../00200-core-concepts/00100-databases/00700-environment-variables.md) and [File Storage](../../00200-core-concepts/00300-tables/00210-file-storage.md).
 
