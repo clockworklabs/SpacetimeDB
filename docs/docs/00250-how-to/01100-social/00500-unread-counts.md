@@ -15,12 +15,14 @@ In this guide, you'll show how many messages each room has that the player hasn'
 
 ## How it works
 
-- A private `read_marker` table has one row for each player in each room they've read. It holds the `id` of the last message they read there. Each message's `id` is larger than the ids of the messages sent before it, so this one number tells which messages are unread: the ones with a larger `id`.
-- A `mark_read` reducer moves the caller's marker forward. It never moves it back, so a late or repeated request can't make messages unread again.
+- A private `read_marker` table holds the `id` of the last message each player read in each room.
+- A `mark_read` reducer moves the caller's marker forward, and never back.
 - A `my_read_markers` view returns the caller's markers.
-- The client already has the messages of the player's rooms, from `my_messages`. A room's unread count is the number of its messages that have an `id` larger than the marker, and that other players sent.
-- When the player opens a room, and when a message arrives in the room they have open, the client marks the room as read.
+- Clients count each room's unread messages from `my_messages`, which they already have: the messages that other players sent after the marker.
+- When the player opens a room, or a message arrives in the room they have open, the client marks the room as read.
 - When a message arrives in another room, the client shows a notice, such as "New message from Alice in general".
+
+Each message's `id` is larger than the ids of the messages sent before it, so one number per room is enough: the unread messages are the ones with a larger `id`. Because the marker never moves back, a late or repeated request can't make messages unread again.
 
 ## Define the table and the view
 
@@ -604,7 +606,7 @@ fn show_room(conn: &DbConnection, room_id: u64) {
 
 ## Notify about new messages
 
-When a message arrives in the room on screen, mark the room as read, so the player's other devices clear it too. Don't show the counts yet: the room would show 1 unread message until its marker changes, and the marker's update shows them. When a message arrives in another room, show a notice, then the counts.
+When a message arrives in the room on screen, mark the room as read, so the player's other devices clear it too. Wait for the marker to change before showing the counts again, or the room briefly shows 1 unread message. When a message arrives in another room, show a notice, then the counts.
 
 Only notify about messages that other players just sent. Inserts into `my_messages` also happen when the client subscribes, and when the player joins a room and gets its earlier messages. The event of each insert tells them apart:
 
@@ -691,3 +693,5 @@ To adapt it to your app:
 - **Players who aren't online.** Clients only see new messages while they're connected. To reach players who aren't, send them an email from your module, as in [Send an email from your module](../01200-common-app-patterns/00400-send-email.md).
 
 To learn more about the features used here, see [Views](../../00200-core-concepts/00200-functions/00500-views.md) and [Indexes](../../00200-core-concepts/00300-tables/00300-indexes.md).
+
+Next, you can [paginate or infinite-scroll a large table](../01200-common-app-patterns/00100-pagination.md).

@@ -403,7 +403,7 @@ fn show_typing(db: &RemoteTables) {
 
 ## Signal that the user is typing
 
-Each time the text in the message box changes, call `start_typing`, but at most once every 2 seconds. Each call is a transaction whose row goes to every subscribed client, so sending one per keystroke would be wasteful: one signal every 2 seconds is enough to keep the user showing as typing.
+Each time the text in the message box changes, call `start_typing`, but at most once every 2 seconds. Each call sends a row to every subscribed client, so don't send one per keystroke: one signal every 2 seconds is enough to keep the user showing as typing.
 
 When the user sends their message, forget when you last signaled, so the next keystroke signals right away.
 

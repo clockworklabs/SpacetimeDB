@@ -19,7 +19,7 @@ In this guide, you'll send emails to players from your module, such as a welcome
 - A private `email_outbox` schedule table holds the emails to send. A `queue_email` function adds one, from any reducer.
 - Each row of `email_outbox` runs the `send_email` procedure, which sends the email to your provider. If the provider can't take it right now, `send_email` queues it again a minute later, up to 3 attempts in all.
 
-Reducers can't make HTTP requests, because they run inside a transaction, so they queue emails instead of sending them. This has a benefit: an email queued by a reducer that fails is never sent, because the failed reducer's changes, including its row in `email_outbox`, are undone. The procedure sends the email after the reducer's transaction has committed.
+Reducers can't make HTTP requests, because they run inside a transaction, so they queue emails instead of sending them. The procedure only sends an email once the transaction that queued it has committed. If a reducer fails, its changes are undone, including its rows in `email_outbox`, so its emails are never sent.
 
 ## Define the tables and the API key
 
@@ -667,4 +667,4 @@ To adapt it to your app:
 
 To learn more about the features used here, see [Procedures](../../00200-core-concepts/00200-functions/00400-procedures.md), [Schedule Tables](../../00200-core-concepts/00300-tables/00500-schedule-tables.md) and [Environment Variables](../../00200-core-concepts/00100-databases/00700-environment-variables.md).
 
-To call other web services the same way, see [Call an external API from your module](./00500-call-external-api.md).
+Next, you can [call an external API from your module](./00500-call-external-api.md).
