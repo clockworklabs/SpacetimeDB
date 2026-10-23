@@ -26,7 +26,7 @@ Each guide will also get a short-format video (done later, once the written guid
 - [x] Build a friends or follow list
 - [x] Chat rooms and private DMs
 - [x] Typing indicators and other short-lived signals
-- [ ] Unread counts and notifications
+- [x] Unread counts and notifications
 
 ## Common app patterns
 
