@@ -100,6 +100,12 @@ After completing setup, `spacetime dev`:
 
 Your database will be available at `https://maincloud.spacetimedb.com`.
 
+### Receiver dependencies
+
+When the root database in `spacetime.json` declares `dependencies`, `dev` attempts receiver binding generation **before** building the sender, including on rebuilds. It watches receiver sources as well as published module sources, even when the receivers are outside the sender directory. Child targets may provide receiver source settings, but their own dependency arrays are not processed by `dev`.
+
+Receiver code generators are not implemented yet, so this step currently fails. `--skip-generate` skips both receiver and client binding generation and removes receiver-only watch paths; it does not supply missing bindings. `--skip-publish` does not skip generation. See the [receiver dependency reference](/cli-reference/spacetime-json#receiver-dependencies) for configuration and current limitations.
+
 ### Client Development Server
 
 `spacetime dev` can automatically run your client's development server alongside the SpacetimeDB module. This is configured via the `spacetime.json` file in your project root:

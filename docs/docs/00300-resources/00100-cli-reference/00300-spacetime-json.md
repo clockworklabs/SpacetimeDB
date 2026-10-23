@@ -40,6 +40,7 @@ These fields can appear at any level (root or child):
 | `num-replicas` | number | Yes | Number of database replicas |
 | `anonymous` | boolean | Yes | Use anonymous identity |
 | `organization` | string | Yes | Organization name or identity |
+| `dependencies` | array | No | Receiver binding inputs for this sender (see [Receiver dependencies](#receiver-dependencies)) |
 | `generate` | array | No | Generate targets (see [Generate configuration](#generate-configuration)) |
 | `children` | array | No | Child database entities (see [Children and inheritance](#children-and-inheritance)) |
 | `dev` | object | No | Dev server configuration, root-level only (see [`spacetime dev` configuration](#spacetime-dev-configuration)) |
@@ -52,7 +53,8 @@ The `generate` key is an array of objects. Each object configures bindings gener
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `language` | string | Target language: `typescript`, `csharp`, `rust`, `unrealcpp` (required) |
+| `language` | string | Target language: `typescript`, `csharp`, `rust`, `unrealcpp`; `cpp` is reserved for module bindings |
+| `bindings` | string | `client` (default) or `module`; module binding generation is not implemented yet |
 | `out-dir` | string | Output directory for generated files |
 | `namespace` | string | C# namespace (`csharp` only) |
 | `unreal-module-name` | string | Unreal module name (`unrealcpp` only) |
@@ -80,6 +82,73 @@ When `spacetime generate` runs, it deduplicates by module path. If multiple data
 }
 ```
 
+## Receiver dependencies
+
+Receiver bindings are module-side bindings for asynchronous inter-database communication (IDC), distinct from the client bindings used by an application connecting to a database. Declare their inputs in the sender database's `dependencies` array.
+
+:::caution Receiver code generation is not implemented yet
+The CLI accepts receiver dependencies and `--bindings module`, resolves their inputs, and selects a generator, but receiver code generation currently fails with a language-specific “receiver binding generation is not implemented yet” error. This configuration does not yet provide a working IDC binding-generation workflow. Ordinary client bindings remain the default.
+:::
+
+Each sender with dependencies must define `module-path`. Dependencies are not inherited by children.
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Local dependency name passed to receiver binding generation; not the receiver's database name |
+| `module-path` | One source required | Receiver source directory; takes precedence over `database` when both are set |
+| `database` | One source required | Exact name of another target in the same config, used to look up its local module source; not a live-schema fetch |
+| `out-dir` | No | Output directory, relative to the config directory |
+| `build-options` | No | Receiver build options when using a direct `module-path` |
+| `dotnet-version` | No | Receiver .NET SDK version when using a direct `module-path` |
+
+### Receiver source without a publish target
+
+A direct receiver source does not need its own database target:
+
+```json
+{
+  "database": "lobby",
+  "module-path": "./lobby",
+  "dependencies": [
+    {
+      "name": "game_world",
+      "module-path": "./game_world",
+      "out-dir": "./lobby/src/remote_bindings"
+    }
+  ]
+}
+```
+
+Declaring a dependency does not publish the receiver. To make it a publish target too, define it under `children` and reference its `database`:
+
+```json
+{
+  "database": "lobby",
+  "module-path": "./lobby",
+  "dependencies": [
+    { "name": "game_world", "database": "game-world" }
+  ],
+  "children": [
+    { "database": "game-world", "module-path": "./game_world" }
+  ]
+}
+```
+
+A `database` reference uses the target's `module-path`, `bin-path`, or `js-path`, and its resolved receiver build options and .NET SDK version. It fails if no matching target or module source exists. A dependency does not inherit the sender's build options or .NET SDK version.
+
+`spacetime generate lobby` selects the sender's regular `generate` entries and dependencies; without a database filter, generation includes all targets' entries. The receiver binding language is inferred from the sender module, not the client project. Prepared output defaults are `<sender module-path>/src/remote_bindings` for Rust/TypeScript and `<sender module-path>/remote_bindings` for C#/C++. These are output defaults, not a claim that those generators are implemented.
+
+### Explicit module-binding request
+
+The equivalent CLI mode can be selected explicitly. Here `--module-path` identifies the **receiver**, while `--out-dir` explicitly places output in the sender project:
+
+```bash
+spacetime generate --no-config --bindings module --lang rust \
+  --module-path ./game_world --out-dir ./lobby/src/remote_bindings
+```
+
+This request currently reaches the unimplemented receiver generator. `--bindings client` remains the default; `unrealcpp` is client-only, while `cpp` is accepted only with `--bindings module`.
+
 ## Children and inheritance
 
 The `children` array defines additional database targets. Each child inherits most fields from the root by default.
@@ -91,6 +160,7 @@ All fields listed in the [Fields reference](#fields-reference) with "Yes" in the
 The following fields are never inherited:
 
 - `database`: each child must define its own.
+- `dependencies`: receiver binding inputs belong to each sender.
 - `generate`: tied to a specific module and output location. Inheriting generate targets is redundant when the child shares the parent's module (deduplication already handles it) and dangerous when the child uses a different module (two modules would write bindings into the same output directory).
 - `children`: structural, not a database property.
 - `dev`: root-level only.
@@ -162,13 +232,14 @@ The `--run` CLI flag overrides `dev.run`.
 
 When running `spacetime dev`:
 
-1. Build all modules defined in the config.
-2. Generate bindings for all databases.
-3. Publish all databases.
-4. Run the client dev server specified by `dev.run`.
-5. Watch for changes and repeat steps 1-4.
+1. Attempt receiver binding generation for the root database's `dependencies`, before compiling the sender.
+2. Build the sender and publish the selected database targets.
+3. Process the root's configured `generate` entries (client bindings by default).
+4. Run the client dev server specified by `dev.run` and watch for changes, repeating the build/publish/generate cycle on edits.
 
-The `--server` flag overrides the server for all databases. The `--skip-publish` flag skips step 3, and `--skip-generate` skips step 2.
+Receiver dependency sources are watched even when they are outside the sender directory or not selected for publishing. Child targets can supply receiver sources for lookup, but `dev` does not process their own `dependencies` arrays.
+
+The `--server` flag overrides the server for all databases. `--skip-publish` skips publishing, not receiver generation. `--skip-generate` skips both receiver and client binding generation and excludes receiver-only sources from watching. It does not create any bindings the sender needs to compile. Until receiver generators are implemented, root dependencies cause `dev` to fail at step 1 unless generation is skipped.
 
 ### Config auto-generation
 

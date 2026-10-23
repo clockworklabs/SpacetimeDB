@@ -50,6 +50,14 @@ spacetime generate --lang typescript|csharp|rust --out-dir ./bindings --module-p
 spacetime generate --lang unrealcpp --uproject-dir ./MyGame --module-path ./server --unreal-module-name MyGame
 ```
 
+### Receiver Bindings (IDC CLI Preparation)
+
+`spacetime generate --bindings client` is the default. `--bindings module` prepares module-side receiver generation, but every receiver generator currently fails with “receiver binding generation is not implemented yet”; do not present this as a working workflow. `cpp` is module-only; `unrealcpp` is client-only.
+
+In `spacetime.json`, each sender's non-inherited `dependencies` array requires sender `module-path` and dependency `name` plus receiver `module-path` or `database`. A `database` reference resolves another target's local source/build settings in the same config; it does not fetch a running database's schema. Direct receiver source takes precedence. Dependencies do not themselves publish receivers or inherit sender build settings. `generate <sender-database>` selects that sender's generate entries and dependencies. Language defaults come from the sender module; output defaults are `<sender>/src/remote_bindings` (Rust/TypeScript) or `<sender>/remote_bindings` (C#/C++). Explicit config `out-dir` is config-relative.
+
+`dev` attempts only root dependencies before building, and watches their source paths. Child targets are available for source lookup, not recursive dependency generation. `--skip-generate` skips receiver/client generation and receiver-only watching; `--skip-publish` does not. See https://spacetimedb.com/docs/cli-reference/spacetime-json#receiver-dependencies for examples and current limitations.
+
 ### Publishing & Deployment
 
 ```bash
