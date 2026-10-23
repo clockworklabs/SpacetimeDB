@@ -50,13 +50,13 @@ spacetime generate --lang typescript|csharp|rust --out-dir ./bindings --module-p
 spacetime generate --lang unrealcpp --uproject-dir ./MyGame --module-path ./server --unreal-module-name MyGame
 ```
 
-### Receiver Bindings (IDC CLI Preparation)
+### Client and Module Bindings
 
-`spacetime generate --bindings client` is the default. `--bindings module` prepares module-side receiver generation, but every receiver generator currently fails with “receiver binding generation is not implemented yet”; do not present this as a working workflow. `cpp` is module-only; `unrealcpp` is client-only.
+`spacetime generate --bindings client` (default) generates bindings for an external application connecting to a database. `--bindings module` generates receiver bindings used inside a **calling database module** to call reducers in another **receiving database** through asynchronous IDC. Rust and TypeScript module bindings are supported; C#/C++ module bindings are not implemented yet. `unrealcpp` is client-only; `cpp` is accepted only in module mode.
 
-In `spacetime.json`, each sender's non-inherited `dependencies` array requires sender `module-path` and dependency `name` plus receiver `module-path` or `database`. A `database` reference resolves another target's local source/build settings in the same config; it does not fetch a running database's schema. Direct receiver source takes precedence. Dependencies do not themselves publish receivers or inherit sender build settings. `generate <sender-database>` selects that sender's generate entries and dependencies. Language defaults come from the sender module; output defaults are `<sender>/src/remote_bindings` (Rust/TypeScript) or `<sender>/remote_bindings` (C#/C++). Explicit config `out-dir` is config-relative.
+In `spacetime.json`, each calling database's non-inherited `dependencies` array requires its own `module-path` and dependency `name` plus receiving-module `module-path` or `database`. A `database` reference resolves another target's local source/build settings in the same config; it does not fetch a running database's schema. Direct receiver source takes precedence. Dependencies do not themselves publish receivers or inherit the calling module's build settings. `generate <calling-database>` selects that database's generate entries and dependencies. Module binding language defaults to the calling module's language; Rust/TypeScript output defaults to `<calling module-path>/src/remote_bindings`. Explicit config `out-dir` is config-relative.
 
-`dev` attempts only root dependencies before building, and watches their source paths. Child targets are available for source lookup, not recursive dependency generation. `--skip-generate` skips receiver/client generation and receiver-only watching; `--skip-publish` does not. See https://spacetimedb.com/docs/cli-reference/spacetime-json#receiver-dependencies for examples and current limitations.
+`dev` generates only root dependencies before building the calling module, and watches their source paths. Child targets are available for source lookup, not recursive dependency generation. `--skip-generate` skips receiver/client generation and receiver-only watching; `--skip-publish` does not. See https://spacetimedb.com/docs/cli-reference/spacetime-json#receiver-dependencies for examples.
 
 ### Publishing & Deployment
 

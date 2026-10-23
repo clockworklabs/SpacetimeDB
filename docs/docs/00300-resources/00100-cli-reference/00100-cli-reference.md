@@ -470,7 +470,7 @@ Run `spacetime help generate` for more detailed information.
 
   Possible values: `csharp`, `typescript`, `rust`, `cpp`, `unrealcpp`
 
-* `--bindings <BINDINGS>` — The kind of bindings to generate (module bindings are not implemented yet)
+* `--bindings <BINDINGS>` — The kind of bindings to generate (client applications or inter-database module calls)
 
   Default value: `client`
 

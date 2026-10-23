@@ -102,9 +102,11 @@ Your database will be available at `https://maincloud.spacetimedb.com`.
 
 ### Receiver dependencies
 
-When the root database in `spacetime.json` declares `dependencies`, `dev` attempts receiver binding generation **before** building the sender, including on rebuilds. It watches receiver sources as well as published module sources, even when the receivers are outside the sender directory. Child targets may provide receiver source settings, but their own dependency arrays are not processed by `dev`.
+For inter-database calls, the **calling database** needs module bindings for the **receiving database** whose reducers it calls. These are distinct from the client bindings used by an external application. Rust and TypeScript modules support receiver bindings.
 
-Receiver code generators are not implemented yet, so this step currently fails. `--skip-generate` skips both receiver and client binding generation and removes receiver-only watch paths; it does not supply missing bindings. `--skip-publish` does not skip generation. See the [receiver dependency reference](/cli-reference/spacetime-json#receiver-dependencies) for configuration and current limitations.
+When the root database in `spacetime.json` declares `dependencies`, `dev` generates those receiver bindings **before** building the calling module, including on rebuilds. It watches receiver sources as well as published module sources, even when the receivers are outside the calling module directory. Child targets may provide receiver source settings, but their own dependency arrays are not processed by `dev`.
+
+`--skip-generate` skips both receiver and client binding generation and removes receiver-only watch paths; it does not supply missing bindings. `--skip-publish` does not skip generation. See the [receiver dependency reference](/cli-reference/spacetime-json#receiver-dependencies) for configuration and language support.
 
 ### Client Development Server
 
