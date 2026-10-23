@@ -48,9 +48,21 @@ declare_tests! {
 }
 
 #[test]
+fn test_codegen_rust_module_bindings_scope_type_names() {
+    let module = compiled_module();
+    let files = generate_receiver_bindings(module, ReceiverLanguage::Rust { type_scope: Some("receiver") }).unwrap();
+    let arg = &files
+        .iter()
+        .find(|file| file.filename == "repeating_test_arg_type.rs")
+        .unwrap()
+        .code;
+    assert!(arg.contains("#[sats(name = \"receiver::RepeatingTestArg\")]"));
+}
+
+#[test]
 fn test_codegen_rust_module_bindings() {
     let module = compiled_module();
-    let outfiles = generate_receiver_bindings(module, ReceiverLanguage::Rust)
+    let outfiles = generate_receiver_bindings(module, ReceiverLanguage::Rust { type_scope: None })
         .unwrap()
         .into_iter()
         .map(|f| (f.filename, f.code))
@@ -108,7 +120,7 @@ fn test_codegen_rust_outbox_fixture() {
     names.insert_function("receivePing", "wire_ping");
     builder.add_explicit_names(names);
     let module: ModuleDef = builder.finish().try_into().unwrap();
-    let files = generate_receiver_bindings(&module, ReceiverLanguage::Rust).unwrap();
+    let files = generate_receiver_bindings(&module, ReceiverLanguage::Rust { type_scope: None }).unwrap();
     let root = &files.iter().find(|file| file.filename == "lib.rs").unwrap().code;
 
     // The CLI formats generated bindings, and CI checks the fixture with the repo's rustfmt config.

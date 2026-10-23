@@ -32,7 +32,9 @@ impl Default for CodegenOptions {
 
 /// Target language and language-specific options for receiver bindings.
 pub enum ReceiverLanguage<'a> {
-    Rust,
+    /// `type_scope` namespaces the generated types in the sender's schema,
+    /// so they don't clash with sender types that share their names.
+    Rust { type_scope: Option<&'a str> },
     TypeScript,
     Csharp { namespace: &'a str },
     Cpp,
@@ -41,7 +43,7 @@ pub enum ReceiverLanguage<'a> {
 /// Generate receiver binding files without reading or writing the filesystem.
 pub fn generate_receiver_bindings(module: &ModuleDef, lang: ReceiverLanguage<'_>) -> anyhow::Result<Vec<OutputFile>> {
     match lang {
-        ReceiverLanguage::Rust => Ok(rust::generate_rust_module_bindings(module)),
+        ReceiverLanguage::Rust { type_scope } => Ok(rust::generate_rust_module_bindings(module, type_scope)),
         ReceiverLanguage::TypeScript => {
             // TODO(idc-typescript): Generate TypeScript receiver types, reducer handles, and dependency exports.
             anyhow::bail!("TypeScript receiver binding generation is not implemented yet")

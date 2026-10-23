@@ -32,7 +32,7 @@ use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors,
 use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v10::{
-    ExplicitNames, MethodOrAny, RawColumnDefaultValueV10, RawConstraintDefV10, RawHttpHandlerDefV10,
+    CaseConversionPolicy, ExplicitNames, MethodOrAny, RawColumnDefaultValueV10, RawConstraintDefV10, RawHttpHandlerDefV10,
     RawHttpRouteDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section,
     RawOutboxDefV10, RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10,
     RawScopedTypeNameV10, RawSequenceDefV10, RawSubmoduleV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10,
@@ -1115,7 +1115,8 @@ impl From<ModuleDef> for RawModuleDefV10 {
             environment,
         } = val;
 
-        let mut sections = Vec::new();
+        // Every name in a `ModuleDef` is already canonical, so re-validating must not convert them again.
+        let mut sections = vec![RawModuleDefV10Section::CaseConversionPolicy(CaseConversionPolicy::None)];
         if let Some(environment) = environment {
             sections.push(RawModuleDefV10Section::Environment(
                 environment.into_declarations().into_iter().map(|x| x.into()).collect(),
@@ -2916,6 +2917,39 @@ mod tests {
                 .unwrap()
                 .into()
         );
+    }
+
+    #[test]
+    fn v10_roundtrip_preserves_names_without_case_conversion() {
+        use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, RawModuleDefV10Builder};
+
+        // `spacetime generate` sees the schema through this round trip, so names must survive it
+        // or receiver bindings get a different IDC signature hash than the host computes.
+        let mut builder = RawModuleDefV10Builder::new();
+        builder.set_case_conversion_policy(CaseConversionPolicy::None);
+        let kind = builder.add_algebraic_type(
+            [],
+            "Kind",
+            AlgebraicType::sum([("Item", AlgebraicType::unit()), ("Cargo", AlgebraicType::unit())]),
+            true,
+        );
+        builder.add_reducer("receive", ProductType::from([("kind", AlgebraicType::Ref(kind))]));
+        let module_def: ModuleDef = builder.finish().try_into().expect("valid module");
+        let round_trip: ModuleDef = RawModuleDefV10::from(module_def.clone())
+            .try_into()
+            .expect("valid module");
+
+        assert_eq!(module_def.typespace(), round_trip.typespace());
+        let hash = |def: &ModuleDef| {
+            let reducer = def.reducer("receive").unwrap();
+            reducer_signature_hash(
+                &reducer.params(),
+                &reducer.ok_return_type,
+                &reducer.err_return_type,
+                def.typespace(),
+            )
+        };
+        assert_eq!(hash(&module_def), hash(&round_trip));
     }
 
     #[test]

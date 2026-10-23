@@ -27,10 +27,10 @@ const INDENT: &str = "    ";
 
 pub struct Rust;
 
-pub(super) fn generate_rust_module_bindings(module: &ModuleDef) -> Vec<OutputFile> {
+pub(super) fn generate_rust_module_bindings(module: &ModuleDef, type_scope: Option<&str>) -> Vec<OutputFile> {
     // TODO: Generate IDC bindings for submodules. Only root types and reducers are emitted for now.
     itertools::chain!(
-        iter_module_binding_types(module).map(|typ| generate_module_binding_type_file(module, typ)),
+        iter_module_binding_types(module).map(|typ| generate_module_binding_type_file(module, typ, type_scope)),
         [generate_module_bindings_root_file(module)],
     )
     .collect()
@@ -1345,7 +1345,7 @@ fn define_module_binding_struct_for_product(
     out.newline();
 }
 
-fn generate_module_binding_type_file(module: &ModuleDef, typ: &TypeDef) -> OutputFile {
+fn generate_module_binding_type_file(module: &ModuleDef, typ: &TypeDef, type_scope: Option<&str>) -> OutputFile {
     let type_name = collect_case(Case::Pascal, typ.accessor_name.name_segments());
     let mut output = CodeIndenter::new(String::new(), INDENT);
     let out = &mut output;
@@ -1371,6 +1371,9 @@ fn generate_module_binding_type_file(module: &ModuleDef, typ: &TypeDef) -> Outpu
     gen_and_print_imports(module, out, members, &[typ.ty]);
     out.newline();
     writeln!(out, "#[derive(spacetimedb::SpacetimeType, Clone, PartialEq, Debug)]");
+    if let Some(scope) = type_scope {
+        writeln!(out, "#[sats(name = \"{scope}::{type_name}\")]");
+    }
     if matches!(def, AlgebraicTypeDef::PlainEnum(_)) {
         print_plain_enum_extra_derives(out);
     }
@@ -1455,7 +1458,29 @@ fn iter_module_binding_types(module: &ModuleDef) -> impl Iterator<Item = &TypeDe
         .tables()
         .map(|table| table.product_type_ref)
         .collect::<BTreeSet<_>>();
-    iter_types(module).filter(move |typ| !table_type_refs.contains(&typ.ty) || reducer_type_refs.contains(&typ.ty))
+    let mut included = iter_types(module)
+        .map(|typ| typ.ty)
+        .filter(|ty| !table_type_refs.contains(ty) || reducer_type_refs.contains(ty))
+        .collect::<BTreeSet<_>>();
+
+    // Emitted types can reference table row types, e.g. a message enum carrying a row,
+    // so pull in everything they reach.
+    let mut pending = included.iter().copied().collect::<Vec<_>>();
+    while let Some(ty) = pending.pop() {
+        let members: &[(Identifier, AlgebraicTypeUse)] = match &module.typespace_for_generate()[ty] {
+            AlgebraicTypeDef::Product(product) => &product.elements,
+            AlgebraicTypeDef::Sum(sum) => &sum.variants,
+            AlgebraicTypeDef::PlainEnum(_) => &[],
+        };
+        for (_, member) in members {
+            member.for_each_ref(|r| {
+                if included.insert(r) {
+                    pending.push(r);
+                }
+            });
+        }
+    }
+    iter_types(module).filter(move |typ| included.contains(&typ.ty))
 }
 
 fn module_binding_reducer_type_refs(module: &ModuleDef) -> BTreeSet<AlgebraicTypeRef> {

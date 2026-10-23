@@ -759,7 +759,9 @@ pub async fn run_prepared_generate_configs(
 
         let generated_files = if run.bindings == BindingKind::Module {
             let lang = match run.lang {
-                Language::Rust => ReceiverLanguage::Rust,
+                Language::Rust => ReceiverLanguage::Rust {
+                    type_scope: run.dependency_name.as_deref(),
+                },
                 Language::TypeScript => ReceiverLanguage::TypeScript,
                 Language::Csharp => ReceiverLanguage::Csharp {
                     namespace: &run.namespace,
