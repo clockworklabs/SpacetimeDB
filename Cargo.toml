@@ -298,6 +298,7 @@ proc-macro2 = "1.0"
 prometheus = "0.14.0"
 proptest = "1.4"
 proptest-derive = "0.5"
+# Test reports only write XML; quick-xml's parsing issues do not apply here.
 quick-junit = { version = "0.3.2" }
 quote = "1.0.8"
 rand08 = { package = "rand", version = "0.8" }
@@ -338,9 +339,12 @@ sqllogictest = "0.17"
 sqlparser = "0.38.0"
 strum = { version = "0.25.0", features = ["derive"] }
 syn = { version = "2", features = ["full", "extra-traits"] }
+# The REPL uses bundled themes, not untrusted plist/XML theme files.
 syntect = { version = "5.0.0", default-features = false, features = ["default-fancy"] }
 tabled = "0.14.0"
 tar = "0.4.46"
+# Only tests/benchmarks use tempdir; remove_dir_all is absent from the server
+# runtime. Those local tools still require a trusted temporary-directory parent.
 tempdir = "0.3.7"
 tempfile = "3.20"
 termcolor = "1.2.0"
