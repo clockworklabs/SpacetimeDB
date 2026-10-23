@@ -1,11 +1,11 @@
 import { env_get } from 'spacetime:sys@2.2';
-import type { Environment, EnvironmentSchema } from '../lib/environment';
+import type { Environment, EnvironmentSchema } from '../lib/environment.ts';
 import type {
   EnvironmentDeclaration,
   EnvVarType,
   AlgebraicType,
-} from '../lib/autogen/types';
-import { OptionBuilder, StringBuilder } from '../lib/type_builders';
+} from '../lib/autogen/types.ts';
+import { OptionBuilder, StringBuilder } from '../lib/type_builders.ts';
 
 // These UTF-8 byte/count limits match spacetimedb_lib::environment.
 const MAX_ENV_KEY_BYTES = 256;
@@ -31,7 +31,7 @@ export type {
   Environment,
   EnvironmentFor,
   EnvironmentSchema,
-} from '../lib/environment';
+} from '../lib/environment.ts';
 
 /** Produce metadata only. No environment value is embedded in the artifact. */
 export function environmentDeclarations(

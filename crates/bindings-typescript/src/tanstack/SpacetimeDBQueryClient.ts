@@ -1,5 +1,5 @@
-import type { UntypedClientTable } from '../sdk/client_table';
-import { getByAccessorPath } from '../lib/accessor_path';
+import type { UntypedClientTable } from '../sdk/client_table.ts';
+import { getByAccessorPath } from '../lib/accessor_path.ts';
 import type {
   QueryClient,
   QueryKey,
@@ -12,7 +12,7 @@ import {
   evaluateBooleanExpr,
   getQueryAccessorName,
   getQueryWhereClause,
-} from '../lib/query';
+} from '../lib/query.ts';
 
 type QueryInput = Query<any>;
 

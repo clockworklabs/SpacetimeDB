@@ -1,6 +1,6 @@
-import type { UntypedRemoteModule } from './spacetime_module';
-import type { ClientTable } from './client_table';
-import type { NestAccessors, Values } from '../lib/type_util';
+import type { UntypedRemoteModule } from './spacetime_module.ts';
+import type { ClientTable } from './client_table.ts';
+import type { NestAccessors, Values } from '../lib/type_util.ts';
 
 /**
  * A type representing a client-side database view, mapping table names to their corresponding client Table handles.

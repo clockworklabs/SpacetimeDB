@@ -1,5 +1,5 @@
-import type { table, UntypedTableDef } from './table';
-import type { ColumnMetadata } from './type_builders';
+import type { table, UntypedTableDef } from './table.ts';
+import type { ColumnMetadata } from './type_builders.ts';
 
 /**
  * A helper type to determine if all columns in an index are unique.

@@ -1,12 +1,12 @@
-import { table } from '../lib/table';
-import t from '../lib/type_builders';
+import { table } from '../lib/table.ts';
+import t from '../lib/type_builders.ts';
 import {
   type HandlerContext,
   Request,
   SyncResponse,
   Router,
   schema,
-} from './index';
+} from './index.ts';
 
 const person = table(
   {},

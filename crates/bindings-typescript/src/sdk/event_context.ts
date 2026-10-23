@@ -1,5 +1,5 @@
 import type { InferTypeOfParams } from '../lib/type_builders.ts';
-import type { DbContext } from './db_context';
+import type { DbContext } from './db_context.ts';
 import type { Event } from './event.ts';
 import type { ReducerEvent } from './reducer_event.ts';
 import type { ReducerEventInfo } from './reducers.ts';
