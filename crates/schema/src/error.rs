@@ -152,6 +152,13 @@ pub enum ValidationError {
     TableNotFound { table: RawIdentifier },
     #[error("table {table} is assigned in multiple outboxes")]
     DuplicateOutbox { table: Identifier },
+    #[error("outbox table {} not found", table_name)]
+    MissingOutboxTable { table_name: RawIdentifier },
+    #[error("on_result reducer {reducer_name} for outbox {table} does not exist")]
+    MissingOutboxOnResult {
+        table: Identifier,
+        reducer_name: RawIdentifier,
+    },
     #[error("outbox table {table} must not be an event table")]
     OutboxEventTable { table: Identifier },
     #[error("outbox table {table} must not be a scheduled table")]
