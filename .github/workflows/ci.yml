@@ -2161,6 +2161,9 @@ jobs:
       - name: Run C# SDK harness tests
         run: cargo test -p sdk-csharp-test-harness --test sdk_csharp
 
+      - name: Check C# managed and WASM build pipeline
+        run: bash tools/test-csharp-build.sh
+
       - name: Check quickstart-chat bindings are up to date
         run: |
           for dotnet_version in 8 10; do

@@ -50,6 +50,23 @@ spacetime generate --lang typescript|csharp|rust --out-dir ./bindings --module-p
 spacetime generate --lang unrealcpp --uproject-dir ./MyGame --module-path ./server --unreal-module-name MyGame
 ```
 
+### C# Build Modes
+
+For new .NET 10 modules, `dotnet build` produces a managed library.
+`spacetime build` and `spacetime publish` explicitly select `wasi-wasm` and use
+NativeAOT-LLVM; `--native-aot` is not required. The manual WASM equivalent is
+`dotnet publish -c Release -r wasi-wasm` from the module directory.
+Use `spacetime init --lang csharp --dotnet-version 10 my-project` to select
+.NET 10 explicitly.
+
+Do not make the project permanently WASM-only to fix a managed build: keep LLVM
+package references and WASM settings conditional on the RID. Let dotnet restore
+when changing build modes. Managed builds alone do not enable C# module unit tests.
+
+.NET 8 retains WASM/JIT by default and requires `--native-aot` to select NativeAOT
+where supported. The CLI manages `SPACETIMEDB_WASM_AOT` and its legacy alias
+`EXPERIMENTAL_WASM_AOT`; users do not need to set either for .NET 10.
+
 ### Publishing & Deployment
 
 ```bash

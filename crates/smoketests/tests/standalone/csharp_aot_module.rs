@@ -25,7 +25,7 @@ fn dotnet_major_version() -> Option<u8> {
 ///
 /// NativeAOT-LLVM targets WASI and uses WASI SDK (clang), not the wasi-experimental
 /// workload or emscripten. WASI SDK is auto-downloaded by SpacetimeDB.Runtime.targets.
-/// The user must set EXPERIMENTAL_WASM_AOT=1 to enable the AOT build path.
+/// The user must set SPACETIMEDB_WASM_AOT=1 to enable the AOT build path.
 ///
 /// Standalone-only: this invokes the local .NET toolchain and never contacts a server.
 #[test]
@@ -60,7 +60,7 @@ fn test_build_csharp_module_aot() {
     // NativeAOT-LLVM packages contain DLLs that stay locked and interfere with other tests
     let nuget_packages_dir = tempfile::tempdir().expect("Failed to create temp directory for NuGet packages");
 
-    // Set EXPERIMENTAL_WASM_AOT=1 for this specific build
+    // Set SPACETIMEDB_WASM_AOT=1 for this specific build
     // Build sdk-test-cs with NativeAOT-LLVM
     let mut cmd = Command::new("dotnet");
     cmd.arg("publish")
@@ -69,7 +69,7 @@ fn test_build_csharp_module_aot() {
         .arg("-f")
         .arg(target_framework)
         .current_dir(workspace.join("modules/sdk-test-cs"))
-        .env("EXPERIMENTAL_WASM_AOT", "1")
+        .env("SPACETIMEDB_WASM_AOT", "1")
         .env("NUGET_PACKAGES", nuget_packages_dir.path());
 
     let output = cmd.output().expect("Failed to run dotnet publish");

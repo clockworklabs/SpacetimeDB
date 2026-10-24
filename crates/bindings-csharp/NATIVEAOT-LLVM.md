@@ -70,7 +70,7 @@ Your `.csproj` must include the conditional LLVM package references:
   </ItemGroup>
 
   <!-- Required for .NET 8 AOT builds -->
-  <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
+  <ItemGroup Condition="'$(SPACETIMEDB_WASM_AOT)' == '1'">
     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
     <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
   </ItemGroup>
@@ -121,11 +121,11 @@ spacetime publish --native-aot my-database-name
 }
 ```
 
-Technically all of these options just set the `EXPERIMENTAL_WASM_AOT` environment variable, but they provide different user experiences. Using `--native-aot` during `init` will create a project with a `spacetime.json` configured like Option 3 so the new project is consistently published with NativeAOT-LLVM.
+Technically all of these options just set the `SPACETIMEDB_WASM_AOT` environment variable, but they provide different user experiences. Using `--native-aot` during `init` will create a project with a `spacetime.json` configured like Option 3 so the new project is consistently published with NativeAOT-LLVM.
 
 ### `dotnet build` with NativeAOT-LLVM
 
-To use NativeAOT-LLVM, the project expects the flag `EXPERIMENTAL_WASM_AOT` to be set. When calling `spacetime publish`, this is dealt with internally. To build your project manually calling `dotnet build`, if you want to use NativeAOT-LLVM, you need to set the flag manually: `dotnet build -f net8.0 -p:EXPERIMENTAL_WASM_AOT=1`. 
+For .NET 8, the project expects `SPACETIMEDB_WASM_AOT=1` to select NativeAOT-LLVM. The CLI sets this when using `--native-aot`. For a manual build, use `dotnet build -f net8.0 -p:SPACETIMEDB_WASM_AOT=1`. .NET 10 WASM builds use NativeAOT-LLVM by default and do not require this flag.
 
 ---
 
@@ -140,17 +140,29 @@ For users who want NativeAOT-LLVM compilation on Windows **or** Linux.
 
 ### Project Configuration
 
-For .NET 10, the project configuration is simpler - no conditional package references needed:
+For .NET 10, ordinary builds produce a managed library. Publishing with the
+`wasi-wasm` runtime identifier selects NativeAOT-LLVM. The module references the
+compiler packages directly, only for WASM builds:
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">
+    <PublishTrimmed>true</PublishTrimmed>
+    <SelfContained>true</SelfContained>
+    <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SpacetimeDB.Runtime" Version="2.2.*" />
+    <PackageReference Include="SpacetimeDB.Runtime" Version="2.13.*" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
+    <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
   </ItemGroup>
 </Project>
 ```
@@ -194,24 +206,19 @@ This is automatically created by the CLI when using the `init` command with `--d
 
 ### Activating NativeAOT-LLVM (.NET 10)
 
-NativeAOT-LLVM is automatically used when targeting .NET 10. You can also explicitly enable it:
-
-**Option 1: Target .NET 10 during init (recommended)**
-```
+The CLI selects WASM and NativeAOT-LLVM automatically for .NET 10 modules.
+```sh
 spacetime init --lang csharp --dotnet-version 10 my-project
 ```
 
-**Option 2: Use `--native-aot` flag**
-```
-spacetime init --lang csharp --native-aot my-project
-```
+Inside the generated module directory:
 
-**Option 3: `spacetime.json` configuration**
-```json
-{
-  "module": "my-module",
-  "native-aot": true
-}
+```sh
+# Managed library, suitable for a ProjectReference from a .NET test project.
+dotnet build
+
+# WASM module, using the same project and runtime DLL.
+dotnet publish -c Release -r wasi-wasm
 ```
 
 ---
@@ -309,7 +316,7 @@ NativeAOT-LLVM builds do **not** use this workload; they use the WASI SDK instea
 
 If you see "Code generation failed for method" errors:
 1. Ensure `NuGet.Config` includes the `dotnet-experimental` feed
-2. For .NET 8: Verify the `EXPERIMENTAL_WASM_AOT` condition is in your `.csproj`
+2. For .NET 8: Verify the `SPACETIMEDB_WASM_AOT` condition is in your `.csproj`
 3. For .NET 10: Verify `TargetFramework` is `net10.0`
 4. Check that `global.json` exists if .NET 10 is not your default SDK
 
