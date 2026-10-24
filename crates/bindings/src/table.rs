@@ -522,7 +522,8 @@ pub struct OutboxDesc<'a> {
     /// Outbox column positions in remote reducer parameter order.
     pub arg_columns: &'a [u16],
     pub target_column: u16,
-    pub signature_hash: &'a str,
+    /// Generated bindings provide a hash; local reducers are resolved after module validation.
+    pub signature_hash: Option<&'a str>,
 }
 
 pub struct ScheduleDesc<'a> {

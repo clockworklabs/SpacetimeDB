@@ -6,7 +6,7 @@ use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, S
 use spacetimedb_lib::bsatn::EncodeError;
 use spacetimedb_lib::db::raw_def::v10::{
     CaseConversionPolicy, ExplicitNames as RawExplicitNames, RawEnvVarTypeV10, RawEnvironmentDeclarationV10,
-    RawModuleDefV10Builder,
+    RawModuleDefV10, RawModuleDefV10Builder, RawModuleDefV10Section,
 };
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableType, ViewResultHeader};
@@ -853,14 +853,19 @@ pub fn register_table<T: Table>() {
         table.finish();
 
         if let Some(outbox) = T::OUTBOX {
+            let signature_hash = if let Some(hash) = outbox.signature_hash {
+                spacetimedb_lib::Hash::from_hex(hash).expect("generated outbox signature hash must be valid hex")
+            } else {
+                module.local_outboxes.push((T::TABLE_NAME, outbox.remote_reducer_name));
+                spacetimedb_lib::Hash::ZERO
+            };
             module.inner.add_outbox(
                 T::TABLE_NAME,
                 outbox.remote_reducer_name,
                 outbox.target_column,
                 outbox.arg_columns.iter().copied().map(Into::into),
                 None::<&str>,
-                spacetimedb_lib::Hash::from_hex(outbox.signature_hash)
-                    .expect("generated outbox signature hash must be valid hex"),
+                signature_hash,
             );
         }
 
@@ -1176,10 +1181,56 @@ pub struct ModuleBuilder {
     /// The anonymous views of the module.
     views_anon: Vec<AnonymousFn>,
     on_result_reducers: Vec<(&'static str, &'static str)>,
+    local_outboxes: Vec<(&'static str, &'static str)>,
 }
 
 // Not actually a mutex; because WASM is single-threaded this basically just turns into a refcell.
 static DESCRIBERS: Mutex<Vec<Box<dyn DescriberFn>>> = Mutex::new(Vec::new());
+
+impl ModuleBuilder {
+    fn finish_definition(&mut self) -> RawModuleDefV10 {
+        for (outbox_table, reducer) in self.on_result_reducers.drain(..) {
+            self.inner.set_outbox_on_result(outbox_table, reducer);
+        }
+
+        let mut raw = std::mem::take(&mut self.inner).finish();
+        if self.local_outboxes.is_empty() {
+            return raw;
+        }
+
+        // A local reducer's signature is only known after names and types have been
+        // canonicalized. The temporary zero hashes are replaced before serialization.
+        let validated = spacetimedb_schema::def::ModuleDef::try_from(RawModuleDef::V10(raw.clone()))
+            .expect("unable to validate module with local outboxes");
+        for &(table_name, reducer_source_name) in &self.local_outboxes {
+            let reducer = validated
+                .reducers()
+                .find(|reducer| reducer.accessor_name.as_ref() == reducer_source_name)
+                .unwrap_or_else(|| {
+                    panic!("local outbox `{table_name}` references missing reducer `{reducer_source_name}`")
+                });
+            let signature_hash = spacetimedb_schema::def::reducer_signature_hash(
+                &reducer.params(),
+                &reducer.ok_return_type,
+                &reducer.err_return_type,
+                validated.typespace(),
+            );
+            let outbox = raw
+                .sections
+                .iter_mut()
+                .find_map(|section| match section {
+                    RawModuleDefV10Section::Outboxes(outboxes) => outboxes
+                        .iter_mut()
+                        .find(|outbox| outbox.table_source_name.as_ref() == table_name),
+                    _ => None,
+                })
+                .expect("registered local outbox is missing from module definition");
+            outbox.remote_reducer = reducer.name.clone().into();
+            outbox.signature_hash = signature_hash;
+        }
+        raw
+    }
+}
 
 /// A reducer function takes in `(ReducerContext, Args)`
 /// and returns a result with a possible error message.
@@ -1209,7 +1260,7 @@ pub fn module_def_for_tests() -> RawModuleDef {
     for describer in &mut *DESCRIBERS.lock().unwrap() {
         describer(&mut module)
     }
-    RawModuleDef::V10(module.inner.finish())
+    RawModuleDef::V10(module.finish_definition())
 }
 
 /// Called by the host when the module is initialized
@@ -1235,12 +1286,8 @@ extern "C" fn __describe_module__(description: BytesSink) {
         describer(&mut module)
     }
 
-    for (outbox_table, reducer) in module.on_result_reducers {
-        module.inner.set_outbox_on_result(outbox_table, reducer);
-    }
-
     // Serialize the module to bsatn.
-    let module_def = module.inner.finish();
+    let module_def = module.finish_definition();
     let module_def = RawModuleDef::V10(module_def);
     let bytes = bsatn::to_vec(&module_def).expect("unable to serialize typespace");
 
