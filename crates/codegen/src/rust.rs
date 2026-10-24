@@ -27,6 +27,16 @@ const INDENT: &str = "    ";
 
 pub struct Rust;
 
+pub(super) fn generate_rust_module_bindings(module: &ModuleDef) -> Vec<OutputFile> {
+    // TODO: Generate IDC bindings for submodules. Only root types and reducers are emitted for now.
+    let type_refs = module_binding_reducer_type_refs(module);
+    itertools::chain!(
+        iter_module_binding_types(module, &type_refs).map(|typ| generate_module_binding_type_file(module, typ)),
+        [generate_module_bindings_root_file(module, &type_refs)],
+    )
+    .collect()
+}
+
 impl Lang for Rust {
     fn generate_type_files(&self, module: &ModuleDef, typ: &TypeDef) -> Vec<OutputFile> {
         let type_name = collect_case(Case::Pascal, typ.accessor_name.name_segments());
@@ -41,7 +51,7 @@ impl Lang for Rust {
             AlgebraicTypeDef::Product(product) => {
                 gen_and_print_imports(module, out, &product.elements, &[typ.ty]);
                 out.newline();
-                define_struct_for_product(module, out, &type_name, &product.elements, "pub");
+                define_struct_for_product(module, out, &type_name, &product.elements, "pub", TypeContext::Client);
             }
             AlgebraicTypeDef::Sum(sum) => {
                 gen_and_print_imports(module, out, &sum.variants, &[typ.ty]);
@@ -513,6 +523,7 @@ pub(super) fn parse_table_update(
             &args_type,
             &reducer.params_for_generate.elements,
             "pub(super)",
+            TypeContext::Client,
         );
 
         out.newline();
@@ -645,6 +656,7 @@ impl {func_name} for super::RemoteReducers {{
             &procedure.params_for_generate.elements,
             // non-pub visibility.
             "",
+            TypeContext::Client,
         );
 
         out.newline();
@@ -709,7 +721,7 @@ impl {func_name} for super::RemoteProcedures {{
         out.newline();
 
         // Declare `pub mod` for each of the files generated.
-        print_module_decls(module, options.visibility, out);
+        print_module_decls(iter_module_names(module, options.visibility), out);
 
         out.newline();
 
@@ -981,26 +993,47 @@ fn implement_query_view_call_accessor(
     )
 }
 
+#[derive(Clone, Copy)]
+enum TypeContext {
+    Client,
+    Receiver,
+    OutboxMacro,
+}
+
 pub fn write_type<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicTypeUse) -> fmt::Result {
+    write_type_in_context(module, out, ty, TypeContext::Client)
+}
+
+fn write_type_in_context<W: Write>(
+    module: &ModuleDef,
+    out: &mut W,
+    ty: &AlgebraicTypeUse,
+    context: TypeContext,
+) -> fmt::Result {
+    let (sdk_path, sats_path, identity_type, type_prefix) = match context {
+        TypeContext::Client => ("__sdk", "__sats", "__sdk::Identity", ""),
+        TypeContext::Receiver => ("spacetimedb", "spacetimedb::sats", "Identity", ""),
+        TypeContext::OutboxMacro => ("spacetimedb", "spacetimedb::sats", "$module::Identity", "$module::"),
+    };
     match ty {
         AlgebraicTypeUse::Unit => write!(out, "()")?,
         AlgebraicTypeUse::Never => write!(out, "std::convert::Infallible")?,
-        AlgebraicTypeUse::Identity => write!(out, "__sdk::Identity")?,
-        AlgebraicTypeUse::ConnectionId => write!(out, "__sdk::ConnectionId")?,
-        AlgebraicTypeUse::Timestamp => write!(out, "__sdk::Timestamp")?,
-        AlgebraicTypeUse::TimeDuration => write!(out, "__sdk::TimeDuration")?,
-        AlgebraicTypeUse::Uuid => write!(out, "__sdk::Uuid")?,
-        AlgebraicTypeUse::ScheduleAt => write!(out, "__sdk::ScheduleAt")?,
+        AlgebraicTypeUse::Identity => write!(out, "{identity_type}")?,
+        AlgebraicTypeUse::ConnectionId => write!(out, "{sdk_path}::ConnectionId")?,
+        AlgebraicTypeUse::Timestamp => write!(out, "{sdk_path}::Timestamp")?,
+        AlgebraicTypeUse::TimeDuration => write!(out, "{sdk_path}::TimeDuration")?,
+        AlgebraicTypeUse::Uuid => write!(out, "{sdk_path}::Uuid")?,
+        AlgebraicTypeUse::ScheduleAt => write!(out, "{sdk_path}::ScheduleAt")?,
         AlgebraicTypeUse::Option(inner_ty) => {
             write!(out, "Option::<")?;
-            write_type(module, out, inner_ty)?;
+            write_type_in_context(module, out, inner_ty, context)?;
             write!(out, ">")?;
         }
         AlgebraicTypeUse::Result { ok_ty, err_ty } => {
             write!(out, "Result::<")?;
-            write_type(module, out, ok_ty)?;
+            write_type_in_context(module, out, ok_ty, context)?;
             write!(out, ", ")?;
-            write_type(module, out, err_ty)?;
+            write_type_in_context(module, out, err_ty, context)?;
             write!(out, ">")?;
         }
         AlgebraicTypeUse::Primitive(prim) => match prim {
@@ -1015,19 +1048,19 @@ pub fn write_type<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicTypeU
             PrimitiveType::U64 => write!(out, "u64")?,
             PrimitiveType::I128 => write!(out, "i128")?,
             PrimitiveType::U128 => write!(out, "u128")?,
-            PrimitiveType::I256 => write!(out, "__sats::i256")?,
-            PrimitiveType::U256 => write!(out, "__sats::u256")?,
+            PrimitiveType::I256 => write!(out, "{sats_path}::i256")?,
+            PrimitiveType::U256 => write!(out, "{sats_path}::u256")?,
             PrimitiveType::F32 => write!(out, "f32")?,
             PrimitiveType::F64 => write!(out, "f64")?,
         },
         AlgebraicTypeUse::String => write!(out, "String")?,
         AlgebraicTypeUse::Array(elem_ty) => {
             write!(out, "Vec::<")?;
-            write_type(module, out, elem_ty)?;
+            write_type_in_context(module, out, elem_ty, context)?;
             write!(out, ">")?;
         }
-        AlgebraicTypeUse::Ref(r) => {
-            write!(out, "{}", type_ref_name(module, *r))?;
+        AlgebraicTypeUse::Ref(type_ref) => {
+            write!(out, "{type_prefix}{}", type_ref_name(module, *type_ref))?;
         }
     }
     Ok(())
@@ -1056,7 +1089,7 @@ struct FormattedArglist {
 impl FormattedArglist {
     fn for_arguments(module: &ModuleDef, params: &[(Identifier, AlgebraicTypeUse)]) -> Self {
         let mut arglist_no_delimiters = String::new();
-        write_arglist_no_delimiters(module, &mut arglist_no_delimiters, params, None)
+        write_arglist_no_delimiters(module, &mut arglist_no_delimiters, params, None, TypeContext::Client)
             .expect("Writing to a String failed... huh?");
 
         let mut arg_names = String::new();
@@ -1089,12 +1122,16 @@ fn print_spacetimedb_imports(output: &mut Indenter) {
 }
 
 fn print_file_header(output: &mut Indenter, include_version: bool) {
+    print_file_preamble(output, include_version);
+    print_spacetimedb_imports(output);
+}
+
+fn print_file_preamble(output: &mut Indenter, include_version: bool) {
     print_auto_generated_file_comment(output);
     if include_version {
         print_auto_generated_version_comment(output);
     }
     writeln!(output, "{ALLOW_LINTS}");
-    print_spacetimedb_imports(output);
 }
 
 // TODO: figure out if/when sum types should derive:
@@ -1139,7 +1176,7 @@ pub fn define_enum_for_sum(
         "{",
         |out| {
             for (ident, ty) in variants {
-                write_enum_variant(module, out, ident, ty);
+                write_enum_variant(module, out, ident, ty, TypeContext::Client);
                 out.newline();
             }
         },
@@ -1149,7 +1186,13 @@ pub fn define_enum_for_sum(
     out.newline()
 }
 
-fn write_enum_variant(module: &ModuleDef, out: &mut Indenter, ident: &Identifier, ty: &AlgebraicTypeUse) {
+fn write_enum_variant(
+    module: &ModuleDef,
+    out: &mut Indenter,
+    ident: &Identifier,
+    ty: &AlgebraicTypeUse,
+    context: TypeContext,
+) {
     let name = ident.deref().to_case(Case::Pascal);
     write!(out, "{name}");
 
@@ -1162,7 +1205,7 @@ fn write_enum_variant(module: &ModuleDef, out: &mut Indenter, ident: &Identifier
         // If the contained type is not a product, i.e. this variant has a single
         // member, write it tuple-style, with parens.
         write!(out, "(");
-        write_type(module, out, ty).unwrap();
+        write_type_in_context(module, out, ty, context).unwrap();
         write!(out, ")");
     }
     writeln!(out, ",");
@@ -1176,10 +1219,11 @@ fn write_struct_type_fields_in_braces(
     // Whether to print a `pub` qualifier on the fields. Necessary for `struct` defns,
     // disallowed for `enum` defns.
     pub_qualifier: bool,
+    context: TypeContext,
 ) {
     out.delimited_block(
         "{",
-        |out| write_arglist_no_delimiters(module, out, elements, pub_qualifier.then_some("pub")).unwrap(),
+        |out| write_arglist_no_delimiters(module, out, elements, pub_qualifier.then_some("pub"), context).unwrap(),
         "}",
     );
 }
@@ -1191,6 +1235,7 @@ fn write_arglist_no_delimiters(
 
     // Written before each line. Useful for `pub`.
     prefix: Option<&str>,
+    context: TypeContext,
 ) -> anyhow::Result<()> {
     for (ident, ty) in elements {
         if let Some(prefix) = prefix {
@@ -1200,7 +1245,7 @@ fn write_arglist_no_delimiters(
         let name = ident.deref().to_case(Case::Snake);
 
         write!(out, "{name}: ")?;
-        write_type(module, out, ty)?;
+        write_type_in_context(module, out, ty, context)?;
         writeln!(out, ",")?;
     }
 
@@ -1231,6 +1276,7 @@ fn define_struct_for_product(
     name: &str,
     elements: &[(Identifier, AlgebraicTypeUse)],
     vis: &str,
+    context: TypeContext,
 ) {
     print_struct_derives(out);
 
@@ -1238,10 +1284,296 @@ fn define_struct_for_product(
 
     // TODO: if elements is empty, define a unit struct with no brace-delimited list of fields.
     write_struct_type_fields_in_braces(
-        module, out, elements, true, // `pub`-qualify fields.
+        module, out, elements, true, context, // `pub`-qualify fields.
     );
 
     out.newline();
+}
+
+fn generate_module_binding_type_file(module: &ModuleDef, typ: &TypeDef) -> OutputFile {
+    let type_name = collect_case(Case::Pascal, typ.accessor_name.name_segments());
+    let mut output = CodeIndenter::new(String::new(), INDENT);
+    let out = &mut output;
+
+    print_file_preamble(out, false);
+    writeln!(out, "use super::Identity;");
+    let def = &module.typespace_for_generate()[typ.ty];
+    let plain_variants;
+    let (kind, members): (_, &[(Identifier, AlgebraicTypeUse)]) = match def {
+        AlgebraicTypeDef::Product(product) => ("struct", &product.elements),
+        AlgebraicTypeDef::Sum(sum) => ("enum", &sum.variants),
+        AlgebraicTypeDef::PlainEnum(plain_enum) => {
+            plain_variants = plain_enum
+                .variants
+                .iter()
+                .cloned()
+                .map(|variant| (variant, AlgebraicTypeUse::Unit))
+                .collect::<Vec<_>>();
+            ("enum", &plain_variants)
+        }
+    };
+    gen_and_print_imports(module, out, members, &[typ.ty]);
+    out.newline();
+    writeln!(out, "#[derive(spacetimedb::SpacetimeType, Clone, PartialEq, Debug)]");
+    if matches!(def, AlgebraicTypeDef::PlainEnum(_)) {
+        print_plain_enum_extra_derives(out);
+    }
+    write!(out, "pub {kind} {type_name} ");
+    out.delimited_block(
+        "{",
+        |out| {
+            if matches!(def, AlgebraicTypeDef::Product(_)) {
+                write_arglist_no_delimiters(module, out, members, Some("pub"), TypeContext::Receiver).unwrap();
+            } else {
+                for (ident, ty) in members {
+                    write_enum_variant(module, out, ident, ty, TypeContext::Receiver);
+                }
+            }
+        },
+        "}\n",
+    );
+
+    OutputFile {
+        filename: type_module_name(&typ.accessor_name) + ".rs",
+        code: output.into_inner(),
+    }
+}
+
+fn generate_module_bindings_root_file(module: &ModuleDef, type_refs: &BTreeSet<AlgebraicTypeRef>) -> OutputFile {
+    let mut output = CodeIndenter::new(String::new(), INDENT);
+    let out = &mut output;
+
+    print_file_preamble(out, false);
+    out.newline();
+    writeln!(out, "use spacetimedb::spacetimedb_lib as __lib;");
+    out.newline();
+    print_module_decls(
+        iter_module_binding_types(module, type_refs).map(|ty| type_module_name(&ty.accessor_name)),
+        out,
+    );
+    out.newline();
+    print_type_reexports(iter_module_binding_types(module, type_refs), out);
+    out.newline();
+    print_module_binding_identity(out);
+    out.newline();
+    print_module_binding_remote_module(out);
+    out.newline();
+    for reducer in iter_reducers(module, CodegenVisibility::OnlyPublic) {
+        print_module_binding_reducer_handle(module, out, reducer);
+        out.newline();
+    }
+
+    OutputFile {
+        filename: "lib.rs".to_owned(),
+        code: output.into_inner(),
+    }
+}
+
+fn print_type_reexports<'a>(types: impl IntoIterator<Item = &'a TypeDef>, out: &mut Indenter) {
+    for ty in types {
+        let mod_name = type_module_name(&ty.accessor_name);
+        let type_name = collect_case(Case::Pascal, ty.accessor_name.name_segments());
+        writeln!(out, "pub use {mod_name}::{type_name};");
+    }
+}
+
+fn iter_module_binding_types<'a>(
+    module: &'a ModuleDef,
+    type_refs: &'a BTreeSet<AlgebraicTypeRef>,
+) -> impl Iterator<Item = &'a TypeDef> + 'a {
+    iter_types(module).filter(move |typ| type_refs.contains(&typ.ty))
+}
+
+fn module_binding_reducer_type_refs(module: &ModuleDef) -> BTreeSet<AlgebraicTypeRef> {
+    let mut pending = Vec::new();
+    for reducer in iter_reducers(module, CodegenVisibility::OnlyPublic) {
+        for (_, ty) in &reducer.params_for_generate.elements {
+            ty.for_each_ref(|reference| pending.push(reference));
+        }
+    }
+    let mut type_refs = BTreeSet::new();
+    while let Some(reference) = pending.pop() {
+        if !type_refs.insert(reference) {
+            continue;
+        }
+        match &module.typespace_for_generate()[reference] {
+            AlgebraicTypeDef::Product(product) => {
+                for (_, ty) in &product.elements {
+                    ty.for_each_ref(|nested| pending.push(nested));
+                }
+            }
+            AlgebraicTypeDef::Sum(sum) => {
+                for (_, ty) in &sum.variants {
+                    ty.for_each_ref(|nested| pending.push(nested));
+                }
+            }
+            AlgebraicTypeDef::PlainEnum(_) => {}
+        }
+    }
+    type_refs
+}
+
+fn print_module_binding_identity(out: &mut Indenter) {
+    writeln!(
+        out,
+        "
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct Identity(pub spacetimedb::Identity);
+
+impl spacetimedb::SpacetimeType for Identity {{
+    fn make_type<S: spacetimedb::spacetimedb_lib::sats::typespace::TypespaceBuilder>(
+        typespace: &mut S,
+    ) -> spacetimedb::spacetimedb_lib::AlgebraicType {{
+        <spacetimedb::Identity as spacetimedb::SpacetimeType>::make_type(typespace)
+    }}
+}}
+
+impl spacetimedb::Serialize for Identity {{
+    fn serialize<S: spacetimedb::spacetimedb_lib::ser::Serializer>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {{
+        <spacetimedb::Identity as spacetimedb::Serialize>::serialize(&self.0, serializer)
+    }}
+}}
+
+impl<'de> spacetimedb::Deserialize<'de> for Identity {{
+    fn deserialize<D: spacetimedb::spacetimedb_lib::de::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Self, D::Error> {{
+        <spacetimedb::Identity as spacetimedb::Deserialize>::deserialize(deserializer).map(Self)
+    }}
+}}
+"
+    );
+}
+
+fn print_module_binding_remote_module(out: &mut Indenter) {
+    writeln!(
+        out,
+        "
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct RemoteModule;
+
+"
+    );
+}
+
+fn print_module_binding_reducer_handle(module: &ModuleDef, out: &mut Indenter, reducer: &ReducerDef) {
+    let handle_name = reducer_function_name(reducer);
+    let outbox_typecheck_macro = format!("__spacetimedb_typecheck_outbox_{handle_name}");
+    let reducer_name = rust_string_literal(reducer.name.deref());
+    let args_type = function_args_type_name(&reducer.accessor_name);
+    define_struct_for_product(
+        module,
+        out,
+        &args_type,
+        &reducer.params_for_generate.elements,
+        "pub",
+        TypeContext::Receiver,
+    );
+    out.newline();
+    let signature_hash = rust_string_literal(&reducer_signature_hash(module, reducer));
+    let mut outbox_typecheck_calls = Vec::new();
+    for (arg, ty) in &reducer.params_for_generate.elements {
+        let arg_name = arg.deref().to_case(Case::Snake);
+        let mut ty_name = String::new();
+        write_type_in_context(module, &mut ty_name, ty, TypeContext::OutboxMacro).unwrap();
+        writeln!(
+            out,
+            "
+#[doc(hidden)]
+macro_rules! __spacetimedb_typecheck_outbox_{handle_name}_{arg_name}_reject_duplicate {{
+    ($module:ident;) => {{}};
+    ($module:ident; ($index:literal, $field:ident : $ty:ty as {arg_name}), $($rest:tt)*) => {{
+        compile_error!(concat!(
+            \"outbox has multiple columns matching remote reducer parameter `\",
+            stringify!({arg_name}),
+            \"`\"
+        ));
+    }};
+    ($module:ident; ($index:literal, $field:ident : $ty:ty as $other:ident), $($rest:tt)*) => {{
+        $module::__spacetimedb_typecheck_outbox_{handle_name}_{arg_name}_reject_duplicate!($module; $($rest)*);
+    }};
+}}
+
+#[doc(hidden)]
+pub(crate) use __spacetimedb_typecheck_outbox_{handle_name}_{arg_name}_reject_duplicate;
+
+#[doc(hidden)]
+macro_rules! __spacetimedb_typecheck_outbox_{handle_name}_{arg_name} {{
+    ($module:ident;) => {{{{
+        compile_error!(concat!(
+            \"outbox has no column matching remote reducer parameter `\",
+            stringify!({arg_name}),
+            \"`\"
+        ));
+        0u16
+    }}}};
+    ($module:ident; ($index:literal, $field:ident : $ty:ty as {arg_name}), $($rest:tt)*) => {{{{
+        let _ = |x: $ty| {{ let _: {ty_name} = x; }};
+        $module::__spacetimedb_typecheck_outbox_{handle_name}_{arg_name}_reject_duplicate!($module; $($rest)*);
+        $index
+    }}}};
+    ($module:ident; ($index:literal, $field:ident : $ty:ty as $other:ident), $($rest:tt)*) => {{
+        $module::__spacetimedb_typecheck_outbox_{handle_name}_{arg_name}!($module; $($rest)*)
+    }};
+}}
+
+#[doc(hidden)]
+pub(crate) use __spacetimedb_typecheck_outbox_{handle_name}_{arg_name};
+"
+        );
+        outbox_typecheck_calls.push(format!(
+            "__outbox_receiver::__spacetimedb_typecheck_outbox_{handle_name}_{arg_name}!(__outbox_receiver; $($columns)*)"
+        ));
+    }
+    let outbox_typecheck_calls = outbox_typecheck_calls.join(",\n            ");
+    writeln!(
+        out,
+        "
+#[doc(hidden)]
+macro_rules! {outbox_typecheck_macro} {{
+    ($module:path, {{ $($columns:tt)* }}) => {{{{
+        #[allow(unused_imports)]
+        use $module as __outbox_receiver;
+        &[{outbox_typecheck_calls}]
+    }}}};
+}}
+
+#[doc(hidden)]
+pub(crate) use {outbox_typecheck_macro};
+"
+    );
+    writeln!(
+        out,
+        "
+#[allow(non_camel_case_types)]
+pub struct {handle_name};
+
+impl spacetimedb::rt::RemoteReducer for {handle_name} {{
+    const NAME: &'static str = {reducer_name};
+    const SIGNATURE_HASH: &'static str = {signature_hash};
+    type Args = {args_type};
+}}
+"
+    );
+}
+
+fn reducer_signature_hash(module: &ModuleDef, reducer: &ReducerDef) -> String {
+    spacetimedb_schema::def::reducer_signature_hash(
+        &reducer.params(),
+        &reducer.ok_return_type,
+        &reducer.err_return_type,
+        module.typespace(),
+    )
+    .to_hex()
+    .to_string()
+}
+
+fn rust_string_literal(value: &str) -> String {
+    format!("{value:?}")
 }
 
 fn type_ref_module_name(module: &ModuleDef, type_ref: AlgebraicTypeRef) -> String {
@@ -1305,19 +1637,15 @@ fn iter_module_names(module: &ModuleDef, visibility: CodegenVisibility) -> impl 
 }
 
 /// Print `pub mod` declarations for all the files that will be generated for `items`.
-fn print_module_decls(module: &ModuleDef, visibility: CodegenVisibility, out: &mut Indenter) {
-    for module_name in iter_module_names(module, visibility) {
+fn print_module_decls(module_names: impl IntoIterator<Item = String>, out: &mut Indenter) {
+    for module_name in module_names {
         writeln!(out, "pub mod {module_name};");
     }
 }
 
 /// Print appropriate reexports for all the files that will be generated for `items`.
 fn print_module_reexports(module: &ModuleDef, visibility: CodegenVisibility, out: &mut Indenter) {
-    for ty in iter_types(module) {
-        let mod_name = type_module_name(&ty.accessor_name);
-        let type_name = collect_case(Case::Pascal, ty.accessor_name.name_segments());
-        writeln!(out, "pub use {mod_name}::{type_name};")
-    }
+    print_type_reexports(iter_types(module), out);
     for (_, accessor_name, _) in iter_table_names_and_types(module, visibility) {
         let mod_name = table_module_name(accessor_name);
         // TODO: More precise reexport: we want:
@@ -1362,7 +1690,13 @@ fn print_reducer_enum_defn(module: &ModuleDef, visibility: CodegenVisibility, ou
                     // like `Foo { bar: Baz, }`.
                     // If it doesn't, generate a "unit variant" instead,
                     // like `Foo,`.
-                    write_struct_type_fields_in_braces(module, out, &reducer.params_for_generate.elements, false);
+                    write_struct_type_fields_in_braces(
+                        module,
+                        out,
+                        &reducer.params_for_generate.elements,
+                        false,
+                        TypeContext::Client,
+                    );
                 }
                 writeln!(out, ",");
             }
@@ -2269,4 +2603,86 @@ fn gen_and_print_imports(
     remove_skipped_imports(&mut imports, dont_import);
 
     print_imports(module, out, imports);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+    use spacetimedb_lib::AlgebraicType;
+    use std::sync::Arc;
+
+    #[test]
+    fn type_rendering_preserves_context_in_nested_types() {
+        let mut builder = RawModuleDefV10Builder::new();
+        let payload = builder.add_algebraic_type(
+            [],
+            "Payload",
+            AlgebraicType::product([("value", AlgebraicType::U64)]),
+            false,
+        );
+        let module: ModuleDef = builder.finish().try_into().unwrap();
+        let option = |ty| AlgebraicTypeUse::Option(Arc::new(ty));
+        let array = |ty| AlgebraicTypeUse::Array(Arc::new(ty));
+        let result = |ok_ty, err_ty| AlgebraicTypeUse::Result {
+            ok_ty: Arc::new(ok_ty),
+            err_ty: Arc::new(err_ty),
+        };
+        let types = [
+            option(array(result(
+                AlgebraicTypeUse::Ref(payload),
+                AlgebraicTypeUse::Identity,
+            ))),
+            result(
+                AlgebraicTypeUse::Primitive(PrimitiveType::I256),
+                AlgebraicTypeUse::Primitive(PrimitiveType::U256),
+            ),
+            option(array(AlgebraicTypeUse::Timestamp)),
+            result(AlgebraicTypeUse::ConnectionId, AlgebraicTypeUse::TimeDuration),
+            result(AlgebraicTypeUse::Uuid, AlgebraicTypeUse::ScheduleAt),
+        ];
+        let cases = [
+            (
+                TypeContext::Client,
+                [
+                    "Option::<Vec::<Result::<Payload, __sdk::Identity>>>",
+                    "Result::<__sats::i256, __sats::u256>",
+                    "Option::<Vec::<__sdk::Timestamp>>",
+                    "Result::<__sdk::ConnectionId, __sdk::TimeDuration>",
+                    "Result::<__sdk::Uuid, __sdk::ScheduleAt>",
+                ],
+            ),
+            (
+                TypeContext::Receiver,
+                [
+                    "Option::<Vec::<Result::<Payload, Identity>>>",
+                    "Result::<spacetimedb::sats::i256, spacetimedb::sats::u256>",
+                    "Option::<Vec::<spacetimedb::Timestamp>>",
+                    "Result::<spacetimedb::ConnectionId, spacetimedb::TimeDuration>",
+                    "Result::<spacetimedb::Uuid, spacetimedb::ScheduleAt>",
+                ],
+            ),
+            (
+                TypeContext::OutboxMacro,
+                [
+                    "Option::<Vec::<Result::<$module::Payload, $module::Identity>>>",
+                    "Result::<spacetimedb::sats::i256, spacetimedb::sats::u256>",
+                    "Option::<Vec::<spacetimedb::Timestamp>>",
+                    "Result::<spacetimedb::ConnectionId, spacetimedb::TimeDuration>",
+                    "Result::<spacetimedb::Uuid, spacetimedb::ScheduleAt>",
+                ],
+            ),
+        ];
+        for (context, expected_types) in cases {
+            for (ty, expected) in types.iter().zip(expected_types) {
+                let mut output = String::new();
+                match context {
+                    TypeContext::Client => write_type(&module, &mut output, ty),
+                    _ => write_type_in_context(&module, &mut output, ty, context),
+                }
+                .unwrap();
+                assert_eq!(output, expected);
+            }
+        }
+    }
 }
