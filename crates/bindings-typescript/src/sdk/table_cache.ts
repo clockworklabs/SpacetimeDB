@@ -37,11 +37,40 @@ export type PendingCallback = {
   cb: () => void;
 };
 
+// The SATS "special products" — `Identity`, `ConnectionId`, `Timestamp`,
+// `TimeDuration` and `Uuid` — are one-element products wrapping a single
+// integer, stored in a field with a well-known name. `AlgebraicValue`'s `Ord`
+// descends through that one-element product, so the host orders a column of
+// one of these types by the integer it wraps.
+const specialProductFields = [
+  '__identity__',
+  '__connection_id__',
+  '__timestamp_micros_since_unix_epoch__',
+  '__time_duration_micros__',
+  '__uuid__',
+] as const;
+
+// Unwrap an index term to the value the host orders it by. Wrapper classes are
+// ordinary objects in JS, so comparing them directly compares object identity
+// and `toString` coercions instead of the wrapped integer. Everything else is
+// returned unchanged.
+const comparableTerm = (value: any): any => {
+  if (value === null || typeof value !== 'object') return value;
+  for (const field of specialProductFields) {
+    const inner = value[field];
+    if (typeof inner === 'bigint') return inner;
+  }
+  return value;
+};
+
 // Strict scalar compare for index term values.
 const scalarCompare = (x: any, y: any): number => {
   if (x === y) return 0;
+  const lhs = comparableTerm(x);
+  const rhs = comparableTerm(y);
+  if (lhs === rhs) return 0;
   // Compare booleans/numbers/bigints/strings with JS ordering.
-  return x < y ? -1 : 1;
+  return lhs < rhs ? -1 : 1;
 };
 
 export type TableIndexView<
