@@ -1103,6 +1103,9 @@ mod test {
             };
             table.finish();
 
+            if let Some(on_result) = on_result {
+                builder.add_reducer(on_result, ProductType::unit());
+            }
             builder.add_outbox(
                 "outbound_pings",
                 "receive_ping",

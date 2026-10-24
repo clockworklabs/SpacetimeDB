@@ -1424,6 +1424,9 @@ mod tests {
                 .finish();
 
             if let Some((remote_reducer, arg_columns, on_result_reducer, signature_hash)) = outbox {
+                if let Some(on_result_reducer) = on_result_reducer {
+                    builder.add_reducer(on_result_reducer.to_owned(), ProductType::unit());
+                }
                 builder.add_outbox(
                     "outbound_pings",
                     remote_reducer.to_owned(),
