@@ -163,6 +163,7 @@ mod sym {
     symbol!(update);
     symbol!(default);
     symbol!(event);
+    symbol!(vis_private);
 
     symbol!(u8);
     symbol!(i8);
