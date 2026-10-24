@@ -155,6 +155,42 @@ fn test_codegen_rust_module_bindings_include_all_types() {
 }
 
 #[test]
+fn test_codegen_rust_outbox_fixture() {
+    use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, ExplicitNames, RawModuleDefV10Builder};
+    use spacetimedb_lib::{AlgebraicType, ProductType};
+
+    let mut builder = RawModuleDefV10Builder::new();
+    builder.set_case_conversion_policy(CaseConversionPolicy::SnakeCase);
+    builder.add_reducer("receivePing", ProductType::from([("Body", AlgebraicType::String)]));
+    // Noop uses case conversion; receivePing uses its explicit wire name.
+    builder.add_reducer("Noop", ProductType::unit());
+    let mut names = ExplicitNames::default();
+    names.insert_function("receivePing", "wire_ping");
+    builder.add_explicit_names(names);
+    let module: ModuleDef = builder.finish().try_into().unwrap();
+    let files = generate_receiver_bindings(&module, ReceiverLanguage::Rust { dependency_name: None }).unwrap();
+    let root = &files.iter().find(|file| file.filename == "lib.rs").unwrap().code;
+
+    // The CLI formats generated bindings, and CI checks the fixture with the repo's rustfmt config.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lib.rs");
+    fs_err::write(&path, root).unwrap();
+    let status = std::process::Command::new("rustfmt")
+        .arg("--config-path")
+        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.rustfmt.toml"))
+        .arg(&path)
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    // The bindings UI tests compile this generated fixture and check its column mappings.
+    assert_eq!(
+        fs_err::read_to_string(path).unwrap().trim_end(),
+        include_str!("../../bindings/tests/fixtures/idc_receiver/lib.rs").trim_end()
+    );
+}
+
+#[test]
 fn test_typescript_table_handles_are_camel_case() {
     let module = compiled_module();
     let index = generate(module, &TypeScript::default(), &CodegenOptions::default())
