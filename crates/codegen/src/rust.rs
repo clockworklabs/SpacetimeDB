@@ -1872,6 +1872,10 @@ impl __sdk::DbContext for DbConnection {{
         self.imp.is_active()
     }}
 
+    fn is_reconnecting(&self) -> bool {{
+        self.imp.is_reconnecting()
+    }}
+
     fn disconnect(&self) -> __sdk::Result<()> {{
         self.imp.disconnect()
     }}
@@ -2197,6 +2201,10 @@ impl __sdk::DbContext for {struct_and_trait_name} {{
 
     fn is_active(&self) -> bool {{
         self.imp.is_active()
+    }}
+
+    fn is_reconnecting(&self) -> bool {{
+        self.imp.is_reconnecting()
     }}
 
     fn disconnect(&self) -> __sdk::Result<()> {{
