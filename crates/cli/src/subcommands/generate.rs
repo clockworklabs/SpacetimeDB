@@ -371,7 +371,7 @@ pub fn cli() -> clap::Command {
                 .long("bindings")
                 .value_parser(clap::value_parser!(BindingKind))
                 .default_value("client")
-                .help("The kind of bindings to generate (module bindings are not implemented yet)"),
+                .help("The kind of bindings to generate (client applications or inter-database module calls)"),
         )
         .arg(
             Arg::new("build_options")
