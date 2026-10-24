@@ -34,7 +34,8 @@ function Root() {
       .withDatabaseName(MODULE_NAME)
       .withToken(localStorage.getItem(TOKEN_KEY) ?? undefined)
       .withAutomaticReconnect()
-      .onConnect((_conn, _identity, token) => localStorage.setItem(TOKEN_KEY, token)),
+      .onConnect((_conn, _identity, token) => localStorage.setItem(TOKEN_KEY, token))
+      .onAutomaticReconnect((_conn, _identity, token) => localStorage.setItem(TOKEN_KEY, token)),
     []
   );
   return (
@@ -110,6 +111,10 @@ const conn = DbConnection.builder()
     localStorage.setItem(TOKEN_KEY, token);
     console.log('Connected as:', identity.toHexString());
   })
+  .onAutomaticReconnect((_conn, identity, token) => {
+    localStorage.setItem(TOKEN_KEY, token);
+    console.log('Reconnected as:', identity.toHexString());
+  })
   .onDisconnect((_ctx, error, nextAttempt, delayMs) => {
     if (nextAttempt !== undefined) {
       console.warn(`Reconnect attempt ${nextAttempt} in ${delayMs} ms`, error);
@@ -140,7 +145,7 @@ conn.db.user.onUpdate((ctx, oldUser, newUser) => console.log('Updated:', newUser
 
 The React provider's connection manager enables automatic reconnect; the explicit `.withAutomaticReconnect()` above also shows the setting to use for direct connections. Without it, a direct connection does not recover automatically. For direct connections, initial failures are not retried. After an established connection drops, retries use exponential backoff and jitter from `minDelayMs` (default 1 s) up to `maxDelayMs` (default 30 s), until `disconnect()` or a terminal failure. Tune these with `.withAutomaticReconnect({ minDelayMs, maxDelayMs })`; values below the 500 ms and 1 s floors are raised with a warning, so that retrying clients cannot overwhelm the database. While mounted, the React provider also preserves its separate connection-manager retries: it builds a replacement connection after an initial or terminal failure that the core connection will not retry. It respects an explicit `disconnect()`.
 
-The same connection, identity, table handles, subscriptions, and row callbacks survive recovery. Each attempt gets a fresh connection ID. `onConnect` runs again before subscription replay, so register subscriptions and row callbacks once, outside that callback. The SDK replays subscriptions in one batch, retains readable but stale cached rows during outages, and emits net row changes after reconciliation. Subscription `onApplied` runs again after replay; keep one-time setup separate.
+The same connection, identity, table handles, subscriptions, and row callbacks survive recovery. Each attempt gets a fresh connection ID. `onConnect` fires once per `DbConnection`; successful automatic reconnects invoke `onAutomaticReconnect` before subscription replay instead. Register subscriptions and row callbacks once, either in `onConnect` or after `build()`, and use `onAutomaticReconnect` for recovery-specific work such as saving a refreshed token. The SDK replays subscriptions in one batch, retains readable but stale cached rows during outages, and emits net row changes after reconciliation. Subscription `onApplied` runs again after replay; keep one-time setup separate.
 
 In React, let `useTable` manage its own subscriptions. Do not add a second subscription effect for the same queries or recreate subscriptions whenever `isActive` changes. Use the hook's `isReady` result for data readiness: a successful reconnect handshake does not mean replay has completed. Invoke reducers from event handlers, not during rendering. For a manually created subscription, retain its handle and call `unsubscribe()` when it is no longer needed, including during an outage.
 
