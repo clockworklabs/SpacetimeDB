@@ -74,8 +74,9 @@ function pcg32(state: bigint): number {
   state = asUintN(64, state * MUL + INC);
   const xorshifted = Number(asUintN(32, ((state >> 18n) ^ state) >> 27n));
   const rot = Number(asUintN(32, state >> 59n));
-  // rotate `xorshifted` right by `rot` bits
-  return (xorshifted >> rot) | (xorshifted << (32 - rot));
+  // rotate `xorshifted` right by `rot` bits. The shift right has to be
+  // unsigned: `>>` copies the sign bit into the top `rot` bits.
+  return (xorshifted >>> rot) | (xorshifted << (32 - rot));
 }
 
 /** From the `pure-rand` README */
