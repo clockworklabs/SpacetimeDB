@@ -16,3 +16,12 @@ export const Accounts = __t.object("Accounts", {
 });
 export type Accounts = __Infer<typeof Accounts>;
 
+export const TransferAudit = __t.object("TransferAudit", {
+  id: __t.u64(),
+  from: __t.u32(),
+  to: __t.u32(),
+  amount: __t.i64(),
+  ts: __t.timestamp(),
+});
+export type TransferAudit = __Infer<typeof TransferAudit>;
+
