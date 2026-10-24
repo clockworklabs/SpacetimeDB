@@ -800,6 +800,7 @@ enum ColumnAttr {
     Target(Span),
     Index(IndexArg),
     Default(syn::Expr, Span),
+    ParamName(Ident),
 }
 
 impl ColumnAttr {
@@ -822,12 +823,28 @@ impl ColumnAttr {
         } else if ident == sym::target {
             attr.meta.require_path_only()?;
             Some(ColumnAttr::Target(ident.span()))
+        } else if ident == sym::param {
+            Some(ColumnAttr::ParamName(parse_param_attr(attr)?))
         } else if ident == sym::default {
             Some(parse_default_attr(attr, ident)?)
         } else {
             None
         })
     }
+}
+
+fn parse_param_attr(attr: &syn::Attribute) -> syn::Result<Ident> {
+    let mut name = None;
+    attr.parse_nested_meta(|meta| {
+        match_meta!(match meta {
+            sym::name => {
+                check_duplicate(&name, &meta)?;
+                name = Some(meta.value()?.parse()?);
+            }
+        });
+        Ok(())
+    })?;
+    name.ok_or_else(|| syn::Error::new_spanned(&attr.meta, "expected `#[param(name = parameter_name)]`"))
 }
 
 fn parse_default_attr(attr: &syn::Attribute, ident: &Ident) -> syn::Result<ColumnAttr> {
@@ -912,6 +929,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         let mut primary_key = None;
         let mut target = None;
         let mut default_value = None;
+        let mut param_name = None;
         for attr in field.original_attrs {
             let Some(attr) = ColumnAttr::parse(attr, field_ident)? else {
                 continue;
@@ -938,6 +956,10 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                     check_duplicate(&default_value, span)?;
                     default_value = Some(expr);
                 }
+                ColumnAttr::ParamName(name) => {
+                    check_duplicate(&param_name, name.span())?;
+                    param_name = Some(name);
+                }
             }
         }
 
@@ -955,7 +977,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             ident: field_ident,
             vis: field.vis,
             ty: field.ty,
-            param_name: field_ident.unraw().to_string(),
+            param_name: param_name.as_ref().unwrap_or(field_ident).unraw().to_string(),
             default_value,
         };
 
