@@ -189,6 +189,17 @@ pub fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// Copies a Rust module fixture's manifest and source into a temporary project.
+pub fn copy_module_fixture(name: &str, dest: &Path) -> Result<()> {
+    let source = workspace_root().join("crates/smoketests/modules").join(name);
+    fs::create_dir_all(dest.join("src"))?;
+    for file in ["Cargo.toml", "src/lib.rs"] {
+        fs::copy(source.join(file), dest.join(file))
+            .with_context(|| format!("Failed to copy {file} from fixture {name}"))?;
+    }
+    Ok(())
+}
+
 /// Rewrites `spacetimedb` dependency in `<module_dir>/Cargo.toml` to use local workspace bindings.
 pub fn patch_module_cargo_to_local_bindings(module_dir: &Path) -> Result<()> {
     let cargo_toml_path = module_dir.join("Cargo.toml");
@@ -202,7 +213,9 @@ pub fn patch_module_cargo_to_local_bindings(module_dir: &Path) -> Result<()> {
     let patched = cargo_toml
         .lines()
         .map(|line| {
-            if line.trim_start().starts_with("spacetimedb = ") {
+            if line.trim_start().starts_with("spacetimedb = ")
+                || line.trim_start().starts_with("spacetimedb.workspace = ")
+            {
                 replacement.as_str()
             } else {
                 line
