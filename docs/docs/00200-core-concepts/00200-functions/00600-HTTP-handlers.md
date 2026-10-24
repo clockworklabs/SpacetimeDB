@@ -229,6 +229,10 @@ Combine routers with `router.Merge(otherRouter)`, which combines both routers.
 
 SpacetimeDB uses strict routing, meaning that a request must match a path exactly in order to be routed to that handler. Trailing slashes are significant.
 
+A path may end with a single `*`, which matches any remaining path: the route `/webhooks/*` handles `/webhooks/github`, `/webhooks/` and `/webhooks/a/b`, but not `/webhooks`, because the separator in front of the wildcard is part of its prefix. A wildcard route cannot be published together with a route it would match *for the same HTTP method* — `GET /webhooks/*` and `POST /webhooks/github` are fine, `GET /webhooks/*` and `GET /webhooks/github` are rejected — so a handler is never chosen between two routes that could both serve the request.
+
+The wildcard does not hide what it matched: the `uri` of the request the handler receives is the full request URI, including the `/v1/database/:name_or_identity/route` prefix described below, so a handler that needs the matched part strips that prefix.
+
 ## Sending Requests
 
 Routes defined by a SpacetimeDB database are exposed under the prefix `/v1/database/:name_or_identity/route`. To access the `say-hello` route above, send a request to `$SPACETIMEDB_URI/v1/database/$DATABASE/route/say-hello`, where `$SPACETIMEDB_URI` is the SpacetimeDB host (usually `https://maincloud.spacetimedb.com`), and `$DATABASE` is the name or identity of the database.
