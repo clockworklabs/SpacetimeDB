@@ -290,7 +290,7 @@ impl<'scope, T: IntoException<'scope>> Throwable<'scope> for T {
 }
 
 /// Either an error outside V8 JS execution, or an exception inside.
-#[derive(Debug)]
+#[derive(Debug, derive_more::Display)]
 pub(super) enum ErrorOrException<Exc> {
     Err(anyhow::Error),
     Exception(Exc),
