@@ -5,6 +5,7 @@ import {
   Identity,
   InternalError,
   SenderError,
+  TimeDuration,
   Timestamp,
   type Infer,
 } from '../src';
@@ -69,6 +70,18 @@ class Deferred<T> {
 }
 
 beforeEach(() => {});
+
+function getLastCallProcedureRequestId(
+  wsAdapter: WebsocketTestAdapter
+): number {
+  for (let i = wsAdapter.outgoingMessages.length - 1; i >= 0; i--) {
+    const message = wsAdapter.outgoingMessages[i];
+    if (message.tag === 'CallProcedure') {
+      return message.value.requestId;
+    }
+  }
+  throw new Error('No CallProcedure message found in messageQueue.');
+}
 
 function getLastCallReducerRequestId(wsAdapter: WebsocketTestAdapter): number {
   for (let i = wsAdapter.outgoingMessages.length - 1; i >= 0; i--) {
@@ -137,6 +150,18 @@ function makeReducerInternalErrorResult(requestId: number, error: string) {
     requestId,
     timestamp: new Timestamp(0n),
     result: {
+      tag: 'InternalError',
+      value: error,
+    },
+  });
+}
+
+function makeProcedureInternalErrorResult(requestId: number, error: string) {
+  return ServerMessage.ProcedureResult({
+    requestId,
+    timestamp: new Timestamp(0n),
+    totalHostExecutionDuration: new TimeDuration(0n),
+    status: {
       tag: 'InternalError',
       value: error,
     },
@@ -646,6 +671,47 @@ describe('DbConnection', () => {
       'test error'
     );
     expect(insertCalled).toBeFalsy();
+  });
+
+  test('procedure internal error rejects with InternalError', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    const onConnectPromise = new Deferred<void>();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.openWebSocket)
+      .onConnect(() => {
+        onConnectPromise.resolve();
+      })
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+    await onConnectPromise.promise;
+
+    const procedurePromise = client.callProcedure(
+      'test_proc',
+      new Uint8Array()
+    );
+
+    await Promise.resolve();
+    const requestId = getLastCallProcedureRequestId(wsAdapter);
+    wsAdapter.sendToClient(
+      makeProcedureInternalErrorResult(requestId, 'internal procedure error')
+    );
+
+    await expect(procedurePromise).rejects.toBeInstanceOf(InternalError);
+    await expect(procedurePromise).rejects.toHaveProperty(
+      'message',
+      'internal procedure error'
+    );
   });
 
   test('reducer internal error rejects with InternalError', async () => {
