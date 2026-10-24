@@ -1314,7 +1314,13 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     };
 
     let field_types = fields.iter().map(|f| f.ty).collect::<Vec<_>>();
+    let mutable_table_impl = args.outbox.is_none().then(|| {
+        quote! {
+            impl spacetimedb::table::MutableTable for #tablehandle_ident {}
+        }
+    });
     let tabletype_impl = quote! {
+        #mutable_table_impl
         use spacetimedb::Serialize;
         impl spacetimedb::Table for #tablehandle_ident {
             type Row = #row_type;
