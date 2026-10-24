@@ -466,7 +466,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 endif()
 "#;
 
-fn parse_identity_from_publish_output(publish_output: &str) -> Result<String> {
+/// Extracts the database identity from a single database publication.
+pub fn parse_identity_from_publish_output(publish_output: &str) -> Result<String> {
     let re = Regex::new(r"identity: ([0-9a-fA-F]+)").unwrap();
     re.captures(publish_output)
         .and_then(|caps| caps.get(1))
@@ -1552,7 +1553,15 @@ log = "0.4"
     pub fn call(&self, name: &str, args: &[&str]) -> Result<String> {
         let identity = self.database_identity.as_ref().context("No database published")?;
 
-        let mut cmd_args = vec!["call", "--server", &self.server_url, "--", identity.as_str(), name];
+        let mut cmd_args = vec![
+            "call",
+            "--no-config",
+            "--server",
+            &self.server_url,
+            "--",
+            identity.as_str(),
+            name,
+        ];
         cmd_args.extend(args);
 
         self.spacetime(&cmd_args)
@@ -1562,7 +1571,15 @@ log = "0.4"
     pub fn call_output(&self, name: &str, args: &[&str]) -> Output {
         let identity = self.database_identity.as_ref().expect("No database published");
 
-        let mut cmd_args = vec!["call", "--server", &self.server_url, "--", identity.as_str(), name];
+        let mut cmd_args = vec![
+            "call",
+            "--no-config",
+            "--server",
+            &self.server_url,
+            "--",
+            identity.as_str(),
+            name,
+        ];
         cmd_args.extend(args);
 
         self.spacetime_cmd(&cmd_args)
@@ -1574,6 +1591,7 @@ log = "0.4"
 
         let mut cmd_args = vec![
             "call",
+            "--no-config",
             "--anonymous",
             "--server",
             &self.server_url,

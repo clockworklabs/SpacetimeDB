@@ -222,3 +222,70 @@ fn cli_generate_two_scoped_receiver_types_compile_in_sender() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+/// Standalone-only: a sender module can use generated receiver bindings from a spacetime.json dependency.
+#[test]
+fn cli_generate_receiver_bindings_from_dependency_compile_in_sender() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let receiver_dir = temp_dir.path().join("receiver");
+    let sender_dir = temp_dir.path().join("sender");
+
+    copy_module_fixture("idc-receiver", &receiver_dir).expect("failed to copy receiver fixture");
+    copy_module_fixture("idc-sender", &sender_dir).expect("failed to copy sender fixture");
+    patch_module_cargo_to_local_bindings(&receiver_dir).expect("failed to patch receiver Cargo.toml");
+    patch_module_cargo_to_local_bindings(&sender_dir).expect("failed to patch sender Cargo.toml");
+
+    std::fs::write(
+        temp_dir.path().join("spacetime.json"),
+        r#"{
+  "server": "local",
+  "children": [
+    {
+      "database": "game-world",
+      "module-path": "./receiver"
+    },
+    {
+      "database": "lobby",
+      "module-path": "./sender",
+      "dependencies": [
+        { "name": "game_world", "database": "game-world" }
+      ]
+    }
+  ]
+}
+"#,
+    )
+    .expect("failed to write spacetime.json");
+
+    let output = cli_cmd()
+        .args(["generate", "lobby"])
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("failed to execute");
+    assert!(
+        output.status.success(),
+        "generate failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let remote_bindings_mod = std::fs::read_to_string(sender_dir.join("src/remote_bindings/mod.rs"))
+        .expect("generated remote_bindings mod.rs should exist");
+    assert!(remote_bindings_mod.contains("pub mod game_world;"));
+
+    let generated = sender_dir.join("src/remote_bindings/game_world/mod.rs");
+    let root = std::fs::read_to_string(&generated).expect("generated receiver binding should exist");
+    assert!(root.contains("pub struct Identity(pub spacetimedb::Identity);"));
+    assert!(root.contains("impl spacetimedb::rt::RemoteReducer for receive_ping"));
+    assert!(root.contains("receive_ping"));
+
+    let output = cli_cmd()
+        .args(["build", "--module-path", sender_dir.to_str().unwrap()])
+        .output()
+        .expect("failed to execute");
+    assert!(
+        output.status.success(),
+        "sender build failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
