@@ -7,6 +7,7 @@ import {
   type TokenProvider,
 } from './db_connection_impl';
 import { EventEmitter } from './event_emitter';
+import { DEFAULT_PING_TIMEOUT_MS } from './network_stats';
 import type {
   DbConnectionConfig,
   ErrorContextInterface,
@@ -37,6 +38,8 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
   #automaticReconnect: boolean = false;
   #reconnectPolicy?: ReconnectPolicy;
   #tokenProvider?: TokenProvider;
+  #pingIntervalMs: number = 1000;
+  #pingTimeoutMs: number = DEFAULT_PING_TIMEOUT_MS;
   #createWSFn: WebSocketFactory;
 
   /**
@@ -178,6 +181,55 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
    */
   withTokenProvider(provider: TokenProvider): this {
     this.#tokenProvider = provider;
+    return this;
+  }
+
+  /**
+   * Sets how often the connection pings the server to measure network
+   * statistics, exposed as `DbConnection.networkStats`.
+   *
+   * The first Ping is sent as soon as the connection is established, then one
+   * every interval. Defaults to 1000 milliseconds. `0` disables pinging, in
+   * which case `networkStats` stays `undefined`, and so does the dead
+   * connection detection described in {@link DbConnectionBuilder.withPingTimeout}.
+   *
+   * @param intervalMs The ping interval in milliseconds, or `0` to disable.
+   * @throws {RangeError} If `intervalMs` is negative or not an integer.
+   */
+  withPingInterval(intervalMs: number): this {
+    if (!Number.isInteger(intervalMs) || intervalMs < 0) {
+      throw new RangeError(
+        `Ping interval must be a non-negative integer number of milliseconds, got ${intervalMs}`
+      );
+    }
+    this.#pingIntervalMs = intervalMs;
+    return this;
+  }
+
+  /**
+   * Sets how long the periodic Pings may go unanswered before the connection
+   * is treated as lost.
+   *
+   * A network that fails silently leaves the websocket open, with nothing
+   * arriving. Once the oldest unanswered Ping is older than this timeout (or
+   * than a few round-trip timeouts, on a slow link), and at least one Ping
+   * has been sent since it, the connection closes with an error: it
+   * reconnects if {@link DbConnectionBuilder.withAutomaticReconnect} is set,
+   * and disconnects otherwise. The check runs once per Ping interval, so
+   * detection takes up to one interval longer than the timeout.
+   *
+   * Defaults to 10000 milliseconds.
+   *
+   * @param timeoutMs The timeout in milliseconds.
+   * @throws {RangeError} If `timeoutMs` is not a positive integer.
+   */
+  withPingTimeout(timeoutMs: number): this {
+    if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+      throw new RangeError(
+        `Ping timeout must be a positive integer number of milliseconds, got ${timeoutMs}`
+      );
+    }
+    this.#pingTimeoutMs = timeoutMs;
     return this;
   }
 
@@ -354,6 +406,8 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
       compression: this.#compression,
       lightMode: this.#lightMode,
       confirmedReads: this.#confirmedReads,
+      pingIntervalMs: this.#pingIntervalMs,
+      pingTimeoutMs: this.#pingTimeoutMs,
       createWSFn: this.#createWSFn,
       remoteModule: this.remoteModule,
       automaticReconnect: this.#automaticReconnect,
