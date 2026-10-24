@@ -14,6 +14,7 @@
 #include "BSATN/UEBSATNHelpers.h"
 #include "Connection/Callback.h"
 #include "LogCategory.h"
+#include "Connection/Reconnect.h"
 #include <type_traits>
 
 #include "DbConnectionBase.generated.h"
@@ -21,13 +22,14 @@
 // Forward declarations
 class UDbConnectionBuilder;
 class UProcedureCallbacks;
+class IHttpRequest;
 
 /** Macro for safae way to bind delegate without needing to write Function name as an FName. */
-#define BIND_DELEGATE_SAFE(DelegateVar, Object, ClassType, FunctionName) \
+#define BIND_DELEGATE_SAFE(DelegateVar, Object, ClassType, FunctionName)                                               \
 	DelegateVar.BindUFunction(Object, GET_FUNCTION_NAME_CHECKED(ClassType, FunctionName))
 
 /** Macro for safe way to unbind delegate without needing to write Function name as an FName. */
-#define UNBIND_DELEGATE_SAFE(DelegateVar, Object, ClassType, FunctionName) \
+#define UNBIND_DELEGATE_SAFE(DelegateVar, Object, ClassType, FunctionName)                                             \
 	DelegateVar.Remove(Object, GET_FUNCTION_NAME_CHECKED(ClassType, FunctionName))
 
 /** Delegate called when the connection attempt fails. */
@@ -35,18 +37,24 @@ DECLARE_DYNAMIC_DELEGATE_OneParam(
 	FOnConnectErrorDelegate,
 	const FString&, ErrorMessage);
 
+/** Delegate called when a connection attempt fails, with the automatic reconnect schedule. */
+DECLARE_DYNAMIC_DELEGATE_FourParams(FOnConnectErrorWithReconnectDelegate, const FString&, ErrorMessage, bool,
+                                    bWillReconnect, int32, NextReconnectAttempt, float, NextReconnectDelaySeconds);
+
 /** Called when a connection is established. */
-DECLARE_DYNAMIC_DELEGATE_ThreeParams(
-	FOnConnectBaseDelegate,
-	UDbConnectionBase*, Connection,
-	FSpacetimeDBIdentity, Identity,
-	const FString&, Token);
+DECLARE_DYNAMIC_DELEGATE_ThreeParams(FOnConnectBaseDelegate, UDbConnectionBase*, Connection, FSpacetimeDBIdentity,
+                                     Identity, const FString&, Token);
 
 /** Called when a connection closes. */
 DECLARE_DYNAMIC_DELEGATE_TwoParams(
 	FOnDisconnectBaseDelegate,
 	UDbConnectionBase*, Connection,
 	const FString&, Error);
+
+/** Called when a connection closes, with the automatic reconnect schedule. */
+DECLARE_DYNAMIC_DELEGATE_FiveParams(FOnDisconnectWithReconnectBaseDelegate, UDbConnectionBase*, Connection,
+                                    const FString&, Error, bool, bWillReconnect, int32, NextReconnectAttempt, float,
+                                    NextReconnectDelaySeconds);
 
 /** Runtime-compatible database update wrapper used by table-update pipeline. */
 USTRUCT(BlueprintType)
@@ -73,15 +81,14 @@ FORCEINLINE uint32 GetTypeHash(const FDatabaseUpdateType& DatabaseUpdate)
 	return GetTypeHash(DatabaseUpdate.Tables);
 }
 
-
 /** Key used to index preprocessed table data without relying on row addresses */
 struct FPreprocessedTableKey
 {
 	FString TableName;
 
 	FPreprocessedTableKey() = default;
-	explicit FPreprocessedTableKey(const FString& InName)
-		: TableName(InName) {
+	explicit FPreprocessedTableKey(const FString& InName) : TableName(InName)
+	{
 	}
 
 	friend bool operator==(const FPreprocessedTableKey& A, const FPreprocessedTableKey& B)
@@ -95,23 +102,19 @@ FORCEINLINE uint32 GetTypeHash(const FPreprocessedTableKey& Key)
 	return GetTypeHash(Key.TableName);
 }
 
-template<typename T, typename = void>
-struct THasOnDeleteDelegate : std::false_type
+template <typename T, typename = void> struct THasOnDeleteDelegate : std::false_type
 {
 };
 
-template<typename T>
-struct THasOnDeleteDelegate<T, std::void_t<decltype(&T::OnDelete)>> : std::true_type
+template <typename T> struct THasOnDeleteDelegate<T, std::void_t<decltype(&T::OnDelete)>> : std::true_type
 {
 };
 
-template<typename T, typename = void>
-struct THasOnUpdateDelegate : std::false_type
+template <typename T, typename = void> struct THasOnUpdateDelegate : std::false_type
 {
 };
 
-template<typename T>
-struct THasOnUpdateDelegate<T, std::void_t<decltype(&T::OnUpdate)>> : std::true_type
+template <typename T> struct THasOnUpdateDelegate<T, std::void_t<decltype(&T::OnUpdate)>> : std::true_type
 {
 };
 
@@ -121,68 +124,81 @@ class SPACETIMEDBSDK_API UDbConnectionBase : public UObject
 	GENERATED_BODY()
 
 public:
-
 	/** The default constructor is private to prevent instantiation without using the builder. */
 	explicit UDbConnectionBase(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	/** Disconnect from the server. */
-	UFUNCTION(BlueprintCallable, Category="SpacetimeDB")
+	UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
 	void Disconnect();
 
 	/** Check if the underlying WebSocket is connected. */
-	UFUNCTION(BlueprintPure, Category="SpacetimeDB")
-	bool IsActive() const;
+	UFUNCTION(BlueprintPure, Category = "SpacetimeDB")
+	virtual bool IsActive() const;
 
-	UFUNCTION(BlueprintCallable, Category="SpacetimeDB")
+	UFUNCTION(BlueprintPure, Category = "SpacetimeDB")
+	bool IsReconnecting() const
+	{
+		return bReconnecting;
+	}
+
+	UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
 	void FrameTick();
 
-	UFUNCTION(BlueprintCallable, Category="SpacetimeDB")
+	UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
 	void SetAutoTicking(bool bAutoTick);
 
 	/** Send a raw JSON message to the server. */
 	bool SendRawMessage(const FString& Message);
 	/** Send a raw binary message to the server. */
-	bool SendRawMessage(const TArray<uint8>& Message);
+	virtual bool SendRawMessage(const TArray<uint8>& Message);
 
 	/** Get the current subscription builder. This is used to create subscriptions. */
 	UFUNCTION()
 	USubscriptionBuilderBase* SubscriptionBuilderBase();
-	
+
 	/** Get the current identity of the SpacetimeDB instance. This is used to identify the connection. */
 	UFUNCTION(BlueprintPure, Category = "SpacetimeDB")
 	bool TryGetIdentity(FSpacetimeDBIdentity& OutIdentity) const;
-	
+
 	/** Get the current connection id. This is used to identify the connection. */
 	UFUNCTION(BlueprintPure, Category = "SpacetimeDB")
 	FSpacetimeDBConnectionId GetConnectionId() const;
 
 	// Typed reducer call helper: hides BSATN bytes from callers.
-	template<typename ArgsStruct>
-	uint32 CallReducerTyped(const FString& Reducer, const ArgsStruct& Args)
+	template <typename ArgsStruct> uint32 CallReducerTyped(const FString& Reducer, const ArgsStruct& Args)
 	{
 		TArray<uint8> Bytes = UE::SpacetimeDB::Serialize(Args);
 		return InternalCallReducer(Reducer, MoveTemp(Bytes));
 	}
 
-	template<typename ArgsStruct>
-	void CallProcedureTyped(const FString& ProcedureName, const ArgsStruct& Args, const FOnProcedureCompleteDelegate& Callback)
+	template <typename ArgsStruct>
+	void CallProcedureTyped(const FString& ProcedureName, const ArgsStruct& Args,
+	                        const FOnProcedureCompleteDelegate& Callback)
 	{
 		TArray<uint8> Bytes = UE::SpacetimeDB::Serialize(Args);
 		InternalCallProcedure(ProcedureName, MoveTemp(Bytes), Callback);
 	}
 
-	template<typename RowType>
-	void RegisterTable(const FString& TableName)
+	template <typename RowType> void RegisterTable(const FString& TableName)
 	{
+		// Copy on write: each incoming message captures the current map by reference count, not by copy.
 		FScopeLock Lock(&TableDeserializersMutex);
-		TableDeserializers.Add(TableName, MakeShared<UE::SpacetimeDB::TTableRowDeserializer<RowType>>());
+		TSharedRef<FDeserializerMap, ESPMode::ThreadSafe> Next =
+		    MakeShared<FDeserializerMap, ESPMode::ThreadSafe>(*TableDeserializers);
+		Next->Add(TableName, MakeShared<UE::SpacetimeDB::TTableRowDeserializer<RowType>, ESPMode::ThreadSafe>());
+		TableDeserializers = Next;
 	}
 
 	/** Internal interface for applying table updates generically */
 	class ITableUpdateHandler
 	{
 	public:
-		virtual ~ITableUpdateHandler() {}
+		virtual ~ITableUpdateHandler()
+		{
+		}
+		/** Add one delete per cached reference to the table's preprocessed data, reusing the cached rows. */
+		virtual void AddCachedDeletes(const FString& TableName,
+		                              TArray<TSharedPtr<UE::SpacetimeDB::FPreprocessedTableDataBase>>& Queue) const = 0;
 
 		/** Update the in-memory cache for the table and store the diff */
 		virtual void UpdateCache(UDbConnectionBase* Conn, const FTableUpdateType& Update, void* Context) = 0;
@@ -191,11 +207,39 @@ public:
 		virtual void BroadcastDiff(UDbConnectionBase* Conn, void* Context) = 0;
 	};
 
-	template<typename RowType, typename TableClass, typename EventContext>
+	template <typename RowType, typename TableClass, typename EventContext>
 	class TTableUpdateHandler : public ITableUpdateHandler
 	{
 	public:
-		explicit TTableUpdateHandler(TableClass* InTable) : Table(InTable) {}
+		explicit TTableUpdateHandler(TableClass* InTable) : Table(InTable)
+		{
+		}
+
+		virtual void AddCachedDeletes(const FString& TableName,
+		                              TArray<TSharedPtr<UE::SpacetimeDB::FPreprocessedTableDataBase>>& Queue) const override
+		{
+			if (Queue.IsEmpty())
+			{
+				Queue.Add(MakeShared<UE::SpacetimeDB::TPreprocessedTableData<RowType>>());
+			}
+			auto Data = StaticCastSharedPtr<UE::SpacetimeDB::TPreprocessedTableData<RowType>>(Queue[0]);
+			const auto Cache = Table->Data->GetTable(TableName);
+			if (!Cache.IsValid())
+			{
+				return;
+			}
+			for (const auto& Pair : Cache->Entries)
+			{
+				if (!Pair.Value.Row.IsValid())
+				{
+					continue;
+				}
+				for (int32 Ref = 0; Ref < Pair.Value.RefCount; ++Ref)
+				{
+					Data->Deletes.Add(FWithBsatn<RowType>(Pair.Key, *Pair.Value.Row));
+				}
+			}
+		}
 
 		//** Update the in-memory cache for the table and store the diff */
 		virtual void UpdateCache(UDbConnectionBase* Conn, const FTableUpdateType& Update, void* Context) override
@@ -210,7 +254,8 @@ public:
 			else
 			{
 				// If no preprocessed data, process the update directly. Backup
-				UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("No preprocessed data for table update. Processing directly."));
+				UE_LOG(LogSpacetimeDb_Connection, Warning,
+				       TEXT("No preprocessed data for table update. Processing directly."));
 				TArray<FWithBsatn<RowType>> Inserts, Deletes;
 				UE::SpacetimeDB::ProcessTableUpdateWithBsatn<RowType>(Update, Inserts, Deletes);
 				LastDiff = Table->Update(Inserts, Deletes);
@@ -228,7 +273,7 @@ public:
 		FTableAppliedDiff<RowType> LastDiff;
 	};
 	//** Register a table with the connection. This will allow the connection to handle updates for the table.
-	template<typename RowType, typename TableClass, typename EventContext>
+	template <typename RowType, typename TableClass, typename EventContext>
 	void RegisterTable(const FString& TableName, TableClass* Table)
 	{
 		RegisterTable<RowType>(TableName);
@@ -236,8 +281,9 @@ public:
 		RegisteredTables.Add(TableName, MakeShared<TTableUpdateHandler<RowType, TableClass, EventContext>>(Table));
 	}
 	//** Take preprocessed table row data. */
-	template<typename RowType>
-	bool TakePreprocessedTableData(const FTableUpdateType& Update, TSharedPtr<UE::SpacetimeDB::TPreprocessedTableData<RowType>>& OutData)
+	template <typename RowType>
+	bool TakePreprocessedTableData(const FTableUpdateType& Update,
+	                               TSharedPtr<UE::SpacetimeDB::TPreprocessedTableData<RowType>>& OutData)
 	{
 		FScopeLock Lock(&PreprocessedDataMutex);
 		FPreprocessedTableKey Key(Update.TableName);
@@ -257,9 +303,7 @@ public:
 		return false;
 	}
 
-
 protected:
-
 	virtual void BeginDestroy() override;
 
 	friend class UDbConnectionBuilderBase;
@@ -269,8 +313,18 @@ protected:
 	friend class URemoteReducers;
 
 	/** Allow derived classes to override the delegates used when connecting */
-	void SetOnConnectDelegate(const FOnConnectBaseDelegate& Delegate) { OnConnectBaseDelegate = Delegate; }
-	void SetOnDisconnectDelegate(const FOnDisconnectBaseDelegate& Delegate) { OnDisconnectBaseDelegate = Delegate; }
+	void SetOnConnectDelegate(const FOnConnectBaseDelegate& Delegate)
+	{
+		OnConnectBaseDelegate = Delegate;
+	}
+	void SetOnDisconnectDelegate(const FOnDisconnectBaseDelegate& Delegate)
+	{
+		OnDisconnectBaseDelegate = Delegate;
+	}
+	void SetOnDisconnectWithReconnectDelegate(const FOnDisconnectWithReconnectBaseDelegate& Delegate)
+	{
+		OnDisconnectWithReconnectBaseDelegate = Delegate;
+	}
 
 	UFUNCTION()
 	void HandleWSError(const FString& Error);
@@ -283,35 +337,84 @@ protected:
 
 	/** Internal handler that processes a single server message. */
 	void ProcessServerMessage(const FServerMessageType& Message);
-	void PreProcessDatabaseUpdate(const FDatabaseUpdateType& Update);
+	using FTableDataMap = TMap<FPreprocessedTableKey, TArray<TSharedPtr<UE::SpacetimeDB::FPreprocessedTableDataBase>>>;
+	using FDeserializerMap = TMap<FString, TSharedPtr<UE::SpacetimeDB::ITableRowDeserializer, ESPMode::ThreadSafe>>;
+	static void PreProcessDatabaseUpdate(const FDatabaseUpdateType& Update, const FDeserializerMap& Deserializers,
+	                                     FTableDataMap& Out);
+	/** Deserialize the rows a server message carries. Touches no UObject, so it is safe on a worker thread. */
+	static void PreProcessServerMessage(const FServerMessageType& Message, const FDeserializerMap& Deserializers,
+	                                    FTableDataMap& Out);
+
 	/** Decompress and parse a raw message. */
-	bool PreProcessMessage(const TArray<uint8>& Message, FServerMessageType& OutMessage);
-	bool DecompressPayload(uint8 Variant, const TArray<uint8>& In, TArray<uint8>& Out);
-	bool DecompressGzip(const TArray<uint8>& InData, TArray<uint8>& OutData);
-	bool DecompressBrotli(const TArray<uint8>& InData, TArray<uint8>& OutData);
+	static bool PreProcessMessage(const TArray<uint8>& Message, FServerMessageType& OutMessage);
+	static bool DecompressPayload(uint8 Variant, const TArray<uint8>& In, TArray<uint8>& Out);
+	static bool DecompressGzip(const TArray<uint8>& InData, TArray<uint8>& OutData);
+	static bool DecompressBrotli(const TArray<uint8>& InData, TArray<uint8>& OutData);
 	void ClearPendingOperations(const FString& Reason);
 	void HandleProtocolViolation(const FString& ErrorMessage);
 
-	/** Pending messages awaiting processing on the game thread. */
-	TArray<FServerMessageType> PendingMessages;
+	// Every transport event has an arrival order and belongs to one socket attempt.
+	// Parsing can finish out of order; FrameTick releases events in arrival order.
+	struct FIncomingEvent
+	{
+		FServerMessageType Message;
+		FTableDataMap TableData;
+		FString Error;
+		bool bFailure = false;
+		bool bTerminal = false;
+		bool bAuth = false;
+		bool bSessionBusy = false;
+	};
+	TMap<uint64, FIncomingEvent> IncomingEvents;
+	uint64 NextIncomingId = 0;
+	uint64 NextReleaseId = 0;
+	uint64 ConnectionGeneration = 0;
+	void AcceptIncomingEvent(uint64 Generation, uint64 Id, FIncomingEvent Event);
+	void QueueFailure(const FString& Error, bool bTerminal, bool bAuth = false, bool bSessionBusy = false);
+	void ResetTransport();
+	void ConnectionLost(const FString& Error, bool bTerminal, bool bAuth = false, bool bSessionBusy = false);
+	void BroadcastConnectError(const FString& Error, bool bWillReconnect, int32 Attempt, float Delay);
+	void BroadcastDisconnect(const FString& Error, bool bWillReconnect, int32 Attempt, float Delay);
+	/** Send a Subscribe for a handle whose query set id is already registered. */
+	void SendSubscribe(USubscriptionHandleBase* Handle);
+	/** Query set ids subscribed before InitialConnection; sent once the connection is established. */
+	TArray<uint32> QueuedSubscriptions;
+	virtual void StartSocket();
+	void OpenSocket();
+	TSharedPtr<IHttpRequest, ESPMode::ThreadSafe> TokenValidation;
+	void AdvanceReconnect();
+	bool TokenNeedsRefresh() const;
+	bool CanSendCalls() const;
+	void ReplaySubscriptions();
+	void ApplyReplay(const FSubscribeBatchAppliedType& Batch);
+	void EndSubscription(USubscriptionHandleBase* Handle);
+	void SuspendSubscriptions(bool bTerminal);
 
-	/** Mutex protecting access to PendingMessages. */
-	FCriticalSection PendingMessagesMutex;
-
-	/** Map of preprocessed messages keyed by their sequential id. */
-	TMap<int32, FServerMessageType> PreprocessedMessages;
-
-	/** Protects PreprocessedMessages and PendingMessages ordering state. */
-	FCriticalSection PreprocessMutex;
-
-	/** Counter for assigning ids to incoming messages. */
-	FThreadSafeCounter NextPreprocessId;
-
-	/** Id of the next message expected to be released. */
-	int32 NextReleaseId = 0;
+	bool bAutomaticReconnect = false;
+	bool bReconnecting = false;
+	bool bEstablished = false;
+	bool bEnded = false;
+	bool bAttemptPending = false;
+	bool bForceTokenRefresh = false;
+	bool bUsedFreshToken = false;
+	bool bPreparingReplay = false;
+	bool bTicking = false;
+	int32 ReconnectAttempt = 0;
+	double ReconnectAt = 0;
+	uint32 ReplayRequestId = 0;
+	TArray<uint32> ReplayQueryIds;
+	FAutomaticReconnectOptions ReconnectOptions;
+	FString WebSocketUrl;
+	UPROPERTY()
+	FTokenProviderDelegate TokenProvider;
+	UPROPERTY()
+	TObjectPtr<UReconnectTokenRequest> TokenRequest;
+	UPROPERTY()
+	FOnConnectBaseDelegate OnAutomaticReconnectBaseDelegate;
 
 	// Map of table name to row deserializer
-	TMap<FString, TSharedPtr<UE::SpacetimeDB::ITableRowDeserializer>> TableDeserializers;
+	TSharedRef<const FDeserializerMap, ESPMode::ThreadSafe> TableDeserializers =
+	    MakeShared<FDeserializerMap, ESPMode::ThreadSafe>();
 	FCriticalSection TableDeserializersMutex;
 
 	// Map from table update pointer to preprocessed data
@@ -322,38 +425,44 @@ protected:
 	TMap<FString, TSharedPtr<ITableUpdateHandler>> RegisteredTables;
 	FCriticalSection RegisteredTablesMutex;
 
-
-	/** Start a subscription. This will add the subscription to the active list and send a subscribe message to the server. */
+	/** Start a subscription. This will add the subscription to the active list and send a subscribe message to the
+	 * server. */
 	void StartSubscription(USubscriptionHandleBase* Handle);
-	/** Unsubscribe from a subscription. This will remove the subscription from the active list and send an unsubscribe message to the server. */
+	/** Unsubscribe from a subscription. This will remove the subscription from the active list and send an unsubscribe
+	 * message to the server. */
 	void UnsubscribeInternal(USubscriptionHandleBase* Handle);
 
 	/** Call a reducer on the connected SpacetimeDB instance. */
 	uint32 InternalCallReducer(const FString& Reducer, TArray<uint8> Args);
 
 	/** Call a reducer on the connected SpacetimeDB instance. */
-	void InternalCallProcedure(const FString& ProcedureName, TArray<uint8> Args, const FOnProcedureCompleteDelegate& Callback);
+	void InternalCallProcedure(const FString& ProcedureName, TArray<uint8> Args,
+	                           const FOnProcedureCompleteDelegate& Callback);
 
 	/**
-	* Update function to apply database changes.
-	* Must be implemented by child classes.
-	* @param Update - Struct containing update data.
-	*/
+	 * Update function to apply database changes.
+	 * Must be implemented by child classes.
+	 * @param Update - Struct containing update data.
+	 */
 	virtual void DbUpdate(const FDatabaseUpdateType& Update, const FSpacetimeDBEvent& Event) {};
 
-	/** Event handler for reducer events. This can should overridden by child classes to handle specific reducer events. */
+	/** Event handler for reducer events. This can should overridden by child classes to handle specific reducer events.
+	 */
 	virtual void ReducerEvent(const FReducerEvent& Event) {};
 
-	/** Event handler for reducer events. This can should overridden by child classes to handle specific reducer events. */
+	/** Event handler for reducer events. This can should overridden by child classes to handle specific reducer events.
+	 */
 	virtual void ReducerEventFailed(const FReducerEvent& Event, const FString ErrorMessage) {};
 
-	/** Event handler for procedure events. This can should overridden by child classes to handle specific procedure events. */
+	/** Event handler for procedure events. This can should overridden by child classes to handle specific procedure
+	 * events. */
 	virtual void ProcedureEventFailed(const FProcedureEvent& Event, const FString ErrorMessage) {};
 
 	/** Event handler for error events. This can should overridden by child classes to handle specific error events. */
 	virtual void TriggerError(const FString& ErrorMessage) {};
 
-	/** Event handler for subscription events. This can should overridden by child classes to handle specific subscription events. */
+	/** Event handler for subscription events. This can should overridden by child classes to handle specific
+	 * subscription events. */
 	virtual void TriggerSubscription() {};
 
 	/** Apply updates for all registered tables using the provided context pointer */
@@ -405,13 +514,15 @@ protected:
 	UPROPERTY()
 	bool bIsAutoTicking = false;
 	FTSTicker::FDelegateHandle TickerHandle;
-	/** Guard to avoid repeatedly handling the same fatal protocol error. */
-	FThreadSafeBool bProtocolViolationHandled = false;
 
 	UPROPERTY()
 	FOnConnectErrorDelegate OnConnectErrorDelegate;
 	UPROPERTY()
+	FOnConnectErrorWithReconnectDelegate OnConnectErrorWithReconnectDelegate;
+	UPROPERTY()
 	FOnDisconnectBaseDelegate OnDisconnectBaseDelegate;
+	UPROPERTY()
+	FOnDisconnectWithReconnectBaseDelegate OnDisconnectWithReconnectBaseDelegate;
 	UPROPERTY()
 	FOnConnectBaseDelegate OnConnectBaseDelegate;
 
@@ -419,7 +530,8 @@ protected:
 	template <typename TableClass, typename RowType, typename EventContext>
 	void BroadcastDiff(TableClass* Table, const FTableAppliedDiff<RowType>& Diff, const EventContext& Context)
 	{
-		if (!Table) return;
+		if (!Table)
+			return;
 
 		// Broadcast the diff to the table's delegates
 		if (Table->OnInsert.IsBound())

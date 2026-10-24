@@ -44,6 +44,12 @@ DECLARE_DYNAMIC_DELEGATE_TwoParams(
 	UDbConnection*, Connection,
 	const FString&, Error);
 
+DECLARE_DYNAMIC_DELEGATE_FiveParams(
+	FOnDisconnectWithReconnectDelegate,
+	UDbConnection*, Connection,
+	const FString&, Error,
+	bool, bWillReconnect, int32, NextReconnectAttempt, float, NextReconnectDelaySeconds);
+
 
 // Context classes for event handling
 
@@ -65,6 +71,7 @@ struct QUICKSTARTCHAT_API FContextBase
 	URemoteProcedures* Procedures;
 
 	bool IsActive() const;
+	bool IsReconnecting() const;
 	void Disconnect();
 	bool TryGetIdentity(FSpacetimeDBIdentity& OutIdentity) const;
 	FSpacetimeDBConnectionId GetConnectionId() const;
@@ -92,6 +99,11 @@ private:
 
 	UFUNCTION(BlueprintPure, Category="SpacetimeDB")
 	static bool IsActive(const FContextBase& Ctx) { return Ctx.IsActive(); }
+	UFUNCTION(BlueprintPure, Category="SpacetimeDB")
+	static bool IsReconnecting(const FContextBase& Ctx)
+	{
+		return Ctx.IsReconnecting();
+	}
 };
 
 UENUM(BlueprintType, Category = "SpacetimeDB")
@@ -204,6 +216,8 @@ USTRUCT(BlueprintType)
 struct QUICKSTARTCHAT_API FQuickstartChatReducerEvent
 {
 	GENERATED_BODY()
+    UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
+    ESpacetimeDBCallError CallError = ESpacetimeDBCallError::None;
 
 	/** Timestamp for when the reducer executed */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB")
@@ -231,7 +245,7 @@ struct QUICKSTARTCHAT_API FQuickstartChatReducerEvent
 
 	FORCEINLINE bool operator==(const FQuickstartChatReducerEvent& Other) const
 	{
-		return Status == Other.Status && Timestamp == Other.Timestamp && CallerIdentity == Other.CallerIdentity &&
+		return CallError == Other.CallError && Status == Other.Status && Timestamp == Other.Timestamp && CallerIdentity == Other.CallerIdentity &&
 			CallerConnectionId == Other.CallerConnectionId && EnergyConsumed == Other.EnergyConsumed &&
 			Reducer == Other.Reducer;
 	}
@@ -248,6 +262,8 @@ USTRUCT(BlueprintType)
 struct QUICKSTARTCHAT_API FQuickstartChatProcedureEvent
 {
 	GENERATED_BODY()
+    UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
+    ESpacetimeDBCallError CallError = ESpacetimeDBCallError::None;
 
 	/** Timestamp for when the procedure executed */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB")
@@ -264,13 +280,14 @@ struct QUICKSTARTCHAT_API FQuickstartChatProcedureEvent
 	FQuickstartChatProcedureEvent() {
 	}
 	FQuickstartChatProcedureEvent(FProcedureEvent Event) {
+		CallError = Event.CallError;
 		Timestamp = Event.Timestamp;
 		Status = FSpacetimeDBProcedureStatus::FromStatus(Event.Status);
 		TotalHostExecutionDuration = Event.TotalHostExecutionDuration;
 	}
 	FORCEINLINE bool operator==(const FQuickstartChatProcedureEvent& Other) const
 	{
-		return Status == Other.Status && Timestamp == Other.Timestamp &&
+		return CallError == Other.CallError && Status == Other.Status && Timestamp == Other.Timestamp &&
 			TotalHostExecutionDuration == Other.TotalHostExecutionDuration;
 	}
 
@@ -772,15 +789,29 @@ public:
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
     UDbConnectionBuilder* OnConnectError(FOnConnectErrorDelegate Callback);
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
+    UDbConnectionBuilder* OnConnectErrorWithReconnect(FOnConnectErrorWithReconnectDelegate Callback);
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
     UDbConnectionBuilder* OnDisconnect(FOnDisconnectDelegate Callback);
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
+    UDbConnectionBuilder* OnDisconnectWithReconnect(FOnDisconnectWithReconnectDelegate Callback);
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
     UDbConnection* Build();
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
+    UDbConnectionBuilder* WithAutomaticReconnect();
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
+    UDbConnectionBuilder* WithAutomaticReconnectOptions(const FAutomaticReconnectOptions& Options);
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
+    UDbConnectionBuilder* WithTokenProvider(FTokenProviderDelegate Provider);
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
+    UDbConnectionBuilder* OnAutomaticReconnect(FOnConnectDelegate Callback);
 
 private:
 
     // Stored delegates which will be forwarded when the connection events occur.
-    FOnConnectDelegate OnConnectDelegateInternal;
-    FOnDisconnectDelegate OnDisconnectDelegateInternal;
+    UPROPERTY() FOnConnectDelegate OnConnectDelegateInternal;
+    UPROPERTY() FOnConnectDelegate OnAutomaticReconnectDelegateInternal;
+    UPROPERTY() FOnDisconnectDelegate OnDisconnectDelegateInternal;
+    UPROPERTY() FOnDisconnectWithReconnectDelegate OnDisconnectWithReconnectDelegateInternal;
 };
 
 // Main DbConnection class
@@ -803,8 +834,10 @@ public:
     URemoteProcedures* Procedures;
 
     // Delegates that allow users to bind with the concrete connection type.
-    FOnConnectDelegate OnConnectDelegate;
-    FOnDisconnectDelegate OnDisconnectDelegate;
+    UPROPERTY() FOnConnectDelegate OnConnectDelegate;
+    UPROPERTY() FOnConnectDelegate OnAutomaticReconnectDelegate;
+    UPROPERTY() FOnDisconnectDelegate OnDisconnectDelegate;
+    UPROPERTY() FOnDisconnectWithReconnectDelegate OnDisconnectWithReconnectDelegate;
 
     UFUNCTION(BlueprintCallable, Category="SpacetimeDB")
     USubscriptionBuilder* SubscriptionBuilder();
@@ -832,7 +865,9 @@ protected:
     UFUNCTION()
     void ForwardOnConnect(UDbConnectionBase* BaseConnection, FSpacetimeDBIdentity InIdentity, const FString& InToken);
     UFUNCTION()
-    void ForwardOnDisconnect(UDbConnectionBase* BaseConnection, const FString& Error);
+    void ForwardOnAutomaticReconnect(UDbConnectionBase* BaseConnection, FSpacetimeDBIdentity InIdentity, const FString& InToken);
+    UFUNCTION()
+    void ForwardOnDisconnect(UDbConnectionBase* BaseConnection, const FString& Error, bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds);
 
     UFUNCTION()
     void OnUnhandledReducerErrorHandler(const FReducerEventContext& Context, const FString& Error);

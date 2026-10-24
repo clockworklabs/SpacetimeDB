@@ -60,5 +60,6 @@ public:
 private:
     const FString TableName = TEXT("vec_u_256");
 
+    friend class UDbConnectionBase; // Read-only replay snapshots through the registered table adapter.
     TSharedPtr<UClientCache<FVecU256Type>> Data;
 };
