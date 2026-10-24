@@ -1208,19 +1208,30 @@ impl From<ModuleDef> for RawModuleDefV10 {
             sections.push(RawModuleDefV10Section::Procedures(raw_procedures));
         }
 
+        let raw_http_routes: Vec<RawHttpRouteDefV10> = http_routes
+            .into_iter()
+            .map(|route| RawHttpRouteDefV10 {
+                handler_function: http_handlers[&route.handler_name].accessor_name.clone().into(),
+                ..route.into()
+            })
+            .collect();
         let raw_http_handlers: Vec<RawHttpHandlerDefV10> = http_handlers
             .into_values()
-            .map(|hd| RawHttpHandlerDefV10 {
-                source_name: hd.accessor_name.into(),
+            .map(|hd| {
+                explicit_names.insert_function(
+                    RawIdentifier::from(hd.accessor_name.clone()),
+                    RawIdentifier::from(hd.name.clone()),
+                );
+                RawHttpHandlerDefV10 {
+                    source_name: hd.accessor_name.into(),
+                }
             })
             .collect();
         if !raw_http_handlers.is_empty() {
             sections.push(RawModuleDefV10Section::HttpHandlers(raw_http_handlers));
         }
 
-        if !http_routes.is_empty() {
-            let raw_http_routes: Vec<RawHttpRouteDefV10> =
-                http_routes.into_iter().map(RawHttpRouteDefV10::from).collect();
+        if !raw_http_routes.is_empty() {
             sections.push(RawModuleDefV10Section::HttpRoutes(raw_http_routes));
         }
 
@@ -2941,6 +2952,34 @@ mod tests {
             }
             for (original, roundtrip) in original.views().zip(roundtrip.views()) {
                 assert_eq!(original.params_for_generate, roundtrip.params_for_generate);
+            }
+        }
+    }
+
+    #[test]
+    fn v10_roundtrip_preserves_http_handler_names() {
+        use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, RawModuleDefV10Builder};
+
+        for policy in [CaseConversionPolicy::SnakeCase, CaseConversionPolicy::None] {
+            for canonical_name in [None, Some("WireHandler")] {
+                let mut builder = RawModuleDefV10Builder::new();
+                builder.set_case_conversion_policy(policy);
+                builder.add_http_handler("GetSimple");
+                builder.add_http_route("GetSimple", MethodOrAny::Any, "/get");
+                if let Some(canonical_name) = canonical_name {
+                    let mut names = ExplicitNames::default();
+                    names.insert_function("GetSimple", canonical_name);
+                    builder.add_http_handler("WireHandler");
+                    builder.add_http_route("WireHandler", MethodOrAny::Any, "/other");
+                    names.insert_function("WireHandler", "OtherHandler");
+                    builder.add_explicit_names(names);
+                }
+                let original: ModuleDef = builder.finish().try_into().expect("valid module");
+                let roundtrip = ModuleDef::try_from(RawModuleDefV10::from(original.clone()))
+                    .expect("valid roundtripped HTTP routes");
+
+                assert_eq!(original.http_handlers, roundtrip.http_handlers);
+                assert_eq!(original.http_routes, roundtrip.http_routes);
             }
         }
     }
