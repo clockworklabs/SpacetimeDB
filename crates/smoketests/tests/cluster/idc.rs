@@ -422,3 +422,112 @@ fn idc_outbox_uses_regenerated_bindings_after_argument_reordering() {
 
     suite.send_detailed_ping("after-update");
 }
+
+#[test]
+fn idc_generated_receiver_types_are_scoped_by_dependency() {
+    let mut test = Smoketest::builder().autopublish(false).build();
+    let world_db = format!("idc-world-{}", random_string());
+    let auth_db = format!("idc-auth-{}", random_string());
+    let sender_db = format!("idc-scoped-sender-{}", random_string());
+
+    for (fixture, directory) in [
+        ("idc-receiver", "world"),
+        ("idc-receiver", "auth"),
+        ("idc-two-dependencies", "sender"),
+    ] {
+        let module_dir = test.project_dir.path().join(directory);
+        copy_module_fixture(fixture, &module_dir).expect("failed to copy IDC fixture");
+        patch_module_cargo_to_local_bindings(&module_dir).expect("failed to patch module Cargo.toml");
+    }
+    std::fs::write(
+        test.project_dir.path().join("spacetime.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "server": test.server_url,
+            "database": world_db,
+            "module-path": "./world",
+            "children": [
+                { "database": auth_db, "module-path": "./auth" },
+                {
+                    "database": sender_db,
+                    "module-path": "./sender",
+                    "dependencies": [
+                        { "name": "game_world", "database": world_db },
+                        { "name": "auth", "database": auth_db }
+                    ]
+                }
+            ]
+        }))
+        .unwrap(),
+    )
+    .expect("failed to write spacetime.json");
+
+    test.spacetime(&["generate", &sender_db])
+        .expect("failed to generate both receiver bindings");
+    for dependency in ["game_world", "auth"] {
+        let file = test
+            .project_dir
+            .path()
+            .join("sender/src/remote_bindings")
+            .join(dependency)
+            .join("ping_details_type.rs");
+        let source = std::fs::read_to_string(file).expect("generated receiver type is missing");
+        assert!(source.contains(&format!("#[sats(name = \"{dependency}.PingDetails\")]")));
+    }
+    test.spacetime(&["publish", "--server", &test.server_url, "--yes=all"])
+        .expect("failed to publish modules with same-named receiver types");
+
+    let resolve_identity = |database: &str| {
+        let response = test
+            .api_call("GET", &format!("/v1/database/{database}/identity"))
+            .expect("failed to resolve database identity");
+        assert!(response.is_success(), "identity lookup failed for {database}");
+        response.text().expect("invalid database identity response")
+    };
+    let world = resolve_identity(&world_db);
+    let auth = resolve_identity(&auth_db);
+    test.database_identity = Some(resolve_identity(&sender_db));
+    test.call(
+        "enqueue_both",
+        &[
+            &serde_json::to_string(&world).unwrap(),
+            &serde_json::to_string(&auth).unwrap(),
+        ],
+    )
+    .expect("failed to enqueue both remote messages");
+
+    let rows = |database: &str, sql: &str| {
+        let output = test
+            .spacetime(&[
+                "sql",
+                "--no-config",
+                "--server",
+                &test.server_url,
+                "--format",
+                "json",
+                database,
+                sql,
+            ])
+            .expect("failed to query IDC database");
+        let result: serde_json::Value = serde_json::from_str(&output).expect("invalid SQL JSON output");
+        result[0]["rows"].as_array().unwrap().clone()
+    };
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let world_messages = rows(&world_db, "SELECT body FROM detailed_ping_log");
+        let auth_messages = rows(&auth_db, "SELECT body FROM detailed_ping_log");
+        let world_pending = rows(&sender_db, "SELECT id FROM world_outbox");
+        let auth_pending = rows(&sender_db, "SELECT id FROM auth_outbox");
+        if world_messages == vec![serde_json::json!(["world"])]
+            && auth_messages == vec![serde_json::json!(["auth"])]
+            && world_pending.is_empty()
+            && auth_pending.is_empty()
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "scoped IDC did not finish: world={world_messages:?}, auth={auth_messages:?}, world_pending={world_pending:?}, auth_pending={auth_pending:?}"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
