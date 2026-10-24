@@ -27,11 +27,15 @@ const INDENT: &str = "    ";
 
 pub struct Rust;
 
-pub(super) fn generate_rust_module_bindings(module: &ModuleDef) -> Vec<OutputFile> {
+pub(super) fn generate_rust_module_bindings(module: &ModuleDef, dependency_name: Option<&str>) -> Vec<OutputFile> {
     // TODO: Generate IDC bindings for submodules. Only root types and reducers are emitted for now.
     let type_refs = module_binding_reducer_type_refs(module);
     itertools::chain!(
-        iter_module_binding_types(module, &type_refs).map(|typ| generate_module_binding_type_file(module, typ)),
+        iter_module_binding_types(module, &type_refs).map(|typ| generate_module_binding_type_file(
+            module,
+            typ,
+            dependency_name
+        )),
         [generate_module_bindings_root_file(module, &type_refs)],
     )
     .collect()
@@ -1290,7 +1294,7 @@ fn define_struct_for_product(
     out.newline();
 }
 
-fn generate_module_binding_type_file(module: &ModuleDef, typ: &TypeDef) -> OutputFile {
+fn generate_module_binding_type_file(module: &ModuleDef, typ: &TypeDef, dependency_name: Option<&str>) -> OutputFile {
     let type_name = collect_case(Case::Pascal, typ.accessor_name.name_segments());
     let mut output = CodeIndenter::new(String::new(), INDENT);
     let out = &mut output;
@@ -1315,6 +1319,10 @@ fn generate_module_binding_type_file(module: &ModuleDef, typ: &TypeDef) -> Outpu
     gen_and_print_imports(module, out, members, &[typ.ty]);
     out.newline();
     writeln!(out, "#[derive(spacetimedb::SpacetimeType, Clone, PartialEq, Debug)]");
+    if let Some(dependency_name) = dependency_name {
+        let scoped_name = format!("{dependency_name}.{}", typ.accessor_name);
+        writeln!(out, "#[sats(name = {})]", rust_string_literal(&scoped_name));
+    }
     if matches!(def, AlgebraicTypeDef::PlainEnum(_)) {
         print_plain_enum_extra_derives(out);
     }
@@ -1355,8 +1363,6 @@ fn generate_module_bindings_root_file(module: &ModuleDef, type_refs: &BTreeSet<A
     print_type_reexports(iter_module_binding_types(module, type_refs), out);
     out.newline();
     print_module_binding_identity(out);
-    out.newline();
-    print_module_binding_remote_module(out);
     out.newline();
     for reducer in iter_reducers(module, CodegenVisibility::OnlyPublic) {
         print_module_binding_reducer_handle(module, out, reducer);
@@ -1444,18 +1450,6 @@ impl<'de> spacetimedb::Deserialize<'de> for Identity {{
         <spacetimedb::Identity as spacetimedb::Deserialize>::deserialize(deserializer).map(Self)
     }}
 }}
-"
-    );
-}
-
-fn print_module_binding_remote_module(out: &mut Indenter) {
-    writeln!(
-        out,
-        "
-#[doc(hidden)]
-#[derive(Debug)]
-pub struct RemoteModule;
-
 "
     );
 }

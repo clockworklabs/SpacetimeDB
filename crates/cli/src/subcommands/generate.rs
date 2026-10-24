@@ -767,7 +767,7 @@ pub async fn run_prepared_generate_configs(
                 Language::Cpp => ReceiverLanguage::Cpp,
                 Language::UnrealCpp => anyhow::bail!("Unreal C++ is a client binding target"),
             };
-            let files = generate_receiver_bindings(&module, lang)?;
+            let files = generate_receiver_bindings(&module, lang, run.dependency_name.as_deref())?;
             if run.lang == Language::Rust
                 && let Some(name) = &run.dependency_name
             {

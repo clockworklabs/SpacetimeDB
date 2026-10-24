@@ -39,9 +39,15 @@ pub enum ReceiverLanguage<'a> {
 }
 
 /// Generate receiver binding files without reading or writing the filesystem.
-pub fn generate_receiver_bindings(module: &ModuleDef, lang: ReceiverLanguage<'_>) -> anyhow::Result<Vec<OutputFile>> {
+/// `dependency_name` scopes generated type names across receiver dependencies.
+/// Use `None` for standalone bindings.
+pub fn generate_receiver_bindings(
+    module: &ModuleDef,
+    lang: ReceiverLanguage<'_>,
+    dependency_name: Option<&str>,
+) -> anyhow::Result<Vec<OutputFile>> {
     match lang {
-        ReceiverLanguage::Rust => Ok(rust::generate_rust_module_bindings(module)),
+        ReceiverLanguage::Rust => Ok(rust::generate_rust_module_bindings(module, dependency_name)),
         ReceiverLanguage::TypeScript => {
             // TODO(idc-typescript): Generate TypeScript receiver types, reducer handles, and dependency exports.
             anyhow::bail!("TypeScript receiver binding generation is not implemented yet")

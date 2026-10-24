@@ -50,7 +50,7 @@ declare_tests! {
 #[test]
 fn test_codegen_rust_module_bindings() {
     let module = compiled_module();
-    let outfiles = generate_receiver_bindings(module, ReceiverLanguage::Rust)
+    let outfiles = generate_receiver_bindings(module, ReceiverLanguage::Rust, None)
         .unwrap()
         .into_iter()
         .map(|f| (f.filename, f.code))
@@ -101,6 +101,62 @@ fn test_codegen_rust_module_bindings() {
     assert!(!root.contains("DbConnection"));
 
     insta::assert_snapshot!(root);
+}
+
+#[test]
+fn rust_receiver_types_are_scoped_by_dependency_name() {
+    let module = compiled_module();
+    let generate = |name| {
+        generate_receiver_bindings(module, ReceiverLanguage::Rust, Some(name))
+            .unwrap()
+            .into_iter()
+            .map(|file| (file.filename, file.code))
+            .collect::<HashMap<_, _>>()
+    };
+    let game_world = generate("game_world");
+    let auth = generate("auth");
+    let type_file = "test_a_type.rs";
+    assert!(game_world[type_file].contains("#[sats(name = \"game_world.TestA\")]"));
+    assert!(auth[type_file].contains("#[sats(name = \"auth.TestA\")]"));
+}
+
+#[test]
+fn test_codegen_rust_module_bindings_include_nested_reducer_types() {
+    use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+    use spacetimedb_lib::{AlgebraicType, ProductType};
+
+    let mut builder = RawModuleDefV10Builder::new();
+    let state_ref = builder
+        .build_table_with_new_type("EmpireState", ProductType::from([("id", AlgebraicType::U64)]), true)
+        .finish();
+    builder
+        .build_table_with_new_type("Unrelated", ProductType::from([("id", AlgebraicType::U64)]), true)
+        .finish();
+    let op_ref = builder.add_algebraic_type(
+        [],
+        "EmpireStateOp",
+        AlgebraicType::sum([("Update", AlgebraicType::option(AlgebraicType::Ref(state_ref)))]),
+        false,
+    );
+    builder.add_reducer(
+        "receive",
+        ProductType::from([("ops", AlgebraicType::array(AlgebraicType::Ref(op_ref)))]),
+    );
+    let module: ModuleDef = builder.finish().try_into().unwrap();
+    let files = generate_receiver_bindings(&module, ReceiverLanguage::Rust, None)
+        .unwrap()
+        .into_iter()
+        .map(|file| (file.filename, file.code))
+        .collect::<HashMap<_, _>>();
+
+    assert!(files.contains_key("empire_state_op_type.rs"));
+    assert!(files.contains_key("empire_state_type.rs"));
+    assert!(!files.contains_key("unrelated_type.rs"));
+    assert!(files["lib.rs"].contains("pub mod empire_state_op_type;"));
+    assert!(files["lib.rs"].contains("pub mod empire_state_type;"));
+    assert!(files["lib.rs"].contains("pub use empire_state_op_type::EmpireStateOp;"));
+    assert!(files["lib.rs"].contains("pub use empire_state_type::EmpireState;"));
+    assert!(!files["lib.rs"].contains("pub mod unrelated_type;"));
 }
 
 #[test]
