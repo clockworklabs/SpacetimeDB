@@ -1,6 +1,6 @@
 use predicates::prelude::*;
 use spacetimedb_guard::ensure_binaries_built;
-use spacetimedb_smoketests::patch_module_cargo_to_local_bindings;
+use spacetimedb_smoketests::{copy_module_fixture, patch_module_cargo_to_local_bindings};
 use std::process::Command;
 
 fn cli_cmd() -> Command {
@@ -88,5 +88,137 @@ fn cli_generate_with_config_but_no_match_uses_cli_args() {
         predicate::path::exists().eval(&output_dir.join("lib.rs"))
             || predicate::path::exists().eval(&output_dir.join("mod.rs")),
         "Generated files should exist in CLI-specified output directory"
+    );
+}
+
+/// Standalone-only: receiver/module bindings are generated from a local Rust module without contacting a server.
+#[test]
+fn cli_generate_rust_module_bindings() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+
+    let output = cli_cmd()
+        .args([
+            "init",
+            "--non-interactive",
+            "--lang",
+            "rust",
+            "--project-path",
+            temp_dir.path().to_str().unwrap(),
+            "test-project",
+        ])
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("failed to execute");
+    assert!(
+        output.status.success(),
+        "init failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let module_dir = temp_dir.path().join("spacetimedb");
+    patch_module_cargo_to_local_bindings(&module_dir).expect("failed to patch module Cargo.toml");
+
+    let output = cli_cmd()
+        .args(["build", "--module-path", module_dir.to_str().unwrap()])
+        .output()
+        .expect("failed to execute");
+    assert!(
+        output.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let output_dir = module_dir.join("receiver-bindings");
+    let output = cli_cmd()
+        .args([
+            "generate",
+            "--lang",
+            "rust",
+            "--bindings",
+            "module",
+            "--out-dir",
+            output_dir.to_str().unwrap(),
+            "--module-path",
+            module_dir.to_str().unwrap(),
+        ])
+        .current_dir(&module_dir)
+        .output()
+        .expect("failed to execute");
+    assert!(
+        output.status.success(),
+        "generate failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let root = std::fs::read_to_string(output_dir.join("lib.rs")).expect("generated lib.rs should exist");
+    assert!(root.contains("pub struct Identity(pub spacetimedb::Identity);"));
+    assert!(root.contains("impl spacetimedb::rt::RemoteReducer for add"));
+    assert!(root.contains("const NAME: &'static str = \"add\";"));
+    assert!(!root.contains("DbConnection"));
+    assert!(!output_dir.join("add_reducer.rs").exists());
+}
+
+#[test]
+fn cli_generate_two_scoped_receiver_types_compile_in_sender() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+    for (name, fixture) in [
+        ("world", "idc-receiver"),
+        ("auth", "idc-receiver"),
+        ("sender", "idc-two-dependencies-types"),
+    ] {
+        let module_dir = temp_dir.path().join(name);
+        copy_module_fixture(fixture, &module_dir).expect("failed to copy module fixture");
+        patch_module_cargo_to_local_bindings(&module_dir).expect("failed to patch module Cargo.toml");
+    }
+    std::fs::write(
+        temp_dir.path().join("spacetime.json"),
+        r#"{
+  "server": "local",
+  "children": [
+    { "database": "world", "module-path": "./world" },
+    { "database": "auth", "module-path": "./auth" },
+    {
+      "database": "sender",
+      "module-path": "./sender",
+      "dependencies": [
+        { "name": "game_world", "database": "world" },
+        { "name": "auth", "database": "auth" }
+      ]
+    }
+  ]
+}"#,
+    )
+    .expect("failed to write spacetime.json");
+
+    let output = cli_cmd()
+        .args(["generate", "sender"])
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("failed to execute generate");
+    assert!(
+        output.status.success(),
+        "generate failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for dependency in ["game_world", "auth"] {
+        let path = temp_dir
+            .path()
+            .join("sender/src/remote_bindings")
+            .join(dependency)
+            .join("ping_details_type.rs");
+        let source = std::fs::read_to_string(path).expect("generated receiver type is missing");
+        assert!(source.contains(&format!("#[sats(name = \"{dependency}.PingDetails\")]")));
+    }
+    let sender_dir = temp_dir.path().join("sender");
+    let output = cli_cmd()
+        .args(["build", "--module-path", sender_dir.to_str().unwrap()])
+        .output()
+        .expect("failed to execute build");
+    assert!(
+        output.status.success(),
+        "sender build failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
     );
 }
