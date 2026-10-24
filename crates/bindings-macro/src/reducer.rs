@@ -1,7 +1,8 @@
 use crate::sym;
 use crate::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta, native_test_utils_registration};
 use proc_macro2::{Span, TokenStream};
-use quote::{quote, quote_spanned};
+use quote::{format_ident, quote, quote_spanned};
+use syn::ext::IdentExt;
 use syn::parse::Parser as _;
 use syn::spanned::Spanned;
 use syn::{FnArg, Ident, ItemFn, LitStr, PatType};
@@ -127,6 +128,7 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
     let explicit_name = args.name.as_ref();
 
     let generate_explicit_names = generate_explicit_names_impl(&reducer_name.value(), func_name, explicit_name);
+    let outbox_typecheck = generate_local_outbox_typecheck(func_name, &typed_args);
 
     // Extract all function parameter names.
     let opt_arg_names = typed_args.iter().map(|arg| {
@@ -197,7 +199,77 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
         }
 
         #generate_explicit_names
+        #outbox_typecheck
     })
+}
+
+fn generate_local_outbox_typecheck(func_name: &Ident, args: &[&PatType]) -> TokenStream {
+    let macro_name = format_ident!("__spacetimedb_typecheck_outbox_{}", func_name.unraw());
+    let mut helpers = Vec::new();
+    let mut checks = Vec::new();
+    for arg in args.iter().skip(1) {
+        let syn::Pat::Ident(pattern) = arg.pat.as_ref() else {
+            checks.push(quote!(compile_error!(
+                "local outbox reducer parameters must have names"
+            )));
+            continue;
+        };
+        let param = pattern.ident.unraw();
+        let ty = &arg.ty;
+        let lookup = format_ident!("{}_{}", macro_name, param);
+        let reject_duplicate = format_ident!("{}_reject_duplicate", lookup);
+        helpers.push(quote! {
+            #[doc(hidden)]
+            macro_rules! #reject_duplicate {
+                ($module:ident;) => {};
+                ($module:ident; ($index:literal, $field:ident : $column_ty:ty as #param), $($rest:tt)*) => {
+                    compile_error!(concat!("outbox has multiple columns matching reducer parameter `", stringify!(#param), "`"));
+                };
+                ($module:ident; ($index:literal, $field:ident : $column_ty:ty as $other:ident), $($rest:tt)*) => {
+                    $module::#reject_duplicate!($module; $($rest)*);
+                };
+            }
+            #[doc(hidden)]
+            #[allow(unused_imports)]
+            pub(crate) use #reject_duplicate;
+
+            #[doc(hidden)]
+            macro_rules! #lookup {
+                ($module:ident;) => {{
+                    compile_error!(concat!("outbox has no column matching reducer parameter `", stringify!(#param), "`"));
+                    0u16
+                }};
+                ($module:ident; ($index:literal, $field:ident : $column_ty:ty as #param), $($rest:tt)*) => {{
+                    #[allow(unused_imports)]
+                    use $module::*;
+                    let _ = |x: $column_ty| { let _: #ty = x; };
+                    $module::#reject_duplicate!($module; $($rest)*);
+                    $index
+                }};
+                ($module:ident; ($index:literal, $field:ident : $column_ty:ty as $other:ident), $($rest:tt)*) => {
+                    $module::#lookup!($module; $($rest)*)
+                };
+            }
+            #[doc(hidden)]
+            #[allow(unused_imports)]
+            pub(crate) use #lookup;
+        });
+        checks.push(quote!(__outbox_receiver::#lookup!(__outbox_receiver; $($columns)*)));
+    }
+    quote! {
+        #(#helpers)*
+        #[doc(hidden)]
+        macro_rules! #macro_name {
+            ($module:path, { $($columns:tt)* }) => {{
+                #[allow(unused_imports)]
+                use $module as __outbox_receiver;
+                &[#(#checks),*]
+            }};
+        }
+        #[doc(hidden)]
+        #[allow(unused_imports)]
+        pub(crate) use #macro_name;
+    }
 }
 
 pub(crate) fn generate_explicit_names_impl(

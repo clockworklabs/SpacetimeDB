@@ -76,7 +76,7 @@ fn main() {
     assert!(named_noop_outbox__TableHandle::OUTBOX.unwrap().arg_columns.is_empty());
     assert_eq!(
         named_noop_outbox__TableHandle::OUTBOX.unwrap().signature_hash,
-        <receiver::noop as spacetimedb::rt::RemoteReducer>::SIGNATURE_HASH
+        Some(<receiver::noop as spacetimedb::rt::RemoteReducer>::SIGNATURE_HASH)
     );
 }
 
