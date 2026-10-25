@@ -21,7 +21,7 @@ pub fn receivePing(ctx: &spacetimedb::ReducerContext, messageBody: String) {
     });
 }
 
-#[spacetimedb::table(accessor = outboundPing, name = "outbound_ping", outbox(local = crate::receivePing))]
+#[spacetimedb::table(accessor = outboundPing, name = "outbound_ping", outbox(crate::receivePing))]
 pub struct OutboundPing {
     #[primary_key]
     #[auto_inc]

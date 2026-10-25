@@ -10,7 +10,7 @@ pub fn receivePing(_: &spacetimedb::ReducerContext, messageBody: String) {
     let _ = messageBody;
 }
 
-#[spacetimedb::table(accessor = outboundPing, outbox(local = crate::receivePing))]
+#[spacetimedb::table(accessor = outboundPing, outbox(crate::receivePing))]
 pub struct OutboundPing {
     #[primary_key]
     #[auto_inc]

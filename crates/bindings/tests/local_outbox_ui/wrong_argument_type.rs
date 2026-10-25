@@ -3,7 +3,7 @@ pub fn receive_ping(_: &spacetimedb::ReducerContext, body: String) {
     let _ = body;
 }
 
-#[spacetimedb::table(accessor = wrong_argument_type, outbox(local = crate::receive_ping))]
+#[spacetimedb::table(accessor = wrong_argument_type, outbox(crate::receive_ping))]
 pub struct WrongArgumentType {
     #[primary_key]
     #[auto_inc]
