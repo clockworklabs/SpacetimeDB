@@ -159,6 +159,7 @@ pub(crate) use __spacetimedb_typecheck_outbox_add;
 pub struct add;
 
 impl spacetimedb::rt::RemoteReducer for add {
+    type Identity = Identity;
     const NAME: &'static str = "add";
     const SIGNATURE_HASH: &'static str = "99a35dc6bdb6cabe48f524346c1979dfe7e6259304f68fb48595ded5c0737c7f";
     type Args = AddArgs;
@@ -231,6 +232,7 @@ pub(crate) use __spacetimedb_typecheck_outbox_add_player;
 pub struct add_player;
 
 impl spacetimedb::rt::RemoteReducer for add_player {
+    type Identity = Identity;
     const NAME: &'static str = "add_player";
     const SIGNATURE_HASH: &'static str = "085a98d187205ddd5cb574208fc8f7aa6728c078ae72865f742a48751056824d";
     type Args = AddPlayerArgs;
@@ -303,6 +305,7 @@ pub(crate) use __spacetimedb_typecheck_outbox_add_private;
 pub struct add_private;
 
 impl spacetimedb::rt::RemoteReducer for add_private {
+    type Identity = Identity;
     const NAME: &'static str = "add_private";
     const SIGNATURE_HASH: &'static str = "085a98d187205ddd5cb574208fc8f7aa6728c078ae72865f742a48751056824d";
     type Args = AddPrivateArgs;
@@ -332,6 +335,7 @@ pub(crate) use __spacetimedb_typecheck_outbox_assert_caller_identity_is_module_i
 pub struct assert_caller_identity_is_module_identity;
 
 impl spacetimedb::rt::RemoteReducer for assert_caller_identity_is_module_identity {
+    type Identity = Identity;
     const NAME: &'static str = "assert_caller_identity_is_module_identity";
     const SIGNATURE_HASH: &'static str = "bc436888fd947d2bfd49ed6bddad31f0245c34fd42c85f9360fa0b477aa957fc";
     type Args = AssertCallerIdentityIsModuleIdentityArgs;
@@ -404,6 +408,7 @@ pub(crate) use __spacetimedb_typecheck_outbox_delete_player;
 pub struct delete_player;
 
 impl spacetimedb::rt::RemoteReducer for delete_player {
+    type Identity = Identity;
     const NAME: &'static str = "delete_player";
     const SIGNATURE_HASH: &'static str = "f9843c43d6a007427a042049aa531419e42c5895ecfe92bf30bbd6f7389e9cb0";
     type Args = DeletePlayerArgs;
@@ -476,6 +481,7 @@ pub(crate) use __spacetimedb_typecheck_outbox_delete_players_by_name;
 pub struct delete_players_by_name;
 
 impl spacetimedb::rt::RemoteReducer for delete_players_by_name {
+    type Identity = Identity;
     const NAME: &'static str = "delete_players_by_name";
     const SIGNATURE_HASH: &'static str = "085a98d187205ddd5cb574208fc8f7aa6728c078ae72865f742a48751056824d";
     type Args = DeletePlayersByNameArgs;
@@ -592,6 +598,7 @@ pub(crate) use __spacetimedb_typecheck_outbox_expect_environment;
 pub struct expect_environment;
 
 impl spacetimedb::rt::RemoteReducer for expect_environment {
+    type Identity = Identity;
     const NAME: &'static str = "expect_environment";
     const SIGNATURE_HASH: &'static str = "92fae346d390625a393c5a4470e5ae4c4111b7d7323984087899d521938ab49b";
     type Args = ExpectEnvironmentArgs;
@@ -664,6 +671,7 @@ pub(crate) use __spacetimedb_typecheck_outbox_list_over_age;
 pub struct list_over_age;
 
 impl spacetimedb::rt::RemoteReducer for list_over_age {
+    type Identity = Identity;
     const NAME: &'static str = "list_over_age";
     const SIGNATURE_HASH: &'static str = "480a4dd20223acbee97594f8957ffae7757bd59f68b8e07a22b8900fb21e0cbd";
     type Args = ListOverAgeArgs;
@@ -693,6 +701,7 @@ pub(crate) use __spacetimedb_typecheck_outbox_log_module_identity;
 pub struct log_module_identity;
 
 impl spacetimedb::rt::RemoteReducer for log_module_identity {
+    type Identity = Identity;
     const NAME: &'static str = "log_module_identity";
     const SIGNATURE_HASH: &'static str = "bc436888fd947d2bfd49ed6bddad31f0245c34fd42c85f9360fa0b477aa957fc";
     type Args = LogModuleIdentityArgs;
@@ -722,6 +731,7 @@ pub(crate) use __spacetimedb_typecheck_outbox_query_private;
 pub struct query_private;
 
 impl spacetimedb::rt::RemoteReducer for query_private {
+    type Identity = Identity;
     const NAME: &'static str = "query_private";
     const SIGNATURE_HASH: &'static str = "bc436888fd947d2bfd49ed6bddad31f0245c34fd42c85f9360fa0b477aa957fc";
     type Args = QueryPrivateArgs;
@@ -751,6 +761,7 @@ pub(crate) use __spacetimedb_typecheck_outbox_say_hello;
 pub struct say_hello;
 
 impl spacetimedb::rt::RemoteReducer for say_hello {
+    type Identity = Identity;
     const NAME: &'static str = "say_hello";
     const SIGNATURE_HASH: &'static str = "bc436888fd947d2bfd49ed6bddad31f0245c34fd42c85f9360fa0b477aa957fc";
     type Args = SayHelloArgs;
@@ -955,6 +966,7 @@ pub(crate) use __spacetimedb_typecheck_outbox_test;
 pub struct test;
 
 impl spacetimedb::rt::RemoteReducer for test {
+    type Identity = Identity;
     const NAME: &'static str = "test";
     const SIGNATURE_HASH: &'static str = "7c5f9ed84b96b24179d63afbe2e4e459cae4cb0b7076f237249d46ea295f698e";
     type Args = TestArgs;
@@ -984,6 +996,7 @@ pub(crate) use __spacetimedb_typecheck_outbox_test_btree_index_args;
 pub struct test_btree_index_args;
 
 impl spacetimedb::rt::RemoteReducer for test_btree_index_args {
+    type Identity = Identity;
     const NAME: &'static str = "test_btree_index_args";
     const SIGNATURE_HASH: &'static str = "bc436888fd947d2bfd49ed6bddad31f0245c34fd42c85f9360fa0b477aa957fc";
     type Args = TestBtreeIndexArgsArgs;

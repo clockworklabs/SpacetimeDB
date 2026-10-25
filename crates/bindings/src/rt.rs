@@ -189,6 +189,9 @@ pub trait FnInfo: ExplicitNames {
 /// therefore has no invocation function. It is used by module-side macros to
 /// typecheck calls into another database.
 pub trait RemoteReducer {
+    /// The destination identity type provided by the receiver bindings.
+    type Identity;
+
     /// The reducer name in the remote module schema.
     const NAME: &'static str;
 
@@ -200,6 +203,24 @@ pub trait RemoteReducer {
     /// Fields preserve the remote reducer's parameter product order, matching the
     /// signature hash and positional BSATN arguments.
     type Args;
+}
+
+/// Metadata used by outboxes targeting generated or source-defined reducer handles.
+pub trait OutboxReceiver {
+    /// The destination identity type accepted by this receiver.
+    type Identity;
+
+    /// The registered reducer name, or its source name when resolved locally.
+    const NAME: &'static str;
+
+    /// A precomputed signature, or `None` to resolve it from the local module schema.
+    const SIGNATURE_HASH: Option<&'static str>;
+}
+
+impl<T: RemoteReducer> OutboxReceiver for T {
+    type Identity = T::Identity;
+    const NAME: &'static str = T::NAME;
+    const SIGNATURE_HASH: Option<&'static str> = Some(T::SIGNATURE_HASH);
 }
 
 pub trait Procedure<'de, A: Args<'de>, Ret: IntoProcedureResult> {
@@ -1221,7 +1242,7 @@ impl ModuleBuilder {
                 .find_map(|section| match section {
                     RawModuleDefV10Section::Outboxes(outboxes) => outboxes
                         .iter_mut()
-                        .find(|outbox| outbox.table_source_name.as_ref() == table_name),
+                        .find(|outbox| outbox.table_name.as_ref() == table_name),
                     _ => None,
                 })
                 .expect("registered local outbox is missing from module definition");

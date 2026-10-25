@@ -198,6 +198,12 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
             const INVOKE: Self::Invoke = #func_name::invoke;
         }
 
+        impl spacetimedb::rt::OutboxReceiver for #func_name {
+            type Identity = spacetimedb::Identity;
+            const NAME: &'static str = <Self as spacetimedb::rt::FnInfo>::NAME;
+            const SIGNATURE_HASH: Option<&'static str> = None;
+        }
+
         #generate_explicit_names
         #outbox_typecheck
     })

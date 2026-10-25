@@ -50,7 +50,6 @@ struct ScheduledArg {
 
 struct OutboxArg {
     receiver_reducer: Path,
-    local: bool,
 }
 
 struct IndexArg {
@@ -207,15 +206,8 @@ If you're migrating from SpacetimeDB 1.*, replace `name = {name_str_value:?}` wi
 impl OutboxArg {
     fn parse_meta(meta: ParseNestedMeta) -> syn::Result<Self> {
         let mut receiver_reducer = None;
-        let mut local = false;
 
         meta.parse_nested_meta(|meta| {
-            if meta.path.is_ident("local") {
-                check_duplicate_msg(&receiver_reducer, &meta, "can only specify one outbox receiver reducer")?;
-                receiver_reducer = Some(meta.value()?.parse()?);
-                local = true;
-                return Ok(());
-            }
             check_duplicate_msg(&receiver_reducer, &meta, "can only specify one outbox receiver reducer")?;
             receiver_reducer = Some(meta.path);
             Ok(())
@@ -223,10 +215,7 @@ impl OutboxArg {
 
         let receiver_reducer = receiver_reducer
             .ok_or_else(|| meta.error("must specify outbox receiver reducer: outbox(receiver::reducer)"))?;
-        Ok(Self {
-            receiver_reducer,
-            local,
-        })
+        Ok(Self { receiver_reducer })
     }
 }
 
@@ -1259,13 +1248,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                     "outbox receiver reducer must be qualified, e.g. `outbox(receiver::reducer)`",
                 ));
             }
-            let receiver_identity: Path = if outbox.local {
-                parse_quote!(spacetimedb::Identity)
-            } else {
-                let mut identity = receiver_module.clone();
-                identity.segments.push(parse_quote!(Identity));
-                identity
-            };
+            let receiver_identity = quote!(<#receiver_reducer as spacetimedb::rt::OutboxReceiver>::Identity);
             let mut receiver_outbox_typecheck = receiver_module.clone();
             let reducer_ident = receiver_reducer
                 .segments
@@ -1306,23 +1289,12 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         (Some(outbox), Some((target_column, _))) => {
             let receiver_reducer = &outbox.receiver_reducer;
             let target_col = target_column.index;
-            let (remote_name, signature_hash) = if outbox.local {
-                (
-                    quote!(<#receiver_reducer as spacetimedb::rt::FnInfo>::NAME),
-                    quote!(None),
-                )
-            } else {
-                (
-                    quote!(<#receiver_reducer as spacetimedb::rt::RemoteReducer>::NAME),
-                    quote!(Some(<#receiver_reducer as spacetimedb::rt::RemoteReducer>::SIGNATURE_HASH)),
-                )
-            };
             quote! {
                 const OUTBOX: Option<spacetimedb::table::OutboxDesc<'static>> = Some(spacetimedb::table::OutboxDesc {
-                    remote_reducer_name: #remote_name,
+                    remote_reducer_name: <#receiver_reducer as spacetimedb::rt::OutboxReceiver>::NAME,
                     arg_columns: #outbox_arg_columns,
                     target_column: #target_col,
-                    signature_hash: #signature_hash,
+                    signature_hash: <#receiver_reducer as spacetimedb::rt::OutboxReceiver>::SIGNATURE_HASH,
                 });
             }
         }
