@@ -24,7 +24,9 @@
             (import rust-overlay)
             (final: prev: {
               cacert = prev.cacert.override {
-                # Exclude the direct root and the AAA cross-sign trust path.
+                # Remove both roots that can validate certificates from the compromised
+                # eMudhra intermediate CAs. Nix uses its own pinned CA bundle, so updating
+                # the OS certificate store does not fix this environment.
                 blacklist = [ "emSign ECC Root CA - G3" "Comodo AAA Services root" ];
               };
             })
