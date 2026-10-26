@@ -1,7 +1,7 @@
 FROM node:20-alpine
 
 WORKDIR /app
-# Refresh the OS CA bundle used by native TLS clients.
+# Refresh OS certificate roots to distrust the compromised eMudhra/emSign CAs.
 RUN apk add --no-cache --upgrade ca-certificates
 
 COPY package*.json ./
