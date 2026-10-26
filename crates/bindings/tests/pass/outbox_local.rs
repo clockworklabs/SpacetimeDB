@@ -33,9 +33,6 @@ mod nested {
 fn main() {
     use spacetimedb::table::TableInternal;
     assert_eq!(outboundPing__TableHandle::OUTBOX.unwrap().arg_columns, &[2]);
-    assert_eq!(
-        nested::outbound_nested__TableHandle::OUTBOX.unwrap().arg_columns,
-        &[2]
-    );
+    assert_eq!(nested::outbound_nested__TableHandle::OUTBOX.unwrap().arg_columns, &[2]);
     assert_eq!(<receivePing as spacetimedb::rt::OutboxReceiver>::SIGNATURE_HASH, None);
 }
