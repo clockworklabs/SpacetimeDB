@@ -176,7 +176,7 @@ pub enum ValidationError {
     #[error("HTTP route duplicates method {method:?} for path {path}")]
     DuplicateHttpRoute { path: RawIdentifier, method: MethodOrAny },
     #[error(
-        "HTTP route path `{path}` is invalid; allowed characters are {allowed}",
+        "HTTP route path `{path}` is invalid; allowed characters are {allowed}, and `*` is allowed only as the final character",
         allowed = ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION
     )]
     InvalidHttpRoutePath { path: RawIdentifier },

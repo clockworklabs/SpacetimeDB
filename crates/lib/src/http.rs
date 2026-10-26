@@ -168,16 +168,112 @@ impl Response {
 
 /// True if `c` is a valid character to appear in the path of a user-defined HTTP route.
 ///
-/// We permit only lowercase ASCII letters, ASCII digits, and `-_~/`.
+/// We permit only lowercase ASCII letters, ASCII digits, and `-_~/*`.
 /// `/` is allowed specifically because it's the segment separator character.
 /// `-_~` seem harmless enough.
+/// `*` is the wildcard character; it is valid only as the final character of a path,
+/// where it matches any remaining path. [`wildcard_is_only_trailing`] checks that position.
 ///
 /// We've chosen an intentionally very restrictive set so that we can assign meaning to other characters in the future,
-/// e.g. we may want to use `*` as a wildcard, `:` or `{}` to introduce path parameters, &c.
+/// e.g. we may want to use `:` or `{}` to introduce path parameters.
 pub fn character_is_acceptable_for_route_path(c: char) -> bool {
-    c.is_ascii_lowercase() || c.is_ascii_digit() || "-_~/".contains(c)
+    c.is_ascii_lowercase() || c.is_ascii_digit() || "-_~/*".contains(c)
 }
 
 /// A human-readable description of the characters accepted by [`character_is_acceptable_for_route_path`],
 /// for use in error reporting.
-pub const ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION: &str = "ASCII lowercase letters, digits and `-_~/`";
+pub const ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION: &str = "ASCII lowercase letters, digits and `-_~/*`";
+
+/// The character which, as the final character of a route path, matches any remaining path.
+pub const ROUTE_WILDCARD: char = '*';
+
+/// True if `*` appears at most once in `path`, and only as its final character.
+pub fn wildcard_is_only_trailing(path: &str) -> bool {
+    match path.strip_suffix(ROUTE_WILDCARD) {
+        Some(prefix) => !prefix.contains(ROUTE_WILDCARD),
+        None => !path.contains(ROUTE_WILDCARD),
+    }
+}
+
+/// True if the route path `route_path` matches the request path `request_path`.
+///
+/// A wildcard route matches any request path starting with the prefix before its `*`,
+/// so `/webhooks/*` matches `/webhooks/github` and `/webhooks/` but not `/webhooks`.
+/// A static route matches only itself.
+pub fn route_path_matches(route_path: &str, request_path: &str) -> bool {
+    match route_path.strip_suffix(ROUTE_WILDCARD) {
+        Some(prefix) => request_path.starts_with(prefix),
+        None => route_path == request_path,
+    }
+}
+
+/// True if two route paths can match the same request path.
+///
+/// Static paths overlap only when they are equal; a wildcard path overlaps any path
+/// which starts with the prefix before its `*`, including another wildcard.
+pub fn route_paths_overlap(a: &str, b: &str) -> bool {
+    match (a.strip_suffix(ROUTE_WILDCARD), b.strip_suffix(ROUTE_WILDCARD)) {
+        (Some(a_prefix), Some(b_prefix)) => a_prefix.starts_with(b_prefix) || b_prefix.starts_with(a_prefix),
+        (Some(prefix), None) => b.starts_with(prefix),
+        (None, Some(prefix)) => a.starts_with(prefix),
+        (None, None) => a == b,
+    }
+}
+
+#[cfg(test)]
+mod route_path_tests {
+    use super::*;
+
+    #[test]
+    fn wildcard_must_be_trailing() {
+        assert!(wildcard_is_only_trailing("/webhooks/*"));
+        assert!(wildcard_is_only_trailing("/webhooks"));
+        assert!(wildcard_is_only_trailing(""));
+
+        // A lone `*` is correctly placed; it is rejected by the leading-slash rule, not here.
+        assert!(wildcard_is_only_trailing("*"));
+        assert!(!wildcard_is_only_trailing("/mid*path"));
+        assert!(!wildcard_is_only_trailing("/double**"));
+        assert!(!wildcard_is_only_trailing("/a/*/b"));
+    }
+
+    #[test]
+    fn static_route_matches_only_itself() {
+        assert!(route_path_matches("/webhooks/github", "/webhooks/github"));
+        assert!(!route_path_matches("/webhooks/github", "/webhooks/github/"));
+        assert!(!route_path_matches("/webhooks", "/webhooks/github"));
+    }
+
+    #[test]
+    fn wildcard_route_matches_the_remainder() {
+        assert!(route_path_matches("/webhooks/*", "/webhooks/github"));
+        assert!(route_path_matches("/webhooks/*", "/webhooks/"));
+        assert!(route_path_matches("/webhooks/*", "/webhooks/a/b"));
+
+        // The prefix itself, without its trailing slash, is not matched.
+        assert!(!route_path_matches("/webhooks/*", "/webhooks"));
+        assert!(!route_path_matches("/webhooks/*", "/other/github"));
+    }
+
+    #[test]
+    fn static_paths_overlap_only_when_equal() {
+        assert!(route_paths_overlap("/a", "/a"));
+        assert!(!route_paths_overlap("/a", "/b"));
+        assert!(!route_paths_overlap("/a", "/a/b"));
+    }
+
+    #[test]
+    fn wildcard_overlaps_its_prefix_and_everything_below() {
+        assert!(route_paths_overlap("/a/*", "/a/b"));
+        assert!(route_paths_overlap("/a/b", "/a/*"));
+        assert!(!route_paths_overlap("/a/*", "/b/c"));
+        assert!(!route_paths_overlap("/a/*", "/a"));
+    }
+
+    #[test]
+    fn wildcards_overlap_when_either_prefix_contains_the_other() {
+        assert!(route_paths_overlap("/a/*", "/a/b/*"));
+        assert!(route_paths_overlap("/a/*", "/a/*"));
+        assert!(!route_paths_overlap("/a/*", "/b/*"));
+    }
+}
