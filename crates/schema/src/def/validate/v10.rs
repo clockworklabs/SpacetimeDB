@@ -10,7 +10,7 @@ use spacetimedb_primitives::ReducerId;
 use spacetimedb_sats::{AlgebraicType, Typespace, WithTypespace};
 
 use crate::def::validate::v9::{
-    check_function_names_are_unique, check_scheduled_functions_exist, convert, generate_schedule_name,
+    check_function_names_are_unique, check_scheduled_functions_exist, generate_schedule_name,
     generate_unique_constraint_name, identifier, CoreValidator, TableValidator, ViewValidator,
 };
 use crate::def::*;
@@ -89,7 +89,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
     // Original `typespace` needs to be preserved to be assign `accesor_name`s to columns.
     let typespace_with_accessor_names = typespace.clone();
     // Apply case conversion to `typespace`.
-    spacetimedb_lib::db::names::canonicalize_typespace(case_policy, &mut typespace);
+    super::names::canonicalize_typespace(case_policy, &mut typespace);
 
     let mut validator = ModuleValidatorV10 {
         core: CoreValidator {
@@ -205,6 +205,8 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .unwrap_or_else(|| Ok(Vec::new()));
 
     let raw_outboxes = def.outboxes().cloned().unwrap_or_default();
+    let local_outboxes = def.local_outboxes().cloned().unwrap_or_default();
+    let local_outbox_tables = local_outboxes.iter().map(|outbox| outbox.table_name.clone()).collect();
 
     // Validate lifecycle reducers - they reference reducers by name
     let lifecycle_validations = reducers
@@ -275,7 +277,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 schedules,
                 lifecycles,
                 http_handlers_and_routes,
-                raw_outboxes,
+                mut raw_outboxes,
             )| {
                 let (mut reducers, mut procedures, mut views) =
                     check_function_names_are_unique(reducers, procedures, views)?;
@@ -285,6 +287,30 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 // Attach schedules to their respective tables
                 attach_schedules_to_tables(&mut tables, schedules)?;
 
+                // Local references use the same canonical reducer and typespace as
+                // delivery. Modules do not need to repeat validation or emit a hash.
+                for local in local_outboxes {
+                    let (name, reducer) = reducers
+                        .iter()
+                        .find(|(_, reducer)| reducer.accessor_name.as_ref() == local.reducer_source_name.as_ref())
+                        .ok_or_else(|| ValidationError::MissingLocalOutboxReducer {
+                            table_name: local.table_name.clone(),
+                            reducer_name: local.reducer_source_name.clone(),
+                        })?;
+                    raw_outboxes.push(RawOutboxDefV10 {
+                        table_name: local.table_name,
+                        remote_reducer: name.clone().into(),
+                        target_column: local.target_column,
+                        arg_columns: local.arg_columns,
+                        on_result_reducer: local.on_result_reducer,
+                        signature_hash: reducer_signature_hash(
+                            &reducer.params(),
+                            &reducer.ok_return_type,
+                            &reducer.err_return_type,
+                            validator.core.typespace,
+                        ),
+                    });
+                }
                 attach_outboxes_to_tables(&mut tables, &mut reducers, raw_outboxes, &mut validator.core)?;
 
                 check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
@@ -322,6 +348,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
     let typespace_for_generate = typespace_for_generate.finish();
 
     let mut module_def = ModuleDef {
+        local_outbox_tables,
         // Set by `apply_namespace` below.
         path: NamespacePath::root(),
         accessor_path: NamespacePath::root(),
@@ -374,10 +401,8 @@ fn resolve_namespace_ident(
     case_policy: ValidationCase,
     explicit_names: &ExplicitNamesLookup,
 ) -> Result<Identifier> {
-    let canonical = match explicit_names.namespaces.get(source) {
-        Some(canonical) => canonical.clone(),
-        None => convert(source.clone(), case_policy).into(),
-    };
+    let canonical =
+        super::names::canonical_name_with_override(source.as_ref(), explicit_names.namespaces.get(source), case_policy);
     Identifier::new(canonical).map_err(|error| ValidationError::IdentifierError { error }.into())
 }
 

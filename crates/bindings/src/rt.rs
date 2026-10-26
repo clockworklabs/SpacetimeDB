@@ -6,7 +6,7 @@ use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, S
 use spacetimedb_lib::bsatn::EncodeError;
 use spacetimedb_lib::db::raw_def::v10::{
     CaseConversionPolicy, ExplicitNames as RawExplicitNames, RawEnvVarTypeV10, RawEnvironmentDeclarationV10,
-    RawModuleDefV10, RawModuleDefV10Builder, RawModuleDefV10Section,
+    RawModuleDefV10, RawModuleDefV10Builder,
 };
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableType, ViewResultHeader};
@@ -213,7 +213,7 @@ pub trait OutboxReceiver {
     /// The registered reducer name, or its source name when resolved locally.
     const NAME: &'static str;
 
-    /// A precomputed signature, or `None` to resolve it from the local module schema.
+    /// A precomputed remote signature, or `None` for host resolution of a local reducer.
     const SIGNATURE_HASH: Option<&'static str>;
 }
 
@@ -874,20 +874,26 @@ pub fn register_table<T: Table>() {
         table.finish();
 
         if let Some(outbox) = T::OUTBOX {
-            let signature_hash = if let Some(hash) = outbox.signature_hash {
-                spacetimedb_lib::Hash::from_hex(hash).expect("generated outbox signature hash must be valid hex")
+            if let Some(hash) = outbox.signature_hash {
+                module.inner.add_outbox(
+                    T::TABLE_NAME,
+                    outbox.remote_reducer_name,
+                    outbox.target_column,
+                    outbox.arg_columns.iter().copied().map(Into::into),
+                    None::<&str>,
+                    spacetimedb_lib::Hash::from_hex(hash).expect("generated outbox signature hash must be valid hex"),
+                );
             } else {
-                module.local_outboxes.push((T::TABLE_NAME, outbox.remote_reducer_name));
-                spacetimedb_lib::Hash::ZERO
-            };
-            module.inner.add_outbox(
-                T::TABLE_NAME,
-                outbox.remote_reducer_name,
-                outbox.target_column,
-                outbox.arg_columns.iter().copied().map(Into::into),
-                None::<&str>,
-                signature_hash,
-            );
+                // Only the source reference is exported. The host resolves names and
+                // computes the signature from its validated reducer definition.
+                module.inner.add_local_outbox(
+                    T::TABLE_NAME,
+                    outbox.remote_reducer_name,
+                    outbox.target_column,
+                    outbox.arg_columns.iter().copied().map(Into::into),
+                    None::<&str>,
+                );
+            }
         }
 
         module.inner.add_explicit_names(T::explicit_names());
@@ -1202,7 +1208,6 @@ pub struct ModuleBuilder {
     /// The anonymous views of the module.
     views_anon: Vec<AnonymousFn>,
     on_result_reducers: Vec<(&'static str, &'static str)>,
-    local_outboxes: Vec<(&'static str, &'static str)>,
 }
 
 // Not actually a mutex; because WASM is single-threaded this basically just turns into a refcell.
@@ -1214,33 +1219,7 @@ impl ModuleBuilder {
             self.inner.set_outbox_on_result(outbox_table, reducer);
         }
 
-        let mut raw = std::mem::take(&mut self.inner).finish();
-        if self.local_outboxes.is_empty() {
-            return raw;
-        }
-
-        // A local reducer's signature is only known after names and types have been
-        // canonicalized. The temporary zero hashes are replaced before serialization.
-        for &(table_name, reducer_source_name) in &self.local_outboxes {
-            let (reducer_name, signature_hash) =
-                spacetimedb_lib::db::reducer_signature::raw_reducer_signature(&raw, reducer_source_name)
-                    .unwrap_or_else(|| {
-                        panic!("local outbox `{table_name}` references missing reducer `{reducer_source_name}`")
-                    });
-            let outbox = raw
-                .sections
-                .iter_mut()
-                .find_map(|section| match section {
-                    RawModuleDefV10Section::Outboxes(outboxes) => outboxes
-                        .iter_mut()
-                        .find(|outbox| outbox.table_name.as_ref() == table_name),
-                    _ => None,
-                })
-                .expect("registered local outbox is missing from module definition");
-            outbox.remote_reducer = reducer_name;
-            outbox.signature_hash = signature_hash;
-        }
-        raw
+        std::mem::take(&mut self.inner).finish()
     }
 }
 

@@ -1,3 +1,4 @@
+use super::names::{canonical_name_with_override, canonical_parameter_names};
 use crate::def::validate::v10::{ExplicitNamesLookup, ValidationCase};
 use crate::def::*;
 use crate::error::{RawColumnName, ValidationError};
@@ -154,6 +155,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
     let typespace_for_generate = typespace_for_generate.finish();
 
     let mut module_def = ModuleDef {
+        local_outbox_tables: Default::default(),
         // V9 has no submodules, so every def is at the root.
         path: NamespacePath::root(),
         accessor_path: NamespacePath::root(),
@@ -631,11 +633,8 @@ impl CoreValidator<'_> {
         source: RawIdentifier,
         lookup: &HashMap<RawIdentifier, RawIdentifier>,
     ) -> Result<Identifier> {
-        if let Some(canonical_name) = lookup.get(&source) {
-            Identifier::new(canonical_name.clone()).map_err(|error| ValidationError::IdentifierError { error }.into())
-        } else {
-            self.resolve_identifier_with_case(source)
-        }
+        let canonical = canonical_name_with_override(source.as_ref(), lookup.get(&source), self.case_policy);
+        identifier(canonical)
     }
 
     pub(crate) fn resolve_table_ident(&self, source: RawIdentifier) -> Result<Identifier> {
@@ -678,12 +677,13 @@ impl CoreValidator<'_> {
         params
             .elements
             .iter()
+            // Retain raw parameters for error locations and typespace references while
+            // resolving the names used by codegen and reducer signature hashing.
+            .zip(canonical_parameter_names(params, self.case_policy))
             .enumerate()
-            .map(|(position, param)| {
+            .map(|(position, (param, canonical_name))| {
                 let location = || make_type_location(position, param.name().cloned());
-                let param_name = param
-                    .name()
-                    .cloned()
+                let param_name = canonical_name
                     .ok_or_else(|| {
                         ValidationError::ClientCodegenError {
                             location: location(),
@@ -691,7 +691,7 @@ impl CoreValidator<'_> {
                         }
                         .into()
                     })
-                    .and_then(|s| self.resolve_identifier_with_case(s));
+                    .and_then(identifier);
                 let ty_use = self.validate_for_type_use(location, &param.algebraic_type);
                 (param_name, ty_use).combine_errors()
             })
@@ -1451,7 +1451,7 @@ pub fn generate_unique_constraint_name(
 //    Identifier::new(name).map_err(|error| ValidationError::IdentifierError { error }.into())
 //}
 pub(crate) fn convert(identifier: RawIdentifier, policy: ValidationCase) -> String {
-    spacetimedb_lib::db::names::canonical_name(identifier.as_ref(), policy)
+    super::names::canonical_name(identifier.as_ref(), policy)
 }
 
 /// Check that every [`ScheduleDef`]'s `function_name` refers to a real reducer or procedure

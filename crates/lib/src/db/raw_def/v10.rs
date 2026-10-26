@@ -108,6 +108,9 @@ pub enum RawModuleDefV10Section {
 
     /// Outbox table definitions.
     Outboxes(Vec<RawOutboxDefV10>),
+
+    /// Outboxes whose receiver signature is resolved from this module's reducers by the host.
+    LocalOutboxes(Vec<RawLocalOutboxDefV10>),
 }
 
 #[derive(Debug, Clone, SpacetimeType)]
@@ -369,6 +372,26 @@ pub struct RawOutboxDefV10 {
     pub on_result_reducer: Option<RawIdentifier>,
     /// Hash of the receiver reducer signature as seen by sender bindings.
     pub signature_hash: Hash,
+}
+
+/// An outbox referencing a reducer defined in the same module.
+///
+/// The host resolves the source name and computes the signature after validating
+/// the module. The target column can still address another database running that module.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawLocalOutboxDefV10 {
+    /// The source name of the outbox table.
+    pub table_name: RawIdentifier,
+    /// The source name of a reducer in the same module, before explicit naming or casing.
+    pub reducer_source_name: RawIdentifier,
+    /// Column containing the receiver database identity.
+    pub target_column: ColId,
+    /// Columns to encode in the local reducer's parameter order.
+    pub arg_columns: Vec<ColId>,
+    /// Optional local reducer called with the delivery result.
+    pub on_result_reducer: Option<RawIdentifier>,
 }
 
 /// A reducer definition.
@@ -726,6 +749,14 @@ impl RawModuleDefV10 {
         })
     }
 
+    /// Get outboxes whose receiver signatures must be resolved by the host.
+    pub fn local_outboxes(&self) -> Option<&Vec<RawLocalOutboxDefV10>> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::LocalOutboxes(outboxes) => Some(outboxes),
+            _ => None,
+        })
+    }
+
     // Get the row-level security section, if present.
     pub fn row_level_security(&self) -> Option<&Vec<RawRowLevelSecurityDefV10>> {
         self.sections.iter().find_map(|s| match s {
@@ -1036,6 +1067,24 @@ impl RawModuleDefV10Builder {
         match &mut self.module.sections[idx] {
             RawModuleDefV10Section::Outboxes(outboxes) => outboxes,
             _ => unreachable!("Just ensured Outboxes section exists"),
+        }
+    }
+
+    fn local_outboxes_mut(&mut self) -> &mut Vec<RawLocalOutboxDefV10> {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::LocalOutboxes(_)))
+            .unwrap_or_else(|| {
+                self.module
+                    .sections
+                    .push(RawModuleDefV10Section::LocalOutboxes(Vec::new()));
+                self.module.sections.len() - 1
+            });
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::LocalOutboxes(outboxes) => outboxes,
+            _ => unreachable!("Just ensured LocalOutboxes section exists"),
         }
     }
 
@@ -1361,6 +1410,24 @@ impl RawModuleDefV10Builder {
         });
     }
 
+    /// Register a local receiver without computing its signature in the module.
+    pub fn add_local_outbox(
+        &mut self,
+        table_name: impl Into<RawIdentifier>,
+        reducer_source_name: impl Into<RawIdentifier>,
+        target_column: impl Into<ColId>,
+        arg_columns: impl IntoIterator<Item = ColId>,
+        on_result_reducer: Option<impl Into<RawIdentifier>>,
+    ) {
+        self.local_outboxes_mut().push(RawLocalOutboxDefV10 {
+            table_name: table_name.into(),
+            reducer_source_name: reducer_source_name.into(),
+            target_column: target_column.into(),
+            arg_columns: arg_columns.into_iter().collect(),
+            on_result_reducer: on_result_reducer.map(Into::into),
+        });
+    }
+
     pub fn set_outbox_on_result(
         &mut self,
         table_name: impl Into<RawIdentifier>,
@@ -1368,19 +1435,27 @@ impl RawModuleDefV10Builder {
     ) {
         let table_name = table_name.into();
         let on_result_reducer = Some(on_result_reducer.into());
-        if let Some(outbox) = self
-            .outboxes_mut()
+        let callback = self
+            .module
+            .sections
             .iter_mut()
-            .find(|outbox| outbox.table_name == table_name)
-        {
-            assert!(
-                outbox.on_result_reducer.is_none(),
-                "outbox table `{table_name}` has multiple on_result reducers"
-            );
-            outbox.on_result_reducer = on_result_reducer;
-        } else {
-            panic!("on_result reducer references unknown outbox table `{table_name}`");
-        }
+            .find_map(|section| match section {
+                RawModuleDefV10Section::Outboxes(outboxes) => outboxes
+                    .iter_mut()
+                    .find(|outbox| outbox.table_name == table_name)
+                    .map(|outbox| &mut outbox.on_result_reducer),
+                RawModuleDefV10Section::LocalOutboxes(outboxes) => outboxes
+                    .iter_mut()
+                    .find(|outbox| outbox.table_name == table_name)
+                    .map(|outbox| &mut outbox.on_result_reducer),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("on_result reducer references unknown outbox table `{table_name}`"));
+        assert!(
+            callback.is_none(),
+            "outbox table `{table_name}` has multiple on_result reducers"
+        );
+        *callback = on_result_reducer;
     }
 
     pub fn add_submodule(&mut self, namespace: impl Into<String>, module: RawModuleDefV10) {

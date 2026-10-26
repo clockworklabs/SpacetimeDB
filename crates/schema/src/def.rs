@@ -15,7 +15,7 @@
 //! After validation, a `ModuleDef` can be converted to the `*Schema` types in `crate::schema` for use in the database.
 //! (Eventually, we may unify these types...)
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Write};
 use std::hash::Hash;
 
@@ -124,6 +124,10 @@ pub struct ModuleDef {
 
     /// The tables of the module definition.
     tables: IdentifierMap<TableDef>,
+
+    /// Source names of outboxes whose receiver belongs to this module. Retained so
+    /// mounting a submodule can qualify local receivers without changing remote ones.
+    local_outbox_tables: BTreeSet<RawIdentifier>,
 
     /// The reducers of the module definition.
     /// Note: this is using IndexMap because reducer order is important
@@ -312,6 +316,11 @@ impl ModuleDef {
         self.accessor_path = accessor_path.clone();
         for table in self.tables.values_mut() {
             table.namespace = path.clone();
+            if self.local_outbox_tables.contains(table.accessor_name.as_raw())
+                && let Some(outbox) = &mut table.outbox
+            {
+                outbox.remote_reducer = ReducerName::new(path.join(outbox.remote_reducer.local().clone()));
+            }
             for index in table.indexes.values_mut() {
                 index.namespace = path.clone();
             }
@@ -1034,6 +1043,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
     fn from(val: ModuleDef) -> Self {
         let ModuleDef {
             path: _,
+            local_outbox_tables: _,
             tables,
             views,
             reducers,
@@ -1096,6 +1106,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
     fn from(val: ModuleDef) -> Self {
         let ModuleDef {
             path: _,
+            local_outbox_tables: _,
             tables,
             views,
             reducers,
@@ -2482,7 +2493,8 @@ fn canonical_params(mut params: ProductType, params_for_generate: &ProductTypeDe
     params
 }
 
-pub use spacetimedb_lib::db::reducer_signature::reducer_signature_hash;
+mod reducer_signature;
+pub use reducer_signature::reducer_signature_hash;
 
 impl From<ReducerDef> for RawReducerDefV9 {
     fn from(val: ReducerDef) -> Self {
