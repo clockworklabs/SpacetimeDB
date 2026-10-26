@@ -2,7 +2,7 @@ Get a SpacetimeDB Node.js app running in under 5 minutes.
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) 18+ installed
+- [Node.js](https://nodejs.org/) 22.23.4+, 24.22.1+, or 26.12.1+ (on a supported release line)
 - [SpacetimeDB CLI](https://spacetimedb.com/install) installed
 
 Install the [SpacetimeDB CLI](https://spacetimedb.com/install) before continuing.
@@ -178,7 +178,7 @@ spacetime logs
 
 ## Node.js considerations
 
-**WebSocket support:** Node.js 22+ has native WebSocket support. For Node.js 18-21, the SDK automatically uses the `undici` package (included in devDependencies).
+**WebSocket support:** Supported Node.js releases (22.23.4+, 24.22.1+, or 26.12.1+ on a supported release line) include native WebSocket support.
 
 **Environment variables:** Configure the connection using `SPACETIMEDB_HOST` and `SPACETIMEDB_DB_NAME` environment variables.
 

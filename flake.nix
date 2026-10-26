@@ -24,6 +24,7 @@
             (import rust-overlay)
             (final: prev: {
               cacert = prev.cacert.override {
+                # Exclude the direct root and the AAA cross-sign trust path.
                 blacklist = [ "emSign ECC Root CA - G3" "Comodo AAA Services root" ];
               };
             })

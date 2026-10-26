@@ -13,7 +13,7 @@ changes.
 - SpacetimeDB SDK, CLI, and server 2.12 or later
 - Host support for the `spacetime:sys@2.0` volatile procedure used by failure
   recovery
-- Node.js 20 or later for package tooling
+- Node.js 22.23.4+, 24.22.1+, or 26.12.1+ for package tooling
 
 ## Install
 

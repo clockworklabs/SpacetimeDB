@@ -2,7 +2,7 @@ Get a SpacetimeDB React app running in under 5 minutes.
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) 18+ installed
+- [Node.js](https://nodejs.org/) 22.23.4+, 24.22.1+, or 26.12.1+ (on a supported release line)
 - [SpacetimeDB CLI](https://spacetimedb.com/install) installed
 
 Install the [SpacetimeDB CLI](https://spacetimedb.com/install) before continuing.
