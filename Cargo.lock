@@ -8839,6 +8839,7 @@ version = "2.16.3"
 dependencies = [
  "anyhow",
  "blake3",
+ "convert_case 0.6.0",
  "derive_more 0.99.20",
  "enum-map",
  "hex",
