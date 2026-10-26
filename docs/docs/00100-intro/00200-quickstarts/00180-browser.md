@@ -13,7 +13,7 @@ Get a SpacetimeDB app running in the browser with inline JavaScript.
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) 22.x (22.23.4+), 24.x (24.22.1+), or 26.12.1+
+- A recent version of [Node.js](https://nodejs.org/) 22, 24, or 26 or later
 - [SpacetimeDB CLI](https://spacetimedb.com/install) installed
 
 <InstallCardLink />

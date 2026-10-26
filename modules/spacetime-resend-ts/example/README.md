@@ -4,7 +4,7 @@ Send an email with Resend and watch its delivery status update in the app.
 
 ## Run it locally
 
-Requires Node.js 22.x (22.23.4+), 24.x (24.22.1+), or 26.12.1+. Also requires
+Requires a recent version of Node.js 22, 24, or 26 or later. Also requires
 pnpm 10 and the SpacetimeDB CLI and server built from this checkout.
 
 Start SpacetimeDB in a separate terminal:

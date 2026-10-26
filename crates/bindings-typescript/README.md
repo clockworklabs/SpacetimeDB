@@ -14,7 +14,7 @@ npm add spacetimedb
 
 You can use the package in the browser, using a bundler like vite/parcel/rsbuild, in server-side applications like NodeJS, Deno, Bun, NextJS, Remix, and in Cloudflare Workers.
 
-> Use Node.js 22.x (22.23.4+), 24.x (24.22.1+), or 26.12.1+. These versions include native WebSocket support.
+> Use a recent version of Node.js 22, 24, or 26 or later. These versions include native WebSocket support.
 
 ### Usage
 

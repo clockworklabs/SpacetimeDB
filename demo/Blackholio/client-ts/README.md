@@ -5,7 +5,7 @@ TypeScript and Phaser.
 
 ## Requirements
 
-- Node.js 22.x (22.23.4+), 24.x (24.22.1+), or 26.12.1+
+- A recent version of Node.js 22, 24, or 26 or later
 - pnpm 10.16.0 or later
 - A locally available SpacetimeDB CLI/server
 
