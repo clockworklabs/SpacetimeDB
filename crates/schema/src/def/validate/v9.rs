@@ -670,68 +670,6 @@ impl CoreValidator<'_> {
         Identifier::new(ident.into()).map_err(|error| ValidationError::IdentifierError { error }.into())
     }
 
-    // Recursive function to change typenames in the typespace according to the case conversion
-    // policy.
-    pub(crate) fn typespace_case_conversion(case_policy: ValidationCase, typespace: &mut Typespace) {
-        let case_policy_for_enum_variants = if matches!(case_policy, ValidationCase::SnakeCase) {
-            ValidationCase::CamelCase
-        } else {
-            case_policy
-        };
-
-        for ty in &mut typespace.types {
-            Self::convert_algebraic_type(ty, case_policy, case_policy_for_enum_variants);
-        }
-    }
-
-    // Recursively convert names in an AlgebraicType
-    fn convert_algebraic_type(
-        ty: &mut AlgebraicType,
-        case_policy: ValidationCase,
-        case_policy_for_enum_variants: ValidationCase,
-    ) {
-        if ty.is_special() {
-            return;
-        }
-        match ty {
-            AlgebraicType::Product(product) => {
-                for element in &mut product.elements.iter_mut() {
-                    // Convert the element name if it exists
-                    if let Some(name) = element.name() {
-                        let new_name = convert(name.clone(), case_policy);
-                        element.name = Some(new_name.into());
-                    }
-                    // Recursively convert the element's type
-                    Self::convert_algebraic_type(
-                        &mut element.algebraic_type,
-                        case_policy,
-                        case_policy_for_enum_variants,
-                    );
-                }
-            }
-            AlgebraicType::Sum(sum) => {
-                for variant in &mut sum.variants.iter_mut() {
-                    // Convert the variant name if it exists
-                    if let Some(name) = variant.name() {
-                        let new_name = convert(name.clone(), case_policy_for_enum_variants);
-                        variant.name = Some(new_name.into())
-                    }
-                    // Recursively convert the variant's type
-                    Self::convert_algebraic_type(
-                        &mut variant.algebraic_type,
-                        case_policy,
-                        case_policy_for_enum_variants,
-                    );
-                }
-            }
-            AlgebraicType::Array(array) => {
-                // Arrays contain a base type that might need conversion
-                Self::convert_algebraic_type(&mut array.elem_ty, case_policy, case_policy_for_enum_variants);
-            }
-            _ => {}
-        }
-    }
-
     pub(crate) fn params_for_generate(
         &mut self,
         params: &ProductType,
@@ -1513,13 +1451,7 @@ pub fn generate_unique_constraint_name(
 //    Identifier::new(name).map_err(|error| ValidationError::IdentifierError { error }.into())
 //}
 pub(crate) fn convert(identifier: RawIdentifier, policy: ValidationCase) -> String {
-    let identifier = identifier.to_string();
-
-    match policy {
-        ValidationCase::SnakeCase => identifier.to_case(Case::Snake),
-        ValidationCase::CamelCase => identifier.to_case(Case::Camel),
-        ValidationCase::None => identifier,
-    }
+    spacetimedb_lib::db::names::canonical_name(identifier.as_ref(), policy)
 }
 
 /// Check that every [`ScheduleDef`]'s `function_name` refers to a real reducer or procedure

@@ -1221,21 +1221,12 @@ impl ModuleBuilder {
 
         // A local reducer's signature is only known after names and types have been
         // canonicalized. The temporary zero hashes are replaced before serialization.
-        let validated = spacetimedb_schema::def::ModuleDef::try_from(RawModuleDef::V10(raw.clone()))
-            .expect("unable to validate module with local outboxes");
         for &(table_name, reducer_source_name) in &self.local_outboxes {
-            let reducer = validated
-                .reducers()
-                .find(|reducer| reducer.accessor_name.as_ref() == reducer_source_name)
-                .unwrap_or_else(|| {
-                    panic!("local outbox `{table_name}` references missing reducer `{reducer_source_name}`")
-                });
-            let signature_hash = spacetimedb_schema::def::reducer_signature_hash(
-                &reducer.params(),
-                &reducer.ok_return_type,
-                &reducer.err_return_type,
-                validated.typespace(),
-            );
+            let (reducer_name, signature_hash) =
+                spacetimedb_lib::db::reducer_signature::raw_reducer_signature(&raw, reducer_source_name)
+                    .unwrap_or_else(|| {
+                        panic!("local outbox `{table_name}` references missing reducer `{reducer_source_name}`")
+                    });
             let outbox = raw
                 .sections
                 .iter_mut()
@@ -1246,7 +1237,7 @@ impl ModuleBuilder {
                     _ => None,
                 })
                 .expect("registered local outbox is missing from module definition");
-            outbox.remote_reducer = reducer.name.clone().into();
+            outbox.remote_reducer = reducer_name;
             outbox.signature_hash = signature_hash;
         }
         raw

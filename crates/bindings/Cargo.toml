@@ -26,7 +26,6 @@ spacetimedb-lib.workspace = true
 spacetimedb-bindings-macro.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-query-builder.workspace = true
-spacetimedb-schema.workspace = true
 
 anyhow.workspace = true
 bytemuck.workspace = true
@@ -46,6 +45,7 @@ spacetimedb-auth = { workspace = true, optional = true }
 spacetimedb-test-datastore = { workspace = true, optional = true }
 
 [dev-dependencies]
+spacetimedb-schema.workspace = true
 insta.workspace = true
 trybuild.workspace = true
 spacetimedb-lib = { path = "../lib", features = ["test"] }
