@@ -193,15 +193,15 @@ impl IdcTest {
             [0, "optional-note"]
         ]);
         loop {
-            let delivered = self.rows(
-                &self.receiver,
-                &format!("SELECT details FROM detailed_ping_log WHERE body = '{body}'"),
-            );
             let callbacks = self.rows(
                 &self.sender,
                 &format!("SELECT details FROM detailed_ping_result WHERE body = '{body}'"),
             );
             let pending = self.rows(&self.sender, "SELECT id FROM outbound_detailed_ping");
+            let delivered = self.rows(
+                &self.receiver,
+                &format!("SELECT details FROM detailed_ping_log WHERE body = '{body}'"),
+            );
             if !callbacks.is_empty() && pending.is_empty() {
                 assert_eq!(delivered, vec![serde_json::json!([expected_details])]);
                 assert_eq!(callbacks, vec![serde_json::json!([expected_details])]);
