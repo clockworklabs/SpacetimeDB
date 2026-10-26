@@ -6,6 +6,7 @@ import {
   InternalError,
   SenderError,
   Timestamp,
+  TimeDuration,
   type Infer,
 } from '../src';
 import { ServerMessage } from '../src/sdk/client_api/types';
@@ -78,6 +79,18 @@ function getLastCallReducerRequestId(wsAdapter: WebsocketTestAdapter): number {
   }
   console.log('Outgoing messages length: ', wsAdapter.outgoingMessages.length);
   throw new Error('No CallReducer message found in messageQueue.');
+}
+
+function getLastCallProcedureRequestId(
+  wsAdapter: WebsocketTestAdapter
+): number {
+  for (let i = wsAdapter.outgoingMessages.length - 1; i >= 0; i--) {
+    const message = wsAdapter.outgoingMessages[i];
+    if (message.tag === 'CallProcedure') {
+      return message.value.requestId;
+    }
+  }
+  throw new Error('No CallProcedure message found in messageQueue.');
 }
 
 function getLastSubscribeMessageInfo(wsAdapter: WebsocketTestAdapter): {
@@ -600,6 +613,53 @@ describe('DbConnection', () => {
     await expect(reducerPromise).rejects.toHaveProperty(
       'message',
       'internal test error'
+    );
+  });
+
+  test('procedure internal error rejects with InternalError', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    const onConnectPromise = new Deferred<void>();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.openWebSocket)
+      .onConnect(() => {
+        onConnectPromise.resolve();
+      })
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+    await onConnectPromise.promise;
+
+    const procedurePromise = client.callProcedure(
+      'test_procedure',
+      new Uint8Array()
+    );
+    await Promise.resolve();
+    const requestId = getLastCallProcedureRequestId(wsAdapter);
+    wsAdapter.sendToClient(
+      ServerMessage.ProcedureResult({
+        requestId,
+        timestamp: new Timestamp(0n),
+        totalHostExecutionDuration: new TimeDuration(0n),
+        status: {
+          tag: 'InternalError',
+          value: 'internal procedure test error',
+        },
+      })
+    );
+
+    await expect(procedurePromise).rejects.toBeInstanceOf(InternalError);
+    await expect(procedurePromise).rejects.toThrow(
+      'internal procedure test error'
     );
   });
 

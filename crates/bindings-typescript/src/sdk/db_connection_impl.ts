@@ -568,7 +568,18 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     const { primaryKeyColName, primaryKeyColType } =
       this.#rowIdMetadata[tableName];
     let previousOffset = 0;
-    while (reader.remaining > 0) {
+    const rowCount =
+      rowList.sizeHint.tag === 'RowOffsets'
+        ? rowList.sizeHint.value.length
+        : rowList.sizeHint.value > 0
+          ? Math.floor(buffer.length / rowList.sizeHint.value)
+          : undefined;
+
+    for (
+      let i = 0;
+      rowCount === undefined ? reader.remaining > 0 : i < rowCount;
+      i++
+    ) {
       const row = deserializeRow(reader);
       let rowId: ComparablePrimitive | undefined = undefined;
       if (primaryKeyColName !== undefined && primaryKeyColType !== undefined) {
@@ -577,9 +588,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           row[primaryKeyColName]
         );
       } else {
-        // Get a view of the bytes for this row.
         const rowBytes = buffer.subarray(previousOffset, reader.offset);
-        // Convert it to a base64 string, so we can use it as a map key.
         const asBase64 = fromByteArray(rowBytes);
         rowId = asBase64;
       }
@@ -591,6 +600,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         row,
       });
     }
+
     return rows;
   }
 
@@ -1289,7 +1299,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       if (result.tag === 'Ok') {
         resolve(result.value);
       } else {
-        reject(result.value);
+        reject(new InternalError(result.value));
       }
     });
     return promise;
@@ -1313,7 +1323,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       if (result.tag === 'Ok') {
         resolve(result.value);
       } else {
-        reject(result.value);
+        reject(new InternalError(result.value));
       }
     });
     return promise;
