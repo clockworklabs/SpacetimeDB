@@ -5,7 +5,7 @@ TypeScript and Phaser.
 
 ## Requirements
 
-- Node.js 18 or later
+- Node.js (latest LTS release)
 - pnpm 10.16.0 or later
 - A locally available SpacetimeDB CLI/server
 

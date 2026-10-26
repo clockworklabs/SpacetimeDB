@@ -1,4 +1,5 @@
-FROM node:20-alpine AS builder
+# Node 22.23.4 includes the eMudhra CA distrust fix.
+FROM node:22.23.4-alpine AS builder
 
 WORKDIR /app
 
