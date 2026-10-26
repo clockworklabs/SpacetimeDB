@@ -445,9 +445,10 @@ fn idc_self_outbox_uses_none_case_policy() {
         .expect("failed to publish self-outbox module");
     let identity = parse_identity_from_publish_output(&output).expect("publish output should contain an identity");
     test.database_identity = Some(identity.clone());
+    let message = serde_json::json!([42, [[0, [7, [0, "self-message"]]], [0, [8, [1, []]]], [1, []]]]);
     test.call(
         "enqueuePing",
-        &[&serde_json::to_string(&identity).unwrap(), "\"self-message\""],
+        &[&serde_json::to_string(&identity).unwrap(), &message.to_string()],
     )
     .expect("failed to enqueue self-referential message");
 
@@ -469,14 +470,17 @@ fn idc_self_outbox_uses_none_case_policy() {
     };
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
-        let delivered = rows("SELECT body FROM delivered_ping");
+        let callbacks = rows("SELECT body, error FROM ping_results");
         let pending = rows("SELECT id FROM outbound_ping");
-        if delivered == vec![serde_json::json!(["self-message"])] && pending.is_empty() {
+        let delivered = rows("SELECT body FROM delivered_ping");
+        if !callbacks.is_empty() && pending.is_empty() {
+            assert_eq!(delivered, vec![serde_json::json!([message])]);
+            assert_eq!(callbacks, vec![serde_json::json!([message, [1, []]])]);
             break;
         }
         assert!(
             Instant::now() < deadline,
-            "self IDC did not finish: delivered={delivered:?}, pending={pending:?}"
+            "self IDC did not finish: delivered={delivered:?}, callbacks={callbacks:?}, pending={pending:?}"
         );
         std::thread::sleep(Duration::from_millis(100));
     }
