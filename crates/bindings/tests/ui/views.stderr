@@ -84,8 +84,7 @@ error[E0599]: no method named `iter` found for struct `test__ViewHandle` in the 
    = help: items from traits can only be used if the trait is implemented and in scope
    = note: the following traits define an item `iter`, perhaps you need to implement one of them:
            candidate #1: `bitflags::traits::Flags`
-           candidate #2: `petgraph::visit::traversal::Walker`
-           candidate #3: `spacetimedb::Table`
+           candidate #2: `spacetimedb::Table`
 
 error[E0599]: no method named `insert` found for struct `test__ViewHandle` in the current scope
   --> tests/ui/views.rs:24:25
