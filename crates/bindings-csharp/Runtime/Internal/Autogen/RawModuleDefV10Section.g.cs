@@ -27,6 +27,7 @@ namespace SpacetimeDB.Internal
         System.Collections.Generic.List<RawEnvironmentDeclarationV10> Environment,
         System.Collections.Generic.List<RawOutboxDefV10> Outboxes,
         System.Collections.Generic.List<RawTableCachePolicyV10> TableCachePolicies,
-        System.Collections.Generic.List<RawMigrationDefV10> Migrations
+        System.Collections.Generic.List<RawMigrationDefV10> Migrations,
+        System.Collections.Generic.List<RawLocalOutboxDefV10> LocalOutboxes
     )>;
 }

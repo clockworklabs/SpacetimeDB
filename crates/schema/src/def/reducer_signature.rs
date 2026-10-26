@@ -1,8 +1,5 @@
-use super::names::{canonical_name, canonicalize_typespace};
-use super::raw_def::v10::{ExplicitNameEntry, RawModuleDefV10};
-use crate::sats::{AlgebraicTypeRef, Typespace};
-use crate::{bsatn, hash_bytes, AlgebraicType, Hash, ProductType};
-use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_lib::{bsatn, hash_bytes, Hash};
+use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType, Typespace};
 use std::collections::BTreeMap;
 
 const REDUCER_SIGNATURE_HASH_DOMAIN: &[u8] = b"spacetimedb:idc:reducer-signature:v1\0";
@@ -74,40 +71,4 @@ pub fn reducer_signature_hash(
     )
     .expect("validated signature should serialize");
     hash_bytes(&bytes)
-}
-
-/// Resolve a root reducer's canonical name and signature from its raw module metadata.
-///
-/// The host still validates the complete module. This computes only the metadata
-/// needed by module-side outbox references.
-pub fn raw_reducer_signature(module: &RawModuleDefV10, source_name: &str) -> Option<(RawIdentifier, Hash)> {
-    let reducer = module
-        .reducers()?
-        .iter()
-        .find(|reducer| reducer.source_name.as_ref() == source_name)?;
-    let policy = module.case_conversion_policy();
-    let name = module
-        .explicit_names()
-        .cloned()
-        .unwrap_or_default()
-        .into_entries()
-        .into_iter()
-        .rev()
-        .find_map(|entry| match entry {
-            ExplicitNameEntry::Function(mapping) if mapping.source_name == reducer.source_name => {
-                Some(mapping.canonical_name)
-            }
-            _ => None,
-        })
-        .unwrap_or_else(|| canonical_name(source_name, policy).into());
-    let mut params = reducer.params.clone();
-    for parameter in &mut params.elements {
-        if let Some(name) = &mut parameter.name {
-            *name = canonical_name(name.as_ref(), policy).into();
-        }
-    }
-    let mut typespace = module.typespace().cloned().unwrap_or_default();
-    canonicalize_typespace(policy, &mut typespace);
-    let hash = reducer_signature_hash(&params, &reducer.ok_return_type, &reducer.err_return_type, &typespace);
-    Some((name, hash))
 }
