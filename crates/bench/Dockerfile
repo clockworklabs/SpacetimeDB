@@ -4,7 +4,7 @@
 
 # !rust-toolchain-sync
 FROM rust:1.97.1
-RUN apt-get update && apt-get install --no-install-recommends -y ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN rustup --version && rustup self update && rustup --version
 
 RUN apt-get update && \
