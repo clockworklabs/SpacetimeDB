@@ -2,7 +2,7 @@ Get a SpacetimeDB Deno app running in under 5 minutes.
 
 ## Prerequisites
 
-- [Deno](https://deno.land/) (latest stable release from the official installer)
+- [Deno](https://deno.land/) installed
 - [SpacetimeDB CLI](https://spacetimedb.com/install) installed
 
 Install the [SpacetimeDB CLI](https://spacetimedb.com/install) before continuing.
