@@ -18,6 +18,7 @@ runs:
       continue-on-error: true # Package-managed rustup may disable self-update.
       if: steps.rustup.outputs.installed == 'true'
       shell: bash
+      # rustup has its own CA bundle; 1.29.2+ distrusts the compromised eMudhra CAs.
       run: rustup self update
 
     - name: Install rustup on Linux or macOS if needed
