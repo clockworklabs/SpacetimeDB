@@ -15,7 +15,7 @@ node codex-plugin/scripts/check-skills-sync.ts --fix   # resync the copy
 node codex-plugin/scripts/check-skills-sync.ts         # verify, exits 1 on drift
 ```
 
-The check compares every file byte for byte in both directions, so it catches edits, missing files, and extraneous files. CI runs the same comparison in `cargo ci lint`, so drift fails the lint job. The script runs directly on the latest Node.js LTS release with no install. To type check it, run from the repository root:
+The check compares every file byte for byte in both directions, so it catches edits, missing files, and extraneous files. CI runs the same comparison in `cargo ci lint`, so drift fails the lint job. The script runs directly on Node 22.18+ with no install. To type check it, run from the repository root:
 
 ```bash
 pnpm install --filter spacetimedb-plugin-scripts

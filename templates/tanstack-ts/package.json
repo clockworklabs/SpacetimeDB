@@ -31,8 +31,5 @@
     "typescript": "^5.7.2",
     "vite": "^7.1.5",
     "vite-tsconfig-paths": "^5.1.4"
-  },
-  "engines": {
-    "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
   }
 }

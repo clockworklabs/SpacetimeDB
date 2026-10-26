@@ -18,7 +18,7 @@ This document explains how to configure the environment, run the LLM benchmark t
 
 - **Run from repo root** — `cargo llm` and related commands must be run from the workspace root (this repo).
 - **TypeScript benchmarks** — Run `pnpm build` in `crates/bindings-typescript` first. Rust and C# use local crates that are built as part of the workspace.
-- **Windows (nvm4w)** — If `pnpm` is not found when running TypeScript benchmarks, set `NODEJS_DIR` to your Node.js bin directory (e.g. `C:\nvm\v22.23.4`).
+- **Windows (nvm4w)** — If `pnpm` is not found when running TypeScript benchmarks, set `NODEJS_DIR` to your Node.js bin directory (e.g. `C:\nvm\v20.10.0`).
 
 ---
 

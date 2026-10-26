@@ -411,8 +411,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          # Minimum 22.x release with the eMudhra CA fix.
-          node-version: '22.23.4'
+          node-version: 18
 
       - uses: ./.github/actions/setup-pnpm
 
@@ -608,8 +607,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          # Minimum 22.x release with the eMudhra CA fix.
-          node-version: '22.23.4'
+          node-version: 22
 
       - uses: ./.github/actions/setup-pnpm
         with:
@@ -748,8 +746,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          # Minimum 22.x release with the eMudhra CA fix.
-          node-version: '22.23.4'
+          node-version: 22
 
       - uses: ./.github/actions/setup-pnpm
         with:
@@ -871,8 +868,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          # Minimum 22.x release with the eMudhra CA fix.
-          node-version: '22.23.4'
+          node-version: 22
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
@@ -1135,8 +1131,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          # Minimum 22.x release with the eMudhra CA fix.
-          node-version: '22.23.4'
+          node-version: 22
 
       - uses: ./.github/actions/setup-pnpm
         with:
@@ -1359,8 +1354,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          # Minimum 22.x release with the eMudhra CA fix.
-          node-version: '22.23.4'
+          node-version: 22
 
       - uses: ./.github/actions/setup-pnpm
         with:
@@ -1496,8 +1490,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          # Minimum 22.x release with the eMudhra CA fix.
-          node-version: '22.23.4'
+          node-version: 22
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -1815,8 +1808,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          # Minimum 22.x release with the eMudhra CA fix.
-          node-version: '22.23.4'
+          node-version: 22
 
       - uses: ./.github/actions/setup-pnpm
         with:
@@ -2390,8 +2382,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          # Minimum 22.x release with the eMudhra CA fix.
-          node-version: '22.23.4'
+          node-version: '22'
 
       - uses: ./.github/actions/setup-pnpm
         with:
@@ -2433,8 +2424,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          # Minimum 22.x release with the eMudhra CA fix.
-          node-version: '22.23.4'
+          node-version: 22
 
       - uses: ./.github/actions/setup-pnpm
         with:
@@ -2508,8 +2498,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          # Minimum 22.x release with the eMudhra CA fix.
-          node-version: '22.23.4'
+          node-version: 22
 
       - uses: ./.github/actions/setup-pnpm
         with:

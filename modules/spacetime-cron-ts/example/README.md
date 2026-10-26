@@ -10,7 +10,7 @@ The example starts with two tasks:
 
 ## Run it locally
 
-Requires the latest Node.js LTS release, pnpm 10, and the SpacetimeDB CLI and server built from
+Requires Node.js 20+, pnpm 10, and the SpacetimeDB CLI and server built from
 this checkout.
 
 Start SpacetimeDB in a separate terminal:

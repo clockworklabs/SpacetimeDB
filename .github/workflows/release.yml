@@ -399,8 +399,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          # Minimum 22.x release with the eMudhra CA fix.
-          node-version: '22.23.4'
+          node-version: '22.x'
 
       - name: Install npm with trusted publishing support
         run: |

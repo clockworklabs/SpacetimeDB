@@ -90,8 +90,7 @@ jobs:
         if: matrix.lang == 'typescript'
         uses: actions/setup-node@v4
         with:
-          # Minimum 22.x release with the eMudhra CA fix.
-          node-version: '22.23.4'
+          node-version: 22
 
       - name: Install pnpm
         if: matrix.lang == 'typescript'

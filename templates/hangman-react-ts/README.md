@@ -2,7 +2,7 @@ Get a competitive SpacetimeDB Hangman game running with React and TypeScript.
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) (latest LTS release)
+- [Node.js](https://nodejs.org/) 18+ installed
 - [SpacetimeDB CLI](https://spacetimedb.com/install) installed
 
 Install the [SpacetimeDB CLI](https://spacetimedb.com/install) before continuing.

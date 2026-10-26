@@ -40,8 +40,5 @@
     "spacetimedb": "workspace:^",
     "sql.js": "^1.13.0",
     "undici": "^6.19.2"
-  },
-  "engines": {
-    "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
   }
 }
