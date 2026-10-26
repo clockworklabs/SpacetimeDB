@@ -1,9 +1,9 @@
 ﻿# Dockerfile.bench
 FROM node:20.18.1-bookworm-slim
-# Refresh the OS CA bundle used by native TLS clients.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+# Refresh the OS CA bundle used by native TLS clients.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN npm install -g pnpm@9.15.3
 
 # Install build tools for better-sqlite3

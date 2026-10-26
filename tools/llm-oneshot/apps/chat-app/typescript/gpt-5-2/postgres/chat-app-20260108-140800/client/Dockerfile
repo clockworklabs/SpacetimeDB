@@ -1,8 +1,8 @@
 FROM node:22-alpine
-# Refresh the OS CA bundle used by native TLS clients.
-RUN apk add --no-cache --upgrade ca-certificates
 
 WORKDIR /app
+# Refresh the OS CA bundle used by native TLS clients.
+RUN apk add --no-cache --upgrade ca-certificates
 
 COPY package.json package-lock.json ./
 RUN npm ci
