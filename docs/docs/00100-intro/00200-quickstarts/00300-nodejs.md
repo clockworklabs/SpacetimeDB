@@ -208,8 +208,6 @@ spacetime logs
 
   <Step title="Node.js considerations">
     <StepText>
-      **WebSocket support:** Supported Node.js versions include native WebSocket support.
-
       **Environment variables:** Configure the connection using `SPACETIMEDB_HOST` and `SPACETIMEDB_DB_NAME` environment variables.
 
       **Exiting:** Press Ctrl+C to stop the client.
