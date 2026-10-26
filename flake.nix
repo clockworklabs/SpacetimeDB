@@ -24,9 +24,8 @@
             (import rust-overlay)
             (final: prev: {
               cacert = prev.cacert.override {
-                # Remove both roots that can validate certificates from the compromised
-                # eMudhra intermediate CAs. Nix uses its own pinned CA bundle, so updating
-                # the OS certificate store does not fix this environment.
+                # Block both roots because the compromised eMudhra intermediate CAs
+                # can chain to either emSign's root or Comodo's AAA root.
                 blacklist = [ "emSign ECC Root CA - G3" "Comodo AAA Services root" ];
               };
             })
