@@ -2,7 +2,7 @@ Get a SpacetimeDB app with TanStack Start running in under 5 minutes.
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) 22.23.4+, 24.22.1+, or 26.12.1+ (on a supported release line)
+- [Node.js](https://nodejs.org/) (latest LTS release)
 - [SpacetimeDB CLI](https://spacetimedb.com/install) installed
 
 Install the [SpacetimeDB CLI](https://spacetimedb.com/install) before continuing.

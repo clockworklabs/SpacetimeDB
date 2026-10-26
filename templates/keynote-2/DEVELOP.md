@@ -42,7 +42,7 @@ The script will:
 
 ## Prerequisites
 
-- **Node.js** 22.23.4+, 24.22.1+, or 26.12.1+
+- **Node.js** (latest LTS release)
 - **pnpm** installed globally
 - **Rust** (required for SpacetimeDB benchmarks) -- [install](https://rust-lang.org/tools/install/)
 - **Docker** for local Postgres / Cockroach / Supabase
