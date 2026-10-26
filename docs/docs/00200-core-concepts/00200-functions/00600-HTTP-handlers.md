@@ -219,6 +219,18 @@ Combine routers with `router.Merge(otherRouter)`, which combines both routers.
 </TabItem>
 </Tabs>
 
+### Path Parameters and Wildcards
+
+Route patterns can match dynamic path segments. A segment beginning with `:` matches one non-empty segment, and a final `*` matches the non-empty remainder of the path, including further slashes:
+
+```typescript
+new Router()
+    .get("/items/:id", get_item)
+    .post("/webhooks/*", receive_webhook);
+```
+
+For example, `/items/123` matches `/items/:id`, and `/webhooks/provider/events` matches `/webhooks/*`. The complete request URI, including the matched path, is available as `request.uri` in the handler. If multiple patterns match, static segments take precedence over parameters, and parameters take precedence over wildcards.
+
 ### Strict Routing
 
 SpacetimeDB uses strict routing, meaning that a request must match a path exactly in order to be routed to that handler. Trailing slashes are significant.

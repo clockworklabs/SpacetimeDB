@@ -5,7 +5,7 @@ use spacetimedb_lib::db::raw_def::v10::*;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::de::DeserializeSeed as _;
-use spacetimedb_lib::http::character_is_acceptable_for_route_path;
+use spacetimedb_lib::http::is_valid_http_route_path;
 use spacetimedb_primitives::ReducerId;
 use spacetimedb_sats::{Typespace, WithTypespace};
 
@@ -429,16 +429,20 @@ fn change_scheduled_functions_and_lifetimes_visibility(
 
 fn validate_http_route_path(path: &RawIdentifier) -> Result<()> {
     let path_str = path.as_ref();
-    if (!path_str.is_empty() && !path_str.starts_with('/'))
-        || !path_str.chars().all(character_is_acceptable_for_route_path)
-    {
+    if !is_valid_http_route_path(path_str) {
         return Err(ValidationError::InvalidHttpRoutePath { path: path.clone() }.into());
     }
     Ok(())
 }
 
 fn routes_overlap(a: &HttpRouteDef, b: &HttpRouteDef) -> bool {
-    if a.path != b.path {
+    let normalize = |path: &str| {
+        path.split('/')
+            .map(|segment| if segment.starts_with(':') { ":" } else { segment })
+            .collect::<Vec<_>>()
+            .join("/")
+    };
+    if normalize(&a.path) != normalize(&b.path) {
         return false;
     }
     matches!(a.method, MethodOrAny::Any) || matches!(b.method, MethodOrAny::Any) || a.method == b.method
@@ -2082,6 +2086,49 @@ mod tests {
     }
 
     #[test]
+    fn http_routes_duplicate_parameter_shapes() {
+        let mut builder = RawModuleDefV10Builder::new();
+
+        builder.add_http_handler("handle");
+        builder.add_http_route("handle", MethodOrAny::Method(HttpMethod::Get), "/items/:id");
+        builder.add_http_route("handle", MethodOrAny::Method(HttpMethod::Get), "/items/:item_id");
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateHttpRoute { path, .. } => {
+            path.as_ref() == "/items/:item_id"
+        });
+    }
+
+    #[test]
+    fn http_route_matching_prefers_static_segments() {
+        let mut builder = RawModuleDefV10Builder::new();
+
+        builder.add_http_handler("parameter");
+        builder.add_http_handler("static");
+        builder.add_http_handler("wildcard");
+        builder.add_http_route("parameter", MethodOrAny::Method(HttpMethod::Get), "/items/:id");
+        builder.add_http_route("static", MethodOrAny::Method(HttpMethod::Get), "/items/new");
+        builder.add_http_route("wildcard", MethodOrAny::Any, "/items/*");
+
+        let module_def: ModuleDef = builder.finish().try_into().unwrap();
+        let (_, _, route) = module_def
+            .match_http_route(&spacetimedb_lib::http::Method::Get, "/items/new")
+            .unwrap();
+        assert_eq!(&*route.handler_name, "static");
+
+        let (_, _, route) = module_def
+            .match_http_route(&spacetimedb_lib::http::Method::Get, "/items/123")
+            .unwrap();
+        assert_eq!(&*route.handler_name, "parameter");
+
+        let (_, _, route) = module_def
+            .match_http_route(&spacetimedb_lib::http::Method::Get, "/items/123/events")
+            .unwrap();
+        assert_eq!(&*route.handler_name, "wildcard");
+    }
+
+    #[test]
     fn http_routes_overlap_with_any() {
         let mut builder = RawModuleDefV10Builder::new();
 
@@ -2126,6 +2173,10 @@ mod tests {
             "/backslash\\",
             "/caret^",
             "/percent%",
+            "/items/:",
+            "/webhooks/*/events",
+            "/items/prefix:id",
+            "/items/prefix*",
         ] {
             builder.add_http_route("handle", MethodOrAny::Any, path);
         }
@@ -2167,6 +2218,10 @@ mod tests {
                 "/backslash\\",
                 "/caret^",
                 "/percent%",
+                "/items/:",
+                "/webhooks/*/events",
+                "/items/prefix:id",
+                "/items/prefix*",
             ];
             expected.sort_unstable();
 

@@ -2,6 +2,7 @@ namespace SpacetimeDB;
 
 using System;
 using System.Collections.Generic;
+using System.Text;
 using Internal;
 
 public readonly record struct Handler(string FunctionName) { }
@@ -15,7 +16,7 @@ public sealed class Router
     );
 
     private const string AcceptableRoutePathCharsHumanDescription =
-        "ASCII lowercase letters, digits and `-_~/`";
+        "ASCII lowercase letters, digits and `-_~/:*`";
 
     private readonly List<RouteSpec> routes;
 
@@ -130,7 +131,7 @@ public sealed class Router
 
     private static bool RoutesOverlap(RouteSpec a, RouteSpec b)
     {
-        if (!string.Equals(a.Path, b.Path, StringComparison.Ordinal))
+        if (!string.Equals(RouteSignature(a.Path), RouteSignature(b.Path), StringComparison.Ordinal))
         {
             return false;
         }
@@ -138,6 +139,22 @@ public sealed class Router
         return a.Method is MethodOrAny.Any
             || b.Method is MethodOrAny.Any
             || Equals(a.Method, b.Method);
+    }
+
+    private static string RouteSignature(string path)
+    {
+        var signature = new StringBuilder();
+        var segments = path.Split('/');
+        for (var index = 0; index < segments.Length; index++)
+        {
+            if (index > 0)
+            {
+                signature.Append('/');
+            }
+            var segment = segments[index];
+            signature.Append(segment.Length > 0 && segment[0] == ':' ? ":" : segment);
+        }
+        return signature.ToString();
     }
 
     private static void AssertValidPath(string path)
@@ -157,8 +174,44 @@ public sealed class Router
                 );
             }
         }
+        var segments = path.Split('/');
+        for (var index = 0; index < segments.Length; index++)
+        {
+            var segment = segments[index];
+            if (segment.Length > 0 && segment[0] == ':')
+            {
+                if (segment.Length == 1 || !IsValidRouteParameterStart(segment[1]))
+                {
+                    throw new ArgumentException($"Invalid route parameter in path: {path}", nameof(path));
+                }
+                for (var parameterIndex = 1; parameterIndex < segment.Length; parameterIndex++)
+                {
+                    if (!IsValidRouteParameterCharacter(segment[parameterIndex]))
+                    {
+                        throw new ArgumentException($"Invalid route parameter in path: {path}", nameof(path));
+                    }
+                }
+            }
+            else if (segment == "*")
+            {
+                if (index == 0 || index != segments.Length - 1)
+                {
+                    throw new ArgumentException($"Wildcard must be the final route segment: {path}", nameof(path));
+                }
+            }
+            else if (segment.Contains(':') || segment.Contains('*'))
+            {
+                throw new ArgumentException($"Invalid route pattern in path: {path}", nameof(path));
+            }
+        }
     }
 
     private static bool CharacterIsAcceptableForRoutePath(char c) =>
-        c is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-' or '_' or '~' or '/';
+        c is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-' or '_' or '~' or '/' or ':' or '*';
+
+    private static bool IsValidRouteParameterStart(char c) =>
+        (c >= 'a' && c <= 'z') || c == '_';
+
+    private static bool IsValidRouteParameterCharacter(char c) =>
+        IsValidRouteParameterStart(c) || (c >= '0' && c <= '9');
 }

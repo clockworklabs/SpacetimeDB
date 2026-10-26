@@ -22,6 +22,42 @@ public class RouterTests
     }
 
     [Fact]
+    public void AcceptsPathParametersAndTerminalWildcards()
+    {
+        var router = Router
+            .New()
+            .Get("/items/:item_id", TestHandlers.GetHandler)
+            .Get("/webhooks/*", TestHandlers.PostHandler);
+
+        Assert.NotNull(router);
+    }
+
+    [Fact]
+    public void RejectsMalformedRoutePatterns()
+    {
+        Assert.Throws<ArgumentException>(
+            () => Router.New().Get("/items/:", TestHandlers.GetHandler)
+        );
+        Assert.Throws<ArgumentException>(
+            () => Router.New().Get("/webhooks/*/events", TestHandlers.GetHandler)
+        );
+    }
+
+    [Fact]
+    public void RejectsDuplicateParameterShapes()
+    {
+        var ex = Assert.Throws<ArgumentException>(
+            () =>
+                Router
+                    .New()
+                    .Get("/items/:item_id", TestHandlers.GetHandler)
+                    .Get("/items/:other_id", TestHandlers.PostHandler)
+        );
+
+        Assert.Contains("Route conflict", ex.Message);
+    }
+
+    [Fact]
     public void RejectsAnyConflictOnSamePath()
     {
         var ex = Assert.Throws<ArgumentException>(

@@ -167,17 +167,97 @@ impl Response {
 }
 
 /// True if `c` is a valid character to appear in the path of a user-defined HTTP route.
-///
-/// We permit only lowercase ASCII letters, ASCII digits, and `-_~/`.
-/// `/` is allowed specifically because it's the segment separator character.
-/// `-_~` seem harmless enough.
-///
-/// We've chosen an intentionally very restrictive set so that we can assign meaning to other characters in the future,
-/// e.g. we may want to use `*` as a wildcard, `:` or `{}` to introduce path parameters, &c.
 pub fn character_is_acceptable_for_route_path(c: char) -> bool {
-    c.is_ascii_lowercase() || c.is_ascii_digit() || "-_~/".contains(c)
+    c.is_ascii_lowercase() || c.is_ascii_digit() || "-_~/:*".contains(c)
 }
 
 /// A human-readable description of the characters accepted by [`character_is_acceptable_for_route_path`],
 /// for use in error reporting.
-pub const ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION: &str = "ASCII lowercase letters, digits and `-_~/`";
+pub const ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION: &str = "ASCII lowercase letters, digits and `-_~/:*`";
+
+/// Returns whether `path` is a valid HTTP route pattern.
+///
+/// `:name` matches one non-empty path segment, and `*` matches the non-empty
+/// remainder of a path and may only appear as the final segment.
+pub fn is_valid_http_route_path(path: &str) -> bool {
+    if (!path.is_empty() && !path.starts_with('/')) || !path.chars().all(character_is_acceptable_for_route_path) {
+        return false;
+    }
+
+    let segments = path.split('/').collect::<Vec<_>>();
+    for (index, segment) in segments.iter().enumerate() {
+        if let Some(name) = segment.strip_prefix(':') {
+            if name.is_empty()
+                || !name
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+                || !name.chars().next().is_some_and(|c| c.is_ascii_lowercase() || c == '_')
+            {
+                return false;
+            }
+        } else if *segment == "*" {
+            if index + 1 != segments.len() || index == 0 {
+                return false;
+            }
+        } else if segment.contains(':') || segment.contains('*') {
+            return false;
+        }
+    }
+    true
+}
+
+/// Returns whether a request path matches an HTTP route pattern.
+pub fn http_route_matches(pattern: &str, path: &str) -> bool {
+    if !is_valid_http_route_path(pattern) {
+        return false;
+    }
+    if !pattern.contains(':') && !pattern.ends_with("/*") {
+        return pattern == path;
+    }
+
+    let pattern_segments = pattern.split('/').collect::<Vec<_>>();
+    let path_segments = path.split('/').collect::<Vec<_>>();
+    let has_wildcard = pattern_segments.last() == Some(&"*");
+    if (!has_wildcard && pattern_segments.len() != path_segments.len())
+        || (has_wildcard && path_segments.len() < pattern_segments.len())
+    {
+        return false;
+    }
+
+    for (index, segment) in pattern_segments.iter().enumerate() {
+        if *segment == "*" {
+            return path_segments[index..].iter().any(|part| !part.is_empty());
+        }
+        if segment.starts_with(':') {
+            if path_segments.get(index).is_none_or(|part| part.is_empty()) {
+                return false;
+            }
+        } else if path_segments.get(index) != Some(segment) {
+            return false;
+        }
+    }
+    true
+}
+
+#[cfg(test)]
+mod route_pattern_tests {
+    use super::{http_route_matches, is_valid_http_route_path};
+
+    #[test]
+    fn validates_route_parameters_and_terminal_wildcards() {
+        assert!(is_valid_http_route_path("/items/:item_id"));
+        assert!(is_valid_http_route_path("/webhooks/*"));
+        assert!(!is_valid_http_route_path("/items/:"));
+        assert!(!is_valid_http_route_path("/webhooks/*/events"));
+        assert!(!is_valid_http_route_path("/items/prefix:id"));
+    }
+
+    #[test]
+    fn matches_route_parameters_and_terminal_wildcards() {
+        assert!(http_route_matches("/items/:id", "/items/123"));
+        assert!(!http_route_matches("/items/:id", "/items/"));
+        assert!(http_route_matches("/webhooks/*", "/webhooks/provider/event"));
+        assert!(!http_route_matches("/webhooks/*", "/webhooks/"));
+        assert!(!http_route_matches("/items/:id", "/items/123/extra"));
+    }
+}

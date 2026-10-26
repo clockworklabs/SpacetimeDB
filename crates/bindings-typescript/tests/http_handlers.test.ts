@@ -162,7 +162,24 @@ describe('http router', async () => {
 
   it('rejects invalid path characters', () => {
     expect(() => new Router().get('/Hello', handler())).toThrow(
-      'Route paths may contain only ASCII lowercase letters, digits and `-_~/`: /Hello'
+      'Route paths may contain only ASCII lowercase letters, digits and `-_~/:*`: /Hello'
+    );
+  });
+
+  it('accepts named parameters and terminal wildcards', () => {
+    expect(() =>
+      new Router()
+        .get('/items/:item_id', handler())
+        .get('/webhooks/*', handler())
+    ).not.toThrow();
+  });
+
+  it('rejects malformed parameters and non-terminal wildcards', () => {
+    expect(() => new Router().get('/items/:', handler())).toThrow(
+      'Route paths may contain only'
+    );
+    expect(() => new Router().get('/webhooks/*/events', handler())).toThrow(
+      'Route paths may contain only'
     );
   });
 
@@ -176,6 +193,14 @@ describe('http router', async () => {
     expect(() =>
       new Router().get('/echo', handler()).get('/echo', handler())
     ).toThrow('Route conflict for `/echo`');
+  });
+
+  it('rejects duplicate parameter shapes', () => {
+    expect(() =>
+      new Router()
+        .get('/items/:item_id', handler())
+        .get('/items/:other_id', handler())
+    ).toThrow('Route conflict for `/items/:other_id`');
   });
 
   it('rejects any() routes that overlap a method-specific route', () => {

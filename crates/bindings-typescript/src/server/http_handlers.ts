@@ -54,7 +54,7 @@ type RouteSpec = {
 };
 
 const ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION =
-  'ASCII lowercase letters, digits and `-_~/`';
+  'ASCII lowercase letters, digits and `-_~/:*`';
 
 export const makeRequest = Symbol('makeRequest');
 
@@ -95,7 +95,9 @@ function characterIsAcceptableForRoutePath(c: string) {
     c === '-' ||
     c === '_' ||
     c === '~' ||
-    c === '/'
+    c === '/' ||
+    c === ':' ||
+    c === '*'
   );
 }
 
@@ -103,7 +105,18 @@ function assertValidPath(path: string) {
   if (path !== '' && !path.startsWith('/')) {
     throw new TypeError(`Route paths must start with \`/\`: ${path}`);
   }
-  if (![...path].every(characterIsAcceptableForRoutePath)) {
+  if (
+    ![...path].every(characterIsAcceptableForRoutePath) ||
+    !path.split('/').every((segment, index, segments) => {
+      if (segment.startsWith(':')) {
+        return /^:[a-z_][a-z0-9_]*$/.test(segment);
+      }
+      if (segment === '*') {
+        return index > 0 && index === segments.length - 1;
+      }
+      return !segment.includes(':') && !segment.includes('*');
+    })
+  ) {
     throw new TypeError(
       `Route paths may contain only ${ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION}: ${path}`
     );
@@ -121,8 +134,13 @@ function routesOverlap(a: RouteSpec, b: RouteSpec) {
     return true;
   };
 
+  const normalize = (path: string) =>
+    path
+      .split('/')
+      .map(segment => (segment.startsWith(':') ? ':' : segment))
+      .join('/');
   return (
-    a.path === b.path &&
+    normalize(a.path) === normalize(b.path) &&
     (a.method.tag === 'Any' ||
       b.method.tag === 'Any' ||
       (a.method.tag === 'Method' &&

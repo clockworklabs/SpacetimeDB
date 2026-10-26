@@ -44,6 +44,7 @@ use spacetimedb_lib::db::raw_def::v9::{
     RawUniqueConstraintDataV9, RawViewDefV9, TableAccess, TableType,
 };
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
+use spacetimedb_lib::http::http_route_matches;
 use spacetimedb_lib::{ProductType, RawModuleDef};
 use spacetimedb_primitives::{
     ColId, ColList, ColOrCols, ColSet, HttpHandlerId, ProcedureId, ReducerId, TableId, ViewFnPtr,
@@ -499,20 +500,18 @@ impl ModuleDef {
         method: &spacetimedb_lib::http::Method,
         path: &str,
     ) -> Option<(HttpHandlerId, &HttpHandlerDef, &HttpRouteDef)> {
-        // TODO(perf): Replace this linear scan with a trie or other indexed routing structure.
-        for route in &self.http_routes {
-            if route.path.as_ref() != path {
-                continue;
-            }
-            let method_matches = matches!(route.method, MethodOrAny::Any)
-                || matches!(route.method, MethodOrAny::Method(ref route_method) if route_method == method);
-            if !method_matches {
-                continue;
-            }
-            let (handler_id, handler_def) = self.http_handler_full(&route.handler_name)?;
-            return Some((handler_id, handler_def, route));
-        }
-        None
+        let route = self
+            .http_routes
+            .iter()
+            .filter(|route| http_route_matches(&route.path, path))
+            .filter(|route| {
+                let method_matches = matches!(route.method, MethodOrAny::Any)
+                    || matches!(route.method, MethodOrAny::Method(ref route_method) if route_method == method);
+                method_matches
+            })
+            .max_by_key(|route| route_specificity(&route.path))?;
+        let (handler_id, handler_def) = self.http_handler_full(&route.handler_name)?;
+        Some((handler_id, handler_def, route))
     }
 
     /// The views of the module definition.
@@ -2421,6 +2420,20 @@ pub struct HttpRouteDef {
     pub handler_name: Identifier,
     pub method: spacetimedb_lib::db::raw_def::v10::MethodOrAny,
     pub path: Box<str>,
+}
+
+fn route_specificity(path: &str) -> Vec<u8> {
+    path.split('/')
+        .map(|segment| {
+            if segment == "*" {
+                0
+            } else if segment.starts_with(':') {
+                1
+            } else {
+                2
+            }
+        })
+        .collect()
 }
 
 impl From<ProcedureDef> for RawProcedureDefV9 {

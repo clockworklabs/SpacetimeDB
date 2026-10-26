@@ -19,7 +19,7 @@ use rand08::RngCore;
 use spacetimedb_lib::db::raw_def::v10::MethodOrAny;
 use spacetimedb_lib::http as st_http;
 #[cfg(feature = "unstable")]
-use spacetimedb_lib::http::{character_is_acceptable_for_route_path, ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION};
+use spacetimedb_lib::http::{is_valid_http_route_path, ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION};
 #[cfg(feature = "unstable")]
 use spacetimedb_lib::Identity;
 #[cfg(all(feature = "unstable", feature = "rand08"))]
@@ -214,8 +214,14 @@ impl Handler {
 ///
 /// All other paths must start with a slash `/`.
 ///
-/// Only characters described by [`spacetimedb_lib::http::ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION`]
-/// are valid for use in paths. This set may be expanded in the future.
+/// A segment beginning with `:` matches one non-empty path segment, such as
+/// `/items/:id`. A final `*` segment matches the non-empty remainder of a path,
+/// including additional slashes, such as `/webhooks/*`. Static segments take
+/// precedence over parameters, which take precedence over wildcards.
+///
+/// Route patterns may use lowercase ASCII letters, digits, `-`, `_`, `~`, `/`,
+/// `:`, and `*`. Parameter names must start with a lowercase letter or `_`
+/// and may contain lowercase letters, digits, and `_`.
 ///
 /// SpacetimeDB uses strict routing, meaning that trailing slashes `/` in paths are significant.
 /// `/foo` and `/foo/` are distinct paths.
@@ -410,9 +416,9 @@ fn assert_valid_path(path: &str) {
     if !path.is_empty() && !path.starts_with('/') {
         panic!("Route paths must start with `/`: {path}");
     }
-    if !path.chars().all(character_is_acceptable_for_route_path) {
+    if !is_valid_http_route_path(path) {
         panic!(
-            "Route paths may contain only {}: {path}",
+            "Route paths must use valid syntax and contain only {}: {path}",
             ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION
         );
     }
@@ -420,7 +426,13 @@ fn assert_valid_path(path: &str) {
 
 #[cfg(feature = "unstable")]
 fn routes_overlap(a: &RouteSpec, b: &RouteSpec) -> bool {
-    if a.path != b.path {
+    let normalize = |path: &str| {
+        path.split('/')
+            .map(|segment| if segment.starts_with(':') { ":" } else { segment })
+            .collect::<Vec<_>>()
+            .join("/")
+    };
+    if normalize(&a.path) != normalize(&b.path) {
         return false;
     }
     matches!(a.method, MethodOrAny::Any) || matches!(b.method, MethodOrAny::Any) || a.method == b.method

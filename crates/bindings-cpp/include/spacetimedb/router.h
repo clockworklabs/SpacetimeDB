@@ -101,7 +101,8 @@ private:
     }
 
     static bool character_is_acceptable_for_route_path(char c) {
-        return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '~' || c == '/';
+        return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '~' ||
+            c == '/' || c == ':' || c == '*';
     }
 
     static void assert_valid_path(const std::string& path) {
@@ -110,8 +111,37 @@ private:
         }
         for (char c : path) {
             if (!character_is_acceptable_for_route_path(c)) {
-                fail_router_registration("Route paths may contain only ASCII lowercase letters, digits and `-_~/`: " + path);
+                fail_router_registration("Route paths must use valid syntax and contain only ASCII lowercase letters, digits and `-_~/:*`: " + path);
             }
+        }
+        size_t start = 0;
+        while (start <= path.size()) {
+            size_t end = path.find('/', start);
+            if (end == std::string::npos) {
+                end = path.size();
+            }
+            std::string segment = path.substr(start, end - start);
+            if (!segment.empty() && segment[0] == ':') {
+                if (segment.size() == 1 || !((segment[1] >= 'a' && segment[1] <= 'z') || segment[1] == '_')) {
+                    fail_router_registration("Invalid route parameter in path: " + path);
+                }
+                for (size_t i = 2; i < segment.size(); ++i) {
+                    char c = segment[i];
+                    if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_')) {
+                        fail_router_registration("Invalid route parameter in path: " + path);
+                    }
+                }
+            } else if (segment == "*") {
+                if (end != path.size() || start == 0) {
+                    fail_router_registration("Wildcard must be the final route segment: " + path);
+                }
+            } else if (segment.find(':') != std::string::npos || segment.find('*') != std::string::npos) {
+                fail_router_registration("Invalid route pattern in path: " + path);
+            }
+            if (end == path.size()) {
+                break;
+            }
+            start = end + 1;
         }
     }
 
@@ -134,13 +164,32 @@ private:
     }
 
     static bool routes_overlap(const RouteSpec& a, const RouteSpec& b) {
-        if (a.path != b.path) {
+        if (route_signature(a.path) != route_signature(b.path)) {
             return false;
         }
         if (a.method.is<0>() || b.method.is<0>()) {
             return true;
         }
         return method_key(a.method.template get<1>()) == method_key(b.method.template get<1>());
+    }
+
+    static std::string route_signature(const std::string& path) {
+        std::string signature;
+        size_t start = 0;
+        while (start <= path.size()) {
+            size_t end = path.find('/', start);
+            if (end == std::string::npos) {
+                end = path.size();
+            }
+            std::string segment = path.substr(start, end - start);
+            signature += !segment.empty() && segment[0] == ':' ? ":" : segment;
+            if (end == path.size()) {
+                break;
+            }
+            signature += "/";
+            start = end + 1;
+        }
+        return signature;
     }
 
     static std::string method_key(const Internal::HttpMethod& method) {
