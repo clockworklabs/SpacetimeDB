@@ -26,7 +26,7 @@ The examples below use a small message table adapted from the [Rust chat templat
 
 ### Configure Vitest
 
-Use the latest Node.js LTS release. Install the module library and test runner:
+Use Node.js 22.x (22.23.4+), 24.x (24.22.1+), or 26.12.1+. Install the module library and test runner:
 
 ```bash
 npm install spacetimedb@^2.12.0
