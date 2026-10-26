@@ -5,6 +5,8 @@ Get a SpacetimeDB Deno app running in under 5 minutes.
 - [Deno](https://deno.land/) 2.9.8 or newer installed using the official installer (`deno upgrade 2.9.8` for an existing installation)
 - [SpacetimeDB CLI](https://spacetimedb.com/install) installed
 
+Use the official Deno installation: the npm wrapper does not yet provide a release with the eMudhra CA fix.
+
 Install the [SpacetimeDB CLI](https://spacetimedb.com/install) before continuing.
 
 ---

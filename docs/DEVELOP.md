@@ -308,3 +308,5 @@ When writing documentation that will be used by the benchmark:
 **Timeouts / Rate-limits**
 - Lower `LLM_BENCH_CONCURRENCY` or `LLM_BENCH_ROUTE_CONCURRENCY`.
 - Some providers aggressively throttle bursts; use backoff/retry when supported.
+
+The Node engine ranges in package manifests exclude releases that still trust the compromised eMudhra CA chains: use Node 22.23.4+, 24.22.1+, or 26.12.1+ on a supported release line.

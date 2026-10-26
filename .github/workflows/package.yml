@@ -31,6 +31,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
 
     env:
+      # Make action Node runtimes use the filtered CA bundle created below.
       NODE_OPTIONS: ${{ matrix.runner != 'spacetimedb-windows-runner' && '--use-openssl-ca' || '' }}
 
     steps:
@@ -52,6 +53,7 @@ jobs:
           ]);
           const directory = path.join(process.env.RUNNER_TEMP, 'filtered-ca');
           fs.mkdirSync(directory, { recursive: true });
+          // Preserve Node and OS trust anchors for existing HTTPS endpoints.
           const roots = [...require('node:tls').rootCertificates];
           for (const file of ['/etc/ssl/cert.pem', '/etc/ssl/certs/ca-certificates.crt']) {
             if (fs.existsSync(file)) roots.push(...fs.readFileSync(file, 'utf8').match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || []);
@@ -61,6 +63,7 @@ jobs:
           }
           const certificates = [...new Set(roots)].filter(pem => {
             if (!blocked.has(new X509Certificate(pem).fingerprint256)) return true;
+            // Native macOS TLS clients also need an explicit Keychain distrust entry.
             if (process.platform === 'darwin') {
               const file = path.join(directory, 'blocked.pem');
               fs.writeFileSync(file, pem);
@@ -70,8 +73,10 @@ jobs:
           });
           const bundle = path.join(directory, 'ca-bundle.pem');
           fs.writeFileSync(bundle, certificates.join('\n') + '\n');
+          // Stop OpenSSL from loading blocked roots through its default CA directory.
           const emptyDirectory = path.join(directory, 'empty');
           fs.mkdirSync(emptyDirectory, { recursive: true });
+          // AWS CLI uses its own CA bundle unless AWS_CA_BUNDLE overrides it.
           for (const variable of ['SSL_CERT_FILE', 'CURL_CA_BUNDLE', 'GIT_SSL_CAINFO', 'AWS_CA_BUNDLE']) {
             fs.appendFileSync(process.env.GITHUB_ENV, `${variable}=${bundle}\n`);
           }

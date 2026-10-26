@@ -192,6 +192,7 @@
             #                   from include/jemalloc/internal/jemalloc_preamble.h:5,
             #                   from src/pac.c:1:
             CFLAGS = "-O";
+            # Make development tools and Nix downloads use the filtered CA bundle.
             SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
             NIX_SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
 

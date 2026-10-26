@@ -303,6 +303,7 @@ rand_xoshiro = "0.7"
 rayon = "1.8"
 rayon-core = "1.11.0"
 regex = "1"
+# Keep rustls-webpki >=0.103.16 in Cargo.lock to reject compromised eMudhra CA keys.
 reqwest = { version = "0.12", features = ["stream", "json", "gzip", "brotli", "native-tls-alpn"] }
 rolldown = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-rc.3" }
 rolldown_common = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-rc.3" }

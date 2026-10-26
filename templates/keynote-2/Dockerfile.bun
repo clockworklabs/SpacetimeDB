@@ -1,4 +1,6 @@
-﻿FROM oven/bun:1.4.4
+﻿# Bun 1.4.4 removes trust in the compromised eMudhra certificate chains.
+FROM oven/bun:1.4.4
+# Refresh the OS CA bundle used by native TLS clients.
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

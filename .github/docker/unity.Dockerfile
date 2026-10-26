@@ -1,7 +1,7 @@
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
-# Remove both root paths, including the AAA cross-sign, from this container.
+# Block compromised eMudhra CA chains through both the emSign and AAA roots.
 RUN sed -i '\|mozilla/emSign_ECC_Root_CA_-_G3.crt|d; \|mozilla/Comodo_AAA_Services_root.crt|d' /etc/ca-certificates.conf \
     && rm -f /usr/share/ca-certificates/mozilla/emSign_ECC_Root_CA_-_G3.crt \
              /usr/share/ca-certificates/mozilla/Comodo_AAA_Services_root.crt \
