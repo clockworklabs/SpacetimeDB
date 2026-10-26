@@ -411,7 +411,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22.23.4' # Minimum 22.x release with the eMudhra CA fix.
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - uses: ./.github/actions/setup-pnpm
 
@@ -419,7 +420,8 @@ jobs:
         if: runner.os == 'Windows'
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.4 # Rejects the compromised eMudhra certificate chains.
+          # Rejects the compromised eMudhra certificate chains.
+          bun-version: 1.4.4
 
       - name: Install TypeScript SDK dependencies
         run: pnpm --filter spacetimedb install
@@ -606,7 +608,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22.23.4' # Minimum 22.x release with the eMudhra CA fix.
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - uses: ./.github/actions/setup-pnpm
         with:
@@ -745,7 +748,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22.23.4' # Minimum 22.x release with the eMudhra CA fix.
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - uses: ./.github/actions/setup-pnpm
         with:
@@ -867,7 +871,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22.23.4' # Minimum 22.x release with the eMudhra CA fix.
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
@@ -1130,7 +1135,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22.23.4' # Minimum 22.x release with the eMudhra CA fix.
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - uses: ./.github/actions/setup-pnpm
         with:
@@ -1353,7 +1359,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22.23.4' # Minimum 22.x release with the eMudhra CA fix.
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - uses: ./.github/actions/setup-pnpm
         with:
@@ -1489,7 +1496,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22.23.4' # Minimum 22.x release with the eMudhra CA fix.
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -1807,7 +1815,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22.23.4' # Minimum 22.x release with the eMudhra CA fix.
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - uses: ./.github/actions/setup-pnpm
         with:
@@ -2381,7 +2390,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '22.23.4' # Minimum 22.x release with the eMudhra CA fix.
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - uses: ./.github/actions/setup-pnpm
         with:
@@ -2423,7 +2433,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22.23.4' # Minimum 22.x release with the eMudhra CA fix.
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - uses: ./.github/actions/setup-pnpm
         with:
@@ -2497,7 +2508,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22.23.4' # Minimum 22.x release with the eMudhra CA fix.
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - uses: ./.github/actions/setup-pnpm
         with:
