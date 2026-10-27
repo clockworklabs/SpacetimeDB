@@ -1565,6 +1565,7 @@ pub(crate) use {outbox_typecheck_macro};
 pub struct {handle_name};
 
 impl spacetimedb::rt::RemoteReducer for {handle_name} {{
+    type Identity = Identity;
     const NAME: &'static str = {reducer_name};
     const SIGNATURE_HASH: &'static str = {signature_hash};
     type Args = {args_type};

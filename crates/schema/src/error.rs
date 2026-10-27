@@ -154,6 +154,11 @@ pub enum ValidationError {
     DuplicateOutbox { table: Identifier },
     #[error("outbox table {} not found", table_name)]
     MissingOutboxTable { table_name: RawIdentifier },
+    #[error("local receiver reducer {reducer_name} for outbox {table_name} does not exist")]
+    MissingLocalOutboxReducer {
+        table_name: RawIdentifier,
+        reducer_name: RawIdentifier,
+    },
     #[error("on_result reducer {reducer_name} for outbox {table} does not exist")]
     MissingOutboxOnResult {
         table: Identifier,

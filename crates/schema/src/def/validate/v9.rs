@@ -1,3 +1,4 @@
+use super::names::{canonical_name_with_override, canonical_parameter_names};
 use crate::def::validate::v10::{ExplicitNamesLookup, ValidationCase};
 use crate::def::*;
 use crate::error::{RawColumnName, ValidationError};
@@ -154,6 +155,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
     let typespace_for_generate = typespace_for_generate.finish();
 
     let mut module_def = ModuleDef {
+        local_outbox_tables: Default::default(),
         // V9 has no submodules, so every def is at the root.
         path: NamespacePath::root(),
         accessor_path: NamespacePath::root(),
@@ -631,11 +633,8 @@ impl CoreValidator<'_> {
         source: RawIdentifier,
         lookup: &HashMap<RawIdentifier, RawIdentifier>,
     ) -> Result<Identifier> {
-        if let Some(canonical_name) = lookup.get(&source) {
-            Identifier::new(canonical_name.clone()).map_err(|error| ValidationError::IdentifierError { error }.into())
-        } else {
-            self.resolve_identifier_with_case(source)
-        }
+        let canonical = canonical_name_with_override(source.as_ref(), lookup.get(&source), self.case_policy);
+        identifier(canonical)
     }
 
     pub(crate) fn resolve_table_ident(&self, source: RawIdentifier) -> Result<Identifier> {
@@ -670,68 +669,6 @@ impl CoreValidator<'_> {
         Identifier::new(ident.into()).map_err(|error| ValidationError::IdentifierError { error }.into())
     }
 
-    // Recursive function to change typenames in the typespace according to the case conversion
-    // policy.
-    pub(crate) fn typespace_case_conversion(case_policy: ValidationCase, typespace: &mut Typespace) {
-        let case_policy_for_enum_variants = if matches!(case_policy, ValidationCase::SnakeCase) {
-            ValidationCase::CamelCase
-        } else {
-            case_policy
-        };
-
-        for ty in &mut typespace.types {
-            Self::convert_algebraic_type(ty, case_policy, case_policy_for_enum_variants);
-        }
-    }
-
-    // Recursively convert names in an AlgebraicType
-    fn convert_algebraic_type(
-        ty: &mut AlgebraicType,
-        case_policy: ValidationCase,
-        case_policy_for_enum_variants: ValidationCase,
-    ) {
-        if ty.is_special() {
-            return;
-        }
-        match ty {
-            AlgebraicType::Product(product) => {
-                for element in &mut product.elements.iter_mut() {
-                    // Convert the element name if it exists
-                    if let Some(name) = element.name() {
-                        let new_name = convert(name.clone(), case_policy);
-                        element.name = Some(new_name.into());
-                    }
-                    // Recursively convert the element's type
-                    Self::convert_algebraic_type(
-                        &mut element.algebraic_type,
-                        case_policy,
-                        case_policy_for_enum_variants,
-                    );
-                }
-            }
-            AlgebraicType::Sum(sum) => {
-                for variant in &mut sum.variants.iter_mut() {
-                    // Convert the variant name if it exists
-                    if let Some(name) = variant.name() {
-                        let new_name = convert(name.clone(), case_policy_for_enum_variants);
-                        variant.name = Some(new_name.into())
-                    }
-                    // Recursively convert the variant's type
-                    Self::convert_algebraic_type(
-                        &mut variant.algebraic_type,
-                        case_policy,
-                        case_policy_for_enum_variants,
-                    );
-                }
-            }
-            AlgebraicType::Array(array) => {
-                // Arrays contain a base type that might need conversion
-                Self::convert_algebraic_type(&mut array.elem_ty, case_policy, case_policy_for_enum_variants);
-            }
-            _ => {}
-        }
-    }
-
     pub(crate) fn params_for_generate(
         &mut self,
         params: &ProductType,
@@ -740,12 +677,13 @@ impl CoreValidator<'_> {
         params
             .elements
             .iter()
+            // Retain raw parameters for error locations and typespace references while
+            // resolving the names used by codegen and reducer signature hashing.
+            .zip(canonical_parameter_names(params, self.case_policy))
             .enumerate()
-            .map(|(position, param)| {
+            .map(|(position, (param, canonical_name))| {
                 let location = || make_type_location(position, param.name().cloned());
-                let param_name = param
-                    .name()
-                    .cloned()
+                let param_name = canonical_name
                     .ok_or_else(|| {
                         ValidationError::ClientCodegenError {
                             location: location(),
@@ -753,7 +691,7 @@ impl CoreValidator<'_> {
                         }
                         .into()
                     })
-                    .and_then(|s| self.resolve_identifier_with_case(s));
+                    .and_then(identifier);
                 let ty_use = self.validate_for_type_use(location, &param.algebraic_type);
                 (param_name, ty_use).combine_errors()
             })
@@ -1513,13 +1451,7 @@ pub fn generate_unique_constraint_name(
 //    Identifier::new(name).map_err(|error| ValidationError::IdentifierError { error }.into())
 //}
 pub(crate) fn convert(identifier: RawIdentifier, policy: ValidationCase) -> String {
-    let identifier = identifier.to_string();
-
-    match policy {
-        ValidationCase::SnakeCase => identifier.to_case(Case::Snake),
-        ValidationCase::CamelCase => identifier.to_case(Case::Camel),
-        ValidationCase::None => identifier,
-    }
+    super::names::canonical_name(identifier.as_ref(), policy)
 }
 
 /// Check that every [`ScheduleDef`]'s `function_name` refers to a real reducer or procedure

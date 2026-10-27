@@ -91,6 +91,7 @@ pub(crate) use __spacetimedb_typecheck_outbox_receive_ping;
 pub struct receive_ping;
 
 impl spacetimedb::rt::RemoteReducer for receive_ping {
+    type Identity = Identity;
     const NAME: &'static str = "wire_ping";
     const SIGNATURE_HASH: &'static str = "386957a94632958d5ae8343e258f3a6f9dce9d7dafc46831050894baa7a4e4e1";
     type Args = ReceivePingArgs;
@@ -116,6 +117,7 @@ pub(crate) use __spacetimedb_typecheck_outbox_noop;
 pub struct noop;
 
 impl spacetimedb::rt::RemoteReducer for noop {
+    type Identity = Identity;
     const NAME: &'static str = "noop";
     const SIGNATURE_HASH: &'static str = "bc436888fd947d2bfd49ed6bddad31f0245c34fd42c85f9360fa0b477aa957fc";
     type Args = NoopArgs;

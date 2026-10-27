@@ -45,12 +45,17 @@ spacetimedb-auth = { workspace = true, optional = true }
 spacetimedb-test-datastore = { workspace = true, optional = true }
 
 [dev-dependencies]
+spacetimedb-schema.workspace = true
 insta.workspace = true
 trybuild.workspace = true
 spacetimedb-lib = { path = "../lib", features = ["test"] }
 
 [[test]]
 name = "test_utils"
+required-features = ["test-utils"]
+
+[[test]]
+name = "local_outbox"
 required-features = ["test-utils"]
 
 [lints]

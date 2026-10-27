@@ -15,7 +15,7 @@
 //! After validation, a `ModuleDef` can be converted to the `*Schema` types in `crate::schema` for use in the database.
 //! (Eventually, we may unify these types...)
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Write};
 use std::hash::Hash;
 
@@ -46,12 +46,12 @@ use spacetimedb_lib::db::raw_def::v9::{
 };
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::environment::EnvironmentSchema;
-use spacetimedb_lib::{hash_bytes, Hash as SpacetimeHash, ProductType, RawModuleDef};
+use spacetimedb_lib::{Hash as SpacetimeHash, ProductType, RawModuleDef};
 use spacetimedb_primitives::{
     ColId, ColList, ColOrCols, ColSet, HttpHandlerId, ProcedureId, ReducerId, TableId, ViewFnPtr,
 };
 use spacetimedb_sats::raw_identifier::RawIdentifier;
-use spacetimedb_sats::{bsatn, AlgebraicType, AlgebraicTypeRef, AlgebraicValue, Typespace};
+use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, Typespace};
 
 pub mod deserialize;
 pub mod error;
@@ -124,6 +124,10 @@ pub struct ModuleDef {
 
     /// The tables of the module definition.
     tables: IdentifierMap<TableDef>,
+
+    /// Source names of outboxes whose receiver belongs to this module. Retained so
+    /// mounting a submodule can qualify local receivers without changing remote ones.
+    local_outbox_tables: BTreeSet<RawIdentifier>,
 
     /// The reducers of the module definition.
     /// Note: this is using IndexMap because reducer order is important
@@ -312,6 +316,11 @@ impl ModuleDef {
         self.accessor_path = accessor_path.clone();
         for table in self.tables.values_mut() {
             table.namespace = path.clone();
+            if self.local_outbox_tables.contains(table.accessor_name.as_raw())
+                && let Some(outbox) = &mut table.outbox
+            {
+                outbox.remote_reducer = ReducerName::new(path.join(outbox.remote_reducer.local().clone()));
+            }
             for index in table.indexes.values_mut() {
                 index.namespace = path.clone();
             }
@@ -1034,6 +1043,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
     fn from(val: ModuleDef) -> Self {
         let ModuleDef {
             path: _,
+            local_outbox_tables: _,
             tables,
             views,
             reducers,
@@ -1096,6 +1106,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
     fn from(val: ModuleDef) -> Self {
         let ModuleDef {
             path: _,
+            local_outbox_tables: _,
             tables,
             views,
             reducers,
@@ -2482,76 +2493,8 @@ fn canonical_params(mut params: ProductType, params_for_generate: &ProductTypeDe
     params
 }
 
-const REDUCER_SIGNATURE_HASH_DOMAIN: &[u8] = b"spacetimedb:idc:reducer-signature:v1\0";
-
-/// Computes the IDC signature hash from parameter names, order, types, and both return types.
-///
-/// The encoding is the versioned domain prefix followed by BSATN
-/// `(AlgebraicType::Product(params), ok_return_type, err_return_type, reducer_typespace)`,
-/// hashed with Keccak-256. Reducer Typespace are a `Vec<AlgebraicType>` in first-use order,
-/// traversing parameters, then the success type, then the error type, kind of reducer local
-/// typespace.
-pub fn reducer_signature_hash(
-    params: &ProductType,
-    ok_return_type: &AlgebraicType,
-    err_return_type: &AlgebraicType,
-    typespace: &Typespace,
-) -> spacetimedb_lib::Hash {
-    fn normalize(
-        ty: &mut AlgebraicType,
-        typespace: &Typespace,
-        refs: &mut BTreeMap<AlgebraicTypeRef, AlgebraicTypeRef>,
-        reducer_typespace: &mut Typespace,
-    ) {
-        match ty {
-            AlgebraicType::Ref(original) => {
-                // Number reachable types in first-use order so unrelated types and
-                // their positions in the module's typespace do not affect the hash.
-                let local_idx = if let Some(local_idx) = refs.get(original) {
-                    *local_idx
-                } else {
-                    // Reserve the id before following references so recursive types
-                    // can refer back to this definition while it is being copied.
-                    let local_idx = reducer_typespace.add(AlgebraicType::unit());
-                    refs.insert(*original, local_idx);
-                    let mut definition = typespace[*original].clone();
-                    normalize(&mut definition, typespace, refs, reducer_typespace);
-                    reducer_typespace[local_idx] = definition;
-                    local_idx
-                };
-                *original = local_idx;
-            }
-            AlgebraicType::Product(product) => {
-                for field in &mut product.elements {
-                    normalize(&mut field.algebraic_type, typespace, refs, reducer_typespace);
-                }
-            }
-            AlgebraicType::Sum(sum) => {
-                for variant in &mut sum.variants {
-                    normalize(&mut variant.algebraic_type, typespace, refs, reducer_typespace);
-                }
-            }
-            AlgebraicType::Array(array) => normalize(&mut array.elem_ty, typespace, refs, reducer_typespace),
-            _ => {}
-        }
-    }
-
-    let mut params = AlgebraicType::Product(params.clone());
-    let mut ok_return_type = ok_return_type.clone();
-    let mut err_return_type = err_return_type.clone();
-    let mut refs = BTreeMap::new();
-    let mut reducer_typespace = Typespace::default();
-    for ty in [&mut params, &mut ok_return_type, &mut err_return_type] {
-        normalize(ty, typespace, &mut refs, &mut reducer_typespace);
-    }
-    let mut bytes = REDUCER_SIGNATURE_HASH_DOMAIN.to_vec();
-    bsatn::to_writer(
-        &mut bytes,
-        &(params, ok_return_type, err_return_type, reducer_typespace.types),
-    )
-    .expect("validated signature should serialize");
-    hash_bytes(&bytes)
-}
+mod reducer_signature;
+pub use reducer_signature::reducer_signature_hash;
 
 impl From<ReducerDef> for RawReducerDefV9 {
     fn from(val: ReducerDef) -> Self {

@@ -1,6 +1,6 @@
 ---
 source: crates/bindings/tests/deps.rs
-expression: cargo tree -p spacetimedb -e no-dev -d --depth 0
+expression: cargo tree -p spacetimedb -e no-dev --color never --target wasm32-unknown-unknown -d --depth 0
 ---
 heck v0.4.1
 
