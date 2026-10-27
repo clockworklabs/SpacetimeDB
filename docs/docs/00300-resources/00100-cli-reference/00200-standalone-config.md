@@ -45,6 +45,30 @@ The `module-http` table controls outbound HTTP requests initiated by database mo
 Setting `enabled` to `false` blocks outbound requests from procedures and module HTTP handlers. Inbound HTTP handlers remain unaffected.
 Changing this setting requires restarting the server.
 
+For an outbound boundary that returns redirects to module code and requires TLS:
+
+```toml
+[module-http]
+enabled = true
+follow-redirects = false
+https-only = true
+```
+
+`follow-redirects` defaults to `true` for compatibility. Set it to `false` to return
+301, 302, 303, 307 and 308 responses without contacting the redirect target or
+forwarding request bodies and credentials. Module code can inspect the response
+and decide whether a separately validated request is appropriate.
+
+`https-only` defaults to `false`. When enabled, both the original URL and any
+automatically followed redirect must use HTTPS. DNS filtering and restrictions on
+private and special-purpose IP addresses remain in effect with either setting.
+
+These server settings apply to outbound requests from module HTTP handlers,
+procedures and scheduled procedures, in both supported module runtimes. They do
+not change inbound HTTP routing or the module ABI. Restart the server after a
+change. Maincloud operators must configure the host; publishing a module cannot
+change these settings.
+
 ### `logs`
 
 ```toml
