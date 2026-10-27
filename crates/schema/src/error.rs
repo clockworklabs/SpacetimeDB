@@ -159,6 +159,13 @@ pub enum ValidationError {
         table: Identifier,
         reducer_name: RawIdentifier,
     },
+    #[error("on_result reducer {reducer_name} for outbox {table} expected parameters {expected}, but has {actual}")]
+    IncorrectOutboxOnResultParams {
+        table: Identifier,
+        reducer_name: RawIdentifier,
+        expected: PrettyAlgebraicType,
+        actual: PrettyAlgebraicType,
+    },
     #[error(
         "on_result reducer {reducer_name} for outbox {table} must be an unqualified name in the same module; cross-module callbacks are not supported"
     )]

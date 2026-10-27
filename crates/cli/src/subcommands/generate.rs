@@ -192,9 +192,18 @@ pub(super) fn dependency_generate_entries(
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("database dependencies require the sender to define `module-path`"))?;
 
+    let mut names = BTreeSet::new();
     dependencies
         .iter()
-        .map(|dependency| dependency_generate_entry(dependency, sender_module_path, all_targets))
+        .map(|dependency| {
+            if let Some(name) = dependency.get("name").and_then(|name| name.as_str()) {
+                anyhow::ensure!(
+                    names.insert(name),
+                    "duplicate dependency name {name:?} in module {sender_module_path:?}"
+                );
+            }
+            dependency_generate_entry(dependency, sender_module_path, all_targets)
+        })
         .collect()
 }
 
@@ -210,6 +219,12 @@ fn get_module_source(fields: &HashMap<String, serde_json::Value>) -> Option<(&st
         .find_map(|key| fields.get(key).cloned().map(|value| (key, value)))
 }
 
+/// Reject paths and other invalid identifiers before resolving sources or writing files.
+fn validate_dependency_name(name: &str) -> anyhow::Result<()> {
+    spacetimedb_schema::identifier::validate_identifier(name)
+        .with_context(|| format!("invalid dependency name {name:?}"))
+}
+
 fn dependency_generate_entry(
     dependency: &serde_json::Value,
     sender_module_path: &str,
@@ -222,6 +237,7 @@ fn dependency_generate_entry(
         .get("name")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("dependency entries require `name`"))?;
+    validate_dependency_name(name)?;
 
     let (source_key, source_value, build_options, dotnet_version) = if let Some(path) = dependency.get("module-path") {
         (
@@ -453,6 +469,9 @@ fn prepare_generate_run_configs<'a>(
         let js_file = command_config.get_resolved_path("js_file", config_dir)?;
         let sender_module_path = command_config.get_resolved_path("sender_module_path", config_dir)?;
         let dependency_name = command_config.get_one::<String>("dependency_name")?;
+        if let Some(name) = &dependency_name {
+            validate_dependency_name(name)?;
+        }
         let requested_lang = command_config.get_one::<Language>("language")?;
         let namespace = command_config
             .get_one::<String>("namespace")?

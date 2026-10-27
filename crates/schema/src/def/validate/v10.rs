@@ -1294,6 +1294,28 @@ fn attach_outboxes_to_tables(
                 let raw_name = name.clone();
                 let name = core.resolve_function_ident(name)?;
                 if let Some(reducer) = reducers.get_mut(&name) {
+                    let result_type = AlgebraicType::result(AlgebraicType::unit(), AlgebraicType::String);
+                    let valid_params = match &*reducer.params.elements {
+                        [row, result] => {
+                            row.algebraic_type == AlgebraicType::Ref(table.product_type_ref)
+                                && core
+                                    .typespace
+                                    .with_type(&result.algebraic_type)
+                                    .resolve_refs()
+                                    .is_ok_and(|ty| ty == result_type)
+                        }
+                        _ => false,
+                    };
+                    if !valid_params {
+                        return Err(ValidationError::IncorrectOutboxOnResultParams {
+                            table: table.name.clone(),
+                            reducer_name: raw_name,
+                            expected: AlgebraicType::product([AlgebraicType::Ref(table.product_type_ref), result_type])
+                                .into(),
+                            actual: reducer.params.clone().into(),
+                        }
+                        .into());
+                    }
                     reducer.visibility = crate::def::FunctionVisibility::Private;
                     Ok::<_, ValidationErrors>(name)
                 } else {
@@ -2603,7 +2625,7 @@ mod tests {
 
     fn outbox_with_on_result() -> RawModuleDefV10Builder {
         let mut builder = RawModuleDefV10Builder::new();
-        builder
+        let row_type = builder
             .build_table_with_new_type(
                 "PingOutbox",
                 ProductType::from([
@@ -2616,7 +2638,16 @@ mod tests {
             .with_auto_inc_primary_key(0)
             .with_index_no_accessor_name(direct(0), "ping_outbox_msg_id_idx_btree")
             .finish();
-        builder.add_reducer("on_ping_result", ProductType::unit());
+        builder.add_reducer(
+            "on_ping_result",
+            ProductType::from([
+                ("row", row_type.into()),
+                (
+                    "result",
+                    AlgebraicType::result(AlgebraicType::unit(), AlgebraicType::String),
+                ),
+            ]),
+        );
         builder.add_outbox(
             "PingOutbox",
             "receive_ping",
@@ -2641,6 +2672,79 @@ mod tests {
             def.reducers[&expect_identifier("on_ping_result")].visibility,
             FunctionVisibility::Private
         );
+    }
+
+    #[test]
+    fn outbox_on_result_accepts_referenced_result_and_arbitrary_parameter_names() {
+        let mut builder = outbox_with_on_result();
+        let result_type = builder.add_algebraic_type(
+            [],
+            "DeliveryResult",
+            AlgebraicType::result(AlgebraicType::unit(), AlgebraicType::String),
+            true,
+        );
+        let mut raw = builder.finish();
+        for section in &mut raw.sections {
+            if let RawModuleDefV10Section::Reducers(reducers) = section {
+                reducers[0].params.elements[0].name = Some("message".into());
+                reducers[0].params.elements[1].name = Some("outcome".into());
+                reducers[0].params.elements[1].algebraic_type = result_type.into();
+            }
+        }
+        let def: ModuleDef = raw.try_into().unwrap();
+        assert_eq!(
+            def.reducers[&expect_identifier("on_ping_result")].visibility,
+            FunctionVisibility::Private
+        );
+    }
+
+    #[test]
+    fn outbox_on_result_rejects_invalid_signatures() {
+        let raw = outbox_with_on_result().finish();
+        let row = AlgebraicType::Ref(raw.tables().unwrap()[0].product_type_ref);
+        let result = AlgebraicType::result(AlgebraicType::unit(), AlgebraicType::String);
+        for params in [
+            ProductType::unit(),
+            ProductType::from([("row", row.clone())]),
+            ProductType::from([("row", AlgebraicType::U64), ("result", result.clone())]),
+            ProductType::from([("result", result.clone()), ("row", row.clone())]),
+            ProductType::from([
+                ("row", row.clone()),
+                (
+                    "result",
+                    AlgebraicType::result(AlgebraicType::U64, AlgebraicType::String),
+                ),
+            ]),
+            ProductType::from([
+                ("row", row.clone()),
+                (
+                    "result",
+                    AlgebraicType::result(AlgebraicType::unit(), AlgebraicType::U64),
+                ),
+            ]),
+            ProductType::from([
+                ("row", row.clone()),
+                ("result", AlgebraicType::option(AlgebraicType::String)),
+            ]),
+            ProductType::from([("row", row), ("result", result), ("extra", AlgebraicType::U64)]),
+        ] {
+            let mut invalid = raw.clone();
+            for section in &mut invalid.sections {
+                if let RawModuleDefV10Section::Reducers(reducers) = section {
+                    reducers[0].params = params.clone();
+                }
+            }
+            let result: Result<ModuleDef> = invalid.try_into();
+            expect_error_matching!(result, ValidationError::IncorrectOutboxOnResultParams {
+                table,
+                reducer_name,
+                ..
+            } => {
+                assert_eq!(table, &expect_identifier("ping_outbox"));
+                assert_eq!(&**reducer_name, "on_ping_result");
+                true
+            });
+        }
     }
 
     #[test]
