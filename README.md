@@ -245,7 +245,7 @@ spacetime version use $stdbVersion
 
 Verify with `spacetime --version`.
 
-To find your way around the code, see the [architecture overview](docs/DEVELOP.md#architecture), which maps what runs inside SpacetimeDB Standalone.
+To find your way around the code, see the [architecture diagram](docs/DEVELOP.md#architecture) of what runs inside SpacetimeDB Standalone.
 
 ## Documentation
 
