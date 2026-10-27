@@ -1016,14 +1016,14 @@ fn write_type_in_context<W: Write>(
 ) -> fmt::Result {
     let (sdk_path, sats_path, identity_type, type_prefix) = match context {
         TypeContext::Client => ("__sdk", "__sats", "__sdk::Identity", ""),
-        TypeContext::Receiver => ("spacetimedb", "spacetimedb::sats", "Identity", ""),
+        TypeContext::Receiver => ("::spacetimedb", "::spacetimedb::sats", "Identity", ""),
         TypeContext::OutboxMacro => ("::spacetimedb", "::spacetimedb::sats", "$module::Identity", "$module::"),
     };
-    // Macro bodies resolve types in the caller's scope. Qualify their builtins
-    // while preserving the established spelling in ordinary generated definitions.
+    // Receiver-defined types can shadow builtins inside the bindings, and macros
+    // resolve types in the caller's scope. Preserve the established client spelling.
     let qualify_builtins = match context {
-        TypeContext::Client | TypeContext::Receiver => false,
-        TypeContext::OutboxMacro => true,
+        TypeContext::Client => false,
+        TypeContext::Receiver | TypeContext::OutboxMacro => true,
     };
     let write_builtin = |out: &mut W, path: &str, name: &str| -> fmt::Result {
         if qualify_builtins {
@@ -1382,8 +1382,19 @@ fn generate_module_bindings_root_file(module: &ModuleDef, type_refs: &BTreeSet<A
     out.newline();
     print_module_binding_identity(out);
     out.newline();
+    let mut used_type_names = iter_module_binding_types(module, type_refs)
+        .map(|ty| type_ref_name(module, ty.ty))
+        .collect::<BTreeSet<_>>();
+    used_type_names.insert("Identity".to_owned());
+    used_type_names.extend(iter_reducers(module, CodegenVisibility::OnlyPublic).map(reducer_function_name));
     for reducer in iter_reducers(module, CodegenVisibility::OnlyPublic) {
-        print_module_binding_reducer_handle(module, out, reducer);
+        let mut args_type = function_args_type_name(&reducer.accessor_name);
+        // Keep existing argument type names unless they collide with an imported
+        // receiver type or another item emitted into the bindings root.
+        while !used_type_names.insert(args_type.clone()) {
+            args_type.push('_');
+        }
+        print_module_binding_reducer_handle(module, out, reducer, &args_type);
         out.newline();
     }
 
@@ -1472,15 +1483,14 @@ impl<'de> spacetimedb::Deserialize<'de> for Identity {{
     );
 }
 
-fn print_module_binding_reducer_handle(module: &ModuleDef, out: &mut Indenter, reducer: &ReducerDef) {
+fn print_module_binding_reducer_handle(module: &ModuleDef, out: &mut Indenter, reducer: &ReducerDef, args_type: &str) {
     let handle_name = reducer_function_name(reducer);
     let outbox_typecheck_macro = format!("__spacetimedb_typecheck_outbox_{handle_name}");
     let reducer_name = rust_string_literal(reducer.name.deref());
-    let args_type = function_args_type_name(&reducer.accessor_name);
     define_struct_for_product(
         module,
         out,
-        &args_type,
+        args_type,
         &reducer.params_for_generate.elements,
         "pub",
         TypeContext::Receiver,
@@ -2667,11 +2677,11 @@ mod tests {
             (
                 TypeContext::Receiver,
                 [
-                    "Option::<Vec::<Result::<Payload, Identity>>>",
-                    "Result::<spacetimedb::sats::i256, spacetimedb::sats::u256>",
-                    "Option::<Vec::<spacetimedb::Timestamp>>",
-                    "Result::<spacetimedb::ConnectionId, spacetimedb::TimeDuration>",
-                    "Result::<spacetimedb::Uuid, spacetimedb::ScheduleAt>",
+                    "::core::option::Option::<::std::vec::Vec::<::core::result::Result::<Payload, Identity>>>",
+                    "::core::result::Result::<::spacetimedb::sats::i256, ::spacetimedb::sats::u256>",
+                    "::core::option::Option::<::std::vec::Vec::<::spacetimedb::Timestamp>>",
+                    "::core::result::Result::<::spacetimedb::ConnectionId, ::spacetimedb::TimeDuration>",
+                    "::core::result::Result::<::spacetimedb::Uuid, ::spacetimedb::ScheduleAt>",
                 ],
             ),
             (

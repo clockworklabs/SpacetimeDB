@@ -52,8 +52,8 @@ impl<'de> spacetimedb::Deserialize<'de> for Identity {
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct AddArgs {
-    pub name: String,
-    pub age: u8,
+    pub name: ::std::string::String,
+    pub age: ::core::primitive::u8,
 }
 
 
@@ -168,7 +168,7 @@ impl spacetimedb::rt::RemoteReducer for add {
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct AddPlayerArgs {
-    pub name: String,
+    pub name: ::std::string::String,
 }
 
 
@@ -240,7 +240,7 @@ impl spacetimedb::rt::RemoteReducer for add_player {
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct AddPrivateArgs {
-    pub name: String,
+    pub name: ::std::string::String,
 }
 
 
@@ -341,7 +341,7 @@ impl spacetimedb::rt::RemoteReducer for assert_caller_identity_is_module_identit
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct DeletePlayerArgs {
-    pub id: u64,
+    pub id: ::core::primitive::u64,
 }
 
 
@@ -413,7 +413,7 @@ impl spacetimedb::rt::RemoteReducer for delete_player {
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct DeletePlayersByNameArgs {
-    pub name: String,
+    pub name: ::std::string::String,
 }
 
 
@@ -485,8 +485,8 @@ impl spacetimedb::rt::RemoteReducer for delete_players_by_name {
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct ExpectEnvironmentArgs {
-    pub key: String,
-    pub expected: Option::<String>,
+    pub key: ::std::string::String,
+    pub expected: ::core::option::Option::<::std::string::String>,
 }
 
 
@@ -601,7 +601,7 @@ impl spacetimedb::rt::RemoteReducer for expect_environment {
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct ListOverAgeArgs {
-    pub age: u8,
+    pub age: ::core::primitive::u8,
 }
 
 
