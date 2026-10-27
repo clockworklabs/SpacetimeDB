@@ -1,6 +1,6 @@
 # Stack Bench ecommerce fix proposal
 
-Status: proposed changes. No grader or runtime fix has been implemented by this proposal.
+Status: proposed changes. Stock-alert privacy was implemented in 9a1685d8dd; the other changes are not implemented.
 
 **Fix the demonstrated false passes first: stock-alert privacy and catalog coverage.** Preserve comparison conditions in the draft publisher. Treat form-encoded authentication as a bounded extension of measurement support.
 
@@ -8,7 +8,7 @@ Guarantees remain required. A failed guarantee continues to block dependent work
 
 | Change | Readiness | Main unresolved detail |
 | --- | --- | --- |
-| Stock-alert privacy | Failure is reproduced; measurement approach needs a focused proof | Identify the real private notification across supported transports |
+| Stock-alert privacy | Implemented in 9a1685d8dd | None |
 | Catalog coverage | Check change is clear | Confirm fixture and reset behavior for every caller of the shared scenario |
 | Upload conditions | Export omission is reproduced; producer change is clear | Inspect and coordinate the receiving schema and grouping logic |
 | Form-encoded authentication | Support gap is confirmed | Prove correct request modification through both existing capture paths |

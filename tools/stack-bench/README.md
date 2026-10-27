@@ -32,13 +32,13 @@ Results are provisional until the selected checks have current
 
 ## Scope
 
-- **Stacks:** SpacetimeDB, PostgreSQL, and MongoDB. Self-hosted Convex supports
-  the ecommerce dependency L1–L3 path.
+- **Stacks:** SpacetimeDB, PostgreSQL, and MongoDB. Self-hosted Convex and
+  Supabase support the ecommerce dependency L1–L3 path.
 - **Tracks:** [ecommerce](tracks/ecommerce/LEVELS.md) (storefront and warehouse)
   and [chat](tracks/chat/LEVELS.md).
 - **Modes:** sequential levels, where each level must pass before the next, or a
   dependency graph, where each feature opens once its parents pass.
-- **Agents:** Claude Code, Codex, and OpenRouter, through the
+- **Agents:** Claude Code, Codex, Grok Build, Antigravity, and OpenRouter, through the
   [appliance](appliance/README.md#provider-credentials).
 
 Campaign execution runs in the Linux Docker appliance. Source checks also run

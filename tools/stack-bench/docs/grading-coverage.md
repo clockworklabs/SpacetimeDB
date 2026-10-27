@@ -54,8 +54,8 @@ repeated request bursts; it is not a capacity test.
   already required for external corrections, through the authenticated backend
   lease. Zero and negative quantities remain observations. Missing, invalid, or
   ambiguous data cannot become a fabricated zero or a passing comparison.
-  PostgreSQL resolves the declared relational links; MongoDB and SpacetimeDB use
-  their declared stock interfaces. This is not an independent read of arbitrary
+  PostgreSQL and Supabase resolve the declared relational links; MongoDB, Convex,
+  and SpacetimeDB use their declared stock interfaces. This is not an independent read of arbitrary
   application tables such as payments or orders.
 - **Business effects.** Price, transfer, cancellation, and return checks prove the
   original business effect before its preservation or reversal. Authorized
@@ -147,8 +147,8 @@ repeated request bursts; it is not a capacity test.
   non-JSON, or incomplete captures are inconclusive.
 - **Checkout crash integrity and acknowledged-order durability** are owned by the
   checkout feature. PostgreSQL and MongoDB use separate application and database
-  process crashes. SpacetimeDB uses one combined process crash, with an explicit
-  shared observation for the application boundary. An uncertain outcome or a
+  process crashes. SpacetimeDB, Convex, and Supabase use one combined process crash,
+  with an explicit shared observation for the application boundary. An uncertain outcome or a
   missed fault window is unmeasured.
 
 ## Expected production criteria
@@ -217,7 +217,7 @@ and its advice to verify business data in
 
 | Observation | Does not establish |
 | --- | --- |
-| Hosted app restart for PostgreSQL/MongoDB; SpacetimeDB runtime restart with retained data | Common database crash semantics, power-loss recovery, or corruption recovery |
+| Hosted app restart for PostgreSQL/MongoDB/Supabase; SpacetimeDB and Convex backend restart with retained data | Common database crash semantics, power-loss recovery, or corruption recovery |
 | Checkout interrupted by an application or database process kill; recovered cart and orders reconciled with recorded requests | Power loss, disk corruption, every crash timing, or external payment durability |
 | Private marker absent from supported captured responses | All endpoints, encodings, binary formats, or arbitrary object-reference attacks |
 | Exact final stock, orders, and totals | Every intermediate state, general serializability, or an external payment ledger |
