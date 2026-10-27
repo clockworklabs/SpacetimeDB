@@ -1101,10 +1101,19 @@ mod test {
             } else {
                 table
             };
-            table.finish();
+            let row_type = table.finish();
 
             if let Some(on_result) = on_result {
-                builder.add_reducer(on_result, ProductType::unit());
+                builder.add_reducer(
+                    on_result,
+                    ProductType::from([
+                        ("row", row_type.into()),
+                        (
+                            "result",
+                            AlgebraicType::result(AlgebraicType::unit(), AlgebraicType::String),
+                        ),
+                    ]),
+                );
             }
             builder.add_outbox(
                 "outbound_pings",
