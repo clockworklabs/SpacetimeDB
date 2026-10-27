@@ -265,4 +265,4 @@ SpacetimeDB is licensed under the [Business Source License 1.1 (BSL)](LICENSE.tx
 **Why did we choose this license?**
 We chose to license SpacetimeDB under the MariaDB Business Source License for 4 years because we can't compete with AWS while also building our products for them.
 
-We chose GPLv3 with linking exception as the open source license because we want contributions merged back into mainline (just like Linux), but we don't want to make anyone else open source their own code (i.e. linking exception). 
+We chose AGPL v3.0 with linking exception as the open source license because we want contributions merged back into mainline (just like Linux), but we don't want to make anyone else open source their own code (i.e. linking exception). 
