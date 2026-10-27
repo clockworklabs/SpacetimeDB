@@ -192,7 +192,10 @@ pub trait RemoteReducer {
     /// Hash of the reducer signature as seen by the generated receiver bindings.
     const SIGNATURE_HASH: &'static str;
 
-    /// Reducer argument tuple, excluding the reducer context.
+    /// Reducer argument product, excluding the reducer context.
+    ///
+    /// Fields preserve the remote reducer's parameter product order, matching the
+    /// signature hash and positional BSATN arguments.
     type Args;
 }
 
