@@ -4,80 +4,115 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>StackBench Reference</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #fbfbf9; --panel: #ffffff; --ink: #1b1d21; --ink-2: #4a4f58; --ink-3: #737985;
-  --line: #e3e4e0; --accent: #3b5bdb; --accent-soft: #eef1fd; --code-bg: #f2f2ef;
-  --good: #2b7a4b; --warn: #9a6200;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #131417; --panel: #1a1c20; --ink: #e8e9ec; --ink-2: #b4b8c0; --ink-3: #8a8f99;
-    --line: #2c2f35; --accent: #8ea2ff; --accent-soft: #1e2440; --code-bg: #22252b;
-    --good: #6cc492; --warn: #e3b25c;
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #131417; --panel: #1a1c20; --ink: #e8e9ec; --ink-2: #b4b8c0; --ink-3: #8a8f99;
-  --line: #2c2f35; --accent: #8ea2ff; --accent-soft: #1e2440; --code-bg: #22252b;
-  --good: #6cc492; --warn: #e3b25c;
+  color-scheme: light;
+  --bg: #f7f5ef; --surface: #ffffff; --surface-2: #eae7de; --border: #d2d5cc; --border-strong: #b4b8ad;
+  --text: #292d29; --text-2: #646a63; --text-3: #76808f;
+  --accent: #355c4d; --accent-bright: #459274; --sage: #d9e3d5;
+  --font-serif: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Source Sans 3', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  --gutter: 32px; --header-height: 68px; --page-max: calc(1120px + 2 * var(--gutter));
 }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; scroll-padding-top: 16px; }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-.layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); max-width: 1180px; margin: 0 auto; }
-nav { position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 28px 18px 28px 22px; border-right: 1px solid var(--line); font-size: 14px; }
-nav .brand { font-weight: 700; font-size: 17px; margin-bottom: 18px; }
-nav ol { list-style: none; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; scroll-padding-top: calc(var(--header-height) + 16px); }
+body { margin: 0; background: var(--bg); color: var(--text-2); font: 1.125rem/1.55 var(--font-sans); counter-reset: section; }
+a { color: var(--accent); text-underline-offset: 2px; }
+a:hover { color: var(--accent-bright); }
+p, ul, ol { margin: 0 0 16px; }
+li { margin-bottom: 6px; }
+li::marker { color: var(--text-2); }
+b, strong { color: var(--text); font-weight: 600; }
+code { font: 0.85em/1.4 var(--font-mono); color: var(--text); background: var(--surface-2); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+
+.site-header { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
+.site-header .inner { max-width: var(--page-max); min-height: var(--header-height); margin: 0 auto; padding: 0 var(--gutter); display: flex; align-items: center; gap: 24px; }
+.site-header .where { margin-left: auto; font-size: 0.875rem; font-weight: 600; color: var(--accent); }
+.logo { display: inline-flex; align-items: center; gap: 8px; color: var(--text); }
+.logo .mark { width: 32px; height: 32px; fill: var(--accent-bright); }
+.logo .word { font-family: var(--font-serif); font-size: 1.25rem; font-weight: 500; line-height: 1; letter-spacing: -0.025em; }
+
+.layout { display: grid; grid-template-columns: 216px minmax(0, 1fr); gap: 64px; max-width: var(--page-max); margin: 0 auto; padding: 0 var(--gutter); }
+nav { position: sticky; top: var(--header-height); align-self: start; max-height: calc(100vh - var(--header-height)); overflow-y: auto; padding: 40px 0 40px; font-size: 0.9375rem; }
+nav .nav-title { margin: 0 0 12px; font-size: 0.875rem; font-weight: 600; color: var(--accent); }
+nav ol { list-style: none; margin: 0; padding: 0; border-left: 1px solid var(--border); }
 nav li { margin: 0; }
-nav a { display: block; padding: 4px 8px; border-radius: 6px; color: var(--ink-2); text-decoration: none; }
-nav a:hover { background: var(--accent-soft); color: var(--ink); }
-main { padding: 32px 48px 96px; min-width: 0; }
-h1 { font-size: 34px; line-height: 1.2; margin: 0 0 8px; }
-h2 { font-size: 24px; margin: 56px 0 12px; padding-top: 12px; border-top: 1px solid var(--line); }
-h3 { font-size: 18px; margin: 28px 0 8px; }
-p, li { color: var(--ink); }
-.lede { font-size: 18px; color: var(--ink-2); max-width: 760px; }
-.meta { color: var(--ink-3); font-size: 14px; margin-bottom: 28px; }
-a { color: var(--accent); }
-code { font: 13.5px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
-table { border-collapse: collapse; width: 100%; margin: 12px 0 20px; font-size: 14.5px; background: var(--panel); }
-th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
-th { background: var(--code-bg); font-weight: 600; }
-td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
-.table-wrap { overflow-x: auto; }
-.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 20px 0 8px; }
-.fact { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
-.fact b { display: block; font-size: 24px; font-variant-numeric: tabular-nums; }
-.fact span { color: var(--ink-3); font-size: 13px; }
-.flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 16px 0 20px; }
-.flow div { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
-.flow b { display: block; margin-bottom: 4px; }
-.flow span { color: var(--ink-2); font-size: 14px; }
-.note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 16px 0; }
-.status { border-left: 3px solid var(--warn); background: var(--code-bg); padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 16px 0; }
-details { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; margin: 10px 0; padding: 0 16px; }
-summary { cursor: pointer; font-weight: 600; padding: 12px 0; }
-details[open] summary { border-bottom: 1px solid var(--line); margin-bottom: 8px; }
-dl.glossary { display: grid; grid-template-columns: minmax(150px, 220px) 1fr; gap: 6px 18px; }
-dl.glossary dt { font-weight: 600; }
-dl.glossary dd { margin: 0; color: var(--ink-2); }
-.theme { position: fixed; top: 12px; right: 14px; border: 1px solid var(--line); background: var(--panel); color: var(--ink-2); border-radius: 8px; padding: 4px 10px; font-size: 13px; cursor: pointer; }
-@media (max-width: 860px) {
+nav a { display: block; margin-left: -1px; padding: 5px 0 5px 14px; border-left: 2px solid transparent; color: var(--text-2); text-decoration: none; line-height: 1.35; }
+nav a:hover { color: var(--accent); border-left-color: var(--accent); }
+main { min-width: 0; padding-bottom: 120px; }
+
+.head { display: flex; flex-direction: column; align-items: center; gap: 20px; padding: 88px 0 56px; text-align: center; }
+.head .label { margin: 0; font-size: 0.875rem; font-weight: 600; line-height: 1.43; color: var(--accent); }
+.head h1 { margin: 0; font-family: var(--font-serif); font-size: clamp(2.25rem, 4.2vw, 3rem); font-weight: 600; line-height: 1.125; color: var(--text); }
+.head .lede { margin: 0; max-width: 760px; font-size: 1.25rem; line-height: 1.5; color: var(--text-2); }
+.head .meta { margin: 0; max-width: 760px; font-size: 0.875rem; line-height: 1.5; color: var(--text-3); }
+
+h2 { counter-increment: section; margin: 72px 0 20px; padding-top: 40px; border-top: 1px solid var(--border); font-family: var(--font-serif); font-size: 2.25rem; font-weight: 600; line-height: 1.22; color: var(--text); }
+h2::before { content: counter(section, decimal-leading-zero); display: block; margin-bottom: 12px; font-size: 4rem; line-height: 1; font-weight: 500; color: var(--text-2); opacity: 0.55; }
+h3 { margin: 36px 0 10px; font-family: var(--font-serif); font-size: 1.5rem; font-weight: 600; line-height: 1.3; color: var(--text); }
+
+.table-wrap { overflow-x: auto; margin: 16px 0 24px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 1rem; line-height: 1.45; }
+th, td { padding: 10px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+tr:last-child > th, tr:last-child > td { border-bottom: 0; }
+th { background: var(--surface-2); font-weight: 600; color: var(--text); }
+td { color: var(--text-2); }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 0 0 32px; }
+.fact { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px; }
+.fact b { display: block; font-family: var(--font-serif); font-size: 2rem; font-weight: 600; line-height: 1.1; color: var(--text); font-variant-numeric: tabular-nums; }
+.fact span { display: block; margin-top: 6px; font-size: 0.875rem; line-height: 1.4; color: var(--text-2); }
+
+.flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 16px 0 24px; }
+.flow div { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+.flow b { display: block; margin-bottom: 6px; font-family: var(--font-serif); font-size: 1.25rem; font-weight: 600; color: var(--text); }
+.flow span { display: block; font-size: 1rem; line-height: 1.45; color: var(--text-2); }
+
+.status { margin: 20px 0; padding: 14px 18px; background: var(--surface-2); border-left: 2px solid var(--accent); border-radius: 0 8px 8px 0; font-size: 1rem; color: var(--text); }
+
+details { margin: 10px 0; padding: 0 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+summary { cursor: pointer; padding: 14px 0; font-weight: 600; color: var(--text); }
+summary::marker { color: var(--accent-bright); }
+details[open] summary { margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+details p { margin: 12px 0 16px; font-size: 1.0625rem; }
+
+dl.glossary { display: grid; grid-template-columns: minmax(150px, 210px) 1fr; gap: 10px 24px; margin: 16px 0; }
+dl.glossary dt { font-weight: 600; color: var(--text); }
+dl.glossary dd { margin: 0; color: var(--text-2); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@media (max-width: 960px) {
   .layout { display: block; }
-  nav { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 16px; }
-  main { padding: 20px 16px 64px; }
+  nav { position: static; max-height: none; padding: 24px 0 0; }
+  nav ol { columns: 2; }
+}
+@media (max-width: 720px) {
+  :root { --gutter: 16px; }
+  body { font-size: 1rem; line-height: 1.5; }
+  .head { padding: 56px 0 40px; }
+  .head h1 { font-size: 2.25rem; }
+  .head .lede { font-size: 1.125rem; }
+  h2 { font-size: 1.75rem; margin-top: 56px; }
+  h2::before { font-size: 3rem; }
+  h3 { font-size: 1.375rem; }
   .flow { grid-template-columns: 1fr 1fr; }
-  dl.glossary { grid-template-columns: 1fr; }
-  dl.glossary dd { margin-bottom: 10px; }
+  nav ol { columns: 1; }
+  dl.glossary { grid-template-columns: 1fr; gap: 4px; }
+  dl.glossary dd { margin-bottom: 12px; }
 }
 </style>
 </head>
 <body>
-<button class="theme" type="button" onclick="toggleTheme()">Theme</button>
+<header class="site-header"><div class="inner"><span class="logo" role="img" aria-label="StackBench"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><g transform="scale(1 -1) translate(0 -32)"><path d="M21.6 24.7954L16 27.2L10.4 24.7954V20.6103L16 23.0149L21.6 20.6102V24.7954Z"/><path d="M24.4 18.2768L16 21.8837L7.6 18.2768V14.0916L16 17.6986L24.4 14.0916V18.2768Z"/><path d="M27.2 9.60922V11.6508L16 16.46L4.8 11.6508V9.60922L16 4.8L27.2 9.60922Z"/></g></svg><span class="word">StackBench</span></span></div></header>
 <div class="layout">
 <nav aria-label="Contents">
-  <div class="brand">StackBench Reference</div>
+  <p class="nav-title">Contents</p>
   <ol>
     <li><a href="#summary">Summary</a></li>
     <li><a href="#run">How a run works</a></li>
@@ -100,16 +135,19 @@ dl.glossary dd { margin: 0; color: var(--ink-2); }
 </nav>
 <main>
 
-<h1 id="summary">StackBench</h1>
-<p class="lede">StackBench measures how well agents deliver production-quality features by default. Each agent builds an online store from a feature list on one stack, and StackBench scores how many of its features hold up under production conditions.</p>
-<p class="meta">Technical reference for the ecommerce track through depth 3, October 2026. StackBench is developed by Clockwork Labs, Convex, and Emergent. Spacetime (Clockwork Labs) and Convex are both included on the leaderboard.</p>
+<header class="head" id="summary">
+  <p class="label">Technical reference</p>
+  <h1>StackBench</h1>
+  <p class="lede">StackBench measures how well agents deliver production-quality features by default. Each agent builds an online store from a feature list on one stack, and StackBench scores how many of its features hold up under production conditions.</p>
+  <p class="meta">Technical reference for the ecommerce track through depth 3, October 2026. StackBench is developed by Clockwork Labs, Convex, and Emergent. Spacetime (Clockwork Labs) and Convex are both included on the leaderboard.</p>
+</header>
 
 <div class="facts">
   <div class="fact"><b>5</b><span>stacks</span></div>
   <div class="fact"><b>27</b><span>features through depth 3</span></div>
   <div class="fact"><b>113</b><span>scored checks</span></div>
   <div class="fact"><b>177</b><span>points</span></div>
-  <div class="fact"><b>143 to 168</b><span>seeded bugs per stack, depths 1 to 3</span></div>
+  <div class="fact"><b>143–168</b><span>seeded bugs per stack, depths 1 to 3</span></div>
   <div class="fact"><b>9</b><span>models in the 1.1 runs</span></div>
 </div>
 
@@ -398,14 +436,5 @@ dl.glossary dd { margin: 0; color: var(--ink-2); }
 
 </main>
 </div>
-<script>
-function toggleTheme() {
-  const root = document.documentElement;
-  const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
-  root.dataset.theme = dark ? 'light' : 'dark';
-  try { localStorage.setItem('stackbench-reference-theme', root.dataset.theme); } catch {}
-}
-try { const t = localStorage.getItem('stackbench-reference-theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
-</script>
 </body>
 </html>
