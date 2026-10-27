@@ -245,6 +245,8 @@ spacetime version use $stdbVersion
 
 Verify with `spacetime --version`.
 
+To find your way around the code, see [ARCHITECTURE.md](ARCHITECTURE.md), which maps what runs inside SpacetimeDB Standalone.
+
 ## Documentation
 
 To prepare your AI coding environment, follow the [agent setup guide](docs/static/agent-setup.md).
