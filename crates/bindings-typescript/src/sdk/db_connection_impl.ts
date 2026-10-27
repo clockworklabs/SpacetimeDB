@@ -75,6 +75,7 @@ import {
   encodeClientMessagesV3,
   forEachServerMessageV3,
 } from './websocket_v3_frames.ts';
+import { forEachBsatnRow } from './row_decoder.ts';
 
 export {
   DbConnectionBuilder,
@@ -559,47 +560,37 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     tableName: string,
     rowList: BsatnRowList
   ): Operation[] {
-    const buffer = rowList.rowsData;
-    const reader = this.#rowListReader;
-    reader.reset(buffer);
     const rows: Operation[] = [];
 
     const deserializeRow = this.#rowDeserializers[tableName];
     const { primaryKeyColName, primaryKeyColType } =
       this.#rowIdMetadata[tableName];
-    let previousOffset = 0;
-    const rowCount =
-      rowList.sizeHint.tag === 'RowOffsets'
-        ? rowList.sizeHint.value.length
-        : rowList.sizeHint.value > 0
-          ? Math.floor(buffer.length / rowList.sizeHint.value)
-          : undefined;
+    forEachBsatnRow(
+      rowList,
+      deserializeRow,
+      (row, rowBytes) => {
+        let rowId: ComparablePrimitive | undefined = undefined;
+        if (
+          primaryKeyColName !== undefined &&
+          primaryKeyColType !== undefined
+        ) {
+          rowId = AlgebraicType.intoMapKey(
+            primaryKeyColType,
+            row[primaryKeyColName]
+          );
+        } else {
+          const asBase64 = fromByteArray(rowBytes);
+          rowId = asBase64;
+        }
 
-    for (
-      let i = 0;
-      rowCount === undefined ? reader.remaining > 0 : i < rowCount;
-      i++
-    ) {
-      const row = deserializeRow(reader);
-      let rowId: ComparablePrimitive | undefined = undefined;
-      if (primaryKeyColName !== undefined && primaryKeyColType !== undefined) {
-        rowId = AlgebraicType.intoMapKey(
-          primaryKeyColType,
-          row[primaryKeyColName]
-        );
-      } else {
-        const rowBytes = buffer.subarray(previousOffset, reader.offset);
-        const asBase64 = fromByteArray(rowBytes);
-        rowId = asBase64;
-      }
-      previousOffset = reader.offset;
-
-      rows.push({
-        type,
-        rowId,
-        row,
-      });
-    }
+        rows.push({
+          type,
+          rowId,
+          row,
+        });
+      },
+      this.#rowListReader
+    );
 
     return rows;
   }
