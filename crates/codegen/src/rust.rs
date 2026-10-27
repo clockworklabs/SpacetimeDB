@@ -1017,11 +1017,26 @@ fn write_type_in_context<W: Write>(
     let (sdk_path, sats_path, identity_type, type_prefix) = match context {
         TypeContext::Client => ("__sdk", "__sats", "__sdk::Identity", ""),
         TypeContext::Receiver => ("spacetimedb", "spacetimedb::sats", "Identity", ""),
-        TypeContext::OutboxMacro => ("spacetimedb", "spacetimedb::sats", "$module::Identity", "$module::"),
+        TypeContext::OutboxMacro => ("::spacetimedb", "::spacetimedb::sats", "$module::Identity", "$module::"),
+    };
+    // Macro bodies resolve types in the caller's scope. Qualify their builtins
+    // while preserving the established spelling in ordinary generated definitions.
+    let qualify_builtins = match context {
+        TypeContext::Client | TypeContext::Receiver => false,
+        TypeContext::OutboxMacro => true,
+    };
+    let write_builtin = |out: &mut W, path: &str, name: &str| -> fmt::Result {
+        if qualify_builtins {
+            write!(out, "{path}::")?;
+        }
+        write!(out, "{name}")
     };
     match ty {
         AlgebraicTypeUse::Unit => write!(out, "()")?,
-        AlgebraicTypeUse::Never => write!(out, "std::convert::Infallible")?,
+        AlgebraicTypeUse::Never => {
+            let root = if qualify_builtins { "::core" } else { "std" };
+            write!(out, "{root}::convert::Infallible")?;
+        }
         AlgebraicTypeUse::Identity => write!(out, "{identity_type}")?,
         AlgebraicTypeUse::ConnectionId => write!(out, "{sdk_path}::ConnectionId")?,
         AlgebraicTypeUse::Timestamp => write!(out, "{sdk_path}::Timestamp")?,
@@ -1029,37 +1044,40 @@ fn write_type_in_context<W: Write>(
         AlgebraicTypeUse::Uuid => write!(out, "{sdk_path}::Uuid")?,
         AlgebraicTypeUse::ScheduleAt => write!(out, "{sdk_path}::ScheduleAt")?,
         AlgebraicTypeUse::Option(inner_ty) => {
-            write!(out, "Option::<")?;
+            write_builtin(out, "::core::option", "Option")?;
+            write!(out, "::<")?;
             write_type_in_context(module, out, inner_ty, context)?;
             write!(out, ">")?;
         }
         AlgebraicTypeUse::Result { ok_ty, err_ty } => {
-            write!(out, "Result::<")?;
+            write_builtin(out, "::core::result", "Result")?;
+            write!(out, "::<")?;
             write_type_in_context(module, out, ok_ty, context)?;
             write!(out, ", ")?;
             write_type_in_context(module, out, err_ty, context)?;
             write!(out, ">")?;
         }
         AlgebraicTypeUse::Primitive(prim) => match prim {
-            PrimitiveType::Bool => write!(out, "bool")?,
-            PrimitiveType::I8 => write!(out, "i8")?,
-            PrimitiveType::U8 => write!(out, "u8")?,
-            PrimitiveType::I16 => write!(out, "i16")?,
-            PrimitiveType::U16 => write!(out, "u16")?,
-            PrimitiveType::I32 => write!(out, "i32")?,
-            PrimitiveType::U32 => write!(out, "u32")?,
-            PrimitiveType::I64 => write!(out, "i64")?,
-            PrimitiveType::U64 => write!(out, "u64")?,
-            PrimitiveType::I128 => write!(out, "i128")?,
-            PrimitiveType::U128 => write!(out, "u128")?,
+            PrimitiveType::Bool => write_builtin(out, "::core::primitive", "bool")?,
+            PrimitiveType::I8 => write_builtin(out, "::core::primitive", "i8")?,
+            PrimitiveType::U8 => write_builtin(out, "::core::primitive", "u8")?,
+            PrimitiveType::I16 => write_builtin(out, "::core::primitive", "i16")?,
+            PrimitiveType::U16 => write_builtin(out, "::core::primitive", "u16")?,
+            PrimitiveType::I32 => write_builtin(out, "::core::primitive", "i32")?,
+            PrimitiveType::U32 => write_builtin(out, "::core::primitive", "u32")?,
+            PrimitiveType::I64 => write_builtin(out, "::core::primitive", "i64")?,
+            PrimitiveType::U64 => write_builtin(out, "::core::primitive", "u64")?,
+            PrimitiveType::I128 => write_builtin(out, "::core::primitive", "i128")?,
+            PrimitiveType::U128 => write_builtin(out, "::core::primitive", "u128")?,
             PrimitiveType::I256 => write!(out, "{sats_path}::i256")?,
             PrimitiveType::U256 => write!(out, "{sats_path}::u256")?,
-            PrimitiveType::F32 => write!(out, "f32")?,
-            PrimitiveType::F64 => write!(out, "f64")?,
+            PrimitiveType::F32 => write_builtin(out, "::core::primitive", "f32")?,
+            PrimitiveType::F64 => write_builtin(out, "::core::primitive", "f64")?,
         },
-        AlgebraicTypeUse::String => write!(out, "String")?,
+        AlgebraicTypeUse::String => write_builtin(out, "::std::string", "String")?,
         AlgebraicTypeUse::Array(elem_ty) => {
-            write!(out, "Vec::<")?;
+            write_builtin(out, "::std::vec", "Vec")?;
+            write!(out, "::<")?;
             write_type_in_context(module, out, elem_ty, context)?;
             write!(out, ">")?;
         }
@@ -2659,11 +2677,11 @@ mod tests {
             (
                 TypeContext::OutboxMacro,
                 [
-                    "Option::<Vec::<Result::<$module::Payload, $module::Identity>>>",
-                    "Result::<spacetimedb::sats::i256, spacetimedb::sats::u256>",
-                    "Option::<Vec::<spacetimedb::Timestamp>>",
-                    "Result::<spacetimedb::ConnectionId, spacetimedb::TimeDuration>",
-                    "Result::<spacetimedb::Uuid, spacetimedb::ScheduleAt>",
+                    "::core::option::Option::<::std::vec::Vec::<::core::result::Result::<$module::Payload, $module::Identity>>>",
+                    "::core::result::Result::<::spacetimedb::sats::i256, ::spacetimedb::sats::u256>",
+                    "::core::option::Option::<::std::vec::Vec::<::spacetimedb::Timestamp>>",
+                    "::core::result::Result::<::spacetimedb::ConnectionId, ::spacetimedb::TimeDuration>",
+                    "::core::result::Result::<::spacetimedb::Uuid, ::spacetimedb::ScheduleAt>",
                 ],
             ),
         ];

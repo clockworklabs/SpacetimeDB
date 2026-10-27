@@ -86,7 +86,7 @@ macro_rules! __spacetimedb_typecheck_outbox_add_name {
         0u16
     }};
     ($module:ident; ($index:literal, $field:ident : $ty:ty as name), $($rest:tt)*) => {{
-        let _ = |x: $ty| { let _: String = x; };
+        let _ = |x: $ty| { let _: ::std::string::String = x; };
         $module::__spacetimedb_typecheck_outbox_add_name_reject_duplicate!($module; $($rest)*);
         $index
     }};
@@ -128,7 +128,7 @@ macro_rules! __spacetimedb_typecheck_outbox_add_age {
         0u16
     }};
     ($module:ident; ($index:literal, $field:ident : $ty:ty as age), $($rest:tt)*) => {{
-        let _ = |x: $ty| { let _: u8 = x; };
+        let _ = |x: $ty| { let _: ::core::primitive::u8 = x; };
         $module::__spacetimedb_typecheck_outbox_add_age_reject_duplicate!($module; $($rest)*);
         $index
     }};
@@ -201,7 +201,7 @@ macro_rules! __spacetimedb_typecheck_outbox_add_player_name {
         0u16
     }};
     ($module:ident; ($index:literal, $field:ident : $ty:ty as name), $($rest:tt)*) => {{
-        let _ = |x: $ty| { let _: String = x; };
+        let _ = |x: $ty| { let _: ::std::string::String = x; };
         $module::__spacetimedb_typecheck_outbox_add_player_name_reject_duplicate!($module; $($rest)*);
         $index
     }};
@@ -273,7 +273,7 @@ macro_rules! __spacetimedb_typecheck_outbox_add_private_name {
         0u16
     }};
     ($module:ident; ($index:literal, $field:ident : $ty:ty as name), $($rest:tt)*) => {{
-        let _ = |x: $ty| { let _: String = x; };
+        let _ = |x: $ty| { let _: ::std::string::String = x; };
         $module::__spacetimedb_typecheck_outbox_add_private_name_reject_duplicate!($module; $($rest)*);
         $index
     }};
@@ -374,7 +374,7 @@ macro_rules! __spacetimedb_typecheck_outbox_delete_player_id {
         0u16
     }};
     ($module:ident; ($index:literal, $field:ident : $ty:ty as id), $($rest:tt)*) => {{
-        let _ = |x: $ty| { let _: u64 = x; };
+        let _ = |x: $ty| { let _: ::core::primitive::u64 = x; };
         $module::__spacetimedb_typecheck_outbox_delete_player_id_reject_duplicate!($module; $($rest)*);
         $index
     }};
@@ -446,7 +446,7 @@ macro_rules! __spacetimedb_typecheck_outbox_delete_players_by_name_name {
         0u16
     }};
     ($module:ident; ($index:literal, $field:ident : $ty:ty as name), $($rest:tt)*) => {{
-        let _ = |x: $ty| { let _: String = x; };
+        let _ = |x: $ty| { let _: ::std::string::String = x; };
         $module::__spacetimedb_typecheck_outbox_delete_players_by_name_name_reject_duplicate!($module; $($rest)*);
         $index
     }};
@@ -519,7 +519,7 @@ macro_rules! __spacetimedb_typecheck_outbox_expect_environment_key {
         0u16
     }};
     ($module:ident; ($index:literal, $field:ident : $ty:ty as key), $($rest:tt)*) => {{
-        let _ = |x: $ty| { let _: String = x; };
+        let _ = |x: $ty| { let _: ::std::string::String = x; };
         $module::__spacetimedb_typecheck_outbox_expect_environment_key_reject_duplicate!($module; $($rest)*);
         $index
     }};
@@ -561,7 +561,7 @@ macro_rules! __spacetimedb_typecheck_outbox_expect_environment_expected {
         0u16
     }};
     ($module:ident; ($index:literal, $field:ident : $ty:ty as expected), $($rest:tt)*) => {{
-        let _ = |x: $ty| { let _: Option::<String> = x; };
+        let _ = |x: $ty| { let _: ::core::option::Option::<::std::string::String> = x; };
         $module::__spacetimedb_typecheck_outbox_expect_environment_expected_reject_duplicate!($module; $($rest)*);
         $index
     }};
@@ -634,7 +634,7 @@ macro_rules! __spacetimedb_typecheck_outbox_list_over_age_age {
         0u16
     }};
     ($module:ident; ($index:literal, $field:ident : $ty:ty as age), $($rest:tt)*) => {{
-        let _ = |x: $ty| { let _: u8 = x; };
+        let _ = |x: $ty| { let _: ::core::primitive::u8 = x; };
         $module::__spacetimedb_typecheck_outbox_list_over_age_age_reject_duplicate!($module; $($rest)*);
         $index
     }};
