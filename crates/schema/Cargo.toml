@@ -39,6 +39,7 @@ spacetimedb-testing = { path = "../testing" }
 
 proptest.workspace = true
 serial_test.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true
