@@ -63,10 +63,6 @@ th { background: var(--surface-2); font-weight: 600; color: var(--text); }
 td { color: var(--text-2); }
 td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 0 0 32px; }
-.fact { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px; }
-.fact b { display: block; font-family: var(--font-serif); font-size: 2rem; font-weight: 600; line-height: 1.1; color: var(--text); font-variant-numeric: tabular-nums; }
-.fact span { display: block; margin-top: 6px; font-size: 0.875rem; line-height: 1.4; color: var(--text-2); }
 
 .flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 16px 0 24px; }
 .flow div { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
@@ -141,15 +137,6 @@ dl.glossary dd { margin: 0; color: var(--text-2); }
   <p class="lede">StackBench measures how well agents deliver production-quality features by default. Each agent builds an online store from a feature list on one stack, and StackBench scores how many of its features hold up under production conditions.</p>
   <p class="meta">Technical reference for the ecommerce track through depth 3, October 2026. StackBench is developed by Clockwork Labs, Convex, and Emergent. Spacetime (Clockwork Labs) and Convex are both included on the leaderboard.</p>
 </header>
-
-<div class="facts">
-  <div class="fact"><b>5</b><span>stacks</span></div>
-  <div class="fact"><b>27</b><span>features through depth 3</span></div>
-  <div class="fact"><b>113</b><span>scored checks</span></div>
-  <div class="fact"><b>177</b><span>points</span></div>
-  <div class="fact"><b>143–168</b><span>seeded bugs per stack, depths 1 to 3</span></div>
-  <div class="fact"><b>9</b><span>models in the 1.1 runs</span></div>
-</div>
 
 <p>Score is the percentage of features that pass every check, averaged over runs. Production conditions include many users at once, live updates, restarts, dropped connections, writes from outside the store, and permissions. The prompt includes the feature list and a request for an app suitable for real users, and the production conditions are not in it.</p>
 <p>Each check is proven on every stack in three ways: the stack's reference app must pass it, seeded bugs in that reference app must make it fail, and an empty app must fail it.</p>
