@@ -13,6 +13,7 @@ Every check produces one outcome:
 
 - `passed`;
 - `failed`;
+- `blocked` when an app prerequisite of the check failed;
 - `inconclusive` when required evidence is unavailable;
 - `harness_failure` when Stack Bench could not perform the measurement.
 

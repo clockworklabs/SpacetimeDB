@@ -123,6 +123,12 @@ cannot run mutations. Its artifacts are diagnostic and cannot qualify a release.
 After setting the measured budget, run ordinary qualification on the frozen
 candidate. Timing collection does not replace that gate.
 
+`pack-budget recommend` sets each budget to twice the slowest measured runtime,
+rounded up to the next second, and never below the waits the pack's checks
+declare. It accepts only timing runs that passed, and a run that exceeds the
+current budget does not pass, so set a growing pack's budget to `unmeasured`
+before timing it again.
+
 ## Optional contention diagnostic
 
 `tracks/ecommerce/scenarios/diagnostic-checkout-contention.json` is a separate,

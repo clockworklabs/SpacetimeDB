@@ -577,7 +577,8 @@ Source files alone do not restore an interrupted agent.
 
 The initial limit comes from `budgets.attemptTimeoutMinutes` in the frozen
 plan. The Plans table shows it in hours and minutes. It includes coding,
-grading, repairs, and host sleep, except for a verified planned depth pause.
+grading, repairs, and host sleep, except for a verified planned depth pause and time
+spent waiting for a grading slot.
 Grant records retain the original limit and
 each accepted extension; adding time alone does not invalidate efficacy data.
 
