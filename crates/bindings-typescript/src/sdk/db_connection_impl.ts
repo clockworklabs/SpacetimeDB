@@ -687,6 +687,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
             this,
             isErrorEvent ? error : this.#connectionError
           );
+          // Nothing reconnects, so settle the calls left waiting on this socket.
+          this.#endConnection(error, { alreadyReported: true });
         } else if (this.#socketEstablished) {
           this.#handleConnectionLoss(error);
         } else {
@@ -1477,8 +1479,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     }
   }
 
+  // A call made before the first connection opens is queued and sent on open;
+  // once the connection has ended, nothing would ever send it.
   #rejectCallIfDisconnected(): DisconnectedError | undefined {
-    return this.#automaticReconnect && !this.isActive
+    return this.#connectionEnded || (this.#automaticReconnect && !this.isActive)
       ? new DisconnectedError()
       : undefined;
   }
