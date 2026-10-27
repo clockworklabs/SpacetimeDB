@@ -117,16 +117,16 @@ main table { border-collapse: collapse; width: 100%; margin: 12px 0 24px; font-s
   <p class="nav-title">Contents</p>
   <ol>
     <li><a href="#summary">Summary</a></li>
-    <li><a href="#run">Run lifecycle</a></li>
-    <li><a href="#prompt">Prompt</a></li>
-    <li><a href="#sandbox">Sandbox</a></li>
-    <li><a href="#model-access">Model access, time, and spending</a></li>
-    <li><a href="#grading">Grading</a></li>
-    <li><a href="#checks">Checks</a></li>
-    <li><a href="#outcomes">Outcomes and scoring</a></li>
-    <li><a href="#validity">How checks are proven</a></li>
+    <li><a href="#run">How a run works</a></li>
+    <li><a href="#prompt">What the agent is told</a></li>
+    <li><a href="#sandbox">Where the agent works</a></li>
+    <li><a href="#model-access">API keys, time limits, and spending</a></li>
+    <li><a href="#grading">How StackBench tests the store</a></li>
+    <li><a href="#checks">What a check looks like</a></li>
+    <li><a href="#outcomes">Results and points</a></li>
+    <li><a href="#validity">How we know the checks work</a></li>
     <li><a href="#cost">Cost</a></li>
-    <li><a href="#study">Study design</a></li>
+    <li><a href="#study">Run order</a></li>
     <li><a href="#faq">FAQ</a></li>
   </ol>
 </nav>
@@ -135,11 +135,11 @@ main table { border-collapse: collapse; width: 100%; margin: 12px 0 24px; font-s
   <p class="label">Technical reference</p>
   <h1>StackBench</h1>
   <p class="lede">Each agent builds an online store from a feature list on one stack, and StackBench scores how many of its features hold up under production conditions.</p>
-  <p class="meta">Code excerpts are from commit <a href="https://github.com/clockworklabs/SpacetimeDB/tree/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench"><code>6c65947996</code></a>.</p>
+  <p class="meta">The code below is from commit <a href="https://github.com/clockworklabs/SpacetimeDB/tree/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench"><code>6c65947996</code></a>.</p>
 </header>
 
-<h2 id="run">Run lifecycle</h2>
-<p>The features form a dependency graph in <code>tracks/ecommerce/progression/ecommerce.json</code>. A feature's depth is one more than its deepest dependency.</p>
+<h2 id="run">How a run works</h2>
+<p>Features unlock in levels. Level 1 features need nothing else. Every other feature comes one level after the last thing it needs, so checkout, which needs the cart, comes after the cart. The features and what each one needs are listed in <code>tracks/ecommerce/progression/ecommerce.json</code>.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/progression/dependency-definition.ts#L274-L283">src/progression/dependency-definition.ts:274-283</a><pre><code>const levelFor = (node: AuthoredNode): number =&gt; {
   if (node.level !== undefined) return node.level;
   node.level = node.dependencies.length === 0
@@ -150,13 +150,13 @@ main table { border-collapse: collapse; width: 100%; margin: 12px 0 24px; font-s
       return levelFor(parent);
     }));
   return node.level;</code></pre></figure>
-<p>Only a feature with status <code>passed</code> unlocks its dependents.</p>
+<p>A feature unlocks the features built on it only when every one of its checks passes.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/progression/dependency-mode.ts#L253-L257">src/progression/dependency-mode.ts:253-257</a><pre><code>// A feature must pass every check, including its production guarantees,
 // before work that depends on it begins.
 function unlocksDependents(status: ProgressionNodeState[&#x27;status&#x27;]): boolean {
   return status === &#x27;passed&#x27;;
 }</code></pre></figure>
-<p>Each feature gets a status after every grade. With no repairs left, any failed check makes it <code>failed</code>, and its descendants become <code>blocked</code>. The 1.1 study plans set the repair budget to zero.</p>
+<p>After each round of grading, a feature with any failed check is marked failed, and everything built on it is marked blocked. In 1.1 the agent gets no chance to fix failures.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/progression/dependency-mode.ts#L495-L517">src/progression/dependency-mode.ts:495-517</a><pre><code>if (state.definition.workSelection !== &#x27;all-at-once&#x27; &amp;&amp; brokenByParents(state, node)) {
   nodeState.status = &#x27;blocked&#x27;;
   return;
@@ -181,8 +181,8 @@ if (allChecksPass(state, node)) {
   nodeState.status = &#x27;active&#x27;;
 }</code></pre></figure>
 
-<h2 id="prompt">Prompt</h2>
-<p>The run rules, stack setup, and skills are shared by every session type.</p>
+<h2 id="prompt">What the agent is told</h2>
+<p>Every prompt starts with the same basics: where to put the code, how to start it, the stack's connection details, and for Spacetime its SDK docs.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/commands/agent.ts#L611-L635">commands/agent.ts:611-635</a><pre><code>const common = [
   `Build the app in ${CODING_CONTAINER_APP_ROOT}.`,
   // Published container ports require the app to bind to all interfaces.
@@ -208,9 +208,9 @@ if (allChecksPass(state, node)) {
 ];
 const skills = materials.skillsText ?? readAgentSkillDocuments(ROOT, args.skills ?? []);
 if (skills) common.push(&#x27;&#x27;, &#x27;## Selected API reference&#x27;, &#x27;&#x27;, skills);</code></pre></figure>
-<p>The production-quality line is prepended when the plan enables it, as the 1.1 plans do.</p>
+<p>In 1.1 the prompt also opens with this line.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/commands/agent.ts#L652">commands/agent.ts:652</a><pre><code>if (args.productionQuality) common.unshift(&#x27;Build a production-quality application suitable for real users, not a prototype or demo.&#x27;, &#x27;&#x27;);</code></pre></figure>
-<p>A build or upgrade session then adds the task line, the feature texts, the starting catalog, and the application interface.</p>
+<p>Then come the instructions for this round, the features to build, the starting products, and the IDs of the buttons and fields StackBench uses.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/commands/agent.ts#L684-L705">commands/agent.ts:684-705</a><pre><code>const verb = args.mode === &#x27;upgrade&#x27;
   ? [
       &#x27;Add the features below to the existing app.&#x27;,
@@ -233,7 +233,7 @@ return prompt([
   &#x27;&#x27;,
   &#x27;## Application interface&#x27;,
   &#x27;&#x27;,</code></pre></figure>
-<p>The 1.1 runs use the <code>neutral-dev</code> profile. Every stack gets connection details only, and Spacetime also gets three SDK skills and a workflow note.</p>
+<p>Every stack gets the same kind of setup notes. Spacetime is the only stack that also gets SDK docs.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/conditions/guidance/neutral-dev.json#L11-L35">conditions/guidance/neutral-dev.json:11-35</a><pre><code>&quot;documents&quot;: {
   &quot;mongodb&quot;: &quot;backends/minimal/mongodb.md&quot;,
   &quot;postgres&quot;: &quot;backends/minimal/postgres.md&quot;,
@@ -259,7 +259,7 @@ return prompt([
   ],
   &quot;convex&quot;: [],
   &quot;supabase&quot;: []</code></pre></figure>
-<p>Production checks are scored without being stated. Their specifications are added to the expected set, which never reaches the prompt.</p>
+<p>The production requirements are graded but never written into the prompt. This is the code that keeps them out.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/progression/progression-recipe-selection.ts#L289-L294">src/progression/progression-recipe-selection.ts:289-294</a><pre><code>if (owner.moduleType === &#x27;specification&#x27; &amp;&amp; !requestedRefs.has(owner.id)) {
   for (const ref of dependencyClosure(modules, [owner.id], &#x27;specification&#x27;, {
     label: &#x27;progression expected specification&#x27;,
@@ -267,8 +267,8 @@ return prompt([
     if (!requestedRefs.has(ref)) expectedSpecifications.add(ref);
   }</code></pre></figure>
 
-<h2 id="sandbox">Sandbox</h2>
-<p>The build container drops all capabilities and adds back six file and process capabilities, runs read-only, and mounts the store directory.</p>
+<h2 id="sandbox">Where the agent works</h2>
+<p>The agent works in a locked-down container. It can't change the system, and the only folder it can write to is the store's code folder.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/container/run-build.ts#L317-L336">container/run-build.ts:317-336</a><pre><code>const create = [
   &#x27;create&#x27;, &#x27;--init&#x27;, &#x27;--name&#x27;, containerName,
   &#x27;--label&#x27;, `${BUILD_CONTAINER_CREATION_LABEL}=${creationToken}`,
@@ -289,7 +289,7 @@ for (const [path, options] of Object.entries(REQUIRED_TMPFS)) {
 }
 create.push(&#x27;--network&#x27;, expectedNetworkMode);
 create.push(...dockerHostGatewayArguments(expectedNetworkMode));</code></pre></figure>
-<p>It also mounts the transcript folder and the mounts the stack adapter declares. For Spacetime those are the read-only SDK and CLI.</p>
+<p>It also gets its own log folder, and on Spacetime a read-only copy of the SDK and CLI.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/container/run-build.ts#L337-L353">container/run-build.ts:337-353</a><pre><code>if (projects) create.push(&#x27;-v&#x27;, `${projects}:${containerTranscripts}`);
 // The selected adapter owns every stack-specific mount. Giving a treatment
 // another stack&#x27;s artifacts would violate the &quot;only artifacts under test&quot;
@@ -307,13 +307,14 @@ for (const mount of containerPlan.mounts) {
     process.exit(2);
   }
 }</code></pre></figure>
+<p>The container gets 2 CPUs and 4 GB of memory.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/composition/product-config.ts#L16-L21">src/composition/product-config.ts:16-21</a><pre><code>export const BUILD_CONTAINER_RESOURCE_LIMITS = Object.freeze({
   cpuCount: 2,
   memoryBytes: 4 * 1024 ** 3,
   memorySwapBytes: 4 * 1024 ** 3,
   pids: 2048,
 });</code></pre></figure>
-<p>The network namespace drops all traffic by default, rejects the host and private and reserved ranges, and allows public HTTP and HTTPS.</p>
+<p>It can reach the public web, but not the host machine, the local network, or other runs.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/runtime/docker-network.ts#L318-L334">src/runtime/docker-network.ts:318-334</a><pre><code>const denied = [...new Set([...hosts, &#x27;0.0.0.0/8&#x27;, &#x27;10.0.0.0/8&#x27;, &#x27;100.64.0.0/10&#x27;,
   &#x27;127.0.0.0/8&#x27;, &#x27;169.254.0.0/16&#x27;, &#x27;172.16.0.0/12&#x27;, &#x27;192.0.0.0/24&#x27;, &#x27;192.0.2.0/24&#x27;,
   &#x27;192.168.0.0/16&#x27;, &#x27;198.18.0.0/15&#x27;, &#x27;198.51.100.0/24&#x27;, &#x27;203.0.113.0/24&#x27;,
@@ -331,7 +332,7 @@ return [
   &#x27;  }&#x27;,
   &#x27;}&#x27;,
   &#x27;&#x27;,</code></pre></figure>
-<p>Subagents are always refused. Web search is off unless a study enables it, and it cannot be enabled for Claude Code. It was off for every 1.1 run.</p>
+<p>Agents can't start helper agents. Web search was off for every 1.1 run.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/agents/tool-policy.ts#L10-L25">src/agents/tool-policy.ts:10-25</a><pre><code>export const DEFAULT_TOOL_POLICY: Readonly&lt;ToolPolicy&gt; = Object.freeze({ webSearch: false, subagents: false });
 
 // Why a policy cannot run, or null. A policy that cannot be honoured is refused rather than
@@ -348,7 +349,7 @@ export function unavailableToolsReason(provider: string | null | undefined, tool
   }
   return null;
 }</code></pre></figure>
-<p>After every coding session, a transcript audit flags reads of StackBench files and network escapes. A serious hit marks the run contaminated.</p>
+<p>After every session, StackBench reads the agent's log. If the agent looked at StackBench's own files, the run doesn't count.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/commands/bench.ts#L489-L495">commands/bench.ts:489-495</a><pre><code>const audit = sh(&#x27;node&#x27;, args, { stdio: &#x27;pipe&#x27; });
 const entries = parseLeakAudit(audit);
 if (entries.length === 0) {
@@ -357,8 +358,8 @@ if (entries.length === 0) {
     verdict: &#x27;SCORES NOT USABLE — nothing verified this build stayed inside its directory.&#x27; };
 }</code></pre></figure>
 
-<h2 id="model-access">Model access, time, and spending</h2>
-<p>Provider keys stay in a broker. Before forwarding a request, the broker reserves the request's worst-case cost and refuses it with HTTP 402 if the run's cap cannot cover it.</p>
+<h2 id="model-access">API keys, time limits, and spending</h2>
+<p>The agent never holds the API key. Its requests go through a proxy that refuses any request that could push the run past its spending cap.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/container/credential-broker.ts#L251-L263">container/credential-broker.ts:251-263</a><pre><code>const budget = config.maxBudgetUsd;
 if (billable &amp;&amp; budget !== null &amp;&amp; budget !== undefined
   &amp;&amp; spentUsd + reservedUsd + costCeiling &gt; budget) {
@@ -372,14 +373,14 @@ if (billable &amp;&amp; budget !== null &amp;&amp; budget !== undefined
   endResponse(&#x27;session budget cannot cover the next request reservation&#x27;);
   return;
 }</code></pre></figure>
-<p>Each coding session has a 120-minute limit.</p>
+<p>A coding session can last two hours.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/agents/coding-session-timeouts.ts#L2">src/agents/coding-session-timeouts.ts:2</a><pre><code>export const CODING_SESSION_TIMEOUT_MS = 120 * 60_000;</code></pre></figure>
-<p>The run limit excludes planned pauses and grading-slot waits.</p>
+<p>A whole run can last four hours. Time spent waiting for a free grading slot doesn't count.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/campaigns/campaign-scheduler.ts#L39-L42">src/campaigns/campaign-scheduler.ts:39-42</a><pre><code>// Planned depth holds and grading-slot waits are not working time.
 const heldMs = (execution.pausedMs ?? 0) + (execution.gradingWaitMs ?? 0);
 if (heldMs &gt; end - start) throw new Error(&#x27;paused time exceeds execution time&#x27;);
 return total + end - start - heldMs;</code></pre></figure>
-<p>Throttled requests wait 60, 120, then 300 seconds. The next wait would pass the 15-minute cap, so the session then holds for an operator.</p>
+<p>When a provider rate-limits the agent, StackBench waits 1 minute, then 2, then 5. If the agent is still blocked, the run pauses until someone resumes it.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/agents/coding-session-retry.ts#L157-L161">src/agents/coding-session-retry.ts:157-161</a><pre><code>// Throttling consumes wait time, not interruption retries.
 const THROTTLE_STATUSES = new Set([429, 529]);
 const TRANSIENT_API_STATUSES = new Set([500, 502, 503, 504]);
@@ -390,7 +391,7 @@ export const DEFAULT_THROTTLE_MAX_WAIT_MS = 15 * 60_000;</code></pre></figure>
     Math.min(throttleWaits, THROTTLE_DELAYS_MS.length - 1)]! + throttleJitterMs;
   if (throttleWaitedMs + delay &gt; throttleMaxWaitMs) {
     if (waitForOperator()) continue;</code></pre></figure>
-<p>The credential profile is chosen per attempt, then per adapter, then the default, and stays fixed for the run.</p>
+<p>Each run uses one account for its whole duration.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/agents/credential-profiles.ts#L76-L82">src/agents/credential-profiles.ts:76-82</a><pre><code>const selection = executionCredentialsSchema.parse(assignments ?? {});
 const id = selection.attempts?.[attemptId] ?? selection.adapters?.[adapterId] ?? selection.default;
 const env = { ...source };
@@ -399,8 +400,8 @@ const { profile, fingerprint } = readProfile(id, source);
 if (AGENT_ADAPTER_REGISTRY.get(adapterId).provider !== profile.provider) {
   throw new Error(`Credential profile ${id} provider does not match adapter ${adapterId}`);</code></pre></figure>
 
-<h2 id="grading">Grading</h2>
-<p>Every grade rebuilds the store from its saved source. Any file that differs from the snapshot stops the grade.</p>
+<h2 id="grading">How StackBench tests the store</h2>
+<p>Every test starts the store from its saved code. If the code doesn't match what was saved, the test stops.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/runtime/source-materialization.ts#L88-L95">src/runtime/source-materialization.ts:88-95</a><pre><code>const changed = accepted.files.filter(file =&gt; !existsSync(join(appDir, file))
   || digest(appDir, file) !== digest(sourcePath, file) &amp;&amp; !sameInstall(file));
 if (changed.length) {
@@ -409,9 +410,9 @@ if (changed.length) {
     new Error(`materialized application source differs from its accepted snapshot: ${changed.slice(0, 5).join(&#x27;, &#x27;)}`),
     { code: &#x27;generated_app_source_changed&#x27; });
 }</code></pre></figure>
-<p>Checks run in Chromium through Playwright. An assertion with no timeout of its own waits 5 seconds.</p>
+<p>StackBench drives Chromium with Playwright. Unless a check says otherwise, it gives the page 5 seconds to show what it's looking for.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/grader/grade.ts#L207">grader/grade.ts:207</a><pre><code>const DEFAULT_WITHIN = 5000;</code></pre></figure>
-<p>A direct server call replays the request with the browser's own session credentials.</p>
+<p>To test the server directly, StackBench sends requests with the signed-in user's own session, the same way the browser does.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/actions/named-action-runtime.ts#L136-L150">src/actions/named-action-runtime.ts:136-150</a><pre><code>const AUTH_HEADER = /^(authorization|x-auth-token|x-session|x-token|x-user)$/i;
 
 // Bind once to the observed current session. Deliberate token tampering then
@@ -427,11 +428,11 @@ export function bindBrowserRequest(actor: Actor, request: NamedActionRequest, cr
       binding = { argument: undefined, bearer: true };
     }
     if (!binding) inconclusive(&#x27;replay-unavailable&#x27;, { actor: actor.name,</code></pre></figure>
-<p>A refusal on a route that never accepted a valid call is inconclusive, so a missing route cannot pass as a permission refusal.</p>
+<p>If the server rejects a request and StackBench never saw that endpoint work, the check counts as neither a pass nor a fail, because the endpoint might simply not exist.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/actions/named-action-executors.ts#L299-L301">src/actions/named-action-executors.ts:299-301</a><pre><code>if (!call.accepted &amp;&amp; input.outcome !== &#x27;completed&#x27; &amp;&amp; !routeProven) {
   inconclusive(&#x27;route-unproven&#x27;, { actor: actor.name, action: call.action });
 }</code></pre></figure>
-<p>Direct stock writes bypass the store. Spacetime uses <code>spacetime sql</code>, then reads the row back.</p>
+<p>To change stock behind the store's back, StackBench writes to the database directly. On Spacetime it runs SQL and reads the row back to confirm.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/stacks/backends/spacetime-operations.ts#L158-L165">src/stacks/backends/spacetime-operations.ts:158-165</a><pre><code>const itemId = idOf(&#x27;item&#x27;, item);
 const warehouseId = idOf(&#x27;warehouse&#x27;, warehouse);
 guarded(`update stock set quantity = ${quantity} where item_id = ${itemId} and warehouse_id = ${warehouseId}`);
@@ -440,7 +441,7 @@ if (!new RegExp(`^\\s*${quantity}\\s*$`, &#x27;m&#x27;).test(verified)) {
   throw new Error(`stock row for ${item} / ${warehouse} did not update to ${quantity}`);
 }
 return { backend: &#x27;spacetime&#x27;, item, warehouse, quantity };</code></pre></figure>
-<p>PostgreSQL and Supabase share one <code>psql</code> writer, MongoDB uses <code>mongosh</code>, and Convex uses its admin API.</p>
+<p>PostgreSQL and Supabase use <code>psql</code>, MongoDB uses <code>mongosh</code>, and Convex uses its admin API.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/stacks/backends/postgres-operations.ts#L93-L99">src/stacks/backends/postgres-operations.ts:93-99</a><pre><code>export function setPostgresStock({ item, warehouse, quantity, lease, exec = execFileSync }: {
   item: string; warehouse: string; quantity: number; lease: LeasedDatabase;
   exec?: TextCommandExecutor;
@@ -465,19 +466,19 @@ return { backend: &#x27;spacetime&#x27;, item, warehouse, quantity };</code></pr
   z.object({ success: z.literal(true) }).parse(result);
   return { backend: &#x27;convex&#x27;, item, warehouse, quantity };
 }</code></pre></figure>
-<p>A restart goes through the stack's lifecycle adapter.</p>
+<p>Restarts use each stack's own restart command.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/actions/runtime-action-executors.ts#L814-L817">src/actions/runtime-action-executors.ts:814-817</a><pre><code>async function restartBackend({ input, capabilities, signal }: ActionArguments&lt;SettleInput&gt;) {
   await capabilities[&#x27;backend-lifecycle&#x27;].operate(&#x27;restart&#x27;, input.settleMs ?? 10000, signal);
   return { operation: &#x27;restart&#x27; };
 }</code></pre></figure>
-<p>A crash sends SIGKILL to the application or the database. On Spacetime, Convex, and Supabase the application and database are one process, so only the database crash applies.</p>
+<p>Crash tests kill the app or the database outright. On Spacetime, Convex, and Supabase the app and the database run as one process, so StackBench kills that one process.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/stacks/process-crash.ts#L192-L197">src/stacks/process-crash.ts:192-197</a><pre><code>export async function prepareProcessCrash(lease: BackendLease, target: CrashTarget, applicationPort?: number) {
   const runtime = stackDatabaseRuntime(lease.backend);
   if (!runtime || ![&#x27;application&#x27;, &#x27;database&#x27;].includes(target)) throw new Error(&#x27;unsupported process crash boundary&#x27;);
   if (runtime.combinedBoundary &amp;&amp; target === &#x27;application&#x27;) {
     throw new Error(`${lease.backend} application and database share one boundary; use database`);
   }</code></pre></figure>
-<p>Lost-reply checks forward each write to the server, then reset the browser's connection before it sees the reply. Inbound WebSocket messages are dropped while armed.</p>
+<p>To test lost replies, StackBench lets a write reach the server, then cuts the browser's connection before the reply arrives.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/grader/response-loss.ts#L39-L56">grader/response-loss.ts:39-56</a><pre><code>// The isolated actor loses write replies on all its HTTP paths and inbound
 // WebSocket messages. This also covers SDK retries and proxy URLs unchanged.
 await context.route(&#x27;**/*&#x27;, route =&gt; {
@@ -496,7 +497,7 @@ await context.route(&#x27;**/*&#x27;, route =&gt; {
       await released;
       await route.abort(&#x27;connectionreset&#x27;);
     } finally { await api.dispose(); }</code></pre></figure>
-<p>Privacy checks record every WebSocket frame a browser receives.</p>
+<p>For privacy checks, StackBench records everything the server sends each browser, including data the page never shows.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/grader/grade.ts#L385-L391">grader/grade.ts:385-391</a><pre><code>// Binary frames are decoded as UTF-8 too, after any SpacetimeDB frame
 // compression: a binary wire format still carries message text as
 // inline UTF-8 bytes, so a substring search finds it without the
@@ -505,8 +506,8 @@ ws.on(&#x27;framereceived&#x27;, f =&gt; {
   recordConvexMutationResult(page, ws, f.payload);
   this.record(f.payload);</code></pre></figure>
 
-<h2 id="checks">Checks</h2>
-<p>A check is a list of steps in a scenario file. This is the outside-write stock alert check: stock is written to the database, and a fresh sign-in must show the alert within 75 plus 15 seconds.</p>
+<h2 id="checks">What a check looks like</h2>
+<p>A check is a list of steps in a JSON file. In this one, StackBench changes the stock directly in the database, waits 75 seconds, signs the customer in again, and expects the stock alert to appear within 15 seconds.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/tracks/ecommerce/scenarios/progression-stock-alert-direct-restore.json#L48-L59">tracks/ecommerce/scenarios/progression-stock-alert-direct-restore.json:48-59</a><pre><code>{&quot;do&quot;:&quot;expectElementCount&quot;,&quot;actor&quot;:&quot;subscriber-fresh&quot;,&quot;testid&quot;:&quot;stock-alert-delivery&quot;,&quot;contains&quot;:&quot;Air Purifier&quot;,&quot;equals&quot;:0},
 {&quot;do&quot;:&quot;dbSetStock&quot;,&quot;item&quot;:&quot;Air Purifier&quot;,&quot;warehouse&quot;:&quot;East&quot;,&quot;quantity&quot;:1,&quot;settleMs&quot;:0},
 {&quot;do&quot;:&quot;wait&quot;,&quot;actor&quot;:&quot;subscriber&quot;,&quot;ms&quot;:75000},
@@ -520,8 +521,8 @@ ws.on(&#x27;framereceived&#x27;, f =&gt; {
 {&quot;do&quot;:&quot;expect&quot;,&quot;actor&quot;:&quot;subscriber-fresh&quot;,&quot;testid&quot;:&quot;notifications-panel&quot;,&quot;attribute&quot;:&quot;aria-busy&quot;,&quot;value&quot;:&quot;false&quot;,&quot;within&quot;:10000},
 {&quot;do&quot;:&quot;expect&quot;,&quot;actor&quot;:&quot;subscriber-fresh&quot;,&quot;testid&quot;:&quot;stock-alert-delivery&quot;,&quot;contains&quot;:&quot;Air Purifier&quot;,&quot;within&quot;:15000}</code></pre></figure>
 
-<h2 id="outcomes">Outcomes and scoring</h2>
-<p>Each check ends with one of five statuses. Passed adds its points, failed and blocked add zero, and inconclusive or harness failure invalidates the run.</p>
+<h2 id="outcomes">Results and points</h2>
+<p>Each check ends one of five ways. A pass earns its points. A fail, or a check skipped because its feature never unlocked, earns nothing. If StackBench couldn't measure the check, or broke itself, the whole run is thrown out and redone.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/evidence/check-evidence.ts#L8-L14">src/evidence/check-evidence.ts:8-14</a><pre><code>export const CHECK_EVIDENCE_STATUSES = Object.freeze([
   &#x27;passed&#x27;,
   &#x27;failed&#x27;,
@@ -531,10 +532,10 @@ ws.on(&#x27;framereceived&#x27;, f =&gt; {
 ] as const);</code></pre></figure>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/campaigns/campaign-scheduler.ts#L190-L191">src/campaigns/campaign-scheduler.ts:190-191</a><pre><code>const INVALID_OUTCOMES = new Set&lt;string&gt;([&#x27;provider_failure&#x27;, &#x27;harness_failure&#x27;, &#x27;inconclusive&#x27;,
   &#x27;ungraded&#x27;, &#x27;incomplete&#x27;, &#x27;contaminated&#x27;, &#x27;timed_out&#x27;, &#x27;missing_artifact&#x27;, &#x27;scheduler_interrupted&#x27;, &#x27;interrupted&#x27;]);</code></pre></figure>
-<p>Invalid runs are excluded when results are published.</p>
+<p>Thrown-out runs are left out of the published results.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/campaigns/campaign-publish.ts#L108-L109">src/campaigns/campaign-publish.ts:108-109</a><pre><code>const byPolicy = invalid || plan.definition.attemptPolicy.excludeFromAnalysis.includes(execution.outcome);
 const operatorReason = exclusions.get(attempt.id);</code></pre></figure>
-<p>A feature earns the points of its passed checks. A blocked feature earns zero, and its points stay in the denominator.</p>
+<p>A feature scores the points of its checks that passed. A feature that never unlocked scores zero, but its points still count toward the total.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/progression/dependency-score.ts#L72-L89">src/progression/dependency-score.ts:72-89</a><pre><code>function nodePoints(state: ScoringState, nodeId: string): PointTotals {
   const node = state.definition.nodes.find(candidate =&gt; candidate.id === nodeId);
   if (!node) throw new Error(`unknown dependency node ${nodeId}`);
@@ -554,8 +555,8 @@ const operatorReason = exclusions.get(attempt.id);</code></pre></figure>
     availablePoints };
 }</code></pre></figure>
 
-<h2 id="validity">How checks are proven</h2>
-<p>A seeded bug is a find-and-replace edit to a reference app, with the checks it must fail.</p>
+<h2 id="validity">How we know the checks work</h2>
+<p>Each stack has a working reference store that passes every check. To prove a check catches what it should, StackBench breaks that store on purpose. Each seeded bug is a small code edit, listed with the checks that should catch it.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/grader/mutations/spacetime-ecommerce.json#L3808-L3822">grader/mutations/spacetime-ecommerce.json:3808-3822</a><pre><code>{
   &quot;id&quot;: &quot;stock-alert-misses-direct-stock-writes&quot;,
   &quot;scenario&quot;: &quot;tracks/ecommerce/scenarios/progression-stock-alert-direct-restore.json&quot;,
@@ -571,7 +572,7 @@ const operatorReason = exclusions.get(attempt.id);</code></pre></figure>
     }
   ]
 }</code></pre></figure>
-<p>It is caught only when its targets fail at an assertion, no other check regresses, and nothing is inconclusive.</p>
+<p>A seeded bug only counts as caught if the checks it targets fail and nothing else breaks.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/evidence/mutation-analysis.ts#L572-L582">src/evidence/mutation-analysis.ts:572-582</a><pre><code>let status: MutationClassificationStatus = &#x27;CAUGHT&#x27;;
 if (targetKeys.size === 0 || missing.length || targetMissing.length) status = &#x27;INVALID_REPORT&#x27;;
 else if (setupFailures.length) status = &#x27;INVALID_SETUP&#x27;;
@@ -583,7 +584,7 @@ else if (targetSurvived.length &amp;&amp; collateral.length) status = &#x27;WRON
 else if (targetSurvived.length) status = &#x27;SURVIVED&#x27;;
 else if (collateral.length) status = &#x27;CAUGHT_COLLATERAL&#x27;;
 else if (targetOffAssertion.length) status = &#x27;CAUGHT_OFF_ASSERTION&#x27;;</code></pre></figure>
-<p>The empty app serves a blank page and returns 404 for everything else. Every scored check must fail on it.</p>
+<p>StackBench also tests an empty site that serves a blank page. Every check has to fail on it, so no check can pass by accident.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/commands/null-control.ts#L171-L181">commands/null-control.ts:171-181</a><pre><code>// Root navigation succeeds, proving the browser and server are healthy. All
 // application/API behavior is absent: non-navigation requests get 404.
 const server = createServer((request, response) =&gt; {
@@ -595,7 +596,7 @@ const server = createServer((request, response) =&gt; {
     response.end(&#x27;{&quot;error&quot;:&quot;not implemented&quot;}&#x27;);
   }
 });</code></pre></figure>
-<p>The calibration's check list must equal the graph's checks through depth 3, and qualification fails unless every seeded bug is caught.</p>
+<p>Before results are official, the list of checks has to match the feature list exactly, and every seeded bug has to be caught.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/composition/calibration-compiler.ts#L1252-L1258">src/composition/calibration-compiler.ts:1252-1258</a><pre><code>  const catalogChecks = catalog.definition.nodes
     .flatMap(node =&gt; node.gradingChecks.map(check =&gt; check.id)).sort();
   const selectedChecks = [...(calibration.qualification.checks ?? [])].sort();
@@ -608,7 +609,7 @@ const server = createServer((request, response) =&gt; {
     || read(mutations, &#x27;caught&#x27;) !== read(mutations, &#x27;total&#x27;)) {
     evidenceFailure(at, `did not catch every mutation in repetition ${repetition}`);
   }</code></pre></figure>
-<p>Each pack's time budget is twice its slowest reference run, rounded up, and never below its declared waits.</p>
+<p>Each group of checks has a time limit of twice the slowest time the reference store took.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/composition/pack-budget.ts#L102-L109">src/composition/pack-budget.ts:102-109</a><pre><code>export const PACK_BUDGET_POLICY = Object.freeze({
   id: &#x27;max-observed-times-two-at-least-declared-waits-rounded-up-1s-v2&#x27;,
   metric: PACK_RUNTIME_METRIC,
@@ -617,26 +618,26 @@ const server = createServer((request, response) =&gt; {
   roundUpMs: 1_000,
   minimumMs: 1_000,
 });</code></pre></figure>
-<table><tr><th>Stack</th><th class="n">Seeded bugs, depths 1 to 3</th></tr><tr><td>PostgreSQL</td><td class="n">168</td></tr><tr><td>MongoDB</td><td class="n">159</td></tr><tr><td>Spacetime</td><td class="n">156</td></tr><tr><td>Convex</td><td class="n">144</td></tr><tr><td>Supabase</td><td class="n">143</td></tr></table>
-<div class="status">The current calibration is not yet formally qualified. Its last full reference grade, on 16 October, passed all 177 points on every stack.</div>
+<table><tr><th>Stack</th><th class="n">Seeded bugs</th></tr><tr><td>PostgreSQL</td><td class="n">168</td></tr><tr><td>MongoDB</td><td class="n">159</td></tr><tr><td>Spacetime</td><td class="n">156</td></tr><tr><td>Convex</td><td class="n">144</td></tr><tr><td>Supabase</td><td class="n">143</td></tr></table>
+<div class="status">The current checks haven't been formally signed off yet. The last full test of the reference stores, on 16 October, passed every check on every stack.</div>
 
 <h2 id="cost">Cost</h2>
-<p>The broker adds each request's cost from reported usage at API list rates. OpenRouter requests use the cost the provider reports. A request without usage is charged its reserved ceiling.</p>
+<p>Cost comes from the token counts the provider reports, at the provider's public API prices. If a request never reports its usage, StackBench charges the most it could have cost.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/container/credential-broker.ts#L282-L287">container/credential-broker.ts:282-287</a><pre><code>if (estimated) {
   estimatedBillableRequests += 1;
   estimatedByReason[estimated] += 1;
   spentUsd = roundUsd(spentUsd + costCeiling);
 } else if (usage) {
   spentUsd = roundUsd(spentUsd + (reportedCost ?? priceNormalizedClaudeUsage(usage, config.pricingRates as PricingRates)));</code></pre></figure>
-<p>Charging a ceiling makes the run's cost an upper bound.</p>
+<p>When that happens, the run's cost is marked as an upper bound. These are the reasons it can happen.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/container/credential-broker-accounting.ts#L13-L17">container/credential-broker-accounting.ts:13-17</a><pre><code>// Why a billable request was charged its cost ceiling instead of priced from
 // the provider&#x27;s usage: a 2xx response without complete usage (an aborted or
 // errored stream, an oversized body), a response that broke off, or an
 // upstream connection that failed. The ceiling makes spend an upper bound.
 export const ESTIMATE_REASONS = [&#x27;no-usage&#x27;, &#x27;response-aborted&#x27;, &#x27;upstream-error&#x27;] as const;</code></pre></figure>
 
-<h2 id="study">Study design</h2>
-<p>Runs launch from one list of every model on every stack. Each of the three rounds starts one place further down that list, so the same model on the same stack is never always launched first.</p>
+<h2 id="study">Run order</h2>
+<p>Runs launch from one list of every model on every stack. Each of the three rounds starts one place further down that list, so no model and stack pair always launches first.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/campaigns/campaign-compiler.ts#L856-L861">src/campaigns/campaign-compiler.ts:856-861</a><pre><code>const repetitions = Math.max(...repetitionsByStack.values());
 for (let repetition = 1; repetition &lt;= repetitions; repetition += 1) {
   rotate(conditions, (repetition - 1) % conditions.length)
@@ -646,9 +647,9 @@ for (let repetition = 1; repetition &lt;= repetitions; repetition += 1) {
 
 <h2 id="faq">FAQ</h2>
 <details><summary>Clockwork Labs makes Spacetime. Why trust the results?</summary>
-<p>StackBench is developed by Clockwork Labs, Convex, and Emergent. Spacetime (Clockwork Labs) and Convex are both included on the leaderboard. Every check runs unchanged on all five stacks against each stack's reference app, seeded bugs, and empty app. See <a href="#validity">How checks are proven</a>.</p></details>
+<p>StackBench is developed by Clockwork Labs, Convex, and Emergent. Spacetime (Clockwork Labs) and Convex are both included on the leaderboard. Every check runs the same way on all five stacks, and each stack has its own reference store, seeded bugs, and empty site to prove the checks. See <a href="#validity">How we know the checks work</a>.</p></details>
 <details><summary>Can an agent see the checks?</summary>
-<p>No. The sandbox mounts the store, transcripts, and stack SDK only, and a transcript audit after every session catches reads of StackBench files. See <a href="#sandbox">Sandbox</a>.</p></details>
+<p>No. The agent's container only has the store's code, its log folder, and the stack's SDK. StackBench also reads the agent's log after every session to catch it looking at StackBench files. See <a href="#sandbox">Where the agent works</a>.</p></details>
 <details><summary>Does the live-update requirement favor real-time databases?</summary>
 <p>Every stack's reference app passes every live check. Of the 43 stores that fail the live support-case check, 40 never update the customer's open page.</p></details>
 <details><summary>Are three runs enough?</summary>
