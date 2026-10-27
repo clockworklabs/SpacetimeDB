@@ -636,7 +636,7 @@ const server = createServer((request, response) =&gt; {
 export const ESTIMATE_REASONS = [&#x27;no-usage&#x27;, &#x27;response-aborted&#x27;, &#x27;upstream-error&#x27;] as const;</code></pre></figure>
 
 <h2 id="study">Study design</h2>
-<p>Each repetition runs the model and stack conditions in a rotated order.</p>
+<p>Runs launch from one list of every model on every stack. Each of the three rounds starts one place further down that list, so the same model on the same stack is never always launched first.</p>
 <figure class="code"><a class="code-ref" href="https://github.com/clockworklabs/SpacetimeDB/blob/6c65947996c7b86d8eaa43238ac60c7e58ec637c/tools/stack-bench/src/campaigns/campaign-compiler.ts#L856-L861">src/campaigns/campaign-compiler.ts:856-861</a><pre><code>const repetitions = Math.max(...repetitionsByStack.values());
 for (let repetition = 1; repetition &lt;= repetitions; repetition += 1) {
   rotate(conditions, (repetition - 1) % conditions.length)
