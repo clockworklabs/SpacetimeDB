@@ -60,8 +60,8 @@ error[E0308]: mismatched types
 error[E0308]: mismatched types
   --> tests/ui/../fixtures/idc_receiver/lib.rs
    |
-   |         let _ = |x: $ty| { let _: String = x; };
-   |                                   ------   ^ expected `String`, found `u64`
+   |         let _ = |x: $ty| { let _: ::std::string::String = x; };
+   |                                   ---------------------   ^ expected `String`, found `u64`
    |                                   |
    |                                   expected due to this
    |
@@ -73,5 +73,5 @@ error[E0308]: mismatched types
    = note: this error originates in the macro `__outbox_receiver::__spacetimedb_typecheck_outbox_receive_ping_body` which comes from the expansion of the attribute macro `spacetimedb::table` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: try using a conversion method
    |
-66 |         let _ = |x: $ty| { let _: String = x.to_string(); };
-   |                                             ++++++++++++
+66 |         let _ = |x: $ty| { let _: ::std::string::String = x.to_string(); };
+   |                                                            ++++++++++++

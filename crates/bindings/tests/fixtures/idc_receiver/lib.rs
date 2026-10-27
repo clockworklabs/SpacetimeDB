@@ -63,7 +63,7 @@ macro_rules! __spacetimedb_typecheck_outbox_receive_ping_body {
         0u16
     }};
     ($module:ident; ($index:literal, $field:ident : $ty:ty as body), $($rest:tt)*) => {{
-        let _ = |x: $ty| { let _: String = x; };
+        let _ = |x: $ty| { let _: ::std::string::String = x; };
         $module::__spacetimedb_typecheck_outbox_receive_ping_body_reject_duplicate!($module; $($rest)*);
         $index
     }};
