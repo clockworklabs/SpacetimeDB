@@ -2957,6 +2957,81 @@ mod tests {
     }
 
     #[test]
+    #[allow(non_snake_case)]
+    fn v10_canonical_params_deserialize_on_receiver() {
+        use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, RawModuleDefV10Builder};
+        use spacetimedb_sats::{de::DeserializeSeed as _, product, WithTypespace};
+
+        #[derive(Debug, PartialEq, spacetimedb_sats::Deserialize)]
+        #[sats(crate = spacetimedb_sats)]
+        struct ReceiverMessage {
+            Item: u64,
+        }
+
+        for policy in [CaseConversionPolicy::None, CaseConversionPolicy::SnakeCase] {
+            let mut builder = RawModuleDefV10Builder::new();
+            builder.set_case_conversion_policy(policy);
+            let item_ref = builder.add_algebraic_type(
+                [],
+                "Message",
+                AlgebraicType::product([("Item", AlgebraicType::U64)]),
+                false,
+            );
+            builder.add_reducer(
+                "receive",
+                ProductType::from([
+                    ("MessageBody", AlgebraicType::Ref(item_ref)),
+                    ("RequestID", AlgebraicType::String),
+                ]),
+            );
+            let original: ModuleDef = builder.finish().try_into().expect("valid module");
+            let roundtrip =
+                ModuleDef::try_from(RawModuleDefV10::from(original.clone())).expect("valid roundtripped module");
+            let (_, sender) = roundtrip.reducer_by_name("receive").unwrap();
+            let (_, receiver) = original.reducer_by_name("receive").unwrap();
+            let expected_names = if matches!(policy, CaseConversionPolicy::None) {
+                ["MessageBody", "RequestID"]
+            } else {
+                ["message_body", "request_id"]
+            };
+            assert_eq!(
+                sender
+                    .params
+                    .elements
+                    .iter()
+                    .map(|param| param.name.as_ref().unwrap().as_ref())
+                    .collect::<Vec<&str>>(),
+                expected_names
+            );
+            assert_eq!(
+                receiver.params.elements[0].name.as_ref().unwrap().as_ref(),
+                "MessageBody"
+            );
+
+            // Encode using the exported canonical schema, as a sender does. Distinct
+            // argument types make an accidental change in parameter order observable.
+            let args = product![product![42u64], "request-7"];
+            let bytes = bsatn::to_vec(&WithTypespace::new(roundtrip.typespace(), &sender.params).with_value(&args))
+                .expect("canonical sender arguments should encode");
+
+            // The host still decodes against the receiver's original parameter names.
+            let mut remaining = bytes.as_slice();
+            let decoded = original
+                .arg_seed_for(receiver)
+                .deserialize(bsatn::Deserializer::new(&mut remaining))
+                .expect("receiver should accept arguments encoded with canonical names");
+            assert_eq!(decoded, args);
+            assert!(remaining.is_empty());
+
+            // A Rust receiver then decodes the same bytes into its source-language
+            // types. BSATN carries values in order, not schema field names.
+            let typed: (ReceiverMessage, String) =
+                bsatn::from_slice(&bytes).expect("Rust receiver should deserialize the original argument types");
+            assert_eq!(typed, (ReceiverMessage { Item: 42 }, "request-7".to_owned()));
+        }
+    }
+
+    #[test]
     fn v10_roundtrip_preserves_http_handler_names() {
         use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, RawModuleDefV10Builder};
 
