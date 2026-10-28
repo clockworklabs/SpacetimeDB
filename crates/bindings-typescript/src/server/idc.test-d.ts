@@ -174,3 +174,13 @@ db.reducer({ note: t.string() }, (ctx, { note }) => {
   // @ts-expect-error A row's identity keeps its own receiver's type.
   ctx.db.outbox.insert({ msgId: 0n, target: caller.admin, note });
 });
+
+// Query comparisons take a raw identity too, so a view can filter by its caller.
+db.view(
+  { name: 'trustedCaller', public: true },
+  t.array(trusted.rowType),
+  ctx =>
+    ctx.from.trusted
+      .where(row => row.world.eq(ctx.sender).or(row.admin.ne(ctx.sender)))
+      .build()
+);
