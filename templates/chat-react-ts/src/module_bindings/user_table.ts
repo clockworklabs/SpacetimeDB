@@ -9,7 +9,7 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from 'spacetimedb';
-
+import { BinaryReader as __BinaryReader } from 'spacetimedb';
 export default __t.row({
   identity: __t.identity().primaryKey(),
   name: __t.option(__t.string()),
