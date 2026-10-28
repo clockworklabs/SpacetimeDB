@@ -17,6 +17,49 @@ fn compiled_typescript_module() -> &'static ModuleDef {
     MODULE.get_or_init(|| CompiledModule::compile("module-test-ts", CompilationMode::Debug).extract_schema_blocking())
 }
 
+#[test]
+fn module_test_fixtures_include_idc_syntax() {
+    use spacetimedb_schema::def::FunctionVisibility;
+
+    let mut signatures = Vec::new();
+    for module in [compiled_module(), compiled_typescript_module()] {
+        let table = module.tables().find(|table| &*table.name == "idc_outbox").unwrap();
+        let outbox = table.outbox.as_ref().expect("manual IDC outbox should be registered");
+        assert_eq!(outbox.remote_reducer.as_ref(), "wire_ping");
+        assert_eq!(outbox.target_column, 2.into());
+        assert_eq!(outbox.arg_columns, vec![3.into()]);
+        assert_eq!(
+            outbox.on_result_reducer.as_ref().map(|name| name.as_ref()),
+            Some("on_idc_result")
+        );
+        assert_eq!(&*table.columns[3].name, "message");
+        assert!(table
+            .indexes
+            .values()
+            .any(|index| index.name.as_ref() == "idc_outbox_tag_idx_btree"));
+        signatures.push(outbox.signature_hash);
+
+        let callback = module
+            .reducers()
+            .find(|reducer| reducer.name.as_ref() == "on_idc_result")
+            .expect("IDC result callback should be registered");
+        assert!(matches!(callback.visibility, FunctionVisibility::Private));
+
+        let noop = module.tables().find(|table| &*table.name == "idc_noop_outbox").unwrap();
+        let noop = noop
+            .outbox
+            .as_ref()
+            .expect("no-argument IDC outbox should be registered");
+        assert_eq!(noop.remote_reducer.as_ref(), "noop");
+        assert!(noop.arg_columns.is_empty());
+        assert!(noop.on_result_reducer.is_none());
+    }
+    assert_eq!(
+        signatures[0], signatures[1],
+        "both fixtures use the same receiver signature"
+    );
+}
+
 macro_rules! declare_tests {
     ($($name:ident => $lang:expr,)*) => ($(
         #[test]

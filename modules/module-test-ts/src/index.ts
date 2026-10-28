@@ -13,6 +13,7 @@ import {
   Router,
 } from 'spacetimedb/server';
 import * as libSubmodule from './lib_submodule';
+import idcReceiver from './idc_receiver';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPE ALIASES
@@ -166,7 +167,25 @@ const repeatingTestArgTable = table(
 // ─────────────────────────────────────────────────────────────────────────────
 // SCHEMA (tables + indexes + visibility)
 // ─────────────────────────────────────────────────────────────────────────────
+const idcOutbox = table(
+  {
+    name: 'idc_outbox',
+    public: true,
+    outbox: { receiver: idcReceiver.reducers.receivePing },
+    indexes: [{ accessor: 'byTag', algorithm: 'btree', columns: ['tag'] }],
+  },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    tag: t.string(),
+    target: idcReceiver.identity().target(),
+    message: t.string().param({ name: 'body' }),
+  }
+);
+const idcNoopOutbox = idcReceiver.outbox.noop();
+
 const spacetimedb = schema({
+  idcOutbox,
+  idcNoopOutbox,
   // person (public) with btree index on age
   person: table(
     {
@@ -274,6 +293,23 @@ export const myPlayer = spacetimedb.view(
 // ─────────────────────────────────────────────────────────────────────────────
 // REDUCERS (mirroring Rust order & behavior)
 // ─────────────────────────────────────────────────────────────────────────────
+
+export const enqueueIdc = spacetimedb.reducer(
+  { target: idcReceiver.identity(), message: t.string() },
+  (ctx, { target, message }) => {
+    ctx.db.idcOutbox.insert({ id: 0n, tag: 'example', target, message });
+    ctx.db.idcNoopOutbox.insert({ __msgId: 0n, __target: target });
+  }
+);
+
+export const onIdcResult = spacetimedb.reducer(
+  { reactive: { onResult: idcOutbox } },
+  { row: idcOutbox.rowType, result: t.result(t.unit(), t.string()) },
+  (_ctx, { row, result }) => {
+    if ('err' in result)
+      console.warn(`IDC message ${row.id} (${row.tag}) failed: ${result.err}`);
+  }
+);
 
 // init
 export const init = spacetimedb.init(ctx => {
