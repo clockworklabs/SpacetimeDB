@@ -352,6 +352,33 @@ describe('IDC outboxes', () => {
     );
   });
 
+  it('names the conflict when a callback is also scheduled or lifecycle', () => {
+    const outbox = explicitOutbox();
+    const scheduled = table(
+      {},
+      { id: t.u64().primaryKey().autoInc(), at: t.scheduleAt() }
+    );
+    const db = schema({ outbox, scheduled });
+    const params = {
+      row: outbox.rowType,
+      result: t.result(t.unit(), t.string()),
+    };
+    const both = db.reducer(
+      { onResult: outbox, onSchedule: scheduled as never },
+      params,
+      () => {}
+    );
+    expect(() => db.buildRawModuleDefV10({ both })).toThrow(
+      'both onSchedule and onResult'
+    );
+    // Exports register once per schema, so the lifecycle case needs its own.
+    const lifecycleDb = schema({ outbox });
+    const init = lifecycleDb.init({ name: 'init', onResult: outbox }, () => {});
+    expect(() => lifecycleDb.buildRawModuleDefV10({ init })).toThrow(
+      'lifecycle reducer cannot use onResult'
+    );
+  });
+
   it('rejects multiple callbacks for one outbox', () => {
     const outbox = explicitOutbox();
     const db = schema({ outbox });

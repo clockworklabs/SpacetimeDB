@@ -88,11 +88,15 @@ export function registerReducer(
   }
 
   if (opts?.onResult) {
+    if (opts.onSchedule) {
+      throw new TypeError('A reducer cannot use both onSchedule and onResult');
+    }
+    if (lifecycle) {
+      throw new TypeError('A lifecycle reducer cannot use onResult');
+    }
     const target = opts.onResult;
     const fields = Object.values(params.row);
     if (
-      opts.onSchedule ||
-      lifecycle ||
       fields.length !== 2 ||
       fields[0].typeBuilder !== target.rowType ||
       !deepEqual(
