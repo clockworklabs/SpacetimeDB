@@ -9,7 +9,7 @@ TABLES
     - Role: string  ("admin" or "member")
 
 REDUCERS
-- Register(ctx)
+- RegisterUser(ctx)
   - If a User row already exists for ctx.Sender, throw exception with "already registered"
   - Insert User { Identity = ctx.Sender, Role = "member" }
 

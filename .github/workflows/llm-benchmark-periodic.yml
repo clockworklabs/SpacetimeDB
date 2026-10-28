@@ -184,6 +184,7 @@ jobs:
           LLM_BENCH_CSHARP_CONCURRENCY: "2"
           LLM_BENCH_ROUTE_CONCURRENCY: ${{ matrix.lang == 'typescript' && '4' || matrix.lang == 'csharp' && '1' || '2' }}
           LLM_BENCHMARK_REPORT_DIR: ${{ runner.temp }}/llm-benchmark-reports
+          LLM_BENCHMARK_DIAGNOSTICS_DIR: ${{ runner.temp }}/llm-benchmark-diagnostics
           INPUT_LANGUAGE: ${{ matrix.lang }}
           INPUT_MODEL_SET: ${{ inputs.model_set || 'website_active' }}
           INPUT_MODELS: ${{ inputs.models || '' }}
@@ -267,6 +268,15 @@ jobs:
         with:
           name: llm-benchmark-analysis-${{ matrix.lang }}
           path: ${{ runner.temp }}/llm-benchmark-reports
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload server diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-benchmark-diagnostics-${{ matrix.lang }}
+          path: ${{ runner.temp }}/llm-benchmark-diagnostics
           if-no-files-found: ignore
           retention-days: 14
 
