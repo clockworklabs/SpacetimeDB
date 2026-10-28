@@ -52,6 +52,7 @@ pub fn replace_in_tree(
     // We intentionally DO NOT include a trailing semicolon so we preserve it (or its absence).
     let re_single = Regex::new(r#"}\s*from\s*'spacetimedb'"#).unwrap();
     let re_double = Regex::new(r#"}\s*from\s*"spacetimedb""#).unwrap();
+    let re_schema = Regex::new(r#"(?s)import\s*\{([^}]*)\}\s*from\s*['"]spacetimedb/schema['"]"#).unwrap();
 
     let mut builder = WalkBuilder::new(&root);
     builder
@@ -129,6 +130,13 @@ pub fn replace_in_tree(
             Ok(s) => s,
             Err(_) => continue,
         };
+
+        // Source-based SDK consumers must use the same declaration classes as
+        // their local root SDK, rather than mixing in the packaged schema entry.
+        let content = re_schema.replace_all(&content, |caps: &regex::Captures<'_>| {
+            let imports = caps[1].replace("schema as ", "declarationSchema as ");
+            format!("import {{{imports}}} from 'spacetimedb'")
+        });
 
         // Count before replacing
         let matches = re_single.find_iter(&content).count() + re_double.find_iter(&content).count();

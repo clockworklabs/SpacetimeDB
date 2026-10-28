@@ -1154,6 +1154,8 @@ jobs:
         run: |
           source ~/emsdk/emsdk_env.sh
           pnpm --dir crates/bindings-typescript build
+          pnpm --dir crates/bindings-typescript test:declarations
+          pnpm --dir crates/bindings-typescript test:declarations:package
           cargo nextest run \
             --archive-file "${RUST_TEST_ARCHIVE}" \
             --workspace-remap "${GITHUB_WORKSPACE}" \

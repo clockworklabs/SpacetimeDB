@@ -91,6 +91,8 @@ fn main() -> Result<()> {
             "-y",
             "--lang",
             "typescript",
+            "--bindings-format",
+            "legacy",
             "--out-dir",
             out_dir,
             "--module-def",

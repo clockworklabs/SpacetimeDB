@@ -1,4 +1,4 @@
-use spacetimedb_codegen::{generate, CodegenOptions, Csharp, Rust, TypeScript};
+use spacetimedb_codegen::{generate, CodegenOptions, Csharp, LegacyTypeScript, Rust, TypeScript};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
@@ -41,14 +41,15 @@ macro_rules! declare_tests {
 
 declare_tests! {
     test_codegen_csharp => Csharp { namespace: "SpacetimeDB" },
-    test_codegen_typescript => TypeScript,
+    test_codegen_typescript => LegacyTypeScript,
+    test_codegen_typescript_declarations => TypeScript,
     test_codegen_rust => Rust,
 }
 
 #[test]
 fn test_typescript_table_handles_are_camel_case() {
     let module = compiled_module();
-    let index = generate(module, &TypeScript, &CodegenOptions::default())
+    let index = generate(module, &LegacyTypeScript, &CodegenOptions::default())
         .into_iter()
         .find(|file| file.filename == "index.ts")
         .expect("typescript codegen should emit index.ts")
@@ -76,7 +77,7 @@ fn test_typescript_table_handles_are_camel_case() {
 #[test]
 fn submodule_names_use_canonical_wire_names_and_accessor_paths() {
     let module = compiled_typescript_module();
-    let files = generate(module, &TypeScript, &CodegenOptions::default());
+    let files = generate(module, &LegacyTypeScript, &CodegenOptions::default());
     let filenames: Vec<_> = files.iter().map(|f| f.filename.clone()).collect();
     let code = files.into_iter().map(|f| f.code).collect::<Vec<_>>().join("\n");
 
@@ -231,5 +232,236 @@ fn compile_csharp_client(files: Vec<spacetimedb_codegen::OutputFile>, program: &
         "generated client failed:\n{}\n{}",
         String::from_utf8_lossy(&result.stdout),
         String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[test]
+fn typescript_clients_compile_and_run() {
+    for options in [
+        CodegenOptions::default(),
+        CodegenOptions {
+            visibility: spacetimedb_codegen::CodegenVisibility::IncludePrivate,
+        },
+    ] {
+        for lang in [&TypeScript as &dyn spacetimedb_codegen::Lang, &LegacyTypeScript] {
+            compile_typescript_client(
+                generate(compiled_module(), lang, &options),
+                r#"
+import assert from 'node:assert/strict';
+import { DbConnection, DbConnectionBuilder, tables, reducers, procedures, type EventContext } from './index';
+const builder: DbConnectionBuilder = DbConnection.builder().withUri('ws://localhost:3000').withDatabaseName('example');
+assert.equal(typeof builder.build, 'function');
+assert.equal(tables.person.toSql(), 'SELECT * FROM "person"');
+assert.equal(tables.logged_out_player, tables.loggedOutPlayer);
+assert.equal(reducers.add.name, 'add');
+assert.equal(procedures.returnValue.name, 'return_value');
+function consume(conn: DbConnection, ctx: EventContext) {
+  conn.reducers.add({ name: 'Alice', age: 30 });
+  const age: number | undefined = conn.db.person.id.find(1)?.age;
+  const same: typeof conn.db.loggedOutPlayer = ctx.db.logged_out_player;
+  // @ts-expect-error invalid argument
+  conn.reducers.add({ name: 123, age: 30 });
+  // @ts-expect-error unknown table
+  conn.db.unknown;
+  void age; void same;
+}
+void consume;
+"#,
+            );
+            compile_typescript_client(
+                generate(compiled_typescript_module(), lang, &options),
+                r#"
+import assert from 'node:assert/strict';
+import { DbConnection, tables, reducers } from './index';
+assert.equal(tables.myLib.libData.sourceName, 'my_lib.libData');
+assert.equal(reducers.myLib.libInsert.name, 'my_lib.lib_insert');
+function consume(conn: DbConnection) {
+  void conn.db.myLib.libData;
+  // @ts-expect-error canonical namespace is not the client accessor
+  void conn.db.my_lib;
+}
+void consume;
+"#,
+            );
+        }
+    }
+}
+
+fn compile_typescript_client(files: Vec<spacetimedb_codegen::OutputFile>, program: &str) {
+    compile_typescript_client_with_sdk(files, program, None);
+}
+
+fn compile_typescript_client_with_sdk(
+    files: Vec<spacetimedb_codegen::OutputFile>,
+    program: &str,
+    sdk_package: Option<&str>,
+) {
+    let sdk = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../bindings-typescript")
+        .canonicalize()
+        .unwrap();
+    let project = tempfile::Builder::new()
+        .prefix(".generated-client-")
+        .tempdir_in(&sdk)
+        .unwrap();
+    for file in files {
+        let path = project.path().join(file.filename);
+        fs_err::create_dir_all(path.parent().unwrap()).unwrap();
+        fs_err::write(path, file.code).unwrap();
+    }
+    fs_err::write(project.path().join("consumer.ts"), program).unwrap();
+    fs_err::write(
+        project.path().join("tsconfig.json"),
+        r#"{
+      "compilerOptions": {
+        "target": "ES2022", "module": "ESNext", "moduleResolution": "Bundler",
+        "strict": true, "exactOptionalPropertyTypes": true, "skipLibCheck": true,
+        "noEmit": true
+      },
+      "include": ["**/*.ts"]
+    }"#,
+    )
+    .unwrap();
+    let mut command = std::process::Command::new("node");
+    command
+        .current_dir(&sdk)
+        .arg("scripts/check-generated-client.mjs")
+        .arg(project.path());
+    if let Some(package) = sdk_package {
+        command.arg(package);
+    }
+    let result = command
+        .output()
+        .expect("Node.js and the built TypeScript SDK are required");
+    assert!(
+        result.status.success(),
+        "generated TypeScript client failed:\n{}\n{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[test]
+fn typescript_declaration_snapshots_cover_submodules_and_private_items() {
+    for (name, module, options) in [
+        (
+            "typescript_declarations_submodules",
+            compiled_typescript_module(),
+            CodegenOptions::default(),
+        ),
+        (
+            "typescript_declarations_private",
+            compiled_module(),
+            CodegenOptions {
+                visibility: spacetimedb_codegen::CodegenVisibility::IncludePrivate,
+            },
+        ),
+    ] {
+        let files = generate(module, &TypeScript, &options)
+            .into_iter()
+            .map(|f| (f.filename, f.code))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let mut settings = insta::Settings::clone_current();
+        settings.add_filter(r#"cliVersion: "\d+\.\d+\.\d+""#, r#"cliVersion: "X.Y.Z""#);
+        settings.bind(|| insta::assert_toml_snapshot!(name, files));
+    }
+}
+
+#[test]
+fn typescript_function_exports_preserve_reserved_names() {
+    use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+    let mut builder = RawModuleDefV10Builder::new();
+    for name in ["default", "return", "spacetimedb"] {
+        builder.add_reducer(name, spacetimedb_lib::ProductType::unit());
+    }
+    let module: ModuleDef = builder.finish().try_into().unwrap();
+    compile_typescript_client(
+        generate(&module, &TypeScript, &CodegenOptions::default()),
+        r#"
+import assert from 'node:assert/strict';
+import { reducers } from './index';
+assert.equal(reducers.default.name, 'default');
+assert.equal(reducers.return.name, 'return');
+assert.equal(reducers.spacetimedb.name, 'spacetimedb');
+"#,
+    );
+}
+
+#[test]
+fn legacy_typescript_bindings_work_with_published_sdk() {
+    compile_typescript_client_with_sdk(
+        generate(compiled_module(), &LegacyTypeScript, &CodegenOptions::default()),
+        r#"
+import assert from 'node:assert/strict';
+import { DbConnection, tables, reducers } from './index';
+assert.equal(typeof DbConnection.builder().build, 'function');
+assert.equal(tables.person.toSql(), 'SELECT * FROM "person"');
+assert.equal(reducers.add.name, 'add');
+function consume(conn: DbConnection) {
+  conn.reducers.add({ name: 'Alice', age: 30 });
+  // @ts-expect-error invalid argument
+  conn.reducers.add({ name: 123, age: 30 });
+}
+void consume;
+"#,
+        Some("spacetimedb-legacy"),
+    );
+}
+
+#[test]
+fn typescript_declarations_preserve_table_metadata() {
+    use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+    use spacetimedb_lib::db::raw_def::v9::RawIndexAlgorithm;
+    use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ProductType};
+    let mut builder = RawModuleDefV10Builder::new();
+    builder
+        .build_table_with_new_type(
+            "person",
+            ProductType::from([
+                ("id", AlgebraicType::U32),
+                ("displayName", AlgebraicType::String),
+                ("score", AlgebraicType::U32),
+            ]),
+            true,
+        )
+        .with_auto_inc_primary_key(0)
+        .with_index(
+            RawIndexAlgorithm::Direct { column: 0.into() },
+            "person_id_direct",
+            "byId",
+        )
+        .with_index(
+            RawIndexAlgorithm::Hash { columns: [1].into() },
+            "person_name_hash",
+            "byName",
+        )
+        .with_default_column_value(2, AlgebraicValue::U32(7))
+        .finish();
+    builder
+        .build_table_with_new_type("audit", ProductType::from([("message", AlgebraicType::String)]), true)
+        .with_event(true)
+        .finish();
+    let module: ModuleDef = builder.finish().try_into().unwrap();
+    let files = generate(&module, &TypeScript, &CodegenOptions::default());
+    let snapshots = files
+        .iter()
+        .map(|f| (&f.filename, &f.code))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut settings = insta::Settings::clone_current();
+    settings.add_filter(r#"cliVersion: "\d+\.\d+\.\d+""#, r#"cliVersion: "X.Y.Z""#);
+    settings.bind(|| insta::assert_toml_snapshot!("typescript_declarations_metadata", snapshots));
+    compile_typescript_client(
+        files,
+        r#"
+import assert from 'node:assert/strict';
+import { tables } from './index';
+import Person from './person_table';
+assert.equal(Person.row.id.columnMetadata.isAutoIncrement, true);
+assert.equal(Person.row.score.columnMetadata.defaultValue, 7);
+assert.equal(Person.row.displayName.columnMetadata.name, 'display_name');
+assert.equal(tables.audit.tableDef.isEvent, true);
+assert.ok(tables.person.tableDef.resolvedIndexes.some(i => i.algorithm === 'direct'));
+assert.ok(tables.person.tableDef.resolvedIndexes.some(i => i.algorithm === 'hash'));
+"#,
     );
 }

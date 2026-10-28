@@ -1,4 +1,9 @@
-import { describe, expect, expectTypeOf, test } from 'vitest';
+import { describe, expect, expectTypeOf, test, vi } from 'vitest';
+import BinaryReader from '../src/lib/binary_reader';
+import BinaryWriter from '../src/lib/binary_writer';
+import { Timestamp } from '../src/lib/timestamp';
+import { ServerMessage } from '../src/sdk/client_api/types';
+import { makeQuerySetUpdate } from './utils';
 import { schema, table, t } from '../src/schema/declarations';
 import { createClient } from '../src/sdk/create_client';
 import { INTERNAL_REMOTE_MODULE } from '../src/sdk/internal';
@@ -35,6 +40,7 @@ const declarations = {
   named: root.view({ public: true }, { name: t.string() }, t.array(Person)),
   me: root.view({ public: true }, t.option(Person)),
   Person,
+  actions: root.exportGroup({ default: root.reducer({}) }),
 };
 
 const client = createClient(declarations, {
@@ -47,13 +53,14 @@ function consumer(conn: InstanceType<typeof client.DbConnection>) {
   conn.reducers.add({ name: 'Alice' });
   conn.reducers.auth.add({ name: 'Bob' });
   conn.reducers.sayHello({});
+  conn.reducers.default({});
   expectTypeOf(conn.procedures.greet({ name: 'Alice' })).toEqualTypeOf<
     Promise<string>
   >();
   conn.db.people.onInsert((_ctx, row) => {
     expectTypeOf(row.name).toEqualTypeOf<string>();
     // @ts-expect-error unknown row property
-    row.missing;
+    void row.missing;
   });
   // @ts-expect-error wrong parameter type
   conn.reducers.add({ name: 123 });
@@ -62,13 +69,25 @@ function consumer(conn: InstanceType<typeof client.DbConnection>) {
   // @ts-expect-error unknown function
   conn.reducers.missing({});
   // @ts-expect-error unknown table
-  conn.db.missing;
+  void conn.db.missing;
   // @ts-expect-error unknown nested table
-  conn.db.auth.missing;
+  void conn.db.auth.missing;
   // @ts-expect-error unknown column
   client.tables.people.where(row => row.missing.eq('x'));
 }
 void consumer;
+function invalidDeclarations() {
+  // @ts-expect-error parameter schemas must be builders
+  root.reducer({ name: 123 });
+  // @ts-expect-error views return rows, not strings
+  root.view({ public: true }, t.string());
+  // @ts-expect-error multiple primary keys are not supported
+  root.view(
+    { public: true },
+    t.array(t.row({ a: t.u32().primaryKey(), b: t.u32().primaryKey() }))
+  );
+}
+void invalidDeclarations;
 
 describe('module declarations', () => {
   test('retains table and function metadata and produces the typed client API', async () => {
@@ -106,6 +125,43 @@ describe('module declarations', () => {
       'full_name'
     );
     await conn['wsPromise'];
+    ws.acceptConnection();
+    const inserted: string[] = [];
+    conn.db.people.onInsert((ctx, row) => {
+      expect(ctx.db.people).toBe(conn.db.people);
+      inserted.push(row.name);
+    });
+    const writer = new BinaryWriter(64);
+    Person.serialize(writer, { id: 1, name: 'Alice', age: 30 });
+    ws.sendToClient(
+      ServerMessage.TransactionUpdate({
+        querySets: [makeQuerySetUpdate(0, 'people', writer.getBuffer())],
+      })
+    );
+    await vi.waitFor(() => expect(inserted).toEqual(['Alice']));
+    expect(conn.db.people.id.find(1)?.name).toBe('Alice');
+
+    const call = conn.reducers.auth.add({ name: 'Bob' });
+    await Promise.resolve();
+    const request = ws.outgoingMessages.find(m => m.tag === 'CallReducer');
+    if (request?.tag !== 'CallReducer')
+      throw new Error('Expected a reducer request');
+    expect(request.value.reducer).toBe('auth_wire.insert_person');
+    expect(new BinaryReader(request.value.args).readString()).toBe('Bob');
+    ws.sendToClient(
+      ServerMessage.ReducerResult({
+        requestId: request.value.requestId,
+        timestamp: new Timestamp(0n),
+        result: {
+          tag: 'Ok',
+          value: {
+            retValue: new Uint8Array(),
+            transactionUpdate: { querySets: [] },
+          },
+        },
+      })
+    );
+    await call;
     conn.disconnect();
   });
 

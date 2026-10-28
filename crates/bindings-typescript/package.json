@@ -48,7 +48,8 @@
     "generate:examples:empty": "pnpm --filter @clockworklabs/empty-client generate",
     "generate": "pnpm generate:moduledef && pnpm generate:client-api && pnpm generate:test-app && pnpm generate:examples:chat-react-ts && pnpm generate:examples:react-ts && pnpm generate:examples:empty",
     "prepublishOnly": "pnpm run build:package && pnpm run test:unit && size-limit && pnpm run check:package",
-    "test:declarations": "vitest run tests/declarations.test.ts && tsc -p tsconfig.declarations.json"
+    "test:declarations": "vitest run tests/declarations.test.ts && tsc -p tsconfig.declarations.json",
+    "test:declarations:package": "node scripts/check-declarations-package.mjs && tsc -p tests/declarations-consumer/tsconfig.json"
   },
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
@@ -63,10 +64,10 @@
     },
     "./sdk": {
       "types": "./dist/index.d.ts",
-      "browser": "./dist/sdk/index.browser.mjs",
-      "import": "./dist/sdk/index.mjs",
-      "require": "./dist/sdk/index.cjs",
-      "default": "./dist/sdk/index.mjs"
+      "browser": "./dist/index.browser.mjs",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.mjs"
     },
     "./react": {
       "types": "./dist/react/index.d.ts",
@@ -273,6 +274,7 @@
     "jsdom": "^26.1.0",
     "react-dom": "^18.3.1",
     "size-limit": "^11.2.0",
+    "spacetimedb-legacy": "npm:spacetimedb@2.12.0",
     "svelte": "^5.0.0",
     "terser": "^5.43.1",
     "ts-node": "^10.9.2",

@@ -54,11 +54,27 @@ export class FunctionDeclaration<
   ) {}
 }
 
+/** The group's keys are function accessors, not an extra namespace. */
+export class DeclarationGroup<
+  E extends Record<string, FunctionDeclaration<any, any, any, any>>,
+> {
+  constructor(
+    readonly schema: Schema<any>,
+    readonly exports: E
+  ) {}
+}
+
 export class Schema<Entries extends SchemaEntries> {
   constructor(
     readonly entries: Entries,
     readonly options: SchemaOptions = {}
   ) {}
+
+  exportGroup<
+    const E extends Record<string, FunctionDeclaration<any, any, any, any>>,
+  >(exports: E): DeclarationGroup<E> {
+    return new DeclarationGroup(this, exports);
+  }
 
   reducer<const P extends ParamsObj>(
     params: P

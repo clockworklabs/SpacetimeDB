@@ -34,9 +34,37 @@ fn ts_string_literal(s: &str) -> String {
     serde_json::to_string(s).expect("serializing a string literal cannot fail")
 }
 
+#[path = "typescript_declarations.rs"]
+mod declarations;
+
 pub struct TypeScript;
 
+/// Expanded bindings for SDK versions predating module declarations.
+pub struct LegacyTypeScript;
+
+impl Lang for LegacyTypeScript {
+    fn generate_type_files(&self, m: &ModuleDef, t: &TypeDef) -> Vec<OutputFile> {
+        TypeScript.generate_type_files(m, t)
+    }
+    fn generate_table_file_from_schema(&self, m: &ModuleDef, t: &TableDef, s: TableSchema) -> OutputFile {
+        TypeScript.generate_table_file_from_schema(m, t, s)
+    }
+    fn generate_reducer_file(&self, m: &ModuleDef, r: &ReducerDef) -> OutputFile {
+        TypeScript.generate_reducer_file(m, r)
+    }
+    fn generate_procedure_file(&self, m: &ModuleDef, p: &ProcedureDef) -> OutputFile {
+        TypeScript.generate_procedure_file(m, p)
+    }
+    fn generate_global_files(&self, m: &ModuleDef, o: &CodegenOptions) -> Vec<OutputFile> {
+        TypeScript.generate_global_files(m, o)
+    }
+}
+
 impl Lang for TypeScript {
+    fn generate_module(&self, module: &ModuleDef, options: &CodegenOptions) -> Option<Vec<OutputFile>> {
+        Some(declarations::generate(module, options))
+    }
+
     fn generate_type_files(&self, _module: &ModuleDef, _typ: &TypeDef) -> Vec<OutputFile> {
         vec![]
     }

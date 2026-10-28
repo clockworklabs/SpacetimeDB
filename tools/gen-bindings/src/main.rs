@@ -18,6 +18,10 @@ struct Cli {
     #[arg(long, alias = "project-path", default_value = "server")]
     module_path: String,
 
+    /// TypeScript binding format
+    #[arg(long, default_value = "declarations", value_parser = ["declarations", "legacy"])]
+    bindings_format: String,
+
     /// Replacement for 'spacetimedb' (relative string used in imports)
     #[arg(long)]
     replacement: Option<String>,
@@ -60,6 +64,8 @@ fn main() -> Result<()> {
             "-y",
             "--lang",
             "typescript",
+            "--bindings-format",
+            &args.bindings_format,
             "--out-dir",
             &args.out_dir,
             "--module-path",

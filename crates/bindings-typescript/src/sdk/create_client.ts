@@ -1,5 +1,6 @@
 import {
   FunctionDeclaration,
+  DeclarationGroup,
   Schema,
   type ModuleDeclarations,
   type SchemaEntries,
@@ -11,12 +12,7 @@ import {
 } from '../lib/schema';
 import { table, type CoerceRow, type UntypedTableDef } from '../lib/table';
 import type { TableSchema, UntypedTableSchema } from '../lib/table_schema';
-import {
-  ArrayBuilder,
-  OptionBuilder,
-  RowBuilder,
-  type TypeBuilder,
-} from '../lib/type_builders';
+import { ArrayBuilder, OptionBuilder, RowBuilder } from '../lib/type_builders';
 import { makeQueryBuilder, type QueryBuilder } from '../lib/query';
 import type { NestAccessors, SnakeCase } from '../lib/type_util';
 import { toSnakeCase, type CoerceParams } from '../lib/util';
@@ -39,6 +35,15 @@ type Intersection<U> = (U extends unknown ? (x: U) => void : never) extends (
 ) => void
   ? I
   : {};
+type FunctionEntries<M> = Intersection<
+  {
+    [K in keyof M & string]: M[K] extends DeclarationGroup<infer E>
+      ? E
+      : M[K] extends AnyFunction
+        ? { [A in K]: M[K] }
+        : {};
+  }[keyof M & string]
+>;
 type ViewRow<D> =
   D extends FunctionDeclaration<'view' | 'anonymousView', any, infer R, any>
     ? R extends ArrayBuilder<infer B> | OptionBuilder<infer B>
@@ -61,14 +66,15 @@ type Tables<M, P extends string = ''> = string extends keyof Entries<M>
           : Tables<Child<Entries<M>[K]>, `${P}${K}.`>;
       }[keyof Entries<M> & string]
     > & {
-      [K in keyof M & string as M[K] extends FunctionDeclaration<
+      [K in keyof FunctionEntries<M> &
+        string as FunctionEntries<M>[K] extends FunctionDeclaration<
         'view' | 'anonymousView',
         any,
         any,
         any
       >
         ? `${P}${K}`
-        : never]: ViewTable<`${P}${K}`, M[K]>;
+        : never]: ViewTable<`${P}${K}`, FunctionEntries<M>[K]>;
     };
 type WireName<K extends string, D extends AnyFunction> = D['options'] extends {
   name: infer N extends string;
@@ -89,21 +95,27 @@ type Functions<
   ? never
   :
       | {
-          [K in keyof M & string]: M[K] extends FunctionDeclaration<
+          [K in keyof FunctionEntries<M> &
+            string]: FunctionEntries<M>[K] extends FunctionDeclaration<
             Kind,
             infer Args,
             infer Ret,
             any
           >
             ? {
-                name: `${W}${WireName<K, M[K]>}`;
+                name: `${W}${WireName<K, FunctionEntries<M>[K]>}`;
                 accessorName: `${P}${K}`;
-                params: Kind extends 'procedure' ? CoerceParams<Args> : Args;
-                paramsType: import('../lib/algebraic_type').ProductType;
-                returnType: Ret;
-              }
+              } & (Kind extends 'procedure'
+                ? {
+                    params: CoerceParams<Args>;
+                    returnType: Ret;
+                  }
+                : {
+                    params: Args;
+                    paramsType: import('../lib/algebraic_type').ProductType;
+                  })
             : never;
-        }[keyof M & string]
+        }[keyof FunctionEntries<M> & string]
       | {
           [K in keyof Entries<M> &
             string]: Entries<M>[K] extends UntypedTableSchema
@@ -255,12 +267,28 @@ export function createClient<
         );
       }
     }
-    for (const [accessor, value] of Object.entries(module)) {
+    const functionEntries = Object.entries(
+      module as unknown as Record<string, unknown>
+    ).flatMap(([name, value]): [string, unknown][] => {
+      if (value instanceof DeclarationGroup) {
+        if (value.schema !== schema)
+          throw new TypeError(
+            `Declaration group ${name} belongs to another schema`
+          );
+        return Object.entries(value.exports);
+      }
+      return [[name, value]];
+    });
+    const names = new Set<string>();
+    for (const [accessor, value] of functionEntries) {
       if (!(value instanceof FunctionDeclaration)) continue;
       if (value.schema !== schema)
         throw new TypeError(
           `Declaration ${accessor} belongs to another schema`
         );
+      if (names.has(accessor))
+        throw new TypeError(`Duplicate function: ${accessor}`);
+      names.add(accessor);
       const wireName =
         canonicalPrefix + (value.options.name ?? canonical(accessor));
       const accessorName = accessorPrefix + accessor;

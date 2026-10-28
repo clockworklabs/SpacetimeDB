@@ -248,3 +248,5 @@ by the host in a submodule fail at runtime; ordinary helpers retain their caller
 scope. Values are private, durable database configuration for secrets and other settings.
 Database owners and authorized collaborators can read them; module code can expose
 them through its own outputs.
+
+See [module-shaped client bindings](DECLARATIONS.md) for the new declaration format and legacy compatibility.
