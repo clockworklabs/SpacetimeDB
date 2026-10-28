@@ -143,7 +143,26 @@ describe('IDC outboxes', () => {
     ]);
   });
 
-  it('keeps convenience outbox metadata separate from msgId and target parameters', () => {
+  it.each(['msgId', 'target'])(
+    'rejects convenience outboxes when a receiver parameter is named %s',
+    name => {
+      const receiver = remoteModule(
+        {
+          receive: {
+            name: 'receive',
+            signatureHash: 1n,
+            params: { [name]: t.u64() },
+          },
+        },
+        Symbol()
+      );
+      expect(() => receiver.outbox.receive()).toThrow(
+        `Receiver parameter '${name}' conflicts with outbox metadata; declare the outbox with table() and choose different metadata column names`
+      );
+    }
+  );
+
+  it('allows msgId and target parameters with different manual metadata column names', () => {
     const receiver = remoteModule(
       {
         receive: {
@@ -154,13 +173,14 @@ describe('IDC outboxes', () => {
       },
       Symbol()
     );
-    const outbox = receiver.outbox.receive();
-    expect(Object.keys(outbox.rowType.row)).toEqual([
-      '__msgId',
-      '__target',
-      'msgId',
-      'target',
-    ]);
+    const outbox = table(
+      { outbox: { receiver: receiver.reducers.receive } },
+      {
+        deliveryId: t.u64().primaryKey().autoInc(),
+        destination: receiver.identity().target(),
+        ...receiver.reducers.receive.params,
+      }
+    );
     expect(outbox.outbox?.targetColumn).toBe(1);
     expect(outbox.outbox?.argColumns).toEqual([2, 3]);
   });
@@ -168,8 +188,8 @@ describe('IDC outboxes', () => {
   it('builds the convenience outbox with receiver argument types', () => {
     const outbox = gw.outbox.receivePing({ name: 'pings' });
     expect(Object.keys(outbox.rowType.row)).toEqual([
-      '__msgId',
-      '__target',
+      'msgId',
+      'target',
       'note',
       'details',
     ]);

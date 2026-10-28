@@ -298,7 +298,7 @@ export const enqueueIdc = spacetimedb.reducer(
   { target: idcReceiver.identity(), message: t.string() },
   (ctx, { target, message }) => {
     ctx.db.idcOutbox.insert({ id: 0n, tag: 'example', target, message });
-    ctx.db.idcNoopOutbox.insert({ __msgId: 0n, __target: target });
+    ctx.db.idcNoopOutbox.insert({ msgId: 0n, target });
   }
 );
 

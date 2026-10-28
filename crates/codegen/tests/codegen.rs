@@ -591,23 +591,33 @@ fn typescript_receiver_bindings_with_shadowing_types_compile() {
             ("symbol", AlgebraicType::Ref(symbol)),
         ]),
     );
+    builder.add_reducer("noop", ProductType::unit());
     let module: ModuleDef = builder.finish().try_into().unwrap();
     compile_typescript_receiver_bindings(
         &module,
-        r#"import { schema } from 'spacetimedb/server';
+        r#"import { schema, table, t } from 'spacetimedb/server';
 import receiver, { String as CustomString, Symbol as CustomSymbol, ReceiveArgs } from './receiver';
 import other from './other';
 
-const outbox = receiver.outbox.receive();
-const db = schema({ outbox });
+const outbox = table(
+  { outbox: { receiver: receiver.reducers.receive } },
+  {
+    deliveryId: t.u64().primaryKey().autoInc(),
+    destination: receiver.identity().target(),
+    ...receiver.reducers.receive.params,
+  }
+);
+const noopOutbox = receiver.outbox.noop();
+const db = schema({ outbox, noopOutbox });
 db.reducer({ target: receiver.identity(), other: other.identity() }, (ctx, { target, other }) => {
   const customString: CustomString = { value: 'custom' };
   const symbol: CustomSymbol = { value: 7n };
   const customArgs: ReceiveArgs = { builtin: 'nested', custom: customString, symbol };
-  const row = { __msgId: 0n, __target: target, msgId: 42n, target: 'payload', text: 'builtin', customString, customArgs, symbol };
+  const row = { deliveryId: 0n, destination: target, msgId: 42n, target: 'payload', text: 'builtin', customString, customArgs, symbol };
   ctx.db.outbox.insert(row);
+  ctx.db.noopOutbox.insert({ msgId: 0n, target });
   // @ts-expect-error Each generated dependency must retain its own identity brand.
-  ctx.db.outbox.insert({ ...row, __target: other });
+  ctx.db.outbox.insert({ ...row, destination: other });
 });
 "#,
     );

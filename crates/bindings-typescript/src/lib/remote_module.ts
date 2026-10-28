@@ -35,10 +35,16 @@ function outboxTable<Params extends ElementsObj, Module extends symbol>(
   identity: () => IdentityBuilder<ReceiverIdentity<Module>>,
   opts: { name?: string } = {}
 ) {
-  // Keep bookkeeping columns separate from generated receiver parameter names.
+  for (const name of ['msgId', 'target']) {
+    if (name in receiver.params) {
+      throw new TypeError(
+        `Receiver parameter '${name}' conflicts with outbox metadata; declare the outbox with table() and choose different metadata column names`
+      );
+    }
+  }
   const row = {
-    __msgId: t.u64().primaryKey().autoInc(),
-    __target: identity().target(),
+    msgId: t.u64().primaryKey().autoInc(),
+    target: identity().target(),
     ...receiver.params,
   };
   return table({ name: opts.name, outbox: { receiver } }, row);

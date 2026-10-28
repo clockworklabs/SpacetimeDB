@@ -75,14 +75,14 @@ export const enqueueTwoDependencies = spacetimedb.reducer(
 export const enqueuePing = spacetimedb.reducer(
   { target: gw.identity(), body: t.string() },
   (ctx, { target, body }) => {
-    ctx.db.outboundPing.insert({ __msgId: 0n, __target: target, body });
+    ctx.db.outboundPing.insert({ msgId: 0n, target, body });
   }
 );
 export const enqueuePings = spacetimedb.reducer(
   { target: gw.identity(), bodies: t.array(t.string()) },
   (ctx, { target, bodies }) => {
     for (const body of bodies)
-      ctx.db.outboundPing.insert({ __msgId: 0n, __target: target, body });
+      ctx.db.outboundPing.insert({ msgId: 0n, target, body });
   }
 );
 export const enqueueDetailedPing = spacetimedb.reducer(
@@ -109,7 +109,7 @@ export const onPingResult = spacetimedb.reducer(
   { row: outboundPing.rowType, result: t.result(t.unit(), t.string()) },
   (ctx, { row, result }) =>
     ctx.db.pingResult.insert({
-      id: row.__msgId,
+      id: row.msgId,
       callbackOrder: 0n,
       moduleVersion: 1,
       body: row.body,

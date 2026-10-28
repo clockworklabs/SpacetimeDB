@@ -269,7 +269,7 @@ const pingOutbox = table(
     note: t.string(),
   }
 );
-// The shorthand gw.outbox.receivePing() uses __msgId and __target for metadata.
+// Alternatively: const pingOutbox = gw.outbox.receivePing();
 // Like table(), it takes an optional name; the schema key defines the accessor.
 const db = schema({ pingOutbox });
 export default db;
@@ -297,3 +297,7 @@ column order. Outboxes expose inserts and reads; updates, deletes, and `clear`
 are unavailable. A result callback accepts the outbox row followed by
 `Result<Unit, String>`. The host commits successful callback changes atomically
 with outbox cleanup.
+
+The shorthand reserves `msgId` and `target` for its metadata columns. If the
+receiver has a parameter with either name, declare the outbox with `table()`
+and use different metadata column names, such as `deliveryId` and `destination`.

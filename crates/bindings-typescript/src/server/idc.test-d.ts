@@ -73,31 +73,31 @@ const widened = table(options, explicit.rowType.row);
 const absent = table({ outbox: undefined }, explicit.rowType.row);
 const db = schema({ outbox, explicit, revisions, ordinary, widened, absent });
 db.reducer({ to: gw.identity(), note: t.string() }, (ctx, { to, note }) => {
-  ctx.db.outbox.insert({ __msgId: 0n, __target: to, note });
-  ctx.db.outbox.__msgId.find(1n);
+  ctx.db.outbox.insert({ msgId: 0n, target: to, note });
+  ctx.db.outbox.msgId.find(1n);
   ctx.db.explicit.insert({ id: 0n, target: to, note });
   ctx.db.explicit.note.filter('hello');
   ctx.db.explicit.byNote.filter(note);
   ctx.db.explicit.byTarget.filter(to);
-  ctx.db.revisions.insert({ __msgId: 0n, __target: to, revision: 1n });
+  ctx.db.revisions.insert({ msgId: 0n, target: to, revision: 1n });
   // @ts-expect-error Each reducer's outbox retains its own argument types.
-  ctx.db.revisions.insert({ __msgId: 0n, __target: to, revision: note });
+  ctx.db.revisions.insert({ msgId: 0n, target: to, revision: note });
   // @ts-expect-error Explicit B-tree indexes remain read-only on outboxes.
   ctx.db.explicit.byNote.delete(note);
   // @ts-expect-error Explicit hash indexes remain read-only on outboxes.
   ctx.db.explicit.byTarget.delete(to);
   // @ts-expect-error Outboxes cannot be updated.
-  ctx.db.outbox.__msgId.update({ __msgId: 1n, __target: to, note });
+  ctx.db.outbox.msgId.update({ msgId: 1n, target: to, note });
   // @ts-expect-error Outboxes cannot be deleted by index.
-  ctx.db.outbox.__msgId.delete(1n);
+  ctx.db.outbox.msgId.delete(1n);
   // @ts-expect-error Outboxes cannot be deleted by range.
   ctx.db.explicit.note.delete('hello');
   // @ts-expect-error Outbox rows cannot be deleted.
-  ctx.db.outbox.delete({ __msgId: 1n, __target: to, note });
+  ctx.db.outbox.delete({ msgId: 1n, target: to, note });
   // @ts-expect-error Outboxes cannot be cleared.
   ctx.db.explicit.clear();
   // @ts-expect-error Generated arguments preserve their types.
-  ctx.db.outbox.insert({ __msgId: 0n, __target: to, note: 123 });
+  ctx.db.outbox.insert({ msgId: 0n, target: to, note: 123 });
   ctx.db.ordinary.id.update({ id: 1n, note });
   ctx.db.ordinary.id.delete(1n);
   ctx.db.ordinary.delete({ id: 1n, note });
@@ -133,14 +133,14 @@ db.reducer(
 db.reducer(
   { to: gw.identity(), other: auth.identity(), raw: t.identity() },
   (ctx, { to, other, raw }) => {
-    ctx.db.outbox.insert({ __msgId: 0n, __target: to, note: 'valid' });
+    ctx.db.outbox.insert({ msgId: 0n, target: to, note: 'valid' });
     ctx.db.outbox.insert({
-      __msgId: 0n,
+      msgId: 0n,
       // @ts-expect-error A different dependency's identity is incompatible.
-      __target: other,
+      target: other,
       note: 'wrong module',
     });
     // @ts-expect-error A raw identity must not bypass receiver typing.
-    ctx.db.outbox.insert({ __msgId: 0n, __target: raw, note: 'untyped' });
+    ctx.db.outbox.insert({ msgId: 0n, target: raw, note: 'untyped' });
   }
 );
