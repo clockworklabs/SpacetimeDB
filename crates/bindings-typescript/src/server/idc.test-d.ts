@@ -120,7 +120,7 @@ db.reducer({ to: gw.identity(), note: t.string() }, (ctx, { to, note }) => {
 });
 db.reducer(
   { reactive: { onResult: outbox } },
-  { row: t.rowOf(outbox), result: t.result(t.unit(), t.string()) },
+  { row: outbox.rowType, result: t.result(t.unit(), t.string()) },
   (_ctx, { row, result }) => {
     const note: string = row.note;
     if ('err' in result) {

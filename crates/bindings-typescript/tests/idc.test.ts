@@ -127,7 +127,7 @@ describe('IDC outboxes', () => {
     const db = schema({ outbox });
     const onResult = db.reducer(
       { name: 'wire_callback', reactive: { onResult: outbox } },
-      { row: t.rowOf(outbox), result: t.result(t.unit(), t.string()) },
+      { row: outbox.rowType, result: t.result(t.unit(), t.string()) },
       () => {}
     );
     const raw = db.buildRawModuleDefV10({ onResult });
@@ -314,7 +314,7 @@ describe('IDC outboxes', () => {
     const other = schema({});
     const callback = other.reducer(
       { reactive: { onResult: outbox } },
-      { row: t.rowOf(outbox), result: t.result(t.unit(), t.string()) },
+      { row: outbox.rowType, result: t.result(t.unit(), t.string()) },
       () => {}
     );
     expect(() => other.buildRawModuleDefV10({ callback })).toThrow(
@@ -328,7 +328,7 @@ describe('IDC outboxes', () => {
     const db = schema({ outbox, other });
     const bad = db.reducer(
       { reactive: { onResult: outbox } },
-      { row: t.rowOf(other), result: t.result(t.unit(), t.string()) },
+      { row: other.rowType, result: t.result(t.unit(), t.string()) },
       () => {}
     );
     expect(() => db.buildRawModuleDefV10({ bad })).toThrow(
@@ -341,7 +341,7 @@ describe('IDC outboxes', () => {
     const db = schema({ outbox });
     const opts = { reactive: { onResult: outbox } };
     const params = {
-      row: t.rowOf(outbox),
+      row: outbox.rowType,
       result: t.result(t.unit(), t.string()),
     };
     const first = db.reducer(opts, params, () => {});

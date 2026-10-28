@@ -3811,10 +3811,6 @@ const enumImpl = ((nameOrObj: any, maybeObj?: any) => {
  * @see {@link TypeBuilder}
  */
 export const t = {
-  /** The row type of a table, for example an IDC result callback parameter. */
-  rowOf: <Row extends RowObj>(table: {
-    rowType: RowBuilder<Row>;
-  }): RowBuilder<Row> => table.rowType,
   /**
    * Creates a new `Bool` {@link AlgebraicType} to be used in table definitions
    * Represented as `boolean` in TypeScript.
