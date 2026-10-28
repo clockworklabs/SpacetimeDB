@@ -8940,6 +8940,7 @@ dependencies = [
  "lean_string",
  "petgraph 0.6.5",
  "proptest",
+ "serde_json",
  "serial_test",
  "smallvec",
  "spacetimedb-data-structures",

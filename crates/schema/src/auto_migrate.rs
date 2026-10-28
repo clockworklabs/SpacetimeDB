@@ -1430,7 +1430,7 @@ mod tests {
                     target_column,
                     arg_columns,
                     on_result_reducer.map(str::to_owned),
-                    signature_hash.to_owned(),
+                    hash_bytes(signature_hash.as_bytes()),
                 );
             }
         })
