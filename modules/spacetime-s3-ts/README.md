@@ -6,11 +6,17 @@ SpacetimeDB. File bytes go straight between the browser and S3.
 Use this submodule for user uploads that must survive a server restart or a failed
 S3 request. Your app decides who can upload, download, and delete each file.
 
-## Setup
+## Install
 
-This package is under development in the SpacetimeDB workspace. Add
-`"@spacetimedb/s3": "workspace:*"` to your module's dependencies, then run `pnpm install`
-from the repository root.
+Run this in your SpacetimeDB TypeScript module directory:
+
+```bash
+npm install @spacetimedb/s3
+```
+
+Requires SpacetimeDB SDK, CLI, and server 2.12 or later.
+
+## Setup
 
 Mount the submodule and its maintenance table:
 
@@ -41,7 +47,7 @@ Call `files.initialize(tx)` from your init reducer. Insert an interval into
 that calls `files.reconcile(ctx, credentials)`. A five-second interval is a useful
 starting point. Keep that procedure private.
 
-The [browser example](./example/) has the complete wiring, typed environment
+The [browser example](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-s3-ts/example) has the complete wiring, typed environment
 variables, caller checks, and an owner-filtered view.
 
 ## Upload and download
@@ -229,4 +235,6 @@ its own server and fault-injection S3 receiver, tests real module transactions a
 host restarts, and stops both afterward. It needs no AWS credentials. Live AWS
 tests must use a separate private bucket and remove all test objects afterward.
 
-License: Apache-2.0.
+## License
+
+Apache-2.0. See the [license](https://github.com/clockworklabs/SpacetimeDB/blob/master/licenses/apache2.txt).
