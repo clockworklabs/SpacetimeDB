@@ -12,7 +12,7 @@ export {
   type RemoteReducer,
   type ReceiverIdentity,
 } from '../lib/remote_module';
-export { table } from '../lib/table';
+export { table, type OutboxTableOpts } from '../lib/table';
 export { SenderError, SpacetimeHostError, errors } from './errors';
 export type { Reducer, ReducerCtx, JwtClaims, AuthCtx } from '../lib/reducers';
 export type { ReducerExport } from './reducers';

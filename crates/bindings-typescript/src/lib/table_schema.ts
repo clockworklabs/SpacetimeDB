@@ -1,6 +1,9 @@
-import type { RawOutboxDefV10 } from './autogen/types';
 import type { ProductType } from './algebraic_type';
-import type { RawScheduleDefV10, RawTableDefV10 } from './autogen/types';
+import type {
+  RawOutboxDefV10,
+  RawScheduleDefV10,
+  RawTableDefV10,
+} from './autogen/types';
 import type { IndexOpts } from './indexes';
 import type { ModuleContext } from './schema';
 import type { ColumnBuilder, RowBuilder } from './type_builders';
@@ -22,6 +25,12 @@ export type TableSchedule = {
   scheduleAtCol: number;
   reducer: () => UntypedScheduledFunctionExport;
 };
+
+/** Outbox metadata before table and callback names are resolved. */
+export type OutboxMetadata = Omit<
+  RawOutboxDefV10,
+  'tableName' | 'onResultReducer'
+>;
 
 export type ScheduleTableForParams<Params extends Record<string, any>> =
   HasExactlyOneKnownKey<Params> extends true
@@ -54,7 +63,7 @@ export type TableSchema<
    * The outbox receiver and argument mapping, if this is an outbox table.
    * Schema registration supplies the table name and resolves the result callback.
    */
-  readonly outbox?: Omit<RawOutboxDefV10, 'tableName' | 'onResultReducer'>;
+  readonly outbox?: OutboxMetadata;
 
   /**
    * The TypeBuilder representation of the type of the rows in the table.

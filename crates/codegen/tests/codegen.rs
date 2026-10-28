@@ -510,6 +510,67 @@ export function checkIdentity(to: ReceiverIdentity, wrong: OtherIdentity, raw: R
 }
 
 #[test]
+fn typescript_receiver_bindings_with_shadowing_types_compile() {
+    use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+    use spacetimedb_lib::{AlgebraicType, ProductType};
+
+    let mut builder = RawModuleDefV10Builder::new();
+    let symbol = builder.add_algebraic_type(
+        [],
+        "Symbol",
+        AlgebraicType::product([("value", AlgebraicType::U64)]),
+        false,
+    );
+    let string = builder.add_algebraic_type(
+        [],
+        "String",
+        AlgebraicType::product([("value", AlgebraicType::String)]),
+        false,
+    );
+    let args = builder.add_algebraic_type(
+        [],
+        "ReceiveArgs",
+        AlgebraicType::product([
+            ("builtin", AlgebraicType::String),
+            ("custom", AlgebraicType::Ref(string)),
+            ("symbol", AlgebraicType::Ref(symbol)),
+        ]),
+        false,
+    );
+    builder.add_reducer(
+        "receive",
+        ProductType::from([
+            ("msg_id", AlgebraicType::U64),
+            ("target", AlgebraicType::String),
+            ("text", AlgebraicType::String),
+            ("custom_string", AlgebraicType::Ref(string)),
+            ("custom_args", AlgebraicType::Ref(args)),
+            ("symbol", AlgebraicType::Ref(symbol)),
+        ]),
+    );
+    let module: ModuleDef = builder.finish().try_into().unwrap();
+    compile_typescript_receiver_bindings(
+        &module,
+        r#"import { schema } from 'spacetimedb/server';
+import receiver, { String as CustomString, Symbol as CustomSymbol, ReceiveArgs } from './receiver';
+import other from './other';
+
+const outbox = receiver.outbox.receive();
+const db = schema({ outbox });
+db.reducer({ target: receiver.identity(), other: other.identity() }, (ctx, { target, other }) => {
+  const customString: CustomString = { value: 'custom' };
+  const symbol: CustomSymbol = { value: 7n };
+  const customArgs: ReceiveArgs = { builtin: 'nested', custom: customString, symbol };
+  const row = { __msgId: 0n, __target: target, msgId: 42n, target: 'payload', text: 'builtin', customString, customArgs, symbol };
+  ctx.db.outbox.insert(row);
+  // @ts-expect-error Each generated dependency must retain its own identity brand.
+  ctx.db.outbox.insert({ ...row, __target: other });
+});
+"#,
+    );
+}
+
+#[test]
 fn test_codegen_typescript_receiver_bindings() {
     use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, ExplicitNames, RawModuleDefV10Builder};
     use spacetimedb_lib::db::raw_def::v9::Lifecycle;

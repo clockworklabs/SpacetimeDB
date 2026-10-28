@@ -1191,6 +1191,9 @@ export function assignTxAliasViews(
   }
 }
 
+// TODO: Return OutboxTable when building an outbox, since it has no delete or clear.
+// This doesn't affect ctx.db: DbView gets its types from the schema's isOutbox
+// flag, rather than this function's return type.
 export function makeTableView(
   typespace: Typespace,
   table: RawTableDefV10,

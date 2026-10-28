@@ -1,4 +1,13 @@
-import { IdentityBuilder, type ElementsObj } from './type_builders';
+import type { OutboxMetadata } from './table_schema';
+import { table } from './table';
+import {
+  IdentityBuilder,
+  t,
+  type ElementsObj,
+  type RowBuilder,
+  type RowObj,
+} from './type_builders';
+import { deepEqual } from './util';
 import type { Identity } from './identity';
 
 declare const receiverIdentityBrand: unique symbol;
@@ -21,6 +30,20 @@ export interface RemoteReducer<Params extends ElementsObj = ElementsObj> {
   readonly signatureHash: bigint;
 }
 
+function outboxTable<Params extends ElementsObj, Module extends symbol>(
+  receiver: RemoteReducer<Params>,
+  identity: () => IdentityBuilder<ReceiverIdentity<Module>>,
+  opts: { name?: string } = {}
+) {
+  // Keep bookkeeping columns separate from generated receiver parameter names.
+  const row = {
+    __msgId: t.u64().primaryKey().autoInc(),
+    __target: identity().target(),
+    ...receiver.params,
+  };
+  return table({ name: opts.name, outbox: { receiver } }, row);
+}
+
 /** Used by generated receiver bindings with a unique symbol declared in that module. */
 export function remoteModule<
   const Reducers extends Record<string, RemoteReducer>,
@@ -39,5 +62,80 @@ export function remoteModule<
       return [name, handle];
     })
   ) as Reducers;
-  return { reducers: handles, identity };
+  const outbox = Object.fromEntries(
+    Object.entries(handles).map(([name, reducer]) => [
+      name,
+      (opts?: { name?: string }) => outboxTable(reducer, identity, opts),
+    ])
+  ) as {
+    [K in keyof Reducers]: (opts?: {
+      name?: string;
+    }) => ReturnType<typeof outboxTable<Reducers[K]['params'], Module>>;
+  };
+  return { reducers: handles, identity, outbox };
+}
+
+/** Resolve receiver parameters by name, independently of sender column order. */
+export function makeOutbox(
+  receiver: RemoteReducer,
+  row: RowBuilder<RowObj>,
+  primaryKey: number[],
+  scheduledOrEvent: boolean
+): OutboxMetadata {
+  const columns = Object.entries(row.row);
+  if (scheduledOrEvent)
+    throw new TypeError('Outbox tables cannot be scheduled or event tables');
+  const pk = primaryKey.length === 1 ? columns[primaryKey[0]][1] : undefined;
+  if (
+    !pk?.columnMetadata.isAutoIncrement ||
+    pk.typeBuilder.algebraicType.tag !== 'U64'
+  ) {
+    throw new TypeError(
+      'Outbox tables require a u64 primary key with autoInc()'
+    );
+  }
+  const targets = columns.flatMap(([, col], i) =>
+    col.columnMetadata.isTarget ? [i] : []
+  );
+  if (
+    targets.length !== 1 ||
+    !deepEqual(
+      columns[targets[0]][1].typeBuilder.algebraicType,
+      t.identity().algebraicType
+    )
+  ) {
+    throw new TypeError(
+      'Outbox tables require exactly one identity().target() column'
+    );
+  }
+  const argColumns = Object.entries(receiver.params).map(([name, type]) => {
+    const matches = columns.flatMap(([key], i) => (key === name ? [i] : []));
+    if (matches.length !== 1)
+      throw new TypeError(
+        `Outbox requires exactly one column for receiver parameter '${name}'`
+      );
+    const index = matches[0];
+    if (
+      !deepEqual(
+        columns[index][1].typeBuilder.algebraicType,
+        type.algebraicType
+      )
+    ) {
+      throw new TypeError(`Outbox column for '${name}' has the wrong type`);
+    }
+    return index;
+  });
+  const module = receiverModules.get(receiver);
+  const target = columns[targets[0]][1].typeBuilder;
+  if (module === undefined || identityModules.get(target) !== module) {
+    throw new TypeError(
+      'Outbox target must use the selected receiver module identity() builder'
+    );
+  }
+  return {
+    targetColumn: targets[0],
+    argColumns,
+    remoteReducer: receiver.name,
+    signatureHash: receiver.signatureHash,
+  };
 }

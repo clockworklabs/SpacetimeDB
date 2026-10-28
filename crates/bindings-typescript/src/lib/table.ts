@@ -1,3 +1,5 @@
+import type { RemoteReducer } from './remote_module';
+import { makeOutbox } from './remote_module';
 import type { ProcedureExport, ReducerExport, t } from '../server';
 import type { errors } from '../server/errors';
 import {
@@ -139,6 +141,7 @@ export type UntypedTableDef = {
   constraints: readonly ConstraintOpts<any>[];
   tableDef: RawTableDefV10;
   isEvent?: boolean;
+  isOutbox?: boolean;
 };
 
 /**
@@ -207,25 +210,44 @@ export type TableOpts<Row extends RowObj> = {
         ReturnType<typeof t.unit>
       >;
   event?: boolean;
+  outbox?: undefined;
+};
+
+/** Options for an insert-only outbox using a generated receiver handle. */
+export type OutboxTableOpts<Row extends RowObj> = Omit<
+  TableOpts<Row>,
+  'outbox'
+> & {
+  outbox: { receiver: RemoteReducer };
 };
 
 /**
  * Extracts the indices from TableOpts, defaulting to an empty array if none are provided.
  */
-type OptsIndices<Opts extends TableOpts<any>> = Opts extends {
-  indexes: infer Ixs extends NonNullable<any[]>;
-}
-  ? Ixs
-  : CoerceArray<[]>;
+type OptsIndices<Opts extends TableOpts<any> | OutboxTableOpts<any>> =
+  Opts extends {
+    indexes: infer Ixs extends NonNullable<any[]>;
+  }
+    ? Ixs
+    : CoerceArray<[]>;
 
 /**
  * Extracts the constraints from TableOpts, defaulting to an empty array if none are provided.
  */
-type OptsConstraints<Opts extends TableOpts<any>> = Opts extends {
-  constraints: infer Constraints extends NonNullable<any[]>;
+type OptsConstraints<Opts extends TableOpts<any> | OutboxTableOpts<any>> =
+  Opts extends {
+    constraints: infer Constraints extends NonNullable<any[]>;
+  }
+    ? Constraints
+    : CoerceArray<[]>;
+
+// Ordinary TableOpts annotations must keep their existing mutable table API.
+// OutboxTableOpts requires the discriminator, even when options are widened.
+type OptsIsOutbox<Opts> = Opts extends {
+  outbox: object;
 }
-  ? Constraints
-  : CoerceArray<[]>;
+  ? true
+  : false;
 
 /**
  * Table<Row, UniqueConstraintViolation = never, AutoIncOverflow = never>
@@ -321,7 +343,10 @@ export interface TableMethods<TableDef extends UntypedTableDef>
  *
  * **How to fix:** Remove either `default()` or the constraint (`primaryKey`/`unique`/`autoInc`).
  */
-export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
+export function table<
+  Row extends RowObj,
+  const Opts extends TableOpts<Row> | OutboxTableOpts<Row>,
+>(
   opts: Opts,
   row: Row | RowBuilder<Row>,
   // ⚠️ INTERNAL: This parameter enforces compile-time validation of column metadata.
@@ -335,7 +360,9 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         >,
       ]
     : []
-): TableSchema<CoerceRow<Row>, OptsIndices<Opts>> {
+): TableSchema<CoerceRow<Row>, OptsIndices<Opts>> & {
+  readonly isOutbox: OptsIsOutbox<Opts>;
+} {
   const {
     name,
     public: isPublic = false,
@@ -500,7 +527,14 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
       ? { scheduleAtCol, reducer: scheduled }
       : undefined;
 
+  const receiver = opts.outbox?.receiver;
+  const outbox = receiver
+    ? makeOutbox(receiver, row, pk, !!scheduled || isEvent)
+    : undefined;
+
   return {
+    isOutbox: !!receiver as boolean & OptsIsOutbox<Opts>,
+    outbox,
     rowType: row as RowBuilder<CoerceRow<Row>>,
     tableName: name,
     rowSpacetimeType: productType,
