@@ -2530,17 +2530,17 @@ namespace SpacetimeDB
     [DataContract]
     public sealed partial class IdcNoopOutbox
     {
-        [DataMember(Name = "id")]
-        public ulong Id;
+        [DataMember(Name = "msg_id")]
+        public ulong MsgId;
         [DataMember(Name = "target")]
         public SpacetimeDB.Identity Target;
 
         public IdcNoopOutbox(
-            ulong Id,
+            ulong MsgId,
             SpacetimeDB.Identity Target
         )
         {
-            this.Id = Id;
+            this.MsgId = MsgId;
             this.Target = Target;
         }
 

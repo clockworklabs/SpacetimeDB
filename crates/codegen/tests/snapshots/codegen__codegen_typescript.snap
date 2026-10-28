@@ -818,7 +818,7 @@ export const HasSpecialStuff = __t.object("HasSpecialStuff", {
 export type HasSpecialStuff = __Infer<typeof HasSpecialStuff>;
 
 export const IdcNoopOutbox = __t.object("IdcNoopOutbox", {
-  id: __t.u64(),
+  msgId: __t.u64(),
   target: __t.identity(),
 });
 export type IdcNoopOutbox = __Infer<typeof IdcNoopOutbox>;

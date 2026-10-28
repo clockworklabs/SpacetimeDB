@@ -817,7 +817,7 @@ use spacetimedb_sdk::__codegen::{
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct IdcNoopOutbox {
-    pub id: u64,
+    pub msg_id: u64,
     pub target: __sdk::Identity,
 }
 
@@ -831,7 +831,7 @@ impl __sdk::InModule for IdcNoopOutbox {
 ///
 /// Provides typed access to columns for query building.
 pub struct IdcNoopOutboxCols {
-    pub id: __sdk::__query_builder::Col<IdcNoopOutbox, u64>,
+    pub msg_id: __sdk::__query_builder::Col<IdcNoopOutbox, u64>,
     pub target: __sdk::__query_builder::Col<IdcNoopOutbox, __sdk::Identity>,
 }
 
@@ -839,7 +839,7 @@ impl __sdk::__query_builder::HasCols for IdcNoopOutbox {
     type Cols = IdcNoopOutboxCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         IdcNoopOutboxCols {
-            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            msg_id: __sdk::__query_builder::Col::new(table_name, "msg_id"),
             target: __sdk::__query_builder::Col::new(table_name, "target"),
 
         }
@@ -850,14 +850,14 @@ impl __sdk::__query_builder::HasCols for IdcNoopOutbox {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct IdcNoopOutboxIxCols {
-    pub id: __sdk::__query_builder::IxCol<IdcNoopOutbox, u64>,
+    pub msg_id: __sdk::__query_builder::IxCol<IdcNoopOutbox, u64>,
 }
 
 impl __sdk::__query_builder::HasIxCols for IdcNoopOutbox {
     type IxCols = IdcNoopOutboxIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         IdcNoopOutboxIxCols {
-            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            msg_id: __sdk::__query_builder::IxCol::new(table_name, "msg_id"),
 
         }
     }
