@@ -7,7 +7,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 use std::{io, thread};
 
-pub trait Scorer {
+pub trait Scorer: Send {
     fn id(&self) -> &'static str;
     fn score(&self, llm_output: &str) -> ScoreDetails;
 }

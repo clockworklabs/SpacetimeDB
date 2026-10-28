@@ -18,7 +18,7 @@ use crate::bench::utils::{
 };
 use crate::bench::Publisher;
 use crate::eval::scorers::call_reducer_json_out;
-use crate::eval::{Lang, ScoreDetails};
+use crate::eval::{Lang, ScoreDetails, Scorer};
 use crate::generated::resolve_by_path;
 use crate::llm::model_routes::ModelRoute;
 
@@ -105,6 +105,20 @@ async fn publish_async(
 async fn delete_database_async(database: PublishedDatabase) -> Result<()> {
     task::spawn_blocking(move || database.delete()).await??;
     Ok(())
+}
+
+async fn score_async(
+    scorers: Vec<Box<dyn Scorer>>,
+    output: String,
+    database: Option<PublishedDatabase>,
+) -> Result<(Vec<(&'static str, ScoreDetails)>, String, Option<PublishedDatabase>)> {
+    task::spawn_blocking(move || {
+        // Keep the database alive if the awaiting task is cancelled while scoring.
+        let scores = scorers.iter().map(|s| (s.id(), s.score(&output))).collect();
+        (scores, output, database)
+    })
+    .await
+    .context("scoring worker failed")
 }
 
 pub async fn delete_databases(databases: Vec<PublishedDatabase>) -> Result<()> {
@@ -307,7 +321,7 @@ impl TaskRunner {
         let generation_duration_ms = Some(gen_start.elapsed().as_millis() as u64);
         let input_tokens = llm_result.input_tokens;
         let output_tokens = llm_result.output_tokens;
-        let llm_output = llm_result.text;
+        let mut llm_output = llm_result.text;
 
         let migration_setup = load_migration_setup_source(task, cfg.lang)?;
 
@@ -343,7 +357,7 @@ impl TaskRunner {
             Ok(None)
         };
 
-        let (published_database, publish_error) = match setup_database {
+        let (mut published_database, publish_error) = match setup_database {
             Err(error) => (None, Some(format!("migration setup failed: {error:#}"))),
             Ok(mut setup_database) => {
                 let publish_result = self
@@ -391,13 +405,21 @@ impl TaskRunner {
 
         if publish_error.is_none() {
             println!("→ [{}] {}: scoring", cfg.lang_name, cfg.route.display_name);
-            for s in &scorers {
-                let r = s.score(&llm_output);
+            let (scores, output, database) =
+                score_async(scorers, llm_output, published_database)
+                    .await
+                    .map_err(|error| RunOneError::Infrastructure {
+                        msg: format!("scoring worker failed: {error:#}"),
+                        llm_output: None,
+                    })?;
+            llm_output = output;
+            published_database = database;
+            for (id, r) in scores {
                 if r.pass {
                     passed += 1;
                 }
                 partial_sum += r.partial.clamp(0.0, 1.0);
-                scorer_details.insert(s.id().to_string(), r);
+                scorer_details.insert(id.to_string(), r);
             }
         } else {
             println!(
@@ -1207,19 +1229,24 @@ pub async fn validate_goldens_for_lang(
 
         let ctor = resolve_by_path(&task.root)?;
         let spec = ctor();
-        for scorer in spec.scorers_for(lang, route_tag, host_url) {
-            let details = scorer.score(&golden_src_text);
+        let (scores, _, candidate_database) = score_async(
+            spec.scorers_for(lang, route_tag, host_url),
+            golden_src_text,
+            Some(candidate_database),
+        )
+        .await?;
+        for (id, details) in scores {
             if !details.pass {
                 failures.push(format!(
                     "{}/{} [{}]: {}",
                     category,
                     task_id,
-                    scorer.id(),
+                    id,
                     serde_json::to_string(&details.notes).unwrap_or_else(|_| "<unprintable details>".to_string())
                 ));
             }
         }
-        delete_database_async(candidate_database).await?;
+        delete_database_async(candidate_database.expect("candidate database retained during scoring")).await?;
     }
 
     delete_databases(golden_databases).await?;
@@ -1380,6 +1407,76 @@ fn normalize_task_selector(raw: &str) -> Result<String> {
 #[cfg(test)]
 mod build_cleanup_tests {
     use super::*;
+
+    #[test]
+    fn slow_scoring_does_not_block_health_checks() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::mpsc;
+
+        struct SlowScorer(mpsc::Receiver<()>);
+        impl Scorer for SlowScorer {
+            fn id(&self) -> &'static str {
+                "slow"
+            }
+            fn score(&self, output: &str) -> ScoreDetails {
+                assert_eq!(output, "candidate");
+                ScoreDetails {
+                    pass: self.0.recv_timeout(Duration::from_secs(8)).is_ok(),
+                    partial: 0.5,
+                    notes: json!({"preserved": true}),
+                }
+            }
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let host = format!("http://{}", listener.local_addr().unwrap());
+        listener.set_nonblocking(true).unwrap();
+        let server = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(15);
+            loop {
+                match listener.accept() {
+                    Ok((mut socket, _)) => {
+                        socket.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                        let mut request = [0; 4096];
+                        let n = socket.read(&mut request).unwrap();
+                        assert!(String::from_utf8_lossy(&request[..n]).starts_with("GET /v1/ping "));
+                        socket
+                            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                            .unwrap();
+                        break;
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(Instant::now() < deadline, "health check never reached mock server");
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(error) => panic!("mock server: {error}"),
+                }
+            }
+        });
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let (release, wait) = mpsc::channel();
+        let (scores, output, database) = runtime.block_on(async {
+            // Poll both futures in one task, as buffer_unordered does in the runner.
+            let scoring = score_async(vec![Box::new(SlowScorer(wait))], "candidate".into(), None);
+            let probe = async {
+                ensure_server_healthy(Some(&host)).await.unwrap();
+                let _ = release.send(());
+            };
+            let (scores, ()) = futures::join!(scoring, probe);
+            scores.unwrap()
+        });
+        server.join().unwrap();
+        assert_eq!(output, "candidate");
+        assert!(database.is_none());
+        assert_eq!(scores[0].0, "slow");
+        assert!(scores[0].1.pass, "scoring blocked the health check until its deadline");
+        assert_eq!(scores[0].1.partial, 0.5);
+        assert_eq!(scores[0].1.notes, json!({"preserved": true}));
+    }
 
     #[test]
     fn preserves_sources_and_shared_files_after_success_and_failure() {

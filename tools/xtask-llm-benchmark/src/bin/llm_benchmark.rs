@@ -298,7 +298,11 @@ fn run_benchmarks(args: RunArgs, reasoning: ReasoningEffort) -> Result<()> {
         eprintln!("[warn] failed to upload task catalog: {e}");
     }
 
-    let RuntimeInit { runtime, mut guard } = initialize_runtime(config.hash_only)?;
+    let initialized = initialize_runtime(config.hash_only)?;
+    let mut guard = initialized.guard;
+    // Drop the runtime first: finish blocking scoring/cleanup before stopping the server.
+    let runtime = initialized.runtime;
+    save_server_diagnostics(guard.as_mut(), "start");
 
     config.host = guard.as_ref().map(|g| g.host_url.clone());
 
@@ -314,12 +318,14 @@ fn run_benchmarks(args: RunArgs, reasoning: ReasoningEffort) -> Result<()> {
 
     if config.goldens_only {
         let rt = runtime.as_ref().expect("runtime required for --goldens-only");
-        rt.block_on(validate_goldens_for_lang(
+        let result = rt.block_on(validate_goldens_for_lang(
             config.host.clone(),
             &bench_root,
             config.lang,
             selectors_ref,
-        ))?;
+        ));
+        save_server_diagnostics(guard.as_mut(), "end");
+        result?;
         println!("[{}] goldens-only validation complete", config.lang.as_str());
         return Ok(());
     }
@@ -355,6 +361,8 @@ fn run_benchmarks(args: RunArgs, reasoning: ReasoningEffort) -> Result<()> {
         all_outcomes.extend(outcomes);
     }
 
+    save_server_diagnostics(guard.as_mut(), "end");
+
     // Write local run log on --dry-run so results aren't lost
     if dry_run && !all_outcomes.is_empty() {
         let runs_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("runs");
@@ -380,10 +388,82 @@ fn report_server_status(guard: Option<&mut SpacetimeDbGuard>) {
     let Some(guard) = guard else {
         return;
     };
+    save_server_diagnostics(Some(guard), "failure");
     match guard.child.try_wait() {
         Ok(Some(status)) => eprintln!("[server] local SpacetimeDB exited unexpectedly: {status}"),
         Ok(None) => eprintln!("[server] local SpacetimeDB is still running after benchmark failure"),
         Err(error) => eprintln!("[server] failed to read local SpacetimeDB exit status: {error}"),
+    }
+}
+
+// Capture before Drop kills the server, so cleanup cannot be mistaken for the cause.
+fn save_server_diagnostics(guard: Option<&mut SpacetimeDbGuard>, phase: &str) {
+    let (Some(guard), Some(dir)) = (guard, std::env::var_os("LLM_BENCHMARK_DIAGNOSTICS_DIR")) else {
+        return;
+    };
+    let result = (|| -> Result<()> {
+        let dir = PathBuf::from(dir);
+        fs::create_dir_all(&dir)?;
+        let pid = guard.child.id();
+        let mut resources = format!(
+            "time={:?}\npid={pid}\nstatus={:?}\n",
+            std::time::SystemTime::now(),
+            guard.child.try_wait()
+        );
+        for path in [
+            "/proc/meminfo".to_owned(),
+            "/proc/pressure/memory".to_owned(),
+            "/proc/pressure/cpu".to_owned(),
+            "/proc/pressure/io".to_owned(),
+            format!("/proc/{pid}/status"),
+            format!("/proc/{pid}/stat"),
+            format!("/proc/{pid}/io"),
+            format!("/proc/{pid}/limits"),
+            format!("/proc/{pid}/cgroup"),
+        ] {
+            append_resource(&mut resources, Path::new(&path));
+        }
+        // On cgroup v2, collect the server's group and its parents (limits can be inherited).
+        // The child may already be dead. The harness shares its cgroup in CI.
+        if let Ok(groups) =
+            fs::read_to_string(format!("/proc/{pid}/cgroup")).or_else(|_| fs::read_to_string("/proc/self/cgroup"))
+            && let Some(group) = groups.lines().find_map(|line| line.strip_prefix("0::/"))
+        {
+            let root = Path::new("/sys/fs/cgroup");
+            let mut path = root.join(group);
+            while path.starts_with(root) {
+                for file in [
+                    "memory.current",
+                    "memory.peak",
+                    "memory.max",
+                    "memory.events",
+                    "cpu.stat",
+                ] {
+                    append_resource(&mut resources, &path.join(file));
+                }
+                if !path.pop() {
+                    break;
+                }
+            }
+        }
+        fs::write(dir.join(format!("resources-{phase}.txt")), resources)?;
+        let logs = guard
+            .logs
+            .lock()
+            .map_err(|_| anyhow::anyhow!("server log lock poisoned"))?;
+        fs::write(dir.join("server.log"), logs.as_bytes())?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        eprintln!("[warn] failed to save server diagnostics: {error:#}");
+    }
+}
+
+fn append_resource(output: &mut String, path: &Path) {
+    output.push_str(&format!("\n--- {} ---\n", path.display()));
+    match fs::read_to_string(path) {
+        Ok(contents) => output.push_str(&contents),
+        Err(error) => output.push_str(&format!("unavailable: {error}\n")),
     }
 }
 
@@ -961,6 +1041,16 @@ fn apply_category_filter(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resource_diagnostics_include_contents_and_missing_file_errors() {
+        let mut output = String::new();
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        append_resource(&mut output, &manifest);
+        assert!(output.contains("[package]"));
+        append_resource(&mut output, &manifest.join("missing"));
+        assert!(output.contains("unavailable:"));
+    }
 
     fn base_run_args() -> RunArgs {
         RunArgs {
