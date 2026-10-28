@@ -4,7 +4,7 @@ use super::Lang;
 use crate::util::{
     is_parameterized_view, iter_indexes, iter_procedures, iter_table_names_and_types, iter_tables, iter_types,
     iter_unique_cols, iter_views, print_auto_generated_file_comment, print_auto_generated_version_comment,
-    CodegenVisibility,
+    view_call_params, CodegenVisibility,
 };
 use crate::CodegenOptions;
 use crate::OutputFile;
@@ -472,8 +472,7 @@ pub(super) fn parse_table_update(
         // If SQL can't express its params, it can't be queried at all, so it gets no accessor.
         match module.view(&table.name) {
             Some(view) if !view.params.elements.is_empty() => {
-                let params = &view.params_for_generate.elements;
-                if params.iter().all(|(_, ty)| is_sql_literal_type(ty)) {
+                if let Some(params) = view_call_params(view) {
                     implement_query_view_call_accessor(module, table, params, out, &row_type)
                         .expect("failed to implement query view call accessor");
                 }
@@ -934,21 +933,6 @@ pub fn implement_query_table_accessor(table: &TableDef, out: &mut impl Write, st
         }}
 "
     )
-}
-
-/// Can a SQL literal express a value of this type?
-/// Matches the types the server accepts as view args, which are the types `SqlLiteral` is implemented for.
-fn is_sql_literal_type(ty: &AlgebraicTypeUse) -> bool {
-    match ty {
-        AlgebraicTypeUse::Primitive(_)
-        | AlgebraicTypeUse::String
-        | AlgebraicTypeUse::Identity
-        | AlgebraicTypeUse::ConnectionId
-        | AlgebraicTypeUse::Timestamp
-        | AlgebraicTypeUse::Uuid => true,
-        AlgebraicTypeUse::Array(elem) => matches!(**elem, AlgebraicTypeUse::Primitive(PrimitiveType::U8)),
-        _ => false,
-    }
 }
 
 /// Like [`implement_query_table_accessor`], but for a parameterized view:

@@ -1,3 +1,4 @@
+import type { ParamsObj } from '../lib/reducers';
 import {
   ModuleContext,
   tablesToSchema,
@@ -28,6 +29,20 @@ export function schema<const H extends Record<string, UntypedTableSchema>>(
   const ctx = new ModuleContext();
 
   return new Tables(tablesToSchema(ctx, tables));
+}
+
+/**
+ * Marks a table as a view with args, so the query builder exposes it as a
+ * function that takes those args. Used by generated bindings.
+ */
+export function withViewParams<
+  const T extends UntypedTableSchema,
+  const Params extends ParamsObj,
+>(
+  table: T,
+  params: Params
+): Omit<T, 'viewParams'> & { readonly viewParams: Params } {
+  return { ...table, viewParams: params };
 }
 
 type HasAccessor = { accessorName: PropertyKey };

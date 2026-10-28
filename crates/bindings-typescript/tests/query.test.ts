@@ -9,9 +9,11 @@ import {
   toSql,
   toComparableValue,
 } from '../src/server/query';
+import { getQueryAccessorName, type RowTypedQuery } from '../src/lib/query';
 import { ModuleContext, tablesToSchema } from '../src/lib/schema';
 import { table } from '../src/lib/table';
 import { t } from '../src/lib/type_builders';
+import { withViewParams } from '../src/sdk/schema';
 import { Timestamp } from '../src';
 
 const personTable = table(
@@ -430,5 +432,63 @@ describe('makeFromBuilder', () => {
     // Root `person` is unaffected by the `lib.orders` namespace grouping.
     expect(toSql(from.person.build())).toBe('SELECT * FROM "person"');
     expect(toSql(from.lib.orders.build())).toBe('SELECT * FROM "lib"."orders"');
+  });
+});
+
+describe('view calls', () => {
+  // How generated client bindings declare a view with args.
+  const viewSchemaDef = tablesToSchema(new ModuleContext(), {
+    peopleBy: withViewParams(
+      table({ name: 'people_by' }, personTable.rowType),
+      {
+        minAge: t.u32(),
+        name: t.string(),
+        tag: t.byteArray(),
+      }
+    ),
+  });
+
+  it('renders a call with its args in param order', () => {
+    const qb = makeQueryBuilder(viewSchemaDef);
+    const call = qb.peopleBy({
+      tag: new Uint8Array([0, 0xab, 0xff]),
+      name: "O'Brian",
+      minAge: 21,
+    });
+    expect(toSql(call)).toBe(
+      `SELECT * FROM "people_by"(21, 'O''Brian', 0x00abff)`
+    );
+    expect(getQueryAccessorName(call)).toBe('peopleBy');
+  });
+
+  it('is only queryable as a whole', () => {
+    const qb = makeQueryBuilder(viewSchemaDef);
+    const call = qb.peopleBy({ minAge: 1, name: 'x', tag: new Uint8Array() });
+    // @ts-expect-error no `where` on a view call
+    void call.where;
+    // @ts-expect-error a view with args can't be queried without them
+    void qb.peopleBy.where;
+    // @ts-expect-error nor subscribed to without them
+    void (qb.peopleBy satisfies RowTypedQuery<any, any>);
+    // @ts-expect-error args are required
+    qb.peopleBy({ minAge: 1 });
+    // @ts-expect-error args are typed
+    qb.peopleBy({ minAge: 'x', name: 'x', tag: new Uint8Array() });
+  });
+
+  it('is callable in a namespace', () => {
+    // How generated client bindings declare a submodule's view with args.
+    const nsSchemaDef = tablesToSchema(new ModuleContext(), {
+      'lib.peopleBy': withViewParams(
+        table({ name: 'lib.people_by' }, personTable.rowType),
+        { minAge: t.u32() }
+      ),
+    });
+    const expected = `SELECT * FROM "lib"."people_by"(2)`;
+    const qb = makeQueryBuilder(nsSchemaDef);
+    expect(toSql(qb['lib.peopleBy']({ minAge: 2 }))).toBe(expected);
+    // The `subscribe` callback's builder groups it under its namespace.
+    const from = makeFromBuilder(nsSchemaDef.tables) as any;
+    expect(toSql(from.lib.people_by({ minAge: 2 }))).toBe(expected);
   });
 });

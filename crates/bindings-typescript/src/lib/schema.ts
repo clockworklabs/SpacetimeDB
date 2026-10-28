@@ -68,6 +68,8 @@ export interface TableToSchema<
   // Resolved runtime index metadata used by runtime consumers (e.g. TableCache).
   resolvedIndexes: readonly UntypedIndex<keyof T['rowType']['row'] & string>[];
   constraints: T['constraints'];
+  // Client bindings only: a view's params, set by `withViewParams`.
+  viewParams?: T['viewParams'];
 }
 
 export function tablesToSchema<
@@ -167,6 +169,7 @@ export function tableToSchema<
     resolvedIndexes,
     tableDef,
     ...(tableDef.isEvent ? { isEvent: true } : {}),
+    ...(schema.viewParams ? { viewParams: schema.viewParams } : {}),
   };
 }
 

@@ -1,6 +1,6 @@
 use crate::util::{
     is_reducer_invokable, iter_constraints, iter_indexes, iter_procedures, iter_reducers, iter_table_names_and_types,
-    iter_tables, iter_types, iter_views, print_auto_generated_version_comment,
+    iter_tables, iter_types, iter_views, print_auto_generated_version_comment, view_call_params,
 };
 use crate::{CodegenOptions, OutputFile};
 
@@ -203,6 +203,18 @@ impl Lang for TypeScript {
         let out = &mut output;
 
         print_file_header(out, true, false);
+        // Only needed for views with args that clients can call,
+        // so other modules' bindings are unchanged.
+        if module
+            .all_views_with_prefix()
+            .into_iter()
+            .any(|(_, _, view)| view_call_params(view).is_some())
+        {
+            writeln!(
+                out,
+                "import {{ withViewParams as __withViewParams }} from \"spacetimedb\";"
+            );
+        }
 
         writeln!(out);
         writeln!(out, "// Import all reducer arg schemas");
@@ -337,7 +349,8 @@ impl Lang for TypeScript {
             if view.accessor_name.deref() != view_accessor {
                 table_accessor_aliases.push((view.accessor_name.to_string(), view_accessor.clone()));
             }
-            writeln!(out, "{view_accessor}: __table({{");
+            let call_params = view_call_params(view);
+            write_view_table_start(out, &view_accessor, call_params.is_some());
             out.indent(1);
             write_table_opts(
                 module,
@@ -349,7 +362,7 @@ impl Lang for TypeScript {
                 false,
             );
             out.dedent(1);
-            writeln!(out, "}}, {}Row),", view_name_pascalcase);
+            write_view_table_end(module, out, &format!("{view_name_pascalcase}Row"), call_params);
         }
         // Namespace tables from submodules
         for (prefix, owning_def, table) in &ns_tables {
@@ -379,7 +392,8 @@ impl Lang for TypeScript {
             let accessor_key = submodule_accessor_key(owning_def, &view.accessor_name);
             let row_type = submodule_row_type_name(owning_def.accessor_path(), view.accessor_name.deref());
             let type_ref = view.product_type_ref;
-            writeln!(out, "\"{accessor_key}\": __table({{");
+            let call_params = view_call_params(view);
+            write_view_table_start(out, &format!("\"{accessor_key}\""), call_params.is_some());
             out.indent(1);
             write_table_opts(
                 owning_def,
@@ -391,7 +405,7 @@ impl Lang for TypeScript {
                 false,
             );
             out.dedent(1);
-            writeln!(out, "}}, {row_type}Row),");
+            write_view_table_end(owning_def, out, &format!("{row_type}Row"), call_params);
         }
         out.dedent(1);
         writeln!(out, "}});");
@@ -1128,6 +1142,41 @@ fn define_body_for_product(
     }
     writeln!(out, "export type {name} = __Infer<typeof {name}>;");
     out.newline();
+}
+
+/// Starts a view's entry in the tables schema.
+/// A view with args that clients can call has its params attached, see [`write_view_table_end`], e.g.
+/// ```ts
+/// playersFrom: __withViewParams(__table({
+///   name: 'players_from',
+///   ...
+/// }, PlayersFromRow), {
+///   minId: __t.u32(),
+/// }),
+/// ```
+fn write_view_table_start(out: &mut Indenter, key: &str, has_call_params: bool) {
+    if has_call_params {
+        writeln!(out, "{key}: __withViewParams(__table({{");
+    } else {
+        writeln!(out, "{key}: __table({{");
+    }
+}
+
+/// Ends a view's entry in the tables schema, started by [`write_view_table_start`].
+fn write_view_table_end(
+    module: &ModuleDef,
+    out: &mut Indenter,
+    row: &str,
+    call_params: Option<&[(Identifier, AlgebraicTypeUse)]>,
+) {
+    match call_params {
+        Some(params) => {
+            writeln!(out, "}}, {row}), {{");
+            out.with_indent(|out| write_object_type_builder_fields(module, out, params, None, true, None).unwrap());
+            writeln!(out, "}}),");
+        }
+        None => writeln!(out, "}}, {row}),"),
+    }
 }
 
 fn write_table_opts<'a>(
