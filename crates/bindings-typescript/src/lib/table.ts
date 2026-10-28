@@ -260,6 +260,11 @@ export type Table<TableDef extends UntypedTableDef> = Prettify<
   TableMethods<TableDef> & Indexes<TableDef, TableIndexes<TableDef>>
 >;
 
+/** Insert/read operations for outboxes, separate from the existing Table API. */
+export type OutboxTable<TableDef extends UntypedTableDef> = Prettify<
+  ReadonlyTable<TableDef> & Pick<TableMethods<TableDef>, 'insert'>
+>;
+
 export type ReadonlyTable<TableDef extends UntypedTableDef> = Prettify<
   ReadonlyTableMethods<TableDef> &
     ReadonlyIndexes<TableDef, TableIndexes<TableDef>>

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { remoteModule } from '../src/lib/remote_module';
-import { table } from '../src/lib/table';
+import { table, type OutboxTable, type Table } from '../src/lib/table';
 import { t } from '../src/lib/type_builders';
 import { schema } from '../src/server/schema';
+import { makeTableView } from '../src/server/runtime';
 
 const gw = remoteModule(
   {
@@ -37,6 +38,42 @@ function explicitOutbox() {
 }
 
 describe('IDC outboxes', () => {
+  it('allows parameter overrides on metadata columns without sending bookkeeping columns', () => {
+    const receiver = remoteModule(
+      {
+        receive: {
+          name: 'receive',
+          signatureHash: 1n,
+          params: { messageId: t.u64(), destination: t.identity() },
+        },
+      },
+      Symbol()
+    );
+    const outbox = table(
+      { outbox: { receiver: receiver.reducers.receive } },
+      {
+        trace: t.string(),
+        id: t.u64().primaryKey().autoInc().param({ name: 'messageId' }),
+        target: receiver.identity().target().param({ name: 'destination' }),
+      }
+    );
+    expect(outbox.outbox?.argColumns).toEqual([1, 2]);
+    expect(Object.keys(outbox.rowType.row)).toEqual(['trace', 'id', 'target']);
+  });
+
+  it('rejects an override colliding with another column matching the same parameter', () => {
+    const row = explicitOutbox().rowType.row;
+    expect(() =>
+      table(
+        { outbox: { receiver: gw.reducers.receivePing } },
+        {
+          ...row,
+          secondNote: t.string().param({ name: 'note' }),
+        }
+      )
+    ).toThrow("exactly one column for receiver parameter 'note'");
+  });
+
   it('supports reducers with no parameters', () => {
     const receiver = remoteModule(
       {
@@ -138,6 +175,111 @@ describe('IDC outboxes', () => {
     ]);
     expect(outbox.outbox?.argColumns).toEqual([2, 3]);
     expect(outbox.isOutbox).toBe(true);
+  });
+
+  it('matches a sender property when its database column has another name', () => {
+    const receiver = remoteModule(
+      {
+        receiveMessage: {
+          name: 'receive_message',
+          signatureHash: 456n,
+          params: { messageText: t.string() },
+        },
+      },
+      Symbol()
+    );
+    const outbox = table(
+      { outbox: { receiver: receiver.reducers.receiveMessage } },
+      {
+        id: t.u64().primaryKey().autoInc(),
+        target: receiver.identity().target(),
+        messageText: t.string().name('legacy_message'),
+      }
+    );
+    expect(outbox.outbox?.argColumns).toEqual([2]);
+    expect(outbox.rowType.row.messageText.columnMetadata.name).toBe(
+      'legacy_message'
+    );
+
+    const aliased = table(
+      { outbox: { receiver: receiver.reducers.receiveMessage } },
+      {
+        id: t.u64().primaryKey().autoInc(),
+        target: receiver.identity().target(),
+        body: t.string().name('legacy_message').param({ name: 'messageText' }),
+      }
+    );
+    expect(aliased.outbox?.argColumns).toEqual([2]);
+    expect(aliased.rowType.row.body.columnMetadata.name).toBe('legacy_message');
+    expect(aliased.rowType.row.body.columnMetadata.paramName).toBe(
+      'messageText'
+    );
+
+    const directAlias = table(
+      { outbox: { receiver: receiver.reducers.receiveMessage } },
+      {
+        id: t.u64().primaryKey().autoInc(),
+        target: receiver.identity().target(),
+        body: t.string().param({ name: 'messageText' }),
+      }
+    );
+    expect(directAlias.outbox?.argColumns).toEqual([2]);
+
+    expect(() =>
+      table(
+        { outbox: { receiver: receiver.reducers.receiveMessage } },
+        {
+          id: t.u64().primaryKey().autoInc(),
+          target: receiver.identity().target(),
+          body: t.string().name('message_text'),
+        }
+      )
+    ).toThrow("parameter 'messageText'");
+  });
+
+  it('does not expose mutation methods at runtime, including indexed deletes', () => {
+    const outbox = explicitOutbox();
+    const db = schema({ outbox });
+    const view = makeTableView(
+      db.typespace,
+      db.schemaType.tables.outbox.tableDef,
+      '',
+      '',
+      true
+    ) as OutboxTable<typeof db.schemaType.tables.outbox>;
+    expect(view.insert).toBeTypeOf('function');
+    expect(view.iter).toBeTypeOf('function');
+    expect('delete' in view).toBe(false);
+    expect('clear' in view).toBe(false);
+    for (const index of [view.id, view.byNote, view.byNoteHash]) {
+      expect('delete' in index).toBe(false);
+      expect('update' in index).toBe(false);
+    }
+    expect(view.id.find).toBeTypeOf('function');
+    expect(view.byNote.filter).toBeTypeOf('function');
+  });
+
+  it('preserves ordinary table mutation methods without outbox options', () => {
+    const ordinary = table(
+      {
+        indexes: [
+          { accessor: 'byNote', algorithm: 'btree', columns: ['note'] },
+          { accessor: 'byNoteHash', algorithm: 'hash', columns: ['note'] },
+        ],
+      },
+      { id: t.u64().primaryKey(), note: t.string() }
+    );
+    const db = schema({ ordinary });
+    const view = makeTableView(
+      db.typespace,
+      db.schemaType.tables.ordinary.tableDef
+    ) as Table<typeof db.schemaType.tables.ordinary>;
+    expect(view.delete).toBeTypeOf('function');
+    expect(view.clear).toBeTypeOf('function');
+    expect(view.id.update).toBeTypeOf('function');
+    for (const index of [view.id, view.byNote, view.byNoteHash]) {
+      expect(index.delete).toBeTypeOf('function');
+    }
   });
 
   it('rejects malformed table shapes and receiver arguments', () => {

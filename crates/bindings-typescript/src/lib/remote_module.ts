@@ -109,7 +109,9 @@ export function makeOutbox(
     );
   }
   const argColumns = Object.entries(receiver.params).map(([name, type]) => {
-    const matches = columns.flatMap(([key], i) => (key === name ? [i] : []));
+    const matches = columns.flatMap(([key, col], i) =>
+      (col.columnMetadata.paramName ?? key) === name ? [i] : []
+    );
     if (matches.length !== 1)
       throw new TypeError(
         `Outbox requires exactly one column for receiver parameter '${name}'`
