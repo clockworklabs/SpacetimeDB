@@ -24,7 +24,7 @@ export interface ReducerExport<
 export interface ReducerOpts<Params extends ParamsObj = ParamsObj> {
   name: string;
   onSchedule?: ScheduleTableForParams<Params>;
-  reactive?: { onResult: UntypedTableSchema & { readonly isOutbox: true } };
+  onResult?: UntypedTableSchema & { readonly isOutbox: true };
 }
 
 export type ReducerOptsWithOptionalName<Params extends ParamsObj = ParamsObj> =
@@ -48,9 +48,9 @@ export function makeReducerExport<
       reducerExport as ReducerExport<any, any>,
       exportName
     );
-    if (opts?.reactive?.onResult !== undefined) {
+    if (opts?.onResult !== undefined) {
       ctx.pendingOutboxCallbacks.push({
-        table: opts.reactive.onResult,
+        table: opts.onResult,
         functionName: exportName,
       });
     }
@@ -87,8 +87,8 @@ export function registerReducer(
     params = new RowBuilder(params);
   }
 
-  if (opts?.reactive?.onResult) {
-    const target = opts.reactive.onResult;
+  if (opts?.onResult) {
+    const target = opts.onResult;
     const fields = Object.values(params.row);
     if (
       opts.onSchedule ||

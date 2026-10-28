@@ -126,7 +126,7 @@ describe('IDC outboxes', () => {
     const outbox = explicitOutbox();
     const db = schema({ outbox });
     const onResult = db.reducer(
-      { name: 'wire_callback', reactive: { onResult: outbox } },
+      { name: 'wire_callback', onResult: outbox },
       { row: outbox.rowType, result: t.result(t.unit(), t.string()) },
       () => {}
     );
@@ -323,17 +323,13 @@ describe('IDC outboxes', () => {
   it('rejects wrong callback parameters and callbacks for another schema', () => {
     const outbox = explicitOutbox();
     const db = schema({ outbox });
-    const bad = db.reducer(
-      { reactive: { onResult: outbox } },
-      { row: t.string() },
-      () => {}
-    );
+    const bad = db.reducer({ onResult: outbox }, { row: t.string() }, () => {});
     expect(() => db.buildRawModuleDefV10({ bad })).toThrow(
       'outbox row followed by'
     );
     const other = schema({});
     const callback = other.reducer(
-      { reactive: { onResult: outbox } },
+      { onResult: outbox },
       { row: outbox.rowType, result: t.result(t.unit(), t.string()) },
       () => {}
     );
@@ -347,7 +343,7 @@ describe('IDC outboxes', () => {
     const other = explicitOutbox();
     const db = schema({ outbox, other });
     const bad = db.reducer(
-      { reactive: { onResult: outbox } },
+      { onResult: outbox },
       { row: other.rowType, result: t.result(t.unit(), t.string()) },
       () => {}
     );
@@ -359,7 +355,7 @@ describe('IDC outboxes', () => {
   it('rejects multiple callbacks for one outbox', () => {
     const outbox = explicitOutbox();
     const db = schema({ outbox });
-    const opts = { reactive: { onResult: outbox } };
+    const opts = { onResult: outbox };
     const params = {
       row: outbox.rowType,
       result: t.result(t.unit(), t.string()),

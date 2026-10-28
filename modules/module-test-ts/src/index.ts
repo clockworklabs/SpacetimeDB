@@ -303,7 +303,7 @@ export const enqueueIdc = spacetimedb.reducer(
 );
 
 export const onIdcResult = spacetimedb.reducer(
-  { reactive: { onResult: idcOutbox } },
+  { onResult: idcOutbox },
   { row: idcOutbox.rowType, result: t.result(t.unit(), t.string()) },
   (_ctx, { row, result }) => {
     if ('err' in result)

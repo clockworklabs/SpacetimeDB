@@ -282,7 +282,7 @@ export const ping = db.reducer(
 );
 
 export const onPingResult = db.reducer(
-  { reactive: { onResult: pingOutbox } },
+  { onResult: pingOutbox },
   { row: pingOutbox.rowType, result: t.result(t.unit(), t.string()) },
   (_ctx, { row, result }) => {
     if ('err' in result)

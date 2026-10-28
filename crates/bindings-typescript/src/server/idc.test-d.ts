@@ -119,7 +119,7 @@ db.reducer({ to: gw.identity(), note: t.string() }, (ctx, { to, note }) => {
   ctx.db.widened.clear();
 });
 db.reducer(
-  { reactive: { onResult: outbox } },
+  { onResult: outbox },
   { row: outbox.rowType, result: t.result(t.unit(), t.string()) },
   (_ctx, { row, result }) => {
     const note: string = row.note;
