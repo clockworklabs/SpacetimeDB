@@ -172,7 +172,7 @@ const idcOutbox = table(
     name: 'idc_outbox',
     public: true,
     outbox: { receiver: idcReceiver.reducers.receivePing },
-    indexes: [{ accessor: 'byTag', algorithm: 'btree', columns: ['tag'] }],
+    indexes: [{ accessor: 'by_tag', algorithm: 'btree', columns: ['tag'] }],
   },
   {
     id: t.u64().primaryKey().autoInc(),
