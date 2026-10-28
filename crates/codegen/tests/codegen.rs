@@ -121,7 +121,7 @@ fn rust_receiver_types_are_scoped_by_dependency_name() {
 }
 
 #[test]
-fn test_codegen_rust_module_bindings_include_nested_reducer_types() {
+fn test_codegen_receiver_bindings_include_nested_reducer_types() {
     use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
     use spacetimedb_lib::{AlgebraicType, ProductType};
 
@@ -157,6 +157,12 @@ fn test_codegen_rust_module_bindings_include_nested_reducer_types() {
     assert!(files["lib.rs"].contains("pub use empire_state_op_type::EmpireStateOp;"));
     assert!(files["lib.rs"].contains("pub use empire_state_type::EmpireState;"));
     assert!(!files["lib.rs"].contains("pub mod unrelated_type;"));
+
+    let files = generate_receiver_bindings(&module, ReceiverLanguage::TypeScript, None).unwrap();
+    let root = &files.iter().find(|file| file.filename == "index.ts").unwrap().code;
+    assert!(root.contains("export const EmpireStateOp ="));
+    assert!(root.contains("export const EmpireState ="));
+    assert!(!root.contains("export const Unrelated ="));
 }
 
 #[test]
@@ -415,6 +421,207 @@ fn typescript_import_extension_applies_to_every_relative_import() {
                 !stem.ends_with(".js") && !stem.ends_with(".ts"),
                 "{spec:?} has more than one extension"
             );
+        }
+    }
+}
+
+fn compile_typescript_receiver_bindings(module: &ModuleDef, sender: &str) {
+    let project = tempfile::tempdir().unwrap();
+    for dependency in ["receiver", "other"] {
+        let receiver = project.path().join(dependency);
+        fs_err::create_dir(&receiver).unwrap();
+        for file in generate_receiver_bindings(module, ReceiverLanguage::TypeScript, Some(dependency)).unwrap() {
+            fs_err::write(receiver.join(file.filename), file.code).unwrap();
+        }
+    }
+    fs_err::write(project.path().join("sender.ts"), sender).unwrap();
+    let sdk = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../bindings-typescript")
+        .canonicalize()
+        .unwrap();
+    let config = project.path().join("tsconfig.json");
+    fs_err::write(
+        &config,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "extends": sdk.join("tsconfig.json"),
+            "compilerOptions": {
+                "paths": { "spacetimedb/server": [sdk.join("src/server/index.ts")] }
+            },
+            "files": [project.path().join("sender.ts"), sdk.join("src/server/sys.d.ts")],
+            "include": []
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    // Compile the generated bindings and an actual sender against local SDK source.
+    let output = std::process::Command::new(if cfg!(windows) { "pnpm.cmd" } else { "pnpm" })
+        .current_dir(sdk)
+        .args(["exec", "tsc", "--project"])
+        .arg(config)
+        .output()
+        .expect("pnpm and installed TypeScript SDK dependencies are required");
+    assert!(
+        output.status.success(),
+        "generated TypeScript receiver bindings failed to compile:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn typescript_receiver_bindings_preserve_module_identity_types() {
+    use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+    use spacetimedb_lib::{AlgebraicType, ProductType};
+
+    let mut builder = RawModuleDefV10Builder::new();
+    builder.add_reducer("receivePing", ProductType::from([("note", AlgebraicType::String)]));
+    let module: ModuleDef = builder.finish().try_into().unwrap();
+    compile_typescript_receiver_bindings(
+        &module,
+        r#"import { t, type Infer } from 'spacetimedb/server';
+import receiver from './receiver';
+import other from './other';
+
+type ReceiverIdentity = Infer<ReturnType<typeof receiver.identity>>;
+type OtherIdentity = Infer<ReturnType<typeof other.identity>>;
+type RawIdentity = Infer<ReturnType<typeof t.identity>>;
+export function checkIdentity(to: ReceiverIdentity, wrong: OtherIdentity, raw: RawIdentity) {
+  const builders = [
+    receiver.identity(),
+    receiver.identity().name('owner').index(),
+    receiver.identity().unique(),
+    receiver.identity().primaryKey(),
+    receiver.identity().default(to),
+  ];
+  for (const builder of builders) {
+    const accepts = (value: Infer<typeof builder>) => value;
+    accepts(to);
+    // @ts-expect-error Another dependency's identity must remain incompatible.
+    accepts(wrong);
+    // @ts-expect-error A raw identity must not erase the receiver brand.
+    accepts(raw);
+  }
+  const note: Infer<typeof receiver.reducers.receivePing.params.note> = 'hello';
+  // @ts-expect-error Receiver parameter metadata must preserve its argument types.
+  const invalidNote: typeof note = 123;
+}
+"#,
+    );
+}
+
+#[test]
+fn test_codegen_typescript_receiver_bindings() {
+    use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, ExplicitNames, RawModuleDefV10Builder};
+    use spacetimedb_lib::db::raw_def::v9::Lifecycle;
+    use spacetimedb_lib::{AlgebraicType, ProductType, SpacetimeType};
+
+    #[derive(SpacetimeType)]
+    #[sats(crate = spacetimedb_lib)]
+    enum Status {
+        Ready,
+        InProgress,
+        Done,
+    }
+
+    #[derive(SpacetimeType)]
+    #[sats(crate = spacetimedb_lib)]
+    struct Entry {
+        entry_id: u64,
+        label: String,
+        status: Status,
+    }
+
+    #[derive(SpacetimeType)]
+    #[sats(crate = spacetimedb_lib)]
+    enum Operation {
+        Clear,
+        Write(Entry),
+        Batch(Vec<Entry>),
+        Deferred(Option<Entry>),
+    }
+
+    #[derive(SpacetimeType)]
+    #[sats(crate = spacetimedb_lib)]
+    struct Details {
+        nested_values: Vec<Option<String>>,
+        operations: Vec<Operation>,
+        outcome: Result<Entry, String>,
+    }
+
+    let mut builder = RawModuleDefV10Builder::new();
+    builder.set_case_conversion_policy(CaseConversionPolicy::SnakeCase);
+    // The table row is reachable only through nested reducer parameter types.
+    let entry = builder.add_type::<Entry>();
+    builder.build_table("entries", *entry.as_ref().unwrap()).finish();
+    let details = builder.add_type::<Details>();
+    let metadata = builder.add_algebraic_type(
+        [],
+        "Metadata",
+        AlgebraicType::product([
+            ("owner", AlgebraicType::identity()),
+            ("connection", AlgebraicType::connection_id()),
+            ("sent_at", AlgebraicType::timestamp()),
+            ("delay", AlgebraicType::time_duration()),
+            ("request_id", AlgebraicType::uuid()),
+            ("payload", AlgebraicType::array(AlgebraicType::U8)),
+            ("signed_counter", AlgebraicType::I256),
+            ("unsigned_counter", AlgebraicType::U256),
+        ]),
+        true,
+    );
+    builder.add_algebraic_type(
+        [],
+        "Unrelated",
+        AlgebraicType::product([("unused", AlgebraicType::Bool)]),
+        true,
+    );
+    builder.add_reducer(
+        "receivePing",
+        ProductType::from([
+            ("Note", AlgebraicType::String),
+            ("Details", details),
+            ("Metadata", AlgebraicType::Ref(metadata)),
+            ("Enabled", AlgebraicType::Bool),
+            ("Sequence", AlgebraicType::U64),
+        ]),
+    );
+    builder.add_reducer("Noop", ProductType::unit());
+    builder.add_lifecycle_reducer(Lifecycle::Init, "initialize", ProductType::unit());
+    let mut names = ExplicitNames::default();
+    names.insert_function("receivePing", "wire_ping");
+    builder.add_explicit_names(names);
+    let module: ModuleDef = builder.finish().try_into().unwrap();
+    let files = generate_receiver_bindings(&module, ReceiverLanguage::TypeScript, None).unwrap();
+    let root = &files.iter().find(|f| f.filename == "index.ts").unwrap().code;
+    assert!(root.contains("nestedValues"));
+    assert!(root.contains("\"receivePing\""));
+    assert!(root.contains("\"wire_ping\""));
+    assert!(root.contains("note: __t.string()"));
+    assert!(!root.contains("Unrelated"));
+    assert!(!root.contains("\"initialize\":"));
+    let reducer = module.reducers().find(|r| r.name.as_ref() == "wire_ping").unwrap();
+    let hash = spacetimedb_schema::def::reducer_signature_hash(
+        &reducer.params(),
+        &reducer.ok_return_type,
+        &reducer.err_return_type,
+        module.typespace(),
+    );
+    assert!(root.contains(&format!("signatureHash: {}n", hash.to_u256())));
+    assert_eq!(files.len(), 1);
+    insta::assert_snapshot!(root);
+
+    for dependency in ["game_world", "auth"] {
+        let scoped = generate_receiver_bindings(&module, ReceiverLanguage::TypeScript, Some(dependency)).unwrap();
+        let code = &scoped[0].code;
+        for (name, constructor) in [
+            ("Details", "object"),
+            ("Entry", "object"),
+            ("Metadata", "object"),
+            ("Operation", "enum"),
+            ("Status", "enum"),
+        ] {
+            assert!(code.contains(&format!("__t.{constructor}(\"{dependency}.{name}\"")));
+            assert!(!code.contains(&format!("__t.{constructor}(\"{name}\"")));
         }
     }
 }

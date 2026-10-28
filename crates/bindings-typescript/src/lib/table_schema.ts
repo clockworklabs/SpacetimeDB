@@ -1,3 +1,4 @@
+import type { RawOutboxDefV10 } from './autogen/types';
 import type { ProductType } from './algebraic_type';
 import type { RawScheduleDefV10, RawTableDefV10 } from './autogen/types';
 import type { IndexOpts } from './indexes';
@@ -42,6 +43,18 @@ export type TableSchema<
    * The name of the table.
    */
   readonly tableName?: string;
+
+  /**
+   * Marks outbox tables so their database handles expose only inserts and reads.
+   * The table builder preserves a literal `true` or `false` for type inference.
+   */
+  readonly isOutbox?: boolean;
+
+  /**
+   * The outbox receiver and argument mapping, if this is an outbox table.
+   * Schema registration supplies the table name and resolves the result callback.
+   */
+  readonly outbox?: Omit<RawOutboxDefV10, 'tableName' | 'onResultReducer'>;
 
   /**
    * The TypeBuilder representation of the type of the rows in the table.
