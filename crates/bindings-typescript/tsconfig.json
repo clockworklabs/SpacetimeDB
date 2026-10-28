@@ -12,6 +12,8 @@
     "allowImportingTsExtensions": true,
     "noImplicitAny": true,
     "moduleResolution": "Bundler",
+    "baseUrl": ".",
+    "paths": { "spacetimedb": ["./src/index.ts"] },
     "isolatedDeclarations": false,
 
     // This library is ESM-only, do not import commonjs modules

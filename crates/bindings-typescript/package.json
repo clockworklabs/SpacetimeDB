@@ -47,7 +47,8 @@
     "generate:examples:react-ts": "pnpm --filter @clockworklabs/react-ts generate",
     "generate:examples:empty": "pnpm --filter @clockworklabs/empty-client generate",
     "generate": "pnpm generate:moduledef && pnpm generate:client-api && pnpm generate:test-app && pnpm generate:examples:chat-react-ts && pnpm generate:examples:react-ts && pnpm generate:examples:empty",
-    "prepublishOnly": "pnpm run build:package && pnpm run test:unit && size-limit && pnpm run check:package"
+    "prepublishOnly": "pnpm run build:package && pnpm run test:unit && size-limit && pnpm run check:package",
+    "test:declarations": "vitest run tests/declarations.test.ts && tsc -p tsconfig.declarations.json"
   },
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
@@ -123,6 +124,12 @@
       "import": "./dist/solid/index.mjs",
       "require": "./dist/solid/index.cjs",
       "default": "./dist/solid/index.mjs"
+    },
+    "./schema": {
+      "types": "./dist/schema/index.d.ts",
+      "import": "./dist/schema/index.mjs",
+      "require": "./dist/schema/index.cjs",
+      "default": "./dist/schema/index.mjs"
     }
   },
   "size-limit": [

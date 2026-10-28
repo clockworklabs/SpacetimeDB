@@ -14,3 +14,19 @@ export * from './lib/option';
 export * from './lib/result';
 export * from './lib/query';
 export * from './sdk';
+
+export {
+  schema as declarationSchema,
+  Schema as DeclarationSchema,
+  FunctionDeclaration,
+} from './schema/declarations';
+export type {
+  ModuleDeclarations,
+  SchemaEntry,
+  SchemaEntries,
+  DeclarationKind,
+  FunctionOptions,
+  ViewOptions,
+  SchemaOptions,
+} from './schema/declarations';
+export { CaseConversionPolicy } from './lib/autogen/types';

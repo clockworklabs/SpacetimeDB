@@ -14,6 +14,20 @@ const outExtension = (ctx: { format: string }) => ({
 });
 
 export default defineConfig([
+  {
+    entry: { index: 'src/schema/index.ts' },
+    format: ['esm', 'cjs'],
+    target: 'es2022',
+    outDir: 'dist/schema',
+    dts: false,
+    sourcemap: true,
+    clean: true,
+    platform: 'neutral',
+    treeshake: 'smallest',
+    external: ['spacetimedb'],
+    outExtension,
+    esbuildOptions: commonEsbuildTweaks(),
+  },
   // Root wrapper (SSR-friendly): dist/index.{mjs,cjs}
   {
     entry: { index: 'src/index.ts' },
