@@ -2,14 +2,7 @@ import { schema, table, t } from 'spacetimedb/server';
 import gw from './remote_bindings/game_world';
 import auth from './remote_bindings/auth';
 
-const outboundPing = table(
-  { outbox: { receiver: gw.reducers.receivePing } },
-  {
-    id: t.u64().primaryKey().autoInc(),
-    target: gw.identity().target(),
-    body: t.string(),
-  }
-);
+const outboundPing = gw.outbox.receivePing();
 const outboundDetailedPing = table(
   { outbox: { receiver: gw.reducers.receiveDetailedPing } },
   {
@@ -81,15 +74,15 @@ export const enqueueTwoDependencies = spacetimedb.reducer(
 );
 export const enqueuePing = spacetimedb.reducer(
   { target: gw.identity(), body: t.string() },
-  (ctx, args) => {
-    ctx.db.outboundPing.insert({ id: 0n, ...args });
+  (ctx, { target, body }) => {
+    ctx.db.outboundPing.insert({ __msgId: 0n, __target: target, body });
   }
 );
 export const enqueuePings = spacetimedb.reducer(
   { target: gw.identity(), bodies: t.array(t.string()) },
   (ctx, { target, bodies }) => {
     for (const body of bodies)
-      ctx.db.outboundPing.insert({ id: 0n, target, body });
+      ctx.db.outboundPing.insert({ __msgId: 0n, __target: target, body });
   }
 );
 export const enqueueDetailedPing = spacetimedb.reducer(
@@ -116,7 +109,7 @@ export const onPingResult = spacetimedb.reducer(
   { row: t.rowOf(outboundPing), result: t.result(t.unit(), t.string()) },
   (ctx, { row, result }) =>
     ctx.db.pingResult.insert({
-      id: row.id,
+      id: row.__msgId,
       callbackOrder: 0n,
       moduleVersion: 1,
       body: row.body,

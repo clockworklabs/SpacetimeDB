@@ -614,6 +614,7 @@ impl IdcTest {
 #[test]
 fn idc_outbox_delivers_between_typescript_modules() {
     spacetimedb_smoketests::require_pnpm!();
+    // The sender's ping outbox uses generated sugar; detailed pings use a manual declaration.
     let suite = IdcTest::new_with_typescript("idc-receiver-ts", "idc-sender-ts");
     let bodies: Vec<_> = (0..20).map(|i| format!("typescript-{i}")).collect();
     suite.enqueue(&bodies);
@@ -633,7 +634,7 @@ fn idc_outbox_delivers_between_typescript_modules() {
             &suite.sender,
             "SELECT succeeded, error FROM ping_result WHERE body = 'reject'",
         );
-        if !callbacks.is_empty() && suite.rows(&suite.sender, "SELECT id FROM outbound_ping").is_empty() {
+        if !callbacks.is_empty() && suite.rows(&suite.sender, "SELECT * FROM outbound_ping").is_empty() {
             assert_eq!(callbacks, vec![serde_json::json!([false, [0, "rejected"]])]);
             assert!(suite
                 .rows(&suite.receiver, "SELECT id FROM ping_log WHERE body = 'reject'")
