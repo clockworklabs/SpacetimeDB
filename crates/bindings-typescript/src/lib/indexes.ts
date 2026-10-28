@@ -1,6 +1,7 @@
 import type { RowType, table, UntypedTableDef } from './table';
 import type { ColumnMetadata, IndexTypes } from './type_builders';
 import type { CollapseTuple, Prettify } from './type_util';
+import type { Identity } from './identity';
 import { Range } from '../server/range';
 import type { ColumnIsUnique } from './constraints';
 
@@ -192,10 +193,17 @@ type _IndexVal<
   ...infer Tail extends readonly string[],
 ]
   ? [
-      TableDef['columns'][Head]['typeBuilder']['type'],
+      IndexKey<TableDef['columns'][Head]['typeBuilder']['type']>,
       ..._IndexVal<TableDef, Tail>,
     ]
   : [];
+
+/**
+ * Index keys take a plain `Identity` where a column holds a receiver's typed
+ * identity. A lookup makes no claim about which module an identity belongs to,
+ * so a reducer can check `ctx.sender` against such a column; rows keep the type.
+ */
+type IndexKey<T> = T extends Identity ? Identity : T;
 
 /**
  * A helper type to define the bounds for scanning an index.

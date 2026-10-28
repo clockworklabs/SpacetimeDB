@@ -71,7 +71,19 @@ const options: OutboxTableOpts<typeof explicit.rowType.row> = {
 };
 const widened = table(options, explicit.rowType.row);
 const absent = table({ outbox: undefined }, explicit.rowType.row);
-const db = schema({ outbox, explicit, revisions, ordinary, widened, absent });
+const trusted = table(
+  {},
+  { world: gw.identity().primaryKey(), admin: auth.identity().index('btree') }
+);
+const db = schema({
+  outbox,
+  explicit,
+  revisions,
+  ordinary,
+  widened,
+  absent,
+  trusted,
+});
 db.reducer({ to: gw.identity(), note: t.string() }, (ctx, { to, note }) => {
   ctx.db.outbox.insert({ msgId: 0n, target: to, note });
   ctx.db.outbox.msgId.find(1n);
@@ -144,3 +156,21 @@ db.reducer(
     ctx.db.outbox.insert({ msgId: 0n, target: raw, note: 'untyped' });
   }
 );
+
+// Index lookups take a raw identity, so a reducer can check its caller against
+// trusted receivers and reply to the stored, typed identity.
+db.reducer({ note: t.string() }, (ctx, { note }) => {
+  const caller = ctx.db.trusted.world.find(ctx.sender);
+  if (!caller) throw new Error('unknown caller');
+  ctx.db.outbox.insert({ msgId: 0n, target: caller.world, note });
+  ctx.db.trusted.admin.filter(ctx.sender);
+  ctx.db.trusted.admin.delete(ctx.sender);
+  ctx.db.trusted.world.delete(ctx.sender);
+  ctx.db.explicit.byTarget.filter(ctx.sender);
+  // @ts-expect-error An unchecked caller identity is not a receiver identity.
+  ctx.db.outbox.insert({ msgId: 0n, target: ctx.sender, note });
+  // @ts-expect-error Rows keep the receiver's identity type.
+  ctx.db.trusted.insert({ world: ctx.sender, admin: caller.admin });
+  // @ts-expect-error A row's identity keeps its own receiver's type.
+  ctx.db.outbox.insert({ msgId: 0n, target: caller.admin, note });
+});
