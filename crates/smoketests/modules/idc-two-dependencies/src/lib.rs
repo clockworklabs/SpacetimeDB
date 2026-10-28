@@ -1,7 +1,6 @@
 mod remote_bindings;
 
 use remote_bindings::{auth, game_world};
-use spacetimedb::Table;
 
 #[spacetimedb::table(accessor = world_outbox, outbox(game_world::receive_detailed_ping))]
 pub struct WorldOutbox {

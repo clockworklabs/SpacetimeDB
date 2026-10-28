@@ -522,15 +522,20 @@ where
 }
 
 /// Resolve an outbox accessor to its registered table source name.
-pub const fn on_result_outbox<T: crate::Table>(_table: fn(&crate::Local) -> T) -> &'static str {
-    T::TABLE_NAME
+pub const fn on_result_outbox<T, Tbl>(_table: fn(&crate::Local) -> T) -> &'static str
+where
+    T: core::ops::Deref<Target = crate::table::OutboxTable<Tbl>>,
+    Tbl: crate::Table,
+{
+    Tbl::TABLE_NAME
 }
 
 /// Assert that an `on_result` reducer accepts the outbox row and delivery result.
-pub fn on_result_typecheck<T, F, Ret>(_f: F, _table: fn(&crate::Local) -> T)
+pub fn on_result_typecheck<T, Tbl, F, Ret>(_f: F, _table: fn(&crate::Local) -> T)
 where
-    T: crate::Table,
-    F: Fn(&ReducerContext, T::Row, Result<(), String>) -> Ret,
+    T: core::ops::Deref<Target = crate::table::OutboxTable<Tbl>>,
+    Tbl: crate::Table,
+    F: Fn(&ReducerContext, Tbl::Row, Result<(), String>) -> Ret,
     Ret: IntoReducerResult,
 {
 }

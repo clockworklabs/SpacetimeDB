@@ -1,175 +1,65 @@
-error[E0277]: the trait bound `outbound_ping__TableHandle: spacetimedb::table::MutableTable` is not satisfied
+error[E0599]: no method named `clear` found for struct `outbound_ping__OutboxHandle` in the current scope
   --> tests/ui/outbox_mutation.rs:23:11
-   |
-23 |     table.clear();
-   |           ^^^^^ unsatisfied trait bound
-   |
-help: the trait `spacetimedb::table::MutableTable` is not implemented for `outbound_ping__TableHandle`
-  --> tests/ui/outbox_mutation.rs:6:1
    |
  6 | / #[spacetimedb::table(
  7 | |     accessor = outbound_ping,
-   | |____________________________^
-note: required by a bound in `clear`
-  --> src/table.rs
+   | |____________________________- method `clear` not found for this struct
+...
+23 |       table.clear();
+   |             ^^^^^ method not found in `outbound_ping__OutboxHandle`
    |
-   |     fn clear(&self) -> u64
-   |        ----- required by a bound in this associated function
-   |     where
-   |         Self: MutableTable,
-   |               ^^^^^^^^^^^^ required by this bound in `Table::clear`
-   = note: this error originates in the attribute macro `spacetimedb::table` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following traits define an item `clear`, perhaps you need to implement one of them:
+           candidate #1: `bitflags::traits::Flags`
+           candidate #2: `protobuf::message::Message`
+           candidate #3: `spacetimedb::Table`
 
-error[E0277]: the trait bound `outbound_ping__TableHandle: spacetimedb::table::MutableTable` is not satisfied
+error[E0599]: no method named `delete` found for struct `UniqueColumnReadOnly<Tbl, ColType, Col>` in the current scope
   --> tests/ui/outbox_mutation.rs:24:16
    |
 24 |     table.id().delete(1);
-   |                ^^^^^^ unsatisfied trait bound
-   |
-help: the trait `spacetimedb::table::MutableTable` is not implemented for `outbound_ping__TableHandle`
-  --> tests/ui/outbox_mutation.rs:6:1
-   |
- 6 | / #[spacetimedb::table(
- 7 | |     accessor = outbound_ping,
-   | |____________________________^
-note: required by a bound in `UniqueColumn::<Tbl, <Col as spacetimedb::table::Column>::ColType, Col>::delete`
-  --> src/table.rs
-   |
-   |     pub fn delete(&self, col_val: impl Borrow<Col::ColType>) -> bool
-   |            ------ required by a bound in this associated function
-   |     where
-   |         Tbl: MutableTable,
-   |              ^^^^^^^^^^^^ required by this bound in `UniqueColumn::<Tbl, <Col as Column>::ColType, Col>::delete`
-   = note: this error originates in the attribute macro `spacetimedb::table` (in Nightly builds, run with -Z macro-backtrace for more info)
+   |                ^^^^^^ method not found in `UniqueColumnReadOnly<outbound_ping__TableHandle, u64, id>`
 
-error[E0277]: the trait bound `outbound_ping__TableHandle: spacetimedb::table::MutableTable` is not satisfied
+error[E0599]: no method named `delete` found for struct `RangedIndexReadOnly<Tbl, IndexType, Idx>` in the current scope
   --> tests/ui/outbox_mutation.rs:25:21
    |
 25 |     table.by_body().delete("body");
-   |                     ^^^^^^ unsatisfied trait bound
-   |
-help: the trait `spacetimedb::table::MutableTable` is not implemented for `outbound_ping__TableHandle`
-  --> tests/ui/outbox_mutation.rs:6:1
-   |
- 6 | / #[spacetimedb::table(
- 7 | |     accessor = outbound_ping,
-   | |____________________________^
-note: required by a bound in `RangedIndex::<Tbl, IndexType, Idx>::delete`
-  --> src/table.rs
-   |
-   |     pub fn delete<B, K>(&self, b: B) -> u64
-   |            ------ required by a bound in this associated function
-   |     where
-   |         Tbl: MutableTable,
-   |              ^^^^^^^^^^^^ required by this bound in `RangedIndex::<Tbl, IndexType, Idx>::delete`
-   = note: this error originates in the attribute macro `spacetimedb::table` (in Nightly builds, run with -Z macro-backtrace for more info)
+   |                     ^^^^^^ method not found in `RangedIndexReadOnly<outbound_ping__TableHandle, (std::string::String,), by_body>`
 
-error[E0277]: the trait bound `outbound_ping__TableHandle: spacetimedb::table::MutableTable` is not satisfied
+error[E0599]: no method named `delete` found for struct `PointIndexReadOnly<Tbl, IndexType, Idx>` in the current scope
   --> tests/ui/outbox_mutation.rs:26:26
    |
 26 |     table.by_body_hash().delete("body");
-   |                          ^^^^^^ unsatisfied trait bound
-   |
-help: the trait `spacetimedb::table::MutableTable` is not implemented for `outbound_ping__TableHandle`
-  --> tests/ui/outbox_mutation.rs:6:1
-   |
- 6 | / #[spacetimedb::table(
- 7 | |     accessor = outbound_ping,
-   | |____________________________^
-note: required by a bound in `PointIndex::<Tbl, IndexType, Idx>::delete`
-  --> src/table.rs
-   |
-   |     pub fn delete<P, K>(&self, point: P) -> u64
-   |            ------ required by a bound in this associated function
-   |     where
-   |         Tbl: MutableTable,
-   |              ^^^^^^^^^^^^ required by this bound in `PointIndex::<Tbl, IndexType, Idx>::delete`
-   = note: this error originates in the attribute macro `spacetimedb::table` (in Nightly builds, run with -Z macro-backtrace for more info)
+   |                          ^^^^^^ method not found in `PointIndexReadOnly<outbound_ping__TableHandle, (std::string::String,), by_body_hash>`
 
-error[E0277]: the trait bound `outbound_ping__TableHandle: spacetimedb::table::MutableTable` is not satisfied
+error[E0599]: no method named `update` found for struct `UniqueColumnReadOnly<Tbl, ColType, Col>` in the current scope
   --> tests/ui/outbox_mutation.rs:27:16
    |
 27 |     table.id().update(row);
-   |                ^^^^^^ unsatisfied trait bound
-   |
-help: the trait `spacetimedb::table::MutableTable` is not implemented for `outbound_ping__TableHandle`
-  --> tests/ui/outbox_mutation.rs:6:1
-   |
- 6 | / #[spacetimedb::table(
- 7 | |     accessor = outbound_ping,
-   | |____________________________^
-note: required by a bound in `UniqueColumn::<Tbl, <Col as spacetimedb::table::Column>::ColType, Col>::update`
-  --> src/table.rs
-   |
-   |     pub fn update(&self, new_row: Tbl::Row) -> Tbl::Row
-   |            ------ required by a bound in this associated function
-   |     where
-   |         Tbl: MutableTable,
-   |              ^^^^^^^^^^^^ required by this bound in `UniqueColumn::<Tbl, <Col as Column>::ColType, Col>::update`
-   = note: this error originates in the attribute macro `spacetimedb::table` (in Nightly builds, run with -Z macro-backtrace for more info)
+   |                ^^^^^^ method not found in `UniqueColumnReadOnly<outbound_ping__TableHandle, u64, id>`
 
-error[E0277]: the trait bound `outbound_ping__TableHandle: spacetimedb::table::MutableTable` is not satisfied
+error[E0599]: no method named `delete` found for struct `outbound_ping__OutboxHandle` in the current scope
   --> tests/ui/outbox_mutation.rs:31:28
    |
-31 |     ctx.db.outbound_ping().delete(row);
-   |                            ^^^^^^ unsatisfied trait bound
-   |
-help: the trait `spacetimedb::table::MutableTable` is not implemented for `outbound_ping__TableHandle`
-  --> tests/ui/outbox_mutation.rs:6:1
-   |
  6 | / #[spacetimedb::table(
  7 | |     accessor = outbound_ping,
-   | |____________________________^
-note: required by a bound in `spacetimedb::Table::delete`
-  --> src/table.rs
+   | |____________________________- method `delete` not found for this struct
+...
+31 |       ctx.db.outbound_ping().delete(row);
+   |                              ^^^^^^ method not found in `outbound_ping__OutboxHandle`
    |
-   |     fn delete(&self, row: Self::Row) -> bool
-   |        ------ required by a bound in this associated function
-   |     where
-   |         Self: MutableTable,
-   |               ^^^^^^^^^^^^ required by this bound in `Table::delete`
-   = note: this error originates in the attribute macro `spacetimedb::table` (in Nightly builds, run with -Z macro-backtrace for more info)
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following trait defines an item `delete`, perhaps you need to implement it:
+           candidate #1: `spacetimedb::Table`
 
-error[E0277]: the trait bound `outbound_ping__TableHandle: spacetimedb::table::MutableTable` is not satisfied
+error[E0599]: no method named `insert_or_update` found for struct `UniqueColumnReadOnly<Tbl, ColType, Col>` in the current scope
   --> tests/ui/outbox_mutation.rs:35:33
    |
 35 |     ctx.db.outbound_ping().id().insert_or_update(row);
-   |                                 ^^^^^^^^^^^^^^^^ unsatisfied trait bound
-   |
-help: the trait `spacetimedb::table::MutableTable` is not implemented for `outbound_ping__TableHandle`
-  --> tests/ui/outbox_mutation.rs:6:1
-   |
- 6 | / #[spacetimedb::table(
- 7 | |     accessor = outbound_ping,
-   | |____________________________^
-note: required by a bound in `UniqueColumn::<Tbl, <Col as spacetimedb::table::Column>::ColType, Col>::insert_or_update`
-  --> src/table.rs
-   |
-   |     pub fn insert_or_update(&self, new_row: Tbl::Row) -> Tbl::Row
-   |            ---------------- required by a bound in this associated function
-   |     where
-   |         Tbl: MutableTable,
-   |              ^^^^^^^^^^^^ required by this bound in `UniqueColumn::<Tbl, <Col as Column>::ColType, Col>::insert_or_update`
-   = note: this error originates in the attribute macro `spacetimedb::table` (in Nightly builds, run with -Z macro-backtrace for more info)
+   |                                 ^^^^^^^^^^^^^^^^ method not found in `UniqueColumnReadOnly<outbound_ping__TableHandle, u64, id>`
 
-error[E0277]: the trait bound `outbound_ping__TableHandle: spacetimedb::table::MutableTable` is not satisfied
+error[E0599]: no method named `try_insert_or_update` found for struct `UniqueColumnReadOnly<Tbl, ColType, Col>` in the current scope
   --> tests/ui/outbox_mutation.rs:39:41
    |
 39 |     let _ = ctx.db.outbound_ping().id().try_insert_or_update(row);
-   |                                         ^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
-   |
-help: the trait `spacetimedb::table::MutableTable` is not implemented for `outbound_ping__TableHandle`
-  --> tests/ui/outbox_mutation.rs:6:1
-   |
- 6 | / #[spacetimedb::table(
- 7 | |     accessor = outbound_ping,
-   | |____________________________^
-note: required by a bound in `UniqueColumn::<Tbl, <Col as spacetimedb::table::Column>::ColType, Col>::try_insert_or_update`
-  --> src/table.rs
-   |
-   |     pub fn try_insert_or_update(&self, new_row: Tbl::Row) -> Result<Tbl::Row, TryInsertError<Tbl>>
-   |            -------------------- required by a bound in this associated function
-   |     where
-   |         Tbl: MutableTable,
-   |              ^^^^^^^^^^^^ required by this bound in `UniqueColumn::<Tbl, <Col as Column>::ColType, Col>::try_insert_or_update`
-   = note: this error originates in the attribute macro `spacetimedb::table` (in Nightly builds, run with -Z macro-backtrace for more info)
+   |                                         ^^^^^^^^^^^^^^^^^^^^ method not found in `UniqueColumnReadOnly<outbound_ping__TableHandle, u64, id>`

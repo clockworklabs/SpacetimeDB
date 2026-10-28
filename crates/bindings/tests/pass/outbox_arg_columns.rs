@@ -5,7 +5,13 @@ mod remote_bindings {
     pub(crate) use crate::receiver;
 }
 
-#[spacetimedb::table(accessor = outbound_ping, name = "WireOutbox", outbox(crate::remote_bindings::receiver::receive_ping))]
+#[spacetimedb::table(
+    accessor = outbound_ping,
+    name = "WireOutbox",
+    outbox(crate::remote_bindings::receiver::receive_ping),
+    index(accessor = by_audit, btree(columns = [audit])),
+    index(accessor = by_audit_hash, hash(columns = [audit])),
+)]
 pub struct OutboundPing {
     #[primary_key]
     #[auto_inc]
@@ -66,13 +72,46 @@ fn main() {
 
 // Outbox tables retain inserts and reads, including primary-key lookups.
 fn read_and_insert(ctx: &spacetimedb::ReducerContext, row: OutboundPing) {
-    use spacetimedb::Table;
     let table = ctx.db.outbound_ping();
     let row = table.insert(row);
     let _ = table.id().find(row.id);
+    let _ = table.by_audit().filter("audit");
+    let _ = table.by_audit_hash().filter("audit");
     let _ = table.try_insert(row);
     let _ = table.count();
     let _ = table.iter();
+}
+
+// Existing Table bounds, associated-type paths, and UFCS calls remain sufficient.
+fn mutate_generic<T: spacetimedb::Table>(table: &T, row: <T as spacetimedb::Table>::Row) {
+    let row = spacetimedb::Table::insert(table, row);
+    table.delete(row);
+    table.clear();
+}
+
+fn mutate_generic_index<T, C>(column: &spacetimedb::UniqueColumn<T, C::ColType, C>, row: T::Row)
+where
+    T: spacetimedb::Table,
+    C: spacetimedb::table::Index + spacetimedb::table::Column<Table = T> + spacetimedb::table::PrimaryKey,
+{
+    let row = column.update(row);
+    #[cfg(feature = "unstable")]
+    let row = column.insert_or_update(row);
+    #[cfg(feature = "unstable")]
+    let row = column.try_insert_or_update(row).unwrap();
+    column.delete(C::get_field(&row));
+}
+
+fn mutate_generic_indexes<T, R, P>(
+    ranged: &spacetimedb::RangedIndex<T, (String,), R>,
+    pointed: &spacetimedb::PointIndex<T, (String,), P>,
+) where
+    T: spacetimedb::Table,
+    R: spacetimedb::table::IndexIsRanged,
+    P: spacetimedb::table::IndexIsPointed,
+{
+    ranged.delete("value");
+    pointed.delete("value");
 }
 
 #[spacetimedb::table(

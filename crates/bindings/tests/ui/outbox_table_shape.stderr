@@ -48,8 +48,8 @@ error[E0593]: function is expected to take 3 arguments, but it takes 2 arguments
 note: required by a bound in `spacetimedb::rt::on_result_typecheck`
   --> src/rt.rs
    |
-   | pub fn on_result_typecheck<T, F, Ret>(_f: F, _table: fn(&crate::Local) -> T)
+   | pub fn on_result_typecheck<T, Tbl, F, Ret>(_f: F, _table: fn(&crate::Local) -> T)
    |        ------------------- required by a bound in this function
 ...
-   |     F: Fn(&ReducerContext, T::Row, Result<(), String>) -> Ret,
-   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `on_result_typecheck`
+   |     F: Fn(&ReducerContext, Tbl::Row, Result<(), String>) -> Ret,
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `on_result_typecheck`

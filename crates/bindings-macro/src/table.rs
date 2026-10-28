@@ -590,15 +590,22 @@ impl ValidatedIndex<'_> {
         row_type_ident: &Ident,
         tbl_type_ident: &Ident,
         flavor: AccessorType,
+        backend: TokenStream,
     ) -> TokenStream {
         if self.is_unique {
-            self.unique_accessor(row_type_ident, tbl_type_ident, flavor)
+            self.unique_accessor(row_type_ident, tbl_type_ident, flavor, backend)
         } else {
-            self.non_unique_accessor(vis, row_type_ident, tbl_type_ident, flavor)
+            self.non_unique_accessor(vis, row_type_ident, tbl_type_ident, flavor, backend)
         }
     }
 
-    fn unique_accessor(&self, row_type_ident: &Ident, tbl_type_ident: &Ident, flavor: AccessorType) -> TokenStream {
+    fn unique_accessor(
+        &self,
+        row_type_ident: &Ident,
+        tbl_type_ident: &Ident,
+        flavor: AccessorType,
+        backend: TokenStream,
+    ) -> TokenStream {
         let col = self.kind.one_col().unwrap();
         let index_ident = self.accessor_name;
         let vis = col.vis;
@@ -616,7 +623,7 @@ impl ValidatedIndex<'_> {
         quote! {
             #[doc = #doc]
             #vis fn #column_ident(&self) -> #unique_ty<#tbl_token, #col_ty, __indices::#index_ident> {
-                #unique_ty::__new(self.__backend.clone())
+                #unique_ty::__new(#backend)
             }
         }
     }
@@ -627,6 +634,7 @@ impl ValidatedIndex<'_> {
         row_type_ident: &Ident,
         tbl_type_ident: &Ident,
         flavor: AccessorType,
+        backend: TokenStream,
     ) -> TokenStream {
         let index_ident = self.accessor_name;
         let cols = self.kind.columns();
@@ -657,7 +665,7 @@ impl ValidatedIndex<'_> {
         quote! {
             #[doc = #doc]
             #vis fn #index_ident(&self) -> #handle_ty<#tbl_token, (#(#col_tys,)*), __indices::#index_ident> {
-                #handle_ty::__new(self.__backend.clone())
+                #handle_ty::__new(#backend)
             }
         }
     }
@@ -1045,14 +1053,41 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
     let tablehandle_ident = format_ident!("{}__TableHandle", table_ident);
     let viewhandle_ident = format_ident!("{}__ViewHandle", table_ident);
+    let outboxhandle_ident = format_ident!("{}__OutboxHandle", table_ident);
+    let public_handle_ident = if args.outbox.is_some() {
+        &outboxhandle_ident
+    } else {
+        &tablehandle_ident
+    };
 
     let index_descs = indices.iter().map(|index| index.desc());
-    let index_accessors_rw = indices
-        .iter()
-        .map(|index| index.accessor(vis, original_struct_ident, &tablehandle_ident, AccessorType::ReadWrite));
-    let index_accessors_ro = indices
-        .iter()
-        .map(|index| index.accessor(vis, original_struct_ident, &tablehandle_ident, AccessorType::Read));
+    let index_accessors_rw = indices.iter().map(|index| {
+        index.accessor(
+            vis,
+            original_struct_ident,
+            &tablehandle_ident,
+            AccessorType::ReadWrite,
+            quote!(self.__backend.clone()),
+        )
+    });
+    let index_accessors_ro = indices.iter().map(|index| {
+        index.accessor(
+            vis,
+            original_struct_ident,
+            &tablehandle_ident,
+            AccessorType::Read,
+            quote!(self.__backend.clone()),
+        )
+    });
+    let outbox_index_accessors = indices.iter().map(|index| {
+        index.accessor(
+            vis,
+            original_struct_ident,
+            &tablehandle_ident,
+            AccessorType::Read,
+            quote!(self.__table.__backend().clone()),
+        )
+    });
     let index_marker_types: Vec<_> = indices
         .iter()
         .map(|index| index.marker_type(vis, &tablehandle_ident, primary_key_column.as_ref()))
@@ -1314,13 +1349,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     };
 
     let field_types = fields.iter().map(|f| f.ty).collect::<Vec<_>>();
-    let mutable_table_impl = args.outbox.is_none().then(|| {
-        quote! {
-            impl spacetimedb::table::MutableTable for #tablehandle_ident {}
-        }
-    });
     let tabletype_impl = quote! {
-        #mutable_table_impl
         use spacetimedb::Serialize;
         impl spacetimedb::Table for #tablehandle_ident {
             type Row = #row_type;
@@ -1363,19 +1392,30 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         }
     };
 
+    let table_handle_value = quote! {
+        #tablehandle_ident { __backend: self.__table_backend() }
+    };
+    let public_handle_value = if args.outbox.is_some() {
+        quote! {
+            #outboxhandle_ident {
+                __table: spacetimedb::table::OutboxTable::__new(#table_handle_value),
+            }
+        }
+    } else {
+        table_handle_value
+    };
+
     // Output all macro data
     let trait_def = quote_spanned! {table_ident.span()=>
         #[allow(non_camel_case_types, dead_code)]
         #vis trait #table_ident {
             #[allow(non_camel_case_types, dead_code)]
-            fn #table_ident(&self) -> #tablehandle_ident;
+            fn #table_ident(&self) -> #public_handle_ident;
         }
         impl #table_ident for spacetimedb::Local {
             #[allow(non_camel_case_types, dead_code)]
-            fn #table_ident(&self) -> #tablehandle_ident {
-                #tablehandle_ident {
-                    __backend: self.__table_backend(),
-                }
+            fn #table_ident(&self) -> #public_handle_ident {
+                #public_handle_value
             }
         }
     };
@@ -1484,6 +1524,31 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         }
     };
 
+    // Keep the existing Table API intact. Outboxes expose a separate facade whose
+    // deref target shares insertion/iteration, but never exposes the mutable handle.
+    let outboxhandle_def = args.outbox.is_some().then(|| {
+        quote! {
+            #[allow(non_camel_case_types)]
+            #[non_exhaustive]
+            #vis struct #outboxhandle_ident {
+                __table: spacetimedb::table::OutboxTable<#tablehandle_ident>,
+            }
+        }
+    });
+    let outboxhandle_impl = args.outbox.is_some().then(|| {
+        quote! {
+            impl #outboxhandle_ident {
+                #(#outbox_index_accessors)*
+            }
+            impl ::core::ops::Deref for #outboxhandle_ident {
+                type Target = spacetimedb::table::OutboxTable<#tablehandle_ident>;
+                fn deref(&self) -> &Self::Target {
+                    &self.__table
+                }
+            }
+        }
+    });
+
     let viewhandle_def = quote! {
         #[allow(non_camel_case_types)]
         #[non_exhaustive]
@@ -1521,11 +1586,13 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         #trait_def_view
 
         #tablehandle_def
+        #outboxhandle_def
         #viewhandle_def
         #table_query_handle_def
         #struct_level_query_impl
 
         const _: () = {
+            #outboxhandle_impl
             impl #tablehandle_ident {
                 #(#index_accessors_rw)*
             }
