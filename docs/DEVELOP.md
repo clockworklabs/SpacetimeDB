@@ -1,6 +1,6 @@
 # DEVELOP.md
 
-This document explains how to configure the environment, run the LLM benchmark tool, and work with the benchmark suite.
+This document explains how to configure the environment, run the LLM benchmark tool, and work with the benchmark suite. It ends with a diagram of the SpacetimeDB Standalone architecture.
 
 ---
 
@@ -12,6 +12,7 @@ This document explains how to configure the environment, run the LLM benchmark t
 4. [Benchmark Suite](#benchmark-suite)
 5. [Context Construction](#context-construction)
 6. [Troubleshooting](#troubleshooting)
+7. [Architecture](#architecture)
 ---
 
 ## Prerequisites
@@ -308,3 +309,13 @@ When writing documentation that will be used by the benchmark:
 **Timeouts / Rate-limits**
 - Lower `LLM_BENCH_CONCURRENCY` or `LLM_BENCH_ROUTE_CONCURRENCY`.
 - Some providers aggressively throttle bursts; use backoff/retry when supported.
+
+---
+
+## Architecture
+
+<p align="center">
+    <img src="../images/server-architecture.svg" alt="SpacetimeDB server architecture" width="100%">
+</p>
+
+This diagram shows what runs inside SpacetimeDB Standalone. The yellow areas run on the shared Tokio runtime: the HTTP, WebSocket, and Postgres servers, ControlDB, and each database's background workers. The purple area is each database's own thread, pinned to a core, where the ModuleHost runs reducers, SQL, and view updates one at a time against the in-memory datastore. The green arrows follow a reducer call through commit, after which the changes go to the commitlog on disk and to subscriptions, which push updates back to clients. The diagram is a plain SVG at `images/server-architecture.svg`, so you can edit it directly.

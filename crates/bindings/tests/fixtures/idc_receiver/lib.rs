@@ -17,13 +17,18 @@ impl spacetimedb::SpacetimeType for Identity {
 }
 
 impl spacetimedb::Serialize for Identity {
-    fn serialize<S: spacetimedb::spacetimedb_lib::ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    fn serialize<S: spacetimedb::spacetimedb_lib::ser::Serializer>(
+        &self,
+        serializer: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
         <spacetimedb::Identity as spacetimedb::Serialize>::serialize(&self.0, serializer)
     }
 }
 
 impl<'de> spacetimedb::Deserialize<'de> for Identity {
-    fn deserialize<D: spacetimedb::spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+    fn deserialize<D: spacetimedb::spacetimedb_lib::de::Deserializer<'de>>(
+        deserializer: D,
+    ) -> ::core::result::Result<Self, D::Error> {
         <spacetimedb::Identity as spacetimedb::Deserialize>::deserialize(deserializer).map(Self)
     }
 }
