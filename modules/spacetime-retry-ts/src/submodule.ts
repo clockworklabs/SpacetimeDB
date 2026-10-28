@@ -29,40 +29,62 @@ export const errors = {
   cannotRemoveLastAdmin: 'retry.cannot_remove_last_admin',
 } as const;
 
-function retryTaskTable(args: SumBuilder<VariantsObj>) {
-  return table(
-    { name: 'retry_task', public: false },
-    {
-      scheduledId: t.u64().primaryKey().autoInc(),
-      scheduledAt: t.scheduleAt(),
-      name: t.string().index(),
-      args,
-      attempt: t.u8(),
-      maxAttempts: t.u8(),
-      backoffSecs: t.u32(),
-    }
-  );
+function retryTaskColumns(args: SumBuilder<VariantsObj>) {
+  return {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+    name: t.string().index(),
+    args,
+    attempt: t.u8(),
+    maxAttempts: t.u8(),
+    backoffSecs: t.u32(),
+  };
 }
 
-const retryHistory = table(
-  { name: 'retry_history', public: false },
-  {
-    id: t.u64().primaryKey().autoInc(),
-    taskName: t.string(),
-    attempt: t.u8(),
-    status: t.enum('RetryHistoryStatus', ['Ok', 'Failed', 'GaveUp']),
-    error: t.option(t.string()),
-    ranAt: t.timestamp().index(),
-  }
-);
+const retryTaskOptions = { name: 'retry_task', public: false } as const;
+function retryTaskTable(
+  args: SumBuilder<VariantsObj>
+): ReturnType<
+  typeof table<ReturnType<typeof retryTaskColumns>, typeof retryTaskOptions>
+> {
+  return table(retryTaskOptions, retryTaskColumns(args));
+}
 
-const retryAdminIdentity = table(
-  { name: 'retry_admin_identity', public: false },
-  {
-    identity: t.identity().primaryKey(),
-    addedAt: t.timestamp(),
-  }
-);
+type RetryHistoryStatusBuilder = SumBuilder<
+  Record<'Ok' | 'Failed' | 'GaveUp', ReturnType<typeof t.unit>>
+>;
+const historyStatus: RetryHistoryStatusBuilder = t.enum('RetryHistoryStatus', {
+  Ok: t.unit(),
+  Failed: t.unit(),
+  GaveUp: t.unit(),
+});
+const historyOptions = { name: 'retry_history', public: false } as const;
+const historyColumns = {
+  id: t.u64().primaryKey().autoInc(),
+  taskName: t.string(),
+  attempt: t.u8(),
+  status: historyStatus,
+  error: t.option(t.string()),
+  ranAt: t.timestamp().index(),
+};
+const retryHistory: ReturnType<
+  typeof table<typeof historyColumns, typeof historyOptions>
+> = table(historyOptions, historyColumns);
+
+const adminOptions = { name: 'retry_admin_identity', public: false } as const;
+const adminColumns = {
+  identity: t.identity().primaryKey(),
+  addedAt: t.timestamp(),
+};
+const retryAdminIdentity: ReturnType<
+  typeof table<typeof adminColumns, typeof adminOptions>
+> = table(adminOptions, adminColumns);
+
+interface RetryTables {
+  retryTask: ReturnType<typeof retryTaskTable>;
+  retryHistory: typeof retryHistory;
+  retryAdminIdentity: typeof retryAdminIdentity;
+}
 
 export type RetryTaskRow = Infer<ReturnType<typeof retryTaskTable>['rowType']>;
 export type RetryHistoryRow = Infer<typeof retryHistory.rowType>;
@@ -159,6 +181,7 @@ export function client<const Tasks extends RetryTasks>({
   const variants: VariantsObj = tasks;
   const retryArgs = t.enum('RetryArgs', variants);
   const retryTask = retryTaskTable(retryArgs);
+  const tables: RetryTables = { retryTask, retryHistory, retryAdminIdentity };
 
   function isAdmin(ctx: RetryViewCtx): boolean {
     return ctx.db.retryAdminIdentity.identity.find(ctx.sender) != null;
@@ -277,7 +300,7 @@ export function client<const Tasks extends RetryTasks>({
   }
 
   return {
-    tables: { retryTask, retryHistory, retryAdminIdentity },
+    tables,
     retryReducer,
     /** Call from the host's init reducer to seed the publishing identity as admin. */
     install(ctx: RetryCtx): void {

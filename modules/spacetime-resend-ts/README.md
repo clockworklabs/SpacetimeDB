@@ -9,11 +9,13 @@ Resend webhooks. Your application decides who can send email and see its history
 
 ## Install
 
+Run this in your SpacetimeDB TypeScript module directory:
+
 ```bash
-npm install @spacetimedb/resend spacetimedb
+npm install @spacetimedb/resend
 ```
 
-Requires SpacetimeDB 2.8.3 or later for submodule mounting.
+Requires SpacetimeDB SDK, CLI, and server 2.12 or later.
 
 ## Integrate into an application
 
@@ -52,7 +54,7 @@ resend.sendEmailRequest(ctx.as.resend, {
 ```
 
 For delivery updates, register `makeResendWebhookHandler()` on an HTTP route
-and add that URL in Resend. See the [Dispatch example](./example/) for a
+and add that URL in Resend. See the [Dispatch example](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-resend-ts/example) for a
 complete send procedure, webhook route, and views that show each user only
 their own email history.
 
@@ -229,7 +231,7 @@ spacetime call --server http://127.0.0.1:3000 spacetime-resend send_email \
   null null null
 ```
 
-The standalone module has no HTTP route. To receive webhooks from Resend, mount the submodule in a host module that registers `makeResendWebhookHandler()` on a router, as the [example](./example/spacetimedb/) does at `/webhook/resend`. Expose the database through a public tunnel such as ngrok and register `https://<tunnel>/v1/database/<database>/route/webhook/resend` in Resend's dashboard with the same `whsec_...` you passed to `set_resend_config`.
+The standalone module has no HTTP route. To receive webhooks from Resend, mount the submodule in a host module that registers `makeResendWebhookHandler()` on a router, as the [example](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-resend-ts/example/spacetimedb) does at `/webhook/resend`. Expose the database through a public tunnel such as ngrok and register `https://<tunnel>/v1/database/<database>/route/webhook/resend` in Resend's dashboard with the same `whsec_...` you passed to `set_resend_config`.
 
 ## Testing
 
@@ -240,4 +242,4 @@ pnpm run lint
 
 ## License
 
-Apache-2.0.
+Apache-2.0. See the [license](https://github.com/clockworklabs/SpacetimeDB/blob/master/licenses/apache2.txt).

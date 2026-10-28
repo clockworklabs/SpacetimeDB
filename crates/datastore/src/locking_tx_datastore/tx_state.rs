@@ -188,7 +188,6 @@ impl MemoryUsage for PendingSchemaChange {
                                     .as_ref()
                                     .map(|name| name.as_ref().heap_usage())
                                     .unwrap_or(0)
-                                + outbox.signature_hash.heap_usage()
                         })
                         .unwrap_or(0)
             }

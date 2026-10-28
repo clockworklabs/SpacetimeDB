@@ -11,14 +11,15 @@ use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::{
     call_identity_connected, init_database, CallHttpHandlerParams, CallProcedureParams, CallReducerParams,
-    CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, HttpHandlerCallError, InitDatabaseResult,
-    ModuleEvent, ModuleFunctionCall, ModuleInfo, RefInstance, SqlCommand, SqlCommandResult, UpdateEnvironmentResult,
-    ViewCallResult, ViewCommand, ViewCommandResult, ViewOutcome,
+    CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, HttpHandlerCallError, IdcDeliveryFailure,
+    IdcMessageParams, IdcReducerCallOutcome, InitDatabaseResult, ModuleEvent, ModuleFunctionCall, ModuleInfo,
+    RefInstance, SqlCommand, SqlCommandResult, UpdateEnvironmentResult, ViewCallResult, ViewCommand, ViewCommandResult,
+    ViewOutcome,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::{
-    ArgsTuple, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult, ReducerId,
-    ReducerOutcome, Scheduler, UpdateDatabaseResult,
+    ArgsTuple, FunctionArgs, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult,
+    ReducerId, ReducerOutcome, Scheduler, UpdateDatabaseResult,
 };
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
@@ -39,6 +40,7 @@ use spacetimedb_datastore::error::{DatastoreError, ViewError};
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo, ViewInstanceArgs};
+use spacetimedb_datastore::system_tables::StInboundMsgResultStatus;
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
 use spacetimedb_execution::ExecutionParams;
 use spacetimedb_lib::buffer::DecodeError;
@@ -58,8 +60,12 @@ use spacetimedb_schema::identifier::NamespacedIdentifier;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_subscription::SubscriptionPlan;
 use std::collections::HashMap;
+use std::ops::ControlFlow;
 use std::sync::Arc;
 use tracing::span::EnteredSpan;
+
+/// Runs after a successful reducer, before views refresh. Errors roll back the transaction.
+pub(crate) type ReducerSuccessAction = Box<dyn FnOnce(&mut MutTxId, &Option<Bytes>) -> anyhow::Result<()> + Send>;
 
 pub trait WasmModule: Send + 'static {
     type Instance: WasmInstance;
@@ -409,7 +415,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             func_names
         };
         let uninit_instance = module.instantiate_pre()?;
-        let instance_env = InstanceEnv::new(mcc.replica_ctx.clone(), mcc.scheduler.clone());
+        let instance_env = InstanceEnv::new(mcc.replica_ctx.clone(), mcc.scheduler.clone(), mcc.idc_sender.clone());
         let mut instance = uninit_instance.instantiate(instance_env, &func_names)?;
 
         let desc = instance.extract_descriptions()?;
@@ -459,13 +465,21 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         self.common.scheduler()
     }
 
+    pub fn idc_sender(&self) -> crate::host::idc_actor::IdcActorSender {
+        self.common.idc_sender()
+    }
+
     pub fn info(&self) -> Arc<ModuleInfo> {
         self.common.info()
     }
 
     pub fn create_instance(&self) -> WasmModuleInstance<T::Instance> {
         let common = &self.common;
-        let env = InstanceEnv::new(common.replica_ctx().clone(), common.scheduler().clone());
+        let env = InstanceEnv::new(
+            common.replica_ctx().clone(),
+            common.scheduler().clone(),
+            common.idc_sender(),
+        );
         // this shouldn't fail, since we already called module.create_instance()
         // before and it didn't error, and ideally they should be deterministic
         let mut instance = self
@@ -523,6 +537,20 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let (res, trapped) = self.call_reducer_with_tx_offset(None, params);
         self.trapped = trapped;
         res
+    }
+
+    pub(in crate::host) fn call_idc_reducer(
+        &mut self,
+        params: CallReducerParams,
+        delivery: IdcMessageParams,
+        on_success: ReducerSuccessAction,
+    ) -> Result<IdcReducerCallOutcome, IdcDeliveryFailure> {
+        let (result, trapped) = crate::callgrind_flag::invoke_allowing_callgrind(|| {
+            self.common
+                .call_idc_reducer(params, delivery, &mut self.instance, on_success)
+        });
+        self.trapped = trapped;
+        result
     }
 
     pub fn clear_all_clients(&self) -> anyhow::Result<()> {
@@ -615,14 +643,21 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         self.trapped = trapped;
         res
     }
+
+    pub(in crate::host) fn run_idc_callback_and_cleanup(
+        &mut self,
+        msg: crate::host::idc_actor::DeliveredMessage,
+    ) -> anyhow::Result<()> {
+        let (result, trapped) = self.common.run_idc_callback_and_cleanup(msg, &mut self.instance);
+        self.trapped = trapped;
+        result
+    }
 }
 
 impl<T: WasmInstance> WasmModuleInstance<T> {
     #[tracing::instrument(level = "trace", skip_all)]
     fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> (ReducerCallResult, bool) {
-        let (res, trapped) = crate::callgrind_flag::invoke_allowing_callgrind(|| {
-            self.common.call_reducer_with_tx(tx, params, &mut self.instance)
-        });
+        let (res, trapped) = self.call_reducer_with_tx_offset(tx, params);
         (res.result, trapped)
     }
 
@@ -979,6 +1014,7 @@ impl InstanceCommon {
     ) -> (Result<(st_http::Response, Bytes), HttpHandlerCallError>, bool) {
         let CallHttpHandlerParams {
             timestamp,
+            caller_auth,
             handler_id,
             request,
             request_body,
@@ -1004,6 +1040,8 @@ impl InstanceCommon {
         let op = HttpHandlerOp {
             id: handler_id,
             name: handler_name.clone().into(),
+            caller_identity: caller_auth.identity,
+            caller_jwt_payload: caller_auth.jwt_payload.unwrap_or_default(),
             timestamp,
             request_bytes,
             request_body_bytes: request_body,
@@ -1073,6 +1111,80 @@ impl InstanceCommon {
         params: CallReducerParams,
         inst: &mut I,
     ) -> (ReducerCallResultWithTxOffset, bool) {
+        self.call_reducer_with_tx_inner(tx, params, inst, None::<ReducerSuccessAction>)
+    }
+
+    pub(crate) fn call_reducer_with_success_action<I: WasmInstance>(
+        &mut self,
+        tx: Option<MutTxId>,
+        params: CallReducerParams,
+        inst: &mut I,
+        on_success: impl FnOnce(&mut MutTxId, &Option<Bytes>) -> anyhow::Result<()>,
+    ) -> (ReducerCallResultWithTxOffset, bool) {
+        self.call_reducer_with_tx_inner(tx, params, inst, Some(on_success))
+    }
+
+    /// Execute the next IDC delivery or return its previously recorded outcome.
+    /// Failed execution is rolled back before recording its outcome in a new transaction.
+    /// The boolean reports an execution trap, even if recording the failure also fails.
+    pub(in crate::host) fn call_idc_reducer<I: WasmInstance>(
+        &mut self,
+        params: CallReducerParams,
+        delivery: IdcMessageParams,
+        inst: &mut I,
+        on_success: ReducerSuccessAction,
+    ) -> (Result<IdcReducerCallOutcome, IdcDeliveryFailure>, bool) {
+        let db = inst.replica_ctx().relational_db();
+        let workload = Workload::Reducer(ReducerContext {
+            name: self.info.module_def.reducer_by_id(params.reducer_id).name.clone(),
+            caller_identity: params.caller_identity,
+            caller_connection_id: params.caller_connection_id,
+            timestamp: params.timestamp,
+            arg_bsatn: params.args.get_bsatn().clone(),
+        });
+        let tx = db.begin_mut_tx(IsolationLevel::Serializable, workload);
+        let tx = match ModuleHost::check_idc_delivery(db, tx, delivery) {
+            Ok(ControlFlow::Continue(tx)) => tx,
+            Ok(ControlFlow::Break(outcome)) => return (Ok(outcome), false),
+            Err(error) => return (Err(error), false),
+        };
+
+        // Keep the sequence check, reducer writes, and success hook in one transaction.
+        let (attempt, trapped) = self.call_reducer_with_success_action(Some(tx), params, inst, on_success);
+        let (status, payload) = match &attempt.result.outcome {
+            ReducerOutcome::Committed => return (Ok(IdcReducerCallOutcome::Recorded(attempt)), trapped),
+            ReducerOutcome::Failed(error) => (StInboundMsgResultStatus::Err, Bytes::copy_from_slice(error.as_bytes())),
+            ReducerOutcome::BudgetExceeded => (
+                StInboundMsgResultStatus::BudgetExceeded,
+                Bytes::from_static(b"Module energy budget exhausted."),
+            ),
+        };
+
+        // Execution rolled back. Record the failure in a new transaction, checking
+        // for a competing outcome before writing. Recorded always means a persisted outcome.
+        let db = inst.replica_ctx().relational_db();
+        let recorded = ModuleHost::record_idc_terminal_error(db, delivery, status, payload);
+        let outcome = recorded.map(|outcome| match outcome {
+            IdcReducerCallOutcome::Recorded(recorded) => {
+                // Use this attempt's result and metrics with the failure commit's offset.
+                IdcReducerCallOutcome::Recorded(ReducerCallResultWithTxOffset {
+                    result: attempt.result,
+                    tx_offset: recorded.tx_offset,
+                })
+            }
+            // Another request won after rollback. Return its outcome unchanged.
+            other => other,
+        });
+        (outcome, trapped)
+    }
+
+    fn call_reducer_with_tx_inner<I: WasmInstance>(
+        &mut self,
+        tx: Option<MutTxId>,
+        params: CallReducerParams,
+        inst: &mut I,
+        on_success: Option<impl FnOnce(&mut MutTxId, &Option<Bytes>) -> anyhow::Result<()>>,
+    ) -> (ReducerCallResultWithTxOffset, bool) {
         let CallReducerParams {
             timestamp,
             caller_identity,
@@ -1126,7 +1238,7 @@ impl InstanceCommon {
         // However, that does not necessarily apply to e.g., V8.
         let trapped = matches!(result.call_result, Err(ExecutionError::Trap(_)));
 
-        let (status, mut reducer_return_value) = match result.call_result {
+        let (mut status, mut reducer_return_value) = match result.call_result {
             Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)) => {
                 inst.log_traceback("reducer", reducer_name, &err);
 
@@ -1170,7 +1282,16 @@ impl InstanceCommon {
             }
         };
 
-        // Only re-evaluate and update views if the reducer's execution was successful
+        // Views must see the hook's writes as well as the reducer's. A failure in
+        // either the hook or view execution rolls back all of these changes.
+        if matches!(status, EventStatus::Committed(_))
+            && let Some(on_success) = on_success
+            && let Err(err) = on_success(&mut tx, &reducer_return_value)
+        {
+            status = EventStatus::FailedInternal(err.to_string());
+        }
+
+        // Only re-evaluate and update views if the reducer and success hook succeeded.
         let (out, n_views_evaluated, trapped) = if !trapped && matches!(status, EventStatus::Committed(_)) {
             self.call_views_with_tx(tx, caller_identity, inst, timestamp)
         } else {
@@ -1432,6 +1553,7 @@ impl InstanceCommon {
             caller,
             sender,
             args,
+            view_call,
             row_type,
             timestamp,
             view_typespace,
@@ -1450,6 +1572,7 @@ impl InstanceCommon {
                         fn_ptr,
                         sender: &sender,
                         args: &args,
+                        view_call: &view_call,
                         timestamp,
                     },
                     budget,
@@ -1461,6 +1584,7 @@ impl InstanceCommon {
                         table_id,
                         fn_ptr,
                         args: &args,
+                        view_call: &view_call,
                         timestamp,
                     },
                     budget,
@@ -1485,13 +1609,9 @@ impl InstanceCommon {
                 inst.log_traceback("view", &view_name, &anyhow::anyhow!(err));
                 self.handle_outer_error(&result.stats.energy, &view_name).into()
             }
-            (Ok(raw), sender) => {
+            (Ok(raw), _) => {
                 // This is wrapped in a closure to simplify error handling.
                 let outcome: Result<ViewOutcome, anyhow::Error> = (|| {
-                    let view_call = match sender {
-                        Some(sender) => ViewCallInfo::sender(view_id, sender),
-                        None => ViewCallInfo::anonymous(view_id),
-                    };
                     let result = ViewResult::from_return_data(raw).context("Error parsing view result")?;
                     let row_product_type = view_typespace
                         .resolve(row_type)
@@ -1577,6 +1697,55 @@ impl InstanceCommon {
         ModuleHost::call_views_with_tx_at(tx, &mut instance, caller, timestamp)
     }
 
+    /// Refresh views for an internal transaction, then commit and broadcast its changes.
+    /// A failed refresh rolls back the transaction. The boolean reports whether the instance trapped.
+    pub(crate) fn refresh_views_then_commit_and_broadcast(
+        &mut self,
+        tx: MutTxId,
+        inst: &mut impl WasmInstance,
+    ) -> (anyhow::Result<()>, bool) {
+        let timestamp = Timestamp::now();
+        let (view_result, _n_evaluated, trapped) =
+            self.call_views_with_tx(tx, self.info.database_identity, inst, timestamp);
+        let mut status = match view_result.outcome {
+            ViewOutcome::Success => EventStatus::Committed(DatabaseUpdate::default()),
+            ViewOutcome::Failed(err) => EventStatus::FailedInternal(err),
+            ViewOutcome::BudgetExceeded => EventStatus::OutOfEnergy,
+        };
+        if trapped && matches!(status, EventStatus::Committed(_)) {
+            status = EventStatus::FailedInternal("The instance encountered a fatal error.".into());
+        }
+
+        // The commit helper returns Ok after rolling back a failed event.
+        // Preserve the view failure so callers do not mistake rollback for a successful commit.
+        let outcome = match &status {
+            EventStatus::Committed(_) => Ok(()),
+            status => Err(anyhow!("view refresh failed: {status:?}")),
+        };
+        let event = ModuleEvent {
+            timestamp,
+            caller_identity: self.info.database_identity,
+            caller_connection_id: None,
+            function_call: ModuleFunctionCall::default(),
+            status,
+            reducer_return_value: None,
+            // No reducer ran for this internal transaction.
+            execution_budget_used: FunctionBudget::ZERO,
+            host_execution_duration: Duration::ZERO,
+            request_id: None,
+            timer: None,
+        };
+
+        let result = self
+            .info
+            .subscriptions
+            .commit_and_broadcast_event(None, event, view_result.tx)
+            .map(|_| ())
+            .map_err(anyhow::Error::from)
+            .and(outcome);
+        (result, trapped)
+    }
+
     /// Executes view calls and accumulate results.
     /// Returns early if any call traps or fails.
     fn execute_view_calls<I: WasmInstance>(
@@ -1630,6 +1799,14 @@ impl InstanceCommon {
     ) -> (CallScheduledFunctionResult, bool) {
         crate::host::scheduler::call_scheduled_reducer(&self.info.clone(), params, self, inst)
     }
+
+    pub(in crate::host) fn run_idc_callback_and_cleanup<I: WasmInstance>(
+        &mut self,
+        msg: crate::host::idc_actor::DeliveredMessage,
+        inst: &mut I,
+    ) -> (anyhow::Result<()>, bool) {
+        crate::host::idc_actor::run_callback_and_cleanup(&self.info.clone(), msg, self, inst)
+    }
 }
 
 fn collect_subscribed_view_calls(
@@ -1670,23 +1847,30 @@ fn collect_subscribed_view_calls(
             if subs.is_empty() {
                 continue;
             }
-            view_calls.push(CallViewParams {
-                view_name: view_name.clone(),
-                view_id,
-                table_id,
-                fn_ptr: global_fn_ptr,
-                caller: owner_identity,
-                sender: None,
-                args: ArgsTuple::nullary(),
-                row_type: *product_type_ref,
-                timestamp: Timestamp::now(),
-                view_typespace: view_typespace.clone(),
-            });
+            // Each anonymous instance is keyed by its args, so each needs its own call.
+            for (view_call, sub) in subs {
+                let ViewInstanceArgs::Anonymous { args } = sub else {
+                    continue;
+                };
+                view_calls.push(CallViewParams {
+                    view_name: view_name.clone(),
+                    view_id,
+                    table_id,
+                    fn_ptr: global_fn_ptr,
+                    caller: owner_identity,
+                    sender: None,
+                    args: FunctionArgs::from_view_args(&args).into_tuple_for_def(owning_def, view)?,
+                    view_call,
+                    row_type: *product_type_ref,
+                    timestamp: Timestamp::now(),
+                    view_typespace: view_typespace.clone(),
+                });
+            }
             continue;
         }
 
-        for sub in subs {
-            let ViewInstanceArgs::Sender(identity) = sub else {
+        for (view_call, sub) in subs {
+            let ViewInstanceArgs::Sender { sender: identity, args } = sub else {
                 continue;
             };
             view_calls.push(CallViewParams {
@@ -1696,7 +1880,8 @@ fn collect_subscribed_view_calls(
                 fn_ptr: global_fn_ptr,
                 caller: owner_identity,
                 sender: Some(identity),
-                args: ArgsTuple::nullary(),
+                args: FunctionArgs::from_view_args(&args).into_tuple_for_def(owning_def, view)?,
+                view_call,
                 row_type: *product_type_ref,
                 timestamp: Timestamp::now(),
                 view_typespace: view_typespace.clone(),
@@ -1988,6 +2173,7 @@ pub struct ViewOp<'a> {
     pub fn_ptr: ViewFnPtr,
     pub args: &'a ArgsTuple,
     pub sender: &'a Identity,
+    pub view_call: &'a ViewCallInfo,
     pub timestamp: Timestamp,
 }
 
@@ -2001,7 +2187,7 @@ impl InstanceOp for ViewOp<'_> {
     }
 
     fn call_type(&self) -> FuncCallType {
-        FuncCallType::View(ViewCallInfo::sender(self.view_id, *self.sender))
+        FuncCallType::View(self.view_call.clone())
     }
 }
 
@@ -2013,6 +2199,7 @@ pub struct AnonymousViewOp<'a> {
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
     pub args: &'a ArgsTuple,
+    pub view_call: &'a ViewCallInfo,
     pub timestamp: Timestamp,
 }
 
@@ -2026,7 +2213,7 @@ impl InstanceOp for AnonymousViewOp<'_> {
     }
 
     fn call_type(&self) -> FuncCallType {
-        FuncCallType::View(ViewCallInfo::anonymous(self.view_id))
+        FuncCallType::View(self.view_call.clone())
     }
 }
 
@@ -2126,6 +2313,8 @@ impl InstanceOp for ProcedureOp {
 pub struct HttpHandlerOp {
     pub id: HttpHandlerId,
     pub name: NamespacedIdentifier,
+    pub caller_identity: Identity,
+    pub caller_jwt_payload: Box<str>,
     pub timestamp: Timestamp,
     pub request_bytes: Bytes,
     pub request_body_bytes: Bytes,
@@ -2147,9 +2336,11 @@ impl InstanceOp for HttpHandlerOp {
 mod tests {
     use super::collect_subscribed_view_calls;
     use crate::db::relational_db::tests_utils::{begin_mut_tx, TestDB};
+    use crate::host::FunctionArgs;
     use spacetimedb_datastore::locking_tx_datastore::{ViewCallInfo, ViewInstanceArgs};
     use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
-    use spacetimedb_lib::{AlgebraicType, Identity, ProductType};
+    use spacetimedb_lib::{AlgebraicType, Identity, ProductType, ProductValue};
+    use spacetimedb_sats::product;
     use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_schema::def::ModuleDef;
 
@@ -2223,7 +2414,12 @@ mod tests {
         let (view_id, _) = db.create_view(&mut tx, &old, old.view("environment_view").unwrap())?;
         let call = ViewCallInfo::anonymous(view_id);
         // Ordinary SQL materialization has no live subscriber to disconnect.
-        tx.update_view_timestamp(call.clone(), ViewInstanceArgs::Anonymous)?;
+        tx.update_view_timestamp(
+            call.clone(),
+            ViewInstanceArgs::Anonymous {
+                args: ProductValue::default(),
+            },
+        )?;
         tx.record_table_scan(&FuncCallType::View(call.clone()), ST_ENV_ID);
         environment::replace(&db, &mut tx, old.environment(), &before)?;
         db.commit_tx(tx)?;
@@ -2390,6 +2586,10 @@ mod tests {
     }
 
     fn module_def_for_view(name: &str, is_anonymous: bool) -> ModuleDef {
+        module_def_for_view_with_params(name, is_anonymous, ProductType::unit())
+    }
+
+    fn module_def_for_view_with_params(name: &str, is_anonymous: bool, params: ProductType) -> ModuleDef {
         let mut builder = RawModuleDefV9Builder::new();
         let name = RawIdentifier::new(name);
         let type_ref = builder.add_algebraic_type(
@@ -2404,7 +2604,7 @@ mod tests {
             0,
             true,
             is_anonymous,
-            ProductType::unit(),
+            params,
             AlgebraicType::array(AlgebraicType::Ref(type_ref)),
         );
 
@@ -2425,12 +2625,16 @@ mod tests {
         let (view_id, _table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
         tx.subscribe_view(
             ViewCallInfo::anonymous(view_id),
-            ViewInstanceArgs::Anonymous,
+            ViewInstanceArgs::Anonymous {
+                args: ProductValue::default(),
+            },
             Identity::ZERO,
         )?;
         tx.subscribe_view(
             ViewCallInfo::anonymous(view_id),
-            ViewInstanceArgs::Anonymous,
+            ViewInstanceArgs::Anonymous {
+                args: ProductValue::default(),
+            },
             Identity::ONE,
         )?;
 
@@ -2462,12 +2666,18 @@ mod tests {
         let (view_id, _table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
         tx.subscribe_view(
             ViewCallInfo::sender(view_id, Identity::ZERO),
-            ViewInstanceArgs::Sender(Identity::ZERO),
+            ViewInstanceArgs::Sender {
+                sender: Identity::ZERO,
+                args: ProductValue::default(),
+            },
             Identity::ZERO,
         )?;
         tx.subscribe_view(
             ViewCallInfo::sender(view_id, Identity::ONE),
-            ViewInstanceArgs::Sender(Identity::ONE),
+            ViewInstanceArgs::Sender {
+                sender: Identity::ONE,
+                args: ProductValue::default(),
+            },
             Identity::ONE,
         )?;
 
@@ -2479,6 +2689,112 @@ mod tests {
         assert_eq!(calls.len(), 2, "sender views should still reevaluate once per sender");
         assert!(senders.contains(&Identity::ZERO));
         assert!(senders.contains(&Identity::ONE));
+        Ok(())
+    }
+
+    /// Anonymous views with different args have separate materializations,
+    /// so reevaluation must emit one call per instance, each with its own args.
+    #[test]
+    fn test_distinct_anonymous_view_calls_by_args() -> anyhow::Result<()> {
+        let stdb = TestDB::in_memory()?;
+        let module_def = module_def_for_view_with_params(
+            "anonymous_view",
+            true,
+            ProductType::from_iter([("id", AlgebraicType::U32)]),
+        );
+        let view_def = module_def.view("anonymous_view").expect("view should exist");
+
+        let mut tx = begin_mut_tx(&stdb);
+        let (view_id, _table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
+        let mut keys = Vec::new();
+        for arg in [42u32, 43u32] {
+            let args = ViewInstanceArgs::Anonymous { args: product![arg] };
+            let key = ViewCallInfo::from_args(view_id, &args);
+            keys.push((product![arg], key.clone()));
+            tx.subscribe_view(key, args, Identity::ZERO)?;
+        }
+
+        let calls = collect_subscribed_view_calls(&tx, &module_def, Identity::ZERO)?;
+        let mut evaluated: Vec<_> = calls
+            .iter()
+            .map(|call| (call.args.tuple().clone(), call.view_call.clone()))
+            .collect();
+        evaluated.sort_by(|a, b| a.0.cmp(&b.0));
+
+        // Each instance is evaluated with its own args, under the key it is stored under.
+        assert_eq!(evaluated, keys);
+        assert!(calls.iter().all(|call| call.sender.is_none()));
+        Ok(())
+    }
+
+    /// Stored view args are passed as BSATN and decoded against the view's params,
+    /// reproducing the stored values for every type a SQL literal can express.
+    #[test]
+    fn test_view_args_bsatn_round_trip() -> anyhow::Result<()> {
+        use spacetimedb_lib::{ConnectionId, Timestamp, Uuid};
+        use spacetimedb_sats::{i256, u256, AlgebraicValue};
+
+        let params = ProductType::from_iter([
+            ("bool", AlgebraicType::Bool),
+            ("i8", AlgebraicType::I8),
+            ("u8", AlgebraicType::U8),
+            ("i16", AlgebraicType::I16),
+            ("u16", AlgebraicType::U16),
+            ("i32", AlgebraicType::I32),
+            ("u32", AlgebraicType::U32),
+            ("i64", AlgebraicType::I64),
+            ("u64", AlgebraicType::U64),
+            ("i128", AlgebraicType::I128),
+            ("u128", AlgebraicType::U128),
+            ("i256", AlgebraicType::I256),
+            ("u256", AlgebraicType::U256),
+            // Float params are disallowed for now, see `ValidationError::ViewFloatParam`.
+            // ("f32", AlgebraicType::F32),
+            // ("f64", AlgebraicType::F64),
+            ("string", AlgebraicType::String),
+            ("bytes", AlgebraicType::bytes()),
+            ("identity", AlgebraicType::identity()),
+            ("connection_id", AlgebraicType::connection_id()),
+            ("timestamp", AlgebraicType::timestamp()),
+            ("uuid", AlgebraicType::uuid()),
+        ]);
+        let stored = ProductValue::from_iter([
+            AlgebraicValue::Bool(true),
+            AlgebraicValue::I8(-8),
+            AlgebraicValue::U8(8),
+            AlgebraicValue::I16(-16),
+            AlgebraicValue::U16(16),
+            AlgebraicValue::I32(-32),
+            AlgebraicValue::U32(32),
+            AlgebraicValue::I64(-64),
+            AlgebraicValue::U64(64),
+            AlgebraicValue::I128((-128).into()),
+            AlgebraicValue::U128(128.into()),
+            AlgebraicValue::I256(Box::new(i256::new(-256))),
+            AlgebraicValue::U256(Box::new(u256::new(256))),
+            // Float params are disallowed for now, see `ValidationError::ViewFloatParam`.
+            // AlgebraicValue::F32(1.5f32.into()),
+            // AlgebraicValue::F64(2.5f64.into()),
+            AlgebraicValue::String("hello".into()),
+            AlgebraicValue::Bytes([1u8, 2, 3].into()),
+            Identity::ONE.into(),
+            ConnectionId::from_u128(7).into(),
+            Timestamp::UNIX_EPOCH.into(),
+            Uuid::from_u128(9).into(),
+        ]);
+
+        for is_anonymous in [true, false] {
+            let module_def = module_def_for_view_with_params("v", is_anonymous, params.clone());
+            let view_def = module_def.view("v").expect("view should exist");
+
+            let decoded = FunctionArgs::from_view_args(&stored).into_tuple_for_def(&module_def, view_def)?;
+            assert_eq!(decoded.tuple(), &stored);
+
+            // Args that don't match the params fail to decode instead of reaching the guest.
+            assert!(FunctionArgs::from_view_args(&product![1u32])
+                .into_tuple_for_def(&module_def, view_def)
+                .is_err());
+        }
         Ok(())
     }
 }

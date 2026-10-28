@@ -192,6 +192,14 @@ pub(super) fn iter_table_names_and_types(
         .sorted_by_key(|(_, accessor_name, _)| *accessor_name)
 }
 
+/// Is `name` a view that takes arguments?
+///
+/// Subscribing to all tables means `SELECT * FROM {name}` for each one,
+/// which the server rejects for such a view because its args are missing.
+pub(super) fn is_parameterized_view(module: &ModuleDef, name: &Identifier) -> bool {
+    module.view(name).is_some_and(|view| !view.params.elements.is_empty())
+}
+
 pub(super) fn iter_unique_cols<'a>(
     typespace: &'a TypespaceForGenerate,
     schema: &'a TableSchema,

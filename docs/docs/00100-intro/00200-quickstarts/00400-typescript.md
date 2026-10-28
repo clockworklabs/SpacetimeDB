@@ -128,5 +128,6 @@ See [automatic reconnection](../../00200-core-concepts/00600-clients/00700-types
 
 ## Next steps
 
+- [Unit test your module](../../00250-how-to/00900-unit-testing.md) without starting a server
 - See the [Chat App Tutorial](../00300-tutorials/00100-chat-app.md) for a complete example
 - Read the [TypeScript SDK Reference](../../00200-core-concepts/00600-clients/00700-typescript-reference.md) for detailed API docs

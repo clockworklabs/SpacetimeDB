@@ -22,14 +22,15 @@ use crate::{
     system_tables::{
         with_sys_table_buf, StClientFields, StClientRow, StColumnAccessorFields, StColumnAccessorRow, StColumnFields,
         StColumnRow, StConstraintFields, StConstraintRow, StEventTableFields, StEventTableRow, StFields as _,
+        StInboundMsgFields, StInboundMsgResultStatus, StInboundMsgRow, StInboundStreamFields, StInboundStreamRow,
         StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StOutboundMsgFields, StOutboundMsgRow,
         StOutboundStreamFields, StOutboundStreamRow, StOutboxFields, StOutboxRow, StRowLevelSecurityFields,
         StRowLevelSecurityRow, StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow,
         StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow, SystemTable,
         INITIAL_OUTBOUND_STREAM_ACK_PREFIX, INITIAL_OUTBOUND_STREAM_NEXT_SEQ, ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID,
-        ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID, ST_OUTBOUND_MSG_ID,
-        ST_OUTBOUND_STREAM_ID, ST_OUTBOX_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID,
-        ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
+        ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INBOUND_MSG_ID, ST_INBOUND_STREAM_ID,
+        ST_INDEX_ACCESSOR_ID, ST_INDEX_ID, ST_OUTBOUND_MSG_ID, ST_OUTBOUND_STREAM_ID, ST_OUTBOX_ID,
+        ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
     },
 };
 use crate::{execution_context::ExecutionContext, system_tables::StViewColumnRow};
@@ -38,6 +39,8 @@ use crate::{
     locking_tx_datastore::state_view::ScanOrIndex,
     traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags},
 };
+use anyhow::anyhow;
+use bytes::Bytes;
 use core::{cell::RefCell, iter, ops::RangeBounds};
 use itertools::Either;
 use rand_core::RngCore;
@@ -48,7 +51,7 @@ use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap};
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
 use spacetimedb_lib::{
     db::auth::StAccess, db::raw_def::v9::RawSql, empty_view_arg_hash_value, metrics::ExecutionMetrics,
-    sender_view_arg_hash_value, ConnectionId, Identity, Timestamp,
+    sender_view_arg_hash_value, view_instance_arg_hash_value, ConnectionId, Identity, Timestamp,
 };
 use spacetimedb_primitives::{
     col_list, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
@@ -90,6 +93,7 @@ pub struct ViewCallInfo {
 }
 
 impl ViewCallInfo {
+    /// A call with no args, to an anonymous view without params.
     pub fn anonymous(view_id: ViewId) -> Self {
         Self {
             view_id,
@@ -97,6 +101,7 @@ impl ViewCallInfo {
         }
     }
 
+    /// A call with no args, to a sender-scoped view without params.
     pub fn sender(view_id: ViewId, sender: Identity) -> Self {
         Self {
             view_id,
@@ -104,10 +109,10 @@ impl ViewCallInfo {
         }
     }
 
-    pub fn from_args(view_id: ViewId, args: ViewInstanceArgs) -> Self {
-        match args {
-            ViewInstanceArgs::Anonymous => Self::anonymous(view_id),
-            ViewInstanceArgs::Sender(sender) => Self::sender(view_id, sender),
+    pub fn from_args(view_id: ViewId, args: &ViewInstanceArgs) -> Self {
+        Self {
+            view_id,
+            arg_hash: view_instance_arg_hash_value(args.sender(), args.args()),
         }
     }
 }
@@ -118,22 +123,41 @@ impl MemoryUsage for ViewCallInfo {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ViewInstanceArgs {
-    Anonymous,
-    Sender(Identity),
+    Anonymous { args: ProductValue },
+    Sender { sender: Identity, args: ProductValue },
 }
 
 impl ViewInstanceArgs {
-    pub fn sender(self) -> Option<Identity> {
+    /// Builds the variant matching the view's schema-level scope.
+    pub fn for_schema(is_anonymous: bool, sender: Identity, args: ProductValue) -> Self {
+        if is_anonymous {
+            Self::Anonymous { args }
+        } else {
+            Self::Sender { sender, args }
+        }
+    }
+
+    pub fn sender(&self) -> Option<Identity> {
         match self {
-            Self::Anonymous => None,
-            Self::Sender(sender) => Some(sender),
+            Self::Anonymous { .. } => None,
+            Self::Sender { sender, .. } => Some(*sender),
+        }
+    }
+
+    pub fn args(&self) -> &ProductValue {
+        match self {
+            Self::Anonymous { args } | Self::Sender { args, .. } => args,
         }
     }
 }
 
-impl MemoryUsage for ViewInstanceArgs {}
+impl MemoryUsage for ViewInstanceArgs {
+    fn heap_usage(&self) -> usize {
+        self.args().heap_usage()
+    }
+}
 
 #[derive(Debug)]
 pub(super) struct ViewInstanceState {
@@ -144,7 +168,7 @@ pub(super) struct ViewInstanceState {
 
 impl MemoryUsage for ViewInstanceState {
     fn heap_usage(&self) -> usize {
-        self.active_subscribers.capacity() * std::mem::size_of::<(Identity, u64)>()
+        self.active_subscribers.capacity() * std::mem::size_of::<(Identity, u64)>() + self.args.heap_usage()
     }
 }
 
@@ -249,8 +273,8 @@ impl<'a> EffectiveViewInstance<'a> {
             .unwrap_or_else(|| self.base.active_subscribers.get(identity).copied().unwrap_or(0))
     }
 
-    fn args(&self) -> ViewInstanceArgs {
-        self.base.args
+    fn args(&self) -> &'a ViewInstanceArgs {
+        &self.base.args
     }
 
     fn last_used(&self) -> Timestamp {
@@ -292,8 +316,15 @@ impl ViewInstanceTxState {
     ) -> &mut ViewInstanceChange {
         use spacetimedb_data_structures::map::hash_map::Entry;
 
-        let change = match self.changes.entry(call) {
-            Entry::Occupied(entry) => entry.into_mut(),
+        match self.changes.entry(call) {
+            Entry::Occupied(entry) => {
+                let change = entry.into_mut();
+                if matches!(change, ViewInstanceChange::Deleted) {
+                    // Recreation must not inherit the deleted instance's committed subscribers.
+                    *change = ViewInstanceChange::Created(ViewInstanceState::new(args, last_used));
+                }
+                change
+            }
             Entry::Vacant(entry) => {
                 let change = if committed_state.view_instance(entry.key()).is_some() {
                     ViewInstanceChange::Updated(ViewInstanceDelta::default())
@@ -302,13 +333,31 @@ impl ViewInstanceTxState {
                 };
                 entry.insert(change)
             }
-        };
-
-        if matches!(change, ViewInstanceChange::Deleted) {
-            // Recreation must not inherit the deleted instance's committed subscribers.
-            *change = ViewInstanceChange::Created(ViewInstanceState::new(args, last_used));
         }
-        change
+    }
+
+    /// Retrieves a writable pending change for `call` if it has an instance.
+    /// Unlike `get_or_create_change_mut`, this never creates or recreates an instance, so it takes no `args`.
+    fn get_change_mut(
+        &mut self,
+        committed_state: &CommittedState,
+        call: ViewCallInfo,
+    ) -> Option<&mut ViewInstanceChange> {
+        use spacetimedb_data_structures::map::hash_map::Entry;
+
+        match self.changes.entry(call) {
+            Entry::Occupied(entry) => match entry.into_mut() {
+                ViewInstanceChange::Deleted => None,
+                change => Some(change),
+            },
+            Entry::Vacant(entry) => {
+                if committed_state.view_instance(entry.key()).is_some() {
+                    Some(entry.insert(ViewInstanceChange::Updated(ViewInstanceDelta::default())))
+                } else {
+                    None
+                }
+            }
+        }
     }
 
     fn remove(&mut self, call: ViewCallInfo) {
@@ -3142,13 +3191,13 @@ impl MutTxId {
 
     /// Returns the stored arguments needed to execute this materialized view argument.
     pub fn view_instance_args(&self, call: &ViewCallInfo) -> Option<ViewInstanceArgs> {
-        self.get_view_instance(call).map(|state| state.args())
+        self.get_view_instance(call).map(|state| state.args().clone())
     }
 
-    /// Returns all materialized view instances for `view_id`.
-    pub fn materialized_view_instances_for_view(&self, view_id: ViewId) -> Vec<ViewInstanceArgs> {
+    /// Returns all materialized view instances for `view_id`, with the key each is stored under.
+    pub fn materialized_view_instances_for_view(&self, view_id: ViewId) -> Vec<(ViewCallInfo, ViewInstanceArgs)> {
         self.effective_view_instances_for_view(view_id)
-            .map(|(_, state)| state.args())
+            .map(|(call, state)| (call.clone(), state.args().clone()))
             .collect()
     }
 
@@ -3214,9 +3263,9 @@ impl MutTxId {
 
     /// Decrement this subscriber's refcount for a materialized view argument.
     pub fn unsubscribe_view(&mut self, call: ViewCallInfo, subscriber: Identity) -> Result<()> {
-        let Some((args, count)) = self
+        let Some(count) = self
             .get_view_instance(&call)
-            .map(|state| (state.args(), state.subscriber_count(&subscriber)))
+            .map(|state| state.subscriber_count(&subscriber))
         else {
             return Ok(());
         };
@@ -3224,10 +3273,13 @@ impl MutTxId {
             return Ok(());
         }
 
+        let Some(change) = self
+            .view_instances
+            .get_change_mut(&self.committed_state_write_lock, call)
+        else {
+            return Ok(());
+        };
         let last_used = now_timestamp();
-        let change =
-            self.view_instances
-                .get_or_create_change_mut(&self.committed_state_write_lock, call, args, last_used);
         change.set_subscriber_count(subscriber, count.saturating_sub(1));
         change.set_last_used(last_used);
         Ok(())
@@ -3356,7 +3408,7 @@ impl MutTxId {
         &mut self,
         identity: Identity,
         connection_id: ConnectionId,
-        jwt_payload: &str,
+        jwt_payload: Option<&str>,
     ) -> Result<()> {
         let row = &StClientRow {
             identity: identity.into(),
@@ -3369,7 +3421,10 @@ impl MutTxId {
                     "[{identity}]: insert_st_client: failed to insert client ({identity}, {connection_id}), error: {e}"
                 );
             })?;
-        self.insert_st_client_credentials(connection_id, jwt_payload)
+        if let Some(jwt_payload) = jwt_payload {
+            self.insert_st_client_credentials(connection_id, jwt_payload)?;
+        }
+        Ok(())
     }
 
     fn insert_st_client_credentials(&mut self, connection_id: ConnectionId, jwt_payload: &str) -> Result<()> {
@@ -3462,6 +3517,109 @@ impl MutTxId {
         })
     }
 
+    fn st_inbound_stream_row(&self, sender: Identity, stream_id: u64) -> Result<Option<StInboundStreamRow>> {
+        let key = AlgebraicValue::Product(product![IdentityViaU256(sender), stream_id]);
+        self.iter_by_col_eq(
+            ST_INBOUND_STREAM_ID,
+            col_list![StInboundStreamFields::SenderIdentity, StInboundStreamFields::StreamId],
+            &key,
+        )?
+        .map(StInboundStreamRow::try_from)
+        .next()
+        .transpose()
+    }
+
+    /// Return the highest contiguous inbound sequence already applied for a stream.
+    pub fn inbound_idc_applied_prefix(&self, sender: Identity, stream_id: u64) -> Result<u64> {
+        Ok(self
+            .st_inbound_stream_row(sender, stream_id)?
+            .map_or(0, |row| row.applied_prefix))
+    }
+
+    /// Look up a retained inbound result for replaying a duplicate delivery.
+    pub fn inbound_idc_outcome(&self, sender: Identity, stream_id: u64, seq: u64) -> Result<Option<StInboundMsgRow>> {
+        let key = AlgebraicValue::Product(product![IdentityViaU256(sender), stream_id, seq]);
+        self.iter_by_col_eq(
+            ST_INBOUND_MSG_ID,
+            col_list![
+                StInboundMsgFields::SenderIdentity,
+                StInboundMsgFields::StreamId,
+                StInboundMsgFields::Seq
+            ],
+            &key,
+        )?
+        .map(StInboundMsgRow::try_from)
+        .next()
+        .transpose()
+    }
+
+    /// Store the result of applying an inbound IDC message.
+    ///
+    /// The applied prefix is kept separately from retained message results so old
+    /// results can be trimmed after ack without allowing old messages to run again.
+    /// Outcomes are immutable: retries must replay the first durable decision.
+    pub fn record_inbound_idc_outcome(
+        &mut self,
+        sender: Identity,
+        stream_id: u64,
+        seq: u64,
+        result_status: StInboundMsgResultStatus,
+        result_payload: Bytes,
+    ) -> Result<()> {
+        if let Some(row) = self.st_inbound_stream_row(sender, stream_id)? {
+            self.delete_by_row_value(ST_INBOUND_STREAM_ID, &row.clone().into())?;
+        }
+        self.insert_via_serialize_bsatn(
+            ST_INBOUND_STREAM_ID,
+            &StInboundStreamRow {
+                sender_identity: IdentityViaU256(sender),
+                stream_id,
+                applied_prefix: seq,
+            },
+        )?;
+
+        let (_, inserted, _) = self.insert_via_serialize_bsatn(
+            ST_INBOUND_MSG_ID,
+            &StInboundMsgRow {
+                sender_identity: IdentityViaU256(sender),
+                stream_id,
+                seq,
+                result_status,
+                result_payload,
+            },
+        )?;
+        if matches!(inserted, RowRefInsertion::Existed(_)) {
+            return Err(
+                anyhow!("IDC outcome already exists for sender {sender}, stream {stream_id}, seq {seq}").into(),
+            );
+        }
+        Ok(())
+    }
+
+    /// Delete retained inbound results the sender has acknowledged.
+    pub fn trim_inbound_idc_outcomes(&mut self, sender: Identity, stream_id: u64, ack_prefix: u64) -> Result<()> {
+        let start = AlgebraicValue::Product(product![IdentityViaU256(sender), stream_id, 0u64]);
+        let end = AlgebraicValue::Product(product![IdentityViaU256(sender), stream_id, ack_prefix]);
+        // Bound all three index columns so repeated acknowledgments do not scan
+        // newer outcomes or copy their payloads.
+        let rows = self
+            .iter_by_col_range(
+                ST_INBOUND_MSG_ID,
+                col_list![
+                    StInboundMsgFields::SenderIdentity,
+                    StInboundMsgFields::StreamId,
+                    StInboundMsgFields::Seq
+                ],
+                start..=end,
+            )?
+            .map(|row| row.pointer())
+            .collect::<Vec<_>>();
+        for row in rows {
+            self.delete(ST_INBOUND_MSG_ID, row)?;
+        }
+        Ok(())
+    }
+
     /// Read the stable IDC message id from the user-visible outbox row.
     fn outbox_message_id(outbox_table_id: TableId, schema: &TableSchema, row_ref: RowRef<'_>) -> Result<u64> {
         let msg_col = schema
@@ -3525,17 +3683,17 @@ impl MutTxId {
         .transpose()
     }
 
-    /// Return whether this outbox row is already queued for delivery.
-    fn st_outbound_msg_exists(&self, stream_id: u64, msg_id: u64) -> Result<bool> {
+    /// Find the pending delivery for this outbox row.
+    fn st_outbound_msg(&self, stream_id: u64, msg_id: u64) -> Result<Option<StOutboundMsgRow>> {
         let msg_key = AlgebraicValue::Product(product![stream_id, msg_id]);
-        Ok(self
-            .iter_by_col_eq(
-                ST_OUTBOUND_MSG_ID,
-                col_list![StOutboundMsgFields::StreamId, StOutboundMsgFields::MsgId],
-                &msg_key,
-            )?
-            .next()
-            .is_some())
+        self.iter_by_col_eq(
+            ST_OUTBOUND_MSG_ID,
+            col_list![StOutboundMsgFields::StreamId, StOutboundMsgFields::MsgId],
+            &msg_key,
+        )?
+        .map(StOutboundMsgRow::try_from)
+        .next()
+        .transpose()
     }
 
     /// Reserve the next sequence number for this outbox table and receiver.
@@ -3573,19 +3731,74 @@ impl MutTxId {
     }
 
     /// Retain the queued message until the IDC actor sends it and observes the result.
-    fn insert_st_outbound_msg(&mut self, stream_id: u64, msg_id: u64, seq: u64) -> Result<()> {
-        self.insert_via_serialize_bsatn(
-            ST_OUTBOUND_MSG_ID,
-            &StOutboundMsgRow {
-                stream_id,
-                msg_id,
-                seq,
-                retry_count: 0,
-                last_transport_error: None,
-                result_status: None,
-                result_payload: None,
-            },
-        )?;
+    fn insert_st_outbound_msg(&mut self, stream_id: u64, msg_id: u64, seq: u64) -> Result<StOutboundMsgRow> {
+        let row = StOutboundMsgRow {
+            stream_id,
+            msg_id,
+            seq,
+            retry_count: 0,
+            last_transport_error: None,
+            result_status: None,
+            result_payload: None,
+        };
+        self.insert_via_serialize_bsatn(ST_OUTBOUND_MSG_ID, &row)?;
+        Ok(row)
+    }
+
+    pub fn record_outbound_idc_transport_error(&mut self, stream_id: u64, seq: u64, reason: String) -> Result<()> {
+        let Some(row) = self.outbound_msg_by_stream_seq(stream_id, seq)? else {
+            return Ok(());
+        };
+        let ptr = row.pointer();
+        let mut current = StOutboundMsgRow::try_from(row)?;
+        self.delete(ST_OUTBOUND_MSG_ID, ptr)?;
+        current.retry_count = current.retry_count.saturating_add(1);
+        current.last_transport_error = Some(reason);
+        self.insert_via_serialize_bsatn(ST_OUTBOUND_MSG_ID, &current)?;
+        Ok(())
+    }
+
+    pub fn record_outbound_idc_result(
+        &mut self,
+        stream_id: u64,
+        seq: u64,
+        result_status: StInboundMsgResultStatus,
+        result_payload: Bytes,
+    ) -> Result<()> {
+        let Some(row) = self.outbound_msg_by_stream_seq(stream_id, seq)? else {
+            return Ok(());
+        };
+        let ptr = row.pointer();
+        let mut current = StOutboundMsgRow::try_from(row)?;
+        self.delete(ST_OUTBOUND_MSG_ID, ptr)?;
+        current.last_transport_error = None;
+        current.result_status = Some(result_status);
+        current.result_payload = Some(result_payload);
+        self.insert_via_serialize_bsatn(ST_OUTBOUND_MSG_ID, &current)?;
+        Ok(())
+    }
+
+    /// Retire the next consecutive message. Repeated acknowledgments are a no-op.
+    pub fn ack_outbound_idc_msg(&mut self, stream_id: u64, seq: u64) -> Result<()> {
+        let Some(row) = self.outbound_msg_by_stream_seq(stream_id, seq)? else {
+            return Ok(());
+        };
+        let ptr = row.pointer();
+        let mut stream = self
+            .st_outbound_stream_by_id(stream_id)?
+            .ok_or_else(|| anyhow!("pending IDC message has no outbound stream {stream_id}"))?;
+        if stream.ack_prefix.checked_add(1) != Some(seq) {
+            return Err(anyhow!(
+                "IDC stream {stream_id} cannot acknowledge sequence {seq} after acknowledgment {}",
+                stream.ack_prefix
+            )
+            .into());
+        }
+
+        self.delete(ST_OUTBOUND_MSG_ID, ptr)?;
+        self.delete_by_row_value(ST_OUTBOUND_STREAM_ID, &stream.clone().into())?;
+        stream.ack_prefix = seq;
+        self.insert_via_serialize_bsatn(ST_OUTBOUND_STREAM_ID, &stream)?;
         Ok(())
     }
 
@@ -3593,18 +3806,19 @@ impl MutTxId {
     ///
     /// Module code writes only the user outbox table. This mirrors that insert into
     /// system tables so the host IDC actor can send messages outside the reducer tx.
+    /// Returns the pending message for notifying the actor without another index lookup.
     #[cold]
     #[inline(never)]
-    pub fn record_outbox_insert(&mut self, outbox_table_id: TableId, row_ptr: RowPointer) -> Result<()> {
+    pub fn record_outbox_insert(&mut self, outbox_table_id: TableId, row_ptr: RowPointer) -> Result<StOutboundMsgRow> {
         let (msg_id, target_identity) = self.read_outbox_msg_id_and_target_identity(outbox_table_id, row_ptr)?;
         let stream = self.st_outbound_stream_row(outbox_table_id, target_identity)?;
 
         // Check before advancing the stream so idempotent calls do not burn sequence numbers
         // or duplicate sends.
         if let Some(stream) = &stream
-            && self.st_outbound_msg_exists(stream.stream_id, msg_id)?
+            && let Some(row) = self.st_outbound_msg(stream.stream_id, msg_id)?
         {
-            return Ok(());
+            return Ok(row);
         }
         let (stream_id, seq) = self.advance_st_outbound_stream(outbox_table_id, target_identity, stream)?;
         self.insert_st_outbound_msg(stream_id, msg_id, seq)
@@ -4348,16 +4562,29 @@ mod tests {
     const CAROL: Identity = Identity::from_byte_array([3; 32]);
 
     // These tests exercise lifecycle bookkeeping, which does not require a view schema.
+    fn anonymous_args() -> ViewInstanceArgs {
+        ViewInstanceArgs::Anonymous {
+            args: ProductValue::default(),
+        }
+    }
+
+    fn sender_args(sender: Identity) -> ViewInstanceArgs {
+        ViewInstanceArgs::Sender {
+            sender,
+            args: ProductValue::default(),
+        }
+    }
+
     fn committed_subscribers(subscribers: &[(Identity, u64)]) -> ResultTest<(Locking, ViewCallInfo)> {
         let datastore = Locking::bootstrap(Identity::ZERO, PagePool::new_for_test())?;
         let call = ViewCallInfo::anonymous(ViewId::from(10_000u32));
         let mut tx = begin_mut_tx(&datastore);
         for &(identity, count) in subscribers {
             for _ in 0..count {
-                tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, identity)?;
+                tx.subscribe_view(call.clone(), anonymous_args(), identity)?;
             }
         }
-        tx.update_view_timestamp_at(call.clone(), ViewInstanceArgs::Anonymous, Timestamp::UNIX_EPOCH)?;
+        tx.update_view_timestamp_at(call.clone(), anonymous_args(), Timestamp::UNIX_EPOCH)?;
         commit(&datastore, tx)?;
         Ok((datastore, call))
     }
@@ -4377,7 +4604,7 @@ mod tests {
         let mut tx = begin_mut_tx(&datastore);
 
         for expected in [3, 4] {
-            tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, ALICE)?;
+            tx.subscribe_view(call.clone(), anonymous_args(), ALICE)?;
             assert_eq!(tx.get_view_instance(&call).unwrap().subscriber_count(&ALICE), expected);
         }
         for expected in [3, 2, 1, 0] {
@@ -4385,7 +4612,7 @@ mod tests {
             assert_eq!(tx.get_view_instance(&call).unwrap().subscriber_count(&ALICE), expected);
         }
         assert_subscribers(&tx, &call, &[(BOB, 1)]);
-        tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, ALICE)?;
+        tx.subscribe_view(call.clone(), anonymous_args(), ALICE)?;
         assert_subscribers(&tx, &call, &[(ALICE, 1), (BOB, 1)]);
 
         let committed = tx.committed_state_write_lock.view_instance(&call).unwrap();
@@ -4407,7 +4634,7 @@ mod tests {
         assert!(!tx.get_view_instance(&call).unwrap().has_subscribers());
         assert_subscribers(&tx, &call, &[]);
 
-        tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, CAROL)?;
+        tx.subscribe_view(call.clone(), anonymous_args(), CAROL)?;
         assert!(tx.get_view_instance(&call).unwrap().has_subscribers());
         assert_subscribers(&tx, &call, &[(CAROL, 1)]);
         Ok(())
@@ -4418,8 +4645,8 @@ mod tests {
         let (datastore, call) = committed_subscribers(&[(ALICE, 2), (BOB, 1)])?;
         let mut tx = begin_mut_tx(&datastore);
 
-        tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, ALICE)?;
-        tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, CAROL)?;
+        tx.subscribe_view(call.clone(), anonymous_args(), ALICE)?;
+        tx.subscribe_view(call.clone(), anonymous_args(), CAROL)?;
         assert_subscribers(&tx, &call, &[(ALICE, 3), (BOB, 1), (CAROL, 1)]);
 
         tx.unsubscribe_view(call.clone(), BOB)?;
@@ -4434,10 +4661,10 @@ mod tests {
         let mut tx = begin_mut_tx(&datastore);
         let refreshed = Timestamp::UNIX_EPOCH + Duration::from_secs(60);
 
-        tx.update_view_timestamp_at(call.clone(), ViewInstanceArgs::Anonymous, refreshed)?;
+        tx.update_view_timestamp_at(call.clone(), anonymous_args(), refreshed)?;
         let state = tx.get_view_instance(&call).unwrap();
         assert_eq!(state.last_used(), refreshed);
-        assert_eq!(state.args(), ViewInstanceArgs::Anonymous);
+        assert_eq!(state.args(), &anonymous_args());
         assert_subscribers(&tx, &call, &[(ALICE, 2), (BOB, 1)]);
         for subscriber in [ALICE, BOB] {
             let calls = tx
@@ -4473,7 +4700,7 @@ mod tests {
         // A zero override must also be a no-op, despite a positive committed count.
         tx.unsubscribe_view(call.clone(), BOB)?;
         let fixed = Timestamp::UNIX_EPOCH + Duration::from_secs(60);
-        tx.update_view_timestamp_at(call.clone(), ViewInstanceArgs::Anonymous, fixed)?;
+        tx.update_view_timestamp_at(call.clone(), anonymous_args(), fixed)?;
         tx.unsubscribe_view(call.clone(), BOB)?;
         assert_eq!(tx.get_view_instance(&call).unwrap().last_used(), fixed);
         assert_subscribers(&tx, &call, &[(ALICE, 2)]);
@@ -4489,7 +4716,7 @@ mod tests {
         // Changing Bob must not hide Alice's committed membership.
         tx.unsubscribe_view(call.clone(), BOB)?;
         for _ in 0..2 {
-            tx.subscribe_view(new_call.clone(), ViewInstanceArgs::Anonymous, ALICE)?;
+            tx.subscribe_view(new_call.clone(), anonymous_args(), ALICE)?;
         }
         let calls = tx
             .view_instances
@@ -4523,7 +4750,7 @@ mod tests {
         let touched = subscribers[512].0;
 
         for expected in 2..=5 {
-            tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, touched)?;
+            tx.subscribe_view(call.clone(), anonymous_args(), touched)?;
             let ViewInstanceChange::Updated(delta) = tx.view_instances.changes.get(&call).unwrap() else {
                 panic!("a committed instance must be updated through a delta");
             };
@@ -4547,10 +4774,10 @@ mod tests {
         let added = Identity::from_byte_array([4; 32]);
         let refreshed = Timestamp::UNIX_EPOCH + Duration::from_secs(60);
         let mut tx = begin_mut_tx(&datastore);
-        tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, ALICE)?;
+        tx.subscribe_view(call.clone(), anonymous_args(), ALICE)?;
         tx.unsubscribe_view(call.clone(), BOB)?;
-        tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, added)?;
-        tx.update_view_timestamp_at(call.clone(), ViewInstanceArgs::Anonymous, refreshed)?;
+        tx.subscribe_view(call.clone(), anonymous_args(), added)?;
+        tx.update_view_timestamp_at(call.clone(), anonymous_args(), refreshed)?;
         assert_subscribers(&tx, &call, &[(ALICE, 3), (CAROL, 1), (added, 1)]);
 
         commit(&datastore, tx)?;
@@ -4562,7 +4789,7 @@ mod tests {
         assert_eq!(state.active_subscribers.get(&CAROL), Some(&1));
         assert_eq!(state.active_subscribers.get(&added), Some(&1));
         assert_eq!(state.last_used, refreshed);
-        assert_eq!(state.args, ViewInstanceArgs::Anonymous);
+        assert_eq!(state.args, anonymous_args());
         assert_subscribers(&tx, &call, &[(ALICE, 3), (CAROL, 1), (added, 1)]);
         Ok(())
     }
@@ -4573,20 +4800,20 @@ mod tests {
         let deleted = ViewCallInfo::sender(call.view_id, BOB);
         let created = ViewCallInfo::sender(call.view_id, CAROL);
         let mut tx = begin_mut_tx(&datastore);
-        tx.subscribe_view(deleted.clone(), ViewInstanceArgs::Sender(BOB), BOB)?;
-        tx.update_view_timestamp_at(deleted.clone(), ViewInstanceArgs::Sender(BOB), Timestamp::UNIX_EPOCH)?;
+        tx.subscribe_view(deleted.clone(), sender_args(BOB), BOB)?;
+        tx.update_view_timestamp_at(deleted.clone(), sender_args(BOB), Timestamp::UNIX_EPOCH)?;
         commit(&datastore, tx)?;
 
         let mut tx = begin_mut_tx(&datastore);
-        tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, ALICE)?;
+        tx.subscribe_view(call.clone(), anonymous_args(), ALICE)?;
         tx.unsubscribe_view(call.clone(), BOB)?;
         tx.update_view_timestamp_at(
             call.clone(),
-            ViewInstanceArgs::Anonymous,
+            anonymous_args(),
             Timestamp::UNIX_EPOCH + Duration::from_secs(60),
         )?;
         tx.view_instances.remove(deleted.clone());
-        tx.subscribe_view(created.clone(), ViewInstanceArgs::Sender(CAROL), CAROL)?;
+        tx.subscribe_view(created.clone(), sender_args(CAROL), CAROL)?;
         assert_eq!(tx.get_view_instance(&call).unwrap().subscriber_count(&ALICE), 3);
         assert_eq!(tx.get_view_instance(&call).unwrap().subscriber_count(&BOB), 0);
         assert!(tx.get_view_instance(&deleted).is_none());
@@ -4600,12 +4827,12 @@ mod tests {
         assert_eq!(state.active_subscribers.get(&ALICE), Some(&2));
         assert_eq!(state.active_subscribers.get(&BOB), Some(&1));
         assert_eq!(state.last_used, Timestamp::UNIX_EPOCH);
-        assert_eq!(state.args, ViewInstanceArgs::Anonymous);
+        assert_eq!(state.args, anonymous_args());
         let state = committed.view_instance(&deleted).unwrap();
         assert_eq!(state.active_subscribers.len(), 1);
         assert_eq!(state.active_subscribers.get(&BOB), Some(&1));
         assert_eq!(state.last_used, Timestamp::UNIX_EPOCH);
-        assert_eq!(state.args, ViewInstanceArgs::Sender(BOB));
+        assert_eq!(state.args, sender_args(BOB));
         assert!(committed.view_instance(&created).is_none());
         Ok(())
     }
@@ -4616,7 +4843,7 @@ mod tests {
         let mut tx = begin_mut_tx(&datastore);
         tx.view_instances.remove(call.clone());
         assert!(tx.get_view_instance(&call).is_none());
-        tx.subscribe_view(call.clone(), ViewInstanceArgs::Anonymous, CAROL)?;
+        tx.subscribe_view(call.clone(), anonymous_args(), CAROL)?;
         assert_subscribers(&tx, &call, &[(CAROL, 1)]);
         assert_eq!(tx.effective_view_instances().count(), 1);
         commit(&datastore, tx)?;
@@ -4638,15 +4865,15 @@ mod tests {
         let created = ViewCallInfo::sender(updated.view_id, CAROL);
         let transient = ViewCallInfo::anonymous(ViewId::from(10_001u32));
         let mut tx = begin_mut_tx(&datastore);
-        tx.subscribe_view(unchanged.clone(), ViewInstanceArgs::Sender(ALICE), ALICE)?;
-        tx.subscribe_view(deleted.clone(), ViewInstanceArgs::Sender(BOB), BOB)?;
+        tx.subscribe_view(unchanged.clone(), sender_args(ALICE), ALICE)?;
+        tx.subscribe_view(deleted.clone(), sender_args(BOB), BOB)?;
         commit(&datastore, tx)?;
 
         let mut tx = begin_mut_tx(&datastore);
-        tx.subscribe_view(updated.clone(), ViewInstanceArgs::Anonymous, ALICE)?;
+        tx.subscribe_view(updated.clone(), anonymous_args(), ALICE)?;
         tx.view_instances.remove(deleted.clone());
-        tx.subscribe_view(created.clone(), ViewInstanceArgs::Sender(CAROL), CAROL)?;
-        tx.subscribe_view(transient.clone(), ViewInstanceArgs::Anonymous, ALICE)?;
+        tx.subscribe_view(created.clone(), sender_args(CAROL), CAROL)?;
+        tx.subscribe_view(transient.clone(), anonymous_args(), ALICE)?;
         tx.view_instances.remove(transient.clone());
 
         let check_effective = |tx: &MutTxId| {

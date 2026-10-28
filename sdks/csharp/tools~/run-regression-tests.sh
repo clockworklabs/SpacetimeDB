@@ -138,6 +138,8 @@ for dotnet_version in "${DOTNET_VERSIONS[@]}"; do
             echo "Running namespace client with .NET $client_version against the .NET 10 module"
             cargo spacetime publish --dotnet-version 10 -c -y --server "$SPACETIMEDB_SERVER_URL" -p "$STDB_PATH/modules/namespace-test-cs" namespace-tests
             run_client "$SDK_PATH/examples~/regression-tests/namespaces" "$client_version" --framework "net$client_version.0"
+            cargo spacetime publish --dotnet-version 10 -c -y --server "$SPACETIMEDB_SERVER_URL" -p "$STDB_PATH/modules/nested-namespace-test-cs" nested-namespace-tests
+            run_client "$SDK_PATH/examples~/regression-tests/nested-namespaces" "$client_version" --framework "net$client_version.0"
         done
     fi
 done

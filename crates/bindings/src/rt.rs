@@ -1358,6 +1358,9 @@ extern "C" fn __call_procedure__(
 /// Called by the host to execute the HTTP handler identified by `id`
 /// in response to the HTTP request `(request, request_body)`.
 ///
+/// The `sender_{0-3}` are the pieces of the random `[u8; 32]` `Identity`
+/// that the host created for this request, and `sender_jwt` holds the payload of its JWT.
+///
 /// The `timestamp` will be the time as of the handler's invocation,
 /// encoded appropriately for conversion to a `spacetimedb_lib::Timestamp`,
 /// i.e. as microseconds since the Unix epoch.
@@ -1378,14 +1381,23 @@ extern "C" fn __call_procedure__(
 #[unsafe(no_mangle)]
 extern "C" fn __call_http_handler__(
     id: usize,
+    sender_0: u64,
+    sender_1: u64,
+    sender_2: u64,
+    sender_3: u64,
+    sender_jwt: BytesSource,
     timestamp: u64,
     request: BytesSource,
     request_body: BytesSource,
     response_sink: BytesSink,
     response_body_sink: BytesSink,
 ) -> i16 {
+    let sender = reconstruct_sender_identity(sender_0, sender_1, sender_2, sender_3);
+    // Read the JWT now, since the host reuses the ids of bytes sources in later calls.
+    let sender_jwt = read_jwt(sender_jwt);
+    let sender_auth = crate::AuthCtx::for_sender(sender, move || sender_jwt);
     let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp as i64);
-    let mut ctx = HandlerContext::new(timestamp);
+    let mut ctx = HandlerContext::new(sender, sender_auth, timestamp);
 
     let handlers = HTTP_HANDLERS.get().unwrap();
     let request = read_bytes_source_as::<spacetimedb_lib::http::Request>(request);
@@ -1501,8 +1513,12 @@ const NO_SUCH_BYTES: u16 = errno::NO_SUCH_BYTES.get();
 
 /// Look up the jwt associated with `connection_id`.
 pub fn get_jwt(connection_id: ConnectionId) -> Option<String> {
+    read_jwt(sys::get_jwt(connection_id.as_le_byte_array())?)
+}
+
+/// Read the jwt that the host wrote to `source`.
+pub(crate) fn read_jwt(source: BytesSource) -> Option<String> {
     let mut buf = IterBuf::take();
-    let source = sys::get_jwt(connection_id.as_le_byte_array())?;
     if source == BytesSource::INVALID {
         return None;
     }

@@ -12,7 +12,10 @@ import { ServerMessage } from '../src/sdk/client_api/types';
 import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter';
 import { V2_WS_PROTOCOL, V3_WS_PROTOCOL } from '../src/sdk/websocket_protocols';
 import { decodeClientMessagesV3 } from '../src/sdk/websocket_v3_frames.ts';
-import { DbConnection } from '../test-app/src/module_bindings';
+import {
+  DbConnection,
+  DbConnectionBuilder,
+} from '../test-app/src/module_bindings';
 import MyUserProcedural from '../test-app/src/module_bindings/my_user_procedural_table';
 import User from '../test-app/src/module_bindings/user_table';
 import {
@@ -493,6 +496,45 @@ describe('DbConnection', () => {
     expect(subscribeMessage.value.queryStrings).toEqual([
       'SELECT * FROM "player"',
     ]);
+  });
+
+  test('subscribeToAllTables() leaves out views that take arguments', async () => {
+    const remoteModule = DbConnection.builder()['remoteModule'];
+    const [withArgs, ...others] = Object.values(remoteModule.tables).map(
+      table => table.sourceName
+    );
+    const wsAdapter = new WebsocketTestAdapter();
+    const client = new DbConnectionBuilder(
+      { ...remoteModule, viewsWithArgs: [withArgs] } as typeof remoteModule,
+      config => new DbConnection(config)
+    )
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.openWebSocket)
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+
+    client.subscriptionBuilder().subscribeToAllTables();
+
+    await Promise.resolve();
+    const subscribeMessage = wsAdapter.outgoingMessages.find(
+      message => message.tag === 'Subscribe'
+    );
+    if (subscribeMessage?.tag !== 'Subscribe') {
+      throw new Error('No Subscribe message found in messageQueue.');
+    }
+    expect(subscribeMessage.value.queryStrings).toEqual(
+      others.map(name => `SELECT * FROM ${name}`)
+    );
   });
 
   test('fires row callbacks after reducer resolution in ReducerResult', async () => {

@@ -21,7 +21,6 @@ Covered cases:
 - wrong request arg type
 - missing return
 - wrong return type
-- forbidden `HandlerContext::sender()`
 - forbidden `HandlerContext::connection_id`
 - forbidden `HandlerContext::db`
 - router authored with args
