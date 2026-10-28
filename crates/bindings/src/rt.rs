@@ -1210,11 +1210,20 @@ static ANONYMOUS_VIEWS: OnceLock<Vec<AnonymousFn>> = OnceLock::new();
 #[cfg(feature = "test-utils")]
 #[doc(hidden)]
 pub fn module_def_for_tests() -> RawModuleDef {
+    RawModuleDef::V10(describe_module().inner.finish())
+}
+
+fn describe_module() -> ModuleBuilder {
     let mut module = ModuleBuilder::default();
     for describer in &mut *DESCRIBERS.lock().unwrap() {
         describer(&mut module)
     }
-    RawModuleDef::V10(module.inner.finish())
+
+    // Tables and reducers can register in either order, so link callbacks last.
+    for (outbox_table, reducer) in module.on_result_reducers.drain(..) {
+        module.inner.set_outbox_on_result(outbox_table, reducer);
+    }
+    module
 }
 
 /// Called by the host when the module is initialized
@@ -1234,15 +1243,7 @@ pub fn module_def_for_tests() -> RawModuleDef {
 /// After initialization, the module cannot alter the schema.
 #[unsafe(no_mangle)]
 extern "C" fn __describe_module__(description: BytesSink) {
-    // Collect the `module`.
-    let mut module = ModuleBuilder::default();
-    for describer in &mut *DESCRIBERS.lock().unwrap() {
-        describer(&mut module)
-    }
-
-    for (outbox_table, reducer) in module.on_result_reducers {
-        module.inner.set_outbox_on_result(outbox_table, reducer);
-    }
+    let module = describe_module();
 
     // Serialize the module to bsatn.
     let module_def = module.inner.finish();
