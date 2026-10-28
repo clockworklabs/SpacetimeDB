@@ -1406,7 +1406,7 @@ mod tests {
         primary_key: ColId,
     ) -> ModuleDef {
         create_module_def_v10(|builder| {
-            builder
+            let row_type = builder
                 .build_table_with_new_type(
                     "outbound_pings",
                     ProductType::from([
@@ -1424,6 +1424,18 @@ mod tests {
                 .finish();
 
             if let Some((remote_reducer, arg_columns, on_result_reducer, signature_hash)) = outbox {
+                if let Some(on_result_reducer) = on_result_reducer {
+                    builder.add_reducer(
+                        on_result_reducer.to_owned(),
+                        ProductType::from([
+                            ("row", row_type.into()),
+                            (
+                                "result",
+                                AlgebraicType::result(AlgebraicType::unit(), AlgebraicType::String),
+                            ),
+                        ]),
+                    );
+                }
                 builder.add_outbox(
                     "outbound_pings",
                     remote_reducer.to_owned(),

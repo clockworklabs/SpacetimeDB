@@ -180,6 +180,25 @@ pub trait FnInfo: ExplicitNames {
     }
 }
 
+/// Metadata for a reducer handle generated from a remote module schema.
+///
+/// Unlike FnInfo, this does not describe a locally exported callable and
+/// therefore has no invocation function. It is used by module-side macros to
+/// typecheck calls into another database.
+pub trait RemoteReducer {
+    /// The reducer name in the remote module schema.
+    const NAME: &'static str;
+
+    /// Hash of the reducer signature as seen by the generated receiver bindings.
+    const SIGNATURE_HASH: &'static str;
+
+    /// Reducer argument product, excluding the reducer context.
+    ///
+    /// Fields preserve the remote reducer's parameter product order, matching the
+    /// signature hash and positional BSATN arguments.
+    type Args;
+}
+
 pub trait Procedure<'de, A: Args<'de>, Ret: IntoProcedureResult> {
     fn invoke(&self, ctx: &mut ProcedureContext, args: A) -> Ret;
 }
