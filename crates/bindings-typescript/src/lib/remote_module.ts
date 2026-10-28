@@ -20,7 +20,7 @@ export type ReceiverIdentity<Module extends symbol> = Identity & {
 const receiverModules = new WeakMap<RemoteReducer, symbol>();
 const identityModules = new WeakMap<object, symbol>();
 
-/** A receiver reducer's canonical wire name, argument schema, and signature. */
+/** A receiver reducer's canonical name, argument schema, and signature. */
 export interface RemoteReducer<Params extends ElementsObj = ElementsObj> {
   /** The receiver's canonical reducer name, used for delivery. */
   readonly name: string;

@@ -99,13 +99,13 @@ pub(super) fn generate_module_bindings(module: &ModuleDef, dependency_name: Opti
     out.newline();
     for typ in iter_types(module).filter(|typ| refs.contains(&typ.ty)) {
         let name = type_ref_name(module, typ.ty);
-        let wire_name = dependency_name.map_or_else(
+        let sats_name = dependency_name.map_or_else(
             || name.clone(),
             |dependency| format!("{dependency}.{}", typ.accessor_name),
         );
         match &module.typespace_for_generate()[typ.ty] {
-            AlgebraicTypeDef::Product(p) => define_body_for_product(module, out, &name, &wire_name, &p.elements),
-            AlgebraicTypeDef::Sum(s) => define_body_for_sum(module, out, &name, &wire_name, &s.variants),
+            AlgebraicTypeDef::Product(p) => define_body_for_product(module, out, &name, &sats_name, &p.elements),
+            AlgebraicTypeDef::Sum(s) => define_body_for_sum(module, out, &name, &sats_name, &s.variants),
             AlgebraicTypeDef::PlainEnum(e) => {
                 let variants = e
                     .variants
@@ -113,7 +113,7 @@ pub(super) fn generate_module_bindings(module: &ModuleDef, dependency_name: Opti
                     .cloned()
                     .map(|v| (v, AlgebraicTypeUse::Unit))
                     .collect::<Vec<_>>();
-                define_body_for_sum(module, out, &name, &wire_name, &variants);
+                define_body_for_sum(module, out, &name, &sats_name, &variants);
             }
         }
     }
@@ -1210,13 +1210,13 @@ fn define_body_for_product(
     module: &ModuleDef,
     out: &mut Indenter,
     name: &str,
-    wire_name: &str,
+    sats_name: &str,
     elements: &[(Identifier, AlgebraicTypeUse)],
 ) {
     write!(
         out,
         "export const {name} = __t.object({}, {{",
-        ts_string_literal(wire_name)
+        ts_string_literal(sats_name)
     );
     if elements.is_empty() {
         writeln!(out, "}});");
@@ -1456,7 +1456,7 @@ fn define_body_for_sum(
     module: &ModuleDef,
     out: &mut Indenter,
     name: &str,
-    wire_name: &str,
+    sats_name: &str,
     variants: &[(Identifier, AlgebraicTypeUse)],
 ) {
     writeln!(out, "// The tagged union or sum type for the algebraic type `{name}`.");
@@ -1464,7 +1464,7 @@ fn define_body_for_sum(
     if name == "AlgebraicType" {
         write!(out, ": __TypeBuilder<__AlgebraicTypeType, __AlgebraicTypeType>");
     }
-    writeln!(out, " = __t.enum({}, {{", ts_string_literal(wire_name));
+    writeln!(out, " = __t.enum({}, {{", ts_string_literal(sats_name));
     // Convert variant names to PascalCase
     let pascal_variants: Vec<(Identifier, AlgebraicTypeUse)> = variants
         .iter()
