@@ -526,7 +526,7 @@ fn partition_results(
                     route,
                     hash,
                     anyhow::anyhow!(msg),
-                    Some(llm_output),
+                    llm_output,
                 ));
             }
             Err(RunOneError::Infrastructure { msg, llm_output }) => {
@@ -547,16 +547,15 @@ fn partition_results(
     Ok((good, retry))
 }
 
-fn pending_retries_to_outcomes(
-    pending: Vec<PendingRetry>,
-    lang_name: &str,
-    route: &ModelRoute,
-    hash: &str,
-) -> Vec<RunOutcome> {
-    pending
-        .into_iter()
-        .map(|pending| build_fail_outcome(&pending.task, lang_name, route, hash, pending.error, None))
-        .collect()
+fn finalize_batch(outcomes: Vec<RunOutcome>, pending: Vec<PendingRetry>) -> Result<Vec<RunOutcome>> {
+    // A partial batch would change the score denominator. Reject it, not just the failed tasks.
+    if let Some(first) = pending.first() {
+        bail!(
+            "{} tasks still have provider/setup errors after retries; refusing to upload the entire batch. First failure at {}: {:#}",
+            pending.len(), first.task.root.display(), first.error
+        );
+    }
+    Ok(outcomes)
 }
 
 fn dry_run_analysis_path(run_id: &str, lang_name: &str, mode: &str, route: &ModelRoute) -> PathBuf {
@@ -764,14 +763,7 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
         retry_tasks = still_failing;
     }
 
-    let dropped = retry_tasks.len();
-    if dropped > 0 {
-        eprintln!(
-            "[runner] {} tasks still failing after retries — recording as provider failures",
-            dropped
-        );
-        outcomes.extend(pending_retries_to_outcomes(retry_tasks, lang_name, cfg.route, cfg.hash));
-    }
+    let outcomes = finalize_batch(outcomes, retry_tasks)?;
 
     println!("[runner] completed batch: {} results", outcomes.len());
 
@@ -886,8 +878,7 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
     let (mut outcomes, retry_tasks) = partition_results(results, lang_name, cfg.route, cfg.hash)?;
 
     // Retry provider-error tasks until all pass or none make progress
-    let dropped;
-    {
+    let pending = {
         const MAX_RETRY_ROUNDS: usize = 3;
         let mut pending = retry_tasks;
         for round in 1..=MAX_RETRY_ROUNDS {
@@ -938,7 +929,7 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
 
             if new_outcomes.is_empty() && !still_failing.is_empty() {
                 eprintln!(
-                    "[runner] no tasks recovered in retry round {} — provider may be down, recording {} failures",
+                    "[runner] no tasks recovered in retry round {} — provider may be down, keeping {} failures",
                     round,
                     still_failing.len()
                 );
@@ -949,18 +940,9 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
             outcomes.extend(new_outcomes);
             pending = still_failing;
         }
-        dropped = pending.len();
-        if dropped > 0 {
-            outcomes.extend(pending_retries_to_outcomes(pending, lang_name, cfg.route, cfg.hash));
-        }
-    }
-
-    if dropped > 0 {
-        eprintln!(
-            "[runner] {} tasks still failing after retries — recording as provider failures",
-            dropped
-        );
-    }
+        pending
+    };
+    let outcomes = finalize_batch(outcomes, pending)?;
 
     ensure_server_healthy(cfg.host.as_deref()).await?;
 
@@ -1285,7 +1267,7 @@ fn build_fail_outcome(
     route: &ModelRoute,
     hash: &str,
     err: anyhow::Error,
-    llm_output: Option<String>,
+    llm_output: String,
 ) -> RunOutcome {
     let category = category_slug(&task.root);
     let task_id = task_slug(&task.root);
@@ -1314,7 +1296,7 @@ fn build_fail_outcome(
         total_tests: 1,
         passed_tests: 0,
 
-        llm_output,
+        llm_output: Some(llm_output),
 
         route_api_model: Some(route.api_model.to_string()),
         golden_db: None,
@@ -1407,6 +1389,47 @@ fn normalize_task_selector(raw: &str) -> Result<String> {
 #[cfg(test)]
 mod build_cleanup_tests {
     use super::*;
+
+    #[test]
+    fn provider_failures_reject_the_whole_batch_but_model_failures_remain_scores() {
+        let task = || TaskPaths {
+            root: PathBuf::from("basics/t_001"),
+            answers_csharp: PathBuf::new(),
+            answers_rust: PathBuf::new(),
+            answers_typescript: PathBuf::new(),
+        };
+        let route = ModelRoute::new("Test", crate::llm::types::Vendor::OpenAi, "test", None);
+        let (outcomes, pending) = partition_results(
+            vec![
+                (
+                    task(),
+                    Err(RunOneError::WithOutput {
+                        msg: "compile failed".into(),
+                        llm_output: "invalid code".into(),
+                    }),
+                ),
+                (task(), Err(RunOneError::Other(anyhow::anyhow!("402 Payment Required")))),
+            ],
+            "rust",
+            &route,
+            "test",
+        )
+        .unwrap();
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].passed_tests, 0);
+        assert!(finalize_batch(outcomes.clone(), Vec::new()).is_ok());
+        let error = finalize_batch(outcomes, pending).unwrap_err().to_string();
+        assert!(error.contains("refusing to upload"), "{error}");
+        assert!(error.contains("402 Payment Required"), "{error}");
+        assert!(finalize_batch(
+            Vec::new(),
+            vec![PendingRetry {
+                task: task(),
+                error: anyhow::anyhow!("provider unavailable"),
+            }]
+        )
+        .is_err());
+    }
 
     #[test]
     fn slow_scoring_does_not_block_health_checks() {
