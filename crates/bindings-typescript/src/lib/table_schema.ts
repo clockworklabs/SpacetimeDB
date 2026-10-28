@@ -47,6 +47,7 @@ export type ScheduleTableForParams<Params extends Record<string, any>> =
 export type TableSchema<
   Row extends Record<string, ColumnBuilder<any, any, any>>,
   Idx extends readonly IndexOpts<keyof Row & string>[],
+  IsOutbox extends boolean = boolean,
 > = {
   /**
    * The name of the table.
@@ -57,7 +58,7 @@ export type TableSchema<
    * Marks outbox tables so their database handles expose only inserts and reads.
    * The table builder preserves a literal `true` or `false` for type inference.
    */
-  readonly isOutbox?: boolean;
+  readonly isOutbox: IsOutbox;
 
   /**
    * The outbox receiver and argument mapping, if this is an outbox table.

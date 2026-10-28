@@ -10,10 +10,9 @@ import {
 import { deepEqual } from './util';
 import type { Identity } from './identity';
 
-declare const receiverIdentityBrand: unique symbol;
 /** An Identity with a compile-time receiver-module brand and the unchanged wire type. */
 export type ReceiverIdentity<Module extends symbol> = Identity & {
-  readonly [receiverIdentityBrand]: Module;
+  readonly [K in Module]: true;
 };
 
 // These brands belong to binding instances, not to the serialized Identity type.

@@ -105,7 +105,7 @@ export const enqueueDetailedPing = spacetimedb.reducer(
   }
 );
 export const onPingResult = spacetimedb.reducer(
-  { reactive: { onResult: outboundPing } },
+  { onResult: outboundPing },
   { row: outboundPing.rowType, result: t.result(t.unit(), t.string()) },
   (ctx, { row, result }) =>
     ctx.db.pingResult.insert({
@@ -118,7 +118,7 @@ export const onPingResult = spacetimedb.reducer(
     })
 );
 export const onDetailedPingResult = spacetimedb.reducer(
-  { reactive: { onResult: outboundDetailedPing } },
+  { onResult: outboundDetailedPing },
   {
     row: outboundDetailedPing.rowType,
     result: t.result(t.unit(), t.string()),

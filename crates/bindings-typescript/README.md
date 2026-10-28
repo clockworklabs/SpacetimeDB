@@ -282,7 +282,7 @@ export const ping = db.reducer(
 );
 
 export const onPingResult = db.reducer(
-  { reactive: { onResult: pingOutbox } },
+  { onResult: pingOutbox },
   { row: pingOutbox.rowType, result: t.result(t.unit(), t.string()) },
   (_ctx, { row, result }) => {
     if ('err' in result)
@@ -301,3 +301,23 @@ with outbox cleanup.
 The shorthand reserves `msgId` and `target` for its metadata columns. If the
 receiver has a parameter with either name, declare the outbox with `table()`
 and use different metadata column names, such as `deliveryId` and `destination`.
+
+A `gw.identity()` type records which module your code means to send to. Nothing
+checks it against the database it names, and any caller can pass any identity
+as a reducer argument. To reply to a calling database, look `ctx.sender` up in a
+table of databases you trust and send to the stored identity. Index lookups
+accept a plain `Identity`, while rows keep the receiver's type, so inserting
+`ctx.sender` as a target does not compile.
+
+```ts
+import { SenderError } from 'spacetimedb/server';
+
+// Register it with the outbox: schema({ pingOutbox, trustedWorld }).
+const trustedWorld = table({}, { world: gw.identity().primaryKey() });
+
+export const pingBack = db.reducer({ note: t.string() }, (ctx, { note }) => {
+  const caller = ctx.db.trustedWorld.world.find(ctx.sender);
+  if (!caller) throw new SenderError('Unknown caller');
+  ctx.db.pingOutbox.insert({ msgId: 0n, target: caller.world, note });
+});
+```

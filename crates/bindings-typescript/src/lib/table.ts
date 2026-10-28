@@ -365,9 +365,7 @@ export function table<
         >,
       ]
     : []
-): TableSchema<CoerceRow<Row>, OptsIndices<Opts>> & {
-  readonly isOutbox: OptsIsOutbox<Opts>;
-} {
+): TableSchema<CoerceRow<Row>, OptsIndices<Opts>, OptsIsOutbox<Opts>> {
   const {
     name,
     public: isPublic = false,
@@ -538,7 +536,7 @@ export function table<
     : undefined;
 
   return {
-    isOutbox: !!receiver as boolean & OptsIsOutbox<Opts>,
+    isOutbox: !!receiver as OptsIsOutbox<Opts>,
     outbox,
     rowType: row as RowBuilder<CoerceRow<Row>>,
     tableName: name,
