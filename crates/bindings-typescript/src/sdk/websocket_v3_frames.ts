@@ -1,6 +1,6 @@
 import BinaryReader from '../lib/binary_reader.ts';
 import BinaryWriter from '../lib/binary_writer.ts';
-import { ClientMessage, ServerMessage } from './client_api/types';
+import { ClientMessage, ServerMessage } from './client_api/types.ts';
 
 // v3 is only a transport framing convention. The payload is one or more
 // already-encoded v2 websocket messages concatenated back-to-back, so these

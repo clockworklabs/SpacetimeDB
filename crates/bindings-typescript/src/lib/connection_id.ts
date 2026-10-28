@@ -1,10 +1,10 @@
-import { AlgebraicType } from './algebraic_type';
+import { AlgebraicType } from './algebraic_type.ts';
 import {
   coerceToBigInt,
   hexStringToU128,
   u128ToHexString,
   u128ToUint8Array,
-} from './util';
+} from './util.ts';
 
 export type ConnectionIdAlgebraicType = {
   tag: 'Product';
