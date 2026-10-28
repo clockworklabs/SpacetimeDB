@@ -31,7 +31,7 @@ impl<'de> spacetimedb::Deserialize<'de> for Identity {
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub struct ReceivePingArgs {
-    pub body: String,
+    pub body: ::std::string::String,
 }
 
 #[doc(hidden)]
