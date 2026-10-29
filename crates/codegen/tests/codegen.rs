@@ -164,6 +164,20 @@ fn rust_receiver_types_are_scoped_by_dependency_name() {
 }
 
 #[test]
+fn receiver_types_with_their_own_scope_join_it_with_dots() {
+    // The TypeScript SDK splits sats names only on `.`, so `Namespace::TestC` would
+    // register as a single invalid identifier and fail the sender's publish.
+    let module = compiled_module();
+    let rust = generate_receiver_bindings(module, ReceiverLanguage::Rust, Some("game_world")).unwrap();
+    let type_file = rust.iter().find(|f| f.filename == "namespace_test_c_type.rs").unwrap();
+    assert!(type_file
+        .code
+        .contains("#[sats(name = \"game_world.Namespace.TestC\")]"));
+    let typescript = generate_receiver_bindings(module, ReceiverLanguage::TypeScript, Some("game_world")).unwrap();
+    assert!(typescript[0].code.contains("__t.enum(\"game_world.Namespace.TestC\""));
+}
+
+#[test]
 fn test_codegen_receiver_bindings_include_nested_reducer_types() {
     use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
     use spacetimedb_lib::{AlgebraicType, ProductType};

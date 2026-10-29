@@ -1,5 +1,5 @@
 use super::code_indenter::{CodeIndenter, Indenter};
-use super::util::{collect_case, iter_reducers, print_lines, type_ref_name};
+use super::util::{collect_case, dependency_scoped_type_name, iter_reducers, print_lines, type_ref_name};
 use super::Lang;
 use crate::util::{
     is_parameterized_view, iter_indexes, iter_procedures, iter_table_names_and_types, iter_tables, iter_types,
@@ -1338,7 +1338,7 @@ fn generate_module_binding_type_file(module: &ModuleDef, typ: &TypeDef, dependen
     out.newline();
     writeln!(out, "#[derive(spacetimedb::SpacetimeType, Clone, PartialEq, Debug)]");
     if let Some(dependency_name) = dependency_name {
-        let scoped_name = format!("{dependency_name}.{}", typ.accessor_name);
+        let scoped_name = dependency_scoped_type_name(dependency_name, &typ.accessor_name);
         writeln!(out, "#[sats(name = {})]", rust_string_literal(&scoped_name));
     }
     if matches!(def, AlgebraicTypeDef::PlainEnum(_)) {

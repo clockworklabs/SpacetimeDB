@@ -4,7 +4,7 @@ use crate::util::{
 };
 use crate::{CodegenOptions, OutputFile};
 
-use super::util::{collect_case, print_auto_generated_file_comment, type_ref_name};
+use super::util::{collect_case, dependency_scoped_type_name, print_auto_generated_file_comment, type_ref_name};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write};
@@ -101,7 +101,7 @@ pub(super) fn generate_module_bindings(module: &ModuleDef, dependency_name: Opti
         let name = type_ref_name(module, typ.ty);
         let sats_name = dependency_name.map_or_else(
             || name.clone(),
-            |dependency| format!("{dependency}.{}", typ.accessor_name),
+            |dependency| dependency_scoped_type_name(dependency, &typ.accessor_name),
         );
         match &module.typespace_for_generate()[typ.ty] {
             AlgebraicTypeDef::Product(p) => define_body_for_product(module, out, &name, &sats_name, &p.elements),
