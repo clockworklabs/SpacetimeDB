@@ -1,7 +1,0 @@
-argon-conve-r1       gemini-4-argon     convex     was undefined same    3 checks [sa631-argon-20261015]
-argon-conve-r2       gemini-4-argon     convex     was undefined same    3 checks [sa631-argon-20261015]
-argon-conve-r3       gemini-4-argon     convex     was undefined same    3 checks [sa631-argon-20261015]
-argon-space-r1       gemini-4-argon     spacetime  was undefined same    3 checks [sa631-argon-20261015]
-argon-space-r2       gemini-4-argon     spacetime  was undefined same    3 checks [sa631-argon-20261015]
-argon-space-r3       gemini-4-argon     spacetime  was undefined same    3 checks [sa631-argon-20261015]
-runs compared: 6 of 6 | not comparable or changed: 0 | checks compared: 18 | duplicate or unkeyed checks: 0
