@@ -132,10 +132,10 @@ function fileCard(file: MyFile): HTMLLIElement {
   const item = element('li', 'file-card');
   item.dataset.state = file.state;
   const main = element('div', 'file-main');
-  main.append(
-    element('span', 'file-name', file.filename),
-    element('span', 'file-meta', formatSize(file.size))
-  );
+  const name = element('span', 'file-name', file.filename);
+  // Long names are truncated; the tooltip shows the whole name.
+  name.title = file.filename;
+  main.append(name, element('span', 'file-meta', formatSize(file.size)));
   if (file.state === 'pending' && uploaded !== undefined) {
     const percent = Math.round(uploaded * 100);
     const bar = element('div', 'progress');
@@ -163,7 +163,16 @@ function fileCard(file: MyFile): HTMLLIElement {
       file.state === 'copying' ? 'Verifying' : 'Deleting'
     );
     actions.append(spinner);
-  } else if (uploaded === undefined) {
+  } else if (uploaded !== undefined) {
+    // The progress bar already gives screen readers this value.
+    const percent = element(
+      'span',
+      'percent',
+      `${Math.round(uploaded * 100)}%`
+    );
+    percent.setAttribute('aria-hidden', 'true');
+    actions.append(percent);
+  } else {
     actions.append(button('delete', 'Delete', () => remove(file), file.id));
   }
   item.append(main, actions);
