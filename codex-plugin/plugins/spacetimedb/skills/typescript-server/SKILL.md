@@ -1,6 +1,6 @@
 ---
 name: typescript-server
-description: SpacetimeDB TypeScript server module SDK reference. Use when writing tables, reducers, or module logic in TypeScript.
+description: SpacetimeDB TypeScript server module SDK reference. Use when writing or unit-testing tables, reducers, or module logic in TypeScript.
 license: Apache-2.0
 metadata:
   author: clockworklabs
@@ -439,3 +439,47 @@ export const routes = spacetimedb.httpRouter(new Router().get('/health', health)
 ```
 
 Handlers are synchronous: return `SyncResponse` directly rather than marking the callback `async`. Pass the exported `httpHandler(...)` value to the router, not its raw callback. The router selects the path, while a handler reads request data with APIs such as `request.text()`; `Request` has no `path` property. A handler context does not expose `ctx.db`; use `ctx.withTx(tx => ...)` when a handler needs transactional database access.
+
+## Testing
+
+Unit-test reducers, procedures and views in-process with the module test harness (`spacetimedb` 2.12+). It runs the module against the real datastore, in memory, so constraints and rollback behave as in production, with no server and no publish. Full guide: https://spacetimedb.com/docs/how-to/unit-testing
+
+In the module directory, install `vitest` as a dev dependency, set `"type": "module"` and add `"test": "vitest run"` to `package.json`. The Vitest plugin replaces the host's `spacetime:sys` imports:
+
+```typescript
+// vitest.config.ts
+import { defineConfig, type Plugin } from 'vitest/config';
+import { spacetimedbModuleTestPlugin } from 'spacetimedb/server/test-utils/vitest';
+
+export default defineConfig({
+  plugins: [spacetimedbModuleTestPlugin() as unknown as Plugin],
+  test: { environment: 'node' },
+});
+```
+
+Pass the default schema and all module exports to `createModuleTestHarness`; each call creates a fresh database. An exported reducer is callable as `reducer(ctx, args)` (`{}` for no arguments):
+
+```typescript
+// src/index.test.ts
+import { expect, it } from 'vitest';
+import { ConnectionId } from 'spacetimedb';
+import { createModuleTestHarness, TestAuth } from 'spacetimedb/server/test-utils';
+import spacetimedb, * as moduleExports from './index';
+
+const alice = TestAuth.fromJwtPayload(
+  JSON.stringify({ iss: 'test-issuer', sub: 'alice' }),
+  new ConnectionId(1n)
+);
+
+it('adds a record', () => {
+  const test = createModuleTestHarness(spacetimedb, moduleExports);
+  test.withReducerTx(alice, ctx => moduleExports.addRecord(ctx, { value: 1 }));
+  expect(test.db.scoreRecord.count()).toBe(1n);
+});
+```
+
+- `withReducerTx(auth, body)` commits when `body` returns and rolls back and rethrows when it throws. Keep `body` synchronous; catching an error inside it commits.
+- `TestAuth.fromJwtPayload(claimsJson, connectionId)` calls as a client; the same `iss` and `sub` always give the same `ctx.sender`. `TestAuth.internal()` calls as the database itself, as scheduled reducers are.
+- `test.clock.set(...)` / `test.clock.advance(...)` control `ctx.timestamp`; the `rngSeed` option controls `ctx.random`.
+- `test.viewContext(auth)` calls views; `test.procedureContextBuilder(auth).http(responder)` stubs outbound HTTP for procedures.
+- Subscriptions, client connections and deployment still need a running server (`spacetime start`).

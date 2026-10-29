@@ -31,9 +31,10 @@ SpacetimeDB is a relational database that is also a server. It lets you upload a
 
 1. **Backend:** Define table(s) to store the data
 2. **Backend:** Define reducer(s) to mutate the data
-3. **Client:** Subscribe to the table(s)
-4. **Client:** Call the reducer(s) from UI
-5. **Client:** Render the data from the table(s)
+3. **Backend:** Unit-test the reducer(s) with the in-process module test harness (TypeScript and Rust modules; see https://spacetimedb.com/docs/how-to/unit-testing)
+4. **Client:** Subscribe to the table(s)
+5. **Client:** Call the reducer(s) from UI
+6. **Client:** Render the data from the table(s)
 
 ---
 

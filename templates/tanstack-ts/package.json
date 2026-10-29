@@ -10,7 +10,8 @@
     "start": "PORT=4000 node .output/server/index.mjs",
     "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb",
     "spacetime:publish:local": "spacetime publish --module-path spacetimedb --server local",
-    "spacetime:publish": "spacetime publish --module-path spacetimedb --server maincloud"
+    "spacetime:publish": "spacetime publish --module-path spacetimedb --server maincloud",
+    "test": "vitest run --root spacetimedb"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
@@ -30,7 +31,8 @@
     "@types/react-dom": "^19.0.0",
     "typescript": "^5.7.2",
     "vite": "^7.1.5",
-    "vite-tsconfig-paths": "^5.1.4"
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^4.1.12"
   },
   "engines": {
     "node": "^22.23.4 || ^24.22.1 || >=26.12.1"

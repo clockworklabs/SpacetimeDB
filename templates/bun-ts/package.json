@@ -7,7 +7,8 @@
     "dev": "bun --watch src/main.ts",
     "start": "bun src/main.ts",
     "build": "bun build src/main.ts --outdir dist",
-    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb"
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb",
+    "test": "vitest run --root spacetimedb"
   },
   "dependencies": {
     "spacetimedb": "workspace:*"
@@ -15,6 +16,7 @@
   "devDependencies": {
     "@types/bun": "latest",
     "bun": "^1.4.4",
-    "typescript": "~5.6.2"
+    "typescript": "~5.6.2",
+    "vitest": "^4.1.12"
   }
 }

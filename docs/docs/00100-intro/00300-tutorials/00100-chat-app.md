@@ -151,7 +151,13 @@ spacetime init --lang cpp quickstart-chat
 <Tabs groupId="lang">
 <TabItem value="typescript" label="TypeScript">
 
-Inside the `spacetimedb/` directory will be a `src/index.ts` entrypoint (required for publishing).
+Inside the `spacetimedb/` directory will be a `src/index.ts` entrypoint (required for publishing), and a `src/index.test.ts` with unit tests for the example module in it.
+
+We're about to replace that example module with our chat module, so from your project directory, delete its tests:
+
+```bash
+rm spacetimedb/src/index.test.ts
+```
 
 </TabItem>
 <TabItem value="csharp" label="C#">

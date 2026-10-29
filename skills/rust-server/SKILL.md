@@ -1,6 +1,6 @@
 ---
 name: rust-server
-description: SpacetimeDB Rust server module SDK reference. Use when writing tables, reducers, or module logic in Rust.
+description: SpacetimeDB Rust server module SDK reference. Use when writing or unit-testing tables, reducers, or module logic in Rust.
 license: Apache-2.0
 metadata:
   author: clockworklabs
@@ -380,6 +380,50 @@ pub enum Status { Online, Away, Offline }
 #[derive(SpacetimeType)]
 pub struct Point { x: f32, y: f32 }
 ```
+
+## Testing
+
+Unit-test reducers, procedures and views in-process with the module test harness (`spacetimedb` 2.12+). It runs the module against the real datastore, in memory, so constraints and rollback behave as in production, with no server and no publish. Full guide: https://spacetimedb.com/docs/how-to/unit-testing
+
+Add a dev-dependency with the `test-utils` feature, at the same version as the normal dependency, and run tests natively with `cargo test` (not for a WebAssembly target):
+
+```toml
+[dev-dependencies]
+spacetimedb = { version = "2.12.0", features = ["test-utils"] }
+icu_calendar = ">=2.1, <2.2"  # until #6317 is fixed: the test datastore needs 2.1.x
+```
+
+`TestContext::new()` discovers the module's tables and functions and creates a fresh database. Call reducers as ordinary functions inside `with_reducer_tx`:
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spacetimedb::test_utils::{TestAuth, TestContext};
+    use spacetimedb::ConnectionId;
+
+    fn alice() -> TestAuth {
+        TestAuth::from_jwt_payload(r#"{"iss":"test-issuer","sub":"alice"}"#, ConnectionId::from_u128(1))
+            .expect("valid test claims")
+    }
+
+    #[test]
+    fn creates_an_entity() {
+        let test = TestContext::new().expect("test database");
+        test.with_reducer_tx(alice(), |ctx| {
+            create_entity(ctx, "Alice".to_string());
+            Ok::<(), String>(())
+        })
+        .expect("reducer succeeds");
+        assert_eq!(test.db.entity().count(), 1);
+    }
+}
+```
+
+- `with_reducer_tx(auth, body)` commits when `body` returns `Ok`, and rolls back on `Err` or panic. For a reducer returning `()`, call it and then return `Ok::<(), String>(())`.
+- `TestAuth::from_jwt_payload(claims_json, connection_id)` calls as a client; the same `iss` and `sub` always give the same `ctx.sender()`. `TestAuth::internal()` calls as the database itself, as scheduled reducers are.
+- `test.clock` controls `ctx.timestamp`; `test.rng` controls `ctx.random()` and `ctx.rng()`.
+- Subscriptions, client connections and deployment still need a running server (`spacetime start`).
 
 ## Complete Example
 
