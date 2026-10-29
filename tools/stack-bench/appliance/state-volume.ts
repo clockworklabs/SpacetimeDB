@@ -68,6 +68,7 @@ export function prepareStateVolume(env: NodeJS.ProcessEnv = process.env, run: Do
     `STACK_BENCH_STATE_ROOT=${root}`,
     `STACK_BENCH_CONTROLLER_IMAGE=${controller}`,
     `STACK_BENCH_BUILD_IMAGE=${build}`,
+    `STACK_BENCH_RELEASE_DEPS_VOLUME=stack-bench-release-deps-${controller.replace(/^.*sha256:/, '').slice(0, 12)}`,
     'STACK_BENCH_RUNNER_CAPACITY=dynamic',
     'STACK_BENCH_AGENT_AUTH=subscription-token',
     `STACK_BENCH_CLAUDE_OAUTH_TOKEN_FILE=${root}/secrets/claude_subscription_token`,

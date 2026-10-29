@@ -60,12 +60,13 @@ npm run test:all
 
 `test:all` runs the unit, dashboard, and contract tiers; integration and
 mutation-definition tests stay separate. On a non-Linux host, run it in the
-controller image's `source` target, which holds the source, development
-dependencies, and compiled tests without the Rust binaries:
+controller image's `source` target, which holds the compiled source and tests
+without the Rust binaries or development dependencies, so run the compiled
+tests directly:
 
 ```sh
 docker build --platform linux/amd64 --target source -f tools/stack-bench/appliance/Controller.Dockerfile -t stack-bench-source-tests:local .
-docker run --rm --init --network none stack-bench-source-tests:local npm run test:all
+docker run --rm --init --network none stack-bench-source-tests:local node --test --test-concurrency=4 "dist/tests/*.test.js" "dist/tests/dashboard/*.test.js" "dist/tests/*.contract.js"
 ```
 
 Browser tests under `tests/dashboard/*.browser.ts` run by hand with

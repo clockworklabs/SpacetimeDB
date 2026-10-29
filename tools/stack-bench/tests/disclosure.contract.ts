@@ -52,7 +52,8 @@ function missingNames(steps: readonly CompiledStep[], delivered: string,
     }
   };
   for (const step of eachStep(steps)) {
-    for (const control of [step.testid,
+    // An optional step names a control of a feature the store may not have yet.
+    for (const control of [step.ifAvailable === true ? undefined : step.testid,
       ...(Array.isArray(step.unlessVisible) ? step.unlessVisible as string[] : [step.unlessVisible as string | undefined]),
       step.in?.testid,
       (step.namedTarget as { testid?: string } | undefined)?.testid,
