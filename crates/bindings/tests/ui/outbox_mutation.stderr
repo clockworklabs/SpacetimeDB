@@ -1,0 +1,65 @@
+error[E0599]: no method named `clear` found for struct `outbound_ping__OutboxHandle` in the current scope
+  --> tests/ui/outbox_mutation.rs:23:11
+   |
+ 6 | / #[spacetimedb::table(
+ 7 | |     accessor = outbound_ping,
+   | |____________________________- method `clear` not found for this struct
+...
+23 |       table.clear();
+   |             ^^^^^ method not found in `outbound_ping__OutboxHandle`
+   |
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following traits define an item `clear`, perhaps you need to implement one of them:
+           candidate #1: `bitflags::traits::Flags`
+           candidate #2: `protobuf::message::Message`
+           candidate #3: `spacetimedb::Table`
+
+error[E0599]: no method named `delete` found for struct `UniqueColumnReadOnly<Tbl, ColType, Col>` in the current scope
+  --> tests/ui/outbox_mutation.rs:24:16
+   |
+24 |     table.id().delete(1);
+   |                ^^^^^^ method not found in `UniqueColumnReadOnly<outbound_ping__TableHandle, u64, id>`
+
+error[E0599]: no method named `delete` found for struct `RangedIndexReadOnly<Tbl, IndexType, Idx>` in the current scope
+  --> tests/ui/outbox_mutation.rs:25:21
+   |
+25 |     table.by_body().delete("body");
+   |                     ^^^^^^ method not found in `RangedIndexReadOnly<outbound_ping__TableHandle, (std::string::String,), by_body>`
+
+error[E0599]: no method named `delete` found for struct `PointIndexReadOnly<Tbl, IndexType, Idx>` in the current scope
+  --> tests/ui/outbox_mutation.rs:26:26
+   |
+26 |     table.by_body_hash().delete("body");
+   |                          ^^^^^^ method not found in `PointIndexReadOnly<outbound_ping__TableHandle, (std::string::String,), by_body_hash>`
+
+error[E0599]: no method named `update` found for struct `UniqueColumnReadOnly<Tbl, ColType, Col>` in the current scope
+  --> tests/ui/outbox_mutation.rs:27:16
+   |
+27 |     table.id().update(row);
+   |                ^^^^^^ method not found in `UniqueColumnReadOnly<outbound_ping__TableHandle, u64, id>`
+
+error[E0599]: no method named `delete` found for struct `outbound_ping__OutboxHandle` in the current scope
+  --> tests/ui/outbox_mutation.rs:31:28
+   |
+ 6 | / #[spacetimedb::table(
+ 7 | |     accessor = outbound_ping,
+   | |____________________________- method `delete` not found for this struct
+...
+31 |       ctx.db.outbound_ping().delete(row);
+   |                              ^^^^^^ method not found in `outbound_ping__OutboxHandle`
+   |
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following trait defines an item `delete`, perhaps you need to implement it:
+           candidate #1: `spacetimedb::Table`
+
+error[E0599]: no method named `insert_or_update` found for struct `UniqueColumnReadOnly<Tbl, ColType, Col>` in the current scope
+  --> tests/ui/outbox_mutation.rs:35:33
+   |
+35 |     ctx.db.outbound_ping().id().insert_or_update(row);
+   |                                 ^^^^^^^^^^^^^^^^ method not found in `UniqueColumnReadOnly<outbound_ping__TableHandle, u64, id>`
+
+error[E0599]: no method named `try_insert_or_update` found for struct `UniqueColumnReadOnly<Tbl, ColType, Col>` in the current scope
+  --> tests/ui/outbox_mutation.rs:39:41
+   |
+39 |     let _ = ctx.db.outbound_ping().id().try_insert_or_update(row);
+   |                                         ^^^^^^^^^^^^^^^^^^^^ method not found in `UniqueColumnReadOnly<outbound_ping__TableHandle, u64, id>`

@@ -6,6 +6,7 @@
 //! It allows easier future extensibility to add new kinds of definitions.
 
 use crate::db::raw_def::v9::{Lifecycle, RawIndexAlgorithm, TableAccess, TableType};
+use crate::Hash;
 use core::fmt;
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
@@ -367,7 +368,7 @@ pub struct RawOutboxDefV10 {
     /// Optional local reducer called with the delivery result.
     pub on_result_reducer: Option<RawIdentifier>,
     /// Hash of the receiver reducer signature as seen by sender bindings.
-    pub signature_hash: String,
+    pub signature_hash: Hash,
 }
 
 /// A reducer definition.
@@ -1348,7 +1349,7 @@ impl RawModuleDefV10Builder {
         target_column: impl Into<ColId>,
         arg_columns: impl IntoIterator<Item = ColId>,
         on_result_reducer: Option<impl Into<RawIdentifier>>,
-        signature_hash: impl Into<String>,
+        signature_hash: Hash,
     ) {
         self.outboxes_mut().push(RawOutboxDefV10 {
             table_name: table_name.into(),
@@ -1356,8 +1357,30 @@ impl RawModuleDefV10Builder {
             target_column: target_column.into(),
             arg_columns: arg_columns.into_iter().collect(),
             on_result_reducer: on_result_reducer.map(Into::into),
-            signature_hash: signature_hash.into(),
+            signature_hash,
         });
+    }
+
+    pub fn set_outbox_on_result(
+        &mut self,
+        table_name: impl Into<RawIdentifier>,
+        on_result_reducer: impl Into<RawIdentifier>,
+    ) {
+        let table_name = table_name.into();
+        let on_result_reducer = Some(on_result_reducer.into());
+        if let Some(outbox) = self
+            .outboxes_mut()
+            .iter_mut()
+            .find(|outbox| outbox.table_name == table_name)
+        {
+            assert!(
+                outbox.on_result_reducer.is_none(),
+                "outbox table `{table_name}` has multiple on_result reducers"
+            );
+            outbox.on_result_reducer = on_result_reducer;
+        } else {
+            panic!("on_result reducer references unknown outbox table `{table_name}`");
+        }
     }
 
     pub fn add_submodule(&mut self, namespace: impl Into<String>, module: RawModuleDefV10) {
