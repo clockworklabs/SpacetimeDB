@@ -1,4 +1,5 @@
 use anyhow::Result;
+use bindings::BindingRelation;
 use core::hash::{Hash, Hasher};
 use core::ops::RangeBounds;
 use spacetimedb_lib::{
@@ -15,6 +16,7 @@ use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{impl_serialize, u256, AlgebraicValue, ProductValue};
 use spacetimedb_table::{static_assert_size, table::RowRef};
 
+pub mod bindings;
 pub mod dml;
 pub mod pipelined;
 
@@ -127,6 +129,11 @@ pub trait DeltaStore {
         delta: Delta,
         point: &AlgebraicValue,
     ) -> impl Iterator<Item = Row<'_>>;
+
+    /// The bindings of the template being evaluated, which live as long as the store's rows
+    fn bindings(&self) -> Option<&BindingRelation> {
+        None
+    }
 
     fn delta_scan(&self, table_id: TableId, inserts: bool) -> DeltaScanIter<'_> {
         match inserts {

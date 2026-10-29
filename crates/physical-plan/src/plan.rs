@@ -43,6 +43,9 @@ pub const PARAM_SENDER: ParamSlot = ParamSlot(0);
 pub const PARAM_VIEW_ARG_HASH_EMPTY: ParamSlot = ParamSlot(1);
 pub const PARAM_VIEW_ARG_HASH_SENDER: ParamSlot = ParamSlot(2);
 
+/// Kept apart from the built-in slots, so `ExecutionParams` rejects binding slots
+pub const PARAM_BINDING_FIRST: ParamSlot = ParamSlot(16);
+
 /// Physical plans always terminate with a projection.
 /// This type of projection returns row ids.
 ///
