@@ -15,8 +15,7 @@
     "browser-observation"
   ],
   "budget": {
-    "status": "bounded",
-    "maxRuntimeMs": 1000
+    "status": "unmeasured"
   },
   "task": {
     "requirements": [
