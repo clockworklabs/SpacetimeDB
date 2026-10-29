@@ -337,7 +337,7 @@ fn run_benchmarks(args: RunArgs, reasoning: ReasoningEffort) -> Result<()> {
     };
 
     let mut all_outcomes: Vec<RunOutcome> = Vec::new();
-    let mut run_status = Ok(());
+    let mut mode_failures = Vec::new();
 
     for mode in modes {
         let result = run_mode_benchmarks(
@@ -348,18 +348,16 @@ fn run_benchmarks(args: RunArgs, reasoning: ReasoningEffort) -> Result<()> {
             runtime.as_ref(),
             llm_provider.as_ref(),
         );
-        match result {
+        let status = match result {
             Ok((outcomes, status)) => {
                 all_outcomes.extend(outcomes);
-                run_status = status;
+                status
             }
-            Err(error) => {
-                run_status = Err(error);
-            }
-        }
-        if run_status.is_err() {
+            Err(error) => Err(error),
+        };
+        if let Err(error) = status {
             report_server_status(guard.as_mut());
-            break;
+            mode_failures.push(format!("{mode}: {error:#}"));
         }
     }
 
@@ -383,7 +381,12 @@ fn run_benchmarks(args: RunArgs, reasoning: ReasoningEffort) -> Result<()> {
         }
     }
 
-    run_status
+    anyhow::ensure!(
+        mode_failures.is_empty(),
+        "benchmark modes failed:\n{}",
+        mode_failures.join("\n")
+    );
+    Ok(())
 }
 
 fn report_server_status(guard: Option<&mut SpacetimeDbGuard>) {
