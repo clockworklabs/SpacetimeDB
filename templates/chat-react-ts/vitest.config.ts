@@ -3,6 +3,10 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react() as unknown as Plugin],
+  // Use one copy of React even when the SDK is linked from a local checkout.
+  resolve: {
+    dedupe: ['react', 'react-dom'],
+  },
   test: {
     globals: true,
     environment: 'jsdom', // or "node" if you're not testing DOM

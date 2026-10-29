@@ -407,7 +407,8 @@ jobs:
         with:
           global-json-file: global.json
 
-      # Node.js and pnpm are required for the TypeScript smoketests.
+      # Node.js and pnpm are required for the TypeScript smoketests. The template
+      # smoketests run the templates' module tests, whose test harness needs Node 22.
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -415,6 +416,33 @@ jobs:
           node-version: '22.23.4'
 
       - uses: ./.github/actions/setup-pnpm
+
+      # The templates' module tests load the TypeScript SDK's test datastore,
+      # which the template smoketests build with wasm-bindgen.
+      - name: Install wasm-bindgen CLI
+        shell: bash
+        run: |
+          REQUIRED_WASM_BINDGEN_VERSION="$(
+            awk '
+              $1 == "name" && $3 == "\"wasm-bindgen\"" { in_pkg = 1; next }
+              in_pkg && $1 == "version" {
+                gsub(/"/, "", $3);
+                print $3;
+                exit;
+              }
+            ' Cargo.lock
+          )"
+          if [ -z "${REQUIRED_WASM_BINDGEN_VERSION}" ]; then
+            echo "Failed to determine wasm-bindgen version from Cargo.lock"
+            exit 1
+          fi
+
+          INSTALLED_WASM_BINDGEN_VERSION="$(wasm-bindgen --version 2>/dev/null | awk '{print $2}' || true)"
+          if [ "${INSTALLED_WASM_BINDGEN_VERSION}" != "${REQUIRED_WASM_BINDGEN_VERSION}" ]; then
+            cargo install --locked --force wasm-bindgen-cli --version "${REQUIRED_WASM_BINDGEN_VERSION}"
+          fi
+
+          wasm-bindgen --version
 
       - name: Set up Bun for Windows compiler discovery smoketest
         if: runner.os == 'Windows'

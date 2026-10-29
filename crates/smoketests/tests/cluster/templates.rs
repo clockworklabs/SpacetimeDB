@@ -12,7 +12,9 @@
 use anyhow::{bail, Context, Result};
 use regex::Regex;
 use serde_json::Value;
-use spacetimedb_smoketests::{pnpm, random_string, workspace_root, Smoketest};
+use spacetimedb_smoketests::{
+    build_typescript_sdk_test_utils, pnpm, pnpm_with_env, random_string, workspace_root, Smoketest,
+};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -590,17 +592,6 @@ fn pin_csharp_client_sdk_package_version(project_path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Builds the TypeScript SDK (`crates/bindings-typescript`).
-///
-/// Should be called once before testing any TypeScript templates.
-fn build_typescript_sdk() -> Result<()> {
-    let sdk_path = workspace_root().join("crates/bindings-typescript");
-    eprintln!("[TEMPLATES] Building TypeScript SDK at {:?}", sdk_path);
-    run_pnpm(&["--filter", "spacetimedb", "install"], &sdk_path)?;
-    run_pnpm(&["build"], &sdk_path)?;
-    Ok(())
-}
-
 /// Points the `spacetimedb` entry in `package.json` at the local TypeScript
 /// SDK and removes the template's lockfile so pnpm re-resolves dependencies.
 fn setup_typescript_sdk_in_package_json(package_json_path: &Path) -> Result<()> {
@@ -815,7 +806,7 @@ fn test_rust_template(test: &Smoketest, template: &Template, project_path: &Path
     Ok(())
 }
 
-/// Publishes a TypeScript server module and verifies the TypeScript client type-checks.
+/// Publishes a TypeScript server module, then installs the project and runs its tests against it.
 fn test_typescript_template(test: &Smoketest, template: &Template, project_path: &Path) -> Result<()> {
     // Server
     let server_path = project_path.join("spacetimedb");
@@ -838,8 +829,22 @@ fn test_typescript_template(test: &Smoketest, template: &Template, project_path:
             template.id
         )
     })?;
-    let _ = test.spacetime(&["delete", "--server", &test.server_url, "--yes", &domain]);
 
+    // Keep the database until the tests are done, since integration tests connect to it.
+    let result = test_typescript_project(template, project_path, &server_path, &test.server_url, &domain);
+    // Best-effort cleanup.
+    let _ = test.spacetime(&["delete", "--server", &test.server_url, "--yes", &domain]);
+    result
+}
+
+/// Installs the TypeScript client, if there is one, and runs the project's `test` script.
+fn test_typescript_project(
+    template: &Template,
+    project_path: &Path,
+    server_path: &Path,
+    server_url: &str,
+    domain: &str,
+) -> Result<()> {
     // Client type-check (only if there's a client package.json in the project root)
     let client_package_json = project_path.join("package.json");
     if client_package_json.exists() {
@@ -849,7 +854,34 @@ fn test_typescript_template(test: &Smoketest, template: &Template, project_path:
         // TODO: some templates don't pass tsc yet, re-enable once they're fixed.
         // run_pnpm(&["exec", "tsc", "--noEmit"], project_path)?;
     }
+
+    // A project-level `test` script also runs the module's tests, so prefer it.
+    let Some(test_dir) = [project_path, server_path]
+        .into_iter()
+        .find(|dir| has_test_script(&dir.join("package.json")))
+    else {
+        eprintln!("[TEMPLATES] Template {} has no test script", template.id);
+        return Ok(());
+    };
+    // Templates read these to find their database, so integration tests use the one just published.
+    pnpm_with_env(
+        &["test"],
+        test_dir,
+        &[
+            ("VITE_SPACETIMEDB_HOST", server_url),
+            ("VITE_SPACETIMEDB_DB_NAME", domain),
+        ],
+    )
+    .with_context(|| format!("pnpm test failed for template {}", template.id))?;
     Ok(())
+}
+
+/// Whether the `package.json` at `package_json_path` exists and defines a `test` script.
+fn has_test_script(package_json_path: &Path) -> bool {
+    fs::read_to_string(package_json_path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<Value>(&content).ok())
+        .is_some_and(|package| package["scripts"]["test"].is_string())
 }
 
 /// Publishes a C# server module and verifies the C# client builds.
@@ -1011,7 +1043,7 @@ fn run_registered_template(template_id: &str) {
     match template.server_lang.as_deref() {
         Some("typescript") => {
             spacetimedb_smoketests::require_pnpm!();
-            build_typescript_sdk().expect("Failed to build TypeScript SDK");
+            build_typescript_sdk_test_utils().expect("Failed to build TypeScript SDK");
         }
         Some("csharp") => {
             spacetimedb_smoketests::require_dotnet!();
