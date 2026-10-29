@@ -1,6 +1,6 @@
 ---
 name: typescript-server
-description: SpacetimeDB TypeScript server module SDK reference. Use when writing tables, reducers, or module logic in TypeScript.
+description: SpacetimeDB TypeScript server module SDK reference. Use when writing or unit-testing tables, reducers, or module logic in TypeScript.
 license: Apache-2.0
 metadata:
   author: clockworklabs
@@ -492,9 +492,11 @@ export const routes = spacetimedb.httpRouter(new Router().get('/health', health)
 
 Handlers are synchronous: return `SyncResponse` directly rather than marking the callback `async`. Pass the exported `httpHandler(...)` value to the router, not its raw callback. The router selects the path, while a handler reads request data with APIs such as `request.text()`; `Request` has no `path` property. A handler context does not expose `ctx.db`; use `ctx.withTx(tx => ...)` when a handler needs transactional database access.
 
-## Module Unit Tests
+## Testing
 
-Use `spacetimedb` 2.12+ and Node.js 22+ in the **module** project, not the client. Set `"type": "module"` in `package.json` and install the test runner with `npm install --save-dev vitest@^3.2.4`. Configure the host-import replacement:
+Unit-test reducers, procedures and views in-process with the module test harness (`spacetimedb` 2.12+, Node.js 22+). It runs the module against the real datastore, in memory, so constraints and rollback behave as in production, with no server and no publish. Full guide: https://spacetimedb.com/docs/how-to/unit-testing
+
+In the module directory, install `vitest@^3.2.4` as a dev dependency, set `"type": "module"` and add `"test": "vitest run"` to `package.json`. The Vitest plugin replaces the host's `spacetime:sys` imports:
 
 ```typescript
 // vitest.config.ts
@@ -507,19 +509,30 @@ export default defineConfig({
 });
 ```
 
+Pass the default schema and all module exports to `createModuleTestHarness`; each call creates a fresh database. An exported reducer is callable as `reducer(ctx, args)` (`{}` for no arguments):
+
 ```typescript
-// src/index.test.ts, for the addRecord reducer above
+// src/index.test.ts
 import { expect, it } from 'vitest';
+import { ConnectionId } from 'spacetimedb';
 import { createModuleTestHarness, TestAuth } from 'spacetimedb/server/test-utils';
 import spacetimedb, * as moduleExports from './index';
 
-it('inserts a record', () => {
+const alice = TestAuth.fromJwtPayload(
+  JSON.stringify({ iss: 'test-issuer', sub: 'alice' }),
+  new ConnectionId(1n)
+);
+
+it('adds a record', () => {
   const test = createModuleTestHarness(spacetimedb, moduleExports);
-  test.withReducerTx(TestAuth.internal(), ctx => {
-    moduleExports.addRecord(ctx, { value: 1 });
-  });
+  test.withReducerTx(alice, ctx => moduleExports.addRecord(ctx, { value: 1 }));
   expect(test.db.scoreRecord.count()).toBe(1n);
 });
 ```
 
-Run `npx vitest run`. Create a fresh harness per test. `withReducerTx` commits on normal return and rolls back/rethrows on exceptions; do not catch a failure inside the transaction if rollback is expected. Callbacks must be synchronous. Use `TestAuth.fromJwtPayload(JSON.stringify({ iss: 'test', sub: 'alice' }), connectionId)` for client authorization tests; internal auth represents the database, not a client or the publisher. The harness exposes `clock`, `rng`, procedure/view contexts, and query execution. It does not simulate subscriptions, RLS, lifecycle calls, or scheduling; invoke lifecycle/scheduled reducers explicitly and retain live integration tests for those host behaviors.
+- `withReducerTx(auth, body)` commits when `body` returns and rolls back and rethrows when it throws. Keep `body` synchronous; catching an error inside it commits.
+- `TestAuth.fromJwtPayload(claimsJson, connectionId)` calls as a client; the same `iss` and `sub` always give the same `ctx.sender`. `TestAuth.internal()` calls as the database itself, as scheduled reducers are.
+- `test.clock.set(...)` / `test.clock.advance(...)` control `ctx.timestamp`; the `rngSeed` option controls `ctx.random`.
+- `test.viewContext(auth)` calls views; `test.procedureContextBuilder(auth).http(responder)` stubs outbound HTTP for procedures.
+- The harness does not run lifecycle reducers, schedules or RLS; call lifecycle and scheduled reducers explicitly.
+- Subscriptions, client connections and deployment still need a running server (`spacetime start`).

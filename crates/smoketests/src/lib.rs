@@ -1294,6 +1294,9 @@ impl Smoketest {
 
         let module_path = module_root.join("spacetimedb");
         fs::write(module_path.join("src/index.ts"), module_source).context("Failed to write TypeScript module code")?;
+        // The scaffold's test exercises the sample module we just replaced, and publish type-checks it.
+        fs::remove_file(module_path.join("src/index.test.ts"))
+            .context("Failed to remove the scaffold's module test")?;
 
         build_typescript_sdk()?;
         let _ = pnpm(&["uninstall", "spacetimedb"], &module_path);
