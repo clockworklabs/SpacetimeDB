@@ -72,14 +72,14 @@ pause. Wait for cleanup to finish and inspect any cleanup error.
 
 When no run is active, stop the Stack Bench dashboard and cache containers in
 Docker Desktop. This preserves results. Do not delete the state volume to stop
-the dashboard. For interrupted work, follow [recovery](appliance/RECOVERY.md).
+the dashboard. For interrupted work, follow the [recover-run skill](skills/recover-run/SKILL.md).
 
 ## Use the CLI instead
 
 The controller's `job options`, `job prepare`, and `job start` commands run the
 same flow without the browser. `prepare` returns the same review the dashboard
 shows; `start` accepts only that review. See the
-[run-setup interface](dashboard/README.md#workload-setup-and-ai-access) for the
+[jobs section](appliance/README.md#jobs) for the
 selection fields, and the [appliance guide](appliance/README.md#run-a-campaign)
 for running an authored campaign file directly.
 
