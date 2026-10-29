@@ -5,16 +5,19 @@ import App from './App';
 import { SpacetimeDBProvider } from 'spacetimedb/react';
 import { DbConnection } from './module_bindings';
 
+// Connect to the same database as the app, unless the environment points
+// elsewhere (the template smoketest publishes to its own server).
+const HOST = import.meta.env.VITE_SPACETIMEDB_HOST ?? 'ws://localhost:3000';
+const DB_NAME = import.meta.env.VITE_SPACETIMEDB_DB_NAME ?? 'quickstart-chat';
+
 describe('App Integration Test', () => {
   it('connects to the DB, allows name change and message sending', async () => {
+    // No token: the test connects as a fresh anonymous identity. (It used to
+    // look one up in localStorage, but jsdom's storage always starts empty, and
+    // Node 25+ shadows it with a global that is undefined unless configured.)
     const connectionBuilder = DbConnection.builder()
-      .withUri('ws://localhost:3000')
-      .withDatabaseName('quickstart-chat')
-      .withToken(
-        localStorage.getItem(
-          'ws://localhost:3000/quickstart-chat/auth_token'
-        ) || ''
-      );
+      .withUri(HOST)
+      .withDatabaseName(DB_NAME);
     render(
       <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
         <App />
@@ -53,7 +56,8 @@ describe('App Integration Test', () => {
     // If your DB or UI updates instantly, we can check that the new name shows up
     await waitFor(
       () => {
-        expect(screen.getByText('TestUser')).toBeInTheDocument();
+        // The name shows in both the profile and the list of users.
+        expect(screen.getAllByText('TestUser').length).toBeGreaterThan(0);
       },
       { timeout: 10000 }
     );
