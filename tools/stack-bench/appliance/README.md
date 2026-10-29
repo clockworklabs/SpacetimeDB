@@ -25,7 +25,7 @@ the repository root:
 
 ```sh
 docker build --platform linux/amd64 -t stack-bench-build:local tools/stack-bench/container
-docker build --platform linux/amd64 -f tools/stack-bench/appliance/Controller.Dockerfile -t stack-bench-controller:local .
+docker build --platform linux/amd64 --no-cache-filter=source -f tools/stack-bench/appliance/Controller.Dockerfile -t stack-bench-controller:local .
 docker run --rm --mount type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock stack-bench-controller:local setup > tools/stack-bench/operator.env
 ```
 

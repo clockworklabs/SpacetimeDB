@@ -25,7 +25,7 @@ From a clean clone, at the repository root. The build refuses a dirty tree.
 
 ```sh
 docker build --platform linux/amd64 -t stack-bench-build:local tools/stack-bench/container
-docker build --platform linux/amd64 -f tools/stack-bench/appliance/Controller.Dockerfile -t stack-bench-controller:local .
+docker build --platform linux/amd64 --no-cache-filter=source -f tools/stack-bench/appliance/Controller.Dockerfile -t stack-bench-controller:local .
 ```
 
 The controller image records the source revision and the checksums of the

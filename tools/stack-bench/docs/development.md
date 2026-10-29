@@ -65,7 +65,7 @@ without the Rust binaries or development dependencies, so run the compiled
 tests directly:
 
 ```sh
-docker build --platform linux/amd64 --target source -f tools/stack-bench/appliance/Controller.Dockerfile -t stack-bench-source-tests:local .
+docker build --platform linux/amd64 --no-cache-filter=source --target source -f tools/stack-bench/appliance/Controller.Dockerfile -t stack-bench-source-tests:local .
 docker run --rm --init --network none stack-bench-source-tests:local node --test --test-concurrency=4 "dist/tests/*.test.js" "dist/tests/dashboard/*.test.js" "dist/tests/*.contract.js"
 ```
 
