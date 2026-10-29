@@ -36,7 +36,9 @@ pub fn check_row_limit<Query>(
 pub fn estimate_rows_scanned(tx: &Tx, plan: &PhysicalPlan) -> u64 {
     match plan {
         PhysicalPlan::TableScan(..) | PhysicalPlan::IxScan(..) => row_estimate(tx, plan),
-        PhysicalPlan::Filter(input, _) => estimate_rows_scanned(tx, input).saturating_add(row_estimate(tx, input)),
+        PhysicalPlan::Filter(input, _) | PhysicalPlan::BindingLookup(input, _) => {
+            estimate_rows_scanned(tx, input).saturating_add(row_estimate(tx, input))
+        }
         PhysicalPlan::NLJoin(lhs, rhs) => estimate_rows_scanned(tx, lhs)
             .saturating_add(estimate_rows_scanned(tx, rhs))
             .saturating_add(row_estimate(tx, lhs).saturating_mul(row_estimate(tx, rhs))),
@@ -98,7 +100,7 @@ pub fn row_estimate(tx: &Tx, plan: &PhysicalPlan) -> u64 {
             index_row_est(tx, ix.schema.table_id, &cols)
         }
         PhysicalPlan::IxScan(IxScan { schema, .. }, _) => tx.table_row_count(schema.table_id).unwrap_or_default(),
-        PhysicalPlan::Filter(input, _) => row_estimate(tx, input),
+        PhysicalPlan::Filter(input, _) | PhysicalPlan::BindingLookup(input, _) => row_estimate(tx, input),
         PhysicalPlan::NLJoin(lhs, rhs) => row_estimate(tx, lhs).saturating_mul(row_estimate(tx, rhs)),
         PhysicalPlan::IxJoin(IxJoin { lhs, unique: true, .. }, _)
         | PhysicalPlan::HashJoin(HashJoin { lhs, unique: true, .. }, _) => row_estimate(tx, lhs),
