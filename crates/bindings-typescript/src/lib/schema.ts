@@ -15,7 +15,7 @@ import type {
 } from './autogen/types';
 import type { UntypedIndex } from './indexes';
 import type { UntypedTableDef } from './table';
-import type { UntypedTableSchema } from './table_schema';
+import type { OutboxMetadata, UntypedTableSchema } from './table_schema';
 import {
   ArrayBuilder,
   OptionBuilder,
@@ -61,7 +61,7 @@ export interface TableToSchema<
   T extends UntypedTableSchema,
 > extends UntypedTableDef {
   accessorName: AccName;
-  isOutbox: T['isOutbox'];
+  isOutbox: T['outbox'] extends OutboxMetadata ? true : false;
   columns: T['rowType']['row'];
   rowType: T['rowSpacetimeType'];
   // Declarative user-provided table-level indexes.
@@ -154,7 +154,10 @@ export function tableToSchema<
     // be used, it is stored as alias in database, hence works in query builder.
     sourceName: schema.tableName || accName,
     accessorName: accName,
-    isOutbox: schema.isOutbox,
+    isOutbox: (schema.outbox !== undefined) as TableToSchema<
+      AccName,
+      T
+    >['isOutbox'],
     columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
     rowType: schema.rowSpacetimeType,
     // Keep declarative indexes in their original shape for type-level consumers.

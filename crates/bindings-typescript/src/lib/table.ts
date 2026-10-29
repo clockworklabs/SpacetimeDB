@@ -22,7 +22,11 @@ import type {
   UntypedIndex,
 } from './indexes';
 import ScheduleAt from './schedule_at';
-import type { TableSchema, TableSchedule } from './table_schema';
+import type {
+  OutboxMetadata,
+  TableSchema,
+  TableSchedule,
+} from './table_schema';
 import {
   RowBuilder,
   type ColumnBuilder,
@@ -243,11 +247,11 @@ type OptsConstraints<Opts extends TableOpts<any> | OutboxTableOpts<any>> =
 
 // Ordinary TableOpts annotations must keep their existing mutable table API.
 // OutboxTableOpts requires the discriminator, even when options are widened.
-type OptsIsOutbox<Opts> = Opts extends {
+type OptsOutbox<Opts> = Opts extends {
   outbox: object;
 }
-  ? true
-  : false;
+  ? OutboxMetadata
+  : undefined;
 
 /**
  * Table<Row, UniqueConstraintViolation = never, AutoIncOverflow = never>
@@ -365,7 +369,7 @@ export function table<
         >,
       ]
     : []
-): TableSchema<CoerceRow<Row>, OptsIndices<Opts>, OptsIsOutbox<Opts>> {
+): TableSchema<CoerceRow<Row>, OptsIndices<Opts>, OptsOutbox<Opts>> {
   const {
     name,
     public: isPublic = false,
@@ -536,8 +540,7 @@ export function table<
     : undefined;
 
   return {
-    isOutbox: !!receiver as OptsIsOutbox<Opts>,
-    outbox,
+    outbox: outbox as OptsOutbox<Opts>,
     rowType: row as RowBuilder<CoerceRow<Row>>,
     tableName: name,
     rowSpacetimeType: productType,

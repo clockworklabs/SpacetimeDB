@@ -193,8 +193,7 @@ describe('IDC outboxes', () => {
       'note',
       'details',
     ]);
-    expect(outbox.outbox?.argColumns).toEqual([2, 3]);
-    expect(outbox.isOutbox).toBe(true);
+    expect(outbox.outbox.argColumns).toEqual([2, 3]);
   });
 
   it('matches a sender property when its database column has another name', () => {

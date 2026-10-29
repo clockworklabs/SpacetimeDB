@@ -4,8 +4,11 @@ import type { ParamsObj, Reducer } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
 import { deepEqual } from '../lib/util';
 import { t } from '../lib/type_builders';
-import type { UntypedTableSchema } from '../lib/table_schema';
-import type { ScheduleTableForParams } from '../lib/table_schema';
+import type {
+  OutboxMetadata,
+  ScheduleTableForParams,
+  UntypedTableSchema,
+} from '../lib/table_schema';
 import { RowBuilder, type RowObj } from '../lib/type_builders';
 import { toPascalCase } from '../lib/util';
 import {
@@ -24,7 +27,7 @@ export interface ReducerExport<
 export interface ReducerOpts<Params extends ParamsObj = ParamsObj> {
   name: string;
   onSchedule?: ScheduleTableForParams<Params>;
-  onResult?: UntypedTableSchema & { readonly isOutbox: true };
+  onResult?: UntypedTableSchema & { readonly outbox: OutboxMetadata };
 }
 
 export type ReducerOptsWithOptionalName<Params extends ParamsObj = ParamsObj> =

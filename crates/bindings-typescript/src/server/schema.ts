@@ -177,7 +177,7 @@ export class SchemaInner<
         );
       }
 
-      if (table.isOutbox)
+      if (table.outbox)
         throw new TypeError('Outbox tables cannot be scheduled');
       const scheduleAtCol = knownScheduleAtCol ?? table.scheduleAtCol;
       if (scheduleAtCol === undefined) {

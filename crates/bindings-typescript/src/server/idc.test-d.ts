@@ -141,6 +141,17 @@ db.reducer(
     }
   }
 );
+db.reducer(
+  // @ts-expect-error onResult requires an outbox table.
+  { onResult: ordinary },
+  { row: ordinary.rowType, result: t.result(t.unit(), t.string()) },
+  () => {}
+);
+db.reducer(
+  { onResult: widened },
+  { row: widened.rowType, result: t.result(t.unit(), t.string()) },
+  () => {}
+);
 
 db.reducer(
   { to: gw.identity(), other: auth.identity(), raw: t.identity() },
