@@ -455,6 +455,14 @@ pub fn prompt_for_typescript_package_manager() -> anyhow::Result<Option<PackageM
     }
 }
 
+fn write_pnpm_workspace(package_dir: &Path) -> anyhow::Result<()> {
+    let path = package_dir.join("pnpm-workspace.yaml");
+    if !path.exists() {
+        fs::write(&path, "strictDepBuilds: false\n").with_context(|| format!("Failed to write {}", path.display()))?;
+    }
+    Ok(())
+}
+
 pub fn install_typescript_dependencies(
     package_dir: &Path,
     package_manager: Option<PackageManager>,
@@ -462,14 +470,15 @@ pub fn install_typescript_dependencies(
     if let Some(pm) = package_manager {
         println!("Installing dependencies with {}...", pm);
 
+        if pm == PackageManager::Pnpm {
+            write_pnpm_workspace(package_dir)?;
+        }
+
         // Command arguments
         let mut args_map: HashMap<&str, Vec<&str>> = HashMap::new();
         args_map.insert("npm", vec!["install", "--no-fund", "--no-audit", "--loglevel=error"]);
         args_map.insert("yarn", vec!["install", "--no-fund"]);
-        args_map.insert(
-            "pnpm",
-            vec!["install", "--ignore-workspace", "--config.ignore-scripts=false"],
-        );
+        args_map.insert("pnpm", vec!["install", "--config.ignore-scripts=false"]);
         args_map.insert("bun", vec!["install"]);
 
         let args: &[&str] = args_map
