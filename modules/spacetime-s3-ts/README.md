@@ -277,8 +277,8 @@ It returns:
 - `beginUpload(ctx, credentials, { owner, requestKey, filename, contentType, size, checksum })`
   creates the file and returns its `id` and the `upload` form. Calling it again
   with the same request key returns the same file while it is in the table. If
-  `upload` is missing, the file can't be uploaded again: if it is `Copying`,
-  wait for `Ready`; otherwise start again with a new key.
+  `upload` is missing, the file can't be uploaded again: use it if it is
+  `Ready`, wait if it is `Copying`, and otherwise start again with a new key.
 - `completeUpload(ctx, credentials, { owner, id })` copies the upload into place
   and checks it. If that fails, `reconcile` tries again.
 - `getDownloadUrl(ctx, credentials, { owner, id })` returns a download link for
