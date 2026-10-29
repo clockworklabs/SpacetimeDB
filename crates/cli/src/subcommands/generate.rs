@@ -791,6 +791,9 @@ pub async fn run_prepared_generate_configs(
                 && let Some(name) = &run.dependency_name
             {
                 write_remote_bindings_mod(&run.out_dir, name)?;
+            }
+
+            if let Some(name) = &run.dependency_name {
                 generate_dependency_module_files(files, name)
             } else {
                 files
@@ -1541,6 +1544,10 @@ mod tests {
                 result.unwrap();
                 assert!(out_dir.join("mod.rs").exists());
                 assert!(out_dir.join("receiver/mod.rs").exists());
+            } else if lang == Language::TypeScript {
+                result.unwrap();
+                assert!(out_dir.join("receiver/index.ts").exists());
+                assert!(!out_dir.join("receiver/package.json").exists());
             } else {
                 assert_eq!(
                     result.unwrap_err().to_string(),

@@ -189,7 +189,7 @@ pub fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Copies a Rust module fixture's manifest and source into a temporary project.
+/// Copies a Rust module fixture into a temporary project with a unique package name.
 pub fn copy_module_fixture(name: &str, dest: &Path) -> Result<()> {
     let source = workspace_root().join("crates/smoketests/modules").join(name);
     fs::create_dir_all(dest.join("src"))?;
@@ -197,6 +197,14 @@ pub fn copy_module_fixture(name: &str, dest: &Path) -> Result<()> {
         fs::copy(source.join(file), dest.join(file))
             .with_context(|| format!("Failed to copy {file} from fixture {name}"))?;
     }
+    let manifest_path = dest.join("Cargo.toml");
+    let manifest = fs::read_to_string(&manifest_path)?;
+    let package_name = Regex::new(r#"(?m)^name\s*=\s*"([^"]+)""#)?;
+    let suffix = random_string();
+    let manifest = package_name.replacen(&manifest, 1, |captures: &regex::Captures<'_>| {
+        format!("name = \"{}-{suffix}\"", &captures[1])
+    });
+    fs::write(manifest_path, manifest.as_bytes())?;
     Ok(())
 }
 
@@ -466,7 +474,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
 endif()
 "#;
 
-fn parse_identity_from_publish_output(publish_output: &str) -> Result<String> {
+/// Extracts the database identity from a single database publication.
+pub fn parse_identity_from_publish_output(publish_output: &str) -> Result<String> {
     let re = Regex::new(r"identity: ([0-9a-fA-F]+)").unwrap();
     re.captures(publish_output)
         .and_then(|caps| caps.get(1))
@@ -1552,7 +1561,15 @@ log = "0.4"
     pub fn call(&self, name: &str, args: &[&str]) -> Result<String> {
         let identity = self.database_identity.as_ref().context("No database published")?;
 
-        let mut cmd_args = vec!["call", "--server", &self.server_url, "--", identity.as_str(), name];
+        let mut cmd_args = vec![
+            "call",
+            "--no-config",
+            "--server",
+            &self.server_url,
+            "--",
+            identity.as_str(),
+            name,
+        ];
         cmd_args.extend(args);
 
         self.spacetime(&cmd_args)
@@ -1562,7 +1579,15 @@ log = "0.4"
     pub fn call_output(&self, name: &str, args: &[&str]) -> Output {
         let identity = self.database_identity.as_ref().expect("No database published");
 
-        let mut cmd_args = vec!["call", "--server", &self.server_url, "--", identity.as_str(), name];
+        let mut cmd_args = vec![
+            "call",
+            "--no-config",
+            "--server",
+            &self.server_url,
+            "--",
+            identity.as_str(),
+            name,
+        ];
         cmd_args.extend(args);
 
         self.spacetime_cmd(&cmd_args)
@@ -1574,6 +1599,7 @@ log = "0.4"
 
         let mut cmd_args = vec![
             "call",
+            "--no-config",
             "--anonymous",
             "--server",
             &self.server_url,
@@ -1955,6 +1981,33 @@ fn normalize_whitespace(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn copied_module_fixtures_have_distinct_wasm_names() {
+        let temp = tempfile::tempdir().unwrap();
+        let target_names: Vec<_> = ["first", "second"]
+            .into_iter()
+            .map(|directory| {
+                let module_dir = temp.path().join(directory);
+                copy_module_fixture("idc-receiver", &module_dir).unwrap();
+                patch_module_cargo_to_local_bindings(&module_dir).unwrap();
+                let metadata = cargo_metadata::MetadataCommand::new()
+                    .manifest_path(module_dir.join("Cargo.toml"))
+                    .no_deps()
+                    .exec()
+                    .unwrap();
+                let package = metadata.root_package().unwrap();
+                package
+                    .targets
+                    .iter()
+                    .find(|target| target.crate_types.iter().any(|kind| kind == "cdylib"))
+                    .unwrap()
+                    .name
+                    .clone()
+            })
+            .collect();
+        assert_ne!(target_names[0], target_names[1]);
+    }
 
     #[test]
     fn test_normalize_whitespace() {
