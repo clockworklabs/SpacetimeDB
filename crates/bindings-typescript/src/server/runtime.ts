@@ -549,7 +549,13 @@ class ModuleHooksImpl implements ModuleHooks {
     const rootTables = Object.values(this.#schema.schemaType.tables).map(
       table => [
         table.accessorName,
-        makeTableView(this.#schema.typespace, table.tableDef),
+        makeTableView(
+          this.#schema.typespace,
+          table.tableDef,
+          hostBackend,
+          '',
+          table.isOutbox
+        ),
       ]
     );
     const submoduleNs = this.#schema.submoduleDispatchInfos.map(dispatch => [
@@ -568,7 +574,13 @@ class ModuleHooksImpl implements ModuleHooks {
       Object.fromEntries(
         m.tables.map(({ accessorName, tableDef }) => [
           accessorName,
-          makeTableView(m.typespace, tableDef, m.namePrefix),
+          makeTableView(
+            m.typespace,
+            tableDef,
+            hostBackend,
+            m.namePrefix,
+            m.schemaTables[accessorName].isOutbox
+          ),
         ])
       ) as DbView<any>
     ));
@@ -953,7 +965,13 @@ function buildDbViewForDispatch(
 ): object {
   const tableEntries = dispatch.tables.map(({ accessorName, tableDef }) => [
     accessorName,
-    makeTableView(dispatch.typespace, tableDef, namePrefix),
+    makeTableView(
+      dispatch.typespace,
+      tableDef,
+      hostBackend,
+      namePrefix,
+      dispatch.schemaTables[accessorName].isOutbox
+    ),
   ]);
   const subNsEntries = dispatch.subDispatches.map(sub => [
     sub.namespace,
@@ -1191,11 +1209,15 @@ export function assignTxAliasViews(
   }
 }
 
+// TODO: Return OutboxTable when building an outbox, since it has no delete or clear.
+// This doesn't affect ctx.db: DbView gets its types from the schema's isOutbox
+// flag, rather than this function's return type.
 export function makeTableView(
   typespace: Typespace,
   table: RawTableDefV10,
   backendOrNamePrefix: DatastoreBackend | string = hostBackend,
-  namePrefix = ''
+  namePrefix = '',
+  isOutbox = false
 ): Table<any> {
   const backend = isDatastoreBackend(backendOrNamePrefix)
     ? backendOrNamePrefix
@@ -1323,6 +1345,13 @@ export function makeTableView(
     Object.create(null),
     tableMethods
   ) as Table<any>;
+
+  if (isOutbox) {
+    // OutboxTable hides these methods from TypeScript. Remove them here so
+    // JavaScript callers can't use them either.
+    Reflect.deleteProperty(tableView, 'delete');
+    Reflect.deleteProperty(tableView, 'clear');
+  }
 
   for (const indexDef of table.indexes) {
     const accessorName = indexDef.accessorName!;
@@ -1663,6 +1692,12 @@ export function makeTableView(
           }
         },
       } as RangedIndex<any, any>;
+    }
+
+    if (isOutbox) {
+      // Outbox indexes must also prevent deletes and updates at runtime.
+      Reflect.deleteProperty(index, 'delete');
+      Reflect.deleteProperty(index, 'update');
     }
 
     // IMPORTANT: duplicate accessor handling.

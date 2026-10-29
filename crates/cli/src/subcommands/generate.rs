@@ -6,8 +6,8 @@ use clap::Arg;
 use clap::ArgAction::{Set, SetTrue};
 use fs_err as fs;
 use spacetimedb_codegen::{
-    generate, private_table_names, CodegenOptions, CodegenVisibility, Csharp, ImportExtension, Lang, OutputFile, Rust,
-    TypeScript, UnrealCpp, AUTO_GENERATED_PREFIX,
+    generate, generate_receiver_bindings, private_table_names, CodegenOptions, CodegenVisibility, Csharp,
+    ImportExtension, Lang, OutputFile, ReceiverLanguage, Rust, TypeScript, UnrealCpp, AUTO_GENERATED_PREFIX,
 };
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::RawModuleDef;
@@ -192,9 +192,18 @@ pub(super) fn dependency_generate_entries(
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("database dependencies require the sender to define `module-path`"))?;
 
+    let mut names = BTreeSet::new();
     dependencies
         .iter()
-        .map(|dependency| dependency_generate_entry(dependency, sender_module_path, all_targets))
+        .map(|dependency| {
+            if let Some(name) = dependency.get("name").and_then(|name| name.as_str()) {
+                anyhow::ensure!(
+                    names.insert(name),
+                    "duplicate dependency name {name:?} in module {sender_module_path:?}"
+                );
+            }
+            dependency_generate_entry(dependency, sender_module_path, all_targets)
+        })
         .collect()
 }
 
@@ -210,6 +219,12 @@ fn get_module_source(fields: &HashMap<String, serde_json::Value>) -> Option<(&st
         .find_map(|key| fields.get(key).cloned().map(|value| (key, value)))
 }
 
+/// Reject paths and other invalid identifiers before resolving sources or writing files.
+fn validate_dependency_name(name: &str) -> anyhow::Result<()> {
+    spacetimedb_schema::identifier::validate_identifier(name)
+        .with_context(|| format!("invalid dependency name {name:?}"))
+}
+
 fn dependency_generate_entry(
     dependency: &serde_json::Value,
     sender_module_path: &str,
@@ -222,6 +237,7 @@ fn dependency_generate_entry(
         .get("name")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("dependency entries require `name`"))?;
+    validate_dependency_name(name)?;
 
     let (source_key, source_value, build_options, dotnet_version) = if let Some(path) = dependency.get("module-path") {
         (
@@ -453,6 +469,9 @@ fn prepare_generate_run_configs<'a>(
         let js_file = command_config.get_resolved_path("js_file", config_dir)?;
         let sender_module_path = command_config.get_resolved_path("sender_module_path", config_dir)?;
         let dependency_name = command_config.get_one::<String>("dependency_name")?;
+        if let Some(name) = &dependency_name {
+            validate_dependency_name(name)?;
+        }
         let requested_lang = command_config.get_one::<Language>("language")?;
         let namespace = command_config
             .get_one::<String>("namespace")?
@@ -647,28 +666,54 @@ pub fn build_generate_entry(
     entry
 }
 
-fn generate_receiver_bindings(_module: &ModuleDef, run: &GenerateRunConfig) -> anyhow::Result<Vec<OutputFile>> {
-    // Each implementation receives the receiver schema and resolved sender options,
-    // including the dependency name and output directory, for its output layout.
-    match run.lang {
-        Language::Rust => {
-            // TODO(idc-rust): Generate Rust receiver types and reducer handles, including dependency modules.
-            anyhow::bail!("Rust receiver binding generation is not implemented yet")
-        }
-        Language::TypeScript => {
-            // TODO(idc-typescript): Generate TypeScript receiver types, reducer handles, and dependency exports.
-            anyhow::bail!("TypeScript receiver binding generation is not implemented yet")
-        }
-        Language::Csharp => {
-            // TODO(idc-csharp): Generate C# receiver types and reducer handles in the configured namespace.
-            anyhow::bail!("C# receiver binding generation is not implemented yet")
-        }
-        Language::Cpp => {
-            // TODO(idc-cpp): Generate C++ receiver types and reducer handles with the required headers.
-            anyhow::bail!("C++ receiver binding generation is not implemented yet")
-        }
-        Language::UnrealCpp => anyhow::bail!("Unreal C++ is a client binding target"),
+fn generate_dependency_module_files(files: Vec<OutputFile>, dependency_name: &str) -> Vec<OutputFile> {
+    files
+        .into_iter()
+        .map(|OutputFile { filename, code }| {
+            let filename = if filename == "lib.rs" {
+                format!("{dependency_name}/mod.rs")
+            } else {
+                format!("{dependency_name}/{filename}")
+            };
+            OutputFile { filename, code }
+        })
+        .collect()
+}
+
+fn write_remote_bindings_mod(out_dir: &Path, dependency_name: &str) -> anyhow::Result<()> {
+    fs::create_dir_all(out_dir)?;
+    let path = out_dir.join("mod.rs");
+    let module_decl = format!("pub mod {dependency_name};");
+
+    let mut module_decls = if path.exists() {
+        fs::read_to_string(&path)?
+            .lines()
+            .filter(|line| line.starts_with("pub mod "))
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    if !module_decls.iter().any(|line| line == &module_decl) {
+        module_decls.push(module_decl);
+        module_decls.sort();
     }
+
+    let mut lines = vec![
+        AUTO_GENERATED_PREFIX.to_string(),
+        "// WILL NOT BE SAVED. MODIFY DEPENDENCIES IN SPACETIME.JSON INSTEAD.".to_string(),
+        String::new(),
+        "#![allow(unused, clippy::all)]".to_string(),
+        String::new(),
+    ];
+    lines.extend(module_decls);
+
+    let code = format!("{}\n", lines.join("\n"));
+    if !path.exists() || fs::read_to_string(&path)? != code {
+        println!("Writing file {}", path.display());
+        fs::write(path, code)?;
+    }
+    Ok(())
 }
 
 pub async fn run_prepared_generate_configs(
@@ -732,7 +777,27 @@ pub async fn run_prepared_generate_configs(
         }
 
         let generated_files = if run.bindings == BindingKind::Module {
-            generate_receiver_bindings(&module, &run)?
+            let lang = match run.lang {
+                Language::Rust => ReceiverLanguage::Rust,
+                Language::TypeScript => ReceiverLanguage::TypeScript,
+                Language::Csharp => ReceiverLanguage::Csharp {
+                    namespace: &run.namespace,
+                },
+                Language::Cpp => ReceiverLanguage::Cpp,
+                Language::UnrealCpp => anyhow::bail!("Unreal C++ is a client binding target"),
+            };
+            let files = generate_receiver_bindings(&module, lang, run.dependency_name.as_deref())?;
+            if run.lang == Language::Rust
+                && let Some(name) = &run.dependency_name
+            {
+                write_remote_bindings_mod(&run.out_dir, name)?;
+            }
+
+            if let Some(name) = &run.dependency_name {
+                generate_dependency_module_files(files, name)
+            } else {
+                files
+            }
         } else {
             let csharp_lang;
             let unreal_cpp_lang;
@@ -1417,7 +1482,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_receiver_dependencies_prepare_options_and_reach_language_placeholders() {
+    async fn test_receiver_dependencies_prepare_options_and_generate_supported_languages() {
         let cmd = cli();
         let schema = build_generate_config_schema(&cmd).unwrap();
         let matches = cmd.clone().get_matches_from(vec!["generate", "sender"]);
@@ -1461,7 +1526,7 @@ mod tests {
             assert_eq!(run.out_dir, sender.join(default_out_dir));
             let out_dir = run.out_dir.clone();
 
-            let error = run_prepared_generate_configs(
+            let result = run_prepared_generate_configs(
                 runs,
                 |path| {
                     assert!(path.is_absolute());
@@ -1474,16 +1539,25 @@ mod tests {
                 false,
                 false,
             )
-            .await
-            .unwrap_err();
-            assert_eq!(
-                error.to_string(),
-                format!(
-                    "{} receiver binding generation is not implemented yet",
-                    lang.display_name()
-                )
-            );
-            assert!(!out_dir.exists(), "unimplemented generation must not write output");
+            .await;
+            if lang == Language::Rust {
+                result.unwrap();
+                assert!(out_dir.join("mod.rs").exists());
+                assert!(out_dir.join("receiver/mod.rs").exists());
+            } else if lang == Language::TypeScript {
+                result.unwrap();
+                assert!(out_dir.join("receiver/index.ts").exists());
+                assert!(!out_dir.join("receiver/package.json").exists());
+            } else {
+                assert_eq!(
+                    result.unwrap_err().to_string(),
+                    format!(
+                        "{} receiver binding generation is not implemented yet",
+                        lang.display_name()
+                    )
+                );
+                assert!(!out_dir.exists(), "unimplemented generation must not write output");
+            }
         }
     }
 
