@@ -44,15 +44,16 @@ function files(env: Ctx['env']) {
   });
 }
 
-function credentials(env: Ctx['env']) {
-  return {
+// One snapshot, so a rotation never mixes old and new keys.
+function credentials(ctx: Ctx) {
+  return ctx.withTx(({ env }) => ({
     accessKeyId: env.AWS_ACCESS_KEY_ID,
     secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
     sessionToken: env.AWS_SESSION_TOKEN,
     expiresAt: env.AWS_SESSION_EXPIRES_AT
       ? Number(env.AWS_SESSION_EXPIRES_AT)
       : undefined,
-  };
+  }));
 }
 
 // Each signed-in identity owns its own files.
@@ -72,7 +73,7 @@ export const maintain = spacetimedb.procedure(
   { tick: s3Tick.rowType },
   t.unit(),
   ctx => {
-    files(ctx.env).reconcile(ctx, credentials(ctx.env));
+    files(ctx.env).reconcile(ctx, credentials(ctx));
     return {};
   }
 );
@@ -87,7 +88,7 @@ export const beginUpload = spacetimedb.procedure(
   },
   uploadReservation,
   (ctx, { requestId, ...file }) =>
-    files(ctx.env).beginUpload(ctx, credentials(ctx.env), {
+    files(ctx.env).beginUpload(ctx, credentials(ctx), {
       ...file,
       owner: owner(ctx),
       requestKey: requestId,
@@ -98,7 +99,7 @@ export const completeUpload = spacetimedb.procedure(
   { id: t.string() },
   t.unit(),
   (ctx, { id }) => {
-    files(ctx.env).completeUpload(ctx, credentials(ctx.env), {
+    files(ctx.env).completeUpload(ctx, credentials(ctx), {
       owner: owner(ctx),
       id,
     });
@@ -110,7 +111,7 @@ export const getDownloadUrl = spacetimedb.procedure(
   { id: t.string() },
   downloadGrant,
   (ctx, { id }) =>
-    files(ctx.env).getDownloadUrl(ctx, credentials(ctx.env), {
+    files(ctx.env).getDownloadUrl(ctx, credentials(ctx), {
       owner: owner(ctx),
       id,
     })

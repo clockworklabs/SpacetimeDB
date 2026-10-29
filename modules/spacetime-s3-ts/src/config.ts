@@ -33,7 +33,7 @@ export function resolveConfig(input: S3Config) {
     recoverySeconds: input.recoverySeconds ?? 3600,
     receiptSeconds: input.receiptSeconds ?? 86400,
     sweepSeconds: input.sweepSeconds ?? 300,
-    httpTimeoutSeconds: input.httpTimeoutSeconds ?? 5,
+    httpTimeoutSeconds: input.httpTimeoutSeconds ?? 15,
   };
   if (
     !/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(config.bucket) ||

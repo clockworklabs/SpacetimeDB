@@ -10,7 +10,8 @@ This example uses a real S3 bucket. Uploads and downloads are billed by AWS.
 
 1. Create a bucket as described in
    [AWS configuration](../README.md#aws-configuration). Use the prefix
-   `example/`.
+   `example/`, so the IAM policy resource ends in `example/*` and the lifecycle
+   rule expires `example/temporary/`.
 2. Add this CORS rule so the browser can upload and download:
 
    ```json
@@ -28,7 +29,9 @@ This example uses a real S3 bucket. Uploads and downloads are billed by AWS.
 
 3. Create credentials with the IAM policy from the package README. A dedicated
    IAM user's access key works for local testing. For temporary credentials,
-   also set `AWS_SESSION_TOKEN` and `AWS_SESSION_EXPIRES_AT` (Unix milliseconds).
+   also set `AWS_SESSION_TOKEN` and `AWS_SESSION_EXPIRES_AT`. AWS reports the
+   expiry as an ISO time; convert it to Unix milliseconds, for example with
+   `Date.parse(expiration)`.
 
 ## Run it locally
 
@@ -41,8 +44,9 @@ Start SpacetimeDB in a separate terminal:
 spacetime start
 ```
 
-The module reads its S3 settings from environment variables when it is first
-published. In the terminal you publish from, set them. In PowerShell:
+The module reads its S3 settings and credentials from its environment. Set them
+in the terminal you publish from; publishing stores them in the database. In
+PowerShell:
 
 ```powershell
 $env:S3_BUCKET = 'your-bucket'
@@ -110,6 +114,10 @@ To replace expired or rotated credentials, set the new variables and run:
 spacetime publish --server local --env-only spacetime-s3-example
 ```
 
+The bucket, region, prefix, and account ID are fixed when the database is
+created. To use a different bucket, set the new values and run
+`pnpm run build:module:fresh`.
+
 ## Before deploying
 
 Anyone who opens this example gets an identity and can upload up to the default
@@ -122,3 +130,6 @@ keep the AWS credentials limited to the package README policy.
   match the address in the browser exactly, including the port.
 - **Files stay at Verifying or Deleting:** check that the SpacetimeDB server is
   running and the credentials have not expired.
+- **A file shows Pending:** another tab is uploading it, or its upload stopped,
+  for example because the page was reloaded. A stopped upload is removed when its
+  upload window closes.

@@ -98,7 +98,12 @@ function button(label: string, onClick: () => Promise<void>, id: string) {
 }
 
 function fileCard(file: MyFile): HTMLLIElement {
-  const label = STATE_LABELS[file.state] ?? file.state;
+  const uploaded = progress.get(file.id);
+  // Only the uploading tab knows a pending file is still uploading.
+  const label =
+    file.state === 'pending' && uploaded === undefined
+      ? 'pending'
+      : (STATE_LABELS[file.state] ?? file.state);
   const item = element('li', 'file-card');
   const main = element('div', 'file-main');
   main.append(
@@ -109,7 +114,6 @@ function fileCard(file: MyFile): HTMLLIElement {
       `${formatSize(file.size)} · ${file.contentType}`
     )
   );
-  const uploaded = progress.get(file.id);
   if (file.state === 'pending' && uploaded !== undefined) {
     const bar = element('div', 'progress');
     const fill = element('span');
@@ -198,18 +202,31 @@ async function upload(file: File): Promise<void> {
   progress.set(id, 0);
   renderFiles();
   setStatus(`Uploading ${file.name}...`);
+  // Keep the progress entry until completion, so the file never looks stalled.
   try {
-    await post(grant.url, form, fraction => {
-      progress.set(id, fraction);
-      renderFiles();
-    });
+    try {
+      await post(grant.url, form, fraction => {
+        progress.set(id, fraction);
+        renderFiles();
+      });
+    } catch (error) {
+      // Release the reservation so it stops counting against the quota.
+      try {
+        await current.reducers.deleteFile({ id });
+      } catch {
+        throw new Error(
+          `${errorMessage(error)} Delete the file to free its quota.`
+        );
+      }
+      throw error;
+    }
+    setStatus(`Verifying ${file.name}...`);
+    // A failed copy is retried by maintenance; the file's badge shows its state.
+    await current.procedures.completeUpload({ id });
   } finally {
     progress.delete(id);
     renderFiles();
   }
-  setStatus(`Verifying ${file.name}...`);
-  // A failed copy is retried by maintenance; the file's badge shows its state.
-  await current.procedures.completeUpload({ id });
   setStatus('');
 }
 
@@ -217,15 +234,10 @@ async function download(file: MyFile): Promise<void> {
   const current = connection;
   if (!current) return;
   const { url } = await current.procedures.getDownloadUrl({ id: file.id });
-  // A cross-origin link ignores its download name, so save a local copy.
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Download failed (${response.status}).`);
-  const href = URL.createObjectURL(await response.blob());
+  // The signed URL tells the browser to save the file under its original name.
   const link = element('a');
-  link.href = href;
-  link.download = file.filename;
+  link.href = url;
   link.click();
-  setTimeout(() => URL.revokeObjectURL(href), 1000);
 }
 
 async function remove(file: MyFile): Promise<void> {

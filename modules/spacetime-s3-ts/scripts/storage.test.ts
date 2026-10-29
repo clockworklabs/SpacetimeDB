@@ -42,3 +42,15 @@ test('upload grants need at least one usable second', () => {
   );
   assert.throws(() => s3.upload(file(1_000_500)), /s3.upload_expired/);
 });
+
+test('download URLs save under the original filename', () => {
+  const s3 = storage(config, 1n, credentials, http, () => at(1_000_000));
+  const url = new URL(
+    s3.download({ ...file(1_001_000), filename: "rock 'n' (roll)*.txt" }).url
+  );
+  assert.equal(url.pathname, '/app/final/1-1');
+  assert.equal(
+    url.searchParams.get('response-content-disposition'),
+    "attachment; filename*=UTF-8''rock%20%27n%27%20%28roll%29%2A.txt"
+  );
+});

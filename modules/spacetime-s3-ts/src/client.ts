@@ -356,13 +356,13 @@ export function client<Tx extends HostTx>(
       credentials: Credentials,
       args: FileInput
     ) {
-      const id = ctx.withTx(tx => {
+      const file = ctx.withTx(tx => {
         const file = owned(tx, args);
         if (file.state.tag !== 'Ready')
           throw new SenderError('s3.file_not_ready');
-        return file.id;
+        return file;
       });
-      return service(ctx, credentials).download(id);
+      return service(ctx, credentials).download(file);
     },
     deleteFile(tx: Tx, args: FileInput) {
       const file = owned(tx, args);

@@ -16,6 +16,12 @@ export type Http = ProcedureCtx<InferSchema<typeof submodule>>['http'];
 export const PAGE_SIZE = 16;
 const stamp = (millis: number) =>
   new Date(millis).toISOString().replace(/[:-]|\.\d{3}/g, '');
+// RFC 5987 value for a Content-Disposition filename* parameter.
+const filenameParam = (name: string) =>
+  encodeURIComponent(name).replace(
+    /['()*]/g,
+    ch => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`
+  );
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -226,10 +232,12 @@ export function storage(
       verifyBucket();
       send('DELETE', key);
     },
-    download(id: bigint) {
+    download(file: FileRecord) {
       // Bind the account in the query so a browser needs no custom GET headers.
-      return signed('GET', finalKey(id), {}, config.downloadSeconds, {
+      return signed('GET', finalKey(file.id), {}, config.downloadSeconds, {
         'x-amz-expected-bucket-owner': config.accountId,
+        // Opening the URL saves the file under its original name.
+        'response-content-disposition': `attachment; filename*=UTF-8''${filenameParam(file.filename)}`,
       });
     },
     listFinal(after: string) {
