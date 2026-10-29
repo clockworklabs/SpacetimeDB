@@ -193,18 +193,19 @@ type _IndexVal<
   ...infer Tail extends readonly string[],
 ]
   ? [
-      LookupValue<TableDef['columns'][Head]['typeBuilder']['type']>,
+      UnbrandedIdentity<TableDef['columns'][Head]['typeBuilder']['type']>,
       ..._IndexVal<TableDef, Tail>,
     ]
   : [];
 
 /**
- * Index keys and query comparisons take a plain `Identity` where a column holds
- * a receiver's typed identity. A lookup makes no claim about which module an
- * identity belongs to, so a reducer or view can check `ctx.sender` against such
- * a column; rows keep the type.
+ * A column type with a receiver identity's module brand removed; other types
+ * pass through. Index keys and query comparisons use it, so they take a plain
+ * `Identity` where a column holds a receiver's typed identity. A lookup makes
+ * no claim about which module an identity belongs to, so a reducer or view can
+ * check `ctx.sender` against such a column; rows keep the type.
  */
-export type LookupValue<T> = T extends Identity ? Identity : T;
+export type UnbrandedIdentity<T> = T extends Identity ? Identity : T;
 
 /**
  * A helper type to define the bounds for scanning an index.
