@@ -56,6 +56,10 @@ jobs:
           echo "CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++"                 >> $GITHUB_ENV
           echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar"                   >> $GITHUB_ENV
 
+      # Fleet VM images maintain rustup; only update it here for the other runners in this matrix.
+      - name: Check and update rustup
+        if: ${{ matrix.runner != 'spacetimedb-windows-runner' }}
+        uses: ./.github/actions/ensure-rustup
       - name: Install Rust
         uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain

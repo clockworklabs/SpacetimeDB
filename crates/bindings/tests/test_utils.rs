@@ -2,6 +2,9 @@ use spacetimedb::spacetimedb_lib::RawModuleDef;
 use spacetimedb::test_utils::{TestAuth, TestQueryError};
 use spacetimedb::{reducer, table, AnonymousViewContext, Query, ReducerContext, Table, Timestamp, ViewContext};
 
+#[path = "fixtures/idc_receiver/lib.rs"]
+mod receiver;
+
 #[table(accessor = test_utils_user, public)]
 #[derive(Debug, PartialEq, Eq)]
 pub struct TestUtilsUser {
@@ -24,6 +27,21 @@ pub fn add_test_utils_user(_ctx: &ReducerContext, id: u64, name: String) {
     let _ = (id, name);
 }
 
+#[table(accessor = test_utils_outbox, outbox(receiver::receive_ping))]
+pub struct TestUtilsOutbox {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    audit: String,
+    #[param(name = body)]
+    payload: String,
+    #[target]
+    destination: receiver::Identity,
+}
+
+#[reducer(on_result(test_utils_outbox))]
+pub fn on_test_utils_outbox_result(_ctx: &ReducerContext, _row: TestUtilsOutbox, _result: Result<(), String>) {}
+
 fn query_test_utils_users_by_name(from: spacetimedb::QueryBuilder, name: &str) -> impl Query<TestUtilsUser> {
     from.test_utils_user()
         .r#where(|user| user.name.eq(name.to_owned()))
@@ -45,6 +63,7 @@ fn module_def_includes_native_test_registrations() {
     let mut table_names = spacetimedb::test_utils::all_table_names();
     table_names.sort_unstable();
     assert!(table_names.contains(&"test_utils_user"));
+    assert!(table_names.contains(&"test_utils_outbox"));
 
     let RawModuleDef::V10(module) = spacetimedb::test_utils::module_def() else {
         panic!("test utils should return a v10 raw module def");
@@ -57,11 +76,33 @@ fn module_def_includes_native_test_registrations() {
     assert!(tables
         .iter()
         .any(|table| table.source_name.as_ref() == "test_utils_event"));
+    assert!(tables
+        .iter()
+        .any(|table| table.source_name.as_ref() == "test_utils_outbox"));
 
     let reducers = module.reducers().expect("reducers section should be present");
     assert!(reducers
         .iter()
         .any(|reducer| reducer.source_name.as_ref() == "add_test_utils_user"));
+    assert!(reducers
+        .iter()
+        .any(|reducer| reducer.source_name.as_ref() == "on_test_utils_outbox_result"));
+
+    let outboxes = module.outboxes().expect("outboxes section should be present");
+    assert_eq!(outboxes.len(), 1);
+    let outbox = &outboxes[0];
+    assert_eq!(outbox.table_name.as_ref(), "test_utils_outbox");
+    assert_eq!(outbox.remote_reducer.as_ref(), "wire_ping");
+    assert_eq!(outbox.target_column, 3.into());
+    assert_eq!(outbox.arg_columns, vec![2.into()]);
+    assert_eq!(
+        outbox.signature_hash,
+        spacetimedb::spacetimedb_lib::Hash::from_hex(
+            <receiver::receive_ping as spacetimedb::rt::RemoteReducer>::SIGNATURE_HASH
+        )
+        .unwrap()
+    );
+    assert_eq!(outbox.on_result_reducer.as_deref(), Some("on_test_utils_outbox_result"));
 }
 
 #[test]

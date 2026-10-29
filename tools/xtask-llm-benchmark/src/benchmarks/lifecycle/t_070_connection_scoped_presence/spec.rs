@@ -26,6 +26,24 @@ pub fn spec() -> BenchmarkSpec {
                 Duration::from_secs(10),
             ));
         }
+        scorers.push(crate::eval::scenario::scenario(
+            file!(),
+            route_tag,
+            host_url,
+            lang,
+            |s| {
+                let (token, _) = s.new_user()?;
+                let first = s.connect(&token)?;
+                let second = s.connect(&token)?;
+                // One synthetic session remains; HTTP SQL also opens a temporary observer session.
+                s.eventually_count("presence_session", 4)?;
+                drop(first);
+                s.eventually_count("presence_session", 3)?;
+                drop(second);
+                s.eventually_count("presence_session", 2)?;
+                Ok(())
+            },
+        ));
         scorers
     })
 }

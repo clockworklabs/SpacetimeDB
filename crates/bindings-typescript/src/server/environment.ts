@@ -1,8 +1,8 @@
 import { env_get } from 'spacetime:sys@2.2';
 import type { Environment, EnvironmentSchema } from '../lib/environment';
 import type {
-  EnvironmentDeclaration,
-  EnvVarType,
+  RawEnvironmentDeclarationV10 as EnvironmentDeclaration,
+  RawEnvVarTypeV10 as EnvVarType,
   AlgebraicType,
 } from '../lib/autogen/types';
 import { OptionBuilder, StringBuilder } from '../lib/type_builders';

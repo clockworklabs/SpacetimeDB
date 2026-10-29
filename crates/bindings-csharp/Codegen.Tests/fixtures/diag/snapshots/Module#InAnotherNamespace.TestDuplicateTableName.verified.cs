@@ -8,6 +8,11 @@ partial class InAnotherNamespace
         : System.IEquatable<TestDuplicateTableName>,
             SpacetimeDB.BSATN.IStructuralReadWrite
     {
+#if NET10_0_OR_GREATER
+        [System.Runtime.CompilerServices.MethodImpl(
+            System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+        )]
+#endif
         public void ReadFields(System.IO.BinaryReader reader) { }
 
         public void WriteFields(System.IO.BinaryWriter writer) { }

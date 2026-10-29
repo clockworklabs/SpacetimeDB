@@ -280,6 +280,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Check and update rustup
+        uses: ./.github/actions/ensure-rustup
       - uses: dsherret/rust-toolchain-file@v1
 
       - name: Download analysis reports

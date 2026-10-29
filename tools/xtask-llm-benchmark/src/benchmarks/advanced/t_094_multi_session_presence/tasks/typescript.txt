@@ -1,0 +1,10 @@
+Implement this SpacetimeDB module in typescript. Return only the module source.
+
+Track real connection lifecycle events. One identity may have multiple simultaneous connections. Disconnecting one connection must not mark its other connections offline. Reconnect must rebuild presence without leaving stale sessions. Do not add seed or exercise reducers. The grader opens actual WebSockets with shared and distinct credentials.
+
+Tables (the first field is the primary key):
+- public live_session: connectionId: ConnectionId, owner: Identity
+- public online_user: owner: Identity, connections: u64 (bigint)
+
+On client_connected, insert a live_session using ctx.connection_id and ctx.sender, and increment that identity's online_user count (insert at 1). On client_disconnected, remove exactly that connection if it exists, decrement its owner's count, and delete online_user only when the count reaches zero. A missing session is a no-op. Both changes are transactional.
+Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged.
