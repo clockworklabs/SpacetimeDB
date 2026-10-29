@@ -200,6 +200,16 @@ Procedural-view primary keys are explicit schema metadata. Add one only when the
 
 Inclusive btree ranges use tuples, for example `ctx.Db.Shipment.DeliverBy.Filter((new Timestamp(1_000), new Timestamp(2_000)))`.
 
+Views can also accept arguments (2.13+), after the context:
+
+```csharp
+[SpacetimeDB.View(Accessor = "EntityById", Public = true)]
+public static Entity? EntityById(AnonymousViewContext ctx, ulong id) =>
+    ctx.Db.Entity.Id.Find(id);
+```
+
+Floating-point arguments and primary keys are rejected on argument-bearing views. See client skills for SQL subscription syntax and restrictions.
+
 ## Client Visibility Filters
 
 ```csharp
@@ -231,6 +241,41 @@ double f = ctx.Rng.NextDouble();        // [0.0, 1.0)
 // Timestamp → milliseconds since epoch
 timestamp.MicrosecondsSinceUnixEpoch / 1000
 ```
+
+## Submodules
+
+C# assembly composition requires SpacetimeDB/Runtime 2.13+, .NET 10, and C# 14 in the root and dependencies. NativeAOT-LLVM module builds require Windows or Linux, not macOS. Reference module assemblies via `ProjectReference` or NuGet. If libraries live beneath the root project, exclude their source from the root compile glob (`<Compile Remove="libraries/**/*.cs" />`). Dependencies, including transitive ones, automatically register once in `public` unless the root assigns a namespace:
+
+```csharp
+// Root Lib.cs, before namespace/type declarations:
+[assembly: SpacetimeDB.Namespace(typeof(AuthLib.Marker), Accessor = "MyAuth", Name = "auth_data")]
+```
+
+The marker is any accessible type in the dependency assembly. Root code uses `ctx.Db.MyAuth.User` and `ctx.From.MyAuth.User()`; library code keeps `ctx.Db.User` and `ctx.From.User()`. Pass the caller's context directly to a library helper: there is no TypeScript-style `ctx.as`. Helpers share the caller's transaction; namespaces are not helper security boundaries.
+
+`Accessor` controls C# members; `Name` pins the canonical namespace used in SQL (`auth_data.<table>`). Without `Name`, the root's case policy derives it (`MyAuth` → `my_auth` by default). Changing the canonical namespace drops its tables and their data; keep `Name` fixed to rename only accessors. Named dependencies retain their naming policy; `public` dependencies inherit the root's and cannot explicitly conflict with it.
+
+Only the root chooses placement. An assembly can be mounted once; nested mounts and cross-language composition are unsupported. Named dependencies cannot declare lifecycle reducers, nonempty environments, or RLS filters. Define RLS in the root with canonical qualified table names. Named-submodule routes are ignored; root handlers may delegate to library helpers. Dependencies in `public` can contribute lifecycle reducers (subject to uniqueness), environment declarations, and routes.
+
+## Environment Variables
+
+```csharp
+[SpacetimeDB.Env]
+public partial struct EnvironmentSchema
+{
+    public string API_KEY;
+    [SpacetimeDB.EnvValues("development", "production")]
+    public string MODE;
+    public string? LOG_LEVEL;
+}
+// In a root entry point:
+// ctx.Env.API_KEY: string; ctx.Env.LOG_LEVEL: string?
+// ctx.Env.Get("LOG_LEVEL"): string?
+```
+
+Enable nullable annotations for optional `string?` fields. One `[SpacetimeDB.Env]` struct declares the environment; `[EnvValues(...)]` restricts allowed strings. Colliding accessor names remain available through `Get("KEY")`.
+
+See the concepts skill for shared environment and secret-handling rules.
 
 ## Scheduled Tables
 
@@ -298,7 +343,7 @@ ctx.WithTx(tx =>
 });
 ```
 
-`WithTx` is generic: its callback must return a value (use `return 0;` when no result is needed). The callback's generated `tx.Db` exposes module table accessors; `ProcedureContext` and `HandlerContext` do not expose tables directly.
+`WithTx` is generic: its callback must return a value (use `return 0;` when no result is needed). In procedures and handlers, access tables only via `tx.Db`, never `ctx.Db`.
 
 For non-GET requests, construct and send an `HttpRequest` directly:
 

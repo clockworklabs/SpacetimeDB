@@ -195,6 +195,17 @@ ctx.from.subscription().right_semijoin(
 
 Query-builder comparisons against a `String` column take an owned `String`, for example `row.label.eq("active".to_string())`.
 
+Views can also accept arguments (2.13+), after the context:
+
+```rust
+#[spacetimedb::view(accessor = entity_by_id, public)]
+pub fn entity_by_id(ctx: &spacetimedb::AnonymousViewContext, id: u64) -> Option<Entity> {
+    ctx.db.entity().id().find(id)
+}
+```
+
+Floating-point arguments and primary keys are rejected on argument-bearing views. See client skills for SQL subscription syntax and restrictions.
+
 ## Client Visibility Filters
 
 ```rust
@@ -230,6 +241,24 @@ let roll: u32 = ctx.rng().gen_range(1..=6);   // any rand::Rng method
 // Client: Timestamp → milliseconds since epoch
 timestamp.to_micros_since_unix_epoch() / 1000
 ```
+
+## Environment Variables
+
+```rust
+#[spacetimedb::env]
+pub struct Env {
+    pub API_KEY: String,
+    pub LOG_LEVEL: Option<String>,
+}
+// Inside a root entry point:
+// ctx.env.API_KEY() -> String
+// ctx.env.LOG_LEVEL() -> Option<String>
+// ctx.env.get("LOG_LEVEL") -> Option<String>
+```
+
+For constrained values, derive `spacetimedb::EnvironmentValue` on a payload-free enum and use it as a field type (or `Option<Enum>`). `#[env(value = "production")]` on a variant supplies its exact accepted string; without it, the Rust variant name is used. `#[env(values("info", "debug"))]` also constrains `String`/`Option<String>` fields.
+
+See the concepts skill for shared environment and secret-handling rules.
 
 ## Scheduled Tables
 
@@ -383,3 +412,40 @@ pub fn add_record(ctx: &ReducerContext, value: u32) {
     });
 }
 ```
+
+## Module Unit Tests
+
+The native in-memory harness is available in 2.12+. Keep the same `spacetimedb` version in normal and dev dependencies, enabling `test-utils` only for tests:
+
+```toml
+[dependencies]
+spacetimedb = { version = "2.13.0", features = ["unstable"] }
+
+[dev-dependencies]
+spacetimedb = { version = "2.13.0", features = ["test-utils"] }
+icu_calendar = ">=2.1, <2.2" # temporal_rs requires icu_calendar 2.1.x
+```
+
+Run `cargo test` natively, not with a WebAssembly target. For the `create_entity` reducer above:
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spacetimedb::test_utils::{TestAuth, TestContext};
+
+    #[test]
+    fn inserts_entity() {
+        let test = TestContext::new().expect("test database");
+        test.with_reducer_tx(TestAuth::internal(), |ctx| {
+            create_entity(ctx, "Alice".to_owned());
+            Ok::<(), String>(())
+        }).expect("transaction");
+        assert_eq!(test.db.entity().count(), 1);
+    }
+}
+```
+
+`with_reducer_tx` commits on `Ok` and rolls back on `Err` or panic unwinding; propagate reducer errors with `?` when the reducer returns `Result`. Create a new `TestContext` for each test: cloning shares the database. Use `TestAuth::from_jwt_payload(payload, connection_id)?` for client calls and `TestAuth::internal()` for the database itself. The harness exposes `clock`, `rng`, procedure/view contexts, and query execution. It does not simulate subscriptions, RLS, lifecycle calls, or timers. Invoke lifecycle/scheduled reducers explicitly and retain integration tests for host behavior.
+
+See https://spacetimedb.com/docs/how-to/unit-testing for test setup, HTTP mocking, and current limitations.

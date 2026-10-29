@@ -40,9 +40,9 @@ export const addRecord = spacetimedb.reducer(
 );
 ```
 
-Only table definitions belong in `schema({...})`. Row and object builders used as reducer arguments or view return types are not schema entries.
+`schema({...})` accepts table definitions and submodule namespace registrations. Row and object builders used as reducer arguments or view return types are not schema entries. Environment declarations go in the second argument: `schema(tables, { env: { ... } })`.
 
-Named runtime exports are reserved for values registered with SpacetimeDB, such as reducers, lifecycle hooks, views, procedures, HTTP exports, and visibility filters. Keep ordinary helper functions and constants unexported.
+Export the default schema and every reducer, lifecycle hook, view, procedure, HTTP export, and visibility filter to register. Root-entry named exports must be registered SpacetimeDB values: keep ordinary root helpers/constants unexported. A submodule library may export ordinary helpers for its consumer to call, because submodule discovery ignores non-module exports; do not re-export those helpers from the root entry.
 
 ## Imports
 
@@ -114,8 +114,8 @@ authorId: t.u64().index('btree'),
 // Access: ctx.db.post.authorId.filter(authorId);
 
 // Multi-column (named):
-indexes: [{ accessor: 'by_group_user', algorithm: 'btree', columns: ['groupId', 'userId'] }]
-// Access: ctx.db.membership.by_group_user.filter([groupId, userId]);
+indexes: [{ accessor: 'byGroupUser', algorithm: 'btree', columns: ['groupId', 'userId'] }]
+// Access: ctx.db.membership.byGroupUser.filter([groupId, userId]);
 ```
 
 Prefer a multi-column index over filtering by one column and looping. Filter takes an array in index column order; a prefix scan passes the leading value bare: `filter(groupId)`.
@@ -208,6 +208,8 @@ const f: number = ctx.random();                          // [0.0, 1.0)
 const roll: number = ctx.random.integerInRange(1, 6);    // safe JS number bounds/result, inclusive
 const storedRoll: bigint = BigInt(roll);                 // convert the result for an i64/u64 column
 const bytes: Uint8Array = ctx.random.fill(new Uint8Array(16));
+// 2.13+: in-place shuffle; copy first to preserve the original array.
+const shuffled = ctx.random.shuffle([...cards]);
 
 // Client: Timestamp → Date
 new Date(Number(row.createdAt.microsSinceUnixEpoch / 1000n));
@@ -259,6 +261,41 @@ export const tick = spacetimedb.reducer(
 //   const micros = at.tag === 'time' ? at.value : at.value.microsSinceUnixEpoch;  // bigint
 ```
 
+## Submodules
+
+Import the library's full module-namespace object, not just its default schema:
+
+```typescript
+import * as authLib from 'auth_lib';
+
+const spacetimedb = schema({
+  scoreRecord,
+  myAuth: { name: 'auth_data', module: authLib },
+});
+export default spacetimedb;
+```
+
+`myAuth` is the accessor (`ctx.db.myAuth.<table>`); `auth_data` is the canonical namespace used in SQL and wire names. Without an explicit `name`, the root's case policy derives it (`myAuth` → `my_auth` by default). Pin `name` when renaming an accessor: changing the canonical namespace drops its tables and their data. The library keeps its own flat `ctx.db` accessors. To call a library function directly, pass `ctx.as.myAuth`; inside `withTx`, use `tx.as.myAuth`. Nested TypeScript submodules are supported, but the same module cannot be registered twice. Lifecycle reducers and nonempty environment declarations belong in the root. Submodule routers are ignored; register delegated handlers on the root router. Composition is not cross-language.
+
+Official reusable libraries include `@spacetimedb/cron`, `@spacetimedb/retry`, `@spacetimedb/rate-limit`, and `@spacetimedb/crypto`. Their registration shapes differ: `@spacetimedb/rate-limit/submodule` is mountable, cron/retry expose factories, and crypto exports helpers. Consult the chosen package's README/exports rather than assuming every package root is a mountable module.
+
+## Environment Variables
+
+```typescript
+const spacetimedb = schema({ scoreRecord }, {
+  env: {
+    API_KEY: t.string(),
+    MODE: t.enum('Mode', ['development', 'production']),
+    LOG_LEVEL: t.string().optional(),
+  },
+});
+// In a root reducer/procedure/view/handler:
+// ctx.env.API_KEY: string; ctx.env.LOG_LEVEL: string | undefined
+// ctx.env.get('LOG_LEVEL'): string | null
+```
+
+See the concepts skill for shared environment and secret-handling rules.
+
 ## Custom Types
 
 ```typescript
@@ -285,7 +322,7 @@ A client subscribing to a view receives only the rows it returns. Use a per-user
 
 `t.row(...)` and `t.object(...)` return schema builders, not TypeScript runtime row types. Let a view callback infer its result, or annotate a separately declared structural type such as `Array<{ sku: bigint; label: string }>`. A named output type must not reuse the generated PascalCase name of its view accessor (for example, reserve `DiscountedProduct` for a `discounted_product` view).
 
-Both `spacetimedb.view(...)` and `spacetimedb.anonymousView(...)` take three arguments: view options, the declared return schema, and the callback.
+Without parameters, `spacetimedb.view(...)` and `spacetimedb.anonymousView(...)` take view options, a return schema, and a callback. Parameterized views add an argument-schema object before the return schema.
 
 ```typescript
 // Anonymous view (same for all clients):
@@ -325,6 +362,19 @@ ctx => ctx.from.subscription.rightSemijoin(
 The method name identifies which side is returned: `A.leftSemijoin(B, ...)` returns rows from `A`, while `A.rightSemijoin(B, ...)` returns rows from `B`. To return one table's rows when another table has a match, put the returned table on the corresponding side. Semijoins do not project combined columns from both tables.
 
 Procedural views read through `ctx.db` and return materialized values such as arrays. Query-builder values from `ctx.from` are returned directly; they are not iterators and cannot be spread, looped over, or mixed with array methods. Use a procedural view when the result is a custom row assembled from multiple tables.
+
+Parameterized views (2.13+) pass arguments to the callback as an object:
+
+```typescript
+export const entityById = spacetimedb.anonymousView(
+  { public: true },
+  { identity: t.identity() },
+  t.option(entity.rowType),
+  (ctx, { identity }) => ctx.db.entity.identity.find(identity) ?? undefined
+);
+```
+
+Floating-point arguments and primary keys are rejected on argument-bearing views. See client skills for SQL subscription syntax and restrictions.
 
 ## Client Visibility Filters
 
@@ -377,3 +427,35 @@ export const routes = spacetimedb.httpRouter(new Router().get('/health', health)
 ```
 
 Handlers are synchronous: return `SyncResponse` directly rather than marking the callback `async`. Pass the exported `httpHandler(...)` value to the router, not its raw callback. The router selects the path, while a handler reads request data with APIs such as `request.text()`; `Request` has no `path` property. A handler context does not expose `ctx.db`; use `ctx.withTx(tx => ...)` when a handler needs transactional database access.
+
+## Module Unit Tests
+
+Use `spacetimedb` 2.12+ and Node.js 22+ in the **module** project, not the client. Set `"type": "module"` in `package.json` and install the test runner with `npm install --save-dev vitest@^3.2.4`. Configure the host-import replacement:
+
+```typescript
+// vitest.config.ts
+import { defineConfig, type Plugin } from 'vitest/config';
+import { spacetimedbModuleTestPlugin } from 'spacetimedb/server/test-utils/vitest';
+
+export default defineConfig({
+  plugins: [spacetimedbModuleTestPlugin() as unknown as Plugin],
+  test: { environment: 'node' },
+});
+```
+
+```typescript
+// src/index.test.ts, for the addRecord reducer above
+import { expect, it } from 'vitest';
+import { createModuleTestHarness, TestAuth } from 'spacetimedb/server/test-utils';
+import spacetimedb, * as moduleExports from './index';
+
+it('inserts a record', () => {
+  const test = createModuleTestHarness(spacetimedb, moduleExports);
+  test.withReducerTx(TestAuth.internal(), ctx => {
+    moduleExports.addRecord(ctx, { value: 1 });
+  });
+  expect(test.db.scoreRecord.count()).toBe(1n);
+});
+```
+
+Run `npx vitest run`. Create a fresh harness per test. `withReducerTx` commits on normal return and rolls back/rethrows on exceptions; do not catch a failure inside the transaction if rollback is expected. Callbacks must be synchronous. Use `TestAuth.fromJwtPayload(JSON.stringify({ iss: 'test', sub: 'alice' }), connectionId)` for client authorization tests; internal auth represents the database, not a client or the publisher. The harness exposes `clock`, `rng`, procedure/view contexts, and query execution. It does not simulate subscriptions, RLS, lifecycle calls, or scheduling; invoke lifecycle/scheduled reducers explicitly and retain live integration tests for those host behaviors.
