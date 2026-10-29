@@ -11,6 +11,8 @@
   --accent-strong: #78ead4;
   --red: #ff8f8f;
   --radius-sm: 8px;
+  --example-footer-border: var(--line);
+  --example-footer-label: var(--muted);
   font-family:
     Inter,
     ui-sans-serif,
@@ -334,29 +336,8 @@ a {
   }
 }
 
-/* Matches the footer of the other submodule examples. */
-.page-foot {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 11px;
-  min-height: 58px;
+.example-footer {
   margin-top: 48px;
-  border-top: 1px solid var(--line);
-}
-
-.page-foot .by {
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.page-foot img {
-  width: auto;
-  height: 26px;
-  opacity: 0.85;
 }
 
 :focus-visible {

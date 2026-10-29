@@ -1,5 +1,7 @@
 import { DbConnection, tables, type ErrorContext } from './module_bindings/app';
 import type { MyFile } from './module_bindings/app/types';
+import { mountFooter } from '@spacetimedb/example-ui';
+import '@spacetimedb/example-ui/footer.css';
 
 interface ServerConfig {
   spacetimeUri: string;
@@ -293,6 +295,11 @@ async function download(file: MyFile): Promise<void> {
   const current = connection;
   if (!current) return;
   const { url } = await current.procedures.getDownloadUrl({ id: file.id });
+  // Check access with one byte first, so an S3 error shows here instead of
+  // replacing the page. An empty file answers 416 after access is granted.
+  const probe = await fetch(url, { headers: { Range: 'bytes=0-0' } });
+  if (!probe.ok && probe.status !== 416)
+    throw new Error(`Download failed (${probe.status}).`);
   // The signed URL tells the browser to save the file under its original name.
   const link = element('a');
   link.href = url;
@@ -377,6 +384,8 @@ function connect(config: ServerConfig): void {
     })
     .build();
 }
+
+mountFooter(byId('shell'));
 
 async function main(): Promise<void> {
   registerUiHandlers();
