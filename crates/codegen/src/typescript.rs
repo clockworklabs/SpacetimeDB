@@ -4,7 +4,7 @@ use crate::util::{
 };
 use crate::{CodegenOptions, OutputFile};
 
-use super::util::{collect_case, print_auto_generated_file_comment, type_ref_name};
+use super::util::{collect_case, dependency_scoped_type_name, print_auto_generated_file_comment, type_ref_name};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write};
@@ -60,6 +60,98 @@ impl ImportExtension {
 #[derive(Default)]
 pub struct TypeScript {
     pub import_extension: ImportExtension,
+}
+
+/// Generate root-module receiver bindings; submodule receivers are not supported yet.
+pub(super) fn generate_module_bindings(module: &ModuleDef, dependency_name: Option<&str>) -> Vec<OutputFile> {
+    fn collect(module: &ModuleDef, ty: &AlgebraicTypeUse, refs: &mut BTreeSet<AlgebraicTypeRef>) {
+        match ty {
+            AlgebraicTypeUse::Ref(r) if refs.insert(*r) => match &module.typespace_for_generate()[*r] {
+                AlgebraicTypeDef::Product(p) => p.elements.iter().for_each(|(_, ty)| collect(module, ty, refs)),
+                AlgebraicTypeDef::Sum(s) => s.variants.iter().for_each(|(_, ty)| collect(module, ty, refs)),
+                AlgebraicTypeDef::PlainEnum(_) => {}
+            },
+            AlgebraicTypeUse::Array(ty) | AlgebraicTypeUse::Option(ty) => collect(module, ty, refs),
+            AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+                collect(module, ok_ty, refs);
+                collect(module, err_ty, refs);
+            }
+            _ => {}
+        }
+    }
+
+    let mut reducers = iter_reducers(module, crate::CodegenVisibility::OnlyPublic).collect::<Vec<_>>();
+    // Equivalent modules can register their reducers in different orders across languages.
+    reducers.sort_by(|left, right| left.name.cmp(&right.name));
+    let mut refs = BTreeSet::new();
+    for reducer in &reducers {
+        for (_, ty) in &reducer.params_for_generate.elements {
+            collect(module, ty, &mut refs);
+        }
+    }
+    let mut output = CodeIndenter::new(String::new(), INDENT);
+    let out = &mut output;
+    print_auto_generated_file_comment(out);
+    writeln!(
+        out,
+        "import {{ t as __t, remoteModule as __remoteModule, TypeBuilder as __TypeBuilder, type AlgebraicTypeType as __AlgebraicTypeType, type Infer as __Infer }} from 'spacetimedb/server';"
+    );
+    out.newline();
+    for typ in iter_types(module).filter(|typ| refs.contains(&typ.ty)) {
+        let name = type_ref_name(module, typ.ty);
+        let sats_name = dependency_name.map_or_else(
+            || name.clone(),
+            |dependency| dependency_scoped_type_name(dependency, &typ.accessor_name),
+        );
+        match &module.typespace_for_generate()[typ.ty] {
+            AlgebraicTypeDef::Product(p) => define_body_for_product(module, out, &name, &sats_name, &p.elements),
+            AlgebraicTypeDef::Sum(s) => define_body_for_sum(module, out, &name, &sats_name, &s.variants),
+            AlgebraicTypeDef::PlainEnum(e) => {
+                let variants = e
+                    .variants
+                    .iter()
+                    .cloned()
+                    .map(|v| (v, AlgebraicTypeUse::Unit))
+                    .collect::<Vec<_>>();
+                define_body_for_sum(module, out, &name, &sats_name, &variants);
+            }
+        }
+    }
+    // Qualifying Symbol avoids receiver-defined names, but TypeScript no longer
+    // infers a fresh unique-symbol type for that call. Preserve the module brand.
+    writeln!(
+        out,
+        "const __receiverModule: unique symbol = globalThis.Symbol() as typeof __receiverModule;"
+    );
+    writeln!(out, "export default __remoteModule({{");
+    out.indent(1);
+    for reducer in reducers {
+        let accessor = reducer.accessor_name.deref().to_case(Case::Camel);
+        let hash = spacetimedb_schema::def::reducer_signature_hash(
+            &reducer.params(),
+            &reducer.ok_return_type,
+            &reducer.err_return_type,
+            module.typespace(),
+        );
+        writeln!(out, "{}: {{", ts_string_literal(&accessor));
+        out.indent(1);
+        writeln!(out, "name: {},", ts_string_literal(&reducer.name));
+        writeln!(out, "signatureHash: {}n,", hash.to_u256());
+        writeln!(out, "params: {{");
+        out.with_indent(|out| {
+            write_object_type_builder_fields(module, out, &reducer.params_for_generate.elements, None, true, None)
+                .unwrap()
+        });
+        writeln!(out, "}},");
+        out.dedent(1);
+        writeln!(out, "}},");
+    }
+    out.dedent(1);
+    writeln!(out, "}}, __receiverModule);");
+    vec![OutputFile {
+        filename: "index.ts".into(),
+        code: output.into_inner(),
+    }]
 }
 
 impl Lang for TypeScript {
@@ -926,8 +1018,10 @@ fn generate_types_file_with_path(module: &ModuleDef, filename: String) -> Output
         }
 
         match &module.typespace_for_generate()[ty.ty] {
-            AlgebraicTypeDef::Product(product) => define_body_for_product(module, out, &type_name, &product.elements),
-            AlgebraicTypeDef::Sum(sum) => define_body_for_sum(module, out, &type_name, &sum.variants),
+            AlgebraicTypeDef::Product(product) => {
+                define_body_for_product(module, out, &type_name, &type_name, &product.elements)
+            }
+            AlgebraicTypeDef::Sum(sum) => define_body_for_sum(module, out, &type_name, &type_name, &sum.variants),
             AlgebraicTypeDef::PlainEnum(plain_enum) => {
                 let variants = plain_enum
                     .variants
@@ -935,7 +1029,7 @@ fn generate_types_file_with_path(module: &ModuleDef, filename: String) -> Output
                     .cloned()
                     .map(|var| (var, AlgebraicTypeUse::Unit))
                     .collect::<Vec<_>>();
-                define_body_for_sum(module, out, &type_name, &variants)
+                define_body_for_sum(module, out, &type_name, &type_name, &variants)
             }
         }
     }
@@ -1070,9 +1164,14 @@ fn define_body_for_product(
     module: &ModuleDef,
     out: &mut Indenter,
     name: &str,
+    sats_name: &str,
     elements: &[(Identifier, AlgebraicTypeUse)],
 ) {
-    write!(out, "export const {name} = __t.object(\"{name}\", {{");
+    write!(
+        out,
+        "export const {name} = __t.object({}, {{",
+        ts_string_literal(sats_name)
+    );
     if elements.is_empty() {
         writeln!(out, "}});");
     } else {
@@ -1311,6 +1410,7 @@ fn define_body_for_sum(
     module: &ModuleDef,
     out: &mut Indenter,
     name: &str,
+    sats_name: &str,
     variants: &[(Identifier, AlgebraicTypeUse)],
 ) {
     writeln!(out, "// The tagged union or sum type for the algebraic type `{name}`.");
@@ -1318,7 +1418,7 @@ fn define_body_for_sum(
     if name == "AlgebraicType" {
         write!(out, ": __TypeBuilder<__AlgebraicTypeType, __AlgebraicTypeType>");
     }
-    writeln!(out, " = __t.enum(\"{name}\", {{");
+    writeln!(out, " = __t.enum({}, {{", ts_string_literal(sats_name));
     // Convert variant names to PascalCase
     let pascal_variants: Vec<(Identifier, AlgebraicTypeUse)> = variants
         .iter()
