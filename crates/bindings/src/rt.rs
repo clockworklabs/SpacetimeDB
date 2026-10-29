@@ -6,7 +6,7 @@ use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, S
 use spacetimedb_lib::bsatn::EncodeError;
 use spacetimedb_lib::db::raw_def::v10::{
     CaseConversionPolicy, ExplicitNames as RawExplicitNames, RawEnvVarTypeV10, RawEnvironmentDeclarationV10,
-    RawModuleDefV10Builder,
+    RawModuleDefV10, RawModuleDefV10Builder, RawModuleDefV10Section,
 };
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableType, ViewResultHeader};
@@ -820,6 +820,14 @@ pub fn register_reftype<T: SpacetimeType>() {
     })
 }
 
+/// Scopes the name of the receiver type `T` by `dependency`, if this module uses `T`.
+///
+/// Generated receiver bindings declare their types exactly as the receiver does, so
+/// two dependencies can both define a `Foo`. The dependency name keeps them apart.
+pub fn register_remote_type<T: SpacetimeType + 'static>(dependency: &'static str) {
+    register_describer(move |module| module.remote_types.push((std::any::TypeId::of::<T>(), dependency)))
+}
+
 /// Registers a describer for the `TableType` `T`.
 pub fn register_table<T: Table>() {
     register_describer(|module| {
@@ -1181,6 +1189,8 @@ pub struct ModuleBuilder {
     /// The anonymous views of the module.
     views_anon: Vec<AnonymousFn>,
     on_result_reducers: Vec<(&'static str, &'static str)>,
+    /// Receiver types and the dependencies they belong to.
+    remote_types: Vec<(std::any::TypeId, &'static str)>,
 }
 
 // Not actually a mutex; because WASM is single-threaded this basically just turns into a refcell.
@@ -1210,7 +1220,8 @@ static ANONYMOUS_VIEWS: OnceLock<Vec<AnonymousFn>> = OnceLock::new();
 #[cfg(feature = "test-utils")]
 #[doc(hidden)]
 pub fn module_def_for_tests() -> RawModuleDef {
-    RawModuleDef::V10(describe_module().inner.finish())
+    let module = describe_module();
+    RawModuleDef::V10(finish_module_def(module.inner, &module.remote_types))
 }
 
 fn describe_module() -> ModuleBuilder {
@@ -1224,6 +1235,34 @@ fn describe_module() -> ModuleBuilder {
         module.inner.set_outbox_on_result(outbox_table, reducer);
     }
     module
+}
+
+/// Finish the module definition, scoping each receiver type by its dependency.
+///
+/// Types are named as they are first used, by tables and reducers in either order,
+/// so the scopes are applied once every describer has run.
+fn finish_module_def(
+    inner: RawModuleDefV10Builder,
+    remote_types: &[(std::any::TypeId, &'static str)],
+) -> RawModuleDefV10 {
+    let scopes = remote_types
+        .iter()
+        .filter_map(|&(typeid, dependency)| Some((inner.type_ref(typeid)?, dependency)))
+        .collect::<Vec<_>>();
+    let mut module_def = inner.finish();
+    let types = module_def.sections.iter_mut().find_map(|section| match section {
+        RawModuleDefV10Section::Types(types) => Some(types),
+        _ => None,
+    });
+    for type_def in types.into_iter().flatten() {
+        if let Some(&(_, dependency)) = scopes.iter().find(|(ty, _)| *ty == type_def.ty) {
+            let name = &mut type_def.source_name;
+            name.scope = std::iter::once(spacetimedb_lib::sats::raw_identifier::RawIdentifier::new(dependency))
+                .chain(name.scope.iter().cloned())
+                .collect();
+        }
+    }
+    module_def
 }
 
 /// Called by the host when the module is initialized
@@ -1246,7 +1285,7 @@ extern "C" fn __describe_module__(description: BytesSink) {
     let module = describe_module();
 
     // Serialize the module to bsatn.
-    let module_def = module.inner.finish();
+    let module_def = finish_module_def(module.inner, &module.remote_types);
     let module_def = RawModuleDef::V10(module_def);
     let bytes = bsatn::to_vec(&module_def).expect("unable to serialize typespace");
 
@@ -1715,6 +1754,63 @@ macro_rules! __make_register_reftype {
             static _STDB_TEST_UTILS_INIT: unsafe extern "C" fn() = {
                 unsafe extern "C" fn __stdb_test_utils_register() {
                     $crate::rt::register_reftype::<$ty>()
+                }
+                __stdb_test_utils_register
+            };
+        };
+    };
+}
+
+/// Declares that receiver bindings' types belong to the dependency `$dependency`,
+/// so this module registers them as `$dependency.Type`.
+///
+/// Used by generated receiver bindings, which declare their types exactly as the
+/// receiver module does and leave scoping to the dependency.
+#[macro_export]
+#[doc(hidden)]
+macro_rules! remote_types {
+    ($dependency:literal $(, $ty:ident)* $(,)?) => {
+        $($crate::__make_register_remote_type!($dependency, $ty);)*
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __make_register_remote_type {
+    ($dependency:literal, $ty:ident) => {
+        const _: () = {
+            #[unsafe(export_name = concat!("__preinit__20_register_remote_type_", $dependency, "_", stringify!($ty)))]
+            extern "C" fn __register_describer() {
+                $crate::rt::register_remote_type::<$ty>($dependency)
+            }
+
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            #[used]
+            #[cfg_attr(
+                any(
+                    target_os = "linux",
+                    target_os = "android",
+                    target_os = "freebsd",
+                    target_os = "dragonfly",
+                    target_os = "netbsd",
+                    target_os = "openbsd",
+                ),
+                unsafe(link_section = ".init_array")
+            )]
+            #[cfg_attr(
+                any(
+                    target_os = "macos",
+                    target_os = "ios",
+                    target_os = "tvos",
+                    target_os = "watchos",
+                    target_os = "visionos",
+                ),
+                unsafe(link_section = "__DATA,__mod_init_func")
+            )]
+            #[cfg_attr(target_os = "windows", unsafe(link_section = ".CRT$XCU"))]
+            static _STDB_TEST_UTILS_INIT: unsafe extern "C" fn() = {
+                unsafe extern "C" fn __stdb_test_utils_register() {
+                    $crate::rt::register_remote_type::<$ty>($dependency)
                 }
                 __stdb_test_utils_register
             };

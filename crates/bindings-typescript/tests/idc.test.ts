@@ -143,6 +143,64 @@ describe('IDC outboxes', () => {
     ]);
   });
 
+  it("scopes each dependency's types by its name, keeping the declared names", () => {
+    const dependency = (name: string) =>
+      remoteModule(
+        {
+          receive: {
+            name: 'receive',
+            signatureHash: 1n,
+            params: {
+              details: t.object('Details', { labels: t.array(t.string()) }),
+            },
+          },
+        },
+        Symbol(),
+        name
+      );
+    const world = dependency('game_world');
+    const auth = dependency('auth');
+    const db = schema({
+      worldOutbox: world.outbox.receive(),
+      authOutbox: auth.outbox.receive(),
+      local: table(
+        {},
+        {
+          id: t.u64().primaryKey(),
+          own: t.object('Details', { note: t.string() }),
+          world: world.reducers.receive.params.details,
+        }
+      ),
+    });
+    const types = db
+      .buildRawModuleDefV10({})
+      .sections.flatMap(s => (s.tag === 'Types' ? s.value : []));
+    const names = types.map(ty =>
+      [...ty.sourceName.scope, ty.sourceName.sourceName].join('.')
+    );
+    expect(names).toEqual(
+      expect.arrayContaining(['game_world.Details', 'auth.Details', 'Details'])
+    );
+    expect(names.filter(name => name === 'game_world.Details')).toHaveLength(1);
+    expect(world.reducers.receive.params.details.typeName).toBe('Details');
+  });
+
+  it('rejects a type claimed by two dependencies', () => {
+    const Details = t.object('Details', { note: t.string() });
+    const dependency = (name: string) =>
+      remoteModule(
+        {
+          receive: { name: 'receive', signatureHash: 1n, params: { Details } },
+        },
+        Symbol(),
+        name
+      );
+    dependency('game_world');
+    expect(() => dependency('auth')).toThrow(
+      "Type 'Details' belongs to dependencies 'game_world' and 'auth'"
+    );
+  });
+
   it.each(['msgId', 'target'])(
     'rejects convenience outboxes when a receiver parameter is named %s',
     name => {

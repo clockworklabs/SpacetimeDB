@@ -31,12 +31,8 @@ pub(super) fn generate_rust_module_bindings(module: &ModuleDef, dependency_name:
     // TODO: Generate IDC bindings for submodules. Only root types and reducers are emitted for now.
     let type_refs = module_binding_reducer_type_refs(module);
     itertools::chain!(
-        iter_module_binding_types(module, &type_refs).map(|typ| generate_module_binding_type_file(
-            module,
-            typ,
-            dependency_name
-        )),
-        [generate_module_bindings_root_file(module, &type_refs)],
+        iter_module_binding_types(module, &type_refs).map(|typ| generate_module_binding_type_file(module, typ)),
+        [generate_module_bindings_root_file(module, &type_refs, dependency_name)],
     )
     .collect()
 }
@@ -1312,7 +1308,7 @@ fn define_struct_for_product(
     out.newline();
 }
 
-fn generate_module_binding_type_file(module: &ModuleDef, typ: &TypeDef, dependency_name: Option<&str>) -> OutputFile {
+fn generate_module_binding_type_file(module: &ModuleDef, typ: &TypeDef) -> OutputFile {
     let type_name = collect_case(Case::Pascal, typ.accessor_name.name_segments());
     let mut output = CodeIndenter::new(String::new(), INDENT);
     let out = &mut output;
@@ -1337,10 +1333,6 @@ fn generate_module_binding_type_file(module: &ModuleDef, typ: &TypeDef, dependen
     gen_and_print_imports(module, out, members, &[typ.ty]);
     out.newline();
     writeln!(out, "#[derive(spacetimedb::SpacetimeType, Clone, PartialEq, Debug)]");
-    if let Some(dependency_name) = dependency_name {
-        let scoped_name = format!("{dependency_name}.{}", typ.accessor_name);
-        writeln!(out, "#[sats(name = {})]", rust_string_literal(&scoped_name));
-    }
     if matches!(def, AlgebraicTypeDef::PlainEnum(_)) {
         print_plain_enum_extra_derives(out);
     }
@@ -1365,7 +1357,11 @@ fn generate_module_binding_type_file(module: &ModuleDef, typ: &TypeDef, dependen
     }
 }
 
-fn generate_module_bindings_root_file(module: &ModuleDef, type_refs: &BTreeSet<AlgebraicTypeRef>) -> OutputFile {
+fn generate_module_bindings_root_file(
+    module: &ModuleDef,
+    type_refs: &BTreeSet<AlgebraicTypeRef>,
+    dependency_name: Option<&str>,
+) -> OutputFile {
     let mut output = CodeIndenter::new(String::new(), INDENT);
     let out = &mut output;
 
@@ -1380,6 +1376,19 @@ fn generate_module_bindings_root_file(module: &ModuleDef, type_refs: &BTreeSet<A
     out.newline();
     print_type_reexports(iter_module_binding_types(module, type_refs), out);
     out.newline();
+    if let Some(dependency_name) = dependency_name {
+        // The types above are declared as the receiver declares them; the
+        // dependency name scopes them in the sender, keeping dependencies apart.
+        let type_names = iter_module_binding_types(module, type_refs)
+            .map(|ty| format!(", {}", collect_case(Case::Pascal, ty.accessor_name.name_segments())))
+            .collect::<String>();
+        writeln!(
+            out,
+            "spacetimedb::remote_types!({}{type_names});",
+            rust_string_literal(dependency_name)
+        );
+        out.newline();
+    }
     print_module_binding_identity(out);
     out.newline();
     let mut used_type_names = iter_module_binding_types(module, type_refs)

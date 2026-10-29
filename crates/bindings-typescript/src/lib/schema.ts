@@ -33,6 +33,7 @@ import {
   type VariantsObj,
 } from './type_builders';
 import type { Values } from './type_util';
+import { remoteTypeScope } from './remote_module';
 
 export type TableNamesOf<S extends UntypedSchemaDef> = Values<
   S['tables']
@@ -419,8 +420,11 @@ export class ModuleContext {
       }
     }
 
+    // A receiver type registers under its dependency's name, which keeps it apart
+    // from the sender's types and from other dependencies' types.
+    const scope = remoteTypeScope(typeBuilder);
     this.#moduleDef.types.push({
-      sourceName: splitName(name),
+      sourceName: splitName(scope === undefined ? name : `${scope}.${name}`),
       ty: r.ref,
       customOrdering: true,
     });

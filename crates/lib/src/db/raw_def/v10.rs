@@ -1428,6 +1428,11 @@ impl RawModuleDefV10Builder {
     pub fn finish(self) -> RawModuleDefV10 {
         self.module
     }
+
+    /// The typespace slot of the Rust type `typeid`, if it has been added.
+    pub fn type_ref(&self, typeid: TypeId) -> Option<AlgebraicTypeRef> {
+        self.type_map.get(&typeid).copied()
+    }
 }
 
 /// Implement TypespaceBuilder for V10

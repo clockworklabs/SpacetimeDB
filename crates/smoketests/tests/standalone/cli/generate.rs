@@ -202,13 +202,14 @@ fn cli_generate_two_scoped_receiver_types_compile_in_sender() {
         String::from_utf8_lossy(&output.stderr)
     );
     for dependency in ["game_world", "auth"] {
-        let path = temp_dir
-            .path()
-            .join("sender/src/remote_bindings")
-            .join(dependency)
-            .join("ping_details_type.rs");
-        let source = std::fs::read_to_string(path).expect("generated receiver type is missing");
-        assert!(source.contains(&format!("#[sats(name = \"{dependency}.PingDetails\")]")));
+        let bindings = temp_dir.path().join("sender/src/remote_bindings").join(dependency);
+        let source =
+            std::fs::read_to_string(bindings.join("ping_details_type.rs")).expect("generated receiver type is missing");
+        // Types are declared as the receiver declares them; the dependency name scopes them once.
+        assert!(!source.contains("#[sats("), "{source}");
+        let root = std::fs::read_to_string(bindings.join("mod.rs")).expect("generated bindings root is missing");
+        let scope = root.split("spacetimedb::remote_types!(").nth(1).unwrap_or_default();
+        assert!(scope.trim_start().starts_with(&format!("\"{dependency}\"")), "{root}");
     }
     let sender_dir = temp_dir.path().join("sender");
     let output = cli_cmd()

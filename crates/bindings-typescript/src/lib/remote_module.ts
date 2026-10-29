@@ -1,11 +1,17 @@
 import type { OutboxMetadata } from './table_schema';
 import { table } from './table';
 import {
+  ArrayBuilder,
   IdentityBuilder,
+  OptionBuilder,
+  ProductBuilder,
+  ResultBuilder,
+  SumBuilder,
   t,
   type ElementsObj,
   type RowBuilder,
   type RowObj,
+  type TypeBuilder,
 } from './type_builders';
 import { deepEqual } from './util';
 import type { Identity } from './identity';
@@ -18,6 +24,43 @@ export type ReceiverIdentity<Module extends symbol> = Identity & {
 // These brands belong to binding instances, not to the serialized Identity type.
 const receiverModules = new WeakMap<RemoteReducer, symbol>();
 const identityModules = new WeakMap<object, symbol>();
+
+// Receiver bindings declare types as the receiver does, so two dependencies can
+// both define a `Details`. The sender registers each under its dependency's name.
+const typeScopes = new WeakMap<TypeBuilder<any, any>, string>();
+
+/** The dependency whose name scopes this receiver type in the sender, if any. */
+export function remoteTypeScope(
+  type: TypeBuilder<any, any>
+): string | undefined {
+  return typeScopes.get(type);
+}
+
+function scopeTypes(type: TypeBuilder<any, any>, dependencyName: string) {
+  if (type instanceof ProductBuilder || type instanceof SumBuilder) {
+    const scope = typeScopes.get(type);
+    if (scope === dependencyName) return;
+    if (scope !== undefined) {
+      throw new TypeError(
+        `Type '${type.typeName}' belongs to dependencies '${scope}' and '${dependencyName}'`
+      );
+    }
+    typeScopes.set(type, dependencyName);
+    const members = Object.values<TypeBuilder<any, any>>(
+      type instanceof ProductBuilder ? type.elements : type.variants
+    );
+    for (const member of members) {
+      scopeTypes(member, dependencyName);
+    }
+  } else if (type instanceof OptionBuilder) {
+    scopeTypes(type.value, dependencyName);
+  } else if (type instanceof ResultBuilder) {
+    scopeTypes(type.ok, dependencyName);
+    scopeTypes(type.err, dependencyName);
+  } else if (type instanceof ArrayBuilder) {
+    scopeTypes(type.element, dependencyName);
+  }
+}
 
 /** A receiver reducer's canonical name, argument schema, and signature. */
 export interface RemoteReducer<Params extends ElementsObj = ElementsObj> {
@@ -49,11 +92,21 @@ function outboxTable<Params extends ElementsObj, Module extends symbol>(
   return table({ name: opts.name, outbox: { receiver } }, row);
 }
 
-/** Used by generated receiver bindings with a unique symbol declared in that module. */
+/**
+ * Used by generated receiver bindings with a unique symbol declared in that module.
+ * `dependencyName` scopes the receiver's types in the sender; standalone bindings omit it.
+ */
 export function remoteModule<
   const Reducers extends Record<string, RemoteReducer>,
   const Module extends symbol,
->(reducers: Reducers, module: Module) {
+>(reducers: Reducers, module: Module, dependencyName?: string) {
+  if (dependencyName !== undefined) {
+    for (const reducer of Object.values(reducers)) {
+      for (const param of Object.values(reducer.params)) {
+        scopeTypes(param, dependencyName);
+      }
+    }
+  }
   const identity = (): IdentityBuilder<ReceiverIdentity<Module>> => {
     const builder = new IdentityBuilder<ReceiverIdentity<Module>>();
     identityModules.set(builder, module);

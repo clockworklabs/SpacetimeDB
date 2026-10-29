@@ -39,7 +39,8 @@ pub enum ReceiverLanguage<'a> {
 }
 
 /// Generate receiver binding files without reading or writing the filesystem.
-/// `dependency_name` scopes generated type names across receiver dependencies.
+/// Types are declared as the receiver declares them. `dependency_name` is passed to
+/// the sender's runtime, which scopes those types so two dependencies can share a name.
 /// Use `None` for standalone bindings.
 pub fn generate_receiver_bindings(
     module: &ModuleDef,

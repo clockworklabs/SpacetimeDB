@@ -158,9 +158,20 @@ fn rust_receiver_types_are_scoped_by_dependency_name() {
     };
     let game_world = generate("game_world");
     let auth = generate("auth");
+    // Types are declared as the receiver declares them, whatever the dependency is called.
     let type_file = "test_a_type.rs";
-    assert!(game_world[type_file].contains("#[sats(name = \"game_world.TestA\")]"));
-    assert!(auth[type_file].contains("#[sats(name = \"auth.TestA\")]"));
+    assert_eq!(game_world[type_file], auth[type_file]);
+    assert!(!game_world[type_file].contains("#[sats("));
+    // The dependency name scopes them once, in the bindings root.
+    assert!(game_world["lib.rs"].contains("spacetimedb::remote_types!(\"game_world\", "));
+    assert!(auth["lib.rs"].contains("spacetimedb::remote_types!(\"auth\", "));
+    let line = game_world["lib.rs"]
+        .lines()
+        .find(|line| line.contains("remote_types!"))
+        .unwrap();
+    assert!(line.contains(", TestA"), "{line}");
+    let standalone = generate_receiver_bindings(module, ReceiverLanguage::Rust, None).unwrap();
+    assert!(standalone.iter().all(|file| !file.code.contains("remote_types!")));
 }
 
 #[test]
@@ -727,6 +738,8 @@ fn test_codegen_typescript_receiver_bindings() {
     for dependency in ["game_world", "auth"] {
         let scoped = generate_receiver_bindings(&module, ReceiverLanguage::TypeScript, Some(dependency)).unwrap();
         let code = &scoped[0].code;
+        // Types are declared as the receiver declares them; only the remoteModule
+        // call names the dependency, which scopes them in the sender.
         for (name, constructor) in [
             ("Details", "object"),
             ("Entry", "object"),
@@ -734,8 +747,10 @@ fn test_codegen_typescript_receiver_bindings() {
             ("Operation", "enum"),
             ("Status", "enum"),
         ] {
-            assert!(code.contains(&format!("__t.{constructor}(\"{dependency}.{name}\"")));
-            assert!(!code.contains(&format!("__t.{constructor}(\"{name}\"")));
+            assert!(code.contains(&format!("__t.{constructor}(\"{name}\"")));
+            assert!(!code.contains(&format!("\"{dependency}.{name}\"")));
         }
+        let call = format!(", __receiverModule, \"{dependency}\");");
+        assert_eq!(&code.replace(&call, ", __receiverModule);"), root);
     }
 }

@@ -42,6 +42,39 @@ pub struct TestUtilsOutbox {
 #[reducer(on_result(test_utils_outbox))]
 pub fn on_test_utils_outbox_result(_ctx: &ReducerContext, _row: TestUtilsOutbox, _result: Result<(), String>) {}
 
+// Receiver bindings declare types as each receiver does, so two dependencies can
+// both define `Details`. The dependency name keeps them apart in this module.
+mod game_world {
+    #[derive(spacetimedb::SpacetimeType)]
+    pub struct Details {
+        pub note: String,
+    }
+
+    #[derive(spacetimedb::SpacetimeType)]
+    pub struct Unused {
+        pub value: u8,
+    }
+
+    spacetimedb::remote_types!("game_world", Details, Unused);
+}
+
+mod auth {
+    #[derive(spacetimedb::SpacetimeType)]
+    pub struct Details {
+        pub level: u8,
+    }
+
+    spacetimedb::remote_types!("auth", Details);
+}
+
+#[table(accessor = test_utils_remote_types)]
+pub struct TestUtilsRemoteTypes {
+    #[primary_key]
+    id: u64,
+    world: game_world::Details,
+    auth: auth::Details,
+}
+
 fn query_test_utils_users_by_name(from: spacetimedb::QueryBuilder, name: &str) -> impl Query<TestUtilsUser> {
     from.test_utils_user()
         .r#where(|user| user.name.eq(name.to_owned()))
@@ -103,6 +136,28 @@ fn module_def_includes_native_test_registrations() {
         .unwrap()
     );
     assert_eq!(outbox.on_result_reducer.as_deref(), Some("on_test_utils_outbox_result"));
+}
+
+#[test]
+fn module_def_scopes_remote_types_by_dependency() {
+    let RawModuleDef::V10(module) = spacetimedb::test_utils::module_def() else {
+        panic!("test utils should return a v10 raw module def");
+    };
+    let names = module
+        .types()
+        .expect("types section should be present")
+        .iter()
+        .map(|ty| {
+            let name = &ty.source_name;
+            let scope = name.scope.iter().map(|segment| segment.as_ref());
+            scope.chain([name.source_name.as_ref()]).collect::<Vec<_>>().join(".")
+        })
+        .collect::<Vec<_>>();
+    assert!(names.iter().any(|name| name == "game_world.Details"), "{names:?}");
+    assert!(names.iter().any(|name| name == "auth.Details"), "{names:?}");
+    assert!(!names.iter().any(|name| name == "Details"), "{names:?}");
+    // Receiver types the module never uses are not added to it.
+    assert!(!names.iter().any(|name| name.ends_with("Unused")), "{names:?}");
 }
 
 #[test]

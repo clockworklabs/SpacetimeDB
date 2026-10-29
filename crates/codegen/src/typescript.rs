@@ -99,13 +99,9 @@ pub(super) fn generate_module_bindings(module: &ModuleDef, dependency_name: Opti
     out.newline();
     for typ in iter_types(module).filter(|typ| refs.contains(&typ.ty)) {
         let name = type_ref_name(module, typ.ty);
-        let sats_name = dependency_name.map_or_else(
-            || name.clone(),
-            |dependency| format!("{dependency}.{}", typ.accessor_name),
-        );
         match &module.typespace_for_generate()[typ.ty] {
-            AlgebraicTypeDef::Product(p) => define_body_for_product(module, out, &name, &sats_name, &p.elements),
-            AlgebraicTypeDef::Sum(s) => define_body_for_sum(module, out, &name, &sats_name, &s.variants),
+            AlgebraicTypeDef::Product(p) => define_body_for_product(module, out, &name, &p.elements),
+            AlgebraicTypeDef::Sum(s) => define_body_for_sum(module, out, &name, &s.variants),
             AlgebraicTypeDef::PlainEnum(e) => {
                 let variants = e
                     .variants
@@ -113,7 +109,7 @@ pub(super) fn generate_module_bindings(module: &ModuleDef, dependency_name: Opti
                     .cloned()
                     .map(|v| (v, AlgebraicTypeUse::Unit))
                     .collect::<Vec<_>>();
-                define_body_for_sum(module, out, &name, &sats_name, &variants);
+                define_body_for_sum(module, out, &name, &variants);
             }
         }
     }
@@ -147,7 +143,11 @@ pub(super) fn generate_module_bindings(module: &ModuleDef, dependency_name: Opti
         writeln!(out, "}},");
     }
     out.dedent(1);
-    writeln!(out, "}}, __receiverModule);");
+    // The receiver's types keep their own names; the dependency name scopes them in the sender.
+    match dependency_name {
+        Some(dependency_name) => writeln!(out, "}}, __receiverModule, {});", ts_string_literal(dependency_name)),
+        None => writeln!(out, "}}, __receiverModule);"),
+    }
     vec![OutputFile {
         filename: "index.ts".into(),
         code: output.into_inner(),
@@ -1064,10 +1064,8 @@ fn generate_types_file_with_path(module: &ModuleDef, filename: String) -> Output
         }
 
         match &module.typespace_for_generate()[ty.ty] {
-            AlgebraicTypeDef::Product(product) => {
-                define_body_for_product(module, out, &type_name, &type_name, &product.elements)
-            }
-            AlgebraicTypeDef::Sum(sum) => define_body_for_sum(module, out, &type_name, &type_name, &sum.variants),
+            AlgebraicTypeDef::Product(product) => define_body_for_product(module, out, &type_name, &product.elements),
+            AlgebraicTypeDef::Sum(sum) => define_body_for_sum(module, out, &type_name, &sum.variants),
             AlgebraicTypeDef::PlainEnum(plain_enum) => {
                 let variants = plain_enum
                     .variants
@@ -1075,7 +1073,7 @@ fn generate_types_file_with_path(module: &ModuleDef, filename: String) -> Output
                     .cloned()
                     .map(|var| (var, AlgebraicTypeUse::Unit))
                     .collect::<Vec<_>>();
-                define_body_for_sum(module, out, &type_name, &type_name, &variants)
+                define_body_for_sum(module, out, &type_name, &variants)
             }
         }
     }
@@ -1210,14 +1208,9 @@ fn define_body_for_product(
     module: &ModuleDef,
     out: &mut Indenter,
     name: &str,
-    sats_name: &str,
     elements: &[(Identifier, AlgebraicTypeUse)],
 ) {
-    write!(
-        out,
-        "export const {name} = __t.object({}, {{",
-        ts_string_literal(sats_name)
-    );
+    write!(out, "export const {name} = __t.object(\"{name}\", {{");
     if elements.is_empty() {
         writeln!(out, "}});");
     } else {
@@ -1456,7 +1449,6 @@ fn define_body_for_sum(
     module: &ModuleDef,
     out: &mut Indenter,
     name: &str,
-    sats_name: &str,
     variants: &[(Identifier, AlgebraicTypeUse)],
 ) {
     writeln!(out, "// The tagged union or sum type for the algebraic type `{name}`.");
@@ -1464,7 +1456,7 @@ fn define_body_for_sum(
     if name == "AlgebraicType" {
         write!(out, ": __TypeBuilder<__AlgebraicTypeType, __AlgebraicTypeType>");
     }
-    writeln!(out, " = __t.enum({}, {{", ts_string_literal(sats_name));
+    writeln!(out, " = __t.enum(\"{name}\", {{");
     // Convert variant names to PascalCase
     let pascal_variants: Vec<(Identifier, AlgebraicTypeUse)> = variants
         .iter()
