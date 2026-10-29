@@ -11810,6 +11810,7 @@ dependencies = [
  "serde",
  "serde_json",
  "spacetimedb",
+ "spacetimedb-client-api-messages",
  "spacetimedb-data-structures",
  "spacetimedb-guard",
  "spacetimedb-lib",

@@ -135,7 +135,7 @@ jobs:
           dotnet pack -c Release crates/bindings-csharp/Runtime
 
       - name: Set up Node.js
-        if: matrix.lang == 'typescript'
+        if: matrix.lang == 'typescript' || matrix.lang == 'csharp'
         uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -153,6 +153,17 @@ jobs:
 
       - name: Build llm-benchmark tool
         run: cargo install --path tools/xtask-llm-benchmark --locked
+
+      - name: Prepare isolated SDK client checks
+        if: matrix.lang == 'typescript' || matrix.lang == 'csharp'
+        env:
+          BENCH_LANGUAGE: ${{ matrix.lang }}
+        run: |
+          docker pull node:22-bookworm-slim
+          if [ "$BENCH_LANGUAGE" = csharp ]; then
+            docker pull mcr.microsoft.com/dotnet/runtime:10.0
+          fi
+          node --test tools/xtask-llm-benchmark/src/eval/client_transport.test.mjs
 
       - name: Build SpacetimeDB server for benchmark harness
         run: |

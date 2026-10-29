@@ -13,6 +13,7 @@ spacetimedb.workspace = true
 spacetimedb-guard.workspace = true
 spacetimedb-data-structures.workspace = true
 spacetimedb-lib = { workspace = true, features = ["serde"] }
+spacetimedb-client-api-messages.workspace = true
 
 anyhow.workspace = true
 serde.workspace = true

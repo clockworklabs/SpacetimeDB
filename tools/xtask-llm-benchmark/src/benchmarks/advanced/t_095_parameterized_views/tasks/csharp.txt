@@ -1,0 +1,7 @@
+Write a SpacetimeDB csharp backend for private notes grouped by tag.
+
+Store notes in the private table private_note (Id: ulong, Owner: Identity, Tag: string, Text: string). The id is the primary key. Index owner for per-user reads.
+
+Expose reducers put_note(id, tag, text) and remove_note(id). The caller owns a new note. Only its owner may replace or remove it; otherwise fail with "owner only". Removing a missing note is harmless.
+
+Expose a public, per-user view notes_for_tag(tag: string). It accepts a tag argument and returns only the caller's notes with that exact tag, projected to id and text in that order. The view has no primary key. Users may subscribe to several argument values. Moving a note to another tag, editing it, or deleting it must update the matching subscriptions. Never expose another user's notes or the private source table.

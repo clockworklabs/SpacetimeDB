@@ -1,0 +1,9 @@
+import { schema, table, t } from 'spacetimedb/server';
+const counter = table({ public: true }, { id: t.u32().primaryKey(), value: t.i32() });
+const db = schema({ counter });
+export default db;
+export const init = db.init(ctx => { ctx.db.counter.insert({ id: 0, value: 0 }); });
+export const add = db.reducer({ delta: t.i32() }, (ctx, { delta }) => {
+  const row = ctx.db.counter.id.find(0)!;
+  ctx.db.counter.id.update({ ...row, value: row.value + delta });
+});

@@ -13,6 +13,17 @@ pub fn materialize_project(
     route_tag: &str,
     llm_code: &str,
 ) -> Result<PathBuf> {
+    let task_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("src/benchmarks")
+        .join(category)
+        .join(task);
+    // Client evals supply a fixed server; model output is compiled by the client scorer.
+    let fixed_server = task_root.join("server").join(format!("{lang}.txt"));
+    let server_source = fixed_server
+        .is_file()
+        .then(|| fs::read_to_string(&fixed_server))
+        .transpose()?;
+    let llm_code = server_source.as_deref().unwrap_or(llm_code);
     let out = work_server_dir_scoped(category, task, lang, phase, route_tag);
     let src = tmpl_root().join(match lang {
         "rust" => "rust/server",
@@ -26,6 +37,15 @@ pub fn materialize_project(
     }
     fs::create_dir_all(&out)?;
     copy_tree_with_templates(&src, &out)?;
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("src/benchmarks")
+        .join(category)
+        .join(task)
+        .join("fixtures")
+        .join(lang);
+    if fixtures.is_dir() {
+        copy_tree_with_templates(&fixtures, &out)?;
+    }
 
     match lang {
         "rust" => inject_rust(&out, llm_code)?,
@@ -34,6 +54,37 @@ pub fn materialize_project(
         _ => {}
     }
 
+    Ok(out)
+}
+
+pub(crate) fn materialize_client(lang: &str, category: &str, task: &str, route: &str, code: &str) -> Result<PathBuf> {
+    let out = work_server_dir_scoped(category, task, lang, "client", route);
+    if out.exists() {
+        fs::remove_dir_all(&out)?;
+    }
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("src/benchmarks")
+        .join(category)
+        .join(task)
+        .join("client")
+        .join(lang);
+    copy_tree_with_templates(&source, &out)?;
+    match lang {
+        "typescript" => {
+            fs::write(out.join("candidate.ts"), normalize_source(code))?;
+        }
+        "csharp" => {
+            fs::write(out.join("Candidate.cs"), normalize_source(code))?;
+            let project = out.join("client.csproj");
+            let text = fs::read_to_string(&project)?.replace(
+                "{CLIENT_SDK_PATH}",
+                &relative_to_workspace(&out, "sdks/csharp/SpacetimeDB.ClientSDK.csproj")?,
+            );
+            fs::write(project, text)?;
+            write_csharp_nuget_config(&out)?;
+        }
+        _ => bail!("client eval is not supported for {lang}"),
+    }
     Ok(out)
 }
 
@@ -82,7 +133,7 @@ fn copy_tree_with_templates(src: &Path, dst: &Path) -> Result<()> {
             } else if out_path.extension().and_then(|e| e.to_str()) == Some("tmpl") {
                 let rendered_path = out_path.with_extension("");
                 let s = fs::read_to_string(&p).with_context(|| format!("read {}", p.display()))?;
-                let s = replace_placeholders(&s);
+                let s = replace_placeholders(&s)?;
                 if let Some(dir) = rendered_path.parent() {
                     fs::create_dir_all(dir)?;
                 }
@@ -104,9 +155,15 @@ fn copy_tree_with_templates(src: &Path, dst: &Path) -> Result<()> {
     recurse(src, dst)
 }
 
-fn replace_placeholders(s: &str) -> String {
+fn replace_placeholders(s: &str) -> Result<String> {
     let sdk = env::var("SPACETIME_SDK_VERSION").unwrap_or_else(|_| "1.5.0".into());
-    s.replace("{SPACETIME_SDK_VERSION}", &sdk)
+    let mut rendered = s.replace("{SPACETIME_SDK_VERSION}", &sdk);
+    if rendered.contains("{SPACETIME_CSHARP_RUNTIME_VERSION}") {
+        let version =
+            read_csharp_package_version(&workspace_root().join("crates/bindings-csharp/Runtime/Runtime.csproj"))?;
+        rendered = rendered.replace("{SPACETIME_CSHARP_RUNTIME_VERSION}", &version);
+    }
+    Ok(rendered)
 }
 
 fn inject_rust(root: &Path, llm_code: &str) -> anyhow::Result<()> {
@@ -337,6 +394,23 @@ fn ensure_parent(p: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nested_fixture_templates_use_the_local_runtime_version() {
+        let root = std::env::temp_dir().join(format!("llm-fixtures-{}", std::process::id()));
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("src/benchmarks/advanced/t_098_nested_submodules/fixtures/csharp");
+        copy_tree_with_templates(&fixture, &root).unwrap();
+        let props = fs::read_to_string(root.join("Directory.Build.props")).unwrap();
+        let version =
+            read_csharp_package_version(&workspace_root().join("crates/bindings-csharp/Runtime/Runtime.csproj"))
+                .unwrap();
+        assert!(props.contains(&format!("Version=\"{version}\"")));
+        assert!(!props.contains("{SPACETIME_CSHARP_RUNTIME_VERSION}"));
+        assert!(root.join("libraries/Branch/Lib.cs").is_file());
+        assert!(root.join("libraries/Inventory/Lib.cs").is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn csharp_package_source_requires_the_requested_version() {

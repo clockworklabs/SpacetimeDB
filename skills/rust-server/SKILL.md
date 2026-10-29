@@ -183,6 +183,14 @@ fn catalog_entry(ctx: &AnonymousViewContext) -> Vec<CatalogEntry> { ... }
 
 Procedural-view primary keys are explicit schema metadata. Add one only when the view itself is required to expose a primary key; a source table's primary key is not inherited by the view.
 
+Parameterized views accept arguments after the context, for example `fn notes_for_tag(ctx: &ViewContext, tag: String) -> Vec<Note>`. Read through an index, such as `ctx.db.note().owner().filter(ctx.sender())`, then filter or project the result. Subscribe with explicit SQL: `SELECT * FROM notes_for_tag('red')`. Arguments are positional literals. These views cannot have a primary key, and view calls cannot be combined with SQL filters or joins. Subscribe-all skips them. Identity and arguments determine each evaluation.
+
+### Inter-database calls
+
+Generate receiver bindings with `spacetime generate --bindings module --lang rust`; generation covers root receiver reducers. Declare an outbox with `#[table(accessor = outgoing, outbox(receiver::receive))]`. It needs an auto-increment `u64` primary key, one `#[target]` field of `receiver::Identity`, and fields matching receiver arguments by name and type. Use `#[param(name = remote_name)]` to map a different field name.
+
+Inserting an outbox row schedules delivery only if the sender transaction commits. Register a callback with `#[reducer(on_result(self::outgoing))] fn on_delivery(ctx: &ReducerContext, row: Outgoing, result: Result<(), String>)`. Successful callback writes and host outbox cleanup commit together; do not manually delete outbox rows. Receiver-typed identities do not establish trust. Check authorized targets and callers when the application requires it.
+
 Query-builder views use `ViewContext`, `ctx.from`, and return `impl Query<Row>`. Use `filter` for predicates and `right_semijoin` when the result should contain right-side rows that have a matching left-side row:
 
 ```rust

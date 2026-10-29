@@ -70,7 +70,7 @@ Task ({task_id}):\n{instructions}\n\n\
 HARD CONSTRAINTS:\n\
 - Use valid SpacetimeDB {version} syntax for {lang}.\n\
 - Output RAW SOURCE ONLY (no markdown/fences/backticks/quotes).\n\
-- Single file. No extra modules, tests, mains, or commentary.\n\
+- Single file. Imports of supplied fixtures are allowed. No extra files, tests, mains, or commentary.\n\
 - Use EXACT identifiers from the TASK; do not rename or re-case anything.\n\
 <<<TASK END>>>",
             task_id = self.task_id,

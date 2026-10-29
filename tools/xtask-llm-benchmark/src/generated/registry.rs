@@ -76,6 +76,42 @@ mod advanced_t_094_multi_session_presence {
 
 #[allow(dead_code)]
 #[allow(clippy::all)]
+mod advanced_t_095_parameterized_views {
+    include!("../benchmarks/advanced/t_095_parameterized_views/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_096_timed_rate_limit {
+    include!("../benchmarks/advanced/t_096_timed_rate_limit/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_097_seat_waitlist {
+    include!("../benchmarks/advanced/t_097_seat_waitlist/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_098_nested_submodules {
+    include!("../benchmarks/advanced/t_098_nested_submodules/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_099_inter_database {
+    include!("../benchmarks/advanced/t_099_inter_database/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_100_client_recovery {
+    include!("../benchmarks/advanced/t_100_client_recovery/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
 mod auth_t_026_auth_identity_check {
     include!("../benchmarks/auth/t_026_auth_identity_check/spec.rs");
 }
@@ -595,6 +631,12 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         ("advanced", "t_092_procedure_cache") => advanced_t_092_procedure_cache::spec,
         ("advanced", "t_093_permission_revocation") => advanced_t_093_permission_revocation::spec,
         ("advanced", "t_094_multi_session_presence") => advanced_t_094_multi_session_presence::spec,
+        ("advanced", "t_095_parameterized_views") => advanced_t_095_parameterized_views::spec,
+        ("advanced", "t_096_timed_rate_limit") => advanced_t_096_timed_rate_limit::spec,
+        ("advanced", "t_097_seat_waitlist") => advanced_t_097_seat_waitlist::spec,
+        ("advanced", "t_098_nested_submodules") => advanced_t_098_nested_submodules::spec,
+        ("advanced", "t_099_inter_database") => advanced_t_099_inter_database::spec,
+        ("advanced", "t_100_client_recovery") => advanced_t_100_client_recovery::spec,
         ("auth", "t_026_auth_identity_check") => auth_t_026_auth_identity_check::spec,
         ("auth", "t_027_private_vs_public_table") => auth_t_027_private_vs_public_table::spec,
         ("auth", "t_041_registered_user_gate") => auth_t_041_registered_user_gate::spec,

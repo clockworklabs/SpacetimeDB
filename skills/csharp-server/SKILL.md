@@ -198,6 +198,14 @@ Declare a procedural view primary key in its attribute: `[SpacetimeDB.View(Acces
 
 Procedural-view primary keys are explicit schema metadata. Add one only when the view itself is required to expose a primary key; a source table's primary key is not inherited by the view.
 
+Parameterized views accept arguments after the context, for example `public static List<Note> NotesForTag(ViewContext ctx, string tag)`. Read through an index such as `ctx.Db.Note.Owner.Filter(ctx.Sender)`, then filter or project the result. Use explicit SQL: `SELECT * FROM notes_for_tag('red')`. Arguments are positional literals. These views cannot have a primary key, and view calls cannot be combined with SQL filters or joins. Subscribe-all skips them. Identity and arguments determine each evaluation.
+
+## Nested submodules (.NET 10)
+
+Use `[assembly: Namespace(typeof(Library.Marker), Accessor = "East")]` to mount a referenced assembly. Mount it again with another accessor for independent table instances. With a nested `Stock` mount, select a typed context with `ReducerContext stock = ctx.As.East.Stock;` and pass that context to the library's helpers. Query-builder paths use `ctx.From.East.Stock.Item()`.
+
+Library helpers execute inside the caller's transaction. A thrown error rolls back all its writes, including writes in other mounted instances. Do not assume nested helper calls create savepoints or form an authorization boundary. Use .NET 10 and C# 14 for composable libraries. Exclude library source directories from the root project's compile glob when they have their own project references. C# inter-database module bindings are not yet supported.
+
 Inclusive btree ranges use tuples, for example `ctx.Db.Shipment.DeliverBy.Filter((new Timestamp(1_000), new Timestamp(2_000)))`.
 
 ## Client Visibility Filters

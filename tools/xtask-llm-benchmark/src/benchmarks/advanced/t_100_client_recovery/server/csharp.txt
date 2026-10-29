@@ -1,0 +1,13 @@
+using SpacetimeDB;
+public static partial class Module {
+    [Table(Accessor = "Counter", Public = true)]
+    public partial struct Counter { [PrimaryKey] public uint Id; public int Value; }
+    [Reducer(ReducerKind.Init)]
+    public static void Init(ReducerContext ctx) => ctx.Db.Counter.Insert(new Counter { Id = 0, Value = 0 });
+    [Reducer]
+    public static void Add(ReducerContext ctx, int delta) {
+        var row = ctx.Db.Counter.Id.Find(0)!.Value;
+        row.Value += delta;
+        ctx.Db.Counter.Id.Update(row);
+    }
+}

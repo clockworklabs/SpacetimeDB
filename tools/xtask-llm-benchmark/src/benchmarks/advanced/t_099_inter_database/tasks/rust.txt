@@ -1,0 +1,16 @@
+The bindings are at src/receiver/lib.rs. Declare #[path = "receiver/lib.rs"] mod receiver; use receiver::Identity and receiver::receive.
+Implement a module that can send and receive inter-database messages using SpacetimeDB outboxes, not HTTP.
+The supplied receiver bindings describe the root reducer receive(body: string, reject: bool).
+Write only the main module source file. Do not edit the bindings.
+
+Public tables:
+- receipt: id (u64 primary key, auto increment), body (string), sender (Identity).
+- outgoing: id (u64 primary key, auto increment), target (receiver Identity, target column), body (string), reject (bool). This is an outbox targeting receive.
+- delivery_result: id (u64 primary key), body (string), succeeded (bool).
+
+Reducers:
+- receive(body, reject): insert a receipt with the actual calling identity. When reject is true, fail with "receiver rejected" and leave no receipt.
+- send_message(target, body, reject, abort): enqueue one outgoing row. When abort is true, fail with "sender rejected". The entire send must roll back: no remote call, result, or outbox row.
+- on_delivery: an outbox result callback. Insert exactly one delivery_result using the delivered row's id and body. succeeded is true only for a successful receiver result. Let the host remove the outbox row.
+
+Successful remote calls must commit once. Receiver failure must produce a failed callback result, not a receipt. The sending database must remain usable after either failure. Do not catch an error and commit partial state.

@@ -285,14 +285,14 @@ A client subscribing to a view receives only the rows it returns. Use a per-user
 
 `t.row(...)` and `t.object(...)` return schema builders, not TypeScript runtime row types. Let a view callback infer its result, or annotate a separately declared structural type such as `Array<{ sku: bigint; label: string }>`. A named output type must not reuse the generated PascalCase name of its view accessor (for example, reserve `DiscountedProduct` for a `discounted_product` view).
 
-Both `spacetimedb.view(...)` and `spacetimedb.anonymousView(...)` take three arguments: view options, the declared return schema, and the callback.
+Without parameters, `spacetimedb.view(...)` and `spacetimedb.anonymousView(...)` take three arguments: view options, the declared return schema, and the callback. Parameterized views add a parameter schema before the return schema.
 
 ```typescript
 // Anonymous view (same for all clients):
 export const activeUsers = spacetimedb.anonymousView(
   { name: 'active_users', public: true },
   t.array(entity.rowType),
-  (ctx) => [...ctx.db.entity.iter()].filter(e => e.active)
+  (ctx) => [...ctx.db.entity.active.filter(true)] // requires an index on active
 );
 
 // Per-user view (varies by ctx.sender):
@@ -325,6 +325,25 @@ ctx => ctx.from.subscription.rightSemijoin(
 The method name identifies which side is returned: `A.leftSemijoin(B, ...)` returns rows from `A`, while `A.rightSemijoin(B, ...)` returns rows from `B`. To return one table's rows when another table has a match, put the returned table on the corresponding side. Semijoins do not project combined columns from both tables.
 
 Procedural views read through `ctx.db` and return materialized values such as arrays. Query-builder values from `ctx.from` are returned directly; they are not iterators and cannot be spread, looped over, or mixed with array methods. Use a procedural view when the result is a custom row assembled from multiple tables.
+
+### Parameterized views
+
+```typescript
+export const notesForTag = spacetimedb.view(
+  { name: 'notes_for_tag', public: true },
+  { tag: t.string() },
+  t.array(note.rowType),
+  (ctx, { tag }) => [...ctx.db.note.owner.filter(ctx.sender)].filter(row => row.tag === tag)
+);
+```
+
+Use explicit SQL such as `SELECT * FROM notes_for_tag('red')`. Arguments are positional literals. Parameterized views cannot have a primary key, and calls cannot be combined with SQL filters or joins. Subscribe-all does not include them. Each identity and argument tuple has its own view evaluation; the client cache merges rows from all active subscriptions.
+
+### Inter-database calls
+
+Generate receiver bindings with `spacetime generate --bindings module --lang typescript`. Only root receiver reducers are supported. Import the generated module and declare an outbox with `table({ outbox: { receiver: remote.reducers.receive } }, columns)`. Include an auto-increment `u64` primary key, one `remote.identity().target()` column, and columns matching receiver parameters by name and type.
+
+Insert an outbox row inside a reducer. Its transaction must commit before delivery. Register the result callback with `db.reducer({ onResult: outbox }, { row: outbox.rowType, result: t.result(t.unit(), t.string()) }, callback)`. Test `'ok' in result` or `'err' in result`. Successful callback writes and host outbox cleanup commit together. Do not manually delete outbox rows. Receiver-typed identities are not an authorization check; validate trusted targets or callers when required.
 
 ## Client Visibility Filters
 

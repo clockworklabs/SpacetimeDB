@@ -69,7 +69,7 @@ pub async fn ensure_goldens_built_once(
     build_goldens_only_for_lang(host, bench_root, lang, selectors, golden_scope).await
 }
 
-fn with_build_cleanup<T>(project: &Path, lang: Lang, publish: impl FnOnce() -> Result<T>) -> Result<T> {
+pub(crate) fn with_build_cleanup<T>(project: &Path, lang: Lang, publish: impl FnOnce() -> Result<T>) -> Result<T> {
     let result = publish();
     // Only task-local outputs: never follow the shared Cargo target override or shared caches.
     let directories: &[&str] = match lang {
@@ -648,7 +648,7 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
     let total_wall = Instant::now();
 
     // 1) run per-task LLM builds + scoring
-    let tasks = discover_tasks(cfg.bench_root)?;
+    let tasks = discover_tasks(cfg.bench_root, cfg.lang)?;
     let runner = TaskRunner::new(
         PathBuf::from(cfg.bench_root),
         SpacetimeRustPublisher,
@@ -814,7 +814,7 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
         .map(|s| normalize_task_selector(s.as_str()))
         .collect::<Result<_>>()?;
 
-    let tasks = discover_tasks(cfg.bench_root)?;
+    let tasks = discover_tasks(cfg.bench_root, cfg.lang)?;
     let selected: Vec<TaskPaths> = tasks
         .into_iter()
         .filter(|t| {
@@ -1009,7 +1009,7 @@ pub async fn build_goldens_only_for_lang(
 ) -> Result<Vec<PublishedDatabase>> {
     let tasks = if let Some(sels) = selectors {
         let wanted: HashSet<String> = sels.iter().map(|s| normalize_task_selector(s)).collect::<Result<_>>()?;
-        let all = discover_tasks(bench_root)?;
+        let all = discover_tasks(bench_root, lang)?;
         let filtered: Vec<TaskPaths> = all
             .into_iter()
             .filter(|t| {
@@ -1026,9 +1026,15 @@ pub async fn build_goldens_only_for_lang(
         }
         filtered
     } else {
-        discover_tasks(bench_root)?
+        discover_tasks(bench_root, lang)?
     };
 
+    if tasks
+        .iter()
+        .any(|task| task.root.join("client").join(lang.as_str()).is_dir())
+    {
+        tokio::task::spawn_blocking(move || crate::eval::client::check_runtime(lang)).await??;
+    }
     let runner = TaskRunner::new(
         PathBuf::from(bench_root),
         SpacetimeRustPublisher,
@@ -1122,7 +1128,7 @@ pub async fn validate_goldens_for_lang(
 
     let tasks = if let Some(sels) = selectors {
         let wanted: HashSet<String> = sels.iter().map(|s| normalize_task_selector(s)).collect::<Result<_>>()?;
-        let filtered: Vec<TaskPaths> = discover_tasks(bench_root)?
+        let filtered: Vec<TaskPaths> = discover_tasks(bench_root, lang)?
             .into_iter()
             .filter(|task| {
                 let name = task.root.file_name().and_then(|name| name.to_str()).unwrap_or("");
@@ -1134,7 +1140,7 @@ pub async fn validate_goldens_for_lang(
         }
         filtered
     } else {
-        discover_tasks(bench_root)?
+        discover_tasks(bench_root, lang)?
     };
 
     let runner = TaskRunner::new(
@@ -1246,10 +1252,14 @@ pub async fn validate_goldens_for_lang(
     Ok(())
 }
 
-fn discover_tasks(benchmarks_root: &Path) -> Result<Vec<TaskPaths>> {
+fn discover_tasks(benchmarks_root: &Path, lang: Lang) -> Result<Vec<TaskPaths>> {
     let mut out = Vec::new();
     for cat in read_dirs(benchmarks_root)? {
         for task in read_dirs(&cat)? {
+            // A task is supported in exactly the languages for which it supplies a prompt.
+            if !task.join("tasks").join(format!("{}.txt", lang.as_str())).is_file() {
+                continue;
+            }
             out.push(TaskPaths {
                 root: task.clone(),
                 answers_rust: task.join("answers/rust/server"),
@@ -1389,6 +1399,24 @@ fn normalize_task_selector(raw: &str) -> Result<String> {
 #[cfg(test)]
 mod build_cleanup_tests {
     use super::*;
+
+    #[test]
+    fn discovery_includes_supported_tasks_by_default_and_requires_their_reference() {
+        let root = std::env::temp_dir().join(format!("llm-task-discovery-{}", std::process::id()));
+        let task = root.join("advanced/t_999_language_specific");
+        fs::create_dir_all(task.join("tasks")).unwrap();
+        fs::write(task.join("tasks/csharp.txt"), "Write the module.").unwrap();
+        assert!(discover_tasks(&root, Lang::Rust).unwrap().is_empty());
+        assert!(discover_tasks(&root, Lang::TypeScript).unwrap().is_empty());
+        let supported = discover_tasks(&root, Lang::CSharp).unwrap();
+        assert_eq!(supported.len(), 1);
+        assert_eq!(supported[0].root, task);
+        assert!(load_golden_source(&supported[0], Lang::CSharp).is_err());
+        fs::create_dir_all(task.join("answers")).unwrap();
+        fs::write(task.join("answers/csharp.cs"), "reference").unwrap();
+        assert_eq!(load_golden_source(&supported[0], Lang::CSharp).unwrap(), "reference");
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn provider_failures_reject_the_whole_batch_but_model_failures_remain_scores() {

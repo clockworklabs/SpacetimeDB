@@ -2,7 +2,7 @@ pub mod analysis;
 pub mod normalize;
 pub mod publishers;
 pub mod runner;
-mod templates;
+pub(crate) mod templates;
 pub mod types;
 pub(crate) mod utils;
 

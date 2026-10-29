@@ -1,0 +1,17 @@
+Export class ClientApp from this file. Import DbConnection from './module_bindings/index.js'. Import SDK types from 'spacetimedb'.
+Required interface:
+- constructor(uri: string, database: string): starts the connection and subscription.
+- readonly connection: DbConnection
+- ready: boolean; outcome: string; changes: number
+- value: number | null (getter for counter id 0)
+- add(delta: number): void (observe the SDK's asynchronous call result without an unhandled rejection)
+- stop(): void
+The test driver runs the Node event loop. No main function is needed.
+Write only a client adapter, not a backend module or a program entry point. A fixed server and generated client bindings are supplied.
+The server has the public counter table: id u32 primary key, value i32. Its initial row is (0, 0). The add(delta: i32) reducer increments value. This operation is NOT idempotent.
+
+Use one actual SpacetimeDB SDK connection. Subscribe to counter once. Enable automatic recovery after a connection loss. Keep the identity, subscriptions and cached rows across recovery. Data is ready only after the subscription applies, including after replay. Mark it not ready during an outage and after stop. Cached value must remain readable during an outage. Register row callbacks once, and count only on-update callbacks (not initial inserts).
+
+Expose the most recent call outcome as idle, pending, committed, failed, or unknown. Set pending before sending. If the connection is lost before the response arrives, report unknown: the server may already have committed. Never retry this non-idempotent call automatically. Reconnection must not overwrite unknown with committed. New explicit add calls must work after recovery. Stop permanently disconnects and clears readiness.
+
+Do not use HTTP, SQL requests outside the subscription, custom sockets, timers to fabricate results, or hard-coded counter values. Read value and identity from the real SDK cache and connection. The test controls transport loss and changes the database while the connection is down.

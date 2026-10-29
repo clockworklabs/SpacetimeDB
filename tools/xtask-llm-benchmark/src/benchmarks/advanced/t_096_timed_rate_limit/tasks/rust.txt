@@ -1,0 +1,9 @@
+Write a SpacetimeDB rust backend for per-identity search throttling.
+
+Expose log_search(request_id: string, term: string). Reject an empty term with "empty term".
+Each caller starts with three tokens. Each new accepted request consumes one token. Refill one token per complete five seconds of server time, up to three tokens. Preserve partial refill intervals, and start refill timing when the caller's bucket is first created. Calls must remain correct under concurrency. Do not trust a client timestamp or scan search history to compute the rate limit.
+
+An exact replay of a request_id for the same caller succeeds without inserting another row or spending a token. Reusing that caller's request_id with another term fails with "request conflict". Different callers may reuse request IDs. Reject a new request without a token with "rate limited"; rejected requests must not create search rows or consume tokens.
+
+Public table search_log: id (u64 auto-increment primary key), owner (Identity), request_id (string), term (string), in that order. Index owner and request_id together.
+Private table search_bucket: owner (Identity primary key), tokens (u32), refilled_at (Timestamp), in that order.

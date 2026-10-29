@@ -1,0 +1,12 @@
+Write a SpacetimeDB typescript backend for event seats and FIFO waitlists.
+
+Public tables (fields in this order):
+- seat_event: id (u64 primary key), capacity (u32).
+- booking: id (u64 auto-increment primary key), owner (Identity), event_id (u64 indexed), status (string: "seated", "waiting", or "cancelled"). Index owner and event_id together as well.
+
+Reducers:
+- create_event(id: u64, capacity: u32): reject zero capacity with "invalid capacity"; reject an existing ID with "event exists". Never overwrite an event.
+- join_event(event_id: u64): reject unknown events with "missing event". If the caller already has a non-cancelled booking for this event, succeed without adding or changing a booking. Otherwise insert a booking owned by the caller. Assign a seat if capacity permits; otherwise wait. A cancelled user may rejoin at the back of the queue with a new booking ID.
+- cancel_booking(id: u64): a missing booking is harmless. Only its owner may cancel it; other callers get "owner only". Keep the row as "cancelled". A repeated cancellation must do nothing. When a seated booking is cancelled, promote the waiting booking with the smallest ID for the same event, if any. Cancelling a waiting booking must not promote anyone.
+
+All operations must hold these rules under concurrent calls: no overselling, no buyer receives two seats for one event, no skipped waiting buyer, and no changes to other events. Use the caller identity, not an identity supplied by the client.

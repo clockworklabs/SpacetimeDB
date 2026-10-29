@@ -1,0 +1,11 @@
+Write only the root C# source for a .NET 10 SpacetimeDB module. The project already references two fixed assemblies:
+- Inventory: public Item table (Id: ulong primary key, Quantity: uint) and Inventory.Functions helpers Set(ctx, id, quantity), Take(ctx, id, quantity), Add(ctx, id, quantity). Take rejects a missing item or insufficient stock. Add uses checked arithmetic.
+- Branch: mounts that same Inventory assembly under Accessor "Stock". Branch.Marker identifies the Branch assembly.
+
+Mount Branch twice as East and West. Mount Inventory directly as Reserve. Use the default snake_case database naming policy. These must be independent instances, not aliases.
+
+Expose root reducers:
+- set_stock(location: string, id: ulong, quantity: uint): call Inventory.Functions.Set on the selected instance.
+- transfer(source: string, destination: string, id: ulong, quantity: uint): move stock using Inventory.Functions.Take and Add with the selected contexts, atomically. Accept only "east", "west", "reserve". Reject any other location with "invalid location", identical locations with "same location", and zero quantity with "invalid quantity". If either helper fails, leave both instances unchanged.
+
+Expose public anonymous query-builder views east_stock and west_stock that return each branch's Stock.Item rows. No root tables. Helpers share the root transaction; do not try to catch a helper failure and commit part of the transfer.

@@ -1,15 +1,17 @@
 //! Stateful checks against explicit expected results, independent of the golden implementation.
 use super::scorers::call_reducer_json_out;
 use super::{casing_for_lang, derive_cat_task_from_file, ident, table_name, Lang, ScoreDetails, Scorer};
-use crate::bench::utils::sanitize_db_name;
+use crate::bench::utils::{golden_db_name, sanitize_db_name};
 use anyhow::{anyhow, bail, ensure, Result};
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
 
+#[derive(Clone)]
 pub struct Scenario {
     pub server: String,
     pub db: String,
     pub lang: Lang,
+    golden_db: String,
     check: fn(&Scenario) -> Result<()>,
 }
 
@@ -25,6 +27,7 @@ pub fn scenario(
         server: server.into(),
         db: sanitize_db_name(&format!("{category}-{task}-{route}-llm")),
         lang,
+        golden_db: golden_db_name(&category, &task, route),
         check,
     })
 }
@@ -50,7 +53,49 @@ impl Scorer for Scenario {
 }
 
 impl Scenario {
+    /// The runner already owns and cleans up this independent reference database.
+    pub fn golden_peer(&self) -> Self {
+        Self {
+            db: self.golden_db.clone(),
+            ..self.clone()
+        }
+    }
+
+    pub fn database_identity(&self) -> Result<Value> {
+        let hex = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(15))
+            .build()?
+            .get(format!("{}/v1/database/{}/identity", self.server, self.db))
+            .send()?
+            .error_for_status()?
+            .text()?;
+        let identity = spacetimedb_lib::Identity::from_hex(hex.trim())?;
+        Ok(serde_json::to_value(
+            spacetimedb_lib::ser::serde::SerializeWrapper::from_ref(&identity),
+        )?)
+    }
+
     pub fn connect(&self, token: &str) -> Result<Connection> {
+        let mut connection = self.connect_protocol(token, "v1.json.spacetimedb")?;
+        let hello = connection.next_message()?;
+        ensure!(
+            hello.get("IdentityToken").is_some(),
+            "expected identity handshake, got {hello}"
+        );
+        Ok(connection)
+    }
+
+    pub fn connect_v2(&self, token: &str) -> Result<V2Connection> {
+        use spacetimedb_client_api_messages::websocket::v2;
+        let mut connection = V2Connection(self.connect_protocol(token, v2::BIN_PROTOCOL)?);
+        ensure!(
+            matches!(connection.next_message()?, v2::ServerMessage::InitialConnection(_)),
+            "missing v2 handshake"
+        );
+        Ok(connection)
+    }
+
+    fn connect_protocol(&self, token: &str, protocol: &str) -> Result<Connection> {
         use tokio_tungstenite::tungstenite::client::IntoClientRequest;
         let address = self
             .server
@@ -63,18 +108,12 @@ impl Scenario {
             format!("ws://{address}/v1/database/{}/subscribe?compression=None", self.db).into_client_request()?;
         request
             .headers_mut()
-            .insert("Sec-WebSocket-Protocol", "v1.json.spacetimedb".parse()?);
+            .insert("Sec-WebSocket-Protocol", protocol.parse()?);
         request
             .headers_mut()
             .insert("Authorization", format!("Bearer {token}").parse()?);
         let (socket, _) = tokio_tungstenite::tungstenite::client(request, stream)?;
-        let mut connection = Connection { socket };
-        let hello = connection.next_message()?;
-        ensure!(
-            hello.get("IdentityToken").is_some(),
-            "expected identity handshake, got {hello}"
-        );
-        Ok(connection)
+        Ok(Connection { socket })
     }
 
     pub fn new_user(&self) -> Result<(String, Value)> {
@@ -296,6 +335,13 @@ pub struct Connection {
 
 impl Connection {
     pub fn next_message(&mut self) -> Result<Value> {
+        match self.next_frame()? {
+            tokio_tungstenite::tungstenite::Message::Text(text) => Ok(serde_json::from_str(&text)?),
+            other => bail!("expected JSON message, got {other:?}"),
+        }
+    }
+
+    fn next_frame(&mut self) -> Result<tokio_tungstenite::tungstenite::Message> {
         use tokio_tungstenite::tungstenite::Message;
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
@@ -304,7 +350,7 @@ impl Connection {
                 .ok_or_else(|| anyhow!("websocket message timeout"))?;
             self.socket.get_mut().set_read_timeout(Some(remaining))?;
             match self.socket.read()? {
-                Message::Text(text) => return Ok(serde_json::from_str(&text)?),
+                message @ (Message::Text(_) | Message::Binary(_)) => return Ok(message),
                 Message::Ping(_) => self.socket.flush()?,
                 Message::Pong(_) => (),
                 other => bail!("unexpected websocket frame: {other:?}"),
@@ -336,6 +382,62 @@ impl Connection {
     }
 }
 
+/// Event tables require protocol v2; the older JSON protocol cannot subscribe to them.
+pub struct V2Connection(Connection);
+
+impl V2Connection {
+    fn next_message(&mut self) -> Result<spacetimedb_client_api_messages::websocket::v2::ServerMessage> {
+        match self.0.next_frame()? {
+            tokio_tungstenite::tungstenite::Message::Binary(bytes) => {
+                ensure!(bytes.first() == Some(&0), "expected uncompressed v2 frame");
+                Ok(spacetimedb_lib::bsatn::from_slice(&bytes[1..])?)
+            }
+            other => bail!("expected v2 binary message, got {other:?}"),
+        }
+    }
+
+    pub fn subscribe_empty(&mut self, query: &str) -> Result<()> {
+        use spacetimedb_client_api_messages::websocket::v2;
+        let message = v2::ClientMessage::Subscribe(v2::Subscribe {
+            request_id: 1,
+            query_set_id: v2::QuerySetId { id: 1 },
+            query_strings: vec![query.into()].into(),
+        });
+        self.0.socket.send(tokio_tungstenite::tungstenite::Message::Binary(
+            spacetimedb_lib::bsatn::to_vec(&message)?.into(),
+        ))?;
+        match self.next_message()? {
+            v2::ServerMessage::SubscribeApplied(update) => {
+                ensure!(
+                    update.rows.tables.iter().all(|t| t.rows.get(0).is_none()),
+                    "event history was replayed"
+                );
+                Ok(())
+            }
+            other => bail!("expected SubscribeApplied, got {other:?}"),
+        }
+    }
+
+    pub fn events(&mut self) -> Result<Vec<Vec<u8>>> {
+        use spacetimedb_client_api_messages::websocket::v2;
+        let v2::ServerMessage::TransactionUpdate(update) = self.next_message()? else {
+            bail!("expected event transaction update");
+        };
+        let mut events = Vec::new();
+        for set in &update.query_sets {
+            for table in &set.tables {
+                for rows in &table.rows {
+                    let v2::TableUpdateRows::EventTable(rows) = rows else {
+                        bail!("expected transient event rows, got persistent rows");
+                    };
+                    events.extend((&rows.events).into_iter().map(|row| row.to_vec()));
+                }
+            }
+        }
+        Ok(events)
+    }
+}
+
 impl Drop for Connection {
     fn drop(&mut self) {
         let _ = self.socket.close(None);
@@ -343,7 +445,7 @@ impl Drop for Connection {
     }
 }
 
-fn update_rows(value: &Value, key: &str) -> Result<Vec<Value>> {
+pub fn update_rows(value: &Value, key: &str) -> Result<Vec<Value>> {
     let mut rows = Vec::new();
     match value {
         Value::Object(object) => {
