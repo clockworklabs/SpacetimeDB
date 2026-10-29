@@ -44,7 +44,6 @@ Use the root [README](../README.md) for the product summary and
 ## Visuals
 
 - [Dependency graph](dependency-graph.html): generated ecommerce feature graph
-- [Reference](stack-bench.html): how StackBench works, how its checks are proven, fairness rules, results, limitations, FAQ, and glossary
 
 These illustrations do not carry qualification status; use the current
 definition and evidence. `dependency-graph.html` is generated from the current
