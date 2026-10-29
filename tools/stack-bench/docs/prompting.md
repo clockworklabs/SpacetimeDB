@@ -1,31 +1,25 @@
-# Prompting method
+# Prompting
 
-Stack Bench gives the coding agent a normal software request. It does not tell
-the agent that it is in a benchmark. What Stack Bench asks for and what Stack
-Bench measures are separate choices.
+StackBench gives the coding agent a normal software request. It does not say
+that the agent is in a benchmark. What the prompt asks for and what StackBench
+measures are separate choices, and this document covers the first.
 
-## Prompt inputs
+## What the agent receives
 
-Each request is assembled from these owners:
+Each prompt is assembled from versioned files and bound to the campaign by
+hash:
 
-| Input | Purpose | Owner |
-|---|---|---|
-| Product framing | Says whether to build a new app or add work to an existing app | Recipe |
-| Current features | Describes the product work to implement now | Feature packs |
-| Requested production behavior | States production requirements that the campaign chose to disclose | Specification packs |
-| Stack material | Gives required access details and the selected level of technical guidance | Guidance profile and backend document |
-| API reference | Supplies selected SDK material, including SpacetimeDB skills | Guidance profile |
-| Starting data | Gives the new app's fixed catalog; later requests retain original entity names and relationships without resetting live data | Fixture |
-| Application interface | Names the controls or operations needed for reliable use | Feature contracts |
-| Repair report | Describes conclusive application failures from the last grade | Condition repair policy |
+| Part | Owner |
+| --- | --- |
+| Framing: build a new app, or add to the existing one | Recipe |
+| The features to build now | Feature packs |
+| Production requirements the campaign chose to disclose | Specification packs |
+| Stack setup: connection details, start command, selected SDK material | Guidance profile and backend document |
+| The starting catalog | Fixture |
+| Application interface: the element names and server operations the checks use | Feature contracts |
+| A repair report, in repair runs only | Repair policy |
 
-The recipe and selected packs own the text. The prompt builder orders that text
-and adds the small controller contract, such as the application directory,
-listening address, start script, and completion response.
-
-## What the coding agent receives
-
-A new-build request has this shape:
+A new-build prompt looks like this, abridged:
 
 ```text
 Build the application described below and leave it running.
@@ -34,316 +28,112 @@ Build the app in /app.
 The web application must listen on 0.0.0.0.
 
 ## Stack
-<selected stack access and guidance>
-
-## Selected API reference
-<selected SDK material, when needed>
+<connection details, start contract, selected SDK material>
 
 ## New application
-<product framing>
+<framing>
 
-## <current feature>
+## <feature>
 <feature request>
 
 ## Starting catalog
 <fixed starting data>
 
 ## Application interface
-<stable controls or operations>
+<element names and operations>
 ```
 
-This is an abridged example. The exact request is composed from versioned files
-and bound to the campaign by hashes.
+The prompt never contains grader source, scenario files, check names, points,
+scores, comparison results, the exact values a scenario uses, features that are
+not ready yet, or production requirements under the `expected` and `observed`
+treatments.
 
-The new-build request does not include:
+By default the prompt also contains one line asking for production quality:
+"Build a production-quality application suitable for real users, not a
+prototype or demo." It is on for each condition with `productionQuality: true`
+and recorded with the run. It changes the request, not the checks.
 
-- grader source or scenario files;
-- check names, point values, expected scores, or comparison results;
-- exact adversarial inputs chosen by a scenario;
-- future dependency nodes that are not ready;
-- production expectations assigned to the `expected` or `observed` treatments.
+## Production requirements and their treatment
 
-## Features and production expectations
+A feature is product work. A production requirement says how features must
+behave under conditions such as reload, reconnect, concurrent writes, access
+boundaries, or direct data changes. Each selected requirement has one
+treatment:
 
-A feature is product work. A production expectation describes how selected
-features should behave under conditions such as reload, reconnect, concurrent
-writes, authorization boundaries, or direct data changes.
-
-Each selected production expectation has one treatment:
-
-| Treatment | Included in request | Main score | Repair feedback |
-|---|---:|---:|---:|
+| Treatment | In the prompt | In the score | Repair feedback |
+| --- | --- | --- | --- |
 | `requested` | Yes | Yes | Yes |
-| `expected` | No | Yes | Yes, after a conclusive failure |
+| `expected` | No | Yes | After a conclusive failure |
 | `observed` | No | No | No |
 
-`Expected` lets a no-repair study measure production behavior that was not
-explicitly requested as a specification. The supplied features, interfaces, and
-skills can still disclose related expectations. Audit their exact text before
-claiming a behavior was supplied without being asked.
+For example, a campaign selects accounts as current work and session
+durability as `expected`. The agent sees only the account feature. StackBench
+still checks that a signed-in session survives a reload, and a failure counts.
+Switching the same requirement to `requested` adds one line to the prompt and
+changes nothing else, so the two conditions are comparable.
 
-`Observed` is a separate first-build diagnostic. It cannot change the main
-score or steer repairs.
+`expected` is what lets a no-repair study measure production behavior that was
+not asked for. The features, interfaces, and SDK material can still hint at a
+requirement, so audit their text before claiming a behavior was unprompted.
 
-### Example: expected durability
+A product request states what the product does, clearly enough that it is not
+ambiguous: reviews, cancellation before shipping, reservations, restock
+scheduling. It does not give implementation instructions for restart survival,
+exactly-once execution, or cross-account isolation. Those are specification
+packs and enter the prompt only as `requested`.
 
-The campaign selects account creation as current work. It also selects session
-durability as expected production behavior.
+## Stack setup
 
-The coding agent sees product text such as:
+Every stack's setup names the stack, its connection details, and the start
+contract. The agent chooses libraries, architecture, and project structure.
+Stacks that are newer and less represented in model training also get SDK
+skills; today that is SpacetimeDB. A condition's `guidanceProfile` picks one
+of these, from [`conditions/catalog.json`](../conditions/catalog.json):
 
-```text
-## Accounts
+| Profile | SpacetimeDB skills |
+| --- | --- |
+| `neutral` (default) | TypeScript server, TypeScript client, CLI |
+| `neutral-dev` | The same, plus the `spacetime dev` watch workflow |
+| `neutral-managed-dev` | The same, plus a managed start/status/stop helper |
+| `neutral-no-sdk` | None |
+| `neutral-dev-no-sdk` | Dev workflow only |
+| `prescribed` | SDK skills plus stack documents with design advice |
 
-Visitors can create an account with a username and password. Returning users
-can sign in, see which account is active, and sign out.
-```
-
-The request does not mention reload behavior. Stack Bench can still verify that
-the signed-in session survives a reload. A conclusive failure affects the main
-score and can produce repair feedback.
-
-### Example: requested durability
-
-The campaign selects the same account feature and changes durability to
-`requested`. The request now also includes text such as:
-
-```text
-## State durability: accounts
-
-A signed-in session survives a page reload as the same account.
-```
-
-The scored behavior is the same. Only disclosure changed. This makes the two
-conditions comparable without changing the feature itself.
-
-### Example: observed durability
-
-The campaign changes durability to `observed`. The request again omits reload
-behavior. Stack Bench measures it after the first build, records the result as
-a diagnostic, and does not include it in the score or repair report.
-
-### Request boundaries
-
-A product request states what the product does, clearly enough that its
-semantics are not ambiguous: buyer reviews, cancellation before shipping,
-reservations, stock scheduling, and account features. "A shipped order becomes
-delivered after 60 seconds" defines a feature. Restart survival, duplicate
-execution, clock authority, and cross-account access do not need implementation
-instructions in that request. Product policy stays explicit where a reasonable
-implementation could differ, such as refund and restock rules or verified-buyer
-reviews. Measure the enforcement of that policy separately.
-
-Neutral requests do not state atomicity, conservation, exactly-once, no-reload,
-or cross-account isolation instructions. Those belong to specification packs and
-enter the request only when a study selects them as `requested`.
-
-These properties do not all have the same justification. Ownership and correct
-acknowledged writes protect the meaning of an operation. Automatic updates in
-another open tab are a chosen product capability. An `expected` live-state
-score measures that selected capability without a direct request. It does not
-establish a general production-readiness standard. Select `requested` to make
-it part of the product brief, or `observed` to exclude it from the main score.
-
-The **Production-quality app** option adds one line to the request: “Build a
-production-quality application suitable for real users, not a prototype or
-demo.” It is on by default in New run and recorded with the run. It changes the request,
-not the checks. Compare results with the same setting, or label the difference.
-Campaign files must set `productionQuality: true` on each condition to include it.
-An omitted field retains the original unframed request, as does an explicit
-`productionQuality: false`. The paid examples set it explicitly.
+Only the SpacetimeDB material differs between the neutral profiles. The skills
+are study inputs: keep their text intact, and compare profiles in separate runs.
 
 ## Agent tools
 
-Every coding agent works with files and a shell. Two groups of the agent's own
-tools follow the campaign's `tools` setting, which is the same for every agent:
+Every agent has files and a shell. Two tool groups follow the campaign's
+`tools` setting, the same for every agent: `webSearch` (the agent's own search
+and fetch tools) and `subagents`. Both are off by default, and `subagents` is
+refused for every agent, because the contamination audit cannot see what a
+sub-agent does. The container can reach public websites whatever the setting.
 
-| Setting | Default | Covers |
-|---|---|---|
-| `webSearch` | off | The agent's web search and page fetch tools |
-| `subagents` | off | Tools that start other agent sessions |
-
-Both are off by default, as every agent ran in StackBench 1.1. Turning one on
-is its own condition. A campaign file may omit `tools`; compiling fills in the
-defaults, so every compiled plan records the setting and its identity covers
-it. Runs under different settings never share a campaign, and an extension
-cannot continue an attempt made under another setting; a parent planned before
-campaigns recorded the setting counts as the defaults. Each run records the
-setting it used in `setup.tools`, and run validation refuses a run whose
-setting differs from its plan's.
-
-`subagents: true` is refused for every agent, at compile time and when a
-session starts. The contamination audit reads each agent's own event log, and
-no test yet shows a subagent's shell calls reaching it. The mappings below are
-in place for when one does.
-
-Each agent maps the setting to its own controls:
-
-| Agent | Web search | Subagents |
-|---|---|---|
-| Claude Code | Not available | Not available |
-| Codex | `web_search="live"`, or `"disabled"` | `features.multi_agent` |
-| Grok Build | `web_search` and `web_fetch` allowed by name, or `--disable-web-search` | Subagent tools allowed by name, or `--no-subagents` with them left out |
-| Antigravity | The broker keeps `search_web`, `read_url_content` and `view_content_chunk` and Google's hosted search and URL tools, or drops them | The broker keeps `invoke_subagent`, `manage_subagents` and `define_subagent`, or drops them |
-
-Claude Code runs with `--bare`. In Claude Code 2.1.284 that mode offers only
-Bash, Edit and Read. A campaign that includes Claude Code and turns web search
-on is refused at compile time.
-
-The coding container reaches public HTTP and HTTPS whatever the setting, so an
-agent can always fetch from its shell.
-
-Providers charge each web search on top of tokens. The credential broker counts
-the searches each response reports and records them as `webSearchCalls` in the
-spend ledger, each cost receipt and the attempt's cost ledger. A request that
-offered search but did not use it is priced from its tokens. A request that
-searched is counted as unpriced, so its cost is a lower bound. OpenRouter's
-reported cost already includes search.
-
-The contamination audit treats a fetch of StackBench's own source as
-contamination. That covers a URL on any host, `gh` call or `git` fetch
-naming `tools/stack-bench` in `clockworklabs/SpacetimeDB` on any branch, so
-mirrors such as jsDelivr and Sourcegraph count. It also covers a GitHub URL,
-`gh` call, `git` fetch or search naming StackBench's pull request (#5766),
-whether from the shell or the agent's web tools. It also covers any read of a local copy of `tools/stack-bench`. The rest
-of SpacetimeDB's source is open to read.
-
-## Stack guidance
-
-Stack selection and guidance selection are separate.
-
-- Neutral guidance gives the required stack, connection details, startup
-  contract, and selected stack material. The coding agent chooses libraries,
-  architecture, and project structure within those requirements.
-- Prescribed guidance can add design advice selected by the campaign.
-
-Neutral does not mean that the supplied skills contain no design advice. The
-neutral profiles record `designAdvice: true`, and the selected SpacetimeDB skills
-are intentional study inputs. Keep their text intact and retain it in the
-evidence. The experiment compares delivered stack packages, not databases with
-identical guidance. These skills are not grader source or scenario scripts.
-
-### Guidance profiles
-
-A condition's `guidanceProfile` selects one profile from
-[`conditions/catalog.json`](../conditions/catalog.json). Only the SpacetimeDB
-material differs between the neutral profiles; other stacks are unchanged.
-
-| Profile | SpacetimeDB skills |
-|---|---|
-| `neutral` (default) | TypeScript server, TypeScript client, CLI |
-| `neutral-dev` | The same, plus the `spacetime dev` watch workflow |
-| `neutral-managed-dev` | The same, plus the managed `/deps/spacetime-dev start\|status\|stop` helper |
-| `neutral-no-sdk` | None |
-| `neutral-dev-no-sdk` | Dev workflow only |
-| `prescribed` | SDK skills plus prescribed stack documents with design advice |
-
-The dashboard's **SDK skills** and **Dev workflow** choices select among these.
-Each profile has its own guidance identity. None changes grading or repair
-policy, and none starts a watcher by itself. Label a skill ablation separately
-from standard guidance, and start a separate run to compare guidance choices.
-
-The managed helper serializes starts, reports initial readiness, and keeps a log
-in the agent home. It runs as the agent user, so normal container cleanup stops
-it. It supports one assigned database and TypeScript binding targets inside
-`/app`, and needs a controller and coding image built with this support.
-
-An abridged neutral PostgreSQL section is:
-
-```text
-# PostgreSQL
-
-Use PostgreSQL for the application data. Choose the libraries, architecture,
-and project structure.
-
-Use the supplied DATABASE_URL. Serve the application on the supplied port.
-```
-
-An abridged neutral SpacetimeDB section is:
-
-```text
-# SpacetimeDB
-
-Use SpacetimeDB for the application data. Put the TypeScript module in the
-required module directory. Choose the schema, libraries, architecture, and the
-rest of the project structure.
-
-Use the supplied server URI, module name, CLI, SDK package, and web port.
-```
+The audit treats a fetch of StackBench's own source as contamination: anything
+under `tools/stack-bench` in `clockworklabs/SpacetimeDB` on any host, GitHub or
+a mirror, and its pull request. The rest of SpacetimeDB's source is open.
 
 ## Application interfaces
 
-Feature contracts name stable controls or operations when deterministic use
-requires them. They do not prescribe layout, data models, frameworks, or visual
-design. The one data-shaped item a contract may name is an interoperability
-surface that other systems write to directly, such as the stock tables; the
-behavior expected around that surface stays in the specification.
-
-For example, the account contract names fields such as `signup-username` and
-`signin-submit`. An HTTP stack also exposes the account operations through HTTP.
-A reducer-based stack exposes the equivalent reducer operations. The product
-behavior stays the same while the usable interface matches the selected stack.
-
-A readiness marker must distinguish an empty result from a failed read. A
-contracted action must be the actual UI action, not a separate endpoint that can
-pass while the product is broken. A hook can reveal that an operation exists,
-but must not state the expected security or synchronization policy.
-
-Scenario files own exact test data and edge-case values. Those values do not
-belong in the product request or interface contract.
+Feature contracts name the element IDs and server operations the checks use.
+They do not prescribe layout, data model, framework, or visual design. The one
+data-shaped exception is the stock interface, which other systems write to
+directly. A contracted action must be the real UI action, not a separate
+endpoint that can pass while the product is broken.
 
 ## Dependency progression
 
-Dependency mode composes the request from features that are ready now.
-
-- A new app receives the framing, current root features, applicable requested
-  production expectations, starting data, and their interfaces.
-- An upgrade receives the newly ready feature work. By default, it also retains
-  the interface contracts disclosed in earlier requests for the same app.
-- Upgrades and repairs retain the original catalog names and relationships.
-  They explicitly do not reset current stock, prices, or user data.
-- Earlier feature requirements are not repeated as new work. Retained contracts
-  do not claim that the earlier implementation passed its checks.
-- Blocked descendants are not included until their dependencies pass.
-
-New dependency plans default `mode.retainPriorContracts` to `true`. The compiler
-records this choice in the frozen plan. To compare incremental interfaces alone,
-set the option explicitly:
-
-```json
-"mode": {
-  "id": "dependency",
-  "workSelection": "progressive",
-  "retainPriorContracts": false
-}
-```
-
-Campaign execution uses the frozen plan's setting. Set the option in the
-campaign definition before compilation; it cannot be changed during execution.
-
-Retained contracts come from previously issued requests, not from grading
-results. Each authored contract appears once. Future interfaces and undisclosed
-production expectations are not added. The coding agent can refactor the app
-while preserving its declared interface. This context is included in token
-accounting and does not enable repair feedback.
-
-An upgrade therefore has three parts: the existing app context, the current
-feature changes, and the applicable interface contracts. Existing compiled plans
-and stored results are not rewritten. A changed prompt treatment requires a new
-plan and separate comparison data.
-
-For example, if accounts and catalog items are ready, the request can include
-those two features. Customer profile stays out until its account dependency
-passes. A failure in the catalog path does not add or remove work from the
-account path.
+Each level's prompt contains the features that are ready now: a new app gets
+the root features, an upgrade gets the newly unlocked ones. Upgrades keep the
+original catalog and the interface contracts from earlier prompts
+(`mode.retainPriorContracts`, default `true`), and never reset live data.
+Blocked features are left out until their prerequisites pass.
 
 ## Repair requests
 
-A repair starts only after Stack Bench completes grading and records a
-conclusive application failure. A repair report can name an expected
-production behavior not stated in the initial request; that disclosure
-happens only through the repair policy, after a conclusive failure, and under
-the same rule for every stack. The coding agent receives a plain bug report:
+In repair runs, a repair starts only after grading records a conclusive
+application failure. The agent gets a plain bug report:
 
 ```text
 Fix the reported application bugs.
@@ -354,67 +144,11 @@ Actual: The page returned to the signed-out state after reload.
 Change only what is needed. Do not alter behavior that is already correct.
 ```
 
-The repair request also supplies the affected product area, current feature text,
-application interface, and original catalog baseline. Provider failures, harness
-failures, and interrupted work do not become application bug reports.
+The report gives the expected behavior, the grader's finding in one sentence,
+the measured values, and the store's own console errors. It never includes
+scenario scripts, fixture data, or implementation advice. Provider failures,
+harness failures, and interrupted work never become bug reports.
 
-Behavior feedback uses the authored expectation for that behavior, a finding from the
-grader's closed catalog rendered as one sentence (a control that did not
-appear, a number below its required value, a request that was accepted
-when it had to be refused), and the application's own console errors.
-Reports include measured quantities and expected results when they explain the
-failure, such as two orders where one was expected. They retain the affected
-control, missing or duplicate entries, and HTTP error statuses. They do not copy
-scenario scripts, unrelated fixture data, or instructions for a particular
-algorithm or data structure.
-
-Reports also name the recent completed controls and lifecycle actions when these
-explain where execution stopped. A missing control before a reload, restart, or
-server request is not evidence that the later durability or access check failed.
-Keep that limit explicit instead of presenting the full requirement as an observed failure.
-
-The current repair policy records this disclosure as
-`scenarioValues: "failed-observations"`. This changes the condition identity
-from the earlier `"withheld"` policy. New plans must use the current identity;
-old frozen plans and reports keep their original metadata. The value permits
-exact expected and actual values only for the failed observations above.
-
-When setup fails, the report uses that setup's observation once, even if it
-prevented several checks. It does not repeat the expectation of a later check
-that never ran. Distinct failures remain separate. Console errors are supporting
-observations from the same product area, not proof of a cause; duplicate lines
-are removed. Initial feature requests still exclude scenario inputs.
-
-## Authoring rules
-
-No-repair runs measure behavior supplied without repair feedback. Normal repair
-runs report observed failures and expected behavior, including production
-guarantees, but do not prescribe algorithms or implementation changes. Their
-results measure remediation, not unprompted guarantees. Earlier repairs also
-carry into later levels and source-seeded campaigns. A later depth's first
-build can therefore contain earlier repair guidance. Label it a pre-repair
-checkpoint at that depth, not a fresh measure of unsolicited guarantees.
-
-Put positive controls in scenario setup. If setup fails, preserve that actionable
-application failure and its setup phase. The check earns no credit, but the
-failure does not prove that the later guarantee is broken. Repair feedback must
-not claim that an unperformed authorization or integrity assertion failed.
-
-- Put product asks in feature prompts.
-- Put optional production requirements in specification prompts.
-- Put stable controls and operations in contracts.
-- Put connection facts and API material in stack guidance.
-- Put exact values and probes in scenarios.
-- Never solve a check by adding its private input or expected implementation to
-  the request.
-- Keep equivalent stacks equally informed about the product.
-- Give every replay, forgery, or direct call a named application action that
-  declares both the HTTP route and the reducer. A campaign does not compile
-  while a selected check cannot be measured on a selected stack.
-- Invalidate qualification tied to changed prompt inputs. Qualification comes
-  from matching evidence; do not add status fields to recipes or references.
-
-After a prompt change, run `npm run check:composition`, `npm run check:prompts`,
-and the exact scenario check for the affected recipe. Inspect the rendered
-request for every affected stack and depth. Do not run unrelated qualification
-or paid work.
+A repair can disclose an `expected` requirement, under the same rule for every
+stack. Later levels carry earlier repairs, so a later level's first build is a
+pre-repair checkpoint, not a fresh measure of unprompted behavior.
