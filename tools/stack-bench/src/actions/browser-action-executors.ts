@@ -114,6 +114,7 @@ interface BrowserArguments<Input> {
 type InteractionInput = CommonInput & {
   readonly text: string;
   readonly enter?: boolean;
+  readonly ifAvailable?: boolean;
   readonly settleMs?: number;
   readonly key?: string;
 };
@@ -388,6 +389,14 @@ async function fill({ input, capabilities, signal }: BrowserArguments<Interactio
   const browser = interaction(capabilities);
   const scope = inputScope(browser, input.in);
   const visible = actor.loc(input.testid, { scope });
+  if (input.ifAvailable) {
+    // An optional input belongs to a feature the store may not have yet; skip it when it never appears.
+    const deadline = Date.now() + (input.within ?? browser.defaultWithin);
+    while (!await visible.isVisible()) {
+      if (Date.now() >= deadline) return { filled: false, testid: input.testid };
+      await browser.sleep(Math.min(100, deadline - Date.now()), signal);
+    }
+  }
   await visible.waitFor({ state: 'visible', timeout: input.within ?? browser.defaultWithin });
   // A contract can reuse an input's ID to show saved values; typing targets the editable one.
   const editable = actor.loc(input.testid, { scope, editable: true });

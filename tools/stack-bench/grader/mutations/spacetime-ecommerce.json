@@ -206,6 +206,21 @@
       ]
     },
     {
+      "id": "catalog-omits-desk-lamp",
+      "scenario": "tracks/ecommerce/scenarios/01-catalog-values.json",
+      "targets": [
+        "ecommerce.feature.catalog.catalog-values.2a"
+      ],
+      "desc": "Seed the catalog without Desk Lamp while every other item keeps its correct values.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  ['Desk Lamp', 42.0, 55, 45, 'Home'],",
+          "replace": "// ['Desk Lamp', 42.0, 55, 45, 'Home'],"
+        }
+      ]
+    },
+    {
       "id": "catalog-tie-breaks-in-reverse-alphabetical-order--01-catalog-ranking",
       "scenario": "tracks/ecommerce/scenarios/01-catalog-ranking.json",
       "targets": [

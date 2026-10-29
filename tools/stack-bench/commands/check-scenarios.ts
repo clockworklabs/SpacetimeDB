@@ -19,6 +19,7 @@ interface ScenarioScope {
   contractOwners: Set<string>;
   requirementOwners: Set<string>;
   contractText: string;
+  recipeContractText: string;
   requirementText: string;
 }
 
@@ -141,6 +142,7 @@ function recipeScenarioScopes(track: Track, recipeFile: string): Map<string, Sce
       contractOwners: new Set<string>(),
       requirementOwners: new Set<string>(),
       contractText: '',
+      recipeContractText: '',
       requirementText: '',
     };
     const criteria = scope.features.get(check.featureId) ?? new Set<string>();
@@ -161,6 +163,7 @@ function recipeScenarioScopes(track: Track, recipeFile: string): Map<string, Sce
       ? requirements.filter(fragment => ownedFragment(fragment, scope.requirementOwners))
       : requirements;
     scope.contractText = selectedContracts.map(fragment => fragment.text).join('\n');
+    scope.recipeContractText = contracts.map(fragment => fragment.text).join('\n');
     scope.requirementText = selectedRequirements.map(fragment => fragment.text).join('\n');
   }
   return scopes;
@@ -283,7 +286,10 @@ function main(args: readonly string[]): number {
             for (const id of referencedTestIds(step)) {
               const declaredStaffRow = id.startsWith('staff-role-account-') && id.length > 'staff-role-account-'.length
                 && recipeScope.contractText.includes('`staff-role-account-`');
-              if (!recipeScope.contractText.includes(`\`${id}\``) && !declaredStaffRow) {
+              // An optional step may name an element of another feature the recipe can select.
+              const optionalElsewhere = step.ifAvailable === true
+                && recipeScope.recipeContractText.includes(`\`${id}\``);
+              if (!recipeScope.contractText.includes(`\`${id}\``) && !declaredStaffRow && !optionalElsewhere) {
                 fail(at, `testid "${id}" is not in the selected recipe contracts`);
               }
             }

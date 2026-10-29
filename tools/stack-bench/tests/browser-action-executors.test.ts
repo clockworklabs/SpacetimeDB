@@ -325,6 +325,20 @@ test('optional clicks operate enabled controls and skip unavailable controls', a
   }
 });
 
+test('optional fills type into a visible input and skip an input the store does not have', async () => {
+  for (const visible of [false, true]) {
+    let filled: unknown, pressed = 0;
+    const input = { isVisible: async () => visible, waitFor: async () => {}, count: async () => 0,
+      evaluate: async () => 'INPUT', getAttribute: async () => 'text',
+      fill: async (value: string) => { filled = value; }, press: async () => { pressed += 1; } };
+    const result = await run({ do: 'fill', actor: 'a', testid: 'search-input', text: 'Webcam',
+      enter: true, ifAvailable: true, within: 1 }, services({ loc: () => input }));
+    assert.equal(result.status, 'passed');
+    assert.equal(filled, visible ? 'Webcam' : undefined);
+    assert.equal(pressed, visible ? 1 : 0);
+  }
+});
+
 test('interaction scopes expand scoped values and can match separate text fragments without assuming punctuation', async () => {
   const received: unknown[] = [];
   let clickOptions: unknown;

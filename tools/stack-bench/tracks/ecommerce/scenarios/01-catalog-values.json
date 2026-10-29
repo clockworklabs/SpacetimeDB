@@ -8,7 +8,9 @@
     {
       "id": 2,
       "name": "Public catalog values",
-      "actors": ["visitor"],
+      "actors": [
+        "visitor"
+      ],
       "setup": [
         { "do": "click", "actor": "visitor", "testid": "catalog-link", "ifAvailable": true, "unlessVisible": "item-list" }
       ],
@@ -16,13 +18,104 @@
         {
           "id": "2a",
           "category": "feature",
-          "desc": "a signed-out visitor sees the seeded item name, price, and total stock",
+          "desc": "a signed-out visitor sees every seeded item with its name, price, and total stock",
           "points": 1,
           "statedBy": "Each item shows its name, price, and total stock",
           "steps": [
             { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Air Purifier" },
-            { "do": "expectNumber", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "Air Purifier" }, "equals": 189 },
-            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "equals": 100 }
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "Air Purifier" },
+              "equals": 189
+            },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" },
+              "equals": 100
+            },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Bluetooth Speaker" },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" },
+              "equals": 79.5
+            },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" },
+              "equals": 100
+            },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Coffee Grinder" },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "Coffee Grinder" },
+              "equals": 64
+            },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Coffee Grinder" },
+              "equals": 100
+            },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Desk Lamp" },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "Desk Lamp" },
+              "equals": 42
+            },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Desk Lamp" },
+              "equals": 100
+            },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Espresso Machine" },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "Espresso Machine" },
+              "equals": 449
+            },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Espresso Machine" },
+              "equals": 100
+            },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Gaming Mouse" },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "Gaming Mouse" },
+              "equals": 59
+            },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Gaming Mouse" },
+              "equals": 100
+            },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Headphones" },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "Headphones" },
+              "equals": 199
+            },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" },
+              "equals": 100
+            },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Induction Cooktop" },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "Induction Cooktop" },
+              "equals": 329
+            },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Induction Cooktop" },
+              "equals": 100
+            },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Keyboard" },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "Keyboard" },
+              "equals": 89
+            },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Keyboard" },
+              "equals": 100
+            },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Laptop Stand" },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "Laptop Stand" },
+              "equals": 29
+            },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Laptop Stand" },
+              "equals": 100
+            },
+            { "do": "fill", "actor": "visitor", "testid": "search-input", "text": "Mirrorless Camera", "enter": true, "settleMs": 1500, "ifAvailable": true },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Mirrorless Camera" },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "Mirrorless Camera" },
+              "equals": 1299
+            },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Mirrorless Camera" },
+              "equals": 3
+            },
+            { "do": "fill", "actor": "visitor", "testid": "search-input", "text": "USB Cable", "enter": true, "settleMs": 1500, "ifAvailable": true },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "USB Cable" },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "USB Cable" },
+              "equals": 65
+            },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "USB Cable" },
+              "equals": 0
+            },
+            { "do": "fill", "actor": "visitor", "testid": "search-input", "text": "Webcam", "enter": true, "settleMs": 1500, "ifAvailable": true },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Webcam" },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "Webcam" },
+              "equals": 69
+            },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Webcam" },
+              "equals": 100
+            }
           ]
         }
       ]

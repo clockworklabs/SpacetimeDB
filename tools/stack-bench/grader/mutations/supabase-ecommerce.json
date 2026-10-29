@@ -742,6 +742,21 @@
       ]
     },
     {
+      "id": "catalog-omits-desk-lamp",
+      "scenario": "tracks/ecommerce/scenarios/01-catalog-values.json",
+      "targets": [
+        "ecommerce.feature.catalog.catalog-values.2a"
+      ],
+      "desc": "Seed the catalog without Desk Lamp while every other item keeps its correct values.",
+      "file": "supabase/seed.sql",
+      "edits": [
+        {
+          "find": "    ('Desk Lamp', 'Home', 42.00, 55, 45, 'Adjustable LED lamp for any desk setup.'),",
+          "replace": "-- ('Desk Lamp', 'Home', 42.00, 55, 45, 'Adjustable LED lamp for any desk setup.'),"
+        }
+      ]
+    },
+    {
       "id": "purchase-order-uses-zero-price",
       "scenario": "tracks/ecommerce/scenarios/progression-purchasing.json",
       "targets": [

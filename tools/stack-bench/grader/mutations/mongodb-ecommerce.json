@@ -897,6 +897,21 @@
       ]
     },
     {
+      "id": "catalog-omits-desk-lamp",
+      "scenario": "tracks/ecommerce/scenarios/01-catalog-values.json",
+      "targets": [
+        "ecommerce.feature.catalog.catalog-values.2a"
+      ],
+      "desc": "Seed the catalog without Desk Lamp while every other item keeps its correct values.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  { name: \"Desk Lamp\", price: 42.0, east: 55, west: 45, description: \"Adjustable LED lamp for any desk setup.\" },",
+          "replace": "// { name: \"Desk Lamp\", price: 42.0, east: 55, west: 45, description: \"Adjustable LED lamp for any desk setup.\" },"
+        }
+      ]
+    },
+    {
       "id": "staff-can-see-admin-navigation",
       "scenario": "tracks/ecommerce/scenarios/01-warehouse-admin-staff.json",
       "targets": [

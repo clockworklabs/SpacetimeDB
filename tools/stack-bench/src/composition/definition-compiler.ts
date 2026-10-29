@@ -249,7 +249,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
   expectUnavailable: fields({ ...actor, testid: nonEmptyString },
     { contains: string, ...locator, ...within }),
   fill: fields({ ...actor, testid: nonEmptyString, text: string },
-    { enter: boolean, ...locator, ...settle, ...within }),
+    { enter: boolean, ifAvailable: boolean, ...locator, ...settle, ...within }),
   forgeWrite: fields({ ...actor, fromActor: nonEmptyString, settleMs: nonNegativeNumber },
     { field: value => oneOf(value, ['room', 'identity']), text: string, value: scalar }),
   freshClient: fields(actor, { preserveStorage: boolean }),

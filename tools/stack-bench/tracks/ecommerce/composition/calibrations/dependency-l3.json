@@ -7,9 +7,9 @@
   "recipe": {
     "path": "../recipes/progression-catalog.json",
     "id": "ecommerce.progression-catalog",
-    "meaningSha256": "965ba5bd4b59ed814df7dda9cf563821d3e623cccf0da9d7e7270921aa79d5e5",
-    "executionSha256": "a5299e64aca9cbe0a7dece622aa02f710fafc0bbfe3362daf3c9edfac801ae22",
-    "contentSha256": "aa2ad046d068db85f5c3e878713832dd5d51fe1a42c0e8189e5ffe123c4beb9b"
+    "meaningSha256": "0fc675598b5dffd8b1cf3c1ebbbb4bce07cdcfaa22eb22417bf040a00d57f225",
+    "executionSha256": "f2fdac6825d5e9bbf0eec3f668af3338fd09f9e6ad4daa363e322d64e62e1ab6",
+    "contentSha256": "ec37c4d413d4cba3c5c03cda88e31bf6f57eab0c2bcd0f4fe388ab7d15f76371"
   },
   "fixture": {
     "id": "ecommerce.operations",
@@ -49,31 +49,31 @@
     {
       "backend": "mongodb",
       "path": "grader/mutations/mongodb-ecommerce.json",
-      "sha256": "c3702c52edcf1ff904dbb5e6f93441d3ba036c2c408a067d0a284cf8e811e9cf",
+      "sha256": "bb2b051de87586e4ea431dbaf39d836c77fd8c2951cbd71346130be778446434",
       "referenceId": "ecommerce-reference-mongodb"
     },
     {
       "backend": "postgres",
       "path": "grader/mutations/postgres-ecommerce.json",
-      "sha256": "a15d56e6cc9c08630a27eadb3a297df182e5a925235a802628eb5b0efdf9da85",
+      "sha256": "b5fce8636bc9355c968943b52244b5b7698c692c649f31756434754372ad18fc",
       "referenceId": "ecommerce-reference-postgres"
     },
     {
       "backend": "spacetime",
       "path": "grader/mutations/spacetime-ecommerce.json",
-      "sha256": "9df40afd886890d7ab1d763940b5dbbdb5e20265194922fa0c7b05fa35bde4c3",
+      "sha256": "ac91df797dbffb76270735ff2c76f58e01683c817be8adec9d37a130fb167340",
       "referenceId": "ecommerce-reference-spacetime"
     },
     {
       "backend": "convex",
       "path": "grader/mutations/convex-ecommerce.json",
-      "sha256": "4a2db5b58dd9b00e322cf565f19fb58b66283838fcdaeec74c6ab2a5b8c68232",
+      "sha256": "5f8e894b014f6cf09bad0d408071184532dbe26c01454c175881c7f64e697246",
       "referenceId": "ecommerce-reference-convex"
     },
     {
       "backend": "supabase",
       "path": "grader/mutations/supabase-ecommerce.json",
-      "sha256": "8419868903cb7daaaf9a854e75af4ba6bbf05a8ee402e257a1f918122090b3f9",
+      "sha256": "52962d4fc03926ef1bc3afcb501d879f54eb8b9da8937478cdc6980ef226808f",
       "referenceId": "ecommerce-reference-supabase"
     }
   ],
