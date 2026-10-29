@@ -23,7 +23,7 @@ use spacetimedb_schema::{
     type_for_generate::TypespaceForGenerate,
 };
 use spacetimedb_schema::{
-    def::{ModuleDef, ReducerDef},
+    def::{ModuleDef, ReducerDef, ScopedTypeName},
     identifier::Identifier,
     type_for_generate::AlgebraicTypeUse,
 };
@@ -81,6 +81,14 @@ pub(super) fn print_auto_generated_version_comment(output: &mut Indenter) {
 pub(super) fn type_ref_name(module: &ModuleDef, typeref: AlgebraicTypeRef) -> String {
     let (name, _def) = module.type_def_from_ref(typeref).unwrap();
     collect_case(Case::Pascal, name.name_segments())
+}
+
+/// The name a receiver type registers under in a sender, scoped by its dependency.
+///
+/// Segments are joined with `.` because the TypeScript SDK splits only on `.`,
+/// while `ScopedTypeName`'s `Display` joins them with `::`.
+pub(super) fn dependency_scoped_type_name(dependency: &str, name: &ScopedTypeName) -> String {
+    format!("{dependency}.{}", name.name_segments().join("."))
 }
 
 pub(super) fn is_type_filterable(typespace: &TypespaceForGenerate, ty: &AlgebraicTypeUse) -> bool {

@@ -30,6 +30,36 @@ impl Default for CodegenOptions {
     }
 }
 
+/// Target language and language-specific options for receiver bindings.
+pub enum ReceiverLanguage<'a> {
+    Rust,
+    TypeScript,
+    Csharp { namespace: &'a str },
+    Cpp,
+}
+
+/// Generate receiver binding files without reading or writing the filesystem.
+/// `dependency_name` scopes generated type names across receiver dependencies.
+/// Use `None` for standalone bindings.
+pub fn generate_receiver_bindings(
+    module: &ModuleDef,
+    lang: ReceiverLanguage<'_>,
+    dependency_name: Option<&str>,
+) -> anyhow::Result<Vec<OutputFile>> {
+    match lang {
+        ReceiverLanguage::Rust => Ok(rust::generate_rust_module_bindings(module, dependency_name)),
+        ReceiverLanguage::TypeScript => Ok(typescript::generate_module_bindings(module, dependency_name)),
+        ReceiverLanguage::Csharp { .. } => {
+            // TODO(idc-csharp): Generate C# receiver types and reducer handles in the configured namespace.
+            anyhow::bail!("C# receiver binding generation is not implemented yet")
+        }
+        ReceiverLanguage::Cpp => {
+            // TODO(idc-cpp): Generate C++ receiver types and reducer handles with the required headers.
+            anyhow::bail!("C++ receiver binding generation is not implemented yet")
+        }
+    }
+}
+
 pub fn generate(module: &ModuleDef, lang: &dyn Lang, options: &CodegenOptions) -> Vec<OutputFile> {
     itertools::chain!(
         util::iter_tables(module, options.visibility).map(|tbl| lang.generate_table_file(module, tbl)),
