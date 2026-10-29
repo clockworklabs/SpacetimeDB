@@ -15,7 +15,7 @@ The two ordinary callers use locally signed test JWTs with different subjects;
 only their public verification key is deployed. No cloud account or auth service
 is used. These identities do not prove the username/password contract.
 
-Build Stack Bench once, then run from this fixture directory:
+Build StackBench once, then run from this fixture directory:
 
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund
@@ -107,7 +107,7 @@ native API (3210) and HTTP actions (3211) on that anchor, bound to host loopback
 The backend and fixture helper join `container:<anchor>`; only the backend mounts
 its named data volume. Do not join the helper to the replaceable backend itself.
 For this feasibility probe, Docker-assigned host ports avoid collisions. They
-are not production allocation: the adapter must use Stack Bench's leased windows.
+are not production allocation: the adapter must use StackBench's leased windows.
 
 With the local-account fixture deployed, run these phases from its helper:
 

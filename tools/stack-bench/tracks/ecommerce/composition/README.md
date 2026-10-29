@@ -1,55 +1,35 @@
 # Ecommerce composition
 
-This directory defines ecommerce work that Stack Bench can ask for and grade.
+This directory defines the ecommerce work StackBench can request and grade.
 
-## Ownership
+- `packs/`: selectable features and specifications. A pack names the packs it
+  depends on by stable ID.
+- `fixtures/`: exact starting data.
+- `recipes/`: which packs, fixture, prompts, execution, and scoring a campaign
+  gets.
+- `sequential.json` and `dependency.json`: mode aliases to recipes.
+- `calibrations/`: a recipe bound to its reference apps, seeded bugs, empty-app
+  controls, repetition policy, and qualification evidence.
 
-- `packs/` contains selectable product features and specifications. A pack
-  names the packs it depends on by stable id.
-- `fixtures/` contains exact starting data.
-- `recipes/` selects pack, fixture, prompt, execution, and scoring content.
-- `sequential.json` and `dependency.json` map mode aliases to recipes.
-- `calibrations/` binds a recipe to reference apps, mutations, null controls,
-  repetition policy, and qualification state.
+These files are the source of truth. Do not copy versions or qualification
+status into documentation.
 
-These files are the source of truth. Do not copy current versions, counts, or
-qualification status into documentation.
-
-## Selection rules
-
-A pack selection changes the requested product work. Its declared dependencies
-join both the prompt and grading scope.
-
-A check selection narrows measurement inside that requested work. It does not
-change the product request. A check outside the selected packs is rejected.
-
-Prompt selection and scoring selection remain independent. Specifications have
-three treatments:
-
-- **requested:** included in the initial request and scored;
-- **expected:** omitted from the initial request, but scored and eligible for
-  repair feedback after a failure;
-- **observed:** measured after the first build without affecting the main score
-  or repair loop.
-
-See the [prompting method](../../../docs/prompting.md) for the complete request
-pipeline and examples of each treatment.
+Selecting a pack changes the requested work; its dependencies join both the
+prompt and the grading scope. Selecting checks narrows measurement; the request
+is unchanged. A specification's treatment is explained in
+[prompting](../../../docs/prompting.md).
 
 ## Identity
 
-Recipes use normalized JSON. Object keys are sorted. Arrays keep their order when
-order changes meaning or execution.
+Recipes are normalized JSON with sorted keys; arrays keep their order where
+order matters. `meaningSha256` covers task text, contracts, checks, roles, and
+points. `executionSha256` covers fixtures, actions, timing, capabilities, and
+budgets. `contentSha256` binds both, and `sourceManifestSha256` binds the raw
+source bytes. Version labels are for people; hashes identify content.
 
-- `meaningSha256` covers task text, contracts, checks, roles, and points.
-- `executionSha256` covers fixtures, actions, timing, capabilities, and budgets.
-- `contentSha256` binds meaning and execution.
-- `sourceManifestSha256` binds source paths and raw bytes.
+## Commands
 
-Human versions are labels. Hashes identify the exact content.
-
-## Authoring commands
-
-Run these commands from `tools/stack-bench`:
+From `tools/stack-bench`:
 
 ```bash
 npm run check:composition
@@ -60,15 +40,6 @@ npm run recipe -- show <recipe.json> --track ecommerce
 npm run recipe -- diff <old-recipe.json> <new-recipe.json> --track ecommerce
 ```
 
-Use `recipe show --pack <pack-id>` or `--check <check-id>` to inspect a selected
-scope and its hash.
-
-Use the compiler-owned command for current qualification status:
-
-```bash
-node dist/commands/qualification-cli.js status --track ecommerce --level <N>
-```
-
-Do not infer launch or promotion status from this README. Qualification evidence
-must match the exact recipe, fixture, calibration, engine, image, stack, and
-runner identities.
+`recipe show --pack <id>` or `--check <id>` inspects one selected scope and its
+hash. Qualification status comes from `qualification status`; see the
+[qualify-checks skill](../../../skills/qualify-checks/SKILL.md).

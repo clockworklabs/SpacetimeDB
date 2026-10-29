@@ -4,32 +4,10 @@ StackBench runs as one Docker appliance. Docker runs the controller, the coding
 sessions, the databases, the grading browser, and a package cache. The host needs
 Git and Docker and nothing else.
 
-## Run the demo
-
-From the repository root of a clean checkout, with Docker running:
-
-```sh
-docker compose -f tools/stack-bench/appliance/demo.compose.yaml run --build --rm demo
-```
-
-When startup completes, open [localhost:7331](http://localhost:7331). The
-command builds the images, prepares the state volume, starts the dashboard, and
-grades the reference apps on three stacks. It makes no model calls and needs no
-credentials. The first build can take a long time. The dashboard stays running
-afterwards; results stay in the `stack-bench-state` volume.
-
-## Requirements
-
-- Docker running Linux containers for `linux/amd64`, with BuildKit and the
-  Compose plugin.
-- 4 CPUs, 8 GiB of memory, and 10 GiB of free storage allocated to Docker. The
-  first source build needs about 16 GiB of memory and 60 GiB of storage.
-- A clean, normal Git clone. Release builds reject a changed or worktree checkout.
-- Internet access for base images, npm packages, and the model provider.
-
+Host requirements and the demo are in [Getting started](../GETTING-STARTED.md).
 The controller manages containers through the Docker socket and keeps all state
-in the `stack-bench-state` volume, mounted at Docker's own mountpoint so paths
-match on Docker Desktop and Linux.
+in the `stack-bench-state` volume; its isolation is described in
+[system design](../docs/system-design.md#appliance-isolation).
 
 ## Set up for model runs
 
