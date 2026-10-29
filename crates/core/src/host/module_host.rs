@@ -265,6 +265,7 @@ pub struct ModuleMetrics {
     pub request_round_trip_unsubscribe: Histogram,
     pub request_round_trip_sql: Histogram,
     scheduled_function_delay: ScheduledFunctionDelayMetrics,
+    idc_callback_failures: Mutex<FxHashMap<TableName, prometheus::IntCounter>>,
 }
 
 #[derive(Debug)]
@@ -330,7 +331,16 @@ impl ModuleMetrics {
             request_round_trip_unsubscribe,
             request_round_trip_sql,
             scheduled_function_delay,
+            idc_callback_failures: Mutex::new(FxHashMap::default()),
         }
+    }
+
+    pub(in crate::host) fn record_idc_callback_failure(&self, db: Identity, table_name: &TableName) {
+        self.idc_callback_failures
+            .lock()
+            .entry(table_name.clone())
+            .or_insert_with(|| WORKER_METRICS.idc_callback_failures.with_label_values(&db, table_name))
+            .inc();
     }
 
     pub(in crate::host) fn observe_scheduled_function_delay(&self, function_name: &str, delay: Duration) {
@@ -2745,7 +2755,7 @@ impl ModuleHost {
             ..
         } = delivery;
 
-        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Idc);
 
         let tx = match Self::check_idc_delivery(stdb, tx, delivery)? {
             ControlFlow::Continue(tx) => tx,
@@ -2896,7 +2906,7 @@ impl ModuleHost {
             return Ok(());
         }
         let db = self.relational_db();
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Idc);
         let (tx, ()) = db
             .with_auto_rollback(tx, |tx| {
                 tx.trim_inbound_idc_outcomes(sender_identity, stream_id, ack_prefix)
@@ -2907,6 +2917,19 @@ impl ModuleHost {
             .ok_or_else(|| IdcDeliveryFailure::Internal("IDC transaction was not committed".into()))?;
         db.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
         Ok(())
+    }
+
+    pub(super) async fn run_idc_callback_and_cleanup(
+        &self,
+        msg: super::idc_actor::DeliveredMessage,
+    ) -> anyhow::Result<()> {
+        call_instance!(
+            self,
+            "IDC result",
+            msg,
+            |msg, inst| inst.run_idc_callback_and_cleanup(msg),
+            |msg, inst| inst.run_idc_callback_and_cleanup(msg).await,
+        )?
     }
 
     /// Processes an ordered IDC message and returns its recorded outcome.
@@ -3833,11 +3856,13 @@ impl ModuleHost {
         // As in `Self::marked_closed`, `Relaxed` is sufficient because we're not synchronizing any external state.
         self.closed.store(true, std::sync::atomic::Ordering::Relaxed);
         self.scheduler().close();
+        self.idc_sender().close();
         self.exited().await;
     }
 
     pub async fn exited(&self) {
-        self.scheduler().closed().await;
+        let idc_sender = self.idc_sender();
+        tokio::join!(self.scheduler().closed(), idc_sender.closed());
     }
 
     pub fn inject_logs(&self, log_level: LogLevel, function_name: &str, message: &str) {
@@ -4239,6 +4264,13 @@ impl ModuleHost {
         match &*self.inner {
             ModuleHostInner::Wasm(wasm) => wasm.module.scheduler(),
             ModuleHostInner::Js(js) => js.module.scheduler(),
+        }
+    }
+
+    fn idc_sender(&self) -> super::idc_actor::IdcActorSender {
+        match &*self.inner {
+            ModuleHostInner::Wasm(wasm) => wasm.module.idc_sender(),
+            ModuleHostInner::Js(js) => js.module.idc_sender(),
         }
     }
 }

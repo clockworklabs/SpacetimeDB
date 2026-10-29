@@ -50,6 +50,14 @@ spacetime generate --lang typescript|csharp|rust --out-dir ./bindings --module-p
 spacetime generate --lang unrealcpp --uproject-dir ./MyGame --module-path ./server --unreal-module-name MyGame
 ```
 
+### Client and Module Bindings
+
+`spacetime generate --bindings client` (default) generates bindings for clients connecting to a database. `--bindings module` generates receiver bindings used inside a **calling database module** to call reducers in another **receiving database** through asynchronous IDC. Rust and TypeScript module bindings are supported; C#/C++ module bindings are not implemented yet. `unrealcpp` is client-only; `cpp` is accepted only in module mode.
+
+In `spacetime.json`, each calling database's non-inherited `dependencies` array requires its own `module-path` and dependency `name` plus receiving-module `module-path` or `database`. A `database` reference resolves another target's local source/build settings in the same config; it does not fetch a running database's schema. A direct receiving module source takes precedence. Dependencies do not themselves publish receiving databases or inherit the calling module's build settings. `generate <calling-database>` processes both its regular `generate` entries (client bindings by default) and `dependencies` (module bindings automatically); no `--bindings` flag or second `generate` entry is needed for a dependency. For dependencies, module binding language defaults to the calling module's language and Rust/TypeScript output defaults to `<calling module-path>/src/remote_bindings`. Explicit config `out-dir` is config-relative. A regular `generate` entry can select `"bindings": "module"`, but does not use dependency language or output defaults. The CLI `--bindings` override is allowed only when a single generation entry is selected.
+
+`dev` generates only root dependencies before building the calling module, and watches their source paths. Child targets are available for source lookup, not recursive dependency generation. `--skip-generate` skips receiver/client generation and receiver-only watching; `--skip-publish` does not. See https://spacetimedb.com/docs/cli-reference/spacetime-json#receiver-dependencies for examples.
+
 ### Publishing & Deployment
 
 ```bash

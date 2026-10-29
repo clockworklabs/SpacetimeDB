@@ -1,0 +1,42 @@
+---
+source: crates/codegen/tests/outbox_builtin_shadowing.rs
+expression: declarations
+---
+"lib.rs" = '''
+pub use receive_args_type::ReceiveArgs;
+pub use string_type::String;
+pub struct Identity(pub spacetimedb::Identity);
+pub struct ReceiveArgs_ {
+    pub text: ::std::string::String,
+    pub values: ::std::vec::Vec::<::core::primitive::u64>,
+    pub maybe: ::core::option::Option::<::std::string::String>,
+    pub outcome: ::core::result::Result::<(), ::std::string::String>,
+    pub number: ::core::primitive::u64,
+    pub timestamp: ::spacetimedb::Timestamp,
+    pub identity: Identity,
+    pub custom_string: String,
+    pub custom_args: ReceiveArgs,
+}
+pub struct receive;
+impl spacetimedb::rt::RemoteReducer for receive {
+    const NAME: &'static str = "receive";
+    const SIGNATURE_HASH: &'static str = "c0cb30752579ca4f11c7255a77df5f9294ed3ecdf3df710a4c41d086fb9b5ebc";
+    type Args = ReceiveArgs_;
+}
+pub struct NoopArgs {
+    }
+pub struct noop;
+impl spacetimedb::rt::RemoteReducer for noop {
+    const NAME: &'static str = "noop";
+    const SIGNATURE_HASH: &'static str = "bc436888fd947d2bfd49ed6bddad31f0245c34fd42c85f9360fa0b477aa957fc";
+    type Args = NoopArgs;
+}'''
+"receive_args_type.rs" = '''
+pub struct ReceiveArgs {
+    pub builtin: ::std::string::String,
+    pub custom: String,
+}'''
+"string_type.rs" = '''
+pub struct String {
+    pub value: ::core::primitive::u64,
+}'''

@@ -114,6 +114,8 @@ pub enum Workload {
     Update,
     Procedure,
     Internal,
+    /// Inter-database message bookkeeping outside reducer execution.
+    Idc,
 }
 
 impl Workload {
@@ -142,6 +144,7 @@ impl Workload {
             Self::Update => WorkloadType::Update,
             Self::Procedure => WorkloadType::Procedure,
             Self::Internal => WorkloadType::Internal,
+            Self::Idc => WorkloadType::Idc,
         }
     }
 }
@@ -161,6 +164,8 @@ pub enum WorkloadType {
     Internal,
     View,
     Procedure,
+    /// Inter-database message bookkeeping outside reducer execution.
+    Idc,
 }
 
 impl ExecutionContext {
@@ -185,6 +190,7 @@ impl ExecutionContext {
             Workload::Unsubscribe => Self::new(database, None, WorkloadType::Unsubscribe),
             Workload::Update => Self::new(database, None, WorkloadType::Update),
             Workload::Procedure => Self::new(database, None, WorkloadType::Procedure),
+            Workload::Idc => Self::new(database, None, WorkloadType::Idc),
         }
     }
 
