@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use futures::{StreamExt, TryStreamExt};
+use futures::{FutureExt, StreamExt};
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, HashSet};
 use spacetimedb_guard::SpacetimeDbGuard;
 use std::fs;
@@ -331,16 +331,13 @@ fn run_benchmarks(args: RunArgs, reasoning: ReasoningEffort) -> Result<()> {
     }
 
     let llm_provider = if !config.goldens_only && !config.hash_only {
-        let provider = make_provider_from_env(reasoning)?;
-        let rt = runtime.as_ref().expect("failed to initialize runtime for preflight");
-        let routes = filter_routes(&config);
-        preflight_llm_routes(rt, provider.as_ref(), &routes, &modes)?;
-        Some(provider)
+        Some(make_provider_from_env(reasoning)?)
     } else {
         None
     };
 
     let mut all_outcomes: Vec<RunOutcome> = Vec::new();
+    let mut run_status = Ok(());
 
     for mode in modes {
         let result = run_mode_benchmarks(
@@ -351,14 +348,19 @@ fn run_benchmarks(args: RunArgs, reasoning: ReasoningEffort) -> Result<()> {
             runtime.as_ref(),
             llm_provider.as_ref(),
         );
-        let outcomes = match result {
-            Ok(outcomes) => outcomes,
-            Err(error) => {
-                report_server_status(guard.as_mut());
-                return Err(error);
+        match result {
+            Ok((outcomes, status)) => {
+                all_outcomes.extend(outcomes);
+                run_status = status;
             }
-        };
-        all_outcomes.extend(outcomes);
+            Err(error) => {
+                run_status = Err(error);
+            }
+        }
+        if run_status.is_err() {
+            report_server_status(guard.as_mut());
+            break;
+        }
     }
 
     save_server_diagnostics(guard.as_mut(), "end");
@@ -381,7 +383,7 @@ fn run_benchmarks(args: RunArgs, reasoning: ReasoningEffort) -> Result<()> {
         }
     }
 
-    Ok(())
+    run_status
 }
 
 fn report_server_status(guard: Option<&mut SpacetimeDbGuard>) {
@@ -674,51 +676,6 @@ fn should_fetch_remote_routes(args: &RunArgs) -> bool {
         && !args.goldens_only
 }
 
-fn preflight_llm_routes(
-    runtime: &Runtime,
-    llm_provider: &dyn LlmProvider,
-    routes: &[ModelRoute],
-    modes: &[String],
-) -> Result<()> {
-    if routes.is_empty() {
-        return Ok(());
-    }
-
-    let mut search_flags = Vec::new();
-    if modes.iter().any(|mode| mode == "search") {
-        search_flags.push(true);
-    }
-    if modes.iter().any(|mode| mode != "search") {
-        search_flags.push(false);
-    }
-
-    let mut failures = Vec::new();
-    for route in routes {
-        for search_enabled in &search_flags {
-            let mode_label = if *search_enabled {
-                "search/OpenRouter online"
-            } else {
-                "standard"
-            };
-
-            if let Err(err) = runtime.block_on(llm_provider.preflight_route(route, *search_enabled)) {
-                let msg = format!("{} ({mode_label}): {err:#}", route.display_name);
-                eprintln!("[preflight] FAILED {msg}");
-                failures.push(msg);
-            }
-        }
-    }
-
-    if !failures.is_empty() {
-        anyhow::bail!(
-            "LLM provider preflight failed before benchmark run:\n  - {}",
-            failures.join("\n  - ")
-        );
-    }
-
-    Ok(())
-}
-
 /// Run benchmarks for a single mode.
 fn run_mode_benchmarks(
     mode: &str,
@@ -727,7 +684,7 @@ fn run_mode_benchmarks(
     bench_root: &Path,
     runtime: Option<&Runtime>,
     llm_provider: Option<&Arc<dyn LlmProvider>>,
-) -> Result<Vec<RunOutcome>> {
+) -> Result<(Vec<RunOutcome>, Result<()>)> {
     let lang_str = lang.as_str();
     let context = build_context(mode, Some(lang))?;
     // Use processed context hash so each lang/mode combination has its own unique hash
@@ -737,7 +694,7 @@ fn run_mode_benchmarks(
     println!("{:<12} [{:<10}] hash: {}", mode, lang_str, short_hash(&hash));
 
     if config.hash_only {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Ok(())));
     }
 
     // Run benchmarks for all matching routes
@@ -745,13 +702,13 @@ fn run_mode_benchmarks(
 
     if routes.is_empty() {
         println!("{:<12} [{:<10}] no matching models to run", mode, lang_str);
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Ok(())));
     }
 
     let runtime = runtime.expect("runtime required for normal runs");
     let llm_provider = llm_provider.expect("llm provider required for normal runs");
 
-    let route_runs = runtime.block_on(run_many_routes_for_mode(
+    let (route_runs, status) = runtime.block_on(run_many_routes_for_mode(
         bench_root,
         mode,
         &hash,
@@ -760,7 +717,7 @@ fn run_mode_benchmarks(
         config,
         llm_provider.as_ref(),
         &routes,
-    ))?;
+    ));
 
     // Print summary sorted by pass rate descending
     let mut summary: Vec<(&str, u32, u32, f32)> = route_runs
@@ -782,7 +739,7 @@ fn run_mode_benchmarks(
     }
 
     let all_outcomes: Vec<RunOutcome> = route_runs.into_iter().flat_map(|rr| rr.outcomes).collect();
-    Ok(all_outcomes)
+    Ok((all_outcomes, status))
 }
 
 /// Routes to run: when `model_filter` is set (from --models), only routes whose vendor and
@@ -848,7 +805,7 @@ async fn run_many_routes_for_mode(
     config: &RunConfig,
     llm: &dyn LlmProvider,
     routes: &[ModelRoute],
-) -> Result<Vec<RouteRun>> {
+) -> (Vec<RouteRun>, Result<()>) {
     let rbuf = bench_route_concurrency();
     let selectors = config.selectors.as_deref();
     let host = config.host.clone();
@@ -857,13 +814,16 @@ async fn run_many_routes_for_mode(
     let local_analysis = config.local_analysis;
     let dry_run_id = config.dry_run_id.clone();
 
-    futures::stream::iter(routes.iter().map(|route| {
+    let runs = futures::stream::iter(routes.iter().map(|route| {
         let host = host.clone();
         let api_client = api_client.clone();
         let dry_run_id = dry_run_id.clone();
 
         async move {
             println!("\u{2192} running {}", route.display_name);
+            llm.preflight_route(route, mode == "search")
+                .await
+                .context("LLM provider preflight failed before model batch")?;
 
             let golden_scope = xtask_llm_benchmark::bench::run_scope_tag(mode, route.vendor.slug(), &route.api_model);
             let golden_databases =
@@ -902,10 +862,36 @@ async fn run_many_routes_for_mode(
                 outcomes,
             })
         }
+        .map(move |result| result.with_context(|| format!("model {}:{}", route.vendor.slug(), route.api_model)))
     }))
-    .buffer_unordered(rbuf)
-    .try_collect::<Vec<_>>()
-    .await
+    .buffer_unordered(rbuf);
+    collect_model_runs(runs).await
+}
+
+/// A rejected batch must not cancel independent models or make the job look successful.
+async fn collect_model_runs<T>(runs: impl futures::Stream<Item = Result<T>>) -> (Vec<T>, Result<()>) {
+    futures::pin_mut!(runs);
+    let mut completed = Vec::new();
+    let mut failures = Vec::new();
+    while let Some(result) = runs.next().await {
+        match result {
+            Ok(run) => completed.push(run),
+            Err(error) => {
+                eprintln!("[runner] model batch failed: {error:#}");
+                failures.push(format!("{error:#}"));
+            }
+        }
+    }
+    let status = if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(
+            "{} model batches failed:\n{}",
+            failures.len(),
+            failures.join("\n")
+        ))
+    };
+    (completed, status)
 }
 
 fn categories_to_set(v: Option<Vec<String>>) -> Option<HashSet<String>> {
@@ -1098,6 +1084,32 @@ mod tests {
 
         let overridden = Cli::try_parse_from(["llm", "run", "--hash-only", "--reasoning", "high"]).unwrap();
         assert_eq!(overridden.reasoning, ReasoningEffort::High);
+    }
+
+    #[tokio::test]
+    async fn failed_model_does_not_skip_later_models_or_report_success() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let completed = AtomicUsize::new(0);
+        let runs = futures::stream::iter(["broken", "healthy", "also-broken"].into_iter().map(|model| {
+            let completed = &completed;
+            async move {
+                completed.fetch_add(1, Ordering::SeqCst);
+                if model == "healthy" {
+                    Ok(model)
+                } else {
+                    anyhow::bail!("{model}: provider error")
+                }
+            }
+        }))
+        .buffer_unordered(1);
+        let (successful, status) = collect_model_runs(runs).await;
+        assert_eq!(successful, ["healthy"]);
+        let error = status.unwrap_err().to_string();
+        assert_eq!(completed.load(Ordering::SeqCst), 3);
+        assert!(error.contains("broken") && error.contains("also-broken"), "{error}");
+        let (valid, status) = collect_model_runs(futures::stream::iter([Ok("first"), Ok("second")])).await;
+        status.unwrap();
+        assert_eq!(valid, ["first", "second"]);
     }
 
     #[test]

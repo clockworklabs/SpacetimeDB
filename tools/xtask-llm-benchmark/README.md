@@ -4,6 +4,12 @@ The normal suite contains 95 tasks. The 12 `advanced` tasks are included by defa
 in all three languages and in both context modes. They are also included in the
 normal website task catalog. `--categories advanced` is only a development filter.
 
+Provider errors or missing response content reject the whole model/language/mode
+batch after retries. No partial scores from that batch are uploaded. Other models
+still run, but the language job exits with failure if any batch fails. Response
+errors include the generation ID and finish reason when supplied by the provider.
+Generated code that fails compilation or grading remains a normal benchmark score.
+
 ## New behavioral tasks
 
 | ID | Contract checked |
