@@ -9,3 +9,4 @@ export {
   type AuthPanelOptions,
   type AuthProviderAvailability,
 } from './auth-panel';
+export { mountFooter } from './footer';
