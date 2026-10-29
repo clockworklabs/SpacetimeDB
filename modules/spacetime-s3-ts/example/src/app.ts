@@ -6,17 +6,19 @@ interface ServerConfig {
   databaseName: string;
 }
 
-type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
 type StatusTone = 'neutral' | 'success' | 'error';
 
 const TOKEN_KEY = 'spacetime-s3-example-token';
 // The module uses the submodule's default file size limit.
 const MAX_FILE_BYTES = 100 * 1024 * 1024;
-const STATE_LABELS: Record<string, string> = {
-  pending: 'uploading',
-  copying: 'verifying',
-  ready: 'ready',
-  deleting: 'deleting',
+// 24px stroke icons, one path per array entry.
+const ICONS = {
+  download: ['M12 3v12', 'm7 10 5 5 5-5', 'M5 21h14'],
+  delete: [
+    'M3 6h18',
+    'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6',
+    'M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2',
+  ],
 };
 const ERROR_MESSAGES: Record<string, string> = {
   's3.quota_exceeded': 'You have reached your file or storage limit.',
@@ -30,6 +32,10 @@ let connection: DbConnection | null = null;
 // Upload progress by file ID, from 0 to 1. Only this tab knows it.
 const progress = new Map<string, number>();
 const busy = new Set<string>();
+// Upload messages by file ID, shown until the file's row can show progress.
+const uploadMessages = new Map<string, string>();
+// Files this tab completed; screen readers hear when each becomes ready.
+const verifying = new Set<string>();
 
 function element<T extends keyof HTMLElementTagNameMap>(
   tag: T,
@@ -60,10 +66,25 @@ function setStatus(text: string, tone: StatusTone = 'neutral'): void {
   status.dataset.tone = tone;
 }
 
-function setConnection(state: ConnectionState, label: string): void {
-  byId('connection').dataset.state = state;
-  byId('conn').textContent = label;
-  byId<HTMLButtonElement>('upload').disabled = state !== 'connected';
+// Read by screen readers only; the file rows show the same steps visually.
+function announce(text: string): void {
+  byId('announce').textContent = text;
+}
+
+function setConnected(connected: boolean): void {
+  byId<HTMLButtonElement>('upload').disabled = !connected;
+}
+
+function icon(name: keyof typeof ICONS): SVGSVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const d of ICONS[name]) {
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', d);
+    svg.append(path);
+  }
+  return svg;
 }
 
 function formatSize(bytes: number): string {
@@ -78,9 +99,17 @@ function formatSize(bytes: number): string {
   return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`;
 }
 
-function button(label: string, onClick: () => Promise<void>, id: string) {
-  const node = element('button', 'button button-secondary button-small', label);
+function button(
+  name: keyof typeof ICONS,
+  label: string,
+  onClick: () => Promise<void>,
+  id: string
+) {
+  const node = element('button', `icon-button ${name}`);
   node.type = 'button';
+  node.title = label;
+  node.setAttribute('aria-label', label);
+  node.append(icon(name));
   node.disabled = busy.has(id);
   node.onclick = async () => {
     busy.add(id);
@@ -98,39 +127,46 @@ function button(label: string, onClick: () => Promise<void>, id: string) {
 }
 
 function fileCard(file: MyFile): HTMLLIElement {
-  const uploaded = progress.get(file.id);
   // Only the uploading tab knows a pending file is still uploading.
-  const label =
-    file.state === 'pending' && uploaded === undefined
-      ? 'pending'
-      : (STATE_LABELS[file.state] ?? file.state);
+  const uploaded = progress.get(file.id);
   const item = element('li', 'file-card');
+  item.dataset.state = file.state;
   const main = element('div', 'file-main');
   main.append(
     element('span', 'file-name', file.filename),
-    element(
-      'span',
-      'file-meta',
-      `${formatSize(file.size)} · ${file.contentType}`
-    )
+    element('span', 'file-meta', formatSize(file.size))
   );
   if (file.state === 'pending' && uploaded !== undefined) {
+    const percent = Math.round(uploaded * 100);
     const bar = element('div', 'progress');
+    bar.setAttribute('role', 'progressbar');
+    bar.setAttribute('aria-label', `Uploading ${file.filename}`);
+    bar.setAttribute('aria-valuenow', String(percent));
     const fill = element('span');
-    fill.style.width = `${Math.round(uploaded * 100)}%`;
+    fill.style.width = `${percent}%`;
     bar.append(fill);
     main.append(bar);
+  } else if (file.state === 'pending') {
+    main.append(element('span', 'sr-only', 'Upload not finished'));
   }
   const actions = element('div', 'file-actions');
   if (file.state === 'ready') {
     actions.append(
-      button('Download', () => download(file), file.id),
-      button('Delete', () => remove(file), file.id)
+      button('download', 'Download', () => download(file), file.id),
+      button('delete', 'Delete', () => remove(file), file.id)
     );
-  } else if (file.state === 'pending' && uploaded === undefined) {
-    actions.append(button('Delete', () => remove(file), file.id));
+  } else if (file.state === 'copying' || file.state === 'deleting') {
+    const spinner = element('span', 'spinner');
+    spinner.setAttribute('role', 'img');
+    spinner.setAttribute(
+      'aria-label',
+      file.state === 'copying' ? 'Verifying' : 'Deleting'
+    );
+    actions.append(spinner);
+  } else if (uploaded === undefined) {
+    actions.append(button('delete', 'Delete', () => remove(file), file.id));
   }
-  item.append(main, element('span', `status-badge ${label}`, label), actions);
+  item.append(main, actions);
   return item;
 }
 
@@ -145,6 +181,17 @@ function renderFiles(): void {
   byId('file-count').textContent = String(files.length);
   byId('files').hidden = files.length === 0;
   byId('files-empty').hidden = files.length > 0;
+  for (const file of files) {
+    clearUploadMessage(file.id);
+    if (file.state === 'ready' && verifying.delete(file.id))
+      announce(`${file.filename} is ready`);
+  }
+}
+
+function clearUploadMessage(id: string): void {
+  // Another action's message, such as an error, stays.
+  if (byId('status').textContent === uploadMessages.get(id)) setStatus('');
+  uploadMessages.delete(id);
 }
 
 async function sha256Base64(file: File): Promise<string> {
@@ -200,8 +247,9 @@ async function upload(file: File): Promise<void> {
   for (const { name, value } of grant.fields) form.append(name, value);
   form.append('file', file);
   progress.set(id, 0);
+  uploadMessages.set(id, `Uploading ${file.name}...`);
+  setStatus(uploadMessages.get(id)!);
   renderFiles();
-  setStatus(`Uploading ${file.name}...`);
   // Keep the progress entry until completion, so the file never looks stalled.
   try {
     try {
@@ -220,10 +268,12 @@ async function upload(file: File): Promise<void> {
       }
       throw error;
     }
-    setStatus(`Verifying ${file.name}...`);
-    // A failed copy is retried by maintenance; the file's badge shows its state.
+    verifying.add(id);
+    announce(`Verifying ${file.name}`);
+    // A failed copy is retried by maintenance; the file's row shows its state.
     await current.procedures.completeUpload({ id });
   } finally {
+    clearUploadMessage(id);
     progress.delete(id);
     renderFiles();
   }
@@ -295,7 +345,8 @@ function connect(config: ServerConfig): void {
     .onConnect((current: DbConnection, _identity, token) => {
       saveToken(token);
       connection = current;
-      setConnection('connected', config.databaseName);
+      setConnected(true);
+      setStatus('');
       current.db.myFiles.onInsert(renderFiles);
       current.db.myFiles.onDelete(renderFiles);
       current
@@ -307,24 +358,23 @@ function connect(config: ServerConfig): void {
         .subscribe([tables.myFiles]);
     })
     .onConnectError((_ctx: ErrorContext, error: Error) => {
-      setConnection('error', 'Connection failed');
+      setConnected(false);
       setStatus(error.message, 'error');
     })
     .onDisconnect((_ctx, error) => {
       connection = null;
-      setConnection('disconnected', 'Disconnected');
-      if (error) setStatus(error.message, 'error');
+      setConnected(false);
+      setStatus(error?.message ?? 'Disconnected', 'error');
     })
     .build();
 }
 
 async function main(): Promise<void> {
   registerUiHandlers();
-  setConnection('connecting', 'Connecting');
+  setStatus('Connecting...');
   connect(await loadServerConfig());
 }
 
 void main().catch(error => {
-  setConnection('error', 'Configuration failed');
   setStatus(errorMessage(error), 'error');
 });

@@ -71,14 +71,15 @@ Open <http://127.0.0.1:8794>.
 
 ## Try it
 
-1. Click **Upload file** and choose a file. A progress bar shows the upload to
-   S3. The file then shows **Verifying** while the server checks and copies it,
-   and **Ready** when it is done.
-2. Click **Download**. The browser saves the file under its original name.
+1. Click **Upload** and choose a file. A progress bar shows the upload to S3. A
+   spinner shows while the server checks and copies it. The download and delete
+   buttons appear when it is done.
+2. Click the download button. The browser saves the file under its original
+   name.
 3. Open the app in a private browser window. That window is a different user
    and sees only its own files.
-4. Click **Delete**. The file shows **Deleting** until maintenance removes it
-   from S3, a few seconds later.
+4. Click the delete button. The file fades until maintenance removes it from
+   S3, a few seconds later.
 
 Each browser keeps its identity in local storage. Clearing site data creates a
 new identity, and files owned by the old one are no longer reachable from that
@@ -128,8 +129,8 @@ keep the AWS credentials limited to the package README policy.
 
 - **Upload fails with a network error:** check the bucket's CORS origin. It must
   match the address in the browser exactly, including the port.
-- **Files stay at Verifying or Deleting:** check that the SpacetimeDB server is
-  running and the credentials have not expired.
-- **A file shows Pending:** another tab is uploading it, or its upload stopped,
-  for example because the page was reloaded. A stopped upload is removed when its
-  upload window closes.
+- **A file keeps spinning:** check that the SpacetimeDB server is running and
+  the credentials have not expired.
+- **A faded file has only a delete button:** another tab is uploading it, or its
+  upload stopped, for example because the page was reloaded. A stopped upload is
+  removed when its upload window closes.

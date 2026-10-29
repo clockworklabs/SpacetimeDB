@@ -134,39 +134,6 @@ a {
   gap: 12px;
 }
 
-.connection {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: var(--muted-bright);
-  background: rgb(7 11 15 / 55%);
-  font-size: 0.78rem;
-  font-weight: 600;
-}
-
-.connection-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--amber);
-  box-shadow: 0 0 0 4px rgb(244 201 93 / 10%);
-}
-
-.connection[data-state='connected'] .connection-dot {
-  background: var(--green);
-  box-shadow: 0 0 0 4px rgb(76 244 144 / 10%);
-}
-
-.connection[data-state='error'] .connection-dot,
-.connection[data-state='disconnected'] .connection-dot {
-  background: var(--red);
-  box-shadow: 0 0 0 4px rgb(255 143 143 / 10%);
-}
-
 .button {
   display: inline-flex;
   align-items: center;
@@ -203,24 +170,6 @@ a {
 
 .button-primary:not(:disabled):hover {
   background: var(--accent-strong);
-}
-
-.button-secondary {
-  border-color: var(--line);
-  color: var(--muted-bright);
-  background: var(--surface-raised);
-}
-
-.button-secondary:not(:disabled):hover {
-  border-color: var(--line-strong);
-  color: var(--text);
-  background: var(--surface-soft);
-}
-
-.button-small {
-  min-height: 32px;
-  padding: 0 11px;
-  font-size: 0.74rem;
 }
 
 .panel {
@@ -307,38 +256,75 @@ a {
   stroke-width: 1.8;
 }
 
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
-  border: 1px solid;
-  border-radius: 999px;
-  font-size: 0.63rem;
-  font-weight: 750;
-  text-transform: capitalize;
+.icon-button {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  place-items: center;
+  color: var(--muted-bright);
+  background: var(--surface-raised);
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    color 150ms ease;
 }
 
-.status-badge::before {
-  width: 5px;
-  height: 5px;
+.icon-button:not(:disabled):hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+  background: var(--surface-soft);
+}
+
+.icon-button.delete:not(:disabled):hover {
+  color: var(--red);
+}
+
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.icon-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  margin: 9px;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--accent);
   border-radius: 50%;
-  background: currentColor;
-  content: '';
+  animation: spin 800ms linear infinite;
 }
 
-.status-badge.ready {
-  border-color: rgb(76 244 144 / 20%);
-  color: var(--green);
-  background: rgb(76 244 144 / 7%);
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-.status-badge.uploading,
-.status-badge.verifying,
-.status-badge.deleting {
-  border-color: rgb(244 201 93 / 20%);
-  color: var(--amber);
-  background: rgb(244 201 93 / 7%);
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.status:empty {
+  display: none;
 }
 
 .status {
@@ -359,6 +345,7 @@ a {
 
 .file-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 9px;
   margin: 0;
   padding: 0;
@@ -373,6 +360,11 @@ a {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface-raised);
+}
+
+.file-card[data-state='deleting'],
+.file-card[data-state='pending']:not(:has(.progress)) {
+  opacity: 0.5;
 }
 
 .file-main {
@@ -470,7 +462,6 @@ a {
     width: 100%;
   }
 
-  .connection,
   .topbar-actions .button {
     flex: 1;
   }
@@ -479,20 +470,12 @@ a {
     align-items: flex-start;
     flex-direction: column;
     gap: 8px;
+    min-height: 0;
     padding: 17px;
   }
 
   .status {
     text-align: left;
-  }
-
-  .file-card {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .file-main {
-    width: 100%;
   }
 }
 
@@ -501,5 +484,9 @@ a {
   *::before,
   *::after {
     transition-duration: 0.01ms !important;
+  }
+
+  .spinner {
+    animation: none;
   }
 }

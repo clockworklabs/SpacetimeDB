@@ -26,10 +26,6 @@
           <span class="brand-product">S3</span>
         </a>
         <div class="topbar-actions">
-          <span class="connection" id="connection" data-state="connecting">
-            <span class="connection-dot" aria-hidden="true"></span>
-            <span id="conn">Connecting</span>
-          </span>
           <button
             class="button button-primary"
             id="upload"
@@ -37,7 +33,7 @@
             disabled
           >
             <span aria-hidden="true">+</span>
-            Upload file
+            Upload
           </button>
           <input id="file-input" type="file" hidden />
         </div>
@@ -50,9 +46,10 @@
             <span class="count" id="file-count">0</span>
           </h2>
           <p class="status" id="status" role="status"></p>
+          <p class="sr-only" id="announce" role="status"></p>
         </header>
         <div class="panel-body">
-          <div class="empty-state" id="files-empty">
+          <div class="empty-state" id="files-empty" hidden>
             <span class="empty-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <path
