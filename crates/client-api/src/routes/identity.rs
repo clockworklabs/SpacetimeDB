@@ -96,7 +96,8 @@ pub struct WebsocketTokenResponse {
     pub token: String,
 }
 
-// This endpoint takes a token from a client and sends a newly signed token with a 60s expiry.
+// This endpoint takes a token from a client and sends a newly signed copy that expires within
+// 60s, never after the original.
 // Note that even if the token has a different issuer, we will sign it with our key.
 // This is ok because `FullTokenValidator` checks if we signed the token before worrying about the issuer.
 pub async fn create_websocket_token<S: NodeDelegate>(

@@ -92,6 +92,7 @@ pub async fn dispatch(test: &str, db_name: &str) {
         "should-fail" => exec_should_fail(db_name).await,
 
         "reconnect-different-connection-id" => exec_reconnect_different_connection_id(db_name).await,
+        "reconnect-preserves-token" => exec_reconnect_preserves_token(db_name).await,
         "caller-always-notified" => exec_caller_always_notified(db_name).await,
 
         "subscribe-all-select-star" => exec_subscribe_all_select_star(db_name).await,
@@ -1802,6 +1803,43 @@ async fn exec_reauth_part_1(_db_name: &str) {}
 /// current Node-based wasm harness for the same reason as `exec_reauth_part_1`.
 #[cfg(target_arch = "wasm32")]
 async fn exec_reauth_part_2(_db_name: &str) {}
+
+// Exercise callback-token persistence without filesystem or browser storage, so this
+// also runs in the wasm harness. A browser reconnect must not replace the original
+// credential with the temporary token echoed by the server.
+async fn exec_reconnect_preserves_token(db_name: &str) {
+    let saved = Arc::new(Mutex::new(None::<(Identity, String)>));
+    for attempt in 0..3 {
+        let test_counter = TestCounter::new();
+        let connected = test_counter.add_test(format!("connected-{attempt}"));
+        let disconnected = test_counter.add_test(format!("disconnected-{attempt}"));
+        let token = saved.lock().unwrap().as_ref().map(|(_, token)| token.clone());
+        let saved_on_connect = saved.clone();
+        let connection = build_and_run(
+            DbConnection::builder()
+                .with_database_name(db_name)
+                .with_uri(server_url())
+                .with_token(token)
+                .on_connect_error(|_, error| panic!("Connect failed: {error:?}"))
+                .on_connect(move |ctx, identity, token| {
+                    let mut saved = saved_on_connect.lock().unwrap();
+                    if let Some((original_identity, original_token)) = &*saved {
+                        assert_eq!(identity, *original_identity);
+                        assert_eq!(token, original_token);
+                    }
+                    *saved = Some((identity, token.to_owned()));
+                    connected(Ok(()));
+                    ctx.disconnect().unwrap();
+                })
+                .on_disconnect(move |_, error| {
+                    disconnected(error.map_or(Ok(()), |error| Err(anyhow::anyhow!("{error:?}"))));
+                }),
+        )
+        .await;
+        test_counter.wait_for_all().await;
+        drop(connection);
+    }
+}
 
 // Ensure a new connection gets a different connection id.
 async fn exec_reconnect_different_connection_id(db_name: &str) {
