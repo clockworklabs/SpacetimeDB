@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="A SpacetimeDB analytics example with PostHog event capture, delivery status, and feature flags."
+    />
+    <link rel="icon" href="data:," />
+    <title>Context Cafe</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">🥤</div>
+          <div class="brand-text">
+            <h1>Context Cafe</h1>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <a
+            id="posthogLink"
+            class="ph-link"
+            href="https://us.posthog.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open this project in PostHog"
+          >
+            View in PostHog
+            <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+              <path
+                d="M4 2 h6 v6"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.4"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M10 2 L5 7"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.4"
+                stroke-linecap="round"
+              />
+              <path
+                d="M9 3.5 V9.5 a1 1 0 0 1 -1 1 H2.5 a1 1 0 0 1 -1 -1 V4 a1 1 0 0 1 1 -1 H8"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                opacity="0.6"
+              />
+            </svg>
+          </a>
+          <div class="transport">
+            <button
+              id="runToggle"
+              class="primary run-btn"
+              title="Run or pause the simulation"
+            >
+              <span class="run-ico" aria-hidden="true">
+                <svg class="i-play" viewBox="0 0 12 12" width="11" height="11">
+                  <path d="M2.5 1.5 L10 6 L2.5 10.5 Z" fill="currentColor" />
+                </svg>
+                <svg class="i-pause" viewBox="0 0 12 12" width="11" height="11">
+                  <rect
+                    x="2.6"
+                    y="2"
+                    width="2.6"
+                    height="8"
+                    rx="0.6"
+                    fill="currentColor"
+                  />
+                  <rect
+                    x="6.8"
+                    y="2"
+                    width="2.6"
+                    height="8"
+                    rx="0.6"
+                    fill="currentColor"
+                  />
+                </svg>
+              </span>
+              <span class="run-label">Run</span>
+            </button>
+            <button id="tickOnce" title="Advance the simulation one step">
+              <svg
+                viewBox="0 0 12 12"
+                width="11"
+                height="11"
+                aria-hidden="true"
+                style="margin-right: 5px; vertical-align: -1px"
+              >
+                <path d="M2 2 L7.5 6 L2 10 Z" fill="currentColor" />
+                <rect
+                  x="8"
+                  y="2"
+                  width="2"
+                  height="8"
+                  rx="0.6"
+                  fill="currentColor"
+                /></svg
+              >Step
+            </button>
+            <span class="t-div"></span>
+            <label class="speed-field" title="Simulation speed">
+              <span>Speed</span>
+              <select id="speedSelect" aria-label="Simulation speed">
+                <option value="1400">Slow</option>
+                <option value="900" selected>Normal</option>
+                <option value="350">Fast</option>
+              </select>
+            </label>
+            <span class="t-div"></span>
+            <button
+              id="resetSim"
+              class="ghost"
+              title="Clear all data and start over"
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <section class="stage">
+        <div class="wallet">
+          <span class="wallet-label">Cash on hand</span>
+          <strong id="econCash" class="wallet-cash">$0.00</strong>
+          <div id="walletProfit" class="wallet-profit">▲ $0.00 profit</div>
+          <div class="wallet-break">
+            <span class="up">▲ <b id="walletRevenue">$0.00</b> sales</span>
+            <span class="down">▼ <b id="walletSpent">$0.00</b> supplies</span>
+          </div>
+          <div class="rep">
+            <span class="rep-stars" id="repStars">★★★☆☆</span>
+            <span class="rep-meta">reputation <b id="repValue">50</b></span>
+          </div>
+          <div id="upgradeGrid" class="upgrades">
+            <div class="upgrade">
+              <div>
+                <span class="up-name">Workers</span
+                ><span class="up-state" id="upWorkers">1/tick</span>
+              </div>
+              <button data-upgrade="worker">$60.00</button>
+            </div>
+            <div class="upgrade">
+              <div>
+                <span class="up-name">Machines</span
+                ><span class="up-state" id="upMachine">standard</span>
+              </div>
+              <button data-upgrade="machine">$80.00</button>
+            </div>
+            <div class="upgrade">
+              <div>
+                <span class="up-name">Counter</span
+                ><span class="up-state" id="upCounter">holds 6</span>
+              </div>
+              <button data-upgrade="counter">$50.00</button>
+            </div>
+            <div class="upgrade">
+              <div>
+                <span class="up-name">Storeroom</span
+                ><span class="up-state" id="upStorage">standard</span>
+              </div>
+              <button data-upgrade="storage">$70.00</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="board">
+          <div class="board-head">
+            <h2>Today's menu</h2>
+            <span class="board-hint">tap a drink to price it</span>
+          </div>
+          <div id="menuGrid" class="menu-grid"></div>
+        </div>
+
+        <div class="counter-scene">
+          <div id="rushBadge" class="rush-banner">
+            🔥 Rush hour: bots are pouring in
+          </div>
+          <div class="counter-top">
+            <div id="bankGrid" class="dispensers">
+              <div class="tank">
+                <div class="tank-row">
+                  <span class="tank-name">Compute</span
+                  ><span class="tank-amt"
+                    ><span class="tank-units" id="bankCompute">0</span
+                    ><span class="tank-cap" id="capCompute">/150</span></span
+                  >
+                </div>
+                <div class="tank-track">
+                  <div class="tank-fill" id="fillCompute"></div>
+                </div>
+                <div class="tank-row2">
+                  <span class="tank-sub">GPU-seconds</span
+                  ><button data-supply="compute">+50 · $25</button>
+                </div>
+              </div>
+              <div class="tank">
+                <div class="tank-row">
+                  <span class="tank-name">Context</span
+                  ><span class="tank-amt"
+                    ><span class="tank-units" id="bankContext">0</span
+                    ><span class="tank-cap" id="capContext">/250</span></span
+                  >
+                </div>
+                <div class="tank-track">
+                  <div class="tank-fill" id="fillContext"></div>
+                </div>
+                <div class="tank-row2">
+                  <span class="tank-sub">tokens</span
+                  ><button data-supply="context">+50 · $10</button>
+                </div>
+              </div>
+              <div class="tank">
+                <div class="tank-row">
+                  <span class="tank-name">Memory</span
+                  ><span class="tank-amt"
+                    ><span class="tank-units" id="bankMemory">0</span
+                    ><span class="tank-cap" id="capMemory">/100</span></span
+                  >
+                </div>
+                <div class="tank-track">
+                  <div class="tank-fill" id="fillMemory"></div>
+                </div>
+                <div class="tank-row2">
+                  <span class="tank-sub">GB</span
+                  ><button data-supply="memory">+50 · $20</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="floor">
+            <div id="counter" class="counter">
+              <div id="counterBots" class="bots"></div>
+              <div id="counterPops" class="pops"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ticker">
+          <span><b id="kpiTicks">0</b> ticks</span>
+          <span id="flowSummary" class="funnel"></span>
+          <span><b id="kpiConversion">0.0%</b> conv</span>
+          <span><b id="kpiAov">$0.00</b> avg order</span>
+          <span class="warn"><b id="econStockouts">0</b> stockouts</span>
+          <span class="warn"><b id="kpiReneged">0</b> gave up</span>
+          <span class="ph"><b id="kpiSent">0</b> → PostHog</span>
+        </div>
+      </section>
+
+      <footer class="page-foot">
+        <span class="by">Built on</span>
+        <a
+          href="https://spacetimedb.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          style="display: inline-flex"
+          ><img src="/assets/brand.svg" alt="SpacetimeDB"
+        /></a>
+      </footer>
+
+      <div id="toast" class="toast ok"></div>
+    </main>
+
+    <!-- Drink editor drawer -->
+    <div id="drawerScrim" class="scrim"></div>
+    <aside id="drawer" class="drawer" aria-label="Recipe editor">
+      <div class="drawer-head">
+        <div>
+          <h3 id="drawerTitle">Recipe</h3>
+          <div id="drawerSub"></div>
+        </div>
+        <button id="drawerClose" class="drawer-close" aria-label="Close">
+          ✕
+        </button>
+      </div>
+
+      <div id="variantDetails"></div>
+
+      <div class="field">
+        <label for="priceInput">Price</label>
+        <div class="inline">
+          <input id="priceInput" inputmode="decimal" />
+          <button id="savePrice">Save</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="discountInput">Discount %</label>
+        <div class="inline">
+          <input id="discountInput" inputmode="numeric" />
+          <button id="saveDiscount">Save</button>
+        </div>
+      </div>
+
+      <div class="drawer-actions">
+        <div class="row2">
+          <button id="featureVariant">Feature</button>
+          <button id="toggleVariant">Disable recipe</button>
+        </div>
+        <button id="toggleProduct">Disable product</button>
+      </div>
+    </aside>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
