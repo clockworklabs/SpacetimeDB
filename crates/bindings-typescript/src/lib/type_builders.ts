@@ -1604,6 +1604,9 @@ class SumBuilderImpl<Variants extends VariantsObj>
     this.variants = variants;
     this.typeName = name;
 
+    // Read `create` once: a variant named `create` replaces it on `this` below.
+    const create = this.create;
+
     for (const key of Object.keys(variants) as Array<keyof Variants & string>) {
       const desc = Object.getOwnPropertyDescriptor(variants, key);
 
@@ -1622,7 +1625,7 @@ class SumBuilderImpl<Variants extends VariantsObj>
 
       if (isUnit) {
         // Unit: expose a read-only VALUE (no call)
-        const constant = this.create(key as any) as EnumValue<
+        const constant = create(key as any) as EnumValue<
           typeof key,
           Variants[typeof key]
         >;
@@ -1634,7 +1637,7 @@ class SumBuilderImpl<Variants extends VariantsObj>
         });
       } else {
         const fn = ((value: any) =>
-          this.create(key as any, value)) as VariantConstructor<
+          create(key as any, value)) as VariantConstructor<
           typeof key & string,
           Variants[typeof key]
         >;
