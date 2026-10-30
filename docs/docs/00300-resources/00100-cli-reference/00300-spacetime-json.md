@@ -40,7 +40,8 @@ These fields can appear at any level (root or child):
 | `num-replicas` | number | Yes | Number of database replicas |
 | `anonymous` | boolean | Yes | Use anonymous identity |
 | `organization` | string | Yes | Organization name or identity |
-| `dependencies` | array | No | Receiver binding inputs for this calling database (see [Receiver dependencies](#receiver-dependencies)) |
+| `parent` | string | Yes | Name or identity of an existing database to make this database's parent when it's created |
+| `dependencies` | array | No | Receiver binding inputs for this sending database (see [Receiver dependencies](#receiver-dependencies)) |
 | `generate` | array | No | Generate targets (see [Generate configuration](#generate-configuration)) |
 | `children` | array | No | Child database entities (see [Children and inheritance](#children-and-inheritance)) |
 | `dev` | object | No | Dev server configuration, root-level only (see [`spacetime dev` configuration](#spacetime-dev-configuration)) |
@@ -91,11 +92,11 @@ When `spacetime generate` runs, it deduplicates by module path. If multiple data
 
 With `spacetime.json`, put client bindings in `generate` and receiver bindings in `dependencies`. Running `spacetime generate` processes both arrays: regular `generate` entries default to client bindings, and dependencies automatically generate module bindings. No `--bindings` flag or second `generate` entry is needed for a dependency.
 
-A regular `generate` entry can also set `"bindings": "module"` explicitly. Unlike a dependency, it uses its parent target's module source unless overridden; if its language or output directory is omitted, those defaults are resolved from the config directory rather than the calling module.
+A regular `generate` entry can also set `"bindings": "module"` explicitly. Unlike a dependency, it uses its parent target's module source unless overridden; if its language or output directory is omitted, those defaults are resolved from the config directory rather than the sending module.
 
-The **calling database** contains the code making the inter-database call. The **receiving database** contains the reducers being called. In the examples below, `lobby` is the calling database and `game-world` is the receiving database. Declare receiver binding inputs in the calling database's `dependencies` array.
+The **sending database** contains the code making the inter-database call. The **receiving database** contains the reducers being called. In the examples below, `lobby` is the sending database and `game-world` is the receiving database. Declare receiver binding inputs in the sending database's `dependencies` array.
 
-Each calling database with dependencies must define `module-path`. Dependencies are not inherited by children.
+Each sending database with dependencies must define `module-path`. Dependencies are not inherited by children.
 
 | Field | Required | Description |
 |-------|----------|-------------|
@@ -139,20 +140,20 @@ Declaring a dependency does not publish the receiver. To make it a publish targe
 }
 ```
 
-A `database` reference uses the target's `module-path`, `bin-path`, or `js-path`, and its resolved receiver build options and .NET SDK version. It fails if no matching target or module source exists. A dependency does not inherit the calling module's build options or .NET SDK version.
+A `database` reference uses the target's `module-path`, `bin-path`, or `js-path`, and its resolved receiver build options and .NET SDK version. It fails if no matching target or module source exists. A dependency does not inherit the sending module's build options or .NET SDK version.
 
-`spacetime generate lobby` selects the calling database's regular `generate` entries and dependencies; without a database filter, generation includes all targets' entries. For `dependencies` entries, the module binding language is inferred from the calling module, not the external client project. Rust and TypeScript dependency bindings default to `<calling module-path>/src/remote_bindings`.
+`spacetime generate lobby` selects the sending database's regular `generate` entries and dependencies; without a database filter, generation includes all targets' entries. For `dependencies` entries, the module binding language is inferred from the sending module, not the external client project. Rust and TypeScript dependency bindings default to `<sending module-path>/src/remote_bindings`.
 
 ### Explicit module-binding request
 
-Without configuration, select the binding kind with `--bindings client` (the default) or `--bindings module`. When using `spacetime.json`, `--bindings` can override the binding kind only if a single generation entry is selected; it is rejected when multiple entries are selected. Prefer the config fields described above for configured generation. Here `--module-path` identifies the **receiving module**, while `--out-dir` explicitly places output in the **calling module** project:
+Without configuration, select the binding kind with `--bindings client` (the default) or `--bindings module`. When using `spacetime.json`, `--bindings` can override the binding kind only if a single generation entry is selected; it is rejected when multiple entries are selected. Prefer the config fields described above for configured generation. Here `--module-path` identifies the **receiving module**, while `--out-dir` explicitly places output in the **sending module** project:
 
 ```bash
 spacetime generate --no-config --bindings module --lang rust \
   --module-path ./game_world --out-dir ./lobby/src/remote_bindings
 ```
 
-This generates Rust module bindings for `game_world` in the `lobby` module's source tree. Use `--lang typescript` for a TypeScript calling module. `unrealcpp` is client-only; the CLI accepts `cpp` only with `--bindings module`, but C++ module binding generation is not implemented yet.
+This generates Rust module bindings for `game_world` in the `lobby` module's source tree. Use `--lang typescript` for a TypeScript sending module. `unrealcpp` is client-only; the CLI accepts `cpp` only with `--bindings module`, but C++ module binding generation is not implemented yet.
 
 ## Children and inheritance
 
@@ -165,7 +166,7 @@ All fields listed in the [Fields reference](#fields-reference) with "Yes" in the
 The following fields are never inherited:
 
 - `database`: each child must define its own.
-- `dependencies`: receiver binding inputs belong to each calling database.
+- `dependencies`: receiver binding inputs belong to each sending database.
 - `generate`: tied to a specific module and output location. Inheriting generate targets is redundant when the child shares the parent's module (deduplication already handles it) and dangerous when the child uses a different module (two modules would write bindings into the same output directory).
 - `children`: structural, not a database property.
 - `dev`: root-level only.
@@ -249,9 +250,9 @@ The `--server` flag overrides the server for all databases. The `--skip-publish`
 
 If the root database declares `dependencies`, `dev` generates its receiver bindings before building that database's module, both on startup and on rebuilds. This adds a pre-build step without changing the normal development workflow above.
 
-Receiving module source paths are watched even when they are outside the calling module directory or not selected for publishing. Child targets can supply receiving module sources for lookup, but `dev` does not process their own `dependencies` arrays.
+Receiving module source paths are watched even when they are outside the sending module directory or not selected for publishing. Child targets can supply receiving module sources for lookup, but `dev` does not process their own `dependencies` arrays.
 
-`--skip-generate` skips both receiver and client binding generation and excludes receiver-only sources from watching. It does not create any bindings the calling module needs to compile. `--skip-publish` skips publishing, not binding generation.
+`--skip-generate` skips both receiver and client binding generation and excludes receiver-only sources from watching. It does not create any bindings the sending module needs to compile. `--skip-publish` skips publishing, not binding generation.
 
 ### Config auto-generation
 
