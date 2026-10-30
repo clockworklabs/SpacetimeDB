@@ -429,8 +429,6 @@ jobs:
       - name: Set up certificate trust
         if: runner.environment == 'github-hosted'
         uses: ./.github/actions/setup-certificate-trust
-        with:
-          update-rustup: "false"
 
       - name: Verify mirror tag prefix exists
         env:

@@ -1,13 +1,9 @@
 # GitHub-hosted runner images can still trust the compromised eMudhra/emSign CAs.
 # Centralize the workaround here so CI tools use a filtered certificate bundle
 # until upstream images are fixed. rustup carries its own CA bundle, so invoke
-# ensure-rustup as well for jobs that use Rust.
+# ensure-rustup as well to refresh that independent trust store.
 name: Set up certificate trust
 description: Correct hosted-runner certificate trust and update rustup without changing Rust toolchains
-inputs:
-  update-rustup:
-    description: Update or install rustup for jobs that use Rust
-    default: "true"
 # This protects subsequent requests. Checkout and GitHub's action downloads happen
 # before setup and rely on the runner's original certificate trust.
 # That's unfortunate but can't really be helped.
@@ -21,5 +17,4 @@ runs:
       run: node "$GITHUB_ACTION_PATH/configure-trust.cjs"
 
     - name: Update rustup certificate trust
-      if: inputs.update-rustup == 'true'
       uses: ./.github/actions/ensure-rustup
