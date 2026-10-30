@@ -31,7 +31,14 @@ try {
   await page.addInitScript(() => {
     window.checkoutCalls = [];
     window.testBilling = { purchases: 0, subscriptions: [], checkouts: [] };
+    window.cancelError =
+      'This checkout is complete. Check Billing for the payment result.';
+    window.cancelCalls = [];
     window.stdb = {
+      cancelCheckoutAttempt: async args => {
+        window.cancelCalls.push(args);
+        if (window.cancelError) throw new Error(window.cancelError);
+      },
       getBilling: async () => window.testBilling,
       validatePrice: async () => ({ valid: true }),
       createCheckoutSession: async args => {
@@ -111,15 +118,50 @@ try {
       JSON.stringify({
         ...JSON.parse(localStorage.getItem(key)),
         createdAt: Date.now() - 86400001,
+        recoverable: undefined,
       })
     );
   });
   await page.locator('#btnCheckoutCart').click();
-  await page.getByText(/This checkout is too old to retry safely/).waitFor();
+  await page.getByText(/cannot be verified automatically/).waitFor();
   assert.equal(
     await page.evaluate(() => window.checkoutCalls.length),
     beforeExpiry,
-    'expired retry must not create another checkout'
+    'untagged saved checkout must not be replaced'
+  );
+  assert.equal(
+    await page.evaluate(() => window.cancelCalls.length),
+    0,
+    'untagged checkout cannot use metadata lookup'
+  );
+  await page.evaluate(() => {
+    const key = 'stdb.premiumStore.checkoutAttempt';
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        ...JSON.parse(localStorage.getItem(key)),
+        recoverable: true,
+      })
+    );
+  });
+  await page.locator('#btnCheckoutCart').click();
+  await page.getByText(/This checkout is complete/).waitFor();
+  assert.equal(
+    await page.evaluate(() => window.checkoutCalls.length),
+    beforeExpiry,
+    'completed checkout must not be replaced'
+  );
+  assert.equal(
+    await page.evaluate(() => window.cancelCalls.at(-1).attemptId),
+    subscription
+  );
+  await page.evaluate(() => {
+    window.cancelError = '';
+  });
+  assert.notEqual(
+    await checkout(),
+    subscription,
+    'retired checkout must allow a fresh attempt'
   );
   await page.evaluate(() => {
     const key = 'stdb.premiumStore.checkoutAttempt';

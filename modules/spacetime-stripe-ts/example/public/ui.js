@@ -705,7 +705,7 @@ async function createCheckoutForCart(cartItems, triggerButton) {
       productId: entry.id,
       quantity: entry.quantity,
     }));
-    const saved = readCheckoutAttempt();
+    let saved = readCheckoutAttempt();
     const fingerprint = checkoutFingerprint(cartItems);
     if (
       saved?.items === fingerprint &&
@@ -713,9 +713,14 @@ async function createCheckoutForCart(cartItems, triggerButton) {
         Date.now() - saved.createdAt >= 24 * 60 * 60 * 1000 ||
         saved.createdAt > Date.now())
     ) {
-      throw new Error(
-        'This checkout is too old to retry safely. Check Billing and contact the store to confirm the payment.'
-      );
+      if (!saved.recoverable) {
+        throw new Error(
+          'This saved checkout cannot be verified automatically. Check Billing and contact the store before paying again.'
+        );
+      }
+      await window.stdb.cancelCheckoutAttempt({ attemptId: saved.id });
+      localStorage.removeItem(STORAGE_KEYS.attempt);
+      saved = null;
     }
     const attempt =
       saved?.items === fingerprint
@@ -724,6 +729,7 @@ async function createCheckoutForCart(cartItems, triggerButton) {
             id: crypto.randomUUID(),
             items: fingerprint,
             createdAt: Date.now(),
+            recoverable: true,
           };
     localStorage.setItem(STORAGE_KEYS.attempt, JSON.stringify(attempt));
     const result = await window.stdb.createCheckoutSession({

@@ -1,5 +1,6 @@
 export { default, init } from './store/schema';
 export {
+  cancelStoreCheckoutAttempt,
   upsertStoreProduct,
   seedDefaultStoreProducts,
   listStoreProductsJson,

@@ -62,9 +62,9 @@ inside the webhook transaction. It keeps billing details private to each buyer.
 
 The browser retains the checkout request ID for retries. Keep the same cart to
 retry a failed request; changing it starts a new attempt. Check billing state
-before retrying. The example blocks retries after 24 hours because Stripe may
-forget the request key. Confirm the original payment with the store before
-starting another purchase.
+before retrying. After 24 hours, the example checks the old attempt with Stripe
+and cancels any unpaid checkout before starting again. A completed checkout
+blocks the restart so you can check its payment result in **Billing**.
 
 ## Configuration
 

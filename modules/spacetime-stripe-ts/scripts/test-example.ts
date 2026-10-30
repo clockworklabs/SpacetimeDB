@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHmac } from 'node:crypto';
 import * as v from 'valibot';
+import Stripe from 'stripe';
 import { DbConnection } from '../example/src/module_bindings/app';
 
 const server = process.argv[2] ?? 'http://127.0.0.1:3000';
@@ -200,6 +201,132 @@ try {
     }),
     /invalid_items/
   );
+  const secretKey = process.env.STRIPE_SECRET_KEY;
+  if (secretKey) {
+    assert.ok(secretKey.startsWith('sk_test_'), 'Use a Stripe test key');
+    const stripe = new Stripe(secretKey);
+    const token = run('login', 'show', '--token').match(
+      /eyJ[\w-]+\.[\w-]+\.[\w-]+/
+    )?.[0];
+    assert.ok(token, 'Log in with spacetime before running the live test');
+    const response = await fetch(
+      `${server}/v1/database/${database}/call/stripe.set_stripe_config`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify([secretKey, null, { some: secret }]),
+      }
+    );
+    assert.equal(response.status, 200);
+    const liveBuyer = await connect();
+    const { customerId } = await liveBuyer.procedures.getOrCreateStoreCustomer({
+      email: 'stripe-test@example.com',
+      name: undefined,
+    });
+    const attemptId = 'test-recover-attempt-12345';
+    let sessionId: string | undefined;
+    let productId: string | undefined;
+    try {
+      await liveBuyer.procedures.cancelStoreCheckoutAttempt({ attemptId });
+      const checkout = await stripe.checkout.sessions.create({
+        customer: customerId,
+        mode: 'setup',
+        currency: 'usd',
+        success_url: 'http://localhost/',
+        cancel_url: 'http://localhost/',
+        metadata: { store, storeAttempt: attemptId },
+      });
+      sessionId = checkout.id;
+      await other.procedures.cancelStoreCheckoutAttempt({ attemptId });
+      assert.equal(
+        (await stripe.checkout.sessions.retrieve(sessionId)).status,
+        'open',
+        'Another buyer cannot cancel this checkout'
+      );
+      await liveBuyer.procedures.cancelStoreCheckoutAttempt({ attemptId });
+      assert.equal(
+        (await stripe.checkout.sessions.retrieve(sessionId)).status,
+        'expired'
+      );
+      await liveBuyer.procedures.cancelStoreCheckoutAttempt({ attemptId });
+      const product = await stripe.products.create({
+        name: 'STDB checkout recovery test',
+      });
+      productId = product.id;
+      const completed = await stripe.checkout.sessions.create({
+        customer: customerId,
+        mode: 'payment',
+        success_url: 'http://localhost/complete',
+        line_items: [
+          {
+            price_data: {
+              product: product.id,
+              currency: 'usd',
+              unit_amount: 0,
+            },
+            quantity: 1,
+          },
+        ],
+        metadata: { store, storeAttempt: attemptId },
+      });
+      sessionId = completed.id;
+      assert.ok(completed.url);
+      const { chromium } = await import('playwright-core');
+      const browser = await chromium.launch({
+        channel: 'chrome',
+        headless: false,
+      });
+      try {
+        const page = await browser.newPage();
+        await page.goto(completed.url);
+        await page
+          .getByRole('button', { name: /Complete order|Pay|Subscribe/i })
+          .click();
+        for (let tries = 0; ; tries++) {
+          if (
+            (await stripe.checkout.sessions.retrieve(sessionId)).status ===
+            'complete'
+          )
+            break;
+          assert.ok(tries < 30, 'Stripe checkout did not complete');
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      } finally {
+        await browser.close();
+      }
+      assert.equal(
+        await deliver('evt_deleted_live', 'customer.deleted', {
+          id: customerId,
+        }),
+        200
+      );
+      await assert.rejects(
+        liveBuyer.procedures.cancelStoreCheckoutAttempt({ attemptId }),
+        /checkout is complete/
+      );
+      console.log(
+        'Stripe live recovery: missing, open, expired, other buyer, and deleted customer with completed checkout passed.'
+      );
+    } finally {
+      try {
+        if (
+          sessionId &&
+          (await stripe.checkout.sessions.retrieve(sessionId)).status === 'open'
+        )
+          await stripe.checkout.sessions.expire(sessionId);
+      } finally {
+        try {
+          await stripe.customers.del(customerId);
+        } finally {
+          if (productId)
+            await stripe.products.update(productId, { active: false });
+        }
+      }
+    }
+  }
   console.log(
     'Stripe example: ownership, signatures, atomic fulfillment, duplicates, and setup passed.'
   );

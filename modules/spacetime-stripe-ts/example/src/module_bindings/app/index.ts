@@ -41,6 +41,7 @@ import SetStoreReturnOriginReducer from "./set_store_return_origin_reducer";
 import UpsertStoreProductReducer from "./upsert_store_product_reducer";
 
 // Import all procedure arg schemas
+import * as CancelStoreCheckoutAttemptProcedure from "./cancel_store_checkout_attempt_procedure";
 import * as CreateStoreCheckoutSessionProcedure from "./create_store_checkout_session_procedure";
 import * as CreateStorePortalSessionProcedure from "./create_store_portal_session_procedure";
 import * as GetOrCreateStoreCustomerProcedure from "./get_or_create_store_customer_procedure";
@@ -163,6 +164,7 @@ const reducersSchema = __reducers(
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
 const proceduresSchema = __procedures(
+  __procedureSchema("cancel_store_checkout_attempt", CancelStoreCheckoutAttemptProcedure.params, CancelStoreCheckoutAttemptProcedure.returnType),
   __procedureSchema("create_store_checkout_session", CreateStoreCheckoutSessionProcedure.params, CreateStoreCheckoutSessionProcedure.returnType),
   __procedureSchema("create_store_portal_session", CreateStorePortalSessionProcedure.params, CreateStorePortalSessionProcedure.returnType),
   __procedureSchema("get_or_create_store_customer", GetOrCreateStoreCustomerProcedure.params, GetOrCreateStoreCustomerProcedure.returnType),
@@ -251,6 +253,7 @@ export const reducers = {
 /** The procedures available in this remote SpacetimeDB module. */
 const __procedureAccessors = __convertToAccessorMap(proceduresSchema.procedures);
 export const procedures = {
+  cancelStoreCheckoutAttempt: __procedureAccessors.cancelStoreCheckoutAttempt,
   createStoreCheckoutSession: __procedureAccessors.createStoreCheckoutSession,
   createStorePortalSession: __procedureAccessors.createStorePortalSession,
   getOrCreateStoreCustomer: __procedureAccessors.getOrCreateStoreCustomer,

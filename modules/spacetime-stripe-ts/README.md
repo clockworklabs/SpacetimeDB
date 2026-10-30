@@ -378,6 +378,10 @@ The billing test creates test-mode customers, prices, sessions, and a trial
 subscription. It removes its database, deletes customers, expires sessions,
 cancels subscriptions, and archives prices and products afterward.
 
+With `STRIPE_SECRET_KEY` set to a test key, `test:example` also checks checkout
+recovery against Stripe and completes a free order in Google Chrome. It expires
+open sessions, deletes its customer, and archives its test product.
+
 The smoke test publishes only to the dedicated `stripe-ts-smoke-test` database.
 The Stripe CLI E2E suite likewise defaults to the dedicated `stripe-ts-e2e`
 database, forwards the original signed body, and rotates only that database's

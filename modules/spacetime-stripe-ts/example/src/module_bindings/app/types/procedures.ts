@@ -6,6 +6,7 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all procedure arg schemas
+import * as CancelStoreCheckoutAttemptProcedure from "../cancel_store_checkout_attempt_procedure";
 import * as CreateStoreCheckoutSessionProcedure from "../create_store_checkout_session_procedure";
 import * as CreateStorePortalSessionProcedure from "../create_store_portal_session_procedure";
 import * as GetOrCreateStoreCustomerProcedure from "../get_or_create_store_customer_procedure";
@@ -13,6 +14,8 @@ import * as GetStoreBillingProcedure from "../get_store_billing_procedure";
 import * as ListStoreProductsJsonProcedure from "../list_store_products_json_procedure";
 import * as SyncStoreProductsWithStripeProcedure from "../sync_store_products_with_stripe_procedure";
 
+export type CancelStoreCheckoutAttemptArgs = __Infer<typeof CancelStoreCheckoutAttemptProcedure.params>;
+export type CancelStoreCheckoutAttemptResult = __Infer<typeof CancelStoreCheckoutAttemptProcedure.returnType>;
 export type CreateStoreCheckoutSessionArgs = __Infer<typeof CreateStoreCheckoutSessionProcedure.params>;
 export type CreateStoreCheckoutSessionResult = __Infer<typeof CreateStoreCheckoutSessionProcedure.returnType>;
 export type CreateStorePortalSessionArgs = __Infer<typeof CreateStorePortalSessionProcedure.params>;

@@ -360,7 +360,7 @@ export const setStoreReturnOrigin = spacetimedb.reducer(
 // Signed-in buyers call these procedures directly. The Stripe customer belongs
 // to the caller's identity, and prices, modes, and return URLs come from
 // server-owned state. Each call reaches Stripe, so every identity shares one
-// budget across both procedures.
+// budget across these procedures.
 const buyerStripeCalls = rateLimit.client({
   scope: 'store.buyer_stripe_calls',
   limit: 5,
@@ -431,9 +431,78 @@ export const createStoreCheckoutSession = spacetimedb.procedure(
       mode: checkout.mode,
       successUrl: `${checkout.returnOrigin}/?purchased=1`,
       cancelUrl: `${checkout.returnOrigin}/?canceled=1`,
-      metadata: { store: ctx.databaseIdentity.toHexString() },
+      metadata: {
+        store: ctx.databaseIdentity.toHexString(),
+        storeAttempt: attemptId,
+      },
       idempotencyKey: `${ctx.sender.toHexString()}:${attemptId}`,
     });
+  }
+);
+
+// Stripe can discard request IDs after 24 hours. Retire the previous checkout
+// before the browser starts another attempt with a new ID.
+export const cancelStoreCheckoutAttempt = spacetimedb.procedure(
+  { attemptId: t.string() },
+  t.unit(),
+  (ctx, { attemptId }) => {
+    if (!/^[a-zA-Z0-9-]{16,64}$/.test(attemptId))
+      throwSenderError('store.invalid_attempt');
+    consumeBuyerStripeCall(ctx);
+    const customers = ctx.withTx(tx =>
+      [
+        ...tx.as.stripe.db.stripeCustomer.byUserId.filter(
+          ctx.sender.toHexString()
+        ),
+      ].map(customer => customer.stripeCustomerId)
+    );
+    for (const customer of customers) {
+      let cursor = '';
+      for (let page = 0; ; page++) {
+        if (page === 10) throwSenderError('store.checkout_history_too_large');
+        const query = formBody([
+          ['customer', customer],
+          ['limit', '100'],
+          ['starting_after', cursor || undefined],
+        ]);
+        const list = parseStripeResponse(
+          callStripe(ctx, 'GET', `/v1/checkout/sessions?${query}`)
+        );
+        if (!Array.isArray(list.data) || typeof list.has_more !== 'boolean')
+          throwSenderError('store.checkout_lookup_failed');
+        for (const session of list.data) {
+          if (!isObject(session))
+            throwSenderError('store.checkout_lookup_failed');
+          cursor = stripeObjectId(session, 'checkout');
+          if (
+            !isObject(session.metadata) ||
+            session.metadata.store !== ctx.databaseIdentity.toHexString() ||
+            session.metadata.storeAttempt !== attemptId
+          )
+            continue;
+          if (session.status === 'complete')
+            throwSenderError(
+              'This checkout is complete. Check Billing for the payment result.'
+            );
+          if (session.status === 'open') {
+            const expired = parseStripeResponse(
+              callStripe(
+                ctx,
+                'POST',
+                `/v1/checkout/sessions/${encodeURIComponent(cursor)}/expire`
+              )
+            );
+            if (expired.status !== 'expired')
+              throwSenderError('store.checkout_cancel_failed');
+          } else if (session.status !== 'expired') {
+            throwSenderError('store.checkout_lookup_failed');
+          }
+        }
+        if (!list.has_more) break;
+        if (!list.data.length) throwSenderError('store.checkout_lookup_failed');
+      }
+    }
+    return {};
   }
 );
 

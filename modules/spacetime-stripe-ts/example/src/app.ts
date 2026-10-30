@@ -17,6 +17,7 @@ declare global {
         attemptId: string;
       }) => Promise<{ sessionId: string; url?: string }>;
       createPortalSession: () => Promise<{ url: string }>;
+      cancelCheckoutAttempt: DbConnection['procedures']['cancelStoreCheckoutAttempt'];
       getBilling: () => ReturnType<
         DbConnection['procedures']['getStoreBilling']
       >;
@@ -219,6 +220,8 @@ async function main() {
     createCheckoutSession: args =>
       conn.procedures.createStoreCheckoutSession(args),
     createPortalSession: () => conn.procedures.createStorePortalSession({}),
+    cancelCheckoutAttempt: args =>
+      conn.procedures.cancelStoreCheckoutAttempt(args),
     getBilling: () => conn.procedures.getStoreBilling({}),
     validatePrice: priceId => api('/api/validate-price', { priceId }),
     getWebhookEventCount: () =>
