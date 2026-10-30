@@ -1,3 +1,7 @@
+# GitHub-hosted runner images can still trust the compromised eMudhra/emSign CAs.
+# Centralize the workaround here so CI tools use a filtered certificate bundle
+# until upstream images are fixed. rustup carries its own CA bundle, so invoke
+# ensure-rustup as well for jobs that use Rust.
 name: Set up certificate trust
 description: Correct hosted-runner certificate trust and update rustup without changing Rust toolchains
 inputs:
