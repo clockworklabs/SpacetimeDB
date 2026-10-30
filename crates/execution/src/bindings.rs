@@ -44,6 +44,34 @@ struct BindingIndex {
     entries: BTreeMap<AlgebraicValue, BTreeSet<BindingId>>,
 }
 
+impl BindingIndex {
+    /// The key of a binding row
+    fn key_of_row(&self, row: &ProductValue) -> AlgebraicValue {
+        let values = self.cols.iter().map(|column| row.elements.get(column.idx()));
+        let values = values.map(|value| value.expect("index columns are checked in `new`").clone());
+        self.key(values)
+    }
+
+    /// Rows and probes both build their keys here, so they can't disagree on the shape
+    fn key(&self, values: impl IntoIterator<Item = AlgebraicValue>) -> AlgebraicValue {
+        let column_count = self.cols.len();
+        assert!(column_count > 0, "a binding key needs a value");
+        let mut values = values.into_iter();
+        // One column is a bare value, like `ProductValue::project`
+        let key = if column_count == 1 {
+            values.next()
+        } else {
+            let product = ProductValue::from_iter(values.by_ref().take(column_count as usize));
+            let complete = product.elements.len() as u64 == column_count as u64;
+            complete.then_some(AlgebraicValue::Product(product))
+        };
+        let Some(key) = key.filter(|_| values.next().is_none()) else {
+            panic!("wrong number of key values");
+        };
+        key
+    }
+}
+
 impl BindingRelation {
     /// An empty relation with these value types and indexes
     pub fn new(value_types: Vec<AlgebraicType>, indexes: Vec<ColList>) -> Self {
@@ -120,7 +148,7 @@ impl BindingRelation {
             .chain(values.elements.iter().cloned())
             .collect();
         for index in &mut self.indexes {
-            let key = row.project(&index.cols).expect("index columns are checked in `new`");
+            let key = index.key_of_row(&row);
             let inserted = index.entries.entry(key).or_default().insert(id);
             assert!(inserted);
         }
@@ -140,7 +168,7 @@ impl BindingRelation {
         assert_eq!(BindingId::of_row(&row), id);
 
         for index in &mut self.indexes {
-            let key = row.project(&index.cols).expect("index columns are checked in `new`");
+            let key = index.key_of_row(&row);
             let ids = index.entries.get_mut(&key).expect("every row is in every index");
             let removed = ids.remove(&id);
             assert!(removed, "every row is in every index");
@@ -169,13 +197,16 @@ impl BindingRelation {
         self.rows.values()
     }
 
-    /// The bindings whose indexed columns equal `key`, in id order
-    pub fn probe(&self, index: BindingIndexId, key: &AlgebraicValue) -> &BTreeSet<BindingId> {
+    /// The bindings whose indexed columns equal `key`, one value per column, in id order
+    pub fn probe<Key>(&self, index: BindingIndexId, key: Key) -> &BTreeSet<BindingId>
+    where
+        Key: IntoIterator<Item = AlgebraicValue>,
+    {
         const NONE: &BTreeSet<BindingId> = &BTreeSet::new();
         let Some(index) = self.indexes.get(index.0 as usize) else {
             panic!("unknown binding index: {index:?}");
         };
-        let ids = index.entries.get(key);
+        let ids = index.entries.get(&index.key(key));
         // `remove` drops a key with its last id
         assert!(ids.is_none_or(|ids| !ids.is_empty()));
         ids.unwrap_or(NONE)
@@ -240,12 +271,12 @@ mod tests {
         ProductValue::from_iter([AlgebraicValue::String(region.into()), AlgebraicValue::U32(rank)])
     }
 
-    fn west_3() -> AlgebraicValue {
-        AlgebraicValue::product([AlgebraicValue::String("west".into()), AlgebraicValue::U32(3)])
+    fn west_3() -> Vec<AlgebraicValue> {
+        vec![AlgebraicValue::String("west".into()), AlgebraicValue::U32(3)]
     }
 
-    fn region(region: &str) -> AlgebraicValue {
-        AlgebraicValue::String(region.into())
+    fn region(region: &str) -> Vec<AlgebraicValue> {
+        vec![AlgebraicValue::String(region.into())]
     }
 
     #[test]
@@ -276,10 +307,10 @@ mod tests {
         let b1 = bindings.insert(values("west", 3));
         let b2 = bindings.insert(values("west", 5));
         let b3 = bindings.insert(values("east", 3));
-        assert_eq!(bindings.probe(REGION, &region("west")), &BTreeSet::from([b1, b2]));
-        assert_eq!(bindings.probe(REGION, &region("east")), &BTreeSet::from([b3]));
-        assert_eq!(bindings.probe(REGION_RANK, &west_3()), &BTreeSet::from([b1]));
-        assert!(bindings.probe(REGION, &region("north")).is_empty());
+        assert_eq!(bindings.probe(REGION, region("west")), &BTreeSet::from([b1, b2]));
+        assert_eq!(bindings.probe(REGION, region("east")), &BTreeSet::from([b3]));
+        assert_eq!(bindings.probe(REGION_RANK, west_3()), &BTreeSet::from([b1]));
+        assert!(bindings.probe(REGION, region("north")).is_empty());
     }
 
     #[test]
@@ -289,8 +320,8 @@ mod tests {
         let b2 = bindings.insert(values("west", 5));
         bindings.remove(b1);
         assert_eq!(bindings.len(), 1);
-        assert_eq!(bindings.probe(REGION, &region("west")), &BTreeSet::from([b2]));
-        assert!(bindings.probe(REGION_RANK, &west_3()).is_empty());
+        assert_eq!(bindings.probe(REGION, region("west")), &BTreeSet::from([b2]));
+        assert!(bindings.probe(REGION_RANK, west_3()).is_empty());
         let scanned: Vec<_> = bindings.iter().map(BindingId::of_row).collect();
         assert_eq!(scanned, [b2]);
     }
@@ -302,7 +333,7 @@ mod tests {
         bindings.remove(b1);
         let b2 = bindings.insert(values("west", 3));
         assert_ne!(b1, b2);
-        assert_eq!(bindings.probe(REGION_RANK, &west_3()), &BTreeSet::from([b2]));
+        assert_eq!(bindings.probe(REGION_RANK, west_3()), &BTreeSet::from([b2]));
     }
 
     #[test]
@@ -339,6 +370,18 @@ mod tests {
     fn execution_params_reject_binding_slots() {
         let params = ExecutionParams::from_sender(Identity::ZERO);
         params.resolve_param(PARAM_BINDING_FIRST, &AlgebraicType::String);
+    }
+
+    #[test]
+    #[should_panic(expected = "wrong number of key values")]
+    fn probe_rejects_a_partial_key() {
+        region_rank().probe(REGION_RANK, region("west"));
+    }
+
+    #[test]
+    #[should_panic(expected = "wrong number of key values")]
+    fn probe_rejects_an_extra_value() {
+        region_rank().probe(REGION, west_3());
     }
 
     #[test]

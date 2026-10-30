@@ -112,11 +112,7 @@ impl ProjectPlan {
             Self::Name(plan, label, _) => {
                 // Binding rows hold the binding ids, so the root needs them too
                 let mut reqs = vec![label];
-                plan.visit(&mut |plan| {
-                    if let PhysicalPlan::BindingLookup(_, lookup) = plan {
-                        reqs.push(lookup.label);
-                    }
-                });
+                reqs.extend(plan.binding_label());
                 let plan = plan.optimize(reqs)?;
                 let n = plan.nfields();
                 let pos = plan.position(&label);
@@ -133,6 +129,12 @@ impl ProjectPlan {
         match self {
             Self::None(plan) | Self::Name(plan, ..) => plan,
         }
+    }
+
+    /// The position of the binding row in each tuple, if this plan has a binding lookup
+    pub fn binding_position(&self) -> Option<usize> {
+        let position = |label| self.position(&label).expect("the binding row reaches the root");
+        self.binding_label().map(position)
     }
 
     /// Does this plan select or return whole (unprojected) rows from a single table?
@@ -1076,6 +1078,19 @@ impl PhysicalPlan {
             Self::HashJoin(join, Semi::All) => join.lhs.nfields() + join.rhs.nfields(),
             Self::NLJoin(lhs, rhs) => lhs.nfields() + rhs.nfields(),
         }
+    }
+
+    /// The label of this plan's binding lookup, if it has one
+    fn binding_label(&self) -> Option<Label> {
+        let mut labels = vec![];
+        self.visit(&mut |plan| {
+            if let PhysicalPlan::BindingLookup(_, lookup) = plan {
+                labels.push(lookup.label);
+            }
+        });
+        // A template has one binding relation
+        assert!(labels.len() <= 1, "more than one binding lookup: {self:#?}");
+        labels.first().copied()
     }
 
     /// What is the position of this label in the return tuple?
@@ -2768,6 +2783,7 @@ mod tests {
         assert_eq!(plans.len(), 3);
         for plan in &plans {
             assert_lookup(plan, PLAYER_ID);
+            assert_eq!(plan.binding_position(), Some(1));
             match plan.physical_plan() {
                 PhysicalPlan::BindingLookup(input, _) => {
                     assert!(matches!(**input, PhysicalPlan::TableScan(..)));
@@ -2954,6 +2970,7 @@ mod tests {
         for plan in &plans {
             assert_lookup(plan, PLAYER_ID);
             assert!(!matches!(plan.physical_plan(), PhysicalPlan::BindingLookup(..)));
+            assert_eq!(plan.binding_position(), plan.physical_plan().position(&BINDINGS));
         }
     }
 }
