@@ -24,22 +24,30 @@ them. Creating a sandbox uses paid Daytona credits.
 
 ## Integrate into an application
 
-This module lets each user create a sandbox, run commands in it, read the
-output, and delete it:
+This module lets each allowed user create a sandbox, run commands in it, read
+the output, and delete it:
 
 ```ts
 import { ScheduleAt } from 'spacetimedb';
 import {
   schema,
+  SenderError,
   t,
+  table,
   type InferSchema,
   type TransactionCtx,
 } from 'spacetimedb/server';
 import * as daytona from '@spacetimedb/daytona/submodule';
 import { client, daytonaTick, sandbox } from '@spacetimedb/daytona';
 
+// Identities allowed to run code. Each run spends Daytona credits.
+const allowed = table(
+  { name: 'allowed' },
+  { identity: t.identity().primaryKey() }
+);
+
 const spacetimedb = schema(
-  { daytona, daytonaTick },
+  { daytona, daytonaTick, allowed },
   {
     env: { DAYTONA_API_KEY: t.string() },
   }
@@ -55,10 +63,15 @@ const sandboxes = client({
   ttlMinutes: 10,
 });
 
-// Each SpacetimeDB identity owns its own sandboxes.
-const owner = (tx: Tx) => tx.sender.toHexString();
+// Each allowed SpacetimeDB identity owns its own sandboxes.
+const owner = (tx: Tx) => {
+  if (!tx.db.allowed.identity.find(tx.sender))
+    throw new SenderError('not_allowed');
+  return tx.sender.toHexString();
+};
 
 export const init = spacetimedb.init(tx => {
+  tx.db.allowed.insert({ identity: tx.sender });
   tx.db.daytonaTick.insert({
     scheduledId: 0n,
     scheduledAt: ScheduleAt.interval(3_000_000n), // every 3 seconds
@@ -124,8 +137,8 @@ To replace the key later, set the new value and run
 organization, or the submodule can't find the sandboxes it already created.
 
 `init` only runs when a database is first created. To add the submodule to an
-existing database, insert the `daytonaTick` row once, from a reducer only your
-admins can call.
+existing database, run the two inserts inside `init` once, from a reducer only
+your admins can call.
 
 The browser uses a sandbox in four steps:
 
@@ -140,10 +153,12 @@ sandboxes; add a similar view over `ctx.db.daytona.execution` for commands. The
 has both views and the browser code.
 
 Anyone who can call `createSandbox` and `runCommand` can run any code in a
-sandbox and spend your Daytona credits. Check that the caller is allowed in
-`owner` before returning, as the example does with its `operator` table.
-Always set the owner on the server. Never take it from the browser, and never
-send the API key to a client.
+sandbox and spend your Daytona credits, so `owner` only accepts identities in
+the `allowed` table. `init` adds the identity that publishes the database; add
+others from a reducer only that identity can call, as the
+[example](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-daytona-ts/example/spacetimedb/src/index.ts)
+does with `grantAccess`. Always set the owner on the server. Never take it from
+the browser, and never send the API key to a client.
 
 ## API
 
