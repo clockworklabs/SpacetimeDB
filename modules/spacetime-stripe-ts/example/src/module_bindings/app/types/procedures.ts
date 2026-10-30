@@ -12,7 +12,6 @@ import * as CreateStorePortalSessionProcedure from "../create_store_portal_sessi
 import * as GetOrCreateStoreCustomerProcedure from "../get_or_create_store_customer_procedure";
 import * as GetStoreBillingProcedure from "../get_store_billing_procedure";
 import * as ListStoreProductsJsonProcedure from "../list_store_products_json_procedure";
-import * as OwnsStoreCheckoutSessionProcedure from "../owns_store_checkout_session_procedure";
 import * as SyncStoreProductsWithStripeProcedure from "../sync_store_products_with_stripe_procedure";
 
 export type CancelStoreCheckoutAttemptArgs = __Infer<typeof CancelStoreCheckoutAttemptProcedure.params>;
@@ -27,8 +26,6 @@ export type GetStoreBillingArgs = __Infer<typeof GetStoreBillingProcedure.params
 export type GetStoreBillingResult = __Infer<typeof GetStoreBillingProcedure.returnType>;
 export type ListStoreProductsJsonArgs = __Infer<typeof ListStoreProductsJsonProcedure.params>;
 export type ListStoreProductsJsonResult = __Infer<typeof ListStoreProductsJsonProcedure.returnType>;
-export type OwnsStoreCheckoutSessionArgs = __Infer<typeof OwnsStoreCheckoutSessionProcedure.params>;
-export type OwnsStoreCheckoutSessionResult = __Infer<typeof OwnsStoreCheckoutSessionProcedure.returnType>;
 export type SyncStoreProductsWithStripeArgs = __Infer<typeof SyncStoreProductsWithStripeProcedure.params>;
 export type SyncStoreProductsWithStripeResult = __Infer<typeof SyncStoreProductsWithStripeProcedure.returnType>;
 

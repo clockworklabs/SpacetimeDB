@@ -128,35 +128,17 @@ function checkoutAttemptKey() {
 function readCheckoutAttempt() {
   try {
     const attempt = JSON.parse(
-      localStorage.getItem(checkoutAttemptKey()) ??
-        localStorage.getItem(STORAGE_KEYS.attempt) ??
-        'null'
+      localStorage.getItem(checkoutAttemptKey()) ?? 'null'
     );
     return attempt &&
       typeof attempt.id === 'string' &&
       typeof attempt.items === 'string' &&
-      (!attempt.owner || attempt.owner === window.stdb?.identity)
+      attempt.owner === window.stdb.identity
       ? attempt
       : null;
   } catch {
     return null;
   }
-}
-
-async function verifiedCheckoutAttempt() {
-  let attempt = readCheckoutAttempt();
-  if (attempt && !attempt.owner && attempt.sessionId) {
-    const originalId = attempt.id;
-    const owned = await window.stdb.ownsCheckoutSession({
-      sessionId: attempt.sessionId,
-      attemptId: attempt.id,
-    });
-    const current = readCheckoutAttempt();
-    if (current?.id !== originalId) return current;
-    attempt = owned ? { ...attempt, owner: window.stdb.identity } : null;
-    localStorage.setItem(checkoutAttemptKey(), JSON.stringify(attempt));
-  }
-  return attempt;
 }
 
 let billingTimer;
@@ -178,8 +160,8 @@ async function refreshBilling() {
     .join(', ');
   byId('billingStatus').textContent =
     `${billing.purchases} confirmed purchase${billing.purchases === 1 ? '' : 's'}${subscriptions ? `. Subscription: ${subscriptions}` : ''}.`;
-  const attempt = await verifiedCheckoutAttempt();
-  if (!attempt?.owner || !attempt.sessionId) return;
+  const attempt = readCheckoutAttempt();
+  if (!attempt?.sessionId) return;
   const session = billing.checkouts.find(row => row.id === attempt.sessionId);
   if (
     session &&
@@ -192,13 +174,13 @@ async function refreshBilling() {
       persistCart();
       syncCartState();
     }
-    localStorage.setItem(checkoutAttemptKey(), 'null');
+    localStorage.removeItem(checkoutAttemptKey());
     showCheckoutBanner(
       'success',
       '<strong>Payment confirmed.</strong> Your purchase is recorded.'
     );
   } else if (session?.paymentStatus === 'failed') {
-    localStorage.setItem(checkoutAttemptKey(), 'null');
+    localStorage.removeItem(checkoutAttemptKey());
     showCheckoutBanner(
       'canceled',
       'Payment failed. You can try checkout again.'
@@ -728,36 +710,29 @@ async function createCheckoutForCart(cartItems, triggerButton) {
       productId: entry.id,
       quantity: entry.quantity,
     }));
-    let saved = await verifiedCheckoutAttempt();
+    let saved = readCheckoutAttempt();
     const fingerprint = checkoutFingerprint(cartItems);
     if (
       saved?.items === fingerprint &&
-      ((!saved.owner && saved.recoverable) ||
-        !Number.isFinite(saved.createdAt) ||
+      (!Number.isFinite(saved.createdAt) ||
         Date.now() - saved.createdAt >= 24 * 60 * 60 * 1000 ||
         saved.createdAt > Date.now())
     ) {
-      if (!saved.recoverable) {
-        throw new Error(
-          'This saved checkout cannot be verified automatically. Check Billing and contact the store before paying again.'
-        );
-      }
       await window.stdb.cancelCheckoutAttempt({
         attemptId: saved.id,
         sessionId: saved.sessionId,
       });
-      localStorage.setItem(checkoutAttemptKey(), 'null');
+      localStorage.removeItem(checkoutAttemptKey());
       saved = null;
     }
     const attempt =
       saved?.items === fingerprint
-        ? { ...saved, owner: window.stdb.identity }
+        ? saved
         : {
             id: crypto.randomUUID(),
             owner: window.stdb.identity,
             items: fingerprint,
             createdAt: Date.now(),
-            recoverable: true,
           };
     localStorage.setItem(checkoutAttemptKey(), JSON.stringify(attempt));
     const result = await window.stdb.createCheckoutSession({

@@ -47,7 +47,6 @@ import * as CreateStorePortalSessionProcedure from "./create_store_portal_sessio
 import * as GetOrCreateStoreCustomerProcedure from "./get_or_create_store_customer_procedure";
 import * as GetStoreBillingProcedure from "./get_store_billing_procedure";
 import * as ListStoreProductsJsonProcedure from "./list_store_products_json_procedure";
-import * as OwnsStoreCheckoutSessionProcedure from "./owns_store_checkout_session_procedure";
 import * as SyncStoreProductsWithStripeProcedure from "./sync_store_products_with_stripe_procedure";
 
 // Import all table schema definitions
@@ -171,7 +170,6 @@ const proceduresSchema = __procedures(
   __procedureSchema("get_or_create_store_customer", GetOrCreateStoreCustomerProcedure.params, GetOrCreateStoreCustomerProcedure.returnType),
   __procedureSchema("get_store_billing", GetStoreBillingProcedure.params, GetStoreBillingProcedure.returnType),
   __procedureSchema("list_store_products_json", ListStoreProductsJsonProcedure.params, ListStoreProductsJsonProcedure.returnType),
-  __procedureSchema("owns_store_checkout_session", OwnsStoreCheckoutSessionProcedure.params, OwnsStoreCheckoutSessionProcedure.returnType),
   __procedureSchema("sync_store_products_with_stripe", SyncStoreProductsWithStripeProcedure.params, SyncStoreProductsWithStripeProcedure.returnType),
   __procedureSchema("stripe.add_admin_identity", Stripe_AddAdminIdentityProcedure.params, Stripe_AddAdminIdentityProcedure.returnType, "stripe.addAdminIdentity"),
   __procedureSchema("stripe.cancel_subscription", Stripe_CancelSubscriptionProcedure.params, Stripe_CancelSubscriptionProcedure.returnType, "stripe.cancelSubscription"),
@@ -261,7 +259,6 @@ export const procedures = {
   getOrCreateStoreCustomer: __procedureAccessors.getOrCreateStoreCustomer,
   getStoreBilling: __procedureAccessors.getStoreBilling,
   listStoreProductsJson: __procedureAccessors.listStoreProductsJson,
-  ownsStoreCheckoutSession: __procedureAccessors.ownsStoreCheckoutSession,
   syncStoreProductsWithStripe: __procedureAccessors.syncStoreProductsWithStripe,
   rateLimit: {
     runSweep: __procedureAccessors["rateLimit.runSweep"],

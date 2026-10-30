@@ -9,10 +9,6 @@ declare global {
   interface Window {
     stdb?: {
       identity: string;
-      ownsCheckoutSession: (args: {
-        sessionId: string;
-        attemptId: string;
-      }) => Promise<boolean>;
       getOrCreateCustomer: (args: {
         email?: string;
         name?: string;
@@ -222,7 +218,6 @@ async function main() {
 
   window.stdb = {
     identity: conn.identity!.toHexString(),
-    ownsCheckoutSession: args => conn.procedures.ownsStoreCheckoutSession(args),
     getOrCreateCustomer: args => conn.procedures.getOrCreateStoreCustomer(args),
     createCheckoutSession: args =>
       conn.procedures.createStoreCheckoutSession(args),
