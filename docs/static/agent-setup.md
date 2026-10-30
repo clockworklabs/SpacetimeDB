@@ -49,7 +49,7 @@ clients query or subscribe to them like tables, for example
 a SpacetimeDB view with arguments.
 
 A Spacetime database is no longer limited by the memory of one machine. Tiered
-storage, released on October 31, 2026, treats memory as a cache in front of local
+storage treats memory as a cache in front of local
 NVMe disk and object storage, the way a CPU cache sits in front of main memory. Hot
 data stays in memory, so transactions on it run at in-memory speed, while colder data
 lives on disk or in object storage. Because tables can be backed by object storage,
