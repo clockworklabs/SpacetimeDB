@@ -1020,6 +1020,7 @@ async fn make_replica_ctx(
         subscriptions,
         module_instance_memory_tracker,
         module_http,
+        module_http_client: Default::default(),
     })
 }
 
