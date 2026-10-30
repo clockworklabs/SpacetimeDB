@@ -1,5 +1,6 @@
 const STORAGE_KEYS = {
   cart: 'stdb.premiumStore.cart.v1',
+  attempt: 'stdb.premiumStore.checkoutAttempt',
 };
 
 const state = {
@@ -94,22 +95,99 @@ function consumePostCheckoutQueryFlags() {
   if (!purchased && !canceled) return;
 
   if (purchased) {
-    state.cart = [];
-    state.animatedStepperKey = null;
-    persistCart();
     showCheckoutBanner(
-      'success',
-      '<strong>Checkout complete.</strong> Stripe confirmed the session.'
+      'pending',
+      'Checking the payment result. This can take a moment.'
     );
   } else {
     showCheckoutBanner(
       'canceled',
-      '<strong>Checkout canceled.</strong> No charge was made. Your cart is still here.'
+      '<strong>Returned from checkout.</strong> Your cart is still here.'
     );
   }
   url.searchParams.delete('purchased');
   url.searchParams.delete('canceled');
   window.history.replaceState({}, '', url.toString());
+}
+
+function checkoutFingerprint(items) {
+  return JSON.stringify(
+    items.map(item => ({
+      productId: item.id,
+      quantity: item.quantity,
+      priceId: item.priceId,
+      mode: item.mode,
+    }))
+  );
+}
+
+function readCheckoutAttempt() {
+  try {
+    const attempt = JSON.parse(
+      localStorage.getItem(STORAGE_KEYS.attempt) ?? 'null'
+    );
+    return attempt &&
+      typeof attempt.id === 'string' &&
+      typeof attempt.items === 'string'
+      ? attempt
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+let billingTimer;
+let billingPolls = 0;
+async function refreshBilling() {
+  clearTimeout(billingTimer);
+  if (!window.stdb) return;
+  const billing = await window.stdb.getBilling();
+  byId('btnBilling').hidden = !billing.customerId;
+  const subscriptions = billing.subscriptions
+    .map(sub => {
+      const ending = sub.cancelAtUnix
+        ? ` (ends ${new Date(Number(sub.cancelAtUnix) * 1000).toLocaleDateString()})`
+        : sub.cancelAtPeriodEnd
+          ? ' (ends this period)'
+          : '';
+      return `${sub.status}${ending}`;
+    })
+    .join(', ');
+  byId('billingStatus').textContent =
+    `${billing.purchases} confirmed purchase${billing.purchases === 1 ? '' : 's'}${subscriptions ? `. Subscription: ${subscriptions}` : ''}.`;
+  const attempt = readCheckoutAttempt();
+  if (!attempt?.sessionId) return;
+  const session = billing.checkouts.find(row => row.id === attempt.sessionId);
+  if (
+    session &&
+    session.mode !== 'setup' &&
+    ['paid', 'no_payment_required'].includes(session.paymentStatus)
+  ) {
+    if (checkoutFingerprint(state.cart) === attempt.items) {
+      state.cart = [];
+      persistCart();
+      syncCartState();
+    }
+    localStorage.removeItem(STORAGE_KEYS.attempt);
+    showCheckoutBanner(
+      'success',
+      '<strong>Payment confirmed.</strong> Your purchase is recorded.'
+    );
+  } else if (session?.paymentStatus === 'failed') {
+    localStorage.removeItem(STORAGE_KEYS.attempt);
+    showCheckoutBanner(
+      'canceled',
+      'Payment failed. You can try checkout again.'
+    );
+  } else if (billingPolls++ < 30) {
+    billingTimer = setTimeout(
+      () => refreshBilling().catch(error => setError(error.message)),
+      2000
+    );
+  } else {
+    byId('billingStatus').textContent +=
+      ' Payment is still pending. Use Refresh billing to check again.';
+  }
 }
 
 function writeLog(message) {
@@ -622,12 +700,39 @@ async function createCheckoutForCart(cartItems, triggerButton) {
     if (!window.stdb) {
       throw new Error('STDB not connected yet. Try again.');
     }
+    const items = cartItems.map(entry => ({
+      productId: entry.id,
+      quantity: entry.quantity,
+    }));
+    const saved = readCheckoutAttempt();
+    const fingerprint = checkoutFingerprint(cartItems);
+    if (
+      saved?.items === fingerprint &&
+      (!Number.isFinite(saved.createdAt) ||
+        Date.now() - saved.createdAt >= 24 * 60 * 60 * 1000 ||
+        saved.createdAt > Date.now())
+    ) {
+      throw new Error(
+        'This checkout is too old to retry safely. Check Billing and contact the store to confirm the payment.'
+      );
+    }
+    const attempt =
+      saved?.items === fingerprint
+        ? saved
+        : {
+            id: crypto.randomUUID(),
+            items: fingerprint,
+            createdAt: Date.now(),
+          };
+    localStorage.setItem(STORAGE_KEYS.attempt, JSON.stringify(attempt));
     const result = await window.stdb.createCheckoutSession({
-      items: cartItems.map(entry => ({
-        productId: entry.id,
-        quantity: entry.quantity,
-      })),
+      items,
+      attemptId: attempt.id,
     });
+    localStorage.setItem(
+      STORAGE_KEYS.attempt,
+      JSON.stringify({ ...attempt, sessionId: result.sessionId })
+    );
     writeLog(`create_checkout_session: ${JSON.stringify(result)}`);
 
     if (!result.url) {
@@ -686,7 +791,47 @@ async function createCheckoutCartNext() {
   await createCheckoutForCart(state.cart, ui.btnCheckoutCart);
 }
 
+async function refreshBillingDialog() {
+  const button = byId('btnRefreshBilling');
+  const errorLine = byId('billingError');
+  errorLine.hidden = true;
+  setButtonLoading(button, true, 'Refreshing...');
+  try {
+    billingPolls = 0;
+    await refreshBilling();
+  } catch (error) {
+    errorLine.textContent = error.message;
+    errorLine.hidden = false;
+  } finally {
+    setButtonLoading(button, false);
+  }
+}
+
 function wireEvents() {
+  byId('btnAccount').addEventListener('click', () => {
+    byId('billingDialog').showModal();
+    refreshBillingDialog();
+  });
+  byId('btnRefreshBilling').addEventListener('click', refreshBillingDialog);
+  byId('btnBilling').addEventListener('click', async () => {
+    const button = byId('btnBilling');
+    setButtonLoading(button, true);
+    try {
+      const session = await window.stdb.createPortalSession();
+      window.location.assign(session.url);
+    } catch (error) {
+      byId('billingError').textContent = error.message;
+      byId('billingError').hidden = false;
+    } finally {
+      setButtonLoading(button, false);
+    }
+  });
+  window.addEventListener('stdb:ready', () =>
+    refreshBilling().catch(error => setError(error.message))
+  );
+  window.addEventListener('focus', () =>
+    refreshBilling().catch(error => setError(error.message))
+  );
   if (ui.btnCart) ui.btnCart.addEventListener('click', openCart);
   ui.btnCartClose.addEventListener('click', closeCart);
   ui.btnContinueShopping.addEventListener('click', closeCart);
@@ -737,6 +882,7 @@ async function boot() {
   consumePostCheckoutQueryFlags();
   syncCartState();
   if (state.catalog.length > 0) renderCatalog();
+  await refreshBilling();
 }
 
 boot().catch(error => {

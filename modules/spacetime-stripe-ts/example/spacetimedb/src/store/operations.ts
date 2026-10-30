@@ -390,9 +390,11 @@ export const getOrCreateStoreCustomer = spacetimedb.procedure(
 );
 
 export const createStoreCheckoutSession = spacetimedb.procedure(
-  { items: t.array(storeCheckoutItem) },
+  { items: t.array(storeCheckoutItem), attemptId: t.string() },
   storeCheckoutSessionResult,
-  (ctx, { items }) => {
+  (ctx, { items, attemptId }) => {
+    if (!/^[a-zA-Z0-9-]{16,64}$/.test(attemptId))
+      throwSenderError('store.invalid_attempt');
     if (items.length === 0 || items.length > MAX_CHECKOUT_ITEMS) {
       throwSenderError('store.invalid_items');
     }
@@ -429,8 +431,82 @@ export const createStoreCheckoutSession = spacetimedb.procedure(
       mode: checkout.mode,
       successUrl: `${checkout.returnOrigin}/?purchased=1`,
       cancelUrl: `${checkout.returnOrigin}/?canceled=1`,
+      metadata: { store: ctx.databaseIdentity.toHexString() },
+      idempotencyKey: `${ctx.sender.toHexString()}:${attemptId}`,
     });
   }
+);
+
+export const createStorePortalSession = spacetimedb.procedure(
+  {},
+  t.object('StorePortalSession', {
+    url: t.string(),
+  }),
+  ctx => {
+    consumeBuyerStripeCall(ctx);
+    const returnUrl = ctx.withTx(
+      tx => tx.db.storeConfig.singleton.find(true)?.returnOrigin
+    );
+    if (!returnUrl) throwSenderError('store.return_origin_not_set');
+    return stripe.createUserCustomerPortalSession(ctx.as.stripe, {
+      userId: ctx.sender.toHexString(),
+      returnUrl,
+    });
+  }
+);
+
+export const getStoreBilling = spacetimedb.procedure(
+  {},
+  t.object('StoreBilling', {
+    customerId: t.option(t.string()),
+    purchases: t.u32(),
+    subscriptions: t.array(
+      t.object('StoreSubscription', {
+        id: t.string(),
+        status: t.string(),
+        cancelAtPeriodEnd: t.bool(),
+        cancelAtUnix: t.option(t.i64()),
+      })
+    ),
+    checkouts: t.array(
+      t.object('StoreCheckout', {
+        id: t.string(),
+        mode: t.string(),
+        paymentStatus: t.string(),
+      })
+    ),
+  }),
+  ctx =>
+    ctx.withTx(tx => {
+      const userId = ctx.sender.toHexString();
+      const customers = [
+        ...tx.as.stripe.db.stripeCustomer.byUserId.filter(userId),
+      ];
+      return {
+        customerId: customers.find(customer => !customer.deleted)
+          ?.stripeCustomerId,
+        purchases: [...tx.db.storePurchase.userId.filter(userId)].length,
+        subscriptions: [
+          ...tx.as.stripe.db.stripeSubscription.byUserId.filter(userId),
+        ].map(sub => ({
+          id: sub.stripeSubscriptionId,
+          status: sub.status,
+          cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+          cancelAtUnix: sub.cancelAtUnix,
+        })),
+        checkouts: customers.flatMap(customer =>
+          [
+            ...tx.as.stripe.db.stripeCheckoutSession.byCustomer.filter(
+              customer.stripeCustomerId
+            ),
+          ].map(session => ({
+            id: session.stripeCheckoutSessionId,
+            mode: session.mode,
+            paymentStatus: session.paymentStatus,
+          }))
+        ),
+      };
+    })
 );
 
 export const syncStoreProductsWithStripe = spacetimedb.procedure(

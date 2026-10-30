@@ -41,7 +41,7 @@ export const init = spacetimedb.init(ctx => {
 });
 
 export const stripeWebhook = spacetimedb.httpHandler((ctx, req) =>
-  stripe.handleStripeWebhook(ctx.as.stripe, req)
+  stripe.handleStripeWebhook(ctx, req, { stripe: tx => tx.as.stripe })
 );
 export const router = spacetimedb.httpRouter(
   new Router().post('/stripe/webhook', stripeWebhook)
@@ -49,8 +49,8 @@ export const router = spacetimedb.httpRouter(
 ```
 
 The submodule's procedures are admin-only. Signed-in users reach Stripe through
-host procedures that call the host helpers with `ctx.as.stripe`. The helpers do
-no authorization, so the host procedure resolves the user from `ctx.sender`,
+host procedures that call the host helpers with `ctx.as.stripe`. The host
+procedure resolves the user from `ctx.sender`,
 takes prices from a server-owned catalog, and fixes the return URLs:
 
 ```ts
@@ -94,7 +94,7 @@ Fulfill from webhook state, not from the redirect. See
 Administrators are the identities in `stripe_admin_identity`. `install` seeds
 the publishing identity; `stripe.add_admin_identity` adds more. Host procedures
 that need an administrator check read the same table through
-`ctx.db.stripe.stripeAdminIdentity` instead of keeping a second list. The
+`tx.as.stripe.db.stripeAdminIdentity` inside `ctx.withTx`. The
 [Premium Store example](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-stripe-ts/example) shows a complete host module.
 
 ### Standalone configuration
@@ -138,23 +138,37 @@ spacetime call --server http://127.0.0.1:3000 stripe-ts get_stripe_config_status
 - `stripe_config`: credentials singleton
 - `stripe_admin_identity`: admin allowlist
 
-Stripe base tables are private. Expose product-specific fields and rows through
-caller-scoped host views. Resolve customer, user, and organization IDs from
+Stripe base tables are private. Expose product-specific fields through
+authorized application procedures. Resolve customer, user, and organization IDs from
 trusted application context.
 
 ## API
 
-**Host helpers** (`@spacetimedb/stripe/submodule`, plain functions that do no
-authorization; pass `ctx.as.stripe`)
+**Host helpers** (`@spacetimedb/stripe/submodule`; pass `ctx.as.stripe`)
+
+The host supplies a trusted `userId`. User subscription helpers check the stored
+subscription/customer association against that ID. They do not authenticate a
+user-supplied ID. Network calls are synchronous and must run in procedures,
+outside `withTx`.
 
 - `install(ctx)`: call from the host `init` reducer
-- `createUserCheckoutSession(ctx, { userId, email?, name?, items, mode, successUrl, cancelUrl, metadata? })`
-- `getOrCreateUserCustomer(ctx, { userId, email?, name? })`: matches customers
+- `createUserCheckoutSession(ctx, args)`: hosted or embedded payment, subscription,
+  or setup checkout. See [checkout options](#checkout-options-and-billing-management).
+- `getOrCreateUserCustomer(ctx, { userId, email?, name?, metadata? })`: matches customers
   by `userId` only
+- `createCustomer(ctx, { email?, name?, metadata?, idempotencyKey? })`: creates a
+  customer and stores its metadata. Performs no authorization.
+- `createUserCustomerPortalSession(ctx, { userId, returnUrl, idempotencyKey? })`
+- `cancelUserSubscription(ctx, { userId, stripeSubscriptionId, cancelAtPeriodEnd?, idempotencyKey? })`
+- `reactivateUserSubscription(ctx, { userId, stripeSubscriptionId, idempotencyKey? })`:
+  removes scheduled cancellation; a fully canceled subscription cannot restart
+- `updateUserSubscriptionQuantity(ctx, { userId, stripeSubscriptionId, quantity, subscriptionItemId?, idempotencyKey? })`:
+  requires an item ID for a multi-item subscription
 - `stripeRequest(ctx, { method, path, formBody?, idempotencyKey? })`: request to
   a relative `/v1/` path on `api.stripe.com`; accepted methods are `GET`,
   `POST`, and `DELETE`
-- `handleStripeWebhook(ctx, req)`: HTTP webhook handler for a host route
+- `handleStripeWebhook(ctx, req, { stripe: tx => tx.as.stripe, onEvent? })`:
+  HTTP handler using the host transaction; see [fulfillment](#checkout-fulfillment)
 - `errors`: error code constants thrown by the submodule
 
 **Setup** (admin)
@@ -174,7 +188,8 @@ authorization; pass `ctx.as.stripe`)
 - `cancel_subscription({ stripeSubscriptionId, cancelAtPeriodEnd })`
 - `reactivate_subscription({ stripeSubscriptionId })`
 - `update_subscription_quantity({ stripeSubscriptionId, quantity })`
-- `update_subscription_metadata({ stripeSubscriptionId, metadataJson, orgId, userId })`
+- `update_subscription_metadata({ stripeSubscriptionId, metadataJson, orgId, userId })`:
+  updates stored metadata only; it does not update Stripe
 
 **Webhooks**
 
@@ -195,7 +210,7 @@ authorization; pass `ctx.as.stripe`)
 - `get_checkout_session`, `list_checkout_sessions`
 
 List procedures return at most 1,000 rows. Build paginated, product-specific
-views in the host module when a UI needs a larger history.
+queries in the host module when a UI needs a larger history.
 
 Package entrypoints:
 
@@ -208,13 +223,16 @@ Package entrypoints:
 
 ```
 customer.created                           customer.updated
+customer.deleted
 customer.subscription.created              customer.subscription.updated
 customer.subscription.deleted              checkout.session.completed
 checkout.session.async_payment_succeeded   checkout.session.async_payment_failed
 invoice.created                            invoice.finalized
+invoice.updated
 invoice.paid                               invoice.payment_succeeded
 invoice.payment_failed                     invoice_payment.paid
 payment_intent.succeeded
+payment_intent.payment_failed
 ```
 
 Other event types are accepted and stored with status `Ignored`.
@@ -231,14 +249,64 @@ the row. `replay_webhook_event` follows the same rule.
 
 `checkout.session.completed` also fires for asynchronous payment methods before
 the payment settles. Grant access only when `stripe_checkout_session.paymentStatus`
-is `paid` or `no_payment_required`. Subscribe the webhook endpoint to
+is `paid` or `no_payment_required` and its mode is `payment` or `subscription`.
+Setup mode only saves payment details. Subscribe the webhook endpoint to
 `checkout.session.async_payment_succeeded` and
 `checkout.session.async_payment_failed` so delayed payments update that field.
 Stripe reports a failed delayed payment as `unpaid`, the same as a pending one,
 so the submodule records `checkout.session.async_payment_failed` as
 `paymentStatus` `failed`.
 
+Pass `onEvent: (tx, event) => { ... }` to `handleStripeWebhook` to write application
+records in the same transaction as Stripe state. Its `stripe` selector receives
+that same host transaction. The callback receives a verified event envelope;
+validate fields of `event.data.object` before using them. Unhandled event types
+also reach this callback. Keep it synchronous and free of network calls.
+
+A callback exception rolls back all writes and returns HTTP 500 so Stripe can
+retry. Deduplicate fulfillment by Checkout session or another business-object
+ID: different event IDs can describe the same purchase. The example uses a
+private purchase table keyed by session ID. Repeated processed event IDs skip
+the callback. Admin replay and the relay reducer update Stripe state only; they
+do not invoke a host HTTP callback.
+
+### Checkout options and billing management
+
+Use `params` on `createUserCheckoutSession` for Stripe Checkout options such as
+`allow_promotion_codes`, `automatic_tax`, or `subscription_data.trial_period_days`.
+Customer, line items, mode, URLs, and top-level metadata come from helper
+arguments. Helper metadata wins over nested metadata, including `userId`.
+
+For setup, pass `mode: 'setup'` and `currency`, with no line items. For embedded
+Checkout, pass `uiMode: 'embedded_page'` and `returnUrl` instead of success/cancel
+URLs. Mount Stripe.js embedded Checkout with the returned `clientSecret`. Keep
+that secret private to the buyer. Hosted Checkout returns `url`.
+
+```ts
+export const openBilling = spacetimedb.procedure(
+  {},
+  t.object('BillingPortal', { url: t.string() }),
+  ctx =>
+    stripe.createUserCustomerPortalSession(ctx.as.stripe, {
+      userId: ctx.sender.toHexString(),
+      returnUrl: APP_ORIGIN,
+    })
+);
+```
+
+Give each new purchase a request ID and pass it as `idempotencyKey`. Keep the
+same ID and arguments when retrying after a lost response. The checkout helper
+scopes it to the customer. Stripe can expire request keys after 24 hours; check
+existing billing state before retrying an older attempt. A new purchase needs a
+new key. Stripe and STDB writes are separate: a failed local write can follow a
+successful Stripe request. Retry with the same key and let webhooks reconcile
+state. Deleted customers remain in the history and are not reused.
+
 ### Stripe API versions
+
+Requests default to `2026-08-26.dahlia`, matching the pinned Stripe parameter
+types. Set `stripeVersion` only when the supplied options match that version.
+The SDK supplies types; requests still use STDB's synchronous HTTP client.
 
 Webhook payloads use the API version configured on the webhook endpoint, not
 the `stripeVersion` sent with API requests. The submodule reads both payload
@@ -247,7 +315,7 @@ shapes:
 - Invoice subscriptions come from `invoice.subscription` before
   `2025-03-31.basil` and from `invoice.parent.subscription_details.subscription`
   from that version on.
-- `stripe_payment` mirrors every succeeded PaymentIntent. `stripeInvoiceId` is
+- `stripe_payment` mirrors succeeded and failed PaymentIntents. `stripeInvoiceId` is
   set when the PaymentIntent paid an invoice, from `payment_intent.invoice`
   before `2025-03-31.basil` and from `invoice_payment.paid` from that version on.
   Endpoints on `2025-03-31.basil` or later must subscribe to
@@ -295,7 +363,17 @@ pnpm run test:smoke --server http://127.0.0.1:3000 --http-url http://127.0.0.1:3
 
 # Real Stripe sandbox via Stripe CLI (requires `stripe login`)
 pnpm run test:stripe:e2e
+
+# Host ownership and atomic webhook fulfillment; creates and deletes a test database
+pnpm run test:example http://127.0.0.1:3000
+
+# Live helper contracts; requires STRIPE_SECRET_KEY (sk_test_...) and spacetime login
+pnpm run test:billing:live http://127.0.0.1:3000
 ```
+
+The billing test creates test-mode customers, prices, sessions, and a trial
+subscription. It removes its database, deletes customers, expires sessions,
+cancels subscriptions, and archives prices and products afterward.
 
 The smoke test publishes only to the dedicated `stripe-ts-smoke-test` database.
 The Stripe CLI E2E suite likewise defaults to the dedicated `stripe-ts-e2e`

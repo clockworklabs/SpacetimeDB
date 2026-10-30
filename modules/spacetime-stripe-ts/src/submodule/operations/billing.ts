@@ -1,3 +1,5 @@
+import { sha256, bytesToHex } from '@spacetimedb/crypto';
+import { checkoutForm, type UserCheckoutArgs } from '../checkout.js';
 import type { ProcedureExport } from 'spacetimedb/server';
 import * as v from 'valibot';
 import {
@@ -247,19 +249,29 @@ type CheckoutSessionArgs = {
 export type CheckoutSessionResult = {
   sessionId: string;
   url: string | undefined;
+  clientSecret?: string;
 };
 
-function findUserCustomerId(
+export function findUserCustomerId(
   ctx: ProcedureModuleCtx,
   userId: string
 ): string | undefined {
   return ctx.withTx(tx => {
     for (const customer of tx.db.stripeCustomer.byUserId.filter(userId))
-      return customer.stripeCustomerId;
+      if (!customer.deleted) return customer.stripeCustomerId;
     for (const sub of tx.db.stripeSubscription.byUserId.filter(userId))
-      return sub.stripeCustomerId;
+      if (
+        !tx.db.stripeCustomer.stripeCustomerId.find(sub.stripeCustomerId)
+          ?.deleted
+      )
+        return sub.stripeCustomerId;
     for (const payment of tx.db.stripePayment.byUserId.filter(userId)) {
-      if (payment.stripeCustomerId) return payment.stripeCustomerId;
+      if (
+        payment.stripeCustomerId &&
+        !tx.db.stripeCustomer.stripeCustomerId.find(payment.stripeCustomerId)
+          ?.deleted
+      )
+        return payment.stripeCustomerId;
     }
     return undefined;
   });
@@ -272,21 +284,55 @@ function findUserCustomerId(
  */
 export function getOrCreateUserCustomer(
   ctx: ProcedureModuleCtx,
-  args: { userId: string; email?: string; name?: string }
+  args: {
+    userId: string;
+    email?: string;
+    name?: string;
+    metadata?: Record<string, string>;
+  }
 ): { customerId: string; isNew: boolean } {
   const existing = findUserCustomerId(ctx, args.userId);
   if (existing) return { customerId: existing, isNew: false };
 
   const cfg = loadConfigOrThrowFromProcedure(ctx);
+  const generation = ctx.withTx(tx =>
+    [...tx.db.stripeCustomer.byUserId.filter(args.userId)]
+      .filter(customer => customer.deleted)
+      .map(customer => customer.stripeCustomerId)
+      .sort()
+  );
   const customerId = createCustomerInStripeAndSync(ctx, {
     secretKey: cfg.secretKey,
     stripeVersion: cfg.stripeVersion,
     email: args.email,
     name: args.name,
-    metadataJson: JSON.stringify({ userId: args.userId }),
-    idempotencyKey: args.userId,
+    metadataJson: JSON.stringify({ ...args.metadata, userId: args.userId }),
+    idempotencyKey: `customer:${bytesToHex(sha256(new TextEncoder().encode(JSON.stringify([ctx.databaseIdentity.toHexString(), args.userId, generation]))))}`,
   });
   return { customerId, isNew: true };
+}
+
+/** Creates a customer using trusted application metadata. Performs no authorization. */
+export function createCustomer(
+  ctx: ProcedureModuleCtx,
+  args: {
+    email?: string;
+    name?: string;
+    metadata?: Record<string, string>;
+    idempotencyKey?: string;
+  }
+): { customerId: string } {
+  const cfg = loadConfigOrThrowFromProcedure(ctx);
+  return {
+    customerId: createCustomerInStripeAndSync(ctx, {
+      ...cfg,
+      email: args.email,
+      name: args.name,
+      metadataJson:
+        args.metadata === undefined ? undefined : JSON.stringify(args.metadata),
+      idempotencyKey: args.idempotencyKey,
+    }),
+  };
 }
 
 // Stripe enforces one mode per session; all items must share mode.
@@ -294,7 +340,6 @@ function createCheckoutSessionInStripe(
   ctx: ProcedureModuleCtx,
   args: CheckoutSessionArgs
 ): CheckoutSessionResult {
-  const cfg = loadConfigOrThrowFromProcedure(ctx);
   if (args.items.length === 0) {
     throwSenderError(errors.checkoutSessionRequiresItems);
   }
@@ -326,13 +371,22 @@ function createCheckoutSessionInStripe(
     );
   }
 
+  return requestCheckoutSession(ctx, formPairsToBody(formPairs));
+}
+
+function requestCheckoutSession(
+  ctx: ProcedureModuleCtx,
+  formBody: string,
+  idempotencyKey?: string
+): CheckoutSessionResult {
+  const cfg = loadConfigOrThrowFromProcedure(ctx);
   const response = callStripe(ctx, {
     method: 'POST',
     path: '/v1/checkout/sessions',
     secretKey: cfg.secretKey,
     stripeVersion: cfg.stripeVersion,
-    idempotencyKey: undefined,
-    formBody: formPairsToBody(formPairs),
+    idempotencyKey,
+    formBody,
   });
   if (response.status < 200 || response.status >= 300) {
     throwSenderError(
@@ -352,6 +406,7 @@ function createCheckoutSessionInStripe(
   return {
     sessionId: sessionResult.output.id,
     url: sessionResult.output.url ?? undefined,
+    clientSecret: sessionResult.output.client_secret ?? undefined,
   };
 }
 
@@ -364,32 +419,22 @@ function createCheckoutSessionInStripe(
  */
 export function createUserCheckoutSession(
   ctx: ProcedureModuleCtx,
-  args: {
-    userId: string;
-    email?: string;
-    name?: string;
-    items: Array<{ priceId: string; quantity: bigint }>;
-    mode: 'payment' | 'subscription';
-    successUrl: string;
-    cancelUrl: string;
-    metadata?: Record<string, string>;
-  }
+  args: UserCheckoutArgs
 ): CheckoutSessionResult {
+  // Validate before creating a customer or making a provider request.
+  checkoutForm(args, '');
   const { customerId } = getOrCreateUserCustomer(ctx, args);
-  const metadataJson = JSON.stringify({
-    ...args.metadata,
-    userId: args.userId,
-  });
-  return createCheckoutSessionInStripe(ctx, {
-    items: args.items,
-    customerId,
-    mode: args.mode,
-    successUrl: args.successUrl,
-    cancelUrl: args.cancelUrl,
-    metadataJson,
-    subscriptionMetadataJson: metadataJson,
-    paymentIntentMetadataJson: metadataJson,
-  });
+  const result = requestCheckoutSession(
+    ctx,
+    checkoutForm(args, customerId),
+    args.idempotencyKey === undefined
+      ? undefined
+      : `checkout:${customerId}:${args.idempotencyKey}`
+  );
+  if (args.uiMode === 'embedded_page' ? !result.clientSecret : !result.url) {
+    throwSenderError(errors.checkoutSessionInvalidResponse);
+  }
+  return result;
 }
 
 /**
@@ -475,34 +520,7 @@ export const createCustomerPortalSession: ProcedureExport<
   portalSessionResult,
   (ctx, args) => {
     requireProcedureAdmin(ctx);
-    const cfg = loadConfigOrThrowFromProcedure(ctx);
-    const response = callStripe(ctx, {
-      method: 'POST',
-      path: '/v1/billing_portal/sessions',
-      secretKey: cfg.secretKey,
-      stripeVersion: cfg.stripeVersion,
-      idempotencyKey: undefined,
-      formBody: formPairsToBody([
-        ['customer', args.customerId],
-        ['return_url', args.returnUrl],
-      ]),
-    });
-    if (response.status < 200 || response.status >= 300) {
-      throwSenderError(
-        `${errors.portalSessionFailed}:${response.status}${stripeErrorSuffix(response.body)}`
-      );
-    }
-
-    const portalResult = v.safeParse(
-      vStripeBillingPortalSessionResponse,
-      safeJsonParse(response.body)
-    );
-    if (!portalResult.success) {
-      throwSenderError(
-        `${errors.portalSessionInvalidResponse}:${summarizeIssues(portalResult.issues)}`
-      );
-    }
-    return { url: portalResult.output.url };
+    return createPortalSession(ctx, args);
   }
 );
 
@@ -513,14 +531,15 @@ function patchSubscriptionFromStripe(
     stripeVersion: string | undefined;
     stripeSubscriptionId: string;
     formBody: string;
+    idempotencyKey?: string;
   }
 ) {
   const response = callStripe(ctx, {
     method: 'POST',
-    path: `/v1/subscriptions/${args.stripeSubscriptionId}`,
+    path: `/v1/subscriptions/${encodeURIComponent(args.stripeSubscriptionId)}`,
     secretKey: args.secretKey,
     stripeVersion: args.stripeVersion,
-    idempotencyKey: undefined,
+    idempotencyKey: args.idempotencyKey,
     formBody: args.formBody,
   });
   if (response.status < 200 || response.status >= 300) {
@@ -591,6 +610,84 @@ export const cancelSubscription: ProcedureExport<
   typeof unitResult
 > = spacetimedb.procedure(cancelSubscriptionArgs, unitResult, (ctx, args) => {
   requireProcedureAdmin(ctx);
+  return cancelSubscriptionInStripe(ctx, args);
+});
+
+const reactivateSubscriptionArgs = {
+  stripeSubscriptionId: t.string(),
+};
+export const reactivateSubscription: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof reactivateSubscriptionArgs,
+  typeof unitResult
+> = spacetimedb.procedure(
+  reactivateSubscriptionArgs,
+  unitResult,
+  (ctx, args) => {
+    requireProcedureAdmin(ctx);
+    return reactivateSubscriptionInStripe(ctx, args);
+  }
+);
+
+const updateSubscriptionQuantityArgs = {
+  stripeSubscriptionId: t.string(),
+  quantity: t.i64(),
+};
+export const updateSubscriptionQuantity: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof updateSubscriptionQuantityArgs,
+  typeof unitResult
+> = spacetimedb.procedure(
+  updateSubscriptionQuantityArgs,
+  unitResult,
+  (ctx, args) => {
+    requireProcedureAdmin(ctx);
+    return updateSubscriptionQuantityInStripe(ctx, args);
+  }
+);
+
+function createPortalSession(
+  ctx: ProcedureModuleCtx,
+  args: { customerId: string; returnUrl: string; idempotencyKey?: string }
+) {
+  const cfg = loadConfigOrThrowFromProcedure(ctx);
+  const response = callStripe(ctx, {
+    method: 'POST',
+    path: '/v1/billing_portal/sessions',
+    secretKey: cfg.secretKey,
+    stripeVersion: cfg.stripeVersion,
+    idempotencyKey: args.idempotencyKey,
+    formBody: formPairsToBody([
+      ['customer', args.customerId],
+      ['return_url', args.returnUrl],
+    ]),
+  });
+  if (response.status < 200 || response.status >= 300) {
+    throwSenderError(
+      `${errors.portalSessionFailed}:${response.status}${stripeErrorSuffix(response.body)}`
+    );
+  }
+
+  const portalResult = v.safeParse(
+    vStripeBillingPortalSessionResponse,
+    safeJsonParse(response.body)
+  );
+  if (!portalResult.success) {
+    throwSenderError(
+      `${errors.portalSessionInvalidResponse}:${summarizeIssues(portalResult.issues)}`
+    );
+  }
+  return { url: portalResult.output.url };
+}
+
+function cancelSubscriptionInStripe(
+  ctx: ProcedureModuleCtx,
+  args: {
+    stripeSubscriptionId: string;
+    cancelAtPeriodEnd?: boolean;
+    idempotencyKey?: string;
+  }
+) {
   const cfg = loadConfigOrThrowFromProcedure(ctx);
   const atPeriodEnd = args.cancelAtPeriodEnd ?? true;
   const stripeSubscription = atPeriodEnd
@@ -598,12 +695,13 @@ export const cancelSubscription: ProcedureExport<
         secretKey: cfg.secretKey,
         stripeVersion: cfg.stripeVersion,
         stripeSubscriptionId: args.stripeSubscriptionId,
+        idempotencyKey: args.idempotencyKey,
         formBody: formPairsToBody([['cancel_at_period_end', 'true']]),
       })
     : (() => {
         const response = callStripe(ctx, {
           method: 'DELETE',
-          path: `/v1/subscriptions/${args.stripeSubscriptionId}`,
+          path: `/v1/subscriptions/${encodeURIComponent(args.stripeSubscriptionId)}`,
           secretKey: cfg.secretKey,
           stripeVersion: cfg.stripeVersion,
           idempotencyKey: undefined,
@@ -623,104 +721,150 @@ export const cancelSubscription: ProcedureExport<
 
   syncSubscriptionObjectFromStripe(ctx, stripeSubscription);
   return {};
-});
+}
 
-const reactivateSubscriptionArgs = {
-  stripeSubscriptionId: t.string(),
-};
-export const reactivateSubscription: ProcedureExport<
-  typeof spacetimedb.schemaType,
-  typeof reactivateSubscriptionArgs,
-  typeof unitResult
-> = spacetimedb.procedure(
-  reactivateSubscriptionArgs,
-  unitResult,
-  (ctx, args) => {
-    requireProcedureAdmin(ctx);
-    const cfg = loadConfigOrThrowFromProcedure(ctx);
-    const stripeSubscription = patchSubscriptionFromStripe(ctx, {
-      secretKey: cfg.secretKey,
-      stripeVersion: cfg.stripeVersion,
-      stripeSubscriptionId: args.stripeSubscriptionId,
-      formBody: formPairsToBody([['cancel_at_period_end', 'false']]),
-    });
-    syncSubscriptionObjectFromStripe(ctx, stripeSubscription);
-    return {};
+function reactivateSubscriptionInStripe(
+  ctx: ProcedureModuleCtx,
+  args: { stripeSubscriptionId: string; idempotencyKey?: string }
+) {
+  const cfg = loadConfigOrThrowFromProcedure(ctx);
+  const stripeSubscription = patchSubscriptionFromStripe(ctx, {
+    secretKey: cfg.secretKey,
+    stripeVersion: cfg.stripeVersion,
+    stripeSubscriptionId: args.stripeSubscriptionId,
+    idempotencyKey: args.idempotencyKey,
+    formBody: formPairsToBody([['cancel_at_period_end', 'false']]),
+  });
+  syncSubscriptionObjectFromStripe(ctx, stripeSubscription);
+  return {};
+}
+
+function updateSubscriptionQuantityInStripe(
+  ctx: ProcedureModuleCtx,
+  args: {
+    stripeSubscriptionId: string;
+    quantity: bigint;
+    subscriptionItemId?: string;
+    idempotencyKey?: string;
   }
-);
-
-const updateSubscriptionQuantityArgs = {
-  stripeSubscriptionId: t.string(),
-  quantity: t.i64(),
-};
-export const updateSubscriptionQuantity: ProcedureExport<
-  typeof spacetimedb.schemaType,
-  typeof updateSubscriptionQuantityArgs,
-  typeof unitResult
-> = spacetimedb.procedure(
-  updateSubscriptionQuantityArgs,
-  unitResult,
-  (ctx, args) => {
-    requireProcedureAdmin(ctx);
-    const cfg = loadConfigOrThrowFromProcedure(ctx);
-    const getResponse = callStripe(ctx, {
-      method: 'GET',
-      path: `/v1/subscriptions/${args.stripeSubscriptionId}`,
-      secretKey: cfg.secretKey,
-      stripeVersion: cfg.stripeVersion,
-      idempotencyKey: undefined,
-      formBody: undefined,
-    });
-    if (getResponse.status < 200 || getResponse.status >= 300) {
-      throwSenderError(
-        `${errors.subscriptionLookupFailed}:${getResponse.status}${stripeErrorSuffix(getResponse.body)}`
-      );
-    }
-
-    const existing = safeJsonParse(getResponse.body);
-    if (!isRecord(existing))
-      throwSenderError(errors.subscriptionLookupInvalidResponse);
-    const items = isRecord(existing.items) ? existing.items : undefined;
-    const firstItem = Array.isArray(items?.data) ? items.data[0] : undefined;
-    const firstRecord = isRecord(firstItem) ? firstItem : undefined;
-    const subscriptionItemId = maybeString(firstRecord?.id);
-    if (!subscriptionItemId)
-      throwSenderError(errors.subscriptionMissingLineItems);
-
-    const updateResponse = callStripe(ctx, {
-      method: 'POST',
-      path: `/v1/subscription_items/${subscriptionItemId}`,
-      secretKey: cfg.secretKey,
-      stripeVersion: cfg.stripeVersion,
-      idempotencyKey: undefined,
-      formBody: formPairsToBody([['quantity', String(args.quantity)]]),
-    });
-    if (updateResponse.status < 200 || updateResponse.status >= 300) {
-      throwSenderError(
-        `${errors.subscriptionItemUpdateFailed}:${updateResponse.status}${stripeErrorSuffix(updateResponse.body)}`
-      );
-    }
-
-    ctx.withTx(tx => {
-      const localSub = tx.db.stripeSubscription.stripeSubscriptionId.find(
-        args.stripeSubscriptionId
-      );
-      if (!localSub) return;
-      upsertSubscriptionRow(tx, ctx.timestamp, {
-        stripeSubscriptionId: localSub.stripeSubscriptionId,
-        stripeCustomerId: localSub.stripeCustomerId,
-        status: localSub.status,
-        currentPeriodEndUnix: localSub.currentPeriodEndUnix,
-        cancelAtPeriodEnd: localSub.cancelAtPeriodEnd,
-        cancelAtUnix: localSub.cancelAtUnix,
-        quantity: args.quantity,
-        priceId: localSub.priceId,
-        metadataJson: localSub.metadataJson,
-        orgId: localSub.orgId,
-        userId: localSub.userId,
-        eventCreatedUnix: localSub.eventCreatedUnix,
-      });
-    });
-    return {};
+) {
+  if (args.quantity <= 0n || args.quantity > BigInt(Number.MAX_SAFE_INTEGER))
+    throwSenderError(errors.invalidQuantity);
+  const cfg = loadConfigOrThrowFromProcedure(ctx);
+  const getResponse = callStripe(ctx, {
+    method: 'GET',
+    path: `/v1/subscriptions/${encodeURIComponent(args.stripeSubscriptionId)}`,
+    secretKey: cfg.secretKey,
+    stripeVersion: cfg.stripeVersion,
+    idempotencyKey: undefined,
+    formBody: undefined,
+  });
+  if (getResponse.status < 200 || getResponse.status >= 300) {
+    throwSenderError(
+      `${errors.subscriptionLookupFailed}:${getResponse.status}${stripeErrorSuffix(getResponse.body)}`
+    );
   }
-);
+
+  const existing = safeJsonParse(getResponse.body);
+  if (!isRecord(existing))
+    throwSenderError(errors.subscriptionLookupInvalidResponse);
+  const items = isRecord(existing.items) ? existing.items : undefined;
+  const data = Array.isArray(items?.data) ? items.data.filter(isRecord) : [];
+  if (!args.subscriptionItemId && data.length > 1)
+    throwSenderError(errors.subscriptionItemRequired);
+  const selected = args.subscriptionItemId
+    ? data.find(item => item.id === args.subscriptionItemId)
+    : data[0];
+  const subscriptionItemId = maybeString(selected?.id);
+  if (!subscriptionItemId) throwSenderError(errors.subscriptionItemNotFound);
+
+  const updateResponse = callStripe(ctx, {
+    method: 'POST',
+    path: `/v1/subscription_items/${encodeURIComponent(subscriptionItemId)}`,
+    secretKey: cfg.secretKey,
+    stripeVersion: cfg.stripeVersion,
+    idempotencyKey: args.idempotencyKey,
+    formBody: formPairsToBody([['quantity', String(args.quantity)]]),
+  });
+  if (updateResponse.status < 200 || updateResponse.status >= 300) {
+    throwSenderError(
+      `${errors.subscriptionItemUpdateFailed}:${updateResponse.status}${stripeErrorSuffix(updateResponse.body)}`
+    );
+  }
+
+  const refreshed = stripeRequest(ctx, {
+    method: 'GET',
+    path: `/v1/subscriptions/${encodeURIComponent(args.stripeSubscriptionId)}`,
+  });
+  const parsed = safeJsonParse(refreshed.body);
+  if (refreshed.status < 200 || refreshed.status >= 300 || !isRecord(parsed)) {
+    throwSenderError(errors.subscriptionLookupInvalidResponse);
+  }
+  syncSubscriptionObjectFromStripe(ctx, parsed);
+  return {};
+}
+
+/** The host must supply a user ID from trusted application context. */
+export function createUserCustomerPortalSession(
+  ctx: ProcedureModuleCtx,
+  args: { userId: string; returnUrl: string; idempotencyKey?: string }
+): { url: string } {
+  const customerId = findUserCustomerId(ctx, args.userId);
+  if (!customerId) throwSenderError(errors.customerNotFound);
+  return createPortalSession(ctx, { ...args, customerId });
+}
+
+function requireUserSubscription(
+  ctx: ProcedureModuleCtx,
+  userId: string,
+  subscriptionId: string
+): void {
+  ctx.withTx(tx => {
+    const subscription =
+      tx.db.stripeSubscription.stripeSubscriptionId.find(subscriptionId);
+    const customer =
+      subscription &&
+      tx.db.stripeCustomer.stripeCustomerId.find(subscription.stripeCustomerId);
+    if (!subscription || (subscription.userId ?? customer?.userId) !== userId)
+      throwSenderError(errors.notAuthorized);
+  });
+}
+
+export function cancelUserSubscription(
+  ctx: ProcedureModuleCtx,
+  args: {
+    userId: string;
+    stripeSubscriptionId: string;
+    cancelAtPeriodEnd?: boolean;
+    idempotencyKey?: string;
+  }
+): void {
+  requireUserSubscription(ctx, args.userId, args.stripeSubscriptionId);
+  cancelSubscriptionInStripe(ctx, args);
+}
+
+export function reactivateUserSubscription(
+  ctx: ProcedureModuleCtx,
+  args: {
+    userId: string;
+    stripeSubscriptionId: string;
+    idempotencyKey?: string;
+  }
+): void {
+  requireUserSubscription(ctx, args.userId, args.stripeSubscriptionId);
+  reactivateSubscriptionInStripe(ctx, args);
+}
+
+export function updateUserSubscriptionQuantity(
+  ctx: ProcedureModuleCtx,
+  args: {
+    userId: string;
+    stripeSubscriptionId: string;
+    quantity: bigint;
+    subscriptionItemId?: string;
+    idempotencyKey?: string;
+  }
+): void {
+  requireUserSubscription(ctx, args.userId, args.stripeSubscriptionId);
+  updateSubscriptionQuantityInStripe(ctx, args);
+}

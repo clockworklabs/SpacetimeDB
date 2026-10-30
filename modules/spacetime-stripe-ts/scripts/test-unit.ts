@@ -8,6 +8,7 @@ import {
   subscriptionStatusRank,
 } from '../src/submodule/event-order';
 import { buildStripeHttpRequest } from '../src/submodule/http';
+import { checkoutForm, type UserCheckoutArgs } from '../src/submodule/checkout';
 import { parseStripeEventMetadata } from '../src/submodule/webhook-metadata';
 import {
   validateWebhookRequestBody,
@@ -27,6 +28,75 @@ const customerEvent = {
     },
   },
 };
+
+const checkout: UserCheckoutArgs = {
+  userId: 'buyer',
+  mode: 'subscription',
+  items: [{ priceId: 'price_seat', quantity: 2n }],
+  successUrl: 'https://store.test/return',
+  cancelUrl: 'https://store.test/',
+  metadata: { orgId: 'team', note: 'a&b' },
+  params: {
+    allow_promotion_codes: false,
+    automatic_tax: { enabled: true },
+    subscription_data: {
+      trial_period_days: 7,
+      metadata: { userId: 'wrong', extra: 'kept' },
+    },
+  },
+};
+const checkoutBody = new URLSearchParams(checkoutForm(checkout, 'cus_buyer'));
+assert.equal(checkoutBody.get('customer'), 'cus_buyer');
+assert.equal(checkoutBody.get('line_items[0][quantity]'), '2');
+assert.equal(checkoutBody.get('allow_promotion_codes'), 'false');
+assert.equal(checkoutBody.get('automatic_tax[enabled]'), 'true');
+assert.equal(checkoutBody.get('subscription_data[trial_period_days]'), '7');
+assert.equal(checkoutBody.get('subscription_data[metadata][userId]'), 'buyer');
+assert.equal(checkoutBody.get('subscription_data[metadata][extra]'), 'kept');
+assert.equal(checkoutBody.get('metadata[note]'), 'a&b');
+assert.throws(
+  () => checkoutForm({ ...checkout, items: [] }, 'cus_buyer'),
+  /requires_items/
+);
+assert.throws(
+  () =>
+    checkoutForm(
+      { ...checkout, items: [{ priceId: 'price_seat', quantity: 0n }] },
+      'cus_buyer'
+    ),
+  /quantity/
+);
+// JavaScript callers can bypass the type boundary; protected fields still cannot be replaced.
+assert.throws(
+  () =>
+    checkoutForm(
+      { ...checkout, params: JSON.parse('{"customer":"cus_other"}') },
+      'cus_buyer'
+    ),
+  /protected/
+);
+const setupBody = new URLSearchParams(
+  checkoutForm(
+    {
+      userId: 'buyer',
+      mode: 'setup',
+      currency: 'usd',
+      uiMode: 'embedded_page',
+      returnUrl: 'https://store.test/return',
+    },
+    'cus_buyer'
+  )
+);
+assert.equal(setupBody.get('mode'), 'setup');
+assert.equal(setupBody.get('currency'), 'usd');
+assert.equal(setupBody.get('ui_mode'), 'embedded_page');
+assert.equal(setupBody.get('return_url'), 'https://store.test/return');
+assert.equal(setupBody.has('success_url'), false);
+assert.equal(
+  [...setupBody.keys()].some(key => key.startsWith('line_items')),
+  false
+);
+assert.equal(setupBody.get('setup_intent_data[metadata][userId]'), 'buyer');
 
 assert.deepEqual(parseStripeEventMetadata(JSON.stringify(customerEvent)), {
   eventId: 'evt_1',

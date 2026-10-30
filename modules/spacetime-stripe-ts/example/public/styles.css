@@ -267,6 +267,50 @@ body::before {
   font-size: 17px;
 }
 
+.billing-dialog {
+  width: min(440px, calc(100% - 32px));
+  padding: 20px;
+  border: 1px solid #264353;
+  border-radius: var(--radius-lg);
+  background: var(--color-shade6);
+  color: var(--color-white);
+}
+
+.billing-dialog::backdrop {
+  background: #0009;
+}
+
+.billing-dialog-header,
+.billing-dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.billing-dialog h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.billing-dialog p {
+  margin: 20px 0;
+  line-height: 1.6;
+}
+
+.billing-dialog-actions {
+  justify-content: flex-end;
+}
+
+.billing-dialog-actions .btn {
+  width: auto;
+}
+
+#billingError {
+  color: var(--color-red);
+}
+
 .catalog-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -361,6 +405,7 @@ body::before {
 }
 
 .card-actions .btn {
+  min-height: 40px;
   font-size: 11px;
   padding: 9px 10px;
 }
@@ -1148,6 +1193,15 @@ textarea {
 }
 
 @media (max-width: 680px) {
+  .topnav {
+    flex-wrap: wrap;
+  }
+  .brand-sub {
+    display: none;
+  }
+  .topnav-actions {
+    margin-left: auto;
+  }
   .shell {
     width: calc(100% - 20px);
   }

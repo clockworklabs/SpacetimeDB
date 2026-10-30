@@ -1,4 +1,5 @@
-import { WebhookEventStatus, spacetimedb } from '../schema.js';
+import { WebhookEventStatus, spacetimedb, type WriteCtx } from '../schema.js';
+import * as v from 'valibot';
 import {
   SyncResponse,
   type HandlerContext,
@@ -21,9 +22,25 @@ function jsonResponse(status: number, body: unknown): SyncResponse {
   });
 }
 
-export function handleStripeWebhook(
-  ctx: HandlerContext<typeof spacetimedb.schemaType>,
-  req: StdbRequest
+const verifiedEvent = v.object({
+  id: v.string(),
+  type: v.string(),
+  created: v.number(),
+  livemode: v.optional(v.boolean(), false),
+  data: v.object({ object: v.record(v.string(), v.unknown()) }),
+});
+
+export type VerifiedStripeEvent = v.InferOutput<typeof verifiedEvent>;
+
+export function handleStripeWebhook<T>(
+  ctx: Pick<HandlerContext, 'timestamp'> & {
+    withTx<R>(body: (tx: T) => R): R;
+  },
+  req: StdbRequest,
+  options: {
+    stripe: (tx: T) => WriteCtx;
+    onEvent?: (tx: T, event: VerifiedStripeEvent) => void;
+  }
 ): SyncResponse {
   const signatureHeader = req.headers.get('stripe-signature') ?? undefined;
   const headerRejection = validateWebhookRequestHeaders(
@@ -44,7 +61,8 @@ export function handleStripeWebhook(
   }
 
   // Webhook processing requires a configured signing secret.
-  const webhookSecret = ctx.withTx(tx => {
+  const webhookSecret = ctx.withTx(root => {
+    const tx = options.stripe(root);
     const cfg = tx.db.stripeConfig.singleton.find(true);
     return cfg?.webhookSigningSecret ?? undefined;
   });
@@ -68,6 +86,9 @@ export function handleStripeWebhook(
   if (!metadata)
     return jsonResponse(400, { error: 'missing or invalid event metadata' });
   const { eventId, eventType, livemode } = metadata;
+  const event = v.safeParse(verifiedEvent, JSON.parse(payloadJson));
+  if (!event.success)
+    return jsonResponse(400, { error: 'invalid event object' });
   if (
     eventId.length === 0 ||
     eventId.length > MAX_WEBHOOK_METADATA_LENGTH ||
@@ -78,7 +99,8 @@ export function handleStripeWebhook(
   }
 
   try {
-    const outcome = ctx.withTx(tx => {
+    const outcome = ctx.withTx(root => {
+      const tx = options.stripe(root);
       const existing = tx.db.stripeWebhookEvent.eventId.find(eventId);
       if (
         existing &&
@@ -100,6 +122,12 @@ export function handleStripeWebhook(
         });
 
       const result = applyStripeEvent(tx, existing?.payloadJson ?? payloadJson);
+      if (result.status.tag !== 'Failed' && options.onEvent) {
+        const appliedEvent = existing
+          ? v.parse(verifiedEvent, JSON.parse(existing.payloadJson))
+          : event.output;
+        options.onEvent(root, appliedEvent);
+      }
       updateWebhookStatus(tx, eventId, result.status, result.error);
       return { kind: 'applied', status: result.status, error: result.error };
     });
@@ -113,4 +141,6 @@ export function handleStripeWebhook(
 }
 
 export const stripeWebhookHandler: ReturnType<typeof spacetimedb.httpHandler> =
-  spacetimedb.httpHandler(handleStripeWebhook);
+  spacetimedb.httpHandler((ctx, req) =>
+    handleStripeWebhook(ctx, req, { stripe: tx => tx })
+  );

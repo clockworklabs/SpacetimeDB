@@ -19,5 +19,6 @@ export const params = {
   get items() {
     return __t.array(StoreCheckoutItem);
   },
+  attemptId: __t.string(),
 };
 export const returnType = StoreCheckoutSessionResult

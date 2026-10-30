@@ -27,6 +27,7 @@
           <span class="brand-sub">Premium Store Test App</span>
         </div>
         <div class="topnav-actions">
+          <button id="btnAccount" class="cart-button">Billing</button>
           <button id="btnCart" class="cart-button">Cart (0)</button>
           <button id="btnSettings" class="icon-button" aria-label="Settings">
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -68,6 +69,29 @@
         </button>
       </div>
     </main>
+
+    <dialog
+      id="billingDialog"
+      class="billing-dialog"
+      aria-labelledby="billingTitle"
+    >
+      <header class="billing-dialog-header">
+        <h2 id="billingTitle">Your billing</h2>
+        <form method="dialog">
+          <button class="icon-button" aria-label="Close billing">×</button>
+        </form>
+      </header>
+      <p id="billingStatus" role="status" aria-live="polite">
+        Loading billing details...
+      </p>
+      <p id="billingError" role="alert" hidden></p>
+      <div class="billing-dialog-actions">
+        <button id="btnRefreshBilling" class="btn ghost">Refresh</button>
+        <button id="btnBilling" class="btn primary" hidden>
+          Manage billing
+        </button>
+      </div>
+    </dialog>
 
     <div id="cartBackdrop" class="cart-backdrop" hidden></div>
     <aside id="cartPopout" class="cart-popout" hidden>

@@ -22,7 +22,7 @@ export function loadConfigOrThrow(ctx: WriteCtx): StripeConfig {
   }
   return {
     secretKey: row.secretKey,
-    stripeVersion: row.stripeVersion,
+    stripeVersion: row.stripeVersion ?? '2026-08-26.dahlia',
     webhookSigningSecret: row.webhookSigningSecret,
   };
 }

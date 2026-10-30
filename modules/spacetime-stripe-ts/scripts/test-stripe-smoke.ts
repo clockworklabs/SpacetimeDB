@@ -651,6 +651,145 @@ async function main() {
     throw new Error(`replay broke customer row: ${customerAfter}`);
   }
 
+  step('customer deletion is final and retains billing history');
+  for (const [eventId, eventType, created] of [
+    ['evt_deleted', 'customer.deleted', EVENT_CREATED + 10],
+    ['evt_stale_customer', 'customer.updated', EVENT_CREATED + 9],
+  ] as const) {
+    await ingest(opts, {
+      eventId,
+      eventType,
+      payload: {
+        id: eventId,
+        type: eventType,
+        created,
+        data: {
+          object: {
+            id: 'cus_smoke_1',
+            deleted: eventType === 'customer.deleted',
+          },
+        },
+      },
+    });
+  }
+  const deletedCustomer = JSON.parse(
+    await call(opts, 'get_customer', [q('cus_smoke_1')])
+  );
+  if (deletedCustomer[1].at(-1) !== true)
+    throw new Error('deleted customer was revived');
+
+  await ingest(opts, {
+    eventId: 'evt_deleted_first',
+    eventType: 'customer.deleted',
+    payload: {
+      id: 'evt_deleted_first',
+      type: 'customer.deleted',
+      created: EVENT_CREATED,
+      data: {
+        object: {
+          id: 'cus_deleted_first',
+          metadata: { userId: 'deleted_owner' },
+        },
+      },
+    },
+  });
+  const deletedFirst = await call(opts, 'get_customer', [
+    q('cus_deleted_first'),
+  ]);
+  if (!deletedFirst.includes('deleted_owner'))
+    throw new Error('deletion arriving first lost the customer owner');
+
+  for (const [eventType, created, metadata] of [
+    ['customer.deleted', EVENT_CREATED + 1, {}],
+    ['customer.created', EVENT_CREATED, { userId: 'late_owner' }],
+  ] as const) {
+    const eventId = `evt_owner_${eventType}`;
+    await ingest(opts, {
+      eventId,
+      eventType,
+      payload: {
+        id: eventId,
+        type: eventType,
+        created,
+        data: { object: { id: 'cus_missing_owner', metadata } },
+      },
+    });
+  }
+  const recoveredOwner = await call(opts, 'get_customer', [
+    q('cus_missing_owner'),
+  ]);
+  if (!recoveredOwner.includes('late_owner'))
+    throw new Error('late creation did not recover the deleted customer owner');
+  if (JSON.parse(recoveredOwner)[1].at(-1) !== true)
+    throw new Error('owner recovery revived the deleted customer');
+
+  step('payment failure cannot overwrite a success');
+  for (const [eventId, eventType, status, created] of [
+    [
+      'evt_payment_fail',
+      'payment_intent.payment_failed',
+      'requires_payment_method',
+      EVENT_CREATED,
+    ],
+    [
+      'evt_payment_ok',
+      'payment_intent.succeeded',
+      'succeeded',
+      EVENT_CREATED + 1,
+    ],
+    [
+      'evt_payment_late_fail',
+      'payment_intent.payment_failed',
+      'requires_payment_method',
+      EVENT_CREATED + 2,
+    ],
+  ] as const) {
+    await ingest(opts, {
+      eventId,
+      eventType,
+      payload: {
+        id: eventId,
+        type: eventType,
+        created,
+        data: {
+          object: {
+            id: 'pi_failure_test',
+            status,
+            amount: 100,
+            currency: 'usd',
+            created: EVENT_CREATED,
+          },
+        },
+      },
+    });
+  }
+  const recoveredPayment = await call(opts, 'get_payment', [
+    q('pi_failure_test'),
+  ]);
+  if (!recoveredPayment.includes('"succeeded"'))
+    throw new Error(`payment regressed: ${recoveredPayment}`);
+
+  step('setup checkout stores setup state without a payment');
+  await ingest(opts, {
+    eventId: 'evt_setup',
+    eventType: 'checkout.session.completed',
+    payload: {
+      id: 'evt_setup',
+      type: 'checkout.session.completed',
+      created: EVENT_CREATED,
+      data: {
+        object: {
+          id: 'cs_setup',
+          mode: 'setup',
+          status: 'complete',
+          payment_status: 'no_payment_required',
+        },
+      },
+    },
+  });
+  const setup = await call(opts, 'get_checkout_session', [q('cs_setup')]);
+  if (!setup.includes('"setup"'))
+    throw new Error(`setup mode missing: ${setup}`);
   step('done: stripe smoke test passed');
 }
 

@@ -10,6 +10,25 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const StoreBilling = __t.object("StoreBilling", {
+  customerId: __t.option(__t.string()),
+  purchases: __t.u32(),
+  get subscriptions() {
+    return __t.array(StoreSubscription);
+  },
+  get checkouts() {
+    return __t.array(StoreCheckout);
+  },
+});
+export type StoreBilling = __Infer<typeof StoreBilling>;
+
+export const StoreCheckout = __t.object("StoreCheckout", {
+  id: __t.string(),
+  mode: __t.string(),
+  paymentStatus: __t.string(),
+});
+export type StoreCheckout = __Infer<typeof StoreCheckout>;
+
 export const StoreCheckoutItem = __t.object("StoreCheckoutItem", {
   productId: __t.string(),
   quantity: __t.u32(),
@@ -35,6 +54,11 @@ export const StoreCustomerResult = __t.object("StoreCustomerResult", {
 });
 export type StoreCustomerResult = __Infer<typeof StoreCustomerResult>;
 
+export const StorePortalSession = __t.object("StorePortalSession", {
+  url: __t.string(),
+});
+export type StorePortalSession = __Infer<typeof StorePortalSession>;
+
 export const StoreProduct = __t.object("StoreProduct", {
   productId: __t.string(),
   name: __t.string(),
@@ -49,4 +73,19 @@ export const StoreProduct = __t.object("StoreProduct", {
   updatedAt: __t.timestamp(),
 });
 export type StoreProduct = __Infer<typeof StoreProduct>;
+
+export const StorePurchase = __t.object("StorePurchase", {
+  sessionId: __t.string(),
+  userId: __t.string(),
+  confirmedAt: __t.timestamp(),
+});
+export type StorePurchase = __Infer<typeof StorePurchase>;
+
+export const StoreSubscription = __t.object("StoreSubscription", {
+  id: __t.string(),
+  status: __t.string(),
+  cancelAtPeriodEnd: __t.bool(),
+  cancelAtUnix: __t.option(__t.i64()),
+});
+export type StoreSubscription = __Infer<typeof StoreSubscription>;
 

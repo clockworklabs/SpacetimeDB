@@ -7,14 +7,20 @@ import { type Infer as __Infer } from "spacetimedb";
 
 // Import all procedure arg schemas
 import * as CreateStoreCheckoutSessionProcedure from "../create_store_checkout_session_procedure";
+import * as CreateStorePortalSessionProcedure from "../create_store_portal_session_procedure";
 import * as GetOrCreateStoreCustomerProcedure from "../get_or_create_store_customer_procedure";
+import * as GetStoreBillingProcedure from "../get_store_billing_procedure";
 import * as ListStoreProductsJsonProcedure from "../list_store_products_json_procedure";
 import * as SyncStoreProductsWithStripeProcedure from "../sync_store_products_with_stripe_procedure";
 
 export type CreateStoreCheckoutSessionArgs = __Infer<typeof CreateStoreCheckoutSessionProcedure.params>;
 export type CreateStoreCheckoutSessionResult = __Infer<typeof CreateStoreCheckoutSessionProcedure.returnType>;
+export type CreateStorePortalSessionArgs = __Infer<typeof CreateStorePortalSessionProcedure.params>;
+export type CreateStorePortalSessionResult = __Infer<typeof CreateStorePortalSessionProcedure.returnType>;
 export type GetOrCreateStoreCustomerArgs = __Infer<typeof GetOrCreateStoreCustomerProcedure.params>;
 export type GetOrCreateStoreCustomerResult = __Infer<typeof GetOrCreateStoreCustomerProcedure.returnType>;
+export type GetStoreBillingArgs = __Infer<typeof GetStoreBillingProcedure.params>;
+export type GetStoreBillingResult = __Infer<typeof GetStoreBillingProcedure.returnType>;
 export type ListStoreProductsJsonArgs = __Infer<typeof ListStoreProductsJsonProcedure.params>;
 export type ListStoreProductsJsonResult = __Infer<typeof ListStoreProductsJsonProcedure.returnType>;
 export type SyncStoreProductsWithStripeArgs = __Infer<typeof SyncStoreProductsWithStripeProcedure.params>;

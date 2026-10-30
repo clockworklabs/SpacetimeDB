@@ -67,6 +67,8 @@
     "publish:local": "spacetime publish --server local --yes spacetime-stripe",
     "publish:local:reset": "spacetime publish --server local --yes --delete-data=always spacetime-stripe",
     "test:smoke": "tsx scripts/test-stripe-smoke.ts",
+    "test:example": "tsx scripts/test-example.ts",
+    "test:billing:live": "tsx scripts/test-billing-live.ts",
     "test:stripe:e2e": "tsx scripts/test-stripe-e2e.ts",
     "test:gate:local": "spacetime build && spacetime publish --server local --yes spacetime-stripe && tsx scripts/test-stripe-e2e.ts --skip-build-publish --skip-checkout-trigger --events customer.created --kill-existing-stripe-listeners",
     "prepack": "pnpm run build && node -e \"require('node:fs').copyFileSync('../../licenses/apache2.txt', 'LICENSE')\"",
@@ -74,17 +76,18 @@
   },
   "dependencies": {
     "@spacetimedb/crypto": "workspace:^",
+    "stripe": "22.6.2",
     "valibot": "^1.4.2"
   },
   "peerDependencies": {
     "spacetimedb": "^2.12.0"
   },
   "devDependencies": {
+    "esbuild": "^0.28.0",
     "eslint": "^9.17.0",
     "prettier": "^3.3.3",
     "@types/node": "^22.10.2",
     "spacetimedb": "workspace:*",
-    "stripe": "^22.1.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }

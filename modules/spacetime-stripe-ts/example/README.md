@@ -35,8 +35,11 @@ Open <http://127.0.0.1:8787>.
 1. Add a product to the cart.
 2. Start checkout. The app opens a Stripe Checkout page.
 3. Complete checkout with a Stripe test payment method.
-4. Return to the store. Set up webhooks below to receive the payment result
-   in SpacetimeDB.
+4. Return to the store. With webhooks configured below, the app confirms the
+   purchase from stored payment state and clears the cart.
+5. Open **Billing** in the header, then **Manage billing** to open Stripe's customer portal. Enable its test-mode
+   configuration in the Stripe Dashboard first. Reopen **Billing** after a change
+   to see the updated subscription state. **Refresh** checks again while it is open.
 
 Use test mode throughout. Do not enter real card details.
 
@@ -53,7 +56,15 @@ restart `pnpm run dev`. Incoming events update the stored Stripe records.
 
 A successful browser redirect is not proof of payment. In your own app, fulfill
 an order only after a verified webhook records its payment status as `paid`
-or `no_payment_required`.
+or `no_payment_required` for a payment or subscription checkout. Setup checkout
+only saves payment details. This example writes one purchase receipt per session
+inside the webhook transaction. It keeps billing details private to each buyer.
+
+The browser retains the checkout request ID for retries. Keep the same cart to
+retry a failed request; changing it starts a new attempt. Check billing state
+before retrying. The example blocks retries after 24 hours because Stripe may
+forget the request key. Confirm the original payment with the store before
+starting another purchase.
 
 ## Configuration
 

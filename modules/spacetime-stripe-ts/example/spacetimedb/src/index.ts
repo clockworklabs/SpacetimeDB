@@ -6,6 +6,8 @@ export {
   setStoreReturnOrigin,
   getOrCreateStoreCustomer,
   createStoreCheckoutSession,
+  createStorePortalSession,
+  getStoreBilling,
   syncStoreProductsWithStripe,
   setStoreProductPrice,
   clearStoreProductPrice,

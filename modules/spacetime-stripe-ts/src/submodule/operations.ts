@@ -211,6 +211,7 @@ export function upsertCustomerRow(
   args: {
     stripeCustomerId: string;
     appUserId: string | undefined;
+    deleted?: boolean;
     email: string | undefined;
     name: string | undefined;
     metadataJson: string | undefined;
@@ -231,6 +232,7 @@ export function upsertCustomerRow(
     eventCreatedUnix: args.eventCreatedUnix,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
+    deleted: args.deleted ?? existing?.deleted ?? false,
   };
 
   if (!existing) {
@@ -577,13 +579,41 @@ function dispatchEvent(
 ): WebhookEventStatusValue {
   const eventCreatedUnix = BigInt(event.created);
   switch (event.type) {
+    case 'customer.deleted': {
+      const obj = event.data.object;
+      const meta = metadataInfoFromRecord(obj.metadata);
+      upsertCustomerRow(ctx, ctx.timestamp, {
+        stripeCustomerId: obj.id,
+        appUserId: meta.userId,
+        email: obj.email ?? undefined,
+        name: obj.name ?? undefined,
+        metadataJson: meta.metadataJson,
+        userId: meta.userId,
+        eventCreatedUnix,
+        deleted: true,
+      });
+      return WebhookEventStatus.Processed;
+    }
     case 'customer.created':
     case 'customer.updated': {
       const obj = event.data.object;
       const existing = ctx.db.stripeCustomer.stripeCustomerId.find(obj.id);
+      const meta = metadataInfoFromRecord(obj.metadata);
+      if (existing?.deleted) {
+        // A late creation event can identify a deleted customer without reviving it.
+        if (!existing.userId && meta.userId) {
+          ctx.db.stripeCustomer.stripeCustomerId.update({
+            ...existing,
+            userId: meta.userId,
+            appUserId: existing.appUserId ?? meta.userId,
+            metadataJson: existing.metadataJson ?? meta.metadataJson,
+            updatedAt: ctx.timestamp,
+          });
+        }
+        return WebhookEventStatus.Ignored;
+      }
       if (existing && eventCreatedUnix < existing.eventCreatedUnix)
         return WebhookEventStatus.Ignored;
-      const meta = metadataInfoFromRecord(obj.metadata);
       upsertCustomerRow(ctx, ctx.timestamp, {
         stripeCustomerId: obj.id,
         appUserId: undefined,
@@ -699,6 +729,7 @@ function dispatchEvent(
       );
     }
     case 'invoice.finalized':
+    case 'invoice.updated':
     case 'invoice.payment_failed': {
       const obj = event.data.object;
       return syncInvoiceEvent(ctx, obj, obj.status ?? 'open', eventCreatedUnix);
@@ -725,7 +756,7 @@ function dispatchEvent(
         stripeInvoiceId: invoiceId,
         amount: existing?.amount ?? toBigIntOrZero(obj.amount_paid),
         currency: existing?.currency ?? obj.currency,
-        status: existing?.status ?? 'succeeded',
+        status: 'succeeded',
         createdUnix: existing?.createdUnix ?? BigInt(obj.created),
         metadataJson: undefined,
         orgId: invoice?.orgId,
@@ -733,8 +764,16 @@ function dispatchEvent(
       });
       return WebhookEventStatus.Processed;
     }
-    case 'payment_intent.succeeded': {
+    case 'payment_intent.succeeded':
+    case 'payment_intent.payment_failed': {
       const obj = event.data.object;
+      const existing = ctx.db.stripePayment.stripePaymentIntentId.find(obj.id);
+      if (
+        event.type === 'payment_intent.payment_failed' &&
+        existing?.status === 'succeeded'
+      ) {
+        return WebhookEventStatus.Ignored;
+      }
       const invoiceId =
         obj.invoice === undefined
           ? undefined
@@ -750,7 +789,11 @@ function dispatchEvent(
         stripeInvoiceId: invoiceId,
         amount: toBigIntOrZero(obj.amount),
         currency: obj.currency ?? 'unknown',
-        status: obj.status ?? 'succeeded',
+        status:
+          obj.status ??
+          (event.type === 'payment_intent.succeeded'
+            ? 'succeeded'
+            : 'requires_payment_method'),
         createdUnix: toBigIntOrZero(obj.created),
         metadataJson: meta.metadataJson,
         orgId: meta.orgId,

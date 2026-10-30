@@ -96,6 +96,7 @@ export const StripeCustomer = __t.object("StripeCustomer", {
   eventCreatedUnix: __t.i64(),
   createdAt: __t.timestamp(),
   updatedAt: __t.timestamp(),
+  deleted: __t.bool(),
 });
 export type StripeCustomer = __Infer<typeof StripeCustomer>;
 

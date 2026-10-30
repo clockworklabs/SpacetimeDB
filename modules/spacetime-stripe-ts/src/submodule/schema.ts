@@ -56,6 +56,7 @@ export const stripeCustomerRow = {
   eventCreatedUnix: t.i64(),
   createdAt: t.timestamp(),
   updatedAt: t.timestamp(),
+  deleted: t.bool().default(false),
 };
 
 export const stripeSubscriptionRow = {
@@ -464,6 +465,7 @@ function vEvent<const T extends string, const O extends v.GenericSchema>(
 export const vStripeEvent = v.variant('type', [
   vEvent('customer.created', vCustomerObject),
   vEvent('customer.updated', vCustomerObject),
+  vEvent('customer.deleted', vCustomerObject),
   vEvent('customer.subscription.created', vSubscriptionObject),
   vEvent('customer.subscription.updated', vSubscriptionObject),
   vEvent('customer.subscription.deleted', vSubscriptionObject),
@@ -471,12 +473,14 @@ export const vStripeEvent = v.variant('type', [
   vEvent('checkout.session.async_payment_succeeded', vCheckoutSessionObject),
   vEvent('checkout.session.async_payment_failed', vCheckoutSessionObject),
   vEvent('invoice.created', vInvoiceObject),
+  vEvent('invoice.updated', vInvoiceObject),
   vEvent('invoice.finalized', vInvoiceObject),
   vEvent('invoice.paid', vInvoiceObject),
   vEvent('invoice.payment_succeeded', vInvoiceObject),
   vEvent('invoice.payment_failed', vInvoiceObject),
   vEvent('invoice_payment.paid', vInvoicePaymentObject),
   vEvent('payment_intent.succeeded', vPaymentIntentObject),
+  vEvent('payment_intent.payment_failed', vPaymentIntentObject),
 ]);
 
 export type ParsedStripeEvent = v.InferOutput<typeof vStripeEvent>;
@@ -486,6 +490,7 @@ export const vStripeIdResponse = v.object({ id: v.string() });
 export const vStripeCheckoutSessionResponse = v.object({
   id: v.string(),
   url: v.optional(v.union([v.string(), v.null()])),
+  client_secret: v.optional(v.union([v.string(), v.null()])),
 });
 
 export const vStripeBillingPortalSessionResponse = v.object({

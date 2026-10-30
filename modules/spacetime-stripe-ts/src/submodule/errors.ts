@@ -12,7 +12,14 @@ export const errors = {
   idempotencyKeyTooLong: 'stripe.idempotency_key_too_long',
   createCustomerFailed: 'stripe.create_customer_failed',
   createCustomerInvalidResponse: 'stripe.create_customer_invalid_response',
+  customerNotFound: 'stripe.customer_not_found',
+  invalidQuantity: 'stripe.invalid_quantity',
   checkoutSessionRequiresItems: 'stripe.checkout_session_requires_items',
+  checkoutInvalidParameter: 'stripe.checkout_invalid_parameter',
+  checkoutProtectedParameter: 'stripe.checkout_protected_parameter',
+  checkoutUserRequired: 'stripe.checkout_user_required',
+  checkoutInvalidQuantity: 'stripe.checkout_invalid_quantity',
+  checkoutModeParametersMismatch: 'stripe.checkout_mode_parameters_mismatch',
   checkoutSessionFailed: 'stripe.checkout_session_failed',
   checkoutSessionInvalidResponse: 'stripe.checkout_session_invalid_response',
   portalSessionFailed: 'stripe.portal_session_failed',
@@ -28,6 +35,8 @@ export const errors = {
   subscriptionLookupInvalidResponse:
     'stripe.subscription_lookup_invalid_response',
   subscriptionMissingLineItems: 'stripe.subscription_missing_line_items',
+  subscriptionItemRequired: 'stripe.subscription_item_required',
+  subscriptionItemNotFound: 'stripe.subscription_item_not_found',
   subscriptionItemUpdateFailed: 'stripe.subscription_item_update_failed',
   subscriptionPayloadMissingFields:
     'stripe.subscription_payload_missing_fields',

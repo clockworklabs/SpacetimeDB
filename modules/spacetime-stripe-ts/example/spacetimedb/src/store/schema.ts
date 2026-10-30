@@ -62,11 +62,21 @@ export const storeConfigTable = table(
   storeConfigRow
 );
 
+const storePurchase = table(
+  { name: 'store_purchase' },
+  {
+    sessionId: t.string().primaryKey(),
+    userId: t.string().index('btree'),
+    confirmedAt: t.timestamp(),
+  }
+);
+
 export const spacetimedb = schema({
   stripe,
   rateLimit,
   storeProduct: storeProductTable,
   storeConfig: storeConfigTable,
+  storePurchase,
 });
 
 export const init = spacetimedb.init(ctx => {
