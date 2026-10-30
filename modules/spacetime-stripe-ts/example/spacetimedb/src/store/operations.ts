@@ -473,6 +473,7 @@ export const getStoreBilling = spacetimedb.procedure(
         id: t.string(),
         mode: t.string(),
         paymentStatus: t.string(),
+        fulfilled: t.bool(),
       })
     ),
   }),
@@ -503,6 +504,11 @@ export const getStoreBilling = spacetimedb.procedure(
             id: session.stripeCheckoutSessionId,
             mode: session.mode,
             paymentStatus: session.paymentStatus,
+            fulfilled: Boolean(
+              tx.db.storePurchase.sessionId.find(
+                session.stripeCheckoutSessionId
+              )
+            ),
           }))
         ),
       };

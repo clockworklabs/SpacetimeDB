@@ -729,15 +729,18 @@ importers:
         specifier: ^1.4.2
         version: 1.5.0(typescript@5.9.3)
     devDependencies:
-      esbuild:
-        specifier: ^0.28.0
-        version: 0.28.2
       '@types/node':
         specifier: ^22.10.2
         version: 22.18.0
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.2
       eslint:
         specifier: ^9.17.0
         version: 9.33.0(jiti@2.6.1)
+      playwright-core:
+        specifier: 1.55.1
+        version: 1.55.1
       prettier:
         specifier: ^3.3.3
         version: 3.6.2
@@ -12477,6 +12480,11 @@ packages:
 
   pkg-types@2.3.0:
     resolution: {integrity: sha512-SIqCzDRg0s9npO5XQ3tNZioRY1uK06lA41ynBC1YmFTmnY6FjUjVt6s4LoADmwoig1qqD0oK8h1p/8mlMx8Oig==}
+
+  playwright-core@1.55.1:
+    resolution: {integrity: sha512-Z6Mh9mkwX+zxSlHqdr5AOcJnfp+xUWLCt9uKV18fhzA8eyxUd8NUWzAjxUh55RZKSYwDGX0cfaySdhZJGMoJ+w==}
+    engines: {node: '>=18'}
+    hasBin: true
 
   pluralize@8.0.0:
     resolution: {integrity: sha512-Nc3IT5yHzflTfbjgqWcCPpo7DaKy4FnpB0l/zCAW0Tc7jxAiuqSxHasntB3D7887LSrA93kDJ9IXovxJYxyLCA==}
@@ -30003,6 +30011,8 @@ snapshots:
       confbox: 0.2.2
       exsolve: 1.0.8
       pathe: 2.0.3
+
+  playwright-core@1.55.1: {}
 
   pluralize@8.0.0: {}
 

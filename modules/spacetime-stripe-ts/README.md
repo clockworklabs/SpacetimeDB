@@ -367,6 +367,9 @@ pnpm run test:stripe:e2e
 # Host ownership and atomic webhook fulfillment; creates and deletes a test database
 pnpm run test:example http://127.0.0.1:3000
 
+# Browser cart and retry tests; requires Google Chrome, no server or Stripe keys
+pnpm run test:ui
+
 # Live helper contracts; requires STRIPE_SECRET_KEY (sk_test_...) and spacetime login
 pnpm run test:billing:live http://127.0.0.1:3000
 ```

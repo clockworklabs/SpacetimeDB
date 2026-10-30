@@ -143,6 +143,36 @@ try {
   billing = await buyer.procedures.getStoreBilling({});
   assert.equal(billing.purchases, 1);
   assert.equal(billing.checkouts[0].paymentStatus, 'paid');
+  assert.equal(billing.checkouts[0].fulfilled, true);
+  const relaySession = { ...session, id: 'cs_relay' };
+  const relayEvent = {
+    id: 'evt_relay',
+    type: 'checkout.session.completed',
+    created: Math.floor(Date.now() / 1000),
+    livemode: false,
+    data: { object: relaySession },
+  };
+  const relayBody = JSON.stringify(relayEvent);
+  const relayDigest = createHmac('sha256', secret)
+    .update(`${relayEvent.created}.${relayBody}`)
+    .digest('hex');
+  run(
+    'call',
+    '--server',
+    server,
+    database,
+    'stripe.ingest_stripe_webhook',
+    JSON.stringify(relayEvent.id),
+    JSON.stringify(relayEvent.type),
+    'false',
+    JSON.stringify(relayBody),
+    JSON.stringify({ some: `t=${relayEvent.created},v1=${relayDigest}` })
+  );
+  billing = await buyer.procedures.getStoreBilling({});
+  const relayed = billing.checkouts.find(row => row.id === relaySession.id);
+  assert.equal(relayed?.paymentStatus, 'paid');
+  assert.equal(relayed?.fulfilled, false);
+  assert.equal(billing.purchases, 1);
   assert.equal(
     await deliver('evt_setup', 'checkout.session.completed', {
       ...session,

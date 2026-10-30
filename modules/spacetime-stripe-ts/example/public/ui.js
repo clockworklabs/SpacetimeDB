@@ -160,6 +160,7 @@ async function refreshBilling() {
   const session = billing.checkouts.find(row => row.id === attempt.sessionId);
   if (
     session &&
+    session.fulfilled &&
     session.mode !== 'setup' &&
     ['paid', 'no_payment_required'].includes(session.paymentStatus)
   ) {

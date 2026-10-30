@@ -26,6 +26,7 @@ export const StoreCheckout = __t.object("StoreCheckout", {
   id: __t.string(),
   mode: __t.string(),
   paymentStatus: __t.string(),
+  fulfilled: __t.bool(),
 });
 export type StoreCheckout = __Infer<typeof StoreCheckout>;
 
