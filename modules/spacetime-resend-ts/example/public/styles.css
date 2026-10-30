@@ -838,28 +838,6 @@ p {
   line-height: 1.5;
 }
 
-.page-foot {
-  min-height: 58px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 11px;
-  border-top: 1px solid var(--color-shade4);
-}
-.page-foot .by {
-  color: var(--color-n4);
-  font-family: var(--font-ibm);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-.page-foot img {
-  height: 26px;
-  width: auto;
-  opacity: 0.85;
-}
-
 @media (max-width: 1040px) {
   /* Stack the panels at their natural heights and use page-level scrolling. */
   .shell {

@@ -1,5 +1,7 @@
 import { DbConnection, tables, type ErrorContext } from './module_bindings/app';
 import type { CronSchedule } from './module_bindings/app/types';
+import { mountFooter } from '@spacetimedb/example-ui';
+import '@spacetimedb/example-ui/footer.css';
 
 interface ServerConfig {
   spacetimeUri: string;
@@ -442,6 +444,8 @@ async function main(): Promise<void> {
   setConnection('connecting', 'Connecting');
   connect(await loadServerConfig());
 }
+
+mountFooter(document.querySelector<HTMLElement>('.shell')!);
 
 void main().catch(error => {
   setConnection('error', 'Configuration failed');
