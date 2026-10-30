@@ -96,7 +96,7 @@ const threadLockColumns = {
   owner: t.string().index(),
   lockedAt: t.timestamp().index('btree'),
   cancelRequested: t.bool(),
-  runId: t.string().default(''),
+  runId: t.string(),
 };
 export const threadLock: ReturnType<
   typeof table<typeof threadLockColumns, typeof threadLockOptions>
