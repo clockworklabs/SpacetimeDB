@@ -3,20 +3,31 @@ import type { Identity } from './identity';
 import type { ScheduleAt } from './schedule_at';
 import type { TimeDuration } from './time_duration';
 import type { Timestamp } from './timestamp';
+import type { Uuid } from './uuid';
 
 type DoNotPrettify =
   | Identity
   | ConnectionId
   | Timestamp
   | TimeDuration
-  | ScheduleAt;
+  | ScheduleAt
+  | Uuid;
+
+type Primitive = string | number | boolean | bigint | symbol | null | undefined;
 
 /**
  * Utility to make TS show cleaner types by flattening intersections.
+ *
+ * Primitives pass through unchanged. A branded primitive (`string & Brand`)
+ * is an object type, but mapping it yields a structural record of `String`'s
+ * members that no longer satisfies `string`. The outer `object` check keeps a
+ * generic `Prettify<T>` spreadable.
  */
-export type Prettify<T> = T extends DoNotPrettify
-  ? T
-  : { [K in keyof T]: T[K] } & {};
+export type Prettify<T> = T extends object
+  ? T extends DoNotPrettify | Primitive
+    ? T
+    : { [K in keyof T]: T[K] } & {}
+  : T;
 
 /**
  * Helper function to sets a field in an object
