@@ -161,6 +161,11 @@ jobs:
           ln -sf "$GITHUB_WORKSPACE/target/release/spacetimedb-cli" "$HOME/.local/bin/spacetime"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      - name: Check disk usage before benchmarks
+        run: |
+          df -h "$GITHUB_WORKSPACE" "$RUNNER_TEMP"
+          du -sh "$CARGO_TARGET_DIR"
+
       - name: Run benchmarks
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -245,6 +250,17 @@ jobs:
             llm_benchmark run --lang "$LANG" --modes "$MODES" --models "${MODEL_ARGS[@]}" "${EXTRA_ARGS[@]}"
           fi
 
+      - name: Check disk usage after benchmarks
+        if: always()
+        run: |
+          df -h "$GITHUB_WORKSPACE" "$RUNNER_TEMP"
+          if [ -d "$CARGO_TARGET_DIR" ]; then
+            du -sh "$CARGO_TARGET_DIR"
+          fi
+          if [ -d "$CARGO_TARGET_DIR/llm-runs" ]; then
+            du -sh "$CARGO_TARGET_DIR/llm-runs"
+          fi
+
       - name: Upload analysis reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -264,6 +280,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Check and update rustup
+        uses: ./.github/actions/ensure-rustup
       - uses: dsherret/rust-toolchain-file@v1
 
       - name: Download analysis reports

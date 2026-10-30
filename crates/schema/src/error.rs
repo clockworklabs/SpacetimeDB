@@ -97,6 +97,10 @@ pub enum ValidationError {
     },
     #[error("Primary key column {column} for view {view} not found")]
     ViewPrimaryKeyColumnNotFound { view: RawIdentifier, column: RawIdentifier },
+    #[error("View {view} has parameters and cannot have a primary key")]
+    ViewPrimaryKeyWithParams { view: RawIdentifier },
+    #[error("View {view} has a float parameter `{param}`, which views can't take yet")]
+    ViewFloatParam { view: RawIdentifier, param: RawIdentifier },
     #[error("Table {table} has invalid product_type_ref {ref_}")]
     InvalidProductTypeRef {
         table: RawIdentifier,
@@ -148,6 +152,27 @@ pub enum ValidationError {
     TableNotFound { table: RawIdentifier },
     #[error("table {table} is assigned in multiple outboxes")]
     DuplicateOutbox { table: Identifier },
+    #[error("outbox table {} not found", table_name)]
+    MissingOutboxTable { table_name: RawIdentifier },
+    #[error("on_result reducer {reducer_name} for outbox {table} does not exist")]
+    MissingOutboxOnResult {
+        table: Identifier,
+        reducer_name: RawIdentifier,
+    },
+    #[error("on_result reducer {reducer_name} for outbox {table} expected parameters {expected}, but has {actual}")]
+    IncorrectOutboxOnResultParams {
+        table: Identifier,
+        reducer_name: RawIdentifier,
+        expected: PrettyAlgebraicType,
+        actual: PrettyAlgebraicType,
+    },
+    #[error(
+        "on_result reducer {reducer_name} for outbox {table} must be an unqualified name in the same module; cross-module callbacks are not supported"
+    )]
+    OutboxOnResultMustBeLocal {
+        table: Identifier,
+        reducer_name: RawIdentifier,
+    },
     #[error("outbox table {table} must not be an event table")]
     OutboxEventTable { table: Identifier },
     #[error("outbox table {table} must not be a scheduled table")]

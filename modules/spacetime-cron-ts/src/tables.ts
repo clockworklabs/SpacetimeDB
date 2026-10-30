@@ -1,5 +1,11 @@
 import type { Identity, Timestamp } from 'spacetimedb';
-import { t, table, type Infer, type VariantsObj } from 'spacetimedb/server';
+import {
+  t,
+  table,
+  type Infer,
+  type VariantsObj,
+  type SumBuilder,
+} from 'spacetimedb/server';
 
 const cronSchedule = t.enum('CronSchedule', {
   cron: t.object('CronSpec', {
@@ -11,7 +17,13 @@ const cronSchedule = t.enum('CronSchedule', {
   }),
 });
 
-const cronRunStatus = t.enum('CronRunStatus', ['Ok', 'Failed']);
+type CronRunStatusBuilder = SumBuilder<
+  Record<'Ok' | 'Failed', ReturnType<typeof t.unit>>
+>;
+const cronRunStatus: CronRunStatusBuilder = t.enum('CronRunStatus', {
+  Ok: t.unit(),
+  Failed: t.unit(),
+});
 
 const cronFireRecovery = t.object('CronFireRecovery', {
   sequence: t.u64(),
@@ -33,63 +45,82 @@ export const cronJobView = t.row('CronJobView', {
   disabledReason: t.option(t.string()),
 });
 
-export function cronJobTable(args: VariantsObj) {
-  return table(
-    { name: 'cron_job', public: false },
-    {
-      name: t.string().primaryKey(),
-      schedule: cronSchedule,
-      args: t.enum('CronJobArgsValue', args),
-      enabled: t.bool(),
-      maxFailures: t.u32(),
-      consecutiveFailures: t.u32(),
-      fireCount: t.u64(),
-      generation: t.u64(),
-      lastRunAt: t.option(t.timestamp()),
-      nextRunAt: t.option(t.timestamp()),
-      disabledReason: t.option(t.string()),
-    }
-  );
+function cronJobColumns(args: VariantsObj) {
+  return {
+    name: t.string().primaryKey(),
+    schedule: cronSchedule,
+    args: t.enum('CronJobArgsValue', args),
+    enabled: t.bool(),
+    maxFailures: t.u32(),
+    consecutiveFailures: t.u32(),
+    fireCount: t.u64(),
+    generation: t.u64(),
+    lastRunAt: t.option(t.timestamp()),
+    nextRunAt: t.option(t.timestamp()),
+    disabledReason: t.option(t.string()),
+  };
 }
 
-export function cronRunTable(isPublic: boolean) {
-  return table(
-    { name: 'cron_run', public: isPublic },
-    {
-      invocationId: t.string().primaryKey(),
-      jobName: t.string().index(),
-      generation: t.u64(),
-      sequence: t.u64(),
-      scheduledFor: t.timestamp(),
-      completedAt: t.timestamp(),
-      status: cronRunStatus,
-      error: t.option(t.string()),
-    }
-  );
+const cronJobOptions = { name: 'cron_job', public: false };
+export function cronJobTable(
+  args: VariantsObj
+): ReturnType<
+  typeof table<ReturnType<typeof cronJobColumns>, typeof cronJobOptions>
+> {
+  return table(cronJobOptions, cronJobColumns(args));
 }
 
-export function cronFireTable(name: string, isPublic: boolean) {
-  return table(
-    { name, public: isPublic },
-    {
-      scheduledId: t.u64().primaryKey().autoInc(),
-      scheduledAt: t.scheduleAt(),
-      jobName: t.string().unique(),
-      generation: t.u64(),
-      targetAt: t.option(t.timestamp()),
-      recovery: t.option(cronFireRecovery),
-    }
-  );
+const cronRunColumns = {
+  invocationId: t.string().primaryKey(),
+  jobName: t.string().index(),
+  generation: t.u64(),
+  sequence: t.u64(),
+  scheduledFor: t.timestamp(),
+  completedAt: t.timestamp(),
+  status: cronRunStatus,
+  error: t.option(t.string()),
+};
+export function cronRunTable(
+  isPublic: boolean
+): ReturnType<
+  typeof table<typeof cronRunColumns, { name: string; public: boolean }>
+> {
+  return table({ name: 'cron_run', public: isPublic }, cronRunColumns);
 }
 
-export function cronReconcileTickTable(isPublic: boolean) {
+const cronFireColumns = {
+  scheduledId: t.u64().primaryKey().autoInc(),
+  scheduledAt: t.scheduleAt(),
+  jobName: t.string().unique(),
+  generation: t.u64(),
+  targetAt: t.option(t.timestamp()),
+  recovery: t.option(cronFireRecovery),
+};
+export function cronFireTable(
+  name: string,
+  isPublic: boolean
+): ReturnType<
+  typeof table<typeof cronFireColumns, { name: string; public: boolean }>
+> {
+  return table({ name, public: isPublic }, cronFireColumns);
+}
+
+const cronReconcileTickColumns = {
+  scheduledId: t.u64().primaryKey().autoInc(),
+  scheduledAt: t.scheduleAt(),
+  key: t.string().unique(),
+};
+export function cronReconcileTickTable(
+  isPublic: boolean
+): ReturnType<
+  typeof table<
+    typeof cronReconcileTickColumns,
+    { name: string; public: boolean }
+  >
+> {
   return table(
     { name: 'cron_reconcile_tick', public: isPublic },
-    {
-      scheduledId: t.u64().primaryKey().autoInc(),
-      scheduledAt: t.scheduleAt(),
-      key: t.string().unique(),
-    }
+    cronReconcileTickColumns
   );
 }
 

@@ -6,10 +6,37 @@ using System.Diagnostics.CodeAnalysis;
 #pragma warning disable STDB_UNSTABLE
 #pragma warning disable CA1822 // Preserve the existing instance-based context API.
 
-public sealed class Local : LocalBase { }
-
-public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
+public sealed class Local : LocalBase
 {
+    private static readonly Local Root = new();
+
+    private static Local?[] Instances => field ??= new Local?[Internal.Module.InstanceCount];
+
+    internal static Local ForInstance(int instanceId) =>
+        instanceId == 0 ? Root : Instances[instanceId] ??= new() { InstanceId = instanceId };
+}
+
+public sealed record ReducerContext
+    : DbContext<Local>,
+        Internal.IReducerContext,
+        Internal.IModuleContext<ReducerContext>
+{
+    private ReducerContext? selectionSource;
+
+    int Internal.IModuleContext.InstanceId => ModuleInstanceId;
+
+    ReducerContext Internal.IModuleContext<ReducerContext>.SelectInstance(int instanceId)
+    {
+        if (instanceId == ModuleInstanceId)
+        {
+            return this;
+        }
+        var selected = this with { Db = Local.ForInstance(instanceId) };
+        selected.selectionSource = selectionSource ?? this;
+        return selected;
+    }
+
+    internal int ModuleInstanceId => Db.InstanceId;
     public DatabaseEnvironment Env => default;
     public readonly Identity Sender;
     public readonly ConnectionId? ConnectionId;
@@ -32,8 +59,10 @@ public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
         ConnectionId? connectionId,
         Random random,
         Timestamp time,
-        AuthCtx? senderAuth = null
+        AuthCtx? senderAuth = null,
+        int instanceId = 0
     )
+        : base(Local.ForInstance(instanceId))
     {
         Sender = identity;
         ConnectionId = connectionId;
@@ -87,25 +116,52 @@ public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
     {
         var bytes = new byte[4];
         Rng.NextBytes(bytes);
-        return Uuid.FromCounterV7(ref CounterUuid, Timestamp, bytes);
+        return Uuid.FromCounterV7(ref (selectionSource ?? this).CounterUuid, Timestamp, bytes);
     }
 }
 
-public readonly struct QueryBuilder { }
-
-public sealed partial class ProcedureContext : global::SpacetimeDB.ProcedureContextBase
+public readonly struct QueryBuilder
 {
-    private readonly Local _db = new();
+    internal readonly int InstanceId;
+
+    internal QueryBuilder(int instanceId) => InstanceId = instanceId;
+}
+
+public sealed partial class ProcedureContext
+    : global::SpacetimeDB.ProcedureContextBase,
+        Internal.IModuleContext<ProcedureContext>
+{
+    int Internal.IModuleContext.InstanceId => ModuleInstanceId;
+
+    ProcedureContext Internal.IModuleContext<ProcedureContext>.SelectInstance(int instanceId)
+    {
+        if (instanceId == ModuleInstanceId)
+        {
+            return this;
+        }
+        var selected = (ProcedureContext)MemberwiseClone();
+        selected.Db = Local.ForInstance(instanceId);
+        selected.SelectionSource = SelectionSource ?? this;
+        return selected;
+    }
+
+    protected override ProcedureTxContextBase SelectTxContext(ProcedureTxContextBase tx) =>
+        ((Internal.IModuleContext<ProcedureTxContext>)(ProcedureTxContext)tx).SelectInstance(
+            ModuleInstanceId
+        );
+
+    internal int ModuleInstanceId => Db.InstanceId;
 
     internal ProcedureContext(
         Identity identity,
         ConnectionId? connectionId,
         Random random,
-        Timestamp time
+        Timestamp time,
+        int instanceId = 0
     )
-        : base(identity, connectionId, random, time) { }
+        : base(identity, connectionId, random, time) => Db = Local.ForInstance(instanceId);
 
-    protected internal override global::SpacetimeDB.LocalBase CreateLocal() => _db;
+    protected internal override global::SpacetimeDB.LocalBase CreateLocal() => Db;
 
     protected override global::SpacetimeDB.ProcedureTxContextBase CreateTxContext(
         Internal.TxContext inner
@@ -113,7 +169,7 @@ public sealed partial class ProcedureContext : global::SpacetimeDB.ProcedureCont
 
     private ProcedureTxContext? _cached;
 
-    public Local Db => _db;
+    public Local Db { get; private set; }
 
     public TResult WithTx<TResult>(Func<ProcedureTxContext, TResult> body) =>
         base.WithTx(tx => body((ProcedureTxContext)tx));
@@ -167,16 +223,37 @@ public sealed partial class ProcedureContext : global::SpacetimeDB.ProcedureCont
     {
         var bytes = new byte[4];
         Rng.NextBytes(bytes);
-        return Uuid.FromCounterV7(ref CounterUuid, Timestamp, bytes);
+        return Uuid.FromCounterV7(ref SharedCounterUuid, Timestamp, bytes);
     }
 }
 
-public sealed partial class HandlerContext : global::SpacetimeDB.HandlerContextBase
+public sealed partial class HandlerContext
+    : global::SpacetimeDB.HandlerContextBase,
+        Internal.IModuleContext<HandlerContext>
 {
-    private readonly Local _db = new();
+    private Local _db = Local.ForInstance(0);
 
-    internal HandlerContext(Random random, Timestamp time)
-        : base(random, time) { }
+    int Internal.IModuleContext.InstanceId => _db.InstanceId;
+
+    HandlerContext Internal.IModuleContext<HandlerContext>.SelectInstance(int instanceId)
+    {
+        if (instanceId == _db.InstanceId)
+        {
+            return this;
+        }
+        var selected = (HandlerContext)MemberwiseClone();
+        selected._db = Local.ForInstance(instanceId);
+        selected.SelectionSource = SelectionSource ?? this;
+        return selected;
+    }
+
+    protected override HandlerTxContextBase SelectTxContext(HandlerTxContextBase tx) =>
+        ((Internal.IModuleContext<HandlerTxContext>)(HandlerTxContext)tx).SelectInstance(
+            _db.InstanceId
+        );
+
+    internal HandlerContext(Identity sender, string? senderJwt, Random random, Timestamp time)
+        : base(sender, senderJwt, random, time) { }
 
     protected override global::SpacetimeDB.LocalBase CreateLocal() => _db;
 
@@ -207,12 +284,28 @@ public sealed partial class HandlerContext : global::SpacetimeDB.HandlerContextB
     {
         var bytes = new byte[4];
         Rng.NextBytes(bytes);
-        return Uuid.FromCounterV7(ref CounterUuid, Timestamp, bytes);
+        return Uuid.FromCounterV7(ref SharedCounterUuid, Timestamp, bytes);
     }
 }
 
-public sealed class ProcedureTxContext : global::SpacetimeDB.ProcedureTxContextBase
+public sealed class ProcedureTxContext
+    : global::SpacetimeDB.ProcedureTxContextBase,
+        Internal.IModuleContext<ProcedureTxContext>
 {
+    int Internal.IModuleContext.InstanceId => Db.InstanceId;
+
+    ProcedureTxContext Internal.IModuleContext<ProcedureTxContext>.SelectInstance(int instanceId)
+    {
+        if (instanceId == Db.InstanceId)
+        {
+            return this;
+        }
+        var selected = (ProcedureTxContext)MemberwiseClone();
+        selected.SelectionSource = SelectionSource ?? this;
+        selected.LocalDb = Local.ForInstance(instanceId);
+        return selected;
+    }
+
     internal ProcedureTxContext(Internal.TxContext inner)
         : base(inner) { }
 
@@ -220,20 +313,50 @@ public sealed class ProcedureTxContext : global::SpacetimeDB.ProcedureTxContextB
 }
 
 [Experimental("STDB_UNSTABLE")]
-public sealed class HandlerTxContext : global::SpacetimeDB.HandlerTxContextBase
+public sealed class HandlerTxContext
+    : global::SpacetimeDB.HandlerTxContextBase,
+        Internal.IModuleContext<HandlerTxContext>
 {
+    int Internal.IModuleContext.InstanceId => Db.InstanceId;
+
+    HandlerTxContext Internal.IModuleContext<HandlerTxContext>.SelectInstance(int instanceId)
+    {
+        if (instanceId == Db.InstanceId)
+        {
+            return this;
+        }
+        var selected = (HandlerTxContext)MemberwiseClone();
+        selected.SelectionSource = SelectionSource ?? this;
+        selected.LocalDb = Local.ForInstance(instanceId);
+        return selected;
+    }
+
     internal HandlerTxContext(Internal.TxContext inner)
         : base(inner) { }
 
     public new Local Db => (Local)base.Db;
 }
 
-public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.IViewContext
+public sealed record ViewContext
+    : DbContext<Internal.LocalReadOnly>,
+        Internal.IViewContext,
+        Internal.IModuleContext<ViewContext>
 {
+    int Internal.IModuleContext.InstanceId => ModuleInstanceId;
+
+    ViewContext Internal.IModuleContext<ViewContext>.SelectInstance(int instanceId) =>
+        instanceId == ModuleInstanceId
+            ? this
+            : this with
+            {
+                Db = Internal.LocalReadOnly.ForInstance(instanceId),
+            };
+
+    internal int ModuleInstanceId => Db.InstanceId;
     public DatabaseEnvironment Env => default;
     public Identity Sender { get; }
 
-    public QueryBuilder From => default;
+    public QueryBuilder From => new(ModuleInstanceId);
 
     internal ViewContext(Identity sender, Internal.LocalReadOnly db)
         : base(db)
@@ -244,10 +367,24 @@ public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.I
 
 public sealed record AnonymousViewContext
     : DbContext<Internal.LocalReadOnly>,
-        Internal.IAnonymousViewContext
+        Internal.IAnonymousViewContext,
+        Internal.IModuleContext<AnonymousViewContext>
 {
+    int Internal.IModuleContext.InstanceId => ModuleInstanceId;
+
+    AnonymousViewContext Internal.IModuleContext<AnonymousViewContext>.SelectInstance(
+        int instanceId
+    ) =>
+        instanceId == ModuleInstanceId
+            ? this
+            : this with
+            {
+                Db = Internal.LocalReadOnly.ForInstance(instanceId),
+            };
+
+    internal int ModuleInstanceId => Db.InstanceId;
     public DatabaseEnvironment Env => default;
-    public QueryBuilder From => default;
+    public QueryBuilder From => new(ModuleInstanceId);
 
     internal AnonymousViewContext(Internal.LocalReadOnly db)
         : base(db) { }

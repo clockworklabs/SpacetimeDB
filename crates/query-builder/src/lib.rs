@@ -270,6 +270,22 @@ mod tests {
     }
 
     #[test]
+    fn test_view_call() {
+        let uuid = spacetimedb_lib::Uuid::from_u128(1);
+        let call = ViewCall::<User>::new(
+            "users_by",
+            [
+                (-5i32).to_sql_literal(),
+                "O'Neil".to_sql_literal(),
+                uuid.to_sql_literal(),
+            ],
+        );
+
+        let expected = r#"SELECT * FROM "users_by"(-5, 'O''Neil', '00000000-0000-0000-0000-000000000001')"#;
+        assert_eq!(call.build().sql, expected);
+    }
+
+    #[test]
     fn test_literals() {
         use spacetimedb_lib::{ConnectionId, Identity};
 
