@@ -5,6 +5,66 @@ use reqwest::{
 };
 use std::time::Duration;
 
+#[derive(serde::Serialize)]
+pub(crate) struct HttpResponseError {
+    pub status: u16,
+    pub body: String,
+}
+
+impl std::fmt::Display for HttpResponseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "provider HTTP {} (response body omitted from console)", self.status)
+    }
+}
+
+impl std::fmt::Debug for HttpResponseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, f)
+    }
+}
+
+impl std::error::Error for HttpResponseError {}
+
+#[cfg(test)]
+pub(super) async fn mock_response(status: u16, body: &'static str) -> (String, tokio::task::JoinHandle<String>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            loop {
+                let mut buf = [0; 4096];
+                let n = socket.read(&mut buf).await.unwrap();
+                assert!(n > 0);
+                request.extend_from_slice(&buf[..n]);
+                if let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                    let headers = String::from_utf8_lossy(&request[..end]).to_ascii_lowercase();
+                    let length: usize = headers
+                        .lines()
+                        .find_map(|line| line.strip_prefix("content-length: "))
+                        .unwrap()
+                        .parse()
+                        .unwrap();
+                    if request.len() >= end + 4 + length {
+                        break;
+                    }
+                }
+            }
+            let response = format!(
+                "HTTP/1.1 {status} Mock\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            socket.write_all(response.as_bytes()).await.unwrap();
+            String::from_utf8(request).unwrap()
+        })
+        .await
+        .unwrap()
+    });
+    (base, server)
+}
+
 #[derive(Clone)]
 pub struct HttpClient {
     inner: Client,
@@ -40,19 +100,11 @@ impl HttpClient {
         let status = resp.status();
         if !status.is_success() {
             let bytes = resp.bytes().await.context("read error response body")?;
-            let body_preview = String::from_utf8_lossy(&bytes);
-            let body_str = body_preview.trim();
-            let body_short: String = if body_str.len() > 500 {
-                format!("{}...", &body_str[..500])
-            } else {
-                body_str.into()
-            };
-            anyhow::bail!(
-                "GET {url} status {status} body: {body_short}",
-                url = url,
-                status = status,
-                body_short = body_short
-            );
+            return Err(HttpResponseError {
+                status: status.as_u16(),
+                body: String::from_utf8_lossy(&bytes).into_owned(),
+            }
+            .into());
         }
 
         let bytes = resp.bytes().await.context("read GET body")?;
@@ -87,19 +139,11 @@ impl HttpClient {
         let status = resp.status();
         if !status.is_success() {
             let bytes = resp.bytes().await.context("read error response body")?;
-            let body_preview = String::from_utf8_lossy(&bytes);
-            let body_str = body_preview.trim();
-            let body_short: String = if body_str.len() > 500 {
-                format!("{}...", &body_str[..500])
-            } else {
-                body_str.into()
-            };
-            anyhow::bail!(
-                "POST {url} status {status} body: {body_short}",
-                url = url,
-                status = status,
-                body_short = body_short
-            );
+            return Err(HttpResponseError {
+                status: status.as_u16(),
+                body: String::from_utf8_lossy(&bytes).into_owned(),
+            }
+            .into());
         }
 
         let bytes = resp.bytes().await.context("read POST body")?;

@@ -5,10 +5,12 @@ use serde_json::json;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tokio::task;
 
 use crate::bench::publishers::{DotnetPublisher, PublishedDatabase, SpacetimeRustPublisher, TypeScriptPublisher};
+use crate::bench::records::BatchRecord;
 use crate::bench::templates::materialize_project;
 use crate::bench::types::{BenchRunContext, PublishParams, RunContext, RunOneError};
 pub(crate) use crate::bench::types::{RunOutcome, TaskPaths};
@@ -34,11 +36,57 @@ struct PendingRetry {
     error: anyhow::Error,
 }
 
-fn task_result_or_infrastructure_error(
+async fn collect_recorded_attempts<F, T, R>(
+    attempts: impl IntoIterator<Item = F>,
+    concurrency: usize,
+    mut record: impl FnMut(T) -> Result<R>,
+) -> Result<Vec<R>>
+where
+    F: std::future::Future<Output = T>,
+{
+    let stopped = AtomicBool::new(false);
+    stream::iter(attempts)
+        .take_while(|_| std::future::ready(!stopped.load(Ordering::Relaxed)))
+        .buffer_unordered(concurrency)
+        .map(|attempt| {
+            let result = record(attempt);
+            if result.is_err() {
+                stopped.store(true, Ordering::Relaxed);
+            }
+            result
+        })
+        // Drain in-flight attempts before returning an error. Do not lose completed work.
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect()
+}
+
+fn record_task_result(
+    record: &mut BatchRecord,
+    cfg: &BenchRunContext<'_>,
     task: TaskPaths,
     result: Result<RunOutcome, RunOneError>,
     started: chrono::DateTime<Utc>,
 ) -> Result<(TaskPaths, Result<RunOutcome, RunOneError>)> {
+    let result = match result {
+        Err(RunOneError::WithOutput { msg, llm_output }) => Ok(build_fail_outcome(
+            &task,
+            cfg.lang.as_str(),
+            cfg.route,
+            cfg.hash,
+            anyhow!(msg),
+            llm_output,
+        )),
+        other => other,
+    }
+    .map(|mut outcome| {
+        outcome.started_at.get_or_insert(started);
+        outcome
+    });
+    // Save before propagating an infrastructure failure; the collector drains started tasks.
+    // A record write failure also aborts the batch before any website upload.
+    record.record(&task.root.to_string_lossy(), &result)?;
     match result {
         Err(RunOneError::Infrastructure { msg, llm_output }) => {
             let output_note = llm_output
@@ -47,13 +95,7 @@ fn task_result_or_infrastructure_error(
                 .unwrap_or_default();
             bail!("benchmark infrastructure failure: {msg}{output_note}");
         }
-        other => Ok((
-            task,
-            other.map(|mut outcome| {
-                outcome.started_at.get_or_insert(started);
-                outcome
-            }),
-        )),
+        other => Ok((task, other)),
     }
 }
 
@@ -111,14 +153,18 @@ async fn score_async(
     scorers: Vec<Box<dyn Scorer>>,
     output: String,
     database: Option<PublishedDatabase>,
-) -> Result<(Vec<(&'static str, ScoreDetails)>, String, Option<PublishedDatabase>)> {
+) -> Result<(Vec<(&'static str, ScoreDetails)>, String, Option<PublishedDatabase>), RunOneError> {
+    let failure_output = output.clone();
     task::spawn_blocking(move || {
         // Keep the database alive if the awaiting task is cancelled while scoring.
         let scores = scorers.iter().map(|s| (s.id(), s.score(&output))).collect();
         (scores, output, database)
     })
     .await
-    .context("scoring worker failed")
+    .map_err(|error| RunOneError::Infrastructure {
+        msg: format!("scoring worker failed: {error:#}"),
+        llm_output: Some(failure_output),
+    })
 }
 
 pub async fn delete_databases(databases: Vec<PublishedDatabase>) -> Result<()> {
@@ -148,6 +194,116 @@ async fn ensure_server_healthy(host: Option<&str>) -> Result<()> {
         );
     }
     Ok(())
+}
+
+fn provider_retry_delay(error: &anyhow::Error) -> Option<u64> {
+    use crate::llm::clients::{
+        http::HttpResponseError,
+        oa_compat::{ProviderRefusal, ProviderResponseError},
+    };
+    let status_delay = |status| match status {
+        429 => Some(60),
+        502..=504 => Some(30),
+        _ => None,
+    };
+    if error.downcast_ref::<ProviderRefusal>().is_some() {
+        return None;
+    }
+    if let Some(response) = error.downcast_ref::<HttpResponseError>() {
+        return status_delay(u64::from(response.status));
+    }
+    // Inspect private fields for retry decisions, never for console output.
+    let message = if let Some(response) = error.downcast_ref::<ProviderResponseError>() {
+        if let Some(code) = response.error.code.as_ref().and_then(|code| {
+            code.as_u64()
+                .or_else(|| code.as_str().and_then(|value| value.parse().ok()))
+        }) {
+            return status_delay(code);
+        }
+        response
+            .error
+            .message
+            .as_deref()
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+    } else {
+        format!("{error:#}").to_ascii_lowercase()
+    };
+    if message.contains("429") || message.contains("rate limit") {
+        Some(60)
+    } else if message.contains("timed out") || ["502", "503", "504"].iter().any(|status| message.contains(status)) {
+        Some(30)
+    } else {
+        None
+    }
+}
+
+fn is_code_publish_failure(message: &str, source_root: &Path, lang: Lang) -> bool {
+    // Unknown publish failures are unscored. A healthy ping does not prove a valid build environment.
+    let message = message.replace('\\', "/").to_ascii_lowercase();
+    if [
+        "error[e0463]",
+        "error[e0460]",
+        "error[e0514]",
+        "error cs0006",
+        "error cs0009",
+        "error cs0012",
+        "error cs0518",
+        "error cs1705",
+    ]
+    .iter()
+    .any(|code| message.contains(code))
+    {
+        return false;
+    }
+    let relative = match lang {
+        Lang::Rust => "src/lib.rs",
+        Lang::CSharp => "lib.cs",
+        Lang::TypeScript => "src/index.ts",
+    };
+    let absolute = source_root
+        .canonicalize()
+        .or_else(|_| std::path::absolute(source_root))
+        .unwrap_or_else(|_| source_root.to_path_buf())
+        .join(relative)
+        .to_string_lossy()
+        .replace('\\', "/")
+        .to_ascii_lowercase();
+    let is_generated_location = |location: &str| {
+        let location = location.trim().trim_start_matches("//?/").trim_start_matches("./");
+        [relative, absolute.trim_start_matches("//?/")].iter().any(|path| {
+            location
+                .strip_prefix(path)
+                .is_some_and(|rest| rest.starts_with(':') || rest.starts_with('('))
+        })
+    };
+    let lines: Vec<_> = message.lines().map(str::trim).collect();
+    let mut found = false;
+    for (index, line) in lines.iter().enumerate() {
+        let rust_error = matches!(lang, Lang::Rust) && (line.starts_with("error[e") || line.starts_with("error:"));
+        if rust_error {
+            // Cargo/rustc summaries add no source diagnostic of their own.
+            if line.starts_with("error: could not compile") || line.starts_with("error: aborting due to") {
+                continue;
+            }
+            let location = lines[index + 1..]
+                .iter()
+                .take_while(|line| !line.starts_with("error") && !line.starts_with("warning"))
+                .find_map(|line| line.strip_prefix("--> "));
+            if !location.is_some_and(is_generated_location) {
+                return false;
+            }
+            found = true;
+        } else if (matches!(lang, Lang::CSharp) && (line.contains(": error cs") || line.contains(": error stdb")))
+            || (matches!(lang, Lang::TypeScript) && line.contains(": error ts"))
+        {
+            if !is_generated_location(line) {
+                return false;
+            }
+            found = true;
+        }
+    }
+    found
 }
 
 impl TaskRunner {
@@ -278,18 +434,7 @@ impl TaskRunner {
                     }
                     Ok(Err(e)) => {
                         let msg = format!("{e:#}");
-                        let retryable = msg.contains("timed out")
-                            || msg.contains("429")
-                            || msg.contains("502")
-                            || msg.contains("503")
-                            || msg.contains("504")
-                            || msg.contains("rate limit");
-                        if retryable && attempt < MAX_ATTEMPTS {
-                            let delay = if msg.contains("429") || msg.contains("rate limit") {
-                                60
-                            } else {
-                                30
-                            };
+                        if let Some(delay) = provider_retry_delay(&e).filter(|_| attempt < MAX_ATTEMPTS) {
                             eprintln!(
                                 "⚠️ [{}/{}] provider error (attempt {}/{}), retrying in {delay}s: {}",
                                 cfg.lang_name, cfg.route.display_name, attempt, MAX_ATTEMPTS, msg
@@ -323,7 +468,11 @@ impl TaskRunner {
         let output_tokens = llm_result.output_tokens;
         let mut llm_output = llm_result.text;
 
-        let migration_setup = load_migration_setup_source(task, cfg.lang)?;
+        let migration_setup =
+            load_migration_setup_source(task, cfg.lang).map_err(|error| RunOneError::Infrastructure {
+                msg: format!("load migration setup failed: {error:#}"),
+                llm_output: Some(llm_output.clone()),
+            })?;
 
         if debug_llm() {
             print_llm_output(&cfg.route.display_name, &task_id, &llm_output);
@@ -347,8 +496,12 @@ impl TaskRunner {
                 .await;
             match setup_result {
                 Ok(database) => {
-                    call_reducer_json_out(&llm_db, "seed", &[], Some(cfg.host.as_deref().unwrap_or("local")))
-                        .map_err(anyhow::Error::msg)?;
+                    call_reducer_json_out(&llm_db, "seed", &[], Some(cfg.host.as_deref().unwrap_or("local"))).map_err(
+                        |error| RunOneError::Infrastructure {
+                            msg: format!("migration seed failed: {error}"),
+                            llm_output: Some(llm_output.clone()),
+                        },
+                    )?;
                     Ok(Some(database))
                 }
                 Err(error) => Err(error),
@@ -358,7 +511,12 @@ impl TaskRunner {
         };
 
         let (mut published_database, publish_error) = match setup_database {
-            Err(error) => (None, Some(format!("migration setup failed: {error:#}"))),
+            Err(error) => {
+                return Err(RunOneError::Infrastructure {
+                    msg: format!("migration setup failed: {error:#}"),
+                    llm_output: Some(llm_output),
+                })
+            }
             Ok(mut setup_database) => {
                 let publish_result = self
                     .publish_llm(PublishParams {
@@ -380,6 +538,13 @@ impl TaskRunner {
                         (Some(database), None)
                     }
                     Err(error) => {
+                        let source_root = work_server_dir_scoped(&category, &task_id, cfg.lang_name, "llm", &route_tag);
+                        if !is_code_publish_failure(&format!("{error:#}"), &source_root, cfg.lang) {
+                            return Err(RunOneError::Infrastructure {
+                                msg: format!("publish failed without a source-code diagnostic: {error:#}"),
+                                llm_output: Some(llm_output),
+                            });
+                        }
                         eprintln!(
                             "⚠️ publish failed for {}/{}/{}: {error:#}",
                             category, task_id, cfg.route.display_name
@@ -405,13 +570,7 @@ impl TaskRunner {
 
         if publish_error.is_none() {
             println!("→ [{}] {}: scoring", cfg.lang_name, cfg.route.display_name);
-            let (scores, output, database) =
-                score_async(scorers, llm_output, published_database)
-                    .await
-                    .map_err(|error| RunOneError::Infrastructure {
-                        msg: format!("scoring worker failed: {error:#}"),
-                        llm_output: None,
-                    })?;
+            let (scores, output, database) = score_async(scorers, llm_output, published_database).await?;
             llm_output = output;
             published_database = database;
             for (id, r) in scores {
@@ -649,6 +808,7 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
 
     // 1) run per-task LLM builds + scoring
     let tasks = discover_tasks(cfg.bench_root)?;
+    let mut record = BatchRecord::new(cfg, &tasks)?;
     let runner = TaskRunner::new(
         PathBuf::from(cfg.bench_root),
         SpacetimeRustPublisher,
@@ -662,8 +822,8 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
         _ => bench_concurrency(),
     };
 
-    let results: Vec<(TaskPaths, Result<RunOutcome, RunOneError>)> =
-        futures::stream::iter(tasks.into_iter().map(|task| {
+    let results: Vec<(TaskPaths, Result<RunOutcome, RunOneError>)> = collect_recorded_attempts(
+        tasks.into_iter().map(|task| {
             let runner = &runner;
             let route = cfg.route;
             let lang = cfg.lang;
@@ -687,12 +847,13 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
                 };
 
                 let result = runner.run_one(&task, &run_cfg).await;
-                task_result_or_infrastructure_error(task, result, started)
+                (task, result, started)
             }
-        }))
-        .buffer_unordered(buf)
-        .try_collect()
-        .await?;
+        }),
+        buf,
+        |(task, result, started)| record_task_result(&mut record, cfg, task, result, started),
+    )
+    .await?;
 
     let (mut outcomes, mut retry_tasks) = partition_results(results, lang_name, cfg.route, cfg.hash)?;
 
@@ -710,8 +871,8 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
         );
         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
 
-        let retry_results: Vec<(TaskPaths, Result<RunOutcome, RunOneError>)> =
-            futures::stream::iter(retry_tasks.drain(..).map(|pending| {
+        let retry_results: Vec<(TaskPaths, Result<RunOutcome, RunOneError>)> = collect_recorded_attempts(
+            retry_tasks.drain(..).map(|pending| {
                 let runner = &runner;
                 let route = cfg.route;
                 let lang = cfg.lang;
@@ -735,12 +896,13 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
                         host,
                     };
                     let result = runner.run_one(&task, &run_cfg).await;
-                    task_result_or_infrastructure_error(task, result, started)
+                    (task, result, started)
                 }
-            }))
-            .buffer_unordered(buf)
-            .try_collect()
-            .await?;
+            }),
+            buf,
+            |(task, result, started)| record_task_result(&mut record, cfg, task, result, started),
+        )
+        .await?;
 
         let (new_outcomes, still_failing) = partition_results(retry_results, lang_name, cfg.route, cfg.hash)?;
 
@@ -770,6 +932,7 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
     // A dead local server turns later publish failures into misleading zeroes.
     // Refuse to analyze or upload any batch that cannot pass a final health check.
     ensure_server_healthy(cfg.host.as_deref()).await?;
+    record.complete()?;
 
     if cfg.dry_run {
         let _ = match maybe_generate_analysis(cfg, &outcomes).await {
@@ -831,6 +994,7 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
         bail!("no tasks matched {:?}", wanted);
     }
 
+    let mut record = BatchRecord::new(cfg, &selected)?;
     let runner = TaskRunner::new(
         PathBuf::from(cfg.bench_root),
         SpacetimeRustPublisher,
@@ -844,8 +1008,8 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
         _ => bench_concurrency(),
     };
 
-    let results: Vec<(TaskPaths, Result<RunOutcome, RunOneError>)> =
-        futures::stream::iter(selected.into_iter().map(|task| {
+    let results: Vec<(TaskPaths, Result<RunOutcome, RunOneError>)> = collect_recorded_attempts(
+        selected.into_iter().map(|task| {
             let runner = &runner;
             let route = cfg.route;
             let lang = cfg.lang;
@@ -868,12 +1032,13 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
                 };
 
                 let result = runner.run_one(&task, &run_cfg).await;
-                task_result_or_infrastructure_error(task, result, started)
+                (task, result, started)
             }
-        }))
-        .buffer_unordered(buf)
-        .try_collect()
-        .await?;
+        }),
+        buf,
+        |(task, result, started)| record_task_result(&mut record, cfg, task, result, started),
+    )
+    .await?;
 
     let (mut outcomes, retry_tasks) = partition_results(results, lang_name, cfg.route, cfg.hash)?;
 
@@ -893,8 +1058,8 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
             );
             tokio::time::sleep(std::time::Duration::from_secs(30)).await;
 
-            let retry_results: Vec<(TaskPaths, Result<RunOutcome, RunOneError>)> =
-                futures::stream::iter(pending.drain(..).map(|pending_retry| {
+            let retry_results: Vec<(TaskPaths, Result<RunOutcome, RunOneError>)> = collect_recorded_attempts(
+                pending.drain(..).map(|pending_retry| {
                     let runner = &runner;
                     let route = cfg.route;
                     let lang = cfg.lang;
@@ -918,12 +1083,13 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
                             host,
                         };
                         let result = runner.run_one(&task, &run_cfg).await;
-                        task_result_or_infrastructure_error(task, result, started)
+                        (task, result, started)
                     }
-                }))
-                .buffer_unordered(buf)
-                .try_collect()
-                .await?;
+                }),
+                buf,
+                |(task, result, started)| record_task_result(&mut record, cfg, task, result, started),
+            )
+            .await?;
 
             let (new_outcomes, still_failing) = partition_results(retry_results, lang_name, cfg.route, cfg.hash)?;
 
@@ -945,6 +1111,7 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
     let outcomes = finalize_batch(outcomes, pending)?;
 
     ensure_server_healthy(cfg.host.as_deref()).await?;
+    record.complete()?;
 
     if cfg.dry_run {
         let _ = match maybe_generate_analysis(cfg, &outcomes).await {
@@ -1390,6 +1557,128 @@ fn normalize_task_selector(raw: &str) -> Result<String> {
 mod build_cleanup_tests {
     use super::*;
 
+    #[tokio::test]
+    async fn failed_attempt_drains_started_work_without_starting_more_tasks() {
+        let mut recorded = Vec::new();
+        let error = collect_recorded_attempts(
+            (0..4).map(|id| async move {
+                if id == 1 {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                id
+            }),
+            2,
+            |id| {
+                recorded.push(id);
+                if id == 0 {
+                    bail!("infrastructure failure");
+                }
+                Ok(id)
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.to_string(), "infrastructure failure");
+        assert_eq!(
+            recorded,
+            [0, 1],
+            "retain in-flight evidence, but stop scheduling new tasks"
+        );
+    }
+
+    #[test]
+    fn only_explicit_code_diagnostics_are_scored_as_publish_failures() {
+        let root = std::env::temp_dir().join("benchmark-module");
+        let root = root.as_path();
+        for diagnostic in [
+            "error[E0425]: cannot find value `missing` in this scope",
+            "error: expected one of `!` or `::`, found `main`",
+            "error: unexpected closing delimiter: `}`",
+            "error: mismatched closing delimiter: `)`",
+            "error: invalid suffix `words` for number literal",
+            "error: this file contains an unclosed delimiter",
+            "error: unknown start of token: \\",
+        ] {
+            let diagnostic =
+                format!("{diagnostic}\n --> src/lib.rs:10:5\nerror: could not compile `test` due to 1 previous error");
+            assert!(is_code_publish_failure(&diagnostic, root, Lang::Rust), "{diagnostic}");
+        }
+        for (lang, diagnostic) in [
+            (
+                Lang::CSharp,
+                "Lib.cs(10,5): error CS0103: The name 'missing' does not exist",
+            ),
+            (
+                Lang::TypeScript,
+                "src/index.ts(2,3): error TS2304: Cannot find name 'missing'",
+            ),
+        ] {
+            assert!(is_code_publish_failure(diagnostic, root, lang), "{diagnostic}");
+        }
+        for root in [root, Path::new("target/llm-runs/test-relative-module")] {
+            let source = std::path::absolute(root).unwrap().join("Lib.cs");
+            let diagnostic = format!("{}(10,5): error CS0103: missing name", source.display());
+            assert!(is_code_publish_failure(&diagnostic, root, Lang::CSharp), "{diagnostic}");
+        }
+        for diagnostic in [
+            "HTTP 503 Service Unavailable",
+            "authentication token expired",
+            "No space left on device",
+            "failed to download package",
+            "command dotnet publish exited with code 1",
+            "migration setup failed",
+            "unknown publish error",
+            "error: linking with `cc` failed",
+            "error: could not compile `test` due to 1 previous error",
+            "error[E0463]: can't find crate for `std`\n --> src/lib.rs:1:1",
+            "error[E0425]: cannot find value\n --> /dependencies/src/lib.rs:1:1",
+            "Lib.cs(1,1): error CS0006: Metadata file could not be found",
+            "/dependencies/Lib.cs(1,1): error CS0103: missing name",
+            "node_modules/package/index.ts(1,1): error TS2304: missing name",
+        ] {
+            for lang in [Lang::Rust, Lang::CSharp, Lang::TypeScript] {
+                assert!(!is_code_publish_failure(diagnostic, root, lang), "{diagnostic}");
+            }
+        }
+    }
+
+    #[test]
+    fn private_provider_errors_keep_their_retry_policy() {
+        use crate::llm::clients::oa_compat::OACompatResp;
+        for (error, expected) in [
+            (serde_json::json!({"message": "rate limit private detail"}), Some(60)),
+            (
+                serde_json::json!({"code": "429", "message": "private detail"}),
+                Some(60),
+            ),
+            (serde_json::json!({"code": 503, "message": "private detail"}), Some(30)),
+            (serde_json::json!({"code": 402, "message": "private detail"}), None),
+            (
+                serde_json::json!({"message": "request timed out: private detail"}),
+                Some(30),
+            ),
+        ] {
+            let response: OACompatResp = serde_json::from_value(serde_json::json!({"error": error})).unwrap();
+            let error = response.first_text().unwrap_err().context("model test");
+            assert_eq!(provider_retry_delay(&error), expected);
+            assert!(!format!("{error:?}").contains("private detail"));
+        }
+        let refusal: OACompatResp = serde_json::from_value(serde_json::json!({
+            "id": "gen-429", "choices": [{"finish_reason":"content_filter", "message":{"content":null}}]
+        }))
+        .unwrap();
+        assert_eq!(provider_retry_delay(&refusal.first_text().unwrap_err()), None);
+        for (status, expected) in [(429, Some(60)), (503, Some(30)), (402, None)] {
+            let error = crate::llm::clients::http::HttpResponseError {
+                status,
+                body: "private detail".into(),
+            }
+            .into();
+            assert_eq!(provider_retry_delay(&error), expected);
+            assert!(!format!("{error:?}").contains("private detail"));
+        }
+    }
+
     #[test]
     fn provider_failures_reject_the_whole_batch_but_model_failures_remain_scores() {
         let task = || TaskPaths {
@@ -1409,6 +1698,11 @@ mod build_cleanup_tests {
                     }),
                 ),
                 (task(), Err(RunOneError::Other(anyhow::anyhow!("402 Payment Required")))),
+                (task(), Err(RunOneError::Other(
+                    serde_json::from_value::<crate::llm::clients::oa_compat::OACompatResp>(json!({
+                        "choices": [{"finish_reason": "content_filter", "message": {"content": null, "refusal": "provider refusal"}}]
+                    })).unwrap().first_text().unwrap_err()
+                ))),
             ],
             "rust",
             &route,
@@ -1416,6 +1710,7 @@ mod build_cleanup_tests {
         )
         .unwrap();
         assert_eq!(outcomes.len(), 1);
+        assert_eq!(pending.len(), 2, "refusals and provider failures are not scored zeroes");
         assert_eq!(outcomes[0].passed_tests, 0);
         assert!(finalize_batch(outcomes.clone(), Vec::new()).is_ok());
         let error = finalize_batch(outcomes, pending).unwrap_err().to_string();
@@ -1429,6 +1724,30 @@ mod build_cleanup_tests {
             }]
         )
         .is_err());
+    }
+
+    #[tokio::test]
+    async fn scorer_panic_preserves_generated_code_as_unscored_evidence() {
+        struct PanickingScorer;
+        impl Scorer for PanickingScorer {
+            fn id(&self) -> &'static str {
+                "panic"
+            }
+            fn score(&self, _: &str) -> ScoreDetails {
+                panic!("test scorer failure")
+            }
+        }
+        let error = score_async(vec![Box::new(PanickingScorer)], "generated code".into(), None)
+            .await
+            .err()
+            .unwrap();
+        match error {
+            RunOneError::Infrastructure { msg, llm_output } => {
+                assert!(msg.contains("test scorer failure"));
+                assert_eq!(llm_output.as_deref(), Some("generated code"));
+            }
+            other => panic!("expected unscored infrastructure error: {other:?}"),
+        }
     }
 
     #[test]
@@ -1460,6 +1779,7 @@ mod build_cleanup_tests {
             loop {
                 match listener.accept() {
                     Ok((mut socket, _)) => {
+                        socket.set_nonblocking(false).unwrap();
                         socket.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
                         let mut request = [0; 4096];
                         let n = socket.read(&mut request).unwrap();

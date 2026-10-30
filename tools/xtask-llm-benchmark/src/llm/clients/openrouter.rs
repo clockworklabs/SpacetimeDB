@@ -238,7 +238,7 @@ impl OpenRouterClient {
             .http
             .post_json(&url, &[auth], &req)
             .await
-            .with_context(|| format!("OpenRouter POST {}", url))?;
+            .with_context(|| format!("OpenRouter POST {url} (model={model})"))?;
 
         let resp: OACompatResp =
             serde_json::from_str(&body).with_context(|| format!("parse OpenRouter response (model={model})"))?;
@@ -429,6 +429,10 @@ mod tests {
 
         let cases = [
             (
+                r#"{"error":{"message":"refusal text must not be logged"}}"#,
+                Some("HTTP 403"),
+            ),
+            (
                 r#"{"choices":[{"message":{"content":"valid code"}}],"usage":{"prompt_tokens":10,"completion_tokens":2}}"#,
                 None,
             ),
@@ -438,11 +442,11 @@ mod tests {
             ),
             (
                 r#"{"id":"gen-error","choices":[{"finish_reason":"error","message":{"content":"partial code"},"error":{"code":503,"message":"upstream unavailable"}}]}"#,
-                Some("upstream unavailable"),
+                Some("gen-error"),
             ),
             (
                 r#"{"id":"gen-top","error":{"code":429,"message":"rate limited"}}"#,
-                Some("rate limited"),
+                Some("gen-top"),
             ),
             (
                 r#"{"id":"gen-empty","choices":[{"finish_reason":"stop","message":{"content":"  "}}]}"#,
@@ -490,7 +494,12 @@ mod tests {
                         }
                     }
                 }
-                write!(socket, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+                let status = if expected_error == Some("HTTP 403") {
+                    "403 Forbidden"
+                } else {
+                    "200 OK"
+                };
+                write!(socket, "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
             });
             let client = OpenRouterClient::with_base(HttpClient::new().unwrap(), base, "mock-key".into());
             let prompt = BuiltPrompt {
@@ -503,7 +512,33 @@ mod tests {
             server.join().unwrap();
             match expected_error {
                 Some(expected) => {
-                    let error = format!("{:#}", result.expect_err("response must not be scored"));
+                    let error = result.expect_err("response must not be scored");
+                    if expected == "HTTP 403" {
+                        let response = error.downcast_ref::<super::super::http::HttpResponseError>().unwrap();
+                        assert_eq!(response.status, 403);
+                        assert!(response.body.contains("refusal text"));
+                        assert!(!format!("{error:?}").contains("refusal text"));
+                    }
+                    if expected == "content_filter" {
+                        let refusal = error
+                            .downcast_ref::<super::super::oa_compat::ProviderRefusal>()
+                            .unwrap();
+                        assert_eq!(refusal.generation_id.as_deref(), Some("gen-filter"));
+                        assert_eq!(refusal.refusal.as_deref(), Some("refusal text must not be logged"));
+                    }
+                    if matches!(expected, "gen-error" | "gen-top") {
+                        let response = error
+                            .downcast_ref::<super::super::oa_compat::ProviderResponseError>()
+                            .unwrap();
+                        let expected_message = if expected == "gen-error" {
+                            "upstream unavailable"
+                        } else {
+                            "rate limited"
+                        };
+                        assert_eq!(response.error.message.as_deref(), Some(expected_message));
+                        assert!(!format!("{error:?}").contains(expected_message));
+                    }
+                    let error = format!("{error:#}");
                     assert!(error.contains(expected), "{error}");
                     assert!(error.contains("test/model"), "{error}");
                     assert!(

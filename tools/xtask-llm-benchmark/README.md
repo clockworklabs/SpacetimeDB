@@ -10,6 +10,36 @@ still run, but the language job exits with failure if any batch fails. Response
 errors include the generation ID and finish reason when supplied by the provider.
 Generated code that fails compilation or grading remains a normal benchmark score.
 
+Each batch also saves an append-only JSONL record under
+`LLM_BENCHMARK_REPORT_DIR/batches`, or `tools/xtask-llm-benchmark/runs/batches`
+when that variable is not set. CI retains these files in its analysis artifacts,
+including on failure. They are not website uploads.
+
+The record contains the planned tasks, model identity, each finished task attempt,
+generated code, scorer details, and provider refusal details. Outer task retries
+remain in the record. The latest task attempt determines its status and the
+summary. Inner provider-call retries are not separate artifact entries; their
+status and retry counts remain in console logs. Raw refusal text, partial provider
+content, and HTTP error bodies stay in artifacts, not console errors. Treat these
+artifacts as source and provider-response data.
+
+Refusals and provider or infrastructure errors have no code score. Summaries keep
+task counts separate from scorer-check counts and always include coverage. For
+example, 99 passing tasks and one refusal means **99/99 scored tasks passed, with
+99/100 tasks scored and one refusal**. It does not mean a complete 100% benchmark.
+Zero scored tasks means no score, not 0%. An incomplete batch stays off the website.
+Migration setup failures and publish failures without a recognized source-code
+diagnostic also block the batch, even when the server responds to a health check.
+This is conservative: an unknown code error can block a batch until classified.
+
+Each finished attempt is saved before an error can stop the batch. If a task
+reports an infrastructure error, new tasks stop, but started tasks finish and save
+their results before the batch returns failure. If the process stops during a
+write, only the last JSONL line can be incomplete; earlier lines
+remain usable. Only a final `complete` event after the server health check marks
+the batch complete for scoring. It does not confirm a website upload. A record
+write failure blocks upload. This does not resume or upload partial runs.
+
 ## New behavioral tasks
 
 | ID | Contract checked |
