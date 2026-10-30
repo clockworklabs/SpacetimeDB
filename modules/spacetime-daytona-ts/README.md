@@ -154,11 +154,13 @@ has both views and the browser code.
 
 Anyone who can call `createSandbox` and `runCommand` can run any code in a
 sandbox and spend your Daytona credits, so `owner` only accepts identities in
-the `allowed` table. `init` adds the identity that publishes the database; add
-others from a reducer only that identity can call, as the
+the `allowed` table. `init` adds the identity that publishes the database.
+Add others from a reducer that only allowed identities can call, as the
 [example](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-daytona-ts/example/spacetimedb/src/index.ts)
-does with `grantAccess`. Always set the owner on the server. Never take it from
-the browser, and never send the API key to a client.
+does with `grantAccess`. Anyone you allow can then allow others.
+
+Always set the owner on the server. Never take it from the browser, and never
+send the API key to a client.
 
 ## API
 
