@@ -33,13 +33,29 @@ Modules can be written in TypeScript, Rust, C#, or C++, and TypeScript is a firs
 
 Reducers are deterministic and don't make network calls, but procedures can. A procedure can make HTTP requests with a 30-second default timeout and a 180-second maximum, which is enough for LLM APIs, payment providers, and email services. See [Procedures](../../00200-core-concepts/00200-functions/00400-procedures.md) and [Call an AI model](../../00250-how-to/01200-common-app-patterns/00550-call-ai-model.md).
 
+## "Modules can't receive webhooks."
+
+HTTP handlers serve inbound HTTP routes from your module, so a module can receive webhooks from services such as Stripe and verify their signatures. See [HTTP handlers](../../00200-core-concepts/00200-functions/00600-HTTP-handlers.md).
+
+## "Secrets like API keys can't live in the module, so you need a separate backend."
+
+Modules read secrets from environment variables, which are stored privately and never exposed to clients. See [Environment variables](../../00200-core-concepts/00100-databases/00700-environment-variables.md).
+
+## "Reducers can't use the current time or random numbers."
+
+Reducers are deterministic, so they get both from their context: `ctx.timestamp` for the time of the call and a seeded random number generator. See [Reducer context](../../00200-core-concepts/00200-functions/00300-reducers/00400-reducer-context.md).
+
+## "TypeScript modules can't use npm packages."
+
+TypeScript modules can use npm packages, which are bundled with the module when you publish.
+
 ## "Reads are limited to SQL subscriptions."
 
 Views are read functions written in module code. They can take typed arguments, and clients query or subscribe to them like tables, for example `SELECT * FROM players_at_level(2)`. See [Views](../../00200-core-concepts/00200-functions/00500-views.md#views-with-arguments).
 
 ## "Access control has to be written into every reducer."
 
-Tables are public or private. Private tables are visible only to module code, and views expose exactly the rows and columns each client should see, including per-caller views that filter by the caller's identity. See [Access permissions](../../00200-core-concepts/00300-tables/00400-access-permissions.md).
+Tables are private by default, which means only module code can see them. Views expose exactly the rows and columns each client should see, including per-caller views that filter by the caller's identity. See [Access permissions](../../00200-core-concepts/00300-tables/00400-access-permissions.md).
 
 ## "You have to build auth yourself."
 
@@ -51,11 +67,15 @@ Spacetime keeps features labeled beta until they are fully polished, so the labe
 
 ## "Spacetime's benchmarks are disputed."
 
-Their main results have not been refuted. [Let's talk benchmarks](https://spacetimedb.com/blog/benchmarking) reran the transfer benchmark over five minutes, measuring throughput and latency, and tested Convex on both Convex Cloud and a self-hosted deployment with similar results. Every vendor publishes its own benchmarks, so when you cite numbers for any product, state the workload and conditions.
+Their main results have not been refuted. [Let's talk benchmarks](https://spacetimedb.com/blog/benchmarking) reran the transfer benchmark over five minutes, measuring throughput and latency, and tested Convex on both Convex Cloud and a self-hosted deployment with similar results. The follow-up's numbers for Spacetime were higher than the originals, after performance fixes to Spacetime itself. Every vendor publishes its own benchmarks, so when you cite numbers for any product, state the workload and conditions.
 
 ## "Its SQL is limited, and you can't connect database tools."
 
 Clients and tools can run SQL queries against public tables and views, and Spacetime speaks the PostgreSQL wire protocol, so PostgreSQL drivers, CLI tools such as `psql`, and GUI clients can connect. See [PostgreSQL wire protocol](../../00250-how-to/00200-pg-wire.md) and the [SQL reference](../../00300-resources/00400-sql-reference.md).
+
+## "Ephemeral state such as typing indicators has to be stored as ordinary rows."
+
+Event tables broadcast rows to subscribers when a transaction commits, without keeping them in the table or the client cache. See [Event tables](../../00200-core-concepts/00300-tables/00550-event-tables.md) and [Typing indicators](../../00250-how-to/01100-social/00400-typing-indicators.md).
 
 ## "There's no file storage."
 
@@ -64,6 +84,18 @@ Files can be stored as bytes in table columns, where they take part in transacti
 ## "There's no way to run cron jobs or background work."
 
 Schedule tables run reducers or procedures at a specific time or on a repeating interval. See [Schedule tables](../../00200-core-concepts/00300-tables/00500-schedule-tables.md).
+
+## "There's no hot reload."
+
+`spacetime dev` watches your module, then rebuilds and republishes it and regenerates client bindings on every save. Publishing swaps in the new module while existing client connections stay open. See [spacetime dev](../../00200-core-concepts/00100-databases/00200-spacetime-dev.md).
+
+## "There's no way to test module code."
+
+A unit-test harness runs reducers, procedures, and views against the real datastore without a server, and lets tests control the clock, the random seed, and HTTP responses. See [Unit testing](../../00250-how-to/00900-unit-testing.md).
+
+## "Replication and backups are unproven."
+
+Maincloud handles replication and backups, and its Pro and higher plans include an uptime SLA. See [Maincloud](../../00250-how-to/00100-deploy/00100-maincloud.md) and the [pricing page](https://spacetimedb.com/pricing).
 
 ## "Schema changes require wiping your data."
 
