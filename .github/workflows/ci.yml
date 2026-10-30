@@ -1580,6 +1580,7 @@ jobs:
       - *find-git-ref
       - *checkout-sources
 
+      # Fleet VM images maintain certificate trust and rustup; only set them up here for GitHub-hosted runners.
       - name: Set up certificate trust
         if: runner.environment == 'github-hosted'
         uses: ./.github/actions/setup-certificate-trust
