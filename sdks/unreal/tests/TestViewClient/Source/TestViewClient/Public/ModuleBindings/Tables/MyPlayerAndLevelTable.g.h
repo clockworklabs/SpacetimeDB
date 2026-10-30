@@ -60,5 +60,6 @@ public:
 private:
     const FString TableName = TEXT("my_player_and_level");
 
+    friend class UDbConnectionBase; // Read-only replay snapshots through the registered table adapter.
     TSharedPtr<UClientCache<FPlayerAndLevelType>> Data;
 };

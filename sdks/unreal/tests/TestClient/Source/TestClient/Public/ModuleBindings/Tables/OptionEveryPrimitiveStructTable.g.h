@@ -60,5 +60,6 @@ public:
 private:
     const FString TableName = TEXT("option_every_primitive_struct");
 
+    friend class UDbConnectionBase; // Read-only replay snapshots through the registered table adapter.
     TSharedPtr<UClientCache<FOptionEveryPrimitiveStructType>> Data;
 };

@@ -56,9 +56,11 @@ void AGameManager::BeginPlay()
 
 	FOnConnectDelegate ConnectDelegate;
 	BIND_DELEGATE_SAFE(ConnectDelegate, this, AGameManager, HandleConnect);
-	FOnDisconnectDelegate DisconnectDelegate;
+	FOnConnectDelegate ReconnectDelegate;
+	BIND_DELEGATE_SAFE(ReconnectDelegate, this, AGameManager, HandleReconnect);
+	FOnDisconnectWithReconnectDelegate DisconnectDelegate;
 	BIND_DELEGATE_SAFE(DisconnectDelegate, this, AGameManager, HandleDisconnect);
-	FOnConnectErrorDelegate ConnectErrorDelegate;
+	FOnConnectErrorWithReconnectDelegate ConnectErrorDelegate;
 	BIND_DELEGATE_SAFE(ConnectErrorDelegate, this, AGameManager, HandleConnectError);
 
 	UCredentials::Init(FString::Printf(TEXT("%s-%s"), *TokenFilePath, *ServerUri));
@@ -68,8 +70,10 @@ void AGameManager::BeginPlay()
 	                                            ->WithUri(ServerUri)
 	                                            ->WithDatabaseName(ModuleName)
 	                                            ->OnConnect(ConnectDelegate)
-	                                            ->OnDisconnect(DisconnectDelegate)
-	                                            ->OnConnectError(ConnectErrorDelegate);
+	                                            ->OnAutomaticReconnect(ReconnectDelegate)
+	                                            ->OnDisconnectWithReconnect(DisconnectDelegate)
+	                                            ->OnConnectErrorWithReconnect(ConnectErrorDelegate)
+	                                            ->WithAutomaticReconnect();
 
 	if (!Token.IsEmpty())
 	{
@@ -91,7 +95,7 @@ void AGameManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void AGameManager::Tick(float DeltaTime)
 {
-	if (IsConnected())
+	if (Conn != nullptr)
 	{
 		Conn->FrameTick();
 	}
@@ -118,14 +122,19 @@ void AGameManager::HandleConnect(UDbConnection* InConn, FSpacetimeDBIdentity Ide
 		->SubscribeToAllTables();
 }
 
-void AGameManager::HandleConnectError(const FString& Error)
+void AGameManager::HandleReconnect(UDbConnection* InConn, FSpacetimeDBIdentity Identity, const FString& Token)
 {
-	UE_LOG(LogTemp, Log, TEXT("Connection error %s"), *Error);
+	UE_LOG(LogTemp, Log, TEXT("Reconnected. Same identity: %s"), Identity == LocalIdentity ? TEXT("yes") : TEXT("no"));
 }
 
-void AGameManager::HandleDisconnect(UDbConnection* InConn, const FString& Error)
+void AGameManager::HandleConnectError(const FString& Error, bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds)
 {
-	UE_LOG(LogTemp, Log, TEXT("Disconnected."));
+	UE_LOG(LogTemp, Log, TEXT("Connection error %s (will reconnect: %d, attempt %d in %.2fs)"), *Error, bWillReconnect, NextReconnectAttempt, NextReconnectDelaySeconds);
+}
+
+void AGameManager::HandleDisconnect(UDbConnection* InConn, const FString& Error, bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds)
+{
+	UE_LOG(LogTemp, Log, TEXT("Disconnected. (will reconnect: %d, attempt %d in %.2fs)"), bWillReconnect, NextReconnectAttempt, NextReconnectDelaySeconds);
 	if (!Error.IsEmpty())
 	{
 		UE_LOG(LogTemp, Log, TEXT("Disconnect error %s"), *Error);

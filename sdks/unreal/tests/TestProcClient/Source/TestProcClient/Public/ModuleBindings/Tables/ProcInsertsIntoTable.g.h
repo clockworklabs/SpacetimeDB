@@ -60,5 +60,6 @@ public:
 private:
     const FString TableName = TEXT("proc_inserts_into");
 
+    friend class UDbConnectionBase; // Read-only replay snapshots through the registered table adapter.
     TSharedPtr<UClientCache<FProcInsertsIntoType>> Data;
 };

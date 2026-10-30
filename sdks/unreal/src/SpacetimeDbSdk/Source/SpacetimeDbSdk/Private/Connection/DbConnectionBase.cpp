@@ -10,73 +10,100 @@
 #include "Async/Async.h"
 #include "BSATN/UEBSATNHelpers.h"
 #include "Connection/ProcedureFlags.h"
+#include "Misc/Base64.h"
+#include "Dom/JsonObject.h"
+#include "Serialization/JsonSerializer.h"
+#include "HAL/PlatformTime.h"
+#include <exception>
+#include <stdexcept>
+#include "HttpModule.h"
+#include "Interfaces/IHttpRequest.h"
+#include "Interfaces/IHttpResponse.h"
 
 namespace
 {
-enum class EWsCompressionTag : uint8
-{
-	Uncompressed = 0,
-	Brotli = 1,
-	Gzip = 2,
-};
-
-static FDatabaseUpdateType QueryRowsToDatabaseUpdate(const FQueryRowsType& Rows, bool bAsDeletes)
-{
-	FDatabaseUpdateType Update;
-	for (const FSingleTableRowsType& TableRows : Rows.Tables)
+	enum class EWsCompressionTag : uint8
 	{
-		FTableUpdateType TableUpdate;
-		TableUpdate.TableName = TableRows.Table;
+		Uncompressed = 0,
+		Brotli = 1,
+		Gzip = 2,
+	};
 
-		FPersistentTableRowsType PersistentRows;
-		if (bAsDeletes)
-		{
-			PersistentRows.Deletes = TableRows.Rows;
-		}
-		else
-		{
-			PersistentRows.Inserts = TableRows.Rows;
-		}
-		TableUpdate.Rows.Add(FTableUpdateRowsType::PersistentTable(PersistentRows));
-		Update.Tables.Add(TableUpdate);
-	}
-	return Update;
-}
-
-static FDatabaseUpdateType TransactionUpdateToDatabaseUpdate(const FTransactionUpdateType& Update)
-{
-	FDatabaseUpdateType Out;
-	TMap<FString, int32> TableNameToIndex;
-	for (const FQuerySetUpdateType& QuerySet : Update.QuerySets)
+	static FDatabaseUpdateType QueryRowsToDatabaseUpdate(const FQueryRowsType& Rows, bool bAsDeletes)
 	{
-		for (const FTableUpdateType& TableUpdate : QuerySet.Tables)
+		FDatabaseUpdateType Update;
+		for (const FSingleTableRowsType& TableRows : Rows.Tables)
 		{
-			if (const int32* ExistingIndex = TableNameToIndex.Find(TableUpdate.TableName))
+			FTableUpdateType TableUpdate;
+			TableUpdate.TableName = TableRows.Table;
+
+			FPersistentTableRowsType PersistentRows;
+			if (bAsDeletes)
 			{
-				Out.Tables[*ExistingIndex].Rows.Append(TableUpdate.Rows);
+				PersistentRows.Deletes = TableRows.Rows;
 			}
 			else
 			{
-				const int32 NewIndex = Out.Tables.Add(TableUpdate);
-				TableNameToIndex.Add(TableUpdate.TableName, NewIndex);
+				PersistentRows.Inserts = TableRows.Rows;
+			}
+			TableUpdate.Rows.Add(FTableUpdateRowsType::PersistentTable(PersistentRows));
+			Update.Tables.Add(TableUpdate);
+		}
+		return Update;
+	}
+
+	static FDatabaseUpdateType TransactionUpdateToDatabaseUpdate(const FTransactionUpdateType& Update)
+	{
+		FDatabaseUpdateType Out;
+		TMap<FString, int32> TableNameToIndex;
+		for (const FQuerySetUpdateType& QuerySet : Update.QuerySets)
+		{
+			for (const FTableUpdateType& TableUpdate : QuerySet.Tables)
+			{
+				if (const int32* ExistingIndex = TableNameToIndex.Find(TableUpdate.TableName))
+				{
+					Out.Tables[*ExistingIndex].Rows.Append(TableUpdate.Rows);
+				}
+				else
+				{
+					const int32 NewIndex = Out.Tables.Add(TableUpdate);
+					TableNameToIndex.Add(TableUpdate.TableName, NewIndex);
+				}
 			}
 		}
+		return Out;
 	}
-	return Out;
-}
 
-static FString DecodeReducerErrorMessage(const TArray<uint8>& ErrorBytes)
-{
-	if (ErrorBytes.Num() == 0)
+	/** Inserts for every applied replay set, merged so each table appears once. */
+	static FDatabaseUpdateType ReplayInsertsToDatabaseUpdate(const FSubscribeBatchAppliedType& Batch)
 	{
-		return TEXT("Reducer returned empty error payload");
+		FQuerySetUpdateType Applied;
+		for (const FSubscribeSetResultType& Result : Batch.Results)
+		{
+			if (Result.Outcome.IsApplied())
+			{
+				Applied.Tables.Append(QueryRowsToDatabaseUpdate(Result.Outcome.GetAsApplied(), false).Tables);
+			}
+		}
+		FTransactionUpdateType Transaction;
+		Transaction.QuerySets.Add(Applied);
+		return TransactionUpdateToDatabaseUpdate(Transaction);
 	}
-	return UE::SpacetimeDB::Deserialize<FString>(ErrorBytes);
-}
+
+	/** Close code the server uses to refuse a socket while the previous one in the session is still tearing down. */
+	constexpr int32 SessionBusyCloseCode = 4000;
+
+	static FString DecodeReducerErrorMessage(const TArray<uint8>& ErrorBytes)
+	{
+		if (ErrorBytes.Num() == 0)
+		{
+			return TEXT("Reducer returned empty error payload");
+		}
+		return UE::SpacetimeDB::Deserialize<FString>(ErrorBytes);
+	}
 }
 
-UDbConnectionBase::UDbConnectionBase(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
+UDbConnectionBase::UDbConnectionBase(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
 	NextRequestId = 1;
 	NextSubscriptionId = 1;
@@ -96,7 +123,8 @@ void UDbConnectionBase::SetAutoTicking(bool bAutoTick)
 	{
 		if (!TickerHandle.IsValid())
 		{
-			TickerHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateUObject(this, &UDbConnectionBase::OnTickerTick));
+			TickerHandle = FTSTicker::GetCoreTicker().AddTicker(
+			    FTickerDelegate::CreateUObject(this, &UDbConnectionBase::OnTickerTick));
 		}
 	}
 	else if (TickerHandle.IsValid())
@@ -114,23 +142,39 @@ void UDbConnectionBase::BeginDestroy()
 		TickerHandle.Reset();
 	}
 	bIsAutoTicking = false;
+	bEnded = true;
+	ResetTransport();
 
 	Super::BeginDestroy();
 }
 
 void UDbConnectionBase::Disconnect()
 {
-	if (WebSocket)
+	if (bEnded)
 	{
-		WebSocket->Disconnect();
+		return;
 	}
+	bEnded = true;
+	bEstablished = false;
+	bReconnecting = false;
+	bAttemptPending = false;
+	ResetTransport();
+	SuspendSubscriptions(true);
+	ClearPendingOperations(TEXT("Connection closed before the result was received"));
+	BroadcastDisconnect(FString(), false, 0, 0.0f);
 }
 
 bool UDbConnectionBase::IsActive() const
 {
-	return WebSocket && WebSocket->IsConnected();
+	return !bEnded && !bReconnecting && WebSocket && WebSocket->IsConnected();
 }
 
+bool UDbConnectionBase::CanSendCalls() const
+{
+	// Matches C#/TS: with reconnect, calls wait for InitialConnection, so none can be lost to an initial failure.
+	// Kept out of IsActive, which callers use to decide whether to FrameTick, which is what processes InitialConnection.
+	return IsActive() && (!bAutomaticReconnect || bEstablished);
+}
 
 bool UDbConnectionBase::TryGetIdentity(FSpacetimeDBIdentity& OutIdentity) const
 {
@@ -151,12 +195,12 @@ FSpacetimeDBConnectionId UDbConnectionBase::GetConnectionId() const
 
 bool UDbConnectionBase::SendRawMessage(const FString& Message)
 {
-	return WebSocket && WebSocket->SendMessage(Message);
+	return IsActive() && WebSocket->SendMessage(Message);
 }
 
 bool UDbConnectionBase::SendRawMessage(const TArray<uint8>& Message)
 {
-	return WebSocket && WebSocket->SendMessage(Message);
+	return IsActive() && WebSocket->SendMessage(Message);
 }
 
 USubscriptionBuilderBase* UDbConnectionBase::SubscriptionBuilderBase()
@@ -164,124 +208,129 @@ USubscriptionBuilderBase* UDbConnectionBase::SubscriptionBuilderBase()
 	return NewObject<USubscriptionBuilderBase>();
 }
 
-void UDbConnectionBase::HandleWSError(const FString& Error)
+void UDbConnectionBase::QueueFailure(const FString& Error, bool bTerminal, bool bAuth, bool bSessionBusy)
 {
-	bProtocolViolationHandled = false;
-	ClearPendingOperations(Error);
-	if (OnConnectErrorDelegate.IsBound())
+	if (bEnded)
 	{
-		OnConnectErrorDelegate.Execute(Error);
+		return;
 	}
+	FIncomingEvent Event;
+	Event.Error = Error;
+	Event.bFailure = true;
+	Event.bTerminal = bTerminal;
+	Event.bAuth = bAuth;
+	Event.bSessionBusy = bSessionBusy;
+	IncomingEvents.Add(NextIncomingId++, MoveTemp(Event));
 }
 
-void UDbConnectionBase::HandleWSClosed(int32 /*StatusCode*/, const FString& Reason, bool /*bWasClean*/)
+void UDbConnectionBase::HandleWSError(const FString& Error)
 {
-	bProtocolViolationHandled = false;
-	ClearPendingOperations(Reason);
-	if (OnDisconnectBaseDelegate.IsBound())
-	{
-		OnDisconnectBaseDelegate.Execute(this, Reason);
-	}
+	// IWebSocket reports upgrade failures as backend-specific text, so credential
+	// rejection is detected by the token check in StartSocket instead.
+	QueueFailure(Error, false);
+}
+
+void UDbConnectionBase::HandleWSClosed(int32 StatusCode, const FString& Reason, bool /*bWasClean*/)
+{
+	const bool bTerminal = StatusCode == 1002 || StatusCode == 1003 || StatusCode == 1007 || StatusCode == 1008;
+	QueueFailure(Reason.IsEmpty() ? TEXT("Connection closed") : Reason, bTerminal, false,
+	             StatusCode == SessionBusyCloseCode);
 }
 
 void UDbConnectionBase::HandleProtocolViolation(const FString& ErrorMessage)
 {
-	if (bProtocolViolationHandled)
+	if (bEnded)
 	{
 		return;
 	}
-	bProtocolViolationHandled = true;
-
 	UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("%s"), *ErrorMessage);
-	TriggerError(ErrorMessage);
-	ClearPendingOperations(ErrorMessage);
-
-	// Match Rust/C# behavior: parse/protocol violations are fatal for the connection.
-	if (WebSocket && WebSocket->IsConnected())
-	{
-		WebSocket->Disconnect();
-	}
-	else if (OnConnectErrorDelegate.IsBound())
-	{
-		OnConnectErrorDelegate.Execute(ErrorMessage);
-	}
+	ConnectionLost(ErrorMessage, true);
 }
 
 void UDbConnectionBase::HandleWSBinaryMessage(const TArray<uint8>& Message)
 {
-	//tag for arrival order
-	const int32 Id = NextPreprocessId.GetValue();
-	NextPreprocessId.Increment();
-
-	//do expensive work off-thread
-	TWeakObjectPtr<UDbConnectionBase> WeakThis(this);
-	Async(EAsyncExecution::Thread, [WeakThis, Message, Id]()
+	if (bEnded)
 	{
-		if (!WeakThis.IsValid())
-		{
-			return;
-		}
-		UDbConnectionBase* This = WeakThis.Get();
-
-		//parse the message, decompress if needed
-		FServerMessageType Parsed;
-		if (!This->PreProcessMessage(Message, Parsed))
-		{
-			AsyncTask(ENamedThreads::GameThread, [WeakThis]()
-			{
-				if (!WeakThis.IsValid())
-				{
-					return;
-				}
-				UDbConnectionBase* Conn = WeakThis.Get();
-				Conn->HandleProtocolViolation(TEXT("Failed to parse/decompress incoming WebSocket message"));
-			});
-			return;
-		}
-
-		//queue: re-order buffer
-		TArray<FServerMessageType> Ready;
-		{
-			FScopeLock Lock(&This->PreprocessMutex);
-			// Move the parsed message into the map to avoid copying
-			This->PreprocessedMessages.Add(Id, MoveTemp(Parsed));
-			//check if we can release any messages in order
-			while (This->PreprocessedMessages.Contains(This->NextReleaseId))
-			{
-				Ready.Add(This->PreprocessedMessages.FindAndRemoveChecked(This->NextReleaseId));
-				++This->NextReleaseId;
-			}
-		}
-		//if we have any ready messages, append them to the pending messages list that is processed in Tick
-		if (Ready.Num() > 0)
-		{
-			FScopeLock Lock(&This->PendingMessagesMutex);
-			This->PendingMessages.Append(MoveTemp(Ready));
-		}
-	});
+		return;
+	}
+	const uint64 Id = NextIncomingId++;
+	const uint64 Generation = ConnectionGeneration;
+	TWeakObjectPtr<UDbConnectionBase> WeakThis(this);
+	TSharedPtr<const FDeserializerMap, ESPMode::ThreadSafe> Deserializers;
+	{
+		FScopeLock Lock(&TableDeserializersMutex);
+		Deserializers = TableDeserializers;
+	}
+	// Parsing owns only bytes and value types. Never dereference a UObject on the worker.
+	Async(
+	    EAsyncExecution::ThreadPool,
+	    [WeakThis, Message, Id, Generation, Deserializers]()
+	    {
+		    FIncomingEvent Event;
+		    try
+		    {
+			    Event.bFailure = !PreProcessMessage(Message, Event.Message);
+			    if (!Event.bFailure)
+			    {
+				    // Each message owns its decoded rows, so out-of-order workers cannot
+				    // consume another message's rows or contaminate a replacement socket.
+				    PreProcessServerMessage(Event.Message, *Deserializers, Event.TableData);
+			    }
+		    }
+		    catch (const std::exception&)
+		    {
+			    Event.bFailure = true;
+		    }
+		    if (Event.bFailure)
+		    {
+			    Event.bTerminal = true;
+			    Event.Error = TEXT("Failed to parse/decompress incoming WebSocket message");
+		    }
+		    AsyncTask(ENamedThreads::GameThread,
+		              [WeakThis, Id, Generation, Event = MoveTemp(Event)]() mutable
+		              {
+			              if (WeakThis.IsValid() && WeakThis->ConnectionGeneration == Generation && !WeakThis->bEnded)
+			              {
+				              WeakThis->AcceptIncomingEvent(Generation, Id, MoveTemp(Event));
+			              }
+		              });
+	    });
 }
 
 void UDbConnectionBase::FrameTick()
 {
-	TArray<FServerMessageType> Local;
+	if (bTicking || bEnded)
 	{
-		FScopeLock Lock(&PendingMessagesMutex);
-		if (PendingMessages.Num() == 0)
+		return;
+	}
+	TGuardValue<bool> TickGuard(bTicking, true);
+	const uint64 Generation = ConnectionGeneration;
+	FIncomingEvent Event;
+	while (IncomingEvents.RemoveAndCopyValue(NextReleaseId, Event))
+	{
+		++NextReleaseId;
+		if (Event.bFailure)
 		{
-			//nothing to process, return early
-			return;
+			ConnectionLost(Event.Error, Event.bTerminal, Event.bAuth, Event.bSessionBusy);
 		}
-		//move pending messages to local array for processing
-		Local = MoveTemp(PendingMessages);
-		PendingMessages.Empty();
+		else
+		{
+			PreprocessedTableData = MoveTemp(Event.TableData);
+			try
+			{
+				ProcessServerMessage(Event.Message);
+			}
+			catch (const std::exception&)
+			{
+				HandleProtocolViolation(TEXT("Invalid server message or row data"));
+			}
+		}
+		if (bEnded || ConnectionGeneration != Generation)
+		{
+			break;
+		}
 	}
-
-	//process all messages in the local array
-	for (const FServerMessageType& Msg : Local)
-	{
-		//process the message, this will call DbUpdate or trigger subscription events as needed
-		ProcessServerMessage(Msg);
-	}
+	AdvanceReconnect();
 }
 
 bool UDbConnectionBase::OnTickerTick(float DeltaTime)
@@ -295,124 +344,176 @@ bool UDbConnectionBase::OnTickerTick(float DeltaTime)
 	return true;
 }
 
-
 void UDbConnectionBase::ProcessServerMessage(const FServerMessageType& Message)
 {
+	if (bEnded)
+	{
+		return;
+	}
+	if (!bEstablished && Message.Tag != EServerMessageTag::InitialConnection)
+	{
+		HandleProtocolViolation(TEXT("Expected InitialConnection before data messages"));
+		return;
+	}
 	switch (Message.Tag)
 	{
-	case EServerMessageTag::InitialConnection:
-	{
-		const FInitialConnectionType Payload = Message.GetAsInitialConnection();
-		Token = Payload.Token;
-		UCredentials::SaveToken(Token);
-		Identity = Payload.Identity;
-		bIsIdentitySet = true;
-		ConnectionId = Payload.ConnectionId;
-		if (OnConnectBaseDelegate.IsBound())
+		case EServerMessageTag::InitialConnection:
 		{
-			OnConnectBaseDelegate.Execute(this, Identity, Token);
-		}
-		break;
-	}
-	case EServerMessageTag::TransactionUpdate:
-	{
-		const FTransactionUpdateType Payload = Message.GetAsTransactionUpdate();
-		const FDatabaseUpdateType Update = TransactionUpdateToDatabaseUpdate(Payload);
-		DbUpdate(Update, FSpacetimeDBEvent::Transaction(FSpacetimeDBUnit()));
-		break;
-	}
-	case EServerMessageTag::OneOffQueryResult:
-	{
-		// One-off query results are request/response only and do not mutate cache by default.
-		break;
-	}
-	case EServerMessageTag::SubscribeApplied:
-	{
-		const FSubscribeAppliedType Payload = Message.GetAsSubscribeApplied();
-		const FDatabaseUpdateType Update = QueryRowsToDatabaseUpdate(Payload.Rows, false);
-		DbUpdate(Update, FSpacetimeDBEvent::SubscribeApplied(FSpacetimeDBUnit()));
-
-		if (TObjectPtr<USubscriptionHandleBase>* HandlePtr = ActiveSubscriptions.Find(Payload.QuerySetId.Id))
-		{
-			TObjectPtr<USubscriptionHandleBase> Handle = *HandlePtr;
-			if (!Handle)
+			const FInitialConnectionType Payload = Message.GetAsInitialConnection();
+			if (bEstablished || (bIsIdentitySet && Identity != Payload.Identity))
 			{
-				UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("SubscribeApplied: Null handle for QuerySetId %u."), Payload.QuerySetId.Id);
+				HandleProtocolViolation(bEstablished ? TEXT("Duplicate InitialConnection")
+				                                     : TEXT("Reconnect returned a different identity"));
 				return;
 			}
-			FSubscriptionEventContextBase Ctx;
-			Ctx.Event = FSpacetimeDBEvent::SubscribeApplied(FSpacetimeDBUnit());
-			Handle->TriggerApplied(Ctx);
-		}
-		break;
-	}
-	case EServerMessageTag::UnsubscribeApplied:
-	{
-		const FUnsubscribeAppliedType Payload = Message.GetAsUnsubscribeApplied();
-		if (Payload.Rows.IsSet())
-		{
-			const FDatabaseUpdateType Update = QueryRowsToDatabaseUpdate(Payload.Rows.Value, true);
-			DbUpdate(Update, FSpacetimeDBEvent::UnsubscribeApplied(FSpacetimeDBUnit()));
-		}
-
-		if (TObjectPtr<USubscriptionHandleBase>* HandlePtr = ActiveSubscriptions.Find(Payload.QuerySetId.Id))
-		{
-			TObjectPtr<USubscriptionHandleBase> Handle = *HandlePtr;
-			if (!Handle)
+			const bool bWasReconnecting = bReconnecting;
+			Token = Payload.Token;
+			// Keep the SDK's existing persistence behavior; reconnects always reuse this token in memory.
+			UCredentials::SaveToken(Token);
+			Identity = Payload.Identity;
+			bIsIdentitySet = true;
+			ConnectionId = Payload.ConnectionId;
+			bEstablished = true;
+			bAttemptPending = false;
+			bReconnecting = false;
+			ReconnectAttempt = 0;
+			bPreparingReplay = bWasReconnecting;
+			const uint64 Generation = ConnectionGeneration;
+			if (bWasReconnecting)
 			{
-				UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("UnsubscribeApplied: Null handle for QuerySetId %u."), Payload.QuerySetId.Id);
+				OnAutomaticReconnectBaseDelegate.ExecuteIfBound(this, Identity, Token);
+			}
+			else
+			{
+				OnConnectBaseDelegate.ExecuteIfBound(this, Identity, Token);
+			}
+			if (bEnded || ConnectionGeneration != Generation)
+			{
+				break;
+			}
+			if (bWasReconnecting)
+			{
+				ReplaySubscriptions();
+			}
+			else
+			{
+				// Subscriptions made before the connection was established.
+				const TArray<uint32> Queued = MoveTemp(QueuedSubscriptions);
+				QueuedSubscriptions.Empty();
+				for (const uint32 QuerySetId : Queued)
+				{
+					const TObjectPtr<USubscriptionHandleBase>* Found = ActiveSubscriptions.Find(QuerySetId);
+					if (Found && *Found && !(*Found)->bEnded && !(*Found)->bUnsubscribeCalled)
+					{
+						SendSubscribe(*Found);
+					}
+				}
+			}
+			break;
+		}
+		case EServerMessageTag::SubscribeBatchApplied:
+			ApplyReplay(Message.GetAsSubscribeBatchApplied());
+			break;
+		case EServerMessageTag::TransactionUpdate:
+		{
+			const FTransactionUpdateType Payload = Message.GetAsTransactionUpdate();
+			const FDatabaseUpdateType Update = TransactionUpdateToDatabaseUpdate(Payload);
+			DbUpdate(Update, FSpacetimeDBEvent::Transaction(FSpacetimeDBUnit()));
+			break;
+		}
+		case EServerMessageTag::OneOffQueryResult:
+		{
+			// One-off query results are request/response only and do not mutate cache by default.
+			break;
+		}
+		case EServerMessageTag::SubscribeApplied:
+		{
+			const FSubscribeAppliedType Payload = Message.GetAsSubscribeApplied();
+			const FDatabaseUpdateType Update = QueryRowsToDatabaseUpdate(Payload.Rows, false);
+			DbUpdate(Update, FSpacetimeDBEvent::SubscribeApplied(FSpacetimeDBUnit()));
+
+			if (TObjectPtr<USubscriptionHandleBase>* HandlePtr = ActiveSubscriptions.Find(Payload.QuerySetId.Id))
+			{
+				TObjectPtr<USubscriptionHandleBase> Handle = *HandlePtr;
+				if (!Handle)
+				{
+					UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("SubscribeApplied: Null handle for QuerySetId %u."),
+					       Payload.QuerySetId.Id);
+					return;
+				}
+				FSubscriptionEventContextBase Ctx;
+				Ctx.Event = FSpacetimeDBEvent::SubscribeApplied(FSpacetimeDBUnit());
+				Handle->TriggerApplied(Ctx);
+			}
+			break;
+		}
+		case EServerMessageTag::UnsubscribeApplied:
+		{
+			const FUnsubscribeAppliedType Payload = Message.GetAsUnsubscribeApplied();
+			if (Payload.Rows.IsSet())
+			{
+				const FDatabaseUpdateType Update = QueryRowsToDatabaseUpdate(Payload.Rows.Value, true);
+				DbUpdate(Update, FSpacetimeDBEvent::UnsubscribeApplied(FSpacetimeDBUnit()));
+			}
+
+			if (TObjectPtr<USubscriptionHandleBase>* HandlePtr = ActiveSubscriptions.Find(Payload.QuerySetId.Id))
+			{
+				TObjectPtr<USubscriptionHandleBase> Handle = *HandlePtr;
+				if (!Handle)
+				{
+					UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("UnsubscribeApplied: Null handle for QuerySetId %u."),
+					       Payload.QuerySetId.Id);
+					return;
+				}
+				Handle->bEnded = true;
+				Handle->bActive = false;
+				Handle->bUnsubscribeCalled = true;
+				FSubscriptionEventContextBase Ctx;
+				Ctx.Event = FSpacetimeDBEvent::UnsubscribeApplied(FSpacetimeDBUnit());
+				if (Handle->EndDelegate.IsBound())
+				{
+					Handle->EndDelegate.Execute(Ctx);
+				}
+				ActiveSubscriptions.Remove(Payload.QuerySetId.Id);
+			}
+			break;
+		}
+		case EServerMessageTag::SubscriptionError:
+		{
+			const FSubscriptionErrorType Payload = Message.GetAsSubscriptionError();
+			UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("SubscriptionError received for QuerySetId=%u Error=%s"),
+			       Payload.QuerySetId.Id, *Payload.Error);
+			if (TObjectPtr<USubscriptionHandleBase>* HandlePtr = ActiveSubscriptions.Find(Payload.QuerySetId.Id))
+			{
+				TObjectPtr<USubscriptionHandleBase> Handle = *HandlePtr;
+				if (!Handle)
+				{
+					UE_LOG(LogSpacetimeDb_Connection, Error,
+					       TEXT("SubscriptionError: Null handle for QuerySetId %u. Error: %s"), Payload.QuerySetId.Id,
+					       *Payload.Error);
+					return;
+				}
+				FErrorContextBase Ctx;
+				Ctx.Error = Payload.Error;
+				ActiveSubscriptions.Remove(Payload.QuerySetId.Id);
+				Handle->TriggerError(Ctx);
+			}
+			break;
+		}
+		case EServerMessageTag::ReducerResult:
+		{
+			const FReducerResultType Payload = Message.GetAsReducerResult();
+			const FReducerCallInfoType* FoundReducerCall = PendingReducerCalls.Find(Payload.RequestId);
+			if (!FoundReducerCall)
+			{
+				const FString ErrorMessage =
+				    FString::Printf(TEXT("Reducer result for unknown request_id %u"), Payload.RequestId);
+				HandleProtocolViolation(ErrorMessage);
 				return;
 			}
-			Handle->bEnded = true;
-			Handle->bActive = false;
-			Handle->bUnsubscribeCalled = true;
-			FSubscriptionEventContextBase Ctx;
-			Ctx.Event = FSpacetimeDBEvent::UnsubscribeApplied(FSpacetimeDBUnit());
-			if (Handle->EndDelegate.IsBound())
-			{
-				Handle->EndDelegate.Execute(Ctx);
-			}
-			ActiveSubscriptions.Remove(Payload.QuerySetId.Id);
-		}
-		break;
-	}
-	case EServerMessageTag::SubscriptionError:
-	{
-		const FSubscriptionErrorType Payload = Message.GetAsSubscriptionError();
-		UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("SubscriptionError received for QuerySetId=%u Error=%s"),
-			Payload.QuerySetId.Id,
-			*Payload.Error);
-		if (TObjectPtr<USubscriptionHandleBase>* HandlePtr = ActiveSubscriptions.Find(Payload.QuerySetId.Id))
-		{
-			TObjectPtr<USubscriptionHandleBase> Handle = *HandlePtr;
-			if (!Handle)
-			{
-				UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("SubscriptionError: Null handle for QuerySetId %u. Error: %s"),
-					Payload.QuerySetId.Id,
-					*Payload.Error);
-				return;
-			}
-			FErrorContextBase Ctx; Ctx.Error = Payload.Error;
-			Handle->TriggerError(Ctx);
-			ActiveSubscriptions.Remove(Payload.QuerySetId.Id);
-		}
-		break;
-	}
-	case EServerMessageTag::ReducerResult:
-	{
-		const FReducerResultType Payload = Message.GetAsReducerResult();
-		const FReducerCallInfoType* FoundReducerCall = PendingReducerCalls.Find(Payload.RequestId);
-		if (!FoundReducerCall)
-		{
-			const FString ErrorMessage = FString::Printf(
-				TEXT("Reducer result for unknown request_id %u"),
-				Payload.RequestId);
-			HandleProtocolViolation(ErrorMessage);
-			return;
-		}
 
-		const FReducerCallInfoType ReducerCall = *FoundReducerCall;
-		PendingReducerCalls.Remove(Payload.RequestId);
+			const FReducerCallInfoType ReducerCall = *FoundReducerCall;
+			PendingReducerCalls.Remove(Payload.RequestId);
 
 			FReducerEvent RedEvent;
 			RedEvent.RequestId = Payload.RequestId;
@@ -421,80 +522,72 @@ void UDbConnectionBase::ProcessServerMessage(const FServerMessageType& Message)
 			RedEvent.CallerConnectionId = ConnectionId;
 			RedEvent.ReducerCall = ReducerCall;
 
-		if (Payload.Result.IsOk())
-		{
-			RedEvent.Status = FSpacetimeDBStatus::Committed(FSpacetimeDBUnit());
-			const FReducerOkType Ok = Payload.Result.GetAsOk();
-			const FDatabaseUpdateType Update = TransactionUpdateToDatabaseUpdate(Ok.TransactionUpdate);
-			DbUpdate(Update, FSpacetimeDBEvent::Reducer(RedEvent));
-			ReducerEvent(RedEvent);
-		}
-		else if (Payload.Result.IsOkEmpty())
-		{
-			RedEvent.Status = FSpacetimeDBStatus::Committed(FSpacetimeDBUnit());
-			ReducerEvent(RedEvent);
-		}
-		else
-		{
-			FString ErrorMessage;
-			if (Payload.Result.IsErr())
+			if (Payload.Result.IsOk())
 			{
-				ErrorMessage = DecodeReducerErrorMessage(Payload.Result.GetAsErr());
+				RedEvent.Status = FSpacetimeDBStatus::Committed(FSpacetimeDBUnit());
+				const FReducerOkType Ok = Payload.Result.GetAsOk();
+				const FDatabaseUpdateType Update = TransactionUpdateToDatabaseUpdate(Ok.TransactionUpdate);
+				DbUpdate(Update, FSpacetimeDBEvent::Reducer(RedEvent));
+				ReducerEvent(RedEvent);
+			}
+			else if (Payload.Result.IsOkEmpty())
+			{
+				RedEvent.Status = FSpacetimeDBStatus::Committed(FSpacetimeDBUnit());
+				ReducerEvent(RedEvent);
 			}
 			else
 			{
-				ErrorMessage = Payload.Result.GetAsInternalError();
+				FString ErrorMessage;
+				if (Payload.Result.IsErr())
+				{
+					ErrorMessage = DecodeReducerErrorMessage(Payload.Result.GetAsErr());
+				}
+				else
+				{
+					ErrorMessage = Payload.Result.GetAsInternalError();
+				}
+				RedEvent.Status = FSpacetimeDBStatus::Failed(ErrorMessage);
+				ReducerEvent(RedEvent);
+				ReducerEventFailed(RedEvent, ErrorMessage);
 			}
-			RedEvent.Status = FSpacetimeDBStatus::Failed(ErrorMessage);
-			ReducerEvent(RedEvent);
-			ReducerEventFailed(RedEvent, ErrorMessage);
+			break;
 		}
-		break;
-	}
-	case EServerMessageTag::ProcedureResult:
-	{
-		const FProcedureResultType Payload = Message.GetAsProcedureResult();
-		FProcedureEvent ProcEvent;
-		ProcEvent.Status = Payload.Status;
-		ProcEvent.Timestamp = Payload.Timestamp;
-		ProcEvent.TotalHostExecutionDuration = Payload.TotalHostExecutionDuration;
-		ProcEvent.Success = ProcEvent.Status.IsReturned();
+		case EServerMessageTag::ProcedureResult:
+		{
+			const FProcedureResultType Payload = Message.GetAsProcedureResult();
+			FProcedureEvent ProcEvent;
+			ProcEvent.Status = Payload.Status;
+			ProcEvent.Timestamp = Payload.Timestamp;
+			ProcEvent.TotalHostExecutionDuration = Payload.TotalHostExecutionDuration;
+			ProcEvent.Success = ProcEvent.Status.IsReturned();
 
-		TArray<uint8> PayloadData;
-		FString ErrorMessage;
-		if (ProcEvent.Success)
-		{
-			PayloadData = ProcEvent.Status.GetAsReturned();
-		}
-		else if (Payload.Status.IsInternalError())
-		{
-			ErrorMessage = Payload.Status.GetAsInternalError();
-		}
+			TArray<uint8> PayloadData;
+			FString ErrorMessage;
+			if (ProcEvent.Success)
+			{
+				PayloadData = ProcEvent.Status.GetAsReturned();
+			}
+			else if (Payload.Status.IsInternalError())
+			{
+				ErrorMessage = Payload.Status.GetAsInternalError();
+			}
 
-		const bool bResolved = ProcedureCallbacks->ResolveCallback(
-			Payload.RequestId,
-			FSpacetimeDBEvent::Procedure(ProcEvent),
-			PayloadData,
-			ProcEvent.Success
-		);
-		if (!bResolved)
-		{
-			UE_LOG(
-				LogSpacetimeDb_Connection,
-				Warning,
-				TEXT("Received ProcedureResult for unknown request ID: %u"),
-				Payload.RequestId
-			);
+			const bool bResolved = ProcedureCallbacks->ResolveCallback(
+			    Payload.RequestId, FSpacetimeDBEvent::Procedure(ProcEvent), PayloadData, ProcEvent.Success);
+			if (!bResolved)
+			{
+				UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("Received ProcedureResult for unknown request ID: %u"),
+				       Payload.RequestId);
+			}
+			if (!ProcEvent.Success)
+			{
+				ProcedureEventFailed(ProcEvent, ErrorMessage);
+			}
+			break;
 		}
-		if (!ProcEvent.Success)
-		{
-			ProcedureEventFailed(ProcEvent, ErrorMessage);
-		}
-		break;
-	}
-	default:
-		UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("Unknown server-message tag"));
-		break;
+		default:
+			UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("Unknown server-message tag"));
+			break;
 	}
 }
 
@@ -533,67 +626,117 @@ bool UDbConnectionBase::DecompressPayload(uint8 Variant, const TArray<uint8>& In
 {
 	switch (static_cast<EWsCompressionTag>(Variant))
 	{
-	case EWsCompressionTag::Uncompressed:
-		// No compression, just copy the data
-		Out = In;
-		return true;
-	case EWsCompressionTag::Brotli:
-		return DecompressBrotli(In, Out);
-	case EWsCompressionTag::Gzip:
-		return DecompressGzip(In, Out);
-	default:
-		UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("Unknown compression variant"));
-		return false;
+		case EWsCompressionTag::Uncompressed:
+			// No compression, just copy the data
+			Out = In;
+			return true;
+		case EWsCompressionTag::Brotli:
+			return DecompressBrotli(In, Out);
+		case EWsCompressionTag::Gzip:
+			return DecompressGzip(In, Out);
+		default:
+			UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("Unknown compression variant"));
+			return false;
 	}
 }
 
 void UDbConnectionBase::ClearPendingOperations(const FString& Reason)
 {
+	auto Calls = MoveTemp(PendingReducerCalls);
 	PendingReducerCalls.Empty();
+	if (bAutomaticReconnect)
+	{
+		for (const auto& Pair : Calls)
+		{
+			FReducerEvent Event;
+			Event.RequestId = Pair.Key;
+			Event.ReducerCall = Pair.Value;
+			Event.CallerIdentity = Identity;
+			Event.CallerConnectionId = ConnectionId;
+			Event.Status = FSpacetimeDBStatus::Failed(Reason);
+			Event.CallError = ESpacetimeDBCallError::UnknownResult;
+			ReducerEvent(Event);
+			ReducerEventFailed(Event, Reason);
+		}
+	}
 	if (ProcedureCallbacks)
 	{
-		ProcedureCallbacks->ClearAllCallbacks();
-	}
-	if (!Reason.IsEmpty())
-	{
-		UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("Cleared pending operations due to connection issue: %s"), *Reason);
-	}
-}
-
-void UDbConnectionBase::PreProcessDatabaseUpdate(const FDatabaseUpdateType& Update)
-{
-	for (const FTableUpdateType& TableUpdate : Update.Tables)
-	{
-		// Attempt to deserialize rows after payload decode.
-		TSharedPtr<UE::SpacetimeDB::ITableRowDeserializer> Deserializer;
+		if (bAutomaticReconnect)
 		{
-			// Find the deserializer for this table
-			FScopeLock Lock(&TableDeserializersMutex);
-			if (TSharedPtr<UE::SpacetimeDB::ITableRowDeserializer>* Found = TableDeserializers.Find(TableUpdate.TableName))
-			{
-				// If found, use the deserializer
-				Deserializer = *Found;
-			}
-			else
-			{
-				UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("No deserializer found for table %s"), *TableUpdate.TableName);
-			}
-		}
-		if (Deserializer)
-		{
-			TSharedPtr<UE::SpacetimeDB::FPreprocessedTableDataBase> Data = Deserializer->PreProcess(TableUpdate.Rows, TableUpdate.TableName);
-			if (Data.IsValid())
-			{
-				FScopeLock Lock(&PreprocessedDataMutex);
-				FPreprocessedTableKey Key(TableUpdate.TableName);
-				TArray<TSharedPtr<UE::SpacetimeDB::FPreprocessedTableDataBase>>& Queue = PreprocessedTableData.FindOrAdd(Key);
-				Queue.Add(Data);
-			}
+			FProcedureEvent Event;
+			Event.CallError = ESpacetimeDBCallError::UnknownResult;
+			Event.Status = FProcedureStatusType::InternalError(Reason);
+			ProcedureCallbacks->FailAllCallbacks(FSpacetimeDBEvent::Procedure(Event));
 		}
 		else
 		{
-			UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("Skipping table %s updates due to missing deserializer"), *TableUpdate.TableName);
+			ProcedureCallbacks->ClearAllCallbacks();
 		}
+	}
+
+	if (!Reason.IsEmpty())
+	{
+		UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("Cleared pending operations due to connection issue: %s"),
+		       *Reason);
+	}
+}
+
+void UDbConnectionBase::PreProcessDatabaseUpdate(const FDatabaseUpdateType& Update,
+                                                 const FDeserializerMap& Deserializers, FTableDataMap& Out)
+{
+	for (const FTableUpdateType& TableUpdate : Update.Tables)
+	{
+		const auto* Found = Deserializers.Find(TableUpdate.TableName);
+		if (!Found)
+		{
+			// Bindings older than the module: skip the table rather than drop the connection.
+			UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("No deserializer found for table %s"), *TableUpdate.TableName);
+			continue;
+		}
+		auto Data = (*Found)->PreProcess(TableUpdate.Rows, TableUpdate.TableName);
+		if (!Data.IsValid())
+		{
+			throw std::runtime_error("Invalid table update");
+		}
+		Out.FindOrAdd(FPreprocessedTableKey(TableUpdate.TableName)).Add(MoveTemp(Data));
+	}
+}
+
+void UDbConnectionBase::PreProcessServerMessage(const FServerMessageType& Message,
+                                                const FDeserializerMap& Deserializers, FTableDataMap& Out)
+{
+	switch (Message.Tag)
+	{
+		case EServerMessageTag::SubscribeApplied:
+			PreProcessDatabaseUpdate(QueryRowsToDatabaseUpdate(Message.GetAsSubscribeApplied().Rows, false),
+			                         Deserializers, Out);
+			break;
+		case EServerMessageTag::UnsubscribeApplied:
+			if (Message.GetAsUnsubscribeApplied().Rows.IsSet())
+			{
+				PreProcessDatabaseUpdate(QueryRowsToDatabaseUpdate(Message.GetAsUnsubscribeApplied().Rows.Value, true),
+				                         Deserializers, Out);
+			}
+			break;
+		case EServerMessageTag::TransactionUpdate:
+			PreProcessDatabaseUpdate(TransactionUpdateToDatabaseUpdate(Message.GetAsTransactionUpdate()),
+			                         Deserializers, Out);
+			break;
+		case EServerMessageTag::ReducerResult:
+			if (Message.GetAsReducerResult().Result.IsOk())
+			{
+				PreProcessDatabaseUpdate(
+				    TransactionUpdateToDatabaseUpdate(Message.GetAsReducerResult().Result.GetAsOk().TransactionUpdate),
+				    Deserializers, Out);
+			}
+			break;
+		case EServerMessageTag::SubscribeBatchApplied:
+			// Only the replayed inserts; ApplyReplay adds deletes for the cached rows on the game thread.
+			PreProcessDatabaseUpdate(ReplayInsertsToDatabaseUpdate(Message.GetAsSubscribeBatchApplied()), Deserializers,
+			                         Out);
+			break;
+		default:
+			break;
 	}
 }
 
@@ -620,45 +763,8 @@ bool UDbConnectionBase::PreProcessMessage(const TArray<uint8>& Message, FServerM
 	// Deserialize the decompressed data into a UServerMessageType object
 	OutMessage = UE::SpacetimeDB::Deserialize<FServerMessageType>(Decompressed);
 
-	// Preprocess row-bearing payloads for table deserializers.
-	switch (OutMessage.Tag)
-	{
-		case EServerMessageTag::SubscribeApplied:
-		{
-			const FSubscribeAppliedType Payload = OutMessage.GetAsSubscribeApplied();
-			PreProcessDatabaseUpdate(QueryRowsToDatabaseUpdate(Payload.Rows, false));
-			break;
-		}
-		case EServerMessageTag::UnsubscribeApplied:
-		{
-			const FUnsubscribeAppliedType Payload = OutMessage.GetAsUnsubscribeApplied();
-			if (Payload.Rows.IsSet())
-			{
-				PreProcessDatabaseUpdate(QueryRowsToDatabaseUpdate(Payload.Rows.Value, true));
-			}
-			break;
-		}
-		case EServerMessageTag::TransactionUpdate:
-		{
-			const FTransactionUpdateType Payload = OutMessage.GetAsTransactionUpdate();
-			PreProcessDatabaseUpdate(TransactionUpdateToDatabaseUpdate(Payload));
-			break;
-		}
-		case EServerMessageTag::ReducerResult:
-		{
-			const FReducerResultType Payload = OutMessage.GetAsReducerResult();
-			if (Payload.Result.IsOk())
-			{
-				PreProcessDatabaseUpdate(TransactionUpdateToDatabaseUpdate(Payload.Result.GetAsOk().TransactionUpdate));
-			}
-			break;
-		}
-		default:
-			break;
-	}
 	return true;
 }
-
 
 uint32 UDbConnectionBase::GetNextRequestId()
 {
@@ -683,20 +789,45 @@ void UDbConnectionBase::StartSubscription(USubscriptionHandleBase* Handle)
 		UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("StartSubscription called with empty query list"));
 		return;
 	}
-	
+
 	const uint32 QuerySetId = GetNextSubscriptionId();
 	Handle->QuerySetId = QuerySetId;
 	Handle->ConnInternal = this;
 	ActiveSubscriptions.Add(QuerySetId, Handle);
 
+	if (bEnded)
+	{
+		ActiveSubscriptions.Remove(QuerySetId);
+		FErrorContextBase Context;
+		Context.Error = TEXT("Disconnected");
+		Handle->TriggerError(Context);
+		return;
+	}
+	if (bReconnecting || bPreparingReplay)
+	{
+		return;
+	}
+	if (!bEstablished)
+	{
+		QueuedSubscriptions.Add(QuerySetId);
+		return;
+	}
+	SendSubscribe(Handle);
+}
+
+void UDbConnectionBase::SendSubscribe(USubscriptionHandleBase* Handle)
+{
 	FSubscribeType SubMsg;
 	SubMsg.RequestId = GetNextRequestId();
-	SubMsg.QuerySetId.Id = QuerySetId;
+	SubMsg.QuerySetId.Id = Handle->QuerySetId;
 	SubMsg.QueryStrings = Handle->QuerySqls;
 
 	FClientMessageType Msg = FClientMessageType::Subscribe(SubMsg);
 	TArray<uint8> Data = UE::SpacetimeDB::Serialize(Msg);
-	SendRawMessage(Data);
+	if (!SendRawMessage(Data))
+	{
+		QueueFailure(TEXT("Disconnected while subscribing"), false);
+	}
 }
 
 void UDbConnectionBase::UnsubscribeInternal(USubscriptionHandleBase* Handle)
@@ -706,6 +837,12 @@ void UDbConnectionBase::UnsubscribeInternal(USubscriptionHandleBase* Handle)
 		return;
 	}
 
+	// Nothing was sent for this set on the current socket, so end it locally.
+	if (bEnded || !bEstablished || bReconnecting || bPreparingReplay)
+	{
+		EndSubscription(Handle);
+		return;
+	}
 	const uint32 QuerySetId = Handle->QuerySetId;
 	FUnsubscribeType MsgData;
 	MsgData.RequestId = GetNextRequestId();
@@ -714,14 +851,30 @@ void UDbConnectionBase::UnsubscribeInternal(USubscriptionHandleBase* Handle)
 
 	FClientMessageType Msg = FClientMessageType::Unsubscribe(MsgData);
 	TArray<uint8> Data = UE::SpacetimeDB::Serialize(Msg);
-	SendRawMessage(Data);
+	if (!SendRawMessage(Data))
+	{
+		QueueFailure(TEXT("Connection lost while sending a request"), false);
+	}
 }
 
 uint32 UDbConnectionBase::InternalCallReducer(const FString& Reducer, TArray<uint8> Args)
 {
-	if (!WebSocket || !WebSocket->IsConnected())
+	if (!CanSendCalls())
 	{
 		UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("Cannot call reducer, not connected to server!"));
+		if (bAutomaticReconnect)
+		{
+			// Matches C#/TS rejecting the call. Not routed through ReducerEvent: no request id was
+			// assigned, so generated bindings have no typed reducer to match it against.
+			FReducerEvent Event;
+			Event.ReducerCall.ReducerName = Reducer;
+			Event.ReducerCall.Args = MoveTemp(Args);
+			Event.CallerIdentity = Identity;
+			Event.CallerConnectionId = ConnectionId;
+			Event.Status = FSpacetimeDBStatus::Failed(TEXT("Disconnected"));
+			Event.CallError = ESpacetimeDBCallError::Disconnected;
+			ReducerEventFailed(Event, TEXT("Disconnected"));
+		}
 		return 0;
 	}
 
@@ -738,15 +891,22 @@ uint32 UDbConnectionBase::InternalCallReducer(const FString& Reducer, TArray<uin
 
 	FClientMessageType Msg = FClientMessageType::CallReducer(MsgData);
 	TArray<uint8> Data = UE::SpacetimeDB::Serialize(Msg);
-	SendRawMessage(Data);
+	if (!SendRawMessage(Data))
+	{
+		QueueFailure(TEXT("Connection lost while sending a reducer"), false);
+	}
 	return MsgData.RequestId;
 }
 
-void UDbConnectionBase::InternalCallProcedure(const FString& ProcedureName, TArray<uint8> Args, const FOnProcedureCompleteDelegate& Callback)
+void UDbConnectionBase::InternalCallProcedure(const FString& ProcedureName, TArray<uint8> Args,
+                                              const FOnProcedureCompleteDelegate& Callback)
 {
-	if (!WebSocket || !WebSocket->IsConnected())
+	if (!CanSendCalls())
 	{
-		UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("Cannot call proceduer, not connected to server!"));
+		FProcedureEvent Event;
+		Event.Status = FProcedureStatusType::InternalError(TEXT("Disconnected"));
+		Event.CallError = ESpacetimeDBCallError::Disconnected;
+		Callback.ExecuteIfBound(FSpacetimeDBEvent::Procedure(Event), TArray<uint8>(), false);
 		return;
 	}
 	FCallProcedureType MsgData;
@@ -757,7 +917,10 @@ void UDbConnectionBase::InternalCallProcedure(const FString& ProcedureName, TArr
 
 	FClientMessageType Msg = FClientMessageType::CallProcedure(MsgData);
 	TArray<uint8> Data = UE::SpacetimeDB::Serialize(Msg);
-	SendRawMessage(Data);
+	if (!SendRawMessage(Data))
+	{
+		QueueFailure(TEXT("Connection lost while sending a request"), false);
+	}
 }
 
 void UDbConnectionBase::ApplyRegisteredTableUpdates(const FDatabaseUpdateType& Update, void* Context)
@@ -782,10 +945,377 @@ void UDbConnectionBase::ApplyRegisteredTableUpdates(const FDatabaseUpdateType& U
 			Handlers.Add(Handler);
 		}
 	}
-	
+
 	for (TSharedPtr<ITableUpdateHandler>& Handler : Handlers)
 	{
 		// Broadcast the diff for each handler
 		Handler->BroadcastDiff(this, Context);
+	}
+}
+
+void UDbConnectionBase::ResetTransport()
+{
+	++ConnectionGeneration; // Invalidate parses and credential completions from this socket attempt.
+	if (TokenRequest)
+	{
+		TokenRequest->Completion = nullptr;
+		TokenRequest = nullptr;
+	}
+	if (TokenValidation)
+	{
+		TokenValidation->OnProcessRequestComplete().Unbind();
+		TokenValidation->CancelRequest();
+		TokenValidation.Reset();
+	}
+	if (WebSocket)
+	{
+		WebSocket->OnConnectionError.RemoveAll(this);
+		WebSocket->OnClosed.RemoveAll(this);
+		WebSocket->OnBinaryMessageReceived.RemoveAll(this);
+		WebSocket->Disconnect();
+		WebSocket = nullptr;
+	}
+	IncomingEvents.Empty();
+	NextIncomingId = NextReleaseId = 0;
+	PreprocessedTableData.Empty();
+	ReplayRequestId = 0;
+	ReplayQueryIds.Empty();
+	bPreparingReplay = false;
+	QueuedSubscriptions.Empty();
+}
+
+void UDbConnectionBase::StartSocket()
+{
+	// The initial connection is never retried, so it gains nothing from the check below.
+	if (!bReconnecting || Token.IsEmpty())
+	{
+		OpenSocket();
+		return;
+	}
+	// IWebSocket does not reliably expose HTTP upgrade status codes (notably on
+	// Windows). Validate credentials through the same endpoint the browser SDK
+	// uses, so a rejected token can trigger refresh or terminate on every backend.
+	// Any other outcome (proxy without this route, server error) falls through to the socket.
+	FString HttpUri = Uri;
+	if (HttpUri.StartsWith(TEXT("wss://")))
+	{
+		HttpUri = TEXT("https://") + HttpUri.Mid(6);
+	}
+	else if (HttpUri.StartsWith(TEXT("ws://")))
+	{
+		HttpUri = TEXT("http://") + HttpUri.Mid(5);
+	}
+	TokenValidation = FHttpModule::Get().CreateRequest();
+	TokenValidation->SetURL(HttpUri + TEXT("/v1/identity/websocket-token"));
+	TokenValidation->SetVerb(TEXT("POST"));
+	TokenValidation->SetDelegateThreadPolicy(EHttpRequestDelegateThreadPolicy::CompleteOnGameThread);
+	TokenValidation->SetHeader(TEXT("Authorization"), TEXT("Bearer ") + Token);
+	const uint64 Generation = ConnectionGeneration;
+	TWeakObjectPtr<UDbConnectionBase> WeakThis(this);
+	TokenValidation->OnProcessRequestComplete().BindLambda(
+	    [WeakThis, Generation](FHttpRequestPtr, FHttpResponsePtr Response, bool bSuccess)
+	    {
+		    if (!WeakThis.IsValid() || WeakThis->bEnded || WeakThis->ConnectionGeneration != Generation)
+		    {
+			    return;
+		    }
+		    auto* Conn = WeakThis.Get();
+		    Conn->TokenValidation.Reset();
+		    const int32 Status = bSuccess && Response.IsValid() ? Response->GetResponseCode() : 0;
+		    if (Status == 400 || Status == 401 || Status == 403)
+		    {
+			    Conn->QueueFailure(FString::Printf(TEXT("Token rejected (HTTP %d)"), Status), false, true);
+		    }
+		    else
+		    {
+			    Conn->OpenSocket();
+		    }
+	    });
+	if (!TokenValidation->ProcessRequest())
+	{
+		TokenValidation.Reset();
+		OpenSocket();
+	}
+}
+
+void UDbConnectionBase::OpenSocket()
+{
+	WebSocket = NewObject<UWebsocketManager>(this);
+	WebSocket->OnConnectionError.AddDynamic(this, &UDbConnectionBase::HandleWSError);
+	WebSocket->OnClosed.AddDynamic(this, &UDbConnectionBase::HandleWSClosed);
+	WebSocket->OnBinaryMessageReceived.AddDynamic(this, &UDbConnectionBase::HandleWSBinaryMessage);
+	WebSocket->SetInitToken(Token);
+	WebSocket->Connect(WebSocketUrl);
+}
+
+void UDbConnectionBase::ConnectionLost(const FString& Error, bool bTerminal, bool bAuth, bool bSessionBusy)
+{
+	if (bEnded)
+	{
+		return;
+	}
+	const bool bWasEstablished = bEstablished;
+	const bool bRetry = bAutomaticReconnect && bIsIdentitySet && !bTerminal &&
+	                    !(bAuth && (!TokenProvider.IsBound() || bUsedFreshToken));
+	bEstablished = false;
+	bReconnecting = bRetry;
+	bEnded = !bRetry;
+	bAttemptPending = bRetry;
+	bForceTokenRefresh |= bAuth;
+	ResetTransport();
+	const uint64 Generation = ConnectionGeneration;
+	double Delay = 0;
+	if (bRetry)
+	{
+		// A busy session means the server is still tearing down our previous socket: retry
+		// at the base delay without counting it as a failed attempt.
+		const bool bBusy = bSessionBusy && !bWasEstablished;
+		if (!bBusy)
+		{
+			ReconnectAttempt = ReconnectAttempt < MAX_int32 ? ReconnectAttempt + 1 : MAX_int32;
+		}
+		Delay = ReconnectOptions.Delay(bBusy ? 1 : ReconnectAttempt, FMath::FRand());
+		ReconnectAt = FPlatformTime::Seconds() + Delay;
+	}
+	SuspendSubscriptions(!bRetry);
+	ClearPendingOperations(TEXT("Connection lost before the result was received; execution outcome is unknown"));
+	if (ConnectionGeneration != Generation)
+	{
+		return;
+	} // A callback cancelled recovery.
+	if (bWasEstablished)
+	{
+		BroadcastDisconnect(Error, bRetry, bRetry ? ReconnectAttempt : 0, float(Delay));
+	}
+	else
+	{
+		BroadcastConnectError(Error, bRetry, bRetry ? ReconnectAttempt : 0, float(Delay));
+	}
+}
+
+void UDbConnectionBase::BroadcastConnectError(const FString& Error, bool bWillReconnect, int32 Attempt, float Delay)
+{
+	OnConnectErrorDelegate.ExecuteIfBound(Error);
+	OnConnectErrorWithReconnectDelegate.ExecuteIfBound(Error, bWillReconnect, Attempt, Delay);
+}
+
+void UDbConnectionBase::BroadcastDisconnect(const FString& Error, bool bWillReconnect, int32 Attempt, float Delay)
+{
+	OnDisconnectBaseDelegate.ExecuteIfBound(this, Error);
+	OnDisconnectWithReconnectBaseDelegate.ExecuteIfBound(this, Error, bWillReconnect, Attempt, Delay);
+}
+
+bool UDbConnectionBase::TokenNeedsRefresh() const
+{
+	TArray<FString> Parts;
+	Token.ParseIntoArray(Parts, TEXT("."), false);
+	if (Parts.Num() != 3)
+	{
+		return true;
+	}
+	FString Payload = Parts[1].Replace(TEXT("-"), TEXT("+")).Replace(TEXT("_"), TEXT("/"));
+	while (Payload.Len() % 4)
+	{
+		Payload += TEXT("=");
+	}
+	FString Json;
+	if (!FBase64::Decode(Payload, Json))
+	{
+		return true;
+	}
+	TSharedPtr<FJsonObject> Claims;
+	if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), Claims) || !Claims.IsValid())
+	{
+		return true;
+	}
+	double Expiry = 0, Issued = 0;
+	if (!Claims->TryGetNumberField(TEXT("exp"), Expiry) || !FMath::IsFinite(Expiry))
+	{
+		return true;
+	}
+	const bool bHasIssued = Claims->TryGetNumberField(TEXT("iat"), Issued) && FMath::IsFinite(Issued);
+	const double Margin = bHasIssued ? FMath::Max(30.0, (Expiry - Issued) * 0.05) : 30.0;
+	return Expiry - double(FDateTime::UtcNow().ToUnixTimestamp()) <= Margin;
+}
+
+void UDbConnectionBase::AdvanceReconnect()
+{
+	if (bEnded || !bAttemptPending || FPlatformTime::Seconds() < ReconnectAt)
+	{
+		return;
+	}
+	bAttemptPending = false;
+	bUsedFreshToken = false;
+	if (TokenProvider.IsBound() && (bForceTokenRefresh || TokenNeedsRefresh()))
+	{
+		TokenRequest = NewObject<UReconnectTokenRequest>(this);
+		TWeakObjectPtr<UDbConnectionBase> WeakThis(this);
+		const uint64 Generation = ConnectionGeneration;
+		TokenRequest->Completion = [WeakThis, Generation](const FString& NewToken, const FString& Error)
+		{
+			if (!WeakThis.IsValid() || WeakThis->ConnectionGeneration != Generation || WeakThis->bEnded)
+			{
+				return;
+			}
+			// Credential completion may open the socket; lifecycle callbacks run inside FrameTick.
+			auto* Conn = WeakThis.Get();
+			if (!Error.IsEmpty() || NewToken.IsEmpty())
+			{
+				Conn->QueueFailure(Error.IsEmpty() ? TEXT("Token provider returned an empty token") : Error, false);
+				Conn->TokenRequest = nullptr;
+				return;
+			}
+			Conn->Token = NewToken;
+			Conn->bUsedFreshToken = true;
+			Conn->bForceTokenRefresh = false;
+			Conn->TokenRequest = nullptr;
+			Conn->StartSocket();
+		};
+		TokenProvider.Execute(TokenRequest);
+	}
+	else
+	{
+		StartSocket();
+	}
+}
+
+void UDbConnectionBase::EndSubscription(USubscriptionHandleBase* Handle)
+{
+	if (!Handle || Handle->bEnded)
+	{
+		return;
+	}
+	ActiveSubscriptions.Remove(Handle->QuerySetId);
+	Handle->bActive = false;
+	Handle->bEnded = true;
+	FSubscriptionEventContextBase Context;
+	Context.Event = FSpacetimeDBEvent::UnsubscribeApplied(FSpacetimeDBUnit());
+	Handle->EndDelegate.ExecuteIfBound(Context);
+}
+
+void UDbConnectionBase::SuspendSubscriptions(bool bTerminal)
+{
+	TArray<TObjectPtr<USubscriptionHandleBase>> Handles;
+	ActiveSubscriptions.GenerateValueArray(Handles);
+	for (auto Handle : Handles)
+	{
+		if (!Handle)
+		{
+			continue;
+		}
+		Handle->bActive = false;
+		if (bTerminal || Handle->bUnsubscribeCalled)
+		{
+			EndSubscription(Handle);
+		}
+	}
+}
+
+void UDbConnectionBase::ReplaySubscriptions()
+{
+	FSubscribeBatchType Batch;
+	Batch.RequestId = GetNextRequestId();
+	TArray<TObjectPtr<USubscriptionHandleBase>> Handles;
+	ActiveSubscriptions.GenerateValueArray(Handles);
+	ActiveSubscriptions.Empty();
+	for (auto Handle : Handles)
+	{
+		if (!Handle || Handle->bEnded || Handle->bUnsubscribeCalled)
+		{
+			continue;
+		}
+		Handle->QuerySetId = GetNextSubscriptionId();
+		ActiveSubscriptions.Add(Handle->QuerySetId, Handle);
+		FSubscribeSetType Set;
+		Set.QuerySetId.Id = Handle->QuerySetId;
+		Set.QueryStrings = Handle->QuerySqls;
+		Batch.Sets.Add(Set);
+		ReplayQueryIds.Add(Handle->QuerySetId);
+	}
+	ReplayRequestId = Batch.RequestId;
+	bPreparingReplay = false;
+	if (Batch.Sets.IsEmpty())
+	{
+		FSubscribeBatchAppliedType Applied;
+		Applied.RequestId = Batch.RequestId;
+		ApplyReplay(Applied);
+	}
+	else if (!SendRawMessage(UE::SpacetimeDB::Serialize(FClientMessageType::SubscribeBatch(Batch))))
+	{
+		QueueFailure(TEXT("Disconnected while replaying subscriptions"), false);
+	}
+}
+
+void UDbConnectionBase::ApplyReplay(const FSubscribeBatchAppliedType& Batch)
+{
+	if (!ReplayRequestId || Batch.RequestId != ReplayRequestId || Batch.Results.Num() != ReplayQueryIds.Num())
+	{
+		HandleProtocolViolation(TEXT("Unexpected subscription replay response"));
+		return;
+	}
+	for (int32 Index = 0; Index < Batch.Results.Num(); ++Index)
+	{
+		if (Batch.Results[Index].QuerySetId.Id != ReplayQueryIds[Index])
+		{
+			HandleProtocolViolation(TEXT("Mismatched replay query set"));
+			return;
+		}
+	}
+	ReplayRequestId = 0;
+	ReplayQueryIds.Empty();
+	// The worker already decoded the replayed inserts, one entry per table. Reconcile by
+	// deleting every cached reference against them; the deletes reuse the cached rows,
+	// so nothing is decoded on the game thread.
+	FDatabaseUpdateType Update = ReplayInsertsToDatabaseUpdate(Batch);
+	{
+		FScopeLock Lock(&PreprocessedDataMutex);
+		for (const auto& Pair : RegisteredTables)
+		{
+			Pair.Value->AddCachedDeletes(Pair.Key, PreprocessedTableData.FindOrAdd(FPreprocessedTableKey(Pair.Key)));
+			if (!Update.Tables.ContainsByPredicate([&](const FTableUpdateType& Table)
+			                                       { return Table.TableName == Pair.Key; }))
+			{
+				FTableUpdateType Table;
+				Table.TableName = Pair.Key;
+				Update.Tables.Add(Table);
+			}
+		}
+	}
+	const uint64 Generation = ConnectionGeneration;
+	// Apply every table before any row or subscription callback observes the cache.
+	DbUpdate(Update, FSpacetimeDBEvent::SubscribeApplied(FSpacetimeDBUnit()));
+	for (const auto& Result : Batch.Results)
+	{
+		if (bEnded || ConnectionGeneration != Generation)
+		{
+			return;
+		}
+		auto* Found = ActiveSubscriptions.Find(Result.QuerySetId.Id);
+		if (!Found || !*Found)
+		{
+			continue;
+		}
+		auto Handle = *Found;
+		if (Result.Outcome.IsError())
+		{
+			FErrorContextBase Context;
+			Context.Error = Result.Outcome.GetAsError();
+			ActiveSubscriptions.Remove(Result.QuerySetId.Id);
+			Handle->TriggerError(Context);
+		}
+		else
+		{
+			FSubscriptionEventContextBase Context;
+			Context.Event = FSpacetimeDBEvent::SubscribeApplied(FSpacetimeDBUnit());
+			Handle->TriggerApplied(Context);
+		}
+	}
+}
+
+void UDbConnectionBase::AcceptIncomingEvent(uint64 Generation, uint64 Id, FIncomingEvent Event)
+{
+	if (!bEnded && Generation == ConnectionGeneration)
+	{
+		IncomingEvents.Add(Id, MoveTemp(Event));
 	}
 }
