@@ -16,7 +16,6 @@ type Options = {
   listenerWarmupSeconds: number;
   skipBuildPublish: boolean;
   skipCheckoutTrigger: boolean;
-  killExistingStripeListeners: boolean;
 };
 
 type CmdResult = {
@@ -67,7 +66,6 @@ function parseArgs(argv: string[]): Options {
     listenerWarmupSeconds: 3,
     skipBuildPublish: false,
     skipCheckoutTrigger: false,
-    killExistingStripeListeners: false,
   };
 
   const takeValue = (i: number, flag: string) => {
@@ -99,27 +97,18 @@ Options:
   --listener-warmup-seconds <n>
   --skip-build-publish
   --skip-checkout-trigger
-  --kill-existing-stripe-listeners
 `);
       process.exit(0);
     }
 
-    if (flag === 'skipbuildpublish' || flag === 'skip-build-publish') {
+    if (flag === 'skip-build-publish') {
       opts.skipBuildPublish = true;
       continue;
     }
-    if (flag === 'skipcheckouttrigger' || flag === 'skip-checkout-trigger') {
+    if (flag === 'skip-checkout-trigger') {
       opts.skipCheckoutTrigger = true;
       continue;
     }
-    if (
-      flag === 'killexistingstripelisteners' ||
-      flag === 'kill-existing-stripe-listeners'
-    ) {
-      opts.killExistingStripeListeners = true;
-      continue;
-    }
-
     const value = takeValue(i, flag);
     i++;
 
@@ -130,19 +119,15 @@ Options:
       case 'database':
         opts.database = value;
         break;
-      case 'relayport':
       case 'relay-port':
         opts.relayPort = Number.parseInt(value, 10);
         break;
-      case 'stripeclipath':
       case 'stripe-cli-path':
         opts.stripeCliPath = value;
         break;
-      case 'stripeprojectname':
       case 'stripe-project-name':
         opts.stripeProjectName = value;
         break;
-      case 'stripeapikey':
       case 'stripe-api-key':
         opts.stripeApiKey = value;
         break;
@@ -152,11 +137,9 @@ Options:
           .map(v => v.trim())
           .filter(Boolean);
         break;
-      case 'deliverywaitseconds':
       case 'delivery-wait-seconds':
         opts.deliveryWaitSeconds = Number.parseInt(value, 10);
         break;
-      case 'listenerwarmupseconds':
       case 'listener-warmup-seconds':
         opts.listenerWarmupSeconds = Number.parseInt(value, 10);
         break;
@@ -351,10 +334,8 @@ async function assertEventWorkflowState(
       );
       return;
     case 'payment_intent.succeeded':
-      // Invoice-attached and recent-subscription payment intents are
-      // ignored to avoid duplicate or orphan payment rows. The
-      // aggregate assertion in main verifies that at least one standalone
-      // trigger produced a payment row.
+      // The aggregate assertion verifies that the standalone trigger
+      // produced a payment row.
       return;
     case 'invoice.created':
     case 'invoice.finalized':
@@ -396,23 +377,6 @@ async function main() {
       await checkCommand('stripe', ['version']);
     } else if (!existsSync(options.stripeCliPath)) {
       throw new Error(`Stripe CLI not found at path: ${options.stripeCliPath}`);
-    }
-
-    step('Clean stale Stripe listeners');
-    if (options.killExistingStripeListeners) {
-      const kill = await spawnCapture('taskkill', [
-        '/F',
-        '/IM',
-        'stripe.exe',
-        '/T',
-      ]);
-      if (kill.code === 0) {
-        info('stopped existing stripe.exe processes.');
-      } else {
-        info('no existing stripe.exe processes to stop (or no permission).');
-      }
-    } else {
-      info('skipped (pass --kill-existing-stripe-listeners to force cleanup).');
     }
 
     if (!options.skipBuildPublish) {
