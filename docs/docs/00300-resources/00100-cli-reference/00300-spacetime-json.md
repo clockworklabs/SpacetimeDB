@@ -87,7 +87,7 @@ When `spacetime generate` runs, it deduplicates by module path. If multiple data
 `spacetime generate` produces two kinds of bindings:
 
 - **Client bindings** are used by clients to connect to a database, subscribe to data, and call its reducers.
-- **Module bindings**, also called **receiver bindings**, are used inside one database module to make asynchronous inter-database communication (IDC) calls to another database's reducers. Rust and TypeScript modules support these bindings; C# and C++ module bindings are not implemented yet.
+- **Module bindings**, also called **receiver bindings**, are used inside one database module to make [asynchronous inter-database communication (IDC)](../../00200-core-concepts/00100-databases/00650-inter-database-communication.md) calls to another database's reducers. Rust and TypeScript modules support these bindings; C# and C++ module bindings are not implemented yet.
 
 With `spacetime.json`, put client bindings in `generate` and receiver bindings in `dependencies`. Running `spacetime generate` processes both arrays: regular `generate` entries default to client bindings, and dependencies automatically generate module bindings. No `--bindings` flag or second `generate` entry is needed for a dependency.
 
