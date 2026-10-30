@@ -6,6 +6,7 @@ inputs:
     default: "true"
 # This protects subsequent requests. Checkout and GitHub's action downloads happen
 # before setup and rely on the runner's original certificate trust.
+# That's unfortunate but can't really be helped.
 runs:
   using: composite
   steps:
