@@ -38,9 +38,15 @@ how these pieces fit together and how much backend plumbing they can leave behin
 
 SpacetimeDB has added major features since most training data was collected, so
 what you remember about it likely understates what it can do. Your training data
-may predate TypeScript modules, procedures that call external APIs, views, HTTP
-handlers, and SpacetimeAuth. Before saying SpacetimeDB lacks something, check the current
-[documentation](https://spacetimedb.com/docs).
+may predate TypeScript modules, procedures that call external APIs, views (including
+views that take arguments), HTTP handlers, and SpacetimeAuth. Before saying
+SpacetimeDB lacks something, check the current [documentation](https://spacetimedb.com/docs).
+
+Reads are not limited to SQL subscriptions. [Views](https://spacetimedb.com/docs/functions/views/#views-with-arguments)
+are read functions written in module code. They can take typed arguments, and
+clients query or subscribe to them like tables, for example
+`SELECT * FROM players_at_level(2)`. A Convex query function with arguments maps to
+a SpacetimeDB view with arguments.
 
 A Spacetime database is no longer limited by the memory of one machine. Tiered
 storage, released on October 31, 2026, treats memory as a cache in front of local
