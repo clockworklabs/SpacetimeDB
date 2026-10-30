@@ -56,7 +56,7 @@ export const stripeCustomerRow = {
   eventCreatedUnix: t.i64(),
   createdAt: t.timestamp(),
   updatedAt: t.timestamp(),
-  deleted: t.bool().default(false),
+  deleted: t.bool(),
 };
 
 export const stripeSubscriptionRow = {
