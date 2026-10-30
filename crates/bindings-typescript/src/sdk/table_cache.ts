@@ -1,7 +1,7 @@
 import { EventEmitter } from './event_emitter.ts';
 
 import { stdbLogger } from './logger.ts';
-import { deepEqual, type ComparablePrimitive } from '../';
+import { AlgebraicType, deepEqual, type ComparablePrimitive } from '../';
 import type { EventContextInterface, TableDefForTableName } from './index.ts';
 import type { RowType, TableIndexes, UntypedTableDef } from '../lib/table.ts';
 import type { ClientTableCoreImplementable } from './client_table.ts';
@@ -13,7 +13,7 @@ import type {
   ReadonlyRangedIndex,
   ReadonlyUniqueIndex,
 } from '../lib/indexes.ts';
-import type { Bound } from '../server/range.ts';
+import type { Range } from '../server/range.ts';
 import type { Prettify } from '../lib/type_util.ts';
 
 export type Operation<
@@ -44,6 +44,37 @@ const scalarCompare = (x: any, y: any): number => {
   return x < y ? -1 : 1;
 };
 
+const isRange = (arg: any): arg is Range<any> =>
+  arg && typeof arg === 'object' && 'from' in arg && 'to' in arg;
+
+const inRange = (value: unknown, range: Range<any>): boolean => {
+  const { from, to } = range;
+
+  if (from.tag !== 'unbounded') {
+    const c = scalarCompare(value, from.value);
+    if (c < 0) return false;
+    if (c === 0 && from.tag === 'excluded') return false;
+  }
+
+  if (to.tag !== 'unbounded') {
+    const c = scalarCompare(value, to.value);
+    if (c > 0) return false;
+    if (c === 0 && to.tag === 'excluded') return false;
+  }
+
+  return true;
+};
+
+type IndexNode<Row> = {
+  rows: Map<ComparablePrimitive, Row>;
+  children: Map<ComparablePrimitive, IndexNode<Row>>;
+};
+
+const newIndexNode = <Row>(): IndexNode<Row> => ({
+  rows: new Map(),
+  children: new Map(),
+});
+
 export type TableIndexView<
   RemoteModule extends UntypedRemoteModule,
   TableName extends TableNamesOf<RemoteModule>,
@@ -72,6 +103,16 @@ export class TableCacheImpl<
     [RowType<TableDefForTableName<RemoteModule, TableName>>, number]
   >;
   private tableDef: TableDefForTableName<RemoteModule, TableName>;
+  #indexes: {
+    add(
+      rowId: ComparablePrimitive,
+      row: RowType<TableDefForTableName<RemoteModule, TableName>>
+    ): void;
+    remove(
+      rowId: ComparablePrimitive,
+      row: RowType<TableDefForTableName<RemoteModule, TableName>>
+    ): void;
+  }[] = [];
   private emitter: EventEmitter<'insert' | 'delete' | 'update'>;
 
   /**
@@ -102,7 +143,6 @@ export class TableCacheImpl<
     }
   }
 
-  // TODO: this just scans the whole table; we should build proper index structures
   #makeReadonlyIndex<
     I extends TableDefForTableName<
       RemoteModule,
@@ -121,69 +161,54 @@ export class TableCacheImpl<
     }
 
     const columns = idx.columns;
+    const keyFns = columns.map(c => {
+      const ty = tableDef.columns[c].typeBuilder.algebraicType;
+      return (value: unknown) => AlgebraicType.intoMapKey(ty, value);
+    });
+    const getCol = (row: RowType<TableDef>, i: number) =>
+      (row as Record<string, unknown>)[columns[i]];
 
-    // Extract the tuple key for this btree index (column order preserved)
-    const getKey = (row: Row): readonly unknown[] =>
-      columns.map(c => (row as Record<string, unknown>)[c]);
+    // Each level of the tree is keyed by the next index column, and each node
+    // holds every row whose key starts with the path leading to it.
+    const root = newIndexNode<Row>();
 
-    // The server’s ranged scan fixes all prefix cols to equality and applies
-    // the bound only to the *last* term. We mirror that.
-    //
-    // rangeArg for multi-col index is:
-    //   [...prefixEqualValues, (lastTerm | Range<lastTerm>)]
-    //
-    // If only one element is provided, it’s the last term (scalar or Range).
-    const matchRange = (row: Row, rangeArg: any): boolean => {
-      const key = getKey(row);
-
-      // Normalize rangeArg into an array.
-      // With multi-col b-tree, IndexScanRangeBounds always yields at least one element.
-      const arr = Array.isArray(rangeArg) ? rangeArg : [rangeArg];
-
-      const prefixLen = Math.max(0, arr.length - 1);
-      // Check equality over the prefix (all but the last provided element)
-      for (let i = 0; i < prefixLen; i++) {
-        if (!deepEqual(key[i], arr[i])) return false;
+    const lookup = (prefix: readonly unknown[]): IndexNode<Row> | undefined => {
+      let node: IndexNode<Row> | undefined = root;
+      for (let i = 0; i < prefix.length && node; i++) {
+        node = node.children.get(keyFns[i](prefix[i]));
       }
-
-      const lastProvided = arr[arr.length - 1];
-      const kLast = key[prefixLen];
-
-      // If the last provided is a Range<T>, apply bounds; otherwise equality.
-      if (
-        lastProvided &&
-        typeof lastProvided === 'object' &&
-        'from' in lastProvided &&
-        'to' in lastProvided
-      ) {
-        // Range<T>
-        const from = lastProvided.from as Bound<any>;
-        const to = lastProvided.to as Bound<any>;
-
-        // Lower bound
-        if (from.tag !== 'unbounded') {
-          const c = scalarCompare(kLast, from.value);
-          if (c < 0) return false;
-          if (c === 0 && from.tag === 'excluded') return false;
-        }
-
-        // Upper bound
-        if (to.tag !== 'unbounded') {
-          const c = scalarCompare(kLast, to.value);
-          if (c > 0) return false;
-          if (c === 0 && to.tag === 'excluded') return false;
-        }
-
-        // All good on last term; any remaining columns (if any) are unconstrained,
-        // which matches server behavior for a prefix scan.
-        return true;
-      } else {
-        // Equality on the last provided element
-        if (!deepEqual(kLast, lastProvided)) return false;
-        // Any remaining columns are unconstrained (prefix equality only).
-        return true;
-      }
+      return node;
     };
+
+    this.#indexes.push({
+      add: (rowId, row) => {
+        let node = root;
+        for (let i = 0; i < columns.length; i++) {
+          const key = keyFns[i](getCol(row, i));
+          let child = node.children.get(key);
+          if (!child) {
+            child = newIndexNode();
+            node.children.set(key, child);
+          }
+          child.rows.set(rowId, row as Row);
+          node = child;
+        }
+      },
+      remove: (rowId, row) => {
+        let node = root;
+        for (let i = 0; i < columns.length; i++) {
+          const key = keyFns[i](getCol(row, i));
+          const child = node.children.get(key);
+          if (!child) return;
+          child.rows.delete(rowId);
+          if (child.rows.size === 0) {
+            node.children.delete(key);
+            return;
+          }
+          node = child;
+        }
+      },
+    });
 
     // An index is unique if it shares all columns with a unique constraint
     const isUnique = tableDef.constraints.some(constraint => {
@@ -199,19 +224,29 @@ export class TableCacheImpl<
       const impl: ReadonlyUniqueIndex<TableDef, I> = {
         find: (colVal: any): Row | null => {
           // For unique btree, caller supplies the *full* key (tuple if multi-col).
-          const expected = Array.isArray(colVal) ? colVal : [colVal];
-          for (const row of self.iter()) {
-            if (deepEqual(getKey(row), expected)) return row;
-          }
-          return null;
+          const node = lookup(Array.isArray(colVal) ? colVal : [colVal]);
+          return node?.rows.values().next().value ?? null;
         },
       };
       return impl as ReadonlyIndex<TableDef, I>;
     } else {
       const impl: ReadonlyRangedIndex<TableDef, I> = {
+        // The server’s ranged scan fixes all prefix cols to equality and applies
+        // the bound only to the *last* provided term. We mirror that.
         *filter(range: any): IteratorObject<Row, undefined> {
-          for (const row of self.iter()) {
-            if (matchRange(row, range)) yield row;
+          const arr = Array.isArray(range) ? range : [range];
+          const last = arr[arr.length - 1];
+          if (!isRange(last)) {
+            const node = lookup(arr);
+            if (node) yield* node.rows.values();
+            return;
+          }
+          const candidates =
+            arr.length === 1
+              ? self.iter()
+              : (lookup(arr.slice(0, -1))?.rows.values() ?? []);
+          for (const row of candidates) {
+            if (inRange(getCol(row, arr.length - 1), last)) yield row;
           }
         },
       };
@@ -404,7 +439,7 @@ export class TableCacheImpl<
       );
       return undefined;
     }
-    this.rows.set(rowId, [newRow, refCount]);
+    this.#setRow(rowId, newRow, refCount);
     if (skipIfIdentical && deepEqual(oldRow, newRow)) {
       // The row is unchanged; the reference count was adjusted above but no
       // callback fires.
@@ -444,7 +479,7 @@ export class TableCacheImpl<
       operation.row,
       0,
     ];
-    this.rows.set(operation.rowId, [operation.row, previousCount + count]);
+    this.#setRow(operation.rowId, operation.row, previousCount + count);
     if (previousCount === 0) {
       return {
         type: 'insert',
@@ -477,7 +512,7 @@ export class TableCacheImpl<
     // If this was the last reference, we are actually deleting the row.
     if (previousCount <= count) {
       // TODO: Log a warning/error if previousCount is less than count.
-      this.rows.delete(operation.rowId);
+      this.#deleteRow(operation.rowId);
       return {
         type: 'delete',
         table: this.tableDef.sourceName,
@@ -486,9 +521,29 @@ export class TableCacheImpl<
         },
       };
     }
-    this.rows.set(operation.rowId, [operation.row, previousCount - count]);
+    this.#setRow(operation.rowId, operation.row, previousCount - count);
     return undefined;
   };
+
+  #setRow(
+    rowId: ComparablePrimitive,
+    row: RowType<TableDefForTableName<RemoteModule, TableName>>,
+    refCount: number
+  ): void {
+    const existing = this.rows.get(rowId);
+    if (existing) {
+      for (const index of this.#indexes) index.remove(rowId, existing[0]);
+    }
+    this.rows.set(rowId, [row, refCount]);
+    for (const index of this.#indexes) index.add(rowId, row);
+  }
+
+  #deleteRow(rowId: ComparablePrimitive): void {
+    const existing = this.rows.get(rowId);
+    if (!existing) return;
+    for (const index of this.#indexes) index.remove(rowId, existing[0]);
+    this.rows.delete(rowId);
+  }
 
   /**
    * Register a callback for when a row is newly inserted into the database.
