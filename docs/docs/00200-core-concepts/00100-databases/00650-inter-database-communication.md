@@ -18,7 +18,7 @@ Outbox tables can be declared in Rust and TypeScript modules as of today. A data
 
 Applications often grow past a single database. A game might run a lobby and shard the game world, so that each world scales on its own and a busy world doesn't slow down the others. A company might keep accounts, billing, and its product in separate databases that different teams own and publish on their own schedules. These databases still need to communicate or coordinate. For example, the lobby sends players into a world, and the product tells billing that a customer upgraded.
 
-Reducers are designed to be atomic and side-effect free. This means reducers can't make network requests, so without async IDC, these messages would otherwise have to be delivered by a service outside of the database, for example via a client, an external service, or a [procedure](../00200-functions/00400-procedures.md). If the caller crashes after the lobby removes a player but before the world admits them, the player is lost. If it retries after a timeout that hid a success, it could end up adding the player twice. Each would developer have to handle retries, deduplication, ordering, and credentials separately.
+Reducers are designed to be atomic and side-effect free. This means reducers can't make network requests, so without async IDC, these messages would otherwise have to be delivered by a service outside of the database, for example via a client, an external service, or a [procedure](../00200-functions/00400-procedures.md). If the caller crashes after the lobby removes a player but before the world admits them, the player is lost. If it retries after a timeout that hid a success, it could end up adding the player twice. Each developer would have to handle retries, deduplication, ordering, and credentials separately.
 
 ## Async IDC guarantees
 
@@ -28,19 +28,19 @@ By contrast, Spacetime async IDC provides a set of important guarantees that red
 - **Exactly once semantics** Spacetime retries delivery until the receiving database answers, and the receiving database discards duplicates, so the receiving reducer runs once for each row. This invariant is maintained across crashes and server restarts, without any additional work from the module developer.
 - **In order** Calls through one outbox table to one database run in the order their rows were inserted. Calls through different outbox tables, or to different databases, are not ordered relative to each other.
 - **Durable first** Spacetime sends a call only after the transaction that inserted it is durable, so the receiving database never acts on a call from a transaction that the sending database could lose in a crash.
-- **Non-blocking** The sending reducer finishes as soon as its transaction commits. The receiving database doesn't need to be available at the time of the call. The call will be made once the receive database is available.
+- **Non-blocking** The sending reducer finishes as soon as its transaction commits. The receiving database doesn't need to be available at the time of the call. The call will be made once the receiving database is available.
 - **Authenticated** In the receiving reducer, `ctx.sender` is the sending database's identity. Spacetime authenticates all async IDC calls, so one database can't pose as another.
-- **Type-checked.** The sending module compiles against bindings generated from the receiving module, so a misspelled parameter or a wrong type is a compile error. If the receiving reducer's parameters change later, calls built from the old bindings fail with an error instead of being read with the wrong types.
+- **Type-checked** The sending module compiles against bindings generated from the receiving module, so a misspelled parameter or a wrong type is a compile error. If the receiving reducer's parameters change later, calls built from the old bindings fail with an error instead of being read with the wrong types.
 
 Together, these let you split an application into databases that scale, deploy, and fail independently, while each call between them is sent if and only if its transaction commits, and runs exactly once, in order.
 
 :::note
-This is similar in spirit to actor systems BEAM/Erlang or Scala Akka, but with the added guarantees and conveniences of a relational database.
+This is similar in spirit to actor systems like BEAM/Erlang or Scala Akka, but with the added guarantees and conveniences of a relational database.
 :::
 
-Note that, async IDC doesn't make two databases commit together. The receiving reducer runs later, in its own transaction, and it can fail after the sending transaction has committed. If mutual or "synchronous commit" is important for your use case, use `on_result` to undo or record the work in the sending database, as the example below does. This is sometimes referred to as the "Saga Pattern".
+Note that async IDC doesn't make two databases commit together. The receiving reducer runs later, in its own transaction, and it can fail after the sending transaction has committed. If mutual or "synchronous commit" is important for your use case, use `on_result` to undo or record the work in the sending database, as the example below does. This is sometimes referred to as the "Saga Pattern".
 
-## Example: lobby & game world 
+## Example: lobby & game world
 
 This example has two databases. Players wait in `lobby` and play in `game-world`. The lobby removes a player from its waiting list and sends them to the world in one transaction. The world contains up to two players, so that it's easy to fill. Once it's full, it turns players away, and the lobby puts them back on the waiting list.
 
@@ -254,7 +254,7 @@ pub fn on_admit_player_result(ctx: &ReducerContext, row: AdmitPlayerOutbox, resu
 </TabItem>
 </Tabs>
 
-For clarity, the rest of this page uses the "canonical names" for tables and columns. Canonical names are the names that are used in SQL and the CLI, such as `admit_player_outbox`. Canonical names are distinguished from "accessor names" which are used as identifiers in source code. For example, TypeScript code typically uses camel case, such as `admitPlayerOutbox`.
+For clarity, the rest of this page uses the "canonical names" for tables and columns. Canonical names are the names that are used in SQL and the CLI, such as `admit_player_outbox`. Canonical names are distinguished from "accessor names", which are used as identifiers in source code. For example, TypeScript code typically uses camel case, such as `admitPlayerOutbox`.
 
 `admit_player_outbox` is the outbox table. Its outbox option declares the reducer it calls, `admit_player` from the `game_world` bindings, and each of its rows corresponds to a single reducer call. `msg_id` identifies the row and the call. `world` is the target column, which holds the identity of the database to call. `name` supplies the `name` parameter of `admit_player`. [Outbox tables](#outbox-tables) describes these rules in full.
 
@@ -333,7 +333,7 @@ An outbox table's rows are calls to one reducer in another database. To declare 
 
 Columns in an outbox table must follow these rules:
 
-- **One message ID** The primary key must be a single `u64` column with auto-increment. If a `0` value is specified, Spacetime will automatically assigns the ID on insert. The column can have any name.
+- **One message ID** The primary key must be a single `u64` column with auto-increment. If a `0` value is specified, Spacetime will automatically assign the ID on insert. The column can have any name.
 - **One target** The target column references the identity of the database to call. It must have the identity type from the receiving module's bindings, and be marked as the target. A plain `Identity` column can't be the target. The column can have any name.
 - **One column for each parameter** For each parameter of the receiving reducer, exactly one column must have the same name and type. The columns can be in any order. To give a column a different name, map it to its parameter with an alias. The message ID and target columns can supply parameters too.
 
@@ -388,7 +388,7 @@ Outbox rows are insert-only. Module code can insert and read them, but can't upd
 spacetime sql lobby "SELECT * FROM admit_player_outbox"
 ```
 
-### Generated outbox declarations 
+### Generated outbox declarations
 
 You can always declare an outbox by manually specifying the table and types, however, in TypeScript, the receiver bindings can declare an outbox for you. `gw.outbox.admitPlayer()` returns an outbox table with a `msgId` message ID column, a `target` column, and a column for each parameter of the reducer:
 
