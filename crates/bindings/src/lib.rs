@@ -870,6 +870,12 @@ pub use spacetimedb_bindings_macro::procedure;
 ///     })
 /// }
 ///
+/// // An example of a parameterized view
+/// #[view(accessor = players_at_level, public)]
+/// fn players_at_level(ctx: &AnonymousViewContext, level: u32) -> Vec<Player> {
+///     ctx.db.player().level().filter(level).collect()
+/// }
+///
 /// // An example that is analogous to a semijoin in sql
 /// #[view(accessor = players_at_coordinates, public)]
 /// fn players_at_coordinates(ctx: &AnonymousViewContext) -> Vec<Player> {
@@ -974,6 +980,9 @@ pub use spacetimedb_bindings_macro::EnvironmentValue;
 /// Values are stored in plaintext and may be read by database collaborators.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Environment {
+    /// In native unit tests, reads come from this `TestContext` environment instead of the host.
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    test: Option<test_utils::TestEnvironmentId>,
     _private: (),
 }
 
@@ -985,7 +994,19 @@ impl Environment {
     ///
     /// Panics if the key is undeclared, invalid, or inaccessible in the current host call.
     pub fn get(&self, key: &str) -> Option<String> {
+        #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+        if let Some(test) = self.test {
+            return test.get(key);
+        }
         rt::env_get(key)
+    }
+
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    fn __test(test: test_utils::TestEnvironmentId) -> Self {
+        Self {
+            test: Some(test),
+            _private: (),
+        }
     }
 }
 
@@ -1011,9 +1032,9 @@ impl Default for AnonymousViewContext {
 impl AnonymousViewContext {
     #[doc(hidden)]
     #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
-    pub fn __test(db: LocalReadOnly) -> Self {
+    pub fn __test(env: Environment, db: LocalReadOnly) -> Self {
         Self {
-            env: Environment::default(),
+            env,
             db,
             from: QueryBuilder {},
         }
@@ -1046,10 +1067,10 @@ impl ViewContext {
 
     #[doc(hidden)]
     #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
-    pub fn __test(sender: Identity, db: LocalReadOnly) -> Self {
+    pub fn __test(env: Environment, sender: Identity, db: LocalReadOnly) -> Self {
         Self {
             sender,
-            env: Environment::default(),
+            env,
             db,
             from: QueryBuilder {},
         }
@@ -1167,7 +1188,7 @@ impl ReducerContext {
             sender,
             timestamp,
             connection_id,
-            sender_auth: AuthCtx::from_connection_id_opt(connection_id),
+            sender_auth: AuthCtx::for_sender(sender, move || connection_id.and_then(rt::get_jwt)),
             #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
             module_identity: Identity::ZERO,
             #[cfg(feature = "rand08")]
@@ -1179,7 +1200,9 @@ impl ReducerContext {
 
     #[doc(hidden)]
     #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    #[allow(clippy::too_many_arguments)]
     pub fn __test(
+        env: Environment,
         db: Local,
         sender: Identity,
         sender_auth: AuthCtx,
@@ -1189,7 +1212,7 @@ impl ReducerContext {
         #[cfg(feature = "rand08")] rng_seed: Option<u64>,
     ) -> Self {
         Self {
-            env: Environment::default(),
+            env,
             db,
             sender,
             timestamp,
@@ -1335,13 +1358,15 @@ impl Deref for TxContext {
 }
 
 /// We need to passthrough identity and connection_id because procedures can be invoked by users.
-/// For [HttpContext] this is always anonymous ([Identity::ZERO]).
+/// For [HttpContext] this is the random identity the host created for the request,
+/// whose JWT is `sender_auth`, since there is no connection to look it up by.
 /// Construct the inner [ReducerContext] with the appropriate caller information.
+#[cfg(feature = "unstable")]
 fn try_with_tx<T, E>(
     body: impl Fn(&TxContext) -> Result<T, E>,
     identity: Identity,
     connection_id: Option<ConnectionId>,
-    is_http_handler: bool,
+    sender_auth: &AuthCtx,
 ) -> Result<T, E> {
     let abort = || {
         crate::sys::procedure::procedure_abort_mut_tx()
@@ -1354,10 +1379,7 @@ fn try_with_tx<T, E>(
         let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
 
         let mut tx = ReducerContext::new(crate::Local::__host(), identity, connection_id, timestamp);
-        if is_http_handler {
-            // HTTP requests have no connection ID, but are not host-originated calls.
-            tx.sender_auth = AuthCtx::new(false, || None);
-        }
+        tx.sender_auth = sender_auth.clone();
         let tx = TxContext(tx);
 
         struct DoOnDrop<F: Fn()>(F);
@@ -1390,14 +1412,15 @@ fn try_with_tx<T, E>(
     res
 }
 
+#[cfg(feature = "unstable")]
 fn with_tx<T>(
     body: impl Fn(&TxContext) -> T,
     identity: Identity,
     connection_id: Option<ConnectionId>,
-    is_http_handler: bool,
+    sender_auth: &AuthCtx,
 ) -> T {
     use core::convert::Infallible;
-    match try_with_tx::<T, Infallible>(|tx| Ok(body(tx)), identity, connection_id, is_http_handler) {
+    match try_with_tx::<T, Infallible>(|tx| Ok(body(tx)), identity, connection_id, sender_auth) {
         Ok(v) => v,
         Err(e) => match e {},
     }
@@ -1464,7 +1487,7 @@ impl ProcedureContext {
             connection_id,
             env: Environment::default(),
             #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
-            sender_auth: AuthCtx::from_connection_id_opt(connection_id),
+            sender_auth: AuthCtx::for_sender(sender, move || connection_id.and_then(rt::get_jwt)),
             #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
             module_identity: Identity::ZERO,
             #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
@@ -1487,6 +1510,7 @@ impl ProcedureContext {
     #[allow(clippy::too_many_arguments)]
     #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
     pub fn __test(
+        env: Environment,
         datastore: std::sync::Arc<spacetimedb_test_datastore::TestDatastore>,
         sender: Identity,
         sender_auth: AuthCtx,
@@ -1502,7 +1526,7 @@ impl ProcedureContext {
             sender,
             timestamp,
             connection_id,
-            env: Environment::default(),
+            env,
             sender_auth,
             module_identity,
             test_datastore: Some(datastore),
@@ -1640,7 +1664,11 @@ impl ProcedureContext {
     /// callers should avoid writing to any captured mutable state within `body`,
     /// This includes interior mutability through types like [`std::cell::Cell`].
     pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
-        with_tx(body, self.sender(), self.connection_id(), false)
+        use core::convert::Infallible;
+        match self.try_with_tx::<T, Infallible>(|tx| Ok(body(tx))) {
+            Ok(v) => v,
+            Err(e) => match e {},
+        }
     }
 
     /// Acquire a mutable transaction
@@ -1686,6 +1714,7 @@ impl ProcedureContext {
 
                 let test_tx = std::rc::Rc::new(datastore.begin_mut_tx());
                 let tx = ReducerContext::__test(
+                    self.env,
                     Local::__test_tx(test_tx.clone()),
                     self.sender,
                     self.sender_auth.clone(),
@@ -2283,22 +2312,31 @@ pub struct JwtClaims {
 /// Authentication information for the caller of a reducer.
 #[derive(Clone)]
 pub struct AuthCtx {
-    is_internal: bool,
+    // Computed on first use, since comparing the sender with the database's `Identity` needs a host call.
+    is_internal: Rc<dyn Deref<Target = bool>>,
     // NOTE(jsdt): cannot directly use a `LazyCell` without making this struct generic,
     // which would cause `ReducerContext` to become generic as well.
     jwt: Rc<dyn Deref<Target = Option<JwtClaims>>>,
 }
 
 impl AuthCtx {
-    /// Creates an [`AuthCtx`] both for cases where there's a [`ConnectionId`]
-    /// and for when there isn't.
-    fn from_connection_id_opt(conn_id: Option<ConnectionId>) -> Self {
-        conn_id.map(Self::from_connection_id).unwrap_or_else(Self::internal)
+    /// Creates the [`AuthCtx`] of an invocation by `sender`,
+    /// which is internal when `sender` is this database,
+    /// and whose [JWT] payload, if any, `jwt_fn` reads.
+    ///
+    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
+    fn for_sender(sender: Identity, jwt_fn: impl FnOnce() -> Option<String> + 'static) -> Self {
+        AuthCtx {
+            is_internal: Rc::new(LazyCell::new(move || {
+                sender == Identity::from_byte_array(spacetimedb_bindings_sys::identity())
+            })),
+            jwt: Rc::new(LazyCell::new(move || jwt_fn().map(JwtClaims::new))),
+        }
     }
 
     fn new(is_internal: bool, jwt_fn: impl FnOnce() -> Option<JwtClaims> + 'static) -> Self {
         AuthCtx {
-            is_internal,
+            is_internal: Rc::new(Box::new(is_internal)),
             jwt: Rc::new(LazyCell::new(jwt_fn)),
         }
     }
@@ -2323,16 +2361,13 @@ impl AuthCtx {
         Self::new(false, move || Some(JwtClaims::new(jwt_payload)))
     }
 
-    /// Creates an [`AuthCtx`] that reads the [JWT] for the given connection id.
+    /// Returns whether the sender of this invocation is this database,
+    /// as it is for scheduled reducers and procedures.
     ///
-    /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
-    fn from_connection_id(connection_id: ConnectionId) -> AuthCtx {
-        Self::new(false, move || rt::get_jwt(connection_id).map(JwtClaims::new))
-    }
-
-    /// Returns whether this reducer was spawned from inside the database.
+    /// This is equivalent to `ctx.sender() == ctx.database_identity()`.
+    /// It is false in `init`, whose sender is the database's owner.
     pub fn is_internal(&self) -> bool {
-        self.is_internal
+        **self.is_internal
     }
 
     /// Checks if there is a [JWT] without loading it.
@@ -2340,13 +2375,19 @@ impl AuthCtx {
     ///
     /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn has_jwt(&self) -> bool {
-        self.jwt.is_some()
+        self.jwt().is_some()
     }
 
     /// Loads the [JWT].
+    /// If [`AuthCtx::is_internal`] returns true, this will return `None`.
     ///
     /// [JWT]: https://en.wikipedia.org/wiki/JSON_Web_Token
     pub fn jwt(&self) -> Option<&JwtClaims> {
+        // Internal invocations have no JWT, even when they arrive over a connection that has one.
+        // A container connected as its database has a token, but its claims describe the container, not the database.
+        if self.is_internal() {
+            return None;
+        }
         self.jwt.as_ref().deref().as_ref()
     }
 }

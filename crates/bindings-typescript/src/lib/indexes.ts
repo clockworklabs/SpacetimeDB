@@ -1,6 +1,7 @@
 import type { RowType, table, UntypedTableDef } from './table';
 import type { ColumnMetadata, IndexTypes } from './type_builders';
 import type { CollapseTuple, Prettify } from './type_util';
+import type { Identity } from './identity';
 import { Range } from '../server/range';
 import type { ColumnIsUnique } from './constraints';
 
@@ -10,7 +11,7 @@ import type { ColumnIsUnique } from './constraints';
  */
 export type IndexOpts<AllowedCol extends string> = {
   accessor: string;
-  name?: string;
+  name?: string | undefined;
 } & (
   | { algorithm: 'btree'; columns: readonly AllowedCol[] }
   | { algorithm: 'hash'; columns: readonly AllowedCol[] }
@@ -192,10 +193,19 @@ type _IndexVal<
   ...infer Tail extends readonly string[],
 ]
   ? [
-      TableDef['columns'][Head]['typeBuilder']['type'],
+      UnbrandedIdentity<TableDef['columns'][Head]['typeBuilder']['type']>,
       ..._IndexVal<TableDef, Tail>,
     ]
   : [];
+
+/**
+ * A column type with a receiver identity's module brand removed; other types
+ * pass through. Index keys and query comparisons use it, so they take a plain
+ * `Identity` where a column holds a receiver's typed identity. A lookup makes
+ * no claim about which module an identity belongs to, so a reducer or view can
+ * check `ctx.sender` against such a column; rows keep the type.
+ */
+export type UnbrandedIdentity<T> = T extends Identity ? Identity : T;
 
 /**
  * A helper type to define the bounds for scanning an index.

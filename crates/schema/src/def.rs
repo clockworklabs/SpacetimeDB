@@ -46,12 +46,12 @@ use spacetimedb_lib::db::raw_def::v9::{
 };
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::environment::EnvironmentSchema;
-use spacetimedb_lib::{ProductType, RawModuleDef};
+use spacetimedb_lib::{hash_bytes, Hash as SpacetimeHash, ProductType, RawModuleDef};
 use spacetimedb_primitives::{
     ColId, ColList, ColOrCols, ColSet, HttpHandlerId, ProcedureId, ReducerId, TableId, ViewFnPtr,
 };
 use spacetimedb_sats::raw_identifier::RawIdentifier;
-use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, Typespace};
+use spacetimedb_sats::{bsatn, AlgebraicType, AlgebraicTypeRef, AlgebraicValue, Typespace};
 
 pub mod deserialize;
 pub mod error;
@@ -323,6 +323,13 @@ impl ModuleDef {
             }
             if let Some(schedule) = &mut table.schedule {
                 schedule.namespace = path.clone();
+            }
+            if let Some(callback) = table
+                .outbox
+                .as_mut()
+                .and_then(|outbox| outbox.on_result_reducer.as_mut())
+            {
+                *callback = ReducerName::new(path.join(callback.local().clone()));
             }
         }
         for view in self.views.values_mut() {
@@ -1108,7 +1115,11 @@ impl From<ModuleDef> for RawModuleDefV10 {
             environment,
         } = val;
 
-        let mut sections = Vec::new();
+        // Names are already canonicalized. Disable further case conversion so revalidation
+        // preserves them.
+        let mut sections = vec![RawModuleDefV10Section::CaseConversionPolicy(
+            raw_def::v10::CaseConversionPolicy::None,
+        )];
         if let Some(environment) = environment {
             sections.push(RawModuleDefV10Section::Environment(
                 environment.into_declarations().into_iter().map(|x| x.into()).collect(),
@@ -1162,7 +1173,9 @@ impl From<ModuleDef> for RawModuleDefV10 {
                         remote_reducer: outbox.remote_reducer.into(),
                         target_column: outbox.target_column,
                         arg_columns: outbox.arg_columns,
-                        on_result_reducer: outbox.on_result_reducer.map(Into::into),
+                        on_result_reducer: outbox
+                            .on_result_reducer
+                            .map(|name| reducers[name.local()].accessor_name.clone().into()),
                         signature_hash: outbox.signature_hash,
                     });
                 }
@@ -1204,19 +1217,30 @@ impl From<ModuleDef> for RawModuleDefV10 {
             sections.push(RawModuleDefV10Section::Procedures(raw_procedures));
         }
 
+        let raw_http_routes: Vec<RawHttpRouteDefV10> = http_routes
+            .into_iter()
+            .map(|route| RawHttpRouteDefV10 {
+                handler_function: http_handlers[&route.handler_name].accessor_name.clone().into(),
+                ..route.into()
+            })
+            .collect();
         let raw_http_handlers: Vec<RawHttpHandlerDefV10> = http_handlers
             .into_values()
-            .map(|hd| RawHttpHandlerDefV10 {
-                source_name: hd.accessor_name.into(),
+            .map(|hd| {
+                explicit_names.insert_function(
+                    RawIdentifier::from(hd.accessor_name.clone()),
+                    RawIdentifier::from(hd.name.clone()),
+                );
+                RawHttpHandlerDefV10 {
+                    source_name: hd.accessor_name.into(),
+                }
             })
             .collect();
         if !raw_http_handlers.is_empty() {
             sections.push(RawModuleDefV10Section::HttpHandlers(raw_http_handlers));
         }
 
-        if !http_routes.is_empty() {
-            let raw_http_routes: Vec<RawHttpRouteDefV10> =
-                http_routes.into_iter().map(RawHttpRouteDefV10::from).collect();
+        if !raw_http_routes.is_empty() {
             sections.push(RawModuleDefV10Section::HttpRoutes(raw_http_routes));
         }
 
@@ -1406,7 +1430,7 @@ pub struct OutboxDef {
     /// Local reducer to invoke with the remote result before acknowledging this stream.
     pub on_result_reducer: Option<ReducerName>,
     /// Hash of the receiver reducer signature as seen by sender bindings.
-    pub signature_hash: String,
+    pub signature_hash: SpacetimeHash,
 }
 
 impl TableDef {
@@ -2342,6 +2366,7 @@ impl From<ViewDef> for RawViewDefV10 {
             is_anonymous,
             is_public,
             params,
+            params_for_generate,
             return_type,
             fn_ptr,
             ..
@@ -2351,7 +2376,7 @@ impl From<ViewDef> for RawViewDefV10 {
             index: fn_ptr.into(),
             is_public,
             is_anonymous,
-            params,
+            params: canonical_params(params, &params_for_generate),
             return_type,
         }
     }
@@ -2440,6 +2465,94 @@ pub struct ReducerDef {
     pub err_return_type: AlgebraicType,
 }
 
+impl ReducerDef {
+    /// Parameter types with schema names.
+    pub fn params(&self) -> ProductType {
+        canonical_params(self.params.clone(), &self.params_for_generate)
+    }
+}
+
+// Keep the original typespace references, but use the names resolved by validation so
+// revalidating the raw definition with CaseConversionPolicy::None preserves the schema.
+fn canonical_params(mut params: ProductType, params_for_generate: &ProductTypeDef) -> ProductType {
+    assert_eq!(params.elements.len(), params_for_generate.elements.len());
+    for (param, (name, _)) in params.elements.iter_mut().zip(params_for_generate.elements.iter()) {
+        param.name = Some(name.clone().into());
+    }
+    params
+}
+
+const REDUCER_SIGNATURE_HASH_DOMAIN: &[u8] = b"spacetimedb:idc:reducer-signature:v1\0";
+
+/// Computes the IDC signature hash from parameter names, order, types, and both return types.
+///
+/// The encoding is the versioned domain prefix followed by BSATN
+/// `(AlgebraicType::Product(params), ok_return_type, err_return_type, reducer_typespace)`,
+/// hashed with Keccak-256. Reducer Typespace are a `Vec<AlgebraicType>` in first-use order,
+/// traversing parameters, then the success type, then the error type, kind of reducer local
+/// typespace.
+pub fn reducer_signature_hash(
+    params: &ProductType,
+    ok_return_type: &AlgebraicType,
+    err_return_type: &AlgebraicType,
+    typespace: &Typespace,
+) -> spacetimedb_lib::Hash {
+    fn normalize(
+        ty: &mut AlgebraicType,
+        typespace: &Typespace,
+        refs: &mut BTreeMap<AlgebraicTypeRef, AlgebraicTypeRef>,
+        reducer_typespace: &mut Typespace,
+    ) {
+        match ty {
+            AlgebraicType::Ref(original) => {
+                // Number reachable types in first-use order so unrelated types and
+                // their positions in the module's typespace do not affect the hash.
+                let local_idx = if let Some(local_idx) = refs.get(original) {
+                    *local_idx
+                } else {
+                    // Reserve the id before following references so recursive types
+                    // can refer back to this definition while it is being copied.
+                    let local_idx = reducer_typespace.add(AlgebraicType::unit());
+                    refs.insert(*original, local_idx);
+                    let mut definition = typespace[*original].clone();
+                    normalize(&mut definition, typespace, refs, reducer_typespace);
+                    reducer_typespace[local_idx] = definition;
+                    local_idx
+                };
+                *original = local_idx;
+            }
+            AlgebraicType::Product(product) => {
+                for field in &mut product.elements {
+                    normalize(&mut field.algebraic_type, typespace, refs, reducer_typespace);
+                }
+            }
+            AlgebraicType::Sum(sum) => {
+                for variant in &mut sum.variants {
+                    normalize(&mut variant.algebraic_type, typespace, refs, reducer_typespace);
+                }
+            }
+            AlgebraicType::Array(array) => normalize(&mut array.elem_ty, typespace, refs, reducer_typespace),
+            _ => {}
+        }
+    }
+
+    let mut params = AlgebraicType::Product(params.clone());
+    let mut ok_return_type = ok_return_type.clone();
+    let mut err_return_type = err_return_type.clone();
+    let mut refs = BTreeMap::new();
+    let mut reducer_typespace = Typespace::default();
+    for ty in [&mut params, &mut ok_return_type, &mut err_return_type] {
+        normalize(ty, typespace, &mut refs, &mut reducer_typespace);
+    }
+    let mut bytes = REDUCER_SIGNATURE_HASH_DOMAIN.to_vec();
+    bsatn::to_writer(
+        &mut bytes,
+        &(params, ok_return_type, err_return_type, reducer_typespace.types),
+    )
+    .expect("validated signature should serialize");
+    hash_bytes(&bytes)
+}
+
 impl From<ReducerDef> for RawReducerDefV9 {
     fn from(val: ReducerDef) -> Self {
         RawReducerDefV9 {
@@ -2454,7 +2567,7 @@ impl From<ReducerDef> for RawReducerDefV10 {
     fn from(val: ReducerDef) -> Self {
         RawReducerDefV10 {
             source_name: val.accessor_name.into(),
-            params: val.params,
+            params: canonical_params(val.params, &val.params_for_generate),
             visibility: val.visibility.into(),
             ok_return_type: val.ok_return_type,
             err_return_type: val.err_return_type,
@@ -2542,7 +2655,7 @@ impl From<ProcedureDef> for RawProcedureDefV10 {
     fn from(val: ProcedureDef) -> Self {
         RawProcedureDefV10 {
             source_name: val.accessor_name.into(),
-            params: val.params,
+            params: canonical_params(val.params, &val.params_for_generate),
             return_type: val.return_type,
             visibility: val.visibility.into(),
         }
@@ -2799,6 +2912,163 @@ mod tests {
     }
 
     #[test]
+    fn v10_roundtrip_preserves_reducer_signature_casing() {
+        use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, RawModuleDefV10Builder};
+
+        for policy in [CaseConversionPolicy::None, CaseConversionPolicy::SnakeCase] {
+            let mut builder = RawModuleDefV10Builder::new();
+            builder.set_case_conversion_policy(policy);
+            let item_ref = builder.add_algebraic_type(
+                [],
+                "Message",
+                AlgebraicType::product([("Item", AlgebraicType::U64)]),
+                false,
+            );
+            builder.add_reducer(
+                "receive",
+                ProductType::from([("MessageBody", AlgebraicType::Ref(item_ref))]),
+            );
+            builder.add_procedure(
+                "read_message",
+                ProductType::from([("MessageBody", AlgebraicType::Ref(item_ref))]),
+                AlgebraicType::Ref(item_ref),
+            );
+            builder.add_view(
+                "messages",
+                0,
+                true,
+                true,
+                ProductType::from([("MessageBody", AlgebraicType::Ref(item_ref))]),
+                AlgebraicType::array(AlgebraicType::Ref(item_ref)),
+            );
+            let original: ModuleDef = builder.finish().try_into().expect("valid module");
+            let roundtrip =
+                ModuleDef::try_from(RawModuleDefV10::from(original.clone())).expect("valid roundtripped module");
+            let signature = |module: &ModuleDef| {
+                let (_, reducer) = module.reducer_by_name("receive").expect("receiver exists");
+                reducer_signature_hash(
+                    &reducer.params(),
+                    &reducer.ok_return_type,
+                    &reducer.err_return_type,
+                    module.typespace(),
+                )
+            };
+
+            assert_eq!(original.typespace(), roundtrip.typespace());
+            assert_eq!(signature(&original), signature(&roundtrip));
+            for (original, roundtrip) in original.procedures().zip(roundtrip.procedures()) {
+                assert_eq!(original.params_for_generate, roundtrip.params_for_generate);
+            }
+            for (original, roundtrip) in original.views().zip(roundtrip.views()) {
+                assert_eq!(original.params_for_generate, roundtrip.params_for_generate);
+            }
+        }
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn v10_canonical_params_deserialize_on_receiver() {
+        use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, RawModuleDefV10Builder};
+        use spacetimedb_sats::{de::DeserializeSeed as _, product, WithTypespace};
+
+        #[derive(Debug, PartialEq, spacetimedb_sats::Deserialize)]
+        #[sats(crate = spacetimedb_sats)]
+        struct ReceiverMessage {
+            Item: u64,
+        }
+
+        for policy in [CaseConversionPolicy::None, CaseConversionPolicy::SnakeCase] {
+            let mut builder = RawModuleDefV10Builder::new();
+            builder.set_case_conversion_policy(policy);
+            let item_ref = builder.add_algebraic_type(
+                [],
+                "Message",
+                AlgebraicType::product([("Item", AlgebraicType::U64)]),
+                false,
+            );
+            builder.add_reducer(
+                "receive",
+                ProductType::from([
+                    ("MessageBody", AlgebraicType::Ref(item_ref)),
+                    ("RequestID", AlgebraicType::String),
+                ]),
+            );
+            let original: ModuleDef = builder.finish().try_into().expect("valid module");
+            let roundtrip =
+                ModuleDef::try_from(RawModuleDefV10::from(original.clone())).expect("valid roundtripped module");
+            let (_, sender) = roundtrip.reducer_by_name("receive").unwrap();
+            let (_, receiver) = original.reducer_by_name("receive").unwrap();
+            let expected_names = if matches!(policy, CaseConversionPolicy::None) {
+                ["MessageBody", "RequestID"]
+            } else {
+                ["message_body", "request_id"]
+            };
+            assert_eq!(
+                sender
+                    .params
+                    .elements
+                    .iter()
+                    .map(|param| param.name.as_ref().unwrap().as_ref())
+                    .collect::<Vec<&str>>(),
+                expected_names
+            );
+            assert_eq!(
+                receiver.params.elements[0].name.as_ref().unwrap().as_ref(),
+                "MessageBody"
+            );
+
+            // Encode using the exported canonical schema, as a sender does. Distinct
+            // argument types make an accidental change in parameter order observable.
+            let args = product![product![42u64], "request-7"];
+            let bytes = bsatn::to_vec(&WithTypespace::new(roundtrip.typespace(), &sender.params).with_value(&args))
+                .expect("canonical sender arguments should encode");
+
+            // The host still decodes against the receiver's original parameter names.
+            let mut remaining = bytes.as_slice();
+            let decoded = original
+                .arg_seed_for(receiver)
+                .deserialize(bsatn::Deserializer::new(&mut remaining))
+                .expect("receiver should accept arguments encoded with canonical names");
+            assert_eq!(decoded, args);
+            assert!(remaining.is_empty());
+
+            // A Rust receiver then decodes the same bytes into its source-language
+            // types. BSATN carries values in order, not schema field names.
+            let typed: (ReceiverMessage, String) =
+                bsatn::from_slice(&bytes).expect("Rust receiver should deserialize the original argument types");
+            assert_eq!(typed, (ReceiverMessage { Item: 42 }, "request-7".to_owned()));
+        }
+    }
+
+    #[test]
+    fn v10_roundtrip_preserves_http_handler_names() {
+        use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, RawModuleDefV10Builder};
+
+        for policy in [CaseConversionPolicy::SnakeCase, CaseConversionPolicy::None] {
+            for canonical_name in [None, Some("WireHandler")] {
+                let mut builder = RawModuleDefV10Builder::new();
+                builder.set_case_conversion_policy(policy);
+                builder.add_http_handler("GetSimple");
+                builder.add_http_route("GetSimple", MethodOrAny::Any, "/get");
+                if let Some(canonical_name) = canonical_name {
+                    let mut names = ExplicitNames::default();
+                    names.insert_function("GetSimple", canonical_name);
+                    builder.add_http_handler("WireHandler");
+                    builder.add_http_route("WireHandler", MethodOrAny::Any, "/other");
+                    names.insert_function("WireHandler", "OtherHandler");
+                    builder.add_explicit_names(names);
+                }
+                let original: ModuleDef = builder.finish().try_into().expect("valid module");
+                let roundtrip = ModuleDef::try_from(RawModuleDefV10::from(original.clone()))
+                    .expect("valid roundtripped HTTP routes");
+
+                assert_eq!(original.http_handlers, roundtrip.http_handlers);
+                assert_eq!(original.http_routes, roundtrip.http_routes);
+            }
+        }
+    }
+
+    #[test]
     fn v10_roundtrip_preserves_column_defaults() {
         use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
 
@@ -2932,5 +3202,175 @@ mod tests {
         assert!(def.reducer_by_name("auth.nonexistent").is_none());
         assert!(def.reducer_by_name("nonexistent").is_none());
         assert!(def.reducer_by_name("nonamespace.auth_verify").is_none());
+    }
+
+    #[test]
+    fn reducer_signature_hash_tracks_reachable_types_not_global_ids() {
+        #[derive(Clone, Copy, Debug)]
+        enum SignaturePart {
+            Parameter,
+            OkReturn,
+            ErrReturn,
+        }
+
+        fn hash_for(mut typespace: Typespace, value_type: AlgebraicType, part: SignaturePart) -> spacetimedb_lib::Hash {
+            // Reserve a slot so Node can refer to itself through its children.
+            let node = typespace.add(AlgebraicType::unit());
+            typespace[node] = AlgebraicType::product([
+                ("value", value_type),
+                ("children", AlgebraicType::array(AlgebraicType::Ref(node))),
+            ]);
+
+            // Put the recursive type in one signature position at a time, keeping
+            // the other positions fixed so each traversal path is checked separately.
+            let node = AlgebraicType::Ref(node);
+            let (param_type, ok_return_type, err_return_type) = match part {
+                SignaturePart::Parameter => (node, AlgebraicType::unit(), AlgebraicType::unit()),
+                SignaturePart::OkReturn => (AlgebraicType::unit(), node, AlgebraicType::unit()),
+                SignaturePart::ErrReturn => (AlgebraicType::unit(), AlgebraicType::unit(), node),
+            };
+            let params = ProductType::from([("node", param_type)]);
+            reducer_signature_hash(&params, &ok_return_type, &err_return_type, &typespace)
+        }
+
+        // This unused definition moves Node from Ref(0) to Ref(1) without
+        // changing its structure or making another type reachable from it.
+        let mut with_unrelated_type = Typespace::default();
+        with_unrelated_type.add(AlgebraicType::product([("other", AlgebraicType::Bool)]));
+
+        for part in [
+            SignaturePart::Parameter,
+            SignaturePart::OkReturn,
+            SignaturePart::ErrReturn,
+        ] {
+            let original = hash_for(Typespace::default(), AlgebraicType::U64, part);
+            let renumbered = hash_for(with_unrelated_type.clone(), AlgebraicType::U64, part);
+            let changed = hash_for(Typespace::default(), AlgebraicType::String, part);
+
+            assert_eq!(original, renumbered, "unrelated types must not affect {part:?}");
+            assert_ne!(original, changed, "changing Node.value must affect {part:?}");
+        }
+    }
+
+    #[test]
+    fn reducer_signature_hash_uses_schema_parameter_names() {
+        use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+
+        // The parameter references Message, which contains an array of MessagePart
+        // references. Hashing must follow both levels, including the nested fields.
+        let mut builder = RawModuleDefV10Builder::new();
+        let part_type =
+            AlgebraicType::product([("sender", AlgebraicType::identity()), ("text", AlgebraicType::String)]);
+        let part_ref = builder.add_algebraic_type([], "MessagePart", part_type.clone(), false);
+        let message_type = AlgebraicType::product([
+            ("label", AlgebraicType::option(AlgebraicType::String)),
+            ("parts", AlgebraicType::array(AlgebraicType::Ref(part_ref))),
+        ]);
+        let message_ref = builder.add_algebraic_type([], "Message", message_type.clone(), false);
+        builder.add_reducer(
+            "receive",
+            ProductType::from([
+                ("messageBody", AlgebraicType::Ref(message_ref)),
+                ("requestId", AlgebraicType::U64),
+            ]),
+        );
+        // These type references belong to the child, not the parent typespace.
+        let mut parent = RawModuleDefV10Builder::new();
+        parent.add_submodule("child", builder.finish());
+        let def: ModuleDef = parent.finish().try_into().expect("valid module");
+        let (_, reducer, owning) = def.reducer_by_name_with_module("child.receive").unwrap();
+        // Validation applies the module's naming policy to the source parameter names.
+        let expected_params = ProductType::from([
+            ("message_body", AlgebraicType::Ref(message_ref)),
+            ("request_id", AlgebraicType::U64),
+        ]);
+        assert_eq!(reducer.params(), expected_params);
+
+        let hash = reducer_signature_hash(
+            &reducer.params(),
+            &reducer.ok_return_type,
+            &reducer.err_return_type,
+            owning.typespace(),
+        );
+        // Rebuild just the referenced definitions, without the surrounding module.
+        let mut typespace: Typespace = [part_type, message_type].into_iter().collect();
+        // Source-language spelling is irrelevant when the schema names agree.
+        assert_eq!(
+            hash,
+            reducer_signature_hash(
+                &expected_params,
+                &reducer.ok_return_type,
+                &reducer.err_return_type,
+                &typespace,
+            )
+        );
+
+        // Keep the parameter names and reference ids fixed, but change MessagePart.text
+        // from String to U64. The hash must include the referenced definition's contents.
+        typespace[part_ref] =
+            AlgebraicType::product([("sender", AlgebraicType::identity()), ("text", AlgebraicType::U64)]);
+        assert_ne!(
+            hash,
+            reducer_signature_hash(
+                &expected_params,
+                &reducer.ok_return_type,
+                &reducer.err_return_type,
+                &typespace,
+            )
+        );
+    }
+
+    #[test]
+    fn reducer_signature_hash_tracks_return_types() {
+        let hash_for = |ok, err| reducer_signature_hash(&ProductType::unit(), &ok, &err, &Typespace::default());
+        // With no parameters, only the success and error types contribute to these differences.
+        let base = hash_for(AlgebraicType::unit(), AlgebraicType::String);
+        // Changing either return type independently changes the signature.
+        assert_ne!(base, hash_for(AlgebraicType::U64, AlgebraicType::String));
+        assert_ne!(base, hash_for(AlgebraicType::unit(), AlgebraicType::U64));
+        // Success and error are distinct positions, even when the same two types are used.
+        assert_ne!(base, hash_for(AlgebraicType::String, AlgebraicType::unit()));
+    }
+
+    #[test]
+    fn reducer_signature_hash_tracks_contract() {
+        // Keep return types fixed to isolate changes to the parameters.
+        let hash_for = |params: ProductType| {
+            reducer_signature_hash(
+                &params,
+                &AlgebraicType::unit(),
+                &AlgebraicType::String,
+                &Typespace::default(),
+            )
+        };
+        let base = hash_for(ProductType::from([
+            ("a", AlgebraicType::U64),
+            ("b", AlgebraicType::String),
+        ]));
+
+        // BSATN arguments are positional, so reordering parameters changes the contract.
+        assert_ne!(
+            base,
+            hash_for(ProductType::from([
+                ("b", AlgebraicType::String),
+                ("a", AlgebraicType::U64)
+            ]))
+        );
+        // Names also matter: outbox columns are matched to reducer parameters by name.
+        assert_ne!(
+            base,
+            hash_for(ProductType::from([
+                ("renamed", AlgebraicType::U64),
+                ("b", AlgebraicType::String)
+            ]))
+        );
+        // Keeping names and order unchanged must not hide a parameter type change.
+        assert_ne!(
+            base,
+            hash_for(ProductType::from([
+                ("a", AlgebraicType::U32),
+                ("b", AlgebraicType::String)
+            ]))
+        );
     }
 }

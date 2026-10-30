@@ -1,4 +1,7 @@
-﻿FROM oven/bun:latest
+﻿# Bun 1.4.4 removes trust in the compromised eMudhra certificate chains.
+FROM oven/bun:1.4.4
+# Refresh OS certificate roots to distrust the compromised eMudhra/emSign CAs.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

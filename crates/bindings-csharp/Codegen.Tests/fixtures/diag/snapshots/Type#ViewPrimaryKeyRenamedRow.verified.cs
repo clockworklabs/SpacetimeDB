@@ -6,6 +6,11 @@ partial struct ViewPrimaryKeyRenamedRow
     : System.IEquatable<ViewPrimaryKeyRenamedRow>,
         SpacetimeDB.BSATN.IStructuralReadWrite
 {
+#if NET10_0_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
+#endif
     public void ReadFields(System.IO.BinaryReader reader)
     {
         RenamedIdentity = BSATN.RenamedIdentityRW.Read(reader);
@@ -72,16 +77,7 @@ partial struct ViewPrimaryKeyRenamedRow
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as ViewPrimaryKeyRenamedRow?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is ViewPrimaryKeyRenamedRow t && Equals(t);
     }
 
     public static bool operator ==(ViewPrimaryKeyRenamedRow this_, ViewPrimaryKeyRenamedRow that)
