@@ -11,7 +11,7 @@
   "evidence": ["browser-observation", "server-refusal", "server-response", "fresh-client-observation"],
   "budget": {
     "status": "bounded",
-    "maxRuntimeMs": 68000
+    "maxRuntimeMs": 63000
   },
   "task": {
     "requirements": [

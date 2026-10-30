@@ -80,7 +80,8 @@ formatting checks only.
 
 A pack's runtime budget is the time its checks may take on a clean reference.
 For a pack whose budget is `unmeasured`, collect timings with
-`qualify-reference --timing-only`. Timing artifacts cannot qualify a release.
+`qualify-reference --timing-only --timeout-minutes 120`; a full L3 pass takes about an
+hour per stack. Timing artifacts cannot qualify a release.
 Then run `pack-budget recommend`. It sets the budget to twice the slowest
 passing timing, rounded up to the next second, and never below the waits the
 pack's checks declare. A pack that exceeds its budget fails, so set a growing
