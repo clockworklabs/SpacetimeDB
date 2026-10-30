@@ -652,7 +652,8 @@ const baseReq: ChatRequest = {
 
 // 21. openAiProvider differs only in URL (same wire format).
 {
-  const { url, headers } = openAiProvider.buildRequest(baseReq);
+  const { url, headers, body } = openAiProvider.buildRequest(baseReq);
+  assert(JSON.parse(body).messages[1].content === 'hi', 'openai: user text');
   assert(
     url === 'https://api.openai.com/v1/chat/completions',
     `openai: native OpenAI URL`
@@ -678,8 +679,10 @@ const baseReq: ChatRequest = {
     `anthropic: system as top-level field`
   );
   assert(
-    b.messages.length === 1 && b.messages[0].role === 'user',
-    `anthropic: system NOT in messages array`
+    b.messages.length === 1 &&
+      b.messages[0].role === 'user' &&
+      b.messages[0].content === 'hi',
+    `anthropic: user text without the system prompt`
   );
   assert(b.max_tokens === 256, `anthropic: max_tokens carried`);
   assert(
@@ -1152,25 +1155,6 @@ process.stdout.write('\nembeddings + RAG tests\n');
       data: 'BASE64DATA',
     }),
     `multimodal-anthropic: source structured correctly`
-  );
-}
-
-// 42c. String content unchanged through providers (backward compat).
-{
-  const req: ChatRequest = {
-    apiKey: 'k',
-    model: 'm',
-    messages: [{ role: 'user', content: 'plain text' }],
-  };
-  const oa = JSON.parse(openAiProvider.buildRequest(req).body);
-  const an = JSON.parse(anthropicProvider.buildRequest(req).body);
-  assert(
-    oa.messages[0].content === 'plain text',
-    `compat: openai keeps string content`
-  );
-  assert(
-    an.messages[0].content === 'plain text',
-    `compat: anthropic keeps string content`
   );
 }
 

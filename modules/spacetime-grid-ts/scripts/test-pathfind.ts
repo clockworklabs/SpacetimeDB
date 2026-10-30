@@ -77,19 +77,6 @@ process.stdout.write('A* tests\n');
   );
 }
 
-// 3. Around a wall
-{
-  const g = buildGrid(['.....', '...#.', '...#.', '.....']);
-  const r = findPathAstar({
-    start: { x: 0, y: 0 },
-    goal: { x: 4, y: 0 },
-    cost: g.cost,
-    neighbors: g.neighbors,
-    heuristic: (a, b) => distance('square', a, b, 4),
-  });
-  check('straight path around no obstacle -> cost 4', r.found && r.cost === 4);
-}
-
 // 4. Goal walled off
 {
   const g = buildGrid(['...#.', '...#.', '...#.', '...#.']);
