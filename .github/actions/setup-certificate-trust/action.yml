@@ -1,0 +1,18 @@
+name: Set up certificate trust
+description: Correct hosted-runner certificate trust and update rustup without changing Rust toolchains
+inputs:
+  update-rustup:
+    description: Update or install rustup for jobs that use Rust
+    default: "true"
+runs:
+  using: composite
+  steps:
+    # Hosted images may still trust the compromised eMudhra/emSign certificate chains.
+    - name: Configure hosted-runner certificate trust
+      if: runner.environment == 'github-hosted'
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/configure-trust.cjs"
+
+    - name: Update rustup certificate trust
+      if: inputs.update-rustup == 'true'
+      uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@master
