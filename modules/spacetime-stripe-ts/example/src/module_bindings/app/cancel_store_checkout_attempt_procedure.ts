@@ -12,5 +12,6 @@ import {
 
 export const params = {
   attemptId: __t.string(),
+  sessionId: __t.option(__t.string()),
 };
 export const returnType = __t.unit()

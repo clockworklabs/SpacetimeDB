@@ -1,4 +1,5 @@
 import * as assert from 'node:assert/strict';
+import { retireCheckoutAttempt } from '../example/spacetimedb/src/store/checkout-recovery';
 import { Timestamp } from 'spacetimedb';
 import { latestSubscription } from '../src/submodule/subscription-order';
 import {
@@ -253,3 +254,65 @@ assert.equal(
 );
 
 console.log('stripe unit tests passed');
+
+const recoveryArgs = {
+  customers: ['cus_buyer'],
+  store: 'store',
+  attemptId: 'attempt',
+};
+for (const status of ['complete', 'expired']) {
+  let pages = 0;
+  const recover = () =>
+    retireCheckoutAttempt((method, path) => {
+      assert.equal(method, 'GET');
+      const query = new URL(`https://api.stripe.com${path}`).searchParams;
+      assert.equal(
+        query.get('starting_after'),
+        pages ? `cs_page_${pages}` : null
+      );
+      pages++;
+      return {
+        has_more: pages < 11,
+        data: [
+          {
+            id: `cs_page_${pages}`,
+            status,
+            metadata:
+              pages === 11 ? { store: 'store', storeAttempt: 'attempt' } : {},
+          },
+        ],
+      };
+    }, recoveryArgs);
+  if (status === 'complete') assert.throws(recover, /checkout is complete/);
+  else recover();
+  assert.equal(pages, 11, 'Recovery must reach a match beyond page ten');
+}
+for (const customer of ['cus_buyer', 'cus_other']) {
+  const requests: string[] = [];
+  const recover = () =>
+    retireCheckoutAttempt(
+      (method, path) => {
+        requests.push(`${method} ${path}`);
+        return {
+          id: 'cs_saved',
+          customer,
+          status: method === 'GET' ? 'open' : 'expired',
+          metadata: { store: 'store', storeAttempt: 'attempt' },
+        };
+      },
+      { ...recoveryArgs, sessionId: 'cs_saved' }
+    );
+  if (customer === 'cus_other') {
+    assert.throws(recover, /owner_mismatch/);
+    assert.equal(requests.length, 1);
+  } else {
+    recover();
+    assert.deepEqual(requests, [
+      'GET /v1/checkout/sessions/cs_saved',
+      'POST /v1/checkout/sessions/cs_saved/expire',
+    ]);
+  }
+}
+console.log(
+  'Checkout recovery: pagination and direct session ownership passed.'
+);

@@ -9,6 +9,7 @@ import {
 import * as rateLimit from '@spacetimedb/rate-limit/submodule';
 import * as stripe from '@spacetimedb/stripe/submodule';
 import { requireAdmin } from './auth';
+import { retireCheckoutAttempt } from './checkout-recovery';
 import { stringArrayFromJson, throwSenderError } from './validation';
 
 const DEFAULT_STORE_PRODUCTS: Array<{
@@ -443,11 +444,13 @@ export const createStoreCheckoutSession = spacetimedb.procedure(
 // Stripe can discard request IDs after 24 hours. Retire the previous checkout
 // before the browser starts another attempt with a new ID.
 export const cancelStoreCheckoutAttempt = spacetimedb.procedure(
-  { attemptId: t.string() },
+  { attemptId: t.string(), sessionId: t.option(t.string()) },
   t.unit(),
-  (ctx, { attemptId }) => {
+  (ctx, { attemptId, sessionId }) => {
     if (!/^[a-zA-Z0-9-]{16,64}$/.test(attemptId))
       throwSenderError('store.invalid_attempt');
+    if (sessionId !== undefined && !/^cs_[a-zA-Z0-9_]{1,200}$/.test(sessionId))
+      throwSenderError('store.invalid_session');
     consumeBuyerStripeCall(ctx);
     const customers = ctx.withTx(tx =>
       [
@@ -456,56 +459,18 @@ export const cancelStoreCheckoutAttempt = spacetimedb.procedure(
         ),
       ].map(customer => customer.stripeCustomerId)
     );
-    for (const customer of customers) {
-      let cursor = '';
-      for (let page = 0; ; page++) {
-        if (page === 10) throwSenderError('store.checkout_history_too_large');
-        const query = formBody([
-          ['customer', customer],
-          ['limit', '100'],
-          ['starting_after', cursor || undefined],
-        ]);
-        const list = parseStripeResponse(
-          callStripe(ctx, 'GET', `/v1/checkout/sessions?${query}`)
-        );
-        if (!Array.isArray(list.data) || typeof list.has_more !== 'boolean')
-          throwSenderError('store.checkout_lookup_failed');
-        for (const session of list.data) {
-          if (!isObject(session))
-            throwSenderError('store.checkout_lookup_failed');
-          cursor = stripeObjectId(session, 'checkout');
-          if (
-            !isObject(session.metadata) ||
-            session.metadata.store !== ctx.databaseIdentity.toHexString() ||
-            session.metadata.storeAttempt !== attemptId
-          )
-            continue;
-          if (session.status === 'complete')
-            throwSenderError(
-              'This checkout is complete. Check Billing for the payment result.'
-            );
-          if (session.status === 'open') {
-            const expired = parseStripeResponse(
-              callStripe(
-                ctx,
-                'POST',
-                `/v1/checkout/sessions/${encodeURIComponent(cursor)}/expire`
-              )
-            );
-            if (expired.status !== 'expired')
-              throwSenderError('store.checkout_cancel_failed');
-          } else if (session.status !== 'expired') {
-            throwSenderError('store.checkout_lookup_failed');
-          }
-        }
-        if (!list.has_more) break;
-        if (!list.data.length) throwSenderError('store.checkout_lookup_failed');
+    retireCheckoutAttempt(
+      (method, path) => parseStripeResponse(callStripe(ctx, method, path)),
+      {
+        customers,
+        store: ctx.databaseIdentity.toHexString(),
+        attemptId,
+        sessionId,
       }
-    }
+    );
     return {};
   }
 );
-
 export const createStorePortalSession = spacetimedb.procedure(
   {},
   t.object('StorePortalSession', {

@@ -718,7 +718,10 @@ async function createCheckoutForCart(cartItems, triggerButton) {
           'This saved checkout cannot be verified automatically. Check Billing and contact the store before paying again.'
         );
       }
-      await window.stdb.cancelCheckoutAttempt({ attemptId: saved.id });
+      await window.stdb.cancelCheckoutAttempt({
+        attemptId: saved.id,
+        sessionId: saved.sessionId,
+      });
       localStorage.removeItem(STORAGE_KEYS.attempt);
       saved = null;
     }

@@ -230,7 +230,10 @@ try {
     let sessionId: string | undefined;
     let productId: string | undefined;
     try {
-      await liveBuyer.procedures.cancelStoreCheckoutAttempt({ attemptId });
+      await liveBuyer.procedures.cancelStoreCheckoutAttempt({
+        attemptId,
+        sessionId: undefined,
+      });
       const checkout = await stripe.checkout.sessions.create({
         customer: customerId,
         mode: 'setup',
@@ -240,18 +243,30 @@ try {
         metadata: { store, storeAttempt: attemptId },
       });
       sessionId = checkout.id;
-      await other.procedures.cancelStoreCheckoutAttempt({ attemptId });
+      await assert.rejects(
+        other.procedures.cancelStoreCheckoutAttempt({
+          attemptId,
+          sessionId,
+        }),
+        /owner_mismatch/
+      );
       assert.equal(
         (await stripe.checkout.sessions.retrieve(sessionId)).status,
         'open',
         'Another buyer cannot cancel this checkout'
       );
-      await liveBuyer.procedures.cancelStoreCheckoutAttempt({ attemptId });
+      await liveBuyer.procedures.cancelStoreCheckoutAttempt({
+        attemptId,
+        sessionId,
+      });
       assert.equal(
         (await stripe.checkout.sessions.retrieve(sessionId)).status,
         'expired'
       );
-      await liveBuyer.procedures.cancelStoreCheckoutAttempt({ attemptId });
+      await liveBuyer.procedures.cancelStoreCheckoutAttempt({
+        attemptId,
+        sessionId: undefined,
+      });
       const product = await stripe.products.create({
         name: 'STDB checkout recovery test',
       });
@@ -304,7 +319,10 @@ try {
         200
       );
       await assert.rejects(
-        liveBuyer.procedures.cancelStoreCheckoutAttempt({ attemptId }),
+        liveBuyer.procedures.cancelStoreCheckoutAttempt({
+          attemptId,
+          sessionId: undefined,
+        }),
         /checkout is complete/
       );
       console.log(
