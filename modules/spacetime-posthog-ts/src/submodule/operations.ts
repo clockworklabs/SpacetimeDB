@@ -39,7 +39,6 @@ import {
   releaseExpiredClaim,
   requeueFailedRow,
   RETRY_WINDOW_MICROS,
-  retryDeadline,
   expireOutboxRow,
   settleOutboxClaim,
 } from './outbox-state.js';
@@ -308,11 +307,7 @@ function maintainOutbox(ctx: WriteCtx): void {
     ]),
     MAX_EXPIRED_CLAIMS_PER_FLUSH
   )) {
-    const deadline = retryDeadline(row);
-    const next =
-      deadline.microsSinceUnixEpoch <= ctx.timestamp.microsSinceUnixEpoch
-        ? expireOutboxRow(row, ctx.timestamp)
-        : { ...row, retryExpiresAt: deadline };
+    const next = expireOutboxRow(row, ctx.timestamp);
     ctx.db.posthogOutbox.outboxId.update(next);
     countStatusChange(delta, row.status, next.status);
   }
@@ -338,7 +333,7 @@ function claimQueuedRows(ctx: WriteCtx, limit: number) {
   for (const row of rows) {
     // The bounded maintenance pass may leave more expired rows in the queue.
     const next =
-      retryDeadline(row).microsSinceUnixEpoch <=
+      row.retryExpiresAt.microsSinceUnixEpoch <=
       ctx.timestamp.microsSinceUnixEpoch
         ? expireOutboxRow(row, ctx.timestamp)
         : claimOutboxRow(row, claimId, expiresAt, ctx.timestamp);

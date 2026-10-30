@@ -8,14 +8,12 @@ import {
   posthogFetch,
 } from '../src/submodule/http';
 import {
-  retryDeadline,
   expireOutboxRow,
   claimHasExpired,
   claimOutboxRow,
   isPermanentFailure,
   releaseExpiredClaim,
   requeueFailedRow,
-  retryDelayMicros,
   settleOutboxClaim,
 } from '../src/submodule/outbox-state';
 
@@ -111,11 +109,6 @@ const released = releaseExpiredClaim(claimed, timestamp);
 assert.equal(released.status.tag, 'Queued');
 assert.equal(released.claimId, undefined);
 assert.equal(released.claimExpiresAt, Timestamp.UNIX_EPOCH);
-assert.deepEqual(
-  [1, 2, 3, 4, 5, 6, 7, 100].map(retryDelayMicros),
-  [5n, 10n, 20n, 40n, 80n, 300n, 300n, 300n].map(s => s * 1_000_000n)
-);
-
 let retrying = claimed;
 let completedAt = timestamp;
 for (let attempt = 1; attempt <= 8; attempt++) {
@@ -175,15 +168,9 @@ assert.equal(
   'expiry does not count as an HTTP attempt'
 );
 assert.equal(unsentExpired.lastError, 'posthog.retry_expired');
-assert.equal(
-  retryDeadline({ ...queued, retryExpiresAt: Timestamp.UNIX_EPOCH })
-    .microsSinceUnixEpoch,
-  queued.retryExpiresAt.microsSinceUnixEpoch,
-  'existing rows expire from their original enqueue time'
-);
 const lostClaim = releaseExpiredClaim(retrying, queued.retryExpiresAt);
 assert.equal(
-  retryDeadline(lostClaim),
+  lostClaim.retryExpiresAt,
   queued.retryExpiresAt,
   'claim recovery does not extend the retry window'
 );

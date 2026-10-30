@@ -31,15 +31,6 @@ export function retryDelayMicros(attempt: number): bigint {
     : MAX_RETRY_DELAY_MICROS;
 }
 
-export function retryDeadline(
-  row: Pick<OutboxRow, 'createdAt' | 'retryExpiresAt'>
-): Timestamp {
-  // Rows from before this column was added retain their original retry window.
-  return row.retryExpiresAt.microsSinceUnixEpoch === 0n
-    ? new Timestamp(row.createdAt.microsSinceUnixEpoch + RETRY_WINDOW_MICROS)
-    : row.retryExpiresAt;
-}
-
 export function expireOutboxRow<T extends OutboxRow>(
   row: T,
   timestamp: Timestamp
@@ -118,7 +109,7 @@ export function settleOutboxClaim<T extends OutboxRow>(
   timestamp: Timestamp
 ): T {
   const attempts = row.attempts + 1;
-  const deadline = retryDeadline(row);
+  const deadline = row.retryExpiresAt;
   const terminal =
     result.ok ||
     isPermanentFailure(result.statusCode) ||
