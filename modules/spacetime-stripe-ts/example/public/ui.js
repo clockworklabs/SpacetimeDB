@@ -121,19 +121,42 @@ function checkoutFingerprint(items) {
   );
 }
 
+function checkoutAttemptKey() {
+  return `${STORAGE_KEYS.attempt}.${window.stdb.identity}`;
+}
+
 function readCheckoutAttempt() {
   try {
     const attempt = JSON.parse(
-      localStorage.getItem(STORAGE_KEYS.attempt) ?? 'null'
+      localStorage.getItem(checkoutAttemptKey()) ??
+        localStorage.getItem(STORAGE_KEYS.attempt) ??
+        'null'
     );
     return attempt &&
       typeof attempt.id === 'string' &&
-      typeof attempt.items === 'string'
+      typeof attempt.items === 'string' &&
+      (!attempt.owner || attempt.owner === window.stdb?.identity)
       ? attempt
       : null;
   } catch {
     return null;
   }
+}
+
+async function verifiedCheckoutAttempt() {
+  let attempt = readCheckoutAttempt();
+  if (attempt && !attempt.owner && attempt.sessionId) {
+    const originalId = attempt.id;
+    const owned = await window.stdb.ownsCheckoutSession({
+      sessionId: attempt.sessionId,
+      attemptId: attempt.id,
+    });
+    const current = readCheckoutAttempt();
+    if (current?.id !== originalId) return current;
+    attempt = owned ? { ...attempt, owner: window.stdb.identity } : null;
+    localStorage.setItem(checkoutAttemptKey(), JSON.stringify(attempt));
+  }
+  return attempt;
 }
 
 let billingTimer;
@@ -155,8 +178,8 @@ async function refreshBilling() {
     .join(', ');
   byId('billingStatus').textContent =
     `${billing.purchases} confirmed purchase${billing.purchases === 1 ? '' : 's'}${subscriptions ? `. Subscription: ${subscriptions}` : ''}.`;
-  const attempt = readCheckoutAttempt();
-  if (!attempt?.sessionId) return;
+  const attempt = await verifiedCheckoutAttempt();
+  if (!attempt?.owner || !attempt.sessionId) return;
   const session = billing.checkouts.find(row => row.id === attempt.sessionId);
   if (
     session &&
@@ -169,13 +192,13 @@ async function refreshBilling() {
       persistCart();
       syncCartState();
     }
-    localStorage.removeItem(STORAGE_KEYS.attempt);
+    localStorage.setItem(checkoutAttemptKey(), 'null');
     showCheckoutBanner(
       'success',
       '<strong>Payment confirmed.</strong> Your purchase is recorded.'
     );
   } else if (session?.paymentStatus === 'failed') {
-    localStorage.removeItem(STORAGE_KEYS.attempt);
+    localStorage.setItem(checkoutAttemptKey(), 'null');
     showCheckoutBanner(
       'canceled',
       'Payment failed. You can try checkout again.'
@@ -705,11 +728,12 @@ async function createCheckoutForCart(cartItems, triggerButton) {
       productId: entry.id,
       quantity: entry.quantity,
     }));
-    let saved = readCheckoutAttempt();
+    let saved = await verifiedCheckoutAttempt();
     const fingerprint = checkoutFingerprint(cartItems);
     if (
       saved?.items === fingerprint &&
-      (!Number.isFinite(saved.createdAt) ||
+      ((!saved.owner && saved.recoverable) ||
+        !Number.isFinite(saved.createdAt) ||
         Date.now() - saved.createdAt >= 24 * 60 * 60 * 1000 ||
         saved.createdAt > Date.now())
     ) {
@@ -722,25 +746,26 @@ async function createCheckoutForCart(cartItems, triggerButton) {
         attemptId: saved.id,
         sessionId: saved.sessionId,
       });
-      localStorage.removeItem(STORAGE_KEYS.attempt);
+      localStorage.setItem(checkoutAttemptKey(), 'null');
       saved = null;
     }
     const attempt =
       saved?.items === fingerprint
-        ? saved
+        ? { ...saved, owner: window.stdb.identity }
         : {
             id: crypto.randomUUID(),
+            owner: window.stdb.identity,
             items: fingerprint,
             createdAt: Date.now(),
             recoverable: true,
           };
-    localStorage.setItem(STORAGE_KEYS.attempt, JSON.stringify(attempt));
+    localStorage.setItem(checkoutAttemptKey(), JSON.stringify(attempt));
     const result = await window.stdb.createCheckoutSession({
       items,
       attemptId: attempt.id,
     });
     localStorage.setItem(
-      STORAGE_KEYS.attempt,
+      checkoutAttemptKey(),
       JSON.stringify({ ...attempt, sessionId: result.sessionId })
     );
     writeLog(`create_checkout_session: ${JSON.stringify(result)}`);

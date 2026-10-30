@@ -163,7 +163,8 @@ outside `withTx`.
 - `reactivateUserSubscription(ctx, { userId, stripeSubscriptionId, idempotencyKey? })`:
   removes scheduled cancellation; a fully canceled subscription cannot restart
 - `updateUserSubscriptionQuantity(ctx, { userId, stripeSubscriptionId, quantity, subscriptionItemId?, idempotencyKey? })`:
-  requires an item ID for a multi-item subscription
+  requires an item ID for a multi-item subscription. Only the first item is stored
+  in the subscription record, so this helper rejects updates to other items
 - `stripeRequest(ctx, { method, path, formBody?, idempotencyKey? })`: request to
   a relative `/v1/` path on `api.stripe.com`; accepted methods are `GET`,
   `POST`, and `DELETE`

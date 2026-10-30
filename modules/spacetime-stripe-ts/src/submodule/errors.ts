@@ -1,6 +1,7 @@
 // Stable error codes. Stripe API failures append `:<http status>` and Stripe's
 // error details after the code.
 export const errors = {
+  subscriptionItemNotStored: 'stripe.subscription_item_not_stored',
   notAuthorized: 'stripe.not_authorized',
   cannotRemoveLastAdmin: 'stripe.cannot_remove_last_admin',
   configNotSet: 'stripe.config_not_set',

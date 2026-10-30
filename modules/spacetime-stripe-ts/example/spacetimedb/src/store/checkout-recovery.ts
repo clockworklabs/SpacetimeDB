@@ -46,10 +46,10 @@ export function retireCheckoutAttempt(
     );
     if (
       typeof session.customer !== 'string' ||
-      !args.customers.includes(session.customer) ||
-      !matches(session)
+      !args.customers.includes(session.customer)
     )
       throw new Error('store.checkout_owner_mismatch');
+    if (!matches(session)) throw new Error('store.checkout_attempt_mismatch');
     retire(session);
     return;
   }

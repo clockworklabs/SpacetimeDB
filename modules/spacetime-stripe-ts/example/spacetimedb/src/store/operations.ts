@@ -443,6 +443,36 @@ export const createStoreCheckoutSession = spacetimedb.procedure(
 
 // Stripe can discard request IDs after 24 hours. Retire the previous checkout
 // before the browser starts another attempt with a new ID.
+export const ownsStoreCheckoutSession = spacetimedb.procedure(
+  { sessionId: t.string(), attemptId: t.string() },
+  t.bool(),
+  (ctx, { sessionId, attemptId }) => {
+    if (!/^cs_[a-zA-Z0-9_]{1,200}$/.test(sessionId))
+      throwSenderError('store.invalid_session');
+    consumeBuyerStripeCall(ctx);
+    const session = parseStripeResponse(
+      callStripe(
+        ctx,
+        'GET',
+        `/v1/checkout/sessions/${encodeURIComponent(sessionId)}`
+      )
+    );
+    return (
+      ctx.withTx(tx =>
+        [
+          ...tx.as.stripe.db.stripeCustomer.byUserId.filter(
+            ctx.sender.toHexString()
+          ),
+        ].some(customer => customer.stripeCustomerId === session.customer)
+      ) &&
+      isObject(session.metadata) &&
+      session.metadata.store === ctx.databaseIdentity.toHexString() &&
+      (!Object.hasOwn(session.metadata, 'storeAttempt') ||
+        session.metadata.storeAttempt === attemptId)
+    );
+  }
+);
+
 export const cancelStoreCheckoutAttempt = spacetimedb.procedure(
   { attemptId: t.string(), sessionId: t.option(t.string()) },
   t.unit(),

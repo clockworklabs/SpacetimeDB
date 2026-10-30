@@ -777,6 +777,8 @@ function updateSubscriptionQuantityInStripe(
     : data[0];
   const subscriptionItemId = maybeString(selected?.id);
   if (!subscriptionItemId) throwSenderError(errors.subscriptionItemNotFound);
+  if (subscriptionItemId !== data[0]?.id)
+    throwSenderError(errors.subscriptionItemNotStored);
 
   const updateResponse = callStripe(ctx, {
     method: 'POST',

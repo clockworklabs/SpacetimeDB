@@ -214,14 +214,28 @@ assert.throws(
     }),
   /item_not_found/
 );
+assert.throws(
+  () =>
+    updateUserSubscriptionQuantity(billing, {
+      userId: 'buyer',
+      stripeSubscriptionId: 'sub_buyer',
+      subscriptionItemId: 'si_second',
+      quantity: 3n,
+    }),
+  /item_not_stored/
+);
+assert.equal(
+  calls.some(call => call.url.endsWith('/subscription_items/si_second')),
+  false
+);
 updateUserSubscriptionQuantity(billing, {
   userId: 'buyer',
   stripeSubscriptionId: 'sub_buyer',
-  subscriptionItemId: 'si_second',
+  subscriptionItemId: 'si_first',
   quantity: 3n,
 });
 const change = calls.find(call =>
-  call.url.endsWith('/subscription_items/si_second')
+  call.url.endsWith('/subscription_items/si_first')
 );
 assert.equal(new URLSearchParams(change?.body).get('quantity'), '3');
 process.stdout.write('stripe billing tests passed\n');

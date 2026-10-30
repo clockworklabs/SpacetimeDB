@@ -230,10 +230,6 @@ try {
     let sessionId: string | undefined;
     let productId: string | undefined;
     try {
-      await liveBuyer.procedures.cancelStoreCheckoutAttempt({
-        attemptId,
-        sessionId: undefined,
-      });
       const checkout = await stripe.checkout.sessions.create({
         customer: customerId,
         mode: 'setup',
@@ -243,6 +239,20 @@ try {
         metadata: { store, storeAttempt: attemptId },
       });
       sessionId = checkout.id;
+      assert.equal(
+        await other.procedures.ownsStoreCheckoutSession({
+          sessionId,
+          attemptId,
+        }),
+        false
+      );
+      assert.equal(
+        await liveBuyer.procedures.ownsStoreCheckoutSession({
+          sessionId,
+          attemptId,
+        }),
+        true
+      );
       await assert.rejects(
         other.procedures.cancelStoreCheckoutAttempt({
           attemptId,
@@ -263,10 +273,13 @@ try {
         (await stripe.checkout.sessions.retrieve(sessionId)).status,
         'expired'
       );
-      await liveBuyer.procedures.cancelStoreCheckoutAttempt({
-        attemptId,
-        sessionId: undefined,
-      });
+      assert.equal(
+        await liveBuyer.procedures.ownsStoreCheckoutSession({
+          sessionId,
+          attemptId: 'different-attempt',
+        }),
+        false
+      );
       const product = await stripe.products.create({
         name: 'STDB checkout recovery test',
       });

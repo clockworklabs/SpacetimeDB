@@ -35,6 +35,8 @@ try {
       'This checkout is complete. Check Billing for the payment result.';
     window.cancelCalls = [];
     window.stdb = {
+      identity: 'buyer_one',
+      ownsCheckoutSession: async () => false,
       cancelCheckoutAttempt: async args => {
         window.cancelCalls.push(args);
         if (window.cancelError) throw new Error(window.cancelError);
@@ -104,15 +106,76 @@ try {
     'new price retry must keep its request'
   );
   await catalog('price_new', 'subscription');
-  const subscription = await checkout();
+  let subscription = await checkout();
   assert.notEqual(
     subscription,
     changed,
     'changed checkout mode must start a new request'
   );
+  await page.evaluate(() => {
+    window.stdb.identity = 'buyer_two';
+  });
+  const newBuyerAttempt = await checkout();
+  assert.notEqual(
+    newBuyerAttempt,
+    subscription,
+    'a new buyer must not inherit the previous checkout'
+  );
+  await page.evaluate(() => {
+    window.stdb.identity = 'buyer_one';
+  });
+  assert.equal(
+    await checkout(),
+    subscription,
+    'returning buyer must retain their pending attempt'
+  );
+  await page.evaluate(() => {
+    window.stdb.identity = 'buyer_two';
+  });
+  assert.equal(await checkout(), newBuyerAttempt);
+  await page.evaluate(() => {
+    const base = 'stdb.premiumStore.checkoutAttempt';
+    const scoped = base + '.' + window.stdb.identity;
+    const attempt = JSON.parse(localStorage.getItem(scoped));
+    delete attempt.owner;
+    attempt.sessionId = 'cs_buyer_one';
+    localStorage.setItem(base, JSON.stringify(attempt));
+    localStorage.removeItem(scoped);
+    window.cancelError = 'store.checkout_owner_mismatch';
+  });
+  subscription = await checkout();
+  assert.notEqual(
+    subscription,
+    newBuyerAttempt,
+    "another buyer's legacy checkout must not block a new attempt"
+  );
+  assert.equal(
+    await page.evaluate(() => window.cancelCalls.length),
+    0,
+    'another buyer session must not be canceled'
+  );
+  await page.evaluate(() => {
+    window.cancelCalls = [];
+    window.cancelError =
+      'This checkout is complete. Check Billing for the payment result.';
+  });
+  await page.evaluate(() => {
+    const base = 'stdb.premiumStore.checkoutAttempt';
+    const key = base + '.' + window.stdb.identity;
+    const saved = JSON.parse(localStorage.getItem(key));
+    delete saved.owner;
+    delete saved.recoverable;
+    localStorage.setItem(base, JSON.stringify(saved));
+    localStorage.removeItem(key);
+  });
+  assert.equal(
+    await checkout(),
+    subscription,
+    'recent untagged legacy attempt must reuse its request'
+  );
   const beforeExpiry = await page.evaluate(() => window.checkoutCalls.length);
   await page.evaluate(() => {
-    const key = 'stdb.premiumStore.checkoutAttempt';
+    const key = 'stdb.premiumStore.checkoutAttempt.' + window.stdb.identity;
     localStorage.setItem(
       key,
       JSON.stringify({
@@ -135,7 +198,7 @@ try {
     'untagged checkout cannot use metadata lookup'
   );
   await page.evaluate(() => {
-    const key = 'stdb.premiumStore.checkoutAttempt';
+    const key = 'stdb.premiumStore.checkoutAttempt.' + window.stdb.identity;
     localStorage.setItem(
       key,
       JSON.stringify({
@@ -164,7 +227,7 @@ try {
     'retired checkout must allow a fresh attempt'
   );
   await page.evaluate(() => {
-    const key = 'stdb.premiumStore.checkoutAttempt';
+    const key = 'stdb.premiumStore.checkoutAttempt.' + window.stdb.identity;
     localStorage.setItem(
       key,
       JSON.stringify({
@@ -200,6 +263,51 @@ try {
   await page.evaluate(() => {
     window.testBilling.checkouts[0].fulfilled = true;
     window.testBilling.purchases = 1;
+    const base = 'stdb.premiumStore.checkoutAttempt';
+    const scoped = base + '.' + window.stdb.identity;
+    const saved = JSON.parse(localStorage.getItem(scoped));
+    delete saved.owner;
+    localStorage.setItem(base, JSON.stringify(saved));
+    localStorage.removeItem(scoped);
+    window.stdb.ownsCheckoutSession = () =>
+      new Promise(resolve => {
+        window.completeOwnerCheck = resolve;
+      });
+    window.dispatchEvent(new Event('stdb:ready'));
+  });
+  await page.waitForFunction(() => window.completeOwnerCheck);
+  await page.evaluate(async () => {
+    const base = 'stdb.premiumStore.checkoutAttempt';
+    const scoped = base + '.' + window.stdb.identity;
+    localStorage.setItem(
+      scoped,
+      JSON.stringify({
+        ...JSON.parse(localStorage.getItem(base)),
+        id: 'new_attempt',
+        sessionId: 'cs_new',
+        owner: window.stdb.identity,
+      })
+    );
+    window.completeOwnerCheck(true);
+    await new Promise(resolve => setTimeout(resolve, 0));
+  });
+  assert.equal(
+    await page.evaluate(
+      () =>
+        JSON.parse(
+          localStorage.getItem(
+            'stdb.premiumStore.checkoutAttempt.' + window.stdb.identity
+          )
+        ).id
+    ),
+    'new_attempt',
+    'late ownership result must not overwrite a newer checkout'
+  );
+  await page.evaluate(() => {
+    localStorage.removeItem(
+      'stdb.premiumStore.checkoutAttempt.' + window.stdb.identity
+    );
+    window.stdb.ownsCheckoutSession = async () => true;
     window.dispatchEvent(new Event('stdb:ready'));
   });
   await page.getByRole('button', { name: 'Cart (0)', exact: true }).waitFor();

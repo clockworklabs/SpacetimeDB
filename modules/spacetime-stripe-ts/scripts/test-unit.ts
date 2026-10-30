@@ -316,3 +316,19 @@ for (const customer of ['cus_buyer', 'cus_other']) {
 console.log(
   'Checkout recovery: pagination and direct session ownership passed.'
 );
+assert.throws(
+  () =>
+    retireCheckoutAttempt(
+      method => {
+        assert.equal(method, 'GET', 'the other attempt must stay open');
+        return {
+          id: 'cs_other_attempt',
+          customer: 'cus_buyer',
+          status: 'open',
+          metadata: { store: 'store', storeAttempt: 'different' },
+        };
+      },
+      { ...recoveryArgs, sessionId: 'cs_other_attempt' }
+    ),
+  /checkout_attempt_mismatch/
+);
