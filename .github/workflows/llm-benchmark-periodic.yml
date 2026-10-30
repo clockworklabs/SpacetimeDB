@@ -281,13 +281,12 @@ jobs:
       NODE_OPTIONS: --use-openssl-ca
 
     steps:
-      # Configure action and tool trust before checkout.
-      - name: Set up certificate trust
-        if: runner.environment == 'github-hosted'
-        uses: clockworklabs/SpacetimeDB/.github/actions/setup-certificate-trust@bfops/refresh-ci-trust
-
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set up certificate trust
+        if: runner.environment == 'github-hosted'
+        uses: ./.github/actions/setup-certificate-trust
 
       - uses: dsherret/rust-toolchain-file@v1
 

@@ -301,16 +301,15 @@ jobs:
       packages: write
 
     steps:
-      # Configure action and tool trust before checkout.
-      - name: Set up certificate trust
-        if: runner.environment == 'github-hosted'
-        uses: clockworklabs/SpacetimeDB/.github/actions/setup-certificate-trust@bfops/refresh-ci-trust
-
       - name: Checkout release source
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.dry_run && github.sha || github.event.inputs.release_tag }}
           submodules: recursive
+
+      - name: Set up certificate trust
+        if: runner.environment == 'github-hosted'
+        uses: ./.github/actions/setup-certificate-trust
 
       - name: Download cargo-release
         uses: actions/download-artifact@v4
@@ -424,10 +423,12 @@ jobs:
       NODE_OPTIONS: --use-openssl-ca
 
     steps:
-      # Configure action and tool trust before checkout.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Set up certificate trust
         if: runner.environment == 'github-hosted'
-        uses: clockworklabs/SpacetimeDB/.github/actions/setup-certificate-trust@bfops/refresh-ci-trust
+        uses: ./.github/actions/setup-certificate-trust
         with:
           update-rustup: "false"
 

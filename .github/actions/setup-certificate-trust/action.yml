@@ -4,6 +4,8 @@ inputs:
   update-rustup:
     description: Update or install rustup for jobs that use Rust
     default: "true"
+# This protects subsequent requests. Checkout and GitHub's action downloads happen
+# before setup and rely on the runner's original certificate trust.
 runs:
   using: composite
   steps:
@@ -15,4 +17,4 @@ runs:
 
     - name: Update rustup certificate trust
       if: inputs.update-rustup == 'true'
-      uses: clockworklabs/SpacetimeDB/.github/actions/ensure-rustup@master
+      uses: ./.github/actions/ensure-rustup
