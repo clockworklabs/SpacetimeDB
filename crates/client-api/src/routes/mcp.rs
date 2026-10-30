@@ -3,7 +3,8 @@ use std::time::Duration;
 use axum::extract::State;
 use axum::response::{ErrorResponse, IntoResponse, Response};
 use axum::{Extension, Json};
-use http::StatusCode;
+use base64::{engine::general_purpose, Engine};
+use http::{HeaderMap, StatusCode};
 use serde_json::{json, Value};
 use spacetimedb::auth::identity::ConnectionAuthCtx;
 use spacetimedb::host::{FunctionArgs, ReducerOutcome};
@@ -22,7 +23,21 @@ use crate::routes::subscribe::generate_random_connection_id;
 use crate::util::NameOrIdentity;
 use crate::{log_and_500, Authorization, ControlStateDelegate, NodeDelegate};
 
-const PROTOCOL_VERSION: &str = "2025-06-18";
+/// stateless revision
+const PROTOCOL_VERSION: &str = "2026-07-28";
+
+/// still answered so existing clients keep working
+const LEGACY_PROTOCOL_VERSION: &str = "2025-06-18";
+
+const SUPPORTED_VERSIONS: [&str; 2] = [PROTOCOL_VERSION, LEGACY_PROTOCOL_VERSION];
+
+const LEGACY_VERSIONS: [&str; 5] = [
+    LEGACY_PROTOCOL_VERSION,
+    "2025-11-25",
+    "2025-03-26",
+    "2024-11-05",
+    "2024-10-07",
+];
 
 const JSONRPC_VERSION: &str = "2.0";
 
@@ -32,17 +47,159 @@ const METHOD_NOT_FOUND: i64 = -32601;
 
 const INVALID_PARAMS: i64 = -32602;
 
+const HEADER_MISMATCH: i64 = -32020;
+
+const UNSUPPORTED_PROTOCOL_VERSION: i64 = -32022;
+
+const META_PROTOCOL_VERSION: &str = "io.modelcontextprotocol/protocolVersion";
+
+const META_CLIENT_CAPABILITIES: &str = "io.modelcontextprotocol/clientCapabilities";
+
+const META_SERVER_INFO: &str = "io.modelcontextprotocol/serverInfo";
+
+const PROTOCOL_VERSION_HEADER: &str = "mcp-protocol-version";
+
+const METHOD_HEADER: &str = "mcp-method";
+
+const NAME_HEADER: &str = "mcp-name";
+
+const LIST_CACHE_TTL_MS: u64 = 300_000;
+
 const MODULE_WAIT_TIMEOUT: Duration = Duration::from_secs(10);
 
 const MAX_ERROR_BODY_BYTES: usize = 64 * 1024;
 
 type RpcError = (i64, String);
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Era {
+    /// 2026-07-28
+    Stateless,
+    /// any version in LEGACY_VERSIONS or no version header
+    Handshake,
+}
+
+fn protocol_era(headers: &HeaderMap) -> Result<Era, Option<String>> {
+    if headers.get(PROTOCOL_VERSION_HEADER).is_none() {
+        return Ok(Era::Handshake);
+    }
+
+    let Some(requested) = single_header(headers, PROTOCOL_VERSION_HEADER) else {
+        return Err(None);
+    };
+
+    if requested == PROTOCOL_VERSION {
+        Ok(Era::Stateless)
+    } else if LEGACY_VERSIONS.contains(&requested) {
+        Ok(Era::Handshake)
+    } else {
+        Err(Some(requested.to_owned()))
+    }
+}
+
+fn single_header<'h>(headers: &'h HeaderMap, name: &str) -> Option<&'h str> {
+    let mut values = headers.get_all(name).into_iter();
+    match (values.next(), values.next()) {
+        (Some(value), None) => value.to_str().ok(),
+        _ => None,
+    }
+}
+
+fn decode_header_value(value: &str) -> Option<String> {
+    let Some(encoded) = value.strip_prefix("=?base64?").and_then(|rest| rest.strip_suffix("?=")) else {
+        return Some(value.to_owned());
+    };
+    let bytes = general_purpose::STANDARD.decode(encoded).ok()?;
+
+    String::from_utf8(bytes).ok()
+}
+
+fn validate_stateless_request(headers: &HeaderMap, request: &Value, method: &str) -> Result<(), RpcError> {
+    let header = |name: &str| single_header(headers, name);
+    let params = request.get("params");
+    let meta = params.and_then(|params| params.get("_meta"));
+
+    match header(METHOD_HEADER) {
+        None => return Err((HEADER_MISMATCH, format!("missing or malformed {METHOD_HEADER} header"))),
+        Some(value) if value != method => {
+            return Err((
+                HEADER_MISMATCH,
+                format!("{METHOD_HEADER} is '{value}' but the body calls '{method}'"),
+            ))
+        }
+        Some(_) => {}
+    }
+
+    let Some(version) = meta
+        .and_then(|meta| meta.get(META_PROTOCOL_VERSION))
+        .and_then(Value::as_str)
+    else {
+        return Err((
+            INVALID_PARAMS,
+            format!("missing {META_PROTOCOL_VERSION} in params._meta"),
+        ));
+    };
+
+    if Some(version) != header(PROTOCOL_VERSION_HEADER) {
+        return Err((
+            HEADER_MISMATCH,
+            format!("{PROTOCOL_VERSION_HEADER} does not match {META_PROTOCOL_VERSION}"),
+        ));
+    }
+
+    if !meta
+        .and_then(|meta| meta.get(META_CLIENT_CAPABILITIES))
+        .is_some_and(Value::is_object)
+    {
+        return Err((
+            INVALID_PARAMS,
+            format!("missing {META_CLIENT_CAPABILITIES} in params._meta"),
+        ));
+    }
+
+    if method == "tools/call" {
+        let Some(name) = params.and_then(|params| params.get("name")).and_then(Value::as_str) else {
+            return Err((INVALID_PARAMS, "missing tool name".to_owned()));
+        };
+        match header(NAME_HEADER).map(decode_header_value) {
+            None => return Err((HEADER_MISMATCH, format!("missing or malformed {NAME_HEADER} header"))),
+            Some(None) => {
+                return Err((HEADER_MISMATCH, format!("{NAME_HEADER} did not decode")));
+            }
+            Some(Some(value)) if value != name => {
+                return Err((
+                    HEADER_MISMATCH,
+                    format!("{NAME_HEADER} is '{value}' but the body calls '{name}'"),
+                ));
+            }
+            Some(Some(_)) => {}
+        }
+    }
+
+    Ok(())
+}
+
+fn json_response(status: StatusCode, body: Value) -> Response {
+    (status, Json(body)).into_response()
+}
+
+fn unsupported_version(id: &Value, requested: &str) -> Response {
+    let mut body = jsonrpc_error(
+        id,
+        UNSUPPORTED_PROTOCOL_VERSION,
+        format!("unsupported protocol version: {requested}"),
+    );
+    body["error"]["data"] = json!({ "supported": SUPPORTED_VERSIONS, "requested": requested });
+
+    json_response(StatusCode::BAD_REQUEST, body)
+}
+
 /// handle MCP JSON-RPC request for the database named in the URL
 pub async fn mcp<S>(
     State(ctx): State<S>,
     Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
     Extension(auth): Extension<SpacetimeAuth>,
+    headers: HeaderMap,
     Json(request): Json<Value>,
 ) -> axum::response::Result<Response>
 where
@@ -51,19 +208,20 @@ where
     // the middleware counts this route, so the addressed database is discarded
     let mut discarded = None;
 
-    handle_mcp(&ctx, Some(database), auth, request, &mut discarded).await
+    handle_mcp(&ctx, Some(database), auth, headers, request, &mut discarded).await
 }
 
 pub async fn mcp_root<S>(
     State(ctx): State<S>,
     Extension(auth): Extension<SpacetimeAuth>,
+    headers: HeaderMap,
     Json(request): Json<Value>,
 ) -> axum::response::Result<Response>
 where
     S: ControlStateDelegate + NodeDelegate + Authorization + Clone + 'static,
 {
     let mut addressed = None;
-    let response = handle_mcp(&ctx, None, auth, request, &mut addressed).await?;
+    let response = handle_mcp(&ctx, None, auth, headers, request, &mut addressed).await?;
 
     // no path middleware can attribute this route, its database is named in the request body
     Ok(match addressed {
@@ -76,6 +234,7 @@ async fn handle_mcp<S>(
     ctx: &S,
     scope: Option<Database>,
     auth: SpacetimeAuth,
+    headers: HeaderMap,
     request: Value,
     // set to the database a tool addressed, so mcp_root can attribute its egress
     addressed: &mut Option<Identity>,
@@ -83,27 +242,63 @@ async fn handle_mcp<S>(
 where
     S: ControlStateDelegate + NodeDelegate + Authorization + Clone + 'static,
 {
+    if !request.is_object() {
+        let body = jsonrpc_error(&Value::Null, INVALID_REQUEST, "invalid request: expected an object");
+        return Ok(json_response(StatusCode::BAD_REQUEST, body));
+    }
+
     // a notification has no id, so it gets no response
     let Some(id) = request.get("id").cloned() else {
         return Ok(StatusCode::ACCEPTED.into_response());
+    };
+
+    let era = match protocol_era(&headers) {
+        Ok(era) => era,
+        Err(None) => {
+            let message = format!("malformed {PROTOCOL_VERSION_HEADER} header");
+            return Ok(json_response(
+                StatusCode::BAD_REQUEST,
+                jsonrpc_error(&id, HEADER_MISMATCH, message),
+            ));
+        }
+        Err(Some(requested)) => return Ok(unsupported_version(&id, &requested)),
     };
 
     let Some(method) = request.get("method").and_then(Value::as_str) else {
         return Ok(Json(jsonrpc_error(&id, INVALID_REQUEST, "invalid request: missing method")).into_response());
     };
 
+    if era == Era::Stateless
+        && let Err((code, message)) = validate_stateless_request(&headers, &request, method)
+    {
+        return Ok(json_response(
+            StatusCode::BAD_REQUEST,
+            jsonrpc_error(&id, code, message),
+        ));
+    }
+
     let host_wide = scope.is_none();
-    let body = match method {
-        "initialize" => jsonrpc_result(&id, initialize_result(host_wide)),
+    let body = match (era, method) {
+        (Era::Handshake, "initialize") => jsonrpc_result(&id, initialize_result(host_wide)),
         // protocol ping, distinct from the ping tool
-        "ping" => jsonrpc_result(&id, json!({})),
-        "tools/list" => jsonrpc_result(&id, tools_list(host_wide)),
-        "tools/call" => match tools_call(ctx, scope, auth, request.get("params"), addressed).await {
+        (Era::Handshake, "ping") => jsonrpc_result(&id, json!({})),
+        (Era::Handshake, "tools/list") => jsonrpc_result(&id, tools_list(host_wide)),
+        (_, "server/discover") => jsonrpc_result(&id, cacheable(discover_result(host_wide))),
+        (Era::Stateless, "tools/list") => jsonrpc_result(&id, cacheable(tools_list(host_wide))),
+        (_, "tools/call") => match tools_call(ctx, scope, auth, request.get("params"), addressed).await {
+            Ok(result) if era == Era::Stateless => jsonrpc_result(&id, complete(result)),
             Ok(result) => jsonrpc_result(&id, result),
             Err((code, message)) => jsonrpc_error(&id, code, message),
         },
-        other => jsonrpc_error(&id, METHOD_NOT_FOUND, format!("method not found: {other}")),
+        (Era::Stateless, other) => {
+            return Ok(json_response(
+                StatusCode::NOT_FOUND,
+                jsonrpc_error(&id, METHOD_NOT_FOUND, format!("method not found: {other}")),
+            ))
+        }
+        (Era::Handshake, other) => jsonrpc_error(&id, METHOD_NOT_FOUND, format!("method not found: {other}")),
     };
+
     Ok(Json(body).into_response())
 }
 
@@ -115,8 +310,25 @@ fn jsonrpc_error(id: &Value, code: i64, message: impl Into<String>) -> Value {
     json!({ "jsonrpc": JSONRPC_VERSION, "id": id, "error": { "code": code, "message": message.into() } })
 }
 
-fn initialize_result(host_wide: bool) -> Value {
-    let instructions = if host_wide {
+fn server_info() -> Value {
+    json!({ "name": "spacetimedb", "version": env!("CARGO_PKG_VERSION") })
+}
+
+fn complete(mut result: Value) -> Value {
+    result["resultType"] = json!("complete");
+    result["_meta"][META_SERVER_INFO] = server_info();
+    result
+}
+
+fn cacheable(result: Value) -> Value {
+    let mut result = complete(result);
+    result["ttlMs"] = json!(LIST_CACHE_TTL_MS);
+    result["cacheScope"] = json!("public");
+    result
+}
+
+fn instructions(host_wide: bool) -> &'static str {
+    if host_wide {
         "Tools for the SpacetimeDB databases you can reach on this host. Every data tool takes a \
          `database` argument, either a name or an identity. Use list_databases to see the ones you \
          own, get_schema to see a database's tables and reducers, sql to query data, and call to \
@@ -127,12 +339,23 @@ fn initialize_result(host_wide: bool) -> Value {
          Use get_schema to see its tables and reducers, sql to query data, and call to \
          invoke a reducer. Reducers are the usual way to write, and SQL writes require \
          ownership. Everything runs with your identity, exactly as over the HTTP API."
-    };
+    }
+}
+
+fn initialize_result(host_wide: bool) -> Value {
     json!({
-        "protocolVersion": PROTOCOL_VERSION,
+        "protocolVersion": LEGACY_PROTOCOL_VERSION,
         "capabilities": { "tools": {} },
-        "serverInfo": { "name": "spacetimedb", "version": env!("CARGO_PKG_VERSION") },
-        "instructions": instructions,
+        "serverInfo": server_info(),
+        "instructions": instructions(host_wide),
+    })
+}
+
+fn discover_result(host_wide: bool) -> Value {
+    json!({
+        "supportedVersions": SUPPORTED_VERSIONS,
+        "capabilities": { "tools": {} },
+        "instructions": instructions(host_wide),
     })
 }
 
@@ -446,7 +669,7 @@ mod tests {
         for host_wide in [false, true] {
             let info = initialize_result(host_wide);
             assert_eq!(info["serverInfo"]["name"], "spacetimedb");
-            assert_eq!(info["protocolVersion"], PROTOCOL_VERSION);
+            assert_eq!(info["protocolVersion"], LEGACY_PROTOCOL_VERSION);
             assert!(info["capabilities"]["tools"].is_object());
             assert!(info["instructions"].as_str().unwrap().contains("SpacetimeDB"));
         }
@@ -689,5 +912,227 @@ mod tests {
         assert_eq!(ids, [1, 3], "a listing must never include another owner's database");
 
         assert!(owned_by(vec![database(other, 2)], caller).is_empty());
+    }
+
+    fn stateless_headers(method: &str, name: Option<&str>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(PROTOCOL_VERSION_HEADER, PROTOCOL_VERSION.parse().unwrap());
+        headers.insert(METHOD_HEADER, method.parse().unwrap());
+        if let Some(name) = name {
+            headers.insert(NAME_HEADER, name.parse().unwrap());
+        }
+        headers
+    }
+
+    fn version_header(version: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(PROTOCOL_VERSION_HEADER, version.parse().unwrap());
+        headers
+    }
+
+    fn request_meta(version: &str, capabilities: bool) -> Value {
+        let mut meta = serde_json::Map::new();
+        meta.insert(META_PROTOCOL_VERSION.to_owned(), json!(version));
+        if capabilities {
+            meta.insert(META_CLIENT_CAPABILITIES.to_owned(), json!({}));
+        }
+        Value::Object(meta)
+    }
+
+    fn stateless_request(method: &str, mut params: Value) -> Value {
+        params["_meta"] = request_meta(PROTOCOL_VERSION, true);
+        json!({ "jsonrpc": "2.0", "id": 1, "method": method, "params": params })
+    }
+
+    #[test]
+    fn the_version_header_picks_the_protocol_era() {
+        assert_eq!(protocol_era(&version_header(PROTOCOL_VERSION)).unwrap(), Era::Stateless);
+
+        // existing clients older than the header use the handshake
+        assert_eq!(protocol_era(&HeaderMap::new()).unwrap(), Era::Handshake);
+
+        for version in LEGACY_VERSIONS {
+            assert_eq!(
+                protocol_era(&version_header(version)).unwrap(),
+                Era::Handshake,
+                "{version} clients must keep working"
+            );
+        }
+
+        let unsupported = protocol_era(&version_header("2099-01-01")).unwrap_err();
+        assert_eq!(unsupported.as_deref(), Some("2099-01-01"));
+    }
+
+    #[test]
+    fn a_malformed_version_header_is_rejected_not_demoted() {
+        let mut duplicated = HeaderMap::new();
+        duplicated.append(PROTOCOL_VERSION_HEADER, PROTOCOL_VERSION.parse().unwrap());
+        duplicated.append(PROTOCOL_VERSION_HEADER, LEGACY_PROTOCOL_VERSION.parse().unwrap());
+        assert_eq!(protocol_era(&duplicated).unwrap_err(), None);
+
+        let mut unreadable = HeaderMap::new();
+        unreadable.insert(PROTOCOL_VERSION_HEADER, http::HeaderValue::from_bytes(&[0xff]).unwrap());
+        assert_eq!(
+            protocol_era(&unreadable).unwrap_err(),
+            None,
+            "an unreadable value must not be served as the handshake era"
+        );
+    }
+
+    #[test]
+    fn a_duplicated_mirrored_header_is_rejected() {
+        let request = stateless_request("tools/list", json!({}));
+        let mut headers = stateless_headers("tools/list", None);
+        headers.append(METHOD_HEADER, "tools/call".parse().unwrap());
+
+        let (code, _) = validate_stateless_request(&headers, &request, "tools/list").unwrap_err();
+        assert_eq!(code, HEADER_MISMATCH, "an intermediary could route on the second value");
+    }
+
+    #[test]
+    fn completing_a_result_keeps_meta_it_already_set() {
+        let result = complete(json!({ "_meta": { "vendor/key": 1 } }));
+
+        assert_eq!(result["_meta"]["vendor/key"], 1, "an existing key must survive");
+        assert_eq!(result["_meta"][META_SERVER_INFO]["name"], "spacetimedb");
+    }
+
+    #[tokio::test]
+    async fn an_unsupported_version_reports_what_the_server_speaks() {
+        let response = unsupported_version(&json!(1), "2099-01-01");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let bytes = axum::body::to_bytes(response.into_body(), MAX_ERROR_BODY_BYTES)
+            .await
+            .unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["error"]["code"], UNSUPPORTED_PROTOCOL_VERSION);
+        assert_eq!(body["error"]["data"]["requested"], "2099-01-01");
+        assert_eq!(body["error"]["data"]["supported"], json!(SUPPORTED_VERSIONS));
+    }
+
+    #[test]
+    fn stateless_requests_mirror_the_method_into_a_header() {
+        let request = stateless_request("tools/list", json!({}));
+
+        assert!(validate_stateless_request(&stateless_headers("tools/list", None), &request, "tools/list").is_ok());
+
+        let (code, _) = validate_stateless_request(&HeaderMap::new(), &request, "tools/list").unwrap_err();
+        assert_eq!(code, HEADER_MISMATCH, "the method header is required");
+
+        let (code, _) =
+            validate_stateless_request(&stateless_headers("tools/call", None), &request, "tools/list").unwrap_err();
+        assert_eq!(code, HEADER_MISMATCH);
+    }
+
+    #[test]
+    fn stateless_requests_carry_their_own_protocol_metadata() {
+        let headers = stateless_headers("tools/list", None);
+
+        let bare = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" });
+        let (code, _) = validate_stateless_request(&headers, &bare, "tools/list").unwrap_err();
+        assert_eq!(code, INVALID_PARAMS, "a request without params has no protocol version");
+
+        let no_capabilities =
+            json!({ "method": "tools/list", "params": { "_meta": request_meta(PROTOCOL_VERSION, false) } });
+        let (code, _) = validate_stateless_request(&headers, &no_capabilities, "tools/list").unwrap_err();
+        assert_eq!(
+            code, INVALID_PARAMS,
+            "client capabilities are required on every request"
+        );
+
+        let disagrees =
+            json!({ "method": "tools/list", "params": { "_meta": request_meta(LEGACY_PROTOCOL_VERSION, true) } });
+        let (code, _) = validate_stateless_request(&headers, &disagrees, "tools/list").unwrap_err();
+        assert_eq!(
+            code, HEADER_MISMATCH,
+            "the header and the body must name the same version"
+        );
+    }
+
+    #[test]
+    fn tools_call_mirrors_the_tool_name_into_a_header() {
+        let request = stateless_request("tools/call", json!({ "name": "sql", "arguments": {} }));
+        let validate =
+            |headers: HeaderMap| validate_stateless_request(&headers, &request, "tools/call").map_err(|(code, _)| code);
+
+        assert!(validate(stateless_headers("tools/call", Some("sql"))).is_ok());
+
+        assert_eq!(
+            validate(stateless_headers("tools/call", None)).unwrap_err(),
+            HEADER_MISMATCH,
+            "the name header is required for tools/call"
+        );
+        assert_eq!(
+            validate(stateless_headers("tools/call", Some("call"))).unwrap_err(),
+            HEADER_MISMATCH,
+            "a name that disagrees with the body must be rejected"
+        );
+
+        assert!(validate(stateless_headers("tools/call", Some("=?base64?c3Fs?="))).is_ok());
+        assert_eq!(
+            validate(stateless_headers("tools/call", Some("=?base64?not valid?="))).unwrap_err(),
+            HEADER_MISMATCH
+        );
+    }
+
+    #[test]
+    fn header_values_decode_the_base64_sentinel() {
+        assert_eq!(decode_header_value("sql").unwrap(), "sql");
+        assert_eq!(decode_header_value("=?base64?c3Fs?=").unwrap(), "sql");
+        // non ASCII names are sent base64 wrapped
+        assert_eq!(
+            decode_header_value("=?base64?SGVsbG8sIOS4lueVjA==?=").unwrap(),
+            "Hello, 世界"
+        );
+        assert!(decode_header_value("=?base64?not valid?=").is_none());
+    }
+
+    #[test]
+    fn stateless_results_state_completion_and_identity() {
+        let result = complete(json!({ "content": [], "isError": false }));
+        assert_eq!(result["resultType"], "complete");
+        assert_eq!(result["_meta"][META_SERVER_INFO]["name"], "spacetimedb");
+        assert_eq!(result["isError"], false, "decorating must not disturb the result");
+    }
+
+    #[test]
+    fn listings_carry_cache_hints() {
+        let listed = cacheable(tools_list(true));
+        assert_eq!(listed["resultType"], "complete");
+        assert_eq!(listed["cacheScope"], "public");
+        assert!(listed["ttlMs"].as_u64().is_some_and(|ttl| ttl > 0));
+        assert_eq!(listed["tools"].as_array().unwrap().len(), 5);
+    }
+
+    #[test]
+    fn discover_advertises_every_version_the_server_answers() {
+        let discovered = cacheable(discover_result(true));
+        assert_eq!(discovered["supportedVersions"], json!(SUPPORTED_VERSIONS));
+        assert!(discovered["capabilities"]["tools"].is_object());
+        assert!(discovered["instructions"].as_str().unwrap().contains("SpacetimeDB"));
+        assert_eq!(discovered["resultType"], "complete");
+        assert_eq!(discovered["_meta"][META_SERVER_INFO]["name"], "spacetimedb");
+        assert_eq!(discovered["cacheScope"], "public");
+
+        // every version advertised needs to be accepted
+        for version in SUPPORTED_VERSIONS {
+            assert!(
+                protocol_era(&version_header(version)).is_ok(),
+                "{version} is advertised but not accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn handshake_results_keep_the_shape_older_clients_expect() {
+        let info = initialize_result(true);
+        assert!(info["resultType"].is_null(), "a 2025-06-18 client has no resultType");
+        assert!(info["_meta"].is_null());
+
+        let listed = tools_list(true);
+        assert!(listed["resultType"].is_null());
+        assert!(listed["ttlMs"].is_null());
+        assert!(listed["cacheScope"].is_null());
     }
 }
