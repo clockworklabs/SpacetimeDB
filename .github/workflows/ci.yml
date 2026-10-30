@@ -1924,9 +1924,9 @@ jobs:
       - name: Hydrate Unity SDK DLLs
         run: cargo regen csharp dlls
 
-      # The upstream action bundles affected roots in its own Docker image.
+      # v4.0.1's container removes trust in the compromised eMudhra/emSign roots.
       - name: Check Unity meta files
-        uses: ./.github/actions/unity-meta-check
+        uses: DeNA/unity-meta-check@v4.0.1
         with:
           enable_pr_comment: ${{ github.event_name == 'pull_request' }}
           target_path: sdks/csharp
