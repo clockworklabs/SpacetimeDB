@@ -6,9 +6,8 @@ import {
   type ProcedureCtx,
   type TransactionCtx,
 } from 'spacetimedb/server';
-import * as daytona from '../../../src/submodule';
-import { client } from '../../../src/client';
-import { type Http } from '../../../src/api';
+import * as daytona from '@spacetimedb/daytona/submodule';
+import { client } from '@spacetimedb/daytona';
 
 const remote = table(
   { public: true },
@@ -79,6 +78,8 @@ export const mode = db.reducer({ mode: t.string() }, (ctx, args) => {
   const row = ctx.db.remote.id.find(0)!;
   ctx.db.remote.id.update({ ...row, mode: args.mode });
 });
+
+type Http = Parameters<typeof sandbox.reconcile>[0]['http'];
 
 function provider(ctx: ProcedureCtx<Schema>): Http {
   return {

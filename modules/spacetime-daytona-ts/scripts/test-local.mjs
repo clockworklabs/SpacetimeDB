@@ -111,7 +111,7 @@ try {
     server,
     '--yes',
     '--module-path',
-    'scripts/fixture',
+    'spacetimedb',
     database,
   ]);
   published = true;

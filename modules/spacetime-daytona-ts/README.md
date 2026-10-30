@@ -1,44 +1,42 @@
 # @spacetimedb/daytona
 
-Run commands in temporary Daytona sandboxes from your SpacetimeDB application.
-Daytona provides the Linux environment. This submodule manages sandbox requests,
-tracks command results, and limits how many sandboxes each owner can use.
+Let users run commands in temporary Daytona sandboxes from your SpacetimeDB
+application. Daytona provides the Linux machine. SpacetimeDB keeps track of who
+owns each sandbox, which commands ran, and whether they succeeded.
 
-The [example app](./example/README.md) lets you create a sandbox, run commands,
-and watch the results in your browser. Creating a sandbox can use paid Daytona
-credits.
+Each request is saved in the database first, and a scheduled procedure sends it
+to Daytona. If the server restarts or a request to Daytona fails, the submodule
+checks Daytona later instead of sending the request twice. Your app decides who
+can create sandboxes and run commands.
 
-## Setup
+## Install
 
-This package is not yet published. Use it within this repository with the
-workspace SDK and matching SpacetimeDB CLI and server built from this checkout.
-
-Add `@spacetimedb/daytona` and `spacetimedb` to your host module's dependencies
-with version `workspace:*`. Build the SDK from the repository root:
+Run this in your SpacetimeDB TypeScript module directory:
 
 ```bash
-pnpm install
-pnpm --filter spacetimedb build
+npm install @spacetimedb/daytona
 ```
 
-You need a Daytona API key with sandbox management and execution access. Set
-`DAYTONA_API_KEY` in the shell used to publish the host module. Keep the key on
-the server and within the same Daytona organization when rotating it.
+Requires SpacetimeDB SDK, CLI, and server 2.12 or later.
 
-## Add it to a module
+You also need a Daytona API key that can manage sandboxes and run commands in
+them. Creating a sandbox uses paid Daytona credits.
 
-Mount the submodule and add a timer to check requests every three seconds:
+## Integrate into an application
+
+This module lets each user create a sandbox, run commands in it, read the
+output, and delete it:
 
 ```ts
+import { ScheduleAt } from 'spacetimedb';
 import {
   schema,
   t,
-  ScheduleAt,
   type InferSchema,
   type TransactionCtx,
 } from 'spacetimedb/server';
 import * as daytona from '@spacetimedb/daytona/submodule';
-import { client, daytonaTick } from '@spacetimedb/daytona';
+import { client, daytonaTick, sandbox } from '@spacetimedb/daytona';
 
 const spacetimedb = schema(
   { daytona, daytonaTick },
@@ -48,23 +46,26 @@ const spacetimedb = schema(
 );
 export default spacetimedb;
 
+type Tx = TransactionCtx<InferSchema<typeof spacetimedb>>;
+
 const sandboxes = client({
-  submodule: (tx: TransactionCtx<InferSchema<typeof spacetimedb>>) =>
-    tx.as.daytona,
+  submodule: (tx: Tx) => tx.as.daytona,
   namespace: 'daytona',
   snapshot: 'daytona-small',
   ttlMinutes: 10,
-  maxSandboxesPerOwner: 2,
 });
 
-export const init = spacetimedb.init(ctx => {
-  ctx.db.daytonaTick.insert({
+// Each SpacetimeDB identity owns its own sandboxes.
+const owner = (tx: Tx) => tx.sender.toHexString();
+
+export const init = spacetimedb.init(tx => {
+  tx.db.daytonaTick.insert({
     scheduledId: 0n,
-    scheduledAt: ScheduleAt.interval(3_000_000n),
+    scheduledAt: ScheduleAt.interval(3_000_000n), // every 3 seconds
   });
 });
 
-export const reconcileDaytona = spacetimedb.procedure(
+export const maintain = spacetimedb.procedure(
   { onSchedule: daytonaTick },
   { tick: daytonaTick.rowType },
   t.unit(),
@@ -73,110 +74,167 @@ export const reconcileDaytona = spacetimedb.procedure(
     return {};
   }
 );
+
+export const createSandbox = spacetimedb.reducer(
+  { requestKey: t.string() },
+  (tx, { requestKey }) => {
+    sandboxes.createSandbox(tx, { owner: owner(tx), requestKey });
+  }
+);
+
+export const runCommand = spacetimedb.reducer(
+  { sandboxId: t.u64(), requestKey: t.string(), command: t.string() },
+  (tx, args) => {
+    sandboxes.runCommand(tx, { owner: owner(tx), ...args });
+  }
+);
+
+export const getCommandOutput = spacetimedb.procedure(
+  { executionId: t.u64() },
+  t.object('CommandOutput', { output: t.string(), truncated: t.bool() }),
+  (ctx, { executionId }) =>
+    sandboxes.getCommandOutput(ctx, ctx.env.DAYTONA_API_KEY, {
+      owner: ctx.withTx(owner),
+      executionId,
+    })
+);
+
+export const deleteSandbox = spacetimedb.reducer(
+  { sandboxId: t.u64() },
+  (tx, args) => {
+    sandboxes.deleteSandbox(tx, { owner: owner(tx), ...args });
+  }
+);
+
+export const mySandboxes = spacetimedb.view(
+  { public: true },
+  t.array(sandbox.rowType),
+  ctx => [...ctx.db.daytona.sandbox.owner.filter(ctx.sender.toHexString())]
+);
 ```
 
-## Application operations
+Publish with the API key in your shell. It is stored privately in the database:
 
-Call these methods inside authorized host reducers. Resolve `owner` from the
-authenticated caller. Do not accept an owner value supplied by the browser.
+```bash
+DAYTONA_API_KEY='...' spacetime publish my-app
+```
 
-| Method                     | Arguments                                     | Result                     |
-| -------------------------- | --------------------------------------------- | -------------------------- |
-| `createSandbox(tx, input)` | `owner`, `requestKey`                         | Local sandbox ID           |
-| `runCommand(tx, input)`    | `owner`, `sandboxId`, `requestKey`, `command` | Local execution ID         |
-| `deleteSandbox(tx, input)` | `owner`, `sandboxId`                          | Records a deletion request |
+To replace the key later, set the new value and run
+`spacetime publish my-app --env-only`. Use a key from the same Daytona
+organization, or the submodule can't find the sandboxes it already created.
 
-These methods record requests in the reducer's transaction. The scheduled
-procedure sends them to Daytona after commit. See the
-[example module](./example/spacetimedb/src/index.ts) for reducers with access
-checks and views that return each caller's records.
+`init` only runs when a database is first created. To add the submodule to an
+existing database, insert the `daytonaTick` row once, from a reducer only your
+admins can call.
 
-Generate a request key once per user action. Reuse it if the client repeats that
-request. Reusing a command request key with different command text is rejected.
-`command` accepts shell text. Quote untrusted values before inserting them into
-a command. Only expose arbitrary command execution to callers who should have
-that access.
+The browser uses a sandbox in four steps:
 
-Each command runs in its own `sh` process. Shell state such as `cd` and exported
-variables does not carry between commands. The snapshot must include POSIX `sh`.
+1. Call `createSandbox` and wait for the sandbox's state to become `Ready`.
+2. Call `runCommand`. Use a new request key for each command.
+3. Wait for the command's state to become `Succeeded` or `Failed`.
+4. Call `getCommandOutput` to read what it printed.
 
-## Observe the result
+The submodule's tables are private. The view above lists the caller's
+sandboxes; add a similar view over `ctx.db.daytona.execution` for commands. The
+[browser example](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-daytona-ts/example)
+has both views and the browser code.
 
-Both tables are private. Host views can read `ctx.db.daytona.sandbox` and
-`ctx.db.daytona.execution`. Filter by the caller's owner key before returning rows.
+Anyone who can call `createSandbox` and `runCommand` can run any code in a
+sandbox and spend your Daytona credits. Check that the caller is allowed in
+`owner` before returning, as the example does with its `operator` table.
+Always set the owner on the server. Never take it from the browser, and never
+send the API key to a client.
 
-- Sandbox state becomes `Ready` when Daytona reports that it has started.
-- Only one unresolved command is allowed per sandbox.
-- `Succeeded` means exit code zero. `Failed` means a nonzero exit code.
-- `Unknown` means the result is not established. It does not mean the command failed.
-- `deleteRequested` blocks new commands. Wait for `Deleted` before treating cleanup as complete.
+## API
 
-Call `getCommandOutput(ctx, apiKey, { owner, executionId })` from an authorized
-host procedure to read a completed command's combined output. Derive `owner`
-from the caller, as with reducers. The method verifies sandbox ownership before
-contacting Daytona and returns `{ output, truncated }`. It does not run commands
-or change their state. See the [example procedure](./example/spacetimedb/src/index.ts).
+`client(options)` takes:
 
-The returned text is limited to 16,384 characters. This limits the value returned
-to the caller; the provider's full log response is still downloaded. Output is
-fetched on demand and is not stored in SpacetimeDB. It becomes unavailable when
-the sandbox is deleted. A failed output request can be retried independently.
+- `submodule`: returns the mounted submodule from a transaction.
+- `namespace`: a short name for this installation, made of lowercase letters,
+  digits, and `-`, starting with a letter, at most 16 characters. Use a
+  different one for each installation in the same database.
+- `snapshot`: the Daytona snapshot each sandbox starts from. It sets the
+  sandbox's size and installed tools, and must include POSIX `sh`. Sandboxes
+  have no outbound network access, so install what commands need in the
+  snapshot.
+- `ttlMinutes`: how long a sandbox lives, 1 to 60. Daytona deletes it after
+  that even if your server is down.
+- `maxSandboxesPerOwner`: 2 by default. A sandbox counts until it is `Deleted`.
+- `toolboxOrigins`: the HTTPS origins allowed to receive the API key when
+  running commands. The default is `https://proxy.app.daytona.io`. Change it
+  only after checking the new origin with Daytona, and never from client input.
 
-## Failure handling
+Invalid options fail module loading with `daytona.invalid_config`.
 
-A lost response can leave a request accepted by Daytona but unconfirmed locally.
-The scheduled procedure checks the sandbox name or command session to recover
-the result. It does not repeat create or command submissions with unknown outcomes.
+It returns:
 
-An unresolved sandbox still counts toward its owner's limit. An unknown command
-blocks new commands on that sandbox. Inspect it in Daytona before submitting a
-replacement, or delete the sandbox to stop its work. If creation remains unknown
-and no remote ID is available, the record stays pending until an operator
-investigates. Execution across the two services has no exactly-once guarantee.
+- `createSandbox(tx, { owner, requestKey })` records a new sandbox and returns
+  its ID. Calling it again with the same request key returns the same sandbox.
+- `runCommand(tx, { owner, sandboxId, requestKey, command })` records a command
+  and returns its ID. The sandbox must be `Ready` with no command still
+  running. Calling it again with the same request key and command returns the
+  same command.
+- `getCommandOutput(ctx, apiKey, { owner, executionId })` returns
+  `{ output, truncated }` for a finished command, read from Daytona. Output is
+  limited to 16,384 characters and is not stored in SpacetimeDB, so it is gone
+  once the sandbox is deleted.
+- `deleteSandbox(tx, { owner, sandboxId })` stops new commands at once;
+  `reconcile` deletes the sandbox in Daytona.
+- `reconcile(ctx, apiKey)` sends queued requests to Daytona and checks on ones
+  that were interrupted. Run it on a schedule. Each run handles at most one
+  sandbox and one command.
 
-Deleting a sandbox stops its work and removes its files. It cannot reverse
-external effects a command has already caused. Confirm cleanup in Daytona
-before deleting the SpacetimeDB database.
+A sandbox's `state` is `Queued`, `Creating`, `Ready`, `Unavailable`, `Unknown`,
+`Deleting`, or `Deleted`. A command's `state` is `Queued`, `Submitting`,
+`Running`, `Succeeded`, `Failed`, or `Unknown`. `Succeeded` means exit code 0.
+Both keep the latest error code in `error`.
 
-After restoring a database backup, inspect the matching Daytona resources before
-enabling its timer. Restoring local state does not restore remote commands.
+`Unknown` means Daytona may have done the work but the submodule could not
+confirm it. The submodule does not repeat the request. Check the sandbox in
+Daytona, or delete it. An `Unknown` command blocks new commands in its sandbox,
+and an `Unknown` sandbox still counts toward its owner's limit.
 
-## Limits and defaults
+Each command runs in its own `sh` process, so `cd` and exported variables do not
+carry over to the next command. Commands are at most 4 KiB, and request keys at
+most 128 bytes. Quote untrusted values before putting them in a command.
 
-- Choose a finite lifetime of 1 to 60 minutes. Daytona enforces it independently
-  of the application timer. The example uses 10 minutes.
-- Sandboxes have private previews and blocked outbound network access. Select
-  a prepared Linux snapshot with the tools the command needs.
-- The default owner limit is two active or unresolved sandboxes. Deleted records
-  do not consume this limit.
-- Retain at most 100 sandbox records and 100 execution records per sandbox.
-  Admission stops when these limits are reached. Resolved history is eligible
-  for removal after 24 hours. Request deduplication ends with history removal.
-- Commands are limited to 4 KiB. Owner and request keys are limited to 128 bytes.
-- Each tick checks at most one sandbox and one execution. Provider requests have
-  a 10-second HTTP timeout. Remote work can continue after an HTTP timeout.
-- The default approved toolbox origin is `https://proxy.app.daytona.io`. If a
-  region uses another origin, verify it with Daytona and set `toolboxOrigins` in
-  trusted host configuration. Never accept this setting from a client.
+The submodule keeps at most 100 sandboxes and 100 commands per sandbox. Finished
+commands and deleted sandboxes are removed after 24 hours; after that, a reused
+request key creates a new one.
 
-Use a unique `namespace` for each installation in a database. Set sandbox size
-through `snapshot`. Sandbox limits and expiry do not cap your Daytona bill.
+Errors reach the caller as `daytona.*` codes: `invalid_request_key`,
+`invalid_command`, `request_key_conflict`, `sandbox_limit`, `history_full`,
+`sandbox_not_found`, `sandbox_not_ready`, `command_pending`,
+`execution_not_found`, `output_not_ready`, and `scheduler_only`. A failed
+Daytona request reports `daytona.http_<status>`, such as `daytona.http_401` for
+a bad key, or `daytona.transport`, `daytona.invalid_response`,
+`daytona.untrusted_toolbox`, or `daytona.ownership_mismatch`.
 
-## Development
+Deleting a sandbox removes its files but cannot undo what a command already did
+outside it. Delete sandboxes in Daytona before deleting the database. After
+restoring a database backup, check the matching sandboxes in Daytona before
+starting the schedule again.
+
+Package entrypoints:
+
+- `@spacetimedb/daytona/submodule` supplies the submodule's tables.
+- `@spacetimedb/daytona` exports `client`, `daytonaTick`, `sandbox`,
+  `execution`, and their types.
+
+## Testing
+
+From `modules/spacetime-daytona-ts`:
 
 ```bash
 pnpm test
-pnpm typecheck
-pnpm lint
-pnpm build
+pnpm test:local
 ```
 
-Run `pnpm test:local` for database behavior, overlapping-worker, and crash-recovery
-tests. Set `SPACETIME_BIN` to the matching CLI path if needed. The suite starts an
-isolated server, tests against a simulated provider, and removes its temporary
-data afterward. It does not create a paid Daytona sandbox.
+`test:local` needs the SpacetimeDB CLI on `PATH`, or `SPACETIME_BIN` set to it,
+and no Daytona account. It runs a real server and a fake Daytona that fails on
+purpose, kills the server while a command is running, and checks that every
+sandbox and command ends up right.
 
-Live provider verification is separate: follow the example walkthrough, check
-successful and failed scripts, delete the sandbox, and confirm its removal in Daytona.
+## License
 
-Licensed under Apache-2.0.
+Apache-2.0. See the [license](https://github.com/clockworklabs/SpacetimeDB/blob/master/licenses/apache2.txt).

@@ -1,24 +1,17 @@
 # Daytona example
 
-Run Python in a temporary Daytona sandbox and read its output in the browser.
-Build a report from sample CSV orders, then read the saved file in a second run.
+A Python playground. Create a temporary Daytona sandbox, run Python in it, and
+read the output in the browser. Daytona runs the code; SpacetimeDB keeps track
+of each sandbox, each run, and whether it succeeded.
 
-The example allows one sandbox per owner. It uses `daytona-small`, blocks outbound
-network access, and sets a 10-minute expiry. Creating a sandbox can use paid Daytona
-credits. Output loads when the code finishes. The page shows the latest output,
-up to 16,384 characters, including errors.
+## Run it locally
 
-## Prerequisites
+This example uses a real Daytona account. Creating a sandbox uses paid Daytona
+credits. You need an API key that can manage sandboxes and run commands, and
+access to the `daytona-small` snapshot, which must include `python3` and `sh`.
 
-- Node.js 20 or later and pnpm 10.
-- The workspace SDK and matching SpacetimeDB CLI and server from this checkout,
-  with the CLI available as `spacetime`.
-- A Daytona API key with sandbox management and execution access, and access to
-  the `daytona-small` snapshot. The snapshot must contain `python3` and POSIX `sh`.
-
-The example uses the unpublished submodule from this workspace.
-
-## Start
+Requires Node.js 20+, pnpm 10, and the SpacetimeDB CLI and server built from
+this checkout.
 
 Start SpacetimeDB in a separate terminal:
 
@@ -26,71 +19,93 @@ Start SpacetimeDB in a separate terminal:
 spacetime start
 ```
 
-Set `DAYTONA_API_KEY` in the shell that will publish the module. In PowerShell,
-`$env:DAYTONA_API_KEY = 'your-key'` sets it for that shell. Do not commit the key or
-put it in the browser environment.
+The module reads the API key from its environment. Set it in the terminal you
+publish from; publishing stores it in the database. In PowerShell:
 
-In Bash:
-
-```bash
-export DAYTONA_API_KEY='your-key'
+```powershell
+$env:DAYTONA_API_KEY = '...'
 ```
 
-From this directory:
+In bash, use `export DAYTONA_API_KEY=...`.
+
+From `modules/spacetime-daytona-ts/example`, run:
 
 ```bash
 pnpm install
-pnpm --filter spacetimedb build
-pnpm --dir spacetimedb run publish:local
-pnpm run build
-pnpm dev
+pnpm run build:module
+pnpm run dev
 ```
 
-Open [the example](http://127.0.0.1:8816). The page shows a command for the database
-owner to authorize that browser identity. Run it from the same CLI login used to
-first publish the database. Each authorized browser can create its own sandbox
-and sees only its own records.
+Open <http://127.0.0.1:8816>. The page shows a `spacetime call` command. Run it
+from the same CLI login you published with, to let that browser create
+sandboxes.
 
-1. Select **Create sandbox** and wait for **Run** to become available.
-2. Select **Run**. Expect `4 orders`, `25 items`, and
-   `Saved /tmp/report.txt` in the output.
-3. Open **Examples**, select **Read report**, then **Run**. Expect `4 orders` and
-   `25 items` read from the saved report. Files remain between runs in the same
-   sandbox. Loading a sample only changes the editor.
+## Try it
+
+1. Click **Create sandbox** and wait for **Run** to appear.
+2. Click **Run**. The output shows `4 orders`, `25 items`, and
+   `Saved /tmp/report.txt`.
+3. Open **Examples**, choose **Read report**, and click **Run**. The output
+   shows the report saved by the first run: files stay in the sandbox between
+   runs.
 4. Edit the code and run it again. Try `raise ValueError("Try another input")`
-   to see Python's error output and a failed run.
-5. Open **Sandbox**, select **Delete sandbox**, and confirm. Wait for `Deleted`,
-   then confirm the resource is gone in Daytona. Output cannot be fetched after
-   deletion.
+   to see a failed run and Python's error.
+5. Open **Sandbox**, click **Delete sandbox**, and confirm. Wait for `Deleted`,
+   then check in Daytona that the sandbox is gone.
 
-Keep the server running until deletion is confirmed. Expiry also stops work and
-removes sandbox files. Clean up remote sandboxes before deleting the database.
+Each sandbox has no outbound network access and is deleted by Daytona after 10
+minutes. Each browser can have one sandbox at a time and sees only its own.
+Keep SpacetimeDB running until a deleted sandbox shows `Deleted`; the server
+deletes it in Daytona.
+
+## Change the example
+
+- [spacetimedb/src/index.ts](./spacetimedb/src/index.ts) mounts the submodule,
+  sets the snapshot, lifetime, and per-user limit, checks who may use it, and
+  defines the views.
+- [src/app.ts](./src/app.ts) handles the controls and shows the output.
+- [src/presets.ts](./src/presets.ts) holds the two example scripts.
+
+After changing the server code, run `pnpm run build:module`. This keeps
+existing sandboxes and the stored API key. Restart `pnpm run dev` after changing
+the browser code.
+
+To start over, delete your sandboxes first, then run
+`pnpm run build:module:fresh`. **This deletes all data in the local
+`spacetime-daytona-example` database.** Sandboxes still in Daytona are no longer
+tracked; delete them in Daytona.
+
+For instructions on adding sandboxes to your own app, see the
+[Daytona package README](../README.md).
 
 ## Configuration
 
-The web server listens only on `127.0.0.1`. It reads `PORT` (default `8816`),
-`STDB_URI` (default `ws://127.0.0.1:3000`), and `SPACETIMEDB_DB_NAME` (default
-`spacetime-daytona-example`) from its process environment. It does not read the
-Daytona key.
+See [.env.example](./.env.example) to change the database address or web-server
+port. The web server never reads the API key.
 
-To rotate the key, set `DAYTONA_API_KEY` in your shell and run:
+To replace the API key, set `DAYTONA_API_KEY` and run:
 
 ```bash
 spacetime publish --server local --env-only spacetime-daytona-example
 ```
 
-Change the snapshot, lifetime, or owner limit in
-[`spacetimedb/src/index.ts`](./spacetimedb/src/index.ts). See the
-[submodule README](../README.md) to integrate it into your application.
-Edit the starter scripts in [`src/presets.ts`](./src/presets.ts).
+## Before deploying
 
-## Errors
+The example only lets identities you have authorized run code, because anyone
+who can run code spends your Daytona credits. Keep a check like that, and
+connect it to your app's user accounts.
 
-- If fetching output fails, select **Retry output**. This fetches the output
-  without running the code again.
-- `operator_only`: run the authorization command shown on the page.
-- `http_401` or `http_403`: check the published key and its permissions.
-- `untrusted_toolbox`: verify the returned proxy origin before changing the
-  approved origins in host configuration.
-- `Unknown`: inspect the remote resource. Do not submit a replacement command
-  until you know what happened. The original command may have run.
+## Troubleshooting
+
+- **`daytona.operator_only`:** run the `spacetime call` command shown on the
+  page.
+- **`daytona.http_401` or `daytona.http_403`:** check the API key and its
+  permissions, then publish it again with `--env-only`.
+- **The output didn't load:** click **Retry output**. This reads the output
+  again without running the code again.
+- **A sandbox or run shows `Unknown`:** Daytona may have done the work, but
+  SpacetimeDB couldn't confirm it. Check the sandbox in Daytona before running
+  the code again, or delete the sandbox.
+- **`daytona.untrusted_toolbox`:** Daytona returned a command address the
+  submodule doesn't trust. Check it with Daytona before adding it to
+  `toolboxOrigins` in [spacetimedb/src/index.ts](./spacetimedb/src/index.ts).

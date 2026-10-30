@@ -3,15 +3,27 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Run Python in temporary Daytona sandboxes with state in SpacetimeDB, powered by @spacetimedb/daytona."
+    />
     <title>SpacetimeDB Daytona</title>
     <link rel="icon" href="/assets/logo.svg" />
     <link rel="stylesheet" href="/app.css" />
   </head>
   <body>
-    <main>
+    <main class="shell">
       <header>
-        <a class="brand" href="https://spacetimedb.com">
-          <img src="/assets/logo.svg" alt="SpacetimeDB" />Daytona
+        <a
+          class="brand"
+          href="https://spacetimedb.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="SpacetimeDB home"
+        >
+          <img src="/assets/logo.svg" alt="" />
+          <span class="brand-name">SpacetimeDB</span>
+          <span class="brand-product">Daytona</span>
         </a>
         <nav aria-label="Playground controls">
           <span id="connection" role="status">Connecting</span>

@@ -520,6 +520,9 @@ importers:
       '@spacetimedb/example-ui':
         specifier: workspace:*
         version: link:../../spacetime-example-ui-ts
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
       express:
         specifier: ^4.21.2
         version: 4.21.2
@@ -552,6 +555,25 @@ importers:
         specifier: workspace:*
         version: link:../../../../crates/bindings-typescript
     devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  modules/spacetime-daytona-ts/spacetimedb:
+    dependencies:
+      '@spacetimedb/daytona':
+        specifier: workspace:*
+        version: link:..
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

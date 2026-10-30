@@ -1,4 +1,14 @@
 {
-  "extends": "../tsconfig.json",
-  "include": ["src/**/*.ts", "server.ts"]
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "moduleResolution": "Bundler",
+    "isolatedModules": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src/**/*.ts", "server.ts"],
+  "exclude": ["node_modules", "spacetimedb"]
 }

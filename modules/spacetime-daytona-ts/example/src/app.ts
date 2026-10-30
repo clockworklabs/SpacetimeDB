@@ -1,6 +1,8 @@
+import '@spacetimedb/example-ui/footer.css';
 import './style.css';
-import { DbConnection, tables } from './module_bindings';
+import { DbConnection, tables } from './module_bindings/app';
 import { presets, pythonCommand } from './presets';
+import { mountFooter } from '@spacetimedb/example-ui';
 
 const create = document.querySelector<HTMLButtonElement>('#create')!;
 const run = document.querySelector<HTMLButtonElement>('#run')!;
@@ -17,6 +19,7 @@ let outputAttempt = '';
 let outputRequest = 0;
 let loadingOutput = false;
 command.value = presets.report.code;
+mountFooter(document.querySelector<HTMLElement>('.shell')!);
 
 function node<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -38,18 +41,18 @@ function showError(cause: unknown) {
   error.hidden = false;
 }
 
-const config: { uri: string; database: string } = await (
+const config: { spacetimeUri: string; databaseName: string } = await (
   await fetch('/api/config')
 ).json();
-const tokenKey = `daytona:${config.uri}:${config.database}`;
+const tokenKey = `daytona:${config.spacetimeUri}:${config.databaseName}`;
 const db = DbConnection.builder()
-  .withUri(config.uri)
-  .withDatabaseName(config.database)
+  .withUri(config.spacetimeUri)
+  .withDatabaseName(config.databaseName)
   .withToken(localStorage.getItem(tokenKey) ?? undefined)
   .onConnect((ctx, identity, token) => {
     localStorage.setItem(tokenKey, token);
     document.querySelector('#grant')!.textContent =
-      `spacetime call --server ${config.uri.replace(/^ws/, 'http')} ${config.database} grant_access '"${identity.toHexString()}"'`;
+      `spacetime call --server ${config.spacetimeUri.replace(/^ws/, 'http')} ${config.databaseName} grant_access '"${identity.toHexString()}"'`;
     ctx
       .subscriptionBuilder()
       .onApplied(() => {
