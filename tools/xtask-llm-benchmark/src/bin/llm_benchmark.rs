@@ -298,11 +298,12 @@ fn run_benchmarks(args: RunArgs, reasoning: ReasoningEffort) -> Result<()> {
         eprintln!("[warn] failed to upload task catalog: {e}");
     }
 
-    let initialized = initialize_runtime(config.hash_only)?;
+    let isolated_csharp = config.lang == Lang::CSharp && !config.goldens_only;
+    let initialized = initialize_runtime(config.hash_only || isolated_csharp)?;
     let mut guard = initialized.guard;
     // Drop the runtime first: finish blocking scoring/cleanup before stopping the server.
     let runtime = initialized.runtime;
-    save_server_diagnostics(guard.as_mut(), "start");
+    save_server_diagnostics(guard.as_mut(), "start", None);
 
     config.host = guard.as_ref().map(|g| g.host_url.clone());
 
@@ -324,7 +325,7 @@ fn run_benchmarks(args: RunArgs, reasoning: ReasoningEffort) -> Result<()> {
             config.lang,
             selectors_ref,
         ));
-        save_server_diagnostics(guard.as_mut(), "end");
+        save_server_diagnostics(guard.as_mut(), "end", None);
         result?;
         println!("[{}] goldens-only validation complete", config.lang.as_str());
         return Ok(());
@@ -356,12 +357,12 @@ fn run_benchmarks(args: RunArgs, reasoning: ReasoningEffort) -> Result<()> {
             Err(error) => Err(error),
         };
         if let Err(error) = status {
-            report_server_status(guard.as_mut());
+            report_server_status(guard.as_mut(), None);
             mode_failures.push(format!("{mode}: {error:#}"));
         }
     }
 
-    save_server_diagnostics(guard.as_mut(), "end");
+    save_server_diagnostics(guard.as_mut(), "end", None);
 
     // Write local run log on --dry-run so results aren't lost
     if dry_run && !all_outcomes.is_empty() {
@@ -389,11 +390,11 @@ fn run_benchmarks(args: RunArgs, reasoning: ReasoningEffort) -> Result<()> {
     Ok(())
 }
 
-fn report_server_status(guard: Option<&mut SpacetimeDbGuard>) {
+fn report_server_status(guard: Option<&mut SpacetimeDbGuard>, scope: Option<&str>) {
     let Some(guard) = guard else {
         return;
     };
-    save_server_diagnostics(Some(guard), "failure");
+    save_server_diagnostics(Some(guard), "failure", scope);
     match guard.child.try_wait() {
         Ok(Some(status)) => eprintln!("[server] local SpacetimeDB exited unexpectedly: {status}"),
         Ok(None) => eprintln!("[server] local SpacetimeDB is still running after benchmark failure"),
@@ -402,12 +403,15 @@ fn report_server_status(guard: Option<&mut SpacetimeDbGuard>) {
 }
 
 // Capture before Drop kills the server, so cleanup cannot be mistaken for the cause.
-fn save_server_diagnostics(guard: Option<&mut SpacetimeDbGuard>, phase: &str) {
+fn save_server_diagnostics(guard: Option<&mut SpacetimeDbGuard>, phase: &str, scope: Option<&str>) {
     let (Some(guard), Some(dir)) = (guard, std::env::var_os("LLM_BENCHMARK_DIAGNOSTICS_DIR")) else {
         return;
     };
     let result = (|| -> Result<()> {
-        let dir = PathBuf::from(dir);
+        let mut dir = PathBuf::from(dir);
+        if let Some(scope) = scope {
+            dir.push(scope);
+        }
         fs::create_dir_all(&dir)?;
         let pid = guard.child.id();
         let mut resources = format!(
@@ -708,19 +712,47 @@ fn run_mode_benchmarks(
         return Ok((Vec::new(), Ok(())));
     }
 
-    let runtime = runtime.expect("runtime required for normal runs");
     let llm_provider = llm_provider.expect("llm provider required for normal runs");
 
-    let (route_runs, status) = runtime.block_on(run_many_routes_for_mode(
-        bench_root,
-        mode,
-        &hash,
-        &context,
-        lang,
-        config,
-        llm_provider.as_ref(),
-        &routes,
-    ));
+    let (route_runs, status) = if lang == Lang::CSharp {
+        // C# batches run sequentially with fresh server state to bound cross-model memory growth.
+        let runs = routes.iter().enumerate().map(|(index, route)| {
+            let tag = xtask_llm_benchmark::bench::run_scope_tag(mode, route.vendor.slug(), &route.api_model);
+            let scope = format!("csharp-{index}-{tag}");
+            with_isolated_server(&scope, |host| async {
+                let mut config = config.clone();
+                config.host = Some(host);
+                let (runs, status) = run_many_routes_for_mode(
+                    bench_root,
+                    mode,
+                    &hash,
+                    &context,
+                    lang,
+                    &config,
+                    llm_provider.as_ref(),
+                    std::slice::from_ref(route),
+                )
+                .await;
+                status?;
+                Ok(runs)
+            })
+            .with_context(|| format!("model {}:{}", route.vendor.slug(), route.api_model))
+        });
+        collect_sequential_model_runs(runs)
+    } else {
+        runtime
+            .expect("runtime required for normal runs")
+            .block_on(run_many_routes_for_mode(
+                bench_root,
+                mode,
+                &hash,
+                &context,
+                lang,
+                config,
+                llm_provider.as_ref(),
+                &routes,
+            ))
+    };
 
     // Print summary sorted by pass rate descending
     let mut summary: Vec<(&str, u32, u32, f32)> = route_runs
@@ -885,7 +917,11 @@ async fn collect_model_runs<T>(runs: impl futures::Stream<Item = Result<T>>) -> 
             }
         }
     }
-    let status = if failures.is_empty() {
+    (completed, model_batch_status(failures))
+}
+
+fn model_batch_status(failures: Vec<String>) -> Result<()> {
+    if failures.is_empty() {
         Ok(())
     } else {
         Err(anyhow::anyhow!(
@@ -893,8 +929,20 @@ async fn collect_model_runs<T>(runs: impl futures::Stream<Item = Result<T>>) -> 
             failures.len(),
             failures.join("\n")
         ))
-    };
-    (completed, status)
+    }
+}
+
+// Consume every lazy batch, including those after a failure, without starting servers concurrently.
+fn collect_sequential_model_runs<T>(runs: impl Iterator<Item = Result<Vec<T>>>) -> (Vec<T>, Result<()>) {
+    let mut completed = Vec::new();
+    let mut failures = Vec::new();
+    for result in runs {
+        match result {
+            Ok(runs) => completed.extend(runs),
+            Err(error) => failures.push(format!("{error:#}")),
+        }
+    }
+    (completed, model_batch_status(failures))
 }
 
 fn categories_to_set(v: Option<Vec<String>>) -> Option<HashSet<String>> {
@@ -912,8 +960,8 @@ pub struct RuntimeInit {
     pub guard: Option<SpacetimeDbGuard>,
 }
 
-fn initialize_runtime(hash_only: bool) -> Result<RuntimeInit> {
-    if hash_only {
+fn initialize_runtime(skip_runtime: bool) -> Result<RuntimeInit> {
+    if skip_runtime {
         return Ok(RuntimeInit {
             runtime: None,
             guard: None,
@@ -921,7 +969,7 @@ fn initialize_runtime(hash_only: bool) -> Result<RuntimeInit> {
     }
 
     // Use locally built SpacetimeDB so server supports spacetime:sys@2.0 (required by local TypeScript SDK).
-    let spacetime = SpacetimeDbGuard::spawn_in_temp_data_dir();
+    let spacetime = SpacetimeDbGuard::try_spawn_in_temp_data_dir().context("start local benchmark server")?;
 
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
 
@@ -929,6 +977,47 @@ fn initialize_runtime(hash_only: bool) -> Result<RuntimeInit> {
         runtime: Some(runtime),
         guard: Some(spacetime),
     })
+}
+
+/// Own the runtime and server together so even failed batches drain blocking work before shutdown.
+fn with_isolated_server<T, F>(scope: &str, run: impl FnOnce(String) -> F) -> Result<T>
+where
+    F: std::future::Future<Output = Result<T>>,
+{
+    let initialized = initialize_runtime(false)?;
+    let mut guard = initialized.guard;
+    let runtime = initialized.runtime.expect("isolated batch requires a runtime");
+    let host = guard
+        .as_ref()
+        .expect("isolated batch requires a server")
+        .host_url
+        .clone();
+    println!("[server] starting isolated batch {scope} at {host}");
+    save_server_diagnostics(guard.as_mut(), "start", Some(scope));
+    let result = runtime.block_on(async {
+        let period = std::time::Duration::from_secs(60);
+        let mut samples = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+        samples.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let work = run(host);
+        tokio::pin!(work);
+        let mut sample = 0;
+        loop {
+            tokio::select! {
+                result = &mut work => break result,
+                _ = samples.tick() => {
+                    sample += 1;
+                    save_server_diagnostics(guard.as_mut(), &format!("sample-{sample}"), Some(scope));
+                }
+            }
+        }
+    });
+    if result.is_err() {
+        report_server_status(guard.as_mut(), Some(scope));
+    }
+    drop(runtime);
+    save_server_diagnostics(guard.as_mut(), "end", Some(scope));
+    // The guard now stops the server and removes this batch's temporary database directory.
+    result
 }
 
 fn find_bench_root() -> PathBuf {
@@ -1032,6 +1121,60 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "starts two local servers; requires built CLI and standalone binaries, no LLM calls"]
+    fn isolated_server_stops_after_failure_and_success() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let drained = Arc::new(AtomicBool::new(false));
+        let mut hosts = Vec::new();
+        for fail in [true, false] {
+            let worker_drained = drained.clone();
+            let scope = if fail {
+                "isolation-test-failure"
+            } else {
+                "isolation-test-success"
+            };
+            let result = with_isolated_server(scope, |host| {
+                hosts.push(host.clone());
+                async move {
+                    reqwest::Client::new()
+                        .get(format!("{host}/v1/ping"))
+                        .send()
+                        .await?
+                        .error_for_status()?;
+                    tokio::task::spawn_blocking(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                        let server_alive = reqwest::blocking::Client::builder()
+                            .timeout(std::time::Duration::from_secs(2))
+                            .build()
+                            .unwrap()
+                            .get(format!("{host}/v1/ping"))
+                            .send()
+                            .is_ok_and(|response| response.status().is_success());
+                        worker_drained.store(server_alive, Ordering::SeqCst);
+                    });
+                    anyhow::ensure!(!fail, "injected batch failure");
+                    Ok(())
+                }
+            });
+            if fail {
+                assert_eq!(result.unwrap_err().to_string(), "injected batch failure");
+            } else {
+                result.unwrap();
+            }
+            assert!(
+                drained.load(Ordering::SeqCst),
+                "blocking work must finish before server shutdown"
+            );
+            let client = reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(2))
+                .build()
+                .unwrap();
+            assert!(client.get(format!("{}/v1/ping", hosts.last().unwrap())).send().is_err());
+            drained.store(false, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
     fn resource_diagnostics_include_contents_and_missing_file_errors() {
         let mut output = String::new();
         let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
@@ -1039,6 +1182,24 @@ mod tests {
         assert!(output.contains("[package]"));
         append_resource(&mut output, &manifest.join("missing"));
         assert!(output.contains("unavailable:"));
+    }
+
+    #[test]
+    fn failed_sequential_model_keeps_later_results_and_failure_status() {
+        let mut attempted = Vec::new();
+        let runs = ["failed", "healthy", "last"].into_iter().map(|model| {
+            attempted.push(model);
+            anyhow::ensure!(model != "failed", "injected batch failure");
+            Ok(vec![model])
+        });
+        let (completed, status) = collect_sequential_model_runs(runs);
+        assert_eq!(attempted, ["failed", "healthy", "last"]);
+        assert_eq!(completed, ["healthy", "last"]);
+        assert!(status.unwrap_err().to_string().contains("injected batch failure"));
+
+        let (completed, status) = collect_sequential_model_runs([Ok(vec!["healthy"])].into_iter());
+        assert_eq!(completed, ["healthy"]);
+        assert!(status.is_ok());
     }
 
     fn base_run_args() -> RunArgs {

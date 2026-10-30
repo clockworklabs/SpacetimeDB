@@ -1,5 +1,7 @@
 Write a SpacetimeDB backend module in C# that exposes an upload route and an external upload procedure.
 
+The caller supplies sample bytes and a public HTTP echo endpoint, such as https://postman-echo.com/post. Send only those supplied bytes, then store the response metadata.
+
 TABLE
 - UploadedAsset (public, accessor UploadedAsset)
   - Fields:

@@ -1,5 +1,7 @@
 Write a SpacetimeDB backend module in TypeScript that fetches external data before storing a result in a transaction.
 
+The caller supplies a public example-page URL, such as https://example.com. Fetch that page, then store the response metadata.
+
 TABLE
 - fetched_record (public)
   - Fields:

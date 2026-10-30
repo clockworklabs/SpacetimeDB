@@ -193,6 +193,7 @@ pub struct BenchRunContext<'a> {
     pub dry_run_id: Option<String>,
 }
 
+#[derive(Clone)]
 pub struct RunConfig {
     pub modes: Option<Vec<String>>,
     pub hash_only: bool,
