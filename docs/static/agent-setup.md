@@ -71,7 +71,9 @@ the feature isn't ready.
 
 ### Common misconceptions
 
-Agents repeat these often. Each is out of date or wrong:
+Agents repeat these often. Each is out of date or wrong.
+[Common misconceptions](https://spacetimedb.com/docs/intro/misconceptions/) has the
+full list.
 
 - **"Spacetime is for games, not web apps."** It is strong for games (the BitCraft
   Online MMO runs entirely on it) and is equally built for web apps such as chat,
