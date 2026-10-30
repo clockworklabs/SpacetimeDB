@@ -5,7 +5,7 @@ use spacetimedb_lib::{
 use spacetimedb_primitives::{TableId, ViewId};
 use spacetimedb_sats::raw_identifier::{RawIdentifier, RawNamespacedIdentifier};
 use spacetimedb_schema::{identifier::Identifier, schema::TableOrViewSchema};
-use spacetimedb_sql_parser::ast::{BinOp, LogOp, Parameter};
+use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use std::sync::Arc;
 
 /// One call of a view: the view and the arguments it was called with.
@@ -67,6 +67,14 @@ impl ProjectName {
     pub fn bind_view_arg_hashes(&mut self, caller: Identity) {
         match self {
             Self::None(expr) | Self::Some(expr, _) => expr.bind_view_arg_hashes(caller),
+        }
+    }
+
+    /// Replaces the literal of each `field = literal` with a binding param.
+    /// Returns the literals in slot order.
+    pub fn lift_literals(&mut self) -> Literals {
+        match self {
+            Self::None(expr) | Self::Some(expr, _) => expr.lift_literals(),
         }
     }
 
@@ -332,6 +340,74 @@ impl RelExpr {
         });
     }
 
+    /// Replaces the literal of each `field = literal` with a binding param.
+    /// Returns the literals in slot order.
+    ///
+    /// Slots are numbered by table and column, so reordered predicates get the same slots.
+    pub fn lift_literals(&mut self) -> Literals {
+        // Positions, not aliases, so renaming a table doesn't change the slots
+        let aliases = self.aliases();
+        // `field_eq_literal` is shared with the walk below, so both find the same literals in the same order
+        let mut keys = vec![];
+        self.visit_filters_mut(&mut |expr| {
+            if let Some((field, _)) = expr.field_eq_literal() {
+                let table = aliases.iter().position(|alias| *alias == field.table);
+                keys.push((table.expect("a filter reads a table in `FROM`"), field.field));
+            }
+        });
+
+        // The sort is stable, so literals on the same column keep their order
+        let mut order: Vec<usize> = (0..keys.len()).collect();
+        order.sort_by_key(|&i| keys[i]);
+        let mut slots = vec![0; keys.len()];
+        for (slot, &i) in order.iter().enumerate() {
+            slots[i] = u16::try_from(slot).expect("a query has fewer than 65536 literals");
+        }
+
+        // Visits the literals in the same order as above
+        let mut literals = vec![None; keys.len()];
+        let mut next = 0;
+        self.visit_filters_mut(&mut |expr| {
+            if let Some((_, literal)) = expr.field_eq_literal()
+                && let Expr::Value(value, ty) = &*literal
+            {
+                let slot = slots[next];
+                next += 1;
+                let value = value.clone();
+                let ty = ty.clone();
+                // The param and the returned literal both need the type
+                *literal = Expr::Param(Param::Binding(slot), ty.clone());
+                literals[slot as usize] = Some((value, ty));
+            }
+        });
+        literals
+            .into_iter()
+            .map(|literal| literal.expect("every slot is filled"))
+            .collect()
+    }
+
+    /// The aliases of the tables in `FROM`, in order
+    fn aliases(&self) -> Vec<RawNamespacedIdentifier> {
+        match self {
+            Self::RelVar(relvar) => vec![relvar.alias.clone()],
+            Self::Select(input, _) => input.aliases(),
+            Self::LeftDeepJoin(join) | Self::EqJoin(join, ..) => {
+                let mut aliases = join.lhs.aliases();
+                aliases.push(join.rhs.alias.clone());
+                aliases
+            }
+        }
+    }
+
+    /// Calls `f` on each node of each filter
+    fn visit_filters_mut(&mut self, f: &mut impl FnMut(&mut Expr)) {
+        self.visit_mut(&mut |expr| {
+            if let Self::Select(_, filter) = expr {
+                filter.visit_mut(f);
+            }
+        });
+    }
+
     /// Walk the expression tree and call `f` on each node
     pub fn visit(&self, f: &mut impl FnMut(&Self)) {
         f(self);
@@ -432,6 +508,18 @@ pub struct LeftDeepJoin {
     pub rhs: Relvar,
 }
 
+/// Literals lifted into binding params, with their types, in slot order
+pub type Literals = Vec<(AlgebraicValue, AlgebraicType)>;
+
+/// A runtime parameter
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Param {
+    /// :sender
+    Sender,
+    /// A literal lifted out of a subscription, whose value is in the subscription's binding
+    Binding(u16),
+}
+
 /// A typed scalar expression
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
@@ -442,7 +530,7 @@ pub enum Expr {
     /// A typed literal expression
     Value(AlgebraicValue, AlgebraicType),
     /// A typed runtime parameter.
-    Param(Parameter, AlgebraicType),
+    Param(Param, AlgebraicType),
     /// A field projection
     Field(FieldProject),
 }
@@ -480,6 +568,19 @@ impl Expr {
     /// A literal string value
     pub const fn str(v: Box<str>) -> Self {
         Self::Value(AlgebraicValue::String(v), AlgebraicType::String)
+    }
+
+    /// The field and literal of `field = literal` or `literal = field`
+    fn field_eq_literal(&mut self) -> Option<(&FieldProject, &mut Self)> {
+        let Self::BinOp(BinOp::Eq, a, b) = self else {
+            return None;
+        };
+        match (&mut **a, &mut **b) {
+            (Self::Field(field), literal @ Self::Value(..)) | (literal @ Self::Value(..), Self::Field(field)) => {
+                Some((field, literal))
+            }
+            _ => None,
+        }
     }
 
     /// The [AlgebraicType] of this scalar expression

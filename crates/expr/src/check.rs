@@ -385,10 +385,11 @@ pub mod test_utils {
 mod tests {
     use crate::{
         check::test_utils::{build_module_def, build_module_def_with_views, SchemaViewer},
-        expr::{ProjectName, RelExpr},
+        expr::{Expr, Param, ProjectName, RelExpr},
     };
     use spacetimedb_lib::{identity::AuthCtx, AlgebraicType, AlgebraicValue, Identity, ProductType, ProductValue};
     use spacetimedb_schema::def::ModuleDef;
+    use spacetimedb_sql_parser::ast::BinOp;
 
     use super::{SchemaView, TypingResult};
 
@@ -771,6 +772,73 @@ mod tests {
         let view_args = relvar.view_args.expect("v should be a view call");
         assert_eq!(view_args.args, args);
         assert!(view_args.arg_hash.is_some());
+    }
+
+    /// The literals `sql` lifts, and the `(table, column, slot)` of each binding param
+    fn lift(sql: &str) -> (Vec<AlgebraicValue>, Vec<(String, usize, u16)>) {
+        fn params(expr: &Expr, found: &mut Vec<(String, usize, u16)>) {
+            match expr {
+                Expr::BinOp(BinOp::Eq, a, b) => match (&**a, &**b) {
+                    (Expr::Field(field), Expr::Param(Param::Binding(slot), _))
+                    | (Expr::Param(Param::Binding(slot), _), Expr::Field(field)) => {
+                        found.push((field.table.to_string(), field.field, *slot))
+                    }
+                    _ => {}
+                },
+                Expr::BinOp(_, a, b) | Expr::LogOp(_, a, b) => {
+                    params(a, found);
+                    params(b, found);
+                }
+                _ => {}
+            }
+        }
+        let tx = SchemaViewer(module_def());
+        let mut plan = parse_and_type_sub(sql, &tx).unwrap();
+        let literals = plan.lift_literals();
+        let mut found = vec![];
+        plan.unwrap().visit(&mut |expr| {
+            if let RelExpr::Select(_, filter) = expr {
+                params(filter, &mut found);
+            }
+        });
+        found.sort_by_key(|(.., slot)| *slot);
+        (literals.into_iter().map(|(value, _)| value).collect(), found)
+    }
+
+    #[test]
+    fn lift_literals_numbers_by_table_and_column() {
+        let join = "select t.* from t join s on t.u32 = s.u32";
+        let expected = (
+            vec![AlgebraicValue::U8(2), AlgebraicValue::U32(1)],
+            vec![("t".into(), 2, 0), ("s".into(), 1, 1)],
+        );
+        // Reordered and flipped predicates get the same slots
+        for filter in [
+            "s.u32 = 1 and t.u8 = 2",
+            "t.u8 = 2 and s.u32 = 1",
+            "1 = s.u32 and 2 = t.u8",
+        ] {
+            assert_eq!(lift(&format!("{join} where {filter}")), expected, "{filter}");
+        }
+    }
+
+    #[test]
+    fn lift_literals_ties_keep_their_order() {
+        let (literals, slots) = lift("select * from t where u32 = 5 or u32 = 3");
+        assert_eq!(literals, vec![AlgebraicValue::U32(5), AlgebraicValue::U32(3)]);
+        assert_eq!(slots, vec![("t".into(), 6, 0), ("t".into(), 6, 1)]);
+    }
+
+    #[test]
+    fn lift_literals_skips_ranges_and_sender() {
+        let (literals, slots) = lift("select * from s where u32 > 1 and u32 = 2 and id = :sender");
+        assert_eq!(literals, vec![AlgebraicValue::U32(2)]);
+        assert_eq!(slots, vec![("s".into(), 1, 0)]);
+    }
+
+    #[test]
+    fn lift_literals_without_literals() {
+        assert_eq!(lift("select * from t"), (vec![], vec![]));
     }
 
     #[test]

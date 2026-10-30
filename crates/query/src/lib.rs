@@ -6,7 +6,7 @@ use spacetimedb_execution::{
 };
 use spacetimedb_expr::{
     check::{parse_and_type_sub, SchemaView},
-    expr::ProjectList,
+    expr::{Literals, ProjectList},
     rls::{resolve_views_for_sql, resolve_views_for_sub},
     statement::{parse_and_type_sql, Statement, DML},
 };
@@ -28,11 +28,34 @@ pub fn compile_subscription(
     tx: &impl SchemaView,
     auth: &AuthCtx,
 ) -> Result<(Vec<ProjectPlan>, TableId, TableName, bool)> {
+    let (plans, _, return_id, return_name, has_param) = compile(sql, tx, auth, false)?;
+    Ok((plans, return_id, return_name, has_param))
+}
+
+/// Like [`compile_subscription`], but lifts each `field = literal` into a binding param.
+/// Also returns the lifted literals, in slot order.
+pub fn compile_subscription_template(
+    sql: &str,
+    tx: &impl SchemaView,
+    auth: &AuthCtx,
+) -> Result<(Vec<ProjectPlan>, Literals, TableId, TableName, bool)> {
+    compile(sql, tx, auth, true)
+}
+
+fn compile(
+    sql: &str,
+    tx: &impl SchemaView,
+    auth: &AuthCtx,
+    lift_literals: bool,
+) -> Result<(Vec<ProjectPlan>, Literals, TableId, TableName, bool)> {
     if sql.len() > MAX_SQL_LENGTH {
         bail!("SQL query exceeds maximum allowed length: \"{sql:.120}...\"")
     }
 
-    let (plan, mut has_param) = parse_and_type_sub(sql, tx, auth)?;
+    let (mut plan, mut has_param) = parse_and_type_sub(sql, tx, auth)?;
+
+    // Before RLS, so the literals of its rules stay literal
+    let literals = if lift_literals { plan.lift_literals() } else { vec![] };
 
     let Some(return_id) = plan.return_table_id() else {
         bail!("Failed to determine TableId for query")
@@ -56,7 +79,13 @@ pub fn compile_subscription(
     // We must know this in order to generate the correct query hash.
     let reads_view = plan_fragments.iter().any(|plan| plan.reads_from_view(false));
 
-    Ok((plan_fragments, return_id, return_name, has_param || reads_view))
+    Ok((
+        plan_fragments,
+        literals,
+        return_id,
+        return_name,
+        has_param || reads_view,
+    ))
 }
 
 /// A utility for parsing and type checking a sql statement

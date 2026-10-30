@@ -83,7 +83,7 @@ pub const PARAM_BINDING_FIRST: ParamSlot = ParamSlot(3);
 /// ```sql
 /// select a from t
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProjectPlan {
     None(PhysicalPlan),
     Name(PhysicalPlan, Label, Option<usize>),
@@ -1097,6 +1097,47 @@ impl PhysicalPlan {
         }
     }
 
+    /// Moves each built-in param, such as `:sender`, to a binding slot after the `lifted` literals.
+    /// `builtins` holds the built-in behind each of those slots, in order, and gains any it hasn't seen.
+    /// A template's plans share it, so they agree on the slots.
+    pub fn remap_builtin_params(&mut self, lifted: u16, builtins: &mut Vec<(ParamSlot, AlgebraicType)>) {
+        self.visit_exprs_mut(&mut |expr| {
+            let PhysicalExpr::Param(slot, ty) = expr else {
+                return;
+            };
+            if slot.is_binding() {
+                return;
+            }
+            // `:sender` resolves differently as an identity and as bytes
+            let builtin = (*slot, ty.clone());
+            let i = match builtins.iter().position(|seen| *seen == builtin) {
+                Some(i) => i,
+                None => {
+                    builtins.push(builtin);
+                    builtins.len() - 1
+                }
+            };
+            let i = u16::try_from(i).ok().and_then(|i| lifted.checked_add(i));
+            *slot = ParamSlot::binding(i.expect("binding slot out of range"));
+        });
+        // Binding params don't fall back to `ExecutionParams`, so no built-in may be left
+        self.visit_exprs_mut(&mut |expr| {
+            if let PhysicalExpr::Param(slot, _) = expr {
+                assert!(slot.is_binding(), "built-in param left in a template: {slot:?}");
+            }
+        });
+    }
+
+    /// Calls `f` on each node of each expression in the plan
+    fn visit_exprs_mut(&mut self, f: &mut impl FnMut(&mut PhysicalExpr)) {
+        self.visit_mut(&mut |plan| match plan {
+            Self::Filter(_, expr) => expr.visit_mut(f),
+            Self::IxScan(scan, _) => scan.probe.visit_mut(f),
+            Self::IxJoin(join, _) => join.probe.visit_mut(f),
+            Self::TableScan(..) | Self::HashJoin(..) | Self::NLJoin(..) | Self::BindingLookup(..) => {}
+        });
+    }
+
     /// The label of this plan's binding lookup, if it has one
     fn binding_label(&self) -> Option<Label> {
         let mut labels = vec![];
@@ -1788,7 +1829,7 @@ mod tests {
         },
     };
 
-    use super::{PhysicalExpr, ProjectPlan, TableScan};
+    use super::{ParamSlot, PhysicalExpr, ProjectPlan, TableScan, PARAM_SENDER, PARAM_VIEW_ARG_HASH_SENDER};
 
     struct SchemaViewer {
         schemas: Vec<Arc<TableOrViewSchema>>,
@@ -2988,6 +3029,123 @@ mod tests {
             assert_lookup(plan, PLAYER_ID);
             assert!(!matches!(plan.physical_plan(), PhysicalPlan::BindingLookup(..)));
             assert_eq!(plan.binding_position(), plan.physical_plan().position(&BINDINGS));
+        }
+    }
+
+    /// The base plan and fragments of `sql` as a template: literals lifted, built-ins remapped.
+    /// Also returns the remapped built-ins.
+    fn template_plans(sql: &str, db: &SchemaViewer) -> (Vec<ProjectPlan>, Vec<(ParamSlot, AlgebraicType)>) {
+        let mut plan = parse_and_type_sub(sql, db).unwrap();
+        let lifted = u16::try_from(plan.lift_literals().len()).unwrap();
+        let plan = compile_select(plan);
+        let mut labels = vec![];
+        plan.visit(&mut |plan| {
+            if let PhysicalPlan::TableScan(_, label) = plan {
+                labels.push(*label);
+            }
+        });
+        let mut builtins = vec![];
+        let mut plans = optimize_base_and_fragments(&plan, &labels);
+        for plan in &mut plans {
+            plan.remap_builtin_params(lifted, &mut builtins);
+        }
+        (plans, builtins)
+    }
+
+    /// The binding indexes of `plan`'s params, sorted, without repeats
+    fn binding_indexes(plan: &mut ProjectPlan) -> Vec<u16> {
+        let mut indexes = vec![];
+        plan.visit_exprs_mut(&mut |expr| {
+            if let PhysicalExpr::Param(slot, _) = expr {
+                indexes.push(slot.binding_index().expect("a template has only binding params"));
+            }
+        });
+        indexes.sort();
+        indexes.dedup();
+        indexes
+    }
+
+    /// account(id: identity, n: u32)
+    fn account_db() -> SchemaViewer {
+        let account = schema(
+            TableId(1),
+            "account",
+            &[("id", AlgebraicType::identity()), ("n", AlgebraicType::U32)],
+            &[&[0]],
+            &[&[0]],
+            Some(0),
+        );
+        SchemaViewer {
+            schemas: vec![Arc::new(account)],
+        }
+    }
+
+    #[test]
+    fn template_plans_ignore_predicate_order() {
+        let db = player_team_db();
+        let join = "select p.* from player p join team t on p.team_id = t.id";
+        let (q3, _) = template_plans(&format!("{join} where t.region = 'west' and p.rank = 3"), &db);
+        let (q5, _) = template_plans(&format!("{join} where p.rank = 3 and t.region = 'west'"), &db);
+        let (q6, _) = template_plans(&format!("{join} where 3 = p.rank and 'west' = t.region"), &db);
+        assert_eq!(q3.len(), 9);
+        assert_eq!(q3, q5);
+        assert_eq!(q3, q6);
+
+        // Swapping `FROM`, and reordering inside `OR`, give other templates
+        let q7 = "select p.* from team t join player p on p.team_id = t.id where t.region = 'west' and p.rank = 3";
+        let or = "(t.region = 'west' and p.rank = 1) or (t.region = 'east' and p.rank = 2)";
+        let (q8, _) = template_plans(&format!("{join} where {or}"), &db);
+        let or = "(p.rank = 2 and t.region = 'east') or (p.rank = 1 and t.region = 'west')";
+        let (q9, _) = template_plans(&format!("{join} where {or}"), &db);
+        assert_ne!(q3, template_plans(q7, &db).0);
+        assert_ne!(q3, q8);
+        assert_ne!(q8, q9);
+    }
+
+    #[test]
+    fn remap_adds_no_builtins_for_literals() {
+        let (plans, builtins) = template_plans("select * from player where id = 3", &player_team_db());
+        assert_eq!(builtins, vec![]);
+        for mut plan in plans {
+            assert_eq!(binding_indexes(&mut plan), vec![0]);
+        }
+    }
+
+    #[test]
+    fn remap_moves_sender_after_literals() {
+        let (plans, builtins) = template_plans("select * from account where id = :sender and n = 3", &account_db());
+        assert_eq!(builtins, vec![(PARAM_SENDER, AlgebraicType::identity())]);
+        for mut plan in plans {
+            assert_eq!(binding_indexes(&mut plan), vec![0, 1]);
+        }
+    }
+
+    #[test]
+    fn remap_moves_view_arg_hashes() {
+        // A sender-scoped view without params, with its hidden `arg_hash` column
+        let mut v = TableSchema::clone(
+            &schema(
+                TableId(1),
+                "v",
+                &[("arg_hash", AlgebraicType::U256), ("x", AlgebraicType::U8)],
+                &[&[0]],
+                &[],
+                None,
+            )
+            .inner(),
+        );
+        v.view_info = Some(ViewDefInfo {
+            view_id: ViewId(1),
+            is_anonymous: false,
+            params: ProductType::unit(),
+        });
+        let db = SchemaViewer {
+            schemas: vec![Arc::new(TableOrViewSchema::from(Arc::new(v)))],
+        };
+        let (plans, builtins) = template_plans("select * from v", &db);
+        assert_eq!(builtins, vec![(PARAM_VIEW_ARG_HASH_SENDER, AlgebraicType::U256)]);
+        for mut plan in plans {
+            assert_eq!(binding_indexes(&mut plan), vec![0]);
         }
     }
 }
