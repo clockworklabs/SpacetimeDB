@@ -164,6 +164,7 @@ pub struct ResidentObjects {
     page_id: AtomicU64,
     pages: Mutex<IntMap<PageId, Weak<PageFrame>>>,
     blobs: Mutex<IntMap<BlobHashWrapper, Weak<BlobFrame>>>,
+    evict_blobs: bool,
 }
 
 impl ResidentObjects {
@@ -186,7 +187,13 @@ impl ResidentObjects {
             page_id: <_>::default(),
             pages: <_>::default(),
             blobs: <_>::default(),
+            evict_blobs: true,
         }
+    }
+
+    pub(super) fn with_blob_eviction(mut self, enabled: bool) -> Self {
+        self.evict_blobs = enabled;
+        self
     }
 
     pub(super) fn reserve_blob(
@@ -232,6 +239,7 @@ impl ResidentObjects {
     }
 
     pub(super) fn evictable_blobs(&self, candidates: &mut Vec<BlobEvictionCandidate>) {
+        // Prune dead entries even when blob eviction is disabled.
         {
             let mut blobs = self.blobs.lock().unwrap();
             blobs.retain(|&key, weak| {
@@ -239,7 +247,7 @@ impl ResidentObjects {
                     return false;
                 };
 
-                if Arc::strong_count(&frame) <= 2 {
+                if self.evict_blobs && Arc::strong_count(&frame) <= 2 {
                     candidates.push(BlobEvictionCandidate {
                         key,
                         access: frame.access(),

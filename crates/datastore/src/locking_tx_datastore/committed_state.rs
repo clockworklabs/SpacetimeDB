@@ -8,6 +8,7 @@ use super::{
 use crate::db_metrics::DB_METRICS;
 #[cfg(feature = "metrics")]
 use crate::system_tables::{ST_COLUMN_NAME, ST_CONSTRAINT_NAME, ST_INDEX_NAME, ST_SEQUENCE_NAME};
+use crate::system_tables::{ST_TABLE_CACHE_POLICY_ID, ST_TABLE_CACHE_POLICY_IDX};
 use crate::traits::TxOffset;
 use crate::{
     error::TableError,
@@ -48,6 +49,7 @@ use spacetimedb_lib::{db::auth::StTableType, Identity};
 use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use spacetimedb_schema::schema::TableCachePolicy;
 use spacetimedb_schema::{
     schema::{SequenceSchema, TableSchema},
     table_name::TableName,
@@ -388,6 +390,7 @@ impl CommittedState {
         self.create_table(ST_INBOUND_STREAM_ID, schemas[ST_INBOUND_STREAM_IDX].clone());
         self.create_table(ST_INBOUND_MSG_ID, schemas[ST_INBOUND_MSG_IDX].clone());
         self.create_table(ST_OUTBOX_ID, schemas[ST_OUTBOX_IDX].clone());
+        self.create_table(ST_TABLE_CACHE_POLICY_ID, schemas[ST_TABLE_CACHE_POLICY_IDX].clone());
 
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store) =
@@ -961,12 +964,25 @@ impl CommittedState {
         Ok((table, self.storage.blobs(), &mut self.index_id_map))
     }
 
+    pub(super) fn page_eviction_policy(&self, schema: &TableSchema) -> PageEvictionPolicy {
+        // Schema recovery needs system tables to stay in memory.
+        if schema.table_type == StTableType::System
+            || !self.storage.page_eviction_enabled()
+            || schema.cache_policy == TableCachePolicy::RequiredInMemory
+        {
+            PageEvictionPolicy::NeverEvict
+        } else {
+            PageEvictionPolicy::Evictable
+        }
+    }
+
     fn make_table(&self, schema: Arc<TableSchema>) -> Table {
+        let policy = self.page_eviction_policy(&schema);
         Table::new(
             schema,
             SquashedOffset::COMMITTED_STATE,
             self.storage.pages().clone(),
-            PageEvictionPolicy::NeverEvict,
+            policy,
         )
     }
 
@@ -980,14 +996,11 @@ impl CommittedState {
         schema: &Arc<TableSchema>,
     ) -> (&'this mut Table, &'this BlobSet) {
         let page_manager = self.storage.pages().clone();
-        let table = self.tables.entry(table_id).or_insert_with(|| {
-            Table::new(
-                schema.clone(),
-                SquashedOffset::COMMITTED_STATE,
-                page_manager,
-                PageEvictionPolicy::NeverEvict,
-            )
-        });
+        let policy = self.page_eviction_policy(schema);
+        let table = self
+            .tables
+            .entry(table_id)
+            .or_insert_with(|| Table::new(schema.clone(), SquashedOffset::COMMITTED_STATE, page_manager, policy));
         (table, self.storage.blobs())
     }
 

@@ -941,12 +941,18 @@ impl<'page> VarView<'page> {
             // However, again, at this point we know that the successor isn't NULL.
             // It follows then by induction that any `next_granule` at this point is valid.
             // Thus we have fulfilled the requirement that `next_granule` points to a valid granule.
-            let header = unsafe { self.get_granule_ref(next_granule) }.header;
+            let next = if var_len_obj.is_large_blob() {
+                // Blob hashes occupy one granule. If blob insertion failed,
+                // its header may still contain links from the page's free list.
+                PageOffset::VAR_LEN_NULL
+            } else {
+                unsafe { self.get_granule_ref(next_granule) }.header.next()
+            };
             // SAFETY: `next_granule` still points to a valid granule per above.
             unsafe {
                 self.free_granule(next_granule);
             }
-            next_granule = header.next();
+            next_granule = next;
         }
     }
 

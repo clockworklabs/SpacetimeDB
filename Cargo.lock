@@ -9097,6 +9097,7 @@ dependencies = [
  "spacetimedb-client-api-messages",
  "spacetimedb-core",
  "spacetimedb-datastore",
+ "spacetimedb-disk-table",
  "spacetimedb-lib",
  "spacetimedb-paths",
  "spacetimedb-pg",

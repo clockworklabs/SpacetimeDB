@@ -157,6 +157,21 @@ impl TableOrViewSchema {
     }
 }
 
+/// Which storage tiers may hold a table's data.
+///
+/// Variant order is part of the stored format. Append new variants; do not reorder them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, spacetimedb_lib::SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub enum TableCachePolicy {
+    /// Keep table contents in memory.
+    #[default]
+    RequiredInMemory,
+    /// Allow eviction to local disk, but not remote storage.
+    RequiredOnDisk,
+    /// Allow any storage tier, including remote storage.
+    NoRequirement,
+}
+
 /// A data structure representing the schema of a database table.
 ///
 /// This struct holds information about the table, including its identifier,
@@ -202,6 +217,10 @@ pub struct TableSchema {
 
     /// The visibility of the table.
     pub table_access: StAccess,
+
+    /// Stored in `st_table_cache_policy` and set when the table is created.
+    /// Changing this field alone does not change how the table stores its pages.
+    pub cache_policy: TableCachePolicy,
 
     /// The schedule for the table, if present.
     pub schedule: Option<ScheduleSchema>,
@@ -251,6 +270,7 @@ impl TableSchema {
             sequences,
             table_type,
             table_access,
+            cache_policy: TableCachePolicy::default(),
             schedule,
             primary_key,
             is_event,
