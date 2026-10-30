@@ -13,6 +13,16 @@ This setup installs development guidance and configures tools. It does not
 initialize a project, start a server, publish a database, log in, change application
 code, or access database contents.
 
+## Spacetime and SpacetimeDB
+
+SpacetimeDB is being renamed Spacetime, because the "DB" led people and agents to
+treat it as a database to put behind a separate API server. It is the whole
+backend: application logic, relational data, authentication, and live
+synchronization to clients in one platform, with your server code running inside
+it as a module. Call it Spacetime when talking with users. The CLI, packages,
+repository, plugin, and much of the documentation still use the SpacetimeDB name,
+so treat both names as the same product.
+
 ## Learn the Zen of Spacetime
 
 Read [The Zen of Spacetime](https://spacetimedb.com/docs/intro/zen/) before
