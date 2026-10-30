@@ -1,8 +1,7 @@
 import { Timestamp } from 'spacetimedb';
 import { truncateForLog } from './http.js';
 
-export const MAX_DELIVERY_ATTEMPTS = 5;
-const INITIAL_RETRY_DELAY_MICROS = 1_000_000n;
+export const RETRY_WINDOW_MICROS = 24n * 60n * 60n * 1_000_000n;
 const MAX_RETRY_DELAY_MICROS = 5n * 60n * 1_000_000n;
 
 type OutboxRow = {
@@ -10,11 +9,13 @@ type OutboxRow = {
   attempts: number;
   claimId?: string | undefined;
   claimExpiresAt: Timestamp;
-  nextAttemptAt: unknown;
+  nextAttemptAt: Timestamp;
+  createdAt: Timestamp;
+  retryExpiresAt: Timestamp;
   lastStatusCode?: number | undefined;
   lastError?: string | undefined;
-  updatedAt: unknown;
-  deliveredAt?: unknown;
+  updatedAt: Timestamp;
+  deliveredAt?: Timestamp | undefined;
 };
 
 export function claimHasExpired(
@@ -25,14 +26,38 @@ export function claimHasExpired(
 }
 
 export function retryDelayMicros(attempt: number): bigint {
-  const exponent = Math.max(0, Math.min(30, Math.trunc(attempt) - 1));
-  const delay = INITIAL_RETRY_DELAY_MICROS * (1n << BigInt(exponent));
-  return delay > MAX_RETRY_DELAY_MICROS ? MAX_RETRY_DELAY_MICROS : delay;
+  return attempt <= 5
+    ? 5_000_000n * (1n << BigInt(attempt - 1))
+    : MAX_RETRY_DELAY_MICROS;
+}
+
+export function retryDeadline(
+  row: Pick<OutboxRow, 'createdAt' | 'retryExpiresAt'>
+): Timestamp {
+  // Rows from before this column was added retain their original retry window.
+  return row.retryExpiresAt.microsSinceUnixEpoch === 0n
+    ? new Timestamp(row.createdAt.microsSinceUnixEpoch + RETRY_WINDOW_MICROS)
+    : row.retryExpiresAt;
+}
+
+export function expireOutboxRow<T extends OutboxRow>(
+  row: T,
+  timestamp: Timestamp
+): T {
+  return {
+    ...row,
+    status: { tag: 'Failed' },
+    claimId: undefined,
+    claimExpiresAt: Timestamp.UNIX_EPOCH,
+    nextAttemptAt: timestamp,
+    lastError: 'posthog.retry_expired',
+    updatedAt: timestamp,
+  };
 }
 
 export function releaseExpiredClaim<T extends OutboxRow>(
   row: T,
-  timestamp: T['updatedAt']
+  timestamp: Timestamp
 ): T {
   return {
     ...row,
@@ -56,7 +81,7 @@ export function isPermanentFailure(statusCode: number): boolean {
 
 export function requeueFailedRow<T extends OutboxRow>(
   row: T,
-  timestamp: T['updatedAt']
+  timestamp: Timestamp
 ): T {
   return {
     ...row,
@@ -65,6 +90,9 @@ export function requeueFailedRow<T extends OutboxRow>(
     claimId: undefined,
     claimExpiresAt: Timestamp.UNIX_EPOCH,
     nextAttemptAt: timestamp,
+    retryExpiresAt: new Timestamp(
+      timestamp.microsSinceUnixEpoch + RETRY_WINDOW_MICROS
+    ),
     updatedAt: timestamp,
   };
 }
@@ -73,7 +101,7 @@ export function claimOutboxRow<T extends OutboxRow>(
   row: T,
   claimId: string,
   expiresAt: Timestamp,
-  timestamp: T['updatedAt']
+  timestamp: Timestamp
 ): T {
   return {
     ...row,
@@ -87,14 +115,17 @@ export function claimOutboxRow<T extends OutboxRow>(
 export function settleOutboxClaim<T extends OutboxRow>(
   row: T,
   result: { ok: boolean; statusCode: number; responseBody: string },
-  timestamp: T['updatedAt'],
-  retryAt: T['nextAttemptAt']
+  timestamp: Timestamp
 ): T {
   const attempts = row.attempts + 1;
+  const deadline = retryDeadline(row);
   const terminal =
     result.ok ||
     isPermanentFailure(result.statusCode) ||
-    attempts >= MAX_DELIVERY_ATTEMPTS;
+    timestamp.microsSinceUnixEpoch >= deadline.microsSinceUnixEpoch;
+  const retryAt = new Timestamp(
+    timestamp.microsSinceUnixEpoch + retryDelayMicros(attempts)
+  );
   return {
     ...row,
     status: result.ok
@@ -105,7 +136,11 @@ export function settleOutboxClaim<T extends OutboxRow>(
     attempts,
     claimId: undefined,
     claimExpiresAt: Timestamp.UNIX_EPOCH,
-    nextAttemptAt: terminal ? timestamp : retryAt,
+    nextAttemptAt: terminal
+      ? timestamp
+      : retryAt.microsSinceUnixEpoch < deadline.microsSinceUnixEpoch
+        ? retryAt
+        : deadline,
     lastStatusCode: result.statusCode,
     lastError: result.ok ? undefined : truncateForLog(result.responseBody),
     updatedAt: timestamp,

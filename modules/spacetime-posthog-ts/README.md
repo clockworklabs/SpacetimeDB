@@ -121,15 +121,18 @@ The submodule stores operational state in private tables and exposes admin-gated
   once PostHog is configured, sends up to 10 batches of 100 queued events.
 - Each event is sent with its enqueue time as `timestamp` and a stable `uuid`,
   so PostHog deduplicates events sent more than once.
-- Network errors, 408, 429, and 5xx responses retry with exponential backoff, up
-  to 5 attempts. Other 4xx responses, such as an invalid project key, fail the
-  events immediately. PostHog's `/batch` endpoint reports one status for the
+- Network errors, 408, 429, and 5xx responses retry after 5, 10, 20, 40, and 80
+  seconds, then every 5 minutes, for up to 24 hours after enqueueing. Delays
+  start when the request completes; delivery runs on the next scheduler tick.
+  Expired events are marked `Failed`. Other 4xx responses, such as an invalid
+  project key, fail the events immediately. PostHog's `/batch` endpoint reports one status for the
   whole request, so every event in a batch gets the same result.
 - `flush_outbox({ limit })` sends up to `limit` (1 to 100) queued events now and
   returns `{ attempted, delivered, failed }`.
 - `requeue_failed_events({ limit })` moves up to `limit` failed events back to
-  the queue with a fresh retry budget, for example after fixing the project key.
-  Rejected events are not requeued.
+  the queue with a fresh 24-hour retry window, for example after fixing the
+  project key. The original event timestamp and UUID are preserved. Rejected
+  events are not requeued.
 
 **Analytics**
 

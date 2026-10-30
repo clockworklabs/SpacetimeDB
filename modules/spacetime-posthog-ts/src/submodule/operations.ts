@@ -38,7 +38,9 @@ import {
   claimOutboxRow,
   releaseExpiredClaim,
   requeueFailedRow,
-  retryDelayMicros,
+  RETRY_WINDOW_MICROS,
+  retryDeadline,
+  expireOutboxRow,
   settleOutboxClaim,
 } from './outbox-state.js';
 
@@ -217,6 +219,9 @@ export function enqueueEventInTx(
     createdAt: ctx.timestamp,
     updatedAt: ctx.timestamp,
     deliveredAt: undefined,
+    retryExpiresAt: new Timestamp(
+      ctx.timestamp.microsSinceUnixEpoch + RETRY_WINDOW_MICROS
+    ),
   });
   const delta = emptyDelta();
   countStatusChange(delta, undefined, status);
@@ -280,7 +285,7 @@ function logDelivery(
   });
 }
 
-function claimQueuedRows(ctx: WriteCtx, limit: number) {
+function maintainOutbox(ctx: WriteCtx): void {
   const expiredClaims = takeRows(
     ctx.db.posthogOutbox.byStatusClaimExpiresAt.filter([
       OutboxStatus.Processing,
@@ -295,6 +300,28 @@ function claimQueuedRows(ctx: WriteCtx, limit: number) {
     );
   }
 
+  const delta = emptyDelta();
+  for (const row of takeRows(
+    ctx.db.posthogOutbox.byStatusRetryExpiresAt.filter([
+      OutboxStatus.Queued,
+      new Range(undefined, { tag: 'included', value: ctx.timestamp }),
+    ]),
+    MAX_EXPIRED_CLAIMS_PER_FLUSH
+  )) {
+    const deadline = retryDeadline(row);
+    const next =
+      deadline.microsSinceUnixEpoch <= ctx.timestamp.microsSinceUnixEpoch
+        ? expireOutboxRow(row, ctx.timestamp)
+        : { ...row, retryExpiresAt: deadline };
+    ctx.db.posthogOutbox.outboxId.update(next);
+    countStatusChange(delta, row.status, next.status);
+  }
+  applyStatsDelta(ctx, delta);
+}
+
+function claimQueuedRows(ctx: WriteCtx, limit: number) {
+  maintainOutbox(ctx);
+
   const rows = takeRows(
     ctx.db.posthogOutbox.byStatusNextAttemptAt.filter([
       OutboxStatus.Queued,
@@ -306,10 +333,20 @@ function claimQueuedRows(ctx: WriteCtx, limit: number) {
   const expiresAt = new Timestamp(
     ctx.timestamp.microsSinceUnixEpoch + CLAIM_TTL_MICROS
   );
-  const claimed = rows.map(row =>
-    claimOutboxRow(row, claimId, expiresAt, ctx.timestamp)
-  );
-  for (const row of claimed) ctx.db.posthogOutbox.outboxId.update(row);
+  const claimed: typeof rows = [];
+  const delta = emptyDelta();
+  for (const row of rows) {
+    // The bounded maintenance pass may leave more expired rows in the queue.
+    const next =
+      retryDeadline(row).microsSinceUnixEpoch <=
+      ctx.timestamp.microsSinceUnixEpoch
+        ? expireOutboxRow(row, ctx.timestamp)
+        : claimOutboxRow(row, claimId, expiresAt, ctx.timestamp);
+    ctx.db.posthogOutbox.outboxId.update(next);
+    countStatusChange(delta, row.status, next.status);
+    if (next.status.tag === 'Processing') claimed.push(next);
+  }
+  applyStatsDelta(ctx, delta);
   return { claimId, rows: claimed };
 }
 
@@ -350,16 +387,7 @@ function deliverOutbox(
       )
         continue;
       logDelivery(tx, DeliverySource.Flush, row.outboxId, row, result);
-      const retryAt = new Timestamp(
-        ctx.timestamp.microsSinceUnixEpoch +
-          retryDelayMicros(current.attempts + 1)
-      );
-      const settled = settleOutboxClaim(
-        current,
-        result,
-        ctx.timestamp,
-        retryAt
-      );
+      const settled = settleOutboxClaim(current, result, tx.timestamp);
       tx.db.posthogOutbox.outboxId.update(settled);
       countStatusChange(delta, current.status, settled.status);
       if (result.ok) delivered++;
@@ -390,6 +418,7 @@ export const scheduledFlush: ProcedureExport<
     }
     const cfg = ctx.withTx(tx => {
       pruneDeliveryHistory(tx);
+      maintainOutbox(tx);
       return loadConfig(tx);
     });
     if (!cfg) return {};
@@ -468,7 +497,7 @@ export const flushOutbox: ProcedureExport<
 });
 
 const requeueFailedEventsArgs = { limit: t.u32() };
-/** Moves up to `limit` Failed events back to Queued with a fresh retry budget. */
+/** Moves up to `limit` Failed events back to Queued with a fresh 24-hour retry window. */
 export const requeueFailedEvents: ReducerExport<
   typeof spacetimedb.schemaType,
   typeof requeueFailedEventsArgs

@@ -10,6 +10,7 @@ import {
   type SumBuilder,
 } from 'spacetimedb/server';
 import { install } from './install.js';
+import { Timestamp } from 'spacetimedb';
 
 type PostHogOutboxStatusBuilder = SumBuilder<
   Record<
@@ -104,6 +105,11 @@ const posthogOutboxOptions = {
       algorithm: 'btree',
       columns: ['status', 'updatedAt'],
     } as const,
+    {
+      accessor: 'byStatusRetryExpiresAt',
+      algorithm: 'btree',
+      columns: ['status', 'retryExpiresAt'],
+    } as const,
   ],
 };
 const posthogOutboxColumns = {
@@ -123,6 +129,7 @@ const posthogOutboxColumns = {
   createdAt: t.timestamp(),
   updatedAt: t.timestamp(),
   deliveredAt: t.option(t.timestamp()),
+  retryExpiresAt: t.timestamp().default(Timestamp.UNIX_EPOCH),
 };
 export const posthogOutbox: ReturnType<
   typeof table<typeof posthogOutboxColumns, typeof posthogOutboxOptions>

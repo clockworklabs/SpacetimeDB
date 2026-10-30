@@ -8,7 +8,8 @@ import {
   posthogFetch,
 } from '../src/submodule/http';
 import {
-  MAX_DELIVERY_ATTEMPTS,
+  retryDeadline,
+  expireOutboxRow,
   claimHasExpired,
   claimOutboxRow,
   isPermanentFailure,
@@ -81,7 +82,8 @@ for (const status of [0, 408, 429, 500, 503]) {
   assert.equal(isPermanentFailure(status), false, `${status} is retryable`);
 }
 
-const timestamp = { microsSinceUnixEpoch: 10_000_000n };
+const timestamp = new Timestamp(10_000_000n);
+const day = 86_400_000_000n;
 const queued = {
   outboxId: 'event-1',
   status: { tag: 'Queued' },
@@ -93,6 +95,9 @@ const queued = {
   lastError: undefined,
   updatedAt: timestamp,
   deliveredAt: undefined,
+  uuid: 'stable-event-uuid',
+  createdAt: timestamp,
+  retryExpiresAt: new Timestamp(timestamp.microsSinceUnixEpoch + day),
 };
 
 const expiresAt = new Timestamp(15_000_000n);
@@ -106,37 +111,95 @@ const released = releaseExpiredClaim(claimed, timestamp);
 assert.equal(released.status.tag, 'Queued');
 assert.equal(released.claimId, undefined);
 assert.equal(released.claimExpiresAt, Timestamp.UNIX_EPOCH);
-assert.equal(retryDelayMicros(1), 1_000_000n);
-assert.equal(retryDelayMicros(2), 2_000_000n);
-assert.equal(retryDelayMicros(20), 300_000_000n);
+assert.deepEqual(
+  [1, 2, 3, 4, 5, 6, 7, 100].map(retryDelayMicros),
+  [5n, 10n, 20n, 40n, 80n, 300n, 300n, 300n].map(s => s * 1_000_000n)
+);
 
 let retrying = claimed;
-for (let attempt = 1; attempt < MAX_DELIVERY_ATTEMPTS; attempt++) {
+let completedAt = timestamp;
+for (let attempt = 1; attempt <= 8; attempt++) {
+  // Include slow requests: the delay must start after the response.
+  completedAt = new Timestamp(completedAt.microsSinceUnixEpoch + 60_000_000n);
   const settled = settleOutboxClaim(
     retrying,
     { ok: false, statusCode: 503, responseBody: 'unavailable' },
-    timestamp,
-    { microsSinceUnixEpoch: 11_000_000n }
+    completedAt
   );
   assert.equal(settled.attempts, attempt);
   assert.equal(settled.status.tag, 'Queued');
+  assert.equal(
+    settled.nextAttemptAt.microsSinceUnixEpoch,
+    completedAt.microsSinceUnixEpoch +
+      [5n, 10n, 20n, 40n, 80n, 300n, 300n, 300n][attempt - 1] * 1_000_000n
+  );
+  completedAt = settled.nextAttemptAt;
   retrying = claimOutboxRow(
     settled,
     `claim-${attempt + 1}`,
     expiresAt,
-    timestamp
+    completedAt
   );
 }
 
+const recovered = settleOutboxClaim(
+  retrying,
+  { ok: true, statusCode: 200, responseBody: 'ok' },
+  completedAt
+);
+assert.equal(
+  recovered.status.tag,
+  'Delivered',
+  'an outage longer than five attempts can recover'
+);
+
+const nearExpiry = settleOutboxClaim(
+  retrying,
+  { ok: false, statusCode: 503, responseBody: 'unavailable' },
+  new Timestamp(queued.retryExpiresAt.microsSinceUnixEpoch - 1n)
+);
+assert.equal(nearExpiry.nextAttemptAt, queued.retryExpiresAt);
 const exhausted = settleOutboxClaim(
   retrying,
   { ok: false, statusCode: 503, responseBody: 'unavailable' },
-  timestamp,
-  { microsSinceUnixEpoch: 11_000_000n }
+  queued.retryExpiresAt
 );
-assert.equal(exhausted.attempts, MAX_DELIVERY_ATTEMPTS);
+assert.equal(exhausted.attempts, 9);
 assert.equal(exhausted.status.tag, 'Failed');
 assert.equal(exhausted.lastError, 'unavailable');
+const unsentExpired = expireOutboxRow(queued, queued.retryExpiresAt);
+assert.equal(unsentExpired.status.tag, 'Failed');
+assert.equal(
+  unsentExpired.attempts,
+  0,
+  'expiry does not count as an HTTP attempt'
+);
+assert.equal(unsentExpired.lastError, 'posthog.retry_expired');
+assert.equal(
+  retryDeadline({ ...queued, retryExpiresAt: Timestamp.UNIX_EPOCH })
+    .microsSinceUnixEpoch,
+  queued.retryExpiresAt.microsSinceUnixEpoch,
+  'existing rows expire from their original enqueue time'
+);
+const lostClaim = releaseExpiredClaim(retrying, queued.retryExpiresAt);
+assert.equal(
+  retryDeadline(lostClaim),
+  queued.retryExpiresAt,
+  'claim recovery does not extend the retry window'
+);
+assert.equal(
+  expireOutboxRow(lostClaim, queued.retryExpiresAt).status.tag,
+  'Failed'
+);
+assert.equal(
+  settleOutboxClaim(
+    retrying,
+    { ok: true, statusCode: 200, responseBody: 'ok' },
+    queued.retryExpiresAt
+  ).status.tag,
+  'Delivered',
+  'a successful in-flight request is still delivered at the deadline'
+);
 assert.equal(
   settleOutboxClaim(
     claimed,
@@ -145,7 +208,6 @@ assert.equal(
       statusCode: 503,
       responseBody: 'x'.repeat(3000),
     },
-    timestamp,
     timestamp
   ).lastError,
   truncateForLog('x'.repeat(3000))
@@ -154,20 +216,33 @@ assert.equal(
 const unauthorized = settleOutboxClaim(
   claimed,
   { ok: false, statusCode: 401, responseBody: 'invalid api key' },
-  timestamp,
   timestamp
 );
 assert.equal(unauthorized.attempts, 1);
 assert.equal(unauthorized.status.tag, 'Failed', 'auth errors fail at once');
 
-const requeued = requeueFailedRow(unauthorized, timestamp);
+const requeuedAt = new Timestamp(timestamp.microsSinceUnixEpoch + 2n * day);
+const requeued = requeueFailedRow(unauthorized, requeuedAt);
 assert.equal(requeued.status.tag, 'Queued');
 assert.equal(requeued.attempts, 0);
+assert.equal(
+  requeued.retryExpiresAt.microsSinceUnixEpoch,
+  requeuedAt.microsSinceUnixEpoch + day
+);
+assert.equal(requeued.uuid, queued.uuid);
+assert.equal(requeued.createdAt, queued.createdAt);
+assert.equal(
+  settleOutboxClaim(
+    requeued,
+    { ok: false, statusCode: 429, responseBody: 'limited' },
+    requeuedAt
+  ).status.tag,
+  'Queued'
+);
 
 const delivered = settleOutboxClaim(
   claimed,
   { ok: true, statusCode: 200, responseBody: 'ok' },
-  timestamp,
   timestamp
 );
 assert.equal(delivered.status.tag, 'Delivered');

@@ -33,4 +33,5 @@ export default __t.row({
   createdAt: __t.timestamp().name("created_at"),
   updatedAt: __t.timestamp().name("updated_at"),
   deliveredAt: __t.option(__t.timestamp()).name("delivered_at"),
+  retryExpiresAt: __t.timestamp().name("retry_expires_at"),
 });

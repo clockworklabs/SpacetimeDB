@@ -142,6 +142,7 @@ export const PosthogOutbox = __t.object("PosthogOutbox", {
   createdAt: __t.timestamp(),
   updatedAt: __t.timestamp(),
   deliveredAt: __t.option(__t.timestamp()),
+  retryExpiresAt: __t.timestamp(),
 });
 export type PosthogOutbox = __Infer<typeof PosthogOutbox>;
 
