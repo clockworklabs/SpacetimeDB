@@ -33,6 +33,17 @@ describe('Random', () => {
     }
   });
 
+  // The seed went through a signed shift, which collapsed about 9% of
+  // timestamps to the same seed, so their transactions drew identical numbers.
+  test('distinct timestamps seed distinct generators', () => {
+    const start = 1_791_806_400_000_000n;
+    const first = new Set<number>();
+    for (let i = 0n; i < 1000n; i++) {
+      first.add(makeRandom(new Timestamp(start + i)).uint32());
+    }
+    expect(first.size).toBe(1000);
+  });
+
   test('fill handles empty typed arrays', () => {
     const random = makeRandom(new Timestamp(1n));
     const bytes = new Uint8Array();
