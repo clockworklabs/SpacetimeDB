@@ -20,6 +20,13 @@
     "write-heading-ids": "docusaurus write-heading-ids",
     "typecheck": "tsc"
   },
+  "dependencyNotes": {
+    "@docusaurus/core": [
+      "Introduces @docusaurus/bundler -> copy-webpack-plugin / css-minimizer-webpack-plugin -> serialize-javascript.",
+      "serialize-javascript GHSA-5c6j-r48x-rmvq and GHSA-qj8w-gfj5-8c6v require crafted objects to cause code execution or CPU exhaustion.",
+      "These serializers consume repository content and build configuration. Visitors to the generated static site cannot supply those inputs; malicious build inputs are not covered by this exclusion."
+    ]
+  },
   "dependencies": {
     "@docusaurus/core": "3.9.2",
     "@docusaurus/plugin-client-redirects": "^3.9.2",
