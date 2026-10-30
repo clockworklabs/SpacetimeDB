@@ -390,7 +390,7 @@ spacetime sql lobby "SELECT * FROM admit_player_outbox"
 
 ### Generated outbox declarations
 
-You can always declare an outbox by manually specifying the table and types, however, in TypeScript, the receiver bindings can declare an outbox for you. `gw.outbox.admitPlayer()` returns an outbox table with a `msgId` message ID column, a `target` column, and a column for each parameter of the reducer:
+You can always declare an outbox by manually specifying the table and types. However, in TypeScript, the receiver bindings can declare an outbox for you. `gw.outbox.admitPlayer()` returns an outbox table with a `msgId` message ID column, a `target` column, and a column for each parameter of the reducer:
 
 ```typescript
 const spacetimedb = schema({
