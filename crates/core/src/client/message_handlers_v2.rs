@@ -89,6 +89,22 @@ pub(super) async fn handle_decoded_message(
             }
             Ok(())
         }
+        ws_v2::ClientMessage::Ping(ping) => {
+            // The websocket actor usually answers pings as soon as they are read from the socket,
+            // so they never get here. Those that do, e.g. pings batched with other messages,
+            // are answered in order, counting the time since `timer` as held by the server.
+            let held = timer.elapsed();
+            let pong = ws_v2::Pong {
+                request_id: ping.request_id,
+                client_send_time: ping.client_send_time,
+                server_receive_time: Timestamp::now() - held,
+                server_hold_duration: held.into(),
+            };
+            if let Err(e) = client.send_message(None, ws_v2::ServerMessage::Pong(pong)) {
+                log::warn!("Failed to send pong to client: {e}");
+            }
+            Ok(())
+        }
     };
     res.map_err(|(reducer_name, reducer_id, err)| MessageExecutionError {
         reducer: reducer_name.cloned(),
