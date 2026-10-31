@@ -9128,6 +9128,7 @@ dependencies = [
  "foldhash 0.2.0",
  "hashbrown 0.16.1",
  "itertools 0.12.1",
+ "parking_lot 0.12.5",
  "proptest",
  "proptest-derive",
  "rand 0.9.2",

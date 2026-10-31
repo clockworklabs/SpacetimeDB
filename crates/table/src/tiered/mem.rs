@@ -32,7 +32,7 @@ impl std::hash::Hash for PageId {
 impl ValidAsIdentityHash for PageId {}
 
 pub struct ReservedBlob {
-    frame: BlobFrame,
+    frame: Arc<BlobFrame>,
 }
 
 #[derive(Debug)]
@@ -73,6 +73,17 @@ impl Deref for BlobFrame {
 pub struct ReservedPage {
     id: PageId,
     frame: PageFrame,
+}
+
+impl ReservedPage {
+    /// An unpublished reservation has no external pins or registry entry.
+    pub(super) fn into_resident(self) -> (Box<Page>, BudgetPermit) {
+        let PageFrame { page, permit, .. } = self.frame;
+        let page = Arc::try_unwrap(page)
+            .expect("an unredeemed page reservation has unique ownership")
+            .into_inner();
+        (page.into_owned(), permit)
+    }
 }
 
 #[derive(Debug)]
@@ -156,6 +167,18 @@ pub struct ResidentObjects {
 }
 
 impl ResidentObjects {
+    pub(super) fn has_unlimited_budget(&self) -> bool {
+        self.budget.is_unlimited()
+    }
+
+    pub(super) fn acquire_resident_page(&self) -> Result<BudgetPermit, BudgetExceeded> {
+        self.budget.acquire(PAGE_SIZE as u64)
+    }
+
+    pub(super) fn restored_page_permit(&self) -> BudgetPermit {
+        self.budget.force_acquire(PAGE_SIZE as u64)
+    }
+
     pub fn new(budget: ByteBudget) -> Self {
         Self {
             budget,
@@ -169,18 +192,26 @@ impl ResidentObjects {
     pub(super) fn reserve_blob(
         &self,
         size: u64,
+        hash: BlobHashWrapper,
         alloc: impl FnOnce() -> Box<[u8]>,
     ) -> Result<ReservedBlob, BudgetExceeded> {
+        // Transaction and committed blob set share this registry.
+        // Hand out an existing frame if there is one.
+        if let Some(frame) = self.blobs.lock().unwrap().get(&hash).and_then(Weak::upgrade) {
+            return Ok(ReservedBlob { frame });
+        }
         let permit = self.budget.acquire(size)?;
         let bytes = alloc();
         assert_eq!(size, bytes.len() as u64);
+        debug_assert_eq!(hash, BlobHashWrapper::hash_from_bytes(&bytes));
         let hash = BlobHash::hash_from_bytes(&bytes).into();
         let frame = BlobFrame {
             hash,
             bytes,
             access: Access::new(self.access_epoch.fetch_add(1, Ordering::Relaxed)),
             permit,
-        };
+        }
+        .into();
 
         Ok(ReservedBlob { frame })
     }
@@ -192,11 +223,11 @@ impl ResidentObjects {
         // frames and replace stale weak entries when a hash becomes resident again.
         if let Some(existing) = blobs.get(&key).and_then(Weak::upgrade) {
             assert_eq!(existing.hash(), frame.hash());
-            assert_eq!(&**existing, &*frame);
+            assert!(Arc::ptr_eq(&existing, &frame));
+
             return existing;
         }
-        let frame = Arc::new(frame);
-        assert!(self.blobs.lock().unwrap().insert(key, Arc::downgrade(&frame)).is_none());
+        blobs.insert(key, Arc::downgrade(&frame));
         frame
     }
 
@@ -319,7 +350,8 @@ impl ResidentObjects {
             bytes,
             access: Access::new(self.access_epoch.fetch_add(1, Ordering::Relaxed)),
             permit,
-        };
+        }
+        .into();
 
         ReservedBlob { frame }
     }
@@ -413,6 +445,17 @@ pub(super) struct PooledPage {
 }
 
 impl PooledPage {
+    fn into_owned(self) -> Box<Page> {
+        let mut this = ManuallyDrop::new(self);
+        // SAFETY: `this` suppresses PooledPage::drop, and both fields are moved
+        // exactly once. The receiving resident page set assumes pool ownership.
+        unsafe {
+            let page = ManuallyDrop::take(&mut this.page);
+            std::ptr::drop_in_place(&mut this.pool);
+            page
+        }
+    }
+
     pub fn new(page: Box<Page>, pool: PagePool) -> Self {
         Self {
             page: ManuallyDrop::new(page),

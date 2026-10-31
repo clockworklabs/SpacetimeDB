@@ -11,6 +11,7 @@ use spacetimedb_snapshot::SnapshotError;
 use spacetimedb_table::{
     bflatn_to, read_column,
     table::{self, ReadViaBsatnError, UniqueConstraintViolation},
+    tiered::{BlobError, PageError},
 };
 use thiserror::Error;
 
@@ -34,6 +35,15 @@ pub enum DatastoreError {
 
     #[error("ViewError: {0}")]
     View(#[from] ViewError),
+
+    #[error(transparent)]
+    Page(#[from] PageError),
+
+    #[error(transparent)]
+    TableStorage(#[from] table::TableError),
+
+    #[error(transparent)]
+    Blob(#[from] BlobError),
 
     #[error(transparent)]
     Other(#[from] anyhow::Error),
@@ -142,6 +152,7 @@ impl From<table::InsertError> for DatastoreError {
             table::InsertError::Duplicate(e) => TableError::from(e).into(),
             table::InsertError::Bflatn(e) => TableError::from(e).into(),
             table::InsertError::IndexError(e) => IndexError::from(e).into(),
+            table::InsertError::Table(e) => e.into(),
         }
     }
 }

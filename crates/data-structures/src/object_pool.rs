@@ -85,6 +85,11 @@ impl<T: PooledObject> Pool<T> {
         Self { inner }
     }
 
+    /// The maximum number of objects retained by this pool.
+    pub fn capacity(&self) -> u64 {
+        u64::try_from(self.inner.objects.capacity()).expect("pool capacity fits u64")
+    }
+
     /// Puts back an object into the pool.
     pub fn put(&self, object: T) {
         self.inner.put(object);
