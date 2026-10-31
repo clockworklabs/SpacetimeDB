@@ -30,9 +30,18 @@ jobs:
     name: Build CLI for ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
 
+    env:
+      # Make action Node runtimes use the filtered CA bundle created by the setup action.
+      NODE_OPTIONS: ${{ matrix.runner != 'spacetimedb-windows-runner' && '--use-openssl-ca' || '' }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+
+      # Fleet VM images maintain certificate trust and rustup; only set them up here for GitHub-hosted runners.
+      - name: Set up certificate trust
+        if: runner.environment == 'github-hosted'
+        uses: ./.github/actions/setup-certificate-trust
 
       - name: Show arch
         run: uname -a
@@ -56,10 +65,6 @@ jobs:
           echo "CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++"                 >> $GITHUB_ENV
           echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar"                   >> $GITHUB_ENV
 
-      # Fleet VM images maintain rustup; only update it here for the other runners in this matrix.
-      - name: Check and update rustup
-        if: ${{ matrix.runner != 'spacetimedb-windows-runner' }}
-        uses: ./.github/actions/ensure-rustup
       - name: Install Rust
         uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain

@@ -419,7 +419,8 @@ jobs:
         if: runner.os == 'Windows'
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.3
+          # Rejects the compromised eMudhra certificate chains.
+          bun-version: 1.4.4
 
       - name: Install TypeScript SDK dependencies
         run: pnpm --filter spacetimedb install
@@ -1569,6 +1570,8 @@ jobs:
           - { target: x86_64-pc-windows-msvc, runner: windows-latest }
     runs-on: ${{ matrix.runner }}
     env:
+      # Make action Node runtimes use the filtered CA bundle created by the setup action.
+      NODE_OPTIONS: ${{ matrix.runner != 'spacetimedb-linux-small' && '--use-openssl-ca' || '' }}
       RUST_BACKTRACE: full
     steps:
       - *set-cargo-target-dir
@@ -1577,10 +1580,11 @@ jobs:
       - *find-git-ref
       - *checkout-sources
 
-      # Fleet VM images maintain rustup; only update it here for the other runners in this matrix.
-      - name: Check and update rustup
-        if: ${{ matrix.runner != 'spacetimedb-linux-small' }}
-        uses: ./.github/actions/ensure-rustup
+      # Fleet VM images maintain certificate trust and rustup; only set them up here for GitHub-hosted runners.
+      - name: Set up certificate trust
+        if: runner.environment == 'github-hosted'
+        uses: ./.github/actions/setup-certificate-trust
+
       - name: Install Rust
         uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
@@ -1671,8 +1675,8 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
       # Rustup comes from the job container, so updating the fleet VM image does not update it.
-      - name: Check and update rustup
-        uses: ./.github/actions/ensure-rustup
+      - name: Set up certificate trust
+        uses: ./.github/actions/setup-certificate-trust
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
@@ -1872,8 +1876,9 @@ jobs:
       - name: Hydrate Unity SDK DLLs
         run: cargo regen csharp dlls
 
+      # v4.0.1's container removes trust in the compromised eMudhra/emSign roots.
       - name: Check Unity meta files
-        uses: DeNA/unity-meta-check@v3
+        uses: DeNA/unity-meta-check@v4.0.1
         with:
           enable_pr_comment: ${{ github.event_name == 'pull_request' }}
           target_path: sdks/csharp
@@ -1897,9 +1902,18 @@ jobs:
           yq e -i '.dependencies["com.clockworklabs.spacetimedbsdk"] = "file:../../../../sdks/csharp"' manifest.json
           cat manifest.json
 
+      # Editor containers have their own trust stores, independent of the host.
+      - name: Build Unity image with corrected trust
+        run: |
+          docker build --pull \
+            --build-arg BASE_IMAGE=unityci/editor:ubuntu-${{ env.UNITY_VERSION }}-linux-il2cpp-3 \
+            --tag spacetimedb-unity-linux-il2cpp:${{ env.UNITY_VERSION }} \
+            --file .github/docker/unity.Dockerfile .
+
       - name: Run Unity tests
         uses: game-ci/unity-test-runner@v4
         with:
+          customImage: spacetimedb-unity-linux-il2cpp:${{ env.UNITY_VERSION }}
           unityVersion: ${{ env.UNITY_VERSION }}
           projectPath: demo/Blackholio/client-unity # Path to the Unity project subdirectory
           githubToken: ${{ secrets.GITHUB_TOKEN }}
@@ -1957,9 +1971,18 @@ jobs:
       - name: Hydrate Unity SDK DLLs
         run: cargo regen csharp dlls
 
+      # Editor containers have their own trust stores, independent of the host.
+      - name: Build Unity image with corrected trust
+        run: |
+          docker build --pull \
+            --build-arg BASE_IMAGE=unityci/editor:ubuntu-${{ env.UNITY_VERSION }}-webgl-3 \
+            --tag spacetimedb-unity-webgl:${{ env.UNITY_VERSION }} \
+            --file .github/docker/unity.Dockerfile .
+
       - name: Build Unity WebGL player
         uses: game-ci/unity-builder@v4
         with:
+          customImage: spacetimedb-unity-webgl:${{ env.UNITY_VERSION }}
           unityVersion: ${{ env.UNITY_VERSION }}
           projectPath: demo/Blackholio/client-unity
           targetPlatform: WebGL

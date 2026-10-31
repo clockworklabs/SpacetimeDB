@@ -276,12 +276,18 @@ jobs:
     needs: run-benchmarks
     runs-on: ubuntu-latest
 
+    env:
+      # Make action Node runtimes use the filtered CA bundle created by the setup action.
+      NODE_OPTIONS: --use-openssl-ca
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check and update rustup
-        uses: ./.github/actions/ensure-rustup
+      - name: Set up certificate trust
+        if: runner.environment == 'github-hosted'
+        uses: ./.github/actions/setup-certificate-trust
+
       - uses: dsherret/rust-toolchain-file@v1
 
       - name: Download analysis reports
