@@ -1091,21 +1091,11 @@ impl InstanceEnv {
             return Err(NodesError::HttpError(BLOCKED_HTTP_ADDRESS_ERROR.to_string()));
         }
 
-        let redirect_policy = reqwest::redirect::Policy::custom(|attempt| {
-            if is_blocked_ip_literal(attempt.url()) {
-                attempt.error(BLOCKED_HTTP_ADDRESS_ERROR)
-            } else {
-                reqwest::redirect::Policy::default().redirect(attempt)
-            }
-        });
-
         // TODO(procedure-metrics): record size in bytes of response, time spent awaiting response.
 
         // Actually execute the HTTP request!
         // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
-        let execute_fut = reqwest::Client::builder()
-            .dns_resolver(Arc::new(FilteredDnsResolver))
-            .redirect(redirect_policy)
+        let execute_fut = module_http_client_builder(self.replica_ctx.module_http)
             .build()
             .map_err(http_error)?
             .execute(reqwest);
@@ -1182,6 +1172,26 @@ const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const HTTP_MAX_TIMEOUT: Duration = Duration::from_secs(180);
 const MODULE_HTTP_DISABLED_ERROR: &str = "module outbound HTTP requests are disabled";
 const BLOCKED_HTTP_ADDRESS_ERROR: &str = "refusing to connect to private or special-purpose addresses";
+
+/// One policy for all module HTTP callers, including scheduled procedures and handlers.
+fn module_http_client_builder(config: crate::config::ModuleHttpConfig) -> reqwest::ClientBuilder {
+    let redirect_policy = if config.follow_redirects {
+        reqwest::redirect::Policy::custom(|attempt| {
+            if is_blocked_ip_literal(attempt.url()) {
+                attempt.error(BLOCKED_HTTP_ADDRESS_ERROR)
+            } else {
+                reqwest::redirect::Policy::default().redirect(attempt)
+            }
+        })
+    } else {
+        reqwest::redirect::Policy::none()
+    };
+
+    reqwest::Client::builder()
+        .dns_resolver(Arc::new(FilteredDnsResolver))
+        .redirect(redirect_policy)
+        .https_only(config.https_only)
+}
 
 struct FilteredDnsResolver;
 
@@ -1657,7 +1667,13 @@ pub(super) mod test {
         let db = relational_db()?;
         let (scheduler, _) = Scheduler::open(db.clone());
         let (_, idc_sender) = crate::host::idc_actor::channel(&db.database_identity());
-        let (replica_context, _runtime) = replica_ctx(db, crate::config::ModuleHttpConfig { enabled: false })?;
+        let (replica_context, _runtime) = replica_ctx(
+            db,
+            crate::config::ModuleHttpConfig {
+                enabled: false,
+                ..Default::default()
+            },
+        )?;
         let mut env = InstanceEnv::new(Arc::new(replica_context), scheduler, idc_sender);
         let request = st_http::Request {
             method: st_http::Method::Get,
@@ -1672,6 +1688,167 @@ pub(super) mod test {
             _ => panic!("module HTTP request was not rejected by configuration"),
         }
 
+        Ok(())
+    }
+
+    // Exercise the production client builder against a local TLS server. Test-only
+    // resolver overrides avoid external services without changing the host's filter.
+    fn module_http_test_tls() -> Result<(openssl::ssl::SslAcceptor, reqwest::Certificate)> {
+        use openssl::{
+            asn1::Asn1Time,
+            hash::MessageDigest,
+            pkey::PKey,
+            rsa::Rsa,
+            ssl::{SslAcceptor, SslMethod},
+            x509::{
+                extension::{BasicConstraints, ExtendedKeyUsage, KeyUsage, SubjectAlternativeName},
+                X509NameBuilder, X509,
+            },
+        };
+        let key = PKey::from_rsa(Rsa::generate(2048)?)?;
+        let mut name = X509NameBuilder::new()?;
+        name.append_entry_by_text("CN", "module-http.test")?;
+        let name = name.build();
+        let mut cert = X509::builder()?;
+        cert.set_version(2)?;
+        let serial = openssl::bn::BigNum::from_u32(1)?.to_asn1_integer()?;
+        cert.set_serial_number(&serial)?;
+        cert.set_subject_name(&name)?;
+        cert.set_issuer_name(&name)?;
+        cert.set_pubkey(&key)?;
+        cert.set_not_before(Asn1Time::days_from_now(0)?.as_ref())?;
+        cert.set_not_after(Asn1Time::days_from_now(1)?.as_ref())?;
+        cert.append_extension(BasicConstraints::new().critical().ca().build()?)?;
+        cert.append_extension(
+            KeyUsage::new()
+                .critical()
+                .key_cert_sign()
+                .digital_signature()
+                .key_encipherment()
+                .build()?,
+        )?;
+        cert.append_extension(ExtendedKeyUsage::new().server_auth().build()?)?;
+        let san = SubjectAlternativeName::new()
+            .dns("module-http.test")
+            .build(&cert.x509v3_context(None, None))?;
+        cert.append_extension(san)?;
+        cert.sign(&key, MessageDigest::sha256())?;
+        let cert = cert.build();
+        let root = reqwest::Certificate::from_der(&cert.to_der()?)?;
+        let mut tls = SslAcceptor::mozilla_intermediate(SslMethod::tls())?;
+        tls.set_private_key(&key)?;
+        tls.set_certificate(&cert)?;
+        tls.check_private_key()?;
+        Ok((tls.build(), root))
+    }
+
+    #[test]
+    fn module_http_redirect_controls_do_not_contact_target() -> Result<()> {
+        use std::{
+            io::{Read, Write},
+            net::TcpListener,
+            thread,
+            time::Instant,
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+        let (tls, root) = module_http_test_tls()?;
+        for status in [301, 302, 303, 307, 308] {
+            for scheme in ["https", "http"] {
+                // Also exercise HTTPS-only while following redirects: it must reject
+                // a downgrade, rather than sending even an unauthenticated request.
+                for follow_redirects in [false, true] {
+                    if follow_redirects && scheme == "https" {
+                        continue;
+                    }
+                    let origin = TcpListener::bind("127.0.0.1:0")?;
+                    let origin_addr = origin.local_addr()?;
+                    origin.set_nonblocking(true)?;
+                    let target = TcpListener::bind("127.0.0.1:0")?;
+                    let target_addr = target.local_addr()?;
+                    target.set_nonblocking(true)?;
+                    let location = format!("{scheme}://target.test:{}/collect", target_addr.port());
+                    let response = format!("HTTP/1.1 {status} Redirect\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                    let tls = tls.clone();
+                    let server = thread::spawn(move || -> Result<()> {
+                        let deadline = Instant::now() + Duration::from_secs(10);
+                        let stream = loop {
+                            match origin.accept() {
+                                Ok((stream, _)) => break stream,
+                                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock && Instant::now() < deadline => {
+                                    thread::sleep(Duration::from_millis(5))
+                                }
+                                Err(e) => return Err(e.into()),
+                            }
+                        };
+                        stream.set_nonblocking(false)?;
+                        stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+                        stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+                        let mut stream = tls.accept(stream)?;
+                        let mut request = Vec::new();
+                        let mut byte = [0];
+                        while !request.ends_with(b"\r\n\r\n") && request.len() < 16_384 {
+                            stream.read_exact(&mut byte)?;
+                            request.push(byte[0]);
+                        }
+                        stream.write_all(response.as_bytes())?;
+                        Ok(())
+                    });
+                    let client = module_http_client_builder(crate::config::ModuleHttpConfig {
+                        enabled: true,
+                        follow_redirects,
+                        https_only: true,
+                    })
+                    .no_proxy()
+                    .add_root_certificate(root.clone())
+                    .resolve("module-http.test", origin_addr)
+                    .resolve("target.test", target_addr)
+                    .timeout(Duration::from_secs(5))
+                    .build()?;
+                    let result = runtime.block_on(async {
+                        client
+                            .post(format!("https://module-http.test:{}/export", origin_addr.port()))
+                            .header("Authorization", "Bearer synthetic-test-token")
+                            .body("synthetic-test-body")
+                            .send()
+                            .await
+                    });
+                    server.join().expect("TLS fixture panicked")?;
+                    if follow_redirects {
+                        assert!(result.is_err(), "HTTPS-only must reject downgrade {status}");
+                    } else {
+                        let response = result?;
+                        assert_eq!(response.status().as_u16(), status);
+                        assert_eq!(response.headers()["location"], location);
+                    }
+                    match target.accept() {
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                        _ => panic!(
+                            "redirect target received a connection: {status}, {scheme}, follow={follow_redirects}"
+                        ),
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn module_http_https_only_rejects_initial_plaintext() -> Result<()> {
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+        let target = std::net::TcpListener::bind("127.0.0.1:0")?;
+        target.set_nonblocking(true)?;
+        let addr = target.local_addr()?;
+        let client = module_http_client_builder(crate::config::ModuleHttpConfig {
+            https_only: true,
+            ..Default::default()
+        })
+        .no_proxy()
+        .resolve("target.test", addr)
+        .build()?;
+        assert!(runtime
+            .block_on(client.get(format!("http://target.test:{}/", addr.port())).send())
+            .is_err());
+        assert_eq!(target.accept().unwrap_err().kind(), std::io::ErrorKind::WouldBlock);
         Ok(())
     }
 
