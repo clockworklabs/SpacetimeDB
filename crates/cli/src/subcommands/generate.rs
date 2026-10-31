@@ -21,7 +21,7 @@ use crate::spacetime_config::{
 };
 use crate::tasks::csharp::dotnet_format;
 use crate::tasks::rust::rustfmt;
-use crate::util::{detect_module_language, y_or_n, ModuleLanguage};
+use crate::util::{detect_module_language, ModuleLanguage, YesOrNo};
 use crate::Config;
 use crate::{build, common_args};
 use clap::builder::PossibleValue;
@@ -880,7 +880,11 @@ pub async fn run_prepared_generate_configs(
                 println!("  {}", path.to_str().unwrap());
             }
 
-            if y_or_n(force, "Are you sure you want to delete these files?")? {
+            if YesOrNo::new("Are you sure you want to delete these files?")
+                .force(force)
+                .default(false)
+                .prompt()?
+            {
                 for path in files_to_delete {
                     fs::remove_file(path)?;
                 }
