@@ -387,6 +387,7 @@ impl ClientConnectionSender {
             iat: SystemTime::now(),
             exp: None,
             extra: None,
+            container: None,
         };
         let sender = Self {
             id,
@@ -1561,6 +1562,7 @@ mod tests {
                 iat: SystemTime::now(),
                 exp: None,
                 extra: None,
+                container: None,
             })
             .unwrap(),
             config: ClientConfig::for_test(),
