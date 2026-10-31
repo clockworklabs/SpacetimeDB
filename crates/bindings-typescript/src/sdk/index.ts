@@ -12,3 +12,13 @@ export { table } from '../lib/table.ts';
 export { reducerSchema, reducers } from './reducers.ts';
 export { procedureSchema, procedures } from './procedures.ts';
 export * from './type_utils.ts';
+export * as WebSocketMessages from './client_api/types';
+export {
+  BsatnRowList,
+  ClientMessage,
+  RowSizeHint,
+  ServerMessage,
+} from './client_api/types';
+export * from './websocket_protocols';
+export * from './websocket_v3_frames.ts';
+export { decodeBsatnRowList, type RowDecoderTypespace } from './row_decoder.ts';

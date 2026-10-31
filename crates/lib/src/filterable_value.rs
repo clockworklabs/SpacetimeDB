@@ -20,9 +20,8 @@ use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
 /// - [`Timestamp`].
 /// - [`ConnectionId`].
 /// - [`Hash`](struct@Hash).
-/// - No-payload enums annotated with `#[derive(SpacetimeType)]`.
-///   No-payload enums are sometimes called "plain," "simple" or "C-style."
-///   They are enums where no variant has any payload data.
+/// - Enums annotated with `#[derive(SpacetimeType)]`.
+///   Enums with payloads can be filtered by reference.
 ///
 /// Because SpacetimeDB indexes are present both on the server
 /// and in clients which use our various SDKs,
@@ -49,8 +48,8 @@ use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
 //   E.g. `&str: FilterableValue<Column = String>` is desirable.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot appear as an argument to an index filtering operation",
-    label = "should be an integer type, `bool`, `String`, `&str`, `Identity`, `Uuid`, `Timestamp`, `ConnectionId`, `Hash` or a no-payload enum which derives `SpacetimeType`, not `{Self}`",
-    note = "The allowed set of types are limited to integers, bool, strings, `Identity`, `Uuid`, `Timestamp`, `ConnectionId`, `Hash` and no-payload enums which derive `SpacetimeType`,"
+    label = "should be an integer type, `bool`, `String`, `&str`, `Identity`, `Uuid`, `Timestamp`, `ConnectionId`, `Hash` or an enum which derives `SpacetimeType`, not `{Self}`",
+    note = "The allowed set of types are limited to integers, bool, strings, `Identity`, `Uuid`, `Timestamp`, `ConnectionId`, `Hash` and enums which derive `SpacetimeType`."
 )]
 pub trait FilterableValue: Serialize + Private {
     type Column;
@@ -123,7 +122,7 @@ impl_filterable_value! {
 #[diagnostic::on_unimplemented(
     message = "view primary key column type `{Self}` is not supported",
     label = "view primary key columns must use an index-filterable key type",
-    note = "view primary keys must be integer, bool, string, Identity, Uuid, Timestamp, ConnectionId, Hash, or a no-payload enum which derives SpacetimeType"
+    note = "view primary keys must be integer, bool, string, Identity, Uuid, Timestamp, ConnectionId, Hash, or an enum which derives SpacetimeType"
 )]
 pub trait ViewPrimaryKeyColumn {}
 impl<T> ViewPrimaryKeyColumn for T where for<'a> &'a T: FilterableValue<Column = T> {}
