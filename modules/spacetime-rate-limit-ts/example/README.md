@@ -5,8 +5,8 @@ generate energy, buy upgrades, and watch what happens when you act too quickly.
 
 ## Run it locally
 
-Requires Node.js 20+, pnpm 10, and the SpacetimeDB CLI and server built from
-this checkout.
+Requires a recent version of Node.js 22, 24, or 26 or later. Also requires
+pnpm 10 and the SpacetimeDB CLI and server built from this checkout.
 
 Start SpacetimeDB in a separate terminal:
 
