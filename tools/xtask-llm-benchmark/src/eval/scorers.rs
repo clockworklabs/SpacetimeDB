@@ -108,7 +108,7 @@ impl Scorer for SchemaParityScorer {
         let schema_a = extract_schema(&golden);
         let schema_b = extract_schema(&llm);
 
-        let tables_diff = diff_maps(&schema_a.tables, &schema_b.tables);
+        let tables_diff = diff_maps(&schema_a.tables, &align_table_names(&schema_a.tables, &schema_b.tables));
         let reducers_diff = diff_sets(&schema_a.reducers, &schema_b.reducers);
         let exports_diff = diff_sets(&schema_a.exports, &schema_b.exports);
         let rls_diff = diff_sets(&schema_a.row_level_security, &schema_b.row_level_security);
@@ -508,6 +508,24 @@ fn insert_schema_property(columns: &mut BTreeMap<String, String>, name: &str, va
     if !value.is_empty() {
         columns.insert(format!("@{name}"), value);
     }
+}
+
+// Prompts do not fix a table's casing, so a name differing only by case or underscores is the same table.
+// shortcut: `User` and `USER` beside a golden `user` collapse into one table; compare counts if a model ever does this.
+fn align_table_names(
+    golden: &BTreeMap<String, BTreeMap<String, String>>,
+    candidate: &BTreeMap<String, BTreeMap<String, String>>,
+) -> BTreeMap<String, BTreeMap<String, String>> {
+    let key = |name: &str| name.to_lowercase().replace('_', "");
+    candidate
+        .iter()
+        .map(|(name, table)| {
+            let golden_name = golden
+                .keys()
+                .find(|golden_name| !candidate.contains_key(*golden_name) && key(golden_name) == key(name));
+            (golden_name.unwrap_or(name).clone(), table.clone())
+        })
+        .collect()
 }
 
 fn diff_maps(a: &BTreeMap<String, BTreeMap<String, String>>, b: &BTreeMap<String, BTreeMap<String, String>>) -> Value {
@@ -1438,6 +1456,53 @@ mod tests {
         let candidate = extract_schema(&current_schema(false));
 
         assert!(!diff_maps(&golden.tables, &candidate.tables).is_null());
+    }
+
+    fn tables_named(names: &[&str]) -> BTreeMap<String, BTreeMap<String, String>> {
+        let table = extract_schema(&current_schema(true))
+            .tables
+            .remove("child_item")
+            .unwrap();
+        names.iter().map(|name| (name.to_string(), table.clone())).collect()
+    }
+
+    #[test]
+    fn table_names_differing_only_by_case_or_underscores_match() {
+        for (golden, candidate) in [("user", "User"), ("leased_job", "LeasedJob"), ("item_v_2", "item_v2")] {
+            let golden = tables_named(&[golden]);
+            let candidate = align_table_names(&golden, &tables_named(&[candidate]));
+
+            assert!(diff_maps(&golden, &candidate).is_null());
+        }
+    }
+
+    #[test]
+    fn different_table_names_produce_a_schema_diff() {
+        let golden = tables_named(&["item_v_2"]);
+        let candidate = align_table_names(&golden, &tables_named(&["item_v3"]));
+
+        assert!(!diff_maps(&golden, &candidate).is_null());
+    }
+
+    #[test]
+    fn extra_table_differing_only_by_case_produces_a_schema_diff() {
+        let golden = tables_named(&["user"]);
+        let candidate = align_table_names(&golden, &tables_named(&["User", "user"]));
+
+        assert_eq!(
+            diff_maps(&golden, &candidate)["only_llm"]["User"]["id"],
+            r#"{"U64":[]}"#
+        );
+    }
+
+    #[test]
+    fn matched_table_still_compares_properties() {
+        let golden = extract_schema(&current_schema(true)).tables;
+        let mut candidate = tables_named(&["ChildItem"]);
+        candidate.get_mut("ChildItem").unwrap().remove("@indexes");
+        let candidate = align_table_names(&golden, &candidate);
+
+        assert!(diff_maps(&golden, &candidate)["changed"]["child_item"].is_object());
     }
 
     #[test]

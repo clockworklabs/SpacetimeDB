@@ -18,6 +18,8 @@ starting the next task. Rust and TypeScript keep their batched reference builds.
 Cleanup errors block the batch, but completed scoring remains in the local record.
 Compiler errors in SDK-generated files score as normal failures. Saved batch
 records keep the evidence so suspected SDK defects can go to the core team.
+Schema parity treats table names that differ only by case or underscores as the
+same table, because prompts do not fix a table's casing.
 
 Each batch also saves an append-only JSONL record under
 `LLM_BENCHMARK_REPORT_DIR/batches`, or `tools/xtask-llm-benchmark/runs/batches`
