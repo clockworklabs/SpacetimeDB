@@ -243,6 +243,10 @@ fn provider_retry_delay(error: &anyhow::Error) -> Option<u64> {
 fn is_code_publish_failure(message: &str, source_root: &Path, lang: Lang) -> bool {
     // Unknown publish failures are unscored. A healthy ping does not prove a valid build environment.
     let message = message.replace('\\', "/").to_ascii_lowercase();
+    // The candidate built, but its schema cannot migrate the task's existing data.
+    if message.contains("aborting publish due to required manual migration") {
+        return true;
+    }
     if [
         "error[e0463]",
         "error[e0460]",
@@ -1806,6 +1810,10 @@ mod build_cleanup_tests {
             let source = std::path::absolute(root).unwrap().join("Lib.cs");
             let diagnostic = format!("{}(10,5): error CS0103: missing name", source.display());
             assert!(is_code_publish_failure(&diagnostic, root, Lang::CSharp), "{diagnostic}");
+        }
+        let rejected_migration = "Errors occurred:\nAdding a column enabled to table widget requires a default value annotation\n\nAborting publish due to required manual migration.";
+        for lang in [Lang::Rust, Lang::CSharp, Lang::TypeScript] {
+            assert!(is_code_publish_failure(rejected_migration, root, lang));
         }
         for diagnostic in [
             "HTTP 503 Service Unavailable",

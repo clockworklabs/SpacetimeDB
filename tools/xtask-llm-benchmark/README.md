@@ -40,6 +40,7 @@ Zero scored tasks means no score, not 0%. An incomplete batch stays off the webs
 Migration setup failures and publish failures without a recognized source-code
 diagnostic also block the batch, even when the server responds to a health check.
 This is conservative: an unknown code error can block a batch until classified.
+A candidate whose schema the server rejects as a manual migration is scored normally.
 
 Each finished attempt is saved before an error can stop the batch. If a task
 reports an infrastructure error, new tasks stop, but started tasks finish and save
