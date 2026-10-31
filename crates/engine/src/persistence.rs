@@ -6,7 +6,7 @@ use std::{
 
 use async_trait::async_trait;
 use spacetimedb_commitlog::SizeOnDisk;
-use spacetimedb_paths::server::ServerDataDir;
+use spacetimedb_paths::server::{ReplicaDir, ServerDataDir};
 use spacetimedb_table::{page_pool::PagePool, tiered::TieredStorageConfig};
 
 use crate::util::asyncify;
@@ -175,6 +175,8 @@ pub trait PersistenceProvider: Send + Sync {
     async fn ephemeral(&self, database: &Database, replica_id: u64) -> anyhow::Result<Persistence>;
 }
 
+type OpenTableStorage = dyn Fn(ReplicaDir, PagePool) -> io::Result<TieredStorageConfig> + Send + Sync;
+
 /// The standard [PersistenceProvider] for non-replicated databases.
 ///
 /// [Persistence] services are provided for the local [ServerDataDir].
@@ -188,6 +190,7 @@ pub struct LocalPersistenceProvider {
     data_dir: Arc<ServerDataDir>,
     durability: DurabilityConfig,
     page_pool: PagePool,
+    table_storage: Option<Arc<OpenTableStorage>>,
 }
 
 impl LocalPersistenceProvider {
@@ -196,11 +199,22 @@ impl LocalPersistenceProvider {
             data_dir: data_dir.into(),
             durability: DurabilityConfig::default(),
             page_pool,
+            table_storage: None,
         }
     }
 
     pub fn with_durability_config(mut self, durability: DurabilityConfig) -> Self {
         self.durability = durability;
+        self
+    }
+
+    /// Set the callback used to open table storage for persistent databases.
+    /// This keeps backing-store dependencies out of this crate.
+    pub fn with_table_storage(
+        mut self,
+        open: impl Fn(ReplicaDir, PagePool) -> io::Result<TieredStorageConfig> + Send + Sync + 'static,
+    ) -> Self {
+        self.table_storage = Some(Arc::new(open));
         self
     }
 
@@ -216,6 +230,13 @@ impl PersistenceProvider for LocalPersistenceProvider {
         let replica_dir = self.data_dir.replica(replica_id);
         let snapshot_dir = replica_dir.snapshots();
         let runtime = Handle::tokio_current();
+        let table_storage = if let Some(open) = self.table_storage.clone() {
+            let dir = replica_dir.clone();
+            let pool = self.page_pool.clone();
+            asyncify(&runtime, move || open(dir, pool)).await?
+        } else {
+            self.table_storage()
+        };
 
         let snapshot_worker = asyncify(&runtime, move || {
             relational_db::open_snapshot_repo(snapshot_dir, database_identity, replica_id)
@@ -242,7 +263,7 @@ impl PersistenceProvider for LocalPersistenceProvider {
             durability,
             disk_size,
             Some(snapshot_worker),
-            self.table_storage(),
+            table_storage,
             runtime,
         ))
     }

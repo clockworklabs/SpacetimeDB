@@ -39,8 +39,25 @@ use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
 use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
 use spacetimedb_table::page_pool::PagePool;
+use spacetimedb_table::tiered::{BackingStore, ByteBudget, TieredStorageConfig};
 use std::sync::Arc;
 use std::time::Duration;
+
+fn open_table_storage(
+    dir: spacetimedb_paths::server::ReplicaDir,
+    page_pool: PagePool,
+) -> std::io::Result<TieredStorageConfig> {
+    // Standalone still uses an unlimited memory budget. Per-database limits
+    // are not wired into `resident_budget` yet.
+    let mut config = TieredStorageConfig::new_for_memory_database(page_pool);
+    config.local_store = BackingStore {
+        object_store: Box::new(spacetimedb_disk_table::DiskStorage::open(dir.tables())?),
+        budget: ByteBudget::unlimited(),
+    };
+    config.evict_pages = true;
+    config.evict_blobs = false;
+    Ok(config)
+}
 
 pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL};
 
@@ -87,7 +104,8 @@ impl StandaloneEnv {
         let page_pool = PagePool::new(config.db_config.page_pool_max_size);
         let persistence_provider = Arc::new(
             LocalPersistenceProvider::new(data_dir.clone(), page_pool.clone())
-                .with_durability_config(config.durability),
+                .with_durability_config(config.durability)
+                .with_table_storage(open_table_storage),
         );
         let host_controller = HostController::new(
             data_dir,
