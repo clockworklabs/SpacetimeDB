@@ -2052,7 +2052,11 @@ impl Table {
     // same pointer map (or none) as before.
     pub fn rollback_add_index(&mut self, index_id: IndexId, pointer_map: Option<PointerMap>) -> Option<TableIndex> {
         let index = self.indexes.remove(&index_id)?;
-        self.pointer_map = pointer_map;
+        // Only adding a unique index takes the pointer map. Undoing a
+        // non-unique index addition must preserve the map already present.
+        if index.is_unique() {
+            self.pointer_map = pointer_map;
+        }
         Some(index)
     }
 
