@@ -4072,8 +4072,19 @@ pub(super) fn insert<'a, const GENERATE: bool>(
                 // the temporary table borrow ends before cleanup or mutation.
                 let row = unsafe { tx_table.get_row_ref_from_pinned_unchecked(tx_pinned_row.clone()) };
                 unsafe { Table::find_same_row_from_ref(commit_table, &row, tx_row_hash) }
-            }?;
-            if let (_, Some(commit_ptr)) = existing_row {
+            };
+            let commit_ptr = match existing_row {
+                Ok((_, commit_ptr)) => commit_ptr,
+                Err(error) => {
+                    // Lookup can fault after confirmation has indexed and counted
+                    // the new row. Restore tx state before propagating the error.
+                    // SAFETY: Lookup did not delete this row; tx_pinned_row
+                    // still retains its page and blob pins, so cleanup cannot fault.
+                    unsafe { tx_table.delete_unchecked(tx_blob_store, tx_pinned_row) };
+                    return Err(error.into());
+                }
+            };
+            if let Some(commit_ptr) = commit_ptr {
                 // (insert_undelete)
                 // -----------------------------------------------------
                 // If `row` was already present in the committed state,
@@ -4104,14 +4115,16 @@ pub(super) fn insert<'a, const GENERATE: bool>(
                 // tx_pinned_row retains its page and blob pins.
                 unsafe { tx_table.delete_unchecked(tx_blob_store, tx_pinned_row) };
 
+                // Loading the existing row can fault on its blobs. Finish this
+                // before undeleting it, so an error preserves any prior deletion.
+                // SAFETY: `find_same_row` found a live row in `commit_table`.
+                let row_ref = unsafe { commit_table.get_row_ref_unchecked(commit_blob_store, commit_ptr) }?;
+
                 // It's possible that `row` appears in the committed state,
                 // but is marked as deleted.
                 // In this case, undelete it, so it remains in the committed state.
                 delete_table.remove(commit_ptr);
 
-                // No new row was inserted, but return `committed_ptr`.
-                // SAFETY: `find_same_row` told us that `ptr` refers to a valid row in `commit_table`.
-                let row_ref = unsafe { commit_table.get_row_ref_unchecked(commit_blob_store, commit_ptr) }?;
                 return ok(RowRefInsertion::Existed(row_ref));
             }
 
@@ -4271,11 +4284,17 @@ impl MutTxId {
                 // If the new row is the same as the old,
                 // skip the update altogether to match the semantics of `Self::insert`.
                 //
+                // A comparison fault must reach the unconfirmed-row cleanup below.
                 // SAFETY:
                 // 1. `tx_table` is derived from `commit_table` so they have the same layouts.
                 // 2. `old_ptr` was found in an index of `commit_table`, so we know it is valid.
                 // 3. we just inserted `tx_row_ptr` into `tx_table`, so we know it is valid.
-                if unsafe { Table::eq_row_in_page(commit_table, old_ptr, tx_table, tx_pinned_row.pointer()) }? {
+                let same_row =
+                    match unsafe { Table::eq_row_in_page(commit_table, old_ptr, tx_table, tx_pinned_row.pointer()) } {
+                        Ok(same_row) => same_row,
+                        Err(error) => throw!(error),
+                    };
+                if same_row {
                     // SAFETY: `tx_table.is_row_present(tx_row_ptr)` holds, as noted in 3.
                     unsafe { tx_table.delete_internal_skip_pointer_map(tx_blob_store, tx_pinned_row) };
                     // SAFETY: `commit_table.is_row_present(old_ptr)` holds, as noted in 2.
@@ -4342,6 +4361,8 @@ impl MutTxId {
                     // If we have an identical deleted row in the committed state,
                     // we need to undelete it, just like in `Self::insert`.
                     // The same note (`insert_undelete`) there re. MVCC applies here as well.
+                    // Compare after confirmation has released the old tx row's pins
+                    // to avoid requiring all three rows' data to be resident at once.
                     //
                     // SAFETY:
                     // 1. `tx_table` is derived from `commit_table` so they have the same layouts.
