@@ -17,7 +17,7 @@ TABLES
     - Text: string
 
 REDUCERS
-- Register(ctx, string name)
+- RegisterUser(ctx, string name)
   - If a User row already exists for ctx.Sender, throw exception with "already registered"
   - Otherwise insert a new User with Identity = ctx.Sender and the given Name
 

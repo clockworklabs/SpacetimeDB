@@ -22,7 +22,7 @@ public static partial class Module
     }
 
     [Reducer]
-    public static void Register(ReducerContext ctx, string name)
+    public static void RegisterUser(ReducerContext ctx, string name)
     {
         if (ctx.Db.User.Identity.Find(ctx.Sender) is not null)
         {

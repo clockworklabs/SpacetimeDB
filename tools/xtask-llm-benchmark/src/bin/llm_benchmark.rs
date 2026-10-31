@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use futures::{StreamExt, TryStreamExt};
+use futures::{FutureExt, StreamExt};
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, HashSet};
 use spacetimedb_guard::SpacetimeDbGuard;
 use std::fs;
@@ -298,7 +298,12 @@ fn run_benchmarks(args: RunArgs, reasoning: ReasoningEffort) -> Result<()> {
         eprintln!("[warn] failed to upload task catalog: {e}");
     }
 
-    let RuntimeInit { runtime, mut guard } = initialize_runtime(config.hash_only)?;
+    let isolated_csharp = config.lang == Lang::CSharp && !config.goldens_only;
+    let initialized = initialize_runtime(config.hash_only || isolated_csharp)?;
+    let mut guard = initialized.guard;
+    // Drop the runtime first: finish blocking scoring/cleanup before stopping the server.
+    let runtime = initialized.runtime;
+    save_server_diagnostics(guard.as_mut(), "start", None);
 
     config.host = guard.as_ref().map(|g| g.host_url.clone());
 
@@ -314,27 +319,26 @@ fn run_benchmarks(args: RunArgs, reasoning: ReasoningEffort) -> Result<()> {
 
     if config.goldens_only {
         let rt = runtime.as_ref().expect("runtime required for --goldens-only");
-        rt.block_on(validate_goldens_for_lang(
+        let result = rt.block_on(validate_goldens_for_lang(
             config.host.clone(),
             &bench_root,
             config.lang,
             selectors_ref,
-        ))?;
+        ));
+        save_server_diagnostics(guard.as_mut(), "end", None);
+        result?;
         println!("[{}] goldens-only validation complete", config.lang.as_str());
         return Ok(());
     }
 
     let llm_provider = if !config.goldens_only && !config.hash_only {
-        let provider = make_provider_from_env(reasoning)?;
-        let rt = runtime.as_ref().expect("failed to initialize runtime for preflight");
-        let routes = filter_routes(&config);
-        preflight_llm_routes(rt, provider.as_ref(), &routes, &modes)?;
-        Some(provider)
+        Some(make_provider_from_env(reasoning)?)
     } else {
         None
     };
 
     let mut all_outcomes: Vec<RunOutcome> = Vec::new();
+    let mut mode_failures = Vec::new();
 
     for mode in modes {
         let result = run_mode_benchmarks(
@@ -345,15 +349,20 @@ fn run_benchmarks(args: RunArgs, reasoning: ReasoningEffort) -> Result<()> {
             runtime.as_ref(),
             llm_provider.as_ref(),
         );
-        let outcomes = match result {
-            Ok(outcomes) => outcomes,
-            Err(error) => {
-                report_server_status(guard.as_mut());
-                return Err(error);
+        let status = match result {
+            Ok((outcomes, status)) => {
+                all_outcomes.extend(outcomes);
+                status
             }
+            Err(error) => Err(error),
         };
-        all_outcomes.extend(outcomes);
+        if let Err(error) = status {
+            report_server_status(guard.as_mut(), None);
+            mode_failures.push(format!("{mode}: {error:#}"));
+        }
     }
+
+    save_server_diagnostics(guard.as_mut(), "end", None);
 
     // Write local run log on --dry-run so results aren't lost
     if dry_run && !all_outcomes.is_empty() {
@@ -373,17 +382,97 @@ fn run_benchmarks(args: RunArgs, reasoning: ReasoningEffort) -> Result<()> {
         }
     }
 
+    anyhow::ensure!(
+        mode_failures.is_empty(),
+        "benchmark modes failed:\n{}",
+        mode_failures.join("\n")
+    );
     Ok(())
 }
 
-fn report_server_status(guard: Option<&mut SpacetimeDbGuard>) {
+fn report_server_status(guard: Option<&mut SpacetimeDbGuard>, scope: Option<&str>) {
     let Some(guard) = guard else {
         return;
     };
+    save_server_diagnostics(Some(guard), "failure", scope);
     match guard.child.try_wait() {
         Ok(Some(status)) => eprintln!("[server] local SpacetimeDB exited unexpectedly: {status}"),
         Ok(None) => eprintln!("[server] local SpacetimeDB is still running after benchmark failure"),
         Err(error) => eprintln!("[server] failed to read local SpacetimeDB exit status: {error}"),
+    }
+}
+
+// Capture before Drop kills the server, so cleanup cannot be mistaken for the cause.
+fn save_server_diagnostics(guard: Option<&mut SpacetimeDbGuard>, phase: &str, scope: Option<&str>) {
+    let (Some(guard), Some(dir)) = (guard, std::env::var_os("LLM_BENCHMARK_DIAGNOSTICS_DIR")) else {
+        return;
+    };
+    let result = (|| -> Result<()> {
+        let mut dir = PathBuf::from(dir);
+        if let Some(scope) = scope {
+            dir.push(scope);
+        }
+        fs::create_dir_all(&dir)?;
+        let pid = guard.child.id();
+        let mut resources = format!(
+            "time={:?}\npid={pid}\nstatus={:?}\n",
+            std::time::SystemTime::now(),
+            guard.child.try_wait()
+        );
+        for path in [
+            "/proc/meminfo".to_owned(),
+            "/proc/pressure/memory".to_owned(),
+            "/proc/pressure/cpu".to_owned(),
+            "/proc/pressure/io".to_owned(),
+            format!("/proc/{pid}/status"),
+            format!("/proc/{pid}/stat"),
+            format!("/proc/{pid}/io"),
+            format!("/proc/{pid}/limits"),
+            format!("/proc/{pid}/cgroup"),
+        ] {
+            append_resource(&mut resources, Path::new(&path));
+        }
+        // On cgroup v2, collect the server's group and its parents (limits can be inherited).
+        // The child may already be dead. The harness shares its cgroup in CI.
+        if let Ok(groups) =
+            fs::read_to_string(format!("/proc/{pid}/cgroup")).or_else(|_| fs::read_to_string("/proc/self/cgroup"))
+            && let Some(group) = groups.lines().find_map(|line| line.strip_prefix("0::/"))
+        {
+            let root = Path::new("/sys/fs/cgroup");
+            let mut path = root.join(group);
+            while path.starts_with(root) {
+                for file in [
+                    "memory.current",
+                    "memory.peak",
+                    "memory.max",
+                    "memory.events",
+                    "cpu.stat",
+                ] {
+                    append_resource(&mut resources, &path.join(file));
+                }
+                if !path.pop() {
+                    break;
+                }
+            }
+        }
+        fs::write(dir.join(format!("resources-{phase}.txt")), resources)?;
+        let logs = guard
+            .logs
+            .lock()
+            .map_err(|_| anyhow::anyhow!("server log lock poisoned"))?;
+        fs::write(dir.join("server.log"), logs.as_bytes())?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        eprintln!("[warn] failed to save server diagnostics: {error:#}");
+    }
+}
+
+fn append_resource(output: &mut String, path: &Path) {
+    output.push_str(&format!("\n--- {} ---\n", path.display()));
+    match fs::read_to_string(path) {
+        Ok(contents) => output.push_str(&contents),
+        Err(error) => output.push_str(&format!("unavailable: {error}\n")),
     }
 }
 
@@ -594,51 +683,6 @@ fn should_fetch_remote_routes(args: &RunArgs) -> bool {
         && !args.goldens_only
 }
 
-fn preflight_llm_routes(
-    runtime: &Runtime,
-    llm_provider: &dyn LlmProvider,
-    routes: &[ModelRoute],
-    modes: &[String],
-) -> Result<()> {
-    if routes.is_empty() {
-        return Ok(());
-    }
-
-    let mut search_flags = Vec::new();
-    if modes.iter().any(|mode| mode == "search") {
-        search_flags.push(true);
-    }
-    if modes.iter().any(|mode| mode != "search") {
-        search_flags.push(false);
-    }
-
-    let mut failures = Vec::new();
-    for route in routes {
-        for search_enabled in &search_flags {
-            let mode_label = if *search_enabled {
-                "search/OpenRouter online"
-            } else {
-                "standard"
-            };
-
-            if let Err(err) = runtime.block_on(llm_provider.preflight_route(route, *search_enabled)) {
-                let msg = format!("{} ({mode_label}): {err:#}", route.display_name);
-                eprintln!("[preflight] FAILED {msg}");
-                failures.push(msg);
-            }
-        }
-    }
-
-    if !failures.is_empty() {
-        anyhow::bail!(
-            "LLM provider preflight failed before benchmark run:\n  - {}",
-            failures.join("\n  - ")
-        );
-    }
-
-    Ok(())
-}
-
 /// Run benchmarks for a single mode.
 fn run_mode_benchmarks(
     mode: &str,
@@ -647,7 +691,7 @@ fn run_mode_benchmarks(
     bench_root: &Path,
     runtime: Option<&Runtime>,
     llm_provider: Option<&Arc<dyn LlmProvider>>,
-) -> Result<Vec<RunOutcome>> {
+) -> Result<(Vec<RunOutcome>, Result<()>)> {
     let lang_str = lang.as_str();
     let context = build_context(mode, Some(lang))?;
     // Use processed context hash so each lang/mode combination has its own unique hash
@@ -657,7 +701,7 @@ fn run_mode_benchmarks(
     println!("{:<12} [{:<10}] hash: {}", mode, lang_str, short_hash(&hash));
 
     if config.hash_only {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Ok(())));
     }
 
     // Run benchmarks for all matching routes
@@ -665,22 +709,50 @@ fn run_mode_benchmarks(
 
     if routes.is_empty() {
         println!("{:<12} [{:<10}] no matching models to run", mode, lang_str);
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Ok(())));
     }
 
-    let runtime = runtime.expect("runtime required for normal runs");
     let llm_provider = llm_provider.expect("llm provider required for normal runs");
 
-    let route_runs = runtime.block_on(run_many_routes_for_mode(
-        bench_root,
-        mode,
-        &hash,
-        &context,
-        lang,
-        config,
-        llm_provider.as_ref(),
-        &routes,
-    ))?;
+    let (route_runs, status) = if lang == Lang::CSharp {
+        // C# batches run sequentially with fresh server state to bound cross-model memory growth.
+        let runs = routes.iter().enumerate().map(|(index, route)| {
+            let tag = xtask_llm_benchmark::bench::run_scope_tag(mode, route.vendor.slug(), &route.api_model);
+            let scope = format!("csharp-{index}-{tag}");
+            with_isolated_server(&scope, |host| async {
+                let mut config = config.clone();
+                config.host = Some(host);
+                let (runs, status) = run_many_routes_for_mode(
+                    bench_root,
+                    mode,
+                    &hash,
+                    &context,
+                    lang,
+                    &config,
+                    llm_provider.as_ref(),
+                    std::slice::from_ref(route),
+                )
+                .await;
+                status?;
+                Ok(runs)
+            })
+            .with_context(|| format!("model {}:{}", route.vendor.slug(), route.api_model))
+        });
+        collect_sequential_model_runs(runs)
+    } else {
+        runtime
+            .expect("runtime required for normal runs")
+            .block_on(run_many_routes_for_mode(
+                bench_root,
+                mode,
+                &hash,
+                &context,
+                lang,
+                config,
+                llm_provider.as_ref(),
+                &routes,
+            ))
+    };
 
     // Print summary sorted by pass rate descending
     let mut summary: Vec<(&str, u32, u32, f32)> = route_runs
@@ -702,7 +774,7 @@ fn run_mode_benchmarks(
     }
 
     let all_outcomes: Vec<RunOutcome> = route_runs.into_iter().flat_map(|rr| rr.outcomes).collect();
-    Ok(all_outcomes)
+    Ok((all_outcomes, status))
 }
 
 /// Routes to run: when `model_filter` is set (from --models), only routes whose vendor and
@@ -768,7 +840,7 @@ async fn run_many_routes_for_mode(
     config: &RunConfig,
     llm: &dyn LlmProvider,
     routes: &[ModelRoute],
-) -> Result<Vec<RouteRun>> {
+) -> (Vec<RouteRun>, Result<()>) {
     let rbuf = bench_route_concurrency();
     let selectors = config.selectors.as_deref();
     let host = config.host.clone();
@@ -777,17 +849,23 @@ async fn run_many_routes_for_mode(
     let local_analysis = config.local_analysis;
     let dry_run_id = config.dry_run_id.clone();
 
-    futures::stream::iter(routes.iter().map(|route| {
+    let runs = futures::stream::iter(routes.iter().map(|route| {
         let host = host.clone();
         let api_client = api_client.clone();
         let dry_run_id = dry_run_id.clone();
 
         async move {
             println!("\u{2192} running {}", route.display_name);
+            llm.preflight_route(route, mode == "search")
+                .await
+                .context("LLM provider preflight failed before model batch")?;
 
             let golden_scope = xtask_llm_benchmark::bench::run_scope_tag(mode, route.vendor.slug(), &route.api_model);
-            let golden_databases =
-                ensure_goldens_built_once(host.clone(), bench_root, lang, selectors, &golden_scope).await?;
+            let golden_databases = if lang == Lang::CSharp {
+                Vec::new() // C# references are owned and deleted by each active task.
+            } else {
+                ensure_goldens_built_once(host.clone(), bench_root, lang, selectors, &golden_scope).await?
+            };
 
             let per = BenchRunContext {
                 bench_root,
@@ -822,10 +900,52 @@ async fn run_many_routes_for_mode(
                 outcomes,
             })
         }
+        .map(move |result| result.with_context(|| format!("model {}:{}", route.vendor.slug(), route.api_model)))
     }))
-    .buffer_unordered(rbuf)
-    .try_collect::<Vec<_>>()
-    .await
+    .buffer_unordered(rbuf);
+    collect_model_runs(runs).await
+}
+
+/// A rejected batch must not cancel independent models or make the job look successful.
+async fn collect_model_runs<T>(runs: impl futures::Stream<Item = Result<T>>) -> (Vec<T>, Result<()>) {
+    futures::pin_mut!(runs);
+    let mut completed = Vec::new();
+    let mut failures = Vec::new();
+    while let Some(result) = runs.next().await {
+        match result {
+            Ok(run) => completed.push(run),
+            Err(error) => {
+                eprintln!("[runner] model batch failed: {error:#}");
+                failures.push(format!("{error:#}"));
+            }
+        }
+    }
+    (completed, model_batch_status(failures))
+}
+
+fn model_batch_status(failures: Vec<String>) -> Result<()> {
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(
+            "{} model batches failed:\n{}",
+            failures.len(),
+            failures.join("\n")
+        ))
+    }
+}
+
+// Consume every lazy batch, including those after a failure, without starting servers concurrently.
+fn collect_sequential_model_runs<T>(runs: impl Iterator<Item = Result<Vec<T>>>) -> (Vec<T>, Result<()>) {
+    let mut completed = Vec::new();
+    let mut failures = Vec::new();
+    for result in runs {
+        match result {
+            Ok(runs) => completed.extend(runs),
+            Err(error) => failures.push(format!("{error:#}")),
+        }
+    }
+    (completed, model_batch_status(failures))
 }
 
 fn categories_to_set(v: Option<Vec<String>>) -> Option<HashSet<String>> {
@@ -843,8 +963,8 @@ pub struct RuntimeInit {
     pub guard: Option<SpacetimeDbGuard>,
 }
 
-fn initialize_runtime(hash_only: bool) -> Result<RuntimeInit> {
-    if hash_only {
+fn initialize_runtime(skip_runtime: bool) -> Result<RuntimeInit> {
+    if skip_runtime {
         return Ok(RuntimeInit {
             runtime: None,
             guard: None,
@@ -852,7 +972,7 @@ fn initialize_runtime(hash_only: bool) -> Result<RuntimeInit> {
     }
 
     // Use locally built SpacetimeDB so server supports spacetime:sys@2.0 (required by local TypeScript SDK).
-    let spacetime = SpacetimeDbGuard::spawn_in_temp_data_dir();
+    let spacetime = SpacetimeDbGuard::try_spawn_in_temp_data_dir().context("start local benchmark server")?;
 
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
 
@@ -860,6 +980,47 @@ fn initialize_runtime(hash_only: bool) -> Result<RuntimeInit> {
         runtime: Some(runtime),
         guard: Some(spacetime),
     })
+}
+
+/// Own the runtime and server together so even failed batches drain blocking work before shutdown.
+fn with_isolated_server<T, F>(scope: &str, run: impl FnOnce(String) -> F) -> Result<T>
+where
+    F: std::future::Future<Output = Result<T>>,
+{
+    let initialized = initialize_runtime(false)?;
+    let mut guard = initialized.guard;
+    let runtime = initialized.runtime.expect("isolated batch requires a runtime");
+    let host = guard
+        .as_ref()
+        .expect("isolated batch requires a server")
+        .host_url
+        .clone();
+    println!("[server] starting isolated batch {scope} at {host}");
+    save_server_diagnostics(guard.as_mut(), "start", Some(scope));
+    let result = runtime.block_on(async {
+        let period = std::time::Duration::from_secs(60);
+        let mut samples = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+        samples.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let work = run(host);
+        tokio::pin!(work);
+        let mut sample = 0;
+        loop {
+            tokio::select! {
+                result = &mut work => break result,
+                _ = samples.tick() => {
+                    sample += 1;
+                    save_server_diagnostics(guard.as_mut(), &format!("sample-{sample}"), Some(scope));
+                }
+            }
+        }
+    });
+    if result.is_err() {
+        report_server_status(guard.as_mut(), Some(scope));
+    }
+    drop(runtime);
+    save_server_diagnostics(guard.as_mut(), "end", Some(scope));
+    // The guard now stops the server and removes this batch's temporary database directory.
+    result
 }
 
 fn find_bench_root() -> PathBuf {
@@ -962,6 +1123,88 @@ fn apply_category_filter(
 mod tests {
     use super::*;
 
+    #[test]
+    #[ignore = "starts two local servers; requires built CLI and standalone binaries, no LLM calls"]
+    fn isolated_server_stops_after_failure_and_success() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let drained = Arc::new(AtomicBool::new(false));
+        let mut hosts = Vec::new();
+        for fail in [true, false] {
+            let worker_drained = drained.clone();
+            let scope = if fail {
+                "isolation-test-failure"
+            } else {
+                "isolation-test-success"
+            };
+            let result = with_isolated_server(scope, |host| {
+                hosts.push(host.clone());
+                async move {
+                    reqwest::Client::new()
+                        .get(format!("{host}/v1/ping"))
+                        .send()
+                        .await?
+                        .error_for_status()?;
+                    tokio::task::spawn_blocking(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                        let server_alive = reqwest::blocking::Client::builder()
+                            .timeout(std::time::Duration::from_secs(2))
+                            .build()
+                            .unwrap()
+                            .get(format!("{host}/v1/ping"))
+                            .send()
+                            .is_ok_and(|response| response.status().is_success());
+                        worker_drained.store(server_alive, Ordering::SeqCst);
+                    });
+                    anyhow::ensure!(!fail, "injected batch failure");
+                    Ok(())
+                }
+            });
+            if fail {
+                assert_eq!(result.unwrap_err().to_string(), "injected batch failure");
+            } else {
+                result.unwrap();
+            }
+            assert!(
+                drained.load(Ordering::SeqCst),
+                "blocking work must finish before server shutdown"
+            );
+            let client = reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(2))
+                .build()
+                .unwrap();
+            assert!(client.get(format!("{}/v1/ping", hosts.last().unwrap())).send().is_err());
+            drained.store(false, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn resource_diagnostics_include_contents_and_missing_file_errors() {
+        let mut output = String::new();
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        append_resource(&mut output, &manifest);
+        assert!(output.contains("[package]"));
+        append_resource(&mut output, &manifest.join("missing"));
+        assert!(output.contains("unavailable:"));
+    }
+
+    #[test]
+    fn failed_sequential_model_keeps_later_results_and_failure_status() {
+        let mut attempted = Vec::new();
+        let runs = ["failed", "healthy", "last"].into_iter().map(|model| {
+            attempted.push(model);
+            anyhow::ensure!(model != "failed", "injected batch failure");
+            Ok(vec![model])
+        });
+        let (completed, status) = collect_sequential_model_runs(runs);
+        assert_eq!(attempted, ["failed", "healthy", "last"]);
+        assert_eq!(completed, ["healthy", "last"]);
+        assert!(status.unwrap_err().to_string().contains("injected batch failure"));
+
+        let (completed, status) = collect_sequential_model_runs([Ok(vec!["healthy"])].into_iter());
+        assert_eq!(completed, ["healthy"]);
+        assert!(status.is_ok());
+    }
+
     fn base_run_args() -> RunArgs {
         RunArgs {
             modes: None,
@@ -1008,6 +1251,32 @@ mod tests {
 
         let overridden = Cli::try_parse_from(["llm", "run", "--hash-only", "--reasoning", "high"]).unwrap();
         assert_eq!(overridden.reasoning, ReasoningEffort::High);
+    }
+
+    #[tokio::test]
+    async fn failed_model_does_not_skip_later_models_or_report_success() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let completed = AtomicUsize::new(0);
+        let runs = futures::stream::iter(["broken", "healthy", "also-broken"].into_iter().map(|model| {
+            let completed = &completed;
+            async move {
+                completed.fetch_add(1, Ordering::SeqCst);
+                if model == "healthy" {
+                    Ok(model)
+                } else {
+                    anyhow::bail!("{model}: provider error")
+                }
+            }
+        }))
+        .buffer_unordered(1);
+        let (successful, status) = collect_model_runs(runs).await;
+        assert_eq!(successful, ["healthy"]);
+        let error = status.unwrap_err().to_string();
+        assert_eq!(completed.load(Ordering::SeqCst), 3);
+        assert!(error.contains("broken") && error.contains("also-broken"), "{error}");
+        let (valid, status) = collect_model_runs(futures::stream::iter([Ok("first"), Ok("second")])).await;
+        status.unwrap();
+        assert_eq!(valid, ["first", "second"]);
     }
 
     #[test]
