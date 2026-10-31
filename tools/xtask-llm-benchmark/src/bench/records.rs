@@ -77,7 +77,10 @@ impl BatchRecord {
                 json!({"status": "scored", "outcome": outcome}),
             ),
             Err(RunOneError::Other(error)) => match error.downcast_ref::<ProviderRefusal>() {
-                Some(refusal) => (TaskState::Refused, json!({"status": "refused", "refusal": refusal})),
+                Some(refusal) => (
+                    TaskState::Refused,
+                    json!({"status": "refused", "refusal": refusal, "error": format!("{error:#}")}),
+                ),
                 None => (
                     TaskState::ProviderError,
                     json!({"status": "provider_or_setup_error", "error": format!("{error:#}"),
@@ -85,9 +88,17 @@ impl BatchRecord {
                         "http_response": error.downcast_ref::<crate::llm::clients::http::HttpResponseError>()}),
                 ),
             },
-            Err(RunOneError::Infrastructure { msg, llm_output }) => (
+            Err(RunOneError::Infrastructure {
+                msg,
+                llm_output,
+                provider_error,
+                completed_outcome,
+            }) => (
                 TaskState::InfrastructureError,
-                json!({"status": "infrastructure_error", "error": msg, "llm_output": llm_output}),
+                json!({"status": "infrastructure_error", "error": msg, "llm_output": llm_output, "outcome": completed_outcome,
+                    "refusal": provider_error.as_ref().and_then(|error| error.downcast_ref::<ProviderRefusal>()),
+                    "provider_response": provider_error.as_ref().and_then(|error| error.downcast_ref::<crate::llm::clients::oa_compat::ProviderResponseError>()),
+                    "http_response": provider_error.as_ref().and_then(|error| error.downcast_ref::<crate::llm::clients::http::HttpResponseError>())}),
             ),
             Err(RunOneError::WithOutput { .. }) => bail!("normalize generated-code failures before recording"),
         };
@@ -218,6 +229,8 @@ mod tests {
                 &Err(RunOneError::Infrastructure {
                     msg: "server unavailable".into(),
                     llm_output: Some("unscored code".into()),
+                    provider_error: None,
+                    completed_outcome: None,
                 }),
             )
             .unwrap();
@@ -228,6 +241,47 @@ mod tests {
         assert_eq!(last["summary"]["infrastructure_errors"], 1);
         assert_eq!(last["summary"]["pending_tasks"], 1);
         assert_eq!(last["attempt"]["llm_output"], "unscored code");
+        let refusal = serde_json::from_value::<OACompatResp>(json!({
+            "id": "gen-cleanup", "provider": "test-provider",
+            "choices": [{"finish_reason": "content_filter", "message": {"content": null, "refusal": "private detail"}}]
+        }))
+        .unwrap()
+        .first_text()
+        .unwrap_err();
+        record
+            .record(
+                "b",
+                &Err(RunOneError::Infrastructure {
+                    msg: "reference database cleanup failed".into(),
+                    llm_output: None,
+                    provider_error: Some(refusal),
+                    completed_outcome: None,
+                }),
+            )
+            .unwrap();
+        assert!(record.complete().is_err());
+        let rows = read_rows(&record.path);
+        let last = rows.last().unwrap();
+        assert_eq!(last["summary"]["infrastructure_errors"], 1);
+        assert_eq!(last["summary"]["scored_tasks"], 1);
+        assert_eq!(last["attempt"]["refusal"]["generation_id"], "gen-cleanup");
+        assert_eq!(last["attempt"]["refusal"]["refusal"], "private detail");
+        record
+            .record(
+                "b",
+                &Err(RunOneError::Infrastructure {
+                    msg: "reference database cleanup failed".into(),
+                    llm_output: Some("generated code".into()),
+                    provider_error: None,
+                    completed_outcome: Some(Box::new(outcome(3))),
+                }),
+            )
+            .unwrap();
+        assert!(record.complete().is_err());
+        let rows = read_rows(&record.path);
+        let last = rows.last().unwrap();
+        assert_eq!(last["attempt"]["outcome"]["passed_tests"], 3);
+        assert_eq!(last["attempt"]["outcome"]["llm_output"], "generated code");
         drop(record);
         std::fs::remove_dir_all(root).unwrap();
     }

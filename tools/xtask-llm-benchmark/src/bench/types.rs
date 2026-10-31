@@ -136,7 +136,13 @@ pub enum RunOneError {
     #[error("{msg}")]
     WithOutput { msg: String, llm_output: String },
     #[error("{msg}")]
-    Infrastructure { msg: String, llm_output: Option<String> },
+    Infrastructure {
+        msg: String,
+        llm_output: Option<String>,
+        // Provider details stay in local evidence, not console messages.
+        provider_error: Option<anyhow::Error>,
+        completed_outcome: Option<Box<RunOutcome>>,
+    },
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

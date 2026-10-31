@@ -10,6 +10,15 @@ still run, but the language job exits with failure if any batch fails. Response
 errors include the generation ID and finish reason when supplied by the provider.
 Generated code that fails compilation or grading remains a normal benchmark score.
 
+C# uses a fresh server per model batch. Each active task publishes its own reference
+database and deletes it after scoring or a provider failure. This bounds live C#
+references by task concurrency, rather than loading all 95 before model generation.
+`--goldens-only` also validates and deletes each C# reference/candidate pair before
+starting the next task. Rust and TypeScript keep their batched reference builds.
+Cleanup errors block the batch, but completed scoring remains in the local record.
+Compiler errors from SDK-generated files remain unscored;
+they can expose SDK defects and must not automatically become model failures.
+
 Each batch also saves an append-only JSONL record under
 `LLM_BENCHMARK_REPORT_DIR/batches`, or `tools/xtask-llm-benchmark/runs/batches`
 when that variable is not set. CI retains these files in its analysis artifacts,

@@ -861,8 +861,11 @@ async fn run_many_routes_for_mode(
                 .context("LLM provider preflight failed before model batch")?;
 
             let golden_scope = xtask_llm_benchmark::bench::run_scope_tag(mode, route.vendor.slug(), &route.api_model);
-            let golden_databases =
-                ensure_goldens_built_once(host.clone(), bench_root, lang, selectors, &golden_scope).await?;
+            let golden_databases = if lang == Lang::CSharp {
+                Vec::new() // C# references are owned and deleted by each active task.
+            } else {
+                ensure_goldens_built_once(host.clone(), bench_root, lang, selectors, &golden_scope).await?
+            };
 
             let per = BenchRunContext {
                 bench_root,

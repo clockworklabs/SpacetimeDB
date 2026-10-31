@@ -88,7 +88,7 @@ fn record_task_result(
     // A record write failure also aborts the batch before any website upload.
     record.record(&task.root.to_string_lossy(), &result)?;
     match result {
-        Err(RunOneError::Infrastructure { msg, llm_output }) => {
+        Err(RunOneError::Infrastructure { msg, llm_output, .. }) => {
             let output_note = llm_output
                 .as_deref()
                 .map(|output| format!("; generated output retained in work directory ({} bytes)", output.len()))
@@ -164,6 +164,8 @@ async fn score_async(
     .map_err(|error| RunOneError::Infrastructure {
         msg: format!("scoring worker failed: {error:#}"),
         llm_output: Some(failure_output),
+        provider_error: None,
+        completed_outcome: None,
     })
 }
 
@@ -390,6 +392,30 @@ impl TaskRunner {
     }
 
     pub async fn run_one(&self, task: &TaskPaths, cfg: &RunContext<'_>) -> Result<RunOutcome, RunOneError> {
+        if cfg.lang != Lang::CSharp {
+            return self.run_one_prepared(task, cfg).await;
+        }
+        // A C# reference hosts a .NET runtime. Keep only references for active tasks loaded.
+        let scope = run_scope_tag(cfg.mode, cfg.route.vendor.slug(), &cfg.route.api_model);
+        let references = build_goldens_only_for_lang(
+            cfg.host.clone(),
+            &self.bench_root,
+            cfg.lang,
+            Some(&[task_slug(&task.root)]),
+            &scope,
+        )
+        .await
+        .map_err(|error| RunOneError::Infrastructure {
+            msg: format!("reference setup failed for {}: {error:#}", task.root.display()),
+            llm_output: None,
+            provider_error: None,
+            completed_outcome: None,
+        })?;
+        let result = self.run_one_prepared(task, cfg).await;
+        finish_reference_cleanup(result, delete_databases(references).await)
+    }
+
+    async fn run_one_prepared(&self, task: &TaskPaths, cfg: &RunContext<'_>) -> Result<RunOutcome, RunOneError> {
         let wall = Instant::now();
         let started = Utc::now();
 
@@ -472,6 +498,8 @@ impl TaskRunner {
             load_migration_setup_source(task, cfg.lang).map_err(|error| RunOneError::Infrastructure {
                 msg: format!("load migration setup failed: {error:#}"),
                 llm_output: Some(llm_output.clone()),
+                provider_error: None,
+                completed_outcome: None,
             })?;
 
         if debug_llm() {
@@ -500,6 +528,8 @@ impl TaskRunner {
                         |error| RunOneError::Infrastructure {
                             msg: format!("migration seed failed: {error}"),
                             llm_output: Some(llm_output.clone()),
+                            provider_error: None,
+                            completed_outcome: None,
                         },
                     )?;
                     Ok(Some(database))
@@ -515,6 +545,8 @@ impl TaskRunner {
                 return Err(RunOneError::Infrastructure {
                     msg: format!("migration setup failed: {error:#}"),
                     llm_output: Some(llm_output),
+                    provider_error: None,
+                    completed_outcome: None,
                 })
             }
             Ok(mut setup_database) => {
@@ -543,6 +575,8 @@ impl TaskRunner {
                             return Err(RunOneError::Infrastructure {
                                 msg: format!("publish failed without a source-code diagnostic: {error:#}"),
                                 llm_output: Some(llm_output),
+                                provider_error: None,
+                                completed_outcome: None,
                             });
                         }
                         eprintln!(
@@ -561,6 +595,8 @@ impl TaskRunner {
             return Err(RunOneError::Infrastructure {
                 msg: format!("publish failed and the benchmark server is unavailable: {error:#}"),
                 llm_output: Some(llm_output),
+                provider_error: None,
+                completed_outcome: None,
             });
         }
 
@@ -604,6 +640,8 @@ impl TaskRunner {
             return Err(RunOneError::Infrastructure {
                 msg: format!("database cleanup failed for `{llm_db}`: {error:#}"),
                 llm_output: Some(llm_output),
+                provider_error: None,
+                completed_outcome: None,
             });
         }
 
@@ -661,6 +699,47 @@ impl TaskRunner {
     }
 }
 
+fn finish_reference_cleanup(
+    result: Result<RunOutcome, RunOneError>,
+    cleanup: Result<()>,
+) -> Result<RunOutcome, RunOneError> {
+    let Err(error) = cleanup else {
+        return result;
+    };
+    let cleanup = format!("reference database cleanup failed: {error:#}");
+    match result {
+        Err(RunOneError::Other(error)) => Err(RunOneError::Infrastructure {
+            msg: format!("{cleanup}; provider request also failed: {error:#}"),
+            llm_output: None,
+            provider_error: Some(error),
+            completed_outcome: None,
+        }),
+        Err(RunOneError::Infrastructure {
+            msg,
+            llm_output,
+            provider_error,
+            completed_outcome,
+        }) => Err(RunOneError::Infrastructure {
+            msg: format!("{msg}; {cleanup}"),
+            llm_output,
+            provider_error,
+            completed_outcome,
+        }),
+        Err(RunOneError::WithOutput { msg, llm_output }) => Err(RunOneError::Infrastructure {
+            msg: format!("{msg}; {cleanup}"),
+            llm_output: Some(llm_output),
+            provider_error: None,
+            completed_outcome: None,
+        }),
+        Ok(outcome) => Err(RunOneError::Infrastructure {
+            msg: cleanup,
+            llm_output: outcome.llm_output.clone(),
+            provider_error: None,
+            completed_outcome: Some(Box::new(outcome)),
+        }),
+    }
+}
+
 /// Partition task results into completed outcomes and retry candidates.
 /// Tasks where the LLM never responded (provider/setup error) are returned for retry.
 /// Tasks where the LLM responded but the code failed to compile/score are kept as outcomes.
@@ -688,7 +767,7 @@ fn partition_results(
                     llm_output,
                 ));
             }
-            Err(RunOneError::Infrastructure { msg, llm_output }) => {
+            Err(RunOneError::Infrastructure { msg, llm_output, .. }) => {
                 let output_note = llm_output
                     .as_deref()
                     .map(|output| format!("; generated output retained in work directory ({} bytes)", output.len()))
@@ -1285,7 +1364,11 @@ pub async fn validate_goldens_for_lang(
     selectors: Option<&[String]>,
 ) -> Result<()> {
     let route_tag = "golden-validation";
-    let golden_databases = build_goldens_only_for_lang(host.clone(), bench_root, lang, selectors, route_tag).await?;
+    let shared_goldens = if lang == Lang::CSharp {
+        Vec::new()
+    } else {
+        build_goldens_only_for_lang(host.clone(), bench_root, lang, selectors, route_tag).await?
+    };
 
     let tasks = if let Some(sels) = selectors {
         let wanted: HashSet<String> = sels.iter().map(|s| normalize_task_selector(s)).collect::<Result<_>>()?;
@@ -1317,6 +1400,18 @@ pub async fn validate_goldens_for_lang(
     // Scorers can mutate both databases, so validate one task at a time and
     // preserve the scorer ordering declared by its spec.
     for task in tasks {
+        let golden_databases = if lang == Lang::CSharp {
+            build_goldens_only_for_lang(
+                host.clone(),
+                bench_root,
+                lang,
+                Some(&[task_slug(&task.root)]),
+                route_tag,
+            )
+            .await?
+        } else {
+            Vec::new()
+        };
         let category = category_slug(&task.root);
         let task_id = task_slug(&task.root);
         let candidate_db = sanitize_db_name(&format!("{}-{}-{}-llm", category, task_id, route_tag));
@@ -1396,9 +1491,9 @@ pub async fn validate_goldens_for_lang(
             }
         }
         delete_database_async(candidate_database.expect("candidate database retained during scoring")).await?;
+        delete_databases(golden_databases).await?;
     }
-
-    delete_databases(golden_databases).await?;
+    delete_databases(shared_goldens).await?;
 
     if !failures.is_empty() {
         bail!(
@@ -1556,6 +1651,98 @@ fn normalize_task_selector(raw: &str) -> Result<String> {
 #[cfg(test)]
 mod build_cleanup_tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires local server binaries and packed C# SDK; no model calls or uploads"]
+    fn csharp_references_are_scoped_to_successful_and_failed_tasks() {
+        struct LocalProvider {
+            host: String,
+            reference: String,
+            output: Option<String>,
+        }
+        #[async_trait::async_trait]
+        impl crate::llm::LlmProvider for LocalProvider {
+            async fn preflight_route(&self, _: &ModelRoute, _: bool) -> Result<()> {
+                Ok(())
+            }
+            async fn generate(
+                &self,
+                _: &ModelRoute,
+                _: &crate::llm::prompt::BuiltPrompt,
+            ) -> Result<crate::llm::LlmOutput> {
+                reqwest::Client::new()
+                    .get(format!("{}/v1/database/{}/schema?version=9", self.host, self.reference))
+                    .send()
+                    .await?
+                    .error_for_status()?;
+                Ok(crate::llm::LlmOutput {
+                    text: self.output.clone().context("injected provider failure")?,
+                    input_tokens: None,
+                    output_tokens: None,
+                })
+            }
+        }
+        let server = spacetimedb_guard::SpacetimeDbGuard::try_spawn_in_temp_data_dir().unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/benchmarks");
+        let task = discover_tasks(&root)
+            .unwrap()
+            .into_iter()
+            .find(|task| task.root.ends_with("basics/t_004_insert"))
+            .unwrap();
+        let route = ModelRoute::new(
+            "local-fixture",
+            crate::llm::types::Vendor::OpenAi,
+            "local-fixture",
+            None,
+        );
+        let scope = run_scope_tag("no_context", route.vendor.slug(), &route.api_model);
+        let reference = golden_db_name("basics", "t_004_insert", &scope);
+        let runner = TaskRunner::new(root, SpacetimeRustPublisher, DotnetPublisher, TypeScriptPublisher);
+        let source = load_golden_source(&task, Lang::CSharp).unwrap();
+        for output in [Some(source), Some("this is invalid C#".into()), None] {
+            let provider = LocalProvider {
+                host: server.host_url.clone(),
+                reference: reference.clone(),
+                output,
+            };
+            let cfg = RunContext {
+                lang_name: "csharp",
+                lang: Lang::CSharp,
+                mode: "no_context",
+                route: &route,
+                context: "",
+                hash: "local-validation",
+                llm: &provider,
+                host: Some(server.host_url.clone()),
+            };
+            let result = runtime.block_on(runner.run_one(&task, &cfg));
+            match provider.output.as_deref() {
+                None => assert!(matches!(result, Err(RunOneError::Other(_)))),
+                Some("this is invalid C#") => {
+                    let outcome = result.unwrap();
+                    assert_eq!(outcome.passed_tests, 0);
+                }
+                Some(_) => {
+                    let outcome = result.unwrap();
+                    assert!(outcome.total_tests > 0);
+                    assert_eq!(outcome.passed_tests, outcome.total_tests);
+                }
+            }
+            let status = runtime.block_on(async {
+                reqwest::Client::new()
+                    .get(format!("{}/v1/database/{reference}/schema?version=9", server.host_url))
+                    .send()
+                    .await
+                    .unwrap()
+                    .status()
+            });
+            assert_eq!(status, reqwest::StatusCode::NOT_FOUND, "reference leaked after task");
+        }
+    }
 
     #[tokio::test]
     async fn failed_attempt_drains_started_work_without_starting_more_tasks() {
@@ -1742,11 +1929,58 @@ mod build_cleanup_tests {
             .err()
             .unwrap();
         match error {
-            RunOneError::Infrastructure { msg, llm_output } => {
+            RunOneError::Infrastructure { msg, llm_output, .. } => {
                 assert!(msg.contains("test scorer failure"));
                 assert_eq!(llm_output.as_deref(), Some("generated code"));
             }
             other => panic!("expected unscored infrastructure error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reference_cleanup_failure_preserves_unscored_evidence() {
+        let completed: RunOutcome = serde_json::from_value(json!({
+            "hash": "test", "task": "a", "lang": "csharp", "model_name": "test", "vendor": "test",
+            "golden_published": true, "passed_tests": 1, "total_tests": 2, "llm_output": "candidate code",
+            "input_tokens": 123, "scorer_details": {"parity": {"pass": false, "partial": 0.5, "notes": {"difference": "retained"}}}
+        })).unwrap();
+        let expected = serde_json::to_value(&completed).unwrap();
+        match finish_reference_cleanup(Ok(completed), Err(anyhow!("delete failed"))) {
+            Err(RunOneError::Infrastructure { completed_outcome, .. }) => {
+                assert_eq!(serde_json::to_value(completed_outcome.unwrap()).unwrap(), expected);
+            }
+            other => panic!("completed scoring lost after cleanup failure: {other:?}"),
+        }
+        let failed_code = Err(RunOneError::WithOutput {
+            msg: "compile failed".into(),
+            llm_output: "candidate code".into(),
+        });
+        match finish_reference_cleanup(failed_code, Err(anyhow!("delete failed"))) {
+            Err(RunOneError::Infrastructure { msg, llm_output, .. }) => {
+                assert!(msg.contains("compile failed") && msg.contains("delete failed"));
+                assert_eq!(llm_output.as_deref(), Some("candidate code"));
+            }
+            other => panic!("expected unscored cleanup failure: {other:?}"),
+        }
+        let refusal = serde_json::from_value::<crate::llm::clients::oa_compat::OACompatResp>(json!({
+            "choices": [{"finish_reason":"content_filter", "message":{"content":null,"refusal":"private detail"}}]
+        }))
+        .unwrap()
+        .first_text()
+        .unwrap_err();
+        match finish_reference_cleanup(Err(RunOneError::Other(refusal)), Err(anyhow!("delete failed"))) {
+            Err(RunOneError::Infrastructure {
+                msg, provider_error, ..
+            }) => {
+                assert!(msg.contains("delete failed"));
+                assert!(!msg.contains("private detail"));
+                let error = provider_error.unwrap();
+                let evidence = error
+                    .downcast_ref::<crate::llm::clients::oa_compat::ProviderRefusal>()
+                    .unwrap();
+                assert_eq!(evidence.refusal.as_deref(), Some("private detail"));
+            }
+            other => panic!("cleanup failure must stop the batch: {other:?}"),
         }
     }
 
