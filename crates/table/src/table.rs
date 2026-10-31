@@ -59,7 +59,7 @@ use spacetimedb_schema::{
     table_name::TableName,
 };
 use std::{
-    collections::{btree_map, BTreeMap},
+    collections::{btree_map, BTreeMap, BTreeSet},
     sync::Arc,
 };
 use thiserror::Error;
@@ -1110,8 +1110,10 @@ impl Table {
         // SAFETY: Caller promised that `self.is_row_present(new)` holds.
         let res = unsafe { self.insert_into_indices::<true>(blobs, new) };
         if let Err(e) = res {
-            // Undo (1).
-            unsafe { self.insert_into_indices::<true>(blobs, old) }
+            // Undo (1). Cleanup removed the replacement's index entries, so the
+            // old unique keys are free. Skip duplicate-row comparison: restoring the
+            // pinned old row must not try to load another row during rollback.
+            unsafe { self.insert_into_indices::<false>(blobs, old) }
                 .expect("re-inserting the old row into indices should always work");
             return Err(e);
         }
@@ -1168,23 +1170,31 @@ impl Table {
         }
         if let Some((index_id, old_ptr)) = violation {
             // Found unique constraint violation!
-            let error = if CHECK_SAME_ROW
+            // Capture comparison errors so they cannot bypass the pinned
+            // index and physical-row cleanup below.
+            let same_row = if CHECK_SAME_ROW
                     // If the index was added in this tx,
                     // `old` could be a committed row,
                     // which we want to avoid here.
                     // TODO(centril): not 100% correct, could still be a duplicate,
                     // but this is rather pathological and should be fixed when we restructure.
                     && old_ptr.squashed_offset().is_tx_state()
-                    // SAFETY:
-                    // - The row layouts are the same as it's the same table.
-                    // - We know `old` exists in `self` as we just found it in an index.
-                    // - Caller promised that `new` is valid for `self`.
-                    && unsafe { Self::eq_row_in_page(self, old_ptr, self, new_ref.pointer()) }.map_err(TableError::from)?
             {
-                DuplicateError(old_ptr).into()
+                // SAFETY:
+                // - The row layouts are the same as it's the same table.
+                // - We know `old` exists in `self` as we just found it in an index.
+                // - Caller promised that `new` is valid for `self`.
+                unsafe { Self::eq_row_in_page(self, old_ptr, self, new_ref.pointer()) }
             } else {
-                let index = self.indexes.get(&index_id).unwrap();
-                self.build_error_unique(index, index_id, &new_ref).into()
+                Ok(false)
+            };
+            let error = match same_row {
+                Ok(true) => DuplicateError(old_ptr).into(),
+                Ok(false) => {
+                    let index = self.indexes.get(&index_id).unwrap();
+                    self.build_error_unique(index, index_id, &new_ref).into()
+                }
+                Err(e) => TableError::from(e).into(),
             };
 
             // Delete row from indices.
@@ -2351,11 +2361,15 @@ impl Table {
             pinned_blobs.extend(row.blobs.iter().map(|(_, handle)| handle.clone()));
         }
 
+        let mut comparison_pages = BTreeSet::new();
         let mut prepared = self.inner.pages.prepare_commit(
             self.row_size(),
             &self.inner.visitor_prog,
             deletes,
             inserts.into_iter().map_ok(|insert| {
+                if let Some(hash) = insert.pointer_map_hash {
+                    comparison_pages.extend(self.pointers_for(hash).iter().map(|ptr| ptr.page_index()));
+                }
                 let num_granules = match &insert.inner {
                     PreparedInsertInner::Product(row) => self.required_var_len_granules_for_insert(row),
                     PreparedInsertInner::CopyFixed { .. } => 0,
@@ -2363,27 +2377,43 @@ impl Table {
                 (insert, num_granules)
             }),
         )?;
+        // Applying an insert may compare it with an untouched row sharing its
+        // hash. Pin those pages before any mutations, too. Equality reads blob
+        // hashes from the page, so it does not require the candidate's blobs.
+        for page_index in comparison_pages {
+            prepared.pin_page(&self.inner.pages, page_index)?;
+        }
         prepared.pin_blobs(pinned_blobs);
 
         Ok(prepared)
     }
 
+    /// Prepare a row for insertion into this table during commit.
     pub fn prepare_insert(&self, row: RowRef<'_>) -> PreparedInsert {
         assert_eq!(self.row_layout(), row.row_layout());
 
-        if !self.schema.is_event
+        // Only tiered tables with a pointer map can fault while comparing
+        // committed candidates. Compute the hash while the source row is pinned;
+        // hashing its ProductValue later need not produce the same row hash.
+        let pointer_map_hash = (!self.schema.is_event && !self.inner.pages.is_resident() && self.pointer_map.is_some())
+            .then(|| row.row_hash());
+        let inner = if !self.schema.is_event
             && self.inner.row_layout.layout().fixed
             && let Some(source_page) = &row.page
         {
-            return PreparedInsertInner::CopyFixed {
+            PreparedInsertInner::CopyFixed {
                 source_page: source_page.clone(),
                 source_offset: row.pointer().page_offset(),
             }
-            .into();
+        } else {
+            // Resident pages are borrowed, so prepared commits own the row value.
+            // Unlimited fixed-row resident commits bypass preparation entirely.
+            PreparedInsertInner::Product(row.to_product_value())
+        };
+        PreparedInsert {
+            inner,
+            pointer_map_hash,
         }
-        // Resident pages are borrowed, so prepared commits own the row value.
-        // Unlimited fixed-row resident commits bypass preparation entirely.
-        PreparedInsertInner::Product(row.to_product_value()).into()
     }
     fn required_var_len_granules_for_insert(&self, row: &ProductValue) -> usize {
         if self.inner.row_layout.layout().fixed {
@@ -3275,6 +3305,8 @@ impl Table {
 /// normal insert path.
 pub struct PreparedInsert {
     inner: PreparedInsertInner,
+    /// Present when apply may compare this row with evictable pointer-map candidates.
+    pointer_map_hash: Option<RowHash>,
 }
 
 impl PreparedInsert {
@@ -3283,12 +3315,6 @@ impl PreparedInsert {
             PreparedInsertInner::Product(pv) => pv,
             PreparedInsertInner::CopyFixed { .. } => inserted.unwrap().to_product_value(),
         }
-    }
-}
-
-impl From<PreparedInsertInner> for PreparedInsert {
-    fn from(inner: PreparedInsertInner) -> Self {
-        Self { inner }
     }
 }
 
@@ -4685,5 +4711,115 @@ pub(crate) mod test {
         // until confirmation succeeds, so row_count alone cannot detect a leak.
         assert_eq!(table.num_rows(), count_before);
         assert_eq!(table.scan_all_row_ptrs().unwrap().len() as u64, count_before);
+    }
+
+    fn assert_prepared_commit_protects_pointer_map_candidates(fail_during_preparation: bool, fixed_rows: bool) {
+        use std::sync::atomic::Ordering;
+
+        let (storage, fail_reads) = TieredStorage::with_failing_reads_for_test();
+        let storage = Arc::new(storage);
+        let resident = Arc::new(ResidentObjects::new(ByteBudget::unlimited()));
+        let manager = Arc::new(PageManager::new(
+            resident.clone(),
+            PagePool::new_for_test(),
+            storage.clone(),
+        ));
+        let blobs = BlobSet::new(resident, storage);
+        let value_type = if fixed_rows {
+            AlgebraicType::U64
+        } else {
+            AlgebraicType::String
+        };
+        let schema = TableSchema::from_product_type(ProductType::from([AlgebraicType::U64, value_type]));
+        let mut table = Table::new(
+            schema.into(),
+            SquashedOffset::COMMITTED_STATE,
+            manager,
+            PageEvictionPolicy::Evictable,
+        );
+        let value: AlgebraicValue = if fixed_rows {
+            42_u64.into()
+        } else {
+            "x".repeat(128).into()
+        };
+        let mut first_pointer = None;
+        let mut deletion = None;
+        // Leave a full first page and a row on the second page. The commit
+        // replaces the second-page row, so placement need not read the first.
+        for id in 0..PAGE_SIZE as u64 {
+            let (_, row) = table.insert(&blobs, &product![id, value.clone()]).unwrap();
+            first_pointer.get_or_insert(row.pointer());
+            if row.pointer().page_index() == PageIndex(1) {
+                deletion = Some((row.to_product_value(), row.into_pinned_row()));
+                break;
+            }
+        }
+        let first_pointer = first_pointer.unwrap();
+        let (deleted_value, deleted_pin) = deletion.expect("fixture must fill the first page");
+        let mut source = table.clone_structure(SquashedOffset::TX_STATE);
+        let incoming = product![u64::MAX, value];
+        let (_, row) = source.insert(&blobs, &incoming).unwrap();
+        let hash = row.row_hash();
+        let insert = table.prepare_insert(row);
+        // Force the bucket lookup used by a hash collision, without searching
+        // for a real 64-bit collision. The rows still compare unequal.
+        assert!(table.pointers_for(hash).is_empty());
+        table.pointer_map.as_mut().unwrap().insert(hash, first_pointer);
+        let pointers_before = table.pointer_map.clone();
+        let count_before = table.num_rows();
+
+        if fail_during_preparation {
+            // The deletion page stays pinned, isolating the fault to the
+            // comparison candidate on the otherwise untouched first page.
+            table.inner.pages.evict().unwrap();
+            fail_reads.store(true, Ordering::Relaxed);
+        }
+        let result = table.prepare_commit(&blobs, [deleted_pin.pointer()], [Ok(insert)]);
+        if fail_during_preparation {
+            assert!(matches!(result, Err(TableError::Page(error))
+                if matches!(*error, PageError::Storage(_))));
+            fail_reads.store(false, Ordering::Relaxed);
+            assert_eq!(table.pointer_map, pointers_before);
+            assert_eq!(table.num_rows(), count_before);
+            assert_eq!(table.scan_all_row_ptrs().unwrap().len() as u64, count_before);
+            assert!(table.scan_rows(&blobs).any(|row| row.unwrap() == deleted_value));
+        } else {
+            let prepared = result.unwrap();
+            drop(deleted_pin);
+            // After preparation, eviction and failed storage reads must not
+            // interrupt apply, even after its deletion has already happened.
+            table.inner.pages.evict().unwrap();
+            fail_reads.store(true, Ordering::Relaxed);
+            let (deletes, inserts) = prepared.apply(&mut table, &blobs).into_parts();
+            fail_reads.store(false, Ordering::Relaxed);
+            assert_eq!(&*deletes, std::slice::from_ref(&deleted_value));
+            assert_eq!(&*inserts, std::slice::from_ref(&incoming));
+            assert_eq!(table.num_rows(), count_before);
+            let rows = table
+                .scan_rows(&blobs)
+                .map(|row| row.unwrap().to_product_value())
+                .collect::<Vec<_>>();
+            assert_eq!(rows.len() as u64, count_before);
+            assert!(rows.contains(&incoming));
+            assert!(!rows.contains(&deleted_value));
+        }
+        // Remove the synthetic association; the first row's real hash entry
+        // has remained intact throughout the test.
+        assert!(table.pointer_map.as_mut().unwrap().remove(hash, first_pointer));
+    }
+
+    #[test]
+    fn prepared_commit_pointer_map_fault_precedes_mutations() {
+        assert_prepared_commit_protects_pointer_map_candidates(true, false);
+    }
+
+    #[test]
+    fn prepared_commit_retains_pointer_map_candidate_pins() {
+        assert_prepared_commit_protects_pointer_map_candidates(false, false);
+    }
+
+    #[test]
+    fn prepared_fixed_commit_retains_pointer_map_candidate_pins() {
+        assert_prepared_commit_protects_pointer_map_candidates(false, true);
     }
 }
