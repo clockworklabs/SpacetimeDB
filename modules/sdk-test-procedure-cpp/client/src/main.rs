@@ -66,13 +66,13 @@ fn on_connected(_ctx: &DbConnection, identity: Identity, token: &str) {
 }
 
 /// Our `on_connect_error` callback: print the error, then exit the process.
-fn on_connect_error(_ctx: &ErrorContext, err: Error) {
+fn on_connect_error(_ctx: &ErrorContext, err: Error, _next: Option<spacetimedb_sdk::NextReconnect>) {
     eprintln!("Connection error: {err}");
     std::process::exit(1);
 }
 
 /// Our `on_disconnect` callback: print a note, then exit the process.
-fn on_disconnected(_ctx: &ErrorContext, err: Option<Error>) {
+fn on_disconnected(_ctx: &ErrorContext, err: Option<Error>, _next: Option<spacetimedb_sdk::NextReconnect>) {
     if let Some(err) = err {
         eprintln!("Disconnected: {err}");
         std::process::exit(1);

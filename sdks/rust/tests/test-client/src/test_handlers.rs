@@ -374,7 +374,7 @@ async fn connect_with_then(
             callback(ctx);
             connected_result(Ok(()));
         })
-        .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
+        .on_connect_error(|_ctx, error, _next| panic!("Connect errored: {error:?}"));
     build_and_run(with_builder(builder)).await
 }
 
@@ -420,7 +420,7 @@ fn subscribe_these_then(
     callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static,
 ) {
     ctx.subscription_builder()
-        .on_applied(callback)
+        .on_applied(test_counter::once::<SubscriptionEventContext, _>(callback))
         .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
         .subscribe(queries);
 }
@@ -446,9 +446,11 @@ async fn exec_subscribe_and_cancel(db_name: &str) {
         move |ctx| {
             let handle = ctx
                 .subscription_builder()
-                .on_applied(move |_ctx: &SubscriptionEventContext| {
-                    panic!("Subscription should never be applied");
-                })
+                .on_applied(test_counter::once::<SubscriptionEventContext, _>(
+                    move |_ctx: &SubscriptionEventContext| {
+                        panic!("Subscription should never be applied");
+                    },
+                ))
                 .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
                 .subscribe("SELECT * FROM one_u_8;");
             assert!(!handle.is_active());
@@ -480,22 +482,24 @@ async fn exec_subscribe_and_unsubscribe(db_name: &str) {
             let hc_clone = handle_cell.clone();
             let handle = ctx
                 .subscription_builder()
-                .on_applied(move |ctx: &SubscriptionEventContext| {
-                    let handle = { hc_clone.lock().unwrap().as_ref().unwrap().clone() };
-                    assert!(ctx.is_active());
-                    assert!(handle.is_active());
-                    assert!(!handle.is_ended());
-                    assert!(ctx.db.one_u_8().count() == 1);
-                    let handle_clone = handle.clone();
-                    handle
-                        .unsubscribe_then(Box::new(move |ectx| {
-                            assert!(!handle_clone.is_active());
-                            assert!(handle_clone.is_ended());
-                            assert!(ectx.db.one_u_8().count() == 0);
-                            cb(Ok(()));
-                        }))
-                        .unwrap();
-                })
+                .on_applied(test_counter::once::<SubscriptionEventContext, _>(
+                    move |ctx: &SubscriptionEventContext| {
+                        let handle = { hc_clone.lock().unwrap().as_ref().unwrap().clone() };
+                        assert!(ctx.is_active());
+                        assert!(handle.is_active());
+                        assert!(!handle.is_ended());
+                        assert!(ctx.db.one_u_8().count() == 1);
+                        let handle_clone = handle.clone();
+                        handle
+                            .unsubscribe_then(Box::new(move |ectx| {
+                                assert!(!handle_clone.is_active());
+                                assert!(handle_clone.is_ended());
+                                assert!(ectx.db.one_u_8().count() == 0);
+                                cb(Ok(()));
+                            }))
+                            .unwrap();
+                    },
+                ))
                 .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
                 .subscribe("SELECT * FROM one_u_8;");
             handle_cell.lock().unwrap().replace(handle.clone());
@@ -514,9 +518,11 @@ async fn exec_subscription_error_smoke_test(db_name: &str) {
         move |ctx| {
             let handle = ctx
                 .subscription_builder()
-                .on_applied(move |_ctx: &SubscriptionEventContext| {
-                    panic!("Subscription should never be applied");
-                })
+                .on_applied(test_counter::once::<SubscriptionEventContext, _>(
+                    move |_ctx: &SubscriptionEventContext| {
+                        panic!("Subscription should never be applied");
+                    },
+                ))
                 .on_error(|_, _| cb(Ok(())))
                 .subscribe("SELEcCT * FROM one_u8;"); // intentional typo
             assert!(!handle.is_active());
@@ -1745,7 +1751,7 @@ async fn exec_reauth_part_1(db_name: &str) {
         .on_connect(move |_, _identity, token| {
             save_result(creds.save(token).map_err(Into::into));
         })
-        .on_connect_error(|_ctx, error| panic!("Connect failed: {error:?}"))
+        .on_connect_error(|_ctx, error, _next| panic!("Connect failed: {error:?}"))
         .with_database_name(name)
         .with_uri(server_url())
         .build()
@@ -1780,7 +1786,7 @@ async fn exec_reauth_part_2(db_name: &str) {
                 creds_match_result(run_checks());
             }
         })
-        .on_connect_error(|_ctx, error| panic!("Connect failed: {error:?}"))
+        .on_connect_error(|_ctx, error, _next| panic!("Connect failed: {error:?}"))
         .with_database_name(name)
         .with_token(Some(token))
         .with_uri(server_url())
@@ -1815,14 +1821,16 @@ async fn exec_reconnect_different_connection_id(db_name: &str) {
         DbConnection::builder()
             .with_database_name(db_name)
             .with_uri(server_url())
-            .on_connect_error(|_ctx, error| panic!("on_connect_error: {error:?}"))
+            .on_connect_error(|_ctx, error, _next| panic!("on_connect_error: {error:?}"))
             .on_connect(move |_, _, _| {
                 initial_connect_result(Ok(()));
             })
-            .on_disconnect(|_, error| match error {
-                None => disconnect_result(Ok(())),
-                Some(err) => disconnect_result(Err(anyhow::anyhow!("{err:?}"))),
-            }),
+            .on_disconnect(test_counter::once3::<ErrorContext, _, _, _>(
+                |_, error, _next| match error {
+                    None => disconnect_result(Ok(())),
+                    Some(err) => disconnect_result(Err(anyhow::anyhow!("{err:?}"))),
+                },
+            )),
     )
     .await;
 
@@ -1842,7 +1850,7 @@ async fn exec_reconnect_different_connection_id(db_name: &str) {
         DbConnection::builder()
             .with_database_name(db_name)
             .with_uri(server_url())
-            .on_connect_error(|_ctx, error| panic!("on_connect_error: {error:?}"))
+            .on_connect_error(|_ctx, error, _next| panic!("on_connect_error: {error:?}"))
             .on_connect(move |ctx, _, _| {
                 reconnect_result(Ok(()));
                 let run_checks = || {
@@ -1899,7 +1907,7 @@ async fn exec_subscribe_all_select_star(db_name: &str) {
 
     connection
         .subscription_builder()
-        .on_applied({
+        .on_applied(test_counter::once::<SubscriptionEventContext, _>({
             let test_counter = test_counter.clone();
             move |ctx| {
                 insert_one::<OneU8>(ctx, &test_counter, 0);
@@ -1925,7 +1933,7 @@ async fn exec_subscribe_all_select_star(db_name: &str) {
 
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
             }
-        })
+        }))
         .on_error(|_, e| panic!("Subscription error: {e:?}"))
         .subscribe_to_all_tables();
 
