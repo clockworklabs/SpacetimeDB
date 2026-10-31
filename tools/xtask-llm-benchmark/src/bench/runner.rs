@@ -267,21 +267,25 @@ fn is_code_publish_failure(message: &str, source_root: &Path, lang: Lang) -> boo
         Lang::CSharp => "lib.cs",
         Lang::TypeScript => "src/index.ts",
     };
-    let absolute = source_root
+    let root = source_root
         .canonicalize()
         .or_else(|_| std::path::absolute(source_root))
         .unwrap_or_else(|_| source_root.to_path_buf())
-        .join(relative)
         .to_string_lossy()
         .replace('\\', "/")
         .to_ascii_lowercase();
+    let root = root.trim_start_matches("//?/");
+    let absolute = format!("{root}/{relative}");
+    let sdk_output = format!("{root}/obj/");
     let is_generated_location = |location: &str| {
         let location = location.trim().trim_start_matches("//?/").trim_start_matches("./");
-        [relative, absolute.trim_start_matches("//?/")].iter().any(|path| {
-            location
-                .strip_prefix(path)
-                .is_some_and(|rest| rest.starts_with(':') || rest.starts_with('('))
-        })
+        // SDK source generators compile the candidate's types from its own obj directory.
+        (matches!(lang, Lang::CSharp) && location.starts_with(&sdk_output))
+            || [relative, absolute.as_str()].iter().any(|path| {
+                location
+                    .strip_prefix(path)
+                    .is_some_and(|rest| rest.starts_with(':') || rest.starts_with('('))
+            })
     };
     let lines: Vec<_> = message.lines().map(str::trim).collect();
     let mut found = false;
@@ -1810,6 +1814,9 @@ mod build_cleanup_tests {
             let source = std::path::absolute(root).unwrap().join("Lib.cs");
             let diagnostic = format!("{}(10,5): error CS0103: missing name", source.display());
             assert!(is_code_publish_failure(&diagnostic, root, Lang::CSharp), "{diagnostic}");
+            let generated = std::path::absolute(root).unwrap().join("obj/Release/Shape.cs");
+            let diagnostic = format!("{}(27,33): error CS0144: abstract type", generated.display());
+            assert!(is_code_publish_failure(&diagnostic, root, Lang::CSharp), "{diagnostic}");
         }
         let rejected_migration = "Errors occurred:\nAdding a column enabled to table widget requires a default value annotation\n\nAborting publish due to required manual migration.";
         for lang in [Lang::Rust, Lang::CSharp, Lang::TypeScript] {
@@ -1829,6 +1836,7 @@ mod build_cleanup_tests {
             "error[E0425]: cannot find value\n --> /dependencies/src/lib.rs:1:1",
             "Lib.cs(1,1): error CS0006: Metadata file could not be found",
             "/dependencies/Lib.cs(1,1): error CS0103: missing name",
+            "/dependencies/obj/Shape.cs(1,1): error CS0144: abstract type",
             "node_modules/package/index.ts(1,1): error TS2304: missing name",
         ] {
             for lang in [Lang::Rust, Lang::CSharp, Lang::TypeScript] {

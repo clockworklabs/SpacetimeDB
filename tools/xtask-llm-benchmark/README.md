@@ -16,8 +16,8 @@ references by task concurrency, rather than loading all 95 before model generati
 `--goldens-only` also validates and deletes each C# reference/candidate pair before
 starting the next task. Rust and TypeScript keep their batched reference builds.
 Cleanup errors block the batch, but completed scoring remains in the local record.
-Compiler errors from SDK-generated files remain unscored;
-they can expose SDK defects and must not automatically become model failures.
+Compiler errors in SDK-generated files score as normal failures. Saved batch
+records keep the evidence so suspected SDK defects can go to the core team.
 
 Each batch also saves an append-only JSONL record under
 `LLM_BENCHMARK_REPORT_DIR/batches`, or `tools/xtask-llm-benchmark/runs/batches`
