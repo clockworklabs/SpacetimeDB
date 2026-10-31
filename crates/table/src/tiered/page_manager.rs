@@ -347,7 +347,7 @@ impl PageHandle {
         PAGE_SIZE as u64
     }
 
-    pub(super) fn serialize_for_storage(&self) -> (PageHash, Vec<u8>) {
+    pub fn serialize_for_storage(&self) -> (PageHash, Vec<u8>) {
         let mut guard = self.frame.write_ref();
         let hash = PageHash::from(&mut **guard);
         let guard = RwLockWriteGuard::downgrade(guard);

@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use std::{io, iter, sync::Arc};
 
 use spacetimedb_memory_usage::MemoryUsage;
 
-use crate::page_pool::PagePool;
+use crate::{indexes::PAGE_SIZE, page::Page, page_pool::PagePool, tiered::map::PageHash};
 
 mod blob_set;
 mod budget;
@@ -18,18 +18,19 @@ pub use self::{
     blob_set::{BlobHandle, BlobMap, BlobReadSet, BlobSet},
     budget::{BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetConfig, ByteBudgetUsage},
     error::{BlobError, ObjectStoreError, PageError},
+    map::ObjectKey,
     mem::ResidentObjects,
     page_manager::{PageEvictionPolicy, PageHandle, PageManager, ReservedPage},
     page_ref::{PageBorrow, PageRead, PageRef},
     page_set::{PageSet, PreparedCommit},
-    storage::{MemoryObjectStore, ObjectStore, TieredStorage},
+    storage::{BackingStore, MemoryObjectStore, Object, ObjectBytes, ObjectMetadata, ObjectStore, TieredStorage},
 };
 
 pub struct TieredStorageConfig {
     pub page_pool: PagePool,
-    pub local_object_store: Box<dyn ObjectStore>,
-    pub remote_object_store: Option<Box<dyn ObjectStore>>,
     pub resident_budget: ByteBudget,
+    pub local_store: BackingStore,
+    pub remote_store: Option<BackingStore>,
 }
 
 impl TieredStorageConfig {
@@ -48,11 +49,18 @@ impl TieredStorageConfig {
     fn memory_unlimited(page_pool: PagePool) -> Self {
         Self {
             page_pool,
-            local_object_store: Box::new(MemoryObjectStore::default()),
-            remote_object_store: None,
             resident_budget: ByteBudget::unlimited(),
+            local_store: BackingStore {
+                object_store: Box::new(MemoryObjectStore::default()),
+                budget: ByteBudget::unlimited(),
+            },
+            remote_store: None,
         }
     }
+}
+
+pub trait TieredStorageProvider: Send + Sync {
+    fn tiered_storage(&self) -> impl Future<Output = io::Result<TieredStorageConfig>> + Send;
 }
 
 #[derive(Clone)]
@@ -65,31 +73,41 @@ pub struct TieredDatabaseStorage {
 }
 
 impl TieredDatabaseStorage {
-    pub fn new(
+    pub fn empty(config: TieredStorageConfig) -> io::Result<Self> {
+        Self::from_snapshot(config, <_>::default(), iter::empty())
+    }
+
+    pub fn from_snapshot<'a>(
         TieredStorageConfig {
             page_pool,
+            local_store,
+            remote_store,
             resident_budget,
-            local_object_store,
-            remote_object_store,
         }: TieredStorageConfig,
-    ) -> Self {
-        let store = Arc::new(TieredStorage::new(local_object_store, remote_object_store));
+        blobs: BlobMap,
+        pages: impl Iterator<Item = &'a Page>,
+    ) -> io::Result<Self> {
+        let store = Arc::new(TieredStorage::with_catalog(
+            local_store,
+            remote_store,
+            blobs
+                .iter()
+                .map(|(hash, entry)| (hash.into_object_key(), entry.blob.len() as u64))
+                .chain(pages.map(|page| {
+                    let key = PageHash::from(page).into();
+                    (key, PAGE_SIZE as u64)
+                })),
+        ));
         let cache = Arc::new(ResidentObjects::new(resident_budget));
         let pages = Arc::new(PageManager::new(cache.clone(), page_pool, store.clone()));
-        let blobs = Arc::new(BlobSet::new(cache.clone(), store.clone()));
+        let blobs = Arc::new(BlobSet::from_blob_map(cache.clone(), store.clone(), blobs));
 
-        Self {
+        Ok(Self {
             pages,
             blobs,
             cache,
             store,
-        }
-    }
-
-    pub fn with_blobs(config: TieredStorageConfig, blobs: BlobMap) -> Self {
-        let mut this = Self::new(config);
-        this.blobs = BlobSet::from_blob_map(this.cache.clone(), this.store.clone(), blobs).into();
-        this
+        })
     }
 
     pub fn pages(&self) -> &Arc<PageManager> {

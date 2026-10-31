@@ -1,6 +1,4 @@
-use std::fmt;
-#[cfg(test)]
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 use derive_more::From;
 use parking_lot::RwLock;
@@ -10,11 +8,11 @@ use crate::{
     tiered::{
         error::ObjectStoreError,
         map::{ObjectKey, ObjectMap},
-        BlobHandle, PageHandle,
+        BlobHandle, BudgetPermit, ByteBudget, PageHandle,
     },
 };
 
-pub type ObjectBytes = Box<[u8]>;
+pub type ObjectBytes = Arc<[u8]>; // TODO: Use `bytes::Bytes`?
 
 #[derive(From)]
 pub enum Object<'a> {
@@ -105,18 +103,43 @@ impl ObjectStore for MemoryObjectStore {
 }
 
 #[derive(Debug)]
+pub struct BackingStore {
+    pub object_store: Box<dyn ObjectStore>,
+    pub budget: ByteBudget,
+}
+
+#[derive(Debug)]
 pub struct TieredStorage {
-    local: Box<dyn ObjectStore>,
-    remote: Option<Box<dyn ObjectStore>>,
+    local: BackingStore,
+    remote: Option<BackingStore>,
 
     catalog: RwLock<ObjectMap<ObjectCatalogEntry>>,
-    // TODO: Should this be here? [ObjectStore]s should be managing their
-    // budgets.
-    //local_budget: ByteBudget,
 }
 
 impl TieredStorage {
-    pub fn new(local: Box<dyn ObjectStore>, remote: Option<Box<dyn ObjectStore>>) -> Self {
+    pub fn with_catalog(
+        local: BackingStore,
+        remote: Option<BackingStore>,
+        catalog: impl Iterator<Item = (ObjectKey, u64)>,
+    ) -> Self {
+        let catalog = RwLock::new(
+            catalog
+                .map(|(key, size)| {
+                    (
+                        key,
+                        ObjectCatalogEntry {
+                            size,
+                            permit: Some(local.budget.force_acquire(size)),
+                        },
+                    )
+                })
+                .collect::<ObjectMap<_>>(),
+        );
+
+        Self { local, remote, catalog }
+    }
+
+    pub fn empty(local: BackingStore, remote: Option<BackingStore>) -> Self {
         Self {
             local,
             remote,
@@ -125,7 +148,13 @@ impl TieredStorage {
     }
 
     pub fn new_for_test() -> Self {
-        Self::new(Box::new(MemoryObjectStore::default()), None)
+        Self::empty(
+            BackingStore {
+                object_store: Box::new(MemoryObjectStore::default()),
+                budget: ByteBudget::unlimited(),
+            },
+            None,
+        )
     }
 
     pub fn stat(&self, key: ObjectKey) -> Result<ObjectMetadata, ObjectStoreError> {
@@ -142,8 +171,17 @@ impl TieredStorage {
 
     pub fn write(&self, object: Object<'_>) -> Result<ObjectKey, ObjectStoreError> {
         let size = object.size();
-        let key = self.local.write(object)?;
-        self.catalog.write().insert(key, ObjectCatalogEntry { size });
+        // TODO: Observe the budget limit here. We don't know yet how to evict
+        // entries, though.
+        let permit = self.local.budget.force_acquire(size);
+        let key = self.local.object_store.write(object)?;
+        self.catalog.write().insert(
+            key,
+            ObjectCatalogEntry {
+                size,
+                permit: Some(permit),
+            },
+        );
         Ok(key)
     }
 
@@ -152,12 +190,12 @@ impl TieredStorage {
             return Err(ObjectStoreError::UnknownObject(key));
         }
 
-        if let Some(object) = self.local.read(key)? {
+        if let Some(object) = self.local.object_store.read(key)? {
             return Ok(object);
         }
 
         if let Some(remote) = &self.remote
-            && let Some(object) = remote.read(key)?
+            && let Some(object) = remote.object_store.read(key)?
         {
             return Ok(object);
         }
@@ -201,11 +239,22 @@ impl TieredStorage {
 
         let store = FailingReads::default();
         let fail_reads = store.fail_reads.clone();
-        (Self::new(Box::new(store), None), fail_reads)
+        (
+            Self::empty(
+                BackingStore {
+                    object_store: Box::new(store),
+                    budget: ByteBudget::unlimited(),
+                },
+                None,
+            ),
+            fail_reads,
+        )
     }
 }
 
 #[derive(Debug)]
 struct ObjectCatalogEntry {
     size: u64,
+    #[allow(unused)]
+    permit: Option<BudgetPermit>,
 }

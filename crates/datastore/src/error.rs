@@ -1,3 +1,5 @@
+use std::io;
+
 use super::system_tables::SystemTable;
 use spacetimedb_lib::db::raw_def::{v9::RawSql, RawIndexDefV8};
 use spacetimedb_primitives::{ColId, IndexId, SequenceId, TableId, ViewId};
@@ -32,19 +34,16 @@ pub enum DatastoreError {
     // TODO(cloutiertyler): should this be a TableError? I couldn't get it to compile
     #[error("Error reading a value from a table through BSATN: {0}")]
     ReadViaBsatnError(#[from] ReadViaBsatnError),
-
     #[error("ViewError: {0}")]
     View(#[from] ViewError),
-
     #[error(transparent)]
     Page(#[from] PageError),
-
     #[error(transparent)]
     TableStorage(#[from] table::TableError),
-
     #[error(transparent)]
     Blob(#[from] BlobError),
-
+    #[error(transparent)]
+    Io(#[from] io::Error),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

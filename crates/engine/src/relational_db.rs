@@ -2,6 +2,7 @@ use crate::durability::{request_durability, spawn_close as spawn_durability_clos
 use crate::error::{DBError, RestoreSnapshotError};
 use crate::metrics::ExecutionCounters;
 use crate::metrics::ENGINE_METRICS;
+use crate::persistence::Persistent;
 use crate::resource::{DatabaseMemoryType, MemoryObservation, MemoryObserver};
 use crate::util::asyncify;
 use crate::MetricsRecorderQueue;
@@ -157,13 +158,12 @@ impl RelationalDB {
         database_identity: Identity,
         owner_identity: Identity,
         inner: Locking,
-        persistence: Option<Persistence>,
+        persistence: Option<Persistent>,
         metrics_recorder_queue: Option<MetricsRecorderQueue>,
     ) -> Self {
         let workload_type_to_exec_counters =
             Arc::new(EnumMap::from_fn(|ty| ExecutionCounters::new(&ty, &database_identity)));
-
-        let (durability, disk_size_fn, snapshot_worker, durability_runtime) = Persistence::unzip(persistence);
+        let (durability, disk_size_fn, snapshot_worker, durability_runtime) = Persistent::unzip(persistence);
 
         Self {
             inner,
@@ -285,18 +285,22 @@ impl RelationalDB {
         database_identity: Identity,
         owner_identity: Identity,
         history: impl durability::History<TxData = Txdata>,
-        mut persistence: Option<Persistence>,
+        persistence: Persistence,
         metrics_recorder_queue: Option<MetricsRecorderQueue>,
-        storage_config: TieredStorageConfig,
     ) -> Result<(Self, ConnectedClients), DBError> {
         log::trace!("[{database_identity}] DATABASE: OPEN");
+
+        let Persistence {
+            persistent,
+            table_storage,
+        } = persistence;
 
         // Check the latest durable TX and restore from a snapshot no newer than it,
         // so that you drop TXes which were committed but not durable before the restart.
         // TODO: delete or mark as invalid snapshots newer than this.
-        let durable_tx_offset = persistence
+        let durable_tx_offset = persistent
             .as_ref()
-            .map(|p| p.durable_tx_offset())
+            .map(|p| p.durability.durable_tx_offset().get())
             .transpose()?
             .flatten();
         let (min_commitlog_offset, max_commitlog_offset) = history.tx_range_hint();
@@ -305,24 +309,21 @@ impl RelationalDB {
 
         let start_time = std::time::Instant::now();
 
-        let snapshot_repo = persistence.as_ref().and_then(|p| p.snapshot_repo());
+        let snapshot_repo = Persistent::snapshots(&persistent).map(|worker| worker.snapshot_repo());
         let inner = Self::restore_from_snapshot_or_bootstrap(
             database_identity,
             snapshot_repo.as_deref(),
             durable_tx_offset,
             min_commitlog_offset,
-            storage_config,
+            table_storage,
         )?;
-        if let Some(persistence) = &mut persistence {
-            // Sanity check because the snapshot worker could've been used before.
+        // Sanity check because the snapshot worker could've been used before.
+        if let Some(snapshot_worker) = Persistent::snapshots(&persistent) {
             debug_assert!(
-                persistence
-                    .snapshot_repo()
-                    .map(|repo| repo.database_identity() == database_identity)
-                    .unwrap_or(true),
+                snapshot_worker.snapshot_repo().database_identity() == database_identity,
                 "snapshot repo does not match database identity",
             );
-            persistence.set_snapshot_state(inner.committed_state.clone());
+            snapshot_worker.set_state(inner.committed_state.clone());
         }
 
         apply_history(&inner, database_identity, history)?;
@@ -337,7 +338,7 @@ impl RelationalDB {
             database_identity,
             owner_identity,
             inner,
-            persistence,
+            persistent,
             metrics_recorder_queue,
         );
         if max_commitlog_offset.is_none() {
@@ -566,7 +567,7 @@ impl RelationalDB {
         snapshot_repo: Option<&DynSnapshotRepo>,
         durable_tx_offset: Option<TxOffset>,
         min_commitlog_offset: TxOffset,
-        config: TieredStorageConfig,
+        storage_config: TieredStorageConfig,
     ) -> Result<Locking, RestoreSnapshotError> {
         // Try to load the `ReconstructedSnapshot` at `snapshot_offset`.
         fn try_load_snapshot(
@@ -693,7 +694,12 @@ impl RelationalDB {
                     log::debug!("snapshot_offset={snapshot_offset} min_commitlog_offset={min_commitlog_offset}");
                     break;
                 }
-                match try_load_snapshot(&database_identity, snapshot_repo, snapshot_offset, &config.page_pool) {
+                match try_load_snapshot(
+                    &database_identity,
+                    snapshot_repo,
+                    snapshot_offset,
+                    &storage_config.page_pool,
+                ) {
                     Ok(snapshot) if snapshot.database_identity != database_identity => {
                         return Err(RestoreSnapshotError::IdentityMismatch {
                             expected: database_identity,
@@ -701,7 +707,7 @@ impl RelationalDB {
                         });
                     }
                     Ok(snapshot) => {
-                        return restore_from_snapshot(&database_identity, snapshot, config)
+                        return restore_from_snapshot(&database_identity, snapshot, storage_config)
                             .map_err(RestoreSnapshotError::Datastore);
                     }
                     Err(e) => {
@@ -738,7 +744,7 @@ impl RelationalDB {
             return Err(RestoreSnapshotError::NoConnectedSnapshot { min_commitlog_offset });
         }
 
-        Locking::bootstrap(database_identity, config)
+        Locking::bootstrap(database_identity, storage_config)
             .map_err(DBError::from)
             .map_err(Box::new)
             .map_err(RestoreSnapshotError::Bootstrap)
@@ -2232,20 +2238,16 @@ pub mod tests_utils {
                 rt.block_on(local_durability(root.clone(), runtime.clone(), snapshots.as_ref()))?;
 
             let persistence = Persistence {
-                durability: local.clone(),
-                disk_size: disk_size_fn,
-                snapshots,
-                runtime,
+                persistent: Some(Persistent {
+                    durability: local.clone(),
+                    disk_size: disk_size_fn,
+                    snapshots,
+                    runtime,
+                }),
+                table_storage: TieredStorageConfig::new_for_test(),
             };
 
-            let (db, _) = RelationalDB::open(
-                db_identity,
-                owner_identity,
-                local.as_history(),
-                Some(persistence),
-                None,
-                TieredStorageConfig::new_for_test(),
-            )?;
+            let (db, _) = RelationalDB::open(db_identity, owner_identity, local.as_history(), persistence, None)?;
             let db = db.with_row_count(Self::row_count_fn());
             Ok((db, local))
         }
@@ -2262,7 +2264,12 @@ pub mod tests_utils {
             history: impl durability::History<TxData = Txdata>,
             expected_num_clients: usize,
         ) -> Result<Self, DBError> {
-            let db = Self::open_db(history, None, None, expected_num_clients)?;
+            let db = Self::open_db(
+                history,
+                Persistence::ephemeral(TieredStorageConfig::new_for_test()),
+                None,
+                expected_num_clients,
+            )?;
             Ok(Self {
                 db: Arc::new(db),
                 durable: None,
@@ -2338,7 +2345,12 @@ pub mod tests_utils {
         }
 
         fn in_memory_internal() -> Result<RelationalDB, DBError> {
-            Self::open_db(EmptyHistory::new(), None, None, 0)
+            Self::open_db(
+                EmptyHistory::new(),
+                Persistence::ephemeral(TieredStorageConfig::new_for_test()),
+                None,
+                0,
+            )
         }
 
         fn durable_internal(
@@ -2356,20 +2368,21 @@ pub mod tests_utils {
             let runtime = Handle::tokio(rt.clone());
             let (local, disk_size_fn): (LocalDurability, DiskSizeFn) =
                 rt.block_on(local_durability(root.clone(), runtime.clone(), snapshots.as_ref()))?;
-            let persistence = Persistence {
-                durability: local.clone(),
-                disk_size: disk_size_fn,
+            let persistence = Persistence::persistent(
+                local.clone(),
+                disk_size_fn,
                 snapshots,
+                TieredStorageConfig::new_for_test(),
                 runtime,
-            };
-            let db = Self::open_db(local.as_history(), Some(persistence), None, 0)?;
+            );
+            let db = Self::open_db(local.as_history(), persistence, None, 0)?;
 
             Ok((db, local))
         }
 
         pub fn open_db(
             history: impl durability::History<TxData = Txdata>,
-            persistence: Option<Persistence>,
+            persistence: Persistence,
             metrics_recorder_queue: Option<MetricsRecorderQueue>,
             expected_num_clients: usize,
         ) -> Result<RelationalDB, DBError> {
@@ -2379,7 +2392,6 @@ pub mod tests_utils {
                 history,
                 persistence,
                 metrics_recorder_queue,
-                TieredStorageConfig::new_for_test(),
             )?;
             assert_eq!(connected_clients.len(), expected_num_clients);
             let db = db.with_row_count(Self::row_count_fn());
