@@ -37,11 +37,35 @@ export type PendingCallback = {
   cb: () => void;
 };
 
+// `Identity`, `ConnectionId`, `Timestamp`, `TimeDuration` and `Uuid` each wrap
+// one integer in a well-known field, and the host orders them by it.
+const specialProductFields = [
+  '__identity__',
+  '__connection_id__',
+  '__timestamp_micros_since_unix_epoch__',
+  '__time_duration_micros__',
+  '__uuid__',
+] as const;
+
+// Unwrap an index term to the integer the host orders it by. Comparing the
+// wrapper objects directly compares references and `toString` output.
+const comparableTerm = (value: any): any => {
+  if (value === null || typeof value !== 'object') return value;
+  for (const field of specialProductFields) {
+    const inner = value[field];
+    if (typeof inner === 'bigint') return inner;
+  }
+  return value;
+};
+
 // Strict scalar compare for index term values.
 const scalarCompare = (x: any, y: any): number => {
   if (x === y) return 0;
+  const lhs = comparableTerm(x);
+  const rhs = comparableTerm(y);
+  if (lhs === rhs) return 0;
   // Compare booleans/numbers/bigints/strings with JS ordering.
-  return x < y ? -1 : 1;
+  return lhs < rhs ? -1 : 1;
 };
 
 export type TableIndexView<
