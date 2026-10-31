@@ -2613,7 +2613,7 @@ impl MutTxId {
             self.get_or_create_insert_table_mut(table_id)?;
 
         // Find all indices matching these columns. Pre-validation guarantees non-empty.
-        let index_ids: Vec<_> = commit_table
+        let mut index_ids: Vec<_> = commit_table
             .get_indexes_by_cols(&col_list)
             .into_iter()
             .map(|(id, _)| id)
@@ -2622,6 +2622,9 @@ impl MutTxId {
             !index_ids.is_empty(),
             "pre-validation guaranteed at least one backing index",
         );
+        // Undo only indexes this constraint changes. Already-unique indexes
+        // must remain unique during both immediate undo and transaction rollback.
+        index_ids.retain(|id| !commit_table.indexes[id].is_unique());
 
         // Revert previously-made-unique `commit_table` and `tx_table` indices. Used on
         // both the committed-state duplicate path and the tx-state merge-conflict path

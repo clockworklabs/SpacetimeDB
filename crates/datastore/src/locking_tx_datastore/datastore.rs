@@ -2514,6 +2514,37 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn test_undo_preserves_pointer_map_after_index_addition() -> ResultTest<()> {
+        for unique in [false, true] {
+            let (datastore, mut tx, table_id) = setup_table_with_indices(vec![], vec![])?;
+            let original = u32_str_u32(1, "original", 30);
+            insert(&datastore, &mut tx, table_id, &original)?;
+            commit(&datastore, tx)?;
+
+            let mut tx = begin_mut_tx(&datastore);
+            let mut index = IndexSchema::for_test("temporary_index", BTreeAlgorithm::from(0));
+            index.table_id = table_id;
+            let index_id = datastore.create_index_mut_tx(&mut tx, index, unique)?;
+            assert_eq!(
+                tx.committed_state_write_lock.tables[&table_id].has_pointer_map(),
+                !unique
+            );
+            let _ = datastore.rollback_mut_tx(tx);
+
+            // Inspect committed state after full rollback, then exercise its
+            // duplicate detection rather than only checking catalog metadata.
+            let mut tx = begin_mut_tx(&datastore);
+            let table = &tx.committed_state_write_lock.tables[&table_id];
+            assert!(table.has_pointer_map(), "rollback lost the committed pointer map");
+            assert!(table.get_index_by_id(index_id).is_none());
+            insert(&datastore, &mut tx, table_id, &original)?;
+            assert_eq!(all_rows(&datastore, &tx, table_id), vec![original]);
+            let _ = datastore.rollback_mut_tx(tx);
+        }
+        Ok(())
+    }
+
+    #[test]
     fn test_create_drop_sequence_transactionality() -> ResultTest<()> {
         // Start a transaction. Schema changes empty so far.
         let datastore = get_datastore()?;
@@ -4324,6 +4355,40 @@ pub(crate) mod tests {
             result.is_ok(),
             "duplicate insert should succeed after rollback of unique constraint"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_undo_preserves_existing_index_uniqueness() -> ResultTest<()> {
+        let (datastore, mut tx, table_id) = setup_table_with_indices(
+            vec![IndexSchema::for_test("unique_index", BTreeAlgorithm::from(0))],
+            vec![ConstraintSchema::unique_for_test("original_constraint", 0u16)],
+        )?;
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "original", 30))?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        let index_id = tx.index_id_from_name("unique_index")?.unwrap();
+        let constraints_before = tx.committed_state_write_lock.tables[&table_id]
+            .get_schema()
+            .constraints
+            .clone();
+        let mut constraint = ConstraintSchema::unique_for_test("additional_constraint", 0u16);
+        constraint.table_id = table_id;
+        datastore.create_constraint_mut_tx(&mut tx, constraint)?;
+        let _ = datastore.rollback_mut_tx(tx);
+
+        // The original committed constraint and its enforcement must survive
+        // rolling back another constraint on the same columns.
+        let mut tx = begin_mut_tx(&datastore);
+        let table = &tx.committed_state_write_lock.tables[&table_id];
+        assert_eq!(table.get_schema().constraints, constraints_before);
+        assert!(table.get_index_by_id(index_id).unwrap().is_unique());
+        assert!(matches!(
+            insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "conflicting", 31)),
+            Err(DatastoreError::Index(IndexError::UniqueConstraintViolation(_)))
+        ));
+        let _ = datastore.rollback_mut_tx(tx);
         Ok(())
     }
 
