@@ -1204,18 +1204,15 @@ impl Table {
     }
 
     /// Finds the [`RowPointer`] to the row in `target_table` equal, if any,
-    /// to the row `needle_ptr` in `needle_table`,
+    /// to the already-loaded `needle`,
     /// by any unique index in `target_table`.
     ///
     /// # Safety
     ///
-    /// - `target_table` and `needle_table` must have the same `row_layout`.
-    /// - `needle_table.is_row_present(needle_ptr)` must hold.
+    /// `target_table` and `needle` must have the same row layout.
     unsafe fn find_same_row_via_unique_index(
         target_table: &Table,
-        needle_table: &Table,
-        needle_bs: &BlobSet,
-        needle_ptr: RowPointer,
+        needle: &RowRef<'_>,
     ) -> Result<Option<RowPointer>, TableError> {
         // Use some index (the one with the lowest `IndexId` currently).
         // TODO(centril): this isn't what we actually want.
@@ -1228,19 +1225,17 @@ impl Table {
             .expect("there should be at least one unique index");
         // Project the needle row to the columns of the index, and then seek.
         // As this is a unique index, there are 0-1 rows for this key.
-        // SAFETY: `needle_table.is_row_present(needle_ptr)` holds.
-        let needle_row = unsafe { needle_table.get_row_ref_unchecked(needle_bs, needle_ptr) }?;
         // SAFETY: Caller promised that the row layout of both tables are the same.
         // As `target_index` comes from `target_table`,
-        // it follows that `needle_row`'s type projected to `target_index`'s columns
+        // it follows that `needle`'s type projected to `target_index`'s columns
         // is the same as the index's key type.
-        let key = unsafe { target_index.key_from_row(&needle_row) };
+        let key = unsafe { target_index.key_from_row(needle) };
         if let Some(target_ptr) = target_index.seek_point(&key).next() {
             // SAFETY:
             // - Caller promised that the row layouts were the same.
             // - We know `target_ptr` exists, as it was in `target_index`, belonging to `target_table`.
-            // - Caller promised that `needle_ptr` is valid for `needle_table`.
-            if unsafe { Self::eq_row_in_page(target_table, target_ptr, needle_table, needle_ptr) }? {
+            // - `needle` retains access to its live row.
+            if unsafe { Self::eq_row_with_ref(target_table, target_ptr, needle) }? {
                 return Ok(Some(target_ptr));
             }
         }
@@ -1273,10 +1268,13 @@ impl Table {
         };
         let ptr = pinned_row.pointer();
 
-        // SAFETY:
-        // - `self` trivially has the same `row_layout` as `self`.
-        // - Caller promised that `self.is_row_present(row)` holds.
-        let existing_row = unsafe { Self::find_same_row_via_pointer_map(self, self, blobs, ptr, None) };
+        let existing_row = {
+            // Reuse the insertion's pins rather than loading its row and blobs again.
+            // SAFETY: The caller guarantees that this pinned row is live in self;
+            // searching that same table also guarantees matching row layouts.
+            let row = unsafe { self.get_row_ref_from_pinned_unchecked(pinned_row.clone()) };
+            unsafe { Self::find_same_row_via_pointer_map(self, &row, None) }
+        };
         if !matches!(&existing_row, Ok((_, None))) {
             // A duplicate row or lookup failure must undo the physical insertion.
             // The row is pinned, so this cannot fail due to page faults.
@@ -1313,8 +1311,21 @@ impl Table {
         self.pointer_map.as_ref().map_or(&[], |pm| pm.pointers_for(row_hash))
     }
 
+    fn find_same_row_in_bucket(
+        &self,
+        row_hash: RowHash,
+        mut same_row: impl FnMut(RowPointer) -> Result<bool, PageError>,
+    ) -> Result<Option<RowPointer>, PageError> {
+        for &ptr in self.pointers_for(row_hash) {
+            if same_row(ptr)? {
+                return Ok(Some(ptr));
+            }
+        }
+        Ok(None)
+    }
+
     /// Using the [`PointerMap`],
-    /// searches `target_table` for a row equal to `needle_table[needle_ptr]`.
+    /// searches `target_table` for a row equal to the already-loaded `needle`.
     ///
     /// Rows are compared for equality by [`eq_row_in_page`].
     ///
@@ -1332,38 +1343,48 @@ impl Table {
     ///
     /// # Safety
     ///
-    /// - `target_table` and `needle_table` must have the same `row_layout`.
-    /// - `needle_table.is_row_present(needle_ptr)`.
+    /// `target_table` and `needle` must have the same row layout.
     pub unsafe fn find_same_row_via_pointer_map(
         target_table: &Table,
-        needle_table: &Table,
-        needle_bs: &BlobSet,
-        needle_ptr: RowPointer,
+        needle: &RowRef<'_>,
         row_hash: Option<RowHash>,
     ) -> Result<(RowHash, Option<RowPointer>), TableError> {
-        let row_hash = match row_hash {
-            Some(hash) => hash,
-            None => {
-                // SAFETY: Caller promised that `needle_table.is_row_present(needle_ptr)`.
-                let row_ref = unsafe { needle_table.get_row_ref_unchecked(needle_bs, needle_ptr) }?;
-                row_ref.row_hash()
-            }
-        };
-
-        // Scan all the frow pointers with `row_hash` in the `committed_table`.
-        let mut row_ptr = None;
-        for target_ptr in target_table.pointers_for(row_hash).iter().copied() {
+        let row_hash = row_hash.unwrap_or_else(|| needle.row_hash());
+        let row_ptr = target_table.find_same_row_in_bucket(row_hash, |target_ptr| {
             // SAFETY:
             // - Caller promised that the row layouts were the same.
             // - We know `target_ptr` exists, as it was found in a pointer map.
-            // - Caller promised that `needle_ptr` is valid for `needle_table`.
-            if unsafe { Self::eq_row_in_page(target_table, target_ptr, needle_table, needle_ptr) }? {
-                row_ptr = Some(target_ptr);
-                break;
-            }
-        }
-
+            unsafe { Self::eq_row_with_ref(target_table, target_ptr, needle) }
+        })?;
         Ok((row_hash, row_ptr))
+    }
+
+    /// Compare with an already-loaded row without reacquiring its page or blobs.
+    /// Only loading the target page can fail; equality needs no target blob contents.
+    ///
+    /// # Safety
+    /// `target_ptr` must refer to a live row in `target_table`, with the same layout as `needle`.
+    unsafe fn eq_row_with_ref(
+        target_table: &Table,
+        target_ptr: RowPointer,
+        needle: &RowRef<'_>,
+    ) -> Result<bool, PageError> {
+        let (target_page, target_offset) = target_table.inner.page_and_offset(target_ptr)?;
+        let (needle_page, needle_offset) = needle.page_and_offset();
+        // SAFETY: The caller guarantees the target row and matching layouts;
+        // the RowRef guarantees that the needle is live and its data is available.
+        Ok(target_page.with_page(|target| {
+            needle_page.with_page(|needle| unsafe {
+                eq_row_in_page(
+                    target,
+                    needle,
+                    target_offset,
+                    needle_offset,
+                    &target_table.inner.row_layout,
+                    target_table.static_layout(),
+                )
+            })
+        }))
     }
 
     /// Returns whether the row `target_ptr` in `target_table`
@@ -1440,17 +1461,47 @@ impl Table {
         row_hash: Option<RowHash>,
     ) -> Result<(Option<RowHash>, Option<RowPointer>), TableError> {
         if target_table.pointer_map.is_some() {
-            // SAFETY: Caller promised that `target_table` and `needle_table` have the same `row_layout`.
-            // SAFETY: Caller promised that `needle_table.is_row_present(needle_ptr)`.
-            let (row_hash, row_ptr) = unsafe {
-                Self::find_same_row_via_pointer_map(target_table, needle_table, needle_bs, needle_ptr, row_hash)
-            }?;
+            // Keep pointer-only callers' acquisition behavior: a cached hash
+            // avoids loading needle blobs, and an empty bucket needs no page read.
+            let row_hash = match row_hash {
+                Some(hash) => hash,
+                None => {
+                    // SAFETY: The caller guarantees that the needle is live in needle_table.
+                    unsafe { needle_table.get_row_ref_unchecked(needle_bs, needle_ptr) }?.row_hash()
+                }
+            };
+            let row_ptr = target_table.find_same_row_in_bucket(row_hash, |target_ptr| {
+                // SAFETY: The caller guarantees the needle and matching layouts;
+                // the target pointer came from this table's pointer map.
+                unsafe { Self::eq_row_in_page(target_table, target_ptr, needle_table, needle_ptr) }
+            })?;
             Ok((Some(row_hash), row_ptr))
         } else {
             // SAFETY: Caller promised that `target_table` and `needle_table` have the same `row_layout`.
             // SAFETY: Caller promised that `needle_table.is_row_present(needle_ptr)`.
-            let row_ptr =
-                unsafe { Self::find_same_row_via_unique_index(target_table, needle_table, needle_bs, needle_ptr) }?;
+            let needle = unsafe { needle_table.get_row_ref_unchecked(needle_bs, needle_ptr) }?;
+            let row_ptr = unsafe { Self::find_same_row_via_unique_index(target_table, &needle) }?;
+            Ok((row_hash, row_ptr))
+        }
+    }
+
+    /// Search for an already-loaded row, reusing its page and blob pins.
+    /// Candidate-page reads remain fallible; no additional rows are pinned in advance.
+    ///
+    /// # Safety
+    /// `target_table` and `needle` must have the same row layout.
+    pub unsafe fn find_same_row_from_ref(
+        target_table: &Table,
+        needle: &RowRef<'_>,
+        row_hash: Option<RowHash>,
+    ) -> Result<(Option<RowHash>, Option<RowPointer>), TableError> {
+        if target_table.pointer_map.is_some() {
+            // SAFETY: Forward the caller's layout requirement.
+            let (row_hash, row_ptr) = unsafe { Self::find_same_row_via_pointer_map(target_table, needle, row_hash) }?;
+            Ok((Some(row_hash), row_ptr))
+        } else {
+            // SAFETY: Forward the caller's layout requirement.
+            let row_ptr = unsafe { Self::find_same_row_via_unique_index(target_table, needle) }?;
             Ok((row_hash, row_ptr))
         }
     }
@@ -1578,9 +1629,13 @@ impl Table {
     /// Deletes `row` from the table.
     ///
     /// This method does update statistics.
+    /// The existing pins keep the row's data resident, so deletion needs no storage I/O.
     ///
-    /// SAFETY: `self.is_row_present(row)` must hold.
-    unsafe fn delete_unchecked(&mut self, blobs: &BlobSet, row: PinnedRow) {
+    /// # Safety
+    ///
+    /// `row` must still be live in this table and retain the pins from its acquisition.
+    /// A pin prevents eviction; it does not prevent deletion or row-slot reuse.
+    pub unsafe fn delete_unchecked(&mut self, blobs: &BlobSet, row: PinnedRow) {
         // Delete row from indices.
         // Do this before the actual deletion, as `index.delete` needs a `RowRef`
         // so it can extract the appropriate value.
