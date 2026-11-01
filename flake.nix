@@ -20,7 +20,16 @@
       let
         pkgs = import nixpkgs {
           inherit system;
-          overlays = [(import rust-overlay)];
+          overlays = [
+            (import rust-overlay)
+            (final: prev: {
+              cacert = prev.cacert.override {
+                # Block both roots because the compromised eMudhra intermediate CAs
+                # can chain to either emSign's root or Comodo's AAA root.
+                blacklist = [ "emSign ECC Root CA - G3" "Comodo AAA Services root" ];
+              };
+            })
+          ];
         };
 
         inherit (pkgs) lib;
@@ -183,6 +192,9 @@
             #                   from include/jemalloc/internal/jemalloc_preamble.h:5,
             #                   from src/pac.c:1:
             CFLAGS = "-O";
+            # Make development tools and Nix downloads use the filtered CA bundle.
+            SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+            NIX_SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
 
             packages = [
               rustStable

@@ -73,8 +73,8 @@ jobs:
         with:
           ref: ${{ github.sha }}
 
-      - name: Check and update rustup
-        uses: ./.github/actions/ensure-rustup
+      - name: Set up certificate trust
+        uses: ./.github/actions/setup-certificate-trust
 
       - name: Checkout sources
         uses: actions/checkout@v4
@@ -244,8 +244,8 @@ jobs:
           ref: ${{ github.sha }}
 
       # Rustup comes from the job container, so updating the fleet VM image does not update it.
-      - name: Check and update rustup
-        uses: ./.github/actions/ensure-rustup
+      - name: Set up certificate trust
+        uses: ./.github/actions/setup-certificate-trust
 
       - name: Install iai-callgrind-runner
         run: cargo install --git https://github.com/clockworklabs/iai-callgrind.git --branch main iai-callgrind-runner
