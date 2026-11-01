@@ -503,13 +503,7 @@ function makeDbView<S extends UntypedSchemaDef>(
     Object.fromEntries(
       Object.values(schema.schemaType.tables).map(table => [
         table.accessorName,
-        makeTableView(
-          schema.typespace,
-          table.tableDef,
-          backend,
-          '',
-          table.isOutbox
-        ) as Table<any>,
+        makeTableView(schema.typespace, table.tableDef, backend) as Table<any>,
       ])
     )
   ) as DbView<S>;

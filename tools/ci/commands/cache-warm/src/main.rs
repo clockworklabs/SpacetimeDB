@@ -6,33 +6,29 @@ use duct::{cmd, Expression};
 use std::env;
 use std::ffi::OsString;
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tempfile::tempdir;
 
 #[derive(Parser)]
 #[command(about = "Warms the Rust caches used by CI runner images")]
-struct Args {
-    /// Clear CARGO_TARGET_DIR between population families and before seeding it.
-    #[arg(long)]
-    clear_target_dir: bool,
-}
+struct Args {}
 
 struct WarmRunner {
-    pass: String,
+    pass: &'static str,
     failures: Vec<String>,
 }
 
 impl WarmRunner {
     fn new() -> Self {
         Self {
-            pass: "setup".to_owned(),
+            pass: "setup",
             failures: Vec::new(),
         }
     }
 
-    fn set_pass(&mut self, pass: impl Into<String>) {
-        self.pass = pass.into();
+    fn set_pass(&mut self, pass: &'static str) {
+        self.pass = pass;
     }
 
     fn required<F>(&mut self, description: &str, action: F)
@@ -72,48 +68,53 @@ where
 {
     let command = cmd("cargo", args);
     if cfg!(target_os = "windows") {
-        command.env("OPENSSL_RUST_USE_NASM", "1").env("RUST_BACKTRACE", "full")
+        command
+            .env("CARGO_TARGET_DIR", "C:/actions-runner/_work/target")
+            .env("OPENSSL_RUST_USE_NASM", "1")
+            .env("RUST_BACKTRACE", "full")
     } else {
         command
     }
 }
 
+fn expected_target_dir() -> Result<PathBuf> {
+    if cfg!(target_os = "windows") {
+        return Ok(PathBuf::from(r"C:\actions-runner\_work\target"));
+    }
+    let home = env::var_os("HOME").context("HOME is not set")?;
+    Ok(PathBuf::from(home).join("actions-runner/_work/target"))
+}
+
 fn checked_target_dir() -> Result<PathBuf> {
-    let target =
-        PathBuf::from(env::var_os("CARGO_TARGET_DIR").context("--clear-target-dir requires CARGO_TARGET_DIR")?);
     ensure!(
-        target.is_absolute()
-            && target.file_name().is_some()
-            && !target
-                .components()
-                .any(|component| matches!(component, Component::ParentDir)),
-        "CARGO_TARGET_DIR must be an absolute, non-root path without '..'"
+        cfg!(any(target_os = "linux", target_os = "windows")),
+        "cache warming is supported only on Linux and Windows"
     );
-    let resolved = if target.exists() {
-        target.canonicalize()?
-    } else {
-        target
-            .parent()
-            .context("target has no parent")?
-            .canonicalize()?
-            .join(target.file_name().unwrap())
-    };
+    let expected = expected_target_dir()?;
+    if cfg!(target_os = "windows") {
+        ensure!(
+            !env::current_exe()?.starts_with(&expected),
+            "run cache warming without CARGO_TARGET_DIR set"
+        );
+        return Ok(expected);
+    }
+    let target = env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .context("CARGO_TARGET_DIR is not set")?;
     ensure!(
-        !env::current_dir()?.canonicalize()?.starts_with(&resolved),
-        "refusing to clear a target directory containing the repository"
+        target == expected,
+        "refusing to reset unexpected Cargo target {}; expected {}",
+        target.display(),
+        expected.display()
     );
-    ensure!(
-        !env::current_exe()?.canonicalize()?.starts_with(&resolved),
-        "run cache-warm from a separate Cargo --target-dir when clearing CARGO_TARGET_DIR"
-    );
-    Ok(resolved)
+    Ok(target)
 }
 
 fn reset_cargo_target(target: &Path) -> Result<()> {
     if target.exists() {
         fs::remove_dir_all(target).with_context(|| format!("failed to remove {}", target.display()))?;
     }
-    // Cargo must create the directory itself so it writes CACHEDIR.TAG.
+    fs::create_dir_all(target).with_context(|| format!("failed to create {}", target.display()))?;
     Ok(())
 }
 
@@ -176,26 +177,6 @@ fn warm_windows_runtime_builds(runner: &mut WarmRunner) {
             "spacetimedb-standalone/allow_loopback_http_for_tests",
         ]))
     });
-}
-
-fn warm_windows_package_build(runner: &mut WarmRunner) {
-    runner.required(
-        "Build release CLI, standalone and updater for x86_64-pc-windows-msvc",
-        || {
-            run(cargo([
-                "build",
-                "--release",
-                "--target",
-                "x86_64-pc-windows-msvc",
-                "-p",
-                "spacetimedb-cli",
-                "-p",
-                "spacetimedb-standalone",
-                "-p",
-                "spacetimedb-update",
-            ]))
-        },
-    );
 }
 
 fn warm_test_builds(runner: &mut WarmRunner) {
@@ -477,7 +458,6 @@ const FAMILIES: &[(&str, WarmFamily)] = &[
 const WINDOWS_FAMILIES: &[(&str, WarmFamily)] = &[
     ("runtime builds", warm_windows_runtime_builds),
     ("smoketest archive", warm_windows_smoketests),
-    ("package build", warm_windows_package_build),
 ];
 
 fn families() -> &'static [(&'static str, WarmFamily)] {
@@ -488,32 +468,51 @@ fn families() -> &'static [(&'static str, WarmFamily)] {
     }
 }
 
-fn populate_sccache(runner: &mut WarmRunner, target: Option<&Path>) -> Result<()> {
+fn populate_sccache(runner: &mut WarmRunner, target: &Path) -> Result<()> {
     for &(name, family) in families() {
         let started = Instant::now();
-        if let Some(target) = target {
-            // Force compiler invocations instead of Cargo Fresh reuse when requested.
-            reset_cargo_target(target)?;
-        }
-        runner.set_pass(format!("sccache population: {name}"));
+        reset_cargo_target(target)?;
+        runner.set_pass(match name {
+            "runtime builds" => "sccache population: runtime builds",
+            "test builds" => "sccache population: test builds",
+            "lint and docs builds" => "sccache population: lint and docs builds",
+            "local installs" => "sccache population: local installs",
+            "CI tools" => "sccache population: CI tools",
+            "independent modules" => "sccache population: independent modules",
+            "smoketest archive" => "sccache population: smoketest archive",
+            _ => unreachable!(),
+        });
         family(runner);
         eprintln!("[{}] completed in {}s", runner.pass, started.elapsed().as_secs());
     }
     Ok(())
 }
 
-fn seed_target(runner: &mut WarmRunner, target: Option<&Path>) -> Result<()> {
-    if let Some(target) = target {
-        reset_cargo_target(target)?;
-    }
-    // Retain one combined target, including native outputs sccache cannot cache.
+fn seed_target(runner: &mut WarmRunner, target: &Path) -> Result<()> {
+    reset_cargo_target(target)?;
     for &(name, family) in families() {
         let started = Instant::now();
-        runner.set_pass(format!("target seed: {name}"));
+        runner.set_pass(match name {
+            "runtime builds" => "target seed: runtime builds",
+            "test builds" => "target seed: test builds",
+            "lint and docs builds" => "target seed: lint and docs builds",
+            "local installs" => "target seed: local installs",
+            "CI tools" => "target seed: CI tools",
+            "independent modules" => "target seed: independent modules",
+            "smoketest archive" => "target seed: smoketest archive",
+            _ => unreachable!(),
+        });
         family(runner);
         eprintln!("[{}] completed in {}s", runner.pass, started.elapsed().as_secs());
     }
     Ok(())
+}
+
+fn ensure_cargo_nextest() -> Result<()> {
+    if cargo(["nextest", "--version"]).unchecked().run()?.status.success() {
+        return Ok(());
+    }
+    run(cargo(["install", "--locked", "cargo-nextest"]).env_remove("CARGO_TARGET_DIR"))
 }
 
 fn warm_smoketest_archive() -> Result<()> {
@@ -538,20 +537,17 @@ fn warm_smoketest_archive() -> Result<()> {
 }
 
 fn warm_windows_smoketests(runner: &mut WarmRunner) {
+    runner.required("Install cargo-nextest", ensure_cargo_nextest);
     runner.required("Build smoketest archive", warm_smoketest_archive);
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    Args::parse();
     ensure!(
         Path::new("Cargo.toml").is_file(),
         "run this command from the repository root"
     );
-    let target = args.clear_target_dir.then(checked_target_dir).transpose()?;
-    ensure!(
-        cfg!(any(target_os = "linux", target_os = "windows")),
-        "cache warming is supported only on Linux and Windows"
-    );
+    let target = checked_target_dir()?;
     let mut runner = WarmRunner::new();
 
     runner.set_pass("dependency fetch");
@@ -565,11 +561,12 @@ fn main() -> Result<()> {
         )
     });
 
-    populate_sccache(&mut runner, target.as_deref())?;
-    seed_target(&mut runner, target.as_deref())?;
+    populate_sccache(&mut runner, &target)?;
+    seed_target(&mut runner, &target)?;
 
     if cfg!(target_os = "linux") {
         runner.set_pass("target seed: smoketests");
+        runner.required("Install cargo-nextest", ensure_cargo_nextest);
         runner.required("Build standalone smoketest archive", warm_smoketest_archive);
     }
     runner.finish()

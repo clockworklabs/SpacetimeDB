@@ -23,7 +23,6 @@ mod cluster {
     mod filtering;
     mod http_egress;
     mod http_routes;
-    mod idc;
     mod logs_level_filter;
     mod module_nested_op;
     mod modules;

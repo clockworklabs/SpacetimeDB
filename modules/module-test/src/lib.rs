@@ -11,7 +11,6 @@ use spacetimedb::{
 use spacetimedb::{log, ProcedureContext};
 
 pub mod environment;
-pub mod idc;
 
 pub type TestAlias = TestA;
 

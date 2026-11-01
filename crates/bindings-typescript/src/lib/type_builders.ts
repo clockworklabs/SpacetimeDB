@@ -213,11 +213,6 @@ export class TypeBuilder<Type, SpacetimeType extends AlgebraicType>
     return new OptionBuilder(this);
   }
 
-  /** Match this column to a receiver parameter in an outbox table. */
-  param<const Name extends string>(opts: { name: Name }) {
-    return new ColumnBuilder(this, { paramName: opts.name });
-  }
-
   serialize(writer: BinaryWriter, value: Type): void {
     const serialize = (this.serialize = AlgebraicType.makeSerializer(
       this.algebraicType
@@ -1807,52 +1802,40 @@ export class ScheduleAtBuilder
   }
 }
 
-export class IdentityBuilder<Type extends Identity = Identity>
-  extends TypeBuilder<Type, IdentityAlgebraicType>
+export class IdentityBuilder
+  extends TypeBuilder<Identity, IdentityAlgebraicType>
   implements
-    Indexable<Type, IdentityAlgebraicType>,
-    Uniqueable<Type, IdentityAlgebraicType>,
-    PrimaryKeyable<Type, IdentityAlgebraicType>,
-    Defaultable<Type, IdentityAlgebraicType>,
-    Nameable<Type, IdentityAlgebraicType>
+    Indexable<Identity, IdentityAlgebraicType>,
+    Uniqueable<Identity, IdentityAlgebraicType>,
+    PrimaryKeyable<Identity, IdentityAlgebraicType>,
+    Defaultable<Identity, IdentityAlgebraicType>,
+    Nameable<Identity, IdentityAlgebraicType>
 {
   constructor() {
     super(Identity.getAlgebraicType());
   }
-  /** Marks the destination database column of an IDC outbox. */
-  target(): IdentityColumnBuilder<{ isTarget: true }, Type> {
-    return new IdentityColumnBuilder(this, { isTarget: true });
-  }
   index(): IdentityColumnBuilder<
-    SetField<DefaultMetadata, 'indexType', 'btree'>,
-    Type
+    SetField<DefaultMetadata, 'indexType', 'btree'>
   >;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
-  ): IdentityColumnBuilder<SetField<DefaultMetadata, 'indexType', N>, Type>;
+  ): IdentityColumnBuilder<SetField<DefaultMetadata, 'indexType', N>>;
   index(
     algorithm: IndexTypes = 'btree'
-  ): IdentityColumnBuilder<
-    SetField<DefaultMetadata, 'indexType', IndexTypes>,
-    Type
-  > {
+  ): IdentityColumnBuilder<SetField<DefaultMetadata, 'indexType', IndexTypes>> {
     return new IdentityColumnBuilder(
       this,
       set(defaultMetadata, { indexType: algorithm })
     );
   }
-  unique(): IdentityColumnBuilder<
-    SetField<DefaultMetadata, 'isUnique', true>,
-    Type
-  > {
+  unique(): IdentityColumnBuilder<SetField<DefaultMetadata, 'isUnique', true>> {
     return new IdentityColumnBuilder(
       this,
       set(defaultMetadata, { isUnique: true })
     );
   }
   primaryKey(): IdentityColumnBuilder<
-    SetField<DefaultMetadata, 'isPrimaryKey', true>,
-    Type
+    SetField<DefaultMetadata, 'isPrimaryKey', true>
   > {
     return new IdentityColumnBuilder(
       this,
@@ -1860,8 +1843,7 @@ export class IdentityBuilder<Type extends Identity = Identity>
     );
   }
   autoInc(): IdentityColumnBuilder<
-    SetField<DefaultMetadata, 'isAutoIncrement', true>,
-    Type
+    SetField<DefaultMetadata, 'isAutoIncrement', true>
   > {
     return new IdentityColumnBuilder(
       this,
@@ -1869,10 +1851,9 @@ export class IdentityBuilder<Type extends Identity = Identity>
     );
   }
   default(
-    value: Type
+    value: Identity
   ): IdentityColumnBuilder<
-    SetField<DefaultMetadata, 'defaultValue', Type>,
-    Type
+    SetField<DefaultMetadata, 'defaultValue', Identity>
   > {
     return new IdentityColumnBuilder(
       this,
@@ -1881,7 +1862,7 @@ export class IdentityBuilder<Type extends Identity = Identity>
   }
   name<const Name extends string>(
     name: Name
-  ): IdentityColumnBuilder<SetField<DefaultMetadata, 'name', Name>, Type> {
+  ): IdentityColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
     return new IdentityColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
@@ -2167,11 +2148,9 @@ export type ColumnMetadata<Type = any> = {
   isPrimaryKey?: true;
   isUnique?: true;
   isAutoIncrement?: true;
-  isTarget?: true;
   indexType?: IndexTypes;
   defaultValue?: Type;
   name?: string;
-  paramName?: string;
 };
 
 /**
@@ -2207,14 +2186,6 @@ export class ColumnBuilder<
   constructor(typeBuilder: TypeBuilder<Type, SpacetimeType>, metadata: M) {
     this.typeBuilder = typeBuilder;
     this.columnMetadata = metadata;
-  }
-
-  /** Match this column to a receiver parameter in an outbox table. */
-  param<const Name extends string>(opts: { name: Name }) {
-    return new ColumnBuilder(
-      this.typeBuilder,
-      set(this.columnMetadata, { paramName: opts.name })
-    );
   }
 
   serialize(writer: BinaryWriter, value: Type): void {
@@ -3449,50 +3420,43 @@ export class ScheduleAtColumnBuilder<
 }
 
 export class IdentityColumnBuilder<
-    M extends ColumnMetadata<Type> = DefaultMetadata,
-    Type extends Identity = Identity,
+    M extends ColumnMetadata<Identity> = DefaultMetadata,
   >
-  extends ColumnBuilder<Type, IdentityAlgebraicType, M>
+  extends ColumnBuilder<Identity, IdentityAlgebraicType, M>
   implements
-    Indexable<Type, IdentityAlgebraicType>,
-    Uniqueable<Type, IdentityAlgebraicType>,
-    PrimaryKeyable<Type, IdentityAlgebraicType>,
-    Defaultable<Type, IdentityAlgebraicType>,
-    Nameable<Type, IdentityAlgebraicType>
+    Indexable<Identity, IdentityAlgebraicType>,
+    Uniqueable<Identity, IdentityAlgebraicType>,
+    PrimaryKeyable<Identity, IdentityAlgebraicType>,
+    Defaultable<Identity, IdentityAlgebraicType>,
+    Nameable<Identity, IdentityAlgebraicType>
 {
-  target(): IdentityColumnBuilder<SetField<M, 'isTarget', true>, Type> {
-    return new IdentityColumnBuilder(
-      this.typeBuilder,
-      set(this.columnMetadata, { isTarget: true })
-    );
-  }
-  index(): IdentityColumnBuilder<SetField<M, 'indexType', 'btree'>, Type>;
+  index(): IdentityColumnBuilder<SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
-  ): IdentityColumnBuilder<SetField<M, 'indexType', N>, Type>;
+  ): IdentityColumnBuilder<SetField<M, 'indexType', N>>;
   index(
     algorithm: IndexTypes = 'btree'
-  ): IdentityColumnBuilder<SetField<M, 'indexType', IndexTypes>, Type> {
+  ): IdentityColumnBuilder<SetField<M, 'indexType', IndexTypes>> {
     return new IdentityColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { indexType: algorithm })
     );
   }
-  unique(): IdentityColumnBuilder<SetField<M, 'isUnique', true>, Type> {
+  unique(): IdentityColumnBuilder<SetField<M, 'isUnique', true>> {
     return new IdentityColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isUnique: true })
     );
   }
-  primaryKey(): IdentityColumnBuilder<SetField<M, 'isPrimaryKey', true>, Type> {
+  primaryKey(): IdentityColumnBuilder<SetField<M, 'isPrimaryKey', true>> {
     return new IdentityColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { isPrimaryKey: true })
     );
   }
   default(
-    value: Type
-  ): IdentityColumnBuilder<SetField<M, 'defaultValue', Type>, Type> {
+    value: Identity
+  ): IdentityColumnBuilder<SetField<M, 'defaultValue', Identity>> {
     return new IdentityColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { defaultValue: value })
@@ -3500,7 +3464,7 @@ export class IdentityColumnBuilder<
   }
   name<const Name extends string>(
     name: Name
-  ): IdentityColumnBuilder<SetField<M, 'name', Name>, Type> {
+  ): IdentityColumnBuilder<SetField<M, 'name', Name>> {
     return new IdentityColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { name })

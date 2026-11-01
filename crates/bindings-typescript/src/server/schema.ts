@@ -112,10 +112,6 @@ export class SchemaInner<
   httpHandlerExports: Map<HttpHandlerExport<UntypedSchemaDef>, string> =
     new Map();
   pendingSchedules: PendingSchedule[] = [];
-  pendingOutboxCallbacks: {
-    table: UntypedTableSchema;
-    functionName: string;
-  }[] = [];
   pendingHttpRoutes: PendingHttpRoute[] = [];
   submoduleDispatchInfos: SubmoduleDispatchInfo[] = [];
 
@@ -177,8 +173,6 @@ export class SchemaInner<
         );
       }
 
-      if (table.outbox)
-        throw new TypeError('Outbox tables cannot be scheduled');
       const scheduleAtCol = knownScheduleAtCol ?? table.scheduleAtCol;
       if (scheduleAtCol === undefined) {
         throw new TypeError(
@@ -208,28 +202,6 @@ export class SchemaInner<
         scheduleAtCol,
         functionName,
       });
-    }
-  }
-
-  resolveOutboxCallbacks() {
-    for (const { table, functionName } of this.pendingOutboxCallbacks) {
-      const names = this.tableSourceNames.get(table);
-      if (names?.length !== 1) {
-        throw new TypeError(
-          'onResult must reference an outbox registered exactly once in this schema'
-        );
-      }
-      const outbox = this.moduleDef.outboxes.find(
-        o => o.tableName === names[0]
-      );
-      if (!outbox) throw new TypeError('onResult requires an outbox table');
-      if (
-        outbox.onResultReducer !== undefined &&
-        outbox.onResultReducer !== functionName
-      ) {
-        throw new TypeError('An outbox can only have one onResult reducer');
-      }
-      outbox.onResultReducer = functionName;
     }
   }
 
@@ -336,7 +308,6 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
       ignoreNonModuleExports: opts?.ignoreNonModuleExports ?? false,
     });
     this.#ctx.resolveSchedules();
-    this.#ctx.resolveOutboxCallbacks();
     return this.#ctx.rawModuleDefV10();
   }
 
@@ -1006,13 +977,6 @@ export function schema<
         tableSourceNames.push(tableDef.sourceName);
       }
       ctx.moduleDef.tables.push(tableDef);
-      if (table.outbox) {
-        ctx.moduleDef.outboxes.push({
-          ...table.outbox,
-          tableName: tableDef.sourceName,
-          onResultReducer: undefined,
-        });
-      }
       if (table.schedule) {
         ctx.pendingSchedules.push({
           table,

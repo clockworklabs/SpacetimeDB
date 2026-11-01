@@ -13,7 +13,7 @@ Get a SpacetimeDB Svelte app running in under 5 minutes.
 
 ## Prerequisites
 
-- A recent version of [Node.js](https://nodejs.org/) 22, 24, or 26 or later
+- [Node.js](https://nodejs.org/) 18+ installed
 - [SpacetimeDB CLI](https://spacetimedb.com/install) installed
 
 <InstallCardLink />
