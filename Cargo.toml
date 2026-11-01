@@ -215,7 +215,10 @@ base64 = "0.21.2"
 bigdecimal = "0.4.7"
 bitflags = "2.3.3"
 blake3 = "1.5.1"
-brotli = "3.5"
+# `ffi-api` (on by default) exports `Brotli*` C symbols from any `cdylib` that
+# links this crate, which clashes with host processes that also load libcrypto.
+# Only the Rust API is used, so keep the defaults off. See #6430.
+brotli = { version = "3.5", default-features = false, features = ["std"] }
 bytemuck = { version = "1.16.2", features = ["must_cast"] }
 bytes = "1.10.1"
 bytestring = { version = "1.2.0", features = ["serde"] }
