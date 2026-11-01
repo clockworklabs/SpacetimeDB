@@ -791,9 +791,9 @@ importers:
     devDependencies:
       '@types/bun':
         specifier: latest
-        version: 1.4.3
+        version: 1.4.4
       bun:
-        specifier: ^1.3.2
+        specifier: ^1.4.4
         version: 1.4.4
       typescript:
         specifier: ~5.6.2
@@ -937,7 +937,7 @@ importers:
         specifier: ^12.4.1
         version: 12.11.1
       bun:
-        specifier: ^1.3.2
+        specifier: ^1.4.4
         version: 1.4.4
       cac:
         specifier: ^7.0.0
@@ -7352,6 +7352,9 @@ packages:
 
   '@types/bun@1.4.3':
     resolution: {integrity: sha512-N67Pqy8JXbAY/j0tNraS3V5mubGvc6rrrNDmDCtZLlFzccbUJPDb0tvgUBC5q4m8ybkP93Jcn1QB+RYQ6PvBhw==}
+
+  '@types/bun@1.4.4':
+    resolution: {integrity: sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ==}
 
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
@@ -23821,6 +23824,10 @@ snapshots:
   '@types/bun@1.4.3':
     dependencies:
       bun-types: 1.4.3
+
+  '@types/bun@1.4.4':
+    dependencies:
+      bun-types: 1.4.4
 
   '@types/chai@5.2.3':
     dependencies:

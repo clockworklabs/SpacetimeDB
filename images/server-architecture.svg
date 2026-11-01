@@ -1,0 +1,224 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1400" viewBox="0 0 1600 1400" role="img" aria-labelledby="title desc">
+  <title id="title">SpacetimeDB server architecture</title>
+  <desc id="desc">Clients reach SpacetimeDB Standalone over HTTP, WebSocket, or the Postgres wire protocol. Network handling, the control database, and background workers run on a shared Tokio runtime. Each database runs its module, datastore, and query engine on one thread pinned to a core. Committed transactions go to the commitlog on disk and to subscription evaluation, which pushes updates back to clients.</desc>
+  <style>
+    text { font-family: Inter, 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    .title { font-size: 30px; font-weight: 700; fill: #e6e9f0; }
+    .subtitle { font-size: 16px; fill: #b6c0cf; }
+    .h { font-size: 17px; font-weight: 600; fill: #e6e9f0; }
+    .h2 { font-size: 15px; font-weight: 600; fill: #e6e9f0; }
+    .b { font-size: 13.5px; fill: #b6c0cf; }
+    .tag { font-family: 'Source Code Pro', 'Source Code Pro Variable', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; fill: #6f7987; }
+    .pill { font-family: 'Source Code Pro', 'Source Code Pro Variable', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; fill: #e6e9f0; }
+    .band { font-size: 12.5px; font-weight: 700; letter-spacing: 1.6px; }
+    .bandsub { font-weight: 400; letter-spacing: 0; fill: #b6c0cf; }
+    .node { font-size: 12.5px; font-weight: 700; letter-spacing: 1.6px; fill: #b6c0cf; }
+    .al { font-size: 13px; fill: #b6c0cf; }
+    .alg { font-size: 13px; font-weight: 600; fill: #4cf490; }
+    .num { font-size: 13px; font-weight: 700; fill: #0b0e12; }
+    .or { font-size: 13px; font-style: italic; fill: #6f7987; }
+    .hot { fill: none; stroke: #4cf490; stroke-width: 2.25; stroke-linejoin: round; }
+    .cold { fill: none; stroke: #6f7987; stroke-width: 1.75; stroke-linejoin: round; }
+  </style>
+  <defs>
+    <marker id="ge" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#4cf490"/></marker>
+    <marker id="gs" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M10 0 L0 5 L10 10 z" fill="#4cf490"/></marker>
+    <marker id="ne" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#6f7987"/></marker>
+    <marker id="ns" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M10 0 L0 5 L10 10 z" fill="#6f7987"/></marker>
+  </defs>
+
+  <!-- Card -->
+  <rect x="0" y="0" width="1600" height="1400" rx="24" fill="#202126" stroke="#202126" stroke-width="0"/>
+  <text x="60" y="66" class="title">SpacetimeDB Standalone architecture</text>
+  <text x="60" y="96" class="subtitle">What runs inside the spacetimedb-standalone process. Green arrows follow a reducer call.</text>
+
+  <!-- Clients -->
+  <rect x="560" y="124" width="164" height="64" rx="10" fill="none" stroke="#6f7987" stroke-width="1.5"/>
+  <text x="642.0" y="152" class="h2" text-anchor="middle">spacetime CLI</text>
+  <text x="642.0" y="173" class="tag" text-anchor="middle">HTTP</text>
+  <rect x="836" y="124" width="164" height="64" rx="10" fill="none" stroke="#6f7987" stroke-width="1.5"/>
+  <text x="918.0" y="152" class="h2" text-anchor="middle">Client SDKs</text>
+  <text x="918.0" y="173" class="tag" text-anchor="middle">WebSocket, HTTP</text>
+  <rect x="1160" y="124" width="232" height="64" rx="10" fill="none" stroke="#6f7987" stroke-width="1.5"/>
+  <text x="1276.0" y="152" class="h2" text-anchor="middle">Postgres clients</text>
+  <text x="1276.0" y="173" class="tag" text-anchor="middle">pgwire</text>
+
+  <!-- Process -->
+  <rect x="40" y="224" width="1520" height="1038" rx="20" fill="none" stroke="#363840" stroke-width="1.5"/>
+  <text x="64" y="250" class="node">SPACETIMEDB STANDALONE</text>
+  <text x="290" y="250" class="al">one process</text>
+
+  <!-- Tokio runtime: network and control plane -->
+  <rect x="64" y="268" width="1472" height="372" rx="16" fill="#fbdc8e" fill-opacity="0.06" stroke="#fbdc8e" stroke-opacity="0.45" stroke-width="1.5"/>
+  <text x="88" y="296" class="band" fill="#fbdc8e">TOKIO RUNTIME<tspan class="bandsub" dx="12">async tasks on the shared worker cores</tspan></text>
+  <rect x="88" y="312" width="312" height="140" rx="10" fill="#18191d" stroke="#363840" stroke-width="1.5"/>
+  <text x="106" y="342" class="h">ControlDB</text>
+  <text x="384" y="342" class="tag" text-anchor="end">sled</text>
+  <text x="106" y="366" class="b">Databases, owners, and names</text>
+  <text x="106" y="385" class="b">Replicas and energy budgets</text>
+  <rect x="460" y="312" width="500" height="140" rx="10" fill="#18191d" stroke="#363840" stroke-width="1.5"/>
+  <text x="478" y="342" class="h">HTTP and WebSocket API</text>
+  <text x="944" y="342" class="tag" text-anchor="end">client-api</text>
+  <text x="478" y="366" class="tag">/v1/database/:name/…</text>
+  <rect x="478" y="380" width="196" height="28" rx="14" fill="#2b2c33" stroke="#363840" stroke-width="1"/>
+  <text x="576.0" y="399" class="pill" text-anchor="middle">/subscribe  WebSocket</text>
+  <rect x="686" y="380" width="150" height="28" rx="14" fill="#2b2c33" stroke="#363840" stroke-width="1"/>
+  <text x="761.0" y="399" class="pill" text-anchor="middle">/call/:reducer</text>
+  <rect x="848" y="380" width="64" height="28" rx="14" fill="#2b2c33" stroke="#363840" stroke-width="1"/>
+  <text x="880.0" y="399" class="pill" text-anchor="middle">/sql</text>
+  <rect x="478" y="414" width="124" height="28" rx="14" fill="#2b2c33" stroke="#363840" stroke-width="1"/>
+  <text x="540.0" y="433" class="pill" text-anchor="middle">PUT  publish</text>
+  <rect x="614" y="414" width="286" height="28" rx="14" fill="#2b2c33" stroke="#363840" stroke-width="1"/>
+  <text x="757.0" y="433" class="pill" text-anchor="middle">logs, schema, names, identity, …</text>
+  <rect x="1040" y="312" width="472" height="140" rx="10" fill="#18191d" stroke="#363840" stroke-width="1.5"/>
+  <text x="1058" y="342" class="h">Postgres wire server</text>
+  <text x="1496" y="342" class="tag" text-anchor="end">pg</text>
+  <text x="1058" y="366" class="b">Authenticates the client, then passes</text>
+  <text x="1058" y="385" class="b">each query to the /sql handler</text>
+  <rect x="88" y="500" width="312" height="96" rx="10" fill="#18191d" stroke="#363840" stroke-width="1.5"/>
+  <text x="106" y="530" class="h">HostController</text>
+  <text x="384" y="530" class="tag" text-anchor="end">core::host</text>
+  <text x="106" y="554" class="b">Starts, updates, and stops</text>
+  <text x="106" y="573" class="b">one host per database</text>
+  <rect x="1160" y="500" width="352" height="96" rx="10" fill="#18191d" stroke="#363840" stroke-width="1.5"/>
+  <text x="1178" y="530" class="h">Send worker</text>
+  <text x="1496" y="530" class="tag" text-anchor="end">per database</text>
+  <text x="1178" y="554" class="b">Batches each client&#x27;s updates and</text>
+  <text x="1178" y="573" class="b">hands them to its WebSocket</text>
+
+  <!-- Per-database thread -->
+  <rect x="64" y="668" width="1472" height="392" rx="16" fill="#a880ff" fill-opacity="0.06" stroke="#a880ff" stroke-opacity="0.45" stroke-width="1.5"/>
+  <text x="1058" y="696" class="band" fill="#a880ff">DATABASE THREAD<tspan class="bandsub" dx="12">one per database, pinned to a core</tspan></text>
+  <rect x="88" y="712" width="912" height="160" rx="10" fill="#18191d" stroke="#363840" stroke-width="1.5"/>
+  <text x="106" y="744" class="h">ModuleHost</text>
+  <text x="106" y="768" class="b">One queue of work for this database:</text>
+  <text x="216" y="744" class="tag">core::host</text>
+  <rect x="106" y="778" width="82" height="28" rx="14" fill="#2b2c33" stroke="#363840" stroke-width="1"/>
+  <text x="147.0" y="797" class="pill" text-anchor="middle">reducers</text>
+  <rect x="196" y="778" width="88" height="28" rx="14" fill="#2b2c33" stroke="#363840" stroke-width="1"/>
+  <text x="240.0" y="797" class="pill" text-anchor="middle">subscribe</text>
+  <rect x="292" y="778" width="48" height="28" rx="14" fill="#2b2c33" stroke="#363840" stroke-width="1"/>
+  <text x="316.0" y="797" class="pill" text-anchor="middle">SQL</text>
+  <rect x="348" y="778" width="90" height="28" rx="14" fill="#2b2c33" stroke="#363840" stroke-width="1"/>
+  <text x="393.0" y="797" class="pill" text-anchor="middle">schedules</text>
+  <rect x="106" y="818" width="334" height="36" rx="8" fill="#2b2c33" stroke="#363840" stroke-width="1"/>
+  <circle cx="126" cy="836" r="11" fill="#4cf490"/>
+  <text x="126" y="840.5" class="num" text-anchor="middle">4</text>
+  <text x="146" y="841" class="b">re-run views the tx touched</text>
+  <rect x="548" y="732" width="200" height="120" rx="10" fill="#2b2c33" stroke="#6f7987" stroke-width="1.5"/>
+  <text x="566" y="762" class="h2">Wasm instance</text>
+  <text x="566" y="786" class="b">wasmtime</text>
+  <text x="566" y="805" class="b">Rust, C#, C++</text>
+  <text x="766" y="798" class="or" text-anchor="middle">or</text>
+  <rect x="784" y="732" width="196" height="120" rx="10" fill="#2b2c33" stroke="#6f7987" stroke-width="1.5"/>
+  <text x="802" y="762" class="h2">V8 isolate</text>
+  <text x="802" y="786" class="b">TypeScript</text>
+  <rect x="460" y="900" width="540" height="136" rx="10" fill="#18191d" stroke="#363840" stroke-width="1.5"/>
+  <text x="478" y="928" class="h">RelationalDB</text>
+  <text x="984" y="928" class="tag" text-anchor="end">engine</text>
+  <rect x="480" y="944" width="500" height="80" rx="10" fill="#2b2c33" stroke="#6f7987" stroke-width="1.5"/>
+  <text x="498" y="970" class="h2">Datastore</text>
+  <text x="964" y="970" class="tag" text-anchor="end">datastore</text>
+  <text x="498" y="994" class="b">Tables and indexes, fully in memory. Rebuilt at</text>
+  <text x="498" y="1013" class="b">startup from a snapshot plus commitlog replay.</text>
+  <rect x="1040" y="712" width="472" height="324" rx="10" fill="#18191d" stroke="#363840" stroke-width="1.5"/>
+  <text x="1058" y="744" class="h">Query engine</text>
+  <rect x="1060" y="764" width="400" height="82" rx="10" fill="#2b2c33" stroke="#6f7987" stroke-width="1.5"/>
+  <text x="1078" y="790" class="h2">SQL</text>
+  <text x="1078" y="814" class="b">One-off queries and DML from /sql,</text>
+  <text x="1078" y="833" class="b">pgwire, and the WebSocket</text>
+  <text x="1060" y="880" class="tag">sql-parser → expr → physical-plan → execution</text>
+  <rect x="1060" y="944" width="400" height="80" rx="10" fill="#2b2c33" stroke="#6f7987" stroke-width="1.5"/>
+  <text x="1078" y="970" class="h2">Subscriptions</text>
+  <text x="1444" y="970" class="tag" text-anchor="end">subscription</text>
+  <text x="1078" y="994" class="b">Incrementally evaluated against</text>
+  <text x="1078" y="1013" class="b">each commit&#x27;s TxData</text>
+
+  <!-- Tokio runtime: per-database background workers -->
+  <rect x="64" y="1088" width="1472" height="150" rx="16" fill="#fbdc8e" fill-opacity="0.06" stroke="#fbdc8e" stroke-opacity="0.45" stroke-width="1.5"/>
+  <text x="1058" y="1116" class="band" fill="#fbdc8e">TOKIO RUNTIME<tspan class="bandsub" dx="12">per-database background workers</tspan></text>
+  <rect x="88" y="1132" width="148" height="82" rx="10" fill="#18191d" stroke="#363840" stroke-width="1.5"/>
+  <text x="106" y="1162" class="h">Scheduler</text>
+  <text x="106" y="1186" class="b">Timers for rows in</text>
+  <text x="106" y="1204" class="b">schedule tables</text>
+  <rect x="252" y="1132" width="148" height="82" rx="10" fill="#18191d" stroke="#363840" stroke-width="1.5"/>
+  <text x="270" y="1162" class="h">IDC actor</text>
+  <text x="270" y="1186" class="b">Sends outbox rows</text>
+  <text x="270" y="1204" class="b">to other databases</text>
+  <rect x="460" y="1132" width="256" height="82" rx="10" fill="#18191d" stroke="#363840" stroke-width="1.5"/>
+  <text x="478" y="1162" class="h">Durability worker</text>
+  <text x="700" y="1162" class="tag" text-anchor="end">durability</text>
+  <text x="478" y="1186" class="b">Appends each commit</text>
+  <rect x="744" y="1132" width="256" height="82" rx="10" fill="#18191d" stroke="#363840" stroke-width="1.5"/>
+  <text x="762" y="1162" class="h">Snapshot worker</text>
+  <text x="984" y="1162" class="tag" text-anchor="end">snapshot</text>
+  <text x="762" y="1186" class="b">Captures committed state</text>
+
+  <!-- Disk -->
+  <text x="64" y="1336" class="node">DISK</text>
+  <rect x="460" y="1294" width="256" height="72" rx="10" fill="none" stroke="#6f7987" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <text x="478" y="1324" class="h">Commitlog</text>
+  <text x="700" y="1324" class="tag" text-anchor="end">commitlog</text>
+  <text x="478" y="1348" class="b">Write-ahead log</text>
+  <rect x="744" y="1294" width="256" height="72" rx="10" fill="none" stroke="#6f7987" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <text x="762" y="1324" class="h">Snapshots</text>
+  <text x="762" y="1348" class="b">Content-addressed pages</text>
+
+  <!-- Legend -->
+  <path d="M 1080 1308 L 1120 1308" class="hot" marker-end="url(#ge)"/>
+  <text x="1134" y="1313" class="al">A reducer call, step by step</text>
+  <path d="M 1080 1334 L 1120 1334" class="cold" marker-end="url(#ne)"/>
+  <text x="1134" y="1339" class="al">Other requests and control</text>
+  <rect x="1080" y="1350" width="40" height="18" rx="4" fill="none" stroke="#6f7987" stroke-width="1.5" stroke-dasharray="6 5"/>
+  <text x="1134" y="1364" class="al">Files on disk</text>
+
+  <!-- Arrows: other requests and control -->
+  <path d="M 642 188 L 642 312" class="cold" marker-end="url(#ne)"/>
+  <path d="M 1276 188 L 1276 312" class="cold" marker-end="url(#ne)"/>
+  <path d="M 460 382 L 400 382" class="cold" marker-end="url(#ne)"/>
+  <path d="M 1040 394 L 960 394" class="cold" marker-end="url(#ne)"/>
+  <text x="1000.0" y="384" class="tag" text-anchor="middle">sql_direct</text>
+  <text x="430.0" y="372" class="al" text-anchor="middle">lookup</text>
+  <path d="M 480 452 L 480 548 L 400 548" class="cold" marker-end="url(#ne)"/>
+  <text x="440.0" y="570" class="al" text-anchor="middle">publish</text>
+  <path d="M 244 596 L 244 712" class="cold" marker-end="url(#ne)"/>
+  <text x="256" y="658" class="al">launch</text>
+  <path d="M 1000 774 L 1060 774" class="cold" marker-end="url(#ne)"/>
+  <text x="1020.0" y="764" class="al" text-anchor="middle">runs</text>
+  <path d="M 162 1132 L 162 872" class="cold" marker-end="url(#ne)" marker-start="url(#ns)"/>
+  <text x="174" y="990" class="al">new schedule rows ↓</text>
+  <text x="174" y="1009" class="al">due calls ↑</text>
+  <path d="M 326 1132 L 326 872" class="cold" marker-end="url(#ne)" marker-start="url(#ns)"/>
+  <text x="338" y="990" class="al">outbox rows ↓</text>
+  <text x="338" y="1009" class="al">replies ↑</text>
+  <path d="M 588 1214 L 588 1294" class="cold" marker-end="url(#ne)"/>
+  <path d="M 872 1036 L 872 1132" class="cold" marker-end="url(#ne)"/>
+  <path d="M 872 1214 L 872 1294" class="cold" marker-end="url(#ne)"/>
+  <text x="884" y="1080" class="al">every 1M txs</text>
+
+  <!-- Arrows: a reducer call -->
+  <path d="M 918 188 L 918 312" class="hot" marker-end="url(#ge)"/>
+  <circle cx="940" cy="250" r="11" fill="#4cf490"/>
+  <text x="940" y="254.5" class="num" text-anchor="middle">1</text>
+  <text x="958" y="255" class="alg">call</text>
+  <path d="M 520 452 L 520 712" class="hot" marker-end="url(#ge)"/>
+  <circle cx="544" cy="488" r="11" fill="#4cf490"/>
+  <text x="544" y="492.5" class="num" text-anchor="middle">2</text>
+  <text x="564" y="493" class="alg">enqueue</text>
+  <path d="M 766 872 L 766 944" class="hot" marker-end="url(#ge)" marker-start="url(#gs)"/>
+  <circle cx="788" cy="886" r="11" fill="#4cf490"/>
+  <text x="788" y="890.5" class="num" text-anchor="middle">3</text>
+  <text x="808" y="891" class="alg">run reducer in a mutable tx</text>
+  <path d="M 980 984 L 1060 984" class="hot" marker-end="url(#ge)"/>
+  <path d="M 588 1036 L 588 1132" class="hot" marker-end="url(#ge)"/>
+  <circle cx="1020" cy="962" r="11" fill="#4cf490"/>
+  <text x="1020" y="966.5" class="num" text-anchor="middle">5</text>
+  <circle cx="610" cy="1074" r="11" fill="#4cf490"/>
+  <text x="610" y="1078.5" class="num" text-anchor="middle">5</text>
+  <text x="630" y="1079" class="alg">TxData</text>
+  <path d="M 1460 984 L 1488 984 L 1488 596" class="hot" marker-end="url(#ge)"/>
+  <path d="M 1160 548 L 930 548 L 930 452" class="hot" marker-end="url(#ge)"/>
+  <circle cx="1000" cy="526" r="11" fill="#4cf490"/>
+  <text x="1000" y="530.5" class="num" text-anchor="middle">6</text>
+  <text x="1020" y="531" class="alg">push updates</text>
+</svg>

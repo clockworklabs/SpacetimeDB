@@ -1,0 +1,11 @@
+{
+  "name": "idc-receiver-ts",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "spacetimedb": "file:../../../bindings-typescript"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
