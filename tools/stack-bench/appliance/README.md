@@ -282,6 +282,9 @@ keeps the evidence and marks the run quarantined. Follow the
 [recover-run skill](../skills/recover-run/SKILL.md); do not delete containers or
 clear the state root by hand.
 
+`setup` removes dependency volumes that belong to other controller images once
+no container holds them. An older image rebuilds its volume when it next starts.
+
 Qualification, which proves the checks before results are published, is the
 [qualify-checks skill](../skills/qualify-checks/SKILL.md). Building a signed
 release is the [release skill](../skills/release/SKILL.md).

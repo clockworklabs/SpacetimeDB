@@ -13,6 +13,17 @@ const docker: Docker = args => execFileSync('docker', [...args], {
   encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: args[0] === 'pull' ? 300_000 : 60_000,
 });
 
+// Every controller image gets its own dependency volume. deps-init rebuilds a missing one, and
+// Docker refuses to remove one a container holds, so unattached volumes are safe to clear.
+function removeUnusedDependencyVolumes(current: string, run: Docker): void {
+  for (const volume of run(['volume', 'ls', '-q', '--filter', 'dangling=true']).split('\n')) {
+    const name = volume.trim();
+    if (!/^stack-bench-release-deps-[0-9a-f]+$/.test(name) || name === current) continue;
+    try { run(['volume', 'rm', name]); }
+    catch { /* A container claimed it after the listing, so it stays. */ }
+  }
+}
+
 /** The controller and Docker daemon see one native Linux path on every host OS. */
 export function prepareStateVolume(env: NodeJS.ProcessEnv = process.env, run: Docker = docker): string {
   if (run(['version', '--format', '{{.Server.Os}}']).trim() !== 'linux') {
@@ -64,11 +75,13 @@ export function prepareStateVolume(env: NodeJS.ProcessEnv = process.env, run: Do
       + 'd.conditions=["neutral","neutral-no-sdk","neutral-dev","neutral-dev-no-sdk"].map(g=>({...d.conditions[0],id:g,guidanceProfile:g}));'
       + 'fs.writeFileSync(target,JSON.stringify(d,null,2)+"\\n",{flag:"wx",mode:0o600});}',
     root, controller, build]);
+  const dependencyVolume = `stack-bench-release-deps-${controller.replace(/^.*sha256:/, '').slice(0, 12)}`;
+  removeUnusedDependencyVolumes(dependencyVolume, run);
   return [
     `STACK_BENCH_STATE_ROOT=${root}`,
     `STACK_BENCH_CONTROLLER_IMAGE=${controller}`,
     `STACK_BENCH_BUILD_IMAGE=${build}`,
-    `STACK_BENCH_RELEASE_DEPS_VOLUME=stack-bench-release-deps-${controller.replace(/^.*sha256:/, '').slice(0, 12)}`,
+    `STACK_BENCH_RELEASE_DEPS_VOLUME=${dependencyVolume}`,
     'STACK_BENCH_RUNNER_CAPACITY=dynamic',
     'STACK_BENCH_AGENT_AUTH=subscription-token',
     `STACK_BENCH_CLAUDE_OAUTH_TOKEN_FILE=${root}/secrets/claude_subscription_token`,

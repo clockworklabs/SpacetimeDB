@@ -30,6 +30,30 @@ test('setup uses the daemon volume path and exact local images without disclosin
   assert.throws(() => prepareStateVolume({}, () => 'windows'), /Linux containers/);
 });
 
+test('setup removes unattached dependency volumes from other images and nothing else', () => {
+  const id = `sha256:${'a'.repeat(64)}`;
+  const current = `stack-bench-release-deps-${'a'.repeat(12)}`;
+  const stale = `stack-bench-release-deps-${'b'.repeat(12)}`;
+  const claimed = `stack-bench-release-deps-${'c'.repeat(12)}`;
+  const removed: string[] = [];
+  const env = prepareStateVolume({}, args => {
+    if (args[0] === 'version') return 'linux';
+    if (args[0] === 'image') return id;
+    if (args[0] === 'volume' && args[1] === 'inspect') return '/state';
+    if (args[0] === 'volume' && args[1] === 'ls') {
+      return [current, stale, claimed, 'stack-bench-release-deps', 'stack-bench-state',
+        'stack-bench-agy-login', 'stack-bench-appliance-pgdata', ''].join('\n');
+    }
+    if (args[0] === 'volume' && args[1] === 'rm') {
+      if (args[2] === claimed) throw new Error('volume is in use');
+      removed.push(args[2]!);
+    }
+    return '';
+  });
+  assert.deepEqual(removed, [stale]);
+  assert.match(env, new RegExp(`STACK_BENCH_RELEASE_DEPS_VOLUME=${current}`));
+});
+
 test('setup installs an image-bound paid demo and preserves an existing plan', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-setup-'));
   const controller = `sha256:${'a'.repeat(64)}`;
