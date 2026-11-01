@@ -345,7 +345,7 @@ Start development mode with auto-regenerate client module bindings, auto-rebuild
 * `--module-path <MODULE-PATH>` — Path to the SpacetimeDB server module, relative to current directory. Defaults to `<project-path>/spacetimedb`.
 * `--client-lang <CLIENT-LANG>` — The programming language for the generated client module bindings (e.g., typescript, csharp, rust, unrealcpp). If not specified, it will be detected from the project.
 
-  Possible values: `csharp`, `typescript`, `rust`, `unrealcpp`
+  Possible values: `csharp`, `typescript`, `rust`, `cpp`, `unrealcpp`
 
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server to publish to
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
@@ -468,7 +468,13 @@ Run `spacetime help generate` for more detailed information.
 
 * `-l`, `--lang <LANG>` — The language to generate
 
-  Possible values: `csharp`, `typescript`, `rust`, `unrealcpp`
+  Possible values: `csharp`, `typescript`, `rust`, `cpp`, `unrealcpp`
+
+* `--bindings <BINDINGS>` — The kind of bindings to generate (client applications or inter-database module calls)
+
+  Default value: `client`
+
+  Possible values: `client`, `module`
 
 * `--build-options <BUILD_OPTIONS>` — Options to pass to the build command, for example --build-options='--lint-dir='
 

@@ -259,6 +259,68 @@ export const tick = spacetimedb.reducer(
 //   const micros = at.tag === 'time' ? at.value : at.value.microsSinceUnixEpoch;  // bigint
 ```
 
+## Inter-Database Calls (Async IDC)
+
+A reducer calls a reducer in another database by inserting a row into an outbox table. The call is sent only if the transaction commits, runs exactly once, and runs in order with other calls through the same outbox to the same database. The sending reducer doesn't wait for it. Both databases must be on the same server.
+
+Generate receiver bindings by listing the receiving module under `dependencies` in the sending database's `spacetime.json`, then running `spacetime generate <sending-database>`. TypeScript bindings are written to `src/remote_bindings/`.
+
+```json
+{
+  "database": "lobby",
+  "module-path": "./lobby",
+  "dependencies": [{ "name": "game_world", "database": "game-world" }],
+  "children": [{ "database": "game-world", "module-path": "./game_world" }]
+}
+```
+
+```typescript
+import gw from './remote_bindings/game_world';
+
+// Each row is one call to game_world's `admitPlayer({ name })` reducer.
+const admitPlayerOutbox = table(
+  { outbox: { receiver: gw.reducers.admitPlayer } },
+  {
+    msgId: t.u64().primaryKey().autoInc(), // exactly one u64 autoInc primary key
+    world: gw.identity().target(),         // exactly one target, typed by the bindings
+    name: t.string(),                      // one column per reducer parameter, same name and type
+    // playerName: t.string().param({ name: 'name' }),  // alias a column to a parameter
+    // Extra columns are allowed. They aren't sent, but onResult can read them.
+  }
+);
+// Shorthand: gw.outbox.admitPlayer() declares { msgId, target, ...params } for you.
+// It can't be used for a reducer with a parameter named msgId or target.
+
+const spacetimedb = schema({ admitPlayerOutbox });
+export default spacetimedb;
+
+export const sendToWorld = spacetimedb.reducer(
+  { name: t.string(), world: gw.identity() },
+  (ctx, { name, world }) => {
+    // Sent if and only if this transaction commits.
+    ctx.db.admitPlayerOutbox.insert({ msgId: 0n, world, name });
+  }
+);
+
+// Optional, at most one per outbox. Private. Runs once per row, then the row is deleted.
+export const onAdmitPlayerResult = spacetimedb.reducer(
+  { onResult: admitPlayerOutbox },
+  { row: admitPlayerOutbox.rowType, result: t.result(t.unit(), t.string()) },
+  (ctx, { row, result }) => {
+    if ('err' in result) console.warn(`${row.name} was not admitted: ${result.err}`);
+  }
+);
+```
+
+- The receiving reducer is an ordinary reducer and needs no changes. In it, `ctx.sender` is the sending database's identity, so authorize calls by checking it against an allow-list table.
+- The receiving database runs `clientConnected` and `clientDisconnected` around every delivered call, with no JWT. If `clientConnected` rejects the sending database, the call is retried forever.
+- Outbox rows are insert-only, so a pending call can't be cancelled. A call is never retried once it has a result. To try again, insert a new row, for example from `onResult`.
+- A plain `Identity` can't be a target. Use values typed `gw.identity()`, such as reducer arguments or columns of that type. Index lookups on those columns accept a plain `Identity`.
+- An outbox table can't also be a scheduled table or an event table.
+- After the receiving reducer's parameters change, regenerate the bindings and republish the sending database. Calls built from old bindings fail with a signature mismatch error.
+
+See https://spacetimedb.com/docs/databases/inter-database-communication for details.
+
 ## Custom Types
 
 ```typescript
