@@ -127,9 +127,8 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface TransactionCtx<
-  S extends UntypedSchemaDef,
-> extends ReducerCtx<S> {}
+export interface TransactionCtx<S extends UntypedSchemaDef>
+  extends ReducerCtx<S> {}
 
 function registerProcedure<
   S extends UntypedSchemaDef,
@@ -223,9 +222,9 @@ export function callProcedure(
 }
 
 type IProcedureCtx<S extends UntypedSchemaDef> = ProcedureCtx<S>;
-export const ProcedureCtxImpl = class ProcedureCtx<
-  S extends UntypedSchemaDef,
-> implements IProcedureCtx<S> {
+export const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
+  implements IProcedureCtx<S>
+{
   #identity: Identity | undefined;
   #uuidCounter: { value: 0 } | undefined;
   #random: Random | undefined;

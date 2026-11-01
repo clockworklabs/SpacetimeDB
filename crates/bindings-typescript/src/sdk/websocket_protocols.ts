@@ -5,7 +5,8 @@ export const V3_WS_PROTOCOL = 'v3.bsatn.spacetimedb';
 export const PREFERRED_WS_PROTOCOLS = [V3_WS_PROTOCOL, V2_WS_PROTOCOL] as const;
 
 export type NegotiatedWsProtocol =
-  typeof V2_WS_PROTOCOL | typeof V3_WS_PROTOCOL;
+  | typeof V2_WS_PROTOCOL
+  | typeof V3_WS_PROTOCOL;
 
 export function normalizeWsProtocol(protocol: string): NegotiatedWsProtocol {
   if (protocol === V3_WS_PROTOCOL) {

@@ -1,3 +1,4 @@
+// tsup.config.ts
 import { defineConfig, type Options } from 'tsup';
 
 function commonEsbuildTweaks(): NonNullable<Options['esbuildOptions']> {

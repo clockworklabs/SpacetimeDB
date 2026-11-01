@@ -96,8 +96,10 @@ fn wasmtime_config(data_dir: Option<&ServerDataDir>, async_support: bool) -> was
         .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable);
 
     if async_support {
-        // Procedure instances pool the fiber stacks used while waiting for HTTP
-        // responses or transaction locks. Reducers/views use synchronous calls.
+        // Procedure instances need async support to suspend execution when waiting for
+        // e.g. HTTP responses or the transaction lock. Main-lane instances use a
+        // separate sync engine so reducers/views do not pay Wasmtime's fiber overhead.
+        config.async_support(true);
 
         #[cfg(unix)]
         config
@@ -151,8 +153,8 @@ impl WasmtimeRuntime {
         program_bytes: &[u8],
         core: AllocatedJobCore,
     ) -> anyhow::Result<super::module_host::ModuleWithInstance> {
-        let module = wasmtime::Module::new(&self.sync_engine, program_bytes)
-            .map_err(|err| ModuleCreationError::WasmCompileError(err.into()))?;
+        let module =
+            wasmtime::Module::new(&self.sync_engine, program_bytes).map_err(ModuleCreationError::WasmCompileError)?;
 
         let func_imports = module
             .imports()
@@ -164,13 +166,13 @@ impl WasmtimeRuntime {
         let module = self
             .sync_linker
             .instantiate_pre(&module)
-            .map_err(|err| InitializationError::Instantiation(err.into()))?;
-        let procedure_module = wasmtime::Module::new(&self.async_engine, program_bytes)
-            .map_err(|err| ModuleCreationError::WasmCompileError(err.into()))?;
+            .map_err(InitializationError::Instantiation)?;
+        let procedure_module =
+            wasmtime::Module::new(&self.async_engine, program_bytes).map_err(ModuleCreationError::WasmCompileError)?;
         let procedure_module = self
             .async_linker
             .instantiate_pre(&procedure_module)
-            .map_err(|err| InitializationError::Instantiation(err.into()))?;
+            .map_err(InitializationError::Instantiation)?;
 
         let module = WasmtimeModule::new(module);
         let procedure_module = WasmtimeAsyncModule::new(procedure_module);
@@ -194,12 +196,6 @@ pub enum WasmError {
     Db(NodesError),
     BufferTooSmall,
     Wasm(anyhow::Error),
-}
-
-impl From<wasmtime::Error> for WasmError {
-    fn from(error: wasmtime::Error) -> Self {
-        Self::Wasm(error.into())
-    }
 }
 
 #[derive(Copy, Clone)]

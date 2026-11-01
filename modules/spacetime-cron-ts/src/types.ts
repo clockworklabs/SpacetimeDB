@@ -100,10 +100,8 @@ export interface CronJobReference<Name extends string = string> {
   readonly jobName: Name;
 }
 
-export interface CronJobHandle<
-  Name extends string = string,
-  Args = undefined,
-> extends CronJobReference<Name> {
+export interface CronJobHandle<Name extends string = string, Args = undefined>
+  extends CronJobReference<Name> {
   cronReducer<Tx extends CronTx, Proc extends CronProcedureCtx>(
     spacetimedb: CronSchema<Tx, Proc>,
     handler: CronHandler<Tx, Args>
@@ -123,9 +121,9 @@ export type CronTables<Config extends CronConfig> = {
   readonly cronJob: CronJobTableDef;
   readonly cronRun: CronRunTableDef;
 } & {
-  readonly [
-    Job in Config['jobs'][number] as FireAccessor<Job['jobName']>
-  ]: CronFireTableDef;
+  readonly [Job in Config['jobs'][number] as FireAccessor<
+    Job['jobName']
+  >]: CronFireTableDef;
 } & (Config extends { reconcileEverySeconds: number }
     ? { readonly cronReconcileTick: CronReconcileTickTableDef }
     : unknown);

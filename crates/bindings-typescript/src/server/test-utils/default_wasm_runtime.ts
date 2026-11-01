@@ -9,10 +9,8 @@ import {
 } from './wasm';
 
 type GeneratedPortableTransaction = WasmPortableTransaction;
-interface GeneratedPortableDatastore extends Omit<
-  WasmPortableDatastore,
-  'commitTx'
-> {
+interface GeneratedPortableDatastore
+  extends Omit<WasmPortableDatastore, 'commitTx'> {
   commitTx(tx: GeneratedPortableTransaction, mode: number): void;
 }
 

@@ -12,11 +12,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
-const WASM_BINDGEN_VERSION = `wasm-bindgen ${
-  readFileSync(new URL('../../../Cargo.lock', import.meta.url), 'utf8').match(
-    /name = "wasm-bindgen"\nversion = "([^"]+)"/
-  )[1]
-}`;
+const WASM_BINDGEN_VERSION = 'wasm-bindgen 0.2.104';
 const OUTPUT_NAME = 'spacetimedb_portable_datastore_wasm';
 const OUTPUT_FILES = [
   `${OUTPUT_NAME}.cjs`,

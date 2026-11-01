@@ -224,9 +224,9 @@ class FromBuilder<TableDef extends TypedTableDef>
 }
 
 export type QueryBuilder<SchemaDef extends UntypedSchemaDef> = {
-  readonly [
-    Tbl in Values<SchemaDef['tables']> as Tbl['accessorName']
-  ]: TableRef<Tbl> & From<Tbl>;
+  readonly [Tbl in Values<
+    SchemaDef['tables']
+  > as Tbl['accessorName']]: TableRef<Tbl> & From<Tbl>;
 } & {};
 
 /**
@@ -437,8 +437,10 @@ function renderSelectSqlWithJoins<Table extends TypedTableDef>(
 
 // TODO: Just use UntypedTableDef if they end up being the same.
 export type TypedTableDef<
-  Columns extends Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>> =
-    Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>,
+  Columns extends Record<
+    string,
+    ColumnBuilder<any, any, ColumnMetadata<any>>
+  > = Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>,
 > = {
   sourceName: string;
   accessorName: string;
@@ -454,9 +456,11 @@ export type TableSchemaAsTableDef<TSchema extends UntypedTableSchema> = {
 };
 
 type RowType<TableDef extends TypedTableDef> = {
-  [
-    K in keyof TableDef['columns']
-  ]: TableDef['columns'][K] extends ColumnBuilder<infer T, any, any>
+  [K in keyof TableDef['columns']]: TableDef['columns'][K] extends ColumnBuilder<
+    infer T,
+    any,
+    any
+  >
     ? T
     : never;
 };
@@ -652,7 +656,8 @@ type MetadataIndexedColumns<TableDef extends TypedTableDef> = {
 }[ColumnNames<TableDef>];
 
 export type IndexedColumnNames<TableDef extends TypedTableDef> =
-  ExplicitIndexedColumns<TableDef> | MetadataIndexedColumns<TableDef>;
+  | ExplicitIndexedColumns<TableDef>
+  | MetadataIndexedColumns<TableDef>;
 
 export type IndexedRowExpr<TableDef extends TypedTableDef> = Readonly<{
   readonly [C in IndexedColumnNames<TableDef>]: ColumnExpr<TableDef, C>;
@@ -687,13 +692,17 @@ type LiteralValue =
 
 type ValueLike = LiteralValue | ColumnExpr<any, any> | LiteralExpr<any>;
 type ValueInput<TableDef extends TypedTableDef> =
-  ValueLike | ValueExpr<TableDef, any>;
+  | ValueLike
+  | ValueExpr<TableDef, any>;
 
 export type ValueExpr<TableDef extends TypedTableDef, Value> =
-  LiteralExpr<Value & LiteralValue> | ColumnExprForValue<TableDef, Value>;
+  | LiteralExpr<Value & LiteralValue>
+  | ColumnExprForValue<TableDef, Value>;
 
 type PredicateExpr<TableDef extends TypedTableDef> =
-  BooleanExpr<TableDef> | ColumnExprForValue<TableDef, SatsBool> | boolean;
+  | BooleanExpr<TableDef>
+  | ColumnExprForValue<TableDef, SatsBool>
+  | boolean;
 
 type LiteralExpr<Value> = {
   type: 'literal';

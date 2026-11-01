@@ -35,7 +35,8 @@ class TableMap<RemoteModule extends UntypedRemoteModule> {
   ): TableCacheForTableName<RemoteModule, K> | undefined {
     // Cast required: a Map<string, Union> can't refine the union to the exact K-specific member on get<K>(key: K).
     return this.map.get(key) as
-      TableCacheForTableName<RemoteModule, K> | undefined;
+      | TableCacheForTableName<RemoteModule, K>
+      | undefined;
   }
 
   set<K extends TableName<RemoteModule>>(

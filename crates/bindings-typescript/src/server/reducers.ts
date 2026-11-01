@@ -21,8 +21,8 @@ import {
 export interface ReducerExport<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
->
-  extends Reducer<S, Params>, ModuleExport {}
+> extends Reducer<S, Params>,
+    ModuleExport {}
 
 export interface ReducerOpts<Params extends ParamsObj = ParamsObj> {
   name: string;

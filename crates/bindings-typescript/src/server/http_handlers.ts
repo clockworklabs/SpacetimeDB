@@ -244,8 +244,8 @@ export type HandlerFn<S extends UntypedSchemaDef = UntypedSchemaDef> = (
 
 export interface HttpHandlerExport<
   S extends UntypedSchemaDef = UntypedSchemaDef,
->
-  extends HandlerFn<S>, ModuleExport {
+> extends HandlerFn<S>,
+    ModuleExport {
   [httpHandlerFn]: HandlerFn<S>;
 }
 

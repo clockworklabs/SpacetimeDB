@@ -34,7 +34,8 @@ export type AllUnique<
  * ```
  */
 export type ColumnIsUnique<M extends ColumnMetadata<any>> = M extends
-  { isUnique: true } | { isPrimaryKey: true }
+  | { isUnique: true }
+  | { isPrimaryKey: true }
   ? true
   : false;
 

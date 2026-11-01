@@ -13,8 +13,8 @@ export type ClientDbView<RemoteModule extends UntypedRemoteModule> = IfAny<
   RemoteModule,
   ClientDbViewLoose,
   NestAccessors<{
-    readonly [
-      TblName in Values<RemoteModule['tables']>['accessorName']
-    ]: ClientTable<RemoteModule, TblName>;
+    readonly [TblName in Values<
+      RemoteModule['tables']
+    >['accessorName']]: ClientTable<RemoteModule, TblName>;
   }>
 >;

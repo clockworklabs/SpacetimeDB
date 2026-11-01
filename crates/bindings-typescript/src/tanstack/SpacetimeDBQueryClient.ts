@@ -26,7 +26,8 @@ export interface SpacetimeDBQueryOptions {
   staleTime: number;
 }
 
-export interface SpacetimeDBQueryOptionsSkipped extends SpacetimeDBQueryOptions {
+export interface SpacetimeDBQueryOptionsSkipped
+  extends SpacetimeDBQueryOptions {
   enabled: false;
 }
 

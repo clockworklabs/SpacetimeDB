@@ -382,9 +382,9 @@ const MAX_V3_OUTBOUND_FRAME_BYTES = 256 * 1024;
 const WS_READY_STATE_CLOSING = 2;
 const WS_READY_STATE_CLOSED = 3;
 
-export class DbConnectionImpl<
-  RemoteModule extends UntypedRemoteModule,
-> implements DbContext<RemoteModule> {
+export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
+  implements DbContext<RemoteModule>
+{
   /**
    * Whether or not the connection is active.
    */

@@ -205,7 +205,7 @@ impl Drop for WasmMemoryBytesMetric {
 }
 
 type WasmResult<T> = Result<T, WasmError>;
-type RtResult<T> = wasmtime::Result<T>;
+type RtResult<T> = anyhow::Result<T>;
 
 /// Wraps an `InstanceEnv` with the magic necessary to push
 /// and pull bytes from webassembly memory.
@@ -236,7 +236,7 @@ impl WasmInstanceEnv {
         let id = self.next_bytes_source_id;
         self.next_bytes_source_id = id
             .checked_add(1)
-            .ok_or_else(|| wasmtime::format_err!("Allocating next `BytesSourceId` overflowed `u32`"))?;
+            .context("Allocating next `BytesSourceId` overflowed `u32`")?;
         Ok(BytesSourceId(id.into()))
     }
 
@@ -270,7 +270,7 @@ impl WasmInstanceEnv {
             // and that all of our usage of `BytesSource`s as of writing (pgoldman 2025-09-26)
             // are to immediately slurp the whole thing into a buffer in guest memory,
             // which can't hold buffers this big because it's WASM32.
-            Err(wasmtime::format_err!(
+            Err(anyhow::anyhow!(
                 "`create_bytes_source`: `Bytes` has length {}, which is greater than `u32::MAX` {}",
                 bytes.len(),
                 u32::MAX,
@@ -451,11 +451,9 @@ impl WasmInstanceEnv {
 
     fn convert_wasm_result<T: From<u16>>(func: AbiCall, err: WasmError) -> RtResult<T> {
         match err {
-            WasmError::Db(err) => err_to_errno_and_log(func, err)
-                .map(|(code, _)| code)
-                .map_err(wasmtime::Error::from_anyhow),
+            WasmError::Db(err) => err_to_errno_and_log(func, err).map(|(code, _)| code),
             WasmError::BufferTooSmall => Ok(errno::BUFFER_TOO_SMALL.get().into()),
-            WasmError::Wasm(err) => Err(wasmtime::Error::from_anyhow(err)),
+            WasmError::Wasm(err) => Err(err),
         }
     }
 
@@ -1796,7 +1794,7 @@ impl WasmInstanceEnv {
                         caller.data_mut().instance_env.take_procedure_tx_offset();
                     }
                     // Return a host error (trap), never a retryable ABI errno.
-                    confirmed.map(|()| 0).map_err(wasmtime::Error::from_anyhow)
+                    confirmed.map(|()| 0)
                 }
                 None => result,
             };
