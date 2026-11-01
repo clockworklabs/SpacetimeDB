@@ -38,6 +38,9 @@
     "ignoredBuiltDependencies": [
       "@parcel/watcher",
       "esbuild"
-    ]
+    ],
+    "overrides": {
+      "@docusaurus/bundler>webpackbar": "^7.0.0"
+    }
   }
 }
