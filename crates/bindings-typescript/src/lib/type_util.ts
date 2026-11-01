@@ -6,12 +6,7 @@ import type { Timestamp } from './timestamp';
 import type { Uuid } from './uuid';
 
 type DoNotPrettify =
-  | Identity
-  | ConnectionId
-  | Timestamp
-  | TimeDuration
-  | ScheduleAt
-  | Uuid;
+  Identity | ConnectionId | Timestamp | TimeDuration | ScheduleAt | Uuid;
 
 type Primitive = string | number | boolean | bigint | symbol | null | undefined;
 

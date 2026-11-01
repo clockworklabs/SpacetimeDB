@@ -152,12 +152,14 @@ export type UntypedTableDef = {
  * A type representing the indexes defined on a table.
  */
 export type TableIndexes<TableDef extends UntypedTableDef> = {
-  [K in keyof TableDef['columns'] & string as ColumnIndex<
-    K,
-    TableDef['columns'][K]['columnMetadata']
-  > extends never
-    ? never
-    : K]: ColumnIndex<K, TableDef['columns'][K]['columnMetadata']>;
+  [
+    K in keyof TableDef['columns'] & string as ColumnIndex<
+      K,
+      TableDef['columns'][K]['columnMetadata']
+    > extends never
+      ? never
+      : K
+  ]: ColumnIndex<K, TableDef['columns'][K]['columnMetadata']>;
 } & {
   [I in TableDef['indexes'][number] as I['accessor'] & {}]: TableIndexFromDef<
     TableDef,
@@ -291,8 +293,9 @@ export interface ReadonlyTableMethods<TableDef extends UntypedTableDef> {
 /**
  * A type representing the methods available on a table.
  */
-export interface TableMethods<TableDef extends UntypedTableDef>
-  extends ReadonlyTableMethods<TableDef> {
+export interface TableMethods<
+  TableDef extends UntypedTableDef,
+> extends ReadonlyTableMethods<TableDef> {
   /**
    * Insert and return the inserted row (auto-increment fields filled).
    *

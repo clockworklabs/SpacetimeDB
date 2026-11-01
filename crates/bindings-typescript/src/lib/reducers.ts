@@ -79,12 +79,7 @@ export type AuthCtx = Readonly<{
 }>;
 
 export type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | Array<JsonValue>
-  | JsonObject;
+  string | number | boolean | null | Array<JsonValue> | JsonObject;
 
 export interface JsonObject {
   [key: string]: JsonValue;

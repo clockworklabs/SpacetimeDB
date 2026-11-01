@@ -240,9 +240,9 @@ function describeModule<S extends UntypedSchemaDef>(
   return rawModuleDef;
 }
 
-class ModuleTestHarnessImpl<S extends UntypedSchemaDef>
-  implements ModuleTestHarness<S>
-{
+class ModuleTestHarnessImpl<
+  S extends UntypedSchemaDef,
+> implements ModuleTestHarness<S> {
   readonly clock: TestClock;
   readonly rng: TestRng;
   readonly moduleIdentity: Identity;
@@ -421,9 +421,9 @@ class ModuleTestHarnessImpl<S extends UntypedSchemaDef>
   }
 }
 
-class ProcedureContextBuilderImpl<S extends UntypedSchemaDef>
-  implements ProcedureContextBuilder<S>
-{
+class ProcedureContextBuilderImpl<
+  S extends UntypedSchemaDef,
+> implements ProcedureContextBuilder<S> {
   #hooks = new ProcedureTestHooks<S>();
   #responder: TestHttpResponder<S> | undefined;
 

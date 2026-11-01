@@ -272,8 +272,7 @@ class AuthCtxImpl implements AuthCtx {
 // type namespace, so that `ReducerCtx` still refers to the interface.
 export const ReducerCtxImpl = class ReducerCtx<
   SchemaDef extends UntypedSchemaDef,
-> implements IReducerCtx<SchemaDef>
-{
+> implements IReducerCtx<SchemaDef> {
   #identity: Identity | undefined;
   #senderAuth: AuthCtx | undefined;
   #uuidCounter: { value: number } | undefined;
@@ -877,9 +876,9 @@ class ModuleHooksImpl implements ModuleHooks {
 const BINARY_WRITER = new BinaryWriter(0);
 const BINARY_READER = new BinaryReader(new Uint8Array());
 
-class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
-  implements HandlerContext<S>
-{
+class HandlerContextImpl<
+  S extends UntypedSchemaDef = UntypedSchemaDef,
+> implements HandlerContext<S> {
   readonly env = environment as EnvironmentFor<S>;
   #identity: Identity | undefined;
   #senderJwt: Uint8Array;

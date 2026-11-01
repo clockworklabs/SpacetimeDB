@@ -6,9 +6,9 @@ import type { Values } from '../lib/type_util';
  * A type representing a read-only database view, mapping table names to their corresponding read-only Table handles.
  */
 export type ReadonlyDbView<SchemaDef extends UntypedSchemaDef> = {
-  readonly [Tbl in Values<
-    SchemaDef['tables']
-  > as Tbl['accessorName']]: ReadonlyTable<Tbl>;
+  readonly [
+    Tbl in Values<SchemaDef['tables']> as Tbl['accessorName']
+  ]: ReadonlyTable<Tbl>;
 } & (SchemaDef extends {
   namespaces: infer NS extends Record<string, UntypedSchemaDef>;
 }
@@ -21,9 +21,9 @@ export type ReadonlyDbView<SchemaDef extends UntypedSchemaDef> = {
  * existing Table API; runtime outbox handles still omit mutation methods.
  */
 export type DbView<SchemaDef extends UntypedSchemaDef> = {
-  readonly [Tbl in Values<
-    SchemaDef['tables']
-  > as Tbl['accessorName']]: boolean extends Tbl['isOutbox']
+  readonly [
+    Tbl in Values<SchemaDef['tables']> as Tbl['accessorName']
+  ]: boolean extends Tbl['isOutbox']
     ? Table<Tbl>
     : Tbl extends { readonly isOutbox: true }
       ? OutboxTable<Tbl>

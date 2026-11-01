@@ -28,9 +28,9 @@ export type Environment<
   Declarations extends EnvironmentSchema | undefined = undefined,
 > = Declarations extends EnvironmentSchema
   ? {
-      readonly [Key in keyof Declarations as Key extends 'get'
-        ? never
-        : Key]: EnvironmentValue<Declarations[Key]>;
+      readonly [
+        Key in keyof Declarations as Key extends 'get' ? never : Key
+      ]: EnvironmentValue<Declarations[Key]>;
     } & {
       get<const Key extends string>(
         key: Key &
@@ -40,11 +40,10 @@ export type Environment<
               ? unknown
               : never)
       ): Key extends keyof Declarations
-        ?
-            | Exclude<EnvironmentValue<Declarations[Key]>, undefined>
-            | (undefined extends EnvironmentValue<Declarations[Key]>
-                ? null
-                : never)
+        ? | Exclude<EnvironmentValue<Declarations[Key]>, undefined>
+          | (undefined extends EnvironmentValue<Declarations[Key]>
+              ? null
+              : never)
         : string | null;
     }
   : { get(key: string): string | null };

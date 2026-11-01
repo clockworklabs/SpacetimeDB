@@ -18,8 +18,7 @@ import type { ProcedureExport, ReducerExport } from '../server';
  * the export object identity to look up its registered function name.
  */
 export type UntypedScheduledFunctionExport =
-  | ReducerExport<any, any>
-  | ProcedureExport<any, any, any>;
+  ReducerExport<any, any> | ProcedureExport<any, any, any>;
 
 export type TableSchedule = {
   scheduleAtCol: number;

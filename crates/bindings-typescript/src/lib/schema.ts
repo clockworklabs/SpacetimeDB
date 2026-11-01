@@ -49,8 +49,9 @@ export type UntypedSchemaDef = {
 /**
  * Helper type to convert an array of TableSchema into a schema definition
  */
-export interface TablesToSchema<T extends Record<string, UntypedTableSchema>>
-  extends UntypedSchemaDef {
+export interface TablesToSchema<
+  T extends Record<string, UntypedTableSchema>,
+> extends UntypedSchemaDef {
   tables: {
     readonly [AccName in keyof T & string]: TableToSchema<AccName, T[AccName]>;
   };
@@ -77,7 +78,9 @@ export function tablesToSchema<
   // `TablesToSchema<T>['tables']` is intentionally readonly in the public type,
   // but we need a mutable builder while materializing it from entries.
   type MutableTableDefs = {
-    -readonly [AccName in keyof TablesToSchema<T>['tables']]: TablesToSchema<T>['tables'][AccName];
+    -readonly [
+      AccName in keyof TablesToSchema<T>['tables']
+    ]: TablesToSchema<T>['tables'][AccName];
   };
   const tableDefs = Object.create(null) as MutableTableDefs;
   for (const [accName, schema] of Object.entries(tables) as [

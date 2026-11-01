@@ -72,8 +72,7 @@ import type { UntypedTableDef } from '../lib/table';
  * through export object identity.
  */
 type UntypedScheduledFunctionExport =
-  | ReducerExport<any, any>
-  | ProcedureExport<any, any, any>;
+  ReducerExport<any, any> | ProcedureExport<any, any, any>;
 
 export type SubmoduleDispatchInfo = {
   namespace: string;
@@ -851,9 +850,9 @@ type SubmoduleOfEntry<E> = E extends { default: Schema<any> }
     : never;
 
 type ExtractSubmoduleSchemas<H extends Record<string, SchemaEntry>> = {
-  [K in keyof H as [SubmoduleOfEntry<H[K]>] extends [never]
-    ? never
-    : K]: SubmoduleOfEntry<H[K]> extends {
+  [
+    K in keyof H as [SubmoduleOfEntry<H[K]>] extends [never] ? never : K
+  ]: SubmoduleOfEntry<H[K]> extends {
     default: Schema<infer S extends UntypedSchemaDef>;
   }
     ? S

@@ -64,8 +64,7 @@ export type TableCache<
 export class TableCacheImpl<
   RemoteModule extends UntypedRemoteModule,
   TableName extends TableNamesOf<RemoteModule>,
-> implements ClientTableCoreImplementable<RemoteModule, TableName>
-{
+> implements ClientTableCoreImplementable<RemoteModule, TableName> {
   private readonly hasPrimaryKey: boolean;
   private rows: Map<
     ComparablePrimitive,
