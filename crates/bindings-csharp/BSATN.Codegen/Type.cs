@@ -694,6 +694,9 @@ public abstract record BaseTypeDeclaration<M>
 
             extensions.Contents.Append(
                 $$"""
+                #if NET10_0_OR_GREATER
+                [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+                #endif
                 public void ReadFields(System.IO.BinaryReader reader) {
             {{string.Join(
                     "\n",

@@ -263,8 +263,11 @@ impl ModuleHandle {
             uri: format!("http://localhost{path}"),
             version: st_http::Version::Http11,
         };
+        let caller_auth = SpacetimeAuth::alloc(&*self.env)
+            .await
+            .map_err(|_| anyhow::anyhow!("failed to create an identity for the request"))?;
         let (_response, body) = module
-            .call_http_handler(handler_id, request, Bytes::new())
+            .call_http_handler(caller_auth.into(), handler_id, request, Bytes::new())
             .await
             .map_err(|e| anyhow::anyhow!("HTTP handler error: {e}"))?;
         Ok(body)
@@ -419,6 +422,8 @@ impl CompiledModule {
         )
         .await
         .unwrap();
+        // These in-process module tests do not run an HTTP listener.
+        env.configure_idc(0).unwrap();
         // TODO: Fix this when we update identity generation.
         let identity = Identity::ZERO;
         let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().claims.identity;

@@ -4,6 +4,78 @@ use std::path::Path;
 
 #[allow(dead_code)]
 #[allow(clippy::all)]
+mod advanced_t_083_atomic_reservation {
+    include!("../benchmarks/advanced/t_083_atomic_reservation/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_084_stable_pagination {
+    include!("../benchmarks/advanced/t_084_stable_pagination/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_085_online_backfill {
+    include!("../benchmarks/advanced/t_085_online_backfill/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_086_incremental_totals {
+    include!("../benchmarks/advanced/t_086_incremental_totals/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_087_webhook_ordering {
+    include!("../benchmarks/advanced/t_087_webhook_ordering/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_088_lease_fencing {
+    include!("../benchmarks/advanced/t_088_lease_fencing/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_089_cancel_reschedule {
+    include!("../benchmarks/advanced/t_089_cancel_reschedule/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_090_transactional_quota {
+    include!("../benchmarks/advanced/t_090_transactional_quota/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_091_scheduled_queue {
+    include!("../benchmarks/advanced/t_091_scheduled_queue/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_092_procedure_cache {
+    include!("../benchmarks/advanced/t_092_procedure_cache/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_093_permission_revocation {
+    include!("../benchmarks/advanced/t_093_permission_revocation/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod advanced_t_094_multi_session_presence {
+    include!("../benchmarks/advanced/t_094_multi_session_presence/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
 mod auth_t_026_auth_identity_check {
     include!("../benchmarks/auth/t_026_auth_identity_check/spec.rs");
 }
@@ -511,6 +583,18 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         .ok_or_else(|| anyhow!("missing category name"))?;
 
     let ctor = match (category, task) {
+        ("advanced", "t_083_atomic_reservation") => advanced_t_083_atomic_reservation::spec,
+        ("advanced", "t_084_stable_pagination") => advanced_t_084_stable_pagination::spec,
+        ("advanced", "t_085_online_backfill") => advanced_t_085_online_backfill::spec,
+        ("advanced", "t_086_incremental_totals") => advanced_t_086_incremental_totals::spec,
+        ("advanced", "t_087_webhook_ordering") => advanced_t_087_webhook_ordering::spec,
+        ("advanced", "t_088_lease_fencing") => advanced_t_088_lease_fencing::spec,
+        ("advanced", "t_089_cancel_reschedule") => advanced_t_089_cancel_reschedule::spec,
+        ("advanced", "t_090_transactional_quota") => advanced_t_090_transactional_quota::spec,
+        ("advanced", "t_091_scheduled_queue") => advanced_t_091_scheduled_queue::spec,
+        ("advanced", "t_092_procedure_cache") => advanced_t_092_procedure_cache::spec,
+        ("advanced", "t_093_permission_revocation") => advanced_t_093_permission_revocation::spec,
+        ("advanced", "t_094_multi_session_presence") => advanced_t_094_multi_session_presence::spec,
         ("auth", "t_026_auth_identity_check") => auth_t_026_auth_identity_check::spec,
         ("auth", "t_027_private_vs_public_table") => auth_t_027_private_vs_public_table::spec,
         ("auth", "t_041_registered_user_gate") => auth_t_041_registered_user_gate::spec,

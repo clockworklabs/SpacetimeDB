@@ -19,6 +19,7 @@ const person = table(
 const stdb = schema({ person });
 
 const hello = stdb.httpHandler((ctx, req) => {
+  void ctx.sender;
   void ctx.identity;
   void ctx.random;
   req.text();
@@ -67,8 +68,6 @@ stdb.httpHandler((_ctx: number, _req: Request) => new SyncResponse('bad'));
 stdb.httpHandler((_ctx, _req: number) => new SyncResponse('bad'));
 
 stdb.httpHandler((ctx, req) => {
-  // @ts-expect-error HTTP handlers do not expose sender directly
-  void ctx.sender;
   // @ts-expect-error HTTP handlers do not expose connectionId directly
   void ctx.connectionId;
   // @ts-expect-error HTTP handlers do not expose db directly

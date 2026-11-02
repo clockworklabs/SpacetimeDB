@@ -1,0 +1,15 @@
+Implement this SpacetimeDB module in typescript. Return only the module source.
+
+Implement renewable reservations with scheduled expiry. An old timer must never expire a newer generation. Cancellation is durable and must also invalidate old timers. Do not remove old timers when renewing or cancelling: let them execute and record their outcome, which makes stale-callback behavior observable. Only the scheduler may invoke expire_reservation; external calls must be rejected. Native private-callback rejection is valid; an explicit identity guard must report 'scheduler only'.
+
+Tables (the first field is the primary key):
+- public timed_reservation: id: u64 (bigint), generation: u64 (bigint), status: string
+- private expiry_job: scheduledId: u64 (bigint), scheduledAt: ScheduleAt, reservationId: u64 (bigint), generation: u64 (bigint)
+- public expiry_result: scheduledId: u64 (bigint), reservationId: u64 (bigint), generation: u64 (bigint), applied: bool
+
+Reducers (argument order is part of the contract):
+- renew(id: u64 (bigint), delayMs: u64 (bigint)): Require delay_ms in 1..=60000 ('invalid delay'). Insert or update the reservation to active, increment generation (start at 1), and insert a new private expiry_job for server_now+delay_ms. Always use a one-shot ScheduleAt time.
+- cancel(id: u64 (bigint)): Missing or already cancelled is a no-op. Otherwise increment generation and set cancelled. Do not delete scheduled jobs.
+
+expiry_job has an auto-increment primary key and schedules expire_reservation(job: ExpiryJob). The callback checks scheduler identity first. It sets expired only if the current reservation is active and has the job's generation. Insert exactly one expiry_result per executed job with whether it changed the reservation. If the job already has a result, do nothing. Never trust externally supplied callback arguments.
+Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged.

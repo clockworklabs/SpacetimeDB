@@ -6,8 +6,8 @@ use clap::Arg;
 use clap::ArgAction::{Set, SetTrue};
 use fs_err as fs;
 use spacetimedb_codegen::{
-    generate, private_table_names, CodegenOptions, CodegenVisibility, Csharp, Lang, OutputFile, Rust, TypeScript,
-    UnrealCpp, AUTO_GENERATED_PREFIX,
+    generate, generate_receiver_bindings, private_table_names, CodegenOptions, CodegenVisibility, Csharp,
+    ImportExtension, Lang, OutputFile, ReceiverLanguage, Rust, TypeScript, UnrealCpp, AUTO_GENERATED_PREFIX,
 };
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::RawModuleDef;
@@ -21,7 +21,7 @@ use crate::spacetime_config::{
 };
 use crate::tasks::csharp::dotnet_format;
 use crate::tasks::rust::rustfmt;
-use crate::util::YesOrNo;
+use crate::util::{detect_module_language, ModuleLanguage, YesOrNo};
 use crate::Config;
 use crate::{build, common_args};
 use clap::builder::PossibleValue;
@@ -49,9 +49,13 @@ fn build_generate_config_schema(command: &clap::Command) -> Result<CommandSchema
         .key(Key::new("namespace").generate_entry_specific())
         .key(Key::new("unreal_module_name").generate_entry_specific())
         .key(Key::new("module_prefix").generate_entry_specific())
+        .key(Key::new("import_extension").generate_entry_specific())
         .key(Key::new("build_options").module_specific())
         .key(Key::new("dotnet_version").module_specific())
         .key(Key::new("include_private"))
+        .key(Key::new("bindings").generate_entry_specific())
+        .key(Key::new("dependency_name").config_only().generate_entry_specific())
+        .key(Key::new("sender_module_path").config_only().generate_entry_specific())
         .exclude("json_module")
         .exclude("force")
         .exclude("no_config")
@@ -85,7 +89,7 @@ fn get_filtered_generate_configs<'a>(
             glob::Pattern::new(cli_database).with_context(|| format!("Invalid glob pattern: {cli_database}"))?;
 
         let matched: Vec<_> = all_targets
-            .into_iter()
+            .iter()
             .filter(|target| {
                 target
                     .fields
@@ -99,8 +103,7 @@ fn get_filtered_generate_configs<'a>(
             anyhow::bail!(
                 "No database target matches '{}'. Available databases: {}",
                 cli_database,
-                spacetime_config
-                    .collect_all_targets_with_inheritance()
+                all_targets
                     .iter()
                     .filter_map(|t| t.fields.get("database").and_then(|v| v.as_str()))
                     .collect::<Vec<_>>()
@@ -110,39 +113,46 @@ fn get_filtered_generate_configs<'a>(
 
         matched
     } else {
-        all_targets
+        all_targets.iter().collect()
     };
 
-    // Collect generate entries from matched targets, inheriting entity fields
-    // Deduplicate by (module_path, serialized_generate_entry)
+    // Collect generate entries from matched targets, inheriting entity fields.
+    // Also synthesize module-binding entries for receiver dependencies.
+    // Deduplicate by (module_path, serialized_generate_entry).
     let mut seen = std::collections::HashSet::new();
     let mut generate_configs = Vec::new();
 
     for target in &filtered_targets {
-        let generate_entries = match &target.generate {
-            Some(entries) if !entries.is_empty() => entries,
-            _ => continue,
-        };
-
-        // Get module_path from the target's entity fields for dedup
         let module_path = target.fields.get("module-path").and_then(|v| v.as_str()).unwrap_or("");
+        let entries = target
+            .generate
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .cloned()
+            .chain(dependency_generate_entries(target, &all_targets)?);
 
-        for entry in generate_entries {
-            // Deduplicate: same module path + same generate entry config = generate once
-            let dedup_key = format!("{}:{}", module_path, serde_json::to_string(entry).unwrap_or_default());
+        for entry in entries {
+            // Deduplicate: same module path + same generate entry config = generate once.
+            let dedup_key = format!("{}:{}", module_path, serde_json::to_string(&entry).unwrap_or_default());
             if !seen.insert(dedup_key) {
                 continue;
             }
 
-            // Merge entity-level fields (module-path, etc.) with the generate entry
-            let mut merged = entry.clone();
-            // Inherit module-path from the target entity if not set in the generate entry
-            if let Some(mp) = target.fields.get("module-path") {
-                merged.entry("module-path".to_string()).or_insert_with(|| mp.clone());
+            // Merge entity-level fields (module-path, etc.) with the generate entry.
+            let mut merged = entry;
+            // Inherit module-path from the target entity if the entry has no source of its own.
+            if !has_module_source(&merged)
+                && let Some(mp) = target.fields.get("module-path")
+            {
+                merged.insert("module-path".to_string(), mp.clone());
             }
 
             let command_config = CommandConfig::new(schema, merged, args)?;
-            command_config.validate()?;
+            // Receiver language and output defaults will be resolved from the sender.
+            if command_config.get_one::<BindingKind>("bindings")? != Some(BindingKind::Module) {
+                command_config.validate()?;
+            }
             generate_configs.push(command_config);
         }
     }
@@ -164,6 +174,124 @@ fn get_filtered_generate_configs<'a>(
     )?;
 
     Ok(generate_configs)
+}
+
+pub(super) fn dependency_generate_entries(
+    target: &crate::spacetime_config::FlatTarget,
+    all_targets: &[crate::spacetime_config::FlatTarget],
+) -> anyhow::Result<Vec<HashMap<String, serde_json::Value>>> {
+    let Some(dependencies) = target.fields.get("dependencies") else {
+        return Ok(vec![]);
+    };
+    let dependencies = dependencies
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("`dependencies` must be an array"))?;
+    let sender_module_path = target
+        .fields
+        .get("module-path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("database dependencies require the sender to define `module-path`"))?;
+
+    let mut names = BTreeSet::new();
+    dependencies
+        .iter()
+        .map(|dependency| {
+            if let Some(name) = dependency.get("name").and_then(|name| name.as_str()) {
+                anyhow::ensure!(
+                    names.insert(name),
+                    "duplicate dependency name {name:?} in module {sender_module_path:?}"
+                );
+            }
+            dependency_generate_entry(dependency, sender_module_path, all_targets)
+        })
+        .collect()
+}
+
+fn has_module_source(fields: &HashMap<String, serde_json::Value>) -> bool {
+    ["module-path", "bin-path", "js-path", "wasm-file", "js-file"]
+        .iter()
+        .any(|key| fields.contains_key(*key))
+}
+
+fn get_module_source(fields: &HashMap<String, serde_json::Value>) -> Option<(&str, serde_json::Value)> {
+    ["module-path", "bin-path", "js-path"]
+        .into_iter()
+        .find_map(|key| fields.get(key).cloned().map(|value| (key, value)))
+}
+
+/// Reject paths and other invalid identifiers before resolving sources or writing files.
+fn validate_dependency_name(name: &str) -> anyhow::Result<()> {
+    spacetimedb_schema::identifier::validate_identifier(name)
+        .with_context(|| format!("invalid dependency name {name:?}"))
+}
+
+fn dependency_generate_entry(
+    dependency: &serde_json::Value,
+    sender_module_path: &str,
+    all_targets: &[crate::spacetime_config::FlatTarget],
+) -> anyhow::Result<HashMap<String, serde_json::Value>> {
+    let dependency = dependency
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("dependency entries must be objects"))?;
+    let name = dependency
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("dependency entries require `name`"))?;
+    validate_dependency_name(name)?;
+
+    let (source_key, source_value, build_options, dotnet_version) = if let Some(path) = dependency.get("module-path") {
+        (
+            "module-path",
+            path.clone(),
+            dependency.get("build-options"),
+            dependency.get("dotnet-version"),
+        )
+    } else if let Some(database) = dependency.get("database").and_then(|v| v.as_str()) {
+        let receiver = all_targets
+            .iter()
+            .find(|target| target.fields.get("database").and_then(|v| v.as_str()) == Some(database))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "dependency `{name}` refers to database `{database}`, which is not defined in this spacetime.json"
+                )
+            })?;
+        let (key, value) = get_module_source(&receiver.fields).ok_or_else(|| {
+            anyhow::anyhow!(
+                "dependency `{name}` refers to database `{database}`, but that database has no module source"
+            )
+        })?;
+        (
+            key,
+            value,
+            receiver.fields.get("build-options"),
+            receiver.fields.get("dotnet-version"),
+        )
+    } else {
+        anyhow::bail!("dependency `{name}` requires `database` or `module-path`");
+    };
+
+    // Generate's config keys differ from the publish target's source keys.
+    let source_key = match source_key {
+        "bin-path" => "wasm-file",
+        "js-path" => "js-file",
+        key => key,
+    };
+    let mut entry = HashMap::from([
+        ("sender-module-path".to_string(), serde_json::json!(sender_module_path)),
+        ("bindings".to_string(), serde_json::json!("module")),
+        ("dependency-name".to_string(), serde_json::json!(name)),
+        (source_key.to_string(), source_value),
+    ]);
+    for (key, value) in [
+        ("out-dir", dependency.get("out-dir")),
+        ("build-options", build_options),
+        ("dotnet-version", dotnet_version),
+    ] {
+        if let Some(value) = value {
+            entry.insert(key.to_string(), value.clone());
+        }
+    }
+    Ok(entry)
 }
 
 pub fn cli() -> clap::Command {
@@ -242,11 +370,24 @@ pub fn cli() -> clap::Command {
                 .help("The module prefix to use for generated types (only used with --lang unrealcpp)")
         )
         .arg(
+            Arg::new("import_extension")
+                .long("import-extension")
+                .value_parser(["none", "js", "ts"])
+                .help("The extension TypeScript bindings add to their imports of each other: `none` (the default) for bundlers, `js` for `moduleResolution: \"nodenext\"`, `ts` for runtimes that run TypeScript directly (only used with --lang typescript)"),
+        )
+        .arg(
             Arg::new("lang")
                 .long("lang")
                 .short('l')
                 .value_parser(clap::value_parser!(Language))
                 .help("The language to generate"),
+        )
+        .arg(
+            Arg::new("bindings")
+                .long("bindings")
+                .value_parser(clap::value_parser!(BindingKind))
+                .default_value("client")
+                .help("The kind of bindings to generate (client applications or inter-database module calls)"),
         )
         .arg(
             Arg::new("build_options")
@@ -302,6 +443,9 @@ pub struct GenerateRunConfig {
     pub dotnet_version: Option<u8>,
     pub out_dir: PathBuf,
     pub include_private: bool,
+    pub import_extension: Option<ImportExtension>,
+    pub bindings: BindingKind,
+    pub dependency_name: Option<String>,
 }
 
 fn prepare_generate_run_configs<'a>(
@@ -312,6 +456,7 @@ fn prepare_generate_run_configs<'a>(
     let mut runs = Vec::with_capacity(generate_configs.len());
 
     for command_config in generate_configs {
+        let bindings = command_config.get_one::<BindingKind>("bindings")?.unwrap_or_default();
         let project_path = command_config
             .get_resolved_path("module_path", config_dir)?
             .unwrap_or_else(|| {
@@ -320,8 +465,13 @@ fn prepare_generate_run_configs<'a>(
                     .unwrap_or_else(|| PathBuf::from("spacetimedb"))
             });
 
-        let wasm_file = command_config.get_one::<PathBuf>("wasm_file")?;
-        let js_file = command_config.get_one::<PathBuf>("js_file")?;
+        let wasm_file = command_config.get_resolved_path("wasm_file", config_dir)?;
+        let js_file = command_config.get_resolved_path("js_file", config_dir)?;
+        let sender_module_path = command_config.get_resolved_path("sender_module_path", config_dir)?;
+        let dependency_name = command_config.get_one::<String>("dependency_name")?;
+        if let Some(name) = &dependency_name {
+            validate_dependency_name(name)?;
+        }
         let requested_lang = command_config.get_one::<Language>("language")?;
         let namespace = command_config
             .get_one::<String>("namespace")?
@@ -337,6 +487,13 @@ fn prepare_generate_run_configs<'a>(
             let dotnet_version = command_config.get_one::<String>("dotnet_version")?;
             parse_optional_dotnet_version(dotnet_version.as_deref())?
         };
+
+        if bindings == BindingKind::Module && requested_lang == Some(Language::UnrealCpp) {
+            anyhow::bail!("Unreal C++ is a client binding target; use --lang cpp for module bindings");
+        }
+        if bindings == BindingKind::Client && requested_lang == Some(Language::Cpp) {
+            anyhow::bail!("--lang cpp requires --bindings module; use --lang unrealcpp for Unreal client bindings");
+        }
 
         // Validate Unreal-specific args first to preserve focused errors for this mode.
         if requested_lang == Some(Language::UnrealCpp) {
@@ -360,6 +517,17 @@ fn prepare_generate_run_configs<'a>(
 
         let lang = match requested_lang {
             Some(lang) => lang,
+            None if bindings == BindingKind::Module => {
+                let sender_dir = sender_module_path
+                    .as_deref()
+                    .unwrap_or(config_dir.unwrap_or_else(|| Path::new(".")));
+                match detect_module_language(sender_dir)? {
+                    ModuleLanguage::Rust => Language::Rust,
+                    ModuleLanguage::Javascript => Language::TypeScript,
+                    ModuleLanguage::Csharp => Language::Csharp,
+                    ModuleLanguage::Cpp => Language::Cpp,
+                }
+            }
             None => {
                 let client_project_dir = config_dir.unwrap_or_else(|| Path::new("."));
                 let detected = detect_default_language(client_project_dir)?;
@@ -372,18 +540,45 @@ fn prepare_generate_run_configs<'a>(
             }
         };
 
-        let out_dir = command_config
-            .get_resolved_path("out_dir", config_dir)?
-            .or_else(|| {
-                command_config
-                    .get_resolved_path("uproject_dir", config_dir)
-                    .ok()
-                    .flatten()
-            })
-            .or_else(|| default_out_dir_for_language(lang).map(|p| config_dir.map(|d| d.join(&p)).unwrap_or(p)))
-            .ok_or_else(|| anyhow::anyhow!("Either --out-dir or --uproject-dir is required"))?;
+        let out_dir = if bindings == BindingKind::Module {
+            let default_dir = match lang {
+                Language::Rust | Language::TypeScript => "src/remote_bindings",
+                Language::Csharp | Language::Cpp => "remote_bindings",
+                Language::UnrealCpp => unreachable!("Unreal module bindings rejected above"),
+            };
+            command_config
+                .get_resolved_path("out_dir", config_dir)?
+                .unwrap_or_else(|| {
+                    sender_module_path
+                        .as_deref()
+                        .unwrap_or(config_dir.unwrap_or_else(|| Path::new(".")))
+                        .join(default_dir)
+                })
+        } else {
+            command_config
+                .get_resolved_path("out_dir", config_dir)?
+                .or_else(|| {
+                    command_config
+                        .get_resolved_path("uproject_dir", config_dir)
+                        .ok()
+                        .flatten()
+                })
+                .or_else(|| default_out_dir_for_language(lang).map(|p| config_dir.map(|d| d.join(&p)).unwrap_or(p)))
+                .ok_or_else(|| anyhow::anyhow!("Either --out-dir or --uproject-dir is required"))?
+        };
 
         let include_private = command_config.get_one::<bool>("include_private")?.unwrap_or(false);
+        let import_extension = command_config
+            .get_one::<String>("import_extension")?
+            .map(|ext| match ext.as_str() {
+                "none" => Ok(ImportExtension::None),
+                "js" => Ok(ImportExtension::Js),
+                "ts" => Ok(ImportExtension::Ts),
+                other => Err(anyhow::anyhow!(
+                    "Unknown import extension {other:?}: use none, js or ts"
+                )),
+            })
+            .transpose()?;
 
         runs.push(GenerateRunConfig {
             project_path,
@@ -397,6 +592,9 @@ fn prepare_generate_run_configs<'a>(
             dotnet_version,
             out_dir,
             include_private,
+            import_extension,
+            bindings,
+            dependency_name,
         });
     }
 
@@ -431,6 +629,7 @@ fn language_cli_name(lang: Language) -> &'static str {
         Language::Csharp => "csharp",
         Language::TypeScript => "typescript",
         Language::UnrealCpp => "unrealcpp",
+        Language::Cpp => "cpp",
     }
 }
 
@@ -438,7 +637,7 @@ pub fn default_out_dir_for_language(lang: Language) -> Option<PathBuf> {
     match lang {
         Language::Rust | Language::TypeScript => Some(PathBuf::from("src/module_bindings")),
         Language::Csharp => Some(PathBuf::from("module_bindings")),
-        Language::UnrealCpp => None,
+        Language::UnrealCpp | Language::Cpp => None,
     }
 }
 
@@ -467,6 +666,56 @@ pub fn build_generate_entry(
     entry
 }
 
+fn generate_dependency_module_files(files: Vec<OutputFile>, dependency_name: &str) -> Vec<OutputFile> {
+    files
+        .into_iter()
+        .map(|OutputFile { filename, code }| {
+            let filename = if filename == "lib.rs" {
+                format!("{dependency_name}/mod.rs")
+            } else {
+                format!("{dependency_name}/{filename}")
+            };
+            OutputFile { filename, code }
+        })
+        .collect()
+}
+
+fn write_remote_bindings_mod(out_dir: &Path, dependency_name: &str) -> anyhow::Result<()> {
+    fs::create_dir_all(out_dir)?;
+    let path = out_dir.join("mod.rs");
+    let module_decl = format!("pub mod {dependency_name};");
+
+    let mut module_decls = if path.exists() {
+        fs::read_to_string(&path)?
+            .lines()
+            .filter(|line| line.starts_with("pub mod "))
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    if !module_decls.iter().any(|line| line == &module_decl) {
+        module_decls.push(module_decl);
+        module_decls.sort();
+    }
+
+    let mut lines = vec![
+        AUTO_GENERATED_PREFIX.to_string(),
+        "// WILL NOT BE SAVED. MODIFY DEPENDENCIES IN SPACETIME.JSON INSTEAD.".to_string(),
+        String::new(),
+        "#![allow(unused, clippy::all)]".to_string(),
+        String::new(),
+    ];
+    lines.extend(module_decls);
+
+    let code = format!("{}\n", lines.join("\n"));
+    if !path.exists() || fs::read_to_string(&path)? != code {
+        println!("Writing file {}", path.display());
+        fs::write(path, code)?;
+    }
+    Ok(())
+}
+
 pub async fn run_prepared_generate_configs(
     run_configs: Vec<GenerateRunConfig>,
     extract_descriptions: ExtractDescriptions,
@@ -476,13 +725,19 @@ pub async fn run_prepared_generate_configs(
 ) -> anyhow::Result<()> {
     for run in run_configs {
         println!(
-            "Generating {} module bindings for module {}",
+            "Generating {} {} bindings for module {}",
             run.lang.display_name(),
+            run.bindings.display_name(),
             run.project_path.display()
         );
 
         if namespace_from_cli && run.lang != Language::Csharp {
             return Err(anyhow::anyhow!("--namespace is only supported with --lang csharp"));
+        }
+        if run.import_extension.is_some() && run.lang != Language::TypeScript {
+            return Err(anyhow::anyhow!(
+                "--import-extension is only supported with --lang typescript"
+            ));
         }
 
         let module: ModuleDef = if let Some(paths) = &json_module {
@@ -511,8 +766,6 @@ pub async fn run_prepared_generate_configs(
             extract_descriptions(&path).context("could not extract schema")?
         };
 
-        fs::create_dir_all(&run.out_dir)?;
-
         let mut paths = BTreeSet::new();
         let private_tables = private_table_names(&module);
         if !private_tables.is_empty() && !run.include_private {
@@ -523,28 +776,63 @@ pub async fn run_prepared_generate_configs(
             options.visibility = CodegenVisibility::IncludePrivate;
         }
 
-        let csharp_lang;
-        let unreal_cpp_lang;
-        let gen_lang = match run.lang {
-            Language::Csharp => {
-                csharp_lang = Csharp {
+        let generated_files = if run.bindings == BindingKind::Module {
+            let lang = match run.lang {
+                Language::Rust => ReceiverLanguage::Rust,
+                Language::TypeScript => ReceiverLanguage::TypeScript,
+                Language::Csharp => ReceiverLanguage::Csharp {
                     namespace: &run.namespace,
-                };
-                &csharp_lang as &dyn Lang
+                },
+                Language::Cpp => ReceiverLanguage::Cpp,
+                Language::UnrealCpp => anyhow::bail!("Unreal C++ is a client binding target"),
+            };
+            let files = generate_receiver_bindings(&module, lang, run.dependency_name.as_deref())?;
+            if run.lang == Language::Rust
+                && let Some(name) = &run.dependency_name
+            {
+                write_remote_bindings_mod(&run.out_dir, name)?;
             }
-            Language::UnrealCpp => {
-                unreal_cpp_lang = UnrealCpp {
-                    module_name: run.module_name.as_ref().unwrap(),
-                    uproject_dir: &run.out_dir,
-                    module_prefix: run.module_prefix.as_deref().unwrap_or(""),
-                };
-                &unreal_cpp_lang as &dyn Lang
+
+            if let Some(name) = &run.dependency_name {
+                generate_dependency_module_files(files, name)
+            } else {
+                files
             }
-            Language::Rust => &Rust,
-            Language::TypeScript => &TypeScript,
+        } else {
+            let csharp_lang;
+            let unreal_cpp_lang;
+            let typescript_lang;
+            let gen_lang = match run.lang {
+                Language::Csharp => {
+                    csharp_lang = Csharp {
+                        namespace: &run.namespace,
+                    };
+                    &csharp_lang as &dyn Lang
+                }
+                Language::UnrealCpp => {
+                    unreal_cpp_lang = UnrealCpp {
+                        module_name: run.module_name.as_ref().unwrap(),
+                        uproject_dir: &run.out_dir,
+                        module_prefix: run.module_prefix.as_deref().unwrap_or(""),
+                    };
+                    &unreal_cpp_lang as &dyn Lang
+                }
+                Language::Rust => &Rust,
+                Language::TypeScript => {
+                    typescript_lang = TypeScript {
+                        import_extension: run.import_extension.unwrap_or_default(),
+                    };
+                    &typescript_lang as &dyn Lang
+                }
+                Language::Cpp => {
+                    anyhow::bail!("C++ client bindings are not supported; use --lang unrealcpp for Unreal")
+                }
+            };
+            generate(&module, gen_lang, &options)
         };
 
-        for OutputFile { filename, code } in generate(&module, gen_lang, &options) {
+        fs::create_dir_all(&run.out_dir)?;
+        for OutputFile { filename, code } in generated_files {
             let fname = Path::new(&filename);
             if let Some(parent) = fname.parent().filter(|p| !p.as_os_str().is_empty()) {
                 println!("Creating directory {}", run.out_dir.join(parent).display());
@@ -558,8 +846,9 @@ pub async fn run_prepared_generate_configs(
             paths.insert(path);
         }
 
-        let cleanup_root = match run.lang {
-            Language::UnrealCpp => run.out_dir.join("Source").join(run.module_name.as_ref().unwrap()),
+        let cleanup_root = match (run.bindings, &run.dependency_name, run.lang) {
+            (BindingKind::Module, Some(name), _) => run.out_dir.join(name),
+            (_, _, Language::UnrealCpp) => run.out_dir.join("Source").join(run.module_name.as_ref().unwrap()),
             _ => run.out_dir.clone(),
         };
 
@@ -691,7 +980,10 @@ pub async fn exec_from_entries(
         .into_iter()
         .map(|entry| {
             let command_config = CommandConfig::new(&schema, entry, &empty_matches)?;
-            command_config.validate()?;
+            // Receiver language and output defaults will be resolved from the sender.
+            if command_config.get_one::<BindingKind>("bindings")? != Some(BindingKind::Module) {
+                command_config.validate()?;
+            }
             Ok(command_config)
         })
         .collect::<Result<Vec<_>, anyhow::Error>>()?;
@@ -700,25 +992,58 @@ pub async fn exec_from_entries(
     run_prepared_generate_configs(run_configs, extract_descriptions, None, force, false).await
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BindingKind {
+    #[default]
+    Client,
+    Module,
+}
+
+impl clap::ValueEnum for BindingKind {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::Client, Self::Module]
+    }
+
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        Some(match self {
+            Self::Client => PossibleValue::new("client"),
+            Self::Module => PossibleValue::new("module"),
+        })
+    }
+}
+
+impl BindingKind {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            BindingKind::Client => "client",
+            BindingKind::Module => "module",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Language {
     Csharp,
     TypeScript,
     Rust,
+    #[serde(alias = "c++", alias = "cxx")]
+    Cpp,
     #[serde(alias = "uecpp", alias = "ue5cpp", alias = "unreal")]
     UnrealCpp,
 }
 
 impl clap::ValueEnum for Language {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Csharp, Self::TypeScript, Self::Rust, Self::UnrealCpp]
+        &[Self::Csharp, Self::TypeScript, Self::Rust, Self::Cpp, Self::UnrealCpp]
     }
     fn to_possible_value(&self) -> Option<PossibleValue> {
         Some(match self {
             Self::Csharp => clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs"]),
             Self::TypeScript => clap::builder::PossibleValue::new("typescript").aliases(["ts", "TS"]),
             Self::Rust => clap::builder::PossibleValue::new("rust").aliases(["rs", "RS"]),
+            Self::Cpp => PossibleValue::new("cpp").aliases(["c++", "cxx"]),
             Self::UnrealCpp => PossibleValue::new("unrealcpp").aliases(["uecpp", "ue5cpp", "unreal"]),
         })
     }
@@ -732,6 +1057,7 @@ impl Language {
             Language::Csharp => "C#",
             Language::TypeScript => "TypeScript",
             Language::UnrealCpp => "Unreal C++",
+            Language::Cpp => "C++",
         }
     }
 
@@ -742,7 +1068,7 @@ impl Language {
             Language::TypeScript => {
                 // TODO: implement formatting.
             }
-            Language::UnrealCpp => {
+            Language::UnrealCpp | Language::Cpp => {
                 // TODO: implement formatting.
             }
         }
@@ -931,6 +1257,160 @@ mod tests {
     }
 
     #[test]
+    fn test_dependencies_generate_module_bindings_entries() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+
+        let spacetime_config: SpacetimeConfig = json5::from_str(
+            r#"{
+                database: "game",
+                "module-path": "./game",
+                "build-options": "--sender-only",
+                "dotnet-version": "8",
+                dependencies: [
+                    {
+                        name: "inventory",
+                        "module-path": "./inventory",
+                        "build-options": "--features inventory",
+                        "dotnet-version": "9",
+                    },
+                    {
+                        name: "auth",
+                        "module-path": "./auth",
+                    },
+                ],
+                children: [
+                    {
+                        database: "game-world",
+                        "module-path": "./game_world",
+                        "build-options": "--features world",
+                        "dotnet-version": "10",
+                    },
+                    {
+                        database: "lobby",
+                        "module-path": "./lobby",
+                        dependencies: [
+                            {
+                                name: "game_world",
+                                database: "game-world",
+                            },
+                            {
+                                name: "auth",
+                                "module-path": "./auth",
+                                "out-dir": "./lobby/src/auth_bindings",
+                            },
+                        ],
+                    },
+                ],
+            }"#,
+        )
+        .unwrap();
+
+        // Selecting the root generates only its own dependencies.
+        let matches = cmd.clone().get_matches_from(vec!["generate", "game"]);
+        let filtered = get_filtered_generate_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
+        assert_eq!(filtered.len(), 2);
+        assert_eq!(
+            filtered[0].get_one::<String>("dependency_name").unwrap(),
+            Some("inventory".to_string())
+        );
+        assert_eq!(
+            filtered[0].get_one::<PathBuf>("module_path").unwrap(),
+            Some(PathBuf::from("./inventory"))
+        );
+        assert_eq!(filtered[0].get_one::<PathBuf>("out_dir").unwrap(), None);
+        assert_eq!(
+            filtered[1].get_one::<String>("dependency_name").unwrap(),
+            Some("auth".to_string())
+        );
+        assert_eq!(
+            filtered[1].get_one::<PathBuf>("module_path").unwrap(),
+            Some(PathBuf::from("./auth"))
+        );
+        assert_eq!(filtered[1].get_one::<PathBuf>("out_dir").unwrap(), None);
+
+        assert_eq!(
+            filtered[0].get_one::<String>("build_options").unwrap().as_deref(),
+            Some("--features inventory")
+        );
+        assert_eq!(
+            filtered[0].get_one::<String>("dotnet_version").unwrap().as_deref(),
+            Some("9")
+        );
+        assert_eq!(filtered[1].get_one::<String>("build_options").unwrap(), None);
+        assert_eq!(filtered[1].get_one::<String>("dotnet_version").unwrap(), None);
+        assert_eq!(
+            filtered[0].get_one::<PathBuf>("sender_module_path").unwrap(),
+            Some(PathBuf::from("./game"))
+        );
+
+        // A child without dependencies does not inherit the root's dependencies.
+        let matches = cmd.clone().get_matches_from(vec!["generate", "game-world"]);
+        let filtered = get_filtered_generate_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
+        assert!(filtered.is_empty());
+
+        // Selecting a child generates its dependencies, including its custom output directory.
+        let matches = cmd.clone().get_matches_from(vec!["generate", "lobby"]);
+        let filtered = get_filtered_generate_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
+        assert_eq!(filtered.len(), 2);
+        assert_eq!(
+            filtered[0].get_one::<String>("dependency_name").unwrap(),
+            Some("game_world".to_string())
+        );
+        assert_eq!(
+            filtered[0].get_one::<PathBuf>("module_path").unwrap(),
+            Some(PathBuf::from("./game_world"))
+        );
+        assert_eq!(filtered[0].get_one::<PathBuf>("out_dir").unwrap(), None);
+        assert_eq!(
+            filtered[1].get_one::<String>("dependency_name").unwrap(),
+            Some("auth".to_string())
+        );
+        assert_eq!(
+            filtered[1].get_one::<PathBuf>("module_path").unwrap(),
+            Some(PathBuf::from("./auth"))
+        );
+        assert_eq!(
+            filtered[1].get_one::<PathBuf>("out_dir").unwrap(),
+            Some(PathBuf::from("./lobby/src/auth_bindings"))
+        );
+
+        assert_eq!(
+            filtered[0].get_one::<String>("build_options").unwrap().as_deref(),
+            Some("--features world")
+        );
+        assert_eq!(
+            filtered[0].get_one::<String>("dotnet_version").unwrap().as_deref(),
+            Some("10")
+        );
+        assert_eq!(
+            filtered[0].get_one::<PathBuf>("sender_module_path").unwrap(),
+            Some(PathBuf::from("./lobby"))
+        );
+
+        // Generating all targets retains both outputs for the shared auth dependency.
+        let matches = cmd.clone().get_matches_from(vec!["generate"]);
+        let filtered = get_filtered_generate_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
+        assert_eq!(filtered.len(), 4);
+        let auth_outputs = filtered
+            .iter()
+            .filter(|entry| entry.get_one::<String>("dependency_name").unwrap().as_deref() == Some("auth"))
+            .map(|entry| entry.get_one::<PathBuf>("out_dir").unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            auth_outputs,
+            vec![None, Some(PathBuf::from("./lobby/src/auth_bindings"))]
+        );
+        for entry in filtered {
+            assert_eq!(entry.get_one::<Language>("language").unwrap(), None);
+            assert_eq!(
+                entry.get_one::<BindingKind>("bindings").unwrap(),
+                Some(BindingKind::Module)
+            );
+        }
+    }
+
+    #[test]
     fn test_generate_entry_specific_args_error_with_multiple_entries() {
         let cmd = cli();
         let schema = build_generate_config_schema(&cmd).unwrap();
@@ -1003,6 +1483,111 @@ mod tests {
         let command_config = CommandConfig::new(&schema, HashMap::new(), &matches).unwrap();
         let runs = prepare_generate_run_configs(vec![command_config], false, None).unwrap();
         assert_eq!(runs[0].project_path, PathBuf::from("spacetimedb"));
+    }
+
+    #[tokio::test]
+    async fn test_receiver_dependencies_prepare_options_and_generate_supported_languages() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+        let matches = cmd.clone().get_matches_from(vec!["generate", "sender"]);
+        for (manifest, lang, default_out_dir) in [
+            ("Cargo.toml", Language::Rust, "src/remote_bindings"),
+            ("package.json", Language::TypeScript, "src/remote_bindings"),
+            ("Sender.csproj", Language::Csharp, "remote_bindings"),
+            ("CMakeLists.txt", Language::Cpp, "remote_bindings"),
+        ] {
+            let temp = tempfile::TempDir::new().unwrap();
+            let sender = temp.path().join("sender");
+            fs::create_dir_all(&sender).unwrap();
+            fs::write(sender.join(manifest), "").unwrap();
+            // The client project has a different language from most senders.
+            fs::write(temp.path().join("package.json"), "{}").unwrap();
+            let config: SpacetimeConfig = serde_json::from_value(serde_json::json!({
+                "database": "sender",
+                "module-path": "sender",
+                "dependencies": [{ "name": "receiver", "database": "receiver-db" }],
+                "children": [{
+                    "database": "receiver-db",
+                    "bin-path": "receiver.wasm",
+                    "build-options": "--features receiver",
+                    "dotnet-version": "10"
+                }]
+            }))
+            .unwrap();
+            let configs = get_filtered_generate_configs(&config, &cmd, &schema, &matches).unwrap();
+            let runs = prepare_generate_run_configs(configs, true, Some(temp.path())).unwrap();
+            assert_eq!(runs.len(), 1);
+            let run = &runs[0];
+            assert_eq!(run.bindings, BindingKind::Module);
+            assert_eq!(run.lang, lang);
+            assert_eq!(run.dependency_name.as_deref(), Some("receiver"));
+            assert_eq!(
+                run.wasm_file.as_deref(),
+                Some(temp.path().join("receiver.wasm").as_path())
+            );
+            assert_eq!(run.build_options, "--features receiver");
+            assert_eq!(run.dotnet_version, Some(10));
+            assert_eq!(run.out_dir, sender.join(default_out_dir));
+            let out_dir = run.out_dir.clone();
+
+            let result = run_prepared_generate_configs(
+                runs,
+                |path| {
+                    assert!(path.is_absolute());
+                    assert_eq!(path.file_name().unwrap(), "receiver.wasm");
+                    Ok(spacetimedb_lib::db::raw_def::v10::RawModuleDefV10::default()
+                        .try_into()
+                        .unwrap())
+                },
+                None,
+                false,
+                false,
+            )
+            .await;
+            if lang == Language::Rust {
+                result.unwrap();
+                assert!(out_dir.join("mod.rs").exists());
+                assert!(out_dir.join("receiver/mod.rs").exists());
+            } else if lang == Language::TypeScript {
+                result.unwrap();
+                assert!(out_dir.join("receiver/index.ts").exists());
+                assert!(!out_dir.join("receiver/package.json").exists());
+            } else {
+                assert_eq!(
+                    result.unwrap_err().to_string(),
+                    format!(
+                        "{} receiver binding generation is not implemented yet",
+                        lang.display_name()
+                    )
+                );
+                assert!(!out_dir.exists(), "unimplemented generation must not write output");
+            }
+        }
+    }
+
+    #[test]
+    fn test_direct_module_generation_preserves_explicit_options() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+        for language in ["rust", "typescript", "csharp", "cpp"] {
+            let args = cmd.clone().get_matches_from([
+                "generate",
+                "--bindings",
+                "module",
+                "--lang",
+                language,
+                "--bin-path",
+                "receiver.wasm",
+                "--out-dir",
+                "bindings",
+            ]);
+            let config = CommandConfig::new(&schema, HashMap::new(), &args).unwrap();
+            let runs = prepare_generate_run_configs(vec![config], false, None).unwrap();
+            assert_eq!(language_cli_name(runs[0].lang), language);
+            assert_eq!(runs[0].dependency_name, None);
+            assert_eq!(runs[0].wasm_file, Some(PathBuf::from("receiver.wasm")));
+            assert_eq!(runs[0].out_dir, PathBuf::from("bindings"));
+        }
     }
 
     #[test]
