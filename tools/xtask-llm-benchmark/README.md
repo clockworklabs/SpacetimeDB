@@ -40,10 +40,13 @@ task counts separate from scorer-check counts and always include coverage. For
 example, 99 passing tasks and one refusal means **99/99 scored tasks passed, with
 99/100 tasks scored and one refusal**. It does not mean a complete 100% benchmark.
 Zero scored tasks means no score, not 0%. An incomplete batch stays off the website.
-Migration setup failures and publish failures without a recognized source-code
-diagnostic also block the batch, even when the server responds to a health check.
-This is conservative: an unknown code error can block a batch until classified.
-A candidate whose schema fails validation or needs a manual migration is scored normally.
+Model mistakes have no fixed list of messages, so any candidate publish failure
+scores normally unless it matches a short list of environment errors, such as a
+full disk or a refused connection, or the server fails a health check afterward.
+Migration setup failures also block the batch. A batch only completes if a known-good
+module still publishes at the end, so a build environment that breaks mid-run cannot
+upload misleading zeroes. A brief outage that matches none of these checks can score
+one task as a failure; its error stays in the batch record.
 
 Each finished attempt is saved before an error can stop the batch. If a task
 reports an infrastructure error, new tasks stop, but started tasks finish and save

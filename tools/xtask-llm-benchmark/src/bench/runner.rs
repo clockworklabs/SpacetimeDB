@@ -240,83 +240,46 @@ fn provider_retry_delay(error: &anyhow::Error) -> Option<u64> {
     }
 }
 
-fn is_code_publish_failure(message: &str, source_root: &Path, lang: Lang) -> bool {
-    // Unknown publish failures are unscored. A healthy ping does not prove a valid build environment.
-    let message = message.replace('\\', "/").to_ascii_lowercase();
-    // The candidate built, but its schema is invalid or cannot migrate the task's existing data.
-    if message.contains("errors occurred:") || message.contains("aborting publish due to required manual migration") {
-        return true;
-    }
-    if [
-        "error[e0463]",
-        "error[e0460]",
-        "error[e0514]",
-        "error cs0006",
-        "error cs0009",
-        "error cs0012",
-        "error cs0518",
-        "error cs1705",
-    ]
-    .iter()
-    .any(|code| message.contains(code))
-    {
-        return false;
-    }
-    let relative = match lang {
-        Lang::Rust => "src/lib.rs",
-        Lang::CSharp => "lib.cs",
-        Lang::TypeScript => "src/index.ts",
+// Model mistakes have no fixed list of messages, so a candidate failure scores unless it matches one of these.
+fn is_environment_failure(message: &str) -> bool {
+    const SIGNATURES: [&str; 11] = [
+        "no space left on device",
+        "out of memory",
+        "cannot allocate memory",
+        "connection refused",
+        "connection reset",
+        "error sending request",
+        "failed to download",
+        "spurious network error",
+        "could not resolve host",
+        "unable to load the service index",
+        "service unavailable",
+    ];
+    // rustc quotes source lines as `12 | code`, and a model's own strings can read like these errors.
+    let quotes_source = |line: &str| {
+        line.split_once('|')
+            .is_some_and(|(number, _)| number.trim().parse::<u32>().is_ok())
     };
-    let root = source_root
-        .canonicalize()
-        .or_else(|_| std::path::absolute(source_root))
-        .unwrap_or_else(|_| source_root.to_path_buf())
-        .to_string_lossy()
-        .replace('\\', "/")
-        .to_ascii_lowercase();
-    let root = root.trim_start_matches("//?/");
-    let absolute = format!("{root}/{relative}");
-    let sdk_output = format!("{root}/obj/");
-    let is_generated_location = |location: &str| {
-        let location = location.trim().trim_start_matches("//?/").trim_start_matches("./");
-        // SDK source generators compile the candidate's types from its own obj directory.
-        (matches!(lang, Lang::CSharp) && location.starts_with(&sdk_output))
-            || [relative, absolute.as_str()].iter().any(|path| {
-                location
-                    .strip_prefix(path)
-                    .is_some_and(|rest| rest.starts_with(':') || rest.starts_with('('))
-            })
-    };
-    let lines: Vec<_> = message.lines().map(str::trim).collect();
-    let mut found = false;
-    for (index, line) in lines.iter().enumerate() {
-        let rust_error = matches!(lang, Lang::Rust) && (line.starts_with("error[e") || line.starts_with("error:"));
-        if rust_error {
-            // Cargo, rustc and CLI summaries add no source diagnostic of their own.
-            if line.starts_with("error: could not compile")
-                || line.starts_with("error: aborting due to")
-                || line.starts_with("error: command [\"cargo\"")
-            {
-                continue;
-            }
-            let location = lines[index + 1..]
-                .iter()
-                .take_while(|line| !line.starts_with("error") && !line.starts_with("warning"))
-                .find_map(|line| line.strip_prefix("--> "));
-            if !location.is_some_and(is_generated_location) {
-                return false;
-            }
-            found = true;
-        } else if (matches!(lang, Lang::CSharp) && (line.contains(": error cs") || line.contains(": error stdb")))
-            || (matches!(lang, Lang::TypeScript) && line.contains(": error ts"))
-        {
-            if !is_generated_location(line) {
-                return false;
-            }
-            found = true;
-        }
-    }
-    found
+    message.lines().filter(|line| !quotes_source(line)).any(|line| {
+        let line = line.to_ascii_lowercase();
+        SIGNATURES.iter().any(|signature| line.contains(signature))
+    })
+}
+
+// A ping cannot show that builds still work, so a batch only completes if known-good code still publishes.
+async fn ensure_environment_healthy(cfg: &BenchRunContext<'_>) -> Result<()> {
+    ensure_server_healthy(cfg.host.as_deref()).await?;
+    let route_tag = run_scope_tag(cfg.mode, cfg.route.vendor.slug(), &cfg.route.api_model);
+    let control = build_goldens_only_for_lang(
+        cfg.host.clone(),
+        cfg.bench_root,
+        cfg.lang,
+        Some(&["t_000".to_string()]),
+        &format!("{route_tag}-control"),
+    )
+    .await
+    .context("known-good control module failed to publish; refusing to upload results")?;
+    delete_databases(control).await
 }
 
 impl TaskRunner {
@@ -581,10 +544,9 @@ impl TaskRunner {
                         (Some(database), None)
                     }
                     Err(error) => {
-                        let source_root = work_server_dir_scoped(&category, &task_id, cfg.lang_name, "llm", &route_tag);
-                        if !is_code_publish_failure(&format!("{error:#}"), &source_root, cfg.lang) {
+                        if is_environment_failure(&format!("{error:#}")) {
                             return Err(RunOneError::Infrastructure {
-                                msg: format!("publish failed without a source-code diagnostic: {error:#}"),
+                                msg: format!("publish hit an environment failure: {error:#}"),
                                 llm_output: Some(llm_output),
                                 provider_error: None,
                                 completed_outcome: None,
@@ -1019,9 +981,9 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
 
     println!("[runner] completed batch: {} results", outcomes.len());
 
-    // A dead local server turns later publish failures into misleading zeroes.
-    // Refuse to analyze or upload any batch that cannot pass a final health check.
-    ensure_server_healthy(cfg.host.as_deref()).await?;
+    // A broken server or build environment turns later publish failures into misleading zeroes.
+    // Refuse to analyze or upload any batch that cannot pass a final environment check.
+    ensure_environment_healthy(cfg).await?;
     record.complete()?;
 
     if cfg.dry_run {
@@ -1200,7 +1162,7 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
     };
     let outcomes = finalize_batch(outcomes, pending)?;
 
-    ensure_server_healthy(cfg.host.as_deref()).await?;
+    ensure_environment_healthy(cfg).await?;
     record.complete()?;
 
     if cfg.dry_run {
@@ -1785,72 +1747,39 @@ mod build_cleanup_tests {
     }
 
     #[test]
-    fn only_explicit_code_diagnostics_are_scored_as_publish_failures() {
-        let root = std::env::temp_dir().join("benchmark-module");
-        let root = root.as_path();
-        for diagnostic in [
-            "error[E0425]: cannot find value `missing` in this scope",
-            "error: expected one of `!` or `::`, found `main`",
-            "error: unexpected closing delimiter: `}`",
-            "error: mismatched closing delimiter: `)`",
-            "error: invalid suffix `words` for number literal",
-            "error: this file contains an unclosed delimiter",
-            "error: unknown start of token: \\",
-        ] {
-            let diagnostic = format!(
-                "{diagnostic}\n --> src/lib.rs:10:5\nerror: could not compile `test` due to 1 previous error\nError: command [\"cargo\", \"build\"] exited with code 101"
-            );
-            assert!(is_code_publish_failure(&diagnostic, root, Lang::Rust), "{diagnostic}");
-        }
-        for (lang, diagnostic) in [
-            (
-                Lang::CSharp,
-                "Lib.cs(10,5): error CS0103: The name 'missing' does not exist",
-            ),
-            (
-                Lang::TypeScript,
-                "src/index.ts(2,3): error TS2304: Cannot find name 'missing'",
-            ),
-        ] {
-            assert!(is_code_publish_failure(diagnostic, root, lang), "{diagnostic}");
-        }
-        for root in [root, Path::new("target/llm-runs/test-relative-module")] {
-            let source = std::path::absolute(root).unwrap().join("Lib.cs");
-            let diagnostic = format!("{}(10,5): error CS0103: missing name", source.display());
-            assert!(is_code_publish_failure(&diagnostic, root, Lang::CSharp), "{diagnostic}");
-            let generated = std::path::absolute(root).unwrap().join("obj/Release/Shape.cs");
-            let diagnostic = format!("{}(27,33): error CS0144: abstract type", generated.display());
-            assert!(is_code_publish_failure(&diagnostic, root, Lang::CSharp), "{diagnostic}");
-        }
-        let rejected_migration = "Errors occurred:\nAdding a column enabled to table widget requires a default value annotation\n\nAborting publish due to required manual migration.";
-        let invalid_schema = "Error: Local module schema inspection failed:\nError: Errors occurred:\nname `OrderLineDetail` is used for multiple types";
-        for lang in [Lang::Rust, Lang::CSharp, Lang::TypeScript] {
-            assert!(is_code_publish_failure(rejected_migration, root, lang));
-            assert!(is_code_publish_failure(invalid_schema, root, lang));
-        }
-        for diagnostic in [
-            "HTTP 503 Service Unavailable",
-            "authentication token expired",
-            "No space left on device",
-            "failed to download package",
+    fn candidate_publish_failures_score_unless_the_environment_failed() {
+        for message in [
+            "error[E0425]: cannot find value `missing` in this scope\n --> src/lib.rs:10:5\nerror: could not compile `test` due to 1 previous error\nError: command [\"cargo\", \"build\"] exited with code 101",
+            "error: Expected a string literal for `name`, but found an identifier.\n --> src/lib.rs:4:9",
+            "error[E0463]: can't find crate for `serde`\n --> src/lib.rs:1:1",
+            "Lib.cs(10,5): error CS0103: The name 'missing' does not exist",
+            "obj/Release/Shape.cs(27,33): error CS0144: abstract type",
+            "src/index.ts(2,3): error TS2304: Cannot find name 'missing'",
+            "Errors occurred:\nAdding a column enabled to table widget requires a default value annotation\n\nAborting publish due to required manual migration.",
+            "Error: Local module schema inspection failed:\nError: Errors occurred:\nname `OrderLineDetail` is used for multiple types",
+            "Error: It seems like you haven't exported your schema. You must `export default schema(...);`",
+            "Your module doesn't import the `spacetimedb/server` package at all",
+            "Error: Local module schema inspection failed:\nReferenceError: missing is not defined",
             "command dotnet publish exited with code 1",
-            "migration setup failed",
-            "unknown publish error",
-            "Local module schema inspection timed out",
-            "error: linking with `cc` failed",
-            "error: linking with `cc` failed\nError: command [\"cargo\", \"build\"] exited with code 101",
-            "Error: command [\"cargo\", \"build\"] exited with code 101",
-            "error: could not compile `test` due to 1 previous error",
-            "error[E0463]: can't find crate for `std`\n --> src/lib.rs:1:1",
-            "error[E0425]: cannot find value\n --> /dependencies/src/lib.rs:1:1",
-            "Lib.cs(1,1): error CS0006: Metadata file could not be found",
-            "/dependencies/Lib.cs(1,1): error CS0103: missing name",
-            "/dependencies/obj/Shape.cs(1,1): error CS0144: abstract type",
-            "node_modules/package/index.ts(1,1): error TS2304: missing name",
+            "error[E0599]: no method named `body`\n --> src/lib.rs:12:5\n   |\n12 |     let page = fetch(url).expect(\"failed to download\");\n   |                ^^^^^",
+            "a failure nobody has seen before",
         ] {
-            for lang in [Lang::Rust, Lang::CSharp, Lang::TypeScript] {
-                assert!(!is_code_publish_failure(diagnostic, root, lang), "{diagnostic}");
-            }
+            assert!(!is_environment_failure(message), "{message}");
+        }
+        for message in [
+            "No space left on device",
+            "fatal error: out of memory",
+            "cannot allocate memory",
+            "tcp connect error: Connection refused (os error 111)",
+            "Connection reset by peer",
+            "error sending request for url (http://127.0.0.1:3000/v1/database)",
+            "failed to download package",
+            "warning: spurious network error (3 tries remaining)",
+            "Could not resolve host: index.crates.io",
+            "error NU1301: Unable to load the service index for source https://api.nuget.org/v3/index.json",
+            "HTTP 503 Service Unavailable",
+        ] {
+            assert!(is_environment_failure(message), "{message}");
         }
     }
 
