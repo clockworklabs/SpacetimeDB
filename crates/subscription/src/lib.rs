@@ -8,12 +8,12 @@ use spacetimedb_expr::{
     check::SchemaView,
     expr::{CollectViews, ViewCall},
 };
-use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta, AlgebraicValue};
+use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta, AlgebraicType, AlgebraicValue};
 use spacetimedb_physical_plan::plan::{
     IxScan, Label, ParamResolver, PhysicalExpr, PhysicalPlan, ProjectPlan, TableScan,
 };
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
-use spacetimedb_query::compile_subscription;
+use spacetimedb_query::{compile_subscription, SubscriptionTemplate};
 use spacetimedb_schema::{schema::TableSchema, table_name::TableName};
 use std::{ops::RangeBounds, sync::Arc};
 
@@ -607,54 +607,12 @@ impl SubscriptionPlan {
     ) -> Result<(Vec<Self>, bool, Vec<ProjectPlan>)> {
         let (plans, return_id, return_name, has_param) = compile_subscription(sql, tx, auth)?;
 
-        /// Does this plan have any non-index joins?
-        fn has_non_index_join(plan: &PhysicalPlan) -> bool {
-            plan.any(&|op| matches!(op, PhysicalPlan::HashJoin(..) | PhysicalPlan::NLJoin(..)))
-        }
-
-        /// What tables are involved in this plan?
-        fn table_ids_for_plan(plan: &PhysicalPlan) -> (Vec<TableId>, Vec<Label>) {
-            let mut table_aliases = vec![];
-            let mut table_ids = vec![];
-            plan.visit(&mut |plan| match plan {
-                PhysicalPlan::TableScan(
-                    TableScan {
-                        // What table are we reading?
-                        schema,
-                        ..
-                    },
-                    alias,
-                )
-                | PhysicalPlan::IxScan(
-                    IxScan {
-                        // What table are we reading?
-                        schema,
-                        ..
-                    },
-                    alias,
-                ) => {
-                    table_aliases.push(*alias);
-                    table_ids.push(schema.table_id);
-                }
-                _ => {}
-            });
-            (table_ids, table_aliases)
-        }
-
         let mut subscriptions = vec![];
         let mut physical_plans = vec![];
         let params = ExecutionParams::from_auth(auth);
 
         for plan in plans {
-            let plan_opt = plan.clone().optimize()?;
-
-            if has_non_index_join(&plan_opt) {
-                bail!("Subscriptions require indexes on join columns")
-            }
-
-            if plan_opt.reads_from_event_table() {
-                bail!("Event tables cannot be used as the lookup table in subscription joins")
-            }
+            let plan_opt = optimize(plan.clone())?;
 
             let (table_ids, table_aliases) = table_ids_for_plan(&plan);
 
@@ -689,5 +647,142 @@ impl SubscriptionPlan {
         }
 
         Ok((subscriptions, has_param, physical_plans))
+    }
+}
+
+/// Optimizes a subscription plan, rejecting the plans a subscription can't run
+fn optimize(plan: ProjectPlan) -> Result<ProjectPlan> {
+    let plan_opt = plan.optimize()?;
+
+    if has_non_index_join(&plan_opt) {
+        bail!("Subscriptions require indexes on join columns")
+    }
+
+    if plan_opt.reads_from_event_table() {
+        bail!("Event tables cannot be used as the lookup table in subscription joins")
+    }
+
+    Ok(plan_opt)
+}
+
+/// Does this plan have any non-index joins?
+fn has_non_index_join(plan: &PhysicalPlan) -> bool {
+    plan.any(&|op| matches!(op, PhysicalPlan::HashJoin(..) | PhysicalPlan::NLJoin(..)))
+}
+
+/// What tables are involved in this plan?
+fn table_ids_for_plan(plan: &PhysicalPlan) -> (Vec<TableId>, Vec<Label>) {
+    let mut table_aliases = vec![];
+    let mut table_ids = vec![];
+    plan.visit(&mut |plan| match plan {
+        PhysicalPlan::TableScan(
+            TableScan {
+                // What table are we reading?
+                schema,
+                ..
+            },
+            alias,
+        )
+        | PhysicalPlan::IxScan(
+            IxScan {
+                // What table are we reading?
+                schema,
+                ..
+            },
+            alias,
+        ) => {
+            table_aliases.push(*alias);
+            table_ids.push(schema.table_id);
+        }
+        _ => {}
+    });
+    (table_ids, table_aliases)
+}
+
+/// A subscription whose plans read every literal and built-in from a binding,
+/// shared by the queries that differ only in those values
+#[derive(Debug)]
+pub struct Template {
+    /// The plans before optimization, one per RLS fragment, which identify the template
+    key: Vec<ProjectPlan>,
+    /// To which table are we subscribed?
+    return_id: TableId,
+    /// The type of each binding value, in slot order
+    param_types: Vec<AlgebraicType>,
+    /// One per RLS fragment
+    fragments: Vec<TemplateFragment>,
+}
+
+/// One RLS fragment of a [`Template`]
+#[derive(Debug)]
+pub struct TemplateFragment {
+    /// The optimized plan, for estimating the rows it reads
+    plan: ProjectPlan,
+    /// The cached executor for the non-incremental query plan
+    base_plan: PipelinedProject,
+    /// The tables this fragment reads
+    table_ids: Vec<TableId>,
+}
+
+impl Template {
+    /// Optimizes the plans of `compiled` and builds their executors
+    pub fn build(compiled: &SubscriptionTemplate) -> Result<Self> {
+        let fragments = compiled
+            .plans
+            .iter()
+            .map(|plan| {
+                // Before optimization, which keeps every table a scan
+                let (table_ids, _) = table_ids_for_plan(plan);
+                let plan = optimize(plan.clone())?;
+                Ok(TemplateFragment {
+                    base_plan: PipelinedProject::from(plan.clone()),
+                    plan,
+                    table_ids,
+                })
+            })
+            .collect::<Result<_>>()?;
+        Ok(Self {
+            key: compiled.plans.clone(),
+            return_id: compiled.return_id,
+            param_types: compiled.params.iter().map(|(_, ty)| ty.clone()).collect(),
+            fragments,
+        })
+    }
+
+    /// The plans before optimization, one per RLS fragment, which identify the template
+    pub fn key(&self) -> &[ProjectPlan] {
+        &self.key
+    }
+
+    /// To which table are we subscribed?
+    pub fn subscribed_table_id(&self) -> TableId {
+        self.return_id
+    }
+
+    /// The type of each binding value, in slot order
+    pub fn param_types(&self) -> &[AlgebraicType] {
+        &self.param_types
+    }
+
+    /// The plan fragments, one per RLS fragment
+    pub fn fragments(&self) -> &[TemplateFragment] {
+        &self.fragments
+    }
+}
+
+impl TemplateFragment {
+    /// The optimized plan, for estimating the rows it reads
+    pub fn plan(&self) -> &ProjectPlan {
+        &self.plan
+    }
+
+    /// The cached executor for the non-incremental query plan
+    pub fn base_plan(&self) -> &PipelinedProject {
+        &self.base_plan
+    }
+
+    /// From which tables does this fragment read?
+    pub fn table_ids(&self) -> impl Iterator<Item = TableId> + '_ {
+        self.table_ids.iter().copied()
     }
 }

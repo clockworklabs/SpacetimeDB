@@ -125,6 +125,15 @@ impl CollectViews for ProjectPlan {
 }
 
 impl ProjectPlan {
+    /// Puts the plan in the form `optimize` starts from,
+    /// in which plans that differ only in the order of their predicates are equal
+    pub fn canonicalize(self) -> Self {
+        match self {
+            Self::None(plan) => Self::None(plan.map(&PhysicalPlan::canonicalize)),
+            Self::Name(plan, label, pos) => Self::Name(plan.map(&PhysicalPlan::canonicalize), label, pos),
+        }
+    }
+
     pub fn optimize(self) -> Result<Self> {
         match self {
             Self::None(plan) => {
@@ -749,8 +758,17 @@ impl PhysicalPlan {
                     }
                     _ => expr,
                 };
-                // Flatten ANDs and ORs, and move values to rhs
-                Self::Filter(input, expr.flatten().map(&move_value_to_rhs))
+                // Binding equalities first, in slot order, so reordered predicates give the same template.
+                // The sort is stable, so the rest keep their order.
+                let order_binding_eqs = |expr| match expr {
+                    PhysicalExpr::LogOp(LogOp::And, mut exprs) => {
+                        exprs.sort_by_key(|expr| expr.binding_eq_index().map_or(u32::MAX, u32::from));
+                        PhysicalExpr::LogOp(LogOp::And, exprs)
+                    }
+                    _ => expr,
+                };
+                // Flatten ANDs and ORs, move values to rhs, and order binding equalities
+                Self::Filter(input, expr.flatten().map(&move_value_to_rhs).map(&order_binding_eqs))
             }
             _ => self,
         }
@@ -1746,6 +1764,17 @@ impl PhysicalExpr {
             Self::BinOp(op, a, b) => Self::BinOp(op, Box::new(a.flatten()), Box::new(b.flatten())),
             Self::Product(exprs) => Self::Product(exprs.into_iter().map(Self::flatten).collect()),
             Self::Field(..) | Self::Value(..) | Self::Param(..) => self,
+        }
+    }
+
+    /// The binding index of a `field = param`, if the param is a binding
+    fn binding_eq_index(&self) -> Option<u16> {
+        match self {
+            Self::BinOp(BinOp::Eq, a, b) => match (&**a, &**b) {
+                (Self::Field(_), Self::Param(slot, _)) => slot.binding_index(),
+                _ => None,
+            },
+            _ => None,
         }
     }
 }
@@ -3039,7 +3068,8 @@ mod tests {
 
     /// The base plan and fragments of `sql` as a template: literals lifted, built-ins remapped.
     /// Also returns the source of each binding param.
-    fn template_plans(sql: &str, db: &SchemaViewer) -> (Vec<ProjectPlan>, Vec<(ParamSource, AlgebraicType)>) {
+    /// The plan of a template before optimization, in the form templates are compared in
+    fn template_plan(sql: &str, db: &SchemaViewer) -> (ProjectPlan, Vec<(ParamSource, AlgebraicType)>) {
         let mut plan = parse_and_type_sub(sql, db).unwrap();
         let literals = plan.lift_literals();
         let mut params: Vec<_> = literals
@@ -3048,6 +3078,11 @@ mod tests {
             .collect();
         let mut plan = compile_select(plan);
         plan.remap_builtin_params(&mut params);
+        (plan.canonicalize(), params)
+    }
+
+    fn template_plans(sql: &str, db: &SchemaViewer) -> (Vec<ProjectPlan>, Vec<(ParamSource, AlgebraicType)>) {
+        let (plan, params) = template_plan(sql, db);
         let mut labels = vec![];
         plan.visit(&mut |plan| {
             if let PhysicalPlan::TableScan(_, label) = plan {
@@ -3096,15 +3131,45 @@ mod tests {
         assert_eq!(q3, q5);
         assert_eq!(q3, q6);
 
-        // Swapping `FROM`, and reordering inside `OR`, give other templates
+        // Swapping `FROM` gives another template
         let q7 = "select p.* from team t join player p on p.team_id = t.id where t.region = 'west' and p.rank = 3";
-        let or = "(t.region = 'west' and p.rank = 1) or (t.region = 'east' and p.rank = 2)";
-        let (q8, _) = template_plans(&format!("{join} where {or}"), &db);
-        let or = "(p.rank = 2 and t.region = 'east') or (p.rank = 1 and t.region = 'west')";
-        let (q9, _) = template_plans(&format!("{join} where {or}"), &db);
         assert_ne!(q3, template_plans(q7, &db).0);
+
+        // Reordering the branches of `OR` changes only the values, when the branches have the same shape
+        let or = "(t.region = 'west' and p.rank = 1) or (t.region = 'east' and p.rank = 2)";
+        let (q8, q8_params) = template_plans(&format!("{join} where {or}"), &db);
+        let or = "(p.rank = 2 and t.region = 'east') or (p.rank = 1 and t.region = 'west')";
+        let (q9, q9_params) = template_plans(&format!("{join} where {or}"), &db);
         assert_ne!(q3, q8);
-        assert_ne!(q8, q9);
+        assert_eq!(q8, q9);
+        assert_ne!(q8_params, q9_params);
+    }
+
+    #[test]
+    fn canonical_template_ignores_predicate_order() {
+        let db = player_team_db();
+        let template = |filter: &str| template_plan(&format!("select * from player where {filter}"), &db).0;
+
+        // `rank` and `score` have no index, so `optimize` alone would keep these in their order
+        let expected = template("rank = 1 and score = 2 and id > 3");
+        for filter in [
+            "score = 4 and rank = 5 and id > 3",
+            "3 < id and 4 = score and rank = 5",
+            "rank = 5 and (id > 3 and score = 4)",
+        ] {
+            assert_eq!(template(filter), expected, "{filter}");
+        }
+
+        // The rest keep their order
+        assert_ne!(
+            template("rank = 1 and id > 3 and score > 4"),
+            template("rank = 1 and score > 4 and id > 3"),
+        );
+
+        // Inside `OR` too, but not across it
+        let or = template("(rank = 1 and score = 2) or id = 3");
+        assert_eq!(or, template("(2 = score and rank = 1) or id = 3"));
+        assert_ne!(or, template("id = 3 or (rank = 1 and score = 2)"));
     }
 
     #[test]

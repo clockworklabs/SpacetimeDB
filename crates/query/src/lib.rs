@@ -40,7 +40,7 @@ pub fn compile_subscription(
 
 /// A subscription compiled as a template, whose plans read every value from a binding
 pub struct SubscriptionTemplate {
-    /// One plan per RLS fragment, not yet optimized
+    /// One plan per RLS fragment, canonicalized but not yet optimized
     pub plans: Vec<ProjectPlan>,
     /// The source and type of each binding param, in slot order
     pub params: Vec<(ParamSource, AlgebraicType)>,
@@ -85,6 +85,8 @@ fn compile(sql: &str, tx: &impl SchemaView, auth: &AuthCtx, template: bool) -> R
             // The fragments share the lifted literals, so they share the built-ins' slots too
             if template {
                 plan.remap_builtin_params(&mut params);
+                // Templates are compared in this form
+                plan = plan.canonicalize();
             }
             plan
         })

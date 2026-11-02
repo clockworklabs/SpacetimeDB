@@ -30,11 +30,12 @@ use spacetimedb_durability::TxOffset;
 use spacetimedb_expr::expr::{CollectViews, ViewCall};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
+use spacetimedb_physical_plan::plan::ProjectPlan;
 use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::def::RawModuleDefVersion;
 use spacetimedb_schema::table_name::TableName;
-use spacetimedb_subscription::{JoinEdge, SubscriptionPlan};
+use spacetimedb_subscription::{JoinEdge, SubscriptionPlan, Template};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -491,6 +492,51 @@ impl JoinEdges {
             .range(JoinEdge::range_for_table(table_id))
             .filter_map(move |(edge, hashes)| find_rhs_val(edge, row).as_ref().and_then(|rhs_val| hashes.get(rhs_val)))
             .flatten()
+    }
+}
+
+/// The templates of the subscribed queries, found by their plans before optimization.
+/// Plans can't be hashed, so they are grouped by return table and compared in the group.
+#[derive(Debug, Default)]
+pub struct TemplateStore {
+    templates: IntMap<TableId, Vec<Arc<Template>>>,
+}
+
+impl TemplateStore {
+    /// The template that `plans` compile to, if there is one
+    pub fn find(&self, return_id: TableId, plans: &[ProjectPlan]) -> Option<Arc<Template>> {
+        self.templates
+            .get(&return_id)?
+            .iter()
+            .find(|template| template.key() == plans)
+            .cloned()
+    }
+
+    /// Adds `template`, unless an equal one is already here.
+    /// Returns the one that is here.
+    pub fn find_or_insert(&mut self, template: Arc<Template>) -> Arc<Template> {
+        let templates = self.templates.entry(template.subscribed_table_id()).or_default();
+        if let Some(found) = templates.iter().find(|found| found.key() == template.key()) {
+            return found.clone();
+        }
+        templates.push(template.clone());
+        template
+    }
+
+    /// Removes `template`, returning whether it was here
+    pub fn remove(&mut self, template: &Arc<Template>) -> bool {
+        let Entry::Occupied(mut entry) = self.templates.entry(template.subscribed_table_id()) else {
+            return false;
+        };
+        let templates = entry.get_mut();
+        let Some(i) = templates.iter().position(|found| Arc::ptr_eq(found, template)) else {
+            return false;
+        };
+        templates.swap_remove(i);
+        if templates.is_empty() {
+            entry.remove();
+        }
+        true
     }
 }
 
@@ -2193,15 +2239,17 @@ mod tests {
     use spacetimedb_client_api_messages::websocket::{v1 as ws_v1, v2 as ws_v2};
     use spacetimedb_lib::AlgebraicValue;
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, AlgebraicType, ConnectionId, Identity, Timestamp};
+    use spacetimedb_physical_plan::plan::ProjectPlan;
     use spacetimedb_primitives::{ColId, TableId};
+    use spacetimedb_query::compile_subscription_template;
     use spacetimedb_sats::product;
     use spacetimedb_schema::def::RawModuleDefVersion;
     use spacetimedb_schema::reducer_name::ReducerName;
     use spacetimedb_schema::table_name::TableName;
-    use spacetimedb_subscription::SubscriptionPlan;
+    use spacetimedb_subscription::{SubscriptionPlan, Template};
     use tokio::sync::oneshot;
 
-    use super::{Plan, SubscriptionManager};
+    use super::{Plan, SubscriptionManager, TemplateStore};
     use crate::db::relational_db::tests_utils::with_read_only;
     use crate::db::sql::ast::SchemaViewer;
     use crate::host::module_host::DatabaseTableUpdate;
@@ -2235,6 +2283,22 @@ mod tests {
             let hash = QueryHash::from_string(sql, auth.caller(), has_param);
             Ok(Arc::new(Plan::new(plans, hash, sql.into())))
         })
+    }
+
+    /// A template's plans before optimization, and the template built from them
+    fn compile_template(db: &RelationalDB, sql: &str) -> ResultTest<(Vec<ProjectPlan>, Arc<Template>)> {
+        let auth = AuthCtx::for_testing();
+        with_read_only(db, |tx| {
+            let tx = SchemaViewer::new(&*tx, &auth);
+            let compiled = compile_subscription_template(sql, &tx, &auth).unwrap();
+            let template = Template::build(&compiled).unwrap();
+            Ok((compiled.plans, Arc::new(template)))
+        })
+    }
+
+    fn create_table_ab(db: &RelationalDB) -> ResultTest<TableId> {
+        let columns = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
+        Ok(db.create_table_for_test("t", &columns, &[])?)
     }
 
     fn id(connection_id: u128) -> (Identity, ConnectionId) {
@@ -2283,6 +2347,62 @@ mod tests {
         assert!(subscriptions.contains_query(&hash));
         assert!(subscriptions.contains_legacy_subscription(&id, &hash));
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
+
+        Ok(())
+    }
+
+    #[test]
+    fn templates_are_found_by_their_plans() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+        let table_id = create_table_ab(&db)?;
+
+        let mut templates = TemplateStore::default();
+        let (_, template) = compile_template(&db, "select * from t where a = 1 and b = 2")?;
+        let template = templates.find_or_insert(template);
+
+        // Literals and the order of predicates don't change the template
+        for sql in [
+            "select * from t where a = 3 and b = 4",
+            "select * from t where b = 4 and a = 3",
+            "select * from t where 4 = b and a = 3",
+        ] {
+            let found = templates.find(table_id, &compile_template(&db, sql)?.0);
+            assert!(found.is_some_and(|found| Arc::ptr_eq(&found, &template)), "{sql}");
+        }
+
+        // Other columns and shapes do, and so do range literals, which stay in the plan
+        for sql in [
+            "select * from t where a = 1",
+            "select * from t where a = 1 or b = 2",
+            "select * from t where a = 1 and b > 2",
+            "select * from t",
+        ] {
+            assert!(
+                templates.find(table_id, &compile_template(&db, sql)?.0).is_none(),
+                "{sql}"
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn equal_templates_are_stored_once() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+        let table_id = create_table_ab(&db)?;
+
+        // Built before either is stored, like two queries in one batch
+        let (_, first) = compile_template(&db, "select * from t where a = 1")?;
+        let (_, second) = compile_template(&db, "select * from t where a = 2")?;
+
+        let mut templates = TemplateStore::default();
+        assert!(Arc::ptr_eq(&templates.find_or_insert(first.clone()), &first));
+        assert!(Arc::ptr_eq(&templates.find_or_insert(second.clone()), &first));
+
+        assert!(!templates.remove(&second));
+        assert!(templates.remove(&first));
+        assert!(!templates.remove(&first));
+        assert!(templates.find(table_id, first.key()).is_none());
 
         Ok(())
     }
