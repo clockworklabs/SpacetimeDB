@@ -1,9 +1,11 @@
 use crate::bench::utils::debug_llm_verbose;
 use crate::eval::utils::{run_with_timeout, sql_exec_with_timeout};
 use crate::eval::{normalize, spacetime_command, ScoreDetails};
+use regex::Regex;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 use std::{io, thread};
 
@@ -86,7 +88,7 @@ impl Scorer for SchemaParityScorer {
         self.id_str
     }
 
-    fn score(&self, _llm_output: &str) -> ScoreDetails {
+    fn score(&self, llm_output: &str) -> ScoreDetails {
         let golden = match describe_db(&self.server, &self.golden_db, self.timeout) {
             Ok(v) => v,
             Err(e) => return err_details("describe_golden", e),
@@ -112,7 +114,12 @@ impl Scorer for SchemaParityScorer {
         let reducers_diff = diff_sets(&schema_a.reducers, &schema_b.reducers);
         let exports_diff = diff_sets(&schema_a.exports, &schema_b.exports);
         let rls_diff = diff_sets(&schema_a.row_level_security, &schema_b.row_level_security);
-        let pass = tables_diff.is_null() && reducers_diff.is_null() && exports_diff.is_null() && rls_diff.is_null();
+        let name_without_accessor = has_table_name_without_accessor(llm_output);
+        let pass = tables_diff.is_null()
+            && reducers_diff.is_null()
+            && exports_diff.is_null()
+            && rls_diff.is_null()
+            && !name_without_accessor;
 
         ScoreDetails {
             pass,
@@ -121,6 +128,7 @@ impl Scorer for SchemaParityScorer {
                 "server": self.server,
                 "golden_db": self.golden_db,
                 "llm_db": self.llm_db,
+                "table_name_without_accessor": name_without_accessor,
                 "tables_equal": tables_diff.is_null(),
                 "reducers_equal": reducers_diff.is_null(),
                 "exports_equal": exports_diff.is_null(),
@@ -526,6 +534,23 @@ fn align_table_names(
             (golden_name.unwrap_or(name).clone(), table.clone())
         })
         .collect()
+}
+
+// shortcut: text match for the 1.x C# form, which the schema cannot show; delete once the C# SDK rejects it as Rust does.
+fn has_table_name_without_accessor(source: &str) -> bool {
+    static COMMENT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)/\*.*?\*/|//[^\n]*").unwrap());
+    static TABLE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"[\[,]\s*(?:global::)?(?:SpacetimeDB\.)?Table\s*\(([^()]*(?:\([^()]*\)[^()]*)*)\)").unwrap()
+    });
+
+    TABLE.captures_iter(&COMMENT.replace_all(source, "")).any(|table| {
+        let sets = |property: &str| {
+            table[1]
+                .split(',')
+                .any(|argument| argument.split('=').next().is_some_and(|key| key.trim() == property))
+        };
+        sets("Name") && !sets("Accessor")
+    })
 }
 
 fn diff_maps(a: &BTreeMap<String, BTreeMap<String, String>>, b: &BTreeMap<String, BTreeMap<String, String>>) -> Value {
@@ -1503,6 +1528,40 @@ mod tests {
         let candidate = align_table_names(&golden, &candidate);
 
         assert!(diff_maps(&golden, &candidate)["changed"]["child_item"].is_object());
+    }
+
+    #[test]
+    fn table_name_without_accessor_is_detected() {
+        for source in [
+            r#"[Table(Name = "User", Public = true)]"#,
+            r#"[SpacetimeDB.Table(Name = "user")]"#,
+            r#"[global::SpacetimeDB.Table(Public = true, Name = "User")]"#,
+            r#"[Table(Name = "TickTimer", Scheduled = nameof(Tick))]"#,
+            "[Table(\n    Name = \"Reminder\",\n    Scheduled = nameof(SendReminder),\n    ScheduledAt = nameof(Reminder.ScheduledAt))]",
+            "[Table(Accessor = \"A\")]\n[Table(Name = \"B\")]",
+            r#"[Table(Accessor = "A"), Table(Name = "B")]"#,
+        ] {
+            assert!(has_table_name_without_accessor(source), "{source}");
+        }
+    }
+
+    #[test]
+    fn valid_table_declarations_are_not_flagged() {
+        for source in [
+            "[Table]",
+            "[Table(Public = true)]",
+            r#"[Table(Accessor = "User", Public = true)]"#,
+            r#"[SpacetimeDB.Table(Name = "Parent", Public = true, Accessor = "Parent")]"#,
+            r#"[Table(Accessor = "TickTimer", Scheduled = nameof(Tick))]"#,
+            r#"[SpacetimeDB.Index.BTree(Name = "ByOwner", Columns = new[] { nameof(Owner) })]"#,
+            r#"[View(Name = "ActiveUsers")]"#,
+            r#"// [Table(Name = "User")]"#,
+            "/* [Table(Name = \"User\")] */",
+            r#"#[table(accessor = user, name = "User")]"#,
+            r#"const user = table({ name: 'User' }, {});"#,
+        ] {
+            assert!(!has_table_name_without_accessor(source), "{source}");
+        }
     }
 
     #[test]
