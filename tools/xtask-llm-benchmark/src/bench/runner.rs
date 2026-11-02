@@ -243,8 +243,8 @@ fn provider_retry_delay(error: &anyhow::Error) -> Option<u64> {
 fn is_code_publish_failure(message: &str, source_root: &Path, lang: Lang) -> bool {
     // Unknown publish failures are unscored. A healthy ping does not prove a valid build environment.
     let message = message.replace('\\', "/").to_ascii_lowercase();
-    // The candidate built, but its schema cannot migrate the task's existing data.
-    if message.contains("aborting publish due to required manual migration") {
+    // The candidate built, but its schema is invalid or cannot migrate the task's existing data.
+    if message.contains("errors occurred:") || message.contains("aborting publish due to required manual migration") {
         return true;
     }
     if [
@@ -292,8 +292,11 @@ fn is_code_publish_failure(message: &str, source_root: &Path, lang: Lang) -> boo
     for (index, line) in lines.iter().enumerate() {
         let rust_error = matches!(lang, Lang::Rust) && (line.starts_with("error[e") || line.starts_with("error:"));
         if rust_error {
-            // Cargo/rustc summaries add no source diagnostic of their own.
-            if line.starts_with("error: could not compile") || line.starts_with("error: aborting due to") {
+            // Cargo, rustc and CLI summaries add no source diagnostic of their own.
+            if line.starts_with("error: could not compile")
+                || line.starts_with("error: aborting due to")
+                || line.starts_with("error: command [\"cargo\"")
+            {
                 continue;
             }
             let location = lines[index + 1..]
@@ -1794,8 +1797,9 @@ mod build_cleanup_tests {
             "error: this file contains an unclosed delimiter",
             "error: unknown start of token: \\",
         ] {
-            let diagnostic =
-                format!("{diagnostic}\n --> src/lib.rs:10:5\nerror: could not compile `test` due to 1 previous error");
+            let diagnostic = format!(
+                "{diagnostic}\n --> src/lib.rs:10:5\nerror: could not compile `test` due to 1 previous error\nError: command [\"cargo\", \"build\"] exited with code 101"
+            );
             assert!(is_code_publish_failure(&diagnostic, root, Lang::Rust), "{diagnostic}");
         }
         for (lang, diagnostic) in [
@@ -1819,8 +1823,10 @@ mod build_cleanup_tests {
             assert!(is_code_publish_failure(&diagnostic, root, Lang::CSharp), "{diagnostic}");
         }
         let rejected_migration = "Errors occurred:\nAdding a column enabled to table widget requires a default value annotation\n\nAborting publish due to required manual migration.";
+        let invalid_schema = "Error: Local module schema inspection failed:\nError: Errors occurred:\nname `OrderLineDetail` is used for multiple types";
         for lang in [Lang::Rust, Lang::CSharp, Lang::TypeScript] {
             assert!(is_code_publish_failure(rejected_migration, root, lang));
+            assert!(is_code_publish_failure(invalid_schema, root, lang));
         }
         for diagnostic in [
             "HTTP 503 Service Unavailable",
@@ -1830,7 +1836,10 @@ mod build_cleanup_tests {
             "command dotnet publish exited with code 1",
             "migration setup failed",
             "unknown publish error",
+            "Local module schema inspection timed out",
             "error: linking with `cc` failed",
+            "error: linking with `cc` failed\nError: command [\"cargo\", \"build\"] exited with code 101",
+            "Error: command [\"cargo\", \"build\"] exited with code 101",
             "error: could not compile `test` due to 1 previous error",
             "error[E0463]: can't find crate for `std`\n --> src/lib.rs:1:1",
             "error[E0425]: cannot find value\n --> /dependencies/src/lib.rs:1:1",
