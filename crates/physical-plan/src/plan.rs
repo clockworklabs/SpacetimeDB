@@ -63,6 +63,15 @@ pub const PARAM_VIEW_ARG_HASH_SENDER: ParamSlot = ParamSlot(2);
 /// The first slot after the built-ins, so `ExecutionParams` rejects binding slots
 pub const PARAM_BINDING_FIRST: ParamSlot = ParamSlot(3);
 
+/// Where the value of a binding param comes from
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParamSource {
+    /// A literal lifted out of the query
+    Literal(AlgebraicValue),
+    /// A built-in, such as `:sender`, resolved for each subscriber
+    Builtin(ParamSlot),
+}
+
 /// Physical plans always terminate with a projection.
 /// This type of projection returns row ids.
 ///
@@ -1051,10 +1060,10 @@ impl PhysicalPlan {
         }
     }
 
-    /// Moves each built-in param, such as `:sender`, to a binding slot after the `lifted` literals.
-    /// `builtins` holds the built-in behind each of those slots, in order, and gains any it hasn't seen.
-    /// A template's plans share it, so they agree on the slots.
-    pub fn remap_builtin_params(&mut self, lifted: u16, builtins: &mut Vec<(ParamSlot, AlgebraicType)>) {
+    /// Moves each built-in param, such as `:sender`, to a binding slot.
+    /// `params` holds the source of each binding slot, in order, and gains any built-in it hasn't seen.
+    /// A template's RLS fragments share it, so they agree on the slots. Run before `optimize`.
+    pub fn remap_builtin_params(&mut self, params: &mut Vec<(ParamSource, AlgebraicType)>) {
         self.visit_exprs_mut(&mut |expr| {
             let PhysicalExpr::Param(slot, ty) = expr else {
                 return;
@@ -1063,16 +1072,15 @@ impl PhysicalPlan {
                 return;
             }
             // `:sender` resolves differently as an identity and as bytes
-            let builtin = (*slot, ty.clone());
-            let i = match builtins.iter().position(|seen| *seen == builtin) {
+            let builtin = (ParamSource::Builtin(*slot), ty.clone());
+            let i = match params.iter().position(|seen| *seen == builtin) {
                 Some(i) => i,
                 None => {
-                    builtins.push(builtin);
-                    builtins.len() - 1
+                    params.push(builtin);
+                    params.len() - 1
                 }
             };
-            let i = u16::try_from(i).ok().and_then(|i| lifted.checked_add(i));
-            *slot = ParamSlot::binding(i.expect("binding slot out of range"));
+            *slot = ParamSlot::binding(u16::try_from(i).expect("binding slot out of range"));
         });
         // Binding params don't fall back to `ExecutionParams`, so no built-in may be left
         self.visit_exprs_mut(&mut |expr| {
@@ -1784,7 +1792,7 @@ mod tests {
     };
 
     use super::{
-        ParamSlot, PhysicalExpr, ProjectPlan, TableScan, PARAM_SENDER, PARAM_VIEW_ARG_HASH_EMPTY,
+        ParamSource, PhysicalExpr, ProjectPlan, TableScan, PARAM_SENDER, PARAM_VIEW_ARG_HASH_EMPTY,
         PARAM_VIEW_ARG_HASH_SENDER, VIEW_ARG_HASH_COL,
     };
 
@@ -3030,23 +3038,23 @@ mod tests {
     }
 
     /// The base plan and fragments of `sql` as a template: literals lifted, built-ins remapped.
-    /// Also returns the remapped built-ins.
-    fn template_plans(sql: &str, db: &SchemaViewer) -> (Vec<ProjectPlan>, Vec<(ParamSlot, AlgebraicType)>) {
+    /// Also returns the source of each binding param.
+    fn template_plans(sql: &str, db: &SchemaViewer) -> (Vec<ProjectPlan>, Vec<(ParamSource, AlgebraicType)>) {
         let mut plan = parse_and_type_sub(sql, db).unwrap();
-        let lifted = u16::try_from(plan.lift_literals().len()).unwrap();
-        let plan = compile_select(plan);
+        let literals = plan.lift_literals();
+        let mut params: Vec<_> = literals
+            .into_iter()
+            .map(|(value, ty)| (ParamSource::Literal(value), ty))
+            .collect();
+        let mut plan = compile_select(plan);
+        plan.remap_builtin_params(&mut params);
         let mut labels = vec![];
         plan.visit(&mut |plan| {
             if let PhysicalPlan::TableScan(_, label) = plan {
                 labels.push(*label);
             }
         });
-        let mut builtins = vec![];
-        let mut plans = optimize_base_and_fragments(&plan, &labels);
-        for plan in &mut plans {
-            plan.remap_builtin_params(lifted, &mut builtins);
-        }
-        (plans, builtins)
+        (optimize_base_and_fragments(&plan, &labels), params)
     }
 
     /// The binding indexes of `plan`'s params, sorted, without repeats
@@ -3101,8 +3109,9 @@ mod tests {
 
     #[test]
     fn remap_adds_no_builtins_for_literals() {
-        let (plans, builtins) = template_plans("select * from player where id = 3", &player_team_db());
-        assert_eq!(builtins, vec![]);
+        let (plans, params) = template_plans("select * from player where id = 3", &player_team_db());
+        let literal = (ParamSource::Literal(AlgebraicValue::U64(3)), AlgebraicType::U64);
+        assert_eq!(params, vec![literal]);
         for mut plan in plans {
             assert_eq!(binding_indexes(&mut plan), vec![0]);
         }
@@ -3110,8 +3119,10 @@ mod tests {
 
     #[test]
     fn remap_moves_sender_after_literals() {
-        let (plans, builtins) = template_plans("select * from account where id = :sender and n = 3", &account_db());
-        assert_eq!(builtins, vec![(PARAM_SENDER, AlgebraicType::identity())]);
+        let (plans, params) = template_plans("select * from account where id = :sender and n = 3", &account_db());
+        let literal = (ParamSource::Literal(AlgebraicValue::U32(3)), AlgebraicType::U32);
+        let sender = (ParamSource::Builtin(PARAM_SENDER), AlgebraicType::identity());
+        assert_eq!(params, vec![literal, sender]);
         for mut plan in plans {
             assert_eq!(binding_indexes(&mut plan), vec![0, 1]);
         }
@@ -3139,8 +3150,9 @@ mod tests {
         let db = SchemaViewer {
             schemas: vec![Arc::new(TableOrViewSchema::from(Arc::new(v)))],
         };
-        let (plans, builtins) = template_plans("select * from v", &db);
-        assert_eq!(builtins, vec![(PARAM_VIEW_ARG_HASH_SENDER, AlgebraicType::U256)]);
+        let (plans, params) = template_plans("select * from v", &db);
+        let hash = (ParamSource::Builtin(PARAM_VIEW_ARG_HASH_SENDER), AlgebraicType::U256);
+        assert_eq!(params, vec![hash]);
         for mut plan in plans {
             assert_eq!(binding_indexes(&mut plan), vec![0]);
         }

@@ -6,14 +6,14 @@ use spacetimedb_execution::{
 };
 use spacetimedb_expr::{
     check::{parse_and_type_sub, SchemaView},
-    expr::{Literals, ProjectList},
+    expr::ProjectList,
     rls::{resolve_views_for_sql, resolve_views_for_sub},
     statement::{parse_and_type_sql, Statement, DML},
 };
-use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, ProductValue};
+use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, AlgebraicType, ProductValue};
 use spacetimedb_physical_plan::{
     compile::{compile_dml_plan, compile_select, compile_select_list},
-    plan::{ProjectListPlan, ProjectPlan},
+    plan::{ParamSource, ProjectListPlan, ProjectPlan},
 };
 use spacetimedb_primitives::TableId;
 use spacetimedb_schema::table_name::TableName;
@@ -28,26 +28,33 @@ pub fn compile_subscription(
     tx: &impl SchemaView,
     auth: &AuthCtx,
 ) -> Result<(Vec<ProjectPlan>, TableId, TableName, bool)> {
-    let (plans, _, return_id, return_name, has_param) = compile(sql, tx, auth, false)?;
+    let SubscriptionTemplate {
+        plans,
+        return_id,
+        return_name,
+        has_param,
+        ..
+    } = compile(sql, tx, auth, false)?;
     Ok((plans, return_id, return_name, has_param))
 }
 
-/// Like [`compile_subscription`], but lifts each `field = literal` into a binding param.
-/// Also returns the lifted literals, in slot order.
-pub fn compile_subscription_template(
-    sql: &str,
-    tx: &impl SchemaView,
-    auth: &AuthCtx,
-) -> Result<(Vec<ProjectPlan>, Literals, TableId, TableName, bool)> {
+/// A subscription compiled as a template, whose plans read every value from a binding
+pub struct SubscriptionTemplate {
+    /// One plan per RLS fragment, not yet optimized
+    pub plans: Vec<ProjectPlan>,
+    /// The source and type of each binding param, in slot order
+    pub params: Vec<(ParamSource, AlgebraicType)>,
+    pub return_id: TableId,
+    pub return_name: TableName,
+    pub has_param: bool,
+}
+
+/// Like [`compile_subscription`], but lifts each `field = literal` and built-in into a binding param
+pub fn compile_subscription_template(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> Result<SubscriptionTemplate> {
     compile(sql, tx, auth, true)
 }
 
-fn compile(
-    sql: &str,
-    tx: &impl SchemaView,
-    auth: &AuthCtx,
-    lift_literals: bool,
-) -> Result<(Vec<ProjectPlan>, Literals, TableId, TableName, bool)> {
+fn compile(sql: &str, tx: &impl SchemaView, auth: &AuthCtx, template: bool) -> Result<SubscriptionTemplate> {
     if sql.len() > MAX_SQL_LENGTH {
         bail!("SQL query exceeds maximum allowed length: \"{sql:.120}...\"")
     }
@@ -55,7 +62,11 @@ fn compile(
     let (mut plan, mut has_param) = parse_and_type_sub(sql, tx, auth)?;
 
     // Before RLS, so the literals of its rules stay literal
-    let literals = if lift_literals { plan.lift_literals() } else { vec![] };
+    let literals = if template { plan.lift_literals() } else { vec![] };
+    let mut params: Vec<_> = literals
+        .into_iter()
+        .map(|(value, ty)| (ParamSource::Literal(value), ty))
+        .collect();
 
     let Some(return_id) = plan.return_table_id() else {
         bail!("Failed to determine TableId for query")
@@ -70,7 +81,12 @@ fn compile(
         .into_iter()
         .map(|mut fragment| {
             fragment.bind_view_arg_hashes(auth.caller());
-            compile_select(fragment)
+            let mut plan = compile_select(fragment);
+            // The fragments share the lifted literals, so they share the built-ins' slots too
+            if template {
+                plan.remap_builtin_params(&mut params);
+            }
+            plan
         })
         .collect::<Vec<_>>();
 
@@ -79,13 +95,13 @@ fn compile(
     // We must know this in order to generate the correct query hash.
     let reads_view = plan_fragments.iter().any(|plan| plan.reads_from_view(false));
 
-    Ok((
-        plan_fragments,
-        literals,
+    Ok(SubscriptionTemplate {
+        plans: plan_fragments,
+        params,
         return_id,
         return_name,
-        has_param || reads_view,
-    ))
+        has_param: has_param || reads_view,
+    })
 }
 
 /// A utility for parsing and type checking a sql statement
