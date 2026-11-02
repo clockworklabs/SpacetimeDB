@@ -17,8 +17,8 @@ use crate::{
     tiered::{
         blob_set::BlobHandle,
         mem::{PageEvictionCandidate, PageId},
-        page_manager::{PageEvictionPolicy, PageHandle, PageManager, PageSlot, PageSlotHandle, ReservedPage},
-        BlobSet, BudgetPermit, PageError, PageRead, PageRef,
+        page_manager::{PageHandle, PageManager, PageSlot, PageSlotHandle, ReservedPage},
+        BlobSet, BudgetPermit, EvictionPolicy, PageError, PageRead, PageRef,
     },
     var_len::VarLenMembers,
 };
@@ -26,7 +26,7 @@ use crate::{
 /// The set of pages of a [Table].
 #[derive(Debug)]
 pub struct PageSet {
-    pub eviction_policy: PageEvictionPolicy,
+    pub eviction_policy: EvictionPolicy,
     fixed_row_size: Size,
     pub(crate) manager: Arc<PageManager>,
     storage: PageStorage,
@@ -315,13 +315,13 @@ impl PageSet {
     }
 
     /// Create a fresh, empty page set.
-    pub fn new(manager: Arc<PageManager>, eviction_policy: PageEvictionPolicy, fixed_row_size: Size) -> Self {
+    pub fn new(manager: Arc<PageManager>, eviction_policy: EvictionPolicy, fixed_row_size: Size) -> Self {
         let storage = match eviction_policy {
-            PageEvictionPolicy::NeverEvict => PageStorage::Resident(ResidentPages {
+            EvictionPolicy::NeverEvict => PageStorage::Resident(ResidentPages {
                 pages: Pages::default(),
                 permits: smallvec::SmallVec::new(),
             }),
-            PageEvictionPolicy::Evictable => PageStorage::Tiered(TieredPages::default()),
+            EvictionPolicy::Evictable => PageStorage::Tiered(TieredPages::default()),
         };
         Self {
             eviction_policy,
@@ -560,6 +560,7 @@ impl PageSet {
         blobs: &BlobSet,
     ) -> Result<BlobNumBytes, PageError> {
         let page_index = row_ptr.page_index();
+        let eviction_policy = self.eviction_policy;
         let (blob_bytes_deleted, is_empty, available_granules) =
             self.with_page_mut(page_index, fixed_row_size, |page| {
                 // SAFETY:
@@ -568,8 +569,15 @@ impl PageSet {
                 //
                 // - `fixed_row_size` is consistent with the size in bytes of the fixed part of the row.
                 //   The size is also conistent with `var_len_visitor`.
-                let blob_bytes_deleted =
-                    unsafe { page.delete_row(row_ptr.page_offset(), fixed_row_size, var_len_visitor, blobs) };
+                let blob_bytes_deleted = unsafe {
+                    page.delete_row(
+                        row_ptr.page_offset(),
+                        fixed_row_size,
+                        var_len_visitor,
+                        blobs,
+                        eviction_policy,
+                    )
+                };
 
                 (
                     blob_bytes_deleted,
@@ -1311,7 +1319,7 @@ mod tests {
             PagePool::new_for_test(),
             Arc::new(TieredStorage::new_for_test()),
         );
-        PageSet::new(Arc::new(manager), PageEvictionPolicy::Evictable, Size(8))
+        PageSet::new(Arc::new(manager), EvictionPolicy::Evictable, Size(8))
     }
 
     #[test]

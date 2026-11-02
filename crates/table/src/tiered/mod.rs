@@ -20,22 +20,23 @@ pub use self::{
     error::{BlobError, ObjectStoreError, PageError},
     map::ObjectKey,
     mem::ResidentObjects,
-    page_manager::{PageEvictionPolicy, PageHandle, PageManager, ReservedPage},
+    page_manager::{PageHandle, PageManager, ReservedPage},
     page_ref::{PageBorrow, PageRead, PageRef},
     page_set::{PageSet, PreparedCommit},
     storage::{BackingStore, MemoryObjectStore, Object, ObjectBytes, ObjectMetadata, ObjectStore, TieredStorage},
 };
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EvictionPolicy {
+    Evictable,
+    NeverEvict,
+}
 
 pub struct TieredStorageConfig {
     pub page_pool: PagePool,
     pub resident_budget: ByteBudget,
     pub local_store: BackingStore,
     pub remote_store: Option<BackingStore>,
-    /// Allow tables to evict pages according to their cache policy.
-    pub evict_pages: bool,
-    /// Allow blob eviction. Disable this when tables need their blobs to stay in
-    /// memory: blobs can be shared, and their references do not track table policies.
-    pub evict_blobs: bool,
 }
 
 impl TieredStorageConfig {
@@ -60,8 +61,6 @@ impl TieredStorageConfig {
                 budget: ByteBudget::unlimited(),
             },
             remote_store: None,
-            evict_pages: false,
-            evict_blobs: true,
         }
     }
 }
@@ -77,7 +76,6 @@ pub struct TieredDatabaseStorage {
 
     cache: Arc<ResidentObjects>,
     store: Arc<TieredStorage>,
-    evict_pages: bool,
 }
 
 impl TieredDatabaseStorage {
@@ -91,8 +89,6 @@ impl TieredDatabaseStorage {
             local_store,
             remote_store,
             resident_budget,
-            evict_pages,
-            evict_blobs,
         }: TieredStorageConfig,
         blobs: BlobMap,
         pages: impl Iterator<Item = &'a Page>,
@@ -108,7 +104,7 @@ impl TieredDatabaseStorage {
                     (key, PAGE_SIZE as u64)
                 })),
         ));
-        let cache = Arc::new(ResidentObjects::new(resident_budget).with_blob_eviction(evict_blobs));
+        let cache = Arc::new(ResidentObjects::new(resident_budget));
         let pages = Arc::new(PageManager::new(cache.clone(), page_pool, store.clone()));
         let blobs = Arc::new(BlobSet::from_blob_map(cache.clone(), store.clone(), blobs));
 
@@ -117,16 +113,11 @@ impl TieredDatabaseStorage {
             blobs,
             cache,
             store,
-            evict_pages,
         })
     }
 
     pub fn pages(&self) -> &Arc<PageManager> {
         &self.pages
-    }
-
-    pub fn page_eviction_enabled(&self) -> bool {
-        self.evict_pages
     }
 
     pub fn blobs(&self) -> &Arc<BlobSet> {

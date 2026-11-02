@@ -1166,6 +1166,7 @@ mod tests {
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::{product, AlgebraicType};
+    use spacetimedb_schema::schema::TableCachePolicy;
     use spacetimedb_table::tiered::{ByteBudget, ByteBudgetConfig, TieredStorageConfig};
 
     use super::*;
@@ -1386,7 +1387,10 @@ mod tests {
             config.resident_budget = budget.clone();
             let datastore = Locking::bootstrap(Identity::ZERO, config)?;
             let mut tx = begin_mut_tx(&datastore);
-            let schema = TableSchema::from_product_type([AlgebraicType::String].into());
+
+            let mut schema = TableSchema::from_product_type([AlgebraicType::String].into());
+            schema.cache_policy = TableCachePolicy::NoRequirement;
+
             let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
             tx.insert_via_serialize_bsatn(table_id, &product!["small"])?;
             tx.insert_via_serialize_bsatn(table_id, &product!["x".repeat(1024 * 1024)])?;

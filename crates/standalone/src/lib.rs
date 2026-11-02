@@ -54,8 +54,6 @@ fn open_table_storage(
         object_store: Box::new(spacetimedb_disk_table::DiskStorage::open(dir.tables())?),
         budget: ByteBudget::unlimited(),
     };
-    config.evict_pages = true;
-    config.evict_blobs = false;
     Ok(config)
 }
 

@@ -57,7 +57,7 @@ use spacetimedb_schema::{
 use spacetimedb_table::{
     indexes::{RowPointer, SquashedOffset},
     table::{RowRef, Table, TableAndIndex},
-    tiered::{BlobHandle, BlobSet, PageEvictionPolicy, PreparedCommit, TieredDatabaseStorage},
+    tiered::{BlobHandle, BlobSet, EvictionPolicy, PreparedCommit, TieredDatabaseStorage},
 };
 use std::sync::Arc;
 use std::{collections::BTreeMap, iter};
@@ -581,7 +581,7 @@ impl CommittedState {
     fn prepare_merge(&mut self, tx_state: &TxState) -> Result<PreparedMerge> {
         // Prepare transaction-local blobs before planning page mutations. This
         // installs and pins their frames without publishing logical references.
-        let blobs: Box<[BlobHandle]> = tx_state.blob_store.pin_all()?;
+        let blobs: Box<[BlobHandle]> = tx_state.blob_store.fault_all()?;
         let mut prepared = PreparedMerge::with_pinned_blobs(blobs);
         // Skip row planning only if every modified table can be applied without
         // faults or memory-limit errors. Otherwise prepare the whole transaction
@@ -964,15 +964,12 @@ impl CommittedState {
         Ok((table, self.storage.blobs(), &mut self.index_id_map))
     }
 
-    pub(super) fn page_eviction_policy(&self, schema: &TableSchema) -> PageEvictionPolicy {
+    pub(super) fn page_eviction_policy(&self, schema: &TableSchema) -> EvictionPolicy {
         // Schema recovery needs system tables to stay in memory.
-        if schema.table_type == StTableType::System
-            || !self.storage.page_eviction_enabled()
-            || schema.cache_policy == TableCachePolicy::RequiredInMemory
-        {
-            PageEvictionPolicy::NeverEvict
+        if schema.table_type == StTableType::System || schema.cache_policy == TableCachePolicy::RequiredInMemory {
+            EvictionPolicy::NeverEvict
         } else {
-            PageEvictionPolicy::Evictable
+            EvictionPolicy::Evictable
         }
     }
 

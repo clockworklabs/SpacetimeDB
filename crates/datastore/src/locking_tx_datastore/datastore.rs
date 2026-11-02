@@ -1137,9 +1137,10 @@ pub(crate) mod tests {
         ST_CONSTRAINT_NAME, ST_EVENT_TABLE_ID, ST_EVENT_TABLE_NAME, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_NAME,
         ST_INDEX_ID, ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID,
         ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME,
-        ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_NAME, ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME, ST_VIEW_ARG_ID,
-        ST_VIEW_ARG_NAME, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME, ST_VIEW_PARAM_ID,
-        ST_VIEW_PARAM_NAME, ST_VIEW_SUB_ID, ST_VIEW_SUB_NAME,
+        ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_NAME, ST_TABLE_CACHE_POLICY_ID, ST_TABLE_CACHE_POLICY_NAME,
+        ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME, ST_VIEW_ARG_ID, ST_VIEW_ARG_NAME, ST_VIEW_COLUMN_ID,
+        ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_NAME, ST_VIEW_SUB_ID,
+        ST_VIEW_SUB_NAME,
     };
     use crate::system_tables::{
         ST_ENV_ID, ST_ENV_NAME, ST_INBOUND_MSG_ID, ST_INBOUND_MSG_NAME, ST_INBOUND_STREAM_ID, ST_INBOUND_STREAM_NAME,
@@ -1169,7 +1170,7 @@ pub(crate) mod tests {
     use spacetimedb_schema::reducer_name::ReducerName;
     use spacetimedb_schema::schema::{
         columns_to_row_type, ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, RowLevelSecuritySchema,
-        ScheduleSchema, SequenceSchema,
+        ScheduleSchema, SequenceSchema, TableCachePolicy,
     };
     use spacetimedb_schema::table_name::TableName;
     use spacetimedb_table::tiered::{BlobError, ByteBudget, ByteBudgetConfig};
@@ -1462,7 +1463,7 @@ pub(crate) mod tests {
         schedule: Option<ScheduleSchema>,
         pk: Option<ColId>,
     ) -> TableSchema {
-        TableSchema::new(
+        let mut schema = TableSchema::new(
             TableId::SENTINEL,
             TableName::for_test("Foo"),
             None,
@@ -1477,7 +1478,10 @@ pub(crate) mod tests {
             false,
             None,
             None,
-        )
+        );
+        schema.cache_policy = TableCachePolicy::NoRequirement;
+
+        schema
     }
 
     fn basic_table_schema_with_indices(
@@ -1616,7 +1620,7 @@ pub(crate) mod tests {
             TableRow { id: ST_INBOUND_STREAM_ID.into(), name: ST_INBOUND_STREAM_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
             TableRow { id: ST_INBOUND_MSG_ID.into(), name: ST_INBOUND_MSG_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
             TableRow { id: ST_OUTBOX_ID.into(), name: ST_OUTBOX_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
-
+            TableRow { id: ST_TABLE_CACHE_POLICY_ID.into(), name: ST_TABLE_CACHE_POLICY_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_columns()?, map_array([
@@ -1746,6 +1750,9 @@ pub(crate) mod tests {
             ColRow { table: ST_OUTBOX_ID.into(), pos: 3, name: "arg_columns", ty: resolved_type_via_v9::<Vec<ColId>>() },
             ColRow { table: ST_OUTBOX_ID.into(), pos: 4, name: "on_result_reducer", ty: AlgebraicType::option(resolved_type_via_v9::<NamespacedIdentifier>()) },
             ColRow { table: ST_OUTBOX_ID.into(), pos: 5, name: "signature_hash", ty: AlgebraicType::String },
+
+            ColRow { table: ST_TABLE_CACHE_POLICY_ID.into(), pos: 0, name: "table_id", ty: TableId::get_type() },
+            ColRow { table: ST_TABLE_CACHE_POLICY_ID.into(), pos: 1, name: "policy", ty: resolved_type_via_v9::<TableCachePolicy>() },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
@@ -1786,6 +1793,7 @@ pub(crate) mod tests {
             IndexRow { id: 35, table: ST_INBOUND_MSG_ID.into(), col: col_list![0, 1, 2], name: "st_inbound_msg_sender_identity_stream_id_seq_idx_btree", },
             IndexRow { id: 36, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 1], name: "st_outbound_msg_stream_id_msg_id_idx_btree", },
             IndexRow { id: 37, table: ST_OUTBOX_ID.into(), col: col(0), name: "st_outbox_table_id_idx_btree", },
+            IndexRow { id: 38, table: ST_TABLE_CACHE_POLICY_ID.into(), col: col(0), name: "st_table_cache_policy_table_id_idx_btree", },
         ]));
         let start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
         #[rustfmt::skip]
@@ -1840,6 +1848,7 @@ pub(crate) mod tests {
             ConstraintRow { constraint_id: 31, table_id: ST_INBOUND_MSG_ID.into(), unique_columns: col_list![0, 1, 2], constraint_name: "st_inbound_msg_sender_identity_stream_id_seq_key", },
             ConstraintRow { constraint_id: 32, table_id: ST_OUTBOUND_MSG_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_outbound_msg_stream_id_msg_id_key", },
             ConstraintRow { constraint_id: 33, table_id: ST_OUTBOX_ID.into(), unique_columns: col(0), constraint_name: "st_outbox_table_id_key", },
+            ConstraintRow { constraint_id: 34, table_id: ST_TABLE_CACHE_POLICY_ID.into(), unique_columns: col(0), constraint_name: "st_table_cache_policy_table_id_key", },
             ]));
 
         // Verify we get back the tables correctly with the proper ids...
@@ -2396,6 +2405,7 @@ pub(crate) mod tests {
             IndexRow { id: 35, table: ST_INBOUND_MSG_ID.into(), col: col_list![0, 1, 2], name: "st_inbound_msg_sender_identity_stream_id_seq_idx_btree", },
             IndexRow { id: 36, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 1], name: "st_outbound_msg_stream_id_msg_id_idx_btree", },
             IndexRow { id: 37, table: ST_OUTBOX_ID.into(), col: col(0), name: "st_outbox_table_id_idx_btree", },
+            IndexRow { id: 38, table: ST_TABLE_CACHE_POLICY_ID.into(), col: col(0), name: "st_table_cache_policy_table_id_idx_btree" },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree",  },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree",  },
@@ -4438,12 +4448,15 @@ pub(crate) mod tests {
         // Two backing indices exercise undo of an earlier successful pair as
         // well as the pair whose committed-table pointer-map rebuild fails.
         let mut tx = begin_mut_tx(&datastore);
+
         let indices = vec![
             IndexSchema::for_test("Foo_id_first", BTreeAlgorithm::from(0)),
             IndexSchema::for_test("Foo_id_second", BTreeAlgorithm::from(0)),
         ];
         let constraints = vec![ConstraintSchema::unique_for_test("Foo_id_key", 0u16)];
-        let table_id = datastore.create_table_mut_tx(&mut tx, basic_table_schema_with_indices(indices, constraints))?;
+        let schema = basic_table_schema_with_indices(indices, constraints);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+
         let large = "x".repeat(1024 * 1024);
         insert(&datastore, &mut tx, table_id, &u32_str_u32(1, &large, 30))?;
         commit(&datastore, tx)?;
@@ -4514,7 +4527,8 @@ pub(crate) mod tests {
         let datastore = Locking::bootstrap(Identity::ZERO, config)?;
 
         let mut tx = begin_mut_tx(&datastore);
-        let table_id = datastore.create_table_mut_tx(&mut tx, table_with_non_unique_index(0u16))?;
+        let schema = table_with_non_unique_index(0u16);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
         let large = "x".repeat(1024 * 1024);
         insert(&datastore, &mut tx, table_id, &u32_str_u32(1, &large, 30))?;
         commit(&datastore, tx)?;
@@ -4820,10 +4834,12 @@ pub(crate) mod tests {
         config.resident_budget = budget.clone();
         let datastore = Locking::bootstrap(Identity::ZERO, config)?;
         let mut tx = begin_mut_tx(&datastore);
+
         let schema = basic_table_schema_with_indices(
             vec![IndexSchema::for_test("Foo_id_idx", BTreeAlgorithm::from(0))],
             vec![ConstraintSchema::unique_for_test("Foo_id_key", 0u16)],
         );
+
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
         // This is the only unique index. Removing it requires a pointer map,
         // which hashes whole rows and therefore reads this large string even
