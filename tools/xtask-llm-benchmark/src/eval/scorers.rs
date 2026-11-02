@@ -1,6 +1,6 @@
 use crate::bench::utils::debug_llm_verbose;
 use crate::eval::utils::{run_with_timeout, sql_exec_with_timeout};
-use crate::eval::{normalize, spacetime_command, ScoreDetails};
+use crate::eval::{normalize, scorer_command, ScoreDetails};
 use regex::Regex;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -613,7 +613,7 @@ fn call_reducer_json_out_with_timeout(
     host: Option<&str>,
     timeout: Duration,
 ) -> Result<String, String> {
-    let mut cmd = spacetime_command();
+    let mut cmd = scorer_command(host);
     cmd.arg("call");
     if let Some(h) = host {
         cmd.arg("--server").arg(h);
@@ -650,7 +650,7 @@ pub fn sql_raw(db: &str, query: &str, host: Option<&str>) -> Result<String, Stri
 }
 
 fn sql_raw_with_timeout(db: &str, query: &str, host: Option<&str>, timeout: Duration) -> Result<String, String> {
-    let mut cmd = spacetime_command();
+    let mut cmd = scorer_command(host);
     cmd.arg("sql").arg(db).arg(query);
     if let Some(h) = host {
         cmd.arg("--server").arg(h);
@@ -677,7 +677,7 @@ fn sql_raw_with_timeout(db: &str, query: &str, host: Option<&str>, timeout: Dura
 }
 
 fn sql_json_with_timeout(db: &str, query: &str, host: Option<&str>, timeout: Duration) -> Result<Value, String> {
-    let mut cmd = spacetime_command();
+    let mut cmd = scorer_command(host);
     cmd.arg("sql").arg(db).arg(query).args(["--format", "json"]);
     if let Some(h) = host {
         cmd.arg("--server").arg(h);
@@ -706,7 +706,7 @@ pub fn sql_count(db: &str, query: &str, host: Option<&str>) -> Result<i64, Strin
 }
 
 fn sql_count_with_timeout(db: &str, query: &str, host: Option<&str>, timeout: Duration) -> Result<i64, String> {
-    let mut cmd = spacetime_command();
+    let mut cmd = scorer_command(host);
     cmd.arg("sql").arg(db).arg(query);
     if let Some(h) = host {
         cmd.arg("--server").arg(h);

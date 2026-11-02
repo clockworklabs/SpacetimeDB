@@ -55,6 +55,20 @@ pub(crate) fn spacetime_command() -> Command {
     Command::new("spacetime")
 }
 
+fn scorer_cli_root(host: Option<&str>) -> PathBuf {
+    let host = crate::bench::utils::sanitize_db_name(host.unwrap_or("local"));
+    env::temp_dir().join(format!("stdb-llm-scorer-{}-{host}", std::process::id()))
+}
+
+// A saved token only works on the server that issued it, and each C# batch starts a new server.
+pub(crate) fn scorer_command(host: Option<&str>) -> Command {
+    let root = scorer_cli_root(host);
+    let _ = std::fs::create_dir_all(&root);
+    let mut cmd = spacetime_command();
+    cmd.arg("--root-dir").arg(root);
+    cmd
+}
+
 pub fn sql_exec(db: &str, query: &str, host: Option<&str>) -> Result<(), String> {
     sql_exec_with_timeout(db, query, host, Duration::from_secs(30))
 }
@@ -65,7 +79,7 @@ pub(crate) fn sql_exec_with_timeout(
     host: Option<&str>,
     timeout: Duration,
 ) -> Result<(), String> {
-    let mut cmd = spacetime_command();
+    let mut cmd = scorer_command(host);
     cmd.arg("sql").arg(db).arg(query);
     if let Some(h) = host {
         cmd.arg("--server").arg(h);
@@ -229,5 +243,14 @@ mod tests {
         assert_eq!(code, 0);
         assert_eq!(stdout.len(), expected_len);
         assert_eq!(stderr.len(), expected_len);
+    }
+
+    #[test]
+    fn each_server_gets_its_own_scorer_identity() {
+        let first = Some("http://127.0.0.1:3000");
+        let second = Some("http://127.0.0.1:3001");
+
+        assert_eq!(scorer_cli_root(first), scorer_cli_root(first));
+        assert_ne!(scorer_cli_root(first), scorer_cli_root(second));
     }
 }
