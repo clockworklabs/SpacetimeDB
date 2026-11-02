@@ -249,7 +249,7 @@ or interface actions for the user and report setup as partial.
 - [Official agent skills](https://github.com/clockworklabs/SpacetimeDB/tree/master/skills)
 - [Claude Code plugin](https://github.com/clockworklabs/SpacetimeDB/tree/master/.claude-plugin)
 - [Codex plugin](https://github.com/clockworklabs/SpacetimeDB/tree/master/codex-plugin)
-- [MCP reference](https://github.com/clockworklabs/SpacetimeDB/blob/master/docs/docs/00300-resources/00200-reference/00150-mcp.md)
+- [MCP reference](https://github.com/clockworklabs/SpacetimeDB/blob/master/docs/docs/00300-resources/00150-mcp.md)
 
 These instructions are published at <https://spacetimedb.com/agent-setup.md>.
 The source is maintained in

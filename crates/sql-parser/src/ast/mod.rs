@@ -7,9 +7,13 @@ pub mod sql;
 pub mod sub;
 
 /// The FROM clause is either a relvar or a JOIN
+///
+/// A lone relvar carries its view call arguments, e.g. `42` in `FROM v(42)`.
+/// These are empty for a table, or for a view referenced without arguments.
+/// Relvars in a JOIN can't take arguments.
 #[derive(Debug)]
 pub enum SqlFrom {
-    Expr(SqlIdent, SqlIdent),
+    Expr(SqlIdent, SqlIdent, Vec<SqlLiteral>),
     Join(SqlIdent, SqlIdent, Vec<SqlJoin>),
 }
 

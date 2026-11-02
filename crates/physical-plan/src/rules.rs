@@ -440,6 +440,7 @@ impl RewriteRule for IxScanFromPredicates {
                 schema,
                 limit: None,
                 delta: _,
+                view_args: _,
             },
             label,
         ) = &**input
@@ -498,7 +499,17 @@ impl RewriteRule for IxScanFromPredicates {
         let PhysicalPlan::Filter(input, expr) = plan else {
             bail!("{INVARIANT_VIOLATION}: Failed to create index scan from predicates");
         };
-        let PhysicalPlan::TableScan(TableScan { schema, limit, delta }, label) = *input else {
+        // `expand_views` put this view's `arg_hash` filter above this scan
+        let PhysicalPlan::TableScan(
+            TableScan {
+                schema,
+                limit,
+                delta,
+                view_args: _,
+            },
+            label,
+        ) = *input
+        else {
             bail!("{INVARIANT_VIOLATION}: Failed to create index scan from predicates");
         };
 
@@ -813,6 +824,7 @@ impl RewriteRule for HashToIxJoin {
                             schema,
                             limit: None,
                             delta: _,
+                            view_args: _,
                         },
                         rhs_label,
                     ) => {
@@ -842,6 +854,7 @@ impl RewriteRule for HashToIxJoin {
                             schema: rhs,
                             limit: None,
                             delta: rhs_delta,
+                            view_args: _,
                         },
                         rhs_label,
                     ) => (rhs, rhs_label, rhs_delta),

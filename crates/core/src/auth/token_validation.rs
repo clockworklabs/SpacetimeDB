@@ -11,6 +11,7 @@ use jsonwebtoken::{decode, AlgorithmFamily, Validation};
 pub use jsonwebtoken::{DecodingKey, EncodingKey};
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
+pub use spacetimedb_auth::token_signing::TokenSigner;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use thiserror;
@@ -35,19 +36,6 @@ pub enum TokenValidationError {
     // The other case is a catch-all for unexpected errors.
     #[error(transparent)]
     Other(#[from] anyhow::Error),
-}
-
-// A token signer is responsible for signing tokens without doing any validation.
-pub trait TokenSigner: Sync + Send {
-    // Serialize the given claims and sign a JWT token with them as the payload.
-    fn sign<T: Serialize>(&self, claims: &T) -> Result<String, JwtError>;
-}
-
-impl TokenSigner for EncodingKey {
-    fn sign<Token: Serialize>(&self, claims: &Token) -> Result<String, JwtError> {
-        let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
-        jsonwebtoken::encode(&header, claims, self)
-    }
 }
 
 impl TokenSigner for JwtKeys {

@@ -61,11 +61,20 @@ export type Reducer<S extends UntypedSchemaDef, Params extends ParamsObj> = (
  * Authentication information for the caller of a reducer.
  */
 export type AuthCtx = Readonly<{
-  /** Whether the caller is an internal system process. */
+  /**
+   * Whether the sender of this invocation is this database,
+   * as it is for scheduled reducers and procedures.
+   *
+   * This is equivalent to `ctx.sender.isEqual(ctx.databaseIdentity)`.
+   * It is false in `init`, whose sender is the database's owner.
+   */
   isInternal: boolean;
   /** Whether the caller has authenticated with a JWT token. */
   hasJWT: boolean;
-  /** The JWT claims associated with the caller, or null if hasJWT == false. */
+  /**
+   * The JWT claims associated with the caller, or null if hasJWT == false.
+   * If isInternal is true, this is null.
+   */
   jwt: JwtClaims | null;
 }>;
 

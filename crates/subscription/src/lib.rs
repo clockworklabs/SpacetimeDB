@@ -4,12 +4,15 @@ use spacetimedb_execution::{
     pipelined::{PipelinedExecutor, PipelinedIxJoin, PipelinedIxScan, PipelinedProject},
     Datastore, DeltaStore, ExecutionParams, Row,
 };
-use spacetimedb_expr::{check::SchemaView, expr::CollectViews};
+use spacetimedb_expr::{
+    check::SchemaView,
+    expr::{CollectViews, ViewCall},
+};
 use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta, AlgebraicValue};
 use spacetimedb_physical_plan::plan::{
     IxScan, Label, ParamResolver, PhysicalExpr, PhysicalPlan, ProjectPlan, TableScan,
 };
-use spacetimedb_primitives::{ColId, ColList, IndexId, TableId, ViewId};
+use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_schema::{schema::TableSchema, table_name::TableName};
 use std::{ops::RangeBounds, sync::Arc};
@@ -385,8 +388,8 @@ struct SubscriptionMetadata {
     table_ids: Vec<TableId>,
     /// The table or view returned by this plan, if it returns whole rows.
     return_schema: Option<Arc<TableSchema>>,
-    /// View ids read by this plan.
-    view_ids: Vec<ViewId>,
+    /// View calls read by this plan.
+    view_calls: Vec<ViewCall>,
     /// Whether this plan reads from an anonymous view.
     reads_anonymous_view: bool,
     /// Whether this plan reads from a non-anonymous view.
@@ -417,8 +420,8 @@ pub struct SubscriptionPlan {
 }
 
 impl CollectViews for SubscriptionPlan {
-    fn collect_views(&self, views: &mut HashSet<ViewId>) {
-        views.extend(self.metadata.view_ids.iter().copied());
+    fn collect_views(&self, views: &mut HashSet<ViewCall>) {
+        views.extend(self.metadata.view_calls.iter().cloned());
     }
 }
 
@@ -658,13 +661,14 @@ impl SubscriptionPlan {
             let fragments = Fragments::compile_from_plan(&plan, &table_aliases)?;
             let is_join = fragments.insert_plans.len() > 1 && fragments.delete_plans.len() > 1;
 
-            let mut view_ids = HashSet::new();
-            plan_opt.collect_views(&mut view_ids);
+            // Collect from the plan before optimization, which still has every view call's args.
+            let mut view_calls = HashSet::new();
+            plan.collect_views(&mut view_calls);
 
             let metadata = SubscriptionMetadata {
                 table_ids,
                 return_schema: plan_opt.return_table(),
-                view_ids: view_ids.into_iter().collect(),
+                view_calls: view_calls.into_iter().collect(),
                 reads_anonymous_view: plan_opt.reads_from_view(true),
                 reads_non_anonymous_view: plan_opt.reads_from_view(false),
                 search_args: plan_opt.physical_plan().search_args(&params),

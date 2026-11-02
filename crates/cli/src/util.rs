@@ -329,20 +329,53 @@ pub fn host_or_url_to_host_and_protocol(host_or_url: &str) -> (&str, Option<&str
     }
 }
 
-/// Prompt the user for `y` or `n` from stdin.
-///
-/// Return `false` unless the input is `y`.
-pub fn y_or_n(force: bool, prompt: &str) -> anyhow::Result<bool> {
-    if force {
-        println!("Skipping confirmation due to --yes");
-        return Ok(true);
+/// Prompt the user for `n` or `n` from stdin
+pub struct YesOrNo {
+    message: String,
+    force: Option<bool>,
+    default: Option<bool>,
+}
+
+impl YesOrNo {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            force: None,
+            default: None,
+        }
     }
-    let mut input = String::new();
-    print!("{prompt} [y/N]");
-    std::io::stdout().flush()?;
-    std::io::stdin().read_line(&mut input)?;
-    let input = input.trim().to_lowercase();
-    Ok(input == "y" || input == "yes")
+
+    pub fn force(mut self, force: bool) -> Self {
+        self.force = Some(force);
+        self
+    }
+
+    /// Set the response when Enter is pressed without an answer.
+    pub fn default(mut self, default: bool) -> Self {
+        self.default = Some(default);
+        self
+    }
+
+    pub fn prompt(self) -> anyhow::Result<bool> {
+        assert!(!self.message.trim().is_empty(), "YesOrNo requires a message");
+        let force = self.force.expect("YesOrNo requires an explicit force setting");
+        let default = self.default.expect("YesOrNo requires an explicit default");
+        if force {
+            println!("Skipping confirmation due to --yes");
+            return Ok(true);
+        }
+        let choices = if default { "Y/n" } else { "y/N" };
+        print!("{} [{choices}]", self.message);
+        std::io::stdout().flush()?;
+        let mut input = String::new();
+        let num_read = std::io::stdin().read_line(&mut input)?;
+        anyhow::ensure!(num_read != 0, "Unexpected EOF while reading response");
+        let input = input.trim().to_lowercase();
+        if input.is_empty() {
+            return Ok(default);
+        }
+        Ok(input == "y" || input == "yes")
+    }
 }
 
 pub fn decode_identity(token: &String) -> anyhow::Result<String> {
@@ -371,14 +404,16 @@ pub async fn get_login_token_or_log_in(
         return Ok(token.clone());
     }
 
-    // Note: We pass `force: false` to `y_or_n` because if we're running non-interactively we want to default to "no", not yes!
+    // Note: We leave `force` false because if we're running non-interactively we want to default to "no", not yes!
     let full_login = interactive
-        && y_or_n(
-            false,
+        && YesOrNo::new(
             // It would be "ideal" if we could print the `spacetimedb.com` by deriving it from the `default_auth_host` constant,
             // but this will change _so_ infrequently that it's not even worth the time to write that code and test it.
             "You are not logged in. Would you like to log in with spacetimedb.com?",
-        )?;
+        )
+        .force(false)
+        .default(false)
+        .prompt()?;
 
     if full_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;

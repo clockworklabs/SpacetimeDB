@@ -571,6 +571,7 @@ mod tests {
                 schema: users_schema,
                 alias: "users".into(),
                 delta: None,
+                view_args: None,
             }))]
         );
 
@@ -594,6 +595,7 @@ mod tests {
                         schema: users_schema,
                         alias: "users".into(),
                         delta: None,
+                        view_args: None,
                     })),
                     Expr::BinOp(
                         BinOp::Eq,
@@ -635,11 +637,13 @@ mod tests {
                                         schema: player_schema.clone(),
                                         alias: "player".into(),
                                         delta: None,
+                                        view_args: None,
                                     })),
                                     rhs: Relvar {
                                         schema: users_schema.clone(),
                                         alias: "u_2".into(),
                                         delta: None,
+                                        view_args: None,
                                     },
                                 })),
                                 Expr::BinOp(
@@ -686,11 +690,13 @@ mod tests {
                                     schema: player_schema.clone(),
                                     alias: "player".into(),
                                     delta: None,
+                                    view_args: None,
                                 })),
                                 rhs: Relvar {
                                     schema: admins_schema.clone(),
                                     alias: "admins_4".into(),
                                     delta: None,
+                                    view_args: None,
                                 },
                             })),
                             Expr::BinOp(

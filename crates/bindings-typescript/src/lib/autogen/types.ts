@@ -51,23 +51,6 @@ export const CaseConversionPolicy = __t.enum('CaseConversionPolicy', {
 });
 export type CaseConversionPolicy = __Infer<typeof CaseConversionPolicy>;
 
-// The tagged union or sum type for the algebraic type `EnvVarType`.
-export const EnvVarType = __t.enum('EnvVarType', {
-  String: __t.unit(),
-  StringLiteral: __t.string(),
-  Union: __t.array(__t.string()),
-});
-export type EnvVarType = __Infer<typeof EnvVarType>;
-
-export const EnvironmentDeclaration = __t.object('EnvironmentDeclaration', {
-  name: __t.string(),
-  get ty() {
-    return EnvVarType;
-  },
-  optional: __t.bool(),
-});
-export type EnvironmentDeclaration = __Infer<typeof EnvironmentDeclaration>;
-
 // The tagged union or sum type for the algebraic type `ExplicitNameEntry`.
 export const ExplicitNameEntry = __t.enum('ExplicitNameEntry', {
   get Table() {
@@ -268,6 +251,28 @@ export const RawConstraintDefV9 = __t.object('RawConstraintDefV9', {
 });
 export type RawConstraintDefV9 = __Infer<typeof RawConstraintDefV9>;
 
+// The tagged union or sum type for the algebraic type `RawEnvVarTypeV10`.
+export const RawEnvVarTypeV10 = __t.enum('RawEnvVarTypeV10', {
+  String: __t.unit(),
+  StringLiteral: __t.string(),
+  Union: __t.array(__t.string()),
+});
+export type RawEnvVarTypeV10 = __Infer<typeof RawEnvVarTypeV10>;
+
+export const RawEnvironmentDeclarationV10 = __t.object(
+  'RawEnvironmentDeclarationV10',
+  {
+    name: __t.string(),
+    get ty() {
+      return RawEnvVarTypeV10;
+    },
+    optional: __t.bool(),
+  }
+);
+export type RawEnvironmentDeclarationV10 = __Infer<
+  typeof RawEnvironmentDeclarationV10
+>;
+
 export const RawHttpHandlerDefV10 = __t.object('RawHttpHandlerDefV10', {
   sourceName: __t.string(),
 });
@@ -414,7 +419,10 @@ export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
     return __t.array(RawSubmoduleV10);
   },
   get Environment() {
-    return __t.array(EnvironmentDeclaration);
+    return __t.array(RawEnvironmentDeclarationV10);
+  },
+  get Outboxes() {
+    return __t.array(RawOutboxDefV10);
   },
 });
 export type RawModuleDefV10Section = __Infer<typeof RawModuleDefV10Section>;
@@ -456,6 +464,16 @@ export const RawModuleDefV9 = __t.object('RawModuleDefV9', {
   },
 });
 export type RawModuleDefV9 = __Infer<typeof RawModuleDefV9>;
+
+export const RawOutboxDefV10 = __t.object('RawOutboxDefV10', {
+  tableName: __t.string(),
+  remoteReducer: __t.string(),
+  targetColumn: __t.u16(),
+  argColumns: __t.array(__t.u16()),
+  onResultReducer: __t.option(__t.string()),
+  signatureHash: __t.u256(),
+});
+export type RawOutboxDefV10 = __Infer<typeof RawOutboxDefV10>;
 
 export const RawProcedureDefV10 = __t.object('RawProcedureDefV10', {
   sourceName: __t.string(),

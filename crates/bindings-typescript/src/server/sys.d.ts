@@ -42,7 +42,9 @@ declare module 'spacetime:sys@2.0' {
       id: u32,
       timestamp: bigint,
       request: Uint8Array,
-      body: Uint8Array
+      body: Uint8Array,
+      sender: u256,
+      senderJwt: Uint8Array
     ): [response: Uint8Array, body: Uint8Array];
   }
 
