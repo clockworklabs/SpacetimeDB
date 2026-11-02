@@ -92,12 +92,13 @@ fn test_delete_database_yes_skips_confirmation() {
 }
 
 #[test]
-fn test_deleted_database_name_gets_fresh_identity() {
+fn test_deleted_database_name_requires_owner() {
     let mut test = Smoketest::builder()
         .precompiled_module("modules-basic")
         .autopublish(false)
         .build();
     test.new_identity().unwrap();
+    let owner_token = test.read_token().unwrap();
     let name = format!("delete-republish-{}", std::process::id());
     let previous = test.publish().name(&name).run().unwrap();
     assert_eq!(
@@ -116,11 +117,11 @@ fn test_deleted_database_name_gets_fresh_identity() {
         test.api_call("GET", &format!("/v1/database/{name}/identity"))
             .unwrap()
             .status_code,
-        404
+        200
     );
 
     test.new_identity().unwrap();
-    // Establish that this account can publish, then reuse the released name.
+    // Establish that this account can publish, then check the retained reservation.
     let other = test.publish().run().unwrap();
     assert_eq!(
         test.api_call("DELETE", &format!("/v1/database/{other}"))
@@ -128,7 +129,7 @@ fn test_deleted_database_name_gets_fresh_identity() {
             .status_code,
         200
     );
-    let replacement = test.publish().name(&name).run().unwrap();
+    assert!(test.publish().name(&name).run().is_err());
     assert_eq!(
         test.api_call("GET", &format!("/v1/database/{previous}"))
             .unwrap()
@@ -136,7 +137,9 @@ fn test_deleted_database_name_gets_fresh_identity() {
         404
     );
 
-    assert_ne!(replacement, previous);
+    test.login_with_token(&owner_token).unwrap();
+    let replacement = test.publish().name(&name).run().unwrap();
+    assert_eq!(replacement, previous);
     test.call("say_hello", &[]).unwrap();
     assert!(test.logs(100).unwrap().iter().any(|line| line.contains("World")));
 }

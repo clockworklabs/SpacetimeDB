@@ -1399,7 +1399,16 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         match existing.as_ref() {
             None => {
                 if !identity_allocated {
-                    return Err(bad_request("Cannot create a database at a supplied identity".into()));
+                    let Some(name) = db_name else {
+                        return Err(bad_request("Cannot create a database at a supplied identity".into()));
+                    };
+                    // Deleted databases retain their name and namespace owner.
+                    // Reusing the identity requires that owner, not merely
+                    // permission to create a new database.
+                    let owner = ctx.lookup_namespace_owner(name.as_ref()).await.map_err(log_and_500)?;
+                    if owner != Some(auth.claims.identity) {
+                        return Err((StatusCode::FORBIDDEN, "Only the name owner can recreate this database").into());
+                    }
                 }
                 allow_creation(&auth)?;
                 ctx.authorize_action(
@@ -2641,11 +2650,7 @@ mod tests {
                 .unwrap();
             assert_eq!(
                 response.status(),
-                if exists {
-                    StatusCode::OK
-                } else {
-                    StatusCode::BAD_REQUEST
-                }
+                if exists { StatusCode::OK } else { StatusCode::FORBIDDEN }
             );
             if exists {
                 let body = response.into_body().collect().await.unwrap().to_bytes();

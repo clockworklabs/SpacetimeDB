@@ -154,7 +154,7 @@ fn test_decode() -> ResultTest<()> {
 }
 
 #[test]
-fn test_delete_database_removes_names() -> anyhow::Result<()> {
+fn test_delete_database_retains_names() -> anyhow::Result<()> {
     let tmp = TempDir::with_prefix("delete-database-names")?;
     let deleted = Identity::from_claims(LOCALHOST, "deleted-database");
     let retained = Identity::from_claims(LOCALHOST, "retained-database");
@@ -182,12 +182,12 @@ fn test_delete_database_removes_names() -> anyhow::Result<()> {
     }
     let control = ControlDb::at(tmp.path())?;
     for name in names {
-        assert_eq!(control.spacetime_dns(name.as_ref())?, None);
+        assert_eq!(control.spacetime_dns(name.as_ref())?, Some(deleted));
     }
-    assert!(control.spacetime_reverse_dns(&deleted)?.is_empty());
+    assert_eq!(control.spacetime_reverse_dns(&deleted)?.len(), 3);
     assert!(control.get_database_by_identity(&deleted)?.is_none());
     assert_eq!(control.spacetime_dns("retained-name")?, Some(retained));
-    assert_eq!(control.spacetime_dns("shared-name/deleted")?, None);
+    assert_eq!(control.spacetime_dns("shared-name/deleted")?, Some(deleted));
     assert_eq!(control.spacetime_dns("shared-name/retained")?, Some(retained));
     assert_eq!(
         control.spacetime_lookup_tld("shared-name".parse::<DomainName>()?.tld())?,
@@ -196,7 +196,7 @@ fn test_delete_database_removes_names() -> anyhow::Result<()> {
     assert!(control.get_database_by_identity(&retained)?.is_some());
     assert_eq!(
         control.spacetime_lookup_tld("deleted-name".parse::<DomainName>()?.tld())?,
-        None
+        Some(*ALICE)
     );
     Ok(())
 }
