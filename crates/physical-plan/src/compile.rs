@@ -6,9 +6,7 @@ use crate::plan::{
     PARAM_SENDER,
 };
 use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_expr::expr::{
-    Expr, FieldProject, LeftDeepJoin, Param, ProjectList, ProjectName, RelExpr, Relvar, ViewArgs,
-};
+use spacetimedb_expr::expr::{Expr, FieldProject, LeftDeepJoin, Param, ProjectList, ProjectName, RelExpr, Relvar};
 use spacetimedb_expr::statement::DML;
 
 pub trait VarLabel {
@@ -64,17 +62,6 @@ fn compile_field_project(var: &mut impl VarLabel, expr: FieldProject) -> TupleFi
     }
 }
 
-/// Checks that a view call's `arg_hash` was bound before physical compilation.
-fn bound_view_args(view_args: Option<ViewArgs>) -> Option<ViewArgs> {
-    if let Some(view_args) = &view_args {
-        assert!(
-            view_args.arg_hash.is_some(),
-            "bind_view_arg_hashes must run before physical compilation"
-        );
-    }
-    view_args
-}
-
 fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
     match ast {
         RelExpr::RelVar(Relvar {
@@ -85,12 +72,12 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
         }) => {
             let label = var.label(alias.as_ref());
             let schema = schema.inner();
-            PhysicalPlan::TableScan(
+            PhysicalPlan::scoped_scan(
                 TableScan {
                     schema,
                     limit: None,
                     delta,
-                    view_args: bound_view_args(view_args),
+                    view_args,
                 },
                 label,
             )
@@ -116,7 +103,7 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
         ) => PhysicalPlan::HashJoin(
             HashJoin {
                 lhs: Box::new(compile_rel_expr(var, *lhs)),
-                rhs: Box::new(PhysicalPlan::TableScan(
+                rhs: Box::new(PhysicalPlan::scoped_scan(
                     TableScan {
                         schema: rhs_schema.inner(),
                         limit: None,
@@ -150,7 +137,7 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
                 },
         }) => {
             let lhs = compile_rel_expr(var, *lhs);
-            let rhs = PhysicalPlan::TableScan(
+            let rhs = PhysicalPlan::scoped_scan(
                 TableScan {
                     schema: rhs_schema.inner(),
                     limit: None,

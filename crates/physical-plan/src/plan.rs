@@ -544,7 +544,6 @@ impl PhysicalPlan {
     /// 5. Compute positions for tuple labels
     pub fn optimize(self, reqs: Vec<Label>) -> Result<Self> {
         let optimized = self
-            .expand_views()
             .map(&Self::canonicalize)
             .apply_rec::<PushConstAnd>()?
             .apply_rec::<PushConstEq>()?
@@ -608,6 +607,8 @@ impl PhysicalPlan {
         Ok(optimized)
     }
 
+    /// A scan of `scan.schema`, scoped to the rows of a view call if it reads a view.
+    ///
     /// If a view has private arguments, its backing table has an `arg_hash` column.
     /// This column tracks which rows belong to which argument tuple.
     ///
@@ -625,86 +626,39 @@ impl PhysicalPlan {
     /// ```sql
     /// SELECT * FROM my_view WHERE arg_hash = <current view arg hash>
     /// ```
-    fn expand_views(self) -> Self {
-        match self {
-            Self::TableScan(scan, label) if scan.schema.is_view() => {
-                let arg_hash = match &scan.view_args {
-                    // A parameterized call's hash was bound at compile time
-                    Some(view_args) => PhysicalExpr::Value(
-                        view_args
-                            .arg_hash
-                            .clone()
-                            .expect("bind_view_arg_hashes must run before physical compilation"),
-                    ),
-                    None => {
-                        let param = if scan.schema.is_anonymous_view() {
-                            PARAM_VIEW_ARG_HASH_EMPTY
-                        } else {
-                            PARAM_VIEW_ARG_HASH_SENDER
-                        };
-                        PhysicalExpr::Param(param, AlgebraicType::U256)
-                    }
-                };
-                Self::Filter(
-                    Box::new(Self::TableScan(scan, label)),
-                    PhysicalExpr::BinOp(
-                        BinOp::Eq,
-                        Box::new(arg_hash),
-                        Box::new(PhysicalExpr::Field(TupleField {
-                            label,
-                            label_pos: None,
-                            field_pos: VIEW_ARG_HASH_COL.idx(),
-                        })),
-                    ),
-                )
-            }
-            Self::IxJoin(
-                IxJoin {
-                    lhs,
-                    rhs,
-                    rhs_label,
-                    rhs_index,
-                    unique,
-                    probe,
-                    rhs_delta,
-                },
-                semi,
-            ) => Self::IxJoin(
-                IxJoin {
-                    lhs: Box::new(lhs.expand_views()),
-                    rhs,
-                    rhs_label,
-                    rhs_index,
-                    unique,
-                    probe,
-                    rhs_delta,
-                },
-                semi,
-            ),
-            Self::HashJoin(
-                HashJoin {
-                    lhs,
-                    rhs,
-                    lhs_field,
-                    rhs_field,
-                    unique,
-                },
-                semi,
-            ) => Self::HashJoin(
-                HashJoin {
-                    lhs: Box::new(lhs.expand_views()),
-                    rhs: Box::new(rhs.expand_views()),
-                    lhs_field,
-                    rhs_field,
-                    unique,
-                },
-                semi,
-            ),
-            Self::Filter(input, expr) => Self::Filter(Box::new(input.expand_views()), expr),
-            Self::BindingLookup(input, lookup) => Self::BindingLookup(Box::new(input.expand_views()), lookup),
-            Self::NLJoin(lhs, rhs) => Self::NLJoin(Box::new(lhs.expand_views()), Box::new(rhs.expand_views())),
-            Self::TableScan(..) | Self::IxScan(..) => self,
+    pub(crate) fn scoped_scan(scan: TableScan, label: Label) -> Self {
+        if !scan.schema.is_view() {
+            return Self::TableScan(scan, label);
         }
+        let arg_hash = match &scan.view_args {
+            // A parameterized call's hash was bound at compile time
+            Some(view_args) => PhysicalExpr::Value(
+                view_args
+                    .arg_hash
+                    .clone()
+                    .expect("bind_view_arg_hashes must run before physical compilation"),
+            ),
+            None => {
+                let param = if scan.schema.is_anonymous_view() {
+                    PARAM_VIEW_ARG_HASH_EMPTY
+                } else {
+                    PARAM_VIEW_ARG_HASH_SENDER
+                };
+                PhysicalExpr::Param(param, AlgebraicType::U256)
+            }
+        };
+        Self::Filter(
+            Box::new(Self::TableScan(scan, label)),
+            PhysicalExpr::BinOp(
+                BinOp::Eq,
+                Box::new(arg_hash),
+                Box::new(PhysicalExpr::Field(TupleField {
+                    label,
+                    label_pos: None,
+                    field_pos: VIEW_ARG_HASH_COL.idx(),
+                })),
+            ),
+        )
     }
 
     /// The rewriter assumes a canonicalized plan.
@@ -1829,7 +1783,10 @@ mod tests {
         },
     };
 
-    use super::{ParamSlot, PhysicalExpr, ProjectPlan, TableScan, PARAM_SENDER, PARAM_VIEW_ARG_HASH_SENDER};
+    use super::{
+        ParamSlot, PhysicalExpr, ProjectPlan, TableScan, PARAM_SENDER, PARAM_VIEW_ARG_HASH_EMPTY,
+        PARAM_VIEW_ARG_HASH_SENDER, VIEW_ARG_HASH_COL,
+    };
 
     struct SchemaViewer {
         schemas: Vec<Arc<TableOrViewSchema>>,
@@ -2649,6 +2606,46 @@ mod tests {
                 }
                 plan => panic!("unexpected plan: {plan:#?}"),
             }
+        }
+    }
+
+    /// Compilation scopes a view scan to the caller's rows, before any optimization
+    #[test]
+    fn compiled_view_scans_are_scoped() {
+        for (is_anonymous, param) in [(true, PARAM_VIEW_ARG_HASH_EMPTY), (false, PARAM_VIEW_ARG_HASH_SENDER)] {
+            let mut v = TableSchema::clone(
+                &schema(
+                    TableId(1),
+                    "v",
+                    &[("arg_hash", AlgebraicType::U256), ("x", AlgebraicType::U8)],
+                    &[&[0]],
+                    &[],
+                    None,
+                )
+                .inner(),
+            );
+            v.view_info = Some(ViewDefInfo {
+                view_id: ViewId(1),
+                is_anonymous,
+                params: ProductType::unit(),
+            });
+            let db = SchemaViewer {
+                schemas: vec![Arc::new(TableOrViewSchema::from(Arc::new(v)))],
+            };
+
+            let plan = compile_select(parse_and_type_sub("select * from v", &db).unwrap());
+            let ProjectPlan::None(PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, lhs, rhs))) = plan else {
+                panic!("expected a filter over the view scan: {plan:#?}");
+            };
+            let PhysicalPlan::TableScan(_, label) = *input else {
+                panic!("expected a view scan: {input:#?}");
+            };
+            assert_eq!(*lhs, PhysicalExpr::Param(param, AlgebraicType::U256));
+            let PhysicalExpr::Field(field) = *rhs else {
+                panic!("expected the arg hash column: {rhs:#?}");
+            };
+            assert_eq!(field.label, label);
+            assert_eq!(field.field_pos, VIEW_ARG_HASH_COL.idx());
         }
     }
 

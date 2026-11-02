@@ -515,7 +515,7 @@ impl RewriteRule for IxScanFromPredicates {
         let PhysicalPlan::Filter(input, expr) = plan else {
             bail!("{INVARIANT_VIOLATION}: Failed to create index scan from predicates");
         };
-        // `expand_views` put this view's `arg_hash` filter above this scan
+        // `scoped_scan` put this view's `arg_hash` filter above this scan
         let PhysicalPlan::TableScan(
             TableScan {
                 schema,
