@@ -990,6 +990,21 @@ pub struct PreparedCommit {
 }
 
 impl PreparedCommit {
+    /// Retain an additional comparison page in the same set as mutation pages.
+    /// Deduplicating by page index avoids reloading pages already protected by the plan.
+    /// `pages` must be the page set used to prepare this commit.
+    pub(crate) fn pin_page(&mut self, pages: &PageSet, index: PageIndex) -> Result<(), PageError> {
+        if let btree_map::Entry::Vacant(entry) = self.pinned.entry(index) {
+            let page = pages
+                .get_page(index)?
+                .expect("pointer-map candidate belongs to a live page");
+            if let PageRef::Tiered(pin) = page {
+                entry.insert(pin);
+            }
+        }
+        Ok(())
+    }
+
     /// Apply a transaction directly when neither source nor destination can fault
     /// and the destination has no allocation budget or page-index failure ahead.
     pub fn apply_resident(
