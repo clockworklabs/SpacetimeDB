@@ -1418,6 +1418,11 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
             }
         }
 
+        // Reserve the name only after creation permissions have been checked.
+        if identity_allocated && let Some(name) = db_name {
+            create_name(&ctx, &auth, &database_identity, name).await?;
+        }
+
         // Indicate in the response whether we created or updated the database.
         let publish_op = if existing.is_some() {
             PublishOp::Updated
@@ -1566,11 +1571,10 @@ async fn get_or_create_identity_and_name<'a>(
             Ok(resolved) => Ok((resolved, noi.name(), false)),
             Err(name) => {
                 // `name_or_identity` was a `NameOrIdentity::Name`, but no record
-                // exists yet. Create it now with a fresh identity.
+                // exists yet. Allocate a fresh identity; reserve the name after authorization.
                 allow_creation(auth)?;
                 let database_auth = SpacetimeAuth::alloc(ctx).await?;
                 let database_identity = database_auth.claims.identity;
-                create_name(ctx, auth, &database_identity, name).await?;
                 Ok((database_identity, Some(name), true))
             }
         },

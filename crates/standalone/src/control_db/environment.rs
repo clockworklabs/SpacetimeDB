@@ -254,15 +254,29 @@ impl ControlDb {
     }
 
     pub(super) fn delete_database_and_environment(&self, id: u64) -> Result<Option<u64>> {
+        let _names = self.names_lock.lock().unwrap();
         let databases = self.db.open_tree("database")?;
         let identities = self.db.open_tree("database_by_identity")?;
         let metadata = self.db.open_tree(METADATA_TREE)?;
         let values = self.db.open_tree(VALUES_TREE)?;
         let dns = self.db.open_tree("dns")?;
         let reverse_dns = self.db.open_tree("reverse_dns")?;
+        let tlds = self.db.open_tree("top_level_domains")?;
+        let Some(database) = self.get_database_by_id(id)? else {
+            return Ok(None);
+        };
+        let identity = database.database_identity.to_byte_array();
+        let mut retained_tlds = std::collections::HashSet::new();
+        for entry in dns.iter() {
+            let (name, target) = entry?;
+            if target.as_ref() != identity {
+                let name: DomainName = std::str::from_utf8(&name).map_err(|_| invalid())?.parse()?;
+                retained_tlds.insert(name.tld().to_lowercase());
+            }
+        }
         let result: TransactionResult<Option<u64>, Error> =
-            (&databases, &identities, &metadata, &values, &dns, &reverse_dns).transaction(
-                |(databases, identities, metadata, values, dns, reverse_dns)| {
+            (&databases, &identities, &metadata, &values, &dns, &reverse_dns, &tlds).transaction(
+                |(databases, identities, metadata, values, dns, reverse_dns, tlds)| {
                     let Some(bytes) = databases.get(id.to_be_bytes())? else {
                         return Ok(None);
                     };
@@ -274,6 +288,10 @@ impl ControlDb {
                             .map_err(|error| ConflictableTransactionError::Abort(error.into()))?;
                         for name in names {
                             dns.remove(name.to_lowercase().as_bytes())?;
+                            let tld = name.tld().to_lowercase();
+                            if !retained_tlds.contains(&tld) {
+                                tlds.remove(tld.as_bytes())?;
+                            }
                         }
                     }
                     identities.remove(&database.database_identity().to_be_byte_array())?;

@@ -175,6 +175,8 @@ fn test_delete_database_removes_names() -> anyhow::Result<()> {
             control.spacetime_insert_domain(&deleted, name.clone(), *ALICE, true)?;
         }
         control.spacetime_insert_domain(&retained, "retained-name".parse()?, *ALICE, true)?;
+        control.spacetime_insert_domain(&deleted, "shared-name/deleted".parse()?, *ALICE, true)?;
+        control.spacetime_insert_domain(&retained, "shared-name/retained".parse()?, *ALICE, true)?;
         assert_eq!(control.delete_database(id)?, Some(id));
         assert_eq!(control.delete_database(id)?, None);
     }
@@ -185,10 +187,16 @@ fn test_delete_database_removes_names() -> anyhow::Result<()> {
     assert!(control.spacetime_reverse_dns(&deleted)?.is_empty());
     assert!(control.get_database_by_identity(&deleted)?.is_none());
     assert_eq!(control.spacetime_dns("retained-name")?, Some(retained));
+    assert_eq!(control.spacetime_dns("shared-name/deleted")?, None);
+    assert_eq!(control.spacetime_dns("shared-name/retained")?, Some(retained));
+    assert_eq!(
+        control.spacetime_lookup_tld("shared-name".parse::<DomainName>()?.tld())?,
+        Some(*ALICE)
+    );
     assert!(control.get_database_by_identity(&retained)?.is_some());
     assert_eq!(
         control.spacetime_lookup_tld("deleted-name".parse::<DomainName>()?.tld())?,
-        Some(*ALICE)
+        None
     );
     Ok(())
 }

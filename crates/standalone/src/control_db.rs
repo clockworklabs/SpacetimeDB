@@ -26,6 +26,9 @@ mod tests;
 #[derive(Clone)]
 pub struct ControlDb {
     db: sled::Db,
+    // Serialize DNS mutations with deletion, including the scan for surviving
+    // names sharing a reservation. Sled transactions do not support range scans.
+    names_lock: std::sync::Arc<std::sync::Mutex<()>>,
 }
 
 pub type Result<T> = core::result::Result<T, Error>;
@@ -74,7 +77,10 @@ impl ControlDb {
             .flush_every_ms(Some(50))
             .mode(sled::Mode::HighThroughput);
         let db = config.open()?;
-        Ok(Self { db })
+        Ok(Self {
+            db,
+            names_lock: Default::default(),
+        })
     }
 
     #[cfg(test)]
@@ -84,7 +90,10 @@ impl ControlDb {
             .flush_every_ms(Some(50))
             .mode(sled::Mode::HighThroughput);
         let db = config.open()?;
-        Ok(Self { db })
+        Ok(Self {
+            db,
+            names_lock: Default::default(),
+        })
     }
 }
 
@@ -139,6 +148,7 @@ impl ControlDb {
         owner_identity: Identity,
         try_register_tld: bool,
     ) -> Result<InsertDomainResult> {
+        let _names = self.names_lock.lock().unwrap();
         let database_identity = *database_identity;
         if self.spacetime_dns(domain.as_ref())?.is_some() {
             return Err(Error::RecordAlreadyExists(domain));
@@ -153,7 +163,7 @@ impl ControlDb {
             None => {
                 if try_register_tld {
                     // Let's try to automatically register this TLD for the identity
-                    let result = self.spacetime_register_tld(tld.to_owned(), owner_identity)?;
+                    let result = self.register_tld_locked(tld.to_owned(), owner_identity)?;
                     if let RegisterTldResult::Success { .. } = result {
                         // This identity now owns this TLD
                     } else {
@@ -208,6 +218,7 @@ impl ControlDb {
         owner_identity: &Identity,
         domain_names: &[DomainName],
     ) -> Result<SetDomainsResult> {
+        let _names = self.names_lock.lock().unwrap();
         let database_identity_bytes = database_identity.to_byte_array();
 
         let dns_tree = self.db.open_tree("dns")?;
@@ -302,6 +313,11 @@ impl ControlDb {
     /// * `domain` - The domain name to register
     /// * `owner_identity` - The identity that should own this domain name.
     pub fn spacetime_register_tld(&self, tld: Tld, owner_identity: Identity) -> Result<RegisterTldResult> {
+        let _names = self.names_lock.lock().unwrap();
+        self.register_tld_locked(tld, owner_identity)
+    }
+
+    fn register_tld_locked(&self, tld: Tld, owner_identity: Identity) -> Result<RegisterTldResult> {
         let tree = self.db.open_tree("top_level_domains")?;
         let key = tld.to_lowercase();
         let current_owner = tree.get(&key)?;

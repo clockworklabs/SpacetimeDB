@@ -98,7 +98,6 @@ fn test_deleted_database_name_gets_fresh_identity() {
         .autopublish(false)
         .build();
     test.new_identity().unwrap();
-    let owner_token = test.read_token().unwrap();
     let name = format!("delete-republish-{}", std::process::id());
     let previous = test.publish().name(&name).run().unwrap();
     assert_eq!(
@@ -121,7 +120,7 @@ fn test_deleted_database_name_gets_fresh_identity() {
     );
 
     test.new_identity().unwrap();
-    // Establish that this account can publish before checking name ownership.
+    // Establish that this account can publish, then reuse the released name.
     let other = test.publish().run().unwrap();
     assert_eq!(
         test.api_call("DELETE", &format!("/v1/database/{other}"))
@@ -129,7 +128,7 @@ fn test_deleted_database_name_gets_fresh_identity() {
             .status_code,
         200
     );
-    assert!(test.publish().name(&name).run().is_err());
+    let replacement = test.publish().name(&name).run().unwrap();
     assert_eq!(
         test.api_call("GET", &format!("/v1/database/{previous}"))
             .unwrap()
@@ -137,8 +136,6 @@ fn test_deleted_database_name_gets_fresh_identity() {
         404
     );
 
-    test.login_with_token(&owner_token).unwrap();
-    let replacement = test.publish().name(&name).run().unwrap();
     assert_ne!(replacement, previous);
     test.call("say_hello", &[]).unwrap();
     assert!(test.logs(100).unwrap().iter().any(|line| line.contains("World")));
