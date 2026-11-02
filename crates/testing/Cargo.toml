@@ -34,6 +34,11 @@ serde.workspace = true
 futures.workspace = true
 
 [dev-dependencies]
+spacetimedb-datastore.workspace = true
+spacetimedb-primitives.workspace = true
+spacetimedb-sats.workspace = true
+spacetimedb-schema = { workspace = true, features = ["test"] }
+scopeguard.workspace = true
 axum.workspace = true
 tower = { version = "0.5", features = ["util"] }
 env_logger.workspace = true

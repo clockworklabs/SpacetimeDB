@@ -718,6 +718,22 @@ pub struct MeteredUnboundedReceiver<T> {
 }
 
 impl<T> MeteredUnboundedReceiver<T> {
+    pub async fn recv_many(&mut self, buffer: &mut Vec<T>, limit: usize) -> usize {
+        let count = self.inner.recv_many(buffer, limit).await;
+        if let Some(gauge) = &self.gauge {
+            gauge.sub(count as i64);
+        }
+        count
+    }
+
+    pub fn try_recv(&mut self) -> Result<T, mpsc::error::TryRecvError> {
+        self.inner.try_recv().inspect(|_| {
+            if let Some(gauge) = &self.gauge {
+                gauge.dec();
+            }
+        })
+    }
+
     pub fn new(inner: mpsc::UnboundedReceiver<T>) -> Self {
         Self { inner, gauge: None }
     }
@@ -767,6 +783,7 @@ impl<T> MeteredUnboundedReceiver<T> {
 impl<T> Drop for MeteredUnboundedReceiver<T> {
     fn drop(&mut self) {
         // Record the number of elements still in the channel on drop
+        self.inner.close();
         if let Some(gauge) = &self.gauge {
             gauge.sub(self.inner.len() as _);
         }

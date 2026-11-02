@@ -257,6 +257,63 @@ ctx.db.tick_timer().insert(TickTimer { scheduled_id: 0, scheduled_at: at });
 
 Construct a connection ID from a numeric representation with `ConnectionId::from_u128(value)`.
 
+## Inter-Database Calls (Async IDC)
+
+A reducer calls a reducer in another database by inserting a row into an outbox table. The call is sent only if the transaction commits, runs exactly once, and runs in order with other calls through the same outbox to the same database. The sending reducer doesn't wait for it. Both databases must be on the same server.
+
+Generate receiver bindings by listing the receiving module under `dependencies` in the sending database's `spacetime.json`, then running `spacetime generate <sending-database>`. Rust bindings are written to `src/remote_bindings/`.
+
+```json
+{
+  "database": "lobby",
+  "module-path": "./lobby",
+  "dependencies": [{ "name": "game_world", "database": "game-world" }],
+  "children": [{ "database": "game-world", "module-path": "./game_world" }]
+}
+```
+
+```rust
+mod remote_bindings;
+use remote_bindings::game_world;
+
+// Each row is one call to game_world's `admit_player(name: String)` reducer.
+#[spacetimedb::table(accessor = admit_player_outbox, outbox(game_world::admit_player))]
+pub struct AdmitPlayerOutbox {
+    #[primary_key]
+    #[auto_inc]
+    msg_id: u64,                 // exactly one u64 auto_inc primary key
+    #[target]
+    world: game_world::Identity, // exactly one target, typed by the bindings
+    name: String,                // one column per reducer parameter, same name and type
+    // #[param(name = name)] player_name: String,  // alias a column to a parameter
+    // Extra columns are allowed. They aren't sent, but on_result can read them.
+}
+
+#[spacetimedb::reducer]
+pub fn send_to_world(ctx: &ReducerContext, name: String, world: game_world::Identity) {
+    // Sent if and only if this transaction commits.
+    ctx.db.admit_player_outbox().insert(AdmitPlayerOutbox { msg_id: 0, world, name });
+}
+
+// Optional, at most one per outbox. Private. Runs once per row, then the row is deleted.
+#[spacetimedb::reducer(on_result(admit_player_outbox))]
+pub fn on_admit_player_result(ctx: &ReducerContext, row: AdmitPlayerOutbox, result: Result<(), String>) {
+    if let Err(error) = result {
+        log::warn!("{} was not admitted: {error}", row.name);
+    }
+}
+```
+
+- The receiving reducer is an ordinary reducer and needs no changes. In it, `ctx.sender()` is the sending database's identity, so authorize calls by checking it against an allow-list table.
+- The receiving database runs `client_connected` and `client_disconnected` around every delivered call, with no JWT. If `client_connected` rejects the sending database, the call is retried forever.
+- Outbox rows are insert-only, so a pending call can't be cancelled. A call is never retried once it has a result. To try again, insert a new row, for example from `on_result`.
+- Wrap a plain `Identity` to get a target: `game_world::Identity(identity)`.
+- Index lookups (`find`, `filter`) on a `game_world::Identity` column don't compile. Iterate and compare instead.
+- An outbox table can't also be a scheduled table or an event table.
+- After the receiving reducer's parameters change, regenerate the bindings and republish the sending database. Calls built from old bindings fail with a signature mismatch error.
+
+See https://spacetimedb.com/docs/databases/inter-database-communication for details.
+
 ## Procedures and HTTP
 
 Procedures use `&mut ProcedureContext` and may return typed values:

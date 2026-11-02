@@ -454,7 +454,7 @@ pub(crate) mod tests {
                 target_column: ColId(1),
                 arg_columns: vec![],
                 on_result_reducer: None,
-                signature_hash: "test-signature".into(),
+                signature_hash: spacetimedb_lib::Hash::ZERO,
             });
             stdb.create_table(tx, schema)
         })?;

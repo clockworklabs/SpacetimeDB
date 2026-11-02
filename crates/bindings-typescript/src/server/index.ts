@@ -7,7 +7,12 @@ export {
   type SubmoduleMount,
 } from './schema.ts';
 export { CaseConversionPolicy } from '../lib/autogen/types.ts';
-export { table } from '../lib/table.ts';
+export {
+  remoteModule,
+  type RemoteReducer,
+  type ReceiverIdentity,
+} from '../lib/remote_module.ts';
+export { table, type OutboxTable, type OutboxTableOpts } from '../lib/table.ts';
 export { SenderError, SpacetimeHostError, errors } from './errors.ts';
 export type {
   Reducer,

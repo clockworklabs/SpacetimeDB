@@ -3683,17 +3683,17 @@ impl MutTxId {
         .transpose()
     }
 
-    /// Return whether this outbox row is already queued for delivery.
-    fn st_outbound_msg_exists(&self, stream_id: u64, msg_id: u64) -> Result<bool> {
+    /// Find the pending delivery for this outbox row.
+    fn st_outbound_msg(&self, stream_id: u64, msg_id: u64) -> Result<Option<StOutboundMsgRow>> {
         let msg_key = AlgebraicValue::Product(product![stream_id, msg_id]);
-        Ok(self
-            .iter_by_col_eq(
-                ST_OUTBOUND_MSG_ID,
-                col_list![StOutboundMsgFields::StreamId, StOutboundMsgFields::MsgId],
-                &msg_key,
-            )?
-            .next()
-            .is_some())
+        self.iter_by_col_eq(
+            ST_OUTBOUND_MSG_ID,
+            col_list![StOutboundMsgFields::StreamId, StOutboundMsgFields::MsgId],
+            &msg_key,
+        )?
+        .map(StOutboundMsgRow::try_from)
+        .next()
+        .transpose()
     }
 
     /// Reserve the next sequence number for this outbox table and receiver.
@@ -3731,19 +3731,74 @@ impl MutTxId {
     }
 
     /// Retain the queued message until the IDC actor sends it and observes the result.
-    fn insert_st_outbound_msg(&mut self, stream_id: u64, msg_id: u64, seq: u64) -> Result<()> {
-        self.insert_via_serialize_bsatn(
-            ST_OUTBOUND_MSG_ID,
-            &StOutboundMsgRow {
-                stream_id,
-                msg_id,
-                seq,
-                retry_count: 0,
-                last_transport_error: None,
-                result_status: None,
-                result_payload: None,
-            },
-        )?;
+    fn insert_st_outbound_msg(&mut self, stream_id: u64, msg_id: u64, seq: u64) -> Result<StOutboundMsgRow> {
+        let row = StOutboundMsgRow {
+            stream_id,
+            msg_id,
+            seq,
+            retry_count: 0,
+            last_transport_error: None,
+            result_status: None,
+            result_payload: None,
+        };
+        self.insert_via_serialize_bsatn(ST_OUTBOUND_MSG_ID, &row)?;
+        Ok(row)
+    }
+
+    pub fn record_outbound_idc_transport_error(&mut self, stream_id: u64, seq: u64, reason: String) -> Result<()> {
+        let Some(row) = self.outbound_msg_by_stream_seq(stream_id, seq)? else {
+            return Ok(());
+        };
+        let ptr = row.pointer();
+        let mut current = StOutboundMsgRow::try_from(row)?;
+        self.delete(ST_OUTBOUND_MSG_ID, ptr)?;
+        current.retry_count = current.retry_count.saturating_add(1);
+        current.last_transport_error = Some(reason);
+        self.insert_via_serialize_bsatn(ST_OUTBOUND_MSG_ID, &current)?;
+        Ok(())
+    }
+
+    pub fn record_outbound_idc_result(
+        &mut self,
+        stream_id: u64,
+        seq: u64,
+        result_status: StInboundMsgResultStatus,
+        result_payload: Bytes,
+    ) -> Result<()> {
+        let Some(row) = self.outbound_msg_by_stream_seq(stream_id, seq)? else {
+            return Ok(());
+        };
+        let ptr = row.pointer();
+        let mut current = StOutboundMsgRow::try_from(row)?;
+        self.delete(ST_OUTBOUND_MSG_ID, ptr)?;
+        current.last_transport_error = None;
+        current.result_status = Some(result_status);
+        current.result_payload = Some(result_payload);
+        self.insert_via_serialize_bsatn(ST_OUTBOUND_MSG_ID, &current)?;
+        Ok(())
+    }
+
+    /// Retire the next consecutive message. Repeated acknowledgments are a no-op.
+    pub fn ack_outbound_idc_msg(&mut self, stream_id: u64, seq: u64) -> Result<()> {
+        let Some(row) = self.outbound_msg_by_stream_seq(stream_id, seq)? else {
+            return Ok(());
+        };
+        let ptr = row.pointer();
+        let mut stream = self
+            .st_outbound_stream_by_id(stream_id)?
+            .ok_or_else(|| anyhow!("pending IDC message has no outbound stream {stream_id}"))?;
+        if stream.ack_prefix.checked_add(1) != Some(seq) {
+            return Err(anyhow!(
+                "IDC stream {stream_id} cannot acknowledge sequence {seq} after acknowledgment {}",
+                stream.ack_prefix
+            )
+            .into());
+        }
+
+        self.delete(ST_OUTBOUND_MSG_ID, ptr)?;
+        self.delete_by_row_value(ST_OUTBOUND_STREAM_ID, &stream.clone().into())?;
+        stream.ack_prefix = seq;
+        self.insert_via_serialize_bsatn(ST_OUTBOUND_STREAM_ID, &stream)?;
         Ok(())
     }
 
@@ -3751,18 +3806,19 @@ impl MutTxId {
     ///
     /// Module code writes only the user outbox table. This mirrors that insert into
     /// system tables so the host IDC actor can send messages outside the reducer tx.
+    /// Returns the pending message for notifying the actor without another index lookup.
     #[cold]
     #[inline(never)]
-    pub fn record_outbox_insert(&mut self, outbox_table_id: TableId, row_ptr: RowPointer) -> Result<()> {
+    pub fn record_outbox_insert(&mut self, outbox_table_id: TableId, row_ptr: RowPointer) -> Result<StOutboundMsgRow> {
         let (msg_id, target_identity) = self.read_outbox_msg_id_and_target_identity(outbox_table_id, row_ptr)?;
         let stream = self.st_outbound_stream_row(outbox_table_id, target_identity)?;
 
         // Check before advancing the stream so idempotent calls do not burn sequence numbers
         // or duplicate sends.
         if let Some(stream) = &stream
-            && self.st_outbound_msg_exists(stream.stream_id, msg_id)?
+            && let Some(row) = self.st_outbound_msg(stream.stream_id, msg_id)?
         {
-            return Ok(());
+            return Ok(row);
         }
         let (stream_id, seq) = self.advance_st_outbound_stream(outbox_table_id, target_identity, stream)?;
         self.insert_st_outbound_msg(stream_id, msg_id, seq)
