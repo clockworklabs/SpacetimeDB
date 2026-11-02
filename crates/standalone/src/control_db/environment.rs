@@ -258,20 +258,32 @@ impl ControlDb {
         let identities = self.db.open_tree("database_by_identity")?;
         let metadata = self.db.open_tree(METADATA_TREE)?;
         let values = self.db.open_tree(VALUES_TREE)?;
+        let dns = self.db.open_tree("dns")?;
+        let reverse_dns = self.db.open_tree("reverse_dns")?;
         let result: TransactionResult<Option<u64>, Error> =
-            (&databases, &identities, &metadata, &values).transaction(|(databases, identities, metadata, values)| {
-                let Some(bytes) = databases.get(id.to_be_bytes())? else {
-                    return Ok(None);
-                };
-                let database =
-                    compat::Database::from_slice(&bytes).map_err(|_| ConflictableTransactionError::Abort(invalid()))?;
-                identities.remove(&database.database_identity().to_be_byte_array())?;
-                databases.remove(&id.to_be_bytes())?;
-                metadata.remove(&id.to_be_bytes())?;
-                values.remove(&id.to_be_bytes())?;
-                databases.flush();
-                Ok(Some(id))
-            });
+            (&databases, &identities, &metadata, &values, &dns, &reverse_dns).transaction(
+                |(databases, identities, metadata, values, dns, reverse_dns)| {
+                    let Some(bytes) = databases.get(id.to_be_bytes())? else {
+                        return Ok(None);
+                    };
+                    let database = compat::Database::from_slice(&bytes)
+                        .map_err(|_| ConflictableTransactionError::Abort(invalid()))?;
+                    let identity = database.database_identity().to_byte_array();
+                    if let Some(names) = reverse_dns.remove(&identity)? {
+                        let names: Vec<DomainName> = serde_json::from_slice(&names)
+                            .map_err(|error| ConflictableTransactionError::Abort(error.into()))?;
+                        for name in names {
+                            dns.remove(name.to_lowercase().as_bytes())?;
+                        }
+                    }
+                    identities.remove(&database.database_identity().to_be_byte_array())?;
+                    databases.remove(&id.to_be_bytes())?;
+                    metadata.remove(&id.to_be_bytes())?;
+                    values.remove(&id.to_be_bytes())?;
+                    databases.flush();
+                    Ok(Some(id))
+                },
+            );
         let result = result.map_err(transaction_error)?;
         self.db.flush()?;
         Ok(result)

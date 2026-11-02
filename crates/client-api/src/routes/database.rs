@@ -1374,113 +1374,130 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         ));
     }
 
-    let (database_identity, db_name) = get_or_create_identity_and_name(&ctx, &auth, name_or_identity.as_ref()).await?;
-    let maybe_parent_database_identity = match parent.as_ref() {
-        None => None,
-        Some(parent) => parent.resolve(&ctx).await.map(Some)?,
-    };
-    let maybe_org_identity = match organization.as_ref() {
-        None => None,
-        Some(org) => org.resolve_namespace_owner(&ctx).await.map(Some)?,
-    };
+    let (database_identity, db_name, identity_allocated) =
+        get_or_create_identity_and_name(&ctx, &auth, name_or_identity.as_ref()).await?;
+    let result = async {
+        let maybe_parent_database_identity = match parent.as_ref() {
+            None => None,
+            Some(parent) => parent.resolve(&ctx).await.map(Some)?,
+        };
+        let maybe_org_identity = match organization.as_ref() {
+            None => None,
+            Some(org) => org.resolve_namespace_owner(&ctx).await.map(Some)?,
+        };
 
-    // Check that the replication factor looks somewhat sane.
-    let num_replicas = num_replicas.map(validate_replication_factor).transpose()?.flatten();
+        // Check that the replication factor looks somewhat sane.
+        let num_replicas = num_replicas.map(validate_replication_factor).transpose()?.flatten();
 
-    log::trace!("Publishing to the identity: {}", database_identity.to_hex());
+        log::trace!("Publishing to the identity: {}", database_identity.to_hex());
 
-    // Check if the database already exists.
-    let existing = ctx
-        .get_database_by_identity(&database_identity)
-        .await
-        .map_err(log_and_500)?;
-    match existing.as_ref() {
-        None => {
-            if matches!(name_or_identity.as_ref(), Some(NameOrIdentity::Identity(_))) {
-                return Err(bad_request("Cannot create a database at a supplied identity".into()));
+        // Check if the database already exists.
+        let existing = ctx
+            .get_database_by_identity(&database_identity)
+            .await
+            .map_err(log_and_500)?;
+        match existing.as_ref() {
+            None => {
+                if !identity_allocated {
+                    return Err(bad_request("Cannot create a database at a supplied identity".into()));
+                }
+                allow_creation(&auth)?;
+                ctx.authorize_action(
+                    auth.claims.identity,
+                    database_identity,
+                    Action::CreateDatabase {
+                        parent: maybe_parent_database_identity,
+                        organization: maybe_org_identity,
+                    },
+                )
+                .await?;
             }
-            allow_creation(&auth)?;
-            ctx.authorize_action(
-                auth.claims.identity,
-                database_identity,
-                Action::CreateDatabase {
-                    parent: maybe_parent_database_identity,
+            Some(database) => {
+                ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
+                    .await?;
+            }
+        }
+
+        // Indicate in the response whether we created or updated the database.
+        let publish_op = if existing.is_some() {
+            PublishOp::Updated
+        } else {
+            PublishOp::Created
+        };
+        // If a parent is given, resolve to an existing database.
+        let parent = if let Some(name_or_identity) = parent {
+            let identity = name_or_identity
+                .resolve(&ctx)
+                .await
+                .map_err(|_| bad_request(format!("Parent database {name_or_identity} not found").into()))?;
+            Some(identity)
+        } else {
+            None
+        };
+
+        let schema_migration_policy = schema_migration_policy(policy, token)?;
+        let maybe_updated = ctx
+            .publish_database(
+                &auth.claims.identity,
+                DatabaseDef {
+                    database_identity,
+                    program_bytes,
+                    num_replicas,
+                    host_type,
+                    parent,
                     organization: maybe_org_identity,
                 },
+                schema_migration_policy,
+                EnvironmentUpdate {
+                    values: environment,
+                    remove: environment_remove,
+                },
             )
-            .await?;
-        }
-        Some(database) => {
-            ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
-                .await?;
-        }
-    }
-
-    // Indicate in the response whether we created or updated the database.
-    let publish_op = if existing.is_some() {
-        PublishOp::Updated
-    } else {
-        PublishOp::Created
-    };
-    // If a parent is given, resolve to an existing database.
-    let parent = if let Some(name_or_identity) = parent {
-        let identity = name_or_identity
-            .resolve(&ctx)
             .await
-            .map_err(|_| bad_request(format!("Parent database {name_or_identity} not found").into()))?;
-        Some(identity)
-    } else {
-        None
-    };
+            .map_err(publish_error)?;
 
-    let schema_migration_policy = schema_migration_policy(policy, token)?;
-    let maybe_updated = ctx
-        .publish_database(
-            &auth.claims.identity,
-            DatabaseDef {
+        let success = || {
+            axum::Json(PublishResult::Success {
+                domain: db_name.cloned(),
                 database_identity,
-                program_bytes,
-                num_replicas,
-                host_type,
-                parent,
-                organization: maybe_org_identity,
-            },
-            schema_migration_policy,
-            EnvironmentUpdate {
-                values: environment,
-                remove: environment_remove,
-            },
-        )
-        .await
-        .map_err(publish_error)?;
-
-    let success = || {
-        axum::Json(PublishResult::Success {
-            domain: db_name.cloned(),
-            database_identity,
-            op: publish_op,
-        })
-    };
-    match maybe_updated {
-        Some(UpdateDatabaseResult::AutoMigrateError(errs)) => {
-            Err(bad_request(format!("Database update rejected: {errs}").into()))
-        }
-        Some(UpdateDatabaseResult::ErrorExecutingMigration(err)) => Err(publish_migration_error(err)),
-        None | Some(UpdateDatabaseResult::NoUpdateNeeded) => Ok(success()),
-        Some(
-            UpdateDatabaseResult::UpdatePerformed {
-                tx_offset,
-                durable_offset,
+                op: publish_op,
+            })
+        };
+        match maybe_updated {
+            Some(UpdateDatabaseResult::AutoMigrateError(errs)) => {
+                Err(bad_request(format!("Database update rejected: {errs}").into()))
             }
-            | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect {
-                tx_offset,
-                durable_offset,
-            },
-        ) => {
-            confirm_update(tx_offset, durable_offset, confirmation_timeout).await?;
-            Ok(success())
+            Some(UpdateDatabaseResult::ErrorExecutingMigration(err)) => Err(publish_migration_error(err)),
+            None | Some(UpdateDatabaseResult::NoUpdateNeeded) => Ok(success()),
+            Some(
+                UpdateDatabaseResult::UpdatePerformed {
+                    tx_offset,
+                    durable_offset,
+                }
+                | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect {
+                    tx_offset,
+                    durable_offset,
+                },
+            ) => {
+                confirm_update(tx_offset, durable_offset, confirmation_timeout).await?;
+                Ok(success())
+            }
         }
     }
+    .await;
+    if result.is_err()
+        && identity_allocated
+        && db_name.is_some()
+        && matches!(ctx.get_database_by_identity(&database_identity).await, Ok(None))
+    {
+        if let Err(error) = ctx
+            .replace_dns_records(&database_identity, &auth.claims.identity, &[])
+            .await
+        {
+            log::warn!("Failed to remove provisional database name: {error}");
+        }
+    }
+    result
 }
 
 /// Waits until the update committed at `tx_offset` is durable, so that a crash
@@ -1531,6 +1548,7 @@ impl From<UpdateConfirmationError> for ErrorResponse {
 }
 
 /// Try to resolve `name_or_identity` to an [Identity] and [DatabaseName].
+/// The final flag indicates whether this request allocated the identity.
 ///
 /// - If the database exists and has a name registered for it, return that.
 /// - If the database does not exist, but `name_or_identity` is a name,
@@ -1542,10 +1560,10 @@ async fn get_or_create_identity_and_name<'a>(
     ctx: &(impl ControlStateDelegate + NodeDelegate),
     auth: &SpacetimeAuth,
     name_or_identity: Option<&'a NameOrIdentity>,
-) -> axum::response::Result<(Identity, Option<&'a DatabaseName>)> {
+) -> axum::response::Result<(Identity, Option<&'a DatabaseName>, bool)> {
     match name_or_identity {
         Some(noi) => match noi.try_resolve(ctx).await.map_err(log_and_500)? {
-            Ok(resolved) => Ok((resolved, noi.name())),
+            Ok(resolved) => Ok((resolved, noi.name(), false)),
             Err(name) => {
                 // `name_or_identity` was a `NameOrIdentity::Name`, but no record
                 // exists yet. Create it now with a fresh identity.
@@ -1553,13 +1571,13 @@ async fn get_or_create_identity_and_name<'a>(
                 let database_auth = SpacetimeAuth::alloc(ctx).await?;
                 let database_identity = database_auth.claims.identity;
                 create_name(ctx, auth, &database_identity, name).await?;
-                Ok((database_identity, Some(name)))
+                Ok((database_identity, Some(name), true))
             }
         },
         None => {
             let database_auth = SpacetimeAuth::alloc(ctx).await?;
             let database_identity = database_auth.claims.identity;
-            Ok((database_identity, None))
+            Ok((database_identity, None, true))
         }
     }
 }
@@ -2591,6 +2609,44 @@ mod tests {
                         ..
                     } if database_identity == identity
                 ));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn publish_checks_resolved_name_targets() {
+        let identity = test_identity(43);
+        for exists in [false, true] {
+            let mut state = DummyState::new().with_dns("named-target", identity);
+            if exists {
+                state = state.with_database(identity);
+                state.allow_publish_update = true;
+            }
+            let app = DatabaseRoutes::<DummyState>::default()
+                .into_router(state.clone())
+                .with_state(state);
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method(http::Method::PUT)
+                        .uri("/named-target")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                response.status(),
+                if exists {
+                    StatusCode::OK
+                } else {
+                    StatusCode::BAD_REQUEST
+                }
+            );
+            if exists {
+                let body = response.into_body().collect().await.unwrap().to_bytes();
+                assert!(matches!(serde_json::from_slice::<PublishResult>(&body).unwrap(),
+                    PublishResult::Success { database_identity, op: PublishOp::Updated, .. } if database_identity == identity));
             }
         }
     }

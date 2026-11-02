@@ -152,3 +152,43 @@ fn test_decode() -> ResultTest<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_delete_database_removes_names() -> anyhow::Result<()> {
+    let tmp = TempDir::with_prefix("delete-database-names")?;
+    let deleted = Identity::from_claims(LOCALHOST, "deleted-database");
+    let retained = Identity::from_claims(LOCALHOST, "retained-database");
+    let names = ["Deleted-Name".parse::<DomainName>()?, "deleted-name/alias".parse()?];
+    {
+        let control = ControlDb::at(tmp.path())?;
+        let make_database = |database_identity| Database {
+            id: 0,
+            database_identity,
+            owner_identity: *ALICE,
+            host_type: HostType::Wasm,
+            initial_program: Hash::ZERO,
+            bootstrap_generation: 0,
+        };
+        let id = control.insert_database(make_database(deleted))?;
+        control.insert_database(make_database(retained))?;
+        for name in &names {
+            control.spacetime_insert_domain(&deleted, name.clone(), *ALICE, true)?;
+        }
+        control.spacetime_insert_domain(&retained, "retained-name".parse()?, *ALICE, true)?;
+        assert_eq!(control.delete_database(id)?, Some(id));
+        assert_eq!(control.delete_database(id)?, None);
+    }
+    let control = ControlDb::at(tmp.path())?;
+    for name in names {
+        assert_eq!(control.spacetime_dns(name.as_ref())?, None);
+    }
+    assert!(control.spacetime_reverse_dns(&deleted)?.is_empty());
+    assert!(control.get_database_by_identity(&deleted)?.is_none());
+    assert_eq!(control.spacetime_dns("retained-name")?, Some(retained));
+    assert!(control.get_database_by_identity(&retained)?.is_some());
+    assert_eq!(
+        control.spacetime_lookup_tld("deleted-name".parse::<DomainName>()?.tld())?,
+        Some(*ALICE)
+    );
+    Ok(())
+}
