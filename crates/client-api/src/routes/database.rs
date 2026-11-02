@@ -1396,6 +1396,9 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         .map_err(log_and_500)?;
     match existing.as_ref() {
         None => {
+            if matches!(name_or_identity.as_ref(), Some(NameOrIdentity::Identity(_))) {
+                return Err(bad_request("Cannot create a database at a supplied identity".into()));
+            }
             allow_creation(&auth)?;
             ctx.authorize_action(
                 auth.claims.identity,
@@ -2504,6 +2507,7 @@ mod tests {
         databases: std::sync::Arc<HashMap<Identity, Database>>,
         dns: std::sync::Arc<HashMap<String, Identity>>,
         dns_lookups: std::sync::Arc<AtomicUsize>,
+        allow_publish_update: bool,
     }
 
     impl DummyState {
@@ -2518,6 +2522,7 @@ mod tests {
                 databases: std::sync::Arc::new(HashMap::new()),
                 dns: std::sync::Arc::new(HashMap::new()),
                 dns_lookups: std::sync::Arc::new(AtomicUsize::new(0)),
+                allow_publish_update: false,
             }
         }
 
@@ -2552,6 +2557,41 @@ mod tests {
             host_type: HostType::Wasm,
             initial_program: Hash::from_byte_array([0; 32]),
             bootstrap_generation: 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn supplied_identity_can_update_but_not_create_database() {
+        let identity = test_identity(42);
+        let mut existing = DummyState::new().with_database(identity);
+        existing.allow_publish_update = true;
+
+        for (state, expected_status) in [(DummyState::new(), StatusCode::BAD_REQUEST), (existing, StatusCode::OK)] {
+            let app = DatabaseRoutes::<DummyState>::default()
+                .into_router(state.clone())
+                .with_state(state);
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method(http::Method::PUT)
+                        .uri(format!("/{identity}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected_status);
+            if expected_status == StatusCode::OK {
+                let body = response.into_body().collect().await.unwrap().to_bytes();
+                assert!(matches!(
+                    serde_json::from_slice::<PublishResult>(&body).unwrap(),
+                    PublishResult::Success {
+                        database_identity,
+                        op: PublishOp::Updated,
+                        ..
+                    } if database_identity == identity
+                ));
+            }
         }
     }
 
@@ -2699,10 +2739,13 @@ mod tests {
         async fn publish_database(
             &self,
             _publisher: &Identity,
-            _spec: DatabaseDef,
+            spec: DatabaseDef,
             _policy: MigrationPolicy,
             _environment: EnvironmentUpdate,
         ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
+            if self.allow_publish_update && self.databases.contains_key(&spec.database_identity) {
+                return Ok(None);
+            }
             Err(anyhow::anyhow!("unused"))
         }
 
@@ -2785,9 +2828,15 @@ mod tests {
         async fn authorize_action(
             &self,
             _subject: Identity,
-            _database: Identity,
-            _action: Action,
+            database: Identity,
+            action: Action,
         ) -> Result<(), Unauthorized> {
+            if self.allow_publish_update
+                && matches!(action, Action::UpdateDatabase)
+                && self.databases.contains_key(&database)
+            {
+                return Ok(());
+            }
             Err(Unauthorized::InternalError(anyhow::anyhow!("unused")))
         }
 
