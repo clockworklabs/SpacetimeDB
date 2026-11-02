@@ -4049,12 +4049,14 @@ pub(super) fn insert<'a, const GENERATE: bool>(
     let ok = |row_ref| Ok((gen_cols, row_ref, insert_flags));
 
     // `CHECK_SAME_ROW = true`, as there might be an identical row already in the tx state.
-    // SAFETY: `tx_table.is_row_present(row)` holds as we still haven't deleted the row,
-    // in particular, the `write_gen_val_to_col` call does not remove the row.
+    // Keep the original page/blob pins for subsequent checks, cleanup, and the
+    // returned RowRef. Confirmation consumes a clone, which shares those pins.
+    // SAFETY: Physical insertion created this row in tx_table. Sequence generation
+    // only changed column values; no operation has deleted the row.
     let res = unsafe { tx_table.confirm_insertion::<true>(tx_blob_store, tx_pinned_row.clone(), blob_bytes) };
 
     match res {
-        Ok((tx_row_hash, tx_row_ptr)) => {
+        Ok((tx_row_hash, _)) => {
             // The `tx_row_ref` was not previously present in insert tables,
             // but may still be a set-semantic conflict
             // or may violate a unique constraint with a row in the committed state.
@@ -4064,16 +4066,14 @@ pub(super) fn insert<'a, const GENERATE: bool>(
             // SAFETY:
             // - `commit_table` and `tx_table` use the same schema
             //   because `tx_table` is derived from `commit_table`.
-            // - `tx_row_ptr` is correct per post-condition of `tx_table.confirm_insertion(...)`.
-            if let (_, Some(commit_ptr)) = unsafe {
-                Table::find_same_row(
-                    commit_table,
-                    tx_table,
-                    tx_blob_store,
-                    tx_pinned_row.pointer(),
-                    tx_row_hash,
-                )
-            }? {
+            // - Confirmation kept the row held by tx_pinned_row live.
+            let existing_row = {
+                // Reuse the new row's existing pins only for this lookup, so
+                // the temporary table borrow ends before cleanup or mutation.
+                let row = unsafe { tx_table.get_row_ref_from_pinned_unchecked(tx_pinned_row.clone()) };
+                unsafe { Table::find_same_row_from_ref(commit_table, &row, tx_row_hash) }
+            }?;
+            if let (_, Some(commit_ptr)) = existing_row {
                 // (insert_undelete)
                 // -----------------------------------------------------
                 // If `row` was already present in the committed state,
@@ -4100,9 +4100,9 @@ pub(super) fn insert<'a, const GENERATE: bool>(
                 // - Delete Row A
                 // - Insert Row A
                 // This is impossible to recover if `Running 2` elides its insert.
-                tx_table
-                    .delete(tx_blob_store, tx_row_ptr, |_| ())?
-                    .expect("Failed to delete a row we just inserted");
+                // SAFETY: This confirmed row is still live in tx_table, and
+                // tx_pinned_row retains its page and blob pins.
+                unsafe { tx_table.delete_unchecked(tx_blob_store, tx_pinned_row) };
 
                 // It's possible that `row` appears in the committed state,
                 // but is marked as deleted.
@@ -4131,7 +4131,9 @@ pub(super) fn insert<'a, const GENERATE: bool>(
             drop(tx_row_ref);
             if let Err(e) = res {
                 // There was a constraint violation, so undo the insertion.
-                tx_table.delete(tx_blob_store, tx_row_ptr, |_| {})?;
+                // SAFETY: Constraint checking did not delete the confirmed row;
+                // its page and blob pins remain held by tx_pinned_row.
+                unsafe { tx_table.delete_unchecked(tx_blob_store, tx_pinned_row) };
                 return Err(IndexError::from(e).into());
             }
 
@@ -4291,11 +4293,14 @@ impl MutTxId {
                 // but it cannot, as the committed state already has `X` for `C`.
                 // So we don't need to check the tx state for a duplicate row.
                 //
-                // SAFETY: `tx_table.is_row_present(row)` holds as we still haven't deleted the row,
-                // in particular, the `write_gen_val_to_col` call does not remove the row.
-                // On error, `tx_row_ptr` has already been removed, so don't do it again.
+                // Confirmation consumes the clone; retain the original page/blob
+                // pins to return the replacement after changing the deletion marker.
+                // SAFETY: The replacement is still live in tx_table. Sequence
+                // generation and the checks above have not deleted it.
+                // On error, confirmation removes the replacement; return directly
+                // without running the unconfirmed-row cleanup below.
                 let (_, tx_row_ptr) =
-                    unsafe { tx_table.confirm_insertion::<false>(tx_blob_store, tx_pinned_row, blob_bytes) }?;
+                    unsafe { tx_table.confirm_insertion::<false>(tx_blob_store, tx_pinned_row.clone(), blob_bytes) }?;
 
                 // Delete the old row.
                 del_table.insert(old_ptr);
@@ -4325,10 +4330,13 @@ impl MutTxId {
                 // This ensures that the old row is removed from the indices
                 // before attempting to insert the new row into the indices.
                 //
-                // SAFETY: `tx_table.is_row_present(tx_row_ptr)` and `tx_table.is_row_present(old_ptr)` both hold
-                // as we've deleted neither.
-                // In particular, the `write_gen_val_to_col` call does not remove the row.
-                let tx_row_ptr = unsafe { tx_table.confirm_update(tx_blob_store, tx_pinned_row, old_pin, blob_bytes) }?;
+                // Keep the replacement's page/blob pins for cleanup or its returned
+                // RowRef. Confirmation consumes a clone; no row data is copied.
+                // SAFETY: The replacement was physically inserted into tx_table,
+                // and old_pin was acquired from a live row in that same table above.
+                // Neither row has been deleted since its pin was acquired.
+                let tx_row_ptr =
+                    unsafe { tx_table.confirm_update(tx_blob_store, tx_pinned_row.clone(), old_pin, blob_bytes) }?;
 
                 if let Some(old_commit_del_ptr) = old_commit_del_ptr {
                     // If we have an identical deleted row in the committed state,
@@ -4342,9 +4350,9 @@ impl MutTxId {
                     if unsafe { Table::eq_row_in_page(commit_table, old_commit_del_ptr, tx_table, tx_row_ptr) }? {
                         // It is important that we `confirm_update` first,
                         // as we must ensure that undeleting the row causes no tx state conflict.
-                        tx_table
-                            .delete(tx_blob_store, tx_row_ptr, |_| ())?
-                            .expect("Failed to delete a row we just inserted");
+                        // SAFETY: The confirmed replacement is still live in
+                        // tx_table, and tx_pinned_row retains all its pins.
+                        unsafe { tx_table.delete_unchecked(tx_blob_store, tx_pinned_row) };
 
                         // Undelete.
                         del_table.remove(old_commit_del_ptr);
@@ -4362,10 +4370,11 @@ impl MutTxId {
                 throw!(IndexError::KeyNotFound(index_id, missing_index_key));
             };
 
-            // SAFETY: `tx_table.is_row_present(tx_row_ptr)` holds
-            // per post-condition of `confirm_insertion` and `confirm_update`
-            // in the if/else branches respectively.
-            let row_ref = unsafe { tx_table.get_row_ref_unchecked(tx_blob_store, tx_row_ptr) }?;
+            assert_eq!(tx_row_ptr, tx_pinned_row.pointer());
+            // SAFETY: Both confirmation paths kept this replacement live in
+            // tx_table. Its retained page/blob pins let us return the row without
+            // another storage lookup after the update.
+            let row_ref = unsafe { tx_table.get_row_ref_from_pinned_unchecked(tx_pinned_row) };
             return ok(RowRefInsertion::Inserted(row_ref));
         };
 
