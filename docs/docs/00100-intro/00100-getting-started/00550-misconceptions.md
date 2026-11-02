@@ -19,11 +19,11 @@ They share the same model. Server functions live in your repository, writes run 
 
 ## "Your data has to fit in memory."
 
-A Spacetime database is not limited by the memory of one machine. Tiered storage treats memory as a cache in front of local disk and object storage, the way a CPU cache sits in front of main memory. Hot data stays in memory, so transactions on it run at in-memory speed, while colder data lives on disk or in object storage. Because tables can be backed by object storage, a single database can store an effectively unbounded amount of data. See [How does Spacetime scale?](https://spacetimedb.com/blog/how-does-spacetime-scale)
+A Spacetime database is not limited by the memory of one machine. Tiered storage treats memory as a cache in front of local disk, the way a CPU cache sits in front of main memory. Hot data stays in memory, so transactions on it run at in-memory speed, while colder data lives on disk. On Maincloud, tables can also be backed by object storage, so a single database can store an effectively unbounded amount of data. See [How does Spacetime scale?](https://spacetimedb.com/blog/how-does-spacetime-scale)
 
 ## "A database can only scale up, on one machine."
 
-Tiered storage spreads a database's data across memory, disk, and object storage, Maincloud replicates it, and asynchronous inter-database communication lets one app span many databases. See [How does Spacetime scale?](https://spacetimedb.com/blog/how-does-spacetime-scale)
+Tiered storage spreads a database's data across memory and disk, and on Maincloud across object storage too. Maincloud also replicates databases, and asynchronous inter-database communication lets one app span many databases. See [How does Spacetime scale?](https://spacetimedb.com/blog/how-does-spacetime-scale)
 
 ## "Modules are written in Rust or C#, and TypeScript support is less mature."
 
