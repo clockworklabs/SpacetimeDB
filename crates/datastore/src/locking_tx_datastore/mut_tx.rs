@@ -1037,17 +1037,18 @@ impl MutTxId {
     /// Requires:
     /// - All system IDs in the `table_schema` must be set to `SENTINEL`.
     /// - All names in the `table_schema` must be unique among named entities in the database.
+    /// - System tables must use `TableCachePolicy::RequiredInMemory`.
     ///
     /// Ensures:
     /// - An in-memory insert table is created for the transaction, allowing the transaction to insert rows into the table.
     /// - The table metadata is inserted into the system tables.
     /// - The returned ID is unique and not `TableId::SENTINEL`.
     pub fn create_table(&mut self, mut table_schema: TableSchema) -> Result<TableId> {
-        if table_schema.table_type == spacetimedb_lib::db::auth::StTableType::System
-            && table_schema.cache_policy != TableCachePolicy::RequiredInMemory
-        {
-            return Err(anyhow!("system tables must remain in memory").into());
-        }
+        assert!(
+            table_schema.table_type != spacetimedb_lib::db::auth::StTableType::System
+                || table_schema.cache_policy == TableCachePolicy::RequiredInMemory,
+            "system tables must remain in memory"
+        );
         let matching_system_table_schema = system_tables().iter().find(|s| **s == table_schema).cloned();
         if table_schema.table_id != TableId::SENTINEL && matching_system_table_schema.is_none() {
             return Err(anyhow::anyhow!("`table_id` must be `TableId::SENTINEL` in `{table_schema:#?}`").into());
