@@ -1,0 +1,11 @@
+Write only the root TypeScript source for a SpacetimeDB module. The project already contains two fixed modules in the same folder. Do not edit them:
+- ./inventory: public table item (id: u64 primary key, quantity: u32). It exports the table as item, the reducer set(ctx, { id, quantity }), and the helpers take(ctx, id, quantity) and add(ctx, id, quantity). take rejects a missing item or insufficient stock. add uses checked arithmetic.
+- ./branch: mounts that same ./inventory module under the key stock.
+
+Mount ./branch twice as east and west. Mount ./inventory directly as reserve. Use the default snake_case database naming policy. These must be independent instances, not aliases.
+
+Expose root reducers:
+- set_stock(location: string, id: u64, quantity: u32): call set from ./inventory on the selected instance.
+- transfer(source: string, destination: string, id: u64, quantity: u32): move stock using take and add from ./inventory with the selected contexts, atomically. Accept only "east", "west", "reserve". Reject any other location with "invalid location", identical locations with "same location", and zero quantity with "invalid quantity". If either helper fails, leave both instances unchanged.
+
+Expose public anonymous views east_stock and west_stock that return each branch's stock.item rows. No root tables. Helpers share the root transaction; do not try to catch a helper failure and commit part of the transfer.

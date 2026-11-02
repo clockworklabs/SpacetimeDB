@@ -24,7 +24,7 @@ tasks are included in both context modes and the normal website task catalog.
 | 095 | Parameterized per-user views, separate argument sets, live moves and access isolation |
 | 096 | Server-clock token bucket, refill, request replay and concurrent admission |
 | 097 | Seat allocation, FIFO waitlist, cancellation, rejoin and concurrent promotion |
-| 098 | Nested independent C# submodules and cross-instance transaction rollback (.NET 10 only) |
+| 098 | Nested independent submodules and cross-instance transaction rollback (C# on .NET 10 and TypeScript) |
 | 099 | Two-database outbox delivery, sender rollback, receiver failure and result callbacks (Rust/TypeScript) |
 | 100 | Actual SDK client cache recovery, lost call results and no unsafe retry (C#/TypeScript) |
 
