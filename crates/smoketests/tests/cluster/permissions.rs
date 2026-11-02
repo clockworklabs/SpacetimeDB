@@ -91,6 +91,7 @@ fn test_publish_cannot_create_at_supplied_identity() {
         .precompiled_module("modules-basic")
         .autopublish(false)
         .build();
+    test.new_identity().unwrap();
 
     let other_user = test.api_call("POST", "/v1/identity").unwrap();
     assert_eq!(other_user.status_code, 200);
