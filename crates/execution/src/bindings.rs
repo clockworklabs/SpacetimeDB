@@ -160,6 +160,14 @@ impl BindingRelation {
         id
     }
 
+    /// The binding for these values, if there is one
+    pub fn find(&self, values: &ProductValue) -> Option<BindingId> {
+        let id = self.ids.get(values).copied();
+        // `insert` and `remove` keep `ids` and `rows` in step
+        assert!(id.is_none_or(|id| self.rows.contains_key(&id)));
+        id
+    }
+
     /// Removes a binding that is no longer used
     pub fn remove(&mut self, id: BindingId) {
         let Some(row) = self.rows.remove(&id) else {
@@ -289,6 +297,18 @@ mod tests {
         assert_ne!(b1, b2);
         assert_eq!(bindings.insert(values("west", 3)), b1);
         assert_eq!(bindings.len(), 2);
+    }
+
+    #[test]
+    fn find_returns_the_binding_of_equal_values() {
+        let mut bindings = region_rank();
+        let b1 = bindings.insert(values("west", 3));
+        let b2 = bindings.insert(values("west", 5));
+        assert_eq!(bindings.find(&values("west", 3)), Some(b1));
+        assert_eq!(bindings.find(&values("west", 5)), Some(b2));
+        assert_eq!(bindings.find(&values("east", 3)), None);
+        bindings.remove(b1);
+        assert_eq!(bindings.find(&values("west", 3)), None);
     }
 
     #[test]
