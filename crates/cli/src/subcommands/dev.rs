@@ -1895,7 +1895,7 @@ mod tests {
     #[tokio::test]
     async fn test_root_dependencies_run_before_build_unless_skipped() {
         let temp = TempDir::new().unwrap();
-        let config = Config::new_with_localhost(spacetimedb_paths::cli::CliTomlPath::from_path_unchecked(
+        let mut config = Config::new_with_localhost(spacetimedb_paths::cli::CliTomlPath::from_path_unchecked(
             temp.path().join("cli.toml"),
         ));
         // Language detection only needs the sender manifest; no compiler is invoked.
@@ -1922,7 +1922,7 @@ mod tests {
                 spacetime_config.additional_fields.remove("dependencies");
             }
             let error = generate_build_and_publish(
-                &config,
+                &mut config,
                 temp.path(),
                 Some(temp.path()),
                 &temp.path().join("sender"),
