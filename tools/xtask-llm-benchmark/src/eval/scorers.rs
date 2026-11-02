@@ -277,6 +277,7 @@ fn extract_schema(v: &Value) -> SchemaSnapshot {
         schema.exports.insert(view_export(view, types, &names));
     }
     insert_canonical_exports(&mut schema.exports, v, "schedules", "Schedules", "schedule");
+    insert_environment(&mut schema.exports, v);
     insert_canonical_exports(
         &mut schema.exports,
         v,
@@ -375,6 +376,17 @@ fn insert_canonical_exports(
 ) {
     for export in schema_array(schema, direct_name, section_name).into_iter().flatten() {
         exports.insert(format!("{kind}:{}", canonical_value(Some(export))));
+    }
+}
+
+fn insert_environment(exports: &mut BTreeSet<String>, schema: &Value) {
+    for declaration in schema_array(schema, "environment", "Environment").into_iter().flatten() {
+        let mut declaration = declaration.clone();
+        // The allowed values are a set, so declaration order must not fail parity.
+        if let Some(values) = declaration.pointer_mut("/ty/Union").and_then(Value::as_array_mut) {
+            values.sort_by_key(Value::to_string);
+        }
+        exports.insert(format!("environment:{}", canonical_value(Some(&declaration))));
     }
 }
 
@@ -1452,6 +1464,23 @@ mod tests {
         let candidate = extract_schema(&current_schema(true));
 
         assert!(!diff_maps(&golden.tables, &candidate.tables).is_null());
+    }
+
+    #[test]
+    fn environment_declaration_produces_a_schema_diff() {
+        let declaration = |ty: Value, optional: bool| {
+            let mut schema = current_schema(true);
+            schema["environment"] = json!([{ "name": "MODE", "ty": ty, "optional": optional }]);
+            extract_schema(&schema)
+        };
+        let golden = declaration(json!({ "Union": ["development", "production"] }), false);
+        let reordered = declaration(json!({ "Union": ["production", "development"] }), false);
+        let unrestricted = declaration(json!({ "String": [] }), false);
+        let optional = declaration(json!({ "Union": ["development", "production"] }), true);
+
+        assert!(diff_sets(&golden.exports, &reordered.exports).is_null());
+        assert!(!diff_sets(&golden.exports, &unrestricted.exports).is_null());
+        assert!(!diff_sets(&golden.exports, &optional.exports).is_null());
     }
 
     #[test]

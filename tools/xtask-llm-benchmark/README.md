@@ -27,6 +27,7 @@ tasks are included in both context modes and the normal website task catalog.
 | 098 | Nested independent submodules and cross-instance transaction rollback (C# on .NET 10 and TypeScript) |
 | 099 | Two-database outbox delivery, sender rollback, receiver failure and result callbacks (Rust/TypeScript) |
 | 100 | Actual SDK client cache recovery, lost call results and no unsafe retry (C#/TypeScript) |
+| 101 | Typed environment declarations read from reducers and views, with hidden published values |
 
 These are SpacetimeDB contracts, not copies of Convex APIs. Pagination checks
 correctness, not index scan cost. Backfill checks an online data migration

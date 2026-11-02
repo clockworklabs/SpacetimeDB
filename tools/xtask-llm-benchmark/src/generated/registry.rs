@@ -112,6 +112,12 @@ mod advanced_t_100_client_recovery {
 
 #[allow(dead_code)]
 #[allow(clippy::all)]
+mod advanced_t_101_environment_config {
+    include!("../benchmarks/advanced/t_101_environment_config/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
 mod auth_t_026_auth_identity_check {
     include!("../benchmarks/auth/t_026_auth_identity_check/spec.rs");
 }
@@ -637,6 +643,7 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         ("advanced", "t_098_nested_submodules") => advanced_t_098_nested_submodules::spec,
         ("advanced", "t_099_inter_database") => advanced_t_099_inter_database::spec,
         ("advanced", "t_100_client_recovery") => advanced_t_100_client_recovery::spec,
+        ("advanced", "t_101_environment_config") => advanced_t_101_environment_config::spec,
         ("auth", "t_026_auth_identity_check") => auth_t_026_auth_identity_check::spec,
         ("auth", "t_027_private_vs_public_table") => auth_t_027_private_vs_public_table::spec,
         ("auth", "t_041_registered_user_gate") => auth_t_041_registered_user_gate::spec,

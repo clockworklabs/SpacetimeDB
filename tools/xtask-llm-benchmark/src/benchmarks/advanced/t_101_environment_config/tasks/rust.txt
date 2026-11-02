@@ -1,0 +1,16 @@
+Write a SpacetimeDB backend module in Rust that reads deployment settings from database environment variables. Do not hard-code their values, and do not store them in a configuration table.
+
+Declare these environment variables:
+- REGION: required, any string.
+- MODE: required, and only "development" or "production" are allowed.
+- BANNER: optional, any string.
+
+The deployment supplies the values when the module is published.
+
+Public table deployment_note (fields in this order): id (u32 primary key), region (String), mode (String), banner (String).
+
+Reducers:
+- record_deployment(id: u32): insert a row holding the current REGION, MODE and BANNER. Use "(none)" for banner when BANNER is absent. Reject an existing id with "note exists". Never overwrite a row.
+- require_development(): fail with "production locked" when MODE is production. Otherwise succeed.
+
+Public anonymous view current_deployment: returns exactly one row with region (String) and mode (String), in that order, read from the environment variables.
