@@ -475,12 +475,12 @@ export class TableCacheImpl<
     >,
     count: number = 1
   ): PendingCallback | undefined => {
-    const [_, previousCount] = this.rows.get(operation.rowId) || [
+    const [existingRow, previousCount] = this.rows.get(operation.rowId) || [
       operation.row,
       0,
     ];
-    this.#setRow(operation.rowId, operation.row, previousCount + count);
     if (previousCount === 0) {
+      this.#setRow(operation.rowId, operation.row, count);
       return {
         type: 'insert',
         table: this.tableDef.sourceName,
@@ -490,6 +490,7 @@ export class TableCacheImpl<
       };
     }
     // It's possible to get a duplicate insert because rows can be returned from multiple queries.
+    this.rows.set(operation.rowId, [existingRow, previousCount + count]);
     return undefined;
   };
 
@@ -500,7 +501,7 @@ export class TableCacheImpl<
     >,
     count: number = 1
   ): PendingCallback | undefined => {
-    const [_, previousCount] = this.rows.get(operation.rowId) || [
+    const [existingRow, previousCount] = this.rows.get(operation.rowId) || [
       operation.row,
       0,
     ];
@@ -521,7 +522,7 @@ export class TableCacheImpl<
         },
       };
     }
-    this.#setRow(operation.rowId, operation.row, previousCount - count);
+    this.rows.set(operation.rowId, [existingRow, previousCount - count]);
     return undefined;
   };
 
