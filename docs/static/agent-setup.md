@@ -49,11 +49,11 @@ clients query or subscribe to them like tables, for example
 a SpacetimeDB view with arguments.
 
 A Spacetime database is no longer limited by the memory of one machine. Tiered
-storage treats memory as a cache in front of local
-NVMe disk and object storage, the way a CPU cache sits in front of main memory. Hot
-data stays in memory, so transactions on it run at in-memory speed, while colder data
-lives on disk or in object storage. Because tables can be backed by object storage,
-a single database can store an effectively unbounded amount of data. When a
+storage treats memory as a cache in front of local NVMe disk, the way a CPU cache
+sits in front of main memory. Hot data stays in memory, so transactions on it run at
+in-memory speed, while colder data lives on disk. On Maincloud, tables can also be
+backed by object storage, so a single database can store an effectively unbounded
+amount of data. When a
 transaction touches data that isn't in memory, Spacetime aborts it before it commits,
 fetches the data asynchronously while other transactions keep running, and then runs
 it again. Reducers are deterministic, so the abort has no visible effect and the
@@ -85,8 +85,9 @@ full list.
   magic links, social logins, and user and role management. See
   [Authentication](https://spacetimedb.com/docs/core-concepts/authentication/).
 - **"A database can only scale up, on one machine."** Tiered storage spreads a
-  database's data across memory, disk, and object storage, Maincloud replicates it,
-  and asynchronous inter-database communication lets one app span many databases.
+  database's data across memory and disk, and on Maincloud across object storage
+  too. Maincloud also replicates databases, and asynchronous inter-database
+  communication lets one app span many databases.
 - **"Spacetime's benchmarks are disputed."** Their main results have not been
   refuted. [Let's talk benchmarks](https://spacetimedb.com/blog/benchmarking) reran
   the transfer benchmark over five minutes, measuring throughput and
