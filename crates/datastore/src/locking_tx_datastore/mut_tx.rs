@@ -4074,7 +4074,7 @@ pub(super) fn insert<'a, const GENERATE: bool>(
                 // Reuse the new row's existing pins only for this lookup, so
                 // the temporary table borrow ends before cleanup or mutation.
                 let row = unsafe { tx_table.get_row_ref_from_pinned_unchecked(tx_pinned_row.clone()) };
-                unsafe { Table::find_same_row_from_ref(commit_table, &row, tx_row_hash) }
+                unsafe { Table::find_same_row(commit_table, &row, tx_row_hash) }
             };
             let commit_ptr = match existing_row {
                 Ok((_, commit_ptr)) => commit_ptr,
@@ -4484,7 +4484,7 @@ impl MutTxId {
             .tx_state
             .get_table_and_blob_store_or_create_from(table_id, commit_table);
 
-        let to_delete = tx_table.with_temporary_row(tx_blob_store, rel, |tx_table, temp_ptr| {
+        let to_delete = tx_table.with_temporary_row(tx_blob_store, rel, |tx_table, needle| {
             // First, check if a matching row exists in the `commit_table`.
             // If it does, no need to check the `tx_table`.
             //
@@ -4494,15 +4494,13 @@ impl MutTxId {
             //
             // SAFETY:
             // - `commit_table` and `tx_table` use the same schema.
-            // - `temp_ptr` is valid because we just inserted it.
-            let (hash, to_delete) =
-                unsafe { Table::find_same_row(commit_table, tx_table, tx_blob_store, temp_ptr, None) }?;
+            // - `needle` retains the temporary row's page and blob pins.
+            let (hash, to_delete) = unsafe { Table::find_same_row(commit_table, &needle, None) }?;
             if to_delete.is_some() {
                 Ok(to_delete)
             } else {
                 // SAFETY: as above
-                let (_, to_delete) =
-                    unsafe { Table::find_same_row(tx_table, tx_table, tx_blob_store, temp_ptr, hash) }?;
+                let (_, to_delete) = unsafe { Table::find_same_row(tx_table, &needle, hash) }?;
                 Ok(to_delete)
             }
         })?;
