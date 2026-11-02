@@ -84,6 +84,32 @@ fn test_publish() {
     assert!(result.is_err(), "Expected publish to fail for non-owner");
 }
 
+/// A caller may update their database by identity, but may not choose an identity when creating one.
+#[test]
+fn test_publish_cannot_create_at_supplied_identity() {
+    let mut test = Smoketest::builder()
+        .precompiled_module("modules-basic")
+        .autopublish(false)
+        .build();
+
+    let other_user = test.api_call("POST", "/v1/identity").unwrap();
+    assert_eq!(other_user.status_code, 200);
+    let other_identity = other_user.json().unwrap()["identity"].as_str().unwrap().to_owned();
+
+    let response = test
+        .api_call_with_body("PUT", &format!("/v1/database/{other_identity}"), Some(&[]))
+        .unwrap();
+    assert_eq!(response.status_code, 400);
+    assert!(response
+        .text()
+        .unwrap()
+        .contains("Cannot create a database at a supplied identity"));
+
+    let name = format!("permissions-publish-identity-{}", std::process::id());
+    let identity = test.publish().name(&name).run().unwrap();
+    assert_eq!(test.publish().name(&identity).run().unwrap(), identity);
+}
+
 /// Test that you can't replace names of a database you don't own
 #[test]
 fn test_replace_names() {
