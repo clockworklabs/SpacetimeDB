@@ -125,3 +125,34 @@ impl spacetimedb::rt::RemoteReducer for noop {
     const SIGNATURE_HASH: &'static str = "bc436888fd947d2bfd49ed6bddad31f0245c34fd42c85f9360fa0b477aa957fc";
     type Args = NoopArgs;
 }
+
+#[doc(hidden)]
+macro_rules! __spacetimedb_outbox {
+    (receive_ping, $module:ident) => {
+        #[::spacetimedb::table(accessor = receive_ping_outbox, outbox($module::receive_ping))]
+        pub struct ReceivePingOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+            pub body: ::std::string::String,
+        }
+    };
+    (noop, $module:ident) => {
+        #[::spacetimedb::table(accessor = noop_outbox, outbox($module::noop))]
+        pub struct NoopOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+        }
+    };
+    ($reducer:ident, $module:ident) => {
+        compile_error!("unknown remote reducer");
+    };
+}
+
+#[doc(hidden)]
+pub(crate) use __spacetimedb_outbox;

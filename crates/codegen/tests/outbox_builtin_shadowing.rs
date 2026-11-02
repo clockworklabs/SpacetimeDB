@@ -68,6 +68,10 @@ fn receiver_bindings_and_outbox_macros_preserve_builtin_and_custom_types() {
         ]),
     );
     builder.add_reducer("noop", ProductType::unit());
+    // These names collide with the shorthand's metadata fields, but unused
+    // macro arms must not prevent the receiver bindings from compiling.
+    builder.add_reducer("with_target", ProductType::from([("target", AlgebraicType::String)]));
+    builder.add_reducer("with_msg_id", ProductType::from([("msg_id", AlgebraicType::U64)]));
     let module: ModuleDef = builder.finish().try_into().unwrap();
     let files = generate_receiver_bindings(&module, ReceiverLanguage::Rust, None).unwrap();
     let declarations = files
@@ -121,12 +125,43 @@ spacetimedb = {{ path = {bindings_path} }}
     // First compile the complete generated bindings in an ordinary sender, then
     // expand the same receiver macro with builtin names shadowed at its call site.
     for (scope, shadowing) in [("unshadowed", ""), ("shadowed", shadows)] {
+        let outboxes = if scope == "unshadowed" {
+            r#"
+            ::spacetimedb::outbox!(gw::receive);
+            ::spacetimedb::outbox!(gw::noop);
+            #[::spacetimedb::table(accessor = with_target_outbox, outbox(gw::with_target))]
+            pub struct WithTargetOutbox {
+                #[primary_key]
+                #[auto_inc]
+                pub msg_id: u64,
+                #[target]
+                pub destination: gw::Identity,
+                pub target: ::std::string::String,
+            }
+            fn check_outbox_fields(row: ReceiveOutbox) {
+                let _: u64 = row.msg_id;
+                let _: gw::Identity = row.target;
+                let _: ::std::string::String = row.text;
+                let _: ::std::vec::Vec<u64> = row.values;
+                let _: gw::String = row.custom_string;
+                let _: gw::ReceiveArgs = row.custom_args;
+            }
+            fn check_empty_outbox(row: NoopOutbox) {
+                let _: u64 = row.msg_id;
+                let _: gw::Identity = row.target;
+            }
+            "#
+        } else {
+            ""
+        };
         let source = format!(
             r#"
 #![allow(dead_code, non_camel_case_types, unused_imports)]
 mod receiver;
 mod caller {{
+    use crate::receiver as gw;
     {shadowing}
+    {outboxes}
     fn check() {{
         let _ = crate::receiver::__spacetimedb_typecheck_outbox_receive!(crate::receiver, {{
             (0, text: ::std::string::String as text),
