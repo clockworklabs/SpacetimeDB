@@ -229,8 +229,10 @@ impl<'a> BindingParams<'a> {
 impl ParamResolver for BindingParams<'_> {
     fn resolve_param(&self, param: ParamSlot, ty: &AlgebraicType) -> AlgebraicValue {
         // Every parameter of a template is a binding value, so there is nothing to fall back to
-        assert!(param.0 >= PARAM_BINDING_FIRST.0, "not a binding slot: {}", param.0);
-        let col = (param.0 - PARAM_BINDING_FIRST.0) as u32 + 1;
+        let Some(i) = param.binding_index() else {
+            panic!("not a binding slot: {}", param.0);
+        };
+        let col = i as u32 + 1;
         let Some(value) = self.row.elements.get(col as usize) else {
             panic!("binding slot {} has no value: {:?}", param.0, self.row);
         };
@@ -341,8 +343,8 @@ mod tests {
         let mut bindings = region_rank();
         let id = bindings.insert(values("west", 3));
         let params = BindingParams::new(bindings.get(id));
-        let region = params.resolve_param(PARAM_BINDING_FIRST, &AlgebraicType::String);
-        let rank = params.resolve_param(ParamSlot(PARAM_BINDING_FIRST.0 + 1), &AlgebraicType::U32);
+        let region = params.resolve_param(ParamSlot::binding(0), &AlgebraicType::String);
+        let rank = params.resolve_param(ParamSlot::binding(1), &AlgebraicType::U32);
         assert_eq!(region, AlgebraicValue::String("west".into()));
         assert_eq!(rank, AlgebraicValue::U32(3));
     }
@@ -361,7 +363,7 @@ mod tests {
         let mut bindings = region_rank();
         let id = bindings.insert(values("west", 3));
         let params = BindingParams::new(bindings.get(id));
-        params.resolve_param(PARAM_BINDING_FIRST, &AlgebraicType::U32);
+        params.resolve_param(ParamSlot::binding(0), &AlgebraicType::U32);
     }
 
     /// The reason binding slots have their own range
@@ -369,7 +371,7 @@ mod tests {
     #[should_panic(expected = "unknown physical plan parameter slot")]
     fn execution_params_reject_binding_slots() {
         let params = ExecutionParams::from_sender(Identity::ZERO);
-        params.resolve_param(PARAM_BINDING_FIRST, &AlgebraicType::String);
+        params.resolve_param(ParamSlot::binding(0), &AlgebraicType::String);
     }
 
     #[test]
@@ -396,7 +398,7 @@ mod tests {
         let identity = ProductValue::from_iter([Identity::ZERO.into()]);
         let id = bindings.insert(identity);
         let params = BindingParams::new(bindings.get(id));
-        let value = params.resolve_param(PARAM_BINDING_FIRST, &AlgebraicType::identity());
+        let value = params.resolve_param(ParamSlot::binding(0), &AlgebraicType::identity());
         assert_eq!(value, Identity::ZERO.into());
     }
 

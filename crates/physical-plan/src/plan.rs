@@ -39,12 +39,29 @@ pub trait ParamResolver {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ParamSlot(pub u16);
 
+impl ParamSlot {
+    /// The slot of the `i`-th binding value
+    pub fn binding(i: u16) -> Self {
+        Self(PARAM_BINDING_FIRST.0.checked_add(i).expect("binding slot out of range"))
+    }
+
+    /// Is this the slot of a binding value?
+    pub fn is_binding(self) -> bool {
+        self.binding_index().is_some()
+    }
+
+    /// The index of the binding value in this slot, if it holds one
+    pub fn binding_index(self) -> Option<u16> {
+        self.0.checked_sub(PARAM_BINDING_FIRST.0)
+    }
+}
+
 pub const PARAM_SENDER: ParamSlot = ParamSlot(0);
 pub const PARAM_VIEW_ARG_HASH_EMPTY: ParamSlot = ParamSlot(1);
 pub const PARAM_VIEW_ARG_HASH_SENDER: ParamSlot = ParamSlot(2);
 
-/// Kept apart from the built-in slots, so `ExecutionParams` rejects binding slots
-pub const PARAM_BINDING_FIRST: ParamSlot = ParamSlot(16);
+/// The first slot after the built-ins, so `ExecutionParams` rejects binding slots
+pub const PARAM_BINDING_FIRST: ParamSlot = ParamSlot(3);
 
 /// Physical plans always terminate with a projection.
 /// This type of projection returns row ids.
