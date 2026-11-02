@@ -724,6 +724,8 @@ impl DotnetPublisher {
             // when running multiple dotnet builds in parallel.
             .env("MSBUILDDISABLENODEREUSE", "1")
             .env("DOTNET_CLI_USE_MSBUILD_SERVER", "0")
+            // A slow model can idle the shared compiler long enough that later builds lose the SDK generators.
+            .env("UseSharedCompilation", "false")
     }
 }
 

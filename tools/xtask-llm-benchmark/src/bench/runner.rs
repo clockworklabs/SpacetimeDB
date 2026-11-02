@@ -242,7 +242,8 @@ fn provider_retry_delay(error: &anyhow::Error) -> Option<u64> {
 
 // Model mistakes have no fixed list of messages, so a candidate failure scores unless it matches one of these.
 fn is_environment_failure(message: &str) -> bool {
-    const SIGNATURES: [&str; 11] = [
+    const SIGNATURES: [&str; 12] = [
+        "warning cs8784",
         "no space left on device",
         "out of memory",
         "cannot allocate memory",
@@ -1778,6 +1779,7 @@ mod build_cleanup_tests {
             "Could not resolve host: index.crates.io",
             "error NU1301: Unable to load the service index for source https://api.nuget.org/v3/index.json",
             "HTTP 503 Service Unavailable",
+            "CSC : warning CS8784: Generator 'Module' failed to initialize.",
         ] {
             assert!(is_environment_failure(message), "{message}");
         }
