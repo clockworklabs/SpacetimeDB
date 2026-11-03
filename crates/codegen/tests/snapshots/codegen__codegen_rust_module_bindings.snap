@@ -1108,8 +1108,8 @@ impl spacetimedb::rt::RemoteReducer for test_btree_index_args {
 
 #[doc(hidden)]
 macro_rules! __spacetimedb_outbox {
-    (add, $module:ident) => {
-        #[::spacetimedb::table(accessor = add_outbox, outbox($module::add))]
+    (add, $module:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = add_outbox $(, name = $name)?, outbox($module::add))]
         pub struct AddOutbox {
             #[primary_key]
             #[auto_inc]
@@ -1120,8 +1120,20 @@ macro_rules! __spacetimedb_outbox {
             pub age: ::core::primitive::u8,
         }
     };
-    (add_player, $module:ident) => {
-        #[::spacetimedb::table(accessor = add_player_outbox, outbox($module::add_player))]
+    (add, $module:ident, accessor = $accessor:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = $accessor $(, name = $name)?, outbox($module::add))]
+        pub struct AddOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+            pub name: ::std::string::String,
+            pub age: ::core::primitive::u8,
+        }
+    };
+    (add_player, $module:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = add_player_outbox $(, name = $name)?, outbox($module::add_player))]
         pub struct AddPlayerOutbox {
             #[primary_key]
             #[auto_inc]
@@ -1131,8 +1143,19 @@ macro_rules! __spacetimedb_outbox {
             pub name: ::std::string::String,
         }
     };
-    (add_private, $module:ident) => {
-        #[::spacetimedb::table(accessor = add_private_outbox, outbox($module::add_private))]
+    (add_player, $module:ident, accessor = $accessor:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = $accessor $(, name = $name)?, outbox($module::add_player))]
+        pub struct AddPlayerOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+            pub name: ::std::string::String,
+        }
+    };
+    (add_private, $module:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = add_private_outbox $(, name = $name)?, outbox($module::add_private))]
         pub struct AddPrivateOutbox {
             #[primary_key]
             #[auto_inc]
@@ -1142,8 +1165,19 @@ macro_rules! __spacetimedb_outbox {
             pub name: ::std::string::String,
         }
     };
-    (assert_caller_identity_is_module_identity, $module:ident) => {
-        #[::spacetimedb::table(accessor = assert_caller_identity_is_module_identity_outbox, outbox($module::assert_caller_identity_is_module_identity))]
+    (add_private, $module:ident, accessor = $accessor:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = $accessor $(, name = $name)?, outbox($module::add_private))]
+        pub struct AddPrivateOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+            pub name: ::std::string::String,
+        }
+    };
+    (assert_caller_identity_is_module_identity, $module:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = assert_caller_identity_is_module_identity_outbox $(, name = $name)?, outbox($module::assert_caller_identity_is_module_identity))]
         pub struct AssertCallerIdentityIsModuleIdentityOutbox {
             #[primary_key]
             #[auto_inc]
@@ -1152,8 +1186,18 @@ macro_rules! __spacetimedb_outbox {
             pub target: $module::Identity,
         }
     };
-    (delete_player, $module:ident) => {
-        #[::spacetimedb::table(accessor = delete_player_outbox, outbox($module::delete_player))]
+    (assert_caller_identity_is_module_identity, $module:ident, accessor = $accessor:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = $accessor $(, name = $name)?, outbox($module::assert_caller_identity_is_module_identity))]
+        pub struct AssertCallerIdentityIsModuleIdentityOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+        }
+    };
+    (delete_player, $module:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = delete_player_outbox $(, name = $name)?, outbox($module::delete_player))]
         pub struct DeletePlayerOutbox {
             #[primary_key]
             #[auto_inc]
@@ -1163,8 +1207,19 @@ macro_rules! __spacetimedb_outbox {
             pub id: ::core::primitive::u64,
         }
     };
-    (delete_players_by_name, $module:ident) => {
-        #[::spacetimedb::table(accessor = delete_players_by_name_outbox, outbox($module::delete_players_by_name))]
+    (delete_player, $module:ident, accessor = $accessor:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = $accessor $(, name = $name)?, outbox($module::delete_player))]
+        pub struct DeletePlayerOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+            pub id: ::core::primitive::u64,
+        }
+    };
+    (delete_players_by_name, $module:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = delete_players_by_name_outbox $(, name = $name)?, outbox($module::delete_players_by_name))]
         pub struct DeletePlayersByNameOutbox {
             #[primary_key]
             #[auto_inc]
@@ -1174,8 +1229,19 @@ macro_rules! __spacetimedb_outbox {
             pub name: ::std::string::String,
         }
     };
-    (enqueue_idc, $module:ident) => {
-        #[::spacetimedb::table(accessor = enqueue_idc_outbox, outbox($module::enqueue_idc))]
+    (delete_players_by_name, $module:ident, accessor = $accessor:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = $accessor $(, name = $name)?, outbox($module::delete_players_by_name))]
+        pub struct DeletePlayersByNameOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+            pub name: ::std::string::String,
+        }
+    };
+    (enqueue_idc, $module:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = enqueue_idc_outbox $(, name = $name)?, outbox($module::enqueue_idc))]
         pub struct EnqueueIdcOutbox {
             #[primary_key]
             #[auto_inc]
@@ -1186,8 +1252,20 @@ macro_rules! __spacetimedb_outbox {
             pub message: ::std::string::String,
         }
     };
-    (expect_environment, $module:ident) => {
-        #[::spacetimedb::table(accessor = expect_environment_outbox, outbox($module::expect_environment))]
+    (enqueue_idc, $module:ident, accessor = $accessor:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = $accessor $(, name = $name)?, outbox($module::enqueue_idc))]
+        pub struct EnqueueIdcOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+            pub target: $module::Identity,
+            pub message: ::std::string::String,
+        }
+    };
+    (expect_environment, $module:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = expect_environment_outbox $(, name = $name)?, outbox($module::expect_environment))]
         pub struct ExpectEnvironmentOutbox {
             #[primary_key]
             #[auto_inc]
@@ -1198,8 +1276,20 @@ macro_rules! __spacetimedb_outbox {
             pub expected: ::core::option::Option::<::std::string::String>,
         }
     };
-    (list_over_age, $module:ident) => {
-        #[::spacetimedb::table(accessor = list_over_age_outbox, outbox($module::list_over_age))]
+    (expect_environment, $module:ident, accessor = $accessor:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = $accessor $(, name = $name)?, outbox($module::expect_environment))]
+        pub struct ExpectEnvironmentOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+            pub key: ::std::string::String,
+            pub expected: ::core::option::Option::<::std::string::String>,
+        }
+    };
+    (list_over_age, $module:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = list_over_age_outbox $(, name = $name)?, outbox($module::list_over_age))]
         pub struct ListOverAgeOutbox {
             #[primary_key]
             #[auto_inc]
@@ -1209,8 +1299,19 @@ macro_rules! __spacetimedb_outbox {
             pub age: ::core::primitive::u8,
         }
     };
-    (log_module_identity, $module:ident) => {
-        #[::spacetimedb::table(accessor = log_module_identity_outbox, outbox($module::log_module_identity))]
+    (list_over_age, $module:ident, accessor = $accessor:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = $accessor $(, name = $name)?, outbox($module::list_over_age))]
+        pub struct ListOverAgeOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+            pub age: ::core::primitive::u8,
+        }
+    };
+    (log_module_identity, $module:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = log_module_identity_outbox $(, name = $name)?, outbox($module::log_module_identity))]
         pub struct LogModuleIdentityOutbox {
             #[primary_key]
             #[auto_inc]
@@ -1219,8 +1320,18 @@ macro_rules! __spacetimedb_outbox {
             pub target: $module::Identity,
         }
     };
-    (query_private, $module:ident) => {
-        #[::spacetimedb::table(accessor = query_private_outbox, outbox($module::query_private))]
+    (log_module_identity, $module:ident, accessor = $accessor:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = $accessor $(, name = $name)?, outbox($module::log_module_identity))]
+        pub struct LogModuleIdentityOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+        }
+    };
+    (query_private, $module:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = query_private_outbox $(, name = $name)?, outbox($module::query_private))]
         pub struct QueryPrivateOutbox {
             #[primary_key]
             #[auto_inc]
@@ -1229,8 +1340,18 @@ macro_rules! __spacetimedb_outbox {
             pub target: $module::Identity,
         }
     };
-    (say_hello, $module:ident) => {
-        #[::spacetimedb::table(accessor = say_hello_outbox, outbox($module::say_hello))]
+    (query_private, $module:ident, accessor = $accessor:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = $accessor $(, name = $name)?, outbox($module::query_private))]
+        pub struct QueryPrivateOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+        }
+    };
+    (say_hello, $module:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = say_hello_outbox $(, name = $name)?, outbox($module::say_hello))]
         pub struct SayHelloOutbox {
             #[primary_key]
             #[auto_inc]
@@ -1239,8 +1360,18 @@ macro_rules! __spacetimedb_outbox {
             pub target: $module::Identity,
         }
     };
-    (test, $module:ident) => {
-        #[::spacetimedb::table(accessor = test_outbox, outbox($module::test))]
+    (say_hello, $module:ident, accessor = $accessor:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = $accessor $(, name = $name)?, outbox($module::say_hello))]
+        pub struct SayHelloOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+        }
+    };
+    (test, $module:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = test_outbox $(, name = $name)?, outbox($module::test))]
         pub struct TestOutbox {
             #[primary_key]
             #[auto_inc]
@@ -1253,8 +1384,32 @@ macro_rules! __spacetimedb_outbox {
             pub arg_4: $module::NamespaceTestF,
         }
     };
-    (test_btree_index_args, $module:ident) => {
-        #[::spacetimedb::table(accessor = test_btree_index_args_outbox, outbox($module::test_btree_index_args))]
+    (test, $module:ident, accessor = $accessor:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = $accessor $(, name = $name)?, outbox($module::test))]
+        pub struct TestOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+            pub arg: $module::TestA,
+            pub arg_2: $module::TestB,
+            pub arg_3: $module::NamespaceTestC,
+            pub arg_4: $module::NamespaceTestF,
+        }
+    };
+    (test_btree_index_args, $module:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = test_btree_index_args_outbox $(, name = $name)?, outbox($module::test_btree_index_args))]
+        pub struct TestBtreeIndexArgsOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+        }
+    };
+    (test_btree_index_args, $module:ident, accessor = $accessor:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = $accessor $(, name = $name)?, outbox($module::test_btree_index_args))]
         pub struct TestBtreeIndexArgsOutbox {
             #[primary_key]
             #[auto_inc]
@@ -1264,7 +1419,7 @@ macro_rules! __spacetimedb_outbox {
         }
     };
     ($reducer:ident, $module:ident) => {
-        compile_error!("unknown remote reducer");
+        compile_error!("unknown remote reducer or unsupported outbox options");
     };
 }
 

@@ -6,7 +6,7 @@ mod remote_bindings {
 }
 
 spacetimedb::outbox!(receiver::receive_ping);
-spacetimedb::outbox!(receiver::noop);
+spacetimedb::outbox!(receiver::noop, name = "WireNoopOutbox", accessor = named_noop_outbox);
 
 #[spacetimedb::table(
     accessor = outbound_ping,
@@ -73,7 +73,11 @@ fn main() {
     );
     assert_eq!(receive_ping_outbox__TableHandle::OUTBOX.unwrap().arg_columns, &[2]);
     assert_eq!(receive_ping_outbox__TableHandle::OUTBOX.unwrap().target_column, 1);
-    assert!(noop_outbox__TableHandle::OUTBOX.unwrap().arg_columns.is_empty());
+    assert!(named_noop_outbox__TableHandle::OUTBOX.unwrap().arg_columns.is_empty());
+    assert_eq!(
+        named_noop_outbox__TableHandle::OUTBOX.unwrap().signature_hash,
+        <receiver::noop as spacetimedb::rt::RemoteReducer>::SIGNATURE_HASH
+    );
 }
 
 fn insert_generated(ctx: &spacetimedb::ReducerContext, target: receiver::Identity) {

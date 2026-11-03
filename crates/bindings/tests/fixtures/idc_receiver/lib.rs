@@ -128,8 +128,8 @@ impl spacetimedb::rt::RemoteReducer for noop {
 
 #[doc(hidden)]
 macro_rules! __spacetimedb_outbox {
-    (receive_ping, $module:ident) => {
-        #[::spacetimedb::table(accessor = receive_ping_outbox, outbox($module::receive_ping))]
+    (receive_ping, $module:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = receive_ping_outbox $(, name = $name)?, outbox($module::receive_ping))]
         pub struct ReceivePingOutbox {
             #[primary_key]
             #[auto_inc]
@@ -139,8 +139,29 @@ macro_rules! __spacetimedb_outbox {
             pub body: ::std::string::String,
         }
     };
-    (noop, $module:ident) => {
-        #[::spacetimedb::table(accessor = noop_outbox, outbox($module::noop))]
+    (receive_ping, $module:ident, accessor = $accessor:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = $accessor $(, name = $name)?, outbox($module::receive_ping))]
+        pub struct ReceivePingOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+            pub body: ::std::string::String,
+        }
+    };
+    (noop, $module:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = noop_outbox $(, name = $name)?, outbox($module::noop))]
+        pub struct NoopOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+        }
+    };
+    (noop, $module:ident, accessor = $accessor:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = $accessor $(, name = $name)?, outbox($module::noop))]
         pub struct NoopOutbox {
             #[primary_key]
             #[auto_inc]
@@ -150,7 +171,7 @@ macro_rules! __spacetimedb_outbox {
         }
     };
     ($reducer:ident, $module:ident) => {
-        compile_error!("unknown remote reducer");
+        compile_error!("unknown remote reducer or unsupported outbox options");
     };
 }
 

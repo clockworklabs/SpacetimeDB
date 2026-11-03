@@ -68,6 +68,8 @@ fn receiver_bindings_and_outbox_macros_preserve_builtin_and_custom_types() {
         ]),
     );
     builder.add_reducer("noop", ProductType::unit());
+    builder.add_reducer("noop_accessor", ProductType::unit());
+    builder.add_reducer("noop_name", ProductType::unit());
     // These names collide with the shorthand's metadata fields, but unused
     // macro arms must not prevent the receiver bindings from compiling.
     builder.add_reducer("with_target", ProductType::from([("target", AlgebraicType::String)]));
@@ -129,6 +131,8 @@ spacetimedb = {{ path = {bindings_path} }}
             r#"
             ::spacetimedb::outbox!(gw::receive);
             ::spacetimedb::outbox!(gw::noop);
+            ::spacetimedb::outbox!(gw::noop_accessor, accessor = custom_noop);
+            ::spacetimedb::outbox!(gw::noop_name, name = "CustomNoopName");
             #[::spacetimedb::table(accessor = with_target_outbox, outbox(gw::with_target))]
             pub struct WithTargetOutbox {
                 #[primary_key]

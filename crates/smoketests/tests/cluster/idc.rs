@@ -521,7 +521,7 @@ fn idc_generated_receiver_types_are_scoped_by_dependency() {
     loop {
         let world_messages = rows(&world_db, "SELECT body FROM detailed_ping_log");
         let auth_messages = rows(&auth_db, "SELECT body FROM detailed_ping_log");
-        let world_pending = rows(&sender_db, "SELECT msg_id FROM receive_detailed_ping_outbox");
+        let world_pending = rows(&sender_db, "SELECT msg_id FROM world_wire_outbox");
         let auth_pending = rows(&sender_db, "SELECT id FROM auth_outbox");
         if world_messages == vec![serde_json::json!(["world"])]
             && auth_messages == vec![serde_json::json!(["auth"])]

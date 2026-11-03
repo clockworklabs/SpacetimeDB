@@ -31,6 +31,22 @@ impl spacetimedb::rt::RemoteReducer for noop {
     const SIGNATURE_HASH: &'static str = "bc436888fd947d2bfd49ed6bddad31f0245c34fd42c85f9360fa0b477aa957fc";
     type Args = NoopArgs;
 }
+pub struct NoopAccessorArgs {
+    }
+pub struct noop_accessor;
+impl spacetimedb::rt::RemoteReducer for noop_accessor {
+    const NAME: &'static str = "noop_accessor";
+    const SIGNATURE_HASH: &'static str = "bc436888fd947d2bfd49ed6bddad31f0245c34fd42c85f9360fa0b477aa957fc";
+    type Args = NoopAccessorArgs;
+}
+pub struct NoopNameArgs {
+    }
+pub struct noop_name;
+impl spacetimedb::rt::RemoteReducer for noop_name {
+    const NAME: &'static str = "noop_name";
+    const SIGNATURE_HASH: &'static str = "bc436888fd947d2bfd49ed6bddad31f0245c34fd42c85f9360fa0b477aa957fc";
+    type Args = NoopNameArgs;
+}
 pub struct WithTargetArgs {
     pub target: ::std::string::String,
 }
