@@ -11,7 +11,6 @@ for (const load of [
 ]) {
   const { schema, table, t } = await load('spacetimedb/schema');
   const { createClient } = await load('spacetimedb');
-  assert.equal((await load('spacetimedb/sdk')).createClient, createClient);
   const s = schema({
     person: table({ public: true }, t.row({ name: t.string() })),
   });

@@ -30,3 +30,10 @@ export type {
   SchemaOptions,
 } from './schema/declarations';
 export { CaseConversionPolicy } from './lib/autogen/types';
+
+export {
+  createClient,
+  type Client,
+  type ClientConnection,
+  type RemoteModuleOfDeclarations,
+} from './sdk/create_client';

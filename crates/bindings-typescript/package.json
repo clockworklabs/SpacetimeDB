@@ -64,10 +64,10 @@
     },
     "./sdk": {
       "types": "./dist/index.d.ts",
-      "browser": "./dist/index.browser.mjs",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.cjs",
-      "default": "./dist/index.mjs"
+      "browser": "./dist/sdk/index.browser.mjs",
+      "import": "./dist/sdk/index.mjs",
+      "require": "./dist/sdk/index.cjs",
+      "default": "./dist/sdk/index.mjs"
     },
     "./react": {
       "types": "./dist/react/index.d.ts",

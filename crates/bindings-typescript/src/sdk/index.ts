@@ -12,10 +12,3 @@ export { table } from '../lib/table.ts';
 export { reducerSchema, reducers } from './reducers.ts';
 export { procedureSchema, procedures } from './procedures.ts';
 export * from './type_utils.ts';
-
-export {
-  createClient,
-  type Client,
-  type ClientConnection,
-  type RemoteModuleOfDeclarations,
-} from './create_client';
