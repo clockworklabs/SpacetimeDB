@@ -3,13 +3,10 @@
 
 import { declarationSchema as schema, table, t } from '../../../src/index';
 
-import type { Infer } from '../../../src/index';
-
 export const Point = t.object('Point', {
   x: t.u16(),
   y: t.u16(),
 });
-export type Point = Infer<typeof Point>;
 const player = table(
   {
     name: 'player',

@@ -1,6 +1,9 @@
+import type { Infer } from '../lib/type_builders';
 import type { TableUpdate } from './table_cache.ts';
 import type { UntypedTableDef } from '../lib/table.ts';
 import type { ReducerOutcome } from './client_api/declarations';
+
+type ReducerOutcome = Infer<typeof ReducerOutcome>;
 
 export type TransactionUpdateMessage = {
   tag: 'TransactionUpdate';

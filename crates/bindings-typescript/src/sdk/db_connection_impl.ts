@@ -1,3 +1,4 @@
+import type { Infer } from '../lib/type_builders';
 import { accessorSlot } from '../lib/accessor_path';
 import { ConnectionId } from '../lib/connection_id';
 import { ProductBuilder } from '../lib/type_builders';
@@ -94,6 +95,16 @@ import {
   encodeClientMessagesV3,
   forEachServerMessageV3,
 } from './websocket_v3_frames.ts';
+
+type BsatnRowList = Infer<typeof BsatnRowList>;
+type ClientMessage = Infer<typeof ClientMessage>;
+type QueryRows = Infer<typeof QueryRows>;
+type QuerySetUpdate = Infer<typeof QuerySetUpdate>;
+type ServerMessage = Infer<typeof ServerMessage>;
+type TableUpdateRows = Infer<typeof TableUpdateRows>;
+type SubscribeBatchApplied = Infer<typeof SubscribeBatchApplied>;
+type SubscribeBatch = Infer<typeof SubscribeBatch>;
+type TransactionUpdate = Infer<typeof TransactionUpdate>;
 
 export {
   DbConnectionBuilder,

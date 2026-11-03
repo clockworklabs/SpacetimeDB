@@ -32,5 +32,3 @@ export type SubscriptionEventContext =
   SubscriptionEventContextInterface<RemoteModule>;
 export type ErrorContext = ErrorContextInterface<RemoteModule>;
 export type SubscriptionHandle = SubscriptionHandleImpl<RemoteModule>;
-export type * as Reducers from './types/reducers';
-export type * as Procedures from './types/procedures';

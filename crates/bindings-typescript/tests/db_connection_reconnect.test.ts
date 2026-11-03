@@ -1,3 +1,4 @@
+import type { Infer } from '../src/lib/type_builders';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ConnectionId, Identity } from '../src';
 import {
@@ -28,6 +29,9 @@ import {
   encodeUnindexedPlayer,
   encodeUser,
 } from './utils';
+
+type ServerMessage = Infer<typeof ServerMessage>;
+type SubscribeBatch = Infer<typeof SubscribeBatch>;
 
 /** The disconnect/connect-error reports an application sees. */
 type ReconnectReport = {

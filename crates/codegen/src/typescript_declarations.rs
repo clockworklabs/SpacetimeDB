@@ -194,7 +194,7 @@ fn generate_module(module: &ModuleDef, options: &CodegenOptions, dir: &str, file
         })
         .collect();
     out.newline();
-    emit_named_types(module, out, &named, &row_models);
+    emit_named_types(module, out, &named, &row_models, false);
     for (i, table) in rows.iter().enumerate() {
         writeln!(out, "const {} = table(", table_names[i]);
         out.indent(1);
@@ -312,7 +312,6 @@ fn generate_module(module: &ModuleDef, options: &CodegenOptions, dir: &str, file
         filename: format!("{dir}declarations.ts"),
         code: output.into_inner(),
     });
-    files.extend(function_types(module, options, dir));
     files.push(entry_point(dir));
 }
 
@@ -390,7 +389,7 @@ pub(super) fn types_only(module: &ModuleDef) -> OutputFile {
     let mut output = CodeIndenter::new(String::new(), INDENT);
     print_auto_generated_file_comment(&mut output);
     writeln!(output, "import {{ t }} from 'spacetimedb/schema';");
-    emit_named_types(module, &mut output, &iter_types(module).collect::<Vec<_>>(), &[]);
+    emit_named_types(module, &mut output, &iter_types(module).collect::<Vec<_>>(), &[], true);
     OutputFile {
         filename: "types.ts".into(),
         code: output.into_inner(),
@@ -454,7 +453,7 @@ fn ordered_types<'a>(module: &ModuleDef, types: &[&'a TypeDef]) -> Vec<&'a TypeD
     out
 }
 
-fn emit_named_types(module: &ModuleDef, out: &mut Indenter, types: &[&TypeDef], rows: &[TableDef]) {
+fn emit_named_types(module: &ModuleDef, out: &mut Indenter, types: &[&TypeDef], rows: &[TableDef], data_aliases: bool) {
     if types.is_empty() {
         return;
     }
@@ -471,7 +470,9 @@ fn emit_named_types(module: &ModuleDef, out: &mut Indenter, types: &[&TypeDef], 
     } else {
         format!("Infer as {infer}")
     };
-    writeln!(out, "import type {{ {import} }} from 'spacetimedb/schema';");
+    if data_aliases {
+        writeln!(out, "import type {{ {import} }} from 'spacetimedb/schema';");
+    }
     if algebraic_type {
         writeln!(out, "import type {{ TypeBuilder as {type_builder}, AlgebraicTypeType as {algebraic_type_type} }} from 'spacetimedb';");
     }
@@ -480,7 +481,10 @@ fn emit_named_types(module: &ModuleDef, out: &mut Indenter, types: &[&TypeDef], 
         if let Some(row) = rows.iter().find(|row| row.product_type_ref == ty.ty) {
             writeln!(out, "export const {name} = t.row({}, {{", ts_string_literal(&name));
             write_row_fields(module, out, row);
-            writeln!(out, "}});\nexport type {name} = {infer}<typeof {name}>;");
+            writeln!(out, "}});");
+            if data_aliases {
+                writeln!(out, "export type {name} = {infer}<typeof {name}>;");
+            }
             out.newline();
             continue;
         }
@@ -524,7 +528,10 @@ fn emit_named_types(module: &ModuleDef, out: &mut Indenter, types: &[&TypeDef], 
             }
         }
         out.dedent(1);
-        writeln!(out, "}});\nexport type {name} = {infer}<typeof {name}>;");
+        writeln!(out, "}});");
+        if data_aliases {
+            writeln!(out, "export type {name} = {infer}<typeof {name}>;");
+        }
     }
 }
 
@@ -591,69 +598,6 @@ fn function_export(out: &mut Indenter, accessor: &str, binding: &str) {
     } else if accessor != binding {
         writeln!(out, "export {{ {binding} as {accessor} }};");
     }
-}
-
-fn function_ref(accessor: &str) -> String {
-    if accessor == "default" {
-        "declarations.__defaultFunction.exports.default".to_string()
-    } else {
-        format!("declarations.{accessor}")
-    }
-}
-
-fn function_types(module: &ModuleDef, options: &CodegenOptions, dir: &str) -> Vec<OutputFile> {
-    let mut reducers = String::new();
-    let mut procedures = String::new();
-    for reducer in iter_reducers(module, options.visibility) {
-        let name = reducer.accessor_name.deref().to_case(Case::Pascal);
-        if is_reducer_invokable(reducer) {
-            let declaration = function_ref(&reducer.accessor_name.deref().to_case(Case::Camel));
-            writeln!(
-                reducers,
-                "export type {name}Params = Infer<typeof {declaration}.params>;"
-            )
-            .unwrap();
-        } else {
-            // Lifecycle hooks have no arguments, but their existing type aliases remain available.
-            writeln!(reducers, "export type {name}Params = {{}};").unwrap();
-        }
-    }
-    for procedure in iter_procedures(module, options.visibility) {
-        let name = procedure.accessor_name.deref().to_case(Case::Pascal);
-        let declaration = function_ref(&procedure.accessor_name.deref().to_case(Case::Camel));
-        writeln!(procedures, "export type {name}Args = Infer<typeof {declaration}.params>;\nexport type {name}Result = Infer<typeof {declaration}.returnType>;").unwrap();
-    }
-    [
-        (
-            "reducers",
-            reducers,
-            iter_reducers(module, options.visibility).any(is_reducer_invokable),
-        ),
-        (
-            "procedures",
-            procedures,
-            iter_procedures(module, options.visibility).next().is_some(),
-        ),
-    ]
-    .into_iter()
-    .map(|(name, aliases, imports)| {
-        let mut code = "// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB.\n".to_string();
-        if imports {
-            code.push_str(
-                "import type { Infer } from 'spacetimedb';\nimport type * as declarations from '../declarations';\n",
-            );
-        }
-        if aliases.is_empty() {
-            code.push_str("export {};\n");
-        } else {
-            code.push_str(&aliases);
-        }
-        OutputFile {
-            filename: format!("{dir}types/{name}.ts"),
-            code,
-        }
-    })
-    .collect()
 }
 
 fn local_name(name: &str) -> &str {
@@ -818,12 +762,6 @@ fn entry_point(dir: &str) -> OutputFile {
     writeln!(
         code,
         "export type SubscriptionHandle = SubscriptionHandleImpl<RemoteModule>;"
-    )
-    .unwrap();
-    // Preserve the existing reducer/procedure type namespaces.
-    writeln!(
-        code,
-        "export type * as Reducers from './types/reducers';\nexport type * as Procedures from './types/procedures';"
     )
     .unwrap();
     OutputFile {

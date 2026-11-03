@@ -213,6 +213,10 @@ fn typescript_clients_compile_and_run() {
             r#"
 import assert from 'node:assert/strict';
 import { DbConnection, DbConnectionBuilder, tables, reducers, procedures, type EventContext } from './index';
+import { add, returnValue } from './declarations';
+import type { Infer } from 'spacetimedb/schema';
+type AddParams = Infer<typeof add.params>;
+type ReturnValueResult = Infer<typeof returnValue.returnType>;
 const builder: DbConnectionBuilder = DbConnection.builder().withUri('ws://localhost:3000').withDatabaseName('example');
 assert.equal(typeof builder.build, 'function');
 assert.equal(tables.person.toSql(), 'SELECT * FROM "person"');
@@ -220,7 +224,10 @@ assert.equal(tables.loggedOutPlayer.sourceName, 'logged_out_player');
 assert.equal(reducers.add.name, 'add');
 assert.equal(procedures.returnValue.name, 'return_value');
 function consume(conn: DbConnection, ctx: EventContext) {
-  conn.reducers.add({ name: 'Alice', age: 30 });
+  const args: AddParams = { name: 'Alice', age: 30 };
+  conn.reducers.add(args);
+  const result: Promise<ReturnValueResult> = conn.procedures.returnValue({ foo: 1n });
+  void result;
   const age: number | undefined = conn.db.person.id.find(1)?.age;
   const same: typeof conn.db.loggedOutPlayer = ctx.db.loggedOutPlayer;
   // @ts-expect-error invalid argument
@@ -514,6 +521,8 @@ import assert from 'node:assert/strict';
 import { tables, type DbConnection } from './index';
 import spacetimedb from './declarations';
 import { Person } from './declarations';
+import type { Infer } from 'spacetimedb/schema';
+type Person = Infer<typeof Person>;
 assert.equal(spacetimedb.entries.person.rowType, Person);
 assert.equal(Person.row.id.columnMetadata.isAutoIncrement, true);
 assert.equal(Person.row.score.columnMetadata.defaultValue, 7);
@@ -522,7 +531,8 @@ assert.equal(tables.audit.tableDef.isEvent, true);
 assert.ok(tables.person.tableDef.resolvedIndexes.some(i => i.algorithm === 'direct'));
 assert.ok(tables.person.tableDef.resolvedIndexes.some(i => i.algorithm === 'hash'));
 function consume(conn: DbConnection) {
-  conn.reducers.submitPerson({ person: { id: 1, displayName: 'Alice', score: 7, address: { city: 'Paris' } } });
+  const person: Person = { id: 1, displayName: 'Alice', score: 7, address: { city: 'Paris' } };
+  conn.reducers.submitPerson({ person });
   // @ts-expect-error shared row schema still enforces column types
   conn.reducers.submitPerson({ person: { id: 'bad', displayName: 'Alice', score: 7, address: { city: 'Paris' } } });
 }

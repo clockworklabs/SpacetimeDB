@@ -3,13 +3,10 @@
 
 import { schema, t } from '../../schema/declarations';
 
-import type { Infer } from '../../schema/declarations';
-
 export const RowSizeHint = t.enum('RowSizeHint', {
   FixedSize: t.u16(),
   RowOffsets: t.array(t.u64()),
 });
-export type RowSizeHint = Infer<typeof RowSizeHint>;
 
 export const BsatnRowList = t.object('BsatnRowList', {
   get sizeHint() {
@@ -17,7 +14,6 @@ export const BsatnRowList = t.object('BsatnRowList', {
   },
   rowsData: t.byteArray(),
 });
-export type BsatnRowList = Infer<typeof BsatnRowList>;
 
 export const CallProcedure = t.object('CallProcedure', {
   requestId: t.u32(),
@@ -25,7 +21,6 @@ export const CallProcedure = t.object('CallProcedure', {
   procedure: t.string(),
   args: t.byteArray(),
 });
-export type CallProcedure = Infer<typeof CallProcedure>;
 
 export const CallReducer = t.object('CallReducer', {
   requestId: t.u32(),
@@ -33,12 +28,10 @@ export const CallReducer = t.object('CallReducer', {
   reducer: t.string(),
   args: t.byteArray(),
 });
-export type CallReducer = Infer<typeof CallReducer>;
 
 export const QuerySetId = t.object('QuerySetId', {
   id: t.u32(),
 });
-export type QuerySetId = Infer<typeof QuerySetId>;
 
 export const Subscribe = t.object('Subscribe', {
   requestId: t.u32(),
@@ -47,13 +40,11 @@ export const Subscribe = t.object('Subscribe', {
   },
   queryStrings: t.array(t.string()),
 });
-export type Subscribe = Infer<typeof Subscribe>;
 
 export const UnsubscribeFlags = t.enum('UnsubscribeFlags', {
   Default: t.unit(),
   SendDroppedRows: t.unit(),
 });
-export type UnsubscribeFlags = Infer<typeof UnsubscribeFlags>;
 
 export const Unsubscribe = t.object('Unsubscribe', {
   requestId: t.u32(),
@@ -64,13 +55,11 @@ export const Unsubscribe = t.object('Unsubscribe', {
     return UnsubscribeFlags;
   },
 });
-export type Unsubscribe = Infer<typeof Unsubscribe>;
 
 export const OneOffQuery = t.object('OneOffQuery', {
   requestId: t.u32(),
   queryString: t.string(),
 });
-export type OneOffQuery = Infer<typeof OneOffQuery>;
 
 export const SubscribeSet = t.object('SubscribeSet', {
   get querySetId() {
@@ -78,7 +67,6 @@ export const SubscribeSet = t.object('SubscribeSet', {
   },
   queryStrings: t.array(t.string()),
 });
-export type SubscribeSet = Infer<typeof SubscribeSet>;
 
 export const SubscribeBatch = t.object('SubscribeBatch', {
   requestId: t.u32(),
@@ -86,7 +74,6 @@ export const SubscribeBatch = t.object('SubscribeBatch', {
     return t.array(SubscribeSet);
   },
 });
-export type SubscribeBatch = Infer<typeof SubscribeBatch>;
 
 export const ClientMessage = t.enum('ClientMessage', {
   get Subscribe() {
@@ -108,21 +95,18 @@ export const ClientMessage = t.enum('ClientMessage', {
     return SubscribeBatch;
   },
 });
-export type ClientMessage = Infer<typeof ClientMessage>;
 
 export const EventTableRows = t.object('EventTableRows', {
   get events() {
     return BsatnRowList;
   },
 });
-export type EventTableRows = Infer<typeof EventTableRows>;
 
 export const InitialConnection = t.object('InitialConnection', {
   identity: t.identity(),
   connectionId: t.connectionId(),
   token: t.string(),
 });
-export type InitialConnection = Infer<typeof InitialConnection>;
 
 export const SingleTableRows = t.object('SingleTableRows', {
   table: t.string(),
@@ -130,14 +114,12 @@ export const SingleTableRows = t.object('SingleTableRows', {
     return BsatnRowList;
   },
 });
-export type SingleTableRows = Infer<typeof SingleTableRows>;
 
 export const QueryRows = t.object('QueryRows', {
   get tables() {
     return t.array(SingleTableRows);
   },
 });
-export type QueryRows = Infer<typeof QueryRows>;
 
 export const OneOffQueryResult = t.object('OneOffQueryResult', {
   requestId: t.u32(),
@@ -145,7 +127,6 @@ export const OneOffQueryResult = t.object('OneOffQueryResult', {
     return t.result(QueryRows, t.string());
   },
 });
-export type OneOffQueryResult = Infer<typeof OneOffQueryResult>;
 
 export const PersistentTableRows = t.object('PersistentTableRows', {
   get inserts() {
@@ -155,13 +136,11 @@ export const PersistentTableRows = t.object('PersistentTableRows', {
     return BsatnRowList;
   },
 });
-export type PersistentTableRows = Infer<typeof PersistentTableRows>;
 
 export const ProcedureStatus = t.enum('ProcedureStatus', {
   Returned: t.byteArray(),
   InternalError: t.string(),
 });
-export type ProcedureStatus = Infer<typeof ProcedureStatus>;
 
 export const ProcedureResult = t.object('ProcedureResult', {
   get status() {
@@ -171,7 +150,6 @@ export const ProcedureResult = t.object('ProcedureResult', {
   totalHostExecutionDuration: t.timeDuration(),
   requestId: t.u32(),
 });
-export type ProcedureResult = Infer<typeof ProcedureResult>;
 
 export const TableUpdateRows = t.enum('TableUpdateRows', {
   get PersistentTable() {
@@ -181,7 +159,6 @@ export const TableUpdateRows = t.enum('TableUpdateRows', {
     return EventTableRows;
   },
 });
-export type TableUpdateRows = Infer<typeof TableUpdateRows>;
 
 export const TableUpdate = t.object('TableUpdate', {
   tableName: t.string(),
@@ -189,7 +166,6 @@ export const TableUpdate = t.object('TableUpdate', {
     return t.array(TableUpdateRows);
   },
 });
-export type TableUpdate = Infer<typeof TableUpdate>;
 
 export const QuerySetUpdate = t.object('QuerySetUpdate', {
   get querySetId() {
@@ -199,14 +175,12 @@ export const QuerySetUpdate = t.object('QuerySetUpdate', {
     return t.array(TableUpdate);
   },
 });
-export type QuerySetUpdate = Infer<typeof QuerySetUpdate>;
 
 export const TransactionUpdate = t.object('TransactionUpdate', {
   get querySets() {
     return t.array(QuerySetUpdate);
   },
 });
-export type TransactionUpdate = Infer<typeof TransactionUpdate>;
 
 export const ReducerOk = t.object('ReducerOk', {
   retValue: t.byteArray(),
@@ -214,7 +188,6 @@ export const ReducerOk = t.object('ReducerOk', {
     return TransactionUpdate;
   },
 });
-export type ReducerOk = Infer<typeof ReducerOk>;
 
 export const ReducerOutcome = t.enum('ReducerOutcome', {
   get Ok() {
@@ -224,7 +197,6 @@ export const ReducerOutcome = t.enum('ReducerOutcome', {
   Err: t.byteArray(),
   InternalError: t.string(),
 });
-export type ReducerOutcome = Infer<typeof ReducerOutcome>;
 
 export const ReducerResult = t.object('ReducerResult', {
   requestId: t.u32(),
@@ -233,7 +205,6 @@ export const ReducerResult = t.object('ReducerResult', {
     return ReducerOutcome;
   },
 });
-export type ReducerResult = Infer<typeof ReducerResult>;
 
 export const SubscribeApplied = t.object('SubscribeApplied', {
   requestId: t.u32(),
@@ -244,7 +215,6 @@ export const SubscribeApplied = t.object('SubscribeApplied', {
     return QueryRows;
   },
 });
-export type SubscribeApplied = Infer<typeof SubscribeApplied>;
 
 export const UnsubscribeApplied = t.object('UnsubscribeApplied', {
   requestId: t.u32(),
@@ -255,7 +225,6 @@ export const UnsubscribeApplied = t.object('UnsubscribeApplied', {
     return t.option(QueryRows);
   },
 });
-export type UnsubscribeApplied = Infer<typeof UnsubscribeApplied>;
 
 export const SubscriptionError = t.object('SubscriptionError', {
   requestId: t.option(t.u32()),
@@ -264,7 +233,6 @@ export const SubscriptionError = t.object('SubscriptionError', {
   },
   error: t.string(),
 });
-export type SubscriptionError = Infer<typeof SubscriptionError>;
 
 export const SubscribeSetOutcome = t.enum('SubscribeSetOutcome', {
   get Applied() {
@@ -272,7 +240,6 @@ export const SubscribeSetOutcome = t.enum('SubscribeSetOutcome', {
   },
   Error: t.string(),
 });
-export type SubscribeSetOutcome = Infer<typeof SubscribeSetOutcome>;
 
 export const SubscribeSetResult = t.object('SubscribeSetResult', {
   get querySetId() {
@@ -282,7 +249,6 @@ export const SubscribeSetResult = t.object('SubscribeSetResult', {
     return SubscribeSetOutcome;
   },
 });
-export type SubscribeSetResult = Infer<typeof SubscribeSetResult>;
 
 export const SubscribeBatchApplied = t.object('SubscribeBatchApplied', {
   requestId: t.u32(),
@@ -290,7 +256,6 @@ export const SubscribeBatchApplied = t.object('SubscribeBatchApplied', {
     return t.array(SubscribeSetResult);
   },
 });
-export type SubscribeBatchApplied = Infer<typeof SubscribeBatchApplied>;
 
 export const ServerMessage = t.enum('ServerMessage', {
   get InitialConnection() {
@@ -321,6 +286,5 @@ export const ServerMessage = t.enum('ServerMessage', {
     return SubscribeBatchApplied;
   },
 });
-export type ServerMessage = Infer<typeof ServerMessage>;
 const spacetimedb = schema({});
 export default spacetimedb;
