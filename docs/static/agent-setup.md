@@ -9,6 +9,10 @@ cannot perform, or a restart. Inspect existing configuration before changing it,
 preserve unrelated settings and repository changes, and verify the result before
 reporting success.
 
+Several steps download files. If a command fails because your sandbox blocks network
+access, run it again with network access, asking the user to approve that if your
+environment requires it.
+
 This setup installs development guidance and configures tools. It does not
 initialize a project, start a server, publish a database, log in, change application
 code, or access database contents.
@@ -99,9 +103,12 @@ this setup. A working CLI and skills remain useful without MCP.
 
 ## 2. Install the integration for your coding environment
 
-Choose one path. Prefer the full SpacetimeDB plugin for Claude Code or Codex. These
-plugins already include the skills and MCP configuration; do not install duplicate
-skills or register a second MCP server when the plugin succeeds.
+Set up every coding agent on this machine, not only the one you are running in.
+Check for `claude` and `codex` on `PATH` and for a `~/.cursor` directory, and follow
+the matching section below for each. If the agent you are running in has no section,
+use **Other agents**. The Claude Code and Codex plugins already include the skills
+and MCP configuration; do not install duplicate skills or register a second MCP
+server for an agent whose plugin succeeds.
 
 ### Claude Code
 
@@ -288,7 +295,7 @@ Report these results:
 
 ```text
 SpacetimeDB Agent Setup: Complete / Partial
-- Agent: <coding environment>
+- Agents: <each coding environment set up>
 - CLI: <version and whether the MCP command is available>
 - Guidance: <verified plugin or skills, including installation location>
 - MCP: <verified connection, configured but unverified, or unavailable>
