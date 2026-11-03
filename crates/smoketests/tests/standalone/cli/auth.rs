@@ -65,28 +65,27 @@ fn cli_list_without_login_warns_before_server_issued_login() {
 }
 
 #[test]
-fn cli_list_without_login_rejects_yes() {
-    let (root, mut command) = list_without_login();
-    command
-        .arg("--yes")
-        .assert()
-        .failure()
-        .stdout("")
-        .stderr(predicates::str::contains("You are not logged in"));
-    assert_no_login_saved(root.path());
+fn cli_list_without_login_accepts_yes() {
+    assert_list_creates_server_issued_identity(&["--yes"]);
 }
 
 #[test]
 fn cli_list_without_login_uses_server_issued_identity_on_eof() {
+    assert_list_creates_server_issued_identity(&[]);
+}
+
+fn assert_list_creates_server_issued_identity(extra_args: &[&str]) {
     require_server_issued_login!();
     let test = Smoketest::builder()
         .precompiled_module("noop")
         .autopublish(false)
         .build();
     fs::write(&test.config_path, "").unwrap();
-    let output = test.spacetime(&["list", "--server", &test.server_url]).unwrap();
+    let mut args = vec!["list", "--server", &test.server_url];
+    args.extend_from_slice(extra_args);
+    let output = test.spacetime(&args).unwrap();
     assert!(output.contains("WARNING"));
-    test.read_token().expect("EOF should accept the server-issued login");
+    test.read_token().expect("server-issued token should be saved");
 }
 
 #[test]

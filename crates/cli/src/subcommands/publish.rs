@@ -24,14 +24,14 @@ use crate::spacetime_config::{
     FlatTarget, Key, LoadedConfig, SpacetimeConfig,
 };
 use crate::util::{add_auth_header_opt, get_auth_header, strip_verbatim_prefix, AuthHeader, ResponseExt};
-use crate::util::{decode_identity, LoginMode, YesOrNo};
+use crate::util::{decode_identity, YesOrNo};
 use crate::{build, common_args};
 
-/// Individual prompts that `--yes` can suppress. Server-issued login requires an explicit opt-in.
+/// Individual prompts that `--yes` can suppress. `All` is a shorthand for every category below.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 #[clap(rename_all = "kebab-case")]
 pub enum YesValue {
-    /// Equivalent to passing every option except skip-login. This is the default when `--yes` is given without a value.
+    /// Equivalent to passing every other option. This is the default when `--yes` is given without a value.
     All,
     /// Skip the "publish to a non-local server?" confirmation.
     Remote,
@@ -39,10 +39,10 @@ pub enum YesValue {
     Migrate,
     /// Skip the "this will BREAK existing clients" confirmation.
     BreakClients,
+    /// Don't prompt the user to log in; act non-interactively for auth.
+    SkipLogin,
     /// Skip the destructive "this will DESTROY ... ALL corresponding data" confirmation.
     DeleteData,
-    /// Decline spacetimedb.com login and accept the risks of a server-issued identity.
-    SkipLogin,
 }
 
 /// Decoded `--yes` selections, used at every prompt site.
@@ -51,8 +51,6 @@ pub struct YesFlags {
     pub publish_to_remote: bool,
     pub migrate_major_version: bool,
     pub break_clients: bool,
-    /// Plain `--yes` and `--yes=all` require an existing login.
-    pub non_interactive: bool,
     pub skip_login: bool,
     pub delete_data: bool,
 }
@@ -63,33 +61,19 @@ impl YesFlags {
             publish_to_remote: true,
             migrate_major_version: true,
             break_clients: true,
-            non_interactive: true,
-            skip_login: false,
+            skip_login: true,
             delete_data: true,
-        }
-    }
-
-    fn login_mode(self) -> LoginMode {
-        if self.skip_login {
-            LoginMode::ServerIssued
-        } else {
-            (!self.non_interactive).into()
         }
     }
 
     fn merge(&mut self, value: YesValue) {
         match value {
-            YesValue::All => {
-                *self = Self {
-                    skip_login: self.skip_login,
-                    ..Self::all()
-                }
-            }
+            YesValue::All => *self = YesFlags::all(),
             YesValue::Remote => self.publish_to_remote = true,
             YesValue::Migrate => self.migrate_major_version = true,
             YesValue::BreakClients => self.break_clients = true,
-            YesValue::DeleteData => self.delete_data = true,
             YesValue::SkipLogin => self.skip_login = true,
+            YesValue::DeleteData => self.delete_data = true,
         }
     }
 }
@@ -321,13 +305,10 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
                 .help(
                     "Skip confirmation prompts. With no value, defaults to 'all' \
                      (equivalent to --yes=all). To skip specific prompts, pass one or \
-                     more of: all, remote, migrate, break-clients, delete-data, skip-login. \
+                     more of: all, remote, migrate, break-clients, skip-login, delete-data. \
                      Multiple values can be comma-separated (--yes=migrate,break-clients) or \
                      given via repeated flags (--yes=migrate --yes=break-clients). The value \
-                     must be attached with '=' (so `--yes my-db` treats `my-db` as the database name). \
-                     The skip-login option explicitly accepts a server-issued identity and its risks. \
-                     It is not included in all. With all, publishing requires a saved login token unless --anonymous is used; \
-                     run `spacetime login` first."
+                     must be attached with '=' (so `--yes my-db` treats `my-db` as the database name)."
                 )
         )
         .arg(
@@ -657,7 +638,7 @@ async fn execute_publish_configs<'a>(
         // we want to use the default identity
         // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
         //  easily create a new identity with an email
-        let auth_header = get_auth_header(config, anon_identity, server, yes.login_mode()).await?;
+        let auth_header = get_auth_header(config, anon_identity, server, !yes.skip_login).await?;
 
         let (name_or_identity, parent) = validate_name_and_parent(name_or_identity, parent)?;
 
@@ -1450,7 +1431,7 @@ mod tests {
             yes.publish_to_remote
                 && yes.migrate_major_version
                 && yes.break_clients
-                && yes.non_interactive
+                && yes.skip_login
                 && yes.delete_data
         );
     }
@@ -1463,7 +1444,7 @@ mod tests {
             yes.publish_to_remote
                 && yes.migrate_major_version
                 && yes.break_clients
-                && yes.non_interactive
+                && yes.skip_login
                 && yes.delete_data
         );
     }
@@ -1473,23 +1454,23 @@ mod tests {
         let matches = cli().get_matches_from(vec!["publish", "--yes=remote"]);
         let yes = yes_flags_from_args(&matches);
         assert!(yes.publish_to_remote);
-        assert!(!yes.migrate_major_version && !yes.break_clients && !yes.non_interactive && !yes.delete_data);
+        assert!(!yes.migrate_major_version && !yes.break_clients && !yes.skip_login && !yes.delete_data);
     }
 
     #[test]
     fn test_yes_flag_comma_separated_multiple_values() {
-        let matches = cli().get_matches_from(vec!["publish", "--yes=migrate,remote"]);
+        let matches = cli().get_matches_from(vec!["publish", "--yes=migrate,skip-login"]);
         let yes = yes_flags_from_args(&matches);
-        assert!(yes.migrate_major_version && yes.publish_to_remote);
-        assert!(!yes.non_interactive && !yes.break_clients && !yes.delete_data);
+        assert!(yes.migrate_major_version && yes.skip_login);
+        assert!(!yes.publish_to_remote && !yes.break_clients && !yes.delete_data);
     }
 
     #[test]
     fn test_yes_flag_repeated_invocations_accumulate() {
-        let matches = cli().get_matches_from(vec!["publish", "--yes=migrate", "--yes=remote"]);
+        let matches = cli().get_matches_from(vec!["publish", "--yes=migrate", "--yes=skip-login"]);
         let yes = yes_flags_from_args(&matches);
-        assert!(yes.migrate_major_version && yes.publish_to_remote);
-        assert!(!yes.non_interactive && !yes.break_clients && !yes.delete_data);
+        assert!(yes.migrate_major_version && yes.skip_login);
+        assert!(!yes.publish_to_remote && !yes.break_clients && !yes.delete_data);
     }
 
     #[test]
@@ -1497,7 +1478,7 @@ mod tests {
         let matches = cli().get_matches_from(vec!["publish", "--yes=delete-data"]);
         let yes = yes_flags_from_args(&matches);
         assert!(yes.delete_data);
-        assert!(!yes.publish_to_remote && !yes.migrate_major_version && !yes.break_clients && !yes.non_interactive);
+        assert!(!yes.publish_to_remote && !yes.migrate_major_version && !yes.break_clients && !yes.skip_login);
     }
 
     #[test]
@@ -1527,7 +1508,7 @@ mod tests {
             !yes.publish_to_remote
                 && !yes.migrate_major_version
                 && !yes.break_clients
-                && !yes.non_interactive
+                && !yes.skip_login
                 && !yes.delete_data
         );
     }

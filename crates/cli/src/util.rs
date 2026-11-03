@@ -191,12 +191,12 @@ pub async fn get_auth_header(
     config: &mut Config,
     anon_identity: bool,
     target_server: Option<&str>,
-    login_mode: impl Into<LoginMode>,
+    interactive: bool,
 ) -> anyhow::Result<AuthHeader> {
     let token = if anon_identity {
         None
     } else {
-        Some(get_login_token_or_log_in(config, target_server, login_mode).await?)
+        Some(get_login_token_or_log_in(config, target_server, interactive).await?)
     };
     Ok(AuthHeader { token })
 }
@@ -405,39 +405,16 @@ pub fn decode_identity(token: &String) -> anyhow::Result<String> {
     Ok(claims_data.identity.to_string())
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum LoginMode {
-    Interactive,
-    RequireLogin,
-    ServerIssued,
-}
-
-impl From<bool> for LoginMode {
-    fn from(interactive: bool) -> Self {
-        if interactive {
-            Self::Interactive
-        } else {
-            Self::RequireLogin
-        }
-    }
-}
-
 pub async fn get_login_token_or_log_in(
     config: &mut Config,
     target_server: Option<&str>,
-    login_mode: impl Into<LoginMode>,
+    interactive: bool,
 ) -> anyhow::Result<String> {
     if let Some(token) = config.spacetimedb_token() {
         return Ok(token.clone());
     }
 
-    let login_mode = login_mode.into();
-    anyhow::ensure!(
-        login_mode != LoginMode::RequireLogin,
-        "You are not logged in. Run `spacetime login` before running this command with --yes."
-    );
-
-    let full_login = login_mode == LoginMode::Interactive
+    let full_login = interactive
         && YesOrNo::new("You are not logged in. Would you like to log in with spacetimedb.com?")
             .force(false)
             .default(true)
@@ -455,12 +432,12 @@ pub async fn get_login_token_or_log_in(
                  We recommend logging in with spacetimedb.com, which also works with local servers.\n\
                  If you are an agent, please alert your user to these risks.\n\
                  Are you sure you want to continue?";
-        if login_mode == LoginMode::ServerIssued {
+        if !interactive {
             println!("{message}");
         }
         anyhow::ensure!(
             YesOrNo::new(message)
-                .force(login_mode == LoginMode::ServerIssued)
+                .force(!interactive)
                 .default(false)
                 .on_eof(true)
                 .prompt()?,

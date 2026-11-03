@@ -16,7 +16,6 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const dataDir = await mkdtemp(path.join(os.tmpdir(), 'cron-recovery-'));
-const configPath = path.join(dataDir, 'cli.toml');
 const port = await reservePort();
 const serverUrl = `http://127.0.0.1:${port}`;
 const database = 'cron-recovery';
@@ -44,16 +43,12 @@ async function reservePort() {
 }
 
 function run(args) {
-  const result = spawnSync(
-    'spacetime',
-    ['--config-path', configPath, ...args],
-    {
-      cwd: root,
-      encoding: 'utf8',
-      shell: false,
-      windowsHide: true,
-    }
-  );
+  const result = spawnSync('spacetime', args, {
+    cwd: root,
+    encoding: 'utf8',
+    shell: false,
+    windowsHide: true,
+  });
   assert.ifError(result.error);
   assert.equal(
     result.status,
@@ -145,8 +140,6 @@ function startServer() {
   const child = spawn(
     'spacetime',
     [
-      '--config-path',
-      configPath,
       'start',
       '--listen-addr',
       `127.0.0.1:${port}`,
@@ -222,7 +215,6 @@ async function stopServer(child) {
 try {
   server = startServer();
   await waitForServer(server);
-  run(['login', '--server-issued-login', serverUrl]);
   run([
     'publish',
     '--server',

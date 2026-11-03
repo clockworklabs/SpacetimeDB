@@ -107,7 +107,7 @@ pub(super) async fn publish_only(
             "Publish aborted by user"
         );
     }
-    let auth = get_auth_header(config, anonymous, server, yes.login_mode()).await?;
+    let auth = get_auth_header(config, anonymous, server, !yes.skip_login).await?;
     let encoded = percent_encoding::percent_encode(
         database.as_bytes(),
         const { &percent_encoding::NON_ALPHANUMERIC.remove(b'_').remove(b'-') },
