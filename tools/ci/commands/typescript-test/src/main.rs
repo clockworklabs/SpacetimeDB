@@ -15,6 +15,12 @@ fn main() -> Result<()> {
 
     pnpm(["build"]).dir("crates/bindings-typescript").run()?;
     pnpm(["test"]).dir("crates/bindings-typescript").run()?;
+    pnpm(["test:declarations:typecheck"])
+        .dir("crates/bindings-typescript")
+        .run()?;
+    pnpm(["test:declarations:package"])
+        .dir("crates/bindings-typescript")
+        .run()?;
     pnpm(["generate"]).dir("templates/chat-react-ts").run()?;
     let diff_status = duct::cmd!(
         "bash",

@@ -48,7 +48,7 @@
     "generate:examples:empty": "pnpm --filter @clockworklabs/empty-client generate",
     "generate": "pnpm generate:moduledef && pnpm generate:client-api && pnpm generate:test-app && pnpm generate:examples:chat-react-ts && pnpm generate:examples:react-ts && pnpm generate:examples:empty",
     "prepublishOnly": "pnpm run build:package && pnpm run test:unit && size-limit && pnpm run check:package",
-    "test:declarations": "vitest run tests/declarations.test.ts && tsc -p tsconfig.declarations.json",
+    "test:declarations:typecheck": "tsc -p tsconfig.declarations.json",
     "test:declarations:package": "node scripts/check-declarations-package.mjs && tsc -p tests/declarations-consumer/tsconfig.json"
   },
   "main": "dist/index.cjs",
