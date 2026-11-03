@@ -1,7 +1,8 @@
 import { EventEmitter } from './event_emitter.ts';
 
 import { stdbLogger } from './logger.ts';
-import { deepEqual, type ComparablePrimitive } from '../';
+import { deepEqual } from '../lib/util';
+import type { ComparablePrimitive } from '../lib/algebraic_type';
 import type { EventContextInterface, TableDefForTableName } from './index.ts';
 import type { RowType, TableIndexes, UntypedTableDef } from '../lib/table.ts';
 import type { ClientTableCoreImplementable } from './client_table.ts';

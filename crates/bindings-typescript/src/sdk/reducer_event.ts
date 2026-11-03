@@ -1,4 +1,4 @@
-import { Timestamp } from '../';
+import type { Timestamp } from '../lib/timestamp';
 import type { ReducerOutcome } from './client_api/types';
 import type { ReducerEventInfo } from './reducers.ts';
 
