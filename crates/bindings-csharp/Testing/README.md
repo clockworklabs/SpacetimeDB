@@ -1,7 +1,18 @@
-# Managed Testing Interop
+# Managed Module Testing
 
-This .NET 10 project contains the internal managed adapter for the native test
-datastore. Public test contexts and runtime routing are not implemented yet.
+This .NET 10 project provides `TestContext.Create(typeof(Module).Assembly)`,
+fixture-owned `Db`, and synchronous `WithReducerTx` callbacks backed by the native
+test datastore. Use `TestAuth.Internal()` for the database identity. Transactions
+commit on normal return and roll back on exceptions; their handles are invalid
+after the callback finishes. Default clocks start at the Unix epoch, and RNGs
+start at root seed zero. `Clock.Set`/`Advance` and `Rng.SetSeed`/`ClearSeed` control
+subsequent contexts. Managed module logging writes to standard error.
+
+Use one execution flow per fixture. Async callbacks and multicast delegates are
+rejected; returned `Task`/`ValueTask` values also cause rollback. Independent
+fixtures may run in parallel. JWT auth, full index/mutation support, views,
+procedures, and other host services are still pending.
+
 NuGet packaging and native asset distribution are deferred; this project is
 currently not packable.
 

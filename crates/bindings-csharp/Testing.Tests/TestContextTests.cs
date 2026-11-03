@@ -1,0 +1,162 @@
+namespace SpacetimeDB.Testing.Tests;
+
+using TestingModule;
+
+public class TestContextTests
+{
+    [Fact]
+    public void ReducerTransactionsCommitRollbackAndInvalidateHandles()
+    {
+        using var test = TestContext.Create(typeof(Entry).Assembly);
+        var auth = TestAuth.Internal();
+        ReducerContext? escaped = null;
+        var inserted = test.WithReducerTx(
+            auth,
+            ctx =>
+            {
+                escaped = ctx;
+                Assert.Equal(test.DatabaseIdentity, ctx.Sender);
+                Assert.Equal(test.DatabaseIdentity, ctx.DatabaseIdentity);
+                Assert.Null(ctx.ConnectionId);
+                Assert.True(ctx.SenderAuth.IsInternal);
+                Assert.Null(ctx.SenderAuth.Jwt);
+                Log.Info("Managed reducer transaction");
+                return ctx.Db.Entries.Insert(new Entry { Text = "committed" });
+            }
+        );
+        Assert.Equal(inserted.Id, Assert.Single(test.Db.Entries.Iter()).Id);
+        Assert.Throws<ObjectDisposedException>(() => escaped!.Db.Entries.Count);
+
+        var failure = new InvalidOperationException("original exception");
+        Assert.Same(
+            failure,
+            Assert.Throws<InvalidOperationException>(() =>
+                test.WithReducerTx(
+                    auth,
+                    ctx =>
+                    {
+                        escaped = ctx;
+                        ctx.Db.Entries.Insert(new Entry { Text = "rolled back" });
+                        throw failure;
+                    }
+                )
+            )
+        );
+        Assert.Throws<ObjectDisposedException>(() => escaped!.Db.Entries.Count);
+        Assert.Equal(1UL, test.Db.Entries.Count);
+
+        // Ordinary error return values still commit.
+        var result = test.WithReducerTx(
+            auth,
+            ctx =>
+            {
+                ctx.Db.Entries.Insert(new Entry { Text = "also committed" });
+                return false;
+            }
+        );
+        Assert.False(result);
+        Assert.Equal(2UL, test.Db.Entries.Count);
+        var db = test.Db;
+        test.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => db.Entries.Count);
+        Assert.Throws<ObjectDisposedException>(() => test.WithReducerTx(auth, _ => { }));
+    }
+
+    [Fact]
+    public void FixturesHaveIndependentDataClockAndRandomness()
+    {
+        using var first = TestContext.Create(typeof(Entry).Assembly);
+        using var second = TestContext.Create(typeof(Entry).Assembly);
+        var auth = TestAuth.Internal();
+        Assert.Equal(Timestamp.UNIX_EPOCH, first.Clock.Now);
+        first.Clock.Set(new Timestamp(100));
+        first.Clock.Advance(new TimeDuration(20));
+        ReducerContext? captured = null;
+        first.WithReducerTx(auth, ctx => captured = ctx);
+        first.Clock.Advance(new TimeDuration(30));
+        Assert.Equal(new Timestamp(120), captured!.Timestamp);
+        Assert.Equal(Timestamp.UNIX_EPOCH, second.Clock.Now);
+
+        first.Rng.SetSeed(42);
+        var sequence = first.WithReducerTx(auth, ctx => (ctx.Rng.Next(), ctx.Rng.Next()));
+        first.Rng.SetSeed(42);
+        Assert.Equal(sequence, first.WithReducerTx(auth, ctx => (ctx.Rng.Next(), ctx.Rng.Next())));
+        first.Rng.ClearSeed();
+        Assert.Equal(
+            second.WithReducerTx(auth, ctx => ctx.Rng.Next()),
+            first.WithReducerTx(auth, ctx => ctx.Rng.Next())
+        );
+
+        Parallel.Invoke(
+            () =>
+                first.WithReducerTx(
+                    auth,
+                    ctx => ctx.Db.Entries.Insert(new Entry { Text = "first" })
+                ),
+            () =>
+                second.WithReducerTx(
+                    auth,
+                    ctx => ctx.Db.Entries.Insert(new Entry { Text = "second" })
+                )
+        );
+        Assert.Equal("first", Assert.Single(first.Db.Entries.Iter()).Text);
+        Assert.Equal("second", Assert.Single(second.Db.Entries.Iter()).Text);
+        first.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => first.Clock.Now);
+        Assert.Throws<ObjectDisposedException>(() => first.Rng.SetSeed(1));
+        Assert.Equal(1UL, second.Db.Entries.Count);
+    }
+
+    [Fact]
+    public void InvalidModulesAndUnsupportedCallbacksAreRejected()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            TestContext.Create(typeof(TestContextTests).Assembly)
+        );
+        using var test = TestContext.Create(typeof(Entry).Assembly);
+        var auth = TestAuth.Internal();
+        var called = false;
+        async void AsyncVoid(ReducerContext _)
+        {
+            called = true;
+            await Task.CompletedTask;
+        }
+        Assert.Throws<ArgumentException>(() => test.WithReducerTx(auth, AsyncVoid));
+        void RejectReturn<T>(T value)
+        {
+            Assert.Throws<ArgumentException>(() =>
+            {
+                _ = test.WithReducerTx(
+                    auth,
+                    _ =>
+                    {
+                        called = true;
+                        return value;
+                    }
+                );
+            });
+        }
+        RejectReturn(Task.CompletedTask);
+        RejectReturn(ValueTask.CompletedTask);
+        RejectReturn(default(ValueTask<int>));
+        void Sync(ReducerContext _) => called = true;
+        var multicast = (Action<ReducerContext>)Sync;
+        multicast += Sync;
+        Assert.Throws<ArgumentException>(() => test.WithReducerTx(auth, multicast));
+        Assert.False(called);
+
+        Assert.Throws<ArgumentException>(() =>
+            test.WithReducerTx<object>(
+                auth,
+                ctx =>
+                {
+                    ctx.Db.Entries.Insert(new Entry { Text = "erased awaitable" });
+                    return Task.CompletedTask;
+                }
+            )
+        );
+        Assert.Equal(0UL, test.Db.Entries.Count);
+        test.WithReducerTx(auth, ctx => ctx.Db.Entries.Insert(new Entry { Text = "still usable" }));
+        Assert.Equal(1UL, test.Db.Entries.Count);
+    }
+}
