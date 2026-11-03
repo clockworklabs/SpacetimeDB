@@ -140,7 +140,6 @@ const sidebars: SidebarsConfig = {
       collapsed: true,
       items: [
         { type: 'doc', id: 'how-to/pg-wire' },
-        { type: 'doc', id: 'how-to/row-level-security' },
         { type: 'doc', id: 'how-to/reject-client-connections' },
       ],
     },
