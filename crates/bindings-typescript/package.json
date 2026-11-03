@@ -49,7 +49,7 @@
     "generate": "pnpm generate:moduledef && pnpm generate:client-api && pnpm generate:test-app && pnpm generate:examples:chat-react-ts && pnpm generate:examples:react-ts && pnpm generate:examples:empty",
     "prepublishOnly": "pnpm run build:package && pnpm run test:unit && size-limit && pnpm run check:package",
     "test:declarations:typecheck": "tsc -p tsconfig.declarations.json",
-    "test:declarations:package": "node scripts/check-declarations-package.mjs && tsc -p tests/declarations-consumer/tsconfig.json"
+    "test:declarations:package": "vitest run --config vitest.package.config.ts"
   },
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
