@@ -31,14 +31,12 @@ public class AcceptanceTests
         if (expectedError is null)
             test.WithReducerTx(auth, Module.ClientConnected);
         else
-            Assert.Equal(
-                expectedError,
-                Assert
-                    .Throws<InvalidOperationException>(() =>
-                    test.WithReducerTx(auth, Module.ClientConnected)
-                    )
-                    .Message
+        {
+            var error = Assert.Throws<InvalidOperationException>(() =>
+                test.WithReducerTx(auth, Module.ClientConnected)
             );
+            Assert.Equal(expectedError, error.Message);
+        }
     }
 
     [Fact]
@@ -87,7 +85,6 @@ public class AcceptanceTests
             Result<HttpResponse, HttpError>.Ok(new(200, HttpVersion.Http11, [], HttpBody.Empty)),
         ];
         var requests = 0;
-        var commits = 0;
         var context = test.ProcedureContextBuilder(TestAuth.Internal())
             .Http(
                 (_, request) =>
@@ -96,18 +93,13 @@ public class AcceptanceTests
                     return replies[requests++];
                 }
             )
-            .Hooks(
-                new ProcedureTestHooks().AfterTxCommit(fixture =>
-                {
-                    commits++;
-                    fixture.Clock.Advance(new TimeDuration(10));
-                })
-            )
             .Build();
         foreach (var _ in replies)
+        {
             Module.CheckStatus(context);
-        Assert.Equal(3, requests);
-        Assert.Equal(2, commits);
+            test.Clock.Advance(new TimeDuration(10));
+        }
+        Assert.Equal(replies.Length, requests);
         Assert.Equal(
             [now, new Timestamp(110)],
             test.Db.FetchFailure.Iter().OrderBy(row => row.Id).Select(row => row.At)

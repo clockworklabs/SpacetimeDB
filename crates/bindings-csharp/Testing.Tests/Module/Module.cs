@@ -76,8 +76,9 @@ public static class Schema
             .Single()
             .Submodules_.Single()
             .Module;
-        mounted.Sections.OfType<RawModuleDefV10Section.Environment>().Single().Environment_.Clear();
-        mounted.Sections.RemoveAll(section => section is RawModuleDefV10Section.LifeCycleReducers);
+        mounted.Sections.RemoveAll(section =>
+            section is RawModuleDefV10Section.Environment or RawModuleDefV10Section.LifeCycleReducers
+        );
         RawModuleDef schema = new RawModuleDef.V10(definition);
         return (
             IStructuralReadWrite.ToBytes(new RawModuleDef.BSATN(), schema),
