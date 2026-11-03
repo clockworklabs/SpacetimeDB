@@ -820,8 +820,9 @@ mod tests {
             assert_eq!(&*set.get(hash).unwrap(), bytes);
 
             // Removing every logical owner must still release the pinned frame.
-            set.free_ref(hash, EvictionPolicy::Evictable).unwrap();
-            set.free_ref(hash, EvictionPolicy::Evictable).unwrap();
+            for policy in policies {
+                set.free_ref(hash, policy).unwrap();
+            }
             assert_eq!(resident.usage().accounted_bytes(), 0);
             assert!(set.insert(EvictionPolicy::Evictable, b"replacement").is_ok());
         }
@@ -849,17 +850,22 @@ mod tests {
         let bytes = b"restored blob";
         let hash = BlobHashWrapper::hash_from_bytes(bytes);
         drop(set.insert(EvictionPolicy::Evictable, bytes).unwrap());
+        drop(set.insert(EvictionPolicy::Evictable, bytes).unwrap());
         assert_eq!(set.evict().unwrap().accounted_bytes(), 0);
 
-        // Snapshot recovery pins existing references. It must load the bytes
-        // and retain residency after pin()'s temporary handle has been dropped.
+        // Snapshot recovery assigns a pin to each of the two existing logical
+        // references. Neither pin() call may add another logical reference.
         set.pin(hash).unwrap();
         set.pin(hash).unwrap();
         assert_eq!(set.evict().unwrap().accounted_bytes(), bytes.len() as u64);
-        assert_eq!(set.usage_counter().get(&hash), Some(&1));
+        assert_eq!(set.usage_counter().get(&hash), Some(&2));
         assert_eq!(&*set.get(hash).unwrap(), bytes);
 
-        set.free_ref(hash, EvictionPolicy::Evictable).unwrap();
+        // Releasing one restored owner must retain the other owner's pin.
+        set.free_ref(hash, EvictionPolicy::NeverEvict).unwrap();
+        assert_eq!(set.usage_counter().get(&hash), Some(&1));
+        assert_eq!(set.evict().unwrap().accounted_bytes(), bytes.len() as u64);
+        set.free_ref(hash, EvictionPolicy::NeverEvict).unwrap();
         assert_eq!(set.evict().unwrap().accounted_bytes(), 0);
         assert!(matches!(set.pin(hash), Err(BlobError::MissingBlob(_))));
     }
