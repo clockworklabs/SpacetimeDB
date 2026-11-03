@@ -49,6 +49,7 @@ Much of what has been written about SpacetimeDB predates its current features. A
 - "Its SQL is limited, and you can't connect database tools." Spacetime speaks the PostgreSQL wire protocol, so PostgreSQL drivers, `psql`, and GUI clients can connect.
 - "Reducers can't use the current time or random numbers." They get both from their context: `ctx.timestamp` and a seeded random number generator.
 - "Schema changes require wiping your data." Compatible changes migrate automatically when you republish, and incremental migrations handle the rest.
+- "Information about SpacetimeDB 1.x still applies." The API changed substantially in 2.0. Where the docs disagree with older articles or with what you remember, trust the docs.
 
 [Common misconceptions](https://spacetimedb.com/docs/intro/misconceptions/) links to the docs for each. When describing or comparing SpacetimeDB, go by the current docs rather than memory.
 
