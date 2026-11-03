@@ -1821,6 +1821,7 @@ record ViewDeclaration
 /// </summary>
 record ReducerDeclaration
 {
+    private readonly bool managedAccess;
     private readonly string? declaringAssembly;
     public readonly string Name;
     public readonly string? CanonicalName;
@@ -1834,6 +1835,12 @@ record ReducerDeclaration
 
     public ReducerDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
+        managedAccess =
+            Module.UsesSharedContexts(context.SemanticModel.Compilation)
+            && !context.SemanticModel.Compilation.SyntaxTrees.Any(tree =>
+                tree.Options is CSharpParseOptions options
+                && options.PreprocessorSymbolNames.Contains("SPACETIMEDB_WASM_AOT")
+            );
         declaringAssembly = Module.UsesSharedContexts(context.SemanticModel.Compilation)
             ? context.SemanticModel.Compilation.Assembly.Identity.ToString()
             : null;
@@ -1917,6 +1924,27 @@ record ReducerDeclaration
     public Scope.Extensions GenerateSchedule()
     {
         var extensions = new Scope.Extensions(Scope, FullName);
+        if (managedAccess)
+        {
+            extensions.Contents.Append(
+                $$"""
+                [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
+                public static void VolatileNonatomicScheduleImmediate{{Name}}({{string.Join(
+                    ", ",
+                    Args.Select(a => $"{a.Type.Name} {a.Identifier}")
+                )}}) =>
+                    throw new System.NotSupportedException("VolatileNonatomicScheduleImmediate is unavailable in managed module tests. Call the function directly.");
+
+                [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
+                public static void VolatileNonatomicScheduleImmediate{{Name}}<__Context>(__Context __context{{string.Concat(
+                    Args.Select(a => $", {a.Type.Name} {a.Identifier}")
+                )}})
+                    where __Context : global::SpacetimeDB.Internal.IModuleContext =>
+                    throw new System.NotSupportedException("VolatileNonatomicScheduleImmediate is unavailable in managed module tests. Call the function directly.");
+                """
+            );
+            return extensions;
+        }
         var functionName = string.IsNullOrEmpty(CanonicalName)
             ? $"nameof({Identifier})"
             : SymbolDisplay.FormatLiteral(CanonicalName!, true);
@@ -1980,6 +2008,7 @@ record ReducerDeclaration
 /// </summary>
 record ProcedureDeclaration
 {
+    private readonly bool managedAccess;
     private readonly string? declaringAssembly;
     public readonly string Name;
     public readonly string? CanonicalName;
@@ -1996,6 +2025,12 @@ record ProcedureDeclaration
 
     public ProcedureDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
+        managedAccess =
+            Module.UsesSharedContexts(context.SemanticModel.Compilation)
+            && !context.SemanticModel.Compilation.SyntaxTrees.Any(tree =>
+                tree.Options is CSharpParseOptions options
+                && options.PreprocessorSymbolNames.Contains("SPACETIMEDB_WASM_AOT")
+            );
         declaringAssembly = Module.UsesSharedContexts(context.SemanticModel.Compilation)
             ? context.SemanticModel.Compilation.Assembly.Identity.ToString()
             : null;
@@ -2176,6 +2211,27 @@ record ProcedureDeclaration
         var functionName = string.IsNullOrEmpty(CanonicalName)
             ? $"nameof({Identifier})"
             : SymbolDisplay.FormatLiteral(CanonicalName!, true);
+        if (managedAccess)
+        {
+            extensions.Contents.Append(
+                $$"""
+                [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
+                public static void VolatileNonatomicScheduleImmediate{{Name}}({{string.Join(
+                    ", ",
+                    Args.Select(a => $"{a.Type.Name} {a.Identifier}")
+                )}}) =>
+                    throw new System.NotSupportedException("VolatileNonatomicScheduleImmediate is unavailable in managed module tests. Call the function directly.");
+
+                [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
+                public static void VolatileNonatomicScheduleImmediate{{Name}}<__Context>(__Context __context{{string.Concat(
+                    Args.Select(a => $", {a.Type.Name} {a.Identifier}")
+                )}})
+                    where __Context : global::SpacetimeDB.Internal.IModuleContext =>
+                    throw new System.NotSupportedException("VolatileNonatomicScheduleImmediate is unavailable in managed module tests. Call the function directly.");
+                """
+            );
+            return extensions;
+        }
         if (declaringAssembly is not null)
         {
             var cacheName = $"__Schedule{Name}Name";

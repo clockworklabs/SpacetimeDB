@@ -70,13 +70,14 @@ public static class Schema
         var root = new ModuleBuilder();
         root.RegisterSubmodule(mount, null, child);
         var definition = root.BuildModuleDefinition();
-        // This fixture only mounts tables; environment declarations are root-only.
+        // This fixture only mounts tables; environment and lifecycle declarations are root-only.
         var mounted = definition
             .Sections.OfType<RawModuleDefV10Section.Submodules>()
             .Single()
             .Submodules_.Single()
             .Module;
         mounted.Sections.OfType<RawModuleDefV10Section.Environment>().Single().Environment_.Clear();
+        mounted.Sections.RemoveAll(section => section is RawModuleDefV10Section.LifeCycleReducers);
         RawModuleDef schema = new RawModuleDef.V10(definition);
         return (
             IStructuralReadWrite.ToBytes(new RawModuleDef.BSATN(), schema),

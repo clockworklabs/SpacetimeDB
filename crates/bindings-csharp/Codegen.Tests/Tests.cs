@@ -327,6 +327,8 @@ public static class GeneratorSnapshotTests
         Assert.DoesNotContain("TableAccessor", generated);
         Assert.DoesNotContain("__access", generated);
         Assert.DoesNotContain("__owner", generated);
+        Assert.Contains("__ResolveScheduleInsertDataName", generated);
+        Assert.DoesNotContain("unavailable in managed module tests", generated);
     }
 
     [Fact]
