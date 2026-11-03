@@ -48,6 +48,17 @@ uint32_t STDB_TEST_CALL stdb_test_v1_datastore_create(
     const uint8_t *schema, uint64_t schema_len,
     StdbTestDatastore **out, StdbTestBuffer *error);
 
+/* Derive an identity using the production issuer/subject algorithm. Inputs are
+ * UTF-8 strings; claims validation is the caller's responsibility. No signature
+ * verification is performed. Output is one BSATN Identity (32 little-endian bytes),
+ * with the normal buffer/error ownership contract. This stateless call requires
+ * no datastore or handle lock.
+ */
+uint32_t STDB_TEST_CALL stdb_test_v1_identity_from_claims(
+    const uint8_t *issuer, uint64_t issuer_len,
+    const uint8_t *subject, uint64_t subject_len,
+    StdbTestBuffer *out, StdbTestBuffer *error);
+
 /* Calls using a handle must be serialized by the caller, including destruction.
  * Handles may move between caller threads. Native state lives on a dedicated
  * owner thread so transactions can be released from any caller thread

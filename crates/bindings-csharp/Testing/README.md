@@ -2,8 +2,15 @@
 
 This .NET 10 project provides `TestContext.Create(typeof(Module).Assembly)`,
 fixture-owned `Db`, and synchronous `WithReducerTx` callbacks backed by the native
-test datastore. Use `TestAuth.Internal()` for the database identity. Transactions
-commit on normal return and roll back on exceptions; their handles are invalid
+test datastore. Use `TestAuth.Internal()` for the database identity, or
+`TestAuth.FromJwtPayload(json, connectionId)` for a client. Client credentials
+require a nonzero connection ID and string `iss`/`sub` claims of 1-128 UTF-8 bytes.
+An optional `hex_identity` must match the derived identity. Other claims are
+preserved for the existing `JwtClaims` API; signatures and expiry are not checked.
+Identity derivation uses the production Rust implementation through the native
+test bridge, without adding a hashing dependency to Runtime. Rebuild the bridge
+when updating to this API. Credentials are reusable; parsed claims are per invocation.
+Transactions commit on normal return and roll back on exceptions; their handles are invalid
 after the callback finishes. Default clocks start at the Unix epoch, and RNGs
 start at root seed zero. `Clock.Set`/`Advance` and `Rng.SetSeed`/`ClearSeed` control
 subsequent contexts. Managed module logging writes to standard error.
@@ -14,7 +21,7 @@ fixtures may run in parallel. Table deletion and clearing use the owning
 transaction, and the engine removes event rows on commit. Unique-index lookup,
 update, and deletion use fixture-owned index resolution, including mounted modules.
 Range filtering and deletion support the existing inclusive bounds and composite
-prefixes, with owner-lifetime checks on iterators. JWT auth, views, procedures,
+prefixes, with owner-lifetime checks on iterators. Views, procedures,
 and other host services are still pending.
 
 NuGet packaging and native asset distribution are deferred; this project is

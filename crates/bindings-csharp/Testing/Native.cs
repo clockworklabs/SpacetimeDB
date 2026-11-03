@@ -65,6 +65,42 @@ internal static unsafe class Native
         }
     }
 
+    internal static Identity IdentityFromClaims(string issuer, string subject)
+    {
+        EnsureAvailable();
+        var issuerBytes = Encoding.UTF8.GetBytes(issuer);
+        var subjectBytes = Encoding.UTF8.GetBytes(subject);
+        fixed (
+            byte* issuerPtr = issuerBytes,
+                subjectPtr = subjectBytes
+        )
+        {
+            var status = IdentityFromClaimsNative(
+                issuerPtr,
+                (ulong)issuerBytes.Length,
+                subjectPtr,
+                (ulong)subjectBytes.Length,
+                out var output,
+                out var error
+            );
+            return new Identity(TakeBytes(status, ref output, ref error));
+        }
+    }
+
+    [DllImport(
+        Library,
+        EntryPoint = "stdb_test_v1_identity_from_claims",
+        CallingConvention = CallingConvention.Cdecl
+    )]
+    private static extern NativeStatus IdentityFromClaimsNative(
+        byte* issuer,
+        ulong issuerLength,
+        byte* subject,
+        ulong subjectLength,
+        out NativeBuffer output,
+        out NativeBuffer error
+    );
+
     internal static void ValidateVersion(uint version)
     {
         if (version != AbiVersion)

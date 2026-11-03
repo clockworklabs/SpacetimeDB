@@ -155,6 +155,32 @@ fn contain_panic<T>(f: impl FnOnce() -> Result<T, Failure>) -> Result<T, Failure
     })
 }
 
+/// Derive an identity from UTF-8 issuer and subject strings, without a datastore.
+///
+/// # Safety
+/// Pointers must satisfy the ownership and memory contract in the C header.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn stdb_test_v1_identity_from_claims(
+    issuer: *const u8,
+    issuer_len: u64,
+    subject: *const u8,
+    subject_len: u64,
+    out: *mut StdbTestBuffer,
+    error: *mut StdbTestBuffer,
+) -> u32 {
+    unsafe {
+        with_output(out, error, || {
+            let issuer = std::str::from_utf8(input_bytes(issuer, issuer_len)?)
+                .map_err(|err| (INVALID_ARGUMENT, err.to_string()))?;
+            let subject = std::str::from_utf8(input_bytes(subject, subject_len)?)
+                .map_err(|err| (INVALID_ARGUMENT, err.to_string()))?;
+            let identity = spacetimedb_lib::Identity::from_claims(issuer, subject);
+            let bytes = bsatn::to_vec(&identity).map_err(|err| (INTERNAL_ERROR, err.to_string()))?;
+            Ok(StdbTestBuffer::from_bytes(bytes))
+        })
+    }
+}
+
 fn create(schema: &[u8]) -> Result<StdbTestDatastore, Failure> {
     let mut remaining = schema;
     let raw: RawModuleDef = bsatn::from_reader(&mut remaining).map_err(|err| (INVALID_SCHEMA, err.to_string()))?;
@@ -279,6 +305,48 @@ mod tests {
             .build_table_with_new_type("person", ProductType::from([("id", AlgebraicType::I64)]), true)
             .finish();
         bsatn::to_vec(&RawModuleDef::V10(builder.finish())).unwrap()
+    }
+
+    #[test]
+    fn claims_identity_matches_production_and_rejects_invalid_utf8() {
+        let issuer = "test-issuer";
+        let subject = "alice";
+        let mut output = StdbTestBuffer::EMPTY;
+        let mut error = StdbTestBuffer::EMPTY;
+        unsafe {
+            assert_eq!(
+                stdb_test_v1_identity_from_claims(
+                    issuer.as_ptr(),
+                    issuer.len() as u64,
+                    subject.as_ptr(),
+                    subject.len() as u64,
+                    &mut output,
+                    &mut error,
+                ),
+                OK
+            );
+            assert_eq!(output.len, 32);
+            let identity: spacetimedb_lib::Identity =
+                bsatn::from_slice(std::slice::from_raw_parts(output.data, output.len as usize)).unwrap();
+            assert_eq!(identity, spacetimedb_lib::Identity::from_claims(issuer, subject));
+            stdb_test_v1_buffer_free(&mut output);
+            stdb_test_v1_buffer_free(&mut error);
+
+            assert_eq!(
+                stdb_test_v1_identity_from_claims(
+                    [0xff].as_ptr(),
+                    1,
+                    subject.as_ptr(),
+                    subject.len() as u64,
+                    &mut output,
+                    &mut error
+                ),
+                INVALID_ARGUMENT
+            );
+            assert!(output.data.is_null());
+            assert!(error.len > 0);
+            stdb_test_v1_buffer_free(&mut error);
+        }
     }
 
     #[test]

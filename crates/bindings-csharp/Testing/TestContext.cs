@@ -106,8 +106,8 @@ public sealed class TestContext : IDisposable
         using var transaction = backend.BeginTransaction();
         var context = new ReducerContext(
             new SpacetimeDB.Local(new DatabaseAccess(transaction)),
-            backend.DatabaseIdentity,
-            null,
+            auth.Sender ?? backend.DatabaseIdentity,
+            auth.ConnectionId,
             Rng.CreateRandom(),
             Clock.Now,
             auth.SenderAuth

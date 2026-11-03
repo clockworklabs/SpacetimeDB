@@ -11,12 +11,15 @@ public sealed class AuthCtx
     private readonly Lazy<JwtClaims?> _jwtLazy;
 
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
-    internal static AuthCtx InternalForTesting() => new();
+    internal static AuthCtx InternalForTesting() => new(true, static () => null);
 
-    private AuthCtx()
+    internal static AuthCtx FromJwtPayload(string payload, Identity identity) =>
+        new(false, () => new JwtClaims(payload, identity));
+
+    private AuthCtx(bool isInternal, Func<JwtClaims?> jwtFactory)
     {
-        _isInternal = new Lazy<bool>(() => true);
-        _jwtLazy = new Lazy<JwtClaims?>(() => null);
+        _isInternal = new Lazy<bool>(() => isInternal);
+        _jwtLazy = new Lazy<JwtClaims?>(jwtFactory);
     }
 #endif
 
