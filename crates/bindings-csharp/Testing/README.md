@@ -39,8 +39,18 @@ later failures. Each transaction gets fresh handles and a timestamp from the
 fixture clock at entry. Auth and RNG are shared with the procedure, and environment
 reads remain live. Escaped transaction handles never become valid again.
 Use `tx.Db` inside the callback, not `procedure.Db`; nested transactions and
-async/awaitable callbacks are rejected. HTTP responders and after-commit hooks
-are not implemented yet.
+async/awaitable callbacks are rejected. After-commit hooks are not implemented yet.
+
+Use `ProcedureContextBuilder(auth).Http((fixture, request) => ...).Build()` to
+install a per-context HTTP responder returning `Result<HttpResponse, HttpError>`.
+It receives the existing SpacetimeDB request types, including the body. Non-2xx
+responses remain `Ok`; transport failures are `Err`. Responder exceptions and
+assertion failures propagate unchanged. Without a responder, HTTP returns
+`no test HTTP responder configured` and never calls the network or host imports.
+HTTP is rejected while any transaction on that fixture is active. Empty URIs
+and negative timeouts are rejected, and timeouts above 180 seconds are clamped
+without changing the caller's request. Built contexts retain their responder
+even if the builder is later reconfigured; fixture disposal invalidates HTTP.
 
 Use one execution flow per fixture. Async callbacks and multicast delegates are
 rejected; returned `Task`/`ValueTask` values also cause rollback. Independent

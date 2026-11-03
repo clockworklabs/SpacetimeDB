@@ -70,12 +70,14 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
         Identity sender,
         ConnectionId? connectionId,
         Random random,
-        AuthCtx auth
+        AuthCtx auth,
+        HttpClient http
     )
     {
         Sender = sender;
         ConnectionId = connectionId;
         SenderAuth = auth;
+        Http = http;
         Env = new(new Internal.DatabaseAccess(backend));
         txState = new(
             random,

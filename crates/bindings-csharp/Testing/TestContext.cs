@@ -107,7 +107,20 @@ public sealed class TestContext : IDisposable
         new(new LocalReadOnly(new DatabaseAccess(backend)));
 
     /// <summary>Creates a procedure context whose explicit transactions share this fixture.</summary>
-    public ProcedureContext ProcedureContext(TestAuth auth)
+    public ProcedureContext ProcedureContext(TestAuth auth) => CreateProcedureContext(auth, null);
+
+    /// <summary>Configures responders for a new procedure context.</summary>
+    public ProcedureContextBuilder ProcedureContextBuilder(TestAuth auth)
+    {
+        ArgumentNullException.ThrowIfNull(auth);
+        backend.CheckActive();
+        return new(this, auth);
+    }
+
+    internal ProcedureContext CreateProcedureContext(
+        TestAuth auth,
+        Func<TestContext, HttpRequest, Result<HttpResponse, HttpError>>? responder
+    )
     {
         ArgumentNullException.ThrowIfNull(auth);
         backend.CheckActive();
@@ -117,8 +130,47 @@ public sealed class TestContext : IDisposable
             auth.Sender ?? backend.DatabaseIdentity,
             auth.ConnectionId,
             Rng.CreateRandom(),
-            auth.SenderAuth
+            auth.SenderAuth,
+            new HttpClient(request => SendHttp(request, responder))
         );
+    }
+
+    private Result<HttpResponse, HttpError> SendHttp(
+        HttpRequest request,
+        Func<TestContext, HttpRequest, Result<HttpResponse, HttpError>>? responder
+    )
+    {
+        backend.CheckActive();
+        if (backend.HasActiveTransaction)
+            return Result<HttpResponse, HttpError>.Err(
+                new HttpError(
+                    "HTTP requests cannot be performed while a mutable transaction is open (WOULD_BLOCK_TRANSACTION)."
+                )
+            );
+        if (responder is null)
+            return Result<HttpResponse, HttpError>.Err(
+                new HttpError("no test HTTP responder configured")
+            );
+        ArgumentNullException.ThrowIfNull(request);
+        if (string.IsNullOrEmpty(request.Uri))
+            return Result<HttpResponse, HttpError>.Err(
+                new HttpError("URI must not be null or empty")
+            );
+        if (request.Timeout < TimeSpan.Zero)
+            return Result<HttpResponse, HttpError>.Err(
+                new HttpError("Timeout must not be negative")
+            );
+        if (request.Timeout > TimeSpan.FromSeconds(180))
+            request = new HttpRequest
+            {
+                Uri = request.Uri,
+                Method = request.Method,
+                Headers = request.Headers,
+                Body = request.Body,
+                Version = request.Version,
+                Timeout = TimeSpan.FromSeconds(180),
+            };
+        return responder(this, request);
     }
 
     /// <summary>Materializes a SELECT against committed data. Rejects active transactions.</summary>

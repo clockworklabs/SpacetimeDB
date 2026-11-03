@@ -16,6 +16,7 @@ internal sealed class DatabaseBackend : IDatabaseBackend
 
     public NamespaceRegistry Namespaces { get; }
     public Identity DatabaseIdentity => default;
+    internal bool HasActiveTransaction { get; private set; }
 
     internal DatabaseBackend(
         ReadOnlySpan<byte> schema,
@@ -105,7 +106,9 @@ internal sealed class DatabaseBackend : IDatabaseBackend
     public IDatabaseTransaction BeginTransaction()
     {
         CheckActive();
-        return new Transaction(this, datastore.Begin());
+        var transaction = new Transaction(this, datastore.Begin());
+        HasActiveTransaction = true;
+        return transaction;
     }
 
     public void Dispose() => datastore.Dispose();
@@ -246,7 +249,7 @@ internal sealed class DatabaseBackend : IDatabaseBackend
             }
             finally
             {
-                finished = true;
+                Finish();
             }
         }
 
@@ -259,10 +262,28 @@ internal sealed class DatabaseBackend : IDatabaseBackend
             }
             finally
             {
-                finished = true;
+                Finish();
             }
         }
 
-        public void Dispose() => transaction.Dispose();
+        private void Finish()
+        {
+            if (finished)
+                return;
+            finished = true;
+            backend.HasActiveTransaction = false;
+        }
+
+        public void Dispose()
+        {
+            try
+            {
+                transaction.Dispose();
+            }
+            finally
+            {
+                Finish();
+            }
+        }
     }
 }

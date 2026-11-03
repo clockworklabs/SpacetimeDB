@@ -255,9 +255,10 @@ public sealed partial class ProcedureContext
         Identity sender,
         ConnectionId? connectionId,
         Random random,
-        AuthCtx auth
+        AuthCtx auth,
+        HttpClient http
     )
-        : base(backend, clock, sender, connectionId, random, auth) => Db = new Local();
+        : base(backend, clock, sender, connectionId, random, auth, http) => Db = new Local();
 #endif
 
     public Local Db { get; private set; }
