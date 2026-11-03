@@ -109,7 +109,7 @@ public sealed class TestContext : IDisposable
     /// <summary>Creates a procedure context whose explicit transactions share this fixture.</summary>
     public ProcedureContext ProcedureContext(TestAuth auth) => CreateProcedureContext(auth, null);
 
-    /// <summary>Configures responders for a new procedure context.</summary>
+    /// <summary>Configures responders and hooks for a new procedure context.</summary>
     public ProcedureContextBuilder ProcedureContextBuilder(TestAuth auth)
     {
         ArgumentNullException.ThrowIfNull(auth);
@@ -119,7 +119,8 @@ public sealed class TestContext : IDisposable
 
     internal ProcedureContext CreateProcedureContext(
         TestAuth auth,
-        Func<TestContext, HttpRequest, Result<HttpResponse, HttpError>>? responder
+        Func<TestContext, HttpRequest, Result<HttpResponse, HttpError>>? responder,
+        Action<TestContext>? afterCommit = null
     )
     {
         ArgumentNullException.ThrowIfNull(auth);
@@ -131,7 +132,8 @@ public sealed class TestContext : IDisposable
             auth.ConnectionId,
             Rng.CreateRandom(),
             auth.SenderAuth,
-            new HttpClient(request => SendHttp(request, responder))
+            new HttpClient(request => SendHttp(request, responder)),
+            afterCommit is null ? null : () => afterCommit(this)
         );
     }
 

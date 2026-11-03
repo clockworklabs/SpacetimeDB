@@ -39,7 +39,16 @@ later failures. Each transaction gets fresh handles and a timestamp from the
 fixture clock at entry. Auth and RNG are shared with the procedure, and environment
 reads remain live. Escaped transaction handles never become valid again.
 Use `tx.Db` inside the callback, not `procedure.Db`; nested transactions and
-async/awaitable callbacks are rejected. After-commit hooks are not implemented yet.
+async/awaitable callbacks are rejected.
+
+Add `new ProcedureTestHooks().AfterTxCommit(fixture => { ... })` with the builder's
+`Hooks(...)` method to run a synchronous callback after each successful procedure
+transaction has committed and closed. Hooks can access committed data and advance
+the fixture clock for the next transaction. They do not run after rollback.
+Hook exceptions propagate directly from both `WithTx` and `TryWithTx`, without
+undoing the commit or being converted into `TxOutcome` failures. Built contexts
+capture their hook; later changes to the hook configuration do not affect them.
+Calling `AfterTxCommit` again replaces the configured callback. There is no sleep hook.
 
 Use `ProcedureContextBuilder(auth).Http((fixture, request) => ...).Build()` to
 install a per-context HTTP responder returning `Result<HttpResponse, HttpError>`.

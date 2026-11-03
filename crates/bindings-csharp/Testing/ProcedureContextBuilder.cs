@@ -6,6 +6,7 @@ public sealed class ProcedureContextBuilder
     private readonly TestContext fixture;
     private readonly TestAuth auth;
     private Func<TestContext, HttpRequest, Result<HttpResponse, HttpError>>? responder;
+    private ProcedureTestHooks? hooks;
 
     internal ProcedureContextBuilder(TestContext fixture, TestAuth auth)
     {
@@ -23,5 +24,14 @@ public sealed class ProcedureContextBuilder
         return this;
     }
 
-    public ProcedureContext Build() => fixture.CreateProcedureContext(auth, responder);
+    /// <summary>Sets hooks captured when the context is built.</summary>
+    public ProcedureContextBuilder Hooks(ProcedureTestHooks hooks)
+    {
+        ArgumentNullException.ThrowIfNull(hooks);
+        this.hooks = hooks;
+        return this;
+    }
+
+    public ProcedureContext Build() =>
+        fixture.CreateProcedureContext(auth, responder, hooks?.AfterCommit);
 }

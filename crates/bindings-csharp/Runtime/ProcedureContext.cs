@@ -71,7 +71,8 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
         ConnectionId? connectionId,
         Random random,
         AuthCtx auth,
-        HttpClient http
+        HttpClient http,
+        Action? afterCommit
     )
     {
         Sender = sender;
@@ -95,6 +96,7 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
         {
             Backend = backend,
             Clock = clock,
+            AfterCommit = afterCommit,
             CreateManagedTxContext = (transaction, timestamp) =>
                 new Internal.TxContext(
                     new Local(new Internal.DatabaseAccess(transaction)),

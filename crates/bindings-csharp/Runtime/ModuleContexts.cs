@@ -256,9 +256,10 @@ public sealed partial class ProcedureContext
         ConnectionId? connectionId,
         Random random,
         AuthCtx auth,
-        HttpClient http
+        HttpClient http,
+        Action? afterCommit
     )
-        : base(backend, clock, sender, connectionId, random, auth, http) => Db = new Local();
+        : base(backend, clock, sender, connectionId, random, auth, http, afterCommit) => Db = new Local();
 #endif
 
     public Local Db { get; private set; }
