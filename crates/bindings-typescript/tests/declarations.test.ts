@@ -43,9 +43,7 @@ const declarations = {
   actions: root.exportGroup({ default: root.reducer({}) }),
 };
 
-const client = createClient(declarations, {
-  tableAliases: { people_legacy: 'people' },
-});
+const client = createClient(declarations);
 
 // Consumer coverage: the inferred interface must reject invalid code as well as
 // accept valid code, rather than silently widening the module to `any`.
@@ -95,7 +93,6 @@ describe('module declarations', () => {
     expect(declarations.greet.returnType.algebraicType.tag).toBe('String');
     expect(people.rowType.row.id.columnMetadata.isAutoIncrement).toBe(true);
     expect(people.rowType.row.age.columnMetadata.defaultValue).toBe(18);
-    expect(client.tables.people_legacy).toBe(client.tables.people);
     expect(client.tables.people.toSql()).toBe('SELECT * FROM "people"');
     expect(client.tables.auth.people.toSql()).toBe(
       'SELECT * FROM "auth_wire"."people"'
@@ -110,7 +107,6 @@ describe('module declarations', () => {
       .withWSFn(ws.openWebSocket)
       .build();
     expect(conn).toBeInstanceOf(client.DbConnection);
-    expect(conn.db.people_legacy).toBe(conn.db.people);
     const module = conn[INTERNAL_REMOTE_MODULE]();
     expect(module.viewsWithArgs).toEqual(['named']);
     expect(Object.keys(module.tables)).toEqual([

@@ -11,7 +11,6 @@ import {
 } from '../../index';
 const client = createClient(declarations, {
   cliVersion: '2.13.0',
-  tableAliases: {},
 });
 export const {
   DbConnection,
@@ -27,20 +26,11 @@ export type SubscriptionBuilder = InstanceType<typeof SubscriptionBuilder>;
 type RemoteModule = RemoteModuleOfDeclarations<typeof declarations>;
 export type DbView = DbConnection['db'];
 export type Tables = typeof tables;
-export type EventContext = Omit<EventContextInterface<RemoteModule>, 'db'> & {
-  db: DbView;
-};
-export type ReducerEventContext = Omit<
-  ReducerEventContextInterface<RemoteModule>,
-  'db'
-> & { db: DbView };
-export type SubscriptionEventContext = Omit<
-  SubscriptionEventContextInterface<RemoteModule>,
-  'db'
-> & { db: DbView };
-export type ErrorContext = Omit<ErrorContextInterface<RemoteModule>, 'db'> & {
-  db: DbView;
-};
+export type EventContext = EventContextInterface<RemoteModule>;
+export type ReducerEventContext = ReducerEventContextInterface<RemoteModule>;
+export type SubscriptionEventContext =
+  SubscriptionEventContextInterface<RemoteModule>;
+export type ErrorContext = ErrorContextInterface<RemoteModule>;
 export type SubscriptionHandle = SubscriptionHandleImpl<RemoteModule>;
 export type * as Reducers from './types/reducers';
 export type * as Procedures from './types/procedures';

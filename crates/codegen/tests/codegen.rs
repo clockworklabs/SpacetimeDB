@@ -52,11 +52,16 @@ fn test_typescript_table_handles_are_camel_case() {
         r#"
 import assert from 'node:assert/strict';
 import { DbConnection, tables, type EventContext } from './index';
-assert.equal(tables.logged_out_player, tables.loggedOutPlayer);
-assert.equal(tables.my_player, tables.myPlayer);
+assert.equal(tables.loggedOutPlayer.sourceName, 'logged_out_player');
+assert.equal(tables.myPlayer.sourceName, 'my_player');
+assert.equal('logged_out_player' in tables, false);
+// @ts-expect-error legacy spellings are not generated accessors
+void tables.logged_out_player;
 function consume(conn: DbConnection, ctx: EventContext) {
-  const same: typeof conn.db.loggedOutPlayer = ctx.db.logged_out_player;
-  const player: typeof conn.db.myPlayer = conn.db.my_player;
+  const same: typeof conn.db.loggedOutPlayer = ctx.db.loggedOutPlayer;
+  const player: typeof conn.db.myPlayer = conn.db.myPlayer;
+  // @ts-expect-error legacy spellings are not generated accessors
+  void conn.db.logged_out_player;
   void same; void player;
 }
 void consume;
@@ -211,13 +216,13 @@ import { DbConnection, DbConnectionBuilder, tables, reducers, procedures, type E
 const builder: DbConnectionBuilder = DbConnection.builder().withUri('ws://localhost:3000').withDatabaseName('example');
 assert.equal(typeof builder.build, 'function');
 assert.equal(tables.person.toSql(), 'SELECT * FROM "person"');
-assert.equal(tables.logged_out_player, tables.loggedOutPlayer);
+assert.equal(tables.loggedOutPlayer.sourceName, 'logged_out_player');
 assert.equal(reducers.add.name, 'add');
 assert.equal(procedures.returnValue.name, 'return_value');
 function consume(conn: DbConnection, ctx: EventContext) {
   conn.reducers.add({ name: 'Alice', age: 30 });
   const age: number | undefined = conn.db.person.id.find(1)?.age;
-  const same: typeof conn.db.loggedOutPlayer = ctx.db.logged_out_player;
+  const same: typeof conn.db.loggedOutPlayer = ctx.db.loggedOutPlayer;
   // @ts-expect-error invalid argument
   conn.reducers.add({ name: 123, age: 30 });
   // @ts-expect-error unknown table

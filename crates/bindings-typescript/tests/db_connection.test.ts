@@ -155,15 +155,16 @@ function encodeMyUserProcedural(value: MyUserViewRow): Uint8Array {
 }
 
 describe('DbConnection', () => {
-  test('keeps deprecated snake_case db aliases working', async () => {
+  test('exposes camelCase db accessors without legacy aliases', async () => {
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withDatabaseName('db')
       .withWSFn(() => Promise.reject(new Error('expected test failure')))
       .build();
 
-    assertType<typeof client.db.unindexedPlayer>(client.db.unindexed_player);
-    expect(client.db.unindexed_player).toBe(client.db.unindexedPlayer);
+    expect(client.db.unindexedPlayer).toBeDefined();
+    // @ts-expect-error legacy table aliases are not part of the new bindings
+    expect(client.db.unindexed_player).toBeUndefined();
 
     await client['wsPromise'];
   });
