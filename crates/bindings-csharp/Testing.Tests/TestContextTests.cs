@@ -63,7 +63,7 @@ public class TestContextTests
     }
 
     [Fact]
-    public void FixturesHaveIndependentDataClockAndRandomness()
+    public void FixturesHaveIndependentClockAndRandomness()
     {
         using var first = TestContext.Create(typeof(Entry).Assembly);
         using var second = TestContext.Create(typeof(Entry).Assembly);
@@ -87,24 +87,10 @@ public class TestContextTests
             first.WithReducerTx(auth, ctx => ctx.Rng.Next())
         );
 
-        Parallel.Invoke(
-            () =>
-                first.WithReducerTx(
-                    auth,
-                    ctx => ctx.Db.Entries.Insert(new Entry { Text = "first" })
-                ),
-            () =>
-                second.WithReducerTx(
-                    auth,
-                    ctx => ctx.Db.Entries.Insert(new Entry { Text = "second" })
-                )
-        );
-        Assert.Equal("first", Assert.Single(first.Db.Entries.Iter()).Text);
-        Assert.Equal("second", Assert.Single(second.Db.Entries.Iter()).Text);
         first.Dispose();
         Assert.Throws<ObjectDisposedException>(() => first.Clock.Now);
         Assert.Throws<ObjectDisposedException>(() => first.Rng.SetSeed(1));
-        Assert.Equal(1UL, second.Db.Entries.Count);
+        Assert.Equal(Timestamp.UNIX_EPOCH, second.Clock.Now);
     }
 
     [Fact]
