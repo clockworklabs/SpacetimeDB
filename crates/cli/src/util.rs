@@ -441,6 +441,7 @@ pub async fn get_login_token_or_log_in(
         && YesOrNo::new("You are not logged in. Would you like to log in with spacetimedb.com?")
             .force(false)
             .default(true)
+            .on_eof(false)
             .prompt()?;
 
     if full_login {
@@ -461,6 +462,7 @@ pub async fn get_login_token_or_log_in(
             YesOrNo::new(message)
                 .force(login_mode == LoginMode::ServerIssued)
                 .default(false)
+                .on_eof(true)
                 .prompt()?,
             "Login cancelled. Run `spacetime login` to log in with spacetimedb.com."
         );

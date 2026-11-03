@@ -77,6 +77,19 @@ fn cli_list_without_login_rejects_yes() {
 }
 
 #[test]
+fn cli_list_without_login_uses_server_issued_identity_on_eof() {
+    require_server_issued_login!();
+    let test = Smoketest::builder()
+        .precompiled_module("noop")
+        .autopublish(false)
+        .build();
+    fs::write(&test.config_path, "").unwrap();
+    let output = test.spacetime(&["list", "--server", &test.server_url]).unwrap();
+    assert!(output.contains("WARNING"));
+    test.read_token().expect("EOF should accept the server-issued login");
+}
+
+#[test]
 fn cli_publish_skip_login_accepts_server_issued_identity() {
     require_server_issued_login!();
     let test = Smoketest::builder()
