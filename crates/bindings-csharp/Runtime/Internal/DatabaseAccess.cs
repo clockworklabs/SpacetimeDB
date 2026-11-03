@@ -22,6 +22,22 @@ internal interface IDatabaseTransaction : IDisposable
     byte[] Scan(string assemblyIdentity, string table);
     byte[] IndexScanPoint(string assemblyIdentity, string index, byte[] point);
     bool IndexDeletePoint(string assemblyIdentity, string index, byte[] point);
+    byte[] IndexScanRange(
+        string assemblyIdentity,
+        string index,
+        ushort prefixElems,
+        byte[] prefix,
+        byte[] start,
+        byte[] end
+    );
+    uint IndexDeleteRange(
+        string assemblyIdentity,
+        string index,
+        ushort prefixElems,
+        byte[] prefix,
+        byte[] start,
+        byte[] end
+    );
     byte[] Update(string assemblyIdentity, string table, string index, byte[] row);
 }
 

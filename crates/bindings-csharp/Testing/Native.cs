@@ -270,6 +270,44 @@ internal static unsafe class Native
 
     [DllImport(
         Library,
+        EntryPoint = "stdb_test_v1_index_scan_range",
+        CallingConvention = CallingConvention.Cdecl
+    )]
+    internal static extern NativeStatus IndexScanRange(
+        NativeTransaction transaction,
+        uint index,
+        byte* prefix,
+        ulong prefixLength,
+        ushort prefixElems,
+        byte* start,
+        ulong startLength,
+        byte* end,
+        ulong endLength,
+        out NativeBuffer output,
+        out NativeBuffer error
+    );
+
+    [DllImport(
+        Library,
+        EntryPoint = "stdb_test_v1_index_delete_range",
+        CallingConvention = CallingConvention.Cdecl
+    )]
+    internal static extern NativeStatus IndexDeleteRange(
+        NativeTransaction transaction,
+        uint index,
+        byte* prefix,
+        ulong prefixLength,
+        ushort prefixElems,
+        byte* start,
+        ulong startLength,
+        byte* end,
+        ulong endLength,
+        out uint deleted,
+        out NativeBuffer error
+    );
+
+    [DllImport(
+        Library,
         EntryPoint = "stdb_test_v1_table_update",
         CallingConvention = CallingConvention.Cdecl
     )]

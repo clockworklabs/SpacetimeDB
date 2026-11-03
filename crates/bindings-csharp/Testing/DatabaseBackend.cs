@@ -70,6 +70,44 @@ internal sealed class DatabaseBackend : IDatabaseBackend
             return transaction.IndexDeletePoint(IndexId(assemblyIdentity, index), point);
         }
 
+        public byte[] IndexScanRange(
+            string assemblyIdentity,
+            string index,
+            ushort prefixElems,
+            byte[] prefix,
+            byte[] start,
+            byte[] end
+        )
+        {
+            CheckActive();
+            return transaction.IndexScanRange(
+                IndexId(assemblyIdentity, index),
+                prefixElems,
+                prefix,
+                start,
+                end
+            );
+        }
+
+        public uint IndexDeleteRange(
+            string assemblyIdentity,
+            string index,
+            ushort prefixElems,
+            byte[] prefix,
+            byte[] start,
+            byte[] end
+        )
+        {
+            CheckActive();
+            return transaction.IndexDeleteRange(
+                IndexId(assemblyIdentity, index),
+                prefixElems,
+                prefix,
+                start,
+                end
+            );
+        }
+
         public byte[] Update(string assemblyIdentity, string table, string index, byte[] row)
         {
             CheckActive();

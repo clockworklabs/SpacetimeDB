@@ -79,6 +79,31 @@ public readonly struct TableAccessor
         return Execute(tx => tx.IndexDeletePoint(assembly, index, point));
     }
 
+    internal IEnumerable<T> IndexScanRange<T>(
+        string index,
+        ushort prefixElems,
+        byte[] prefix,
+        byte[] start,
+        byte[] end
+    )
+        where T : IStructuralReadWrite, new()
+    {
+        var assembly = assemblyIdentity;
+        return Iter<T>(tx => tx.IndexScanRange(assembly, index, prefixElems, prefix, start, end));
+    }
+
+    internal uint IndexDeleteRange(
+        string index,
+        ushort prefixElems,
+        byte[] prefix,
+        byte[] start,
+        byte[] end
+    )
+    {
+        var assembly = assemblyIdentity;
+        return Execute(tx => tx.IndexDeleteRange(assembly, index, prefixElems, prefix, start, end));
+    }
+
     internal byte[] Update(string index, byte[] row)
     {
         var (assembly, name) = (assemblyIdentity, table);
@@ -106,14 +131,6 @@ public readonly struct TableAccessor
         access!.CheckActive();
         if (reader.BaseStream.Position != reader.BaseStream.Length)
             throw new InvalidDataException("Trailing bytes in native table snapshot.");
-    }
-
-    internal TResult RejectUnsupported<TResult>(string operation)
-    {
-        DatabaseAccess.Require(access).CheckActive();
-        throw new NotSupportedException(
-            $"Managed module testing does not yet support {operation}."
-        );
     }
 }
 #endif

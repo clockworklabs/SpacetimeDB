@@ -126,6 +126,71 @@ internal sealed unsafe class NativeTransaction(NativeDatastore datastore)
             }
     }
 
+    internal byte[] IndexScanRange(
+        uint index,
+        ushort prefixElems,
+        ReadOnlySpan<byte> prefix,
+        ReadOnlySpan<byte> start,
+        ReadOnlySpan<byte> end
+    )
+    {
+        lock (datastore.Sync)
+            fixed (
+                byte* prefixBytes = prefix,
+                    startBytes = start,
+                    endBytes = end
+            )
+            {
+                var status = Native.IndexScanRange(
+                    this,
+                    index,
+                    prefixBytes,
+                    (ulong)prefix.Length,
+                    prefixElems,
+                    startBytes,
+                    (ulong)start.Length,
+                    endBytes,
+                    (ulong)end.Length,
+                    out var output,
+                    out var error
+                );
+                return Native.TakeBytes(status, ref output, ref error);
+            }
+    }
+
+    internal uint IndexDeleteRange(
+        uint index,
+        ushort prefixElems,
+        ReadOnlySpan<byte> prefix,
+        ReadOnlySpan<byte> start,
+        ReadOnlySpan<byte> end
+    )
+    {
+        lock (datastore.Sync)
+            fixed (
+                byte* prefixBytes = prefix,
+                    startBytes = start,
+                    endBytes = end
+            )
+            {
+                var status = Native.IndexDeleteRange(
+                    this,
+                    index,
+                    prefixBytes,
+                    (ulong)prefix.Length,
+                    prefixElems,
+                    startBytes,
+                    (ulong)start.Length,
+                    endBytes,
+                    (ulong)end.Length,
+                    out var deleted,
+                    out var error
+                );
+                Native.Check(status, ref error);
+                return deleted;
+            }
+    }
+
     internal byte[] Update(uint table, uint index, ReadOnlySpan<byte> row)
     {
         lock (datastore.Sync)

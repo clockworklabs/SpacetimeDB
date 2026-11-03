@@ -31,6 +31,21 @@ public partial class Account
     public string Name = "";
 }
 
+[Table(Accessor = "Points")]
+[SpacetimeDB.Index.BTree(
+    Accessor = "ByGroupScore",
+    Columns = [nameof(Group), nameof(Score), nameof(Id)]
+)]
+public partial struct Point
+{
+    [PrimaryKey]
+    public uint Id;
+    public uint Group;
+
+    [SpacetimeDB.Index.BTree]
+    public uint Score;
+}
+
 public static class Schema
 {
     public static NamespaceRegistry CreateNamespaces() => AssemblyDescriptor.CreateNamespaces();

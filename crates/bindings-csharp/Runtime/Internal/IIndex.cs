@@ -35,17 +35,9 @@ public abstract class IndexBase<Row>
     protected byte[] UpdateRow(byte[] row) => accessor.Update(indexName, row);
 #endif
 
-    internal FFI.IndexId IndexId
-    {
-        get
-        {
-#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
-            return accessor.RejectUnsupported<FFI.IndexId>("range index operations");
-#else
-            return hostIndexId;
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
+    internal FFI.IndexId IndexId => hostIndexId;
 #endif
-        }
-    }
 
     public IndexBase(string name)
     {
@@ -84,12 +76,35 @@ public abstract class IndexBase<Row>
     }
 
     protected IEnumerable<Row> DoFilter<Bounds>(Bounds bounds)
-        where Bounds : IBTreeIndexBounds => new RawTableIter<Bounds>(IndexId, bounds);
+        where Bounds : IBTreeIndexBounds
+    {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        ToParams(bounds, out _, out var prefix, out var start, out var end);
+        return accessor.IndexScanRange<Row>(
+            indexName,
+            bounds.PrefixElems,
+            prefix.ToArray(),
+            start.ToArray(),
+            end.ToArray()
+        );
+#else
+        return new RawTableIter<Bounds>(IndexId, bounds);
+#endif
+    }
 
     protected uint DoDelete<Bounds>(Bounds bounds)
         where Bounds : IBTreeIndexBounds
     {
         ToParams(bounds, out var prefixElems, out var prefix, out var rstart, out var rend);
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        return accessor.IndexDeleteRange(
+            indexName,
+            bounds.PrefixElems,
+            prefix.ToArray(),
+            rstart.ToArray(),
+            rend.ToArray()
+        );
+#else
         FFI.datastore_delete_by_index_scan_range_bsatn(
             IndexId,
             prefix,
@@ -102,8 +117,10 @@ public abstract class IndexBase<Row>
             out var out_
         );
         return out_;
+#endif
     }
 
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
     private class RawTableIter<Bounds>(FFI.IndexId indexId, Bounds bounds) : RawTableIterBase<Row>
         where Bounds : IBTreeIndexBounds
     {
@@ -123,6 +140,7 @@ public abstract class IndexBase<Row>
             );
         }
     }
+#endif
 }
 
 public abstract class ReadOnlyIndexBase<Row> : IndexBase<Row>

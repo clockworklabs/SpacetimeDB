@@ -13,8 +13,9 @@ rejected; returned `Task`/`ValueTask` values also cause rollback. Independent
 fixtures may run in parallel. Table deletion and clearing use the owning
 transaction, and the engine removes event rows on commit. Unique-index lookup,
 update, and deletion use fixture-owned index resolution, including mounted modules.
-JWT auth, range/composite indexes, views, procedures, and other host services are
-still pending.
+Range filtering and deletion support the existing inclusive bounds and composite
+prefixes, with owner-lifetime checks on iterators. JWT auth, views, procedures,
+and other host services are still pending.
 
 NuGet packaging and native asset distribution are deferred; this project is
 currently not packable.
