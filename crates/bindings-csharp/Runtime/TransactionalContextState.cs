@@ -78,7 +78,9 @@ internal sealed class TransactionalContextState<TTxContext>(
     )
         where TError : Exception
     {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
         TxOutcomeCore<TResult> outcome;
+#endif
         try
         {
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
@@ -86,7 +88,11 @@ internal sealed class TransactionalContextState<TTxContext>(
 #endif
             var result = RunTransaction(body);
 
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
             outcome = result switch
+#else
+            return result switch
+#endif
             {
                 Result<TResult, TError>.OkR(var value) => TxOutcomeCore<TResult>.Success(value),
                 Result<TResult, TError>.ErrR(var error) => TxOutcomeCore<TResult>.Failure(error),
@@ -101,8 +107,8 @@ internal sealed class TransactionalContextState<TTxContext>(
         // Run after RunTransaction has disposed its transaction, outside failure conversion.
         if (outcome.IsSuccess)
             AfterCommit?.Invoke();
-#endif
         return outcome;
+#endif
     }
 
 #if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME

@@ -15,7 +15,7 @@ public abstract class IndexBase<Row>
     where Row : IStructuralReadWrite, new()
 {
 #if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
-    private readonly FFI.IndexId hostIndexId;
+    internal readonly FFI.IndexId indexId;
 #endif
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
     private readonly TableAccessor accessor;
@@ -35,17 +35,13 @@ public abstract class IndexBase<Row>
     protected byte[] UpdateRow(byte[] row) => accessor.Update(indexName, row);
 #endif
 
-#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
-    internal FFI.IndexId IndexId => hostIndexId;
-#endif
-
     public IndexBase(string name)
     {
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
         throw new InvalidOperationException("Managed indexes require a bound table accessor.");
 #else
         var name_bytes = System.Text.Encoding.UTF8.GetBytes(name);
-        FFI.index_id_from_name(name_bytes, name_bytes.Length, out hostIndexId);
+        FFI.index_id_from_name(name_bytes, name_bytes.Length, out indexId);
 #endif
     }
 
@@ -88,7 +84,7 @@ public abstract class IndexBase<Row>
             end.ToArray()
         );
 #else
-        return new RawTableIter<Bounds>(IndexId, bounds);
+        return new RawTableIter<Bounds>(indexId, bounds);
 #endif
     }
 
@@ -106,7 +102,7 @@ public abstract class IndexBase<Row>
         );
 #else
         FFI.datastore_delete_by_index_scan_range_bsatn(
-            IndexId,
+            indexId,
             prefix,
             prefix.Length,
             prefixElems,
@@ -191,7 +187,7 @@ public abstract class UniqueIndex<Handle, Row, T, RW> : IndexBase<Row>
         return DeletePoint(point);
 #else
         FFI.datastore_delete_by_index_scan_point_bsatn(
-            IndexId,
+            indexId,
             point,
             point.Length,
             out var numDeleted
@@ -210,7 +206,7 @@ public abstract class UniqueIndex<Handle, Row, T, RW> : IndexBase<Row>
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
         using var e = ScanPoint(point).GetEnumerator();
 #else
-        using var e = new RawPointIter(IndexId, point).GetEnumerator();
+        using var e = new RawPointIter(indexId, point).GetEnumerator();
 #endif
         if (!e.MoveNext())
         {
@@ -249,8 +245,7 @@ public abstract class UniqueIndex<Handle, Row, T, RW> : IndexBase<Row>
     {
         var bytes = IStructuralReadWrite.ToBytes(row);
         var bytes_len = bytes.Length;
-        var id = IndexId;
-        FFI.datastore_update_bsatn(tableId, id, bytes, ref bytes_len);
+        FFI.datastore_update_bsatn(tableId, indexId, bytes, ref bytes_len);
 
         return ITableView<Handle, Row>.IntegrateGeneratedColumns(row, bytes, bytes_len);
     }
@@ -290,7 +285,7 @@ public abstract class RefUniqueIndex<Handle, Row, T, RW> : IndexBase<Row>
         return DeletePoint(point);
 #else
         FFI.datastore_delete_by_index_scan_point_bsatn(
-            IndexId,
+            indexId,
             point,
             point.Length,
             out var numDeleted
@@ -309,7 +304,7 @@ public abstract class RefUniqueIndex<Handle, Row, T, RW> : IndexBase<Row>
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
         using var e = ScanPoint(point).GetEnumerator();
 #else
-        using var e = new RawPointIter(IndexId, point).GetEnumerator();
+        using var e = new RawPointIter(indexId, point).GetEnumerator();
 #endif
         if (!e.MoveNext())
         {
@@ -348,8 +343,7 @@ public abstract class RefUniqueIndex<Handle, Row, T, RW> : IndexBase<Row>
     {
         var bytes = IStructuralReadWrite.ToBytes(row);
         var bytes_len = bytes.Length;
-        var id = IndexId;
-        FFI.datastore_update_bsatn(tableId, id, bytes, ref bytes_len);
+        FFI.datastore_update_bsatn(tableId, indexId, bytes, ref bytes_len);
 
         return ITableView<Handle, Row>.IntegrateGeneratedColumns(row, bytes, bytes_len);
     }
@@ -389,7 +383,7 @@ public abstract class ReadOnlyUniqueIndex<Handle, Row, T, RW> : ReadOnlyIndexBas
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
         using var e = ScanPoint(point).GetEnumerator();
 #else
-        using var e = new RawPointIter(IndexId, point).GetEnumerator();
+        using var e = new RawPointIter(indexId, point).GetEnumerator();
 #endif
         if (!e.MoveNext())
         {
@@ -439,7 +433,7 @@ public abstract class ReadOnlyRefUniqueIndex<Handle, Row, T, RW> : ReadOnlyIndex
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
         using var e = ScanPoint(point).GetEnumerator();
 #else
-        using var e = new RawPointIter(IndexId, point).GetEnumerator();
+        using var e = new RawPointIter(indexId, point).GetEnumerator();
 #endif
         if (!e.MoveNext())
         {
