@@ -1376,142 +1376,126 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
 
     let (database_identity, db_name, identity_allocated) =
         get_or_create_identity_and_name(&ctx, &auth, name_or_identity.as_ref()).await?;
-    let result = async {
-        let maybe_parent_database_identity = match parent.as_ref() {
-            None => None,
-            Some(parent) => parent.resolve(&ctx).await.map(Some)?,
-        };
-        let maybe_org_identity = match organization.as_ref() {
-            None => None,
-            Some(org) => org.resolve_namespace_owner(&ctx).await.map(Some)?,
-        };
+    let maybe_parent_database_identity = match parent.as_ref() {
+        None => None,
+        Some(parent) => parent.resolve(&ctx).await.map(Some)?,
+    };
+    let maybe_org_identity = match organization.as_ref() {
+        None => None,
+        Some(org) => org.resolve_namespace_owner(&ctx).await.map(Some)?,
+    };
 
-        // Check that the replication factor looks somewhat sane.
-        let num_replicas = num_replicas.map(validate_replication_factor).transpose()?.flatten();
+    // Check that the replication factor looks somewhat sane.
+    let num_replicas = num_replicas.map(validate_replication_factor).transpose()?.flatten();
 
-        log::trace!("Publishing to the identity: {}", database_identity.to_hex());
+    log::trace!("Publishing to the identity: {}", database_identity.to_hex());
 
-        // Check if the database already exists.
-        let existing = ctx
-            .get_database_by_identity(&database_identity)
-            .await
-            .map_err(log_and_500)?;
-        match existing.as_ref() {
-            None => {
-                if !identity_allocated {
-                    let Some(name) = db_name else {
-                        return Err(bad_request("Cannot create a database at a supplied identity".into()));
-                    };
-                    // Deleted databases retain their name and namespace owner.
-                    // Reusing the identity requires that owner, not merely
-                    // permission to create a new database.
-                    let owner = ctx.lookup_namespace_owner(name.as_ref()).await.map_err(log_and_500)?;
-                    if owner != Some(auth.claims.identity) {
-                        return Err((StatusCode::FORBIDDEN, "Only the name owner can recreate this database").into());
-                    }
+    // Check if the database already exists.
+    let existing = ctx
+        .get_database_by_identity(&database_identity)
+        .await
+        .map_err(log_and_500)?;
+    match existing.as_ref() {
+        None => {
+            if !identity_allocated {
+                let Some(name) = db_name else {
+                    return Err(bad_request("Cannot create a database at a supplied identity".into()));
+                };
+                // Deleted databases retain their name and namespace owner.
+                // Reusing the identity requires that owner, not merely
+                // permission to create a new database.
+                let owner = ctx.lookup_namespace_owner(name.as_ref()).await.map_err(log_and_500)?;
+                if owner != Some(auth.claims.identity) {
+                    return Err((StatusCode::FORBIDDEN, "Only the name owner can recreate this database").into());
                 }
-                allow_creation(&auth)?;
-                ctx.authorize_action(
-                    auth.claims.identity,
-                    database_identity,
-                    Action::CreateDatabase {
-                        parent: maybe_parent_database_identity,
-                        organization: maybe_org_identity,
-                    },
-                )
-                .await?;
             }
-            Some(database) => {
-                ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
-                    .await?;
-            }
-        }
-
-        // Reserve the name only after creation permissions have been checked.
-        if identity_allocated && let Some(name) = db_name {
-            create_name(&ctx, &auth, &database_identity, name).await?;
-        }
-
-        // Indicate in the response whether we created or updated the database.
-        let publish_op = if existing.is_some() {
-            PublishOp::Updated
-        } else {
-            PublishOp::Created
-        };
-        // If a parent is given, resolve to an existing database.
-        let parent = if let Some(name_or_identity) = parent {
-            let identity = name_or_identity
-                .resolve(&ctx)
-                .await
-                .map_err(|_| bad_request(format!("Parent database {name_or_identity} not found").into()))?;
-            Some(identity)
-        } else {
-            None
-        };
-
-        let schema_migration_policy = schema_migration_policy(policy, token)?;
-        let maybe_updated = ctx
-            .publish_database(
-                &auth.claims.identity,
-                DatabaseDef {
-                    database_identity,
-                    program_bytes,
-                    num_replicas,
-                    host_type,
-                    parent,
+            allow_creation(&auth)?;
+            ctx.authorize_action(
+                auth.claims.identity,
+                database_identity,
+                Action::CreateDatabase {
+                    parent: maybe_parent_database_identity,
                     organization: maybe_org_identity,
                 },
-                schema_migration_policy,
-                EnvironmentUpdate {
-                    values: environment,
-                    remove: environment_remove,
-                },
             )
-            .await
-            .map_err(publish_error)?;
+            .await?;
+        }
+        Some(database) => {
+            ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
+                .await?;
+        }
+    }
 
-        let success = || {
-            axum::Json(PublishResult::Success {
-                domain: db_name.cloned(),
-                database_identity,
-                op: publish_op,
-            })
-        };
-        match maybe_updated {
-            Some(UpdateDatabaseResult::AutoMigrateError(errs)) => {
-                Err(bad_request(format!("Database update rejected: {errs}").into()))
-            }
-            Some(UpdateDatabaseResult::ErrorExecutingMigration(err)) => Err(publish_migration_error(err)),
-            None | Some(UpdateDatabaseResult::NoUpdateNeeded) => Ok(success()),
-            Some(
-                UpdateDatabaseResult::UpdatePerformed {
-                    tx_offset,
-                    durable_offset,
-                }
-                | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect {
-                    tx_offset,
-                    durable_offset,
-                },
-            ) => {
-                confirm_update(tx_offset, durable_offset, confirmation_timeout).await?;
-                Ok(success())
-            }
-        }
+    // Reserve the name only after creation permissions have been checked.
+    if identity_allocated && let Some(name) = db_name {
+        create_name(&ctx, &auth, &database_identity, name).await?;
     }
-    .await;
-    if result.is_err()
-        && identity_allocated
-        && db_name.is_some()
-        && matches!(ctx.get_database_by_identity(&database_identity).await, Ok(None))
-    {
-        if let Err(error) = ctx
-            .replace_dns_records(&database_identity, &auth.claims.identity, &[])
+
+    // Indicate in the response whether we created or updated the database.
+    let publish_op = if existing.is_some() {
+        PublishOp::Updated
+    } else {
+        PublishOp::Created
+    };
+    // If a parent is given, resolve to an existing database.
+    let parent = if let Some(name_or_identity) = parent {
+        let identity = name_or_identity
+            .resolve(&ctx)
             .await
-        {
-            log::warn!("Failed to remove provisional database name: {error}");
+            .map_err(|_| bad_request(format!("Parent database {name_or_identity} not found").into()))?;
+        Some(identity)
+    } else {
+        None
+    };
+
+    let schema_migration_policy = schema_migration_policy(policy, token)?;
+    let maybe_updated = ctx
+        .publish_database(
+            &auth.claims.identity,
+            DatabaseDef {
+                database_identity,
+                program_bytes,
+                num_replicas,
+                host_type,
+                parent,
+                organization: maybe_org_identity,
+            },
+            schema_migration_policy,
+            EnvironmentUpdate {
+                values: environment,
+                remove: environment_remove,
+            },
+        )
+        .await
+        .map_err(publish_error)?;
+
+    let success = || {
+        axum::Json(PublishResult::Success {
+            domain: db_name.cloned(),
+            database_identity,
+            op: publish_op,
+        })
+    };
+    match maybe_updated {
+        Some(UpdateDatabaseResult::AutoMigrateError(errs)) => {
+            Err(bad_request(format!("Database update rejected: {errs}").into()))
+        }
+        Some(UpdateDatabaseResult::ErrorExecutingMigration(err)) => Err(publish_migration_error(err)),
+        None | Some(UpdateDatabaseResult::NoUpdateNeeded) => Ok(success()),
+        Some(
+            UpdateDatabaseResult::UpdatePerformed {
+                tx_offset,
+                durable_offset,
+            }
+            | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect {
+                tx_offset,
+                durable_offset,
+            },
+        ) => {
+            confirm_update(tx_offset, durable_offset, confirmation_timeout).await?;
+            Ok(success())
         }
     }
-    result
 }
 
 /// Waits until the update committed at `tx_offset` is durable, so that a crash

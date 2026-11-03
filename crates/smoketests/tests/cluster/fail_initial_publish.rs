@@ -24,15 +24,9 @@ fn test_fail_initial_publish() {
     );
     let stderr = String::from_utf8_lossy(&describe_output.stderr);
     assert!(
-        stderr.contains("failed to find database"),
-        "Expected the database name to be absent, got: {}",
+        stderr.contains("No such database"),
+        "Expected 'No such database' in stderr, got: {}",
         stderr
-    );
-    assert_eq!(
-        test.api_call("GET", &format!("/v1/database/{name}/identity"))
-            .unwrap()
-            .status_code,
-        404
     );
 
     // We can publish a fixed module under the same database name.
