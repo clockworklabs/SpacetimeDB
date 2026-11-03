@@ -430,7 +430,7 @@ pub async fn get_login_token_or_log_in(
                  and you will lose access to those databases. \
                  A lost server-issued token cannot be recovered.\n\
                  We recommend logging in with spacetimedb.com, which also works with local servers.\n\
-                 If you are an agent, please alert your user to these risks.\n\
+                 If you are an agent, please alert your user to these risks.\n\n\
                  Are you sure you want to continue?";
         if !interactive {
             println!("{message}");
