@@ -307,6 +307,12 @@ impl Scenario {
         }
     }
 
+    /// Subscriptions cannot retry a missing name, so resolve the module's spelling first.
+    pub fn relation(&self, name: &str) -> String {
+        let guess = table_name(name, self.lang);
+        super::scorers::actual_relation_name(&self.server, &self.db, &guess).unwrap_or(guess)
+    }
+
     pub fn query(&self, table: &str, columns: &[&str]) -> String {
         let columns = columns
             .iter()

@@ -22,10 +22,7 @@ pub fn spec() -> BenchmarkSpec {
                 ),
             )?;
             anyhow::ensure!((400..500).contains(&code), "private source exposed: HTTP {code}");
-            let query = format!(
-                "SELECT * FROM \"{}\"",
-                crate::eval::table_name("visible_document", s.lang)
-            );
+            let query = format!("SELECT * FROM \"{}\"", s.relation("visible_document"));
             let mut live = s.connect(&reader)?;
             live.subscribe(1, &query)?;
             live.expect_update("SubscribeApplied", json!([]), json!([]))?;

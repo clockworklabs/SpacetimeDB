@@ -742,10 +742,11 @@ fn rename_relation(query: &str, missing: &str, actual: &str) -> String {
         .into_owned()
 }
 
-fn actual_relation_name(server: &str, db: &str, missing: &str) -> Option<String> {
+/// The module's spelling of `wanted`: an exact match first, else one differing only by case or underscores.
+pub(crate) fn actual_relation_name(server: &str, db: &str, wanted: &str) -> Option<String> {
     let schema = describe_db(server, db, Duration::from_secs(15)).ok()?;
     let names = SchemaNames::from_schema(&schema);
-    ["Tables", "Views"]
+    let relations: Vec<String> = ["Tables", "Views"]
         .into_iter()
         .flat_map(|section| {
             schema_array(&schema, &section.to_lowercase(), section)
@@ -761,7 +762,11 @@ fn actual_relation_name(server: &str, db: &str, missing: &str) -> Option<String>
                 .cloned()
                 .unwrap_or(source)
         })
-        .find(|name| name != missing && loose_name(name) == loose_name(missing))
+        .collect();
+    let exact = relations.iter().find(|name| *name == wanted);
+    exact
+        .or_else(|| relations.iter().find(|name| loose_name(name) == loose_name(wanted)))
+        .cloned()
 }
 
 fn sql_raw_with_timeout(db: &str, query: &str, host: Option<&str>, timeout: Duration) -> Result<String, String> {
