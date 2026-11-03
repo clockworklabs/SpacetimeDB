@@ -23,6 +23,7 @@ pub(crate) struct TableArgs {
     accessor: Ident,
     indices: Vec<IndexArg>,
     event: Option<Span>,
+    cache_policy: Option<Ident>,
 }
 
 enum TableAccess {
@@ -88,6 +89,7 @@ impl TableArgs {
         let mut name: Option<LitStr> = None;
         let mut indices = Vec::new();
         let mut event = None;
+        let mut cache_policy = None;
         syn::meta::parser(|meta| {
             match_meta!(match meta {
                 sym::public => {
@@ -159,6 +161,15 @@ If you're migrating from SpacetimeDB 1.*, replace `name = {sym}` with `accessor 
                     check_duplicate(&event, &meta)?;
                     event = Some(meta.path.span());
                 }
+                sym::cache_policy => {
+                    check_duplicate(&cache_policy, &meta)?;
+                    let value: Ident = meta.value()?.parse()?;
+                    if !matches!(value.to_string().as_str(), "required_in_memory" | "required_on_disk" | "no_requirement") {
+                        return Err(syn::Error::new_spanned(value,
+                            "expected required_in_memory, required_on_disk, or no_requirement"));
+                    }
+                    cache_policy = Some(value);
+                }
             });
             Ok(())
         })
@@ -199,6 +210,7 @@ If you're migrating from SpacetimeDB 1.*, replace `name = {name_str_value:?}` wi
             indices,
             name,
             event,
+            cache_policy,
         })
     }
 }
@@ -1349,6 +1361,18 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     };
 
     let field_types = fields.iter().map(|f| f.ty).collect::<Vec<_>>();
+    let cache_policy = args.cache_policy.as_ref().map(|policy| {
+        let variant = match policy.to_string().as_str() {
+            "required_in_memory" => "RequiredInMemory",
+            "required_on_disk" => "RequiredOnDisk",
+            "no_requirement" => "NoRequirement",
+            _ => unreachable!("table cache policy was validated during parsing"),
+        };
+        let variant = Ident::new(variant, policy.span());
+        quote! {
+            const CACHE_POLICY: spacetimedb::table::TableCachePolicy = spacetimedb::table::TableCachePolicy::#variant;
+        }
+    });
     let tabletype_impl = quote! {
         use spacetimedb::Serialize;
         impl spacetimedb::Table for #tablehandle_ident {
@@ -1364,6 +1388,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             // the default value if not specified is Private
             #(const TABLE_ACCESS: spacetimedb::table::TableAccess = #table_access;)*
             #(#is_event)*
+            #cache_policy
             const UNIQUE_COLUMNS: &'static [u16] = &[#(#unique_col_ids),*];
             const INDEXES: &'static [spacetimedb::table::IndexDesc<'static>] = &[#(#index_descs),*];
             #(const PRIMARY_KEY: Option<u16> = Some(#primary_col_id);)*
