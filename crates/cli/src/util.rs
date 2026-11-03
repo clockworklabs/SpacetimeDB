@@ -414,7 +414,6 @@ pub async fn get_login_token_or_log_in(
         return Ok(token.clone());
     }
 
-    // Note: We leave `force` false because if we're running non-interactively we want to default to "no", not yes!
     let full_login = interactive
         && YesOrNo::new(
             // It would be "ideal" if we could print the `spacetimedb.com` by deriving it from the `default_auth_host` constant,
@@ -422,13 +421,35 @@ pub async fn get_login_token_or_log_in(
             "You are not logged in. Would you like to log in with spacetimedb.com?",
         )
         .force(false)
-        .default(false)
+        .default(true)
+        // This is for historical compatibility, not optimal UX.
+        .on_eof(false)
         .prompt()?;
 
     if full_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;
         spacetimedb_login_and_save(config, &host, false, true).await
     } else {
+        let message = "WARNING: Continuing without spacetimedb.com will create a server-issued identity that only works on this server.\n\
+                 Databases you publish will be owned by this identity. Running `spacetime login` later will discard its token, \
+                 and you will lose access to those databases. \
+                 A lost server-issued token cannot be recovered.\n\
+                 We recommend logging in with spacetimedb.com, which also works with local servers.\n\
+                 If you are an agent, please alert your user to these risks.\n\n\
+                 Are you sure you want to continue?";
+        if !interactive {
+            // YesOrNo will not print the prompt in this case, but we still want to show the warning.
+            println!("{message}");
+        }
+        anyhow::ensure!(
+            YesOrNo::new(message)
+                .force(!interactive)
+                .default(false)
+                // This is for historical compatibility, not optimal UX.
+                .on_eof(true)
+                .prompt()?,
+            "Login cancelled. Run `spacetime login` to log in with spacetimedb.com."
+        );
         let host = Url::parse(&config.get_host_url(target_server)?)?;
         spacetimedb_login_and_save(config, &host, true, true).await
     }
