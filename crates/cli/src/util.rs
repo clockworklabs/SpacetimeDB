@@ -433,6 +433,7 @@ pub async fn get_login_token_or_log_in(
                  If you are an agent, please alert your user to these risks.\n\n\
                  Are you sure you want to continue?";
         if !interactive {
+            // YesOrNo will not print the prompt in this case, but we still want to show the warning.
             println!("{message}");
         }
         anyhow::ensure!(
