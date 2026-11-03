@@ -836,7 +836,7 @@ impl PageSet {
         fixed_row_size: Size,
         visitor: &impl VarLenMembers,
         deletes: impl IntoIterator<Item = RowPointer>,
-        inserts: impl IntoIterator<Item = Result<(PreparedInsert, usize), TableError>>,
+        inserts: impl IntoIterator<Item = Result<PreparedInsert, TableError>>,
     ) -> Result<PreparedCommit, TableError> {
         let mut allocator = PageAllocator::new(self, fixed_row_size);
         let mut pinned = BTreeMap::new();
@@ -865,19 +865,33 @@ impl PageSet {
         let inserts = inserts
             .into_iter()
             .map(|res| {
-                let (row, num_granules) = res?;
-                let page_index = allocator.prepare_insert::<PageError>(num_granules, |page_index| {
-                    match pinned.entry(page_index) {
-                        btree_map::Entry::Vacant(entry) => {
-                            let page = self.get_page(page_index)?.expect("delete from absent page");
-                            match page {
-                                PageRef::Resident(page) => Ok(page.metadata(fixed_row_size).into()),
-                                PageRef::Tiered(pin) => Ok(entry.insert(pin).read().metadata(fixed_row_size).into()),
-                            }
-                        }
-                        btree_map::Entry::Occupied(entry) => Ok(entry.get().read().metadata(fixed_row_size).into()),
+                let row = res?;
+                // Comparison pages share the mutation pin set, which deduplicates
+                // them and keeps them resident until apply has finished.
+                for &page_index in &row.extra_pages_to_pin {
+                    if let btree_map::Entry::Vacant(entry) = pinned.entry(page_index)
+                        && let PageRef::Tiered(pin) = self
+                            .get_page(page_index)?
+                            .expect("pointer-map candidate belongs to a live page")
+                    {
+                        entry.insert(pin);
                     }
-                })?;
+                }
+                let page_index =
+                    allocator.prepare_insert::<PageError>(row.required_var_len_granules as usize, |page_index| {
+                        match pinned.entry(page_index) {
+                            btree_map::Entry::Vacant(entry) => {
+                                let page = self.get_page(page_index)?.expect("delete from absent page");
+                                match page {
+                                    PageRef::Resident(page) => Ok(page.metadata(fixed_row_size).into()),
+                                    PageRef::Tiered(pin) => {
+                                        Ok(entry.insert(pin).read().metadata(fixed_row_size).into())
+                                    }
+                                }
+                            }
+                            btree_map::Entry::Occupied(entry) => Ok(entry.get().read().metadata(fixed_row_size).into()),
+                        }
+                    })?;
                 Ok(PlannedInsert { page_index, row })
             })
             .collect::<Result<_, TableError>>()?;

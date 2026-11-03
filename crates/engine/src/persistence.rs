@@ -218,7 +218,7 @@ impl LocalPersistenceProvider {
         self
     }
 
-    fn table_storage(&self) -> TieredStorageConfig {
+    fn memory_table_storage(&self) -> TieredStorageConfig {
         TieredStorageConfig::new_for_memory_database(self.page_pool.clone())
     }
 }
@@ -235,7 +235,7 @@ impl PersistenceProvider for LocalPersistenceProvider {
             let pool = self.page_pool.clone();
             asyncify(&runtime, move || open(dir, pool)).await?
         } else {
-            self.table_storage()
+            self.memory_table_storage()
         };
 
         let snapshot_worker = asyncify(&runtime, move || {
@@ -269,6 +269,6 @@ impl PersistenceProvider for LocalPersistenceProvider {
     }
 
     async fn ephemeral(&self, _database: &Database, _replica_id: u64) -> anyhow::Result<Persistence> {
-        Ok(Persistence::ephemeral(self.table_storage()))
+        Ok(Persistence::ephemeral(self.memory_table_storage()))
     }
 }
