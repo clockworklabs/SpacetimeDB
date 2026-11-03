@@ -1,3 +1,7 @@
+/**
+ * Mirrors the declaration API in ../server/schema.ts for generated client bindings,
+ * preserving schemas and metadata while omitting server function bodies.
+ */
 import type { ParamsObj } from '../lib/reducers';
 import type {
   UntypedTableSchema,
