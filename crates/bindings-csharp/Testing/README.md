@@ -22,14 +22,23 @@ with no values. Required generated accessors throw for missing values; empty
 strings remain present. Reads see current values, and transaction rollback does
 not undo environment changes. Environment handles expire with their owning context.
 
+`ViewContext(auth)` and `AnonymousViewContext()` create fixture-owned read-only
+contexts for calling module views directly. `RunQuery<T>(IQuery<T>)` executes their
+typed SELECT queries, including semijoins, against committed tables and returns
+materialized rows. Row types must implement `IStructuralReadWrite` and have a
+parameterless constructor, as generated module rows do. Queries execute with the
+database identity; caller filtering comes from the view's `Sender` and query.
+The native bridge rejects queries while a mutable transaction is active.
+Contexts expire on fixture disposal; materialized results remain ordinary values.
+
 Use one execution flow per fixture. Async callbacks and multicast delegates are
 rejected; returned `Task`/`ValueTask` values also cause rollback. Independent
 fixtures may run in parallel. Table deletion and clearing use the owning
 transaction, and the engine removes event rows on commit. Unique-index lookup,
 update, and deletion use fixture-owned index resolution, including mounted modules.
 Range filtering and deletion support the existing inclusive bounds and composite
-prefixes, with owner-lifetime checks on iterators. Views, procedures,
-and other host services are still pending.
+prefixes, with owner-lifetime checks on iterators. Procedures and other host
+services are still pending.
 
 NuGet packaging and native asset distribution are deferred; this project is
 currently not packable.

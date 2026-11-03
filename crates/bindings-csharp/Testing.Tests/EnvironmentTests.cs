@@ -11,9 +11,8 @@ public class EnvironmentTests
         using var first = TestContext.Create(typeof(Entry).Assembly);
         using var second = TestContext.Create(typeof(Entry).Assembly);
         var auth = TestAuth.Internal();
-        var readOnly = new LocalReadOnly(first.Db.Access!);
-        var view = new ViewContext(default, readOnly);
-        var anonymous = new AnonymousViewContext(readOnly);
+        var view = first.ViewContext(auth);
+        var anonymous = first.AnonymousViewContext();
         var selectedView = ((IModuleContext<ViewContext>)view).SelectInstance(1);
         var selectedAnonymous = ((IModuleContext<AnonymousViewContext>)anonymous).SelectInstance(1);
         Assert.Equal(1, ((IModuleContext)selectedView).InstanceId);

@@ -199,6 +199,21 @@ internal static unsafe class Native
 
     [DllImport(
         Library,
+        EntryPoint = "stdb_test_v1_query",
+        CallingConvention = CallingConvention.Cdecl
+    )]
+    internal static extern NativeStatus Query(
+        NativeDatastore datastore,
+        byte* sql,
+        ulong sqlLength,
+        byte* identity,
+        ulong identityLength,
+        out NativeBuffer output,
+        out NativeBuffer error
+    );
+
+    [DllImport(
+        Library,
         EntryPoint = "stdb_test_v1_transaction_destroy",
         CallingConvention = CallingConvention.Cdecl
     )]

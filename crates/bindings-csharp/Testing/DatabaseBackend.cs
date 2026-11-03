@@ -1,6 +1,7 @@
 namespace SpacetimeDB.Testing;
 
 using System.Text;
+using SpacetimeDB.BSATN;
 using SpacetimeDB.Internal;
 
 // One execution flow owns each fixture. Native handles synchronize calls and
@@ -74,6 +75,29 @@ internal sealed class DatabaseBackend : IDatabaseBackend
     {
         EnvironmentDeclaration(key);
         environmentValues.Remove(key);
+    }
+
+    internal IReadOnlyList<T> RunQuery<T>(IQuery<T> query)
+        where T : IStructuralReadWrite, new()
+    {
+        CheckActive();
+        ArgumentNullException.ThrowIfNull(query);
+        var snapshot = datastore.Query(query.ToSql(), DatabaseIdentity);
+        using var reader = new BinaryReader(new MemoryStream(snapshot));
+        // The bridge returns BSATN array<array<u8>>; decode framed rows without copying each one.
+        var count = checked((int)reader.ReadUInt32());
+        var rows = new T[count];
+        for (var i = 0; i < count; i++)
+        {
+            var length = reader.ReadUInt32();
+            var end = reader.BaseStream.Position + length;
+            rows[i] = IStructuralReadWrite.Read<T>(reader);
+            if (reader.BaseStream.Position != end)
+                throw new InvalidDataException("Query result row does not match its BSATN schema.");
+        }
+        if (reader.BaseStream.Position != reader.BaseStream.Length)
+            throw new InvalidDataException("Trailing bytes in native query result.");
+        return rows;
     }
 
     public void CheckActive() => ObjectDisposedException.ThrowIf(datastore.IsClosed, this);

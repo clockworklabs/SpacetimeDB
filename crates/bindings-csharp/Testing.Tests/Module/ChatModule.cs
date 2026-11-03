@@ -12,6 +12,10 @@ public static partial class Module
         public string Text = "";
     }
 
+    [View(Accessor = "MyMessages", Public = true)]
+    public static IQuery<Message> MyMessages(ViewContext ctx) =>
+        ctx.From.Message().Where(row => row.Sender.Eq(ctx.Sender));
+
     [Reducer]
     public static void SendMessage(ReducerContext ctx, string text)
     {

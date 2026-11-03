@@ -92,6 +92,24 @@ public sealed class TestContext : IDisposable
     public TestClock Clock { get; }
     public TestRng Rng { get; }
 
+    /// <summary>Creates a fixture-owned read-only context for the specified caller.</summary>
+    public ViewContext ViewContext(TestAuth auth)
+    {
+        ArgumentNullException.ThrowIfNull(auth);
+        return new ViewContext(
+            auth.Sender ?? backend.DatabaseIdentity,
+            new LocalReadOnly(new DatabaseAccess(backend))
+        );
+    }
+
+    /// <summary>Creates a fixture-owned read-only context without caller identity.</summary>
+    public AnonymousViewContext AnonymousViewContext() =>
+        new(new LocalReadOnly(new DatabaseAccess(backend)));
+
+    /// <summary>Materializes a SELECT against committed data. Rejects active transactions.</summary>
+    public IReadOnlyList<T> RunQuery<T>(IQuery<T> query)
+        where T : IStructuralReadWrite, new() => backend.RunQuery(query);
+
     /// <summary>Sets a declared value for this fixture, independently of database transactions.</summary>
     public void SetEnv(string key, string value) => backend.SetEnv(key, value);
 

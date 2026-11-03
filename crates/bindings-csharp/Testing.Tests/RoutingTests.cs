@@ -80,8 +80,8 @@ public class RoutingTests
         Assert.Equal(1UL, readOnly.Entries.Count);
         Assert.Equal("B", readOnly.Entries.Id.Find(1)!.Value.Text);
         Assert.Equal(
-            "SELECT * FROM \"second\".\"Entries\"",
-            new QueryBuilder(readOnly).Entries().ToSql()
+            "B",
+            Assert.Single(backendB.RunQuery(new QueryBuilder(readOnly).Entries())).Text
         );
     }
 }

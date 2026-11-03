@@ -1,6 +1,8 @@
 namespace SpacetimeDB.Testing;
 
+using System.Text;
 using Microsoft.Win32.SafeHandles;
+using SpacetimeDB.BSATN;
 
 internal sealed unsafe class NativeDatastore : SafeHandleZeroOrMinusOneIsInvalid
 {
@@ -53,6 +55,31 @@ internal sealed unsafe class NativeDatastore : SafeHandleZeroOrMinusOneIsInvalid
             {
                 transaction.Dispose();
                 throw;
+            }
+        }
+    }
+
+    internal byte[] Query(string sql, Identity identity)
+    {
+        var sqlBytes = Encoding.UTF8.GetBytes(sql);
+        var identityBytes = IStructuralReadWrite.ToBytes(new Identity.BSATN(), identity);
+        lock (Sync)
+        {
+            fixed (
+                byte* sqlPtr = sqlBytes,
+                    identityPtr = identityBytes
+            )
+            {
+                var status = Native.Query(
+                    this,
+                    sqlPtr,
+                    (ulong)sqlBytes.Length,
+                    identityPtr,
+                    (ulong)identityBytes.Length,
+                    out var output,
+                    out var error
+                );
+                return Native.TakeBytes(status, ref output, ref error);
             }
         }
     }
