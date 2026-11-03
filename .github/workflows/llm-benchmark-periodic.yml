@@ -98,14 +98,14 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.CARGO_TARGET_DIR }}/release/gn_out/obj
-          key: rusty-v8-v1-145.0.0-${{ env.TARGET_TRIPLE }}
+          key: rusty-v8-v1-152.2.0-${{ env.TARGET_TRIPLE }}
 
       - name: Restore OpenSSL
         id: cache-openssl
         uses: actions/cache/restore@v4
         with:
           path: ${{ github.workspace }}/.ci-cache/openssl
-          key: openssl-v1-300.5.3+3.5.4-${{ env.TARGET_TRIPLE }}${{ env.OPENSSL_CACHE_SUFFIX }}
+          key: openssl-v1-400.0.2+4.0.3-${{ env.TARGET_TRIPLE }}${{ env.OPENSSL_CACHE_SUFFIX }}
 
       - name: Configure cached OpenSSL
         if: steps.cache-openssl.outputs.cache-hit == 'true'

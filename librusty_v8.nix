@@ -22,14 +22,11 @@
     };
 in
   fetch_librusty_v8 {
-    version = "145.0.0";
+    version = "152.2.0";
     shas = {
-      x86_64-linux = "sha256-chV1PAx40UH3Ute5k3lLrgfhih39Rm3KqE+mTna6ysE=";
-      # I (pgoldman 2025-10-17) only use x86_64-linux, so I haven't filled in these hashes.
-      # If you use one of these platforms, run the build and wait for it to fail,
-      # copy the detected sha256 from the error message in here, then re-run.
-      aarch64-linux = "0000000000000000000000000000000000000000000000000000";
-      x86_64-darwin = "0000000000000000000000000000000000000000000000000000";
-      aarch64-darwin = "sha256-yHa1eydVCrfYGgrZANbzgmmf25p7ui1VMas2A7BhG6k=";
+      x86_64-linux = "sha256-tmg+mvy3f72MssOs9F001SApqyFrMyUiyVF5wS8P7Tw=";
+      aarch64-linux = "sha256-xAGWu/GCUy5YP2W32vAZb9uzNU5vrFmzHQU5wg+THz0=";
+      x86_64-darwin = "sha256-BMvBw2xM1UWcVASXddkoiTN8adk2+wsBH5sm8dRUYQ0=";
+      aarch64-darwin = "sha256-pKVIREStS18Q3HvtFBI23Z2+q/IAbRRSDxm5NdTbQic=";
     };
   }
