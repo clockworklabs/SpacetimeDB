@@ -334,6 +334,7 @@ pub struct YesOrNo {
     message: String,
     force: Option<bool>,
     default: Option<bool>,
+    on_eof: Option<bool>,
 }
 
 impl YesOrNo {
@@ -342,6 +343,7 @@ impl YesOrNo {
             message: message.into(),
             force: None,
             default: None,
+            on_eof: None,
         }
     }
 
@@ -350,9 +352,15 @@ impl YesOrNo {
         self
     }
 
-    /// Set the response for empty input, including EOF.
+    /// Set the response for empty input, including EOF unless overridden by `on_eof`.
     pub fn default(mut self, default: bool) -> Self {
         self.default = Some(default);
+        self
+    }
+
+    /// Set the response for EOF independently of pressing Enter.
+    pub fn on_eof(mut self, response: bool) -> Self {
+        self.on_eof = Some(response);
         self
     }
 
@@ -368,7 +376,10 @@ impl YesOrNo {
         print!("{} [{choices}]", self.message);
         std::io::stdout().flush()?;
         let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
+        let num_read = std::io::stdin().read_line(&mut input)?;
+        if num_read == 0 {
+            return Ok(self.on_eof.unwrap_or(default));
+        }
         let input = input.trim().to_lowercase();
         if input.is_empty() {
             return Ok(default);
