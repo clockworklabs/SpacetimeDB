@@ -24,14 +24,14 @@ use crate::spacetime_config::{
     FlatTarget, Key, LoadedConfig, SpacetimeConfig,
 };
 use crate::util::{add_auth_header_opt, get_auth_header, strip_verbatim_prefix, AuthHeader, ResponseExt};
-use crate::util::{decode_identity, YesOrNo};
+use crate::util::{decode_identity, LoginMode, YesOrNo};
 use crate::{build, common_args};
 
-/// Individual prompts that `--yes` can suppress. `All` is a shorthand for every category below.
+/// Individual prompts that `--yes` can suppress. Server-issued login requires an explicit opt-in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 #[clap(rename_all = "kebab-case")]
 pub enum YesValue {
-    /// Equivalent to passing every other option. This is the default when `--yes` is given without a value.
+    /// Equivalent to passing every option except skip-login. This is the default when `--yes` is given without a value.
     All,
     /// Skip the "publish to a non-local server?" confirmation.
     Remote,
@@ -41,6 +41,8 @@ pub enum YesValue {
     BreakClients,
     /// Skip the destructive "this will DESTROY ... ALL corresponding data" confirmation.
     DeleteData,
+    /// Decline spacetimedb.com login and accept the risks of a server-issued identity.
+    SkipLogin,
 }
 
 /// Decoded `--yes` selections, used at every prompt site.
@@ -51,6 +53,7 @@ pub struct YesFlags {
     pub break_clients: bool,
     /// Plain `--yes` and `--yes=all` require an existing login.
     pub non_interactive: bool,
+    pub skip_login: bool,
     pub delete_data: bool,
 }
 
@@ -61,17 +64,32 @@ impl YesFlags {
             migrate_major_version: true,
             break_clients: true,
             non_interactive: true,
+            skip_login: false,
             delete_data: true,
+        }
+    }
+
+    fn login_mode(self) -> LoginMode {
+        if self.skip_login {
+            LoginMode::ServerIssued
+        } else {
+            (!self.non_interactive).into()
         }
     }
 
     fn merge(&mut self, value: YesValue) {
         match value {
-            YesValue::All => *self = YesFlags::all(),
+            YesValue::All => {
+                *self = Self {
+                    skip_login: self.skip_login,
+                    ..Self::all()
+                }
+            }
             YesValue::Remote => self.publish_to_remote = true,
             YesValue::Migrate => self.migrate_major_version = true,
             YesValue::BreakClients => self.break_clients = true,
             YesValue::DeleteData => self.delete_data = true,
+            YesValue::SkipLogin => self.skip_login = true,
         }
     }
 }
@@ -303,11 +321,12 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
                 .help(
                     "Skip confirmation prompts. With no value, defaults to 'all' \
                      (equivalent to --yes=all). To skip specific prompts, pass one or \
-                     more of: all, remote, migrate, break-clients, delete-data. \
+                     more of: all, remote, migrate, break-clients, delete-data, skip-login. \
                      Multiple values can be comma-separated (--yes=migrate,break-clients) or \
                      given via repeated flags (--yes=migrate --yes=break-clients). The value \
                      must be attached with '=' (so `--yes my-db` treats `my-db` as the database name). \
-                     With all, publishing requires a saved login token unless --anonymous is used; \
+                     The skip-login option explicitly accepts a server-issued identity and its risks. \
+                     It is not included in all. With all, publishing requires a saved login token unless --anonymous is used; \
                      run `spacetime login` first."
                 )
         )
@@ -638,7 +657,7 @@ async fn execute_publish_configs<'a>(
         // we want to use the default identity
         // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
         //  easily create a new identity with an email
-        let auth_header = get_auth_header(config, anon_identity, server, !yes.non_interactive).await?;
+        let auth_header = get_auth_header(config, anon_identity, server, yes.login_mode()).await?;
 
         let (name_or_identity, parent) = validate_name_and_parent(name_or_identity, parent)?;
 

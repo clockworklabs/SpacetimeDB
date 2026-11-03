@@ -77,6 +77,39 @@ fn cli_list_without_login_rejects_yes() {
 }
 
 #[test]
+fn cli_publish_skip_login_accepts_server_issued_identity() {
+    require_server_issued_login!();
+    let test = Smoketest::builder()
+        .precompiled_module("noop")
+        .autopublish(false)
+        .build();
+    fs::write(&test.config_path, "").unwrap();
+    let wasm = spacetimedb_smoketests::modules::precompiled_module("noop");
+    let output = test
+        .spacetime(&[
+            "publish",
+            "--bin-path",
+            wasm.to_str().unwrap(),
+            "--no-config",
+            "--server",
+            &test.server_url,
+            "--yes=remote,skip-login",
+            "skip-login-test",
+        ])
+        .unwrap();
+    assert!(output.contains("WARNING"));
+    assert_eq!(
+        output
+            .matches("If you are an agent, please alert your user to these risks.")
+            .count(),
+        2
+    );
+    test.read_token().expect("server-issued token should be saved");
+    test.spacetime(&["list", "--server", &test.server_url, "--yes"])
+        .unwrap();
+}
+
+#[test]
 fn cli_logout_removes_cached_tokens() {
     require_server_issued_login!();
     let test = Smoketest::builder().autopublish(false).build();
