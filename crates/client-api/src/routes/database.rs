@@ -1374,8 +1374,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         ));
     }
 
-    let (database_identity, db_name, identity_allocated) =
-        get_or_create_identity_and_name(&ctx, &auth, name_or_identity.as_ref()).await?;
+    let (database_identity, db_name) = get_or_create_identity_and_name(&ctx, &auth, name_or_identity.as_ref()).await?;
     let maybe_parent_database_identity = match parent.as_ref() {
         None => None,
         Some(parent) => parent.resolve(&ctx).await.map(Some)?,
@@ -1397,10 +1396,10 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         .map_err(log_and_500)?;
     match existing.as_ref() {
         None => {
-            if !identity_allocated {
-                let Some(name) = db_name else {
-                    return Err(bad_request("Cannot create a database at a supplied identity".into()));
-                };
+            if matches!(name_or_identity.as_ref(), Some(NameOrIdentity::Identity(_))) {
+                return Err(bad_request("Cannot create a database at a supplied identity".into()));
+            }
+            if let Some(name) = db_name {
                 // Deleted databases retain their name and namespace owner.
                 // Reusing the identity requires that owner, not merely
                 // permission to create a new database.
@@ -1541,7 +1540,6 @@ impl From<UpdateConfirmationError> for ErrorResponse {
 }
 
 /// Try to resolve `name_or_identity` to an [Identity] and [DatabaseName].
-/// The final flag indicates whether this request allocated the identity.
 ///
 /// - If the database exists and has a name registered for it, return that.
 /// - If the database does not exist, but `name_or_identity` is a name,
@@ -1553,10 +1551,10 @@ async fn get_or_create_identity_and_name<'a>(
     ctx: &(impl ControlStateDelegate + NodeDelegate),
     auth: &SpacetimeAuth,
     name_or_identity: Option<&'a NameOrIdentity>,
-) -> axum::response::Result<(Identity, Option<&'a DatabaseName>, bool)> {
+) -> axum::response::Result<(Identity, Option<&'a DatabaseName>)> {
     match name_or_identity {
         Some(noi) => match noi.try_resolve(ctx).await.map_err(log_and_500)? {
-            Ok(resolved) => Ok((resolved, noi.name(), false)),
+            Ok(resolved) => Ok((resolved, noi.name())),
             Err(name) => {
                 // `name_or_identity` was a `NameOrIdentity::Name`, but no record
                 // exists yet. Create it now with a fresh identity.
@@ -1564,13 +1562,13 @@ async fn get_or_create_identity_and_name<'a>(
                 let database_auth = SpacetimeAuth::alloc(ctx).await?;
                 let database_identity = database_auth.claims.identity;
                 create_name(ctx, auth, &database_identity, name).await?;
-                Ok((database_identity, Some(name), true))
+                Ok((database_identity, Some(name)))
             }
         },
         None => {
             let database_auth = SpacetimeAuth::alloc(ctx).await?;
             let database_identity = database_auth.claims.identity;
-            Ok((database_identity, None, true))
+            Ok((database_identity, None))
         }
     }
 }
