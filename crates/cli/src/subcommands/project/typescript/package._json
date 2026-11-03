@@ -11,5 +11,8 @@
   "license": "ISC",
   "dependencies": {
     "spacetimedb": "2.14.*"
+  },
+  "engines": {
+    "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
   }
 }
