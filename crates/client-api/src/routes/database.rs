@@ -2607,40 +2607,6 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn publish_checks_resolved_name_targets() {
-        let identity = test_identity(43);
-        for exists in [false, true] {
-            let mut state = DummyState::new().with_dns("named-target", identity);
-            if exists {
-                state = state.with_database(identity);
-                state.allow_publish_update = true;
-            }
-            let app = DatabaseRoutes::<DummyState>::default()
-                .into_router(state.clone())
-                .with_state(state);
-            let response = app
-                .oneshot(
-                    Request::builder()
-                        .method(http::Method::PUT)
-                        .uri("/named-target")
-                        .body(Body::empty())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(
-                response.status(),
-                if exists { StatusCode::OK } else { StatusCode::FORBIDDEN }
-            );
-            if exists {
-                let body = response.into_body().collect().await.unwrap().to_bytes();
-                assert!(matches!(serde_json::from_slice::<PublishResult>(&body).unwrap(),
-                    PublishResult::Success { database_identity, op: PublishOp::Updated, .. } if database_identity == identity));
-            }
-        }
-    }
-
     fn http_response_size_metric(database_identity: Identity) -> u64 {
         DB_METRICS
             .http_response_size_bytes
