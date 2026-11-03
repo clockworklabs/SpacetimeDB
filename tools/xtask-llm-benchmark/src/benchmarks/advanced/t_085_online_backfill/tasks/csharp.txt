@@ -1,0 +1,17 @@
+Implement this SpacetimeDB module in csharp. Return only the module source.
+
+Implement a resumable online backfill while writes and deletes continue. The legacy table is authoritative. Capture and apply are separate transactions, so a captured snapshot can become stale. Keep tombstones in legacy_item; never resurrect a deleted item. This task tests the data migration algorithm inside one module, not deployment schema conversion.
+
+Tables (the first field is the primary key):
+- public LegacyItem: Id: ulong, Value: string, Revision: ulong, Deleted: bool
+- public BackfillSnapshot: Id: ulong, Value: string, Revision: ulong, Deleted: bool
+- public ItemV2: Id: ulong, Value: string, Revision: ulong
+
+Reducers (argument order is part of the contract):
+- write_item(Id: ulong, Value: string): Insert or update the legacy row, incrementing its revision (start at 1) and clearing deleted. Dual-write the same value and revision to item_v2. IDs may be reused after deletion.
+- seed_legacy(Id: ulong, Value: string): Insert a legacy-only row at revision 1 with deleted=false. Used only to prepare pre-migration data. Do not write item_v2.
+- delete_item(Id: ulong): If legacy exists and is not deleted, increment revision, mark deleted and remove item_v2. Repeated deletion or missing ID is a no-op.
+- capture_batch(AfterId: ulong, Limit: ulong): Reject limit outside 1..=10 with 'invalid limit'. Replace backfill_snapshot with at most limit legacy rows with id>after_id, ordered by id. Capture tombstones too. Do not modify source or destination.
+- apply_batch(): For each captured ID, reconcile item_v2 with the CURRENT authoritative legacy row, not the stale captured contents. Delete destination tombstones; upsert current live rows. Leave snapshots intact so retries are safe. Do not touch IDs outside the captured batch.
+
+Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged.

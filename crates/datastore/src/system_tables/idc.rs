@@ -132,6 +132,7 @@ impl From<StOutboundMsgRow> for ProductValue {
 pub enum StInboundMsgResultStatus {
     Ok = 1,
     Err = 2,
+    BudgetExceeded = 3,
 }
 
 impl TryFrom<u8> for StInboundMsgResultStatus {
@@ -140,6 +141,7 @@ impl TryFrom<u8> for StInboundMsgResultStatus {
         match value {
             1 => Ok(Self::Ok),
             2 => Ok(Self::Err),
+            3 => Ok(Self::BudgetExceeded),
             _ => Err("invalid st_inbound_msg result status"),
         }
     }
@@ -258,20 +260,22 @@ impl From<(TableId, OutboxSchema)> for StOutboxRow {
             target_column: outbox.target_column,
             arg_columns: outbox.arg_columns,
             on_result_reducer: outbox.on_result_reducer.map(Into::into),
-            signature_hash: outbox.signature_hash,
+            signature_hash: outbox.signature_hash.to_hex().to_string(),
         }
     }
 }
 
-impl From<StOutboxRow> for OutboxSchema {
-    fn from(row: StOutboxRow) -> Self {
-        Self {
+impl TryFrom<StOutboxRow> for OutboxSchema {
+    type Error = DatastoreError;
+
+    fn try_from(row: StOutboxRow) -> Result<Self, Self::Error> {
+        Ok(Self {
             remote_reducer: ReducerName::new(row.remote_reducer),
             target_column: row.target_column,
             arg_columns: row.arg_columns,
             on_result_reducer: row.on_result_reducer.map(ReducerName::new),
-            signature_hash: row.signature_hash,
-        }
+            signature_hash: Hash::from_hex(row.signature_hash).map_err(anyhow::Error::from)?,
+        })
     }
 }
 
@@ -376,4 +380,32 @@ pub(crate) fn st_inbound_msg_schema() -> TableSchema {
 
 pub(crate) fn st_outbox_schema() -> TableSchema {
     st_schema(ST_OUTBOX_NAME, ST_OUTBOX_ID)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spacetimedb_lib::bsatn;
+
+    #[test]
+    fn outbox_signature_hash_uses_legacy_string_encoding() {
+        // Encode the existing persisted row format independently of StOutboxRow.
+        let legacy_bytes = bsatn::to_vec(&(
+            TableId(42),
+            "receive_ping",
+            ColId(1),
+            vec![ColId(2)],
+            None::<&str>,
+            "ab".repeat(32),
+        ))
+        .unwrap();
+        let mut row: StOutboxRow = bsatn::from_slice(&legacy_bytes).unwrap();
+        let outbox = OutboxSchema::try_from(row.clone()).unwrap();
+        assert_eq!(outbox.signature_hash, Hash::from_byte_array([0xab; 32]));
+        let stored = StOutboxRow::from((row.table_id, outbox));
+        assert_eq!(bsatn::to_vec(&stored).unwrap(), legacy_bytes);
+
+        row.signature_hash = "invalid".into();
+        assert!(OutboxSchema::try_from(row).is_err());
+    }
 }

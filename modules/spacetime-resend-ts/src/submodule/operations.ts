@@ -1,4 +1,9 @@
 import * as v from 'valibot';
+import type {
+  ProcedureExport,
+  OptionBuilder,
+  ArrayBuilder,
+} from 'spacetimedb/server';
 import {
   EmailStatus,
   emailStatus,
@@ -8,6 +13,7 @@ import {
   sendEmailResult,
   spacetimedb,
   t,
+  unitResult,
   vSendEmailResponse,
   type ProcedureModuleCtx,
   type WriteCtx,
@@ -238,61 +244,74 @@ const sendEmailArgs = {
   idempotencyKey: t.option(t.string()),
 };
 
-export const sendEmail = spacetimedb.procedure(
-  sendEmailArgs,
-  sendEmailResult,
-  (ctx, args) => {
-    const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
-    denyIfNotAdmin(verdict);
-    return sendEmailRequest(ctx, args);
-  }
+export const sendEmail: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof sendEmailArgs,
+  typeof sendEmailResult
+> = spacetimedb.procedure(sendEmailArgs, sendEmailResult, (ctx, args) => {
+  const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
+  denyIfNotAdmin(verdict);
+  return sendEmailRequest(ctx, args);
+});
+
+const cancelEmailArgs = { resendId: t.string() };
+export const cancelEmail: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof cancelEmailArgs,
+  typeof unitResult
+> = spacetimedb.procedure(cancelEmailArgs, unitResult, (ctx, args) => {
+  const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
+  denyIfNotAdmin(verdict);
+  const cfg = loadConfigOrThrowFromProcedure(ctx);
+  const response = callResend(ctx, {
+    method: 'POST',
+    path: `/emails/${args.resendId}/cancel`,
+    apiKey: cfg.apiKey,
+    jsonBody: undefined,
+    idempotencyKey: undefined,
+  });
+  ensureOkOrThrow(response, errors.cancelEmailFailed);
+
+  ctx.withTx(tx => {
+    const existing = tx.db.resendEmail.resendId.find(args.resendId);
+    if (!existing) return;
+    const updated = {
+      ...existing,
+      status: EmailStatus.Cancelled,
+      statusUpdatedAt: ctx.timestamp,
+      updatedAt: ctx.timestamp,
+    };
+    tx.db.resendEmail.resendId.update(updated);
+  });
+  return {};
+});
+
+const getEmailArgs = { resendId: t.string() };
+const getEmailResult: OptionBuilder<typeof resendEmailTable.rowType> = t.option(
+  resendEmailTable.rowType
 );
+export const getEmail: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof getEmailArgs,
+  typeof getEmailResult
+> = spacetimedb.procedure(getEmailArgs, getEmailResult, (ctx, { resendId }) => {
+  requireProcedureAdmin(ctx);
+  return ctx.withTx(
+    tx => tx.db.resendEmail.resendId.find(resendId) ?? undefined
+  );
+});
 
-export const cancelEmail = spacetimedb.procedure(
-  { resendId: t.string() },
-  t.unit(),
-  (ctx, args) => {
-    const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
-    denyIfNotAdmin(verdict);
-    const cfg = loadConfigOrThrowFromProcedure(ctx);
-    const response = callResend(ctx, {
-      method: 'POST',
-      path: `/emails/${args.resendId}/cancel`,
-      apiKey: cfg.apiKey,
-      jsonBody: undefined,
-      idempotencyKey: undefined,
-    });
-    ensureOkOrThrow(response, errors.cancelEmailFailed);
-
-    ctx.withTx(tx => {
-      const existing = tx.db.resendEmail.resendId.find(args.resendId);
-      if (!existing) return;
-      const updated = {
-        ...existing,
-        status: EmailStatus.Cancelled,
-        statusUpdatedAt: ctx.timestamp,
-        updatedAt: ctx.timestamp,
-      };
-      tx.db.resendEmail.resendId.update(updated);
-    });
-    return {};
-  }
-);
-
-export const getEmail = spacetimedb.procedure(
-  { resendId: t.string() },
-  t.option(resendEmailTable.rowType),
-  (ctx, { resendId }) => {
-    requireProcedureAdmin(ctx);
-    return ctx.withTx(
-      tx => tx.db.resendEmail.resendId.find(resendId) ?? undefined
-    );
-  }
-);
-
-export const getWebhookEvent = spacetimedb.procedure(
-  { eventId: t.string() },
-  t.option(resendWebhookEventTable.rowType),
+const getWebhookEventArgs = { eventId: t.string() };
+const getWebhookEventResult: OptionBuilder<
+  typeof resendWebhookEventTable.rowType
+> = t.option(resendWebhookEventTable.rowType);
+export const getWebhookEvent: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof getWebhookEventArgs,
+  typeof getWebhookEventResult
+> = spacetimedb.procedure(
+  getWebhookEventArgs,
+  getWebhookEventResult,
   (ctx, { eventId }) => {
     requireProcedureAdmin(ctx);
     return ctx.withTx(
@@ -301,9 +320,18 @@ export const getWebhookEvent = spacetimedb.procedure(
   }
 );
 
-export const listEmailsByUserId = spacetimedb.procedure(
-  { userId: t.string() },
-  t.array(resendEmailTable.rowType),
+const emailListResult: ArrayBuilder<typeof resendEmailTable.rowType> = t.array(
+  resendEmailTable.rowType
+);
+
+const listEmailsByUserIdArgs = { userId: t.string() };
+export const listEmailsByUserId: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof listEmailsByUserIdArgs,
+  typeof emailListResult
+> = spacetimedb.procedure(
+  listEmailsByUserIdArgs,
+  emailListResult,
   (ctx, { userId }) => {
     requireProcedureAdmin(ctx);
     return ctx.withTx(tx =>
@@ -312,18 +340,30 @@ export const listEmailsByUserId = spacetimedb.procedure(
   }
 );
 
-export const listEmailsByOrgId = spacetimedb.procedure(
-  { orgId: t.string() },
-  t.array(resendEmailTable.rowType),
+const listEmailsByOrgIdArgs = { orgId: t.string() };
+export const listEmailsByOrgId: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof listEmailsByOrgIdArgs,
+  typeof emailListResult
+> = spacetimedb.procedure(
+  listEmailsByOrgIdArgs,
+  emailListResult,
   (ctx, { orgId }) => {
     requireProcedureAdmin(ctx);
     return ctx.withTx(tx => takeRows(tx.db.resendEmail.byOrgId.filter(orgId)));
   }
 );
 
-export const listEmailsByStatus = spacetimedb.procedure(
-  { status: emailStatus },
-  t.array(resendEmailTable.rowType),
+const listEmailsByStatusArgs: { status: typeof emailStatus } = {
+  status: emailStatus,
+};
+export const listEmailsByStatus: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof listEmailsByStatusArgs,
+  typeof emailListResult
+> = spacetimedb.procedure(
+  listEmailsByStatusArgs,
+  emailListResult,
   (ctx, { status }) => {
     requireProcedureAdmin(ctx);
     return ctx.withTx(tx =>
@@ -332,9 +372,17 @@ export const listEmailsByStatus = spacetimedb.procedure(
   }
 );
 
-export const listDeliveryEventsForEmail = spacetimedb.procedure(
-  { resendId: t.string() },
-  t.array(resendDeliveryEventTable.rowType),
+const listDeliveryEventsForEmailArgs = { resendId: t.string() };
+const listDeliveryEventsForEmailResult: ArrayBuilder<
+  typeof resendDeliveryEventTable.rowType
+> = t.array(resendDeliveryEventTable.rowType);
+export const listDeliveryEventsForEmail: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof listDeliveryEventsForEmailArgs,
+  typeof listDeliveryEventsForEmailResult
+> = spacetimedb.procedure(
+  listDeliveryEventsForEmailArgs,
+  listDeliveryEventsForEmailResult,
   (ctx, { resendId }) => {
     requireProcedureAdmin(ctx);
     return ctx.withTx(tx =>
@@ -343,17 +391,23 @@ export const listDeliveryEventsForEmail = spacetimedb.procedure(
   }
 );
 
-export const resendApiRequest = spacetimedb.procedure(
-  {
-    method: t.string(),
-    path: t.string(),
-    jsonBody: t.option(t.string()),
-    idempotencyKey: t.option(t.string()),
-  },
-  t.object('ResendApiRequestResult', {
-    status: t.u16(),
-    body: t.string(),
-  }),
+const resendApiRequestArgs = {
+  method: t.string(),
+  path: t.string(),
+  jsonBody: t.option(t.string()),
+  idempotencyKey: t.option(t.string()),
+};
+const resendApiRequestResult = t.object('ResendApiRequestResult', {
+  status: t.u16(),
+  body: t.string(),
+});
+export const resendApiRequest: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof resendApiRequestArgs,
+  typeof resendApiRequestResult
+> = spacetimedb.procedure(
+  resendApiRequestArgs,
+  resendApiRequestResult,
   (ctx, args) => {
     // Administrators may make authenticated Resend calls with the stored key.
     const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));

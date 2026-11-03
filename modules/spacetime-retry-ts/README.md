@@ -7,12 +7,13 @@ tasks and past attempts.
 
 ## Install
 
+Run this in your SpacetimeDB TypeScript module directory:
+
 ```bash
-npm install @spacetimedb/retry spacetimedb
+npm install @spacetimedb/retry
 ```
 
-`spacetimedb` is a peer dependency. Keep its version aligned with the SDK used
-to build the host module.
+Requires SpacetimeDB SDK, CLI, and server 2.12 or later.
 
 ## Integrate into an application
 
@@ -132,4 +133,4 @@ pnpm --dir spacetimedb run build
 
 ## License
 
-Apache-2.0. See [`LICENSE.txt`](./LICENSE.txt).
+Apache-2.0. See the [license](https://github.com/clockworklabs/SpacetimeDB/blob/master/licenses/apache2.txt).

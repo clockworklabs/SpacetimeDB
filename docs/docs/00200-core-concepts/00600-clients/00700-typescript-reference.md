@@ -503,7 +503,7 @@ conn.subscriptionBuilder().subscribe(
 );
 ```
 
-For raw SQL subscription syntax, see [the SpacetimeDB SQL Reference](../../00300-resources/00200-reference/00400-sql-reference.md#subscriptions).
+For raw SQL subscription syntax, see [the SpacetimeDB SQL Reference](../../00300-resources/00400-sql-reference.md#subscriptions).
 
 ##### Method `subscribeToAllTables`
 

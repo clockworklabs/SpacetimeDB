@@ -1,4 +1,12 @@
-import { Range, SenderError } from 'spacetimedb/server';
+import {
+  Range,
+  SenderError,
+  type ProcedureExport,
+  type ReducerExport,
+  type ViewExport,
+  type ArrayBuilder,
+  type Infer,
+} from 'spacetimedb/server';
 import type { Identity } from 'spacetimedb';
 import {
   DEFAULT_SWEEP_BATCH,
@@ -12,6 +20,7 @@ import {
   spacetimedb,
   t,
   type ViewModuleCtx,
+  type Schema,
 } from './schema.js';
 
 /** Whether `identity` is a rate-limit administrator. */
@@ -39,53 +48,57 @@ function maxRowsArg(value: number | undefined): number {
     : positiveU32(errors.invalidMaxRows, value, MAX_SWEEP_BATCH);
 }
 
-export const runSweep = spacetimedb.procedure(
-  { maxRows: t.option(t.u32()) },
-  t.u32(),
-  (ctx, args) => {
-    const maxRows = maxRowsArg(args.maxRows);
-    return ctx.withTx(tx => {
-      requireAdmin(tx);
-      return sweepRateLimits(
-        tx,
-        tx.db.rateLimitBucket.expiresAt.filter(
-          new Range(undefined, { tag: 'included', value: tx.timestamp })
-        ),
-        maxRows
-      );
+const runSweepArgs = { maxRows: t.option(t.u32()) };
+const runSweepResult = t.u32();
+export const runSweep: ProcedureExport<
+  Schema,
+  typeof runSweepArgs,
+  typeof runSweepResult
+> = spacetimedb.procedure(runSweepArgs, runSweepResult, (ctx, args) => {
+  const maxRows = maxRowsArg(args.maxRows);
+  return ctx.withTx(tx => {
+    requireAdmin(tx);
+    return sweepRateLimits(
+      tx,
+      tx.db.rateLimitBucket.expiresAt.filter(
+        new Range(undefined, { tag: 'included', value: tx.timestamp })
+      ),
+      maxRows
+    );
+  });
+});
+
+const addRateLimitAdminArgs = { identity: t.identity() };
+export const addRateLimitAdmin: ReducerExport<
+  Schema,
+  typeof addRateLimitAdminArgs
+> = spacetimedb.reducer(addRateLimitAdminArgs, (ctx, args) => {
+  requireAdmin(ctx);
+  if (ctx.db.rateLimitAdminIdentity.identity.find(args.identity) == null) {
+    ctx.db.rateLimitAdminIdentity.insert({
+      identity: args.identity,
+      addedAt: ctx.timestamp,
     });
   }
-);
+});
 
-export const addRateLimitAdmin = spacetimedb.reducer(
-  { identity: t.identity() },
-  (ctx, args) => {
-    requireAdmin(ctx);
-    if (ctx.db.rateLimitAdminIdentity.identity.find(args.identity) == null) {
-      ctx.db.rateLimitAdminIdentity.insert({
-        identity: args.identity,
-        addedAt: ctx.timestamp,
-      });
-    }
+const removeRateLimitAdminArgs = { identity: t.identity() };
+export const removeRateLimitAdmin: ReducerExport<
+  Schema,
+  typeof removeRateLimitAdminArgs
+> = spacetimedb.reducer(removeRateLimitAdminArgs, (ctx, { identity }) => {
+  requireAdmin(ctx);
+  const existing = ctx.db.rateLimitAdminIdentity.identity.find(identity);
+  if (!existing) return;
+  if (ctx.db.rateLimitAdminIdentity.count() <= 1n) {
+    throw new SenderError(errors.cannotRemoveLastAdmin);
   }
-);
+  ctx.db.rateLimitAdminIdentity.delete(existing);
+});
 
-export const removeRateLimitAdmin = spacetimedb.reducer(
-  { identity: t.identity() },
-  (ctx, { identity }) => {
-    requireAdmin(ctx);
-    const existing = ctx.db.rateLimitAdminIdentity.identity.find(identity);
-    if (!existing) return;
-    if (ctx.db.rateLimitAdminIdentity.count() <= 1n) {
-      throw new SenderError(errors.cannotRemoveLastAdmin);
-    }
-    ctx.db.rateLimitAdminIdentity.delete(existing);
-  }
-);
-
-export const updateConfig = spacetimedb.reducer(
-  { sweepBatch: t.u32() },
-  (ctx, args) => {
+const updateConfigArgs = { sweepBatch: t.u32() };
+export const updateConfig: ReducerExport<Schema, typeof updateConfigArgs> =
+  spacetimedb.reducer(updateConfigArgs, (ctx, args) => {
     requireAdmin(ctx);
     const cfg = ctx.db.rateLimitConfig.singleton.find(true);
     if (!cfg) throw new Error('rate_limit.config_missing');
@@ -98,12 +111,11 @@ export const updateConfig = spacetimedb.reducer(
       ),
       updatedAt: ctx.timestamp,
     });
-  }
-);
+  });
 
-export const resetBuckets = spacetimedb.reducer(
-  { maxRows: t.option(t.u32()) },
-  (ctx, args) => {
+const resetBucketsArgs = { maxRows: t.option(t.u32()) };
+export const resetBuckets: ReducerExport<Schema, typeof resetBucketsArgs> =
+  spacetimedb.reducer(resetBucketsArgs, (ctx, args) => {
     requireAdmin(ctx);
     const maxRows = maxRowsArg(args.maxRows);
     let removed = 0;
@@ -112,12 +124,16 @@ export const resetBuckets = spacetimedb.reducer(
       ctx.db.rateLimitBucket.delete(row);
       removed++;
     }
-  }
-);
+  });
 
-export const adminRateLimitBuckets = spacetimedb.view(
+const adminRateLimitBucketsResult: ArrayBuilder<
+  typeof rateLimitBucket.rowType
+> = t.array(rateLimitBucket.rowType);
+export const adminRateLimitBuckets: ViewExport<
+  (ctx: ViewModuleCtx) => Infer<typeof adminRateLimitBucketsResult>
+> = spacetimedb.view(
   { name: 'admin_rate_limit_buckets', public: true },
-  t.array(rateLimitBucket.rowType),
+  adminRateLimitBucketsResult,
   ctx => {
     if (!isAdmin(ctx.db, ctx.sender)) return [];
     const rows = [];
@@ -129,17 +145,21 @@ export const adminRateLimitBuckets = spacetimedb.view(
   }
 );
 
-export const rateLimitSweep = spacetimedb.reducer(
-  { onSchedule: rateLimitSweepTick },
-  { arg: rateLimitSweepTick.rowType },
-  (ctx, _args) => {
-    sweepRateLimits(
-      ctx,
-      ctx.db.rateLimitBucket.expiresAt.filter(
-        new Range(undefined, { tag: 'included', value: ctx.timestamp })
-      ),
-      ctx.db.rateLimitConfig.singleton.find(true)?.sweepBatch ??
-        DEFAULT_SWEEP_BATCH
-    );
-  }
-);
+const rateLimitSweepArgs: { arg: typeof rateLimitSweepTick.rowType } = {
+  arg: rateLimitSweepTick.rowType,
+};
+export const rateLimitSweep: ReducerExport<Schema, typeof rateLimitSweepArgs> =
+  spacetimedb.reducer(
+    { onSchedule: rateLimitSweepTick },
+    rateLimitSweepArgs,
+    (ctx, _args) => {
+      sweepRateLimits(
+        ctx,
+        ctx.db.rateLimitBucket.expiresAt.filter(
+          new Range(undefined, { tag: 'included', value: ctx.timestamp })
+        ),
+        ctx.db.rateLimitConfig.singleton.find(true)?.sweepBatch ??
+          DEFAULT_SWEEP_BATCH
+      );
+    }
+  );

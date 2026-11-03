@@ -193,17 +193,12 @@ fn normalize_nuget_path(path: &Path) -> String {
         .to_string()
 }
 
-fn ensure_csharp_package_source(path: &Path, package_id: &str) -> Result<()> {
-    let has_package = fs::read_dir(path).ok().into_iter().flatten().flatten().any(|entry| {
-        entry
-            .file_name()
-            .to_str()
-            .is_some_and(|name| name.starts_with(package_id) && name.ends_with(".nupkg"))
-    });
-    if !has_package {
+fn ensure_csharp_package_source(path: &Path, package_id: &str, version: &str) -> Result<()> {
+    if !path.join(format!("{package_id}.{version}.nupkg")).is_file() {
         bail!(
-            "local C# package {} not found in {}. Run: dotnet pack -c Release crates/bindings-csharp/{}",
+            "local C# package {} version {} not found in {}. Run: dotnet pack -c Release crates/bindings-csharp/{}",
             package_id,
+            version,
             path.display(),
             package_id.strip_prefix("SpacetimeDB.").unwrap_or(package_id)
         );
@@ -216,8 +211,12 @@ fn write_csharp_nuget_config(root: &Path) -> Result<()> {
     let runtime_source = workspace.join("crates/bindings-csharp/Runtime/bin/Release");
     let bsatn_source = workspace.join("crates/bindings-csharp/BSATN.Runtime/bin/Release");
 
-    ensure_csharp_package_source(&runtime_source, "SpacetimeDB.Runtime")?;
-    ensure_csharp_package_source(&bsatn_source, "SpacetimeDB.BSATN.Runtime")?;
+    let runtime_version =
+        read_csharp_package_version(&workspace.join("crates/bindings-csharp/Runtime/Runtime.csproj"))?;
+    let bsatn_version =
+        read_csharp_package_version(&workspace.join("crates/bindings-csharp/BSATN.Runtime/BSATN.Runtime.csproj"))?;
+    ensure_csharp_package_source(&runtime_source, "SpacetimeDB.Runtime", &runtime_version)?;
+    ensure_csharp_package_source(&bsatn_source, "SpacetimeDB.BSATN.Runtime", &bsatn_version)?;
 
     let package_cache = root.join(".nuget/packages");
     if package_cache.exists() {
@@ -229,7 +228,7 @@ fn write_csharp_nuget_config(root: &Path) -> Result<()> {
         r#"<?xml version="1.0" encoding="utf-8"?>
 <configuration>
   <config>
-    <add key="globalPackagesFolder" value="{}" />
+    <add key="globalPackagesFolder" value=".nuget/packages" />
   </config>
   <packageSources>
     <clear />
@@ -255,7 +254,6 @@ fn write_csharp_nuget_config(root: &Path) -> Result<()> {
   </packageSourceMapping>
 </configuration>
 "#,
-        normalize_nuget_path(&package_cache),
         normalize_nuget_path(&runtime_source),
         normalize_nuget_path(&bsatn_source),
     );
@@ -334,4 +332,20 @@ fn ensure_parent(p: &Path) -> io::Result<()> {
         fs::create_dir_all(dir)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn csharp_package_source_requires_the_requested_version() {
+        let root = std::env::temp_dir().join(format!("llm-nuget-version-{}", std::process::id()));
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("SpacetimeDB.Runtime.1.0.0.nupkg"), []).unwrap();
+        assert!(ensure_csharp_package_source(&root, "SpacetimeDB.Runtime", "2.0.0").is_err());
+        fs::write(root.join("SpacetimeDB.Runtime.2.0.0.nupkg"), []).unwrap();
+        assert!(ensure_csharp_package_source(&root, "SpacetimeDB.Runtime", "2.0.0").is_ok());
+        fs::remove_dir_all(&root).unwrap();
+    }
 }

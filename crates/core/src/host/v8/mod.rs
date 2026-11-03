@@ -65,8 +65,8 @@ use self::syscall::{
 };
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{
-    CallHttpHandlerParams, CallProcedureParams, CallReducerParams, InstanceManagerMetrics, ModuleInfo,
-    ModuleWithInstance, UpdateEnvironmentResult,
+    CallHttpHandlerParams, CallProcedureParams, CallReducerParams, IdcDeliveryFailure, IdcMessageParams,
+    IdcReducerCallOutcome, InstanceManagerMetrics, ModuleInfo, ModuleWithInstance, UpdateEnvironmentResult,
 };
 use super::UpdateDatabaseResult;
 use crate::client::{ClientActorId, MeteredUnboundedReceiver, MeteredUnboundedSender};
@@ -82,7 +82,7 @@ use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
     AnonymousViewOp, DescribeError, EnergyStats, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings,
     HttpHandlerExecuteResult, HttpHandlerOp, InstanceCommon, InstanceOp, ProcedureExecuteResult, ProcedureOp,
-    ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp, WasmInstance,
+    ReducerExecuteResult, ReducerOp, ReducerSuccessAction, ViewExecuteResult, ViewOp, WasmInstance,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
 use crate::host::{
@@ -293,6 +293,10 @@ impl JsModule {
 
     pub fn scheduler(&self) -> &Scheduler {
         self.common.scheduler()
+    }
+
+    pub fn idc_sender(&self) -> super::idc_actor::IdcActorSender {
+        self.common.idc_sender()
     }
 
     pub fn info(&self) -> Arc<ModuleInfo> {
@@ -507,11 +511,32 @@ impl JsMainInstance {
         self.request(CallReducerRequest { params }).await
     }
 
+    pub(in crate::host) async fn call_idc_reducer(
+        &self,
+        params: CallReducerParams,
+        delivery: IdcMessageParams,
+        on_success: ReducerSuccessAction,
+    ) -> Result<IdcReducerCallOutcome, IdcDeliveryFailure> {
+        self.request(CallIdcReducerRequest {
+            params,
+            delivery,
+            on_success,
+        })
+        .await
+    }
+
     pub(in crate::host) async fn call_scheduled_reducer(
         &self,
         params: ScheduledFunctionParams,
     ) -> CallScheduledFunctionResult {
         self.request(ScheduledReducerRequest { params }).await
+    }
+
+    pub(in crate::host) async fn run_idc_callback_and_cleanup(
+        &self,
+        msg: crate::host::idc_actor::DeliveredMessage,
+    ) -> anyhow::Result<()> {
+        self.request(RunIdcCallbackAndCleanupRequest { msg }).await
     }
 
     pub(in crate::host) async fn enqueue_reducer(&self, params: CallReducerParams, on_panic: JsFatalHook) {
@@ -663,6 +688,20 @@ js_main_request! {
     ScheduledReducerRequest {
         params: ScheduledFunctionParams,
     } => "scheduled_reducer", CallScheduledFunctionResult, ScheduledReducer
+}
+
+js_main_request! {
+    CallIdcReducerRequest {
+        params: CallReducerParams,
+        delivery: IdcMessageParams,
+        on_success: ReducerSuccessAction,
+    } => "call_idc_reducer", Result<IdcReducerCallOutcome, IdcDeliveryFailure>, CallIdcReducer
+}
+
+js_main_request! {
+    RunIdcCallbackAndCleanupRequest {
+        msg: crate::host::idc_actor::DeliveredMessage,
+    } => "run_idc_callback_and_cleanup", anyhow::Result<()>, RunIdcCallbackAndCleanup
 }
 
 js_main_request! {
@@ -847,6 +886,13 @@ enum JsMainWorkerRequest {
         reply_tx: JsReplyTx<ReducerCallResultWithTxOffset>,
         params: CallReducerParams,
     },
+    /// See [`JsMainInstance::call_idc_reducer`].
+    CallIdcReducer {
+        reply_tx: JsReplyTx<Result<IdcReducerCallOutcome, IdcDeliveryFailure>>,
+        params: CallReducerParams,
+        delivery: IdcMessageParams,
+        on_success: ReducerSuccessAction,
+    },
     /// See [`JsMainInstance::enqueue_reducer`].
     CallReducerDetached {
         params: CallReducerParams,
@@ -856,6 +902,10 @@ enum JsMainWorkerRequest {
     ScheduledReducer {
         reply_tx: JsReplyTx<CallScheduledFunctionResult>,
         params: ScheduledFunctionParams,
+    },
+    RunIdcCallbackAndCleanup {
+        reply_tx: JsReplyTx<anyhow::Result<()>>,
+        msg: crate::host::idc_actor::DeliveredMessage,
     },
     /// See [`JsMainInstance::call_view`].
     CallView {
@@ -1453,6 +1503,14 @@ fn handle_main_worker_request(
                 call_reducer(None, params)
             })
         }
+        JsMainWorkerRequest::CallIdcReducer {
+            reply_tx,
+            params,
+            delivery,
+            on_success,
+        } => handle_worker_request("call_idc_reducer", reply_tx, || {
+            instance_common.call_idc_reducer(params, delivery, inst, on_success)
+        }),
         JsMainWorkerRequest::CallReducerDetached { params, on_panic } => {
             handle_detached_worker_request("call_reducer", on_panic, || {
                 let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
@@ -1464,6 +1522,11 @@ fn handle_main_worker_request(
             handle_worker_request("scheduled_reducer", reply_tx, || {
                 let (res, trapped) = instance_common.call_scheduled_reducer(params, inst);
                 (res, trapped)
+            })
+        }
+        JsMainWorkerRequest::RunIdcCallbackAndCleanup { reply_tx, msg } => {
+            handle_worker_request("run_idc_callback_and_cleanup", reply_tx, || {
+                instance_common.run_idc_callback_and_cleanup(msg, inst)
             })
         }
         JsMainWorkerRequest::CallView { reply_tx, cmd } => handle_worker_request("call_view", reply_tx, || {
@@ -1678,7 +1741,11 @@ where
                     Either::Left(module) => (module.replica_ctx(), module.scheduler()),
                     Either::Right(mcc) => (&mcc.replica_ctx, &mcc.scheduler),
                 };
-                let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler.clone());
+                let idc_sender = match &generation_module_or_mcc {
+                    Either::Left(module) => module.idc_sender(),
+                    Either::Right(mcc) => mcc.idc_sender.clone(),
+                };
+                let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler.clone(), idc_sender);
                 scope.set_slot(JsInstanceEnv::new(instance_env));
 
                 let startup_result = panic::catch_unwind(AssertUnwindSafe(|| {

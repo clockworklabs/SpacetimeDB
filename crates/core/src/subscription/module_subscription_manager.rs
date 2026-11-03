@@ -27,10 +27,10 @@ use spacetimedb_data_structures::map::{
 };
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_durability::TxOffset;
-use spacetimedb_expr::expr::CollectViews;
+use spacetimedb_expr::expr::{CollectViews, ViewCall};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
-use spacetimedb_primitives::{ColId, IndexId, TableId, ViewId};
+use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::def::RawModuleDefVersion;
 use spacetimedb_schema::table_name::TableName;
@@ -69,7 +69,7 @@ pub struct Plan {
 }
 
 impl CollectViews for Plan {
-    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewCall>) {
         for plan in &self.plans {
             plan.collect_views(views);
         }

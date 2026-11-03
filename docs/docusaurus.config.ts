@@ -162,6 +162,7 @@ const config: Config = {
             '1.12.0': {
               label: '1.12.0',
               banner: 'none',
+              noIndex: true,
             },
           },
           beforeDefaultRehypePlugins: [
