@@ -23,7 +23,7 @@ fn cli_can_publish_spacetimedb_on_disk() {
             "--server",
             &test.server_url,
             // Needed when running smoketests against a remote server.
-            "--yes=remote,skip-login",
+            "--yes=remote",
             "foobar",
         ])
         .unwrap();
@@ -37,7 +37,7 @@ fn cli_can_publish_spacetimedb_on_disk() {
             "--server",
             &test.server_url,
             // Needed when running smoketests against a remote server.
-            "--yes=remote,skip-login",
+            "--yes=remote",
             "foobar",
         ])
         .unwrap();
@@ -62,7 +62,7 @@ fn migration_test(module_name: &str, republish_args: &[&str], expect_success: bo
             &dir,
             "--server",
             &test.server_url,
-            "--yes=remote,skip-login",
+            "--yes=remote",
             &module_name,
         ])
         .unwrap();
@@ -74,7 +74,7 @@ fn migration_test(module_name: &str, republish_args: &[&str], expect_success: bo
         &dir,
         "--server",
         &test.server_url,
-        "--yes=remote,skip-login",
+        "--yes=remote",
         &module_name,
     ];
     args.extend(republish_args);
@@ -252,7 +252,7 @@ fn cli_publish_with_config_but_no_match_uses_cli_args() {
         "--server",
         &test.server_url,
         // Needed when running smoketests against a remote server.
-        "--yes=remote,skip-login",
+        "--yes=remote",
         "cli-db-name",
         "--module-path",
         module_dir.to_str().unwrap(),
