@@ -9,7 +9,7 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../../src/index';
-
+import { BinaryReader as __BinaryReader } from '../../../src/index';
 export default __t.row({
   identity: __t.identity().primaryKey(),
   username: __t.string(),

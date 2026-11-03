@@ -41,92 +41,50 @@ macro_rules! declare_tests {
 
 declare_tests! {
     test_codegen_csharp => Csharp { namespace: "SpacetimeDB" },
-    test_codegen_typescript => LegacyTypeScript,
-    test_codegen_typescript_declarations => TypeScript,
+    test_codegen_typescript => TypeScript,
     test_codegen_rust => Rust,
 }
 
 #[test]
 fn test_typescript_table_handles_are_camel_case() {
-    let module = compiled_module();
-    let index = generate(module, &LegacyTypeScript, &CodegenOptions::default())
-        .into_iter()
-        .find(|file| file.filename == "index.ts")
-        .expect("typescript codegen should emit index.ts")
-        .code;
-
-    assert!(index.contains("loggedOutPlayer: __table({"));
-    assert!(!index.contains("logged_out_player: __table({"));
-    assert!(index.contains("myPlayer: __table({"));
-    assert!(!index.contains("my_player: __table({"));
-    assert!(index.contains(r#""logged_out_player": "loggedOutPlayer""#));
-    assert!(index.contains(r#"readonly "logged_out_player": __TablesBase["loggedOutPlayer"];"#));
-    assert!(index.contains(r#"readonly "logged_out_player": __DbViewBase["loggedOutPlayer"];"#));
-    assert!(index.contains(
-        r#"/** @deprecated Use `loggedOutPlayer` instead. This alias will be removed in the next major version. */"#
-    ));
+    compile_typescript_client(
+        generate(compiled_module(), &TypeScript, &CodegenOptions::default()),
+        r#"
+import assert from 'node:assert/strict';
+import { DbConnection, tables, type EventContext } from './index';
+assert.equal(tables.logged_out_player, tables.loggedOutPlayer);
+assert.equal(tables.my_player, tables.myPlayer);
+function consume(conn: DbConnection, ctx: EventContext) {
+  const same: typeof conn.db.loggedOutPlayer = ctx.db.logged_out_player;
+  const player: typeof conn.db.myPlayer = conn.db.my_player;
+  void same; void player;
+}
+void consume;
+"#,
+    );
 }
 
-/// A submodule reducer's wire name must be qualified exactly once, with the canonical
-/// namespace, while everything client code touches uses the accessor namespace.
-///
-/// `module-test-ts` mounts its library as `myLib`, which canonicalizes to `my_lib`.
-/// `ReducerDef::name` is fully qualified, so any code that also prepends the namespace
-/// path would emit `my_lib.my_lib.lib_insert`. Nothing in the snapshot fixtures mounts a
-/// submodule, so this checks the TypeScript output of one that does.
 #[test]
 fn submodule_names_use_canonical_wire_names_and_accessor_paths() {
-    let module = compiled_typescript_module();
-    let files = generate(module, &LegacyTypeScript, &CodegenOptions::default());
-    let filenames: Vec<_> = files.iter().map(|f| f.filename.clone()).collect();
-    let code = files.into_iter().map(|f| f.code).collect::<Vec<_>>().join("\n");
-
-    // Wire names are canonical: snake_case namespace, singly qualified.
-    let reducer_lines: Vec<_> = code.lines().filter(|l| l.contains("__reducerSchema(")).collect();
-    assert!(
-        code.contains(r#"__reducerSchema("my_lib.lib_insert""#),
-        "expected a singly-qualified canonical wire name for the submodule reducer; got:\n{}",
-        reducer_lines.join("\n")
-    );
-    assert!(
-        !code.contains("my_lib.my_lib.") && !code.contains("myLib.my_lib") && !code.contains("my_lib.myLib"),
-        "namespace was applied twice or mixed forms somewhere in the generated bindings"
-    );
-    assert!(
-        code.contains(r#""myLib.libData": __table({"#) && code.contains("name: 'my_lib.libData',"),
-        "submodule tables must be keyed by their accessor path and carry the canonical wire name"
-    );
-    assert!(
-        !code.contains(r#"__reducerSchema("myLib."#) && !code.contains("name: 'myLib."),
-        "the accessor namespace must not leak into wire names"
-    );
-
-    // Client-facing names follow the accessor namespace.
-    assert!(
-        code.contains("myLib: {"),
-        "generated `tables`/`reducers` trees must be keyed by the accessor namespace"
-    );
-    assert!(
-        !code.contains("my_lib: {"),
-        "the canonical namespace must not be used as an accessor key"
-    );
-    // The schema entry registers the reducer under an explicit accessor key, the accessor
-    // path plus the camelCase accessor name, and the tree entry looks it up by that same key.
-    assert!(
-        code.contains(r#", "myLib.libInsert"),"#),
-        "submodule reducer schema should pass its accessor key explicitly"
-    );
-    assert!(
-        code.contains(r#"libInsert: __reducerAccessors["myLib.libInsert"]"#),
-        "namespace tree entries must use the SDK's accessor-map key for the canonical wire name"
-    );
-    assert!(
-        code.contains("MyLib_LibData"),
-        "generated row type names must use the accessor namespace"
-    );
-    assert!(
-        filenames.iter().any(|f| f.starts_with("myLib/")) && !filenames.iter().any(|f| f.starts_with("my_lib/")),
-        "generated files must live under the accessor namespace directory; got {filenames:?}"
+    let files = generate(compiled_typescript_module(), &TypeScript, &CodegenOptions::default());
+    assert!(files.iter().any(|f| f.filename == "my_lib/declarations.ts"));
+    compile_typescript_client(
+        files,
+        r#"
+import assert from 'node:assert/strict';
+import { DbConnection, tables, reducers, procedures } from './index';
+import type { LibData } from './my_lib/types';
+assert.equal(tables.myLib.libData.sourceName, 'my_lib.libData');
+assert.equal(reducers.myLib.libInsert.name, 'my_lib.lib_insert');
+assert.equal(procedures.myLib.libCount.name, 'my_lib.lib_count');
+function consume(conn: DbConnection) {
+  const rows: LibData[] = [...conn.db.myLib.libData.iter()];
+  // @ts-expect-error canonical namespace is not a client accessor
+  void conn.db.my_lib;
+  void rows;
+}
+void consume;
+"#,
     );
 }
 
@@ -243,10 +201,9 @@ fn typescript_clients_compile_and_run() {
             visibility: spacetimedb_codegen::CodegenVisibility::IncludePrivate,
         },
     ] {
-        for lang in [&TypeScript as &dyn spacetimedb_codegen::Lang, &LegacyTypeScript] {
-            compile_typescript_client(
-                generate(compiled_module(), lang, &options),
-                r#"
+        compile_typescript_client(
+            generate(compiled_module(), &TypeScript, &options),
+            r#"
 import assert from 'node:assert/strict';
 import { DbConnection, DbConnectionBuilder, tables, reducers, procedures, type EventContext } from './index';
 const builder: DbConnectionBuilder = DbConnection.builder().withUri('ws://localhost:3000').withDatabaseName('example');
@@ -267,10 +224,10 @@ function consume(conn: DbConnection, ctx: EventContext) {
 }
 void consume;
 "#,
-            );
-            compile_typescript_client(
-                generate(compiled_typescript_module(), lang, &options),
-                r#"
+        );
+        compile_typescript_client(
+            generate(compiled_typescript_module(), &TypeScript, &options),
+            r#"
 import assert from 'node:assert/strict';
 import { DbConnection, tables, reducers } from './index';
 assert.equal(tables.myLib.libData.sourceName, 'my_lib.libData');
@@ -282,8 +239,7 @@ function consume(conn: DbConnection) {
 }
 void consume;
 "#,
-            );
-        }
+        );
     }
 }
 
@@ -389,9 +345,22 @@ assert.equal(reducers.spacetimedb.name, 'spacetimedb');
 
 #[test]
 fn legacy_typescript_bindings_work_with_published_sdk() {
-    compile_typescript_client_with_sdk(
-        generate(compiled_module(), &LegacyTypeScript, &CodegenOptions::default()),
-        r#"
+    let outfiles = generate(compiled_module(), &LegacyTypeScript, &CodegenOptions::default())
+        .into_iter()
+        .map(|f| (f.filename, f.code))
+        .collect::<HashMap<_, _>>();
+    let mut settings = insta::Settings::clone_current();
+    settings.set_sort_maps(true);
+    settings.add_filter(
+        r"// This was generated using spacetimedb cli version \d+\.\d+\.\d+ .*",
+        "VERSION_COMMENT",
+    );
+    settings.add_filter(r#"cliVersion: "\d+\.\d+\.\d+","#, r#"cliVersion: "X.Y.Z","#);
+    settings.bind(|| insta::assert_toml_snapshot!("legacy_typescript_bindings", outfiles));
+    for sdk in [None, Some("spacetimedb-legacy")] {
+        compile_typescript_client_with_sdk(
+            generate(compiled_module(), &LegacyTypeScript, &CodegenOptions::default()),
+            r#"
 import assert from 'node:assert/strict';
 import { DbConnection, tables, reducers } from './index';
 assert.equal(typeof DbConnection.builder().build, 'function');
@@ -404,8 +373,9 @@ function consume(conn: DbConnection) {
 }
 void consume;
 "#,
-        Some("spacetimedb-legacy"),
-    );
+            sdk,
+        );
+    }
 }
 
 #[test]

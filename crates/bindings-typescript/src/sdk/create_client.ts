@@ -158,7 +158,15 @@ export interface Client<M, A extends Record<string, string> = {}> {
     builder(): Builder<ClientConnection<M, A>>;
     prototype: ClientConnection<M, A>;
   };
-  DbConnectionBuilder: typeof Builder<ClientConnection<M, A>>;
+  DbConnectionBuilder: {
+    new (
+      remoteModule: RemoteModuleOfDeclarations<M>,
+      connection: (
+        config: DbConnectionConfig<RemoteModuleOfDeclarations<M>>
+      ) => ClientConnection<M, A>
+    ): Builder<ClientConnection<M, A>>;
+    prototype: Builder<ClientConnection<M, A>>;
+  };
   SubscriptionBuilder: typeof SubscriptionBuilderImpl<
     RemoteModuleOfDeclarations<M>
   >;

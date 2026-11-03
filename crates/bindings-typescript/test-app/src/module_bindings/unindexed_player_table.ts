@@ -9,10 +9,11 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../../src/index';
+import { BinaryReader as __BinaryReader } from '../../../src/index';
 import { Point } from './types';
 
 export default __t.row({
-  id: __t.u32().primaryKey(),
+  id: __t.u32().primaryKey().autoInc(),
   ownerId: __t.identity().name('owner_id'),
   name: __t.string(),
   get location() {

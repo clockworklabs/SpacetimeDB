@@ -38,11 +38,11 @@ fn main() -> anyhow::Result<()> {
     fs::create_dir(dir)?;
 
     let module: ModuleDef = module.try_into()?;
-    generate(&module, &typescript::LegacyTypeScript, &CodegenOptions::default())
+    generate(&module, &typescript::TypeScript, &CodegenOptions::default())
         .into_iter()
         .try_for_each(|OutputFile { filename, code }| {
-            // Skip the index.ts since we don't need it.
-            if filename == "index.ts" {
+            // Only type declarations are needed here.
+            if filename == "index.ts" || filename == "declarations.ts" {
                 return Ok(());
             }
             // We don't need the convenience types.
