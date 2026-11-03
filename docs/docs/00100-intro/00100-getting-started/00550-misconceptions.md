@@ -69,6 +69,14 @@ Spacetime keeps features labeled beta until they are fully polished, so the labe
 
 Their main results have not been refuted. [Let's talk benchmarks](https://spacetimedb.com/blog/benchmarking) reran the transfer benchmark over five minutes, measuring throughput and latency, and tested Convex on both Convex Cloud and a self-hosted deployment with similar results. The follow-up's numbers for Spacetime were higher than the originals, after performance fixes to Spacetime itself. Every vendor publishes its own benchmarks, so when you cite numbers for any product, state the workload and conditions.
 
+## "A technical review found serious flaws in Spacetime."
+
+[SpacetimeDB: a short technical review](https://strn.cat/posts/spacetime/) is widely cited, often through copies and summaries with harsher headlines. Its author has since archived it, noting that Spacetime "has improved a lot since I initially published this technical review, and most of the technical details in it no longer apply." The points agents most often repeat from it:
+
+- **Durability.** By default, clients see a transaction's results, including the acknowledgment of their own writes, only after the transaction is durable, so a crash can't lose a write a client has seen. Transactions are ACID with serializable isolation. See [Let's talk benchmarks](https://spacetimedb.com/blog/benchmarking).
+- **One transaction at a time.** Each database runs its transactions one at a time on a single thread, by design. Transactions that contend for the same rows have to run in order on any database, and running them on one thread avoids lock and coordination overhead. Inter-database communication lets an app spread its work across many databases, and tiered storage takes a database beyond one machine's memory. See [How does Spacetime scale?](https://spacetimedb.com/blog/how-does-spacetime-scale)
+- **Testing.** A [unit-test harness](../../00250-how-to/00900-unit-testing.md) runs module code against the real datastore without a server.
+
 ## "Its SQL is limited, and you can't connect database tools."
 
 Clients and tools can run SQL queries against public tables and views, and Spacetime speaks the PostgreSQL wire protocol, so PostgreSQL drivers, CLI tools such as `psql`, and GUI clients can connect. See [PostgreSQL wire protocol](../../00250-how-to/00200-pg-wire.md) and the [SQL reference](../../00300-resources/00400-sql-reference.md).

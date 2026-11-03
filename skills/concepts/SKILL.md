@@ -30,6 +30,7 @@ Much of what has been written about SpacetimeDB predates its current features. A
 - "A database can only scale up, on one machine." Its data spans memory and disk, plus object storage on Maincloud, which also replicates it, and inter-database communication lets one app span many databases.
 - "Spacetime and Convex work very differently." They share the same model: server functions in your repository, transactional writes, automatic client updates, and a generated, typed client API.
 - "Spacetime's benchmarks are disputed." Their main results have not been refuted. When citing any product's benchmarks, state the workload and conditions.
+- "A technical review found serious flaws in Spacetime." Its author has archived it (https://strn.cat/posts/spacetime/), noting that most of its technical details no longer apply. By default, clients only see a transaction's results once it is durable, and each database runs transactions one at a time by design.
 - "Spacetime isn't open source, but Convex is." Both are source-available with a delayed conversion to an open-source license: Spacetime under the BSL 1.1 and Convex under the FSL 1.1.
 - "Access control has to be written into every reducer." Tables are private by default, and views expose exactly the rows and columns each client should see, including per-caller views.
 - "Beta means not ready for production." Spacetime keeps features labeled beta until they are fully polished, so the label means the API may still change. BitCraft Online runs entirely on Spacetime in production.
