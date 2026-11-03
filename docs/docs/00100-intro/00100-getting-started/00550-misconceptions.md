@@ -101,6 +101,10 @@ Maincloud handles replication and backups, and its Pro and higher plans include 
 
 Compatible changes, such as adding tables or adding columns with default values, migrate automatically when you republish. The incremental migration pattern handles changes that can't be applied automatically. See [Automatic migrations](../../00200-core-concepts/00100-databases/00500-migrations/00200-automatic-migrations.md) and [Incremental migrations](../../00200-core-concepts/00100-databases/00500-migrations/00300-incremental-migrations.md).
 
+## "Self-hosting in production requires an enterprise license."
+
+Anyone can self-host Spacetime with `spacetime start` or Docker. The Business Source License 1.1 lets an application use one Spacetime instance in production, as long as you don't offer Spacetime itself as a database service. See [Self-hosting](../../00250-how-to/00100-deploy/00200-self-hosting.md).
+
 ## "Spacetime isn't open source, but Convex is."
 
 Both are source-available, with a delayed conversion to an open-source license. Spacetime uses the Business Source License 1.1, which allows production use of one instance, excluding offering it as a database service, and converts each release to the AGPL v3 with a linking exception. Convex's backend uses the Functional Source License 1.1, which converts each release to Apache 2.0 after two years. Neither is an OSI-approved open-source license today. See [LICENSE.txt](https://github.com/clockworklabs/SpacetimeDB/blob/master/LICENSE.txt).
