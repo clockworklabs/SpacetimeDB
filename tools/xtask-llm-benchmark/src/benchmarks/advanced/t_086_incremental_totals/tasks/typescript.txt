@@ -1,6 +1,6 @@
 Write a SpacetimeDB backend module in TypeScript that maintains category totals incrementally. Return only the module source.
 
-Maintain category totals after arbitrary sale inserts, updates, moves and deletes. A category row exists exactly when its sale_count is nonzero, even if total_amount is zero. Negative and zero sale amounts are valid. All source and aggregate changes must be atomic. This is a correctness test, not a scan-cost benchmark.
+Maintain category totals after arbitrary sale inserts, updates, moves and deletes. A category row exists exactly when its saleCount is nonzero, even if totalAmount is zero. Negative and zero sale amounts are valid. All source and aggregate changes must be atomic. This is a correctness test, not a scan-cost benchmark.
 
 Tables (the first field is the primary key):
 - public sale: id: u64 (bigint), category: string, amount: i64 (bigint)

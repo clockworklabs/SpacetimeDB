@@ -5,5 +5,5 @@ Implement a persistent cache for an external text-generating service. Cache iden
 Tables (the first field is the primary key):
 - public CacheEntry: Id: ulong, Product: string, Language: string, Value: string, ExpiresAt: long
 
-cache_entry.id is auto-increment. At most one row may exist per exact product/language pair; update expired rows instead of accumulating duplicates. No cache seed reducers. GET endpoints are controlled local test servers.
+CacheEntry.Id is auto-increment. At most one row may exist per exact product/language pair; update expired rows instead of accumulating duplicates. No cache seed reducers. GET endpoints are controlled local test servers.
 Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged.
