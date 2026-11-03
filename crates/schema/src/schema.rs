@@ -157,20 +157,7 @@ impl TableOrViewSchema {
     }
 }
 
-/// Which storage tiers may hold a table's data.
-///
-/// Variant order is part of the stored format. Append new variants; do not reorder them.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, spacetimedb_lib::SpacetimeType)]
-#[sats(crate = spacetimedb_lib)]
-pub enum TableCachePolicy {
-    /// Keep table contents in memory.
-    #[default]
-    RequiredInMemory,
-    /// Allow eviction to local disk, but not remote storage.
-    RequiredOnDisk,
-    /// Allow any storage tier, including remote storage.
-    NoRequirement,
-}
+pub use spacetimedb_lib::db::raw_def::v10::TableCachePolicy;
 
 /// A data structure representing the schema of a database table.
 ///
@@ -1047,7 +1034,7 @@ impl Schema for TableSchema {
             signature_hash: outbox.signature_hash,
         });
 
-        TableSchema::new(
+        let mut schema = TableSchema::new(
             table_id,
             TableName::new(name.clone()),
             None,
@@ -1062,7 +1049,9 @@ impl Schema for TableSchema {
             *is_event,
             Some(accessor_name.clone().into()),
             outbox,
-        )
+        );
+        schema.cache_policy = def.cache_policy;
+        schema
     }
 
     fn check_compatible(&self, module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
@@ -1075,6 +1064,7 @@ impl Schema for TableSchema {
             "Table name mismatch"
         );
         ensure_eq!(self.primary_key, def.primary_key, "Primary key mismatch");
+        ensure_eq!(self.cache_policy, def.cache_policy, "Cache policy mismatch");
         let def_table_access: StAccess = (def.table_access).into();
         ensure_eq!(self.table_access, def_table_access, "Table access mismatch");
         let def_table_type: StTableType = (def.table_type).into();

@@ -108,6 +108,32 @@ pub enum RawModuleDefV10Section {
 
     /// Outbox table definitions.
     Outboxes(Vec<RawOutboxDefV10>),
+
+    /// Residency requirements for tables that opt out of the in-memory default.
+    TableCachePolicies(Vec<RawTableCachePolicyV10>),
+}
+
+/// The furthest storage tier a table's pages and blobs may reside in.
+/// Variant order is also used by `st_table_cache_policy`; append new variants.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, SpacetimeType)]
+#[sats(crate = crate)]
+pub enum TableCachePolicy {
+    /// Keep pages and blobs resident in memory.
+    #[default]
+    RequiredInMemory,
+    /// Allow eviction to local disk, but not to remote storage alone.
+    RequiredOnDisk,
+    /// Allow any storage tier, including remote object storage.
+    NoRequirement,
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawTableCachePolicyV10 {
+    /// The `source_name` of the table in this module.
+    pub table_name: RawIdentifier,
+    pub policy: TableCachePolicy,
 }
 
 #[derive(Debug, Clone, SpacetimeType)]
@@ -726,6 +752,16 @@ impl RawModuleDefV10 {
         })
     }
 
+    pub fn table_cache_policies(&self) -> impl Iterator<Item = &RawTableCachePolicyV10> {
+        self.sections
+            .iter()
+            .filter_map(|section| match section {
+                RawModuleDefV10Section::TableCachePolicies(policies) => Some(policies),
+                _ => None,
+            })
+            .flatten()
+    }
+
     // Get the row-level security section, if present.
     pub fn row_level_security(&self) -> Option<&Vec<RawRowLevelSecurityDefV10>> {
         self.sections.iter().find_map(|s| match s {
@@ -1339,6 +1375,27 @@ impl RawModuleDefV10Builder {
 
     pub fn add_explicit_names(&mut self, names: ExplicitNames) {
         self.explicit_names_mut().merge(names);
+    }
+
+    /// Record a table's residency requirement. Defaults need no new ABI section.
+    pub fn add_table_cache_policy(&mut self, table_name: impl Into<RawIdentifier>, policy: TableCachePolicy) {
+        if policy == TableCachePolicy::RequiredInMemory {
+            return;
+        }
+        let entry = RawTableCachePolicyV10 {
+            table_name: table_name.into(),
+            policy,
+        };
+        if let Some(policies) = self.module.sections.iter_mut().find_map(|section| match section {
+            RawModuleDefV10Section::TableCachePolicies(policies) => Some(policies),
+            _ => None,
+        }) {
+            policies.push(entry);
+        } else {
+            self.module
+                .sections
+                .push(RawModuleDefV10Section::TableCachePolicies(vec![entry]));
+        }
     }
 
     /// Register an IDC outbox table.

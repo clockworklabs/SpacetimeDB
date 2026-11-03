@@ -212,8 +212,15 @@ public static partial class Timers
     }
 }
 
-[SpacetimeDB.Table(Accessor = "MultiTable1", Public = true)]
-[SpacetimeDB.Table(Accessor = "MultiTable2")]
+[SpacetimeDB.Table(
+    Accessor = "MultiTable1",
+    Public = true,
+    CachePolicy = SpacetimeDB.TableCachePolicy.RequiredOnDisk
+)]
+[SpacetimeDB.Table(
+    Accessor = "MultiTable2",
+    CachePolicy = SpacetimeDB.TableCachePolicy.NoRequirement
+)]
 public partial struct MultiTableRow
 {
     [SpacetimeDB.Index.BTree(Table = "MultiTable1")]

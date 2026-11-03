@@ -85,6 +85,9 @@ namespace SpacetimeDB
 
         public bool Event { get; init; } = false;
 
+        /// <summary>The furthest storage tier the table's pages and blobs may reside in.</summary>
+        public TableCachePolicy CachePolicy { get; init; } = TableCachePolicy.RequiredInMemory;
+
         /// <summary>
         /// If set, the name of the reducer that will be invoked when the scheduled time is reached.
         /// </summary>
