@@ -42,7 +42,7 @@ export const addRecord = spacetimedb.reducer(
 
 Only table definitions belong in `schema({...})`. Row and object builders used as reducer arguments or view return types are not schema entries.
 
-Named runtime exports are reserved for values registered with SpacetimeDB, such as reducers, lifecycle hooks, views, procedures, HTTP exports, and visibility filters. Keep ordinary helper functions and constants unexported.
+Named runtime exports are reserved for values registered with SpacetimeDB, such as reducers, lifecycle hooks, views, procedures, and HTTP exports. Keep ordinary helper functions and constants unexported.
 
 ## Imports
 
@@ -387,14 +387,6 @@ ctx => ctx.from.subscription.rightSemijoin(
 The method name identifies which side is returned: `A.leftSemijoin(B, ...)` returns rows from `A`, while `A.rightSemijoin(B, ...)` returns rows from `B`. To return one table's rows when another table has a match, put the returned table on the corresponding side. Semijoins do not project combined columns from both tables.
 
 Procedural views read through `ctx.db` and return materialized values such as arrays. Query-builder values from `ctx.from` are returned directly; they are not iterators and cannot be spread, looped over, or mixed with array methods. Use a procedural view when the result is a custom row assembled from multiple tables.
-
-## Client Visibility Filters
-
-```typescript
-export const privateNoteFilter = spacetimedb.clientVisibilityFilter.sql(
-  'SELECT * FROM owned_row WHERE owner = :sender'
-);
-```
 
 ## Procedures and HTTP
 

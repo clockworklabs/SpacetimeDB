@@ -200,15 +200,6 @@ Procedural-view primary keys are explicit schema metadata. Add one only when the
 
 Inclusive btree ranges use tuples, for example `ctx.Db.Shipment.DeliverBy.Filter((new Timestamp(1_000), new Timestamp(2_000)))`.
 
-## Client Visibility Filters
-
-```csharp
-[ClientVisibilityFilter]
-public static readonly Filter PrivateNoteFilter = new Filter.Sql(
-    "SELECT * FROM OwnedRow WHERE Owner = :sender"
-);
-```
-
 ## Reducer Context API
 
 `ReducerContext` (`ctx`) is the only source of sender identity, time, and randomness; stdlib clocks and RNG are unavailable in modules.

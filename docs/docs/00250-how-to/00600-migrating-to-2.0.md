@@ -415,7 +415,6 @@ Conn->SubscriptionBuilder()
 - **Security**: You control exactly what data is published. In 1.0, reducer arguments were broadcast to any subscriber of affected rows, which could accidentally leak sensitive data.
 - **Flexibility**: Multiple reducers can insert the same event type. In 1.0, events were tied 1:1 to a specific reducer.
 - **Transactional**: Events are only published if the transaction commits. In 1.0, workarounds using scheduled reducers were not transactional.
-- **Row-level security**: RLS rules apply to event tables, so you can control which clients see which events.
 - **Queryable**: Event tables can be subscribed to with query builders (or SQL), and can be filtered per-client.
 
 ### Event table details

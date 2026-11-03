@@ -83,8 +83,10 @@ const legacyRedirects: Redirect[] = [
   { from: '/subscriptions', to: '/clients/subscriptions' },
   { from: '/subscriptions/semantics', to: '/clients/subscriptions/semantics' },
 
-  // Row level security.
-  { from: '/rls', to: '/how-to/rls' },
+  // Row level security. The page was removed; views now control what each
+  // client can see.
+  { from: '/rls', to: '/tables/access-permissions' },
+  { from: '/how-to/rls', to: '/tables/access-permissions' },
 
   // How to.
   {
@@ -178,7 +180,7 @@ const legacyRedirects: Redirect[] = [
     to: '/how-to/deploy/self-hosting',
   },
   { from: '/modules/logging', to: '/how-to/logging' },
-  { from: '/modules/rls', to: '/how-to/rls' },
+  { from: '/modules/rls', to: '/tables/access-permissions' },
   { from: '/old-modules', to: '/functions' },
   { from: '/old-modules/c-sharp', to: '/functions' },
   { from: '/old-modules/rust', to: '/functions' },
