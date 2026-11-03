@@ -73,6 +73,77 @@ internal sealed unsafe class NativeTransaction(NativeDatastore datastore)
             }
     }
 
+    internal uint IndexId(string name)
+    {
+        var utf8 = Encoding.UTF8.GetBytes(name);
+        lock (datastore.Sync)
+            fixed (byte* bytes = utf8)
+            {
+                var status = Native.IndexId(
+                    this,
+                    bytes,
+                    (ulong)utf8.Length,
+                    out var id,
+                    out var error
+                );
+                Native.Check(status, ref error);
+                return id;
+            }
+    }
+
+    internal byte[] IndexScanPoint(uint index, ReadOnlySpan<byte> point)
+    {
+        lock (datastore.Sync)
+            fixed (byte* bytes = point)
+            {
+                var status = Native.IndexScanPoint(
+                    this,
+                    index,
+                    bytes,
+                    (ulong)point.Length,
+                    out var output,
+                    out var error
+                );
+                return Native.TakeBytes(status, ref output, ref error);
+            }
+    }
+
+    internal bool IndexDeletePoint(uint index, ReadOnlySpan<byte> point)
+    {
+        lock (datastore.Sync)
+            fixed (byte* bytes = point)
+            {
+                var status = Native.IndexDeletePoint(
+                    this,
+                    index,
+                    bytes,
+                    (ulong)point.Length,
+                    out var deleted,
+                    out var error
+                );
+                Native.Check(status, ref error);
+                return deleted != 0;
+            }
+    }
+
+    internal byte[] Update(uint table, uint index, ReadOnlySpan<byte> row)
+    {
+        lock (datastore.Sync)
+            fixed (byte* bytes = row)
+            {
+                var status = Native.Update(
+                    this,
+                    table,
+                    index,
+                    bytes,
+                    (ulong)row.Length,
+                    out var output,
+                    out var error
+                );
+                return Native.TakeBytes(status, ref output, ref error);
+            }
+    }
+
     internal bool Delete(uint table, ReadOnlySpan<byte> row)
     {
         lock (datastore.Sync)

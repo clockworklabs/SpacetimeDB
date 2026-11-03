@@ -229,6 +229,62 @@ internal static unsafe class Native
 
     [DllImport(
         Library,
+        EntryPoint = "stdb_test_v1_index_id",
+        CallingConvention = CallingConvention.Cdecl
+    )]
+    internal static extern NativeStatus IndexId(
+        NativeTransaction transaction,
+        byte* name,
+        ulong length,
+        out uint id,
+        out NativeBuffer error
+    );
+
+    [DllImport(
+        Library,
+        EntryPoint = "stdb_test_v1_index_scan_point",
+        CallingConvention = CallingConvention.Cdecl
+    )]
+    internal static extern NativeStatus IndexScanPoint(
+        NativeTransaction transaction,
+        uint index,
+        byte* point,
+        ulong length,
+        out NativeBuffer output,
+        out NativeBuffer error
+    );
+
+    [DllImport(
+        Library,
+        EntryPoint = "stdb_test_v1_index_delete_point",
+        CallingConvention = CallingConvention.Cdecl
+    )]
+    internal static extern NativeStatus IndexDeletePoint(
+        NativeTransaction transaction,
+        uint index,
+        byte* point,
+        ulong length,
+        out uint deleted,
+        out NativeBuffer error
+    );
+
+    [DllImport(
+        Library,
+        EntryPoint = "stdb_test_v1_table_update",
+        CallingConvention = CallingConvention.Cdecl
+    )]
+    internal static extern NativeStatus Update(
+        NativeTransaction transaction,
+        uint table,
+        uint index,
+        byte* row,
+        ulong length,
+        out NativeBuffer output,
+        out NativeBuffer error
+    );
+
+    [DllImport(
+        Library,
         EntryPoint = "stdb_test_v1_table_delete_row",
         CallingConvention = CallingConvention.Cdecl
     )]

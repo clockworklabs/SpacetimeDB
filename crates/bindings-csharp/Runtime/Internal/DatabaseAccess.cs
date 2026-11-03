@@ -20,6 +20,9 @@ internal interface IDatabaseTransaction : IDisposable
     bool Delete(string assemblyIdentity, string table, byte[] row);
     ulong Clear(string assemblyIdentity, string table);
     byte[] Scan(string assemblyIdentity, string table);
+    byte[] IndexScanPoint(string assemblyIdentity, string index, byte[] point);
+    bool IndexDeletePoint(string assemblyIdentity, string index, byte[] point);
+    byte[] Update(string assemblyIdentity, string table, string index, byte[] row);
 }
 
 internal sealed class DatabaseAccess

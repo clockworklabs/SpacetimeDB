@@ -45,8 +45,6 @@ public class RoutingTests
         using var iterator = table.Iter().GetEnumerator();
         Assert.True(iterator.MoveNext());
         var index = table.Id;
-        Assert.Throws<NotSupportedException>(() => index.Find(inserted.Id));
-        Assert.Throws<NotSupportedException>(() => index.Update(inserted));
         transaction.Rollback();
         using (var next = backend.BeginTransaction())
         {
@@ -76,11 +74,11 @@ public class RoutingTests
             () => dbA.Entries.Insert(new Entry { Text = "A" }),
             () => dbB.Entries.Insert(new Entry { Text = "B" })
         );
-        Assert.Equal("A", Assert.Single(dbA.Entries.Iter()).Text);
-        Assert.Equal("B", Assert.Single(dbB.Entries.Iter()).Text);
+        Assert.Equal("A", dbA.Entries.Id.Find(1)!.Value.Text);
+        Assert.Equal("B", dbB.Entries.Id.Find(1)!.Value.Text);
         var readOnly = new LocalReadOnly(new DatabaseAccess(backendB));
         Assert.Equal(1UL, readOnly.Entries.Count);
-        Assert.Throws<NotSupportedException>(() => readOnly.Entries.Id.Find(1));
+        Assert.Equal("B", readOnly.Entries.Id.Find(1)!.Value.Text);
         Assert.Equal(
             "SELECT * FROM \"second\".\"Entries\"",
             new QueryBuilder(readOnly).Entries().ToSql()

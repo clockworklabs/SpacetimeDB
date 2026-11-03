@@ -18,6 +18,19 @@ public partial struct TestEvent
     public string Text;
 }
 
+[Table(Accessor = "Accounts")]
+public partial class Account
+{
+    [PrimaryKey]
+    public ulong Id;
+
+    [AutoInc]
+    public ulong Serial;
+
+    [Unique]
+    public string Name = "";
+}
+
 public static class Schema
 {
     public static NamespaceRegistry CreateNamespaces() => AssemblyDescriptor.CreateNamespaces();

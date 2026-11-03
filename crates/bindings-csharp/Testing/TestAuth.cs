@@ -7,7 +7,7 @@ public sealed class TestAuth
 
     private TestAuth() { }
 
-    internal AuthCtx SenderAuth { get; } = AuthCtx.BuildFromSystemTables(null, default);
+    internal AuthCtx SenderAuth { get; } = AuthCtx.InternalForTesting();
 
     /// <summary>Calls as the fixture's database identity, without a connection or JWT.</summary>
     public static TestAuth Internal() => internalAuth;

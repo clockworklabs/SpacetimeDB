@@ -63,7 +63,32 @@ public readonly struct TableAccessor
         where T : IStructuralReadWrite, new()
     {
         var (assembly, name) = (assemblyIdentity, table);
-        var snapshot = Execute(tx => tx.Scan(assembly, name));
+        return Iter<T>(tx => tx.Scan(assembly, name));
+    }
+
+    internal IEnumerable<T> IndexScanPoint<T>(string index, byte[] point)
+        where T : IStructuralReadWrite, new()
+    {
+        var assembly = assemblyIdentity;
+        return Iter<T>(tx => tx.IndexScanPoint(assembly, index, point));
+    }
+
+    internal bool IndexDeletePoint(string index, byte[] point)
+    {
+        var assembly = assemblyIdentity;
+        return Execute(tx => tx.IndexDeletePoint(assembly, index, point));
+    }
+
+    internal byte[] Update(string index, byte[] row)
+    {
+        var (assembly, name) = (assemblyIdentity, table);
+        return Execute(tx => tx.Update(assembly, name, index, row));
+    }
+
+    private IEnumerable<T> Iter<T>(Func<IDatabaseTransaction, byte[]> scan)
+        where T : IStructuralReadWrite, new()
+    {
+        var snapshot = Execute(scan);
         using var reader = new BinaryReader(new MemoryStream(snapshot));
         // The native snapshot is BSATN array<array<u8>>. Decode each framed row
         // directly from it rather than allocating another byte array per row.
