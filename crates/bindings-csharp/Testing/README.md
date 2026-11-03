@@ -15,6 +15,13 @@ after the callback finishes. Default clocks start at the Unix epoch, and RNGs
 start at root seed zero. `Clock.Set`/`Advance` and `Rng.SetSeed`/`ClearSeed` control
 subsequent contexts. Managed module logging writes to standard error.
 
+`SetEnv(key, value)` and `UnsetEnv(key)` configure fixture-local environment values
+declared by the root module. Keys are case-sensitive; values must satisfy declared
+literal/union constraints and the engine's 8192-byte UTF-8 limit. Fixtures start
+with no values. Required generated accessors throw for missing values; empty
+strings remain present. Reads see current values, and transaction rollback does
+not undo environment changes. Environment handles expire with their owning context.
+
 Use one execution flow per fixture. Async callbacks and multicast delegates are
 rejected; returned `Task`/`ValueTask` values also cause rollback. Independent
 fixtures may run in parallel. Table deletion and clearing use the owning

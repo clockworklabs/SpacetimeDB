@@ -53,7 +53,12 @@ public sealed record ReducerContext
     }
 
     internal int ModuleInstanceId => Db.InstanceId;
-    public DatabaseEnvironment Env => default;
+    public DatabaseEnvironment Env =>
+#if SPACETIMEDB_WASM_RUNTIME
+        default;
+#else
+        new(Db.Access);
+#endif
     public readonly Identity Sender;
     public readonly ConnectionId? ConnectionId;
     public readonly Random Rng;
@@ -416,11 +421,22 @@ public sealed record ViewContext
             ? this
             : this with
             {
+#if !SPACETIMEDB_WASM_RUNTIME
+                Db = Db.Access is { } access
+                    ? new Internal.LocalReadOnly(access) { InstanceId = instanceId }
+                    : Internal.LocalReadOnly.ForInstance(instanceId),
+#else
                 Db = Internal.LocalReadOnly.ForInstance(instanceId),
+#endif
             };
 
     internal int ModuleInstanceId => Db.InstanceId;
-    public DatabaseEnvironment Env => default;
+    public DatabaseEnvironment Env =>
+#if SPACETIMEDB_WASM_RUNTIME
+        default;
+#else
+        new(Db.Access);
+#endif
     public Identity Sender { get; }
 
     public QueryBuilder From =>
@@ -451,11 +467,22 @@ public sealed record AnonymousViewContext
             ? this
             : this with
             {
+#if !SPACETIMEDB_WASM_RUNTIME
+                Db = Db.Access is { } access
+                    ? new Internal.LocalReadOnly(access) { InstanceId = instanceId }
+                    : Internal.LocalReadOnly.ForInstance(instanceId),
+#else
                 Db = Internal.LocalReadOnly.ForInstance(instanceId),
+#endif
             };
 
     internal int ModuleInstanceId => Db.InstanceId;
-    public DatabaseEnvironment Env => default;
+    public DatabaseEnvironment Env =>
+#if SPACETIMEDB_WASM_RUNTIME
+        default;
+#else
+        new(Db.Access);
+#endif
     public QueryBuilder From =>
 #if SPACETIMEDB_WASM_RUNTIME
         new(ModuleInstanceId);

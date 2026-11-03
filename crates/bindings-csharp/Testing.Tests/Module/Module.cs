@@ -46,6 +46,19 @@ public partial struct Point
     public uint Score;
 }
 
+[Env]
+public struct EnvironmentSchema
+{
+    public string REQUIRED;
+    public string? OPTIONAL;
+
+    [EnvValues("fixed")]
+    public string? LITERAL;
+
+    [EnvValues("development", "production")]
+    public string? MODE;
+}
+
 public static class Schema
 {
     public static NamespaceRegistry CreateNamespaces() => AssemblyDescriptor.CreateNamespaces();
@@ -56,7 +69,15 @@ public static class Schema
         global::ModuleRegistration.RegisterModule(child);
         var root = new ModuleBuilder();
         root.RegisterSubmodule(mount, null, child);
-        RawModuleDef schema = new RawModuleDef.V10(root.BuildModuleDefinition());
+        var definition = root.BuildModuleDefinition();
+        // This fixture only mounts tables; environment declarations are root-only.
+        var mounted = definition
+            .Sections.OfType<RawModuleDefV10Section.Submodules>()
+            .Single()
+            .Submodules_.Single()
+            .Module;
+        mounted.Sections.OfType<RawModuleDefV10Section.Environment>().Single().Environment_.Clear();
+        RawModuleDef schema = new RawModuleDef.V10(definition);
         return (
             IStructuralReadWrite.ToBytes(new RawModuleDef.BSATN(), schema),
             new NamespaceRegistry(

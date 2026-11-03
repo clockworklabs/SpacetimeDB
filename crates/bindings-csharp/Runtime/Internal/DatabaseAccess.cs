@@ -5,6 +5,7 @@ internal interface IDatabaseBackend : IDisposable
 {
     NamespaceRegistry Namespaces { get; }
     Identity DatabaseIdentity { get; }
+    string? GetEnv(string key);
     void CheckActive();
     IDatabaseTransaction BeginTransaction();
 }

@@ -1,5 +1,6 @@
 namespace SpacetimeDB.Testing;
 
+using System.Text;
 using SpacetimeDB.Internal;
 
 // One execution flow owns each fixture. Native handles synchronize calls and
@@ -7,16 +8,72 @@ using SpacetimeDB.Internal;
 internal sealed class DatabaseBackend : IDatabaseBackend
 {
     private readonly NativeDatastore datastore;
+    private readonly IReadOnlyDictionary<string, RawEnvVarTypeV10> environmentDeclarations;
+    private readonly Dictionary<string, string> environmentValues = new(StringComparer.Ordinal);
     private readonly Dictionary<(string Assembly, string Table), uint> tableIds = [];
     private readonly Dictionary<(string Assembly, string Index), uint> indexIds = [];
 
     public NamespaceRegistry Namespaces { get; }
     public Identity DatabaseIdentity => default;
 
-    internal DatabaseBackend(ReadOnlySpan<byte> schema, NamespaceRegistry namespaces)
+    internal DatabaseBackend(
+        ReadOnlySpan<byte> schema,
+        NamespaceRegistry namespaces,
+        IReadOnlyDictionary<string, RawEnvVarTypeV10>? environment = null
+    )
     {
         Namespaces = namespaces;
         datastore = NativeDatastore.Create(schema);
+        environmentDeclarations =
+            environment ?? new Dictionary<string, RawEnvVarTypeV10>(StringComparer.Ordinal);
+    }
+
+    private RawEnvVarTypeV10 EnvironmentDeclaration(string key)
+    {
+        CheckActive();
+        ArgumentNullException.ThrowIfNull(key);
+        return environmentDeclarations.TryGetValue(key, out var declaration)
+            ? declaration
+            : throw new ArgumentException(
+                "Environment key is not declared by the root module.",
+                nameof(key)
+            );
+    }
+
+    public string? GetEnv(string key)
+    {
+        EnvironmentDeclaration(key);
+        return environmentValues.GetValueOrDefault(key);
+    }
+
+    internal void SetEnv(string key, string value)
+    {
+        var declaration = EnvironmentDeclaration(key);
+        ArgumentNullException.ThrowIfNull(value);
+        if (Encoding.UTF8.GetByteCount(value) > 8192)
+            throw new ArgumentException(
+                "Environment values must not exceed 8192 UTF-8 bytes.",
+                nameof(value)
+            );
+        var allowed = declaration switch
+        {
+            RawEnvVarTypeV10.String => true,
+            RawEnvVarTypeV10.StringLiteral(var literal) => value == literal,
+            RawEnvVarTypeV10.Union(var literals) => literals.Contains(value),
+            _ => throw new InvalidOperationException("Unknown environment declaration type."),
+        };
+        if (!allowed)
+            throw new ArgumentException(
+                "Environment value does not satisfy its declared constraint.",
+                nameof(value)
+            );
+        environmentValues[key] = value;
+    }
+
+    internal void UnsetEnv(string key)
+    {
+        EnvironmentDeclaration(key);
+        environmentValues.Remove(key);
     }
 
     public void CheckActive() => ObjectDisposedException.ThrowIf(datastore.IsClosed, this);
