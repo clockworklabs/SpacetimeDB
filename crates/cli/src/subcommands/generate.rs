@@ -52,7 +52,7 @@ fn build_generate_config_schema(command: &clap::Command) -> Result<CommandSchema
         .key(Key::new("build_options").module_specific())
         .key(Key::new("dotnet_version").module_specific())
         .key(Key::new("include_private"))
-        .key(Key::new("bindings_format").generate_entry_specific())
+        .key(Key::new("legacy").generate_entry_specific())
         .exclude("json_module")
         .exclude("force")
         .exclude("no_config")
@@ -263,11 +263,10 @@ pub fn cli() -> clap::Command {
                 .conflicts_with("js_file"),
         )
         .arg(
-            Arg::new("bindings_format")
-                .long("bindings-format")
-                .value_parser(["declarations", "legacy"])
-                .default_value("declarations")
-                .help("TypeScript binding format; use legacy with older SDKs"),
+            Arg::new("legacy")
+                .long("legacy")
+                .action(SetTrue)
+                .help("Generate legacy TypeScript bindings for older SDKs"),
         )
         .arg(
             Arg::new("include_private")
@@ -310,7 +309,7 @@ pub struct GenerateRunConfig {
     pub dotnet_version: Option<u8>,
     pub out_dir: PathBuf,
     pub include_private: bool,
-    pub bindings_format: String,
+    pub legacy: bool,
 }
 
 fn prepare_generate_run_configs<'a>(
@@ -410,9 +409,7 @@ fn prepare_generate_run_configs<'a>(
             dotnet_version,
             out_dir,
             include_private,
-            bindings_format: command_config
-                .get_one::<String>("bindings_format")?
-                .unwrap_or_else(|| "declarations".into()),
+            legacy: command_config.get_one::<bool>("legacy")?.unwrap_or(false),
         });
     }
 
@@ -501,8 +498,8 @@ pub async fn run_prepared_generate_configs(
             return Err(anyhow::anyhow!("--namespace is only supported with --lang csharp"));
         }
 
-        if run.lang != Language::TypeScript && run.bindings_format == "legacy" {
-            anyhow::bail!("--bindings-format legacy is only supported for TypeScript");
+        if run.lang != Language::TypeScript && run.legacy {
+            anyhow::bail!("--legacy is only supported for TypeScript");
         }
 
         let module: ModuleDef = if let Some(paths) = &json_module {
@@ -561,7 +558,7 @@ pub async fn run_prepared_generate_configs(
                 &unreal_cpp_lang as &dyn Lang
             }
             Language::Rust => &Rust,
-            Language::TypeScript if run.bindings_format == "legacy" => &spacetimedb_codegen::LegacyTypeScript,
+            Language::TypeScript if run.legacy => &spacetimedb_codegen::LegacyTypeScript,
             Language::TypeScript => &TypeScript,
         };
 
@@ -796,23 +793,15 @@ mod tests {
     }
 
     #[test]
-    fn typescript_binding_format_option() {
+    fn typescript_legacy_option() {
         let args = cli()
             .try_get_matches_from(["generate", "--lang", "typescript", "--out-dir", "bindings"])
             .unwrap();
-        assert_eq!(args.get_one::<String>("bindings_format").unwrap(), "declarations");
+        assert!(!args.get_flag("legacy"));
         let args = cli()
-            .try_get_matches_from([
-                "generate",
-                "--lang",
-                "typescript",
-                "--out-dir",
-                "bindings",
-                "--bindings-format",
-                "legacy",
-            ])
+            .try_get_matches_from(["generate", "--lang", "typescript", "--out-dir", "bindings", "--legacy"])
             .unwrap();
-        assert_eq!(args.get_one::<String>("bindings_format").unwrap(), "legacy");
+        assert!(args.get_flag("legacy"));
     }
 
     use super::*;
