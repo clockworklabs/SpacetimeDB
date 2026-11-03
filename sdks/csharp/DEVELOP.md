@@ -56,7 +56,7 @@ Generated C# clients expose its tables through
 `conn.Procedures.MyAuth`, and query factories through `q.From.MyAuth`.
 Generated SQL and network messages use the database namespace `auth_data`.
 The C# accessor remains `MyAuth`. When `Name` is omitted, the host derives the
-database namespace from the accessor using the root module's case policy.
+database namespace from the accessor using the containing module's case policy.
 
 The `--namespace` option of `spacetime generate` controls where generated C#
 classes are declared; it does not name or rename database namespaces. With
@@ -64,6 +64,18 @@ classes are declared; it does not name or rename database namespaces. With
 while a `User` row in that dependency becomes
 `Game.Bindings.MyAuth.User`. Their table handles remain `conn.Db.User` and
 `conn.Db.MyAuth.User`, respectively.
+
+Nested submodules follow the same pattern at every level:
+`conn.Db.Auth.Audit.User`, `conn.Reducers.Auth.Audit.Login(...)`,
+`conn.Procedures.Auth.Audit.Count(...)`, and `q.From.Auth.Audit.User()`.
+All containers share one connection and table registry. Generated SQL quotes
+each canonical namespace segment separately; accessors are never substituted
+for canonical names. `SqlTableName(string[], string)` supports these paths while
+the existing string constructors continue to treat dots as literal identifier
+characters. Qualified names are cached on generated table handles.
+
+The `nested-namespaces` regression client exercises a real three-level C# module
+on .NET 8 and .NET 10.
 
 ### Runtime Structure
 

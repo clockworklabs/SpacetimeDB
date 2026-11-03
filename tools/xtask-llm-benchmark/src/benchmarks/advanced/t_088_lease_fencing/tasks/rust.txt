@@ -1,0 +1,13 @@
+Implement this SpacetimeDB module in rust. Return only the module source.
+
+Implement a leased job with monotonically increasing fencing tokens. Use the server transaction timestamp, in microseconds, for all expiry checks. A completion must match the current worker and token AND arrive before expiry. Reclaiming an expired lease increments the token. No caller-supplied current time. Workers are opaque labels in this test; authentication is tested separately.
+
+Tables (the first field is the primary key):
+- public leased_job: id: u64, worker: String, generation: u64, expires_at: i64, done: bool, result: String
+
+Reducers (argument order is part of the contract):
+- create_job(id: u64): Insert an unclaimed job: worker/result empty, generation/expiry=0, done=false.
+- claim(id: u64, worker: String, lease_ms: u64): Require nonempty worker and lease_ms in 1..=60000 ('invalid lease'), existing job ('missing job'), not done ('already done'), and unclaimed or expired ('lease busy'). Increment generation, set worker and expires_at=server_now+lease_ms*1000.
+- complete(id: u64, worker: String, generation: u64, result: String): Require existing job ('missing job'). Exact replay of an already successful completion is a no-op, even after expiry. Any other completion of a done job fails ('already done'). For pending jobs, require nonempty matching worker, positive matching generation and server_now<expires_at ('stale lease'). Record done and result; never extend expiry.
+
+Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged.

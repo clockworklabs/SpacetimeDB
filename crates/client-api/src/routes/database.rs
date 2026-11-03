@@ -469,7 +469,12 @@ async fn handle_http_route_impl<S: ControlStateDelegate + NodeDelegate>(
         version: http_version_to_st(parts.version),
     };
 
-    let response = match module.call_http_handler(handler_id, request, body).await {
+    // Each request gets a new identity, like a client that connects without a token.
+    let caller_auth = SpacetimeAuth::alloc(&worker_ctx).await?;
+    let response = match module
+        .call_http_handler(caller_auth.into(), handler_id, request, body)
+        .await
+    {
         Ok(response) => response,
         Err(spacetimedb::host::module_host::HttpHandlerCallError::NoSuchHandler) => {
             return Ok((StatusCode::NOT_FOUND, NO_SUCH_ROUTE).into_response());

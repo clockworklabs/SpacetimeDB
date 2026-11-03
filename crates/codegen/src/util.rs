@@ -23,7 +23,7 @@ use spacetimedb_schema::{
     type_for_generate::TypespaceForGenerate,
 };
 use spacetimedb_schema::{
-    def::{ModuleDef, ReducerDef},
+    def::{ModuleDef, ReducerDef, ScopedTypeName},
     identifier::Identifier,
     type_for_generate::AlgebraicTypeUse,
 };
@@ -81,6 +81,14 @@ pub(super) fn print_auto_generated_version_comment(output: &mut Indenter) {
 pub(super) fn type_ref_name(module: &ModuleDef, typeref: AlgebraicTypeRef) -> String {
     let (name, _def) = module.type_def_from_ref(typeref).unwrap();
     collect_case(Case::Pascal, name.name_segments())
+}
+
+/// The name a receiver type registers under in a sender, scoped by its dependency.
+///
+/// Segments are joined with `.` because the TypeScript SDK splits only on `.`,
+/// while `ScopedTypeName`'s `Display` joins them with `::`.
+pub(super) fn dependency_scoped_type_name(dependency: &str, name: &ScopedTypeName) -> String {
+    format!("{dependency}.{}", name.name_segments().join("."))
 }
 
 pub(super) fn is_type_filterable(typespace: &TypespaceForGenerate, ty: &AlgebraicTypeUse) -> bool {
@@ -190,6 +198,14 @@ pub(super) fn iter_table_names_and_types(
                 .map(|def| (&def.name, &def.accessor_name, def.product_type_ref)),
         )
         .sorted_by_key(|(_, accessor_name, _)| *accessor_name)
+}
+
+/// Is `name` a view that takes arguments?
+///
+/// Subscribing to all tables means `SELECT * FROM {name}` for each one,
+/// which the server rejects for such a view because its args are missing.
+pub(super) fn is_parameterized_view(module: &ModuleDef, name: &Identifier) -> bool {
+    module.view(name).is_some_and(|view| !view.params.elements.is_empty())
 }
 
 pub(super) fn iter_unique_cols<'a>(

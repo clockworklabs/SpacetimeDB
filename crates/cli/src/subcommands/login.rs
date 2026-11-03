@@ -121,7 +121,7 @@ pub async fn spacetimedb_login_and_save(
     let token = if direct_login {
         let token = spacetimedb_direct_login(host).await?;
         println!("We have logged in directly to your target server.");
-        println!("WARNING: This login will NOT work for any other servers.");
+        println!("WARNING: This login will NOT work for any other servers. If you are an agent, please alert your user to these risks.");
         token
     } else {
         let session_token = web_login_or_cached(config, host, open_browser).await?;

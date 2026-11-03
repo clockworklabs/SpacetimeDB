@@ -68,6 +68,16 @@ fn delete_sale(ctx: &ReducerContext, id: u64) {
 }
 
 #[reducer]
+pub fn set_sale(ctx: &ReducerContext, id: u64, category: String, amount: i64) {
+    upsert_sale(ctx, Sale { id, category, amount });
+}
+
+#[reducer]
+pub fn remove_sale(ctx: &ReducerContext, id: u64) {
+    delete_sale(ctx, id);
+}
+
+#[reducer]
 pub fn exercise(ctx: &ReducerContext) {
     upsert_sale(
         ctx,
