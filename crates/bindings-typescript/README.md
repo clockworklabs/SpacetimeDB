@@ -14,7 +14,7 @@ npm add spacetimedb
 
 You can use the package in the browser, using a bundler like vite/parcel/rsbuild, in server-side applications like NodeJS, Deno, Bun, NextJS, Remix, and in Cloudflare Workers.
 
-> NOTE: For usage in NodeJS 18-21, you need to install the `undici` package as a peer dependency: `npm add spacetimedb undici`. Node 22 and later are supported out of the box.
+> Use a recent version of Node.js 22, 24, or 26 or later.
 
 ### Usage
 
