@@ -490,7 +490,8 @@ fn typescript_declarations_preserve_table_metadata() {
         r#"
 import assert from 'node:assert/strict';
 import { tables } from './index';
-import Person from './person_table';
+import spacetimedb from './declarations';
+const Person = spacetimedb.entries.person.rowType;
 assert.equal(Person.row.id.columnMetadata.isAutoIncrement, true);
 assert.equal(Person.row.score.columnMetadata.defaultValue, 7);
 assert.equal(Person.row.displayName.columnMetadata.name, 'display_name');

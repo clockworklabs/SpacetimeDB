@@ -1,9 +1,9 @@
+import spacetimedb from '../test-app/src/module_bindings/declarations';
 import { describe, expect, test } from 'vitest';
 import { AlgebraicType, Identity, type Infer } from '../src';
 import { type Operation, TableCacheImpl } from '../src/sdk/table_cache';
 import { tables } from '../test-app/src/module_bindings/index.ts';
 import { Player } from '../test-app/src/module_bindings/types';
-import UnindexedPlayer from '../test-app/src/module_bindings/unindexed_player_table.ts';
 
 interface ApplyOperations {
   ops: Operation[];
@@ -48,6 +48,8 @@ interface AssertionInput {
   // The sequence of callbacks that were fired from the last applyOperations.
   callbackHistory: CallbackEvent[];
 }
+
+const UnindexedPlayer = spacetimedb.entries.unindexedPlayer.rowType;
 
 type Assertion = (arg0: AssertionInput) => void;
 

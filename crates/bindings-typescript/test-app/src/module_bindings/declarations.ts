@@ -3,7 +3,6 @@
 
 import { declarationSchema as schema, table, t } from '../../../src/index';
 import * as types from './types';
-import MyUserProceduralRow from './my_user_procedural_table';
 
 const player = table(
   {
@@ -82,6 +81,13 @@ const user = table(
     username: t.string(),
   }
 );
+
+export const MyUserProceduralRow = t.row({
+  id: t.u32().primaryKey(),
+  userId: t.identity().name('user_id'),
+  name: t.string(),
+  location: types.Point,
+});
 
 const spacetimedb = schema({
   player,
