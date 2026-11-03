@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import BinaryReader from '../src/lib/binary_reader.ts';
 import BinaryWriter from '../src/lib/binary_writer.ts';
-import { ClientMessage } from '../src/sdk/client_api/types';
+import { ClientMessage } from '../src/sdk/client_api/declarations';
 import {
   countClientMessagesForV3Frame,
   decodeClientMessagesV3,

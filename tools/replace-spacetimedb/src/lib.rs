@@ -52,7 +52,7 @@ pub fn replace_in_tree(
     // We intentionally DO NOT include a trailing semicolon so we preserve it (or its absence).
     let re_single = Regex::new(r#"}\s*from\s*'spacetimedb'"#).unwrap();
     let re_double = Regex::new(r#"}\s*from\s*"spacetimedb""#).unwrap();
-    let re_schema = Regex::new(r#"(?s)import\s*\{([^}]*)\}\s*from\s*['"]spacetimedb/schema['"]"#).unwrap();
+    let re_schema = Regex::new(r#"(?s)import\s*(type\s+)?\{([^}]*)\}\s*from\s*['"]spacetimedb/schema['"]"#).unwrap();
 
     let mut builder = WalkBuilder::new(&root);
     builder
@@ -138,7 +138,7 @@ pub fn replace_in_tree(
         // Source-based SDK consumers must use the same declaration classes as
         // their local root SDK, rather than mixing in the packaged schema entry.
         let content = re_schema.replace_all(&content, |caps: &regex::Captures<'_>| {
-            let imports = caps[1]
+            let imports = caps[2]
                 .split(',')
                 .map(|item| {
                     let item = item.trim();
@@ -152,7 +152,10 @@ pub fn replace_in_tree(
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("import {{{imports}}} from 'spacetimedb'")
+            format!(
+                "import {}{{{imports}}} from 'spacetimedb'",
+                caps.get(1).map_or("", |m| m.as_str())
+            )
         });
 
         // Count before replacing

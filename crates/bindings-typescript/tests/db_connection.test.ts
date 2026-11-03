@@ -9,7 +9,7 @@ import {
   Timestamp,
   type Infer,
 } from '../src';
-import { ServerMessage } from '../src/sdk/client_api/types';
+import { ServerMessage } from '../src/sdk/client_api/declarations';
 import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter';
 import { V2_WS_PROTOCOL, V3_WS_PROTOCOL } from '../src/sdk/websocket_protocols';
 import { decodeClientMessagesV3 } from '../src/sdk/websocket_v3_frames.ts';

@@ -73,7 +73,9 @@ fn submodule_names_use_canonical_wire_names_and_accessor_paths() {
         r#"
 import assert from 'node:assert/strict';
 import { DbConnection, tables, reducers, procedures } from './index';
-import type { LibData } from './my_lib/types';
+import child from './my_lib/declarations';
+import type { Infer } from 'spacetimedb';
+type LibData = Infer<typeof child.entries.libData.rowType>;
 assert.equal(tables.myLib.libData.sourceName, 'my_lib.libData');
 assert.equal(reducers.myLib.libInsert.name, 'my_lib.lib_insert');
 assert.equal(procedures.myLib.libCount.name, 'my_lib.lib_count');
@@ -387,9 +389,13 @@ fn typescript_function_exports_preserve_reserved_names() {
     ] {
         builder.add_reducer(name, spacetimedb_lib::ProductType::unit());
     }
-    builder
+    let infer = builder
         .build_table_with_new_type("infer", spacetimedb_lib::ProductType::unit(), true)
         .finish();
+    builder.add_reducer(
+        "use_infer",
+        spacetimedb_lib::ProductType::from([("value", spacetimedb_lib::AlgebraicType::Ref(infer))]),
+    );
     let module: ModuleDef = builder.finish().try_into().unwrap();
     compile_typescript_client(
         generate(&module, &TypeScript, &CodegenOptions::default()),
@@ -449,13 +455,20 @@ fn typescript_declarations_preserve_table_metadata() {
     use spacetimedb_lib::db::raw_def::v9::RawIndexAlgorithm;
     use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ProductType};
     let mut builder = RawModuleDefV10Builder::new();
-    builder
+    let address = builder.add_algebraic_type(
+        [],
+        "ZAddress",
+        AlgebraicType::from(ProductType::from([("city", AlgebraicType::String)])),
+        true,
+    );
+    let person = builder
         .build_table_with_new_type(
             "person",
             ProductType::from([
                 ("id", AlgebraicType::U32),
                 ("displayName", AlgebraicType::String),
                 ("score", AlgebraicType::U32),
+                ("address", AlgebraicType::Ref(address)),
             ]),
             true,
         )
@@ -472,6 +485,10 @@ fn typescript_declarations_preserve_table_metadata() {
         )
         .with_default_column_value(2, AlgebraicValue::U32(7))
         .finish();
+    builder.add_reducer(
+        "submit_person",
+        ProductType::from([("person", AlgebraicType::Ref(person))]),
+    );
     builder
         .build_table_with_new_type("audit", ProductType::from([("message", AlgebraicType::String)]), true)
         .with_event(true)
@@ -489,15 +506,22 @@ fn typescript_declarations_preserve_table_metadata() {
         files,
         r#"
 import assert from 'node:assert/strict';
-import { tables } from './index';
+import { tables, type DbConnection } from './index';
 import spacetimedb from './declarations';
-const Person = spacetimedb.entries.person.rowType;
+import { Person } from './declarations';
+assert.equal(spacetimedb.entries.person.rowType, Person);
 assert.equal(Person.row.id.columnMetadata.isAutoIncrement, true);
 assert.equal(Person.row.score.columnMetadata.defaultValue, 7);
 assert.equal(Person.row.displayName.columnMetadata.name, 'display_name');
 assert.equal(tables.audit.tableDef.isEvent, true);
 assert.ok(tables.person.tableDef.resolvedIndexes.some(i => i.algorithm === 'direct'));
 assert.ok(tables.person.tableDef.resolvedIndexes.some(i => i.algorithm === 'hash'));
+function consume(conn: DbConnection) {
+  conn.reducers.submitPerson({ person: { id: 1, displayName: 'Alice', score: 7, address: { city: 'Paris' } } });
+  // @ts-expect-error shared row schema still enforces column types
+  conn.reducers.submitPerson({ person: { id: 'bad', displayName: 'Alice', score: 7, address: { city: 'Paris' } } });
+}
+void consume;
 "#,
     );
 }

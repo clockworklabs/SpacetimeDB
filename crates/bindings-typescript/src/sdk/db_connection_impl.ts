@@ -18,7 +18,7 @@ import {
   UnsubscribeFlags,
   type SubscribeBatchApplied,
   type SubscribeBatch,
-} from './client_api/types';
+} from './client_api/declarations';
 import { ClientCache } from './client_cache.ts';
 import { DbConnectionBuilder } from './db_connection_builder.ts';
 import { INTERNAL_REMOTE_MODULE } from './internal.ts';
@@ -68,7 +68,7 @@ import type { RowType, UntypedTableDef } from '../lib/table.ts';
 import type { UntypedSchemaDef } from '../lib/schema';
 import type { ProceduresView } from './procedures.ts';
 import type { Values } from '../lib/type_util.ts';
-import type { TransactionUpdate } from './client_api/types.ts';
+import type { TransactionUpdate } from './client_api/declarations.ts';
 import type { SubscriptionEntry } from './subscription_builder_impl';
 import {
   DisconnectedError,

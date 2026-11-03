@@ -2,7 +2,7 @@ import { describe, expect, expectTypeOf, test, vi } from 'vitest';
 import BinaryReader from '../src/lib/binary_reader';
 import BinaryWriter from '../src/lib/binary_writer';
 import { Timestamp } from '../src/lib/timestamp';
-import { ServerMessage } from '../src/sdk/client_api/types';
+import { ServerMessage } from '../src/sdk/client_api/declarations';
 import { makeQuerySetUpdate } from './utils';
 import { schema, table, t } from '../src/schema/declarations';
 import { createClient } from '../src/sdk/create_client';

@@ -26,7 +26,7 @@ import type { ConnectionState } from '../src/react/connection_state';
 import type { ConnectionState as VueConnectionState } from '../src/vue/connection_state';
 import type { ConnectionState as SvelteConnectionState } from '../src/svelte/connection_state';
 import { ConnectionId } from '../src';
-import { ServerMessage } from '../src/sdk/client_api/types';
+import { ServerMessage } from '../src/sdk/client_api/declarations';
 import { WebsocketTestAdapterFactory } from '../src/sdk/websocket_test_adapter';
 import { DbConnection, tables } from '../test-app/src/module_bindings';
 import { anIdentity, encodeUser } from './utils';

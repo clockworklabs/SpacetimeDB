@@ -3,7 +3,6 @@ import { describe, expect, test } from 'vitest';
 import { AlgebraicType, Identity, type Infer } from '../src';
 import { type Operation, TableCacheImpl } from '../src/sdk/table_cache';
 import { tables } from '../test-app/src/module_bindings/index.ts';
-import { Player } from '../test-app/src/module_bindings/types';
 
 interface ApplyOperations {
   ops: Operation[];
@@ -49,6 +48,7 @@ interface AssertionInput {
   callbackHistory: CallbackEvent[];
 }
 
+const Player = spacetimedb.entries.player.rowType;
 const UnindexedPlayer = spacetimedb.entries.unindexedPlayer.rowType;
 
 type Assertion = (arg0: AssertionInput) => void;
@@ -412,7 +412,7 @@ describe('TableCache', () => {
       row: Infer<typeof Player>
     ) => {
       const rowId = AlgebraicType.intoMapKey(
-        Player.elements['id'].algebraicType,
+        Player.row.id.typeBuilder.algebraicType,
         row['id']
       );
       return {

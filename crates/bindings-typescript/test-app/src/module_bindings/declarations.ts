@@ -2,8 +2,14 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 import { declarationSchema as schema, table, t } from '../../../src/index';
-import * as types from './types';
 
+import type { Infer } from '../../../src/index';
+
+export const Point = t.object('Point', {
+  x: t.u16(),
+  y: t.u16(),
+});
+export type Point = Infer<typeof Point>;
 const player = table(
   {
     name: 'player',
@@ -24,7 +30,9 @@ const player = table(
     id: t.u32().primaryKey().autoInc(),
     userId: t.identity().name('user_id'),
     name: t.string(),
-    location: types.Point,
+    get location() {
+      return Point;
+    },
   }
 );
 
@@ -52,7 +60,9 @@ const unindexedPlayer = table(
     id: t.u32().primaryKey().autoInc(),
     ownerId: t.identity().name('owner_id'),
     name: t.string(),
-    location: types.Point,
+    get location() {
+      return Point;
+    },
   }
 );
 
@@ -86,7 +96,9 @@ export const MyUserProceduralRow = t.row({
   id: t.u32().primaryKey(),
   userId: t.identity().name('user_id'),
   name: t.string(),
-  location: types.Point,
+  get location() {
+    return Point;
+  },
 });
 
 const spacetimedb = schema({
@@ -100,7 +112,7 @@ export const createPlayer = spacetimedb.reducer(
   { name: 'create_player' },
   {
     name: t.string(),
-    location: types.Point,
+    location: Point,
   }
 );
 

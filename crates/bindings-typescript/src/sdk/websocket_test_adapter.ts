@@ -1,6 +1,6 @@
 import BinaryReader from '../lib/binary_reader.ts';
 import BinaryWriter from '../lib/binary_writer.ts';
-import { ClientMessage, ServerMessage } from './client_api/types';
+import { ClientMessage, ServerMessage } from './client_api/declarations';
 import type { WebSocketAdapter, WebSocketArgs, WebSocketFactory } from './ws';
 import { PREFERRED_WS_PROTOCOLS, V3_WS_PROTOCOL } from './websocket_protocols';
 import {

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { Identity } from '../src';
-import { ServerMessage } from '../src/sdk/client_api/types';
+import { ServerMessage } from '../src/sdk/client_api/declarations';
 import { WebsocketTestAdapterFactory } from '../src/sdk/websocket_test_adapter';
 import { ConnectionId } from '../src';
 import { DbConnection } from '../test-app/src/module_bindings';

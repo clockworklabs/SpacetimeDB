@@ -18,7 +18,7 @@ import {
 import {
   ServerMessage,
   type SubscribeBatch,
-} from '../src/sdk/client_api/types';
+} from '../src/sdk/client_api/declarations';
 import { WebSocketTokenError } from '../src/sdk/ws';
 import { WebsocketTestAdapterFactory } from '../src/sdk/websocket_test_adapter';
 import { DbConnection } from '../test-app/src/module_bindings';

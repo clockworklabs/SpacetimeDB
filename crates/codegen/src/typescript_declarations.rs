@@ -27,9 +27,8 @@ fn generate_module(module: &ModuleDef, options: &CodegenOptions, dir: &str, file
         "schema",
         "table",
         "t",
-        "types",
         "spacetimedb",
-        "BinaryReader",
+        "__BinaryReader",
         "default",
         "return",
         "class",
@@ -141,23 +140,44 @@ fn generate_module(module: &ModuleDef, options: &CodegenOptions, dir: &str, file
                 .element_types(),
         );
     }
+    // Row types already represented by a table or view need a separate builder
+    // only when another declaration refers to them.
+    let row_models: Vec<_> = iter_tables(module, crate::CodegenVisibility::IncludePrivate)
+        .cloned()
+        .chain(module.views().cloned().map(TableDef::from))
+        .collect();
+    let named = selected_types(module, &used_types, &row_models);
+    used.extend(
+        named
+            .iter()
+            .map(|ty| collect_case(Case::Pascal, ty.accessor_name.name_segments())),
+    );
     let mut imports = vec!["schema"];
     if !rows.is_empty() {
         imports.push("table");
     }
-    if module.views().next().is_some() || used_types.iter().any(|t| !matches!(t, AlgebraicTypeUse::Ref(_))) {
+    if !named.is_empty()
+        || module.views().next().is_some()
+        || used_types.iter().any(|t| !matches!(t, AlgebraicTypeUse::Ref(_)))
+    {
         imports.push("t");
     }
     writeln!(out, "import {{ {} }} from 'spacetimedb/schema';", imports.join(", "));
-    if used_types.iter().any(|t| type_contains_ref(t)) {
-        writeln!(out, "import * as types from './types';");
-    }
-    if rows.iter().any(|t| {
-        t.columns
-            .iter()
-            .any(|c| c.default_value.as_ref().is_some_and(|v| default_literal(v).is_none()))
-    }) {
-        writeln!(out, "import {{ BinaryReader }} from 'spacetimedb';");
+    if rows
+        .iter()
+        .copied()
+        .chain(
+            row_models
+                .iter()
+                .filter(|row| named.iter().any(|ty| ty.ty == row.product_type_ref)),
+        )
+        .any(|t| {
+            t.columns
+                .iter()
+                .any(|c| c.default_value.as_ref().is_some_and(|v| default_literal(v).is_none()))
+        })
+    {
+        writeln!(out, "import {{ BinaryReader as __BinaryReader }} from 'spacetimedb';");
     }
     let table_names: Vec<_> = rows
         .iter()
@@ -173,34 +193,41 @@ fn generate_module(module: &ModuleDef, options: &CodegenOptions, dir: &str, file
             (canonical, child, name)
         })
         .collect();
-    let view_rows: Vec<_> = module
-        .views()
-        .map(|view| {
-            let name = binding_name(
-                &format!("{}Row", view.accessor_name.deref().to_case(Case::Pascal)),
-                &mut used,
-            );
-            name
-        })
-        .collect();
     out.newline();
+    emit_named_types(module, out, &named, &row_models);
     for (i, table) in rows.iter().enumerate() {
         writeln!(out, "const {} = table(", table_names[i]);
         out.indent(1);
         table_options(out, table);
-        writeln!(out, ", {{");
-        write_row_fields(module, out, table);
-        writeln!(out, "}}");
+        if let Some(name) = shared_row_name(table, &named, &row_models) {
+            writeln!(out, ", {name}");
+        } else {
+            writeln!(out, ", {{");
+            write_row_fields(module, out, table);
+            writeln!(out, "}}");
+        }
         out.dedent(1);
         writeln!(out, ");");
         out.newline();
     }
-    for (view, name) in module.views().zip(&view_rows) {
-        writeln!(out, "export const {name} = t.row({{");
-        write_row_fields(module, out, &TableDef::from(view.clone()));
-        writeln!(out, "}});");
-        out.newline();
-    }
+    let view_rows: Vec<_> = module
+        .views()
+        .map(|view| {
+            let row = TableDef::from(view.clone());
+            if let Some(name) = shared_row_name(&row, &named, &row_models) {
+                return name;
+            }
+            let name = binding_name(
+                &format!("{}Row", view.accessor_name.deref().to_case(Case::Pascal)),
+                &mut used,
+            );
+            writeln!(out, "export const {name} = t.row({{");
+            write_row_fields(module, out, &row);
+            writeln!(out, "}});");
+            out.newline();
+            name
+        })
+        .collect();
     writeln!(out, "const spacetimedb = schema({{");
     out.indent(1);
     for table in &tables {
@@ -254,7 +281,7 @@ fn generate_module(module: &ModuleDef, options: &CodegenOptions, dir: &str, file
             &table_names,
         );
         write!(out, ", ");
-        write_type_builder_with_names(module, out, &procedure.return_type_for_generate, "t", "types.").unwrap();
+        write_type_builder_with_names(module, out, &procedure.return_type_for_generate, "t", "").unwrap();
         writeln!(out, ");");
         function_export(out, &accessor, binding);
     }
@@ -285,22 +312,152 @@ fn generate_module(module: &ModuleDef, options: &CodegenOptions, dir: &str, file
         filename: format!("{dir}declarations.ts"),
         code: output.into_inner(),
     });
-    files.push(named_types(module, dir));
     files.extend(function_types(module, options, dir));
     files.push(entry_point(module, options, dir));
 }
 
-fn named_types(module: &ModuleDef, dir: &str) -> OutputFile {
+fn selected_types<'a>(module: &'a ModuleDef, uses: &[&AlgebraicTypeUse], rows: &[TableDef]) -> Vec<&'a TypeDef> {
+    fn refs(ty: &AlgebraicTypeUse, needed: &mut BTreeSet<AlgebraicTypeRef>) {
+        match ty {
+            AlgebraicTypeUse::Ref(r) => {
+                needed.insert(*r);
+            }
+            AlgebraicTypeUse::Array(t) | AlgebraicTypeUse::Option(t) => refs(t, needed),
+            AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+                refs(ok_ty, needed);
+                refs(err_ty, needed);
+            }
+            _ => {}
+        }
+    }
+    let reducer_args = |ty: &TypeDef| {
+        module.reducers().any(|reducer| {
+            collect_case(Case::Pascal, ty.accessor_name.name_segments())
+                == reducer.accessor_name.deref().to_case(Case::Pascal)
+                && module.typespace_for_generate()[ty.ty]
+                    .as_product()
+                    .is_some_and(|p| p.elements == reducer.params_for_generate.elements)
+        })
+    };
+    let mut needed: BTreeSet<_> = module
+        .types()
+        .filter(|ty| !rows.iter().any(|r| r.product_type_ref == ty.ty) && !reducer_args(ty))
+        .map(|ty| ty.ty)
+        .collect();
+    for ty in uses {
+        refs(ty, &mut needed);
+    }
+    loop {
+        let previous = needed.clone();
+        for r in &previous {
+            match &module.typespace_for_generate()[*r] {
+                AlgebraicTypeDef::Product(p) => {
+                    for ty in p.element_types() {
+                        refs(ty, &mut needed);
+                    }
+                }
+                AlgebraicTypeDef::Sum(s) => {
+                    for (_, ty) in &s.variants {
+                        refs(ty, &mut needed);
+                    }
+                }
+                AlgebraicTypeDef::PlainEnum(_) => {}
+            }
+        }
+        if previous == needed {
+            break;
+        }
+    }
+    iter_types(module).filter(|ty| needed.contains(&ty.ty)).collect()
+}
+
+fn shared_row_name(table: &TableDef, types: &[&TypeDef], rows: &[TableDef]) -> Option<String> {
+    let ty = types.iter().find(|ty| ty.ty == table.product_type_ref)?;
+    let row = rows.iter().find(|row| row.product_type_ref == ty.ty)?;
+    let sequences = |t: &TableDef| t.sequences.values().map(|s| s.column).collect::<BTreeSet<_>>();
+    let same =
+        row.primary_key == table.primary_key
+            && sequences(row) == sequences(table)
+            && row.columns.iter().zip(&table.columns).all(|(a, b)| {
+                a.name == b.name && a.accessor_name == b.accessor_name && a.default_value == b.default_value
+            });
+    same.then(|| collect_case(Case::Pascal, ty.accessor_name.name_segments()))
+}
+
+// Internal SDK wire/schema generation needs the same named type declarations,
+// without constructing a module or depending on the client runtime.
+pub(super) fn types_only(module: &ModuleDef) -> OutputFile {
     let mut output = CodeIndenter::new(String::new(), INDENT);
-    let out = &mut output;
-    print_auto_generated_file_comment(out);
-    let reducer_names: BTreeSet<_> = module
-        .reducers()
-        .map(|r| r.accessor_name.deref().to_case(Case::Pascal))
-        .collect();
-    let types: Vec<_> = iter_types(module)
-        .filter(|ty| !reducer_names.contains(&collect_case(Case::Pascal, ty.accessor_name.name_segments())))
-        .collect();
+    print_auto_generated_file_comment(&mut output);
+    writeln!(output, "import {{ t }} from 'spacetimedb/schema';");
+    emit_named_types(module, &mut output, &iter_types(module).collect::<Vec<_>>(), &[]);
+    OutputFile {
+        filename: "types.ts".into(),
+        code: output.into_inner(),
+    }
+}
+
+// RowBuilder evaluates its fields at construction, unlike the lazy object and
+// enum builders. Define named dependencies first so shared rows can reuse them.
+fn ordered_types<'a>(module: &ModuleDef, types: &[&'a TypeDef]) -> Vec<&'a TypeDef> {
+    fn visit<'a>(
+        module: &ModuleDef,
+        ty: &'a TypeDef,
+        types: &[&'a TypeDef],
+        seen: &mut BTreeSet<AlgebraicTypeRef>,
+        out: &mut Vec<&'a TypeDef>,
+    ) {
+        if !seen.insert(ty.ty) {
+            return;
+        }
+        fn visit_use<'a>(
+            module: &ModuleDef,
+            usage: &AlgebraicTypeUse,
+            types: &[&'a TypeDef],
+            seen: &mut BTreeSet<AlgebraicTypeRef>,
+            out: &mut Vec<&'a TypeDef>,
+        ) {
+            match usage {
+                AlgebraicTypeUse::Ref(r) => {
+                    if let Some(ty) = types.iter().find(|ty| ty.ty == *r) {
+                        visit(module, ty, types, seen, out);
+                    }
+                }
+                AlgebraicTypeUse::Array(t) | AlgebraicTypeUse::Option(t) => visit_use(module, t, types, seen, out),
+                AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+                    visit_use(module, ok_ty, types, seen, out);
+                    visit_use(module, err_ty, types, seen, out);
+                }
+                _ => {}
+            }
+        }
+        match &module.typespace_for_generate()[ty.ty] {
+            AlgebraicTypeDef::Product(p) => {
+                for usage in p.element_types() {
+                    visit_use(module, usage, types, seen, out);
+                }
+            }
+            AlgebraicTypeDef::Sum(s) => {
+                for (_, usage) in &s.variants {
+                    visit_use(module, usage, types, seen, out);
+                }
+            }
+            AlgebraicTypeDef::PlainEnum(_) => {}
+        }
+        out.push(ty);
+    }
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::new();
+    for ty in types {
+        visit(module, ty, types, &mut seen, &mut out);
+    }
+    out
+}
+
+fn emit_named_types(module: &ModuleDef, out: &mut Indenter, types: &[&TypeDef], rows: &[TableDef]) {
+    if types.is_empty() {
+        return;
+    }
     let mut names: BTreeSet<_> = types
         .iter()
         .map(|ty| collect_case(Case::Pascal, ty.accessor_name.name_segments()))
@@ -309,21 +466,24 @@ fn named_types(module: &ModuleDef, dir: &str) -> OutputFile {
     let infer = binding_name("Infer", &mut names);
     let type_builder = binding_name("TypeBuilder", &mut names);
     let algebraic_type_type = binding_name("AlgebraicTypeType", &mut names);
-    if types.is_empty() {
-        writeln!(out, "export {{}};");
+    let import = if infer == "Infer" {
+        "Infer".to_string()
     } else {
-        let import = if infer == "Infer" {
-            "Infer".to_string()
-        } else {
-            format!("Infer as {infer}")
-        };
-        writeln!(out, "import {{ t, type {import} }} from 'spacetimedb/schema';");
-    }
+        format!("Infer as {infer}")
+    };
+    writeln!(out, "import type {{ {import} }} from 'spacetimedb/schema';");
     if algebraic_type {
         writeln!(out, "import type {{ TypeBuilder as {type_builder}, AlgebraicTypeType as {algebraic_type_type} }} from 'spacetimedb';");
     }
-    for ty in types {
+    for ty in ordered_types(module, types) {
         let name = collect_case(Case::Pascal, ty.accessor_name.name_segments());
+        if let Some(row) = rows.iter().find(|row| row.product_type_ref == ty.ty) {
+            writeln!(out, "export const {name} = t.row({}, {{", ts_string_literal(&name));
+            write_row_fields(module, out, row);
+            writeln!(out, "}});\nexport type {name} = {infer}<typeof {name}>;");
+            out.newline();
+            continue;
+        }
         let (kind, fields, case) = match &module.typespace_for_generate()[ty.ty] {
             AlgebraicTypeDef::Product(p) => ("object", p.elements.clone(), Case::Camel),
             AlgebraicTypeDef::Sum(s) => ("enum", s.variants.clone(), Case::Pascal),
@@ -366,10 +526,6 @@ fn named_types(module: &ModuleDef, dir: &str) -> OutputFile {
         out.dedent(1);
         writeln!(out, "}});\nexport type {name} = {infer}<typeof {name}>;");
     }
-    OutputFile {
-        filename: format!("{dir}types.ts"),
-        code: output.into_inner(),
-    }
 }
 
 fn params(module: &ModuleDef, out: &mut Indenter, elements: &[(Identifier, AlgebraicTypeUse)]) {
@@ -381,7 +537,7 @@ fn params(module: &ModuleDef, out: &mut Indenter, elements: &[(Identifier, Algeb
     out.indent(1);
     for (name, ty) in elements {
         write!(out, "{}: ", name.deref().to_case(Case::Camel));
-        write_type_builder_with_names(module, out, ty, "t", "types.").unwrap();
+        write_type_builder_with_names(module, out, ty, "t", "").unwrap();
         writeln!(out, ",");
     }
     out.dedent(1);
@@ -512,8 +668,13 @@ fn write_row_fields(module: &ModuleDef, out: &mut Indenter, table: &TableDef) {
     for (i, (_, ty)) in product.elements.iter().enumerate() {
         let column = &table.columns[i];
         let name = column.accessor_name.deref().to_case(Case::Camel);
-        write!(out, "{name}: ");
-        write_type_builder_with_names(module, out, ty, "t", "types.").unwrap();
+        let getter = type_contains_ref(ty);
+        if getter {
+            write!(out, "get {name}() {{ return ");
+        } else {
+            write!(out, "{name}: ");
+        }
+        write_type_builder_with_names(module, out, ty, "t", "").unwrap();
         if table.primary_key.is_some_and(|pk| pk.idx() == i) {
             write!(out, ".primaryKey()");
         }
@@ -529,12 +690,16 @@ fn write_row_fields(module: &ModuleDef, out: &mut Indenter, table: &TableDef) {
                 write!(out, "{literal}");
             } else {
                 let bytes = spacetimedb_lib::sats::bsatn::to_vec(value).unwrap();
-                write_type_builder_with_names(module, out, ty, "t", "types.").unwrap();
-                write!(out, ".deserialize(new BinaryReader(new Uint8Array({bytes:?})))");
+                write_type_builder_with_names(module, out, ty, "t", "").unwrap();
+                write!(out, ".deserialize(new __BinaryReader(new Uint8Array({bytes:?})))");
             }
             write!(out, ")");
         }
-        writeln!(out, ",");
+        if getter {
+            writeln!(out, "; }},");
+        } else {
+            writeln!(out, ",");
+        }
     }
     out.dedent(1);
 }
@@ -666,7 +831,7 @@ fn entry_point(module: &ModuleDef, options: &CodegenOptions, dir: &str) -> Outpu
         "export type SubscriptionHandle = SubscriptionHandleImpl<RemoteModule>;"
     )
     .unwrap();
-    // Match the old type namespaces as well as ordinary row-type import paths.
+    // Preserve the existing reducer/procedure type namespaces.
     writeln!(
         code,
         "export type * as Reducers from './types/reducers';\nexport type * as Procedures from './types/procedures';"

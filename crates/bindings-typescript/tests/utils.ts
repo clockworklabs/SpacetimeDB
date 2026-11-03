@@ -2,9 +2,12 @@ import spacetimedb from '../test-app/src/module_bindings/declarations';
 import BinaryWriter from '../src/lib/binary_writer';
 import { Identity } from '../src/lib/identity';
 import type { Infer } from '../src/lib/type_builders';
-import { RowSizeHint, TableUpdateRows } from '../src/sdk/client_api/types';
+import {
+  RowSizeHint,
+  TableUpdateRows,
+} from '../src/sdk/client_api/declarations';
 
-import { Point } from '../test-app/src/module_bindings/types';
+import { Point } from '../test-app/src/module_bindings/declarations';
 
 const PlayerRow = spacetimedb.entries.player.rowType;
 const UnindexedPlayerRow = spacetimedb.entries.unindexedPlayer.rowType;

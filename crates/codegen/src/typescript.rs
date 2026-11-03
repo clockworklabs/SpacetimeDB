@@ -39,6 +39,13 @@ mod declarations;
 
 pub struct TypeScript;
 
+impl TypeScript {
+    /// Generate registered types for internal SDK schemas, without client wiring.
+    pub fn generate_type_declarations(&self, module: &ModuleDef) -> OutputFile {
+        declarations::types_only(module)
+    }
+}
+
 /// Expanded bindings for SDK versions predating module declarations.
 pub struct LegacyTypeScript;
 
