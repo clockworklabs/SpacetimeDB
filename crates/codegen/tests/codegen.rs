@@ -375,9 +375,21 @@ fn typescript_declaration_snapshots_cover_submodules_and_private_items() {
 fn typescript_function_exports_preserve_reserved_names() {
     use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
     let mut builder = RawModuleDefV10Builder::new();
-    for name in ["default", "return", "spacetimedb"] {
+    for name in [
+        "default",
+        "return",
+        "spacetimedb",
+        "schema",
+        "table",
+        "t",
+        "types",
+        "binary_reader",
+    ] {
         builder.add_reducer(name, spacetimedb_lib::ProductType::unit());
     }
+    builder
+        .build_table_with_new_type("infer", spacetimedb_lib::ProductType::unit(), true)
+        .finish();
     let module: ModuleDef = builder.finish().try_into().unwrap();
     compile_typescript_client(
         generate(&module, &TypeScript, &CodegenOptions::default()),
@@ -387,6 +399,11 @@ import { reducers } from './index';
 assert.equal(reducers.default.name, 'default');
 assert.equal(reducers.return.name, 'return');
 assert.equal(reducers.spacetimedb.name, 'spacetimedb');
+assert.equal(reducers.schema.name, 'schema');
+assert.equal(reducers.table.name, 'table');
+assert.equal(reducers.t.name, 't');
+assert.equal(reducers.types.name, 'types');
+assert.equal(reducers.binaryReader.name, 'binary_reader');
 "#,
     );
 }

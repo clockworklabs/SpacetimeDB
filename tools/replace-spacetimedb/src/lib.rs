@@ -138,7 +138,20 @@ pub fn replace_in_tree(
         // Source-based SDK consumers must use the same declaration classes as
         // their local root SDK, rather than mixing in the packaged schema entry.
         let content = re_schema.replace_all(&content, |caps: &regex::Captures<'_>| {
-            let imports = caps[1].replace("schema as ", "declarationSchema as ");
+            let imports = caps[1]
+                .split(',')
+                .map(|item| {
+                    let item = item.trim();
+                    if item == "schema" {
+                        "declarationSchema as schema".to_string()
+                    } else if let Some(alias) = item.strip_prefix("schema as ") {
+                        format!("declarationSchema as {alias}")
+                    } else {
+                        item.to_string()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
             format!("import {{{imports}}} from 'spacetimedb'")
         });
 

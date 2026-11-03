@@ -49,7 +49,11 @@ fn main() -> anyhow::Result<()> {
             if filename.starts_with("types/") {
                 return Ok(());
             }
-            let code = regex_replace!(&code, r#"from "spacetimedb";"#, r#"from "../../lib/type_builders";"#);
+            let code = regex_replace!(
+                &code,
+                r#"from ['"]spacetimedb(?:/schema)?['"];"#,
+                r#"from "../../lib/type_builders";"#
+            );
 
             // Elide types which are related to client-side only things
             let code = regex_replace!(&code, r"type CallReducerFlags as __CallReducerFlags,", r"");

@@ -1285,55 +1285,65 @@ fn write_type_builder_field(
 
 /// e.g. `__t.option(__t.i32())`, `__t.string()`
 fn write_type_builder<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicTypeUse) -> fmt::Result {
+    write_type_builder_with_names(module, out, ty, "__t", "")
+}
+
+fn write_type_builder_with_names<W: Write>(
+    module: &ModuleDef,
+    out: &mut W,
+    ty: &AlgebraicTypeUse,
+    builder: &str,
+    types: &str,
+) -> fmt::Result {
     match ty {
-        AlgebraicTypeUse::Unit => write!(out, "__t.unit()")?,
-        AlgebraicTypeUse::Never => write!(out, "__t.never()")?,
-        AlgebraicTypeUse::Identity => write!(out, "__t.identity()")?,
-        AlgebraicTypeUse::ConnectionId => write!(out, "__t.connectionId()")?,
-        AlgebraicTypeUse::Timestamp => write!(out, "__t.timestamp()")?,
-        AlgebraicTypeUse::TimeDuration => write!(out, "__t.timeDuration()")?,
-        AlgebraicTypeUse::ScheduleAt => write!(out, "__t.scheduleAt()")?,
-        AlgebraicTypeUse::Uuid => write!(out, "__t.uuid()")?,
+        AlgebraicTypeUse::Unit => write!(out, "{builder}.unit()")?,
+        AlgebraicTypeUse::Never => write!(out, "{builder}.never()")?,
+        AlgebraicTypeUse::Identity => write!(out, "{builder}.identity()")?,
+        AlgebraicTypeUse::ConnectionId => write!(out, "{builder}.connectionId()")?,
+        AlgebraicTypeUse::Timestamp => write!(out, "{builder}.timestamp()")?,
+        AlgebraicTypeUse::TimeDuration => write!(out, "{builder}.timeDuration()")?,
+        AlgebraicTypeUse::ScheduleAt => write!(out, "{builder}.scheduleAt()")?,
+        AlgebraicTypeUse::Uuid => write!(out, "{builder}.uuid()")?,
         AlgebraicTypeUse::Option(inner_ty) => {
-            write!(out, "__t.option(")?;
-            write_type_builder(module, out, inner_ty)?;
+            write!(out, "{builder}.option(")?;
+            write_type_builder_with_names(module, out, inner_ty, builder, types)?;
             write!(out, ")")?;
         }
         AlgebraicTypeUse::Result { ok_ty, err_ty } => {
-            write!(out, "__t.result(")?;
-            write_type_builder(module, out, ok_ty)?;
+            write!(out, "{builder}.result(")?;
+            write_type_builder_with_names(module, out, ok_ty, builder, types)?;
             write!(out, ", ")?;
-            write_type_builder(module, out, err_ty)?;
+            write_type_builder_with_names(module, out, err_ty, builder, types)?;
             write!(out, ")")?;
         }
         AlgebraicTypeUse::Primitive(prim) => match prim {
-            PrimitiveType::Bool => write!(out, "__t.bool()")?,
-            PrimitiveType::I8 => write!(out, "__t.i8()")?,
-            PrimitiveType::U8 => write!(out, "__t.u8()")?,
-            PrimitiveType::I16 => write!(out, "__t.i16()")?,
-            PrimitiveType::U16 => write!(out, "__t.u16()")?,
-            PrimitiveType::I32 => write!(out, "__t.i32()")?,
-            PrimitiveType::U32 => write!(out, "__t.u32()")?,
-            PrimitiveType::I64 => write!(out, "__t.i64()")?,
-            PrimitiveType::U64 => write!(out, "__t.u64()")?,
-            PrimitiveType::I128 => write!(out, "__t.i128()")?,
-            PrimitiveType::U128 => write!(out, "__t.u128()")?,
-            PrimitiveType::I256 => write!(out, "__t.i256()")?,
-            PrimitiveType::U256 => write!(out, "__t.u256()")?,
-            PrimitiveType::F32 => write!(out, "__t.f32()")?,
-            PrimitiveType::F64 => write!(out, "__t.f64()")?,
+            PrimitiveType::Bool => write!(out, "{builder}.bool()")?,
+            PrimitiveType::I8 => write!(out, "{builder}.i8()")?,
+            PrimitiveType::U8 => write!(out, "{builder}.u8()")?,
+            PrimitiveType::I16 => write!(out, "{builder}.i16()")?,
+            PrimitiveType::U16 => write!(out, "{builder}.u16()")?,
+            PrimitiveType::I32 => write!(out, "{builder}.i32()")?,
+            PrimitiveType::U32 => write!(out, "{builder}.u32()")?,
+            PrimitiveType::I64 => write!(out, "{builder}.i64()")?,
+            PrimitiveType::U64 => write!(out, "{builder}.u64()")?,
+            PrimitiveType::I128 => write!(out, "{builder}.i128()")?,
+            PrimitiveType::U128 => write!(out, "{builder}.u128()")?,
+            PrimitiveType::I256 => write!(out, "{builder}.i256()")?,
+            PrimitiveType::U256 => write!(out, "{builder}.u256()")?,
+            PrimitiveType::F32 => write!(out, "{builder}.f32()")?,
+            PrimitiveType::F64 => write!(out, "{builder}.f64()")?,
         },
-        AlgebraicTypeUse::String => write!(out, "__t.string()")?,
+        AlgebraicTypeUse::String => write!(out, "{builder}.string()")?,
         AlgebraicTypeUse::Array(elem_ty) => {
             if matches!(&**elem_ty, AlgebraicTypeUse::Primitive(PrimitiveType::U8)) {
-                return write!(out, "__t.byteArray()");
+                return write!(out, "{builder}.byteArray()");
             }
-            write!(out, "__t.array(")?;
-            write_type_builder(module, out, elem_ty)?;
+            write!(out, "{builder}.array(")?;
+            write_type_builder_with_names(module, out, elem_ty, builder, types)?;
             write!(out, ")")?;
         }
         AlgebraicTypeUse::Ref(r) => {
-            write!(out, "{}", type_ref_name(module, *r))?;
+            write!(out, "{types}{}", type_ref_name(module, *r))?;
         }
     }
     Ok(())

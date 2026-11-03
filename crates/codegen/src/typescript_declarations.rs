@@ -8,210 +8,317 @@ pub(super) fn generate(module: &ModuleDef, options: &CodegenOptions) -> Vec<Outp
     files
 }
 
+// Local names are readable by default; aliases are only needed for actual collisions.
+fn binding_name(preferred: &str, used: &mut BTreeSet<String>) -> String {
+    let mut name = preferred.to_string();
+    while used.contains(&name) {
+        name.push('_');
+    }
+    used.insert(name.clone());
+    name
+}
+
 fn generate_module(module: &ModuleDef, options: &CodegenOptions, dir: &str, files: &mut Vec<OutputFile>) {
     let mut output = CodeIndenter::new(String::new(), INDENT);
     let out = &mut output;
     print_auto_generated_file_comment(out);
-    writeln!(
-        out,
-        "import {{ schema as __schema, table as __table }} from 'spacetimedb/schema';"
-    );
+
+    let mut used: BTreeSet<String> = [
+        "schema",
+        "table",
+        "t",
+        "types",
+        "spacetimedb",
+        "BinaryReader",
+        "default",
+        "return",
+        "class",
+        "function",
+        "var",
+        "let",
+        "const",
+        "new",
+        "delete",
+        "switch",
+        "case",
+        "break",
+        "continue",
+        "for",
+        "while",
+        "do",
+        "if",
+        "else",
+        "try",
+        "catch",
+        "finally",
+        "throw",
+        "extends",
+        "import",
+        "export",
+        "in",
+        "instanceof",
+        "typeof",
+        "void",
+        "with",
+        "yield",
+        "await",
+        "enum",
+        "implements",
+        "interface",
+        "package",
+        "private",
+        "protected",
+        "public",
+        "static",
+        "super",
+        "this",
+        "null",
+        "true",
+        "false",
+        "debugger",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    // Reserve function exports before allocating table and child-module locals.
+    let mut functions = BTreeMap::new();
+    for accessor in iter_reducers(module, options.visibility)
+        .filter(|r| is_reducer_invokable(r))
+        .map(|r| r.accessor_name.deref())
+        .chain(iter_procedures(module, options.visibility).map(|p| p.accessor_name.deref()))
+        .chain(module.views().map(|v| v.accessor_name.deref()))
+    {
+        let accessor = accessor.to_case(Case::Camel);
+        let binding = binding_name(&accessor, &mut used);
+        functions.insert(accessor, binding);
+    }
     let tables: Vec<_> = iter_tables(module, options.visibility).collect();
-    // Private tables needed by schedules remain local metadata, not public accessors.
-    let schedule_tables: Vec<_> = module
-        .tables()
-        .filter(|table| {
-            table.schedule.as_ref().is_some_and(|schedule| {
-                iter_reducers(module, options.visibility)
-                    .any(|r| is_reducer_invokable(r) && local_name(&r.name) == local_name(&schedule.function_name))
-                    || iter_procedures(module, options.visibility)
-                        .any(|p| local_name(&p.name) == local_name(&schedule.function_name))
-            })
-        })
-        .collect();
-    let mut rows: Vec<&TableDef> = tables.clone();
-    for table in &schedule_tables {
-        if !rows.iter().any(|t| t.name == table.name) {
+    let mut rows = tables.clone();
+    for table in module.tables() {
+        if table.schedule.as_ref().is_some_and(|s| {
+            iter_reducers(module, options.visibility)
+                .any(|r| is_reducer_invokable(r) && local_name(&r.name) == local_name(&s.function_name))
+                || iter_procedures(module, options.visibility)
+                    .any(|p| local_name(&p.name) == local_name(&s.function_name))
+        }) && !rows.iter().any(|t| t.name == table.name)
+        {
             rows.push(table);
         }
     }
-    for (i, table) in rows.iter().enumerate() {
-        let stem = table_module_name(&table.accessor_name);
-        writeln!(out, "import __row{i} from './{stem}';");
-        files.push(row_file(module, table, format!("{dir}{stem}.ts")));
-    }
-    for (i, view) in module.views().enumerate() {
-        let row = row_file(
-            module,
-            &TableDef::from(view.clone()),
-            format!("{dir}{}.ts", table_module_name(&view.accessor_name)),
-        );
-        // The schema's view definition supplies the view kind and result cardinality.
-        files.push(row);
-        writeln!(
-            out,
-            "import __viewRow{i} from './{}';",
-            table_module_name(&view.accessor_name)
-        );
-    }
-    for reducer in iter_reducers(module, options.visibility) {
-        let file = TypeScript.generate_reducer_file(module, reducer);
-        writeln!(
-            out,
-            "import {} from './{}';",
-            reducer_args_type_name(&reducer.accessor_name),
-            reducer_module_name(&reducer.accessor_name)
-        );
-        files.push(OutputFile {
-            filename: format!("{dir}{}", file.filename),
-            ..file
-        });
-    }
-    for procedure in iter_procedures(module, options.visibility) {
-        let file = TypeScript.generate_procedure_file(module, procedure);
-        writeln!(
-            out,
-            "import * as {} from './{}';",
-            procedure_args_type_name(&procedure.accessor_name),
-            procedure_module_name(&procedure.accessor_name)
-        );
-        files.push(OutputFile {
-            filename: format!("{dir}{}", file.filename),
-            ..file
-        });
-    }
-    writeln!(out, "import {{ t as __t }} from 'spacetimedb';");
-    gen_and_print_imports(
-        module,
-        out,
-        module.views().flat_map(|v| v.params_for_generate.element_types()),
-        &[],
+    let mut used_types: Vec<_> = rows
+        .iter()
+        .flat_map(|table| {
+            module.typespace_for_generate()[table.product_type_ref]
+                .as_product()
+                .unwrap()
+                .element_types()
+        })
+        .collect();
+    let scheduled = |name: &str| {
+        rows.iter().any(|t| {
+            t.schedule
+                .as_ref()
+                .is_some_and(|s| local_name(&s.function_name) == local_name(name))
+        })
+    };
+    used_types.extend(
+        iter_reducers(module, options.visibility)
+            .filter(|r| is_reducer_invokable(r) && !scheduled(&r.name))
+            .flat_map(|r| r.params_for_generate.element_types()),
     );
-    for (i, (canonical, _)) in module.submodules().iter().enumerate() {
-        writeln!(out, "import * as __child{i} from './{canonical}/declarations';");
+    for procedure in iter_procedures(module, options.visibility) {
+        if !scheduled(&procedure.name) {
+            used_types.extend(procedure.params_for_generate.element_types());
+        }
+        used_types.push(&procedure.return_type_for_generate);
     }
+    used_types.extend(module.views().flat_map(|v| v.params_for_generate.element_types()));
+    let mut imports = vec!["schema"];
+    if !rows.is_empty() {
+        imports.push("table");
+    }
+    if module.views().next().is_some() || used_types.iter().any(|t| !matches!(t, AlgebraicTypeUse::Ref(_))) {
+        imports.push("t");
+    }
+    writeln!(out, "import {{ {} }} from 'spacetimedb/schema';", imports.join(", "));
+    if used_types.iter().any(|t| type_contains_ref(t)) {
+        writeln!(out, "import * as types from './types';");
+    }
+    if rows.iter().any(|t| {
+        t.columns
+            .iter()
+            .any(|c| c.default_value.as_ref().is_some_and(|v| default_literal(v).is_none()))
+    }) {
+        writeln!(out, "import {{ BinaryReader }} from 'spacetimedb';");
+    }
+    let table_names: Vec<_> = rows
+        .iter()
+        .map(|t| binding_name(&t.accessor_name.deref().to_case(Case::Camel), &mut used))
+        .collect();
+    let children: Vec<_> = module
+        .submodules()
+        .iter()
+        .map(|(canonical, child)| {
+            let name = binding_name(&canonical.deref().to_case(Case::Camel), &mut used);
+            writeln!(out, "import * as {name} from './{canonical}/declarations';");
+            generate_module(child, options, &format!("{dir}{canonical}/"), files);
+            (canonical, child, name)
+        })
+        .collect();
+    let view_rows: Vec<_> = module
+        .views()
+        .map(|view| {
+            let name = binding_name(
+                &format!("{}Row", view.accessor_name.deref().to_case(Case::Pascal)),
+                &mut used,
+            );
+            let stem = table_module_name(&view.accessor_name);
+            writeln!(out, "import {name} from './{stem}';");
+            files.push(row_file(
+                module,
+                &TableDef::from(view.clone()),
+                format!("{dir}{stem}.ts"),
+            ));
+            name
+        })
+        .collect();
+    out.newline();
     for (i, table) in rows.iter().enumerate() {
-        write!(out, "const __table{i} = __table(");
+        writeln!(out, "const {} = table(", table_names[i]);
+        out.indent(1);
         table_options(out, table);
-        writeln!(out, ", __row{i});");
+        writeln!(out, ", {{");
+        write_row_fields(module, out, table);
+        writeln!(out, "}}");
+        out.dedent(1);
+        writeln!(out, ");");
+        out.newline();
+        // Existing row import paths remain thin compatibility exports.
+        if tables.iter().any(|t| t.name == table.name) {
+            files.push(OutputFile { filename: format!("{dir}{}.ts", table_module_name(&table.accessor_name)),
+                code: format!("// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB.\nimport spacetimedb from './declarations';\nexport default spacetimedb.entries[{}].rowType;\n", ts_string_literal(&table.accessor_name.deref().to_case(Case::Camel))) });
+        }
     }
-    writeln!(out, "const spacetimedb = __schema({{");
+    writeln!(out, "const spacetimedb = schema({{");
     out.indent(1);
     for table in &tables {
         let i = rows.iter().position(|t| t.name == table.name).unwrap();
-        writeln!(
-            out,
-            "{}: __table{i},",
-            ts_string_literal(&table.accessor_name.deref().to_case(Case::Camel))
-        );
+        let accessor = table.accessor_name.deref().to_case(Case::Camel);
+        if accessor == table_names[i] {
+            writeln!(out, "{accessor},");
+        } else {
+            writeln!(out, "{}: {},", ts_string_literal(&accessor), table_names[i]);
+        }
     }
-    for (i, (canonical, child)) in module.submodules().iter().enumerate() {
-        let accessor = child.mount_accessor_name().unwrap_or(canonical);
+    for (canonical, child, name) in children {
         writeln!(
             out,
-            "{}: {{ name: {}, module: __child{i} }},",
-            ts_string_literal(accessor),
+            "{}: {{ name: {}, module: {name} }},",
+            ts_string_literal(child.mount_accessor_name().unwrap_or(canonical)),
             ts_string_literal(canonical)
         );
-        generate_module(child, options, &format!("{dir}{canonical}/"), files);
     }
     out.dedent(1);
-    writeln!(out, "}});");
-    writeln!(out, "export default spacetimedb;");
-    for (i, reducer) in iter_reducers(module, options.visibility)
-        .filter(|r| is_reducer_invokable(r))
-        .enumerate()
-    {
+    writeln!(out, "}});\nexport default spacetimedb;");
+    for reducer in iter_reducers(module, options.visibility).filter(|r| is_reducer_invokable(r)) {
         let accessor = reducer.accessor_name.deref().to_case(Case::Camel);
-        write!(
+        let binding = &functions[&accessor];
+        out.newline();
+        function_start(out, &accessor, binding, "reducer");
+        function_args(
+            module,
             out,
-            "const __reducer{i} = spacetimedb.reducer({{ name: {}",
-            ts_string_literal(local_name(&reducer.name))
+            &reducer.name,
+            &accessor,
+            &reducer.params_for_generate.elements,
+            &rows,
+            &table_names,
         );
-        let scheduled = rows.iter().enumerate().find(|(_, t)| {
-            t.schedule
-                .as_ref()
-                .is_some_and(|s| local_name(&s.function_name) == local_name(&reducer.name))
-        });
-        if let Some((i, _)) = scheduled {
-            write!(out, ", onSchedule: __table{i}");
-        }
-        write!(out, " }}, ");
-        if let Some((i, _)) = scheduled {
-            write!(
-                out,
-                "{{ {}: __row{i} }}",
-                reducer.params_for_generate.elements[0].0.deref().to_case(Case::Camel)
-            );
-        } else {
-            write!(out, "{}", reducer_args_type_name(&reducer.accessor_name));
-        }
         writeln!(out, ");");
-        export_function(out, &accessor, &format!("__reducer{i}"));
+        function_export(out, &accessor, binding);
+        files.push(function_file(
+            dir,
+            &reducer_module_name(&reducer.accessor_name),
+            &accessor,
+            false,
+        ));
     }
-    for (i, procedure) in iter_procedures(module, options.visibility).enumerate() {
-        let args = procedure_args_type_name(&procedure.accessor_name);
-        write!(
-            out,
-            "const __procedure{i} = spacetimedb.procedure({{ name: {}",
-            ts_string_literal(local_name(&procedure.name))
-        );
-        let scheduled = rows.iter().enumerate().find(|(_, t)| {
-            t.schedule
-                .as_ref()
-                .is_some_and(|s| local_name(&s.function_name) == local_name(&procedure.name))
+    // Lifecycle argument types were public in the old bindings, although the hooks
+    // themselves are not client-invokable declarations.
+    for reducer in iter_reducers(module, options.visibility).filter(|r| !is_reducer_invokable(r)) {
+        let mut code = CodeIndenter::new(String::new(), INDENT);
+        print_auto_generated_file_comment(&mut code);
+        if reducer
+            .params_for_generate
+            .element_types()
+            .any(|t| !matches!(t, AlgebraicTypeUse::Ref(_)))
+        {
+            writeln!(code, "import {{ t }} from 'spacetimedb/schema';");
+        }
+        if reducer.params_for_generate.element_types().any(type_contains_ref) {
+            writeln!(code, "import * as types from './types';");
+        }
+        write!(code, "export default ");
+        params(module, &mut code, &reducer.params_for_generate.elements);
+        writeln!(code, ";");
+        files.push(OutputFile {
+            filename: format!("{dir}{}.ts", reducer_module_name(&reducer.accessor_name)),
+            code: code.into_inner(),
         });
-        if let Some((i, _)) = scheduled {
-            write!(out, ", onSchedule: __table{i}");
-        }
-        write!(out, " }}, ");
-        if let Some((i, _)) = scheduled {
-            write!(
-                out,
-                "{{ {}: __row{i} }}",
-                procedure.params_for_generate.elements[0].0.deref().to_case(Case::Camel)
-            );
-        } else {
-            write!(out, "{args}.params");
-        }
-        writeln!(out, ", {args}.returnType);");
-        export_function(
+    }
+    for procedure in iter_procedures(module, options.visibility) {
+        let accessor = procedure.accessor_name.deref().to_case(Case::Camel);
+        let binding = &functions[&accessor];
+        out.newline();
+        function_start(out, &accessor, binding, "procedure");
+        function_args(
+            module,
             out,
-            &procedure.accessor_name.deref().to_case(Case::Camel),
-            &format!("__procedure{i}"),
+            &procedure.name,
+            &accessor,
+            &procedure.params_for_generate.elements,
+            &rows,
+            &table_names,
         );
+        write!(out, ", ");
+        write_type_builder_with_names(module, out, &procedure.return_type_for_generate, "t", "types.").unwrap();
+        writeln!(out, ");");
+        function_export(out, &accessor, binding);
+        files.push(function_file(
+            dir,
+            &procedure_module_name(&procedure.accessor_name),
+            &accessor,
+            true,
+        ));
     }
     for (i, view) in module.views().enumerate() {
+        let accessor = view.accessor_name.deref().to_case(Case::Camel);
+        let binding = &functions[&accessor];
         let kind = if view.is_anonymous { "anonymousView" } else { "view" };
         let cardinality = if matches!(view.return_type_for_generate, AlgebraicTypeUse::Option(_)) {
             "option"
         } else {
             "array"
         };
+        out.newline();
+        function_start(out, &accessor, binding, kind);
         write!(
             out,
-            "const __view{i} = spacetimedb.{kind}({{ name: {}, public: true }}, ",
+            "{{ name: {}, public: true }}, ",
             ts_string_literal(local_name(&view.name))
         );
         if !view.params_for_generate.elements.is_empty() {
-            writeln!(out, "{{");
-            write_object_type_builder_fields(module, out, &view.params_for_generate.elements, None, true, None)
-                .unwrap();
-            write!(out, "}}, ");
+            params(module, out, &view.params_for_generate.elements);
+            write!(out, ", ");
         }
-        writeln!(out, "__t.{cardinality}(__viewRow{i}));");
-        export_function(
-            out,
-            &view.accessor_name.deref().to_case(Case::Camel),
-            &format!("__view{i}"),
-        );
+        writeln!(out, "t.{cardinality}({}));", view_rows[i]);
+        function_export(out, &accessor, binding);
     }
     files.push(OutputFile {
         filename: format!("{dir}declarations.ts"),
         code: output.into_inner(),
     });
-    files.push(generate_types_file_with_path(module, format!("{dir}types.ts")));
-    // Preserve the existing parameter type import paths.
+    files.push(named_types(module, dir));
     let mut reducers = generate_reducers_file(module, options);
     reducers.filename = format!("{dir}{}", reducers.filename);
     files.push(reducers);
@@ -221,15 +328,165 @@ fn generate_module(module: &ModuleDef, options: &CodegenOptions, dir: &str, file
     files.push(entry_point(module, options, dir));
 }
 
-fn export_function(out: &mut Indenter, accessor: &str, binding: &str) {
+fn named_types(module: &ModuleDef, dir: &str) -> OutputFile {
+    let mut output = CodeIndenter::new(String::new(), INDENT);
+    let out = &mut output;
+    print_auto_generated_file_comment(out);
+    let reducer_names: BTreeSet<_> = module
+        .reducers()
+        .map(|r| r.accessor_name.deref().to_case(Case::Pascal))
+        .collect();
+    let types: Vec<_> = iter_types(module)
+        .filter(|ty| !reducer_names.contains(&collect_case(Case::Pascal, ty.accessor_name.name_segments())))
+        .collect();
+    let mut names: BTreeSet<_> = types
+        .iter()
+        .map(|ty| collect_case(Case::Pascal, ty.accessor_name.name_segments()))
+        .collect();
+    let algebraic_type = names.contains("AlgebraicType");
+    let infer = binding_name("Infer", &mut names);
+    let type_builder = binding_name("TypeBuilder", &mut names);
+    let algebraic_type_type = binding_name("AlgebraicTypeType", &mut names);
+    if types.is_empty() {
+        writeln!(out, "export {{}};");
+    } else {
+        let import = if infer == "Infer" {
+            "Infer".to_string()
+        } else {
+            format!("Infer as {infer}")
+        };
+        writeln!(out, "import {{ t, type {import} }} from 'spacetimedb/schema';");
+    }
+    if algebraic_type {
+        writeln!(out, "import type {{ TypeBuilder as {type_builder}, AlgebraicTypeType as {algebraic_type_type} }} from 'spacetimedb';");
+    }
+    for ty in types {
+        let name = collect_case(Case::Pascal, ty.accessor_name.name_segments());
+        let (kind, fields, case) = match &module.typespace_for_generate()[ty.ty] {
+            AlgebraicTypeDef::Product(p) => ("object", p.elements.clone(), Case::Camel),
+            AlgebraicTypeDef::Sum(s) => ("enum", s.variants.clone(), Case::Pascal),
+            AlgebraicTypeDef::PlainEnum(e) => (
+                "enum",
+                e.variants
+                    .iter()
+                    .cloned()
+                    .map(|v| (v, AlgebraicTypeUse::Unit))
+                    .collect(),
+                Case::Pascal,
+            ),
+        };
+        out.newline();
+        if name == "AlgebraicType" {
+            write!(
+                out,
+                "export const {name}: {type_builder}<{algebraic_type_type}, {algebraic_type_type}>"
+            );
+        } else {
+            write!(out, "export const {name}");
+        }
+        writeln!(out, " = t.{kind}({}, {{", ts_string_literal(&name));
+        out.indent(1);
+        for (field, ty) in fields {
+            let field = field.deref().to_case(case);
+            let getter = type_contains_ref(&ty);
+            if getter {
+                write!(out, "get {field}() {{ return ");
+            } else {
+                write!(out, "{field}: ");
+            }
+            write_type_builder_with_names(module, out, &ty, "t", "").unwrap();
+            if getter {
+                writeln!(out, "; }},");
+            } else {
+                writeln!(out, ",");
+            }
+        }
+        out.dedent(1);
+        writeln!(out, "}});\nexport type {name} = {infer}<typeof {name}>;");
+    }
+    OutputFile {
+        filename: format!("{dir}types.ts"),
+        code: output.into_inner(),
+    }
+}
+
+fn params(module: &ModuleDef, out: &mut Indenter, elements: &[(Identifier, AlgebraicTypeUse)]) {
+    if elements.is_empty() {
+        write!(out, "{{}}");
+        return;
+    }
+    writeln!(out, "{{");
+    out.indent(1);
+    for (name, ty) in elements {
+        write!(out, "{}: ", name.deref().to_case(Case::Camel));
+        write_type_builder_with_names(module, out, ty, "t", "types.").unwrap();
+        writeln!(out, ",");
+    }
+    out.dedent(1);
+    write!(out, "}}");
+}
+
+fn function_args(
+    module: &ModuleDef,
+    out: &mut Indenter,
+    name: &str,
+    accessor: &str,
+    elements: &[(Identifier, AlgebraicTypeUse)],
+    rows: &[&TableDef],
+    names: &[String],
+) {
+    let scheduled = rows.iter().position(|t| {
+        t.schedule
+            .as_ref()
+            .is_some_and(|s| local_name(&s.function_name) == local_name(name))
+    });
+    if local_name(name) != accessor || scheduled.is_some() {
+        write!(out, "{{ name: {}", ts_string_literal(local_name(name)));
+        if let Some(i) = scheduled {
+            write!(out, ", onSchedule: {}", names[i]);
+        }
+        write!(out, " }}, ");
+    }
+    if let Some(i) = scheduled {
+        write!(
+            out,
+            "{{ {}: {}.rowType }}",
+            elements[0].0.deref().to_case(Case::Camel),
+            names[i]
+        );
+    } else {
+        params(module, out, elements);
+    }
+}
+
+fn function_start(out: &mut Indenter, accessor: &str, binding: &str, kind: &str) {
+    let export = if accessor == binding { "export " } else { "" };
+    write!(out, "{export}const {binding} = spacetimedb.{kind}(");
+}
+
+fn function_export(out: &mut Indenter, accessor: &str, binding: &str) {
     if accessor == "default" {
         writeln!(
             out,
             "export const __defaultFunction = spacetimedb.exportGroup({{ default: {binding} }});"
         );
-    } else {
+    } else if accessor != binding {
         writeln!(out, "export {{ {binding} as {accessor} }};");
     }
+}
+
+fn function_file(dir: &str, stem: &str, accessor: &str, procedure: bool) -> OutputFile {
+    let expression = if accessor == "default" {
+        "declarations.__defaultFunction.exports.default".to_string()
+    } else {
+        format!("declarations.{accessor}")
+    };
+    let exports = if procedure {
+        format!("export const params = {expression}.params;\nexport const returnType = {expression}.returnType;\n")
+    } else {
+        format!("export default {expression}.params;\n")
+    };
+    OutputFile { filename: format!("{dir}{stem}.ts"), code: format!("// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB.\nimport * as declarations from './declarations';\n{exports}") }
 }
 
 fn local_name(name: &str) -> &str {
@@ -239,24 +496,42 @@ fn local_name(name: &str) -> &str {
 fn row_file(module: &ModuleDef, table: &TableDef, filename: String) -> OutputFile {
     let mut output = CodeIndenter::new(String::new(), INDENT);
     let out = &mut output;
-    print_file_header(out, false, true);
-    writeln!(out, "import {{ BinaryReader as __BinaryReader }} from 'spacetimedb';");
+    print_auto_generated_file_comment(out);
+    writeln!(out, "import {{ t }} from 'spacetimedb/schema';");
+    if module.typespace_for_generate()[table.product_type_ref]
+        .as_product()
+        .unwrap()
+        .element_types()
+        .any(type_contains_ref)
+    {
+        writeln!(out, "import * as types from './types';");
+    }
+    if table
+        .columns
+        .iter()
+        .any(|c| c.default_value.as_ref().is_some_and(|v| default_literal(v).is_none()))
+    {
+        writeln!(out, "import {{ BinaryReader }} from 'spacetimedb';");
+    }
+    writeln!(out, "export default t.row({{");
+    write_row_fields(module, out, table);
+    writeln!(out, "}});");
+    OutputFile {
+        filename,
+        code: output.into_inner(),
+    }
+}
+
+fn write_row_fields(module: &ModuleDef, out: &mut Indenter, table: &TableDef) {
     let product = module.typespace_for_generate()[table.product_type_ref]
         .as_product()
         .unwrap();
-    gen_and_print_imports(module, out, product.element_types(), &[]);
-    writeln!(out, "export default __t.row({{");
     out.indent(1);
     for (i, (_, ty)) in product.elements.iter().enumerate() {
         let column = &table.columns[i];
         let name = column.accessor_name.deref().to_case(Case::Camel);
-        let getter = type_contains_ref(ty);
-        if getter {
-            write!(out, "get {name}() {{ return ");
-        } else {
-            write!(out, "{name}: ");
-        }
-        write_type_builder(module, out, ty).unwrap();
+        write!(out, "{name}: ");
+        write_type_builder_with_names(module, out, ty, "t", "types.").unwrap();
         if table.primary_key.is_some_and(|pk| pk.idx() == i) {
             write!(out, ".primaryKey()");
         }
@@ -267,79 +542,108 @@ fn row_file(module: &ModuleDef, table: &TableDef, filename: String) -> OutputFil
             write!(out, ".name({})", ts_string_literal(&column.name));
         }
         if let Some(value) = &column.default_value {
-            let bytes = spacetimedb_lib::sats::bsatn::to_vec(value).unwrap();
             write!(out, ".default(");
-            write_type_builder(module, out, ty).unwrap();
-            write!(out, ".deserialize(new __BinaryReader(new Uint8Array({bytes:?}))))");
+            if let Some(literal) = default_literal(value) {
+                write!(out, "{literal}");
+            } else {
+                let bytes = spacetimedb_lib::sats::bsatn::to_vec(value).unwrap();
+                write_type_builder_with_names(module, out, ty, "t", "types.").unwrap();
+                write!(out, ".deserialize(new BinaryReader(new Uint8Array({bytes:?})))");
+            }
+            write!(out, ")");
         }
-        if getter {
-            writeln!(out, "; }},");
-        } else {
-            writeln!(out, ",");
-        }
+        writeln!(out, ",");
     }
     out.dedent(1);
-    writeln!(out, "}});");
-    OutputFile {
-        filename,
-        code: output.into_inner(),
-    }
+}
+
+// Keep common defaults readable; arbitrary compound values retain their exact BSATN representation.
+fn default_literal(value: &spacetimedb_lib::AlgebraicValue) -> Option<String> {
+    use spacetimedb_lib::AlgebraicValue::*;
+    Some(match value {
+        Bool(v) => v.to_string(),
+        I8(v) => v.to_string(),
+        U8(v) => v.to_string(),
+        I16(v) => v.to_string(),
+        U16(v) => v.to_string(),
+        I32(v) => v.to_string(),
+        U32(v) => v.to_string(),
+        I64(v) => format!("{v}n"),
+        U64(v) => format!("{v}n"),
+        I128(v) => format!("{}n", { v.0 }),
+        U128(v) => format!("{}n", { v.0 }),
+        I256(v) => format!("{v}n"),
+        U256(v) => format!("{v}n"),
+        String(v) => ts_string_literal(v),
+        _ => return None,
+    })
 }
 
 fn table_options(out: &mut Indenter, table: &TableDef) {
-    writeln!(
+    write!(
         out,
-        "{{ name: {}, public: {}, event: {}, indexes: [",
+        "{{ name: {}, public: {}",
         ts_string_literal(&table.name),
-        table.table_access == TableAccess::Public,
-        table.is_event
+        table.table_access == TableAccess::Public
     );
-    out.indent(1);
-    for index in iter_indexes(table).filter(|i| !i.generated()) {
-        let algorithm = match index.algorithm {
-            IndexAlgorithm::BTree(_) => "btree",
-            IndexAlgorithm::Hash(_) => "hash",
-            IndexAlgorithm::Direct(_) => "direct",
-            _ => panic!("unsupported index algorithm in TypeScript declarations"),
-        };
-        let columns: Vec<_> = index
-            .algorithm
-            .columns()
-            .iter()
-            .map(|id| ts_string_literal(&table.columns[id.idx()].accessor_name.deref().to_case(Case::Camel)))
-            .collect();
-        write!(
-            out,
-            "{{ accessor: {}, name: {}, algorithm: '{algorithm}', ",
-            ts_string_literal(index.accessor_name.as_deref().unwrap_or(&index.name)),
-            ts_string_literal(&index.name)
-        );
-        if algorithm == "direct" {
-            writeln!(out, "column: {} }},", columns[0]);
-        } else {
-            writeln!(out, "columns: [{}] }},", columns.join(", "));
+    if table.is_event {
+        write!(out, ", event: true");
+    }
+    let indexes: Vec<_> = iter_indexes(table).filter(|i| !i.generated()).collect();
+    if !indexes.is_empty() {
+        writeln!(out, ", indexes: [");
+        out.indent(1);
+        for index in indexes {
+            let algorithm = match index.algorithm {
+                IndexAlgorithm::BTree(_) => "btree",
+                IndexAlgorithm::Hash(_) => "hash",
+                IndexAlgorithm::Direct(_) => "direct",
+                _ => panic!("unsupported index algorithm in TypeScript declarations"),
+            };
+            let columns: Vec<_> = index
+                .algorithm
+                .columns()
+                .iter()
+                .map(|id| ts_string_literal(&table.columns[id.idx()].accessor_name.deref().to_case(Case::Camel)))
+                .collect();
+            write!(
+                out,
+                "{{ accessor: {}, name: {}, algorithm: '{algorithm}', ",
+                ts_string_literal(index.accessor_name.as_deref().unwrap_or(&index.name)),
+                ts_string_literal(&index.name)
+            );
+            if algorithm == "direct" {
+                writeln!(out, "column: {} }},", columns[0]);
+            } else {
+                writeln!(out, "columns: [{}] }},", columns.join(", "));
+            }
         }
+        out.dedent(1);
+        write!(out, "]");
     }
-    out.dedent(1);
-    writeln!(out, "], constraints: [");
-    out.indent(1);
-    for constraint in iter_constraints(table) {
-        let columns: Vec<_> = constraint
-            .data
-            .unique_columns()
-            .into_iter()
-            .flat_map(|c| c.iter())
-            .map(|id| ts_string_literal(&table.columns[id.idx()].accessor_name.deref().to_case(Case::Camel)))
-            .collect();
-        writeln!(
-            out,
-            "{{ name: {}, constraint: 'unique', columns: [{}] }},",
-            ts_string_literal(&constraint.name),
-            columns.join(", ")
-        );
+    let constraints: Vec<_> = iter_constraints(table).collect();
+    if !constraints.is_empty() {
+        writeln!(out, ", constraints: [");
+        out.indent(1);
+        for constraint in constraints {
+            let columns: Vec<_> = constraint
+                .data
+                .unique_columns()
+                .into_iter()
+                .flat_map(|c| c.iter())
+                .map(|id| ts_string_literal(&table.columns[id.idx()].accessor_name.deref().to_case(Case::Camel)))
+                .collect();
+            writeln!(
+                out,
+                "{{ name: {}, constraint: 'unique', columns: [{}] }},",
+                ts_string_literal(&constraint.name),
+                columns.join(", ")
+            );
+        }
+        out.dedent(1);
+        write!(out, "]");
     }
-    out.dedent(1);
-    write!(out, "] }}");
+    write!(out, " }}");
 }
 
 fn entry_point(module: &ModuleDef, options: &CodegenOptions, dir: &str) -> OutputFile {
