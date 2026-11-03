@@ -1374,8 +1374,22 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         ));
     }
 
-    let (database_identity, db_name, identity_allocated) =
-        get_or_create_identity_and_name(&ctx, &auth, name_or_identity.as_ref()).await?;
+    // Resolve the target, allocating an identity if needed. Defer name registration
+    // until publication permissions have been checked.
+    let (database_identity, name_to_register) = match name_or_identity.as_ref() {
+        Some(target) => match target.try_resolve(&ctx).await.map_err(log_and_500)? {
+            Ok(identity) => (identity, None),
+            Err(name) => {
+                allow_creation(&auth)?;
+                let database_auth = SpacetimeAuth::alloc(&ctx).await?;
+                (database_auth.claims.identity, Some(name))
+            }
+        },
+        None => {
+            let database_auth = SpacetimeAuth::alloc(&ctx).await?;
+            (database_auth.claims.identity, None)
+        }
+    };
     let maybe_parent_database_identity = match parent.as_ref() {
         None => None,
         Some(parent) => parent.resolve(&ctx).await.map(Some)?,
@@ -1415,7 +1429,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
     }
 
     // Reserve a new name only after checking publication permissions.
-    if identity_allocated && let Some(name) = db_name {
+    if let Some(name) = name_to_register {
         create_name(&ctx, &auth, &database_identity, name).await?;
     }
 
@@ -1459,7 +1473,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
 
     let success = || {
         axum::Json(PublishResult::Success {
-            domain: db_name.cloned(),
+            domain: name_or_identity.as_ref().and_then(NameOrIdentity::name).cloned(),
             database_identity,
             op: publish_op,
         })
@@ -1530,39 +1544,6 @@ impl From<UpdateConfirmationError> for ErrorResponse {
             ),
         }
         .into()
-    }
-}
-
-/// Try to resolve `name_or_identity` to an [Identity] and [DatabaseName].
-///
-/// - If the database exists and has a name registered for it, return that.
-/// - If the database does not exist, but `name_or_identity` is a name,
-///   try to register the name and return alongside a newly allocated [Identity]
-/// - Otherwise, if the database does not exist and `name_or_identity` is `None`,
-///   allocate a fresh [Identity] and no name.
-///
-async fn get_or_create_identity_and_name<'a>(
-    ctx: &(impl ControlStateDelegate + NodeDelegate),
-    auth: &SpacetimeAuth,
-    name_or_identity: Option<&'a NameOrIdentity>,
-) -> axum::response::Result<(Identity, Option<&'a DatabaseName>, bool)> {
-    match name_or_identity {
-        Some(noi) => match noi.try_resolve(ctx).await.map_err(log_and_500)? {
-            Ok(resolved) => Ok((resolved, noi.name(), false)),
-            Err(name) => {
-                // `name_or_identity` was a `NameOrIdentity::Name`, but no record
-                // exists yet. Allocate an identity and defer registration until authorized.
-                allow_creation(auth)?;
-                let database_auth = SpacetimeAuth::alloc(ctx).await?;
-                let database_identity = database_auth.claims.identity;
-                Ok((database_identity, Some(name), true))
-            }
-        },
-        None => {
-            let database_auth = SpacetimeAuth::alloc(ctx).await?;
-            let database_identity = database_auth.claims.identity;
-            Ok((database_identity, None, true))
-        }
     }
 }
 
