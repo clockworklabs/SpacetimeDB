@@ -415,12 +415,16 @@ pub async fn get_login_token_or_log_in(
     }
 
     let full_login = interactive
-        && YesOrNo::new("You are not logged in. Would you like to log in with spacetimedb.com?")
-            .force(false)
-            .default(true)
-            // This is for historical compatibility, not optimal UX.
-            .on_eof(false)
-            .prompt()?;
+        && YesOrNo::new(
+            // It would be "ideal" if we could print the `spacetimedb.com` by deriving it from the `default_auth_host` constant,
+            // but this will change _so_ infrequently that it's not even worth the time to write that code and test it.
+            "You are not logged in. Would you like to log in with spacetimedb.com?",
+        )
+        .force(false)
+        .default(true)
+        // This is for historical compatibility, not optimal UX.
+        .on_eof(false)
+        .prompt()?;
 
     if full_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;
