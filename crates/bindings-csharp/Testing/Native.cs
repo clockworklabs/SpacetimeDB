@@ -229,6 +229,32 @@ internal static unsafe class Native
 
     [DllImport(
         Library,
+        EntryPoint = "stdb_test_v1_table_delete_row",
+        CallingConvention = CallingConvention.Cdecl
+    )]
+    internal static extern NativeStatus DeleteRow(
+        NativeTransaction transaction,
+        uint table,
+        byte* row,
+        ulong length,
+        out uint deleted,
+        out NativeBuffer error
+    );
+
+    [DllImport(
+        Library,
+        EntryPoint = "stdb_test_v1_table_clear",
+        CallingConvention = CallingConvention.Cdecl
+    )]
+    internal static extern NativeStatus Clear(
+        NativeTransaction transaction,
+        uint table,
+        out ulong count,
+        out NativeBuffer error
+    );
+
+    [DllImport(
+        Library,
         EntryPoint = "stdb_test_v1_table_scan",
         CallingConvention = CallingConvention.Cdecl
     )]

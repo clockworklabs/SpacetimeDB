@@ -10,7 +10,8 @@ subsequent contexts. Managed module logging writes to standard error.
 
 Use one execution flow per fixture. Async callbacks and multicast delegates are
 rejected; returned `Task`/`ValueTask` values also cause rollback. Independent
-fixtures may run in parallel. JWT auth, full index/mutation support, views,
+fixtures may run in parallel. Table deletion and clearing use the owning
+transaction, and the engine removes event rows on commit. JWT auth, indexes, views,
 procedures, and other host services are still pending.
 
 NuGet packaging and native asset distribution are deferred; this project is
@@ -34,6 +35,11 @@ the ABI version before creating a datastore.
 
 Datastore and transaction handles own native resources through `SafeHandle`.
 Their shared lock serializes calls and destruction, including finalizer cleanup.
+Keep this synchronization in `NativeDatastore` and `NativeTransaction`, not in
+`DatabaseBackend` or other managed fixture state. The one-execution-flow contract
+includes disposal; concurrent use or disposal of the same fixture is unsupported.
+Managed caches and transaction state therefore need no additional locks. Separate
+fixtures remain independent and may run in parallel.
 Disposing an unfinished transaction rolls it back. Disposing a datastore closes
 outstanding transactions; their handles remain safe to dispose. Returned buffers
 are copied before being freed by the native allocator, including on error paths.

@@ -47,6 +47,18 @@ public readonly struct TableAccessor
         return Execute(tx => tx.Insert(assembly, name, row));
     }
 
+    internal bool Delete(byte[] row)
+    {
+        var (assembly, name) = (assemblyIdentity, table);
+        return Execute(tx => tx.Delete(assembly, name, row));
+    }
+
+    internal ulong Clear()
+    {
+        var (assembly, name) = (assemblyIdentity, table);
+        return Execute(tx => tx.Clear(assembly, name));
+    }
+
     internal IEnumerable<T> Iter<T>()
         where T : IStructuralReadWrite, new()
     {

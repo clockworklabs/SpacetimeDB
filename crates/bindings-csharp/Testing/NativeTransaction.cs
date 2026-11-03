@@ -73,6 +73,34 @@ internal sealed unsafe class NativeTransaction(NativeDatastore datastore)
             }
     }
 
+    internal bool Delete(uint table, ReadOnlySpan<byte> row)
+    {
+        lock (datastore.Sync)
+            fixed (byte* bytes = row)
+            {
+                var status = Native.DeleteRow(
+                    this,
+                    table,
+                    bytes,
+                    (ulong)row.Length,
+                    out var deleted,
+                    out var error
+                );
+                Native.Check(status, ref error);
+                return deleted != 0;
+            }
+    }
+
+    internal ulong Clear(uint table)
+    {
+        lock (datastore.Sync)
+        {
+            var status = Native.Clear(this, table, out var count, out var error);
+            Native.Check(status, ref error);
+            return count;
+        }
+    }
+
     internal byte[] Scan(uint table)
     {
         lock (datastore.Sync)

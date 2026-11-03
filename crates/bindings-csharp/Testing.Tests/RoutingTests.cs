@@ -14,7 +14,9 @@ public class RoutingTests
         Assert.Throws<InvalidOperationException>(
             () => table.Insert(new Entry { Text = "unbound" })
         );
-        Assert.Throws<InvalidOperationException>(() => table.Delete(default));
+        Assert.Throws<InvalidOperationException>(() =>
+            table.Delete(new Entry { Text = "unbound" })
+        );
         Assert.Throws<InvalidOperationException>(() => table.Clear());
         Assert.Throws<InvalidOperationException>(() => table.Id.Find(1));
         Assert.Throws<InvalidOperationException>(() => new LocalReadOnly().Entries.Count);
@@ -45,8 +47,6 @@ public class RoutingTests
         var index = table.Id;
         Assert.Throws<NotSupportedException>(() => index.Find(inserted.Id));
         Assert.Throws<NotSupportedException>(() => index.Update(inserted));
-        Assert.Throws<NotSupportedException>(() => table.Clear());
-        Assert.Throws<NotSupportedException>(() => table.Delete(inserted));
         transaction.Rollback();
         using (var next = backend.BeginTransaction())
         {

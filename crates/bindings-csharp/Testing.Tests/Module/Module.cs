@@ -12,6 +12,12 @@ public partial struct Entry
     public string Text;
 }
 
+[Table(Accessor = "Events", Event = true)]
+public partial struct TestEvent
+{
+    public string Text;
+}
+
 public static class Schema
 {
     public static NamespaceRegistry CreateNamespaces() => AssemblyDescriptor.CreateNamespaces();

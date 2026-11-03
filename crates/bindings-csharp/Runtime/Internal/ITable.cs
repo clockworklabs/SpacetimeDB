@@ -138,9 +138,8 @@ public interface ITableView<View, T>
         return IntegrateGeneratedColumns(row, generated, generated.Length);
     }
     protected static bool DoDelete(TableAccessor accessor, T row) =>
-        accessor.RejectUnsupported<bool>("row deletion");
-    protected static ulong DoClear(TableAccessor accessor) =>
-        accessor.RejectUnsupported<ulong>("table clearing");
+        accessor.Delete(IStructuralReadWrite.ToBytes(row));
+    protected static ulong DoClear(TableAccessor accessor) => accessor.Clear();
 #endif
 
     protected static IEnumerable<T> DoIter() => new RawTableIter(tableId);

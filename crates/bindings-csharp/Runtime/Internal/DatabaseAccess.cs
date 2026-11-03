@@ -17,6 +17,8 @@ internal interface IDatabaseTransaction : IDisposable
     void Rollback();
     ulong Count(string assemblyIdentity, string table);
     byte[] Insert(string assemblyIdentity, string table, byte[] row);
+    bool Delete(string assemblyIdentity, string table, byte[] row);
+    ulong Clear(string assemblyIdentity, string table);
     byte[] Scan(string assemblyIdentity, string table);
 }
 
