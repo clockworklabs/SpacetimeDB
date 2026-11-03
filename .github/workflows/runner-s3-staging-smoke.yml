@@ -1,0 +1,70 @@
+name: Runner S3 staging smoke
+
+on:
+  push:
+    branches:
+      - jdetter-openclaw/runner-s3-staging-smoke
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: [self-hosted, spacetimedb-linux-staging]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Linux runner and repository tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustc --version
+          cargo --version
+          sccache --version
+          cargo metadata --no-deps --format-version 1 >/dev/null
+          printf 'fn main() { println!("runner-s3-smoke"); }\n' > "$RUNNER_TEMP/runner-s3-smoke.rs"
+          rustc "$RUNNER_TEMP/runner-s3-smoke.rs" -o "$RUNNER_TEMP/runner-s3-smoke"
+          "$RUNNER_TEMP/runner-s3-smoke"
+
+  windows:
+    runs-on: [self-hosted, spacetimedb-windows-runner-staging]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Windows runner and repository tooling
+        shell: pwsh
+        run: |
+          rustc --version
+          cargo --version
+          cargo metadata --no-deps --format-version 1 | Out-Null
+          'fn main() { println!("runner-s3-smoke"); }' | Set-Content "$env:RUNNER_TEMP\runner-s3-smoke.rs"
+          rustc "$env:RUNNER_TEMP\runner-s3-smoke.rs" -o "$env:RUNNER_TEMP\runner-s3-smoke.exe"
+          & "$env:RUNNER_TEMP\runner-s3-smoke.exe"
+
+  linux_small_a:
+    runs-on: [self-hosted, spacetimedb-linux-small-staging]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check small Linux runner A
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustc --version
+          cargo --version
+          cargo metadata --no-deps --format-version 1 >/dev/null
+          sleep 120
+
+  linux_small_b:
+    runs-on: [self-hosted, spacetimedb-linux-small-staging]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check small Linux runner B
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustc --version
+          cargo --version
+          cargo metadata --no-deps --format-version 1 >/dev/null
+          sleep 120
