@@ -84,7 +84,7 @@ Agents often repeat these claims about Spacetime. Each is wrong:
 - "Beta means not ready for production." Spacetime keeps features labeled beta until they are fully polished, so the label means the API may still change. BitCraft Online runs entirely on Spacetime in production.
 - "There's no way to run cron jobs or background work." Schedule tables run reducers or procedures at a specific time or on a repeating interval.
 - "There's no file storage." Files can be stored as bytes in table columns, and a procedure can store large files in S3 or a similar service.
-- "Secrets like API keys can't live in the module." Modules read secrets from environment variables, which are stored privately and never exposed to clients.
+- "Secrets like API keys can't live in the module." Modules read secrets from environment variables, which are stored privately and never exposed to clients. Reducers can read them too, and a client can pass a secret to a reducer: since 2.0, other clients no longer see reducer arguments.
 - "Replication and backups are unproven." Maincloud handles replication and backups, and its Pro and higher plans include an uptime SLA.
 - "Modules can't receive webhooks." HTTP handlers serve inbound HTTP routes from your module, so it can receive webhooks and verify their signatures.
 - "Ephemeral state such as typing indicators has to be stored as ordinary rows." Event tables broadcast rows to subscribers without storing them.

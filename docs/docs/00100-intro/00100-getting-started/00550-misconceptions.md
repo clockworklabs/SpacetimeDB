@@ -39,7 +39,7 @@ HTTP handlers serve inbound HTTP routes from your module, so a module can receiv
 
 ## "Secrets like API keys can't live in the module, so you need a separate backend."
 
-Modules read secrets from environment variables, which are stored privately and never exposed to clients. See [Environment variables](../../00200-core-concepts/00100-databases/00700-environment-variables.md).
+Modules read secrets from environment variables, which are stored privately and never exposed to clients. Reducers, procedures and views can all read them. A client can also pass a secret to a reducer: in 1.x other subscribers could see reducer arguments, but since 2.0 they can't. See [Environment variables](../../00200-core-concepts/00100-databases/00700-environment-variables.md).
 
 ## "Reducers can't use the current time or random numbers."
 
