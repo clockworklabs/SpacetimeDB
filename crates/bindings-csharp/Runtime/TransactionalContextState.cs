@@ -34,6 +34,16 @@ internal sealed class TransactionalContextState<TTxContext>(
     private Internal.TxContext? txContext;
     private TTxContext? cachedUserTxContext;
 
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    internal IDatabaseBackend? Backend { private get; init; }
+    internal Func<Timestamp>? Clock { private get; init; }
+    internal Func<IDatabaseTransaction, Timestamp, Internal.TxContext>? CreateManagedTxContext
+    {
+        private get;
+        init;
+    }
+#endif
+
     public Internal.TxContext EnterTxContext(long timestampMicros)
     {
         var timestamp = new Timestamp(timestampMicros);
@@ -54,8 +64,13 @@ internal sealed class TransactionalContextState<TTxContext>(
         return cachedUserTxContext;
     }
 
-    public TResult WithTx<TResult>(Func<TTxContext, TResult> body) =>
-        TryWithTx(tx => Result<TResult, Exception>.Ok(body(tx))).UnwrapOrThrow();
+    public TResult WithTx<TResult>(Func<TTxContext, TResult> body)
+    {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        TransactionCallback.Validate(body, typeof(TResult));
+#endif
+        return TryWithTx(tx => Result<TResult, Exception>.Ok(body(tx))).UnwrapOrThrow();
+    }
 
     public TxOutcomeCore<TResult> TryWithTx<TResult, TError>(
         Func<TTxContext, Result<TResult, TError>> body
@@ -64,7 +79,10 @@ internal sealed class TransactionalContextState<TTxContext>(
     {
         try
         {
-            var result = RunWithRetry(body);
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+            TransactionCallback.Validate(body, typeof(TResult));
+#endif
+            var result = RunTransaction(body);
 
             return result switch
             {
@@ -79,6 +97,7 @@ internal sealed class TransactionalContextState<TTxContext>(
         }
     }
 
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
     private static long StartMutTx()
     {
         var status = FFI.procedure_start_mut_tx(out var micros);
@@ -97,12 +116,31 @@ internal sealed class TransactionalContextState<TTxContext>(
         var status = FFI.procedure_abort_mut_tx();
         FFI.ErrnoHelpers.ThrowIfError(status);
     }
+#endif
 
-    private Result<TResult, TError> RunWithRetry<TResult, TError>(
+    private Result<TResult, TError> RunTransaction<TResult, TError>(
         Func<TTxContext, Result<TResult, TError>> body
     )
         where TError : Exception
     {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        var backend =
+            Backend
+            ?? throw new InvalidOperationException(
+                "Managed procedure transactions require a testing backend."
+            );
+        using var transaction = backend.BeginTransaction();
+        Timestamp = Clock!();
+        // Never refresh a cached context: escaped handles must retain their closed transaction.
+        var context = createTxContext(CreateManagedTxContext!(transaction, Timestamp));
+        var result = body(context);
+        if (result is Result<TResult, TError>.OkR(var value))
+        {
+            TransactionCallback.ValidateResult(value);
+            transaction.Commit();
+        }
+        return result;
+#else
         var result = RunOnce(body);
         if (result is Result<TResult, TError>.ErrR)
         {
@@ -131,8 +169,10 @@ internal sealed class TransactionalContextState<TTxContext>(
             CommitMutTx();
             return retryResult;
         }
+#endif
     }
 
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
     private Result<TResult, TError> RunOnce<TResult, TError>(
         Func<TTxContext, Result<TResult, TError>> body
     )
@@ -171,6 +211,7 @@ internal sealed class TransactionalContextState<TTxContext>(
             }
         }
     }
+#endif
 }
 
 internal static class TxOutcomeCoreExtensions

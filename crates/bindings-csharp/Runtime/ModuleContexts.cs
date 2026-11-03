@@ -212,7 +212,11 @@ public sealed partial class ProcedureContext
             return this;
         }
         var selected = (ProcedureContext)MemberwiseClone();
+#if !SPACETIMEDB_WASM_RUNTIME
+        selected.Db = new Local { InstanceId = instanceId };
+#else
         selected.Db = Local.ForInstance(instanceId);
+#endif
         selected.SelectionSource = SelectionSource ?? this;
         return selected;
     }
@@ -237,19 +241,45 @@ public sealed partial class ProcedureContext
 
     protected override global::SpacetimeDB.ProcedureTxContextBase CreateTxContext(
         Internal.TxContext inner
-    ) => _cached ??= new ProcedureTxContext(inner);
+    ) =>
+#if SPACETIMEDB_WASM_RUNTIME
+        _cached ??= new ProcedureTxContext(inner);
 
     private ProcedureTxContext? _cached;
+#else
+        new ProcedureTxContext(inner);
+
+    internal ProcedureContext(
+        Internal.IDatabaseBackend backend,
+        Func<Timestamp> clock,
+        Identity sender,
+        ConnectionId? connectionId,
+        Random random,
+        AuthCtx auth
+    )
+        : base(backend, clock, sender, connectionId, random, auth) => Db = new Local();
+#endif
 
     public Local Db { get; private set; }
 
-    public TResult WithTx<TResult>(Func<ProcedureTxContext, TResult> body) =>
-        base.WithTx(tx => body((ProcedureTxContext)tx));
+    public TResult WithTx<TResult>(Func<ProcedureTxContext, TResult> body)
+    {
+#if !SPACETIMEDB_WASM_RUNTIME
+        Internal.TransactionCallback.Validate(body, typeof(TResult));
+#endif
+        return base.WithTx(tx => body((ProcedureTxContext)tx));
+    }
 
     public TxOutcome<TResult> TryWithTx<TResult, TError>(
         Func<ProcedureTxContext, Result<TResult, TError>> body
     )
-        where TError : Exception => base.TryWithTx(tx => body((ProcedureTxContext)tx));
+        where TError : Exception
+    {
+#if !SPACETIMEDB_WASM_RUNTIME
+        Internal.TransactionCallback.Validate(body, typeof(TResult));
+#endif
+        return base.TryWithTx(tx => body((ProcedureTxContext)tx));
+    }
 
     /// <summary>
     /// Create a new random <see cref="Uuid"/> `v4` using the built-in RNG.
@@ -374,7 +404,13 @@ public sealed class ProcedureTxContext
         }
         var selected = (ProcedureTxContext)MemberwiseClone();
         selected.SelectionSource = SelectionSource ?? this;
+#if !SPACETIMEDB_WASM_RUNTIME
+        selected.LocalDb = Db.Access is { } access
+            ? new Local(access) { InstanceId = instanceId }
+            : Local.ForInstance(instanceId);
+#else
         selected.LocalDb = Local.ForInstance(instanceId);
+#endif
         return selected;
     }
 

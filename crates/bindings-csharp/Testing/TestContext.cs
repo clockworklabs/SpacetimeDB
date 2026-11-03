@@ -106,6 +106,21 @@ public sealed class TestContext : IDisposable
     public AnonymousViewContext AnonymousViewContext() =>
         new(new LocalReadOnly(new DatabaseAccess(backend)));
 
+    /// <summary>Creates a procedure context whose explicit transactions share this fixture.</summary>
+    public ProcedureContext ProcedureContext(TestAuth auth)
+    {
+        ArgumentNullException.ThrowIfNull(auth);
+        backend.CheckActive();
+        return new ProcedureContext(
+            backend,
+            () => Clock.Now,
+            auth.Sender ?? backend.DatabaseIdentity,
+            auth.ConnectionId,
+            Rng.CreateRandom(),
+            auth.SenderAuth
+        );
+    }
+
     /// <summary>Materializes a SELECT against committed data. Rejects active transactions.</summary>
     public IReadOnlyList<T> RunQuery<T>(IQuery<T> query)
         where T : IStructuralReadWrite, new() => backend.RunQuery(query);
@@ -119,7 +134,7 @@ public sealed class TestContext : IDisposable
     /// <summary>Commits on normal return; rolls back and rethrows on failure.</summary>
     public void WithReducerTx(TestAuth auth, Action<ReducerContext> body)
     {
-        ValidateCallback(body, typeof(void));
+        TransactionCallback.Validate(body, typeof(void));
         Run(
             auth,
             ctx =>
@@ -133,7 +148,7 @@ public sealed class TestContext : IDisposable
     /// <summary>Returns the callback value after committing. Returned error values do not roll back.</summary>
     public T WithReducerTx<T>(TestAuth auth, Func<ReducerContext, T> body)
     {
-        ValidateCallback(body, typeof(T));
+        TransactionCallback.Validate(body, typeof(T));
         return Run(auth, body);
     }
 
@@ -150,35 +165,10 @@ public sealed class TestContext : IDisposable
             auth.SenderAuth
         );
         var result = body(context);
-        // Also catch awaitables returned through object or another erased return type.
-        if (result is not null && IsAwaitable(result.GetType()))
-            throw new ArgumentException(
-                "Reducer transaction callbacks must not return Task or ValueTask.",
-                nameof(body)
-            );
+        TransactionCallback.ValidateResult(result);
         transaction.Commit();
         return result;
     }
-
-    private static void ValidateCallback(Delegate body, Type returnType)
-    {
-        ArgumentNullException.ThrowIfNull(body);
-        if (
-            body.GetInvocationList().Length != 1
-            || body.Method.IsDefined(typeof(AsyncStateMachineAttribute))
-            || IsAwaitable(returnType)
-            || IsAwaitable(body.Method.ReturnType)
-        )
-            throw new ArgumentException(
-                "Reducer transactions require a single synchronous callback; async void, Task and ValueTask are not supported.",
-                nameof(body)
-            );
-    }
-
-    private static bool IsAwaitable(Type type) =>
-        typeof(Task).IsAssignableFrom(type)
-        || type == typeof(ValueTask)
-        || (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(ValueTask<>));
 
     public void Dispose() => backend.Dispose();
 }

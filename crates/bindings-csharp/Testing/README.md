@@ -31,14 +31,24 @@ database identity; caller filtering comes from the view's `Sender` and query.
 The native bridge rejects queries while a mutable transaction is active.
 Contexts expire on fixture disposal; materialized results remain ordinary values.
 
+`ProcedureContext(auth)` creates a context for calling procedures directly.
+`WithTx` commits a returned value and rolls back/rethrows exceptions; `TryWithTx`
+also rolls back a returned `Result.Err` and reports failures through `TxOutcome`.
+There is no transaction around the whole procedure, so earlier commits survive
+later failures. Each transaction gets fresh handles and a timestamp from the
+fixture clock at entry. Auth and RNG are shared with the procedure, and environment
+reads remain live. Escaped transaction handles never become valid again.
+Use `tx.Db` inside the callback, not `procedure.Db`; nested transactions and
+async/awaitable callbacks are rejected. HTTP responders and after-commit hooks
+are not implemented yet.
+
 Use one execution flow per fixture. Async callbacks and multicast delegates are
 rejected; returned `Task`/`ValueTask` values also cause rollback. Independent
 fixtures may run in parallel. Table deletion and clearing use the owning
 transaction, and the engine removes event rows on commit. Unique-index lookup,
 update, and deletion use fixture-owned index resolution, including mounted modules.
 Range filtering and deletion support the existing inclusive bounds and composite
-prefixes, with owner-lifetime checks on iterators. Procedures and other host
-services are still pending.
+prefixes, with owner-lifetime checks on iterators. Other host services remain pending.
 
 NuGet packaging and native asset distribution are deferred; this project is
 currently not packable.
