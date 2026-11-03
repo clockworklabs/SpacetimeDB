@@ -4,6 +4,11 @@
 
 partial struct BTreeViews : System.IEquatable<BTreeViews>, SpacetimeDB.BSATN.IStructuralReadWrite
 {
+#if NET10_0_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
+#endif
     public void ReadFields(System.IO.BinaryReader reader)
     {
         Id = BSATN.IdRW.Read(reader);
@@ -87,16 +92,7 @@ partial struct BTreeViews : System.IEquatable<BTreeViews>, SpacetimeDB.BSATN.ISt
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as BTreeViews?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is BTreeViews t && Equals(t);
     }
 
     public static bool operator ==(BTreeViews this_, BTreeViews that)

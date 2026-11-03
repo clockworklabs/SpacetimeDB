@@ -74,7 +74,7 @@
     "cron-parser": "5.5.0"
   },
   "peerDependencies": {
-    "spacetimedb": "workspace:^"
+    "spacetimedb": "^2.12.0"
   },
   "devDependencies": {
     "eslint": "^9.17.0",
@@ -83,5 +83,8 @@
     "spacetimedb": "workspace:*",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
   }
 }

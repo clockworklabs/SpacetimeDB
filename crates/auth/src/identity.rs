@@ -9,8 +9,9 @@ use std::time::SystemTime;
 
 #[derive(Debug, Clone)]
 pub struct ConnectionAuthCtx {
-    pub claims: SpacetimeIdentityClaims,
-    pub jwt_payload: Box<str>,
+    pub identity: Identity,
+    /// Client JWT claims, absent for host-authenticated database calls.
+    pub jwt_payload: Option<Box<str>>,
 }
 
 impl TryFrom<SpacetimeIdentityClaims> for ConnectionAuthCtx {
@@ -18,8 +19,8 @@ impl TryFrom<SpacetimeIdentityClaims> for ConnectionAuthCtx {
     fn try_from(claims: SpacetimeIdentityClaims) -> Result<Self, Self::Error> {
         let payload = serde_json::to_string(&claims).map_err(|e| anyhow::anyhow!("Failed to serialize claims: {e}"))?;
         Ok(ConnectionAuthCtx {
-            claims,
-            jwt_payload: payload.into(),
+            identity: claims.identity,
+            jwt_payload: Some(payload.into()),
         })
     }
 }

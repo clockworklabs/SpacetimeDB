@@ -1,6 +1,8 @@
+import type { ProcedureExport } from 'spacetimedb/server';
 import {
   spacetimedb,
   t,
+  unitResult,
   type ProcedureModuleCtx,
   type WriteCtx,
 } from './schema.js';
@@ -59,50 +61,52 @@ function upsertConfig(
 }
 
 // Requires an admin seeded by the database owner; no public first-call bootstrap.
-export const setResendConfig = spacetimedb.procedure(
-  {
-    apiKey: t.string(),
-    webhookSigningSecret: t.option(t.string()),
-    defaultFrom: t.option(t.string()),
-  },
-  t.unit(),
-  (ctx, args) => {
-    const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
-    denyIfNotAdmin(verdict);
-    ctx.withTx(tx => {
-      upsertConfig(tx, args);
-    });
-    return {};
-  }
-);
+const setResendConfigArgs = {
+  apiKey: t.string(),
+  webhookSigningSecret: t.option(t.string()),
+  defaultFrom: t.option(t.string()),
+};
+export const setResendConfig: ProcedureExport<
+  typeof spacetimedb.schemaType,
+  typeof setResendConfigArgs,
+  typeof unitResult
+> = spacetimedb.procedure(setResendConfigArgs, unitResult, (ctx, args) => {
+  const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
+  denyIfNotAdmin(verdict);
+  ctx.withTx(tx => {
+    upsertConfig(tx, args);
+  });
+  return {};
+});
 
-export const getResendConfigStatus = spacetimedb.procedure(
+const getResendConfigStatusResult = t.object('ResendConfigStatus', {
+  isConfigured: t.bool(),
+  hasWebhookSecret: t.bool(),
+  defaultFrom: t.option(t.string()),
+  apiKeyLength: t.u16(),
+});
+export const getResendConfigStatus: ProcedureExport<
+  typeof spacetimedb.schemaType,
   {},
-  t.object('ResendConfigStatus', {
-    isConfigured: t.bool(),
-    hasWebhookSecret: t.bool(),
-    defaultFrom: t.option(t.string()),
-    apiKeyLength: t.u16(),
-  }),
-  ctx => {
-    const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
-    denyIfNotAdmin(verdict);
-    return ctx.withTx(tx => {
-      const row = tx.db.resendConfig.singleton.find(true);
-      if (!row) {
-        return {
-          isConfigured: false,
-          hasWebhookSecret: false,
-          defaultFrom: undefined,
-          apiKeyLength: 0,
-        };
-      }
+  typeof getResendConfigStatusResult
+> = spacetimedb.procedure({}, getResendConfigStatusResult, ctx => {
+  const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
+  denyIfNotAdmin(verdict);
+  return ctx.withTx(tx => {
+    const row = tx.db.resendConfig.singleton.find(true);
+    if (!row) {
       return {
-        isConfigured: true,
-        hasWebhookSecret: row.webhookSigningSecret !== undefined,
-        defaultFrom: row.defaultFrom,
-        apiKeyLength: row.apiKey.length,
+        isConfigured: false,
+        hasWebhookSecret: false,
+        defaultFrom: undefined,
+        apiKeyLength: 0,
       };
-    });
-  }
-);
+    }
+    return {
+      isConfigured: true,
+      hasWebhookSecret: row.webhookSigningSecret !== undefined,
+      defaultFrom: row.defaultFrom,
+      apiKeyLength: row.apiKey.length,
+    };
+  });
+});
