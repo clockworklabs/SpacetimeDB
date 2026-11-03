@@ -3,8 +3,8 @@ use super::oa_compat::ProviderRefusal;
 use crate::bench::utils::debug_llm_verbose;
 use crate::llm::prompt::BuiltPrompt;
 use crate::llm::segmentation::{
-    anthropic_ctx_limit_tokens, build_anthropic_messages, desired_output_tokens, deterministic_trim_prefix,
-    estimate_tokens, headroom_tokens_env, non_context_reserve_tokens_env,
+    anthropic_ctx_limit_tokens, build_anthropic_messages, deterministic_trim_prefix, estimate_tokens,
+    headroom_tokens_env, non_context_reserve_tokens_env, output_token_limit_env,
 };
 use crate::llm::types::{LlmOutput, ReasoningEffort, Vendor};
 use anyhow::{anyhow, Context, Result};
@@ -252,8 +252,9 @@ fn compute_backoff(status: StatusCode, headers: &HeaderMap, attempt: u32) -> std
     std::time::Duration::from_millis(base_ms.min(cap_ms) + jitter)
 }
 
+// Thinking counts against max_tokens, so the shared 4096 default truncates long answers.
 fn anthropic_max_output_tokens() -> u32 {
-    desired_output_tokens().max(1) as u32
+    output_token_limit_env().unwrap_or(16_000).max(1) as u32
 }
 
 pub fn normalize_anthropic_model(id: &str) -> &str {

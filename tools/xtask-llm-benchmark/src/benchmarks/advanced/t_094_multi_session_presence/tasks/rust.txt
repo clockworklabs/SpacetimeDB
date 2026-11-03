@@ -1,4 +1,4 @@
-Implement this SpacetimeDB module in rust. Return only the module source.
+Write a SpacetimeDB backend module in Rust that tracks presence across multiple sessions. Return only the module source.
 
 Track real connection lifecycle events. One identity may have multiple simultaneous connections. Disconnecting one connection must not mark its other connections offline. Reconnect must rebuild presence without leaving stale sessions. Do not add seed or exercise reducers. The grader opens actual WebSockets with shared and distinct credentials.
 

@@ -1,4 +1,4 @@
-Implement this SpacetimeDB module in csharp. Return only the module source.
+Write a SpacetimeDB backend module in C# that manages renewable reservations with scheduled expiry. Return only the module source.
 
 Implement renewable reservations with scheduled expiry. An old timer must never expire a newer generation. Cancellation is durable and must also invalidate old timers. Do not remove old timers when renewing or cancelling: let them execute and record their outcome, which makes stale-callback behavior observable. Only the scheduler may invoke expire_reservation; external calls must be rejected. Native private-callback rejection is valid; an explicit identity guard must report 'scheduler only'.
 

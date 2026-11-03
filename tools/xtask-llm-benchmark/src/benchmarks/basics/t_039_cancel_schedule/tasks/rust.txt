@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in Rust that schedules a reducer and allows canceling it before it fires.
 
 TABLE
-- cleanup_job
+- cleanup_job (private)
   - Struct: CleanupJob
   - Fields:
     - scheduled_id: u64 (primary key, auto-increment)

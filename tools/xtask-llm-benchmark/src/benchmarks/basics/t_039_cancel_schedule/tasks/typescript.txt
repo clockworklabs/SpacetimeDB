@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in TypeScript that schedules a reducer and allows canceling it before it fires.
 
 TABLE
-- cleanup_job
+- cleanup_job (private)
   - Fields:
     - scheduledId: u64 (primary key, auto-increment)
     - scheduledAt: scheduleAt

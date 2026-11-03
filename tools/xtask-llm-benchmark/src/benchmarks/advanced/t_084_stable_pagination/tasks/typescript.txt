@@ -1,4 +1,4 @@
-Implement this SpacetimeDB module in typescript. Return only the module source.
+Write a SpacetimeDB backend module in TypeScript that serves stable paginated audit logs. Return only the module source.
 
 Implement a tenant-scoped audit-log page. The ordering key is (occurred_at, id), ascending. The exclusive cursor is that pair; never use timestamp alone. Only rows for the requested tenant with visible=true can enter a page. Apply filtering BEFORE the limit. The page table is a test adapter: replace it on each read_page call; it is not a per-client cache. No native pagination API or scan-cost guarantee is assumed.
 

@@ -1,4 +1,4 @@
-Implement this SpacetimeDB module in typescript. Return only the module source.
+Write a SpacetimeDB backend module in TypeScript that leases jobs with fencing tokens. Return only the module source.
 
 Implement a leased job with monotonically increasing fencing tokens. Use the server transaction timestamp, in microseconds, for all expiry checks. A completion must match the current worker and token AND arrive before expiry. Reclaiming an expired lease increments the token. No caller-supplied current time. Workers are opaque labels in this test; authentication is tested separately.
 

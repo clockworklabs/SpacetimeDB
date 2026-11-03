@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in C# that schedules a reducer and allows canceling it before it fires.
 
 TABLE
-- CleanupJob
+- CleanupJob (private)
   - Fields:
     - ScheduledId: ulong (primary key, auto-increment)
     - ScheduledAt: ScheduleAt (the schedule column)

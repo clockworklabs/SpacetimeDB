@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in Rust that schedules a one-shot reducer to fire at a specific future time.
 
 TABLE
-- reminder
+- reminder (private)
   - Struct: Reminder
   - Fields:
     - scheduled_id: u64 (primary key, auto-increment)

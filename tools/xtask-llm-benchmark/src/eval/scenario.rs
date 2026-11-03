@@ -137,6 +137,17 @@ impl Scenario {
     }
 
     pub fn sql_as(&self, token: &str, query: &str) -> Result<(u16, String)> {
+        let result =
+            super::scorers::with_actual_relation_names(&self.db, query, Some(&self.server), |query| {
+                match self.sql_once(token, query) {
+                    Ok((400, body)) if body.contains("no such table") => Err(body),
+                    other => Ok(other),
+                }
+            });
+        result.unwrap_or_else(|body| Ok((400, body)))
+    }
+
+    fn sql_once(&self, token: &str, query: &str) -> Result<(u16, String)> {
         let mut request = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(15))
             .build()?
@@ -194,6 +205,98 @@ impl Scenario {
     fn call_result(&self, reducer: &str, args: &Value) -> Result<String, String> {
         let args = args.as_array().ok_or("reducer arguments must be an array")?;
         call_reducer_json_out(&self.db, reducer, args, Some(&self.server))
+    }
+
+    pub fn owner_token(&self) -> Result<String> {
+        crate::bench::publishers::database_owner_token(&self.db)
+    }
+
+    pub fn owner_rows(&self, table: &str, columns: &[&str], expected: Value) -> Result<()> {
+        self.rows_as(&self.owner_token()?, table, columns, expected)
+    }
+
+    pub fn owner_sql(&self, query: &str) -> Result<Value> {
+        let (status, body) = self.sql_as(&self.owner_token()?, query)?;
+        ensure!(status == 200, "{query}: HTTP {status}: {body}");
+        let result: Value = serde_json::from_str(&body)?;
+        Ok(result[0]["rows"].clone())
+    }
+
+    /// Inserts rows as the owner, for tasks with private tables and no reducer that adds rows.
+    pub fn seed(&self, table: &str, columns: &[&str], rows: Value) -> Result<()> {
+        let literal = |value: &Value| match value {
+            Value::String(text) => format!("'{}'", text.replace('\'', "''")),
+            Value::Object(_) => value["__identity__"].as_str().unwrap_or_default().to_owned(),
+            other => other.to_string(),
+        };
+        let columns = columns
+            .iter()
+            .map(|c| format!("\"{}\"", ident(c, casing_for_lang(self.lang))))
+            .collect::<Vec<_>>()
+            .join(", ");
+        for row in rows.as_array().ok_or_else(|| anyhow!("rows must be an array"))? {
+            let values = row
+                .as_array()
+                .ok_or_else(|| anyhow!("row must be an array"))?
+                .iter()
+                .map(literal)
+                .collect::<Vec<_>>()
+                .join(", ");
+            let table = table_name(table, self.lang);
+            self.owner_sql(&format!("INSERT INTO \"{table}\" ({columns}) VALUES ({values})"))?;
+        }
+        Ok(())
+    }
+
+    /// A panic or plain exception reaches the caller as a generic fatal error, without its message.
+    pub fn expect_rejected_as(&self, token: &str, reducer: &str, args: Value, expected: &str) -> Result<()> {
+        let (status, body) = self.call_as(token, reducer, args)?;
+        ensure!(
+            status == 530 && (body.contains(expected) || body.contains("fatal error")),
+            "{reducer}: expected rejection {expected:?}, got HTTP {status}: {body}"
+        );
+        Ok(())
+    }
+
+    /// Event tables need a binary WebSocket protocol, so this subscribes through the CLI.
+    pub fn watch_update(&self, query: &str, action: impl FnOnce() -> Result<()>) -> Result<String> {
+        use std::io::{BufRead, BufReader, Read};
+        let mut child = super::scorer_command(Some(&self.server))
+            .args([
+                "subscribe",
+                "--print-initial-update",
+                "--num-updates",
+                "1",
+                "--timeout",
+                "15",
+            ])
+            .arg("--server")
+            .arg(&self.server)
+            .arg(&self.db)
+            .arg(query)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()?;
+        let mut stdout = BufReader::new(child.stdout.take().ok_or_else(|| anyhow!("no subscribe output"))?);
+        let mut initial = String::new();
+        stdout.read_line(&mut initial)?;
+        let result = action();
+        let mut update = String::new();
+        stdout.read_to_string(&mut update)?;
+        let _ = child.wait();
+        result?;
+        Ok(update)
+    }
+
+    pub fn eventually(&self, check: impl Fn() -> Result<()>) -> Result<()> {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            match check() {
+                Ok(()) => return Ok(()),
+                Err(error) if Instant::now() >= deadline => return Err(error),
+                Err(_) => std::thread::sleep(Duration::from_millis(100)),
+            }
+        }
     }
 
     /// Require the contract's error text. Transport errors and missing reducers must not pass.
@@ -272,7 +375,17 @@ impl Scenario {
     }
 }
 
+/// SQL rows print an identity as a one-element array, unlike its JSON argument form.
+fn identity_cells(value: &Value) -> Value {
+    match value {
+        Value::Array(items) => Value::Array(items.iter().map(identity_cells).collect()),
+        Value::Object(fields) if fields.contains_key("__identity__") => json!([fields["__identity__"]]),
+        other => other.clone(),
+    }
+}
+
 fn compare_rows(actual: &Value, expected: &Value) -> Result<()> {
+    let expected = &identity_cells(expected);
     let sorted = |v: &Value| -> Result<Vec<String>> {
         let mut rows = v
             .as_array()

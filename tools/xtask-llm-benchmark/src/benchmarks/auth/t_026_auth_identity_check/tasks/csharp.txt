@@ -3,6 +3,7 @@ Write a SpacetimeDB backend module in C# that defines a table of messages owned 
 TABLES
 - Message
   - Struct: Message
+  - public table
   - Fields:
     - Id: ulong (primary key, AutoInc)
     - Owner: Identity (index BTree)

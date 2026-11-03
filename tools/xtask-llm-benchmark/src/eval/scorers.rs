@@ -108,9 +108,15 @@ impl Scorer for SchemaParityScorer {
         }
 
         let schema_a = extract_schema(&golden);
-        let schema_b = extract_schema(&llm);
+        let mut schema_b = extract_schema(&llm);
+        // Extra view primary keys only help clients match rows; behaviour checks catch a wrong one.
+        schema_b
+            .exports
+            .retain(|export| !export.starts_with("view_primary_key:") || schema_a.exports.contains(export));
+        let candidate_tables =
+            accept_extra_indexes(&schema_a.tables, align_table_names(&schema_a.tables, &schema_b.tables));
 
-        let tables_diff = diff_maps(&schema_a.tables, &align_table_names(&schema_a.tables, &schema_b.tables));
+        let tables_diff = diff_maps(&schema_a.tables, &candidate_tables);
         let reducers_diff = diff_sets(&schema_a.reducers, &schema_b.reducers);
         let exports_diff = diff_sets(&schema_a.exports, &schema_b.exports);
         let rls_diff = diff_sets(&schema_a.row_level_security, &schema_b.row_level_security);
@@ -250,9 +256,30 @@ fn extract_schema(v: &Value) -> SchemaSnapshot {
         }
     }
 
+    // Clients cannot call lifecycle reducers, so they match by lifecycle kind, not by name.
+    let mut lifecycle_kinds = BTreeMap::new();
+    for lifecycle in schema_array(v, "life_cycle_reducers", "LifeCycleReducers")
+        .into_iter()
+        .flatten()
+    {
+        let spec = lifecycle.get("lifecycle_spec");
+        let kind = spec
+            .and_then(Value::as_object)
+            .and_then(|spec| spec.keys().next().cloned())
+            .unwrap_or_else(|| canonical_value(spec));
+        lifecycle_kinds.insert(schema_name(lifecycle.get("function_name")), kind.clone());
+        schema.exports.insert(format!("lifecycle:{kind}"));
+    }
+
     if let Some(rs) = schema_array(v, "reducers", "Reducers") {
         for r in rs {
-            let name = names.function(schema_name(r.get("source_name").or_else(|| r.get("name"))));
+            let source = schema_name(r.get("source_name").or_else(|| r.get("name")));
+            let name = names.function(source.clone());
+            let name = lifecycle_kinds
+                .get(&name)
+                .or_else(|| lifecycle_kinds.get(&source))
+                .map(|kind| format!("<{kind}>"))
+                .unwrap_or(name);
             let mut sig = format!("{}({})", name, parameter_types(r, types).join(","));
             append_field(&mut sig, "visibility", r.get("visibility"));
             append_type(&mut sig, "ok", r.get("ok_return_type"), types);
@@ -285,21 +312,19 @@ fn extract_schema(v: &Value) -> SchemaSnapshot {
         schema.exports.insert(view_export(view, types, &names));
     }
     insert_canonical_exports(&mut schema.exports, v, "schedules", "Schedules", "schedule");
-    insert_canonical_exports(
-        &mut schema.exports,
-        v,
-        "life_cycle_reducers",
-        "LifeCycleReducers",
-        "lifecycle",
-    );
     insert_http_routes(&mut schema.exports, v);
-    insert_canonical_exports(
-        &mut schema.exports,
-        v,
-        "view_primary_keys",
-        "ViewPrimaryKeys",
-        "view_primary_key",
-    );
+    for key in schema_array(v, "view_primary_keys", "ViewPrimaryKeys")
+        .into_iter()
+        .flatten()
+    {
+        let mut key = key.clone();
+        if let Some(view) = key.get_mut("view_source_name") {
+            *view = Value::String(loose_name(&schema_name(Some(view))));
+        }
+        schema
+            .exports
+            .insert(format!("view_primary_key:{}", canonical_value(Some(&key))));
+    }
 
     for rule in schema_array(v, "row_level_security", "RowLevelSecurity")
         .into_iter()
@@ -361,14 +386,20 @@ fn function_export(kind: &str, function: &Value, types: &[Value], names: &Schema
     let name = names.function(schema_name(
         function.get("source_name").or_else(|| function.get("name")),
     ));
+    named_function_export(kind, &name, function, types)
+}
+
+fn named_function_export(kind: &str, name: &str, function: &Value, types: &[Value]) -> String {
     let mut signature = format!("{kind}:{name}({})", parameter_types(function, types).join(","));
     append_type(&mut signature, "return", function.get("return_type"), types);
     append_field(&mut signature, "visibility", function.get("visibility"));
     signature
 }
 
+// Prompts do not fix a view's casing, and TypeScript modules often camelCase it.
 fn view_export(view: &Value, types: &[Value], names: &SchemaNames) -> String {
-    let mut signature = function_export("view", view, types, names);
+    let name = names.function(schema_name(view.get("source_name").or_else(|| view.get("name"))));
+    let mut signature = named_function_export("view", &loose_name(&name), view, types);
     append_field(&mut signature, "public", view.get("is_public"));
     append_field(&mut signature, "anonymous", view.get("is_anonymous"));
     signature
@@ -524,16 +555,45 @@ fn align_table_names(
     golden: &BTreeMap<String, BTreeMap<String, String>>,
     candidate: &BTreeMap<String, BTreeMap<String, String>>,
 ) -> BTreeMap<String, BTreeMap<String, String>> {
-    let key = |name: &str| name.to_lowercase().replace('_', "");
     candidate
         .iter()
         .map(|(name, table)| {
-            let golden_name = golden
-                .keys()
-                .find(|golden_name| !candidate.contains_key(*golden_name) && key(golden_name) == key(name));
+            let golden_name = golden.keys().find(|golden_name| {
+                !candidate.contains_key(*golden_name) && loose_name(golden_name) == loose_name(name)
+            });
             (golden_name.unwrap_or(name).clone(), table.clone())
         })
         .collect()
+}
+
+fn loose_name(name: &str) -> String {
+    name.to_lowercase().replace('_', "")
+}
+
+// Extra indexes only speed up lookups; a missing golden index still fails.
+fn accept_extra_indexes(
+    golden: &BTreeMap<String, BTreeMap<String, String>>,
+    mut candidate: BTreeMap<String, BTreeMap<String, String>>,
+) -> BTreeMap<String, BTreeMap<String, String>> {
+    for (name, table) in &mut candidate {
+        let Some(golden_table) = golden.get(name) else {
+            continue;
+        };
+        let expected = golden_table.get("@indexes").map(String::as_str).unwrap_or("");
+        let actual = table.get("@indexes").map(String::as_str).unwrap_or("");
+        let actual: BTreeSet<&str> = actual.split(';').collect();
+        if expected
+            .split(';')
+            .filter(|index| !index.is_empty())
+            .all(|index| actual.contains(index))
+        {
+            match golden_table.get("@indexes") {
+                Some(expected) => table.insert("@indexes".to_owned(), expected.clone()),
+                None => table.remove("@indexes"),
+            };
+        }
+    }
+    candidate
 }
 
 // shortcut: text match for the 1.x C# form, which the schema cannot show; delete once the C# SDK rejects it as Rust does.
@@ -649,7 +709,66 @@ pub fn sql_raw(db: &str, query: &str, host: Option<&str>) -> Result<String, Stri
     sql_raw_with_timeout(db, query, host, Duration::from_secs(30))
 }
 
+// Checks guess a table's name from the language's convention; a model may spell it differently.
+pub(crate) fn with_actual_relation_names<T>(
+    db: &str,
+    query: &str,
+    host: Option<&str>,
+    run: impl Fn(&str) -> Result<T, String>,
+) -> Result<T, String> {
+    static MISSING: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"no such table: `([^`]+)`").unwrap());
+    let mut query = query.to_owned();
+    for _ in 0..4 {
+        let error = match run(&query) {
+            Ok(value) => return Ok(value),
+            Err(error) => error,
+        };
+        let renamed = MISSING.captures(&error).and_then(|missing| {
+            let actual = actual_relation_name(host?, db, &missing[1])?;
+            Some(rename_relation(&query, &missing[1], &actual))
+        });
+        match renamed {
+            Some(renamed) if renamed != query => query = renamed,
+            _ => return Err(error),
+        }
+    }
+    run(&query)
+}
+
+fn rename_relation(query: &str, missing: &str, actual: &str) -> String {
+    let pattern = Regex::new(&format!(r#""{0}"|\b{0}\b"#, regex::escape(missing))).unwrap();
+    pattern
+        .replace_all(query, format!("\"{actual}\"").as_str())
+        .into_owned()
+}
+
+fn actual_relation_name(server: &str, db: &str, missing: &str) -> Option<String> {
+    let schema = describe_db(server, db, Duration::from_secs(15)).ok()?;
+    let names = SchemaNames::from_schema(&schema);
+    ["Tables", "Views"]
+        .into_iter()
+        .flat_map(|section| {
+            schema_array(&schema, &section.to_lowercase(), section)
+                .into_iter()
+                .flatten()
+        })
+        .map(|relation| {
+            let source = schema_name(relation.get("source_name").or_else(|| relation.get("name")));
+            names
+                .tables
+                .get(&source)
+                .or_else(|| names.functions.get(&source))
+                .cloned()
+                .unwrap_or(source)
+        })
+        .find(|name| name != missing && loose_name(name) == loose_name(missing))
+}
+
 fn sql_raw_with_timeout(db: &str, query: &str, host: Option<&str>, timeout: Duration) -> Result<String, String> {
+    with_actual_relation_names(db, query, host, |query| sql_raw_once(db, query, host, timeout))
+}
+
+fn sql_raw_once(db: &str, query: &str, host: Option<&str>, timeout: Duration) -> Result<String, String> {
     let mut cmd = scorer_command(host);
     cmd.arg("sql").arg(db).arg(query);
     if let Some(h) = host {
@@ -677,6 +796,10 @@ fn sql_raw_with_timeout(db: &str, query: &str, host: Option<&str>, timeout: Dura
 }
 
 fn sql_json_with_timeout(db: &str, query: &str, host: Option<&str>, timeout: Duration) -> Result<Value, String> {
+    with_actual_relation_names(db, query, host, |query| sql_json_once(db, query, host, timeout))
+}
+
+fn sql_json_once(db: &str, query: &str, host: Option<&str>, timeout: Duration) -> Result<Value, String> {
     let mut cmd = scorer_command(host);
     cmd.arg("sql").arg(db).arg(query).args(["--format", "json"]);
     if let Some(h) = host {
@@ -706,6 +829,10 @@ pub fn sql_count(db: &str, query: &str, host: Option<&str>) -> Result<i64, Strin
 }
 
 fn sql_count_with_timeout(db: &str, query: &str, host: Option<&str>, timeout: Duration) -> Result<i64, String> {
+    with_actual_relation_names(db, query, host, |query| sql_count_once(db, query, host, timeout))
+}
+
+fn sql_count_once(db: &str, query: &str, host: Option<&str>, timeout: Duration) -> Result<i64, String> {
     let mut cmd = scorer_command(host);
     cmd.arg("sql").arg(db).arg(query);
     if let Some(h) = host {
@@ -1481,6 +1608,71 @@ mod tests {
         let candidate = extract_schema(&current_schema(false));
 
         assert!(!diff_maps(&golden.tables, &candidate.tables).is_null());
+        assert!(!diff_maps(&golden.tables, &accept_extra_indexes(&golden.tables, candidate.tables)).is_null());
+    }
+
+    #[test]
+    fn missing_relation_is_renamed_quoted_or_bare() {
+        assert_eq!(
+            rename_relation(r#"SELECT * FROM "OnlineUser" WHERE x = 1"#, "OnlineUser", "online_user"),
+            r#"SELECT * FROM "online_user" WHERE x = 1"#
+        );
+        assert_eq!(
+            rename_relation("SELECT COUNT(*) FROM OnlineUser", "OnlineUser", "online_user"),
+            r#"SELECT COUNT(*) FROM "online_user""#
+        );
+        assert_eq!(
+            rename_relation("SELECT * FROM OnlineUsers", "OnlineUser", "online_user"),
+            "SELECT * FROM OnlineUsers"
+        );
+    }
+
+    #[test]
+    fn extra_index_is_accepted() {
+        let golden = extract_schema(&current_schema(false)).tables;
+        let candidate = extract_schema(&current_schema(true)).tables;
+
+        assert!(diff_maps(&golden, &accept_extra_indexes(&golden, candidate)).is_null());
+    }
+
+    fn lifecycle_schema(function: &str, kind: &str) -> Value {
+        json!({
+            "sections": [
+                { "Typespace": { "types": [] } },
+                { "Reducers": [{ "source_name": function, "params": { "elements": [] } }] },
+                { "LifeCycleReducers": [{ "lifecycle_spec": { kind: [] }, "function_name": function }] }
+            ]
+        })
+    }
+
+    #[test]
+    fn lifecycle_reducers_match_by_kind_not_name() {
+        let golden = extract_schema(&lifecycle_schema("client_connected", "OnConnect"));
+
+        assert_eq!(golden, extract_schema(&lifecycle_schema("on_connect", "OnConnect")));
+        assert_ne!(golden, extract_schema(&lifecycle_schema("client_connected", "Init")));
+    }
+
+    #[test]
+    fn view_names_differing_only_by_case_or_underscores_match() {
+        let schema = |view: &str| {
+            json!({
+                "sections": [
+                    { "Typespace": { "types": [] } },
+                    { "Views": [{ "source_name": view, "params": { "elements": [] }, "is_public": true }] },
+                    { "ViewPrimaryKeys": [{ "view_source_name": view, "columns": ["id"] }] }
+                ]
+            })
+        };
+
+        assert_eq!(
+            extract_schema(&schema("active_announcements")),
+            extract_schema(&schema("activeAnnouncements"))
+        );
+        assert_ne!(
+            extract_schema(&schema("active_announcements")),
+            extract_schema(&schema("announcements"))
+        );
     }
 
     fn tables_named(names: &[&str]) -> BTreeMap<String, BTreeMap<String, String>> {

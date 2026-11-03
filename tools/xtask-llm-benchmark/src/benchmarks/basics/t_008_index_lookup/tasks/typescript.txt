@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in TypeScript that defines two tables and two reducers: one that inserts a user row, and one that looks up a row by primary-key index and writes a projection to another table.
 
 TABLES
-- user
+- user (private)
   - Fields:
     - id: number (u64, primary key, autoInc)
     - name: string
