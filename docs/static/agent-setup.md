@@ -185,11 +185,38 @@ Confirm that the installed plugin comes from `spacetimedb-plugins` and is enable
 Restart Codex if the skills or MCP server are not available in the current session.
 If plugin installation is unavailable, use **Other agents** below.
 
+Codex also loads skills from `~/.agents/skills`. If SpacetimeDB skills are already
+there from an earlier setup, Codex sees them twice. Report that to the user rather
+than removing them, since another agent may rely on them.
+
 ### Cursor
 
-Install the skills as described in **Other agents**, then inspect
-`~/.cursor/mcp.json`. Merge this entry into its existing `mcpServers` object,
-preserving other servers and any existing SpacetimeDB server configuration:
+Cursor loads skills from `~/.cursor/skills` and from `~/.agents/skills`, and Codex
+also loads `~/.agents/skills`. If Codex has the SpacetimeDB plugin, put Cursor's
+copy in `~/.cursor/skills` so Codex doesn't see every skill twice:
+
+```sh
+tmp=$(mktemp -d)
+git clone --quiet --depth 1 --filter=blob:none --sparse https://github.com/clockworklabs/SpacetimeDB.git "$tmp"
+git -C "$tmp" sparse-checkout set skills
+mkdir -p ~/.cursor/skills
+cp -R "$tmp"/skills/. ~/.cursor/skills/
+rm -rf "$tmp"
+```
+
+Before copying, check that no folder this would replace in `~/.cursor/skills`
+holds another product's skill. To update these skills later, run the same commands
+again.
+
+If Codex doesn't have the plugin, install the skills with the skills CLI instead.
+It puts them in `~/.agents/skills` and can update them later:
+
+```sh
+npx -y skills add https://github.com/clockworklabs/SpacetimeDB/tree/master/skills --skill '*' --agent cursor --yes --global
+```
+
+Then inspect `~/.cursor/mcp.json`. Merge this entry into its existing `mcpServers`
+object, preserving other servers and any existing SpacetimeDB server configuration:
 
 ```json
 {
