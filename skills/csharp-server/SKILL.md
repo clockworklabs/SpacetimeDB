@@ -153,14 +153,16 @@ The pattern is `ctx.Db.{Accessor}.{ColumnName}.{Method}(value)` for all indexed 
 
 ```csharp
 [SpacetimeDB.Reducer(ReducerKind.Init)]
-public static void OnInit(ReducerContext ctx) { ... }
+public static void Init(ReducerContext ctx) { ... }
 
 [SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
-public static void OnConnect(ReducerContext ctx) { ... }
+public static void ClientConnected(ReducerContext ctx) { ... }
 
 [SpacetimeDB.Reducer(ReducerKind.ClientDisconnected)]
-public static void OnDisconnect(ReducerContext ctx) { ... }
+public static void ClientDisconnected(ReducerContext ctx) { ... }
 ```
+
+Reducer and procedure method names must not start with `On`, `on`, or `__`; the code generator rejects them (STDB0010), so name lifecycle reducers `ClientConnected`, not `OnConnect`.
 
 `ctx.ConnectionId` is `ConnectionId?`, including in connection lifecycle reducers. Check or unwrap it before storing it in a non-nullable column or passing it to an index accessor.
 
@@ -285,6 +287,7 @@ public static ResultValue Inspect(ProcedureContext ctx, string input) =>
 Outbound HTTP is available through `ctx.Http`; handle its success/error result before using the response. Open short database transactions with `ctx.WithTx`. Perform network I/O before opening the transaction, and keep only database work inside its callback.
 
 ```csharp
+string uri = "https://example.com/data"; // the C# HTTP API takes the URI as a string
 var result = ctx.Http.Get(uri);
 var text = result.Match(
     response => response.Body.ToStringUtf8Lossy(),
