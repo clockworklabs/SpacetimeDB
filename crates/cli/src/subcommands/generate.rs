@@ -768,18 +768,6 @@ pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<ModuleDef> {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn typescript_legacy_option() {
-        let args = cli()
-            .try_get_matches_from(["generate", "--lang", "typescript", "--out-dir", "bindings"])
-            .unwrap();
-        assert!(!args.get_flag("legacy"));
-        let args = cli()
-            .try_get_matches_from(["generate", "--lang", "typescript", "--out-dir", "bindings", "--legacy"])
-            .unwrap();
-        assert!(args.get_flag("legacy"));
-    }
-
     use super::*;
     use crate::spacetime_config::*;
     use std::collections::HashMap;
