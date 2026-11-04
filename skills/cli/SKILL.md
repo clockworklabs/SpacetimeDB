@@ -20,6 +20,8 @@ triggers:
   - spacetime server
   - spacetime login
   - spacetime generate
+  - spacetime env
+  - spacetime auth
   - how do I use the CLI
   - CLI command
 ---
@@ -70,6 +72,29 @@ spacetime publish my-database --server local --yes
 # Clear database and republish
 spacetime publish my-database --delete-data=always --yes
 ```
+
+### Database Environment
+
+Module declarations validate string values before initialization/migration. Publishing preserves unspecified stored values. For each declared key, precedence is publishing-process environment → resolved config `env` map → stored database value. Undeclared keys can be staged explicitly in JSON, but module code cannot read them until declared. Keep secrets out of checked-in config; use process variables or ignored local config files.
+
+```bash
+# Supply declared values while publishing; use a disposable value for local development
+API_KEY='development-only' spacetime publish my-database --server local --yes
+
+# Change only the environment of an existing database (no module build/upload)
+API_KEY='development-only' spacetime publish my-database --server local --env-only --yes
+
+# Explicitly remove an optional or undeclared key
+spacetime publish my-database --server local --env-only --unset-env LOG_LEVEL --yes
+
+# Inspect stored values (these commands print secrets; authorization is required)
+spacetime env list my-database --server local
+spacetime env get my-database MODE --server local
+```
+
+Before `--unset-env`, remove that key from effective JSON/process inputs. Required values cannot be unset. `--replace-env` replaces the whole store and deletes omitted keys; it cannot be combined with `--unset-env`. `--delete-data` also clears environment values; supply required values again after a reset. `--env-only` requires an existing database and cannot be combined with a reset. An empty string is a value, not deletion. `--env` selects a project configuration environment; it does not assign a database environment variable.
+
+There is no separate `spacetime env set`: updates use validated publishing. For full merge/validation semantics see https://spacetimedb.com/docs/databases/environment-variables.
 
 ### Database Interaction
 
@@ -147,6 +172,21 @@ spacetime login show
 # Logout
 spacetime logout
 ```
+
+### SpacetimeAuth Management (2.13+)
+
+`spacetime auth` manages SpacetimeAuth settings; it is not a replacement for `spacetime login`. Log in and enable SpacetimeAuth for the database first. Pass the database **name**, not its identity. For example:
+
+```bash
+spacetime auth config set my-database display_name 'My App'
+spacetime auth idp enable my-database github
+spacetime auth client create my-database --name web
+spacetime auth client set my-database --name web web true
+spacetime auth client get my-database --name web
+spacetime auth client set my-database --name web redirect_uris 'https://example.com/callback'
+```
+
+The command families are `config set/reset`, `idp set/enable/disable`, and `client create/delete/get/set`. `idp set <database> <idp> <client_id>` prompts for the OAuth secret when omitted (or reads it from stdin); avoid embedding real secrets in shell history. `client get --include-secret` explicitly prints a client's secret; ordinary create/get output does not. These commands use the SpacetimeAuth management service, not the database `--server` target. Use each subcommand's `--help` for supported providers, settings, and values.
 
 ## Default Servers
 
