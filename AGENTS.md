@@ -16,4 +16,4 @@ These markers are provisional, and CI does not check any of this yet.
 
 # PR testing sections
 
-When writing or updating a PR's testing section, read [Writing testing sections](.agents/testing-sections.md). Describe concrete coverage concisely, distinguishing updated tests, added tests, and relevant existing coverage.
+When writing or updating a PR's testing section, read [Writing testing sections](.agents/testing-sections.md). Explain what verification supports confidence that the change works as intended, and identify important remaining uncertainty.
