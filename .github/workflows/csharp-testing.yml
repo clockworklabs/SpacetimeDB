@@ -3,9 +3,9 @@ name: C# Testing Packages
 on:
   workflow_call:
     inputs:
-      source-ref:
-        type: string
-        required: true
+      use-release-tag:
+        type: boolean
+        default: false
       release-tag:
         type: string
         default: ""
@@ -18,6 +18,9 @@ on:
 permissions:
   contents: read
 
+# Package validation needs artifacts, not Actions caches.
+cache-mode: none
+
 jobs:
   prepare:
     runs-on: ubuntu-22.04
@@ -27,13 +30,43 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source-ref }}
+          persist-credentials: false
+          fetch-depth: ${{ inputs.use-release-tag && '0' || '1' }}
       - id: source
         shell: bash
         env:
           RELEASE_TAG: ${{ inputs.release-tag }}
+          USE_RELEASE_TAG: ${{ inputs.use-release-tag }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          sha=$(git rev-parse HEAD)
+          if [ "$USE_RELEASE_TAG" = true ]; then
+            if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+              echo "Invalid release tag: $RELEASE_TAG" >&2
+              exit 1
+            fi
+            git check-ref-format "refs/tags/$RELEASE_TAG"
+            git fetch --no-tags origin "refs/tags/$RELEASE_TAG"
+            sha=$(git rev-parse --verify 'FETCH_HEAD^{commit}')
+
+            # A tag name alone is not a trust boundary. Require protected branch history.
+            trusted_heads=$(gh api --paginate "repos/$GITHUB_REPOSITORY/branches?protected=true&per_page=100" \
+              --jq '.[] | select(.name == "master" or (.name | startswith("release/"))) | .commit.sha')
+            trusted=false
+            while IFS= read -r head; do
+              [ -n "$head" ] || continue
+              git fetch --no-tags origin "$head"
+              if git merge-base --is-ancestor "$sha" "$head"; then
+                trusted=true
+                break
+              fi
+            done <<< "$trusted_heads"
+            if [ "$trusted" != true ]; then
+              echo "Release tag must belong to protected master or release/* history" >&2
+              exit 1
+            fi
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
           if [ -n "$RELEASE_TAG" ]; then
             version="${RELEASE_TAG#v}"
             # Hotfix tags reuse the existing NuGet version, as in cargo-release.
@@ -67,6 +100,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
       - uses: dsherret/rust-toolchain-file@v1
       - uses: actions/setup-dotnet@v4
         with:
@@ -130,6 +164,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
@@ -205,6 +240,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json

@@ -153,12 +153,13 @@ jobs:
     if: ${{ inputs.release_csharp }}
     uses: ./.github/workflows/csharp-testing.yml
     with:
-      source-ref: ${{ inputs.dry_run && github.sha || github.event.inputs.release_tag }}
+      use-release-tag: ${{ !inputs.dry_run }}
       release-tag: ${{ inputs.release_tag }}
 
   release-csharp:
     needs: [build-cargo-release, validate-csharp-packages]
     runs-on: spacetimedb-linux
+    cache-mode: none
     if: ${{ inputs.release_csharp }}
     env:
       CARGO_TERM_COLOR: always
@@ -171,6 +172,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.validate-csharp-packages.outputs.source-sha }}
+          persist-credentials: false
           submodules: recursive
 
       - name: Set up Rust

@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       pr_number:
-        description: "Pull Request Number"
+        description: "Unsupported: rerun the PR workflow instead of supplying a PR number"
         required: false
         default: ""
 
@@ -34,6 +34,12 @@ jobs:
       # A reused failure also skips fresh jobs; the final step reports that failure on this commit.
       skip: ${{ steps.compare.outputs.skip == 'true' || steps.reuse.outputs.reused == 'true' }}
     steps:
+      - name: Reject manual PR checkout
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.pr_number != '' }}
+        run: |
+          echo "Rerun the PR workflow instead; manual PR checkout would use the dispatch ref's cache scope." >&2
+          exit 1
+
       - name: Checkout merge queue commit
         uses: actions/checkout@v4
 
@@ -1251,8 +1257,6 @@ jobs:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     uses: ./.github/workflows/csharp-testing.yml
-    with:
-      source-ref: ${{ github.event.inputs.pr_number && format('refs/pull/{0}/head', github.event.inputs.pr_number) || github.sha }}
 
   test:
     needs:
