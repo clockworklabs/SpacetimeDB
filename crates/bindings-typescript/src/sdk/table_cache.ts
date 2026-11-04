@@ -44,6 +44,23 @@ const scalarCompare = (x: any, y: any): number => {
   return x < y ? -1 : 1;
 };
 
+// Match deepEqual's structural object semantics, including wrapper values and
+// property order independence. Equality is still checked within each bucket.
+function uniqueIndexKey(value: unknown): string {
+  const parts = (value: unknown): unknown => {
+    if (value !== null && typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      return Object.keys(record)
+        .sort()
+        .map(key => [key, parts(record[key])]);
+    }
+    return [typeof value, String(value)];
+  };
+  return JSON.stringify(parts(value));
+}
+
+type CachedRow<Row> = [row: Row, references: number, order: number];
+
 export type TableIndexView<
   RemoteModule extends UntypedRemoteModule,
   TableName extends TableNamesOf<RemoteModule>,
@@ -69,8 +86,14 @@ export class TableCacheImpl<
   private readonly hasPrimaryKey: boolean;
   private rows: Map<
     ComparablePrimitive,
-    [RowType<TableDefForTableName<RemoteModule, TableName>>, number]
+    CachedRow<RowType<TableDefForTableName<RemoteModule, TableName>>>
   >;
+  #nextRowOrder = 0;
+  readonly #updateUniqueIndexes: ((
+    rowId: ComparablePrimitive,
+    row: RowType<TableDefForTableName<RemoteModule, TableName>> | undefined,
+    order: number
+  ) => void)[] = [];
   private tableDef: TableDefForTableName<RemoteModule, TableName>;
   private emitter: EventEmitter<'insert' | 'delete' | 'update'>;
 
@@ -102,7 +125,6 @@ export class TableCacheImpl<
     }
   }
 
-  // TODO: this just scans the whole table; we should build proper index structures
   #makeReadonlyIndex<
     I extends TableDefForTableName<
       RemoteModule,
@@ -196,18 +218,51 @@ export class TableCacheImpl<
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
     if (isUnique) {
+      type Entry = { row: Row; order: number; key: string };
+      const buckets = new Map<string, Set<Entry>>();
+      // Retain fingerprints so replacement/removal does not recompute old keys.
+      const entries = new Map<ComparablePrimitive, Entry>();
+      this.#updateUniqueIndexes.push((rowId, row, order) => {
+        const previous = entries.get(rowId);
+        if (previous) {
+          const bucket = buckets.get(previous.key)!;
+          bucket.delete(previous);
+          if (bucket.size === 0) buckets.delete(previous.key);
+          entries.delete(rowId);
+        }
+        if (row !== undefined) {
+          const indexRow = row as Row;
+          const key = uniqueIndexKey(getKey(indexRow));
+          const entry: Entry = { row: indexRow, order, key };
+          let bucket = buckets.get(key);
+          if (!bucket) buckets.set(key, (bucket = new Set()));
+          bucket.add(entry);
+          entries.set(rowId, entry);
+        }
+      });
       const impl: ReadonlyUniqueIndex<TableDef, I> = {
         find: (colVal: any): Row | null => {
           // For unique btree, caller supplies the *full* key (tuple if multi-col).
           const expected = Array.isArray(colVal) ? colVal : [colVal];
-          for (const row of self.iter()) {
-            if (deepEqual(getKey(row), expected)) return row;
+          const bucket = buckets.get(uniqueIndexKey(expected));
+          // Preserve table iteration order even during transient unique-key conflicts.
+          let first: Entry | undefined;
+          if (bucket) {
+            for (const entry of bucket) {
+              if (
+                (!first || entry.order < first.order) &&
+                deepEqual(getKey(entry.row), expected)
+              ) {
+                first = entry;
+              }
+            }
           }
-          return null;
+          return first?.row ?? null;
         },
       };
       return impl as ReadonlyIndex<TableDef, I>;
     } else {
+      // TODO: ranged indexes still scan the whole table.
       const impl: ReadonlyRangedIndex<TableDef, I> = {
         *filter(range: any): IteratorObject<Row, undefined> {
           for (const row of self.iter()) {
@@ -236,7 +291,7 @@ export class TableCacheImpl<
     function* generator(
       rows: Map<
         ComparablePrimitive,
-        [RowType<TableDefForTableName<RemoteModule, TableName>>, number]
+        CachedRow<RowType<TableDefForTableName<RemoteModule, TableName>>>
       >
     ): IteratorObject<
       Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>,
@@ -260,6 +315,25 @@ export class TableCacheImpl<
     undefined
   > {
     return this.iter();
+  }
+
+  #setRow(
+    rowId: ComparablePrimitive,
+    row: RowType<TableDefForTableName<RemoteModule, TableName>>,
+    references: number
+  ): void {
+    const order = this.rows.get(rowId)?.[2] ?? this.#nextRowOrder++;
+    this.rows.set(rowId, [row, references, order]);
+    for (const updateIndex of this.#updateUniqueIndexes) {
+      updateIndex(rowId, row, order);
+    }
+  }
+
+  #deleteRow(rowId: ComparablePrimitive): void {
+    for (const updateIndex of this.#updateUniqueIndexes) {
+      updateIndex(rowId, undefined, 0);
+    }
+    this.rows.delete(rowId);
   }
 
   /** Delete every cached reference, including overlaps between subscriptions. */
@@ -404,7 +478,7 @@ export class TableCacheImpl<
       );
       return undefined;
     }
-    this.rows.set(rowId, [newRow, refCount]);
+    this.#setRow(rowId, newRow, refCount);
     if (skipIfIdentical && deepEqual(oldRow, newRow)) {
       // The row is unchanged; the reference count was adjusted above but no
       // callback fires.
@@ -444,7 +518,7 @@ export class TableCacheImpl<
       operation.row,
       0,
     ];
-    this.rows.set(operation.rowId, [operation.row, previousCount + count]);
+    this.#setRow(operation.rowId, operation.row, previousCount + count);
     if (previousCount === 0) {
       return {
         type: 'insert',
@@ -477,7 +551,7 @@ export class TableCacheImpl<
     // If this was the last reference, we are actually deleting the row.
     if (previousCount <= count) {
       // TODO: Log a warning/error if previousCount is less than count.
-      this.rows.delete(operation.rowId);
+      this.#deleteRow(operation.rowId);
       return {
         type: 'delete',
         table: this.tableDef.sourceName,
@@ -486,7 +560,7 @@ export class TableCacheImpl<
         },
       };
     }
-    this.rows.set(operation.rowId, [operation.row, previousCount - count]);
+    this.#setRow(operation.rowId, operation.row, previousCount - count);
     return undefined;
   };
 
