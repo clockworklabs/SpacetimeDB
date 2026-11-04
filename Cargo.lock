@@ -8558,16 +8558,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "spacetimedb-disk-table"
-version = "2.14.0"
-dependencies = [
- "spacetimedb-fs-utils",
- "spacetimedb-paths",
- "spacetimedb-snapshot",
- "spacetimedb-table",
-]
-
-[[package]]
 name = "spacetimedb-dst-lib"
 version = "2.14.0"
 dependencies = [
@@ -9097,12 +9087,12 @@ dependencies = [
  "spacetimedb-client-api-messages",
  "spacetimedb-core",
  "spacetimedb-datastore",
- "spacetimedb-disk-table",
  "spacetimedb-lib",
  "spacetimedb-paths",
  "spacetimedb-pg",
  "spacetimedb-schema",
  "spacetimedb-table",
+ "spacetimedb-tiered-storage",
  "tempfile",
  "thiserror 1.0.69",
  "tikv-jemallocator",
@@ -9203,6 +9193,16 @@ dependencies = [
  "tempfile",
  "tokio",
  "tower",
+]
+
+[[package]]
+name = "spacetimedb-tiered-storage"
+version = "2.14.0"
+dependencies = [
+ "spacetimedb-fs-utils",
+ "spacetimedb-paths",
+ "spacetimedb-snapshot",
+ "spacetimedb-table",
 ]
 
 [[package]]
