@@ -112,6 +112,10 @@ export class SchemaInner<
   httpHandlerExports: Map<HttpHandlerExport<UntypedSchemaDef>, string> =
     new Map();
   pendingSchedules: PendingSchedule[] = [];
+  pendingOutboxCallbacks: {
+    table: UntypedTableSchema;
+    functionName: string;
+  }[] = [];
   pendingHttpRoutes: PendingHttpRoute[] = [];
   submoduleDispatchInfos: SubmoduleDispatchInfo[] = [];
 
@@ -173,6 +177,8 @@ export class SchemaInner<
         );
       }
 
+      if (table.outbox)
+        throw new TypeError('Outbox tables cannot be scheduled');
       const scheduleAtCol = knownScheduleAtCol ?? table.scheduleAtCol;
       if (scheduleAtCol === undefined) {
         throw new TypeError(
@@ -202,6 +208,28 @@ export class SchemaInner<
         scheduleAtCol,
         functionName,
       });
+    }
+  }
+
+  resolveOutboxCallbacks() {
+    for (const { table, functionName } of this.pendingOutboxCallbacks) {
+      const names = this.tableSourceNames.get(table);
+      if (names?.length !== 1) {
+        throw new TypeError(
+          'onResult must reference an outbox registered exactly once in this schema'
+        );
+      }
+      const outbox = this.moduleDef.outboxes.find(
+        o => o.tableName === names[0]
+      );
+      if (!outbox) throw new TypeError('onResult requires an outbox table');
+      if (
+        outbox.onResultReducer !== undefined &&
+        outbox.onResultReducer !== functionName
+      ) {
+        throw new TypeError('An outbox can only have one onResult reducer');
+      }
+      outbox.onResultReducer = functionName;
     }
   }
 
@@ -308,6 +336,7 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
       ignoreNonModuleExports: opts?.ignoreNonModuleExports ?? false,
     });
     this.#ctx.resolveSchedules();
+    this.#ctx.resolveOutboxCallbacks();
     return this.#ctx.rawModuleDefV10();
   }
 
@@ -536,34 +565,37 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     // builders, but becomes a required error tuple when a returned row builder
     // marks more than one column with `.primaryKey()`.
     ..._: ValidateViewPrimaryKey<Ret>
-  ): ViewExport<F> {
-    return makeViewExport<S, {}, Ret, F>(this.#ctx, opts, {}, ret, fn);
+  ): ViewExport<F>;
+  view<
+    Params extends ParamsObj,
+    Ret extends ViewReturnTypeBuilder,
+    F extends ViewFn<S, Params, Ret>,
+  >(
+    opts: ViewOpts,
+    params: Params,
+    ret: Ret,
+    fn: F,
+    // The same primary-key guard as above.
+    ..._: ValidateViewPrimaryKey<Ret>
+  ): ViewExport<F>;
+  view<
+    Params extends ParamsObj,
+    Ret extends ViewReturnTypeBuilder,
+    F extends ViewFn<S, Params, Ret>,
+  >(opts: ViewOpts, ...args: [Ret, F] | [Params, Ret, F]): ViewExport<F> {
+    let params = {} as Params,
+      ret: Ret,
+      fn: F;
+    switch (args.length) {
+      case 2:
+        [ret, fn] = args;
+        break;
+      case 3:
+        [params, ret, fn] = args;
+        break;
+    }
+    return makeViewExport<S, Params, Ret, F>(this.#ctx, opts, params, ret, fn);
   }
-
-  // TODO: re-enable once parameterized views are supported in SQL
-  // view<Ret extends ViewReturnTypeBuilder>(
-  //   opts: ViewOpts,
-  //   ret: Ret,
-  //   fn: ViewFn<S, {}, Ret>
-  // ): void;
-  // view<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
-  //   opts: ViewOpts,
-  //   params: Params,
-  //   ret: Ret,
-  //   fn: ViewFn<S, {}, Ret>
-  // ): void;
-  // view<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
-  //   opts: ViewOpts,
-  //   paramsOrRet: Ret | Params,
-  //   retOrFn: ViewFn<S, {}, Ret> | Ret,
-  //   maybeFn?: ViewFn<S, Params, Ret>
-  // ): void {
-  //   if (typeof retOrFn === 'function') {
-  //     defineView(name, false, {}, paramsOrRet as Ret, retOrFn);
-  //   } else {
-  //     defineView(name, false, paramsOrRet as Params, retOrFn, maybeFn!);
-  //   }
-  // }
 
   anonymousView<
     Ret extends ViewReturnTypeBuilder,
@@ -576,34 +608,43 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     // builders, but becomes a required error tuple when a returned row builder
     // marks more than one column with `.primaryKey()`.
     ..._: ValidateViewPrimaryKey<Ret>
-  ): ViewExport<F> {
-    return makeAnonViewExport<S, {}, Ret, F>(this.#ctx, opts, {}, ret, fn);
+  ): ViewExport<F>;
+  anonymousView<
+    Params extends ParamsObj,
+    Ret extends ViewReturnTypeBuilder,
+    F extends AnonymousViewFn<S, Params, Ret>,
+  >(
+    opts: ViewOpts,
+    params: Params,
+    ret: Ret,
+    fn: F,
+    // The same primary-key guard as above.
+    ..._: ValidateViewPrimaryKey<Ret>
+  ): ViewExport<F>;
+  anonymousView<
+    Params extends ParamsObj,
+    Ret extends ViewReturnTypeBuilder,
+    F extends AnonymousViewFn<S, Params, Ret>,
+  >(opts: ViewOpts, ...args: [Ret, F] | [Params, Ret, F]): ViewExport<F> {
+    let params = {} as Params,
+      ret: Ret,
+      fn: F;
+    switch (args.length) {
+      case 2:
+        [ret, fn] = args;
+        break;
+      case 3:
+        [params, ret, fn] = args;
+        break;
+    }
+    return makeAnonViewExport<S, Params, Ret, F>(
+      this.#ctx,
+      opts,
+      params,
+      ret,
+      fn
+    );
   }
-
-  // TODO: re-enable once parameterized views are supported in SQL
-  // anonymousView<Ret extends ViewReturnTypeBuilder>(
-  //   opts: ViewOpts,
-  //   ret: Ret,
-  //   fn: AnonymousViewFn<S, {}, Ret>
-  // ): void;
-  // anonymousView<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
-  //   opts: ViewOpts,
-  //   params: Params,
-  //   ret: Ret,
-  //   fn: AnonymousViewFn<S, {}, Ret>
-  // ): void;
-  // anonymousView<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
-  //   opts: ViewOpts,
-  //   paramsOrRet: Ret | Params,
-  //   retOrFn: AnonymousViewFn<S, {}, Ret> | Ret,
-  //   maybeFn?: AnonymousViewFn<S, Params, Ret>
-  // ): void {
-  //   if (typeof retOrFn === 'function') {
-  //     defineView(name, true, {}, paramsOrRet as Ret, retOrFn);
-  //   } else {
-  //     defineView(name, true, paramsOrRet as Params, retOrFn, maybeFn!);
-  //   }
-  // }
 
   procedure<Params extends ParamsObj, Ret extends TypeBuilder<any, any>>(
     params: Params,
@@ -965,6 +1006,13 @@ export function schema<
         tableSourceNames.push(tableDef.sourceName);
       }
       ctx.moduleDef.tables.push(tableDef);
+      if (table.outbox) {
+        ctx.moduleDef.outboxes.push({
+          ...table.outbox,
+          tableName: tableDef.sourceName,
+          onResultReducer: undefined,
+        });
+      }
       if (table.schedule) {
         ctx.pendingSchedules.push({
           table,

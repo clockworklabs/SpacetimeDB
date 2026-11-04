@@ -495,13 +495,15 @@ fn get_call_view_anon(store: &mut Store<WasmInstanceEnv>, instance: &Instance) -
 /// Similar to [`get_call_procedure`], but for HTTP handlers.
 fn get_call_http_handler(store: &mut Store<WasmInstanceEnv>, instance: &Instance) -> Option<CallHttpHandlerType> {
     let export = instance.get_export(store.as_context_mut(), CALL_HTTP_HANDLER_DUNDER)?;
-    Some(
-        export
-            .into_func()
-            .unwrap_or_else(|| panic!("{CALL_HTTP_HANDLER_DUNDER} export is not a function"))
-            .typed(store)
-            .unwrap_or_else(|err| panic!("{CALL_HTTP_HANDLER_DUNDER} export is a function with incorrect type: {err}")),
-    )
+    let func = export
+        .into_func()
+        .unwrap_or_else(|| panic!("{CALL_HTTP_HANDLER_DUNDER} export is not a function"));
+    Some(match func.typed(&*store) {
+        Ok(func) => CallHttpHandlerType::WithSender(func),
+        Err(_) => CallHttpHandlerType::WithoutSender(func.typed(store).unwrap_or_else(|err| {
+            panic!("{CALL_HTTP_HANDLER_DUNDER} export is a function with incorrect type: {err}")
+        })),
+    })
 }
 
 // `__call_procedure__` takes the same arguments as `__call_reducer__`.
@@ -568,8 +570,44 @@ pub(super) type CallViewAnonType = TypedFunc<
     i32,
 >;
 
+/// The `__call_http_handler__` export, in either of its signatures.
+pub(super) enum CallHttpHandlerType {
+    WithSender(CallHttpHandlerWithSenderType),
+    /// Modules built with libraries from before HTTP handlers had a sender export this signature.
+    WithoutSender(CallHttpHandlerWithoutSenderType),
+}
+
 /// The function signature of `__call_http_handler__`
-pub(super) type CallHttpHandlerType = TypedFunc<
+pub(super) type CallHttpHandlerWithSenderType = TypedFunc<
+    (
+        // HttpHandlerId
+        u32,
+        // sender_0
+        u64,
+        // sender_1
+        u64,
+        // sender_2
+        u64,
+        // sender_3
+        u64,
+        // byte source id for the sender's JWT payload
+        u32,
+        // timestamp
+        u64,
+        // byte source id for request metadata
+        u32,
+        // byte source id for request body
+        u32,
+        // byte sink id for response metadata
+        u32,
+        // byte sink id for response body
+        u32,
+    ),
+    i32,
+>;
+
+/// The function signature of `__call_http_handler__` without a sender.
+pub(super) type CallHttpHandlerWithoutSenderType = TypedFunc<
     (
         // HttpHandlerId
         u32,
@@ -861,19 +899,49 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             return (res, None);
         };
 
-        let call_result = call_http_handler
-            .call_async(
-                &mut *store,
-                (
-                    op.id.0,
-                    op.timestamp.to_micros_since_unix_epoch() as u64,
-                    request_source.0,
-                    request_body_source.0,
-                    response_sink,
-                    response_body_sink,
-                ),
-            )
-            .await;
+        let timestamp = op.timestamp.to_micros_since_unix_epoch() as u64;
+        let call_result = match call_http_handler {
+            CallHttpHandlerType::WithSender(call_http_handler) => {
+                let [sender_0, sender_1, sender_2, sender_3] = prepare_identity_for_call(op.caller_identity);
+                let sender_jwt_source = store
+                    .data_mut()
+                    .create_extra_bytes_source(op.caller_jwt_payload.into_boxed_bytes().into())
+                    .expect("failed to register http handler sender jwt");
+                call_http_handler
+                    .call_async(
+                        &mut *store,
+                        (
+                            op.id.0,
+                            sender_0,
+                            sender_1,
+                            sender_2,
+                            sender_3,
+                            sender_jwt_source.0,
+                            timestamp,
+                            request_source.0,
+                            request_body_source.0,
+                            response_sink,
+                            response_body_sink,
+                        ),
+                    )
+                    .await
+            }
+            CallHttpHandlerType::WithoutSender(call_http_handler) => {
+                call_http_handler
+                    .call_async(
+                        &mut *store,
+                        (
+                            op.id.0,
+                            timestamp,
+                            request_source.0,
+                            request_body_source.0,
+                            response_sink,
+                            response_body_sink,
+                        ),
+                    )
+                    .await
+            }
+        };
 
         store.data_mut().terminate_dangling_anon_tx();
 

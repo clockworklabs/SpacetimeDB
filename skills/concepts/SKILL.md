@@ -99,6 +99,24 @@ Server-side modules can be written in: Rust, C#, TypeScript, C++
 
 Lifecycle: Write → Compile → Publish (`spacetime publish`) → Hot-swap (republish without disconnecting clients)
 
+## Reusable Modules and Configuration
+
+TypeScript and C# support same-language submodule composition. A namespace has a language accessor and a canonical database name; SQL, CLI calls, and HTTP calls use the canonical name. Changing the canonical namespace drops its tables and their data, so pin it when renaming an accessor. TypeScript supports nested submodules; C# composition requires 2.13+ with .NET 10/C# 14, and nested or repeated C# mounts require 2.14+. See the respective server skills for registration and helper-context rules.
+
+Database environment values are read-only strings, including secrets, supplied at publish time, not process environment variables. Keys are exact and case-sensitive: declare every key module code reads; undeclared reads fail even if a value is stored. Required declarations need values before initialization/migration; optional declarations permit absence. Publishing preserves unspecified values; environment-only publishing changes configuration without replacing the module. Transactional reads share a snapshot. In TypeScript/C#, named submodules cannot declare their own environment or read the root environment through host-dispatched entry points; ordinary helper calls retain the caller's access. C# dependencies registered in `public` instead contribute to the root schema. Do not return or log secrets; private storage does not prevent module code from exposing them.
+
+## Views with Arguments and Module Tests
+
+Views can accept arguments in 2.13+ (Rust, TypeScript, C#), queried as `SELECT * FROM view_name(42)`. Use explicit queries instead of subscribe-all on that connection; subscribe-all skips these views. See server skills for definition restrictions and client skills for query/cache rules.
+
+Rust and TypeScript provide in-memory module unit-test harnesses in 2.12+: run native `cargo test` or Vitest with the module-test plugin. These use the real datastore but do not simulate clients, subscriptions, RLS enforcement, lifecycle events, or timer execution. Test those host behaviors against a running database.
+
+## Inter-Database Communication
+
+Reducers can't make network requests, but a reducer can call a reducer in another database on the same server through an **outbox table** (async IDC). The reducer inserts a row, and after its transaction commits, the row is delivered as a reducer call to the target database exactly once, in order with other calls through the same outbox to the same database. The sending reducer doesn't wait, and the two databases don't commit together: the receiving reducer runs later in its own transaction and can fail. An optional `on_result` reducer in the sending database receives the result, so it can undo or record the work.
+
+Use it to split an application into databases that scale and deploy independently, such as a lobby that sends players to separate game world databases. Only Rust and TypeScript modules can declare outbox tables. See the language-specific server skills for syntax.
+
 ## Identity
 
 - **Identity**: A long-lived, globally unique identifier for a user, derived from the token's issuer and subject claims. The same token yields the same identity on every connection.

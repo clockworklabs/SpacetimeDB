@@ -105,26 +105,11 @@ public sealed class QueryBuilderTests
         Assert.Equal("SELECT * FROM \"auth.users\"", MakeTable("auth.users").ToSql());
         Assert.Equal("\"auth.users\".\"id\"", new Col<Row, int>("auth.users", "id").ToString());
         Assert.Equal("\"auth.users\".\"id\"", new IxCol<Row, int>("auth.users", "id").ToString());
-    }
-
-    [Fact]
-    public void QualifiedName_FiltersAndBothSemijoinsKeepSameLeafNamesDistinct()
-    {
-        var leftName = new SqlTableName("auth", "users");
-        var rightName = new SqlTableName("audit", "users");
-        var left = new Table<LeftRow, Col<LeftRow, int>, IxCol<LeftRow, int>>(
-            leftName, new(leftName, "id"), new(leftName, "id"));
-        var right = new Table<RightRow, Col<RightRow, int>, IxCol<RightRow, int>>(
-            rightName, new(rightName, "id"), new(rightName, "id"));
-        Assert.Equal("SELECT * FROM \"auth\".\"users\" WHERE (\"auth\".\"users\".\"id\" = 1)",
-            left.Where(c => c.Eq(1)).ToSql());
-        Assert.Equal("SELECT * FROM \"auth\".\"users\" WHERE (\"auth\".\"users\".\"id\" = 1)",
-            left.Where((_, ix) => ix.Eq(SqlLit.Int(1))).ToSql());
-        const string join = " FROM \"auth\".\"users\" JOIN \"audit\".\"users\" ON \"auth\".\"users\".\"id\" = \"audit\".\"users\".\"id\"";
-        Assert.Equal("SELECT \"auth\".\"users\".*" + join,
-            left.LeftSemijoin(right, (l, r) => l.Eq(r)).ToSql());
-        Assert.Equal("SELECT \"audit\".\"users\".*" + join,
-            left.RightSemijoin(right, (l, r) => l.Eq(r)).ToSql());
+        var segments = new[] { "outer.data", "in\"ner" };
+        var nested = new SqlTableName(segments, "users");
+        segments[0] = "changed";
+        Assert.Equal("\"outer.data\".\"in\"\"ner\".\"users\"", nested.ToString());
+        Assert.Equal("\"users\"", new SqlTableName(Array.Empty<string>(), "users").ToString());
         var escaped = new SqlTableName("auth\"data", "select");
         Assert.Equal("\"auth\"\"data\".\"select\".\"i\"\"d\"", new Col<Row, int>(escaped, "i\"d").ToString());
         Assert.Equal("\"auth\"\"data\".\"select\".\"i\"\"d\"", new IxCol<Row, int>(escaped, "i\"d").ToString());

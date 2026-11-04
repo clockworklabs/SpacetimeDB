@@ -89,4 +89,5 @@ cargo spacetime generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/p
 
 if [ -z "$DOTNET_VERSION" ] || [ "$DOTNET_VERSION" = "10" ]; then
     cargo spacetime generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/namespaces/module_bindings" --module-path "$STDB_PATH/modules/namespace-test-cs" --build-options="--dotnet-version 10"
+    cargo spacetime generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/nested-namespaces/module_bindings" --module-path "$STDB_PATH/modules/nested-namespace-test-cs" --build-options="--dotnet-version 10"
 fi

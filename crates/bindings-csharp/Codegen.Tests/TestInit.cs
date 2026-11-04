@@ -72,7 +72,8 @@ static class TestInit
                 // Write location only when we don't have the source code snippet to make snapshots more stable.
                 writer.WriteMember(diag, diag.Location, nameof(diag.Location));
             }
-            writer.WriteMember(diag, diag.GetMessage(), "Message");
+            // Roslyn can include source paths in messages; keep snapshots portable across OSes.
+            writer.WriteMember(diag, diag.GetMessage().Replace('\\', '/'), "Message");
             writer.WriteMember(diag, diag.Severity, nameof(diag.Severity));
             writer.WriteMember(diag, diag.Descriptor, nameof(diag.Descriptor));
             writer.WriteEndObject();

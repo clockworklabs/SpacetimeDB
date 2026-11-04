@@ -102,6 +102,8 @@ extern "C" {
     STDB_EXPORT(__call_http_handler__)
     int16_t __call_http_handler__(
         uint32_t id,
+        uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
+        SpacetimeDB::BytesSource sender_jwt,
         uint64_t timestamp_microseconds,
         SpacetimeDB::BytesSource request_source,
         SpacetimeDB::BytesSource request_body_source,
@@ -110,6 +112,8 @@ extern "C" {
     ) {
         return SpacetimeDB::Internal::Module::__call_http_handler__(
             id,
+            sender_0, sender_1, sender_2, sender_3,
+            sender_jwt,
             timestamp_microseconds,
             request_source,
             request_body_source,

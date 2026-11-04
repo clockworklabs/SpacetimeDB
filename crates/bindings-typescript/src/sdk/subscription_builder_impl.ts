@@ -148,12 +148,15 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
    * on a `DbConnection` that has previously used `subscribeToAllTables`,
    * or vice versa, may misbehave in any number of ways,
    * including dropping subscriptions, corrupting the client cache, or throwing errors.
+   *
+   * Views that take arguments are left out, as there are no arguments to pass them.
    */
   subscribeToAllTables(): void {
     const remoteModule = this.db[INTERNAL_REMOTE_MODULE]();
-    const queries = Object.values(remoteModule.tables).map(
-      table => `SELECT * FROM ${table.sourceName}`
-    );
+    const viewsWithArgs = new Set(remoteModule.viewsWithArgs);
+    const queries = Object.values(remoteModule.tables)
+      .filter(table => !viewsWithArgs.has(table.sourceName))
+      .map(table => `SELECT * FROM ${table.sourceName}`);
     this.subscribe(queries);
   }
 }

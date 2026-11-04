@@ -187,7 +187,7 @@ class AuthCtxImpl implements AuthCtx {
     if (this._initializedJWT) return;
     this._initializedJWT = true;
 
-    const token = this._jwtSource();
+    const token = this.isInternal ? null : this._jwtSource();
     if (!token) {
       this._jwtClaims = null;
     } else {
@@ -218,38 +218,21 @@ class AuthCtxImpl implements AuthCtx {
     });
   }
 
-  /** Create a context for an HTTP request, which has no connection but is not host-originated. */
-  static httpRequest(): AuthCtx {
-    return new AuthCtxImpl({
-      isInternal: false,
-      jwtSource: () => null,
-      senderIdentity: Identity.zero(),
-    });
-  }
-
   /**
-   * If there is a connection id, look up the JWT payload from the system tables.
-   * A call without one was spawned by the database, such as `init` or a scheduled function.
+   * Create the context of an invocation by `sender`,
+   * which is internal when `sender` is this database,
+   * and otherwise reads the JWT payload from `jwtPayload` on first use.
    */
-  static fromBackend(
-    connectionId: ConnectionId | null,
+  static forSender(
     sender: Identity,
-    backend: DatastoreBackend
+    databaseIdentity: Identity,
+    jwtPayload: () => Uint8Array | null
   ): AuthCtx {
-    if (connectionId === null) {
-      return new AuthCtxImpl({
-        isInternal: true,
-        jwtSource: () => null,
-        senderIdentity: sender,
-      });
-    }
     return new AuthCtxImpl({
-      isInternal: false,
+      isInternal: sender.isEqual(databaseIdentity),
       jwtSource: () => {
-        const payloadBuf = backend.getJwtPayload(
-          connectionId.__connection_id__
-        );
-        if (payloadBuf.length === 0) return null;
+        const payloadBuf = jwtPayload();
+        if (payloadBuf === null || payloadBuf.length === 0) return null;
         const payloadStr = new TextDecoder().decode(payloadBuf);
         return payloadStr;
       },
@@ -257,12 +240,31 @@ class AuthCtxImpl implements AuthCtx {
     });
   }
 
+  /** If there is a connection id, look up the JWT payload from the system tables. */
+  static fromBackend(
+    connectionId: ConnectionId | null,
+    sender: Identity,
+    databaseIdentity: Identity,
+    backend: DatastoreBackend
+  ): AuthCtx {
+    return AuthCtxImpl.forSender(sender, databaseIdentity, () =>
+      connectionId === null
+        ? null
+        : backend.getJwtPayload(connectionId.__connection_id__)
+    );
+  }
+
   /** If there is a connection id, look up the JWT payload from the host system tables. */
   static fromSystemTables(
     connectionId: ConnectionId | null,
     sender: Identity
   ): AuthCtx {
-    return AuthCtxImpl.fromBackend(connectionId, sender, hostBackend);
+    return AuthCtxImpl.fromBackend(
+      connectionId,
+      sender,
+      new Identity(hostBackend.identity()),
+      hostBackend
+    );
   }
 }
 
@@ -369,13 +371,6 @@ export const ReducerCtxImpl = class ReducerCtx<
     }
   }
 
-  /** A transaction inside an HTTP handler, which reports external authority. */
-  static forHttpHandler(timestamp: Timestamp, dbView: DbView<any>) {
-    const tx = new ReducerCtx<any>(Identity.zero(), timestamp, null, dbView);
-    tx.#senderAuth = AuthCtxImpl.httpRequest();
-    return tx;
-  }
-
   get databaseIdentity() {
     return (this.#identity ??= new Identity(this.#backend.identity()));
   }
@@ -388,6 +383,7 @@ export const ReducerCtxImpl = class ReducerCtx<
     return (this.#senderAuth ??= AuthCtxImpl.fromBackend(
       this.connectionId,
       this.sender,
+      this.databaseIdentity,
       this.#backend
     ));
   }
@@ -553,7 +549,13 @@ class ModuleHooksImpl implements ModuleHooks {
     const rootTables = Object.values(this.#schema.schemaType.tables).map(
       table => [
         table.accessorName,
-        makeTableView(this.#schema.typespace, table.tableDef),
+        makeTableView(
+          this.#schema.typespace,
+          table.tableDef,
+          hostBackend,
+          '',
+          table.isOutbox
+        ),
       ]
     );
     const submoduleNs = this.#schema.submoduleDispatchInfos.map(dispatch => [
@@ -572,7 +574,13 @@ class ModuleHooksImpl implements ModuleHooks {
       Object.fromEntries(
         m.tables.map(({ accessorName, tableDef }) => [
           accessorName,
-          makeTableView(m.typespace, tableDef, m.namePrefix),
+          makeTableView(
+            m.typespace,
+            tableDef,
+            hostBackend,
+            m.namePrefix,
+            m.schemaTables[accessorName].isOutbox
+          ),
         ])
       ) as DbView<any>
     ));
@@ -838,12 +846,16 @@ class ModuleHooksImpl implements ModuleHooks {
     id: u32,
     timestamp: bigint,
     request: Uint8Array,
-    body: Uint8Array
+    body: Uint8Array,
+    sender: u256,
+    senderJwt: Uint8Array
   ): [response: Uint8Array, body: Uint8Array] {
     const moduleCtx = this.#schema;
     const handler = moduleCtx.httpHandlers[id];
     const ctx = new HandlerContextImpl(
+      new Identity(sender),
       new Timestamp(timestamp),
+      senderJwt,
       () => this.#dbView,
       this.#schema.submoduleDispatchInfos
     );
@@ -870,6 +882,8 @@ class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
 {
   readonly env = environment as EnvironmentFor<S>;
   #identity: Identity | undefined;
+  #senderJwt: Uint8Array;
+  #senderAuth: AuthCtx | undefined;
   #uuidCounter: { value: number } | undefined;
   #random: Random | undefined;
   #dbView: () => DbView<any>;
@@ -879,12 +893,24 @@ class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
   readonly http = httpClient;
 
   constructor(
+    readonly sender: Identity,
     readonly timestamp: Timestamp,
+    senderJwt: Uint8Array,
     dbView: () => DbView<any>,
     dispatches: SubmoduleDispatchInfo[] = []
   ) {
+    this.#senderJwt = senderJwt;
     this.#dbView = dbView;
     this.#dispatches = dispatches;
+  }
+
+  /** The `AuthCtx` of `me.sender`, which the transactions that `me` opens share. */
+  static senderAuth(me: HandlerContextImpl): AuthCtx {
+    return (me.#senderAuth ??= AuthCtxImpl.forSender(
+      me.sender,
+      me.identity,
+      () => me.#senderJwt
+    ));
   }
 
   get identity() {
@@ -906,7 +932,14 @@ class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
   withTx<T>(body: (ctx: any) => T): T {
     const dispatches = this.#dispatches;
     return runWithTx(timestamp => {
-      const tx = ReducerCtxImpl.forHttpHandler(timestamp, this.#dbView());
+      const tx = new ReducerCtxImpl(
+        this.sender,
+        timestamp,
+        null,
+        this.#dbView(),
+        hostBackend,
+        HandlerContextImpl.senderAuth(this)
+      );
       if (dispatches.length > 0) {
         tx.as = buildAliasCtxMap(tx, dispatches, '') as any;
       }
@@ -932,7 +965,13 @@ function buildDbViewForDispatch(
 ): object {
   const tableEntries = dispatch.tables.map(({ accessorName, tableDef }) => [
     accessorName,
-    makeTableView(dispatch.typespace, tableDef, namePrefix),
+    makeTableView(
+      dispatch.typespace,
+      tableDef,
+      hostBackend,
+      namePrefix,
+      dispatch.schemaTables[accessorName].isOutbox
+    ),
   ]);
   const subNsEntries = dispatch.subDispatches.map(sub => [
     sub.namespace,
@@ -1010,6 +1049,9 @@ function buildHandlerAliasCtx(
     namePrefix
   );
   return {
+    get sender() {
+      return parent.sender;
+    },
     get timestamp() {
       return parent.timestamp;
     },
@@ -1025,12 +1067,16 @@ function buildHandlerAliasCtx(
     as: subAs,
     withTx(body: any) {
       return runWithTx((ts: Timestamp) => {
-        const tx = ReducerCtxImpl.forHttpHandler(
+        const tx = new ReducerCtxImpl(
+          parent.sender,
           ts,
+          null,
           (nsDb_ ??= buildDbViewForDispatch(
             dispatch,
             namePrefix
-          ) as DbView<any>)
+          ) as DbView<any>),
+          hostBackend,
+          HandlerContextImpl.senderAuth(parent)
         );
         assignTxAliasViews(tx, dispatch.subDispatches, namePrefix);
         return tx;
@@ -1163,11 +1209,15 @@ export function assignTxAliasViews(
   }
 }
 
+// TODO: Return OutboxTable when building an outbox, since it has no delete or clear.
+// This doesn't affect ctx.db: DbView gets its types from the schema's isOutbox
+// flag, rather than this function's return type.
 export function makeTableView(
   typespace: Typespace,
   table: RawTableDefV10,
   backendOrNamePrefix: DatastoreBackend | string = hostBackend,
-  namePrefix = ''
+  namePrefix = '',
+  isOutbox = false
 ): Table<any> {
   const backend = isDatastoreBackend(backendOrNamePrefix)
     ? backendOrNamePrefix
@@ -1295,6 +1345,13 @@ export function makeTableView(
     Object.create(null),
     tableMethods
   ) as Table<any>;
+
+  if (isOutbox) {
+    // OutboxTable hides these methods from TypeScript. Remove them here so
+    // JavaScript callers can't use them either.
+    Reflect.deleteProperty(tableView, 'delete');
+    Reflect.deleteProperty(tableView, 'clear');
+  }
 
   for (const indexDef of table.indexes) {
     const accessorName = indexDef.accessorName!;
@@ -1635,6 +1692,12 @@ export function makeTableView(
           }
         },
       } as RangedIndex<any, any>;
+    }
+
+    if (isOutbox) {
+      // Outbox indexes must also prevent deletes and updates at runtime.
+      Reflect.deleteProperty(index, 'delete');
+      Reflect.deleteProperty(index, 'update');
     }
 
     // IMPORTANT: duplicate accessor handling.

@@ -1,6 +1,11 @@
 import { ConnectionId } from './connection_id';
 import { Identity } from './identity';
-import type { ColumnIndex, IndexColumns, IndexOpts } from './indexes';
+import type {
+  ColumnIndex,
+  IndexColumns,
+  IndexOpts,
+  UnbrandedIdentity,
+} from './indexes';
 import type { UntypedSchemaDef } from './schema';
 import type { UntypedTableDef } from './table';
 import type { UntypedTableSchema } from './table_schema';
@@ -521,7 +526,7 @@ export class ColumnExpression<
   }
 
   eq(
-    literal: LiteralValue & RowType<TableDef>[ColumnName]
+    literal: LiteralValue & UnbrandedIdentity<RowType<TableDef>[ColumnName]>
   ): BooleanExpr<TableDef>;
   eq<OtherCol extends ColumnExpr<any, any>>(
     value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
@@ -536,7 +541,7 @@ export class ColumnExpression<
   }
 
   ne(
-    literal: LiteralValue & RowType<TableDef>[ColumnName]
+    literal: LiteralValue & UnbrandedIdentity<RowType<TableDef>[ColumnName]>
   ): BooleanExpr<TableDef>;
   ne<OtherCol extends ColumnExpr<any, any>>(
     value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
@@ -551,7 +556,7 @@ export class ColumnExpression<
   }
 
   lt(
-    literal: LiteralValue & RowType<TableDef>[ColumnName]
+    literal: LiteralValue & UnbrandedIdentity<RowType<TableDef>[ColumnName]>
   ): BooleanExpr<TableDef>;
   lt<OtherCol extends ColumnExpr<any, any>>(
     value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
@@ -566,7 +571,7 @@ export class ColumnExpression<
   }
 
   lte(
-    literal: LiteralValue & RowType<TableDef>[ColumnName]
+    literal: LiteralValue & UnbrandedIdentity<RowType<TableDef>[ColumnName]>
   ): BooleanExpr<TableDef>;
   lte<OtherCol extends ColumnExpr<any, any>>(
     value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
@@ -581,7 +586,7 @@ export class ColumnExpression<
   }
 
   gt(
-    literal: LiteralValue & RowType<TableDef>[ColumnName]
+    literal: LiteralValue & UnbrandedIdentity<RowType<TableDef>[ColumnName]>
   ): BooleanExpr<TableDef>;
   gt<OtherCol extends ColumnExpr<any, any>>(
     value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
@@ -596,7 +601,7 @@ export class ColumnExpression<
   }
 
   gte(
-    literal: LiteralValue & RowType<TableDef>[ColumnName]
+    literal: LiteralValue & UnbrandedIdentity<RowType<TableDef>[ColumnName]>
   ): BooleanExpr<TableDef>;
   gte<OtherCol extends ColumnExpr<any, any>>(
     value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
