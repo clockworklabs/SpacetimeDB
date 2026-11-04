@@ -11,10 +11,5 @@
     "src/server/**/*",
     "test-app/**/*"
   ],
-  "exclude": [
-    "node_modules",
-    "dist/**/*",
-    "src/svelte/**/*",
-    "src/vue/**/*"
-  ]
+  "exclude": ["node_modules", "dist/**/*", "src/svelte/**/*", "src/vue/**/*"]
 }

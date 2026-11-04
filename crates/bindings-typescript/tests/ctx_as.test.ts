@@ -2,18 +2,15 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 const lookedUpTables = vi.hoisted(() => [] as string[]);
 
-vi.mock(
-  'spacetime:sys@2.0',
-  () => ({
-    moduleHooks: Symbol('moduleHooks'),
-    table_id_from_name: (name: string) => {
-      lookedUpTables.push(name);
-      return 1;
-    },
-    index_id_from_name: () => 1,
-    row_iter_bsatn_close: () => {},
-  })
-);
+vi.mock('spacetime:sys@2.0', () => ({
+  moduleHooks: Symbol('moduleHooks'),
+  table_id_from_name: (name: string) => {
+    lookedUpTables.push(name);
+    return 1;
+  },
+  index_id_from_name: () => 1,
+  row_iter_bsatn_close: () => {},
+}));
 
 describe('ctx.as alias proxy', () => {
   let schema: typeof import('../src/server/schema').schema;

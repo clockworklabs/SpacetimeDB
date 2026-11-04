@@ -1,12 +1,9 @@
 import type { RawModuleDefV10 } from '../src/lib/autogen/types';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
-vi.mock(
-  'spacetime:sys@2.0',
-  () => ({
-    moduleHooks: Symbol('moduleHooks'),
-  })
-);
+vi.mock('spacetime:sys@2.0', () => ({
+  moduleHooks: Symbol('moduleHooks'),
+}));
 
 vi.mock('../src/server/runtime', () => ({
   makeHooks: () => ({}),
