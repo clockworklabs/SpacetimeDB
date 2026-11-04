@@ -1,14 +1,11 @@
-import spacetimedb from '../test-app/src/module_bindings/declarations';
 import BinaryWriter from '../src/lib/binary_writer';
 import { Identity } from '../src/lib/identity';
 import type { Infer } from '../src/lib/type_builders';
 import { RowSizeHint, TableUpdateRows } from '../src/sdk/client_api/types';
-
-import { Point } from '../test-app/src/module_bindings/declarations';
-
-const PlayerRow = spacetimedb.entries.player.rowType;
-const UnindexedPlayerRow = spacetimedb.entries.unindexedPlayer.rowType;
-const UserRow = spacetimedb.entries.user.rowType;
+import PlayerRow from '../test-app/src/module_bindings/player_table';
+import { Point } from '../test-app/src/module_bindings/types';
+import UnindexedPlayerRow from '../test-app/src/module_bindings/unindexed_player_table';
+import UserRow from '../test-app/src/module_bindings/user_table';
 
 export const anIdentity = Identity.fromString(
   '0000000000000000000000000000000000000000000000000000000000000069'

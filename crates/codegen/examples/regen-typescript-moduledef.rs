@@ -41,14 +41,6 @@ fn main() -> anyhow::Result<()> {
     [typescript::TypeScript.generate_type_declarations(&module)]
         .into_iter()
         .try_for_each(|OutputFile { filename, code }| {
-            // Only type declarations are needed here.
-            if filename == "index.ts" || filename == "declarations.ts" {
-                return Ok(());
-            }
-            // We don't need the convenience types.
-            if filename.starts_with("types/") {
-                return Ok(());
-            }
             let code = regex_replace!(
                 &code,
                 r#"from ['"]spacetimedb(?:/schema)?['"];"#,

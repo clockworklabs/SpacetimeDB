@@ -9,5 +9,5 @@
     "module": "ESNext",
     "moduleResolution": "Bundler"
   },
-  "files": ["app.ts", "declarations.ts"]
+  "files": ["app.ts", "declarations.ts", "declarations-browser.ts"]
 }

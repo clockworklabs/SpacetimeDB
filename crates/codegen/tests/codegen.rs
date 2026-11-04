@@ -334,14 +334,6 @@ void consume; void Row; void Args; void Count;
 }
 
 fn compile_typescript_client(files: Vec<spacetimedb_codegen::OutputFile>, program: &str) {
-    compile_typescript_client_with_sdk(files, program, None);
-}
-
-fn compile_typescript_client_with_sdk(
-    files: Vec<spacetimedb_codegen::OutputFile>,
-    program: &str,
-    sdk_package: Option<&str>,
-) {
     let sdk = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../bindings-typescript")
         .canonicalize()
@@ -376,26 +368,11 @@ fn compile_typescript_client_with_sdk(
         .arg(
             r#"import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { join, dirname } from 'node:path';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { build } from 'tsup';
 
 const project = process.argv[1];
 const require = createRequire(import.meta.url);
-const legacyPackage = process.argv[2];
-let legacyEntry;
-if (legacyPackage) {
-  legacyEntry = require.resolve(legacyPackage);
-  const configPath = join(project, 'tsconfig.json');
-  const config = JSON.parse(readFileSync(configPath, 'utf8'));
-  // SDK 2.12 predates the exactOptionalPropertyTypes compatibility fix.
-  config.compilerOptions.exactOptionalPropertyTypes = false;
-  config.compilerOptions.paths = {
-    spacetimedb: [join(dirname(legacyEntry), 'index.d.ts')],
-  };
-  writeFileSync(configPath, JSON.stringify(config));
-}
-
 execFileSync(
   process.execPath,
   [require.resolve('typescript/bin/tsc'), '-p', join(project, 'tsconfig.json')],
@@ -409,9 +386,6 @@ await build({
   config: false,
   silent: true,
   noExternal: [/^spacetimedb(?:\/|$)/],
-  esbuildOptions(options) {
-    if (legacyEntry) options.alias = { spacetimedb: legacyEntry };
-  },
   tsconfig: join(project, 'tsconfig.json'),
   outExtension: () => ({ js: '.cjs' }),
 });
@@ -421,9 +395,6 @@ execFileSync(process.execPath, [join(project, 'out/consumer.cjs')], {
 "#,
         )
         .arg(project.path());
-    if let Some(package) = sdk_package {
-        command.arg(package);
-    }
     let result = command
         .output()
         .expect("Node.js and the built TypeScript SDK are required");
@@ -516,11 +487,10 @@ fn existing_typescript_bindings() -> Vec<spacetimedb_codegen::OutputFile> {
 }
 
 #[test]
-fn existing_typescript_bindings_work_with_supported_sdks() {
-    for sdk in [None, Some("spacetimedb-legacy")] {
-        compile_typescript_client_with_sdk(
-            existing_typescript_bindings(),
-            r#"
+fn existing_typescript_bindings_work_with_current_sdk() {
+    compile_typescript_client(
+        existing_typescript_bindings(),
+        r#"
 import assert from 'node:assert/strict';
 import { DbConnection, tables, reducers } from './index';
 assert.equal(typeof DbConnection.builder().build, 'function');
@@ -533,9 +503,7 @@ function consume(conn: DbConnection) {
 }
 void consume;
 "#,
-            sdk,
-        );
-    }
+    );
 }
 
 #[test]

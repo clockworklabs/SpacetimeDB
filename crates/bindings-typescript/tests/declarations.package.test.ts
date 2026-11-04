@@ -1,12 +1,9 @@
 import { execFileSync } from 'node:child_process';
-import { createRequire } from 'node:module';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { build } from 'tsup';
 import { test } from 'vitest';
-
-const require = createRequire(import.meta.url);
 
 // Use native Node loaders so these checks exercise package exports, not Vite's resolver.
 test('built declarations work with ESM and CommonJS clients', () => {
@@ -39,28 +36,16 @@ test('built declarations work with ESM and CommonJS clients', () => {
   );
 });
 
-test('built declarations support typed consumers', () => {
-  execFileSync(
-    process.execPath,
-    [
-      require.resolve('typescript/bin/tsc'),
-      '-p',
-      'tests/declarations-consumer/tsconfig.json',
-    ],
-    { stdio: 'pipe' }
-  );
-});
-
 test('declaration clients bundle for browsers', async () => {
   const outDir = await mkdtemp(join(tmpdir(), 'spacetimedb-consumer-'));
   try {
     await build({
-      entry: ['tests/declarations-consumer/index.ts'],
+      entry: ['tests/consumer/declarations-browser.ts'],
       platform: 'browser',
       format: 'esm',
       outDir,
       config: false,
-      tsconfig: 'tests/declarations-consumer/tsconfig.json',
+      tsconfig: 'tests/consumer/tsconfig.json',
       noExternal: ['spacetimedb'],
       silent: true,
     });

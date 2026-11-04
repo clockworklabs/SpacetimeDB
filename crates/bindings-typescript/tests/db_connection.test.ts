@@ -1,4 +1,3 @@
-import spacetimedb from '../test-app/src/module_bindings/declarations';
 import { assertType, beforeEach, describe, expect, test } from 'vitest';
 import {
   BinaryWriter,
@@ -17,8 +16,8 @@ import {
   DbConnection,
   DbConnectionBuilder,
 } from '../test-app/src/module_bindings';
-import { MyUserProceduralRow as MyUserProcedural } from '../test-app/src/module_bindings/declarations';
-
+import MyUserProcedural from '../test-app/src/module_bindings/my_user_procedural_table';
+import User from '../test-app/src/module_bindings/user_table';
 import {
   anIdentity,
   bobIdentity,
@@ -143,8 +142,6 @@ function makeReducerInternalErrorResult(requestId: number, error: string) {
     },
   });
 }
-
-const User = spacetimedb.entries.user.rowType;
 
 type MyUserViewRow = Infer<typeof MyUserProcedural>;
 
