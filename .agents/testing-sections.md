@@ -2,6 +2,8 @@
 
 A PR's testing section should explain what verification is happening and why it gives the reviewer confidence that the change works correctly and avoids bugs. Focus on how automated tests were extended or adapted, or why existing tests are sufficient. Manual tests and other verification also belong when they provide useful evidence. The reader should be able to judge that evidence without opening the tests.
 
+Explain why the evidence supports the intended outcome. List checks only when their relevance is clear. For documentation or instructions, consistency and working links alone do not establish effectiveness: describe evidence that the content helps readers accomplish its purpose, and identify important uncertainty.
+
 Brevity comes from removing unnecessary detail, not replacing concrete information with vague labels.
 
 ## Content
