@@ -1,18 +1,19 @@
 # Writing testing sections
 
-A PR's testing section should help a casual reviewer understand what protects the change from regressions. Describe the coverage so the reader can judge confidence without opening the tests.
+A PR's testing section should explain what verification is happening and why it gives the reviewer confidence that the change works correctly and avoids bugs. Focus on how automated tests were extended or adapted, or why existing tests are sufficient. Manual tests and other verification also belong when they provide useful evidence. The reader should be able to judge that evidence without opening the tests.
 
 Brevity comes from removing unnecessary detail, not replacing concrete information with vague labels.
 
 ## Content
 
 - Distinguish updated tests, added tests, and relevant existing coverage. Use short bullets; omit categories that don't apply.
-- Describe what each test verifies. Name the inputs or API when needed to make the claim clear: incorrect reducer arguments, generated bindings, or the built package.
+- Describe what each test or other check verifies. Name the inputs or API when needed to make the claim clear: incorrect reducer arguments, generated bindings, or the built package.
 - Explain what coverage the change adds. A new test may exercise previously tested behavior through a new path; don't imply the behavior was previously untested.
 - Make compatibility claims precise. The same client against old and new bindings is different from old bindings against a new SDK.
 - Include existing integration coverage when it helps explain why the change is covered. Inspect it before claiming coverage is missing or proposing more tests.
 - Write assuming CI passes. Don't include a running log of local test execution or say CI tests still need to be run for the PR. This does not justify claiming a known failure passes.
-- Mention missing coverage only when it is an important unresolved caveat. Don't routinely list what tests don't do.
+- Label manual verification as manual and state what was checked and the result.
+- Include important gaps in verification and explain why they could not or cannot be tested. Focus on gaps that affect confidence in the change, not a routine list of what tests don't do.
 
 ## Wording and detail
 
