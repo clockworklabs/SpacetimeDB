@@ -155,6 +155,9 @@ function mount(framework: string, initial: ConnectionState): MountedHook {
         get isActive() {
           return state().isActive;
         },
+        get isReconnecting() {
+          return state().isReconnecting;
+        },
         get connectionId() {
           return state().connectionId;
         },
@@ -232,6 +235,7 @@ function fixture(framework: string) {
   };
   const snapshot = (): ConnectionState => ({
     isActive: connection.isActive,
+    isReconnecting: connection.isReconnecting,
     connectionId: connection.connectionId,
     getConnection: () => connection,
   });

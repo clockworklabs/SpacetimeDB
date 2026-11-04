@@ -29,6 +29,7 @@ export function SpacetimeDBProvider<DbConnection extends DbConnectionImpl<any>>(
 
   const fallbackState: ManagerConnectionState = {
     isActive: false,
+    isReconnecting: false,
     identity: undefined,
     token: undefined,
     connectionId: ConnectionId.random(),
@@ -69,6 +70,9 @@ export function SpacetimeDBProvider<DbConnection extends DbConnectionImpl<any>>(
   const contextValue: ConnectionState = {
     get isActive() {
       return state.isActive;
+    },
+    get isReconnecting() {
+      return state.isReconnecting;
     },
     get identity() {
       return state.identity;

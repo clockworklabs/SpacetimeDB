@@ -48,6 +48,13 @@ import { ConnectionId } from '../lib/connection_id';
 /** Represents the current state of a managed connection. */
 export type ConnectionState = {
   isActive: boolean;
+  /**
+   * True while the SDK is retrying a dropped connection, from the drop until
+   * it reconnects or stops retrying. The connection, its client cache and its
+   * callbacks all survive this, so it can be told apart from a connection that
+   * is down for good.
+   */
+  isReconnecting: boolean;
   identity?: Identity;
   token?: string;
   connectionId: ConnectionId;
@@ -102,6 +109,7 @@ type ManagedConnection = {
 function defaultState(): ConnectionState {
   return {
     isActive: false,
+    isReconnecting: false,
     identity: undefined,
     token: undefined,
     connectionId: ConnectionId.random(),
@@ -171,6 +179,7 @@ class ConnectionManagerImpl {
       managed.reconnectAttempt = 0;
       this.#updateState(managed, {
         isActive: conn.isActive,
+        isReconnecting: false,
         identity: conn.identity,
         token: conn.token,
         connectionId: conn.connectionId,
@@ -189,6 +198,7 @@ class ConnectionManagerImpl {
       }
       this.#updateState(managed, {
         isActive: false,
+        isReconnecting: nextReconnectAttempt !== undefined,
         connectionError: error ?? undefined,
       });
       if (nextReconnectAttempt === undefined) {
@@ -202,6 +212,7 @@ class ConnectionManagerImpl {
       }
       this.#updateState(managed, {
         isActive: false,
+        isReconnecting: nextReconnectAttempt !== undefined,
         connectionError: error,
       });
       if (nextReconnectAttempt === undefined) {
@@ -254,6 +265,7 @@ class ConnectionManagerImpl {
 
     this.#updateState(managed, {
       isActive: connection.isActive,
+      isReconnecting: false,
       identity: connection.identity,
       token: connection.token,
       connectionId: connection.connectionId,
@@ -400,6 +412,7 @@ class ConnectionManagerImpl {
       // the caller can handle it.
       this.#updateState(managed, {
         isActive: false,
+        isReconnecting: false,
         connectionError:
           error instanceof Error ? error : new Error(String(error)),
       });
