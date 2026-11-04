@@ -12,4 +12,4 @@ TABLE
 
 REDUCERS
 - send_reminder: scheduled reducer triggered by reminder (receives a Reminder row, does nothing)
-- init: inserts one row into reminder, scheduling send_reminder to fire 60 seconds in the future using ScheduleAt::Time
+- init: when the module is first published, insert one row into reminder, scheduling send_reminder to fire 60 seconds in the future using ScheduleAt::Time

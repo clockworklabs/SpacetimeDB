@@ -9,5 +9,5 @@ TABLE
 
 REDUCERS
 - run_cleanup: scheduled reducer triggered by cleanup_job (receives a cleanup_job row argument, does nothing)
-- init: inserts one row into cleanup_job with a 60-second interval (60_000_000n microseconds)
+- init: when the module is first published, insert one row into cleanup_job with a 60-second interval (60_000_000n microseconds)
 - cancel_cleanup(ctx, { scheduledId: u64 }): deletes the cleanup_job row with the given scheduledId, canceling the pending scheduled call

@@ -12,8 +12,8 @@ pub fn spec() -> BenchmarkSpec {
             let (outsider, outsider_id) = s.new_user()?;
             s.expect_call_as(&owner, "set_document", json!(["first", "secret-one"]), None)?;
             s.rows_as(&reader, "visible_document", &["id", "title"], json!([]))?;
-            s.expect_call_as(&reader, "set_document", json!(["stolen", "leak"]), Some("owner only"))?;
-            s.expect_call_as(&reader, "set_access", json!([outsider_id, true]), Some("owner only"))?;
+            s.expect_rejected_as(&reader, "set_document", json!(["stolen", "leak"]), "owner only")?;
+            s.expect_rejected_as(&reader, "set_access", json!([outsider_id, true]), "owner only")?;
             let (code, _) = s.sql_as(
                 &reader,
                 &format!(

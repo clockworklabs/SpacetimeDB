@@ -12,4 +12,4 @@ TABLE
 
 REDUCERS
 - Tick: scheduled reducer triggered by TickTimer
-- Init: insert exactly one row into TickTimer that schedules a repeating interval of 50_000 microseconds
+- Init: when the module is first published, insert exactly one row into TickTimer that schedules a repeating interval of 50_000 microseconds

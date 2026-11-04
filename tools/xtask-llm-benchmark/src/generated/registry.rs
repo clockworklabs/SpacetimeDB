@@ -424,6 +424,12 @@ mod reducers_t_060_reducer_result_table {
 
 #[allow(dead_code)]
 #[allow(clippy::all)]
+mod reducers_t_102_caller_error_message {
+    include!("../benchmarks/reducers/t_102_caller_error_message/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
 mod schema_t_012_spacetime_product_type {
     include!("../benchmarks/schema/t_012_spacetime_product_type/spec.rs");
 }
@@ -653,6 +659,7 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         ("reducers", "t_058_batched_delete") => reducers_t_058_batched_delete::spec,
         ("reducers", "t_059_deterministic_context") => reducers_t_059_deterministic_context::spec,
         ("reducers", "t_060_reducer_result_table") => reducers_t_060_reducer_result_table::spec,
+        ("reducers", "t_102_caller_error_message") => reducers_t_102_caller_error_message::spec,
         ("schema", "t_012_spacetime_product_type") => schema_t_012_spacetime_product_type::spec,
         ("schema", "t_013_spacetime_sum_type") => schema_t_013_spacetime_sum_type::spec,
         ("schema", "t_014_elementary_columns") => schema_t_014_elementary_columns::spec,

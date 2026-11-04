@@ -14,4 +14,4 @@ Reducers (argument order is part of the contract):
 - capture_batch(after_id: u64, limit: u64): Reject limit outside 1..=10 with 'invalid limit'. Replace backfill_snapshot with at most limit legacy rows with id>after_id, ordered by id. Capture tombstones too. Do not modify source or destination.
 - apply_batch(): For each captured ID, reconcile item_v2 with the CURRENT authoritative legacy row, not the stale captured contents. Delete destination tombstones; upsert current live rows. Leave snapshots intact so retries are safe. Do not touch IDs outside the captured batch.
 
-Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged. When an operation fails with quoted text, the caller must receive that exact text.
+Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged.

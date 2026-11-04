@@ -9,4 +9,4 @@ Tables (the first field is the primary key):
 Reducers (argument order is part of the contract):
 - submit(request_id: String, units: i64): If request ID exists, identical owner+units returns success; otherwise fail 'request conflict'. For new IDs, require nonempty request ID and units>0 ('invalid request'). Require used+units<=3 ('quota exceeded'), starting at used=0. Insert request and update quota atomically.
 
-Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged. When an operation fails with quoted text, the caller must receive that exact text.
+Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged.

@@ -12,4 +12,4 @@ Reducers (argument order is part of the contract):
 - cancel(Id: ulong): Missing or already cancelled is a no-op. Otherwise increment generation and set cancelled. Do not delete scheduled jobs.
 
 ExpiryJob has an auto-increment primary key and schedules expire_reservation(job: ExpiryJob). The callback checks scheduler identity first. It sets expired only if the current reservation is active and has the job's generation. Insert exactly one ExpiryResult per executed job with whether it changed the reservation. If the job already has a result, do nothing. Never trust externally supplied callback arguments.
-Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged. When an operation fails with quoted text, the caller must receive that exact text.
+Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged.

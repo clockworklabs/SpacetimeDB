@@ -303,10 +303,12 @@ impl Scenario {
         }
     }
 
-    /// Require the contract's error text. Transport errors and missing reducers must not pass.
+    /// A panic or plain exception counts as a rejection. Transport errors and missing reducers must not pass.
     pub fn reject(&self, reducer: &str, args: Value, expected: &str) -> Result<()> {
         match self.call_result(reducer, &args) {
-            Err(error) if error.contains("(530") && error.contains(expected) => Ok(()),
+            Err(error) if error.contains("(530") && (error.contains(expected) || error.contains("fatal error")) => {
+                Ok(())
+            }
             actual => bail!("{reducer}({args}): expected error {expected:?}, got {actual:?}"),
         }
     }

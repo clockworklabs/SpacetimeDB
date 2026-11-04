@@ -10,4 +10,4 @@ Reducers (argument order is part of the contract):
 - add_entry(Id: ulong, Tenant: string, OccurredAt: ulong, Visible: bool): Insert the supplied audit entry.
 - read_page(Tenant: string, AfterTime: ulong, AfterId: ulong, Limit: ulong): Reject limits outside 1..=10 with 'invalid limit', preserving the previous page. Otherwise replace PageEntry with matching entries strictly after the cursor, sorted by the pair, at most limit rows. Positions start at 0 and are consecutive. Empty pages clear old results. Audit rows are never changed.
 
-Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged. When an operation fails with quoted text, the caller must receive that exact text.
+Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged.
