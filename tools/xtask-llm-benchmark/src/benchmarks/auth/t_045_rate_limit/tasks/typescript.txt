@@ -18,6 +18,6 @@ REDUCERS
 - limited_action(ctx, { payload: string })
   - Get the current time in microseconds
   - Look up the rate_limit row for the caller's identity
-  - If a row exists and (now - last_call_us) < 1_000_000n, throw "rate limited"
+  - If a row exists and (now - last_call_us) < 1_000_000n, fail with "rate limited"
   - Insert or update the rate_limit row with last_call_us = now
-  - Insert an action_log row with identity = the caller's identity and the given payload, id = 0n for autoInc
+  - Insert an action_log row with identity = the caller's identity and the given payload

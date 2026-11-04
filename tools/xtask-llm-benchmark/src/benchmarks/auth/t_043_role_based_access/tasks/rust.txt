@@ -10,20 +10,20 @@ TABLES
 
 REDUCERS
 - register(ctx)
-  - If a User row already exists for the caller's identity, panic with "already registered"
+  - If a User row already exists for the caller's identity, fail with "already registered"
   - Insert User { identity: the caller's identity, role: "member" }
 
 - promote(ctx, target: Identity)
-  - Load the User row for the caller's identity; if missing, panic with "not registered"
-  - If the caller's role is not "admin", panic with "not admin"
-  - Load the User row for target; if missing, panic with "target not registered"
+  - Load the User row for the caller's identity; if missing, fail with "not registered"
+  - If the caller's role is not "admin", fail with "not admin"
+  - Load the User row for target; if missing, fail with "target not registered"
   - Update that row's role to "admin"
 
 - member_action(ctx)
-  - Load the User row for the caller's identity; if missing, panic with "not registered"
+  - Load the User row for the caller's identity; if missing, fail with "not registered"
   - (No further logic needed; presence of the row is sufficient)
 
 - admin_action(ctx)
-  - Load the User row for the caller's identity; if missing, panic with "not registered"
-  - If the role is not "admin", panic with "not admin"
+  - Load the User row for the caller's identity; if missing, fail with "not registered"
+  - If the role is not "admin", fail with "not admin"
   - (No further logic needed beyond the guard)

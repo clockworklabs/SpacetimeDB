@@ -11,10 +11,9 @@ TABLES
 REDUCERS
 - create_message(ctx, { text: string })
   - Insert a new message with owner set to the caller's identity
-  - Use id: 0n for autoInc
 
 - delete_message(ctx, { id: bigint (u64) })
   - Find the message by id
-  - If not found, throw "not found"
-  - If the message's owner does not equal the caller's identity, throw "unauthorized"
+  - If not found, fail with "not found"
+  - If the message's owner does not equal the caller's identity, fail with "unauthorized"
   - Otherwise, delete the message

@@ -19,15 +19,15 @@ TABLES
 
 REDUCERS
 - add_admin(ctx, { target: Identity })
-  - If the caller's identity is not in the admin table, throw "not admin"
+  - If the caller's identity is not in the admin table, fail with "not admin"
   - Insert { identity: target } into admin (ignore if already present)
 
 - ban_player(ctx, { target: Identity })
-  - If the caller's identity is not in the admin table, throw "not admin"
+  - If the caller's identity is not in the admin table, fail with "not admin"
   - Insert { identity: target } into banned
   - Remove the player row for target if one exists
 
 - join_game(ctx, { name: string })
-  - If the caller's identity is in the banned table, throw "banned"
-  - If a player row already exists for the caller's identity, throw "already in game"
+  - If the caller's identity is in the banned table, fail with "banned"
+  - If a player row already exists for the caller's identity, fail with "already in game"
   - Insert player { identity: the caller's identity, name }

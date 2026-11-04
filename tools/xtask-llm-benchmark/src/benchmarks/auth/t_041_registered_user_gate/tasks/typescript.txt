@@ -16,9 +16,9 @@ TABLES
 
 REDUCERS
 - register(ctx, { name: string })
-  - If a user row already exists for the caller's identity, throw "already registered"
+  - If a user row already exists for the caller's identity, fail with "already registered"
   - Otherwise insert a new user with identity = the caller's identity and the given name
 
 - post_message(ctx, { text: string })
-  - If no user row exists for the caller's identity, throw "not registered"
-  - Otherwise insert a message with sender = the caller's identity and the given text, id = 0n for autoInc
+  - If no user row exists for the caller's identity, fail with "not registered"
+  - Otherwise insert a message with sender = the caller's identity and the given text

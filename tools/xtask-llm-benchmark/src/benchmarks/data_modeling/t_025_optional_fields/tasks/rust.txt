@@ -12,4 +12,3 @@ TABLES
 REDUCERS
 - create_player(ctx, name: String, nickname: Option<String>, high_score: Option<u32>)
   - Insert a Player row, passing through the optional fields as-is
-  - Use id: 0 for auto_inc

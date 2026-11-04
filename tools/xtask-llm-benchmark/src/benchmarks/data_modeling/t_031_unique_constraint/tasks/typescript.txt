@@ -10,4 +10,3 @@ TABLES
 REDUCERS
 - create_account(ctx, { email: string, displayName: string })
   - Insert an account row with the given email and displayName
-  - Use id: 0n for autoInc

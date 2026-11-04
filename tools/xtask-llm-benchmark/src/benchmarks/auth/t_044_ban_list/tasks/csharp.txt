@@ -22,14 +22,14 @@ TABLES
 
 REDUCERS
 - AddAdmin(ctx, Identity target)
-  - If the caller's identity is not in the Admin table, throw exception with "not admin"
+  - If the caller's identity is not in the Admin table, fail with "not admin"
   - Insert Admin { Identity = target } (ignore if already present)
 
 - BanPlayer(ctx, Identity target)
-  - If the caller's identity is not in the Admin table, throw exception with "not admin"
+  - If the caller's identity is not in the Admin table, fail with "not admin"
   - Insert Banned { Identity = target }
   - Remove the Player row for target if one exists
 
 - JoinGame(ctx, string name)
-  - If the caller's identity is in the Banned table, throw exception with "banned"
-  - Insert Player { Identity = the caller's identity, Name = name }; if already present, throw exception with "already in game"
+  - If the caller's identity is in the Banned table, fail with "banned"
+  - Insert Player { Identity = the caller's identity, Name = name }; if already present, fail with "already in game"

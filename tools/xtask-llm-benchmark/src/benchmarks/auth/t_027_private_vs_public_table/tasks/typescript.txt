@@ -17,5 +17,5 @@ TABLES
 
 REDUCERS
 - register_user(ctx, { name: string, email: string, passwordHash: string })
-  - Insert into user_internal (id: 0n for autoInc)
+  - Insert into user_internal
   - Also insert into user_public with just the id and name (safe fields only)

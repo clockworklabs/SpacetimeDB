@@ -12,10 +12,9 @@ TABLES
 REDUCERS
 - CreateMessage(ctx, string text)
   - Insert a new Message with Owner set to the caller's identity
-  - Use Id: 0 for AutoInc
 
 - DeleteMessage(ctx, ulong id)
   - Find the message by Id
-  - If not found, throw exception with "not found"
-  - If the message's Owner does not equal the caller's identity, throw exception with "unauthorized"
+  - If not found, fail with "not found"
+  - If the message's Owner does not equal the caller's identity, fail with "unauthorized"
   - Otherwise, delete the message

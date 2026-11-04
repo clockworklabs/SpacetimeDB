@@ -15,6 +15,6 @@ TABLES
 
 REDUCERS
 - build_leaderboard(ctx, { limit: number (u32) })
-  - Collect all players into an array, sort by score descending
+  - Order players by score, highest first
   - Take the first `limit` entries
   - Insert each into leaderboard with rank starting at 1

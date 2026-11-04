@@ -20,6 +20,6 @@ REDUCERS
 - limited_action(ctx, payload: String)
   - Get the current time in microseconds
   - Look up the RateLimit row for the caller's identity
-  - If a row exists and (now - last_call_us) < 1_000_000, panic with "rate limited"
+  - If a row exists and (now - last_call_us) < 1_000_000, fail with "rate limited"
   - Insert or update the RateLimit row with last_call_us = now
-  - Insert an ActionLog row with identity = the caller's identity and the given payload, id = 0 for auto_inc
+  - Insert an ActionLog row with identity = the caller's identity and the given payload

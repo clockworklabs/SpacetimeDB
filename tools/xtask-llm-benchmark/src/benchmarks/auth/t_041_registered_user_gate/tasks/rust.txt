@@ -18,9 +18,9 @@ TABLES
 
 REDUCERS
 - register(ctx, name: String)
-  - If a User row already exists for the caller's identity, panic with "already registered"
+  - If a User row already exists for the caller's identity, fail with "already registered"
   - Otherwise insert a new User with identity = the caller's identity and the given name
 
 - post_message(ctx, text: String)
-  - If no User row exists for the caller's identity, panic with "not registered"
-  - Otherwise insert a Message with sender = the caller's identity and the given text, id = 0 for auto_inc
+  - If no User row exists for the caller's identity, fail with "not registered"
+  - Otherwise insert a Message with sender = the caller's identity and the given text

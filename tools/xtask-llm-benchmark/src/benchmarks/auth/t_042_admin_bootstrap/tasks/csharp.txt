@@ -17,10 +17,10 @@ TABLES
 
 REDUCERS
 - BootstrapAdmin(ctx)
-  - If a Config row already exists (Id = 0), throw exception with "already bootstrapped"
+  - If a Config row already exists (Id = 0), fail with "already bootstrapped"
   - Otherwise insert Config { Id = 0, Admin = the caller's identity }
 
 - AdminAction(ctx, string action)
-  - Load the Config row with Id = 0; if missing, throw exception with "not bootstrapped"
-  - If the caller's identity does not equal config.Admin, throw exception with "not admin"
-  - Insert an AdminLog row with the given Action, Id = 0 for AutoInc
+  - Load the Config row with Id = 0; if missing, fail with "not bootstrapped"
+  - If the caller's identity does not equal config.Admin, fail with "not admin"
+  - Insert an AdminLog row with the given Action
