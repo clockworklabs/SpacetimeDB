@@ -177,7 +177,7 @@ export interface Client<M, A extends Record<string, string> = {}> {
     RemoteModuleOfSchema<M, A>
   >;
   tables: WithAliases<
-    NestAccessors<QueryBuilder<RemoteModuleOfSchema<M, A>>>,
+    NestAccessors<QueryBuilder<RemoteModuleOfSchema<M>>>,
     A
   >;
   reducers: AccessorMap<Functions<M, 'reducer'>>;
