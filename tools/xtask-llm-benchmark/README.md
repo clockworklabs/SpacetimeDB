@@ -9,6 +9,8 @@ batch after retries. No partial scores from that batch are uploaded. Other model
 still run, but the language job exits with failure if any batch fails. Response
 errors include the generation ID and finish reason when supplied by the provider.
 Generated code that fails compilation or grading remains a normal benchmark score.
+A provider rejecting the content also scores: the task fails all of its checks, with
+no retry. The batch still completes and uploads.
 
 C# uses a fresh server per model batch. Each active task publishes its own reference
 database and deletes it after scoring or a provider failure. This bounds live C#
@@ -40,11 +42,13 @@ status and retry counts remain in console logs. Raw refusal text, partial provid
 content, and HTTP error bodies stay in artifacts, not console errors. Treat these
 artifacts as source and provider-response data.
 
-Refusals and provider or infrastructure errors have no code score. Summaries keep
-task counts separate from scorer-check counts and always include coverage. For
-example, 99 passing tasks and one refusal means **99/99 scored tasks passed, with
-99/100 tasks scored and one refusal**. It does not mean a complete 100% benchmark.
+Provider and infrastructure errors have no code score. Summaries keep task counts
+separate from scorer-check counts and always include coverage. For example, 99
+passing tasks and one provider error means **99/99 scored tasks passed, with 99/100
+tasks scored and one provider error**. It does not mean a complete 100% benchmark.
 Zero scored tasks means no score, not 0%. An incomplete batch stays off the website.
+A content rejection is a failed task, so 99 passing tasks and one rejection means
+**99/100 tasks passed, with `refused_tasks` at 1**.
 Model mistakes have no fixed list of messages, so any candidate publish failure
 scores normally unless it matches a short list of environment errors, such as a
 full disk or a refused connection, or the server fails a health check afterward.

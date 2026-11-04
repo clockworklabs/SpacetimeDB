@@ -240,6 +240,50 @@ fn provider_retry_delay(error: &anyhow::Error) -> Option<u64> {
     }
 }
 
+// A provider declining the request counts against the model. Any other provider error blocks the batch.
+fn is_content_rejection(error: &anyhow::Error) -> bool {
+    use crate::llm::clients::{
+        http::HttpResponseError,
+        oa_compat::{ProviderRefusal, ProviderResponseError},
+    };
+    const SIGNATURES: [&str; 10] = [
+        "flagged_input",
+        "requires moderation",
+        "input was flagged",
+        "flagged as potentially",
+        "content_policy",
+        "content policy",
+        "content_filter",
+        "content management policy",
+        "safety system",
+        "prohibited_content",
+    ];
+    if error.downcast_ref::<ProviderRefusal>().is_some() {
+        return true;
+    }
+    if provider_retry_delay(error).is_some() {
+        return false;
+    }
+    let text = if let Some(response) = error.downcast_ref::<HttpResponseError>() {
+        response.body.to_ascii_lowercase()
+    } else if let Some(response) = error.downcast_ref::<ProviderResponseError>() {
+        format!(
+            "{} {}",
+            response
+                .error
+                .code
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_default(),
+            response.error.message.as_deref().unwrap_or_default()
+        )
+        .to_ascii_lowercase()
+    } else {
+        return false;
+    };
+    SIGNATURES.iter().any(|signature| text.contains(signature))
+}
+
 // Model mistakes have no fixed list of messages, so a candidate failure scores unless it matches one of these.
 fn is_environment_failure(message: &str) -> bool {
     const SIGNATURES: [&str; 12] = [
@@ -442,6 +486,11 @@ impl TaskRunner {
                             );
                             tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
                             last_err = e;
+                        } else if is_content_rejection(&e) {
+                            return Err(RunOneError::Rejected {
+                                outcome: Box::new(build_rejected_outcome(task, cfg, total_tasks, &e, started)),
+                                error: e,
+                            });
                         } else {
                             return Err(RunOneError::Other(e));
                         }
@@ -688,6 +737,12 @@ fn finish_reference_cleanup(
             provider_error: Some(error),
             completed_outcome: None,
         }),
+        Err(RunOneError::Rejected { outcome, error }) => Err(RunOneError::Infrastructure {
+            msg: cleanup,
+            llm_output: None,
+            provider_error: Some(error),
+            completed_outcome: Some(outcome),
+        }),
         Err(RunOneError::Infrastructure {
             msg,
             llm_output,
@@ -747,6 +802,10 @@ fn partition_results(
                     .map(|output| format!("; generated output retained in work directory ({} bytes)", output.len()))
                     .unwrap_or_default();
                 bail!("benchmark infrastructure failure: {msg}{output_note}");
+            }
+            Err(RunOneError::Rejected { outcome, error }) => {
+                eprintln!("\u{26a0}\u{fe0f} provider rejected the request, scoring as a failure: {error:?}");
+                good.push(*outcome);
             }
             Err(RunOneError::Other(e)) => {
                 // No output at all — provider error, retry
@@ -1550,6 +1609,34 @@ fn build_fail_outcome(
     }
 }
 
+fn build_rejected_outcome(
+    task: &TaskPaths,
+    cfg: &RunContext<'_>,
+    total_tests: usize,
+    error: &anyhow::Error,
+    started: chrono::DateTime<Utc>,
+) -> RunOutcome {
+    let details = ScoreDetails {
+        pass: false,
+        partial: 0.0,
+        notes: json!({"phase": "generation", "error": format!("{error:#}")}),
+    };
+    RunOutcome {
+        total_tests: total_tests as u32,
+        llm_output: None,
+        scorer_details: Some([("content_rejection".to_string(), details)].into_iter().collect()),
+        started_at: Some(started),
+        ..build_fail_outcome(
+            task,
+            cfg.lang_name,
+            cfg.route,
+            cfg.hash,
+            anyhow!("unused"),
+            String::new(),
+        )
+    }
+}
+
 fn read_dirs(p: &Path) -> Result<Vec<PathBuf>> {
     let mut v = Vec::new();
     for e in fs::read_dir(p).with_context(|| format!("read_dir {}", p.display()))? {
@@ -1822,6 +1909,114 @@ mod build_cleanup_tests {
         }
     }
 
+    fn refusal_error() -> anyhow::Error {
+        serde_json::from_value::<crate::llm::clients::oa_compat::OACompatResp>(json!({
+            "choices": [{"finish_reason": "content_filter", "message": {"content": null, "refusal": "private detail"}}]
+        }))
+        .unwrap()
+        .first_text()
+        .unwrap_err()
+    }
+
+    #[test]
+    fn only_content_rejections_count_against_the_model() {
+        use crate::llm::clients::http::HttpResponseError;
+        let http = |status, body: &str| -> anyhow::Error {
+            HttpResponseError {
+                status,
+                body: body.to_string(),
+            }
+            .into()
+        };
+        let body_error = |error| -> anyhow::Error {
+            serde_json::from_value::<crate::llm::clients::oa_compat::OACompatResp>(json!({"error": error}))
+                .unwrap()
+                .first_text()
+                .unwrap_err()
+        };
+        assert!(is_content_rejection(&refusal_error()));
+        assert!(is_content_rejection(&http(
+            403,
+            r#"{"error":{"message":"m requires moderation on p. Your input was flagged"}}"#
+        )));
+        assert!(is_content_rejection(&http(
+            400,
+            r#"{"error":{"code":"content_policy_violation"}}"#
+        )));
+        assert!(is_content_rejection(&body_error(
+            json!({"code": 403, "message": "Your input was flagged for sexual"})
+        )));
+        assert!(is_content_rejection(&http(
+            403,
+            r#"{"error":{"metadata":{"flagged_input":"x"}}}"#
+        )));
+        assert!(is_content_rejection(&body_error(json!({"code": "content_filter"}))));
+        assert!(is_content_rejection(&refusal_error().context("provider call")));
+        for error in [
+            http(402, "insufficient credits"),
+            http(403, "full HTTP refusal details"),
+            http(429, "content_filter service is rate limited"),
+            http(503, "safety system unavailable"),
+            body_error(json!({"code": 403, "message": "key limit exceeded"})),
+            anyhow!("no nonempty completion content"),
+            anyhow!("content_filter appears in a plain error"),
+        ] {
+            assert!(!is_content_rejection(&error), "{error:#}");
+        }
+    }
+
+    #[tokio::test]
+    async fn content_rejection_fails_every_check_of_the_task() {
+        struct RefusingProvider;
+        #[async_trait::async_trait]
+        impl crate::llm::LlmProvider for RefusingProvider {
+            async fn preflight_route(&self, _: &ModelRoute, _: bool) -> Result<()> {
+                Ok(())
+            }
+            async fn generate(
+                &self,
+                _: &ModelRoute,
+                _: &crate::llm::prompt::BuiltPrompt,
+            ) -> Result<crate::llm::LlmOutput> {
+                Err(refusal_error())
+            }
+        }
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/benchmarks");
+        let task = discover_tasks(&root)
+            .unwrap()
+            .into_iter()
+            .find(|task| task.root.ends_with("basics/t_004_insert"))
+            .unwrap();
+        let route = ModelRoute::new("Test", crate::llm::types::Vendor::OpenAi, "test", None);
+        let cfg = RunContext {
+            lang_name: "rust",
+            lang: Lang::Rust,
+            mode: "no_context",
+            route: &route,
+            context: "",
+            hash: "test",
+            llm: &RefusingProvider,
+            host: Some("http://127.0.0.1:1".into()),
+        };
+        let runner = TaskRunner::new(root, SpacetimeRustPublisher, DotnetPublisher, TypeScriptPublisher);
+        let result = runner.run_one(&task, &cfg).await;
+        let expected = resolve_by_path(&task.root).unwrap()()
+            .scorers_for(Lang::Rust, "test", "local")
+            .len() as u32;
+        assert!(expected > 1, "the fixture must show the full denominator");
+        let (outcomes, pending) = partition_results(vec![(task, result)], "rust", &route, "test").unwrap();
+        assert!(pending.is_empty(), "a rejection must not block the batch");
+        assert_eq!(outcomes[0].passed_tests, 0);
+        assert_eq!(outcomes[0].total_tests, expected);
+        assert_eq!(outcomes[0].llm_output, None);
+        let notes = serde_json::to_string(&outcomes[0].scorer_details).unwrap();
+        assert!(notes.contains("content_rejection"));
+        assert!(
+            !notes.contains("private detail"),
+            "raw refusal text must not reach uploads"
+        );
+    }
+
     #[test]
     fn provider_failures_reject_the_whole_batch_but_model_failures_remain_scores() {
         let task = || TaskPaths {
@@ -1841,19 +2036,28 @@ mod build_cleanup_tests {
                     }),
                 ),
                 (task(), Err(RunOneError::Other(anyhow::anyhow!("402 Payment Required")))),
-                (task(), Err(RunOneError::Other(
-                    serde_json::from_value::<crate::llm::clients::oa_compat::OACompatResp>(json!({
-                        "choices": [{"finish_reason": "content_filter", "message": {"content": null, "refusal": "provider refusal"}}]
-                    })).unwrap().first_text().unwrap_err()
-                ))),
+                (
+                    task(),
+                    Err(RunOneError::Rejected {
+                        outcome: Box::new(build_fail_outcome(
+                            &task(),
+                            "rust",
+                            &route,
+                            "test",
+                            anyhow!("rejected"),
+                            String::new(),
+                        )),
+                        error: refusal_error(),
+                    }),
+                ),
             ],
             "rust",
             &route,
             "test",
         )
         .unwrap();
-        assert_eq!(outcomes.len(), 1);
-        assert_eq!(pending.len(), 2, "refusals and provider failures are not scored zeroes");
+        assert_eq!(outcomes.len(), 2);
+        assert_eq!(pending.len(), 1, "provider failures are not scored zeroes");
         assert_eq!(outcomes[0].passed_tests, 0);
         assert!(finalize_batch(outcomes.clone(), Vec::new()).is_ok());
         let error = finalize_batch(outcomes, pending).unwrap_err().to_string();
@@ -1924,10 +2128,24 @@ mod build_cleanup_tests {
         .unwrap()
         .first_text()
         .unwrap_err();
-        match finish_reference_cleanup(Err(RunOneError::Other(refusal)), Err(anyhow!("delete failed"))) {
+        let rejected = RunOneError::Rejected {
+            outcome: Box::new(
+                serde_json::from_value(json!({
+                    "hash": "test", "task": "a", "lang": "csharp", "model_name": "test", "vendor": "test",
+                    "golden_published": false, "passed_tests": 0, "total_tests": 2
+                }))
+                .unwrap(),
+            ),
+            error: refusal,
+        };
+        match finish_reference_cleanup(Err(rejected), Err(anyhow!("delete failed"))) {
             Err(RunOneError::Infrastructure {
-                msg, provider_error, ..
+                msg,
+                provider_error,
+                completed_outcome,
+                ..
             }) => {
+                assert!(completed_outcome.is_some());
                 assert!(msg.contains("delete failed"));
                 assert!(!msg.contains("private detail"));
                 let error = provider_error.unwrap();

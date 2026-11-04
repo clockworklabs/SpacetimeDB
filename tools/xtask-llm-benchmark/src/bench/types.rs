@@ -143,6 +143,12 @@ pub enum RunOneError {
         provider_error: Option<anyhow::Error>,
         completed_outcome: Option<Box<RunOutcome>>,
     },
+    // Scores as a failure. Provider details stay in local evidence, not console messages.
+    #[error("{error:#}")]
+    Rejected {
+        outcome: Box<RunOutcome>,
+        error: anyhow::Error,
+    },
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

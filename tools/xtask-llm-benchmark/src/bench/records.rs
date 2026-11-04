@@ -19,7 +19,7 @@ pub(super) struct BatchRecord {
 enum TaskState {
     Pending,
     Scored { passed: u32, total: u32 },
-    Refused,
+    Refused { total: u32 },
     ProviderError,
     InfrastructureError,
 }
@@ -76,18 +76,21 @@ impl BatchRecord {
                 },
                 json!({"status": "scored", "outcome": outcome}),
             ),
-            Err(RunOneError::Other(error)) => match error.downcast_ref::<ProviderRefusal>() {
-                Some(refusal) => (
-                    TaskState::Refused,
-                    json!({"status": "refused", "refusal": refusal, "error": format!("{error:#}")}),
-                ),
-                None => (
-                    TaskState::ProviderError,
-                    json!({"status": "provider_or_setup_error", "error": format!("{error:#}"),
-                        "provider_response": error.downcast_ref::<crate::llm::clients::oa_compat::ProviderResponseError>(),
-                        "http_response": error.downcast_ref::<crate::llm::clients::http::HttpResponseError>()}),
-                ),
-            },
+            Err(RunOneError::Rejected { outcome, error }) => (
+                TaskState::Refused {
+                    total: outcome.total_tests,
+                },
+                json!({"status": "refused", "outcome": outcome, "error": format!("{error:#}"),
+                    "refusal": error.downcast_ref::<ProviderRefusal>(),
+                    "provider_response": error.downcast_ref::<crate::llm::clients::oa_compat::ProviderResponseError>(),
+                    "http_response": error.downcast_ref::<crate::llm::clients::http::HttpResponseError>()}),
+            ),
+            Err(RunOneError::Other(error)) => (
+                TaskState::ProviderError,
+                json!({"status": "provider_or_setup_error", "error": format!("{error:#}"),
+                    "provider_response": error.downcast_ref::<crate::llm::clients::oa_compat::ProviderResponseError>(),
+                    "http_response": error.downcast_ref::<crate::llm::clients::http::HttpResponseError>()}),
+            ),
             Err(RunOneError::Infrastructure {
                 msg,
                 llm_output,
@@ -110,7 +113,7 @@ impl BatchRecord {
         if !self
             .tasks
             .values()
-            .all(|state| matches!(state, TaskState::Scored { .. }))
+            .all(|state| matches!(state, TaskState::Scored { .. } | TaskState::Refused { .. }))
         {
             bail!("incomplete batch record; refusing to upload");
         }
@@ -123,7 +126,11 @@ impl BatchRecord {
         for state in self.tasks.values() {
             match state {
                 TaskState::Pending => pending += 1,
-                TaskState::Refused => refused += 1,
+                TaskState::Refused { total } => {
+                    scored += 1;
+                    refused += 1;
+                    scored_checks += u64::from(*total);
+                }
                 TaskState::ProviderError => provider += 1,
                 TaskState::InfrastructureError => infrastructure += 1,
                 TaskState::Scored { passed: p, total } => {
@@ -178,6 +185,20 @@ mod tests {
         ));
         let mut record = BatchRecord::create(&root, json!({"model": "test"}), vec!["a".into(), "b".into()]).unwrap();
         record.record("a", &Ok(outcome(3))).unwrap();
+        record
+            .record("b", &Err(RunOneError::Other(anyhow::anyhow!("402 Payment Required"))))
+            .unwrap();
+        assert!(record.complete().is_err());
+        let rows = read_rows(&record.path);
+        let last = rows.last().unwrap();
+        assert_eq!(last["summary"]["scored_tasks"], 1);
+        assert_eq!(last["summary"]["passed_tasks"], 1);
+        assert_eq!(last["summary"]["provider_or_setup_errors"], 1);
+        assert_eq!(last["summary"]["passed_checks"], 3);
+        assert_eq!(last["summary"]["scored_checks"], 3);
+        assert_eq!(last["complete"], false);
+        assert_eq!(rows[1]["attempt"]["outcome"]["llm_output"], "generated code");
+        // A rejection counts every check of the task as failed and completes the batch.
         let response: OACompatResp = serde_json::from_value(json!({
             "id": "gen-test", "provider": "test-provider", "choices": [{
                 "finish_reason": "content_filter", "native_finish_reason": "refusal",
@@ -186,30 +207,26 @@ mod tests {
         }))
         .unwrap();
         record
-            .record("b", &Err(RunOneError::Other(response.first_text().unwrap_err())))
+            .record(
+                "b",
+                &Err(RunOneError::Rejected {
+                    outcome: Box::new(outcome(0)),
+                    error: response.first_text().unwrap_err(),
+                }),
+            )
             .unwrap();
-        assert!(record.complete().is_err());
-        let rows = read_rows(&record.path);
-        let last = rows.last().unwrap();
-        assert_eq!(last["summary"]["scored_tasks"], 1);
-        assert_eq!(last["summary"]["passed_tasks"], 1);
-        assert_eq!(last["summary"]["refused_tasks"], 1);
-        assert_eq!(last["summary"]["passed_checks"], 3);
-        assert_eq!(last["summary"]["scored_checks"], 3);
-        assert_eq!(last["complete"], false);
-        assert_eq!(last["attempt"]["refusal"]["refusal"], "full refusal reason");
-        assert_eq!(rows[1]["attempt"]["outcome"]["llm_output"], "generated code");
-        // A generated-code failure is a scored result, unlike a provider refusal.
-        record.record("b", &Ok(outcome(0))).unwrap();
         record.complete().unwrap();
         let rows = read_rows(&record.path);
         let last = rows.last().unwrap();
         assert_eq!(last["complete"], true);
         assert_eq!(last["summary"]["scored_tasks"], 2);
         assert_eq!(last["summary"]["passed_tasks"], 1);
-        assert_eq!(last["summary"]["refused_tasks"], 0);
+        assert_eq!(last["summary"]["refused_tasks"], 1);
+        assert_eq!(last["summary"]["passed_checks"], 3);
         assert_eq!(last["summary"]["scored_checks"], 6);
-        assert_eq!(rows[2]["attempt"]["refusal"]["generation_id"], "gen-test");
+        assert_eq!(rows[3]["attempt"]["status"], "refused");
+        assert_eq!(rows[3]["attempt"]["refusal"]["refusal"], "full refusal reason");
+        assert_eq!(rows[3]["attempt"]["refusal"]["generation_id"], "gen-test");
         drop(record);
         std::fs::remove_dir_all(root).unwrap();
     }
