@@ -30,8 +30,9 @@
     "build:package": "pnpm -s build && pnpm -s prepare:test-utils-wasm:clean",
     "format": "prettier . --write --ignore-path ../../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../../.prettierignore",
-    "test": "pnpm -s prepare:test-utils-wasm && pnpm -s test:unit",
+    "test": "pnpm -s build && pnpm -s prepare:test-utils-wasm && pnpm -s test:unit && pnpm -s test:package",
     "test:unit": "vitest run",
+    "test:package": "vitest run --config vitest.package.config.ts",
     "test:typecheck": "vitest typecheck --run",
     "coverage": "vitest run --coverage",
     "brotli-size": "brotli-size dist/index.js",
@@ -47,8 +48,7 @@
     "generate:examples:react-ts": "pnpm --filter @clockworklabs/react-ts generate",
     "generate:examples:empty": "pnpm --filter @clockworklabs/empty-client generate",
     "generate": "pnpm generate:moduledef && pnpm generate:client-api && pnpm generate:test-app && pnpm generate:examples:chat-react-ts && pnpm generate:examples:react-ts && pnpm generate:examples:empty",
-    "prepublishOnly": "pnpm run build:package && pnpm run test:unit && size-limit && pnpm run check:package",
-    "test:declarations:package": "vitest run --config vitest.package.config.ts"
+    "prepublishOnly": "pnpm run build:package && pnpm run test:unit && size-limit && pnpm run check:package"
   },
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
