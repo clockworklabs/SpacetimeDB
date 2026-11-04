@@ -64,6 +64,8 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
     protected abstract ProcedureTxContextBase CreateTxContext(Internal.TxContext inner);
 
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    internal Internal.DatabaseAccess? Access { get; }
+
     internal ProcedureContextBase(
         Internal.IDatabaseBackend backend,
         Func<Timestamp> clock,
@@ -79,7 +81,8 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
         ConnectionId = connectionId;
         SenderAuth = auth;
         Http = http;
-        Env = new(new Internal.DatabaseAccess(backend));
+        Access = new Internal.DatabaseAccess(backend);
+        Env = new(Access);
         txState = new(
             random,
             clock(),

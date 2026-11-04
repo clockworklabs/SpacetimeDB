@@ -2651,7 +2651,7 @@ public class Module : IIncrementalGenerator
             }
             var members = node.Children.Select(
                 (child, index) =>
-                    $"public Scope{child.Id}<TContext> {child.Mount!.AccessorIdentifier} => new(__context, NamespaceBindings.{(node.Id == 0 ? $"Mount{index}" : $"Child{child.Id}")}[__instanceId]);"
+                    $"public Scope{child.Id}<TContext> {child.Mount!.AccessorIdentifier} => new(__context, NamespaceBindings.{(node.Id == 0 ? $"Mount{index}" : $"Child{child.Id}")}.ResolveContext(__context, __instanceId));"
             );
             scopes.Add(
                 $$"""

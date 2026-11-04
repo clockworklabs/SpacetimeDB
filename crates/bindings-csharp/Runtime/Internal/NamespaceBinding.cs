@@ -11,6 +11,24 @@ public sealed class NamespaceBinding(string? assemblyIdentity, string accessor)
     private int[] Instances => field ??= Module.BindNamespace(assemblyIdentity, accessor);
 
 #if NET10_0_OR_GREATER
+    public int ResolveContext(IModuleContext context, int contextInstance)
+    {
+#if !SPACETIMEDB_WASM_RUNTIME
+        var access = context switch
+        {
+            ReducerContext reducer => reducer.Db.Access,
+            ProcedureContext procedure => procedure.Access,
+            ProcedureTxContext transaction => transaction.Db.Access,
+            ViewContext view => view.Db.Access,
+            AnonymousViewContext view => view.Db.Access,
+            _ => null,
+        };
+        return Resolve(contextInstance, DatabaseAccess.Require(access));
+#else
+        return this[contextInstance];
+#endif
+    }
+
     public Local Select(Local db) => new() {
         InstanceId = Resolve(db.InstanceId
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
