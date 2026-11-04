@@ -1,6 +1,6 @@
 # LLM benchmark validation
 
-The normal suite contains 95 tasks. The 12 `advanced` tasks are included by default,
+The normal suite contains 96 tasks. The 12 `advanced` tasks are included by default,
 in all three languages and in both context modes. They are also included in the
 normal website task catalog. `--categories advanced` is only a development filter.
 
@@ -12,7 +12,7 @@ Generated code that fails compilation or grading remains a normal benchmark scor
 
 C# uses a fresh server per model batch. Each active task publishes its own reference
 database and deletes it after scoring or a provider failure. This bounds live C#
-references by task concurrency, rather than loading all 95 before model generation.
+references by task concurrency, rather than loading all 96 before model generation.
 `--goldens-only` also validates and deletes each C# reference/candidate pair before
 starting the next task. Rust and TypeScript keep their batched reference builds.
 Cleanup errors block the batch, but completed scoring remains in the local record.
@@ -109,7 +109,7 @@ cargo run -p xtask-llm-benchmark --bin llm_benchmark --locked -- run --lang rust
 
 The command publishes disposable local databases and runs the real graders. It
 makes no model requests and uploads no scores or catalog. Omitting `--tasks`
-validates all 95 reference tasks. Keep the weekly action disabled until these
+validates all 96 reference tasks. Keep the weekly action disabled until these
 checks pass and the branch is reviewed.
 
 The scenario grader checks explicit expected rows, including intermediate state,
