@@ -10,138 +10,138 @@ import {
   type Infer as __Infer,
 } from '../../lib/type_builders';
 
-import { BsatnRowList } from './declarations';
+import { BsatnRowList } from './module';
 export { BsatnRowList };
 export type BsatnRowList = __Infer<typeof BsatnRowList>;
 
-import { CallProcedure } from './declarations';
+import { CallProcedure } from './module';
 export { CallProcedure };
 export type CallProcedure = __Infer<typeof CallProcedure>;
 
-import { CallReducer } from './declarations';
+import { CallReducer } from './module';
 export { CallReducer };
 export type CallReducer = __Infer<typeof CallReducer>;
 
-import { ClientMessage } from './declarations';
+import { ClientMessage } from './module';
 export { ClientMessage };
 export type ClientMessage = __Infer<typeof ClientMessage>;
 
-import { EventTableRows } from './declarations';
+import { EventTableRows } from './module';
 export { EventTableRows };
 export type EventTableRows = __Infer<typeof EventTableRows>;
 
-import { InitialConnection } from './declarations';
+import { InitialConnection } from './module';
 export { InitialConnection };
 export type InitialConnection = __Infer<typeof InitialConnection>;
 
-import { OneOffQuery } from './declarations';
+import { OneOffQuery } from './module';
 export { OneOffQuery };
 export type OneOffQuery = __Infer<typeof OneOffQuery>;
 
-import { OneOffQueryResult } from './declarations';
+import { OneOffQueryResult } from './module';
 export { OneOffQueryResult };
 export type OneOffQueryResult = __Infer<typeof OneOffQueryResult>;
 
-import { PersistentTableRows } from './declarations';
+import { PersistentTableRows } from './module';
 export { PersistentTableRows };
 export type PersistentTableRows = __Infer<typeof PersistentTableRows>;
 
-import { ProcedureResult } from './declarations';
+import { ProcedureResult } from './module';
 export { ProcedureResult };
 export type ProcedureResult = __Infer<typeof ProcedureResult>;
 
-import { ProcedureStatus } from './declarations';
+import { ProcedureStatus } from './module';
 export { ProcedureStatus };
 export type ProcedureStatus = __Infer<typeof ProcedureStatus>;
 
-import { QueryRows } from './declarations';
+import { QueryRows } from './module';
 export { QueryRows };
 export type QueryRows = __Infer<typeof QueryRows>;
 
-import { QuerySetId } from './declarations';
+import { QuerySetId } from './module';
 export { QuerySetId };
 export type QuerySetId = __Infer<typeof QuerySetId>;
 
-import { QuerySetUpdate } from './declarations';
+import { QuerySetUpdate } from './module';
 export { QuerySetUpdate };
 export type QuerySetUpdate = __Infer<typeof QuerySetUpdate>;
 
-import { ReducerOk } from './declarations';
+import { ReducerOk } from './module';
 export { ReducerOk };
 export type ReducerOk = __Infer<typeof ReducerOk>;
 
-import { ReducerOutcome } from './declarations';
+import { ReducerOutcome } from './module';
 export { ReducerOutcome };
 export type ReducerOutcome = __Infer<typeof ReducerOutcome>;
 
-import { ReducerResult } from './declarations';
+import { ReducerResult } from './module';
 export { ReducerResult };
 export type ReducerResult = __Infer<typeof ReducerResult>;
 
-import { RowSizeHint } from './declarations';
+import { RowSizeHint } from './module';
 export { RowSizeHint };
 export type RowSizeHint = __Infer<typeof RowSizeHint>;
 
-import { ServerMessage } from './declarations';
+import { ServerMessage } from './module';
 export { ServerMessage };
 export type ServerMessage = __Infer<typeof ServerMessage>;
 
-import { SingleTableRows } from './declarations';
+import { SingleTableRows } from './module';
 export { SingleTableRows };
 export type SingleTableRows = __Infer<typeof SingleTableRows>;
 
-import { Subscribe } from './declarations';
+import { Subscribe } from './module';
 export { Subscribe };
 export type Subscribe = __Infer<typeof Subscribe>;
 
-import { SubscribeApplied } from './declarations';
+import { SubscribeApplied } from './module';
 export { SubscribeApplied };
 export type SubscribeApplied = __Infer<typeof SubscribeApplied>;
 
-import { SubscribeBatch } from './declarations';
+import { SubscribeBatch } from './module';
 export { SubscribeBatch };
 export type SubscribeBatch = __Infer<typeof SubscribeBatch>;
 
-import { SubscribeBatchApplied } from './declarations';
+import { SubscribeBatchApplied } from './module';
 export { SubscribeBatchApplied };
 export type SubscribeBatchApplied = __Infer<typeof SubscribeBatchApplied>;
 
-import { SubscribeSet } from './declarations';
+import { SubscribeSet } from './module';
 export { SubscribeSet };
 export type SubscribeSet = __Infer<typeof SubscribeSet>;
 
-import { SubscribeSetOutcome } from './declarations';
+import { SubscribeSetOutcome } from './module';
 export { SubscribeSetOutcome };
 export type SubscribeSetOutcome = __Infer<typeof SubscribeSetOutcome>;
 
-import { SubscribeSetResult } from './declarations';
+import { SubscribeSetResult } from './module';
 export { SubscribeSetResult };
 export type SubscribeSetResult = __Infer<typeof SubscribeSetResult>;
 
-import { SubscriptionError } from './declarations';
+import { SubscriptionError } from './module';
 export { SubscriptionError };
 export type SubscriptionError = __Infer<typeof SubscriptionError>;
 
-import { TableUpdate } from './declarations';
+import { TableUpdate } from './module';
 export { TableUpdate };
 export type TableUpdate = __Infer<typeof TableUpdate>;
 
-import { TableUpdateRows } from './declarations';
+import { TableUpdateRows } from './module';
 export { TableUpdateRows };
 export type TableUpdateRows = __Infer<typeof TableUpdateRows>;
 
-import { TransactionUpdate } from './declarations';
+import { TransactionUpdate } from './module';
 export { TransactionUpdate };
 export type TransactionUpdate = __Infer<typeof TransactionUpdate>;
 
-import { Unsubscribe } from './declarations';
+import { Unsubscribe } from './module';
 export { Unsubscribe };
 export type Unsubscribe = __Infer<typeof Unsubscribe>;
 
-import { UnsubscribeApplied } from './declarations';
+import { UnsubscribeApplied } from './module';
 export { UnsubscribeApplied };
 export type UnsubscribeApplied = __Infer<typeof UnsubscribeApplied>;
 
-import { UnsubscribeFlags } from './declarations';
+import { UnsubscribeFlags } from './module';
 export { UnsubscribeFlags };
 export type UnsubscribeFlags = __Infer<typeof UnsubscribeFlags>;

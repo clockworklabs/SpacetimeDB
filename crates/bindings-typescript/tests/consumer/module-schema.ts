@@ -21,7 +21,7 @@ const child = {
   add: childSchema.reducer({ name: 'insert_person' }, { name: t.string() }),
 };
 const root = schema({ people, auth: { name: 'auth_wire', module: child } });
-const declarations = {
+const moduleSchema = {
   default: root,
   add: root.reducer({ name: 'add_person' }, { name: t.string() }),
   sayHello: root.reducer({}),
@@ -36,7 +36,7 @@ const declarations = {
   actions: root.exportGroup({ default: root.reducer({}) }),
 };
 
-const client = createClient(declarations, {
+const client = createClient(moduleSchema, {
   tableAliases: { people_legacy: 'people' },
 });
 

@@ -106,7 +106,7 @@ pub fn replace_in_tree(
         let is_entry_point = depth == 0
             && matches!(
                 path.file_name().and_then(|n| n.to_str()),
-                Some("index.ts" | "declarations.ts")
+                Some("index.ts" | "module.ts")
             );
         let repl = if is_entry_point {
             replacement_index_ts
@@ -143,9 +143,9 @@ pub fn replace_in_tree(
                 .map(|item| {
                     let item = item.trim();
                     if item == "schema" {
-                        "declarationSchema as schema".to_string()
+                        "moduleSchema as schema".to_string()
                     } else if let Some(alias) = item.strip_prefix("schema as ") {
-                        format!("declarationSchema as {alias}")
+                        format!("moduleSchema as {alias}")
                     } else {
                         item.to_string()
                     }

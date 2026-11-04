@@ -70,13 +70,13 @@ void consume;
 #[test]
 fn submodule_names_use_canonical_wire_names_and_accessor_paths() {
     let files = generate(compiled_typescript_module(), &TypeScript, &CodegenOptions::default());
-    assert!(files.iter().any(|f| f.filename == "my_lib/declarations.ts"));
+    assert!(files.iter().any(|f| f.filename == "my_lib/module.ts"));
     compile_typescript_client(
         files,
         r#"
 import assert from 'node:assert/strict';
 import { DbConnection, tables, reducers, procedures } from './index';
-import child from './my_lib/declarations';
+import child from './my_lib/module';
 import type { Infer } from 'spacetimedb';
 type LibData = Infer<typeof child.entries.libData.rowType>;
 assert.equal(tables.myLib.libData.sourceName, 'my_lib.libData');
@@ -211,7 +211,7 @@ fn typescript_clients_compile_and_run() {
             r#"
 import assert from 'node:assert/strict';
 import { DbConnection, DbConnectionBuilder, tables, reducers, procedures, type EventContext } from './index';
-import { add, returnValue } from './declarations';
+import { add, returnValue } from './module';
 import type { Infer } from 'spacetimedb/schema';
 type AddParams = Infer<typeof add.params>;
 type ReturnValueResult = Infer<typeof returnValue.returnType>;
@@ -410,12 +410,12 @@ execFileSync(process.execPath, [join(project, 'out/consumer.cjs')], {
 fn typescript_declaration_snapshots_cover_submodules_and_private_items() {
     for (name, module, options) in [
         (
-            "typescript_declarations_submodules",
+            "typescript_module_schema_submodules",
             compiled_typescript_module(),
             CodegenOptions::default(),
         ),
         (
-            "typescript_declarations_private",
+            "typescript_module_schema_private",
             compiled_module(),
             CodegenOptions {
                 visibility: spacetimedb_codegen::CodegenVisibility::IncludePrivate,
@@ -507,7 +507,7 @@ void consume;
 }
 
 #[test]
-fn typescript_declarations_preserve_table_metadata() {
+fn typescript_module_schema_preserve_table_metadata() {
     use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
     use spacetimedb_lib::db::raw_def::v9::RawIndexAlgorithm;
     use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ProductType};
@@ -570,17 +570,17 @@ fn typescript_declarations_preserve_table_metadata() {
         r"// This was generated using spacetimedb cli version \d+\.\d+\.\d+ .*",
         "VERSION_COMMENT",
     );
-    settings.bind(|| insta::assert_toml_snapshot!("typescript_declarations_metadata", snapshots));
+    settings.bind(|| insta::assert_toml_snapshot!("typescript_module_schema_metadata", snapshots));
     compile_typescript_client(
         files,
         r#"
 import assert from 'node:assert/strict';
 import { tables, type DbConnection } from './index';
-import spacetimedb from './declarations';
-import { Person, ZAddress } from './declarations';
+import spacetimedb from './module';
+import { Person, ZAddress } from './module';
 import { ZAddress as CompatibleAddress } from './types';
 assert.equal(CompatibleAddress, ZAddress);
-import { Label } from './my_lib/declarations';
+import { Label } from './my_lib/module';
 import { Label as CompatibleLabel } from './myLib/types';
 assert.equal(CompatibleLabel, Label);
 import type { Infer } from 'spacetimedb/schema';

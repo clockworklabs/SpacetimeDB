@@ -6,7 +6,7 @@ import { build } from 'tsup';
 import { test } from 'vitest';
 
 // Use native Node loaders so these checks exercise package exports, not Vite's resolver.
-test('built declarations work with ESM and CommonJS clients', () => {
+test('built module schemas work with ESM and CommonJS clients', () => {
   execFileSync(
     process.execPath,
     [
@@ -36,11 +36,11 @@ test('built declarations work with ESM and CommonJS clients', () => {
   );
 });
 
-test('declaration clients bundle for browsers', async () => {
+test('module schema clients bundle for browsers', async () => {
   const outDir = await mkdtemp(join(tmpdir(), 'spacetimedb-consumer-'));
   try {
     await build({
-      entry: ['tests/consumer/declarations-browser.ts'],
+      entry: ['tests/consumer/module-schema-browser.ts'],
       platform: 'browser',
       format: 'esm',
       outDir,

@@ -1,17 +1,17 @@
-/** Client module declarations, sharing builder identities with the root SDK. */
+/** Client module schemas, sharing builder identities with the root SDK. */
 export {
-  declarationSchema as schema,
-  DeclarationSchema as Schema,
-  FunctionDeclaration,
+  moduleSchema as schema,
+  ModuleSchema as Schema,
+  FunctionSchema,
   t,
   table,
   CaseConversionPolicy,
 } from 'spacetimedb';
 export type {
-  ModuleDeclarations,
+  ModuleSchemaExports,
   SchemaEntry,
   SchemaEntries,
-  DeclarationKind,
+  FunctionKind,
   FunctionOptions,
   ViewOptions,
   SchemaOptions,

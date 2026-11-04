@@ -4,7 +4,7 @@ import BinaryWriter from '../src/lib/binary_writer';
 import { Timestamp } from '../src/lib/timestamp';
 import { ServerMessage } from '../src/sdk/client_api/types';
 import { makeQuerySetUpdate } from './utils';
-import { schema, table, t } from '../src/schema/declarations';
+import { schema, table, t } from '../src/schema/module';
 import { createClient } from '../src/sdk/create_client';
 import { INTERNAL_REMOTE_MODULE } from '../src/sdk/internal';
 import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter';
@@ -28,7 +28,7 @@ const child = {
   add: childSchema.reducer({ name: 'insert_person' }, { name: t.string() }),
 };
 const root = schema({ people, auth: { name: 'auth_wire', module: child } });
-const declarations = {
+const moduleSchema = {
   default: root,
   add: root.reducer({ name: 'add_person' }, { name: t.string() }),
   sayHello: root.reducer({}),
@@ -43,14 +43,14 @@ const declarations = {
   actions: root.exportGroup({ default: root.reducer({}) }),
 };
 
-const client = createClient(declarations, {
+const client = createClient(moduleSchema, {
   tableAliases: { people_legacy: 'people' },
 });
 
-describe('module declarations', () => {
+describe('module schemas', () => {
   test('retains table and function metadata and produces the typed client API', async () => {
-    expect(declarations.add.params.name.algebraicType.tag).toBe('String');
-    expect(declarations.greet.returnType.algebraicType.tag).toBe('String');
+    expect(moduleSchema.add.params.name.algebraicType.tag).toBe('String');
+    expect(moduleSchema.greet.returnType.algebraicType.tag).toBe('String');
     expect(people.rowType.row.id.columnMetadata.isAutoIncrement).toBe(true);
     expect(people.rowType.row.age.columnMetadata.defaultValue).toBe(18);
     expect(client.tables.people_legacy).toBe(client.tables.people);
@@ -124,9 +124,9 @@ describe('module declarations', () => {
     conn.disconnect();
   });
 
-  test('rejects declarations exported from a different schema', () => {
+  test('rejects functions exported from a different schema', () => {
     expect(() => {
-      createClient({ default: schema({}), add: declarations.add });
+      createClient({ default: schema({}), add: moduleSchema.add });
     }).toThrow('another schema');
   });
 });

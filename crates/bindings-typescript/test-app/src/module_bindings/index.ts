@@ -3,7 +3,7 @@
 
 // This was generated using spacetimedb cli version 2.13.0 (commit 6b10f048da63ec02f0ce72bb27daa4bf834c05b3).
 
-import * as declarations from './declarations';
+import * as moduleSchema from './module';
 import {
   createClient,
   type EventContextInterface,
@@ -13,7 +13,7 @@ import {
   type SubscriptionHandleImpl,
   type RemoteModuleOf,
 } from '../../../src/index';
-const client = createClient(declarations, {
+const client = createClient(moduleSchema, {
   cliVersion: '2.13.0',
   tableAliases: {
     my_user_procedural: 'myUserProcedural',

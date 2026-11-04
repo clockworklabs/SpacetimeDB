@@ -1,5 +1,5 @@
 /**
- * Mirrors the declaration API in ../server/schema.ts for generated client bindings,
+ * Mirrors the module schema API in ../server/schema.ts for generated client bindings,
  * preserving schemas and metadata while omitting server function bodies.
  */
 import type { ParamsObj } from '../lib/reducers';
@@ -18,20 +18,16 @@ export * from '../lib/type_builders';
 export { table } from '../lib/table';
 export { CaseConversionPolicy } from '../lib/autogen/types';
 
-export type ModuleDeclarations = { readonly default: Schema<any> };
+export type ModuleSchemaExports = { readonly default: Schema<any> };
 export type SchemaEntry =
   | UntypedTableSchema
-  | ModuleDeclarations
+  | ModuleSchemaExports
   | {
       readonly name: string;
-      readonly module: ModuleDeclarations;
+      readonly module: ModuleSchemaExports;
     };
 export type SchemaEntries = Record<string, SchemaEntry>;
-export type DeclarationKind =
-  | 'reducer'
-  | 'procedure'
-  | 'view'
-  | 'anonymousView';
+export type FunctionKind = 'reducer' | 'procedure' | 'view' | 'anonymousView';
 
 export type FunctionOptions<P extends ParamsObj = ParamsObj> = Readonly<
   ReducerOptsWithOptionalName<P>
@@ -42,8 +38,8 @@ export type SchemaOptions = Readonly<
 >;
 
 /** Metadata for a remote function. It contains no executable server callback. */
-export class FunctionDeclaration<
-  Kind extends DeclarationKind,
+export class FunctionSchema<
+  Kind extends FunctionKind,
   Params extends ParamsObj,
   Return extends TypeBuilder<any, any>,
   Options extends object = object,
@@ -58,8 +54,8 @@ export class FunctionDeclaration<
 }
 
 /** The group's keys are function accessors, not an extra namespace. */
-export class DeclarationGroup<
-  E extends Record<string, FunctionDeclaration<any, any, any, any>>,
+export class FunctionGroup<
+  E extends Record<string, FunctionSchema<any, any, any, any>>,
 > {
   constructor(
     readonly schema: Schema<any>,
@@ -74,23 +70,23 @@ export class Schema<Entries extends SchemaEntries> {
   ) {}
 
   exportGroup<
-    const E extends Record<string, FunctionDeclaration<any, any, any, any>>,
-  >(exports: E): DeclarationGroup<E> {
-    return new DeclarationGroup(this, exports);
+    const E extends Record<string, FunctionSchema<any, any, any, any>>,
+  >(exports: E): FunctionGroup<E> {
+    return new FunctionGroup(this, exports);
   }
 
   reducer<const P extends ParamsObj>(
     params: P
-  ): FunctionDeclaration<'reducer', P, never, {}>;
+  ): FunctionSchema<'reducer', P, never, {}>;
   reducer<const P extends ParamsObj, const O extends FunctionOptions<P>>(
     options: O,
     params: P
-  ): FunctionDeclaration<'reducer', P, never, O>;
+  ): FunctionSchema<'reducer', P, never, O>;
   reducer(
     first: ParamsObj | FunctionOptions,
     params?: ParamsObj
-  ): FunctionDeclaration<any, any, any, any> {
-    return new FunctionDeclaration(
+  ): FunctionSchema<any, any, any, any> {
+    return new FunctionSchema(
       'reducer',
       this,
       (params ?? first) as ParamsObj,
@@ -102,34 +98,30 @@ export class Schema<Entries extends SchemaEntries> {
   procedure<const P extends ParamsObj, R extends TypeBuilder<any, any>>(
     params: P,
     returnType: R
-  ): FunctionDeclaration<'procedure', P, R, {}>;
+  ): FunctionSchema<'procedure', P, R, {}>;
   procedure<R extends TypeBuilder<any, any>>(
     returnType: R
-  ): FunctionDeclaration<'procedure', {}, R, {}>;
+  ): FunctionSchema<'procedure', {}, R, {}>;
   procedure<
     const P extends ParamsObj,
     R extends TypeBuilder<any, any>,
     const O extends Readonly<ProcedureOptsWithOptionalName<P, R>>,
-  >(
-    options: O,
-    params: P,
-    returnType: R
-  ): FunctionDeclaration<'procedure', P, R, O>;
-  procedure(...args: any[]): FunctionDeclaration<any, any, any, any> {
+  >(options: O, params: P, returnType: R): FunctionSchema<'procedure', P, R, O>;
+  procedure(...args: any[]): FunctionSchema<any, any, any, any> {
     const [options, params, ret] =
       args.length === 3
         ? args
         : args.length === 2
           ? [{}, ...args]
           : [{}, {}, args[0]];
-    return new FunctionDeclaration('procedure', this, params, ret, options);
+    return new FunctionSchema('procedure', this, params, ret, options);
   }
 
   view<const O extends ViewOptions, R extends ViewReturnTypeBuilder>(
     options: O,
     returnType: R,
     ..._: ValidateViewPrimaryKey<R>
-  ): FunctionDeclaration<'view', {}, R, O>;
+  ): FunctionSchema<'view', {}, R, O>;
   view<
     const O extends ViewOptions,
     const P extends ParamsObj,
@@ -139,13 +131,13 @@ export class Schema<Entries extends SchemaEntries> {
     params: P,
     returnType: R,
     ..._: ValidateViewPrimaryKey<R>
-  ): FunctionDeclaration<'view', P, R, O>;
+  ): FunctionSchema<'view', P, R, O>;
   view(
     options: ViewOptions,
     paramsOrReturn: ParamsObj | TypeBuilder<any, any>,
     ret?: TypeBuilder<any, any>
-  ): FunctionDeclaration<any, any, any, any> {
-    return new FunctionDeclaration(
+  ): FunctionSchema<any, any, any, any> {
+    return new FunctionSchema(
       'view',
       this,
       (ret === undefined ? {} : paramsOrReturn) as ParamsObj,
@@ -158,7 +150,7 @@ export class Schema<Entries extends SchemaEntries> {
     options: O,
     returnType: R,
     ..._: ValidateViewPrimaryKey<R>
-  ): FunctionDeclaration<'anonymousView', {}, R, O>;
+  ): FunctionSchema<'anonymousView', {}, R, O>;
   anonymousView<
     const O extends ViewOptions,
     const P extends ParamsObj,
@@ -168,13 +160,13 @@ export class Schema<Entries extends SchemaEntries> {
     params: P,
     returnType: R,
     ..._: ValidateViewPrimaryKey<R>
-  ): FunctionDeclaration<'anonymousView', P, R, O>;
+  ): FunctionSchema<'anonymousView', P, R, O>;
   anonymousView(
     options: ViewOptions,
     paramsOrReturn: ParamsObj | TypeBuilder<any, any>,
     ret?: TypeBuilder<any, any>
-  ): FunctionDeclaration<any, any, any, any> {
-    return new FunctionDeclaration(
+  ): FunctionSchema<any, any, any, any> {
+    return new FunctionSchema(
       'anonymousView',
       this,
       (ret === undefined ? {} : paramsOrReturn) as ParamsObj,

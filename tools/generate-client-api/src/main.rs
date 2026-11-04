@@ -99,13 +99,13 @@ fn main() -> Result<()> {
         None,
     )?;
 
-    // Protocol declarations are used by the SDK itself; importing the root SDK
+    // Protocol schemas are used by the SDK itself; importing the root SDK
     // here would create a runtime cycle through the connection implementation.
-    let declarations = Path::new(out_dir).join("declarations.ts");
-    let code = fs::read_to_string(&declarations)?
-        .replace("'spacetimedb/schema'", "'../../schema/declarations'")
-        .replace("\"spacetimedb/schema\"", "\"../../schema/declarations\"");
-    fs::write(declarations, code)?;
+    let module_schema = Path::new(out_dir).join("module.ts");
+    let code = fs::read_to_string(&module_schema)?
+        .replace("'spacetimedb/schema'", "'../../schema/module'")
+        .replace("\"spacetimedb/schema\"", "\"../../schema/module\"");
+    fs::write(module_schema, code)?;
 
     // 5) Replace "spacetimedb" references under out_dir
     let opts = ReplaceOptions {

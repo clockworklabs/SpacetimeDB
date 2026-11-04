@@ -16,24 +16,24 @@ export * from './lib/query';
 export * from './sdk';
 
 export {
-  schema as declarationSchema,
-  Schema as DeclarationSchema,
-  FunctionDeclaration,
-} from './schema/declarations';
+  schema as moduleSchema,
+  Schema as ModuleSchema,
+  FunctionSchema,
+} from './schema/module';
 export type {
-  ModuleDeclarations,
+  ModuleSchemaExports,
   SchemaEntry,
   SchemaEntries,
-  DeclarationKind,
+  FunctionKind,
   FunctionOptions,
   ViewOptions,
   SchemaOptions,
-} from './schema/declarations';
+} from './schema/module';
 export { CaseConversionPolicy } from './lib/autogen/types';
 
 export {
   createClient,
   type Client,
   type ClientConnection,
-  type RemoteModuleOfDeclarations,
+  type RemoteModuleOfSchema,
 } from './sdk/create_client';

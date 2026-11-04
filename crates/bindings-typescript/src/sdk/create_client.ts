@@ -1,10 +1,10 @@
 import {
-  FunctionDeclaration,
-  DeclarationGroup,
+  FunctionSchema,
+  FunctionGroup,
   Schema,
-  type ModuleDeclarations,
+  type ModuleSchemaExports,
   type SchemaEntries,
-} from '../schema/declarations';
+} from '../schema/module';
 import {
   ModuleContext,
   tableToSchema,
@@ -25,8 +25,8 @@ import { procedureSchema } from './procedures';
 import { _MINIMUM_CLI_VERSION } from './version';
 import type { UntypedRemoteModule } from './spacetime_module';
 
-// The SDK consumes the same declarations at runtime and at the type level.
-type AnyFunction = FunctionDeclaration<any, any, any, any>;
+// The SDK consumes the same module schema at runtime and at the type level.
+type AnyFunction = FunctionSchema<any, any, any, any>;
 type Entries<M> = M extends { default: Schema<infer E> } ? E : never;
 type Child<E> = E extends { module: infer M } ? M : E;
 type Intersection<U> = (U extends unknown ? (x: U) => void : never) extends (
@@ -36,7 +36,7 @@ type Intersection<U> = (U extends unknown ? (x: U) => void : never) extends (
   : {};
 type FunctionEntries<M> = Intersection<
   {
-    [K in keyof M & string]: M[K] extends DeclarationGroup<infer E>
+    [K in keyof M & string]: M[K] extends FunctionGroup<infer E>
       ? E
       : M[K] extends AnyFunction
         ? { [A in K]: M[K] }
@@ -44,7 +44,7 @@ type FunctionEntries<M> = Intersection<
   }[keyof M & string]
 >;
 type ViewRow<D> =
-  D extends FunctionDeclaration<'view' | 'anonymousView', any, infer R, any>
+  D extends FunctionSchema<'view' | 'anonymousView', any, infer R, any>
     ? R extends ArrayBuilder<infer B> | OptionBuilder<infer B>
       ? B extends RowBuilder<infer Row>
         ? Row
@@ -66,7 +66,7 @@ type Tables<M, P extends string = ''> = string extends keyof Entries<M>
       }[keyof Entries<M> & string]
     > & {
       [K in keyof FunctionEntries<M> &
-        string as FunctionEntries<M>[K] extends FunctionDeclaration<
+        string as FunctionEntries<M>[K] extends FunctionSchema<
         'view' | 'anonymousView',
         any,
         any,
@@ -95,7 +95,7 @@ type Functions<
   :
       | {
           [K in keyof FunctionEntries<M> &
-            string]: FunctionEntries<M>[K] extends FunctionDeclaration<
+            string]: FunctionEntries<M>[K] extends FunctionSchema<
             Kind,
             infer Args,
             infer Ret,
@@ -133,10 +133,7 @@ type TableAliases<T, A extends Record<string, string>> = {
     : never;
 };
 
-export type RemoteModuleOfDeclarations<
-  M,
-  A extends Record<string, string> = {},
-> = {
+export type RemoteModuleOfSchema<M, A extends Record<string, string> = {}> = {
   tables: Extract<Tables<M>, Record<string, UntypedTableDef>> &
     TableAliases<Tables<M>, A>;
   reducers: readonly Functions<M, 'reducer'>[];
@@ -157,30 +154,30 @@ type WithAliases<T, A extends Record<string, string>> = T & {
 export type ClientConnection<
   M,
   A extends Record<string, string> = {},
-> = DbConnectionImpl<RemoteModuleOfDeclarations<M, A>>;
+> = DbConnectionImpl<RemoteModuleOfSchema<M, A>>;
 
 export interface Client<M, A extends Record<string, string> = {}> {
   DbConnection: {
     new (
-      config: DbConnectionConfig<RemoteModuleOfDeclarations<M, A>>
+      config: DbConnectionConfig<RemoteModuleOfSchema<M, A>>
     ): ClientConnection<M, A>;
     builder(): Builder<ClientConnection<M, A>>;
     prototype: ClientConnection<M, A>;
   };
   DbConnectionBuilder: {
     new (
-      remoteModule: RemoteModuleOfDeclarations<M, A>,
+      remoteModule: RemoteModuleOfSchema<M, A>,
       connection: (
-        config: DbConnectionConfig<RemoteModuleOfDeclarations<M, A>>
+        config: DbConnectionConfig<RemoteModuleOfSchema<M, A>>
       ) => ClientConnection<M, A>
     ): Builder<ClientConnection<M, A>>;
     prototype: Builder<ClientConnection<M, A>>;
   };
   SubscriptionBuilder: typeof SubscriptionBuilderImpl<
-    RemoteModuleOfDeclarations<M, A>
+    RemoteModuleOfSchema<M, A>
   >;
   tables: WithAliases<
-    NestAccessors<QueryBuilder<RemoteModuleOfDeclarations<M, A>>>,
+    NestAccessors<QueryBuilder<RemoteModuleOfSchema<M, A>>>,
     A
   >;
   reducers: AccessorMap<Functions<M, 'reducer'>>;
@@ -221,12 +218,12 @@ function nest<T extends Record<string, unknown>>(flat: T): NestAccessors<T> {
   return result;
 }
 
-/** Construct the client API from body-free module declarations. */
+/** Construct the client API from body-free module schemas. */
 export function createClient<
-  const M extends ModuleDeclarations,
+  const M extends ModuleSchemaExports,
   const A extends Record<string, string> = {},
 >(
-  declarations: M,
+  moduleSchema: M,
   options: { cliVersion?: string; tableAliases?: A } = {}
 ): Client<M, A> {
   const remote: UntypedRemoteModule = {
@@ -240,14 +237,14 @@ export function createClient<
   };
   const active = new Set<Schema<any>>();
   function collect(
-    module: ModuleDeclarations,
+    module: ModuleSchemaExports,
     accessorPrefix = '',
     canonicalPrefix = ''
   ) {
     const schema = module.default;
     if (!(schema instanceof Schema))
       throw new TypeError('Expected a module with a schema default export');
-    if (active.has(schema)) throw new TypeError('Cyclic module declarations');
+    if (active.has(schema)) throw new TypeError('Cyclic module schemas');
     active.add(schema);
     const ctx = new ModuleContext();
     const canonical = (name: string) =>
@@ -256,15 +253,15 @@ export function createClient<
         : toSnakeCase(name);
     const registerTable = (
       accessor: string,
-      declaration: UntypedTableSchema
+      tableSchema: UntypedTableSchema
     ) => {
       const def = tableToSchema(
         accessor,
-        declaration,
-        declaration.tableDef(ctx, accessor)
+        tableSchema,
+        tableSchema.tableDef(ctx, accessor)
       );
       def.sourceName =
-        canonicalPrefix + (declaration.tableName ?? canonical(accessor));
+        canonicalPrefix + (tableSchema.tableName ?? canonical(accessor));
       def.accessorName = accessorPrefix + accessor;
       if (def.accessorName in remote.tables)
         throw new TypeError(`Duplicate table: ${def.accessorName}`);
@@ -287,10 +284,10 @@ export function createClient<
     const functionEntries = Object.entries(
       module as unknown as Record<string, unknown>
     ).flatMap(([name, value]): [string, unknown][] => {
-      if (value instanceof DeclarationGroup) {
+      if (value instanceof FunctionGroup) {
         if (value.schema !== schema)
           throw new TypeError(
-            `Declaration group ${name} belongs to another schema`
+            `Function group ${name} belongs to another schema`
           );
         return Object.entries(value.exports);
       }
@@ -298,11 +295,9 @@ export function createClient<
     });
     const names = new Set<string>();
     for (const [accessor, value] of functionEntries) {
-      if (!(value instanceof FunctionDeclaration)) continue;
+      if (!(value instanceof FunctionSchema)) continue;
       if (value.schema !== schema)
-        throw new TypeError(
-          `Declaration ${accessor} belongs to another schema`
-        );
+        throw new TypeError(`Function ${accessor} belongs to another schema`);
       if (names.has(accessor))
         throw new TypeError(`Duplicate function: ${accessor}`);
       names.add(accessor);
@@ -348,7 +343,7 @@ export function createClient<
     }
     active.delete(schema);
   }
-  collect(declarations);
+  collect(moduleSchema);
   const module = remote;
   class SubscriptionBuilder extends SubscriptionBuilderImpl<typeof module> {}
   class DbConnection extends DbConnectionImpl<typeof module> {

@@ -35,7 +35,7 @@ pub struct TypeScript;
 
 impl TypeScript {
     /// Generate registered types for internal SDK schemas, without client wiring.
-    pub fn generate_type_declarations(&self, module: &ModuleDef) -> OutputFile {
+    pub fn generate_type_builders(&self, module: &ModuleDef) -> OutputFile {
         types_only(module)
     }
 }
@@ -190,7 +190,7 @@ impl Lang for TypeScript {
             files.push(generate_types_file_with_path(owning_def, filename));
         }
 
-        generate_declarations(module, options, files)
+        generate_module_files(module, options, files)
     }
 }
 
@@ -275,7 +275,7 @@ fn generate_types_file_with_path(module: &ModuleDef, filename: String) -> Output
 fn generate_types_file_with_reexports(
     module: &ModuleDef,
     filename: String,
-    declarations: &str,
+    module_path: &str,
     reexports: &BTreeSet<AlgebraicTypeRef>,
 ) -> OutputFile {
     let mut output = CodeIndenter::new(String::new(), INDENT);
@@ -296,11 +296,7 @@ fn generate_types_file_with_reexports(
         }
 
         if reexports.contains(&ty.ty) {
-            writeln!(
-                out,
-                "import {{ {type_name} }} from {};",
-                ts_string_literal(declarations)
-            );
+            writeln!(out, "import {{ {type_name} }} from {};", ts_string_literal(module_path));
             writeln!(out, "export {{ {type_name} }};");
             writeln!(out, "export type {type_name} = __Infer<typeof {type_name}>;");
             out.newline();
@@ -825,7 +821,7 @@ fn gen_and_print_imports<'a>(
 //     field_name
 // }
 
-fn generate_declarations(module: &ModuleDef, options: &CodegenOptions, mut files: Vec<OutputFile>) -> Vec<OutputFile> {
+fn generate_module_files(module: &ModuleDef, options: &CodegenOptions, mut files: Vec<OutputFile>) -> Vec<OutputFile> {
     generate_module(module, options, "", &mut files);
     files.push(entry_point(module, options, ""));
     files
@@ -964,14 +960,14 @@ fn generate_module(module: &ModuleDef, options: &CodegenOptions, dir: &str, file
         );
     }
     // Row types already represented by a table or view need a separate builder
-    // only when another declaration refers to them.
+    // only when another schema refers to them.
     let row_models: Vec<_> = iter_tables(module, crate::CodegenVisibility::IncludePrivate)
         .cloned()
         .chain(module.views().cloned().map(TableDef::from))
         .collect();
     let named = selected_types(module, &used_types, &row_models);
     // Reuse named object/enum builders, but retain object builders for row types:
-    // a RowBuilder in declarations does not have the old ObjectBuilder API.
+    // a RowBuilder in the module schema does not have the old ObjectBuilder API.
     let reexports = named
         .iter()
         .filter(|ty| !row_models.iter().any(|row| row.product_type_ref == ty.ty))
@@ -988,12 +984,8 @@ fn generate_module(module: &ModuleDef, options: &CodegenOptions, dir: &str, file
     } else {
         "../".repeat(module.accessor_path().segments().len())
     };
-    let compatibility_types = generate_types_file_with_reexports(
-        module,
-        filename.clone(),
-        &format!("{prefix}{dir}declarations"),
-        &reexports,
-    );
+    let compatibility_types =
+        generate_types_file_with_reexports(module, filename.clone(), &format!("{prefix}{dir}module"), &reexports);
     files.retain(|file| file.filename != filename);
     files.push(compatibility_types);
 
@@ -1038,7 +1030,7 @@ fn generate_module(module: &ModuleDef, options: &CodegenOptions, dir: &str, file
         .iter()
         .map(|(canonical, child)| {
             let name = binding_name(&canonical.deref().to_case(Case::Camel), &mut used);
-            writeln!(out, "import * as {name} from './{canonical}/declarations';");
+            writeln!(out, "import * as {name} from './{canonical}/module';");
             generate_module(child, options, &format!("{dir}{canonical}/"), files);
             (canonical, child, name)
         })
@@ -1159,7 +1151,7 @@ fn generate_module(module: &ModuleDef, options: &CodegenOptions, dir: &str, file
         function_export(out, &accessor, binding);
     }
     files.push(OutputFile {
-        filename: format!("{dir}declarations.ts"),
+        filename: format!("{dir}module.ts"),
         code: output.into_inner(),
     });
 }
@@ -1232,7 +1224,7 @@ fn shared_row_name(table: &TableDef, types: &[&TypeDef], rows: &[TableDef]) -> O
     same.then(|| collect_case(Case::Pascal, ty.accessor_name.name_segments()))
 }
 
-// Internal SDK wire/schema generation needs the same named type declarations,
+// Internal SDK wire/schema generation needs the same named type builders,
 // without constructing a module or depending on the client runtime.
 fn types_only(module: &ModuleDef) -> OutputFile {
     let mut output = CodeIndenter::new(String::new(), INDENT);
@@ -1538,7 +1530,7 @@ fn table_options(out: &mut Indenter, table: &TableDef) {
                 IndexAlgorithm::BTree(_) => "btree",
                 IndexAlgorithm::Hash(_) => "hash",
                 IndexAlgorithm::Direct(_) => "direct",
-                _ => panic!("unsupported index algorithm in TypeScript declarations"),
+                _ => panic!("unsupported index algorithm in TypeScript module schemas"),
             };
             let columns: Vec<_> = index
                 .algorithm
@@ -1591,11 +1583,11 @@ fn entry_point(module: &ModuleDef, options: &CodegenOptions, dir: &str) -> Outpu
     print_auto_generated_file_comment(&mut header);
     crate::util::print_auto_generated_version_comment(&mut header);
     let mut code = header.into_inner();
-    writeln!(code, "import * as declarations from './declarations';").unwrap();
+    writeln!(code, "import * as moduleSchema from './module';").unwrap();
     writeln!(code, "import {{ createClient, type EventContextInterface, type ReducerEventContextInterface, type SubscriptionEventContextInterface, type ErrorContextInterface, type SubscriptionHandleImpl, type RemoteModuleOf }} from 'spacetimedb';").unwrap();
     write!(
         code,
-        "const client = createClient(declarations, {{ cliVersion: {}, tableAliases: {{",
+        "const client = createClient(moduleSchema, {{ cliVersion: {}, tableAliases: {{",
         ts_string_literal(spacetimedb_lib_version())
     )
     .unwrap();
