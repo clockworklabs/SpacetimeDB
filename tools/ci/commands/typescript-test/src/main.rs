@@ -13,6 +13,7 @@ fn main() -> Result<()> {
         ci_common::require_runtime()?;
     }
 
+    pnpm(["build"]).dir("crates/bindings-typescript").run()?;
     pnpm(["test"]).dir("crates/bindings-typescript").run()?;
     pnpm(["generate"]).dir("templates/chat-react-ts").run()?;
     let diff_status = duct::cmd!(

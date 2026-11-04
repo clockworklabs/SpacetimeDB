@@ -30,7 +30,7 @@
     "build:package": "pnpm -s build && pnpm -s prepare:test-utils-wasm:clean",
     "format": "prettier . --write --ignore-path ../../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../../.prettierignore",
-    "test": "pnpm -s build && pnpm -s prepare:test-utils-wasm && pnpm -s test:unit",
+    "test": "pnpm -s prepare:test-utils-wasm && pnpm -s test:unit",
     "test:unit": "vitest run",
     "test:typecheck": "vitest typecheck --run",
     "coverage": "vitest run --coverage",
