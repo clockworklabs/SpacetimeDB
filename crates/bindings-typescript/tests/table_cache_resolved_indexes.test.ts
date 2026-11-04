@@ -53,7 +53,16 @@ describe('table cache resolved indexes', () => {
         rowId: row.email,
         row,
       })),
-      {}
+      {
+        db: {},
+        reducers: {},
+        isActive: true,
+        subscriptionBuilder: () => {
+          throw new Error('Not used by this test');
+        },
+        disconnect: () => {},
+        event: { id: 'test', tag: 'SubscribeApplied' },
+      }
     );
     callbacks.forEach(cb => cb.cb());
 
