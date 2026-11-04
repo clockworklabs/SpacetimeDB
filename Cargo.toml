@@ -38,7 +38,6 @@ members = [
   "sdks/rust",
   "sdks/unreal",
   "crates/snapshot",
-  "crates/sqltest",
   "crates/sql-parser",
   "crates/standalone",
   "crates/subscription",
@@ -224,7 +223,6 @@ chrono = { version = "0.4.24", default-features = false }
 clap = { version = "4.2.4", features = ["derive", "wrap_help"] }
 clap-markdown = "0.1.4"
 colored = "2.0.0"
-console = { version = "0.15.6" }
 convert_case = "0.6.0"
 crc32c = "0.6.4"
 criterion = { version = "0.5.1", features = ["async", "async_tokio", "html_reports"] }
@@ -288,13 +286,11 @@ percent-encoding = "2.3"
 petgraph = { version = "0.6.5", default-features = false }
 pin-project-lite = "0.2.9"
 pgwire = { version = "0.37", default-features = false, features = ["server-api", "pg-ext-types"] }
-postgres-types = "0.2.5"
 pretty_assertions = { version = "1.4", features = ["unstable"] }
 proc-macro2 = "1.0"
 prometheus = "0.14.0"
 proptest = "1.4"
 proptest-derive = "0.5"
-quick-junit = { version = "0.3.2" }
 quote = "1.0.8"
 rand08 = { package = "rand", version = "0.8" }
 rand = "0.9"
@@ -310,7 +306,6 @@ rolldown_error = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0
 rolldown_utils = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-rc.3" }
 ron = "0.8"
 rusqlite = { version = "0.29.0", features = ["bundled", "column_decltype"] }
-rust_decimal = { version = "1.29.1", features = ["db-tokio-postgres"] }
 rustc-demangle = "0.1.21"
 rustc-hash = "2"
 rustyline = { version = "12.0.0", features = [] }
@@ -329,7 +324,6 @@ sled = "0.34.7"
 smallvec = { version = "1.11", features = ["union", "const_generics"] }
 socket2 = "0.5"
 sourcemap = "9.3.1"
-sqllogictest = "0.17"
 sqlparser = "0.38.0"
 strum = { version = "0.25.0", features = ["derive"] }
 syn = { version = "2", features = ["full", "extra-traits"] }

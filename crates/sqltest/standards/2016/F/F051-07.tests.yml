@@ -1,7 +1,0 @@
-feature: F051-07
-id: f051_07_01_01
-sql: SELECT CURRENT_TIME
----
-feature: F051-07
-id: f051_07_01_02
-sql: SELECT CURRENT_TIME ( 0 )
