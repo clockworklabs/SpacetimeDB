@@ -10,8 +10,6 @@ use spacetimedb_datastore::locking_tx_datastore::IndexScanPointOrRange;
 #[cfg(feature = "queries")]
 use spacetimedb_datastore::{execution_context::Workload, traits::IsolationLevel};
 use spacetimedb_engine::error::{DBError, DatastoreError, IndexError, SequenceError};
-#[cfg(feature = "queries")]
-use spacetimedb_engine::estimation::{check_row_limit, estimate_rows_scanned};
 use spacetimedb_engine::relational_db::{tests_utils, MutTx, RelationalDB, Tx};
 #[cfg(feature = "queries")]
 use spacetimedb_engine::sql::ast::SchemaViewer;
@@ -24,6 +22,8 @@ use spacetimedb_lib::de::Error as _;
 use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, Identity};
 use spacetimedb_lib::{ProductValue, RawModuleDef};
 use spacetimedb_primitives::{ColId, IndexId, TableId};
+#[cfg(feature = "queries")]
+use spacetimedb_query::estimation::{check_row_limit, estimate_rows_scanned};
 #[cfg(feature = "queries")]
 use spacetimedb_query::{compile_sql_stmt, execute_select_stmt};
 use spacetimedb_schema::def::ModuleDef;

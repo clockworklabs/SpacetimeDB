@@ -8,12 +8,22 @@ description = "Top level crate for invoking the query engine and optimizer"
 
 [dependencies]
 anyhow.workspace = true
+spacetimedb-datastore = { workspace = true, optional = true }
+spacetimedb-engine = { workspace = true, optional = true }
 spacetimedb-execution.workspace = true
 spacetimedb-expr.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-physical-plan.workspace = true
 spacetimedb-schema.workspace = true
+
+[dev-dependencies]
+spacetimedb-engine = { workspace = true, features = ["test"] }
+spacetimedb-sats.workspace = true
+
+[features]
+# Native engine integration; leave disabled for portable datastore builds.
+estimation = ["dep:spacetimedb-datastore", "dep:spacetimedb-engine"]
 
 [lints]
 workspace = true

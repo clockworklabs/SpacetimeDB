@@ -17,7 +17,7 @@ spacetimedb-datastore.workspace = true
 spacetimedb-expr = { workspace = true, optional = true }
 spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true
-spacetimedb-query = { workspace = true, optional = true }
+spacetimedb-query = { workspace = true, optional = true, features = ["estimation"] }
 spacetimedb-schema.workspace = true
 
 anyhow.workspace = true

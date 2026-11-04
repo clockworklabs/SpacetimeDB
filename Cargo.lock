@@ -8636,9 +8636,7 @@ dependencies = [
  "spacetimedb-lib",
  "spacetimedb-metrics",
  "spacetimedb-paths",
- "spacetimedb-physical-plan",
  "spacetimedb-primitives",
- "spacetimedb-query",
  "spacetimedb-runtime",
  "spacetimedb-sats",
  "spacetimedb-schema",
@@ -8856,11 +8854,14 @@ name = "spacetimedb-query"
 version = "2.14.1"
 dependencies = [
  "anyhow",
+ "spacetimedb-datastore",
+ "spacetimedb-engine",
  "spacetimedb-execution",
  "spacetimedb-expr",
  "spacetimedb-lib",
  "spacetimedb-physical-plan",
  "spacetimedb-primitives",
+ "spacetimedb-sats",
  "spacetimedb-schema",
 ]
 
