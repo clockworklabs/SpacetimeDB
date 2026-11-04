@@ -176,10 +176,7 @@ export interface Client<M, A extends Record<string, string> = {}> {
   SubscriptionBuilder: typeof SubscriptionBuilderImpl<
     RemoteModuleOfSchema<M, A>
   >;
-  tables: WithAliases<
-    NestAccessors<QueryBuilder<RemoteModuleOfSchema<M>>>,
-    A
-  >;
+  tables: WithAliases<NestAccessors<QueryBuilder<RemoteModuleOfSchema<M>>>, A>;
   reducers: AccessorMap<Functions<M, 'reducer'>>;
   procedures: AccessorMap<Functions<M, 'procedure'>>;
 }

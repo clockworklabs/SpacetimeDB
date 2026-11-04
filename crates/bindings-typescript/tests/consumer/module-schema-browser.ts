@@ -24,6 +24,6 @@ function consumer(conn: Connection) {
   // @ts-expect-error wrong argument type
   conn.reducers.add({ name: 123 });
   // @ts-expect-error unknown member
-  conn.db.unknown;
+  void conn.db.unknown;
 }
 void consumer;
