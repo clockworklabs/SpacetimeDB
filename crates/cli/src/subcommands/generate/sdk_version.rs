@@ -2,6 +2,7 @@
 //! version detector; project discovery and diagnostics stay outside codegen.
 use super::Language;
 use anyhow::Context;
+use colored::Colorize;
 use semver::Version;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -30,7 +31,12 @@ fn requirement(language: Language) -> Option<SdkRequirement> {
 
 pub(super) fn warn_if_incompatible(language: Language, output: &Path) {
     if let Some(message) = warning(language, output) {
-        eprintln!("Warning: {message}");
+        eprintln!(
+            "\n{}\n{message}\n",
+            "WARNING: Check your client SDK before using these bindings"
+                .yellow()
+                .bold()
+        );
     }
 }
 
@@ -52,7 +58,7 @@ fn warning(language: Language, output: &Path) -> Option<String> {
         "Could not determine the SDK version in use. Install or upgrade your client project's SDK before using these bindings."
     };
     Some(format!(
-        "Generated bindings in '{}' require {} SDK {} or later; {}. {}",
+        "Generated bindings in '{}' require {} SDK {} or later.\nDetected SDK: {}.\n{}",
         output.display(),
         requirement.name,
         requirement.minimum,
