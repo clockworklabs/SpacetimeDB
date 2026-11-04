@@ -1,16 +1,12 @@
-import type { Infer } from '../lib/type_builders';
 import BinaryReader from '../lib/binary_reader.ts';
 import BinaryWriter from '../lib/binary_writer.ts';
-import { ClientMessage, ServerMessage } from './client_api/declarations';
+import { ClientMessage, ServerMessage } from './client_api/types';
 import type { WebSocketAdapter, WebSocketArgs, WebSocketFactory } from './ws';
 import { PREFERRED_WS_PROTOCOLS, V3_WS_PROTOCOL } from './websocket_protocols';
 import {
   decodeClientMessagesV3,
   encodeServerMessagesV3,
 } from './websocket_v3_frames.ts';
-
-type ClientMessage = Infer<typeof ClientMessage>;
-type ServerMessage = Infer<typeof ServerMessage>;
 
 class WebsocketTestAdapter implements WebSocketAdapter {
   protocol: string = '';

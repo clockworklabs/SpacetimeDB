@@ -127,8 +127,18 @@ type Functions<
               >;
         }[keyof Entries<M> & string];
 
-export type RemoteModuleOfDeclarations<M> = {
-  tables: Extract<Tables<M>, Record<string, UntypedTableDef>>;
+type TableAliases<T, A extends Record<string, string>> = {
+  readonly [K in Exclude<keyof A, keyof T>]: A[K] extends keyof T
+    ? Omit<T[A[K]], 'accessorName'> & { readonly accessorName: K }
+    : never;
+};
+
+export type RemoteModuleOfDeclarations<
+  M,
+  A extends Record<string, string> = {},
+> = {
+  tables: Extract<Tables<M>, Record<string, UntypedTableDef>> &
+    TableAliases<Tables<M>, A>;
   reducers: readonly Functions<M, 'reducer'>[];
   procedures: readonly Functions<M, 'procedure'>[];
   versionInfo: { cliVersion: string };
@@ -139,33 +149,60 @@ type AccessorMap<T extends { accessorName: string }> = NestAccessors<{
   [F in T as F['accessorName']]: F;
 }>;
 
-export type ClientConnection<M> = DbConnectionImpl<
-  RemoteModuleOfDeclarations<M>
->;
+type WithAliases<T, A extends Record<string, string>> = T & {
+  readonly [K in Exclude<keyof A, keyof T>]: A[K] extends keyof T
+    ? T[A[K]]
+    : never;
+};
+export type ClientConnection<
+  M,
+  A extends Record<string, string> = {},
+> = DbConnectionImpl<RemoteModuleOfDeclarations<M, A>>;
 
-export interface Client<M> {
+export interface Client<M, A extends Record<string, string> = {}> {
   DbConnection: {
     new (
-      config: DbConnectionConfig<RemoteModuleOfDeclarations<M>>
-    ): ClientConnection<M>;
-    builder(): Builder<ClientConnection<M>>;
-    prototype: ClientConnection<M>;
+      config: DbConnectionConfig<RemoteModuleOfDeclarations<M, A>>
+    ): ClientConnection<M, A>;
+    builder(): Builder<ClientConnection<M, A>>;
+    prototype: ClientConnection<M, A>;
   };
   DbConnectionBuilder: {
     new (
-      remoteModule: RemoteModuleOfDeclarations<M>,
+      remoteModule: RemoteModuleOfDeclarations<M, A>,
       connection: (
-        config: DbConnectionConfig<RemoteModuleOfDeclarations<M>>
-      ) => ClientConnection<M>
-    ): Builder<ClientConnection<M>>;
-    prototype: Builder<ClientConnection<M>>;
+        config: DbConnectionConfig<RemoteModuleOfDeclarations<M, A>>
+      ) => ClientConnection<M, A>
+    ): Builder<ClientConnection<M, A>>;
+    prototype: Builder<ClientConnection<M, A>>;
   };
   SubscriptionBuilder: typeof SubscriptionBuilderImpl<
-    RemoteModuleOfDeclarations<M>
+    RemoteModuleOfDeclarations<M, A>
   >;
-  tables: NestAccessors<QueryBuilder<RemoteModuleOfDeclarations<M>>>;
+  tables: WithAliases<
+    NestAccessors<QueryBuilder<RemoteModuleOfDeclarations<M, A>>>,
+    A
+  >;
   reducers: AccessorMap<Functions<M, 'reducer'>>;
   procedures: AccessorMap<Functions<M, 'procedure'>>;
+}
+
+function withAliases<T extends object>(
+  value: T,
+  aliases: Record<string, string>
+): T {
+  const result = Object.create(Object.getPrototypeOf(value));
+  Object.defineProperties(result, Object.getOwnPropertyDescriptors(value));
+  for (const [alias, target] of Object.entries(aliases)) {
+    if (!(target in value))
+      throw new TypeError(`Unknown table alias target: ${target}`);
+    if (!(alias in result))
+      Object.defineProperty(result, alias, {
+        enumerable: true,
+        get: () => (value as Record<string, unknown>)[target],
+      });
+  }
+  return result;
 }
 
 /** Turn dotted accessor paths into the same nested API used by connections. */
@@ -185,10 +222,13 @@ function nest<T extends Record<string, unknown>>(flat: T): NestAccessors<T> {
 }
 
 /** Construct the client API from body-free module declarations. */
-export function createClient<const M extends ModuleDeclarations>(
+export function createClient<
+  const M extends ModuleDeclarations,
+  const A extends Record<string, string> = {},
+>(
   declarations: M,
-  options: { cliVersion?: string } = {}
-): Client<M> {
+  options: { cliVersion?: string; tableAliases?: A } = {}
+): Client<M, A> {
   const remote: UntypedRemoteModule = {
     tables: Object.create(null),
     reducers: [],
@@ -312,6 +352,10 @@ export function createClient<const M extends ModuleDeclarations>(
   const module = remote;
   class SubscriptionBuilder extends SubscriptionBuilderImpl<typeof module> {}
   class DbConnection extends DbConnectionImpl<typeof module> {
+    constructor(config: DbConnectionConfig<typeof module>) {
+      super(config);
+      this.db = withAliases(this.db, options.tableAliases ?? {});
+    }
     static builder(): DbConnectionBuilder {
       return new DbConnectionBuilder(
         module,
@@ -322,7 +366,9 @@ export function createClient<const M extends ModuleDeclarations>(
       new SubscriptionBuilder(this);
   }
   class DbConnectionBuilder extends Builder<DbConnection> {}
-  const tables = Object.freeze(nest(makeQueryBuilder(module)));
+  const tables = Object.freeze(
+    withAliases(nest(makeQueryBuilder(module)), options.tableAliases ?? {})
+  );
   const reducers = nest(
     Object.fromEntries(module.reducers.map(r => [r.accessorName, r]))
   );
@@ -336,5 +382,5 @@ export function createClient<const M extends ModuleDeclarations>(
     tables,
     reducers,
     procedures,
-  } as unknown as Client<M>;
+  } as unknown as Client<M, A>;
 }

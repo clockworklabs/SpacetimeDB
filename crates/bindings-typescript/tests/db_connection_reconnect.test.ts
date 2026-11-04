@@ -1,4 +1,3 @@
-import type { Infer } from '../src/lib/type_builders';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ConnectionId, Identity } from '../src';
 import {
@@ -19,7 +18,7 @@ import {
 import {
   ServerMessage,
   type SubscribeBatch,
-} from '../src/sdk/client_api/declarations';
+} from '../src/sdk/client_api/types';
 import { WebSocketTokenError } from '../src/sdk/ws';
 import { WebsocketTestAdapterFactory } from '../src/sdk/websocket_test_adapter';
 import { DbConnection } from '../test-app/src/module_bindings';
@@ -29,9 +28,6 @@ import {
   encodeUnindexedPlayer,
   encodeUser,
 } from './utils';
-
-type ServerMessage = Infer<typeof ServerMessage>;
-type SubscribeBatch = Infer<typeof SubscribeBatch>;
 
 /** The disconnect/connect-error reports an application sees. */
 type ReconnectReport = {

@@ -1,15 +1,12 @@
-import type { Infer } from '../src/lib/type_builders';
 import { describe, expect, test } from 'vitest';
 import BinaryReader from '../src/lib/binary_reader.ts';
 import BinaryWriter from '../src/lib/binary_writer.ts';
-import { ClientMessage } from '../src/sdk/client_api/declarations';
+import { ClientMessage } from '../src/sdk/client_api/types';
 import {
   countClientMessagesForV3Frame,
   decodeClientMessagesV3,
   encodeClientMessagesV3,
 } from '../src/sdk/websocket_v3_frames';
-
-type ClientMessage = Infer<typeof ClientMessage>;
 
 function encodeClientMessage(message: ClientMessage): Uint8Array {
   const writer = new BinaryWriter(128);

@@ -1,4 +1,3 @@
-import type { Infer } from '../lib/type_builders';
 import { accessorSlot } from '../lib/accessor_path';
 import { ConnectionId } from '../lib/connection_id';
 import { ProductBuilder } from '../lib/type_builders';
@@ -19,7 +18,7 @@ import {
   UnsubscribeFlags,
   type SubscribeBatchApplied,
   type SubscribeBatch,
-} from './client_api/declarations';
+} from './client_api/types';
 import { ClientCache } from './client_cache.ts';
 import { DbConnectionBuilder } from './db_connection_builder.ts';
 import { INTERNAL_REMOTE_MODULE } from './internal.ts';
@@ -69,7 +68,7 @@ import type { RowType, UntypedTableDef } from '../lib/table.ts';
 import type { UntypedSchemaDef } from '../lib/schema';
 import type { ProceduresView } from './procedures.ts';
 import type { Values } from '../lib/type_util.ts';
-import type { TransactionUpdate } from './client_api/declarations.ts';
+import type { TransactionUpdate } from './client_api/types.ts';
 import type { SubscriptionEntry } from './subscription_builder_impl';
 import {
   DisconnectedError,
@@ -95,16 +94,6 @@ import {
   encodeClientMessagesV3,
   forEachServerMessageV3,
 } from './websocket_v3_frames.ts';
-
-type BsatnRowList = Infer<typeof BsatnRowList>;
-type ClientMessage = Infer<typeof ClientMessage>;
-type QueryRows = Infer<typeof QueryRows>;
-type QuerySetUpdate = Infer<typeof QuerySetUpdate>;
-type ServerMessage = Infer<typeof ServerMessage>;
-type TableUpdateRows = Infer<typeof TableUpdateRows>;
-type SubscribeBatchApplied = Infer<typeof SubscribeBatchApplied>;
-type SubscribeBatch = Infer<typeof SubscribeBatch>;
-type TransactionUpdate = Infer<typeof TransactionUpdate>;
 
 export {
   DbConnectionBuilder,

@@ -4,11 +4,11 @@ import { and, not, or, toSql } from '../src/lib/query';
 import { tables } from '../test-app/src/module_bindings';
 
 describe('ClientQuery.toSql', () => {
-  it('uses camelCase accessors with canonical SQL names', () => {
-    // @ts-expect-error legacy table aliases are not part of the new bindings
-    expect(tables.unindexed_player).toBeUndefined();
+  it('keeps deprecated snake_case table aliases working', () => {
+    assertType<typeof tables.unindexedPlayer>(tables.unindexed_player);
+    expect(tables.unindexed_player).toBe(tables.unindexedPlayer);
 
-    const sql = toSql(tables.unindexedPlayer.build());
+    const sql = toSql(tables.unindexed_player.build());
 
     expect(sql).toBe('SELECT * FROM "unindexed_player"');
   });

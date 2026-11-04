@@ -9,7 +9,7 @@ import {
   Timestamp,
   type Infer,
 } from '../src';
-import { ServerMessage } from '../src/sdk/client_api/declarations';
+import { ServerMessage } from '../src/sdk/client_api/types';
 import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter';
 import { V2_WS_PROTOCOL, V3_WS_PROTOCOL } from '../src/sdk/websocket_protocols';
 import { decodeClientMessagesV3 } from '../src/sdk/websocket_v3_frames.ts';
@@ -155,16 +155,15 @@ function encodeMyUserProcedural(value: MyUserViewRow): Uint8Array {
 }
 
 describe('DbConnection', () => {
-  test('exposes camelCase db accessors without legacy aliases', async () => {
+  test('keeps deprecated snake_case db aliases working', async () => {
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withDatabaseName('db')
       .withWSFn(() => Promise.reject(new Error('expected test failure')))
       .build();
 
-    expect(client.db.unindexedPlayer).toBeDefined();
-    // @ts-expect-error legacy table aliases are not part of the new bindings
-    expect(client.db.unindexed_player).toBeUndefined();
+    assertType<typeof client.db.unindexedPlayer>(client.db.unindexed_player);
+    expect(client.db.unindexed_player).toBe(client.db.unindexedPlayer);
 
     await client['wsPromise'];
   });

@@ -4,7 +4,7 @@ import {
   ServerMessage,
   RowSizeHint,
   TableUpdateRows,
-} from '../src/sdk/client_api/declarations';
+} from '../src/sdk/client_api/types';
 import BinaryReader from '../src/lib/binary_reader';
 import BinaryWriter from '../src/lib/binary_writer';
 

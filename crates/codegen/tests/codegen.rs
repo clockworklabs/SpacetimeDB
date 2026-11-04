@@ -54,14 +54,12 @@ import assert from 'node:assert/strict';
 import { DbConnection, tables, type EventContext } from './index';
 assert.equal(tables.loggedOutPlayer.sourceName, 'logged_out_player');
 assert.equal(tables.myPlayer.sourceName, 'my_player');
-assert.equal('logged_out_player' in tables, false);
-// @ts-expect-error legacy spellings are not generated accessors
-void tables.logged_out_player;
+assert.equal(tables.logged_out_player, tables.loggedOutPlayer);
 function consume(conn: DbConnection, ctx: EventContext) {
   const same: typeof conn.db.loggedOutPlayer = ctx.db.loggedOutPlayer;
   const player: typeof conn.db.myPlayer = conn.db.myPlayer;
-  // @ts-expect-error legacy spellings are not generated accessors
-  void conn.db.logged_out_player;
+  const alias: typeof conn.db.loggedOutPlayer = ctx.db.logged_out_player;
+  void alias;
   void same; void player;
 }
 void consume;
@@ -254,6 +252,90 @@ function consume(conn: DbConnection) {
 void consume;
 "#,
         );
+    }
+}
+
+#[test]
+fn typescript_generation_preserves_existing_client_code() {
+    for module in [compiled_module(), compiled_typescript_module()] {
+        let options = CodegenOptions::default();
+        let legacy = generate(module, &LegacyTypeScript, &options);
+        let current = generate(module, &TypeScript, &options);
+        // Every old direct-import file retains its full API, including runtime
+        // schema exports. The entry point is exercised by unchanged consumers.
+        for old in &legacy {
+            if old.filename != "index.ts" {
+                let new = current.iter().find(|f| f.filename == old.filename).unwrap();
+                assert_eq!(new.code, old.code, "{}", old.filename);
+            }
+        }
+        let program = if std::ptr::eq(module, compiled_module()) {
+            r#"
+import assert from 'node:assert/strict';
+import { DbConnection, DbConnectionBuilder, SubscriptionBuilder, tables, reducers, procedures,
+  type EventContext, type ReducerEventContext, type SubscriptionEventContext, type ErrorContext,
+  type SubscriptionHandle } from './index';
+import PersonRow from './person_table';
+import AddArgs from './add_reducer';
+import * as ReturnValue from './return_value_procedure';
+import { Baz, Foobar, type Person } from './types';
+import type { AddParams } from './types/reducers';
+import type { ReturnValueArgs, ReturnValueResult } from './types/procedures';
+import type { Infer } from 'spacetimedb';
+const args: AddParams = { name: 'Alice', age: 30 };
+const person: Person = { id: 1, ...args };
+const row: Infer<typeof PersonRow> = person;
+const reducerArgs: Infer<typeof AddArgs> = args;
+const procedureArgs: ReturnValueArgs = { foo: 1n };
+const value: ReturnValueResult = { field: 'hello' };
+const baz: Baz = value;
+assert.equal(PersonRow.algebraicType.tag, 'Product');
+assert.equal(AddArgs.age.algebraicType.tag, 'U8');
+assert.equal(ReturnValue.params.foo.algebraicType.tag, 'U64');
+assert.equal(ReturnValue.returnType.algebraicType.tag, 'Product');
+assert.equal(Foobar.Bar.tag, 'Bar');
+assert.equal(tables.logged_out_player, tables.loggedOutPlayer);
+assert.equal(reducers.add.name, 'add');
+assert.equal(procedures.returnValue.name, 'return_value');
+const builder: DbConnectionBuilder = DbConnection.builder().withUri('ws://localhost:3000').withDatabaseName('example');
+assert.ok(builder instanceof DbConnectionBuilder);
+function consume(conn: DbConnection, event: EventContext, reducer: ReducerEventContext,
+ subscription: SubscriptionEventContext, error: ErrorContext, handle: SubscriptionHandle) {
+  conn.reducers.add(reducerArgs);
+  const result: Promise<ReturnValueResult> = conn.procedures.returnValue(procedureArgs);
+  const sub: SubscriptionBuilder = conn.subscriptionBuilder()
+    .onApplied((ctx: SubscriptionEventContext) => { void ctx.db.logged_out_player; })
+    .onError((ctx: ErrorContext) => { void ctx.db.logged_out_player; });
+  conn.db.person.onInsert((ctx: EventContext, row: Person) => { void ctx.db.logged_out_player; void row; });
+  const same: typeof conn.db.loggedOutPlayer = event.db.logged_out_player;
+  const rows: Person[] = [...conn.db.person.iter()];
+  // @ts-expect-error reducer arguments remain checked
+  conn.reducers.add({ name: 123, age: 30 });
+  void result; void sub; void same; void rows; void reducer; void subscription; void error; void handle;
+}
+void consume; void row; void baz;
+"#
+        } else {
+            r#"
+import assert from 'node:assert/strict';
+import { DbConnection, tables, reducers, procedures } from './index';
+import Row from './myLib/lib_data_table';
+import Args from './myLib/lib_insert_reducer';
+import * as Count from './myLib/lib_count_procedure';
+import type { LibData } from './myLib/types';
+assert.equal(tables.myLib.libData.sourceName, 'my_lib.libData');
+assert.equal(reducers.myLib.libInsert.name, 'my_lib.lib_insert');
+assert.equal(procedures.myLib.libCount.name, 'my_lib.lib_count');
+function consume(conn: DbConnection) {
+  const rows: LibData[] = [...conn.db.myLib.libData.iter()];
+  conn.reducers.myLib.libInsert({ value: 'hello' });
+  void rows;
+}
+void consume; void Row; void Args; void Count;
+"#
+        };
+        compile_typescript_client(legacy, program);
+        compile_typescript_client(current, program);
     }
 }
 
