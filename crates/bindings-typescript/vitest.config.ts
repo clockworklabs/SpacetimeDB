@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import type { UserConfig } from 'vite';
-import { configDefaults, defineConfig } from 'vitest/config';
+import { defineConfig } from 'vitest/config';
 import { spacetimedbModuleTestPlugin } from './src/server/test-utils/vitest';
 
 const sysMock = fileURLToPath(
@@ -21,7 +21,6 @@ export default defineConfig({
   },
   test: {
     include: ['tests/**/*.test.ts'],
-    exclude: [...configDefaults.exclude, 'tests/**/*.package.test.ts'],
     setupFiles: ['tests/setup.ts'],
     globals: true,
     environment: 'node',
