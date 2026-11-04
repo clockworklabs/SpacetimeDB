@@ -1,5 +1,0 @@
-statement ok
-CREATE TABLE inventory (inventory_id INTEGER, name TEXT)
-
-statement ok
-INSERT INTO inventory (inventory_id, name) VALUES (1, 'health1'),  (2, 'health2'), (3, 'health3')

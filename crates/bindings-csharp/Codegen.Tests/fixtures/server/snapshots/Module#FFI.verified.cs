@@ -668,8 +668,8 @@ namespace SpacetimeDB
         public new global::SpacetimeDB.ModuleEnvironment Env => default;
         private readonly Local _db = new();
 
-        internal HandlerContext(Random random, Timestamp time)
-            : base(random, time) { }
+        internal HandlerContext(Identity sender, string? senderJwt, Random random, Timestamp time)
+            : base(sender, senderJwt, random, time) { }
 
         protected override global::SpacetimeDB.LocalBase CreateLocal() => _db;
 
@@ -832,6 +832,11 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 
         public static global::SpacetimeDB.Internal.Errno CallLocalHttpHandler(
             int id,
+            ulong sender_0,
+            ulong sender_1,
+            ulong sender_2,
+            ulong sender_3,
+            global::SpacetimeDB.Internal.BytesSource sender_jwt,
             global::SpacetimeDB.Timestamp timestamp,
             global::SpacetimeDB.Internal.BytesSource request,
             global::SpacetimeDB.Internal.BytesSource request_body,
@@ -840,6 +845,11 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
         ) =>
             global::ModuleRegistration.CallLocalHttpHandler(
                 id,
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                sender_jwt,
                 timestamp,
                 request,
                 request_body,
@@ -989,16 +999,26 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 
     public static partial class AssemblyDescriptor
     {
-        private static class BTreeMultiColumnSqlNameCache
-        {
-            internal static readonly global::SpacetimeDB.SqlTableName Name =
-                global::SpacetimeDB.Internal.Module.ResolveSqlName(
-                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "BTreeMultiColumn"
-                );
+        private static global::SpacetimeDB.SqlTableName?[] BTreeMultiColumnSqlNames =>
+            field ??= new global::SpacetimeDB.SqlTableName?[
+                global::SpacetimeDB.Internal.Module.InstanceCount
+            ];
 
-            // Prevent eager initialization before the root installs namespace placements.
-            static BTreeMultiColumnSqlNameCache() { }
+        private static global::SpacetimeDB.SqlTableName BTreeMultiColumnSqlName(int contextInstance)
+        {
+            var names = BTreeMultiColumnSqlNames;
+            if (names[contextInstance] is { } name)
+            {
+                return name;
+            }
+            var instanceId = global::SpacetimeDB.Internal.Module.ResolveInstance(
+                contextInstance,
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+            );
+            var resolvedName = names[instanceId] ??=
+                global::SpacetimeDB.Internal.Module.ResolveSqlName(instanceId, "BTreeMultiColumn");
+            names[contextInstance] = resolvedName;
+            return resolvedName;
         }
 
         public readonly partial struct Queries
@@ -1009,7 +1029,7 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 BTreeMultiColumnIxCols
             > BTreeMultiColumn()
             {
-                var tableName = BTreeMultiColumnSqlNameCache.Name;
+                var tableName = BTreeMultiColumnSqlName(__instanceId);
                 return new(
                     tableName,
                     new BTreeMultiColumnCols(tableName),
@@ -1027,7 +1047,10 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 global::BTreeMultiColumn,
                 BTreeMultiColumnCols,
                 BTreeMultiColumnIxCols
-            > BTreeMultiColumn() => new AssemblyDescriptor.Queries().BTreeMultiColumn();
+            > BTreeMultiColumn() =>
+                new AssemblyDescriptor.Queries(
+                    global::SpacetimeDB.Internal.Module.GetInstanceId(from)
+                ).BTreeMultiColumn();
         }
     }
 
@@ -1074,16 +1097,26 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 
     public static partial class AssemblyDescriptor
     {
-        private static class BTreeViewsSqlNameCache
-        {
-            internal static readonly global::SpacetimeDB.SqlTableName Name =
-                global::SpacetimeDB.Internal.Module.ResolveSqlName(
-                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "BTreeViews"
-                );
+        private static global::SpacetimeDB.SqlTableName?[] BTreeViewsSqlNames =>
+            field ??= new global::SpacetimeDB.SqlTableName?[
+                global::SpacetimeDB.Internal.Module.InstanceCount
+            ];
 
-            // Prevent eager initialization before the root installs namespace placements.
-            static BTreeViewsSqlNameCache() { }
+        private static global::SpacetimeDB.SqlTableName BTreeViewsSqlName(int contextInstance)
+        {
+            var names = BTreeViewsSqlNames;
+            if (names[contextInstance] is { } name)
+            {
+                return name;
+            }
+            var instanceId = global::SpacetimeDB.Internal.Module.ResolveInstance(
+                contextInstance,
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+            );
+            var resolvedName = names[instanceId] ??=
+                global::SpacetimeDB.Internal.Module.ResolveSqlName(instanceId, "BTreeViews");
+            names[contextInstance] = resolvedName;
+            return resolvedName;
         }
 
         public readonly partial struct Queries
@@ -1094,7 +1127,7 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 BTreeViewsIxCols
             > BTreeViews()
             {
-                var tableName = BTreeViewsSqlNameCache.Name;
+                var tableName = BTreeViewsSqlName(__instanceId);
                 return new(
                     tableName,
                     new BTreeViewsCols(tableName),
@@ -1112,7 +1145,10 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 global::BTreeViews,
                 BTreeViewsCols,
                 BTreeViewsIxCols
-            > BTreeViews() => new AssemblyDescriptor.Queries().BTreeViews();
+            > BTreeViews() =>
+                new AssemblyDescriptor.Queries(
+                    global::SpacetimeDB.Internal.Module.GetInstanceId(from)
+                ).BTreeViews();
         }
     }
 
@@ -1144,16 +1180,26 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 
     public static partial class AssemblyDescriptor
     {
-        private static class MultiTable1SqlNameCache
-        {
-            internal static readonly global::SpacetimeDB.SqlTableName Name =
-                global::SpacetimeDB.Internal.Module.ResolveSqlName(
-                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "MultiTable1"
-                );
+        private static global::SpacetimeDB.SqlTableName?[] MultiTable1SqlNames =>
+            field ??= new global::SpacetimeDB.SqlTableName?[
+                global::SpacetimeDB.Internal.Module.InstanceCount
+            ];
 
-            // Prevent eager initialization before the root installs namespace placements.
-            static MultiTable1SqlNameCache() { }
+        private static global::SpacetimeDB.SqlTableName MultiTable1SqlName(int contextInstance)
+        {
+            var names = MultiTable1SqlNames;
+            if (names[contextInstance] is { } name)
+            {
+                return name;
+            }
+            var instanceId = global::SpacetimeDB.Internal.Module.ResolveInstance(
+                contextInstance,
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+            );
+            var resolvedName = names[instanceId] ??=
+                global::SpacetimeDB.Internal.Module.ResolveSqlName(instanceId, "MultiTable1");
+            names[contextInstance] = resolvedName;
+            return resolvedName;
         }
 
         public readonly partial struct Queries
@@ -1164,7 +1210,7 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 MultiTable1IxCols
             > MultiTable1()
             {
-                var tableName = MultiTable1SqlNameCache.Name;
+                var tableName = MultiTable1SqlName(__instanceId);
                 return new(
                     tableName,
                     new MultiTable1Cols(tableName),
@@ -1182,7 +1228,10 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 global::MultiTableRow,
                 MultiTable1Cols,
                 MultiTable1IxCols
-            > MultiTable1() => new AssemblyDescriptor.Queries().MultiTable1();
+            > MultiTable1() =>
+                new AssemblyDescriptor.Queries(
+                    global::SpacetimeDB.Internal.Module.GetInstanceId(from)
+                ).MultiTable1();
         }
     }
 
@@ -1207,16 +1256,26 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 
     public static partial class AssemblyDescriptor
     {
-        private static class MultiTable2SqlNameCache
-        {
-            internal static readonly global::SpacetimeDB.SqlTableName Name =
-                global::SpacetimeDB.Internal.Module.ResolveSqlName(
-                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "MultiTable2"
-                );
+        private static global::SpacetimeDB.SqlTableName?[] MultiTable2SqlNames =>
+            field ??= new global::SpacetimeDB.SqlTableName?[
+                global::SpacetimeDB.Internal.Module.InstanceCount
+            ];
 
-            // Prevent eager initialization before the root installs namespace placements.
-            static MultiTable2SqlNameCache() { }
+        private static global::SpacetimeDB.SqlTableName MultiTable2SqlName(int contextInstance)
+        {
+            var names = MultiTable2SqlNames;
+            if (names[contextInstance] is { } name)
+            {
+                return name;
+            }
+            var instanceId = global::SpacetimeDB.Internal.Module.ResolveInstance(
+                contextInstance,
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+            );
+            var resolvedName = names[instanceId] ??=
+                global::SpacetimeDB.Internal.Module.ResolveSqlName(instanceId, "MultiTable2");
+            names[contextInstance] = resolvedName;
+            return resolvedName;
         }
 
         public readonly partial struct Queries
@@ -1227,7 +1286,7 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 MultiTable2IxCols
             > MultiTable2()
             {
-                var tableName = MultiTable2SqlNameCache.Name;
+                var tableName = MultiTable2SqlName(__instanceId);
                 return new(
                     tableName,
                     new MultiTable2Cols(tableName),
@@ -1245,7 +1304,10 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 global::MultiTableRow,
                 MultiTable2Cols,
                 MultiTable2IxCols
-            > MultiTable2() => new AssemblyDescriptor.Queries().MultiTable2();
+            > MultiTable2() =>
+                new AssemblyDescriptor.Queries(
+                    global::SpacetimeDB.Internal.Module.GetInstanceId(from)
+                ).MultiTable2();
         }
     }
 
@@ -1261,16 +1323,26 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 
     public static partial class AssemblyDescriptor
     {
-        private static class PrivateTableSqlNameCache
-        {
-            internal static readonly global::SpacetimeDB.SqlTableName Name =
-                global::SpacetimeDB.Internal.Module.ResolveSqlName(
-                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "PrivateTable"
-                );
+        private static global::SpacetimeDB.SqlTableName?[] PrivateTableSqlNames =>
+            field ??= new global::SpacetimeDB.SqlTableName?[
+                global::SpacetimeDB.Internal.Module.InstanceCount
+            ];
 
-            // Prevent eager initialization before the root installs namespace placements.
-            static PrivateTableSqlNameCache() { }
+        private static global::SpacetimeDB.SqlTableName PrivateTableSqlName(int contextInstance)
+        {
+            var names = PrivateTableSqlNames;
+            if (names[contextInstance] is { } name)
+            {
+                return name;
+            }
+            var instanceId = global::SpacetimeDB.Internal.Module.ResolveInstance(
+                contextInstance,
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+            );
+            var resolvedName = names[instanceId] ??=
+                global::SpacetimeDB.Internal.Module.ResolveSqlName(instanceId, "PrivateTable");
+            names[contextInstance] = resolvedName;
+            return resolvedName;
         }
 
         public readonly partial struct Queries
@@ -1281,7 +1353,7 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 PrivateTableIxCols
             > PrivateTable()
             {
-                var tableName = PrivateTableSqlNameCache.Name;
+                var tableName = PrivateTableSqlName(__instanceId);
                 return new(
                     tableName,
                     new PrivateTableCols(tableName),
@@ -1299,7 +1371,10 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 global::PrivateTable,
                 PrivateTableCols,
                 PrivateTableIxCols
-            > PrivateTable() => new AssemblyDescriptor.Queries().PrivateTable();
+            > PrivateTable() =>
+                new AssemblyDescriptor.Queries(
+                    global::SpacetimeDB.Internal.Module.GetInstanceId(from)
+                ).PrivateTable();
         }
     }
 
@@ -1472,16 +1547,26 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 
     public static partial class AssemblyDescriptor
     {
-        private static class PublicTableSqlNameCache
-        {
-            internal static readonly global::SpacetimeDB.SqlTableName Name =
-                global::SpacetimeDB.Internal.Module.ResolveSqlName(
-                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "PublicTable"
-                );
+        private static global::SpacetimeDB.SqlTableName?[] PublicTableSqlNames =>
+            field ??= new global::SpacetimeDB.SqlTableName?[
+                global::SpacetimeDB.Internal.Module.InstanceCount
+            ];
 
-            // Prevent eager initialization before the root installs namespace placements.
-            static PublicTableSqlNameCache() { }
+        private static global::SpacetimeDB.SqlTableName PublicTableSqlName(int contextInstance)
+        {
+            var names = PublicTableSqlNames;
+            if (names[contextInstance] is { } name)
+            {
+                return name;
+            }
+            var instanceId = global::SpacetimeDB.Internal.Module.ResolveInstance(
+                contextInstance,
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+            );
+            var resolvedName = names[instanceId] ??=
+                global::SpacetimeDB.Internal.Module.ResolveSqlName(instanceId, "PublicTable");
+            names[contextInstance] = resolvedName;
+            return resolvedName;
         }
 
         public readonly partial struct Queries
@@ -1492,7 +1577,7 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 PublicTableIxCols
             > PublicTable()
             {
-                var tableName = PublicTableSqlNameCache.Name;
+                var tableName = PublicTableSqlName(__instanceId);
                 return new(
                     tableName,
                     new PublicTableCols(tableName),
@@ -1510,7 +1595,10 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 global::PublicTable,
                 PublicTableCols,
                 PublicTableIxCols
-            > PublicTable() => new AssemblyDescriptor.Queries().PublicTable();
+            > PublicTable() =>
+                new AssemblyDescriptor.Queries(
+                    global::SpacetimeDB.Internal.Module.GetInstanceId(from)
+                ).PublicTable();
         }
     }
 
@@ -1549,16 +1637,31 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 
     public static partial class AssemblyDescriptor
     {
-        private static class RegressionMultipleUniqueIndexesHadSameNameSqlNameCache
+        private static global::SpacetimeDB.SqlTableName?[] RegressionMultipleUniqueIndexesHadSameNameSqlNames =>
+            field ??= new global::SpacetimeDB.SqlTableName?[
+                global::SpacetimeDB.Internal.Module.InstanceCount
+            ];
+
+        private static global::SpacetimeDB.SqlTableName RegressionMultipleUniqueIndexesHadSameNameSqlName(
+            int contextInstance
+        )
         {
-            internal static readonly global::SpacetimeDB.SqlTableName Name =
+            var names = RegressionMultipleUniqueIndexesHadSameNameSqlNames;
+            if (names[contextInstance] is { } name)
+            {
+                return name;
+            }
+            var instanceId = global::SpacetimeDB.Internal.Module.ResolveInstance(
+                contextInstance,
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+            );
+            var resolvedName = names[instanceId] ??=
                 global::SpacetimeDB.Internal.Module.ResolveSqlName(
-                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    instanceId,
                     "RegressionMultipleUniqueIndexesHadSameName"
                 );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static RegressionMultipleUniqueIndexesHadSameNameSqlNameCache() { }
+            names[contextInstance] = resolvedName;
+            return resolvedName;
         }
 
         public readonly partial struct Queries
@@ -1569,7 +1672,7 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 RegressionMultipleUniqueIndexesHadSameNameIxCols
             > RegressionMultipleUniqueIndexesHadSameName()
             {
-                var tableName = RegressionMultipleUniqueIndexesHadSameNameSqlNameCache.Name;
+                var tableName = RegressionMultipleUniqueIndexesHadSameNameSqlName(__instanceId);
                 return new(
                     tableName,
                     new RegressionMultipleUniqueIndexesHadSameNameCols(tableName),
@@ -1588,7 +1691,9 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 RegressionMultipleUniqueIndexesHadSameNameCols,
                 RegressionMultipleUniqueIndexesHadSameNameIxCols
             > RegressionMultipleUniqueIndexesHadSameName() =>
-                new AssemblyDescriptor.Queries().RegressionMultipleUniqueIndexesHadSameName();
+                new AssemblyDescriptor.Queries(
+                    global::SpacetimeDB.Internal.Module.GetInstanceId(from)
+                ).RegressionMultipleUniqueIndexesHadSameName();
         }
     }
 
@@ -1636,16 +1741,26 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 
     public static partial class AssemblyDescriptor
     {
-        private static class SendMessageTimerSqlNameCache
-        {
-            internal static readonly global::SpacetimeDB.SqlTableName Name =
-                global::SpacetimeDB.Internal.Module.ResolveSqlName(
-                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "SendMessageTimer"
-                );
+        private static global::SpacetimeDB.SqlTableName?[] SendMessageTimerSqlNames =>
+            field ??= new global::SpacetimeDB.SqlTableName?[
+                global::SpacetimeDB.Internal.Module.InstanceCount
+            ];
 
-            // Prevent eager initialization before the root installs namespace placements.
-            static SendMessageTimerSqlNameCache() { }
+        private static global::SpacetimeDB.SqlTableName SendMessageTimerSqlName(int contextInstance)
+        {
+            var names = SendMessageTimerSqlNames;
+            if (names[contextInstance] is { } name)
+            {
+                return name;
+            }
+            var instanceId = global::SpacetimeDB.Internal.Module.ResolveInstance(
+                contextInstance,
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+            );
+            var resolvedName = names[instanceId] ??=
+                global::SpacetimeDB.Internal.Module.ResolveSqlName(instanceId, "SendMessageTimer");
+            names[contextInstance] = resolvedName;
+            return resolvedName;
         }
 
         public readonly partial struct Queries
@@ -1656,7 +1771,7 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 SendMessageTimerIxCols
             > SendMessageTimer()
             {
-                var tableName = SendMessageTimerSqlNameCache.Name;
+                var tableName = SendMessageTimerSqlName(__instanceId);
                 return new(
                     tableName,
                     new SendMessageTimerCols(tableName),
@@ -1674,7 +1789,10 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 global::Timers.SendMessageTimer,
                 SendMessageTimerCols,
                 SendMessageTimerIxCols
-            > SendMessageTimer() => new AssemblyDescriptor.Queries().SendMessageTimer();
+            > SendMessageTimer() =>
+                new AssemblyDescriptor.Queries(
+                    global::SpacetimeDB.Internal.Module.GetInstanceId(from)
+                ).SendMessageTimer();
         }
     }
 }
@@ -3458,7 +3576,8 @@ static class ModuleRegistration
                 new SpacetimeDB.ProcedureContext(identity, connectionId, random, time)
         );
         SpacetimeDB.Internal.Module.SetHandlerContextConstructor(
-            (random, time) => new SpacetimeDB.HandlerContext(random, time)
+            (sender, senderJwt, random, time) =>
+                new SpacetimeDB.HandlerContext(sender, senderJwt, random, time)
         );
 #endif
 
@@ -4101,6 +4220,11 @@ static class ModuleRegistration
 #endif
     public static SpacetimeDB.Internal.Errno __call_http_handler__(
         int id,
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        SpacetimeDB.Internal.BytesSource sender_jwt,
         SpacetimeDB.Timestamp timestamp,
         SpacetimeDB.Internal.BytesSource request,
         SpacetimeDB.Internal.BytesSource request_body,
@@ -4125,6 +4249,11 @@ static class ModuleRegistration
         )
             return global::SpacetimeDB.Generated.server_D513E4815F57969C.AssemblyDescriptor.CallLocalHttpHandler(
                 localId,
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                sender_jwt,
                 timestamp,
                 request,
                 request_body,
@@ -4140,6 +4269,11 @@ static class ModuleRegistration
 #else
         return CallLocalHttpHandler(
             id,
+            sender_0,
+            sender_1,
+            sender_2,
+            sender_3,
+            sender_jwt,
             timestamp,
             request,
             request_body,
@@ -4151,6 +4285,11 @@ static class ModuleRegistration
 
     internal static SpacetimeDB.Internal.Errno CallLocalHttpHandler(
         int id,
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        SpacetimeDB.Internal.BytesSource sender_jwt,
         SpacetimeDB.Timestamp timestamp,
         SpacetimeDB.Internal.BytesSource request,
         SpacetimeDB.Internal.BytesSource request_body,

@@ -38,7 +38,7 @@ fn main() -> anyhow::Result<()> {
     fs::create_dir(dir)?;
 
     let module: ModuleDef = module.try_into()?;
-    [typescript::TypeScript.generate_type_builders(&module)]
+    [typescript::TypeScript::default().generate_type_builders(&module)]
         .into_iter()
         .try_for_each(|OutputFile { filename, code }| {
             let code = regex_replace!(

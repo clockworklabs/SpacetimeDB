@@ -7,7 +7,12 @@ export {
   type SubmoduleMount,
 } from './schema';
 export { CaseConversionPolicy } from '../lib/autogen/types';
-export { table } from '../lib/table';
+export {
+  remoteModule,
+  type RemoteReducer,
+  type ReceiverIdentity,
+} from '../lib/remote_module';
+export { table, type OutboxTable, type OutboxTableOpts } from '../lib/table';
 export { SenderError, SpacetimeHostError, errors } from './errors';
 export type { Reducer, ReducerCtx, JwtClaims, AuthCtx } from '../lib/reducers';
 export type { ReducerExport } from './reducers';

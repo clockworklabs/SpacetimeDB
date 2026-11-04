@@ -588,6 +588,51 @@ metrics_group!(
         #[labels(db: Identity)]
         pub scheduler_active_scheduled_functions: IntGaugeVec,
 
+        #[name = spacetime_idc_in_flight_messages]
+        #[help = "Messages admitted by IDC actors that have not finished delivery, callback, and cleanup"]
+        #[labels(database_identity: Identity)]
+        pub idc_in_flight_messages: IntGaugeVec,
+
+        #[name = spacetime_idc_in_flight_bytes]
+        #[help = "Estimated retained IDC message bytes: outbox heap, encoded arguments, and completed response bodies; excludes transient HTTP and callback buffers"]
+        #[labels(database_identity: Identity)]
+        pub idc_in_flight_bytes: IntGaugeVec,
+
+        #[name = spacetime_idc_notification_queue_depth]
+        #[help = "Insert notifications waiting in IDC actor channels"]
+        #[labels(database_identity: Identity)]
+        pub idc_notification_queue_depth: IntGaugeVec,
+
+        #[name = spacetime_idc_delivery_attempts_total]
+        #[help = "IDC delivery attempts, including retries"]
+        #[labels(database_identity: Identity, table_name: str)]
+        pub idc_delivery_attempts: IntCounterVec,
+
+        #[name = spacetime_idc_delivery_failures_total]
+        #[help = "IDC attempts that failed to obtain and store a receiver result; excludes terminal reducer errors"]
+        #[labels(database_identity: Identity, table_name: str)]
+        pub idc_delivery_failures: IntCounterVec,
+
+        #[name = spacetime_idc_delivery_duration_seconds]
+        #[help = "Time spent obtaining and storing an IDC receiver result, in seconds"]
+        #[labels(database_identity: Identity, table_name: str)]
+        pub idc_delivery_duration_seconds: HistogramVec,
+
+        #[name = spacetime_idc_retries_total]
+        #[help = "IDC retries scheduled after an unsuccessful delivery, callback, or cleanup attempt"]
+        #[labels(database_identity: Identity, table_name: str)]
+        pub idc_retries: IntCounterVec,
+
+        #[name = spacetime_idc_callback_failures_total]
+        #[help = "IDC callbacks that failed preparation or execution"]
+        #[labels(database_identity: Identity, table_name: str)]
+        pub idc_callback_failures: IntCounterVec,
+
+        #[name = spacetime_idc_actor_errors_total]
+        #[help = "IDC actors that failed startup or exited with an error"]
+        #[labels(database_identity: Identity)]
+        pub idc_actor_errors: IntCounterVec,
+
         #[name = spacetime_worker_wasm_instance_errors_total]
         #[help = "The number of fatal WASM instance errors, such as reducer panics."]
         #[labels(database_identity: Identity, module_hash: Hash, reducer_symbol: str)]
