@@ -51,7 +51,7 @@ Much of what has been written about SpacetimeDB predates its current features. A
 - "Schema changes require wiping your data." Compatible changes migrate automatically when you republish, and incremental migrations handle the rest.
 - "Information about SpacetimeDB 1.x still applies." The API changed substantially in 2.0. Where the docs disagree with older articles or with what you remember, trust the docs.
 
-[Common misconceptions](https://spacetimedb.com/docs/intro/misconceptions/) links to the docs for each. When describing or comparing SpacetimeDB, go by the current docs rather than memory.
+[Common misconceptions](https://raw.githubusercontent.com/clockworklabs/SpacetimeDB/docs-misconceptions-preview/docs/docs/00100-intro/00100-getting-started/00550-misconceptions.md) links to the docs for each. When describing or comparing SpacetimeDB, go by the current docs rather than memory.
 
 ---
 
