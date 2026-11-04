@@ -1,5 +1,6 @@
 use crate::{
     bflatn_to::required_var_len_granules_for_row,
+    blob_store::BlobHash,
     page,
     tiered::{
         BlobError, BlobReadSet, BlobSet, EvictionPolicy, PageBorrow, PageError, PageHandle, PageManager, PageRef,
@@ -1783,10 +1784,13 @@ impl Table {
         result
     }
 
-    /// Clears this table, removing all present rows from it.
-    pub fn clear(&mut self, blobs: &BlobSet) -> Result<u64, TableError> {
-        // Collect blob references before mutating anything: a later page fault
-        // must not leave a partially cleared table during replay or a live tx.
+    /// Prepare release of every large-blob reference owned by this table.
+    ///
+    /// Used when the table is dropped.
+    ///
+    /// Reads row pages without faulting blob contents or changing reference counts.
+    /// Repeated references to the same blob are retained individually.
+    pub fn prepare_blob_release(&self) -> Result<PreparedBlobRelease, TableError> {
         // We only need hashes, not blob contents, and can release each page
         // between reads rather than pinning the entire table in memory.
         let mut blob_refs = Vec::new();
@@ -1808,20 +1812,25 @@ impl Table {
                             let granule = unsafe { page.iter_var_len_object(var_len.first_granule) }
                                 .next()
                                 .expect("large blob has a hash granule");
-                            blob_refs.push(granule.blob_hash().into());
+                            blob_refs.push(granule.blob_hash());
                         }
                     }
                 });
             }
         }
 
-        // No fallible storage operations remain. Each reference belongs to a
-        // live row, so it must exist in the catalog even if its blob is evicted.
-        for hash in blob_refs {
-            blobs
-                .free_ref(hash, self.eviction_policy)
-                .expect("live row has a valid blob reference");
-        }
+        Ok(PreparedBlobRelease {
+            blob_refs,
+            eviction_policy: self.eviction_policy,
+        })
+    }
+
+    /// Clears this table, removing all present rows from it.
+    pub fn clear(&mut self, blobs: &BlobSet) -> Result<u64, TableError> {
+        // Complete all page reads before mutating anything.
+        let blob_refs_to_free = self.prepare_blob_release()?;
+
+        blob_refs_to_free.apply(blobs);
         // Free all pages, marking them as absent.
         self.inner.pages.clear();
         // Clear indexes.
@@ -3296,6 +3305,32 @@ enum PreparedInsertInner {
         source_page: PageHandle,
         source_offset: PageOffset,
     },
+}
+
+/// Prepared release of a table's large-blob references.
+///
+/// Used to defer freeing blob references when a table is dropped.
+///
+/// Created by [Table::prepare_blob_release].
+pub struct PreparedBlobRelease {
+    /// All blob hashes referenced by the table, without deduplication.
+    ///
+    /// `apply` will decrement both usage and pin counts, so we need to ensure
+    /// each blob is accounted for.
+    blob_refs: Vec<BlobHash>,
+    /// The eviction policy of the table. Needed for `free_ref` to decide
+    /// whether the pin count needs to be decremented.
+    eviction_policy: EvictionPolicy,
+}
+
+impl PreparedBlobRelease {
+    pub fn apply(self, blobs: &BlobSet) {
+        for hash in self.blob_refs {
+            blobs
+                .free_ref(hash.into(), self.eviction_policy)
+                .expect("prepared reference belongs to a live row");
+        }
+    }
 }
 
 #[cfg(test)]

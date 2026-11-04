@@ -1173,6 +1173,7 @@ pub(crate) mod tests {
         ScheduleSchema, SequenceSchema, TableCachePolicy,
     };
     use spacetimedb_schema::table_name::TableName;
+    use spacetimedb_table::blob_store::BlobHash;
     use spacetimedb_table::tiered::{BlobError, ByteBudget, ByteBudgetConfig};
 
     /// For the first user-created table, sequences in the system tables start
@@ -3676,6 +3677,159 @@ pub(crate) mod tests {
                 .collect::<Vec<_>>(),
             [first],
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn dropped_tables_release_repeated_blob_references_with_their_own_policy() -> ResultTest<()> {
+        for dropped_policy in [TableCachePolicy::RequiredInMemory, TableCachePolicy::NoRequirement] {
+            for retained_policy in [TableCachePolicy::RequiredInMemory, TableCachePolicy::NoRequirement] {
+                let datastore = get_datastore()?;
+                let mut tx = begin_mut_tx(&datastore);
+                let baseline_bytes = tx.committed_state_write_lock.storage.resident_bytes_used_by_blobs();
+                let mut schema = TableSchema::from_product_type(
+                    [AlgebraicType::U64, AlgebraicType::String, AlgebraicType::String].into(),
+                );
+                schema.table_name = TableName::for_test("dropped");
+                schema.cache_policy = dropped_policy;
+                let dropped = datastore.create_table_mut_tx(&mut tx, schema.clone())?;
+                schema.table_name = TableName::for_test("retained");
+                schema.cache_policy = retained_policy;
+                let retained = datastore.create_table_mut_tx(&mut tx, schema)?;
+
+                let shared = "s".repeat(2048);
+                let unique = "u".repeat(2048);
+                let shared_hash = BlobHash::hash_from_bytes(shared.as_bytes());
+                let unique_hash = BlobHash::hash_from_bytes(unique.as_bytes());
+                let dropped_rows = [
+                    product![1_u64, shared.clone(), shared.clone()],
+                    product![2_u64, shared.clone(), unique],
+                ];
+                for row in &dropped_rows {
+                    tx.insert_via_serialize_bsatn(dropped, row)?;
+                }
+                tx.insert_via_serialize_bsatn(retained, &product![3_u64, shared.clone(), shared.clone()])?;
+                commit(&datastore, tx)?;
+
+                // Schema removal is reversible until commit. Rolling it back
+                // must restore the rows without changing any blob reference.
+                let mut tx = begin_mut_tx(&datastore);
+                tx.drop_table(dropped)?;
+                let _ = datastore.rollback_mut_tx(tx);
+                let mut tx = begin_mut_tx(&datastore);
+                assert_eq!(all_rows(&datastore, &tx, dropped), dropped_rows);
+                let blobs = tx.committed_state_write_lock.storage.blobs();
+                assert_eq!(blobs.uses(shared_hash.into()).unwrap_or_default(), 5);
+                assert_eq!(blobs.uses(unique_hash.into()).unwrap_or_default(), 1);
+
+                tx.drop_table(dropped)?;
+                let changes = commit(&datastore, tx)?;
+                let (_, entry) = changes.iter_table_entries().find(|(id, _)| *id == dropped).unwrap();
+                assert!(entry.truncated);
+                assert_eq!(&*entry.deletes, dropped_rows.as_slice());
+
+                // The shared hash occurred three times in the dropped table,
+                // so now there must be two references remaining.
+                // The unique hash must be gone from the set.
+                let mut tx = begin_mut_tx(&datastore);
+                let blobs = tx.committed_state_write_lock.storage.blobs();
+                assert_eq!(blobs.uses(shared_hash.into()).unwrap_or_default(), 2);
+                assert_eq!(blobs.uses(unique_hash.into()), None);
+                blobs.evict()?;
+                let retained_bytes = match retained_policy {
+                    TableCachePolicy::RequiredInMemory => shared.len() as u64 + BlobHash::SIZE as u64,
+                    _ => 0,
+                };
+                assert_eq!(blobs.resident_bytes_used_by_blobs(), baseline_bytes + retained_bytes);
+
+                // Releasing the remaining owners must remove the entry entirely.
+                tx.clear_table(retained)?;
+                commit(&datastore, tx)?;
+
+                let tx = begin_mut_tx(&datastore);
+                let blobs = tx.committed_state_write_lock.storage.blobs();
+                assert_eq!(blobs.uses(shared_hash.into()), None);
+                assert_eq!(blobs.resident_bytes_used_by_blobs(), baseline_bytes);
+                commit(&datastore, tx)?;
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn failed_commit_preserves_prepared_dropped_table_blob_references() -> ResultTest<()> {
+        const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            low_water_bytes: 0,
+            soft_limit_bytes: HARD_LIMIT_BYTES,
+            hard_limit_bytes: HARD_LIMIT_BYTES,
+        })?;
+        let mut config = TieredStorageConfig::new_for_test();
+        config.resident_budget = budget.clone();
+        let datastore = Locking::bootstrap(Identity::ZERO, config)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+
+        let mut schema = TableSchema::from_product_type([AlgebraicType::String].into());
+        schema.table_name = TableName::for_test("dropped");
+        let dropped = datastore.create_table_mut_tx(&mut tx, schema.clone())?;
+        schema.table_name = TableName::for_test("faulting");
+        schema.cache_policy = TableCachePolicy::NoRequirement;
+
+        let faulting = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let required = "r".repeat(2048);
+        let required_hash = BlobHash::hash_from_bytes(required.as_bytes());
+        let required_row = product![required.clone()];
+        tx.insert_via_serialize_bsatn(dropped, &required_row)?;
+
+        let large_row = product!["x".repeat(1024 * 1024)];
+        tx.insert_via_serialize_bsatn(faulting, &large_row)?;
+
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        tx.drop_table(dropped)?;
+        tx.clear_table(faulting)?;
+        tx.committed_state_write_lock.storage.blobs().evict()?;
+        // The dropped table's small required blob stays resident, so its release
+        // plan and deleted-row values can be prepared. The later deletion from
+        // another table must fault a 1 MiB blob and fail before application.
+        let reservation = budget.acquire(HARD_LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024)?;
+        let result = datastore.commit_mut_tx(tx);
+        assert!(matches!(
+            result,
+            Err(DatastoreError::TableStorage(spacetimedb_table::table::TableError::Blob(error)))
+                if matches!(*error, BlobError::MemoryLimitExceeded(_))
+        ));
+        drop(reservation);
+
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(all_rows(&datastore, &tx, dropped), [required_row]);
+        assert_eq!(all_rows(&datastore, &tx, faulting), [large_row]);
+        let blobs = tx.committed_state_write_lock.storage.blobs();
+        assert_eq!(blobs.uses(required_hash.into()).unwrap_or_default(), 1);
+        blobs.evict()?;
+        assert_eq!(
+            blobs.resident_bytes_used_by_blobs(),
+            required.len() as u64 + BlobHash::SIZE as u64
+        );
+
+        // A retry after releasing memory pressure must still have valid rows
+        // and references to release, including the restored required policy pin.
+        tx.drop_table(dropped)?;
+        commit(&datastore, tx)?;
+
+        let tx = begin_mut_tx(&datastore);
+        assert_eq!(
+            tx.committed_state_write_lock
+                .storage
+                .blobs()
+                .uses(required_hash.into())
+                .unwrap_or_default(),
+            0
+        );
+        commit(&datastore, tx)?;
 
         Ok(())
     }

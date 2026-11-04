@@ -454,6 +454,12 @@ impl BlobSet {
     pub fn num_blobs(&self) -> usize {
         self.entries.read().len()
     }
+
+    /// The number of references a blob has,
+    /// or `None` if the blob is not in the set.
+    pub fn uses(&self, hash: BlobHashWrapper) -> Option<usize> {
+        Some(self.entries.read().get(&hash)?.uses())
+    }
 }
 
 #[cfg(test)]

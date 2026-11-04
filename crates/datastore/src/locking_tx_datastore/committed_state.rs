@@ -56,7 +56,7 @@ use spacetimedb_schema::{
 };
 use spacetimedb_table::{
     indexes::{RowPointer, SquashedOffset},
-    table::{RowRef, Table, TableAndIndex},
+    table::{PreparedBlobRelease, RowRef, Table, TableAndIndex},
     tiered::{BlobHandle, BlobSet, EvictionPolicy, PreparedCommit, TieredDatabaseStorage},
 };
 use std::sync::Arc;
@@ -601,6 +601,10 @@ impl CommittedState {
         for change in &tx_state.pending_schema_changes {
             if let PendingSchemaChange::TableRemoved(table_id, table) = change {
                 assert!(!prepared.mutated_tables.contains_key(table_id));
+                // Dropped tables bypass normal row deletion. Prepare their
+                // reference releases, but keep counts intact until every
+                // fallible commit step has succeeded so rollback can restore them.
+                let blob_release = table.prepare_blob_release()?;
                 let rows = table
                     .scan_rows(self.storage.blobs())
                     .map(|row| Ok(row?.to_product_value()))
@@ -609,6 +613,7 @@ impl CommittedState {
                     id: *table_id,
                     name: table.get_schema().table_name.clone(),
                     rows,
+                    blob_release,
                 });
             }
         }
@@ -731,7 +736,14 @@ impl CommittedState {
         // need to be pinned by the commit guard.
         drop(prepared.pinned_blobs);
 
-        for PreparedRemovedTable { id, name, rows } in prepared.removed_tables {
+        for PreparedRemovedTable {
+            id,
+            name,
+            rows,
+            blob_release,
+        } in prepared.removed_tables
+        {
+            blob_release.apply(self.storage.blobs());
             truncates.insert(id);
             tx_data.set_deletes_for_table(id, &name, rows);
         }
@@ -1061,6 +1073,7 @@ struct PreparedRemovedTable {
     id: TableId,
     name: TableName,
     rows: Arc<[ProductValue]>,
+    blob_release: PreparedBlobRelease,
 }
 
 impl PreparedMerge {
