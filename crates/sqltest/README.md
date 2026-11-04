@@ -4,6 +4,16 @@ This crate check the conformance of SpacetimeDB to SQL:2016
 >
 > This crate is intended for internal use only. It is **not** stable and may change without notice.
 
+# Running
+
+From this directory, run every test file against an engine:
+
+```bash
+cargo run './test/**/*.slt' --engine <engine>
+```
+
+Pass `--override` to overwrite the test files with the engine's output, or `--format` to reformat them.
+
 # Setup PG
 
 Create a database called `TestSpace`
