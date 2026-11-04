@@ -959,19 +959,12 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export const Baz = __t.object("Baz", {
-  field: __t.string(),
-});
+import { Baz } from "./declarations";
+export { Baz };
 export type Baz = __Infer<typeof Baz>;
 
-// The tagged union or sum type for the algebraic type `Foobar`.
-export const Foobar = __t.enum("Foobar", {
-  get Baz() {
-    return Baz;
-  },
-  Bar: __t.unit(),
-  Har: __t.u32(),
-});
+import { Foobar } from "./declarations";
+export { Foobar };
 export type Foobar = __Infer<typeof Foobar>;
 
 export const HasSpecialStuff = __t.object("HasSpecialStuff", {
@@ -1037,9 +1030,8 @@ export const TestA = __t.object("TestA", {
 });
 export type TestA = __Infer<typeof TestA>;
 
-export const TestB = __t.object("TestB", {
-  foo: __t.string(),
-});
+import { TestB } from "./declarations";
+export { TestB };
 export type TestB = __Infer<typeof TestB>;
 
 export const TestD = __t.object("TestD", {
@@ -1065,19 +1057,12 @@ export const TestFoobar = __t.object("TestFoobar", {
 });
 export type TestFoobar = __Infer<typeof TestFoobar>;
 
-// The tagged union or sum type for the algebraic type `NamespaceTestC`.
-export const NamespaceTestC = __t.enum("NamespaceTestC", {
-  Foo: __t.unit(),
-  Bar: __t.unit(),
-});
+import { NamespaceTestC } from "./declarations";
+export { NamespaceTestC };
 export type NamespaceTestC = __Infer<typeof NamespaceTestC>;
 
-// The tagged union or sum type for the algebraic type `NamespaceTestF`.
-export const NamespaceTestF = __t.enum("NamespaceTestF", {
-  Foo: __t.unit(),
-  Bar: __t.unit(),
-  Baz: __t.string(),
-});
+import { NamespaceTestF } from "./declarations";
+export { NamespaceTestF };
 export type NamespaceTestF = __Infer<typeof NamespaceTestF>;
 
 '''

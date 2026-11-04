@@ -575,10 +575,12 @@ export const EnvReadRow = __t.object("EnvReadRow", {
 });
 export type EnvReadRow = __Infer<typeof EnvReadRow>;
 
-export const EnvReadSqlView = __t.object("EnvReadSqlView", {});
+import { EnvReadSqlView } from "../my_lib/declarations";
+export { EnvReadSqlView };
 export type EnvReadSqlView = __Infer<typeof EnvReadSqlView>;
 
-export const EnvReadView = __t.object("EnvReadView", {});
+import { EnvReadView } from "../my_lib/declarations";
+export { EnvReadView };
 export type EnvReadView = __Infer<typeof EnvReadView>;
 
 export const EnvSqlRow = __t.object("EnvSqlRow", {
@@ -863,12 +865,12 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export const Baz = __t.object("Baz", {
-  field: __t.string(),
-});
+import { Baz } from "./declarations";
+export { Baz };
 export type Baz = __Infer<typeof Baz>;
 
-export const EnvReadRootSqlView = __t.object("EnvReadRootSqlView", {});
+import { EnvReadRootSqlView } from "./declarations";
+export { EnvReadRootSqlView };
 export type EnvReadRootSqlView = __Infer<typeof EnvReadRootSqlView>;
 
 export const EnvSqlRow = __t.object("EnvSqlRow", {
@@ -877,14 +879,8 @@ export const EnvSqlRow = __t.object("EnvSqlRow", {
 });
 export type EnvSqlRow = __Infer<typeof EnvSqlRow>;
 
-// The tagged union or sum type for the algebraic type `Foobar`.
-export const Foobar = __t.enum("Foobar", {
-  get Baz() {
-    return Baz;
-  },
-  Bar: __t.unit(),
-  Har: __t.u32(),
-});
+import { Foobar } from "./declarations";
+export { Foobar };
 export type Foobar = __Infer<typeof Foobar>;
 
 export const HasSpecialStuff = __t.object("HasSpecialStuff", {
@@ -893,7 +889,8 @@ export const HasSpecialStuff = __t.object("HasSpecialStuff", {
 });
 export type HasSpecialStuff = __Infer<typeof HasSpecialStuff>;
 
-export const MyPlayer = __t.object("MyPlayer", {});
+import { MyPlayer } from "./declarations";
+export { MyPlayer };
 export type MyPlayer = __Infer<typeof MyPlayer>;
 
 export const NonrepeatingTestArg = __t.object("NonrepeatingTestArg", {
@@ -953,9 +950,8 @@ export const TestA = __t.object("TestA", {
 });
 export type TestA = __Infer<typeof TestA>;
 
-export const TestB = __t.object("TestB", {
-  foo: __t.string(),
-});
+import { TestB } from "./declarations";
+export { TestB };
 export type TestB = __Infer<typeof TestB>;
 
 export const TestD = __t.object("TestD", {
@@ -981,19 +977,12 @@ export const TestF = __t.object("TestF", {
 });
 export type TestF = __Infer<typeof TestF>;
 
-// The tagged union or sum type for the algebraic type `NamespaceTestC`.
-export const NamespaceTestC = __t.enum("NamespaceTestC", {
-  Foo: __t.unit(),
-  Bar: __t.unit(),
-});
+import { NamespaceTestC } from "./declarations";
+export { NamespaceTestC };
 export type NamespaceTestC = __Infer<typeof NamespaceTestC>;
 
-// The tagged union or sum type for the algebraic type `NamespaceTestF`.
-export const NamespaceTestF = __t.enum("NamespaceTestF", {
-  Foo: __t.unit(),
-  Bar: __t.unit(),
-  Baz: __t.string(),
-});
+import { NamespaceTestF } from "./declarations";
+export { NamespaceTestF };
 export type NamespaceTestF = __Infer<typeof NamespaceTestF>;
 
 '''

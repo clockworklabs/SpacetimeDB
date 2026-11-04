@@ -276,6 +276,15 @@ fn generate_types_file(module: &ModuleDef) -> OutputFile {
 }
 
 fn generate_types_file_with_path(module: &ModuleDef, filename: String) -> OutputFile {
+    generate_types_file_with_reexports(module, filename, "", &BTreeSet::new())
+}
+
+fn generate_types_file_with_reexports(
+    module: &ModuleDef,
+    filename: String,
+    declarations: &str,
+    reexports: &BTreeSet<AlgebraicTypeRef>,
+) -> OutputFile {
     let mut output = CodeIndenter::new(String::new(), INDENT);
     let out = &mut output;
 
@@ -290,6 +299,18 @@ fn generate_types_file_with_path(module: &ModuleDef, filename: String) -> Output
     for ty in iter_types(module) {
         let type_name = collect_case(Case::Pascal, ty.accessor_name.name_segments());
         if reducer_type_names.contains(&type_name) {
+            continue;
+        }
+
+        if reexports.contains(&ty.ty) {
+            writeln!(
+                out,
+                "import {{ {type_name} }} from {};",
+                ts_string_literal(declarations)
+            );
+            writeln!(out, "export {{ {type_name} }};");
+            writeln!(out, "export type {type_name} = __Infer<typeof {type_name}>;");
+            out.newline();
             continue;
         }
 

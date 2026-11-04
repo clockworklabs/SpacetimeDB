@@ -3,12 +3,9 @@ use super::*;
 use spacetimedb_schema::def::IndexAlgorithm;
 
 pub(super) fn generate(module: &ModuleDef, options: &CodegenOptions) -> Vec<OutputFile> {
-    let mut files = Vec::new();
+    let mut files = crate::generate_item_files(module, &TypeScript, options);
     generate_module(module, options, "", &mut files);
     files.push(entry_point(module, options, ""));
-    // Keep the old import paths and schema exports outside the module-shaped
-    // declarations. These files preserve the existing client API.
-    files.extend(crate::generate_item_files(module, &TypeScript, options));
     files
 }
 
@@ -151,6 +148,33 @@ fn generate_module(module: &ModuleDef, options: &CodegenOptions, dir: &str, file
         .chain(module.views().cloned().map(TableDef::from))
         .collect();
     let named = selected_types(module, &used_types, &row_models);
+    // Reuse named object/enum builders, but retain object builders for row types:
+    // a RowBuilder in declarations does not have the old ObjectBuilder API.
+    let reexports = named
+        .iter()
+        .filter(|ty| !row_models.iter().any(|row| row.product_type_ref == ty.ty))
+        .map(|ty| ty.ty)
+        .collect();
+    let accessor_dir = module.accessor_path().join_segments("/");
+    let filename = if accessor_dir.is_empty() {
+        "types.ts".to_string()
+    } else {
+        format!("{accessor_dir}/types.ts")
+    };
+    let prefix = if accessor_dir.is_empty() {
+        "./".to_string()
+    } else {
+        "../".repeat(module.accessor_path().segments().len())
+    };
+    let compatibility_types = generate_types_file_with_reexports(
+        module,
+        filename.clone(),
+        &format!("{prefix}{dir}declarations"),
+        &reexports,
+    );
+    files.retain(|file| file.filename != filename);
+    files.push(compatibility_types);
+
     used.extend(
         named
             .iter()

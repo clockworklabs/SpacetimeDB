@@ -582,6 +582,14 @@ fn typescript_declarations_preserve_table_metadata() {
         .build_table_with_new_type("audit", ProductType::from([("message", AlgebraicType::String)]), true)
         .with_event(true)
         .finish();
+    let mut child = RawModuleDefV10Builder::new();
+    child.add_algebraic_type(
+        [],
+        "Label",
+        AlgebraicType::from(ProductType::from([("text", AlgebraicType::String)])),
+        true,
+    );
+    builder.add_submodule("myLib", child.finish());
     let module: ModuleDef = builder.finish().try_into().unwrap();
     let files = generate(&module, &TypeScript, &CodegenOptions::default());
     let snapshots = files
@@ -601,7 +609,12 @@ fn typescript_declarations_preserve_table_metadata() {
 import assert from 'node:assert/strict';
 import { tables, type DbConnection } from './index';
 import spacetimedb from './declarations';
-import { Person } from './declarations';
+import { Person, ZAddress } from './declarations';
+import { ZAddress as CompatibleAddress } from './types';
+assert.equal(CompatibleAddress, ZAddress);
+import { Label } from './my_lib/declarations';
+import { Label as CompatibleLabel } from './myLib/types';
+assert.equal(CompatibleLabel, Label);
 import type { Infer } from 'spacetimedb/schema';
 type Person = Infer<typeof Person>;
 assert.equal(spacetimedb.entries.person.rowType, Person);
