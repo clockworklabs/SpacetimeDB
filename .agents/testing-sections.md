@@ -60,9 +60,3 @@ Added:
 - Tests that the new declaration API works with ESM and CommonJS imports and browser builds.
 
 Existing server integration tests generate bindings and check connections, subscriptions, reducer calls, received rows, and query filters and joins.
-
-## Example: writing instructions
-
-The guidance comes from iterating on [PR #6404's testing section](https://github.com/clockworklabs/SpacetimeDB/pull/6404) until the reviewer accepted it. The examples capture those concrete improvements. We haven't yet tested whether a developer or agent using this guide alone produces a good section.
-
-This gives evidence that the writing approach helped in practice and makes its limitation clear. "Reviewed the document and checked its links" would describe activity without addressing whether the instructions help someone write a better testing section.
