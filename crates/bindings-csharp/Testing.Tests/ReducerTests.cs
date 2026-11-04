@@ -20,15 +20,16 @@ public class ReducerTests
         Assert.Equal(now, message.Sent);
         Assert.Equal("Hello!", message.Text);
 
-        var error = Assert.Throws<ArgumentException>(() =>
-            test.WithReducerTx(
-                auth,
-                ctx =>
-                {
-                    Module.SendMessage(ctx, "This write will roll back");
-                    Module.SendMessage(ctx, "");
-                }
-            )
+        var error = Assert.Throws<ArgumentException>(
+            () =>
+                test.WithReducerTx(
+                    auth,
+                    ctx =>
+                    {
+                        Module.SendMessage(ctx, "This write will roll back");
+                        Module.SendMessage(ctx, "");
+                    }
+                )
         );
 
         Assert.Equal("Messages must not be empty", error.Message);

@@ -3,10 +3,10 @@ namespace SpacetimeDB.Internal;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using SpacetimeDB.BSATN;
 #if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
 using System.Text;
 #endif
-using SpacetimeDB.BSATN;
 
 // Managed builds have additional constructors; keep the declarations shared with WASM.
 #pragma warning disable IDE0290
@@ -495,6 +495,6 @@ public abstract class ReadOnlyTableView<Row>
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
         __access.Iter<Row>();
 #else
-            new TableIter(tableId);
+        new TableIter(tableId);
 #endif
 }

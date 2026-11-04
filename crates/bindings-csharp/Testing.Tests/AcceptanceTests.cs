@@ -32,8 +32,8 @@ public class AcceptanceTests
             test.WithReducerTx(auth, Module.ClientConnected);
         else
         {
-            var error = Assert.Throws<InvalidOperationException>(() =>
-                test.WithReducerTx(auth, Module.ClientConnected)
+            var error = Assert.Throws<InvalidOperationException>(
+                () => test.WithReducerTx(auth, Module.ClientConnected)
             );
             Assert.Equal(expectedError, error.Message);
         }
@@ -114,24 +114,24 @@ public class AcceptanceTests
         Assert.Throws<NotSupportedException>(() => IViewContext.GetIdentity());
         Assert.Throws<NotSupportedException>(() => new LogStopwatch("unsupported"));
         var connection = ConnectionId.FromHexString("00000000000000000000000000000001")!.Value;
-        Assert.Throws<NotSupportedException>(() =>
-            AuthCtx.BuildFromSystemTables(connection, default)
+        Assert.Throws<NotSupportedException>(
+            () => AuthCtx.BuildFromSystemTables(connection, default)
         );
 #pragma warning disable STDB_UNSTABLE
         using var test = TestContext.Create(typeof(Module).Assembly);
         var procedure = test.ProcedureContext(TestAuth.Internal());
         var selected = ((IModuleContext<ProcedureContext>)procedure).SelectInstance(1);
-        Assert.Throws<NotSupportedException>(() =>
-            Module.VolatileNonatomicScheduleImmediateSendMessage(selected, "message")
+        Assert.Throws<NotSupportedException>(
+            () => Module.VolatileNonatomicScheduleImmediateSendMessage(selected, "message")
         );
-        Assert.Throws<NotSupportedException>(() =>
-            Module.VolatileNonatomicScheduleImmediateCheckStatus(selected)
+        Assert.Throws<NotSupportedException>(
+            () => Module.VolatileNonatomicScheduleImmediateCheckStatus(selected)
         );
         Assert.Contains(
             "VolatileNonatomicScheduleImmediate",
             Assert
-                .Throws<NotSupportedException>(() =>
-                    Module.VolatileNonatomicScheduleImmediateSendMessage("message")
+                .Throws<NotSupportedException>(
+                    () => Module.VolatileNonatomicScheduleImmediateSendMessage("message")
                 )
                 .Message
         );

@@ -194,7 +194,10 @@ public readonly struct QueryBuilder
         var access = Internal.DatabaseAccess.Require(Access);
         access.CheckActive();
         var namespaces = access.Backend.Namespaces;
-        return namespaces.ResolveSqlName(namespaces.ResolveInstance(InstanceId, assemblyIdentity), table);
+        return namespaces.ResolveSqlName(
+            namespaces.ResolveInstance(InstanceId, assemblyIdentity),
+            table
+        );
     }
 #endif
 }
@@ -259,7 +262,8 @@ public sealed partial class ProcedureContext
         HttpClient http,
         Action? afterCommit
     )
-        : base(backend, clock, sender, connectionId, random, auth, http, afterCommit) => Db = new Local();
+        : base(backend, clock, sender, connectionId, random, auth, http, afterCommit) =>
+        Db = new Local();
 #endif
 
     public Local Db { get; private set; }

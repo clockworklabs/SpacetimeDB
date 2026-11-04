@@ -1,7 +1,7 @@
 namespace SpacetimeDB.Testing.Tests;
 
-using TestingModule;
 using SpacetimeDB.Internal;
+using TestingModule;
 
 public class ProcedureTests
 {
@@ -16,12 +16,13 @@ public class ProcedureTests
         var failure = new InvalidOperationException("failed transaction");
         Assert.Same(
             failure,
-            Assert.Throws<InvalidOperationException>(() =>
-                procedure.WithTx<int>(tx =>
-                {
-                    tx.Db.Entries.Insert(new Entry { Text = "rolled back" });
-                    throw failure;
-                })
+            Assert.Throws<InvalidOperationException>(
+                () =>
+                    procedure.WithTx<int>(tx =>
+                    {
+                        tx.Db.Entries.Insert(new Entry { Text = "rolled back" });
+                        throw failure;
+                    })
             )
         );
         var rejected = procedure.TryWithTx(tx =>
@@ -79,8 +80,8 @@ public class ProcedureTests
             test.SetEnv("OPTIONAL", "during");
             Assert.Equal("during", tx.Env.OPTIONAL);
             Assert.Equal("during", selected.Env.OPTIONAL);
-            Assert.Throws<InvalidOperationException>(() =>
-                procedure.WithTx(inner => inner.Db.Entries.Count)
+            Assert.Throws<InvalidOperationException>(
+                () => procedure.WithTx(inner => inner.Db.Entries.Count)
             );
             return tx.Db.Entries.Insert(new Entry { Text = "still active" });
         });
@@ -115,12 +116,13 @@ public class ProcedureTests
                 return 1;
             });
         });
-        Assert.Throws<ArgumentException>(() =>
-            procedure.WithTx<object>(tx =>
-            {
-                tx.Db.Entries.Insert(new Entry { Text = "rolled back" });
-                return Task.CompletedTask;
-            })
+        Assert.Throws<ArgumentException>(
+            () =>
+                procedure.WithTx<object>(tx =>
+                {
+                    tx.Db.Entries.Insert(new Entry { Text = "rolled back" });
+                    return Task.CompletedTask;
+                })
         );
         var result = procedure.TryWithTx<object, Exception>(tx =>
         {

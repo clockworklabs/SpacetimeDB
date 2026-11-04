@@ -51,17 +51,18 @@ public class RangeIndexTests
             Ids(readOnly.Points.ByGroupScore.Filter((1u, new SpacetimeDB.Bound<uint>(20, 30))))
         );
 
-        Assert.Throws<InvalidOperationException>(() =>
-            test.WithReducerTx(
-                TestAuth.Internal(),
-                ctx =>
-                {
-                    Assert.Equal(2UL, ctx.Db.Points.ByGroupScore.Delete((1u, 20u)));
-                    Assert.Empty(ctx.Db.Points.ByGroupScore.Filter((1u, 20u)));
-                    Assert.Equal(0UL, ctx.Db.Points.ByGroupScore.Delete((1u, 20u)));
-                    throw new InvalidOperationException("rollback");
-                }
-            )
+        Assert.Throws<InvalidOperationException>(
+            () =>
+                test.WithReducerTx(
+                    TestAuth.Internal(),
+                    ctx =>
+                    {
+                        Assert.Equal(2UL, ctx.Db.Points.ByGroupScore.Delete((1u, 20u)));
+                        Assert.Empty(ctx.Db.Points.ByGroupScore.Filter((1u, 20u)));
+                        Assert.Equal(0UL, ctx.Db.Points.ByGroupScore.Delete((1u, 20u)));
+                        throw new InvalidOperationException("rollback");
+                    }
+                )
         );
         Assert.Equal(5UL, test.Db.Points.Count);
         Assert.Equal(4UL, test.Db.Points.Score.Delete(new SpacetimeDB.Bound<uint>(10, 20)));
@@ -76,11 +77,11 @@ public class RangeIndexTests
     [Fact]
     public void RangeIteratorsAndHandlesRespectTheirOwnerLifetime()
     {
-        Assert.Throws<InvalidOperationException>(() =>
-            new SpacetimeDB.Local().Points.Score.Filter(20u).ToArray()
+        Assert.Throws<InvalidOperationException>(
+            () => new SpacetimeDB.Local().Points.Score.Filter(20u).ToArray()
         );
-        Assert.Throws<InvalidOperationException>(() =>
-            new SpacetimeDB.Local().Points.Score.Delete(20u)
+        Assert.Throws<InvalidOperationException>(
+            () => new SpacetimeDB.Local().Points.Score.Delete(20u)
         );
         using var test = TestContext.Create(typeof(Point).Assembly);
         for (uint id = 1; id <= 2; id++)

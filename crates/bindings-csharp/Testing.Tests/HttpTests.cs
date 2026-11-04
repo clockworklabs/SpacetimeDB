@@ -90,18 +90,19 @@ public class HttpTests
             );
             return 0;
         });
-        Assert.Throws<InvalidOperationException>(() =>
-            test.WithReducerTx(
-                TestAuth.Internal(),
-                _ =>
-                {
-                    Assert.Contains(
-                        "WOULD_BLOCK_TRANSACTION",
-                        Error(procedure.Http.Get("https://example.invalid")).Message
-                    );
-                    throw new InvalidOperationException("rollback");
-                }
-            )
+        Assert.Throws<InvalidOperationException>(
+            () =>
+                test.WithReducerTx(
+                    TestAuth.Internal(),
+                    _ =>
+                    {
+                        Assert.Contains(
+                            "WOULD_BLOCK_TRANSACTION",
+                            Error(procedure.Http.Get("https://example.invalid")).Message
+                        );
+                        throw new InvalidOperationException("rollback");
+                    }
+                )
         );
         Assert.Equal(0, calls);
         Assert.Equal(

@@ -14,20 +14,21 @@ public class TableMutationTests
         Assert.False(test.Db.Entries.Delete(new Entry { Id = first.Id, Text = "different" }));
 
         ReducerContext? escaped = null;
-        Assert.Throws<InvalidOperationException>(() =>
-            test.WithReducerTx(
-                auth,
-                ctx =>
-                {
-                    escaped = ctx;
-                    Assert.True(ctx.Db.Entries.Delete(first));
-                    Assert.False(ctx.Db.Entries.Delete(first));
-                    Assert.Equal(1UL, ctx.Db.Entries.Clear());
-                    Assert.Equal(0UL, ctx.Db.Entries.Clear());
-                    Assert.Equal(0UL, ctx.Db.Entries.Count);
-                    throw new InvalidOperationException("rollback");
-                }
-            )
+        Assert.Throws<InvalidOperationException>(
+            () =>
+                test.WithReducerTx(
+                    auth,
+                    ctx =>
+                    {
+                        escaped = ctx;
+                        Assert.True(ctx.Db.Entries.Delete(first));
+                        Assert.False(ctx.Db.Entries.Delete(first));
+                        Assert.Equal(1UL, ctx.Db.Entries.Clear());
+                        Assert.Equal(0UL, ctx.Db.Entries.Clear());
+                        Assert.Equal(0UL, ctx.Db.Entries.Count);
+                        throw new InvalidOperationException("rollback");
+                    }
+                )
         );
         Assert.Equal(2UL, test.Db.Entries.Count);
         Assert.Throws<ObjectDisposedException>(() => escaped!.Db.Entries.Delete(first));
@@ -62,16 +63,17 @@ public class TableMutationTests
         );
         Assert.Equal(0UL, test.Db.Events.Count);
 
-        Assert.Throws<InvalidOperationException>(() =>
-            test.WithReducerTx(
-                auth,
-                ctx =>
-                {
-                    ctx.Db.Events.Insert(new TestEvent { Text = "rolled back" });
-                    Assert.Equal(1UL, ctx.Db.Events.Count);
-                    throw new InvalidOperationException("rollback");
-                }
-            )
+        Assert.Throws<InvalidOperationException>(
+            () =>
+                test.WithReducerTx(
+                    auth,
+                    ctx =>
+                    {
+                        ctx.Db.Events.Insert(new TestEvent { Text = "rolled back" });
+                        Assert.Equal(1UL, ctx.Db.Events.Count);
+                        throw new InvalidOperationException("rollback");
+                    }
+                )
         );
         Assert.Equal(0UL, test.Db.Events.Count);
 

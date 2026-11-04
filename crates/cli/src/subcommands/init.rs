@@ -2659,10 +2659,7 @@ bytes.workspace = true
         for (major, included) in [(None, false), (Some(11), true)] {
             let temp = tempfile::TempDir::new().unwrap();
             copy_embedded_files(&files, temp.path(), major).unwrap();
-            assert_eq!(
-                temp.path().join("optional/nested/example.txt").exists(),
-                included
-            );
+            assert_eq!(temp.path().join("optional/nested/example.txt").exists(), included);
             assert!(temp.path().join("optional-other/example.txt").exists());
         }
     }

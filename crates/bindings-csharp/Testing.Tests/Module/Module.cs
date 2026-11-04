@@ -77,7 +77,9 @@ public static class Schema
             .Submodules_.Single()
             .Module;
         mounted.Sections.RemoveAll(section =>
-            section is RawModuleDefV10Section.Environment or RawModuleDefV10Section.LifeCycleReducers
+            section
+                is RawModuleDefV10Section.Environment
+                    or RawModuleDefV10Section.LifeCycleReducers
         );
         RawModuleDef schema = new RawModuleDef.V10(definition);
         return (

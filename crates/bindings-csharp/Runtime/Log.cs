@@ -1,10 +1,10 @@
 ﻿namespace SpacetimeDB;
 
 using System.Runtime.CompilerServices;
+using SpacetimeDB.Internal;
 #if !(NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME)
 using System.Text;
 #endif
-using SpacetimeDB.Internal;
 
 public static class Log
 {

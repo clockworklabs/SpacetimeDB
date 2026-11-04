@@ -14,8 +14,8 @@ public class RoutingTests
         Assert.Throws<InvalidOperationException>(
             () => table.Insert(new Entry { Text = "unbound" })
         );
-        Assert.Throws<InvalidOperationException>(() =>
-            table.Delete(new Entry { Text = "unbound" })
+        Assert.Throws<InvalidOperationException>(
+            () => table.Delete(new Entry { Text = "unbound" })
         );
         Assert.Throws<InvalidOperationException>(() => table.Clear());
         Assert.Throws<InvalidOperationException>(() => table.Id.Find(1));

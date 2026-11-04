@@ -546,9 +546,9 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         managedAccess ? "new(__access)"
         : sharedContexts
             ? writable
-                ? $"__state.__index_{identifier.TrimStart('@')} ??= new(__state.InstanceId{(primaryKey ? ", __state" : "")})"
+                    ? $"__state.__index_{identifier.TrimStart('@')} ??= new(__state.InstanceId{(primaryKey ? ", __state" : "")})"
                 : $"__{identifier.TrimStart('@')} ??= new(__instanceId)"
-            : "new()";
+        : "new()";
 
     private IEnumerable<string> WritableIndexCaches(TableAccessor table)
     {
@@ -566,6 +566,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             yield return $"internal {identifier}Index? __index_{identifier.TrimStart('@')};";
         }
     }
+
     private string ManagedIndexConstructor(string typeName, string name) =>
         managedAccess
             ? $"internal {typeName}(global::SpacetimeDB.Internal.TableAccessor accessor) : base(accessor, {SymbolDisplay.FormatLiteral(name, true)}) {{ }}"
@@ -893,7 +894,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
                         public ulong Delete({{argsBounds}}) =>
                             DoDelete(new SpacetimeDB.Internal.BTreeIndexBounds<{{types}}>({{argName}}));
-
+                    
                     """;
             }
 
@@ -958,7 +959,11 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     public sealed class {{{identifierName}}}Index
                     : global::SpacetimeDB.Internal.ReadOnlyIndexBase<{{{globalName}}}>
                     {
-                    {{{(managedAccess ? ManagedIndexConstructor(identifierName + "Index", standardIndexName) : $"internal {identifierName}Index({(sharedContexts ? "int instanceId" : "")}) : base({HandleLookupName(standardIndexName)}) {{ }}")}}}
+                    {{{(
+                        managedAccess
+                            ? ManagedIndexConstructor(identifierName + "Index", standardIndexName)
+                            : $"internal {identifierName}Index({(sharedContexts ? "int instanceId" : "")}) : base({HandleLookupName(standardIndexName)}) {{ }}"
+                    )}}}
                     """,
             };
 
@@ -1047,10 +1052,17 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             var accessorIdentifier = v.Identifier;
             var iTable =
                 $"global::SpacetimeDB.Internal.ITableView<{accessorIdentifier}, {globalName}>";
-            var tableArgument = managedAccess ? "__access" : sharedContexts ? "__state" : "";
-            var rowArgument = managedAccess ? "__access, row" : sharedContexts ? "row, __state" : "row";
-            var instanceMembers = sharedContexts && !managedAccess
-                ? $$"""
+            var tableArgument =
+                managedAccess ? "__access"
+                : sharedContexts ? "__state"
+                : "";
+            var rowArgument =
+                managedAccess ? "__access, row"
+                : sharedContexts ? "row, __state"
+                : "row";
+            var instanceMembers =
+                sharedContexts && !managedAccess
+                    ? $$"""
                     private sealed class __InstanceState(int instanceId) : global::SpacetimeDB.Internal.TableHandle({{HandleLookupName(
                         v.Name
                     )}})
@@ -1077,7 +1089,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                         return __instances[instanceId] ??= new(instanceId);
                     }
                     """
-                : "";
+                    : "";
             yield return new(
                 v.Name,
                 globalName,
@@ -1177,7 +1189,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 {{{visibility}}} sealed class {{{accessorIdentifier}}}ReadOnly
                     : global::SpacetimeDB.Internal.ReadOnlyTableView<{{{globalName}}}>
                 {
-                    {{{(managedAccess ? $"internal {accessorIdentifier}ReadOnly(global::SpacetimeDB.Internal.TableAccessor access) : base(access) {{ }}" : (sharedContexts ? HandleCache(accessorIdentifier + "ReadOnly") : "") + $"internal {accessorIdentifier}ReadOnly({(sharedContexts ? "int instanceId" : "")}) : base({HandleLookupName(accessor.Name)}) {{ {(sharedContexts ? "__instanceId = instanceId;" : "")} }}")}}}
+                    {{{(
+                    managedAccess
+                        ? $"internal {accessorIdentifier}ReadOnly(global::SpacetimeDB.Internal.TableAccessor access) : base(access) {{ }}"
+                        : (sharedContexts ? HandleCache(accessorIdentifier + "ReadOnly") : "")
+                            + $"internal {accessorIdentifier}ReadOnly({(sharedContexts ? "int instanceId" : "")}) : base({HandleLookupName(accessor.Name)}) {{ {(sharedContexts ? "__instanceId = instanceId;" : "")} }}"
+                )}}}
 
                     /// <summary>
                     /// Returns the number of rows in this table.
@@ -2593,8 +2610,16 @@ public class Module : IIncrementalGenerator
                 containers.Add(
                     $$"""
                     public readonly struct {{container}} {
-                        private readonly {{(container == "Queries" ? "global::SpacetimeDB.QueryBuilder" : container == "Tables" ? "global::SpacetimeDB.Internal.Local" : "global::SpacetimeDB.Internal.LocalReadOnly")}} __owner;
-                        public {{container}}({{(container == "Queries" ? "global::SpacetimeDB.QueryBuilder" : container == "Tables" ? "global::SpacetimeDB.Internal.Local" : "global::SpacetimeDB.Internal.LocalReadOnly")}} owner) { __owner = owner; }
+                        private readonly {{(
+                        container == "Queries" ? "global::SpacetimeDB.QueryBuilder"
+                        : container == "Tables" ? "global::SpacetimeDB.Internal.Local"
+                        : "global::SpacetimeDB.Internal.LocalReadOnly"
+                    )}} __owner;
+                        public {{container}}({{(
+                        container == "Queries" ? "global::SpacetimeDB.QueryBuilder"
+                        : container == "Tables" ? "global::SpacetimeDB.Internal.Local"
+                        : "global::SpacetimeDB.Internal.LocalReadOnly"
+                    )}} owner) { __owner = owner; }
                         {{IndentGeneratedCode(string.Join("\n", members), 4)}}
                     }
                     """
@@ -3591,21 +3616,18 @@ public class Module : IIncrementalGenerator
                         : assemblyByIdentity[node.Contributors.Array[0]].CaseConversionPolicy
                             ?? "SnakeCase";
                 string BuilderName(CompositionNode node) =>
-                    node.Id == 0
-                        ? "builder"
-                        : $"child{node.Id - 1}";
+                    node.Id == 0 ? "builder" : $"child{node.Id - 1}";
 
-                var namespaceRegistry =
-                    !sharedContexts
-                        ? $"new global::SpacetimeDB.Internal.NamespaceRegistry({SymbolDisplay.FormatLiteral(identity, true)}, global::SpacetimeDB.CaseConversionPolicy.{rootCasePolicy}, new (string, string, string?, global::SpacetimeDB.CaseConversionPolicy)[] {{}})"
-                        : "new global::SpacetimeDB.Internal.NamespaceRegistry(new (int, string, string?, global::SpacetimeDB.CaseConversionPolicy, string[])[] {"
-                            + string.Join(
-                                ",",
-                                nodes.Select(node =>
-                                    $"({node.ParentId ?? -1}, {SymbolDisplay.FormatLiteral(node.Mount?.Accessor ?? "", true)}, {(node.Mount?.Name is { } name ? SymbolDisplay.FormatLiteral(name, true) : "null")}, global::SpacetimeDB.CaseConversionPolicy.{Policy(node)}, new string[] {{ {string.Join(",", node.Contributors.Select(contributor => SymbolDisplay.FormatLiteral(contributor, true)))} }})"
-                                )
+                var namespaceRegistry = !sharedContexts
+                    ? $"new global::SpacetimeDB.Internal.NamespaceRegistry({SymbolDisplay.FormatLiteral(identity, true)}, global::SpacetimeDB.CaseConversionPolicy.{rootCasePolicy}, new (string, string, string?, global::SpacetimeDB.CaseConversionPolicy)[] {{}})"
+                    : "new global::SpacetimeDB.Internal.NamespaceRegistry(new (int, string, string?, global::SpacetimeDB.CaseConversionPolicy, string[])[] {"
+                        + string.Join(
+                            ",",
+                            nodes.Select(node =>
+                                $"({node.ParentId ?? -1}, {SymbolDisplay.FormatLiteral(node.Mount?.Accessor ?? "", true)}, {(node.Mount?.Name is { } name ? SymbolDisplay.FormatLiteral(name, true) : "null")}, global::SpacetimeDB.CaseConversionPolicy.{Policy(node)}, new string[] {{ {string.Join(",", node.Contributors.Select(contributor => SymbolDisplay.FormatLiteral(contributor, true)))} }})"
                             )
-                            + "})";
+                        )
+                        + "})";
                 var compositionRegistration = new List<string>();
                 foreach (var node in nodes)
                 {

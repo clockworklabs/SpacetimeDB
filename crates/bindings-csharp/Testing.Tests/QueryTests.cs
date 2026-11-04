@@ -58,11 +58,11 @@ public class QueryTests
                 Assert.Throws<InvalidOperationException>(() => test.RunQuery(query));
             }
         );
-        Assert.Throws<InvalidOperationException>(() =>
-            test.RunQuery(new SqlQuery("DELETE FROM Entries"))
+        Assert.Throws<InvalidOperationException>(
+            () => test.RunQuery(new SqlQuery("DELETE FROM Entries"))
         );
-        Assert.Throws<EndOfStreamException>(() =>
-            test.RunQuery(new SqlQuery("SELECT Id FROM Entries"))
+        Assert.Throws<EndOfStreamException>(
+            () => test.RunQuery(new SqlQuery("SELECT Id FROM Entries"))
         );
         Assert.Equal("committed", Assert.Single(test.RunQuery(query)).Text);
         test.Db.Entries.Insert(new Entry { Text = "still writable" });

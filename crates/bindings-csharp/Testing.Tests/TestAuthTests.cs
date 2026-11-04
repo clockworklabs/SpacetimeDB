@@ -62,8 +62,8 @@ public class TestAuthTests
     public void InvalidClaimsAndZeroConnectionIdsAreRejected()
     {
         Assert.Throws<ArgumentNullException>(() => TestAuth.FromJwtPayload(null!, connection));
-        Assert.Throws<ArgumentException>(() =>
-            TestAuth.FromJwtPayload("""{"iss":"issuer","sub":"subject"}""", default)
+        Assert.Throws<ArgumentException>(
+            () => TestAuth.FromJwtPayload("""{"iss":"issuer","sub":"subject"}""", default)
         );
         foreach (
             var payload in new[]
@@ -79,14 +79,7 @@ public class TestAuthTests
 
         foreach (var name in new[] { "iss", "sub" })
         {
-            foreach (
-                var value in new object?[]
-                {
-                    null,
-                    "",
-                    new string('\u00e9', 65),
-                }
-            )
+            foreach (var value in new object?[] { null, "", new string('\u00e9', 65) })
             {
                 var claims = new Dictionary<string, object?>
                 {
@@ -94,8 +87,8 @@ public class TestAuthTests
                     ["sub"] = "subject",
                     [name] = value,
                 };
-                Assert.Throws<ArgumentException>(() =>
-                    TestAuth.FromJwtPayload(JsonSerializer.Serialize(claims), connection)
+                Assert.Throws<ArgumentException>(
+                    () => TestAuth.FromJwtPayload(JsonSerializer.Serialize(claims), connection)
                 );
             }
             var boundary = new Dictionary<string, string>
@@ -132,8 +125,8 @@ public class TestAuthTests
         )
         {
             claims["hex_identity"] = invalid;
-            Assert.Throws<ArgumentException>(() =>
-                TestAuth.FromJwtPayload(JsonSerializer.Serialize(claims), connection)
+            Assert.Throws<ArgumentException>(
+                () => TestAuth.FromJwtPayload(JsonSerializer.Serialize(claims), connection)
             );
         }
     }

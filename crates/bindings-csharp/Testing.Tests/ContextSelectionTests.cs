@@ -16,14 +16,17 @@ public class ContextSelectionTests
     public void GeneratedSelectorsUseTheFixtureWithoutInstallingGlobalNamespaces()
     {
         using var test = TestContext.Create(typeof(Entry).Assembly);
-        test.WithReducerTx(TestAuth.Internal(), ctx =>
-        {
-            ReducerContext left = ctx.As.Left.Leaf;
-            ReducerContext right = ctx.As.Right.Leaf;
-            CheckSelected(left, right);
-            Assert.Same(ctx.Db.Access, left.Db.Access);
-            Assert.Same(ctx.Db.Access, right.Db.Access);
-        });
+        test.WithReducerTx(
+            TestAuth.Internal(),
+            ctx =>
+            {
+                ReducerContext left = ctx.As.Left.Leaf;
+                ReducerContext right = ctx.As.Right.Leaf;
+                CheckSelected(left, right);
+                Assert.Same(ctx.Db.Access, left.Db.Access);
+                Assert.Same(ctx.Db.Access, right.Db.Access);
+            }
+        );
 
         var view = test.ViewContext(TestAuth.Internal());
         ViewContext leftView = view.As.Left.Leaf;
@@ -52,7 +55,10 @@ public class ContextSelectionTests
         });
         leftProcedure.WithTx(tx =>
         {
-            Assert.Equal(((IModuleContext)leftProcedure).InstanceId, ((IModuleContext)tx).InstanceId);
+            Assert.Equal(
+                ((IModuleContext)leftProcedure).InstanceId,
+                ((IModuleContext)tx).InstanceId
+            );
             return 0;
         });
         Assert.Throws<InvalidOperationException>(() => Module.InstanceCount);
@@ -63,14 +69,17 @@ public class ContextSelectionTests
     {
         using var test = TestContext.Create(typeof(Entry).Assembly);
         Action? selectFromReducer = null;
-        test.WithReducerTx(TestAuth.Internal(), ctx =>
-        {
-            var path = ctx.As.Left;
-            selectFromReducer = () =>
+        test.WithReducerTx(
+            TestAuth.Internal(),
+            ctx =>
             {
-                _ = path.Leaf;
-            };
-        });
+                var path = ctx.As.Left;
+                selectFromReducer = () =>
+                {
+                    _ = path.Leaf;
+                };
+            }
+        );
         Assert.Throws<ObjectDisposedException>(selectFromReducer!);
 
         var procedure = test.ProcedureContext(TestAuth.Internal());

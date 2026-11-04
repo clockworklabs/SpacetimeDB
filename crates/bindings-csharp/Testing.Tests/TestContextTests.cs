@@ -30,16 +30,17 @@ public class TestContextTests
         var failure = new InvalidOperationException("original exception");
         Assert.Same(
             failure,
-            Assert.Throws<InvalidOperationException>(() =>
-                test.WithReducerTx(
-                    auth,
-                    ctx =>
-                    {
-                        escaped = ctx;
-                        ctx.Db.Entries.Insert(new Entry { Text = "rolled back" });
-                        throw failure;
-                    }
-                )
+            Assert.Throws<InvalidOperationException>(
+                () =>
+                    test.WithReducerTx(
+                        auth,
+                        ctx =>
+                        {
+                            escaped = ctx;
+                            ctx.Db.Entries.Insert(new Entry { Text = "rolled back" });
+                            throw failure;
+                        }
+                    )
             )
         );
         Assert.Throws<ObjectDisposedException>(() => escaped!.Db.Entries.Count);
@@ -96,8 +97,8 @@ public class TestContextTests
     [Fact]
     public void InvalidModulesAndUnsupportedCallbacksAreRejected()
     {
-        Assert.Throws<ArgumentException>(() =>
-            TestContext.Create(typeof(TestContextTests).Assembly)
+        Assert.Throws<ArgumentException>(
+            () => TestContext.Create(typeof(TestContextTests).Assembly)
         );
         using var test = TestContext.Create(typeof(Entry).Assembly);
         var auth = TestAuth.Internal();
@@ -131,15 +132,16 @@ public class TestContextTests
         Assert.Throws<ArgumentException>(() => test.WithReducerTx(auth, multicast));
         Assert.False(called);
 
-        Assert.Throws<ArgumentException>(() =>
-            test.WithReducerTx<object>(
-                auth,
-                ctx =>
-                {
-                    ctx.Db.Entries.Insert(new Entry { Text = "erased awaitable" });
-                    return Task.CompletedTask;
-                }
-            )
+        Assert.Throws<ArgumentException>(
+            () =>
+                test.WithReducerTx<object>(
+                    auth,
+                    ctx =>
+                    {
+                        ctx.Db.Entries.Insert(new Entry { Text = "erased awaitable" });
+                        return Task.CompletedTask;
+                    }
+                )
         );
         Assert.Equal(0UL, test.Db.Entries.Count);
         test.WithReducerTx(auth, ctx => ctx.Db.Entries.Insert(new Entry { Text = "still usable" }));

@@ -23,17 +23,18 @@ public class EnvironmentTests
         Assert.Equal("", view.Env.REQUIRED);
 
         DatabaseEnvironment escaped = default;
-        Assert.Throws<InvalidOperationException>(() =>
-            first.WithReducerTx(
-                auth,
-                ctx =>
-                {
-                    escaped = ctx.Env;
-                    first.SetEnv("OPTIONAL", "changed");
-                    Assert.Equal("changed", escaped.OPTIONAL);
-                    throw new InvalidOperationException("rollback");
-                }
-            )
+        Assert.Throws<InvalidOperationException>(
+            () =>
+                first.WithReducerTx(
+                    auth,
+                    ctx =>
+                    {
+                        escaped = ctx.Env;
+                        first.SetEnv("OPTIONAL", "changed");
+                        Assert.Equal("changed", escaped.OPTIONAL);
+                        throw new InvalidOperationException("rollback");
+                    }
+                )
         );
         Assert.Equal("changed", view.Env.OPTIONAL);
         Assert.Equal("changed", anonymous.Env.OPTIONAL);
@@ -53,7 +54,9 @@ public class EnvironmentTests
         Assert.Throws<ObjectDisposedException>(() => selectedAnonymous.Env.Get("OPTIONAL"));
         Assert.Throws<ObjectDisposedException>(() => first.SetEnv("OPTIONAL", "value"));
         Assert.Throws<ObjectDisposedException>(() => first.UnsetEnv("OPTIONAL"));
-        Assert.Throws<InvalidOperationException>(() => default(DatabaseEnvironment).Get("OPTIONAL"));
+        Assert.Throws<InvalidOperationException>(
+            () => default(DatabaseEnvironment).Get("OPTIONAL")
+        );
     }
 
     [Fact]

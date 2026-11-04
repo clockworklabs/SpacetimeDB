@@ -17,19 +17,20 @@ public class UniqueIndexTests
         Assert.Equal(updated, test.Db.Entries.Id.Find(first.Id));
 
         ReducerContext? escaped = null;
-        Assert.Throws<InvalidOperationException>(() =>
-            test.WithReducerTx(
-                TestAuth.Internal(),
-                ctx =>
-                {
-                    escaped = ctx;
-                    ctx.Db.Entries.Id.Update(new Entry { Id = first.Id, Text = "rolled back" });
-                    Assert.Equal("rolled back", ctx.Db.Entries.Id.Find(first.Id)!.Value.Text);
-                    Assert.True(ctx.Db.Entries.Id.Delete(second.Id));
-                    Assert.Null(ctx.Db.Entries.Id.Find(second.Id));
-                    throw new InvalidOperationException("rollback");
-                }
-            )
+        Assert.Throws<InvalidOperationException>(
+            () =>
+                test.WithReducerTx(
+                    TestAuth.Internal(),
+                    ctx =>
+                    {
+                        escaped = ctx;
+                        ctx.Db.Entries.Id.Update(new Entry { Id = first.Id, Text = "rolled back" });
+                        Assert.Equal("rolled back", ctx.Db.Entries.Id.Find(first.Id)!.Value.Text);
+                        Assert.True(ctx.Db.Entries.Id.Delete(second.Id));
+                        Assert.Null(ctx.Db.Entries.Id.Find(second.Id));
+                        throw new InvalidOperationException("rollback");
+                    }
+                )
         );
         Assert.Equal(updated, test.Db.Entries.Id.Find(first.Id));
         Assert.Equal(second, test.Db.Entries.Id.Find(second.Id));
@@ -65,15 +66,16 @@ public class UniqueIndexTests
         Assert.Equal(updated.Serial, test.Db.Accounts.Id.Find(1)!.Serial);
         Assert.Null(test.Db.Accounts.Name.Find("first"));
         Assert.Equal(updated.Id, test.Db.Accounts.Name.Find("updated")!.Id);
-        Assert.Throws<UniqueConstraintViolationException>(() =>
-            test.Db.Accounts.Id.Update(
-                new Account
-                {
-                    Id = 1,
-                    Serial = updated.Serial,
-                    Name = "second",
-                }
-            )
+        Assert.Throws<UniqueConstraintViolationException>(
+            () =>
+                test.Db.Accounts.Id.Update(
+                    new Account
+                    {
+                        Id = 1,
+                        Serial = updated.Serial,
+                        Name = "second",
+                    }
+                )
         );
         Assert.Equal("updated", test.Db.Accounts.Id.Find(1)!.Name);
 

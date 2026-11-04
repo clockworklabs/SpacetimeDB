@@ -29,38 +29,46 @@ public sealed class NamespaceBinding(string? assemblyIdentity, string accessor)
 #endif
     }
 
-    public Local Select(Local db) => new() {
-        InstanceId = Resolve(db.InstanceId
+    public Local Select(Local db) =>
+        new()
+        {
+            InstanceId = Resolve(db.InstanceId
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
-            , db.Access
+                , db.Access
 #endif
-        ),
+            ),
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
-        Access = db.Access,
+            Access = db.Access,
 #endif
-    };
+        };
 
-    public LocalReadOnly Select(LocalReadOnly db) => new() {
-        InstanceId = Resolve(db.InstanceId
+    public LocalReadOnly Select(LocalReadOnly db) =>
+        new()
+        {
+            InstanceId = Resolve(db.InstanceId
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
-            , db.Access
+                , db.Access
 #endif
-        ),
+            ),
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
-        Access = db.Access,
+            Access = db.Access,
 #endif
-    };
+        };
 
-    public QueryBuilder Select(QueryBuilder from) => new(new LocalReadOnly {
-        InstanceId = Resolve(from.InstanceId
+    public QueryBuilder Select(QueryBuilder from) =>
+        new(
+            new LocalReadOnly
+            {
+                InstanceId = Resolve(from.InstanceId
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
-            , from.Access
+                    , from.Access
 #endif
-        ),
+                ),
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
-        Access = from.Access,
+                Access = from.Access,
 #endif
-    });
+            }
+        );
 
     private int Resolve(int contextInstance
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
@@ -72,15 +80,18 @@ public sealed class NamespaceBinding(string? assemblyIdentity, string accessor)
         if (access is not null)
         {
             access.CheckActive();
-            var selected = access.Backend.Namespaces.BindNamespace(assemblyIdentity, accessor)[contextInstance];
+            var selected = access.Backend.Namespaces.BindNamespace(assemblyIdentity, accessor)[
+                contextInstance
+            ];
             if (selected < 0)
-                throw new InvalidOperationException($"Namespace '{accessor}' is unavailable or ambiguous in this context.");
+                throw new InvalidOperationException(
+                    $"Namespace '{accessor}' is unavailable or ambiguous in this context."
+                );
             return selected;
         }
 #endif
         return this[contextInstance];
     }
-
 #endif
 
     public int this[int contextInstance]

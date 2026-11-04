@@ -22,17 +22,20 @@ public class ProcedureHookTests
         var selected = ((Internal.IModuleContext<ProcedureContext>)procedure).SelectInstance(1);
         Assert.Same(
             failure,
-            Assert.Throws<InvalidOperationException>(() => selected.WithTx(tx =>
-            {
-                Assert.Equal(1, ((Internal.IModuleContext)tx).InstanceId);
-                return 0;
-            }))
+            Assert.Throws<InvalidOperationException>(
+                () =>
+                    selected.WithTx(tx =>
+                    {
+                        Assert.Equal(1, ((Internal.IModuleContext)tx).InstanceId);
+                        return 0;
+                    })
+            )
         );
         Assert.Equal(1, calls);
         Assert.Same(
             failure,
-            Assert.Throws<InvalidOperationException>(() =>
-                selected.TryWithTx(_ => Result<int, Exception>.Ok(0))
+            Assert.Throws<InvalidOperationException>(
+                () => selected.TryWithTx(_ => Result<int, Exception>.Ok(0))
             )
         );
         Assert.Equal(2, calls);
@@ -65,9 +68,7 @@ public class ProcedureHookTests
             return tx.Db.Entries.Insert(new Entry { Text = "procedure" });
         });
         var failure = new InvalidOperationException("rollback");
-        Assert.Throws<InvalidOperationException>(() =>
-            procedure.WithTx<int>(_ => throw failure)
-        );
+        Assert.Throws<InvalidOperationException>(() => procedure.WithTx<int>(_ => throw failure));
         var rejected = procedure.TryWithTx(_ => Result<int, Exception>.Err(failure));
         Assert.Same(failure, rejected.Error);
         Assert.Equal(1, calls);
@@ -93,18 +94,19 @@ public class ProcedureHookTests
             .Build();
         Assert.Same(
             failure,
-            Assert.Throws<InvalidOperationException>(() =>
-                procedure.WithTx(tx => tx.Db.Entries.Insert(new Entry { Text = "WithTx" }))
+            Assert.Throws<InvalidOperationException>(
+                () => procedure.WithTx(tx => tx.Db.Entries.Insert(new Entry { Text = "WithTx" }))
             )
         );
         Assert.Same(
             failure,
-            Assert.Throws<InvalidOperationException>(() =>
-                procedure.TryWithTx(tx =>
-                    Result<Entry, Exception>.Ok(
-                        tx.Db.Entries.Insert(new Entry { Text = "TryWithTx" })
+            Assert.Throws<InvalidOperationException>(
+                () =>
+                    procedure.TryWithTx(tx =>
+                        Result<Entry, Exception>.Ok(
+                            tx.Db.Entries.Insert(new Entry { Text = "TryWithTx" })
+                        )
                     )
-                )
             )
         );
         Assert.Equal(
