@@ -535,8 +535,12 @@ impl BlobEntry {
     }
 
     fn dec_pins(&mut self) {
-        if let Self::Resident { pins, .. } = self {
-            *pins = pins.saturating_sub(1);
+        match self {
+            Self::NonResident { .. } => unreachable!("attempt to decrement pin count on non-resident blob"),
+            Self::Resident { pins, .. } if *pins == 0 => panic!("attempt to decrement pin count already at zero"),
+            Self::Resident { pins, .. } => {
+                *pins -= 1;
+            }
         }
     }
 }
