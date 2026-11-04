@@ -473,6 +473,8 @@ pub use spacetimedb_bindings_macro::generated_outbox_table;
 /// The receiver must be in scope as a module identifier.
 /// If an argument is named `msg_id` or `target`, use [`table`] to name the
 /// metadata columns differently.
+/// To define multiple outbox tables for the same remote reducer, declare them
+/// manually with [`table`].
 #[macro_export]
 macro_rules! outbox {
     ($module:ident :: $reducer:ident, name = $name:literal, accessor = $accessor:ident $(,)?) => {
