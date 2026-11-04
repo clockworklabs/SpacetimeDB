@@ -12,4 +12,4 @@ TABLE
 
 REDUCERS
 - SendReminder: scheduled reducer triggered by Reminder (receives a Reminder row, does nothing)
-- Init (ReducerKind.Init): inserts one row into Reminder using ScheduleAt.Time with a TimeDuration of 60 seconds (60_000_000 microseconds) added to ctx.Timestamp
+- Init: inserts one row into Reminder, scheduling SendReminder to fire 60 seconds in the future using ScheduleAt.Time

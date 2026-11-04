@@ -1,20 +1,20 @@
-Write a SpacetimeDB backend module in TypeScript that defines a table of messages owned by users, and reducers that enforce ownership using ctx.sender.
+Write a SpacetimeDB backend module in TypeScript that defines a table of messages owned by users, and reducers that enforce ownership using the caller's identity.
 
 TABLES
 - message
   - public table
   - Fields:
-    - id: number (u64, primary key, autoInc)
+    - id: bigint (u64, primary key, autoInc)
     - owner: Identity (index btree)
     - text: string
 
 REDUCERS
 - create_message(ctx, { text: string })
-  - Insert a new message with owner set to ctx.sender()
+  - Insert a new message with owner set to the caller's identity
   - Use id: 0n for autoInc
 
-- delete_message(ctx, { id: number (u64) })
+- delete_message(ctx, { id: bigint (u64) })
   - Find the message by id
   - If not found, throw "not found"
-  - If the message's owner does not equal ctx.sender(), throw "unauthorized"
+  - If the message's owner does not equal the caller's identity, throw "unauthorized"
   - Otherwise, delete the message

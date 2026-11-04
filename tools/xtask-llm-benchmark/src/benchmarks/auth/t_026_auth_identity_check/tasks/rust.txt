@@ -1,4 +1,4 @@
-Write a SpacetimeDB backend module in Rust that defines a table of messages owned by users, and reducers that enforce ownership using ctx.sender.
+Write a SpacetimeDB backend module in Rust that defines a table of messages owned by users, and reducers that enforce ownership using the caller's identity.
 
 TABLES
 - message
@@ -11,11 +11,11 @@ TABLES
 
 REDUCERS
 - create_message(ctx, text: String)
-  - Insert a new Message with owner set to ctx.sender
+  - Insert a new Message with owner set to the caller's identity
   - Use id: 0 for auto_inc
 
 - delete_message(ctx, id: u64)
   - Find the message by id
   - If not found, panic with "not found"
-  - If the message's owner does not equal ctx.sender, panic with "unauthorized"
+  - If the message's owner does not equal the caller's identity, panic with "unauthorized"
   - Otherwise, delete the message

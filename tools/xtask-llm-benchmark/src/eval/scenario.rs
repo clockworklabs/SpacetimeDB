@@ -168,10 +168,14 @@ impl Scenario {
     }
 
     pub fn http(&self, path: &str, body: &str) -> Result<(u16, String)> {
+        self.http_method(reqwest::Method::POST, path, body)
+    }
+
+    pub fn http_method(&self, method: reqwest::Method, path: &str, body: &str) -> Result<(u16, String)> {
         let response = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(15))
             .build()?
-            .post(format!("{}/v1/database/{}/route{path}", self.server, self.db))
+            .request(method, format!("{}/v1/database/{}/route{path}", self.server, self.db))
             .header("content-type", "text/plain")
             .body(body.to_owned())
             .send()?;

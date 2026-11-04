@@ -4,7 +4,7 @@ TABLES
 - user_internal
   - private table (do not set public: true)
   - Fields:
-    - id: number (u64, primary key, autoInc)
+    - id: bigint (u64, primary key, autoInc)
     - name: string
     - email: string
     - passwordHash: string
@@ -12,7 +12,7 @@ TABLES
 - user_public
   - public table (set public: true)
   - Fields:
-    - id: number (u64, primary key)
+    - id: bigint (u64, primary key)
     - name: string
 
 REDUCERS

@@ -20,9 +20,10 @@ Compiler errors in SDK-generated files score as normal failures. Saved batch
 records keep the evidence so suspected SDK defects can go to the core team.
 Schema parity treats table and view names that differ only by case or underscores
 as the same, because prompts do not fix their casing. It matches lifecycle reducers
-by kind, not by name, because clients cannot call them. It accepts extra indexes
-and extra view primary keys, but still fails a missing one. It fails any C# table
-that sets `Name` without `Accessor`, because that is the 1.x form. Behaviour checks
+by kind, not by name, because clients cannot call them. It accepts extra indexes and
+HTTP routes but fails a missing one. It ignores view primary keys except on the task that asks for
+one. It fails any C# table that sets `Name` without `Accessor`, because that is the
+1.x form. Behaviour checks
 query a table or view by the module's own spelling when it differs only by case or
 underscores.
 

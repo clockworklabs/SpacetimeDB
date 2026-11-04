@@ -3,7 +3,7 @@ Write a SpacetimeDB backend module in TypeScript that defines an order table and
 TABLES
 - order (private)
   - Fields:
-    - id: number (u64, primary key, autoInc)
+    - id: bigint (u64, primary key, autoInc)
     - category: string
     - amount: number (u32)
 

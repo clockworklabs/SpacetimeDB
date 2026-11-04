@@ -14,5 +14,5 @@ VIEWS
 - my_profile
   - per-user view (uses ViewContext, not AnonymousViewContext)
   - public
-  - Returns: Option<Profile> (the single profile row matching ctx.sender(), or None)
-  - Logic: look up the profile by the identity column matching ctx.sender()
+  - Returns: Option<Profile> (the single profile row matching the caller's identity, or None)
+  - Logic: look up the profile by the identity column matching the caller's identity

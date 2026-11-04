@@ -256,7 +256,7 @@ public partial struct TickTimer
 [SpacetimeDB.Reducer]
 public static void Tick(ReducerContext ctx, TickTimer timer)
 {
-    // timer row is auto-deleted after this reducer runs
+    // a one-time row is deleted after this runs; an interval row stays
 }
 
 // One-time: fires once at a specific time
@@ -267,7 +267,7 @@ var at = new ScheduleAt.Interval(TimeSpan.FromSeconds(5));
 ctx.Db.TickTimer.Insert(new TickTimer { ScheduledId = 0, ScheduledAt = at });
 ```
 
-Scheduled reducer callbacks use the ordinary `[SpacetimeDB.Reducer]` attribute. There is no `ReducerKind.Scheduled`; the table's `Scheduled` option associates the callback.
+Scheduled reducer callbacks use the ordinary `[SpacetimeDB.Reducer]` attribute. There is no `ReducerKind.Scheduled`; the table's `Scheduled` option associates the callback. To let only the scheduler run a callback, reject calls where `ctx.Sender != ctx.DatabaseIdentity`.
 
 To construct a `ConnectionId` from a 128-bit numeric representation, encode it as exactly 16 little-endian bytes and call `ConnectionId.From(bytes)`. The result is nullable and must be checked before use.
 
@@ -359,3 +359,5 @@ public partial record Shape : SpacetimeDB.TaggedEnum<(Circle Circle, Rectangle R
 var a = new Shape.Circle(new Circle { Radius = 10 });
 var b = new Shape.Rectangle(new Rectangle { Width = 4, Height = 6 });
 ```
+
+Declare `TaggedEnum` records inside your `Module` class. At file scope, a variant named after its own type, such as `Circle Circle`, fails with CS8910.

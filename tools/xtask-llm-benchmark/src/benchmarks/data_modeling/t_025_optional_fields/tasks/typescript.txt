@@ -3,7 +3,7 @@ Write a SpacetimeDB backend module in TypeScript that defines a table with optio
 TABLES
 - player (private)
   - Fields:
-    - id: number (u64, primary key, autoInc)
+    - id: bigint (u64, primary key, autoInc)
     - name: string
     - nickname: optional string (use t.option(t.string()))
     - highScore: optional number (use t.option(t.u32()))

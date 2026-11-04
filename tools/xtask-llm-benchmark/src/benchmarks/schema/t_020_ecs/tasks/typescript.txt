@@ -3,7 +3,7 @@ Write a SpacetimeDB backend module in TypeScript that models a minimal ECS and c
 TABLES
 - entity (private)
   - Fields:
-    - id: number (u64, primary key, autoInc)
+    - id: bigint (u64, primary key, autoInc)
 
 - position (public)
   - Fields:

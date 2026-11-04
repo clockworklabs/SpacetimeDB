@@ -18,16 +18,16 @@ TABLES
 
 REDUCERS
 - CreateDocument(ctx, string title)
-  - Insert a Document with Owner = ctx.Sender and the given Title, Id = 0 for AutoInc
+  - Insert a Document with Owner = the caller's identity and the given Title, Id = 0 for AutoInc
 
 - ShareDocument(ctx, ulong documentId, Identity target)
   - Load the Document by Id; if missing, throw exception with "not found"
-  - If Document.Owner != ctx.Sender, throw exception with "not owner"
+  - If Document.Owner != the caller's identity, throw exception with "not owner"
   - Insert a DocumentShare { DocumentId = documentId, SharedWith = target }
 
 - EditDocument(ctx, ulong documentId, string newTitle)
   - Load the Document by Id; if missing, throw exception with "not found"
   - The caller is authorized if they are the Owner OR if a DocumentShare row exists
-    with matching DocumentId and SharedWith == ctx.Sender
+    with matching DocumentId and SharedWith == the caller's identity
   - If neither condition is true, throw exception with "unauthorized"
   - Update the Document's Title to newTitle

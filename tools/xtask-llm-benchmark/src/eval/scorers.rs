@@ -20,6 +20,7 @@ pub struct SchemaParityScorer {
     pub llm_db: String,
     pub timeout: Duration,
     pub id_str: &'static str,
+    pub view_primary_keys_required: bool,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -107,12 +108,14 @@ impl Scorer for SchemaParityScorer {
             }
         }
 
-        let schema_a = extract_schema(&golden);
+        let mut schema_a = extract_schema(&golden);
         let mut schema_b = extract_schema(&llm);
-        // Extra view primary keys only help clients match rows; behaviour checks catch a wrong one.
-        schema_b
-            .exports
-            .retain(|export| !export.starts_with("view_primary_key:") || schema_a.exports.contains(export));
+        compare_view_primary_keys(
+            &mut schema_a.exports,
+            &mut schema_b.exports,
+            self.view_primary_keys_required,
+        );
+        accept_extra_http_routes(&schema_a.exports, &mut schema_b.exports);
         let candidate_tables =
             accept_extra_indexes(&schema_a.tables, align_table_names(&schema_a.tables, &schema_b.tables));
 
@@ -311,7 +314,19 @@ fn extract_schema(v: &Value) -> SchemaSnapshot {
     for view in schema_array(v, "views", "Views").into_iter().flatten() {
         schema.exports.insert(view_export(view, types, &names));
     }
-    insert_canonical_exports(&mut schema.exports, v, "schedules", "Schedules", "schedule");
+    for schedule in schema_array(v, "schedules", "Schedules").into_iter().flatten() {
+        // The table is compared on its own; these fields only repeat its exact spelling.
+        let mut schedule = schedule.clone();
+        if let Some(fields) = schedule.as_object_mut() {
+            fields.remove("source_name");
+            if let Some(table) = fields.get_mut("table_name") {
+                *table = Value::String(loose_name(&schema_name(Some(table))));
+            }
+        }
+        schema
+            .exports
+            .insert(format!("schedule:{}", canonical_value(Some(&schedule))));
+    }
     insert_http_routes(&mut schema.exports, v);
     for key in schema_array(v, "view_primary_keys", "ViewPrimaryKeys")
         .into_iter()
@@ -403,18 +418,6 @@ fn view_export(view: &Value, types: &[Value], names: &SchemaNames) -> String {
     append_field(&mut signature, "public", view.get("is_public"));
     append_field(&mut signature, "anonymous", view.get("is_anonymous"));
     signature
-}
-
-fn insert_canonical_exports(
-    exports: &mut BTreeSet<String>,
-    schema: &Value,
-    direct_name: &str,
-    section_name: &str,
-    kind: &str,
-) {
-    for export in schema_array(schema, direct_name, section_name).into_iter().flatten() {
-        exports.insert(format!("{kind}:{}", canonical_value(Some(export))));
-    }
 }
 
 fn insert_http_routes(exports: &mut BTreeSet<String>, schema: &Value) {
@@ -564,6 +567,22 @@ fn align_table_names(
             (golden_name.unwrap_or(name).clone(), table.clone())
         })
         .collect()
+}
+
+// TypeScript row types carry a table's key into a view implicitly, so only a task that asks for a key requires one.
+fn compare_view_primary_keys(golden: &mut BTreeSet<String>, candidate: &mut BTreeSet<String>, required: bool) {
+    let is_key = |export: &String| export.starts_with("view_primary_key:");
+    if required {
+        candidate.retain(|export| !is_key(export) || golden.contains(export));
+    } else {
+        golden.retain(|export| !is_key(export));
+        candidate.retain(|export| !is_key(export));
+    }
+}
+
+// A handler that rejects a method explicitly is as valid as leaving the route unregistered.
+fn accept_extra_http_routes(golden: &BTreeSet<String>, candidate: &mut BTreeSet<String>) {
+    candidate.retain(|export| !export.starts_with("http_route:") || golden.contains(export));
 }
 
 fn loose_name(name: &str) -> String {
@@ -1656,6 +1675,67 @@ mod tests {
 
         assert_eq!(golden, extract_schema(&lifecycle_schema("on_connect", "OnConnect")));
         assert_ne!(golden, extract_schema(&lifecycle_schema("client_connected", "Init")));
+    }
+
+    #[test]
+    fn schedules_ignore_table_spelling_but_not_their_reducer() {
+        let schema = |table: &str, function: &str| {
+            json!({
+                "sections": [
+                    { "Typespace": { "types": [] } },
+                    { "Schedules": [{
+                        "source_name": { "some": format!("{table}_sched") },
+                        "table_name": table,
+                        "schedule_at_col": 1,
+                        "function_name": function
+                    }] }
+                ]
+            })
+        };
+        let golden = extract_schema(&schema("tick_timer", "tick"));
+
+        assert_eq!(golden, extract_schema(&schema("TickTimer", "tick")));
+        assert_ne!(golden, extract_schema(&schema("tick_timer", "other")));
+        assert_ne!(golden, extract_schema(&schema("other_timer", "tick")));
+    }
+
+    #[test]
+    fn view_primary_keys_only_matter_when_a_task_requires_them() {
+        let keys = |names: &[&str]| {
+            names
+                .iter()
+                .map(|name| format!("view_primary_key:{name}"))
+                .collect::<BTreeSet<_>>()
+        };
+        for (required, golden, candidate, equal) in [
+            (false, vec!["id"], vec![], true),
+            (false, vec![], vec!["id"], true),
+            (true, vec!["id"], vec!["id"], true),
+            (true, vec![], vec!["id"], true),
+            (true, vec!["id"], vec![], false),
+            (true, vec!["id"], vec!["name"], false),
+        ] {
+            let (mut golden, mut candidate) = (keys(&golden), keys(&candidate));
+            compare_view_primary_keys(&mut golden, &mut candidate, required);
+            assert_eq!(diff_sets(&golden, &candidate).is_null(), equal);
+        }
+    }
+
+    #[test]
+    fn extra_http_routes_are_accepted_but_missing_ones_fail() {
+        let routes = |names: &[&str]| {
+            names
+                .iter()
+                .map(|name| format!("http_route:{name}"))
+                .collect::<BTreeSet<_>>()
+        };
+        let golden = routes(&["get", "post"]);
+        let mut extra = routes(&["get", "post", "put"]);
+        accept_extra_http_routes(&golden, &mut extra);
+        assert!(diff_sets(&golden, &extra).is_null());
+        let mut missing = routes(&["get"]);
+        accept_extra_http_routes(&golden, &mut missing);
+        assert!(!diff_sets(&golden, &missing).is_null());
     }
 
     #[test]

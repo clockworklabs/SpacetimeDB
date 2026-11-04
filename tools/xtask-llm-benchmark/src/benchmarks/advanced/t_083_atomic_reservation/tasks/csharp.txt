@@ -10,4 +10,4 @@ Reducers (argument order is part of the contract):
 - add_stock(Id: ulong, Available: long): Insert a new product. Reject a negative quantity with 'invalid stock'.
 - reserve(RequestId: string, FirstId: ulong, FirstQty: long, SecondId: ulong, SecondQty: long): Exact replay returns success without changes. Changed replay: 'request conflict'. New request requires a nonempty ID, distinct products and positive quantities ('invalid reservation'); both products must exist ('missing product') and have enough stock ('insufficient stock'). Deduct both quantities and record the payload in one transaction.
 
-Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged.
+Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged. When an operation fails with quoted text, the caller must receive that exact text.

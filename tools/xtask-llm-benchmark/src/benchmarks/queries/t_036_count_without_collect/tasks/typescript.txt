@@ -3,14 +3,14 @@ Write a SpacetimeDB backend module in TypeScript that defines a user table and a
 TABLES
 - user (private)
   - Fields:
-    - id: number (u64, primary key, autoInc)
+    - id: bigint (u64, primary key, autoInc)
     - name: string
     - active: boolean
 
 - user_stats (private)
   - Fields:
     - key: string (primary key)
-    - count: number (u64)
+    - count: bigint (u64)
 
 REDUCERS
 - compute_user_counts(ctx)
