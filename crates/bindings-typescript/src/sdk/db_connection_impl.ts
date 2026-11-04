@@ -52,6 +52,11 @@ import {
   type SubscribeEvent,
 } from './subscription_builder_impl.ts';
 import { stdbLogger, stringify } from './logger.ts';
+import {
+  NetworkStatsTracker,
+  type NetworkStats,
+  type PingResult,
+} from './network_stats.ts';
 import { fromByteArray } from 'base64-js';
 import type {
   ReducerEventInfo,
@@ -76,6 +81,7 @@ import {
   WebSocketTokenError,
   type WebSocketAdapter,
   type WebSocketFactory,
+  type WebSocketMessage,
 } from './ws.ts';
 import {
   normalizeWsProtocol,
@@ -137,6 +143,8 @@ export type DbConnectionConfig<RemoteModule extends UntypedRemoteModule> = {
   compression: 'gzip' | 'brotli' | 'none';
   lightMode: boolean;
   confirmedReads?: boolean;
+  pingIntervalMs: number;
+  pingTimeoutMs: number;
   remoteModule: RemoteModule;
   /**
    * Whether the connection reconnects on its own after losing its socket.
@@ -428,6 +436,20 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   }
 
   /**
+   * Network statistics for this connection, measured by periodically pinging
+   * the server.
+   *
+   * `undefined` until the first Pong arrives, after the connection closes, and
+   * always when pinging is disabled with `withPingInterval(0)`. Each access
+   * returns a fresh, frozen snapshot. Durations are in milliseconds.
+   * `serverNow` estimates the server's current time on the same clock as a
+   * reducer's `ctx.timestamp`; it adjusts gradually and never goes backwards.
+   */
+  get networkStats(): NetworkStats | undefined {
+    return this.#networkStats.snapshot(performance.now() * 1000);
+  }
+
+  /**
    * This connection's public identity.
    */
   identity?: Identity = undefined;
@@ -493,7 +515,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #requestId = 0;
   #eventId = 0;
   #emitter: EventEmitter<ConnectionEvent>;
-  #inboundQueue: Uint8Array[] = [];
+  #inboundQueue: { data: Uint8Array; receivedAt: number }[] = [];
   #inboundQueueOffset = 0;
   #isDrainingInboundQueue = false;
   #outboundQueue: Uint8Array<ArrayBuffer>[] = [];
@@ -530,6 +552,15 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #messageReader = new BinaryReader(new Uint8Array());
   #rowListReader = new BinaryReader(new Uint8Array());
   #clientFrameEncoder = new BinaryWriter(1024);
+  #pingEncoder = new BinaryWriter(16);
+  #pingIntervalMs: number;
+  #pingTimeoutMs: number;
+  #pingTimer?: ReturnType<typeof setInterval> = undefined;
+  #networkStats = new NetworkStatsTracker();
+  #pendingPings = new Map<
+    number,
+    { resolve: (result: PingResult) => void; reject: (error: Error) => void }
+  >();
   #boundSubscriptionBuilder!: () => SubscriptionBuilderImpl<RemoteModule>;
   #boundDisconnect!: () => void;
 
@@ -555,6 +586,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     automaticReconnect,
     tokenProvider,
     reconnectPolicy,
+    pingIntervalMs,
+    pingTimeoutMs,
   }: DbConnectionConfig<RemoteModule>) {
     stdbLogger('info', 'Connecting to SpacetimeDB WS...');
 
@@ -568,6 +601,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
     this.identity = identity;
     this.token = token;
+    this.#pingIntervalMs = pingIntervalMs;
+    this.#pingTimeoutMs = pingTimeoutMs;
 
     this.#remoteModule = remoteModule;
     this.#emitter = emitter;
@@ -682,6 +717,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         if (!isCurrent()) return;
         this.isActive = false;
         if (!this.#automaticReconnect) {
+          this.#endPinging();
           this.#emitter.emit(
             isErrorEvent ? 'connectError' : 'disconnect',
             this,
@@ -899,6 +935,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     this.#preparingReplay = this.#hasEverConnected;
     this.#outboundQueue.length = 0;
     this.#inboundQueue.length = 0;
+    this.#endPinging();
     const ws = this.ws;
     this.ws = undefined;
     ws?.close();
@@ -1534,6 +1571,104 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     );
   }
 
+  /**
+   * Send a single Ping now and resolve with the timings from its Pong.
+   *
+   * The sample also feeds `networkStats`, exactly like the periodic Pings, and
+   * works even when periodic pinging is disabled with `withPingInterval(0)`.
+   * Rejects if the connection isn't established, including while an
+   * automatic reconnect is in progress, or if it closes before the Pong
+   * arrives. With periodic pinging disabled there is no Ping timeout, so on a
+   * silently failed network the promise waits until the socket closes.
+   */
+  ping(): Promise<PingResult> {
+    if (!this.#socketEstablished) {
+      return Promise.reject(
+        new Error('Cannot ping before the connection is established')
+      );
+    }
+    const requestId = this.#sendPing();
+    if (requestId === undefined) {
+      return Promise.reject(new Error('Cannot ping a closed connection'));
+    }
+    return new Promise((resolve, reject) => {
+      this.#pendingPings.set(requestId, { resolve, reject });
+    });
+  }
+
+  // Returns the Ping's `requestId`, or `undefined` if it wasn't sent.
+  #sendPing(): number | undefined {
+    if (!this.ws || !this.isActive) {
+      return undefined;
+    }
+    const requestId = this.#getNextRequestId();
+    const clientSendTimeUs = Math.round(performance.now() * 1000);
+    const clientSendTime = BigInt(clientSendTimeUs);
+    const writer = this.#pingEncoder;
+    writer.clear();
+    ClientMessage.serialize(
+      writer,
+      ClientMessage.Ping({ requestId, clientSendTime })
+    );
+    stdbLogger(
+      'trace',
+      () =>
+        `Sending ping: requestId=${requestId} clientSendTime=${clientSendTime}`
+    );
+    // Each Ping goes out in its own websocket message, bypassing the outbound
+    // queue: the server only answers Pings that arrive alone in a message.
+    this.ws.send(writer.getBuffer());
+    this.#networkStats.recordPing(clientSendTimeUs);
+    return requestId;
+  }
+
+  // A silently failed network leaves the socket open with nothing arriving,
+  // so the only sign is Pings going unanswered.
+  #pingTick(): void {
+    const nowUs = performance.now() * 1000;
+    if (this.#networkStats.isUnresponsive(nowUs, this.#pingTimeoutMs * 1000)) {
+      const waitedMs = Math.round(this.#networkStats.pongWaitUs(nowUs) / 1000);
+      stdbLogger('warn', `No Pong for ${waitedMs}ms; closing the connection`);
+      this.#handleConnectionLoss(
+        new Error(`Connection unresponsive: no Pong for ${waitedMs}ms`)
+      );
+      return;
+    }
+    this.#sendPing();
+  }
+
+  #rejectPendingPings(error: Error): void {
+    for (const { reject } of this.#pendingPings.values()) {
+      reject(error);
+    }
+    this.#pendingPings.clear();
+  }
+
+  // Network stats describe one socket, so a replacement socket starts afresh.
+  #endPinging(): void {
+    this.#stopPinging();
+    this.#networkStats.reset();
+    this.#rejectPendingPings(
+      new Error('Connection closed before the Pong arrived')
+    );
+  }
+
+  #startPinging(): void {
+    if (this.#pingIntervalMs <= 0 || this.#pingTimer !== undefined) {
+      return;
+    }
+    this.#sendPing();
+    const timer = setInterval(() => this.#pingTick(), this.#pingIntervalMs);
+    // Don't keep a Node process alive just to ping.
+    (timer as { unref?: () => void }).unref?.();
+    this.#pingTimer = timer;
+  }
+
+  #stopPinging(): void {
+    clearInterval(this.#pingTimer);
+    this.#pingTimer = undefined;
+  }
+
   #setConnectionId(connectionId: ConnectionId): void {
     this.connectionId = connectionId;
     this.#connectionIdHex = connectionId.toHexString();
@@ -1611,7 +1746,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     }
   }
 
-  #processServerMessage(serverMessage: ServerMessage): void {
+  #processServerMessage(
+    serverMessage: ServerMessage,
+    receivedAt: number
+  ): void {
     stdbLogger(
       'trace',
       () => `Processing server message: ${stringify(serverMessage)}`
@@ -1653,6 +1791,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         this.#socketEstablished = true;
         // A connection was established, so the backoff schedule starts over.
         this.#reconnectAttempt = 0;
+        this.#startPinging();
         this.#emitter.emit(
           isReconnect ? 'automaticReconnect' : 'connect',
           this,
@@ -1836,10 +1975,37 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         this.#applyReplayBatch(serverMessage.value);
         break;
       }
+      case 'Pong': {
+        const pong = serverMessage.value;
+        this.#networkStats.recordPong(
+          receivedAt * 1000,
+          Number(pong.clientSendTime),
+          Number(pong.serverReceiveTime.microsSinceUnixEpoch),
+          Number(pong.serverHoldDuration.micros)
+        );
+        const pending = this.#pendingPings.get(pong.requestId);
+        if (pending) {
+          this.#pendingPings.delete(pong.requestId);
+          const sentAt = Number(pong.clientSendTime) / 1000;
+          const roundTrip = receivedAt - sentAt;
+          const serverHold = Number(pong.serverHoldDuration.micros) / 1000;
+          pending.resolve(
+            Object.freeze({
+              rtt: Math.max(0, roundTrip - serverHold),
+              roundTrip,
+              serverHold,
+              serverReceiveTime: pong.serverReceiveTime,
+              sentAt,
+              receivedAt,
+            })
+          );
+        }
+        break;
+      }
     }
   }
 
-  #processV2Message(data: Uint8Array): void {
+  #processV2Message(data: Uint8Array, receivedAt: number): void {
     const reader = this.#messageReader;
     reader.reset(data);
     let message: ServerMessage;
@@ -1849,12 +2015,12 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       this.#handleProtocolError(cause);
       return;
     }
-    this.#processServerMessage(message);
+    this.#processServerMessage(message, receivedAt);
   }
 
-  #processMessage(data: Uint8Array): void {
+  #processMessage(data: Uint8Array, receivedAt: number): void {
     if (this.#negotiatedWsProtocol !== V3_WS_PROTOCOL) {
-      this.#processV2Message(data);
+      this.#processV2Message(data, receivedAt);
       return;
     }
 
@@ -1864,7 +2030,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       forEachServerMessageV3(this.#messageReader, data, serverMessage => {
         if (generation !== this.#socketGeneration) return;
         dispatching = true;
-        this.#processServerMessage(serverMessage);
+        this.#processServerMessage(serverMessage, receivedAt);
         dispatching = false;
       });
     } catch (cause) {
@@ -1886,12 +2052,17 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    * Handles WebSocket onMessage event.
    * @param wsMessage MessageEvent object.
    */
-  #handleOnMessage(wsMessage: { data: Uint8Array }): void {
+  #handleOnMessage(wsMessage: WebSocketMessage): void {
     // Queue inbound messages so they are processed strictly in arrival order.
     // We deliberately drain synchronously instead of promise-chaining each
     // message, but this still guarantees that we do not begin processing the
     // next message until the current message has been fully handled.
-    this.#inboundQueue.push(wsMessage.data);
+    // Timestamp arrival before anything else, for network stats. Adapters that
+    // can see the raw socket supply an earlier reading.
+    this.#inboundQueue.push({
+      data: wsMessage.data,
+      receivedAt: wsMessage.receivedAt ?? performance.now(),
+    });
     if (this.#isDrainingInboundQueue) {
       return;
     }
@@ -1901,10 +2072,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       // TODO: If this loop starts monopolizing the event loop under sustained
       // inbound traffic, switch to a chunked drain that periodically yields.
       while (this.#inboundQueueOffset < this.#inboundQueue.length) {
-        const data = this.#inboundQueue[this.#inboundQueueOffset];
+        const message = this.#inboundQueue[this.#inboundQueueOffset];
         this.#inboundQueueOffset += 1;
-        if (data) {
-          this.#processMessage(data);
+        if (message) {
+          this.#processMessage(message.data, message.receivedAt);
         }
       }
     } finally {
@@ -2160,6 +2331,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    */
   disconnect(): void {
     this.isDisconnectRequested = true;
+    this.#stopPinging();
     if (this.#automaticReconnect) {
       if (this.#connectionEnded) {
         this.#emitter.emit('disconnect', this);

@@ -61,7 +61,7 @@ impl ConsumeEachBuffer for ws_v2::ServerMessage {
             }
             OneOffQueryResult(x) => x.result.ok().consume_each_list(each),
             UnsubscribeApplied(x) => x.rows.consume_each_list(each),
-            SubscriptionError(_) | InitialConnection(_) | ProcedureResult(_) => {}
+            SubscriptionError(_) | InitialConnection(_) | ProcedureResult(_) | Pong(_) => {}
             TransactionUpdate(x) => x.consume_each_list(each),
             ReducerResult(x) => {
                 if let ws_v2::ReducerOutcome::Ok(ro) = x.result {

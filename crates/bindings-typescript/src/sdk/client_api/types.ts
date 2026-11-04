@@ -54,6 +54,9 @@ export const ClientMessage = __t.enum('ClientMessage', {
   get SubscribeBatch() {
     return SubscribeBatch;
   },
+  get Ping() {
+    return Ping;
+  },
 });
 export type ClientMessage = __Infer<typeof ClientMessage>;
 
@@ -94,6 +97,20 @@ export const PersistentTableRows = __t.object('PersistentTableRows', {
   },
 });
 export type PersistentTableRows = __Infer<typeof PersistentTableRows>;
+
+export const Ping = __t.object('Ping', {
+  requestId: __t.u32(),
+  clientSendTime: __t.u64(),
+});
+export type Ping = __Infer<typeof Ping>;
+
+export const Pong = __t.object('Pong', {
+  requestId: __t.u32(),
+  clientSendTime: __t.u64(),
+  serverReceiveTime: __t.timestamp(),
+  serverHoldDuration: __t.timeDuration(),
+});
+export type Pong = __Infer<typeof Pong>;
 
 export const ProcedureResult = __t.object('ProcedureResult', {
   get status() {
@@ -197,6 +214,9 @@ export const ServerMessage = __t.enum('ServerMessage', {
   },
   get SubscribeBatchApplied() {
     return SubscribeBatchApplied;
+  },
+  get Pong() {
+    return Pong;
   },
 });
 export type ServerMessage = __Infer<typeof ServerMessage>;
