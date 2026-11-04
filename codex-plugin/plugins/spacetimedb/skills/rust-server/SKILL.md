@@ -195,6 +195,16 @@ ctx.from.subscription().right_semijoin(
 
 Query-builder comparisons against a `String` column take an owned `String`, for example `row.label.eq("active".to_string())`.
 
+## Client Visibility Filters
+
+```rust
+use spacetimedb::Filter;
+
+#[spacetimedb::client_visibility_filter]
+const PRIVATE_NOTE_FILTER: Filter =
+    Filter::Sql("SELECT * FROM owned_row WHERE owner = :sender");
+```
+
 ## Reducer Context API
 
 `ReducerContext` (`ctx`) is the only source of sender identity, time, and randomness; stdlib clocks and RNG are unavailable in modules.

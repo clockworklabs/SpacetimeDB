@@ -707,3 +707,20 @@ Accessors must also be valid C# identifiers. For a keyword, use its plain spelli
 ### Submodule routers are not applied automatically
 
 Routes from named submodules are ignored. Register handlers explicitly on the root router, as shown in the [HTTP handler section](#from-an-http-handler). In C#, dependencies registered in `public` can contribute routes to root-level routing.
+
+### Row-level security belongs in the root
+
+Define [row-level security](../../00250-how-to/00400-row-level-security.md) filters in the root, referring to canonical qualified table names. Filters declared inside named submodules do not protect their tables.
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+Submodule filter declarations are accepted by the SDK, but the host does not install them. Export filters from the root schema instead, using qualified table names such as `myauth.users`.
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+Named dependencies cannot declare filters; the source generator rejects them. Define filters in the root instead, using qualified table names such as `auth_data.auth_users`.
+
+</TabItem>
+</Tabs>

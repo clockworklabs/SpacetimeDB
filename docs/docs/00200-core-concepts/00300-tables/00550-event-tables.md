@@ -220,6 +220,10 @@ Conceptually, every insert into an event table is a **noop**: an insert paired w
 If you previously used `ctx.reducers.on_<reducer_name>()` callbacks to receive transient data, event tables are the recommended replacement. Define an event table with the fields you want to publish, insert a row in your reducer, and register an `on_insert` callback on the client via `ctx.db.<event_table>().on_insert(...)`. See the [migration guide](../../00250-how-to/00600-migrating-to-2.0.md) for details.
 :::
 
+## Row-Level Security
+
+Row-level security applies to event tables with the same semantics as regular tables. This means you can use RLS rules to control which clients receive which events based on their identity. For example, you could restrict a `DamageEvent` so that only clients whose identity matches the `entity_id` field receive the event, preventing players from seeing damage dealt to other players.
+
 ## Current Limitations
 
 Event tables are fully functional for the use cases described above, but a few capabilities are intentionally restricted for the initial release:
@@ -241,4 +245,4 @@ Event tables are well-suited to any situation where the module needs to notify c
 
 - Learn about [Tables](../00300-tables.md) for persistent data storage
 - Explore [Schedule Tables](./00500-schedule-tables.md) for time-triggered actions
-- See [Access Permissions](./00400-access-permissions.md) for controlling data visibility
+- See [Row-Level Security](./00400-access-permissions.md) for controlling data visibility

@@ -597,7 +597,7 @@ Accessible through the CLI as `spacetime sql <name_or_identity> <query>`.
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
 
-If no `Authorization` header is provided, the request will be treated as anonymous and will only have access to public tables.
+If no `Authorization` header is provided, the request will be treated as anonymous and will only have access to public tables. The caller's identity is used to enforce row-level security policies.
 
 #### Data
 

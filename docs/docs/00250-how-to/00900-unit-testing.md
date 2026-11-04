@@ -1079,7 +1079,7 @@ A test can't subscribe, but it can check the [views](../00200-core-concepts/0020
 
 The harness builds a view context for a chosen caller, or an anonymous one for anonymous views. A view that returns rows gives them back directly. A view that returns a typed query gives back the query, which the harness runs against the committed tables.
 
-Queries run in a test always run as the database owner, which can read private tables. A query's results are therefore the rows it matches, not necessarily the rows a particular client would receive.
+Queries run in a test always run as the database owner, which bypasses [row-level security](./00400-row-level-security.md) and can read private tables. A query's results are therefore the rows it matches, not necessarily the rows a particular client would receive.
 
 In this module, each client sees only the notes they wrote:
 
@@ -1195,7 +1195,7 @@ fn shows_each_client_only_their_own_notes() {
 
 - **Scheduled reducers don't run automatically.** Rows in schedule tables are stored, but no timer fires. Call scheduled reducers directly, as shown [above](#test-scheduled-reducers).
 - **No subscriptions or clients.** The harness doesn't deliver rows to subscribers or run client callbacks. Test the views and queries clients subscribe to instead, as shown [above](#test-what-clients-will-see).
-- **Queries run as the database owner.** They can read private tables, so their results aren't necessarily what a client would receive.
+- **No row-level security.** Queries run as the database owner, so they ignore row-level security rules and can read private tables.
 - **Views can't be queried by name.** Call the view's function instead.
 - **No lifecycle simulation.** Connecting, disconnecting and publishing don't call lifecycle reducers. Call them explicitly.
 
