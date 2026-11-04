@@ -30,6 +30,16 @@ test('production framing is one sentence and never changes restoration prompts',
   }
 });
 
+test('the disclosure check covers StackBench text and leaves supplied skills alone', () => {
+  const track = loadTrack('ecommerce');
+  const args = parseAgentArgs(['node', 'agent', '--mode', 'build', '--backend', 'spacetime', '--level', '1',
+    '--app', '/app', '--guidance', 'neutral']);
+  const render = (skillsText: string, requirementText: string) => buildPrompt(args, portsFor(track, 'spacetime', 0),
+    track, { skillsText, requirementText, contractText: '' });
+  assert.match(render('## Module Unit Tests', 'Build the requested store.'), /## Module Unit Tests/);
+  assert.throws(() => render('## Module Unit Tests', 'Pass the tests.'), /contains internal language/);
+});
+
 const AGENT = resolve(STACK_BENCH_ROOT, 'dist', 'commands', 'agent.js');
 const STACKS = ['mongodb', 'postgres', 'spacetime', 'convex', 'supabase'] as const;
 const EVALUATION_LANGUAGE =
@@ -207,7 +217,7 @@ test('neutral dependency prompts include only selected product and stack contrac
         assert.doesNotMatch(repairInterface, /\b(?:GET|POST|PATCH|DELETE|PUT) \//);
         assert.doesNotMatch(prompt, /<CONVEX|<EXPRESS_PORT>|<VITE_PORT>/);
       }
-      assert.doesNotMatch(prompt,
+      assert.doesNotMatch(prompt.replace(spacetimeReference, ''),
         new RegExp(`${EVALUATION_LANGUAGE.source}|Branding & Styling|App title:|<!-- /?interface`, 'i'));
       assert.doesNotMatch(prompt, /\blevel\s+\d+\b/i);
       assert.doesNotMatch(prompt,
@@ -279,7 +289,9 @@ test('direct neutral guidance uses the current stack access documents', () => {
         STACK_BENCH_IMAGE: 'prompt-review-does-not-use-docker' },
     });
     assert.doesNotMatch(prompt, /Branding & Styling|App title:/i);
-    assert.doesNotMatch(prompt, EVALUATION_LANGUAGE);
+    const skills = readAgentSkillDocuments(STACK_BENCH_ROOT,
+      resolveGuidanceProfile(guidance, STACKS).skills[stack]?.ids ?? []);
+    assert.doesNotMatch(prompt.replace(skills, ''), EVALUATION_LANGUAGE);
     assert.match(prompt, /store-admin-2026/);
     if (stack !== 'spacetime') {
       assert.match(prompt, /service is already running/);

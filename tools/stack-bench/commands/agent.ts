@@ -601,7 +601,13 @@ function resolveIsolation(args: AgentArgs): { container: true; reason: null } {
 
 export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
   materials: PromptMaterials = {}): string {
-  const prompt = (lines: string[]): string => assertAgentVisibleText(lines.join('\n'));
+  const skills = materials.skillsText ?? readAgentSkillDocuments(ROOT, args.skills ?? []);
+  // Skills are the product's own documents and discuss an app's tests; the check covers what StackBench writes.
+  const prompt = (lines: string[]): string => {
+    const text = lines.join('\n');
+    assertAgentVisibleText(skills ? text.replace(skills, '') : text);
+    return text;
+  };
   const applicationInterface = args.guidanceDocument?.applicationInterface
     ?? resolveDefaultGuidanceForStack(args.guidance, args.backend)
       ?.documents[args.backend]?.applicationInterface;
@@ -631,7 +637,6 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
     agentVisibleContractText(backendDoc(args, p, track), args.credentialAliases,
       applicationInterface),
   ];
-  const skills = materials.skillsText ?? readAgentSkillDocuments(ROOT, args.skills ?? []);
   if (skills) common.push('', '## Selected API reference', '', skills);
 
   if (args.mode === 'resume') {
