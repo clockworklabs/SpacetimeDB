@@ -4,7 +4,7 @@ Implementations of various benchmarks used for the *Keynote* presentation.
 
 ## How to Run
 
-1. Start a fresh local server, for example with `cargo spacetime start --in-memory`, which discards its data on exit.
+1. Create a new database, for example using [`run_standalone_temp.sh`](../../run_standalone_temp.sh).
 2. Publish this module:
     ```bash
     # This will `DESTROY` the existing `keynote` database, so be careful! 
