@@ -1247,6 +1247,13 @@ jobs:
 
       - *show-sccache-stats
 
+  csharp_testing_packages:
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    uses: ./.github/workflows/csharp-testing.yml
+    with:
+      source-ref: ${{ github.event.inputs.pr_number && format('refs/pull/{0}/head', github.event.inputs.pr_number) || github.sha }}
+
   test:
     needs:
       [
@@ -1255,6 +1262,7 @@ jobs:
         rust_tests,
         rust_serial_tests,
         csharp_tests,
+        csharp_testing_packages,
         cpp_compile_tests,
         sdk_tests_native,
         sdk_tests_browser,
@@ -1272,6 +1280,7 @@ jobs:
           RUST_BUILD_RESULT: ${{ needs.rust_test_build.result }}
           RUST_SERIAL_RESULT: ${{ needs.rust_serial_tests.result }}
           CSHARP_RESULT: ${{ needs.csharp_tests.result }}
+          CSHARP_TESTING_PACKAGES_RESULT: ${{ needs.csharp_testing_packages.result }}
           CPP_RESULT: ${{ needs.cpp_compile_tests.result }}
           SDK_NATIVE_RESULT: ${{ needs.sdk_tests_native.result }}
           SDK_BROWSER_RESULT: ${{ needs.sdk_tests_browser.result }}
@@ -1280,6 +1289,7 @@ jobs:
           test "${RUST_RESULT}" = success
           test "${RUST_SERIAL_RESULT}" = success
           test "${CSHARP_RESULT}" = success
+          test "${CSHARP_TESTING_PACKAGES_RESULT}" = success
           test "${CPP_RESULT}" = success
           test "${SDK_NATIVE_RESULT}" = success
           test "${SDK_BROWSER_RESULT}" = success
@@ -2115,7 +2125,7 @@ jobs:
       - *show-sccache-stats
 
   csharp-testsuite:
-    needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
+    needs: [merge_queue_noop, lints, upload-build-artifacts-linux, csharp_testing_packages]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     # The C# SDK build and tests saturated the small runner's CPU, so keep this on the main runner.
     runs-on: spacetimedb-linux
@@ -2192,7 +2202,16 @@ jobs:
       - name: Run C# SDK harness tests
         run: cargo test -p sdk-csharp-test-harness --test sdk_csharp
 
+      - name: Download complete C# testing packages
+        uses: actions/download-artifact@v4
+        with:
+          name: spacetimedb-testing-packages
+          path: ${{ runner.temp }}/testing-packages
+
       - name: Check C# managed and WASM build pipeline
+        env:
+          CSHARP_PACKAGE_FEED: ${{ runner.temp }}/testing-packages
+          CSHARP_PACKAGE_VERSION: ${{ needs.csharp_testing_packages.outputs.package-version }}
         run: cargo ci test-csharp-build
 
       - name: Check quickstart-chat bindings are up to date
