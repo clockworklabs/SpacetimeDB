@@ -3913,7 +3913,8 @@ mod cache_policy_tests {
                 let result = crate::auto_migrate::ponder_auto_migrate(&old, &new);
                 if old_policy == new_policy {
                     assert!(result.is_ok());
-                } else {
+                } else if old_policy == TableCachePolicy::NoRequirement || new_policy == TableCachePolicy::NoRequirement
+                {
                     expect_error_matching!(
                         result,
                         crate::auto_migrate::AutoMigrateError::ChangeTableCachePolicy { .. }

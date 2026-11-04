@@ -596,6 +596,20 @@ fn auto_migrate_database(
                 log!(logger, "Changing primary key for table `{table_name}`");
                 stdb.alter_table_primary_key(tx, &table_name, table_def.primary_key)?;
             }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeCachePolicy(table_name_key) => {
+                let (namespace, local) = table_name_key;
+                let table_name = joined(namespace, local);
+                let (_, table_def) = plan.new.find_table(table_name_key).ok_or_else(|| {
+                    anyhow::anyhow!("ChangeCachePolicy: table `{table_name}` not found in new module def")
+                })?;
+                let table_id = stdb.table_id_from_name_mut(tx, &table_name)?.unwrap();
+                log!(
+                    logger,
+                    "Changing cache policy for table `{table_name}` to {:?}",
+                    table_def.cache_policy
+                );
+                stdb.alter_table_cache_policy(tx, table_id, table_def.cache_policy)?;
+            }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeOutbox(table_name_key) => {
                 let (namespace, local) = table_name_key;
                 let table_name = joined(namespace, local);

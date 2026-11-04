@@ -57,8 +57,8 @@ use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
 use spacetimedb_schema::identifier::NamespacePath;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{
-    ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
-    VIEW_ARG_HASH_COL,
+    ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableCachePolicy,
+    TableSchema, VIEW_ARG_HASH_COL,
 };
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_snapshot::{DynSnapshotRepo, ReconstructedSnapshot, SnapshotError, SnapshotRepository};
@@ -1128,6 +1128,15 @@ impl RelationalDB {
 
     pub(crate) fn alter_table_access(&self, tx: &mut MutTx, name: &str, access: StAccess) -> Result<(), DBError> {
         Ok(self.inner.alter_table_access_mut_tx(tx, name, access)?)
+    }
+
+    pub(crate) fn alter_table_cache_policy(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        policy: TableCachePolicy,
+    ) -> Result<(), DBError> {
+        Ok(self.inner.alter_table_cache_policy_mut_tx(tx, table_id, policy)?)
     }
 
     pub(crate) fn alter_table_primary_key(

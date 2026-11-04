@@ -39,7 +39,9 @@ use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_schema::{
     reducer_name::ReducerName,
-    schema::{ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, SequenceSchema, TableSchema},
+    schema::{
+        ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, SequenceSchema, TableCachePolicy, TableSchema,
+    },
 };
 #[cfg(feature = "durability")]
 use spacetimedb_snapshot::{BoxedPendingSnapshot, DynSnapshotRepo, ReconstructedSnapshot};
@@ -324,6 +326,15 @@ impl Locking {
             .ok_or_else(|| TableError::NotFound(name.into()))?;
 
         tx.alter_table_access(table_id, access)
+    }
+
+    pub fn alter_table_cache_policy_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        policy: TableCachePolicy,
+    ) -> Result<()> {
+        tx.alter_table_cache_policy(table_id, policy)
     }
 
     pub fn alter_table_primary_key_mut_tx(

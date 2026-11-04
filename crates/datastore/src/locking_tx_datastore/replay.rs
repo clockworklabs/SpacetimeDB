@@ -5,8 +5,9 @@ use crate::error::{DatastoreError, IndexError, TableError, ViewError};
 use crate::locking_tx_datastore::state_view::{iter_st_column_for_table, StateView};
 use crate::system_tables::{
     is_built_in_meta_row, table_id_is_reserved, StColumnRow, StConstraintData, StConstraintRow, StEventTableFields,
-    StFields as _, StIndexRow, StSequenceFields, StTableFields, StTableRow, StViewRow, ST_COLUMN_ID, ST_CONSTRAINT_ID,
-    ST_EVENT_TABLE_ID, ST_INDEX_ID, ST_SEQUENCE_ID, ST_TABLE_ID, ST_VIEW_ARG_ID, ST_VIEW_ID, ST_VIEW_SUB_ID,
+    StFields as _, StIndexRow, StSequenceFields, StTableCachePolicyFields, StTableFields, StTableRow, StViewRow,
+    ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ID, ST_SEQUENCE_ID, ST_TABLE_CACHE_POLICY_ID,
+    ST_TABLE_ID, ST_VIEW_ARG_ID, ST_VIEW_ID, ST_VIEW_SUB_ID,
 };
 use anyhow::{anyhow, Context};
 use core::cell::RefMut;
@@ -29,6 +30,7 @@ use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::{InsertError, RowRef};
 use std::cell::RefCell;
+use std::collections::BTreeSet;
 use std::io;
 use std::sync::Arc;
 use thiserror::Error;
@@ -458,6 +460,12 @@ pub struct ReplayCommittedState<'cs> {
     /// [`RowPointer`]s from this set are passed to the `unsafe` [`Table::get_row_ref_unchecked`],
     /// so it's important to properly maintain only [`RowPointer`]s to valid, extant, non-deleted rows.
     replay_table_updated: IntMap<TableId, RowPointer>,
+
+    /// Tables whose st_table_cache_policy changed while replaying this transaction.
+    /// After replaying the transaction that changed the cache policy, read each
+    /// table's final policy, convert its page storage, and adjust blob pins for the
+    /// rows that remain.
+    replay_cache_policy_changed: BTreeSet<TableId>,
 }
 
 impl Deref for ReplayCommittedState<'_> {
@@ -481,6 +489,7 @@ impl<'cs> ReplayCommittedState<'cs> {
             replay_table_dropped: <_>::default(),
             replay_columns_to_ignore: <_>::default(),
             replay_table_updated: <_>::default(),
+            replay_cache_policy_changed: BTreeSet::new(),
         }
     }
 
@@ -825,6 +834,10 @@ impl<'cs> ReplayCommittedState<'cs> {
             self.st_column_changed(referenced_table_id)?;
         }
 
+        if table_id == ST_TABLE_CACHE_POLICY_ID {
+            self.replay_cache_policy_changed.insert(Self::read_table_id(row));
+        }
+
         Ok(())
     }
 
@@ -975,6 +988,10 @@ impl<'cs> ReplayCommittedState<'cs> {
             .map_err(TableError::Bflatn)?
             .ok_or_else(|| anyhow!("Delete for non-existent row when replaying transaction"))?;
 
+        if table_id == ST_TABLE_CACHE_POLICY_ID {
+            self.replay_cache_policy_changed.insert(Self::read_table_id(row));
+        }
+
         if table_id == ST_TABLE_ID {
             let referenced_table_id = row
                 .elements
@@ -1056,6 +1073,16 @@ impl<'cs> ReplayCommittedState<'cs> {
             return Ok(());
         }
 
+        // Deleting all policy rows is logged as a truncate instead of row deletes.
+        // Save their table IDs so policy conversion still runs at the end of the transaction.
+        if table_id == ST_TABLE_CACHE_POLICY_ID {
+            let (table, blobs, _) = self.state.get_table_and_blob_store(table_id)?;
+            for row in table.scan_rows(blobs) {
+                self.replay_cache_policy_changed
+                    .insert(row?.read_col(StTableCachePolicyFields::TableId)?);
+            }
+        }
+
         // Get the table for mutation.
         let (table, blob_store, ..) = self.get_table_and_blob_store_mut(table_id)?;
 
@@ -1067,7 +1094,36 @@ impl<'cs> ReplayCommittedState<'cs> {
         Ok(())
     }
 
+    fn apply_replayed_cache_policy_changes(&mut self) -> Result<()> {
+        // Read policies only after the whole transaction has been replayed: a
+        // replacement can contain both an insert and a delete of policy metadata.
+        // Read the system tables rather than the table's old cached schema.
+        let mut prepared_changes = Vec::new();
+        for &table_id in &self.replay_cache_policy_changed {
+            let Some(table) = self.get_table(table_id) else {
+                // Dropped tables need no conversion. New empty tables may not
+                // have been materialized yet; creation will read their policy.
+                continue;
+            };
+            let schema = self.schema_for_table_raw(table_id)?;
+            let eviction_policy = self.page_eviction_policy(&schema);
+            let change = table.prepare_eviction_policy(self.storage.blobs(), eviction_policy)?;
+            prepared_changes.push((table_id, schema.cache_policy, change));
+        }
+
+        // Load every affected table before converting any of them, using the
+        // same preparation and application rules as a live commit.
+        for (table_id, cache_policy, change) in prepared_changes {
+            let (table, blobs, _) = self.get_table_and_blob_store_mut(table_id)?;
+            change.apply(table, blobs);
+            table.with_mut_schema(|schema| schema.cache_policy = cache_policy);
+        }
+        self.replay_cache_policy_changed.clear();
+        Ok(())
+    }
+
     fn replay_end_tx(&mut self) -> Result<()> {
+        self.apply_replayed_cache_policy_changes()?;
         self.next_tx_offset += 1;
 
         if !self.replay_columns_to_ignore.is_empty() {
