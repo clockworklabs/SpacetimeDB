@@ -128,10 +128,21 @@ Modules contain application logic that runs inside the database.
 - **Event Tables**: Broadcast reducer-specific data to clients
 - **Views**: Read-only functions that expose computed subsets of data to clients
 - **Procedures**: (Unstable) Functions that can have side effects (HTTP requests, `ctx.withTx`)
+- **HTTP Handlers**: (Unstable) Functions that serve HTTP requests on routes the module defines
 
 Server-side modules can be written in: Rust, C#, TypeScript, C++
 
 Lifecycle: Write → Compile → Publish (`spacetime publish`) → Hot-swap (republish without disconnecting clients)
+
+## HTTP Handlers
+
+A module can expose its own HTTP API. Each handler takes a request and returns a response, and one router per module binds handlers to a method and path. Requests reach them under `/v1/database/<name_or_identity>/route<path>`, so a `/say-hello` route is served at `/v1/database/my-db/route/say-hello`.
+
+- **Static paths only**: a request must match a route's path exactly. There are no path parameters or wildcards, and trailing slashes are significant. Paths may contain only lowercase ASCII letters, digits and `-_~/`. Pass variable data in the query string, headers or body.
+- **Database access**: the handler context has no `db`. Open a transaction with `with_tx` / `withTx`.
+- **No authentication**: SpacetimeDB does not validate the `Authorization` header on module routes, and each request's `sender` is a random anonymous identity. Validate credentials in the handler, or use a procedure when you need the caller's JWT claims.
+
+Use HTTP handlers for webhooks and for clients that can't use a SpacetimeDB SDK. See the language-specific server skills for syntax.
 
 ## Reusable Modules and Configuration
 
