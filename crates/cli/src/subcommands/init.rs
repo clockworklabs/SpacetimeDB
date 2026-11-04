@@ -2045,8 +2045,16 @@ pub fn init_typescript_project(project_path: &Path) -> anyhow::Result<()> {
             "tsconfig.json",
         ),
         (
+            include_str!("../../../../templates/basic-ts/spacetimedb/vitest.config.ts"),
+            "vitest.config.ts",
+        ),
+        (
             include_str!("../../../../templates/basic-ts/spacetimedb/src/index.ts"),
             "src/index.ts",
+        ),
+        (
+            include_str!("../../../../templates/basic-ts/spacetimedb/src/index.test.ts"),
+            "src/index.test.ts",
         ),
     ];
 

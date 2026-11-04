@@ -10,7 +10,8 @@
     "generate": "pnpm --dir spacetimedb install && cargo run -p gen-bindings -- --out-dir src/module_bindings --module-path spacetimedb && prettier --write src/module_bindings",
     "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb",
     "spacetime:publish:local": "spacetime publish --module-path spacetimedb --server local",
-    "spacetime:publish": "spacetime publish --module-path spacetimedb --server maincloud"
+    "spacetime:publish": "spacetime publish --module-path spacetimedb --server maincloud",
+    "test": "vitest run --root spacetimedb"
   },
   "dependencies": {
     "@remix-run/node": "^2.16.0",
@@ -26,7 +27,8 @@
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "typescript": "~5.6.2",
-    "vite": "^5.4.0"
+    "vite": "^5.4.0",
+    "vitest": "^3.2.4"
   },
   "engines": {
     "node": "^22.23.4 || ^24.22.1 || >=26.12.1"

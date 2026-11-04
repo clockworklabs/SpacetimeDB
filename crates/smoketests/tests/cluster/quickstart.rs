@@ -626,6 +626,10 @@ log = "0.4"
                 )?;
             }
             "typescript" => {
+                // The tutorial has the reader delete the scaffold's module test, which tests the sample
+                // module they replace.
+                fs::remove_file(server_path.join("src/index.test.ts"))?;
+
                 // Build and link the TypeScript SDK
                 build_typescript_sdk()?;
 

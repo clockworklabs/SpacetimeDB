@@ -6,12 +6,14 @@
   "scripts": {
     "dev": "deno run --watch --allow-net --allow-read --allow-write --allow-env --unstable-sloppy-imports src/main.ts",
     "start": "deno run --allow-net --allow-read --allow-write --allow-env --unstable-sloppy-imports src/main.ts",
-    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb"
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb",
+    "test": "vitest run --root spacetimedb"
   },
   "dependencies": {
     "spacetimedb": "workspace:*"
   },
   "devDependencies": {
-    "deno": "^2.6.0"
+    "deno": "^2.6.0",
+    "vitest": "^4.1.12"
   }
 }

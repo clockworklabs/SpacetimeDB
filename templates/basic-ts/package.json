@@ -9,7 +9,8 @@
     "build": "esbuild src/main.ts --bundle --platform=node --outfile=dist/main.js --format=esm",
     "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb",
     "spacetime:publish:local": "spacetime publish --module-path spacetimedb --server local",
-    "spacetime:publish": "spacetime publish --module-path spacetimedb --server maincloud"
+    "spacetime:publish": "spacetime publish --module-path spacetimedb --server maincloud",
+    "test": "vitest run --root spacetimedb"
   },
   "dependencies": {
     "spacetimedb": "workspace:*"
@@ -17,7 +18,8 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "esbuild": "^0.24.0",
-    "typescript": "~5.6.2"
+    "typescript": "~5.6.2",
+    "vitest": "^4.1.12"
   },
   "engines": {
     "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
