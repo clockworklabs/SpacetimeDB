@@ -259,20 +259,25 @@ jobs:
           feed="$(pwd)/feed"
           if [ "$RUNNER_OS" = Windows ]; then feed="$(cygpath -m "$feed")"; fi
           version="$PACKAGE_VERSION"
-          mkdir -p "$work/Module" "$work/Tests"
-          cp crates/bindings-csharp/Testing.PackageTests/Module/* "$work/Module/"
-          cp crates/bindings-csharp/Testing.PackageTests/Tests/* "$work/Tests/"
+          mkdir -p "$work/spacetimedb" "$work/tests"
+          cp templates/chat-console-cs/spacetimedb/{Lib.cs,StdbModule.csproj} "$work/spacetimedb/"
+          cp templates/chat-console-cs/tests/* "$work/tests/"
           cp global.json "$work/"
           cat > "$work/Directory.Build.props" <<EOF
           <Project>
             <PropertyGroup>
-              <SpacetimeDBPackageVersion>$version</SpacetimeDBPackageVersion>
               <ImplicitUsings>enable</ImplicitUsings>
               <Nullable>enable</Nullable>
             </PropertyGroup>
           </Project>
           EOF
-          echo '<Project />' > "$work/Directory.Build.targets"
+          cat > "$work/Directory.Build.targets" <<EOF
+          <Project>
+            <ItemGroup>
+              <PackageReference Update="SpacetimeDB.Runtime;SpacetimeDB.Testing" Version="[$version]" />
+            </ItemGroup>
+          </Project>
+          EOF
           cat > "$work/NuGet.Config" <<EOF
           <configuration>
             <packageSources>
@@ -290,6 +295,16 @@ jobs:
           cd "$work"
           export NUGET_PACKAGES="$work/packages"
           export NUGET_HTTP_CACHE_PATH="$work/http-cache"
-          dotnet restore Tests/Tests.csproj --configfile NuGet.Config
-          dotnet test Tests/Tests.csproj --no-restore -c Release -warnaserror
-          test -f "Tests/bin/Release/net10.0/runtimes/${{ matrix.rid }}/native/${{ matrix.library }}"
+          # Match the .NET 10 project emitted by spacetime init.
+          sed -i 's/<TargetFrameworks>net8.0;net10.0<\/TargetFrameworks>/<TargetFramework>net10.0<\/TargetFramework>/' spacetimedb/StdbModule.csproj
+          dotnet restore tests/Module.Tests.csproj --configfile NuGet.Config
+          dotnet test tests/Module.Tests.csproj --no-restore -c Release -warnaserror
+          test -f "tests/bin/Release/net10.0/runtimes/${{ matrix.rid }}/native/${{ matrix.library }}"
+
+          # Exercise the documented manual setup with the same example tests.
+          dotnet new xunit -f net10.0 -o manual-tests -n Module.Tests --no-restore
+          dotnet add manual-tests/Module.Tests.csproj package SpacetimeDB.Testing --version "$version" --no-restore
+          dotnet add manual-tests/Module.Tests.csproj reference spacetimedb/StdbModule.csproj
+          rm manual-tests/UnitTest1.cs
+          cp tests/ModuleTests.cs manual-tests/
+          dotnet test manual-tests/Module.Tests.csproj -c Release -warnaserror

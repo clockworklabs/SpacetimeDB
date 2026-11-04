@@ -122,14 +122,16 @@ packages. A separate negative restore check treats NuGet's out-of-range dependen
 warning (NU1608) as an error to verify Testing's exact Runtime dependency.
 
 The `csharp_testing_packages` matrix downloads that same package set on every
-supported platform. It copies the small module and sibling test project from
-`Testing.PackageTests` outside the checkout, restores with fresh NuGet caches,
+supported platform. It copies the chat template module and sibling test project
+outside the checkout, restores with fresh NuGet caches,
 and runs `dotnet test`. SpacetimeDB packages must come from the downloaded feed;
 test-framework dependencies come from NuGet.org. Temporary files are removed
 when the step finishes. The Test Suite aggregate requires the matrix to pass.
 
-The single smoke test covers fixture creation, reducer commit and rollback,
-indexed lookup, and disposal. It uses the packaged analyzers and native library
+The chat tests cover fixture creation, caller identity and time, reducer commit
+and rollback, indexed lookup, and disposal. The matrix also creates a new xUnit
+project with the documented `dotnet new`, `dotnet add`, and `dotnet test` commands
+and runs the same tests. Both paths use the packaged analyzers and native library
 without repository project references, manual native-library copying, or
 `NativeTestLibrary`. The consumer workflow does not invoke Cargo or a WASI toolchain.
 The `csharp_testing_native` matrix builds the Release bridge and runs the managed
