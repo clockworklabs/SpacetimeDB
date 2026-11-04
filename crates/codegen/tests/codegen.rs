@@ -457,6 +457,10 @@ fn typescript_declaration_snapshots_cover_submodules_and_private_items() {
             .collect::<std::collections::BTreeMap<_, _>>();
         let mut settings = insta::Settings::clone_current();
         settings.add_filter(r#"cliVersion: "\d+\.\d+\.\d+""#, r#"cliVersion: "X.Y.Z""#);
+        settings.add_filter(
+            r"// This was generated using spacetimedb cli version \d+\.\d+\.\d+ .*",
+            "VERSION_COMMENT",
+        );
         settings.bind(|| insta::assert_toml_snapshot!(name, files));
     }
 }
@@ -586,6 +590,10 @@ fn typescript_declarations_preserve_table_metadata() {
         .collect::<std::collections::BTreeMap<_, _>>();
     let mut settings = insta::Settings::clone_current();
     settings.add_filter(r#"cliVersion: "\d+\.\d+\.\d+""#, r#"cliVersion: "X.Y.Z""#);
+    settings.add_filter(
+        r"// This was generated using spacetimedb cli version \d+\.\d+\.\d+ .*",
+        "VERSION_COMMENT",
+    );
     settings.bind(|| insta::assert_toml_snapshot!("typescript_declarations_metadata", snapshots));
     compile_typescript_client(
         files,
