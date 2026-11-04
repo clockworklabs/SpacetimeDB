@@ -368,21 +368,31 @@ impl BlobSet {
 
     /// Fault the blob with content address `hash`, and mark it as non-evictable.
     ///
-    /// Subject to the resident memory budget.
+    /// Call this for every reference to the blob, without deduplication.
+    ///
+    /// Faulting is subject to the resident memory budget.
+    ///
+    /// The blob must be in this blob set, otherwise a [BlobError::MissingBlob]
+    /// is returned.
     pub fn pin(&self, hash: BlobHashWrapper) -> Result<(), BlobError> {
-        // Ensure the blob is resident.
-        let handle = self.get(hash)?;
+        self.get(hash).and_then(|handle| self.pin_handle(&handle))
+    }
 
+    /// Mark the supplied blob as non-evictable.
+    ///
+    /// Call this for every reference to the blob, without deduplication.
+    ///
+    /// The blob must be in this blob set, otherwise a [BlobError::MissingBlob]
+    /// is returned.
+    pub fn pin_handle(&self, handle: &BlobHandle) -> Result<(), BlobError> {
         let mut entries = self.entries.write();
         let entry = entries
-            .get_mut(&hash)
-            .ok_or_else(|| BlobError::MissingBlob(Box::new(hash.into())))?;
+            .get_mut(&handle.hash())
+            .ok_or_else(|| BlobError::MissingBlob(Box::new(handle.hash().into())))?;
         let BlobEntry::Resident { pins, .. } = entry else {
             unreachable!("blob must be resident because its handle is in scope")
         };
         *pins += 1;
-
-        drop(handle);
 
         Ok(())
     }

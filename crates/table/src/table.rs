@@ -2226,35 +2226,37 @@ impl Table {
             row_count += 1;
             pointer_map.push((row.row_hash(), row.pointer()));
 
-            for (_, blob) in row.blob_store().iter() {
-                blob_store_bytes += blob.size() as usize;
-            }
-
-            // If this table's eviction_policy is `NeverEvict`, pin all blobs of
-            // all rows.
+            // Reconstruct `blob_store_bytes`.
             //
-            // The row's blob set deduplicates blobs, but we need to increment
-            // the pin count for each blob reference individually. Therefore,
-            // walk the var-len references to get the correct number of pins.
-            if let EvictionPolicy::NeverEvict = self.eviction_policy {
-                let (page, offset) = row.page_and_offset();
-                page.with_page(|page| -> Result<(), BlobError> {
-                    let data = page.get_row_data(offset, self.inner.row_layout.size());
-                    let visitor = &self.inner.visitor_prog;
+            // Blobs are accounted per-reference, without deduplication, so we
+            // need to inspect the row rather than just using the row's
+            // BlobReadSet.
+            //
+            // If this is a `NeverEvict` table, also pin all the blobs. Again,
+            // we need one pin count per reference, without deduplication.
+            let (page, offset) = row.page_and_offset();
+            page.with_page(|page| -> Result<(), BlobError> {
+                let data = page.get_row_data(offset, self.inner.row_layout.size());
+                let visitor = &self.inner.visitor_prog;
 
-                    // SAFETY: Forward caller requirements.
-                    for var_len in unsafe { visitor.visit_var_len(data) }.filter(|var_len| var_len.is_large_blob()) {
-                        // SAFETY: A live large-blob reference points to a hash granule.
-                        let granule = unsafe { page.iter_var_len_object(var_len.first_granule) }
-                            .next()
-                            .expect("large blob has a hash granule");
+                // SAFETY: Forward caller requirements.
+                for var_len in unsafe { visitor.visit_var_len(data) }.filter(|var_len| var_len.is_large_blob()) {
+                    // SAFETY: A live large-blob reference points to a hash granule.
+                    let granule = unsafe { page.iter_var_len_object(var_len.first_granule) }
+                        .next()
+                        .expect("large blob has a hash granule");
+                    let blob_hash = granule.blob_hash();
+                    let blob = blobs.get(blob_hash.into())?;
 
-                        blobs.pin(granule.blob_hash().into())?;
+                    blob_store_bytes += blob.size() as usize;
+
+                    if let EvictionPolicy::NeverEvict = self.eviction_policy {
+                        blobs.pin_handle(&blob)?;
                     }
+                }
 
-                    Ok(())
-                })?;
-            }
+                Ok(())
+            })?;
         }
 
         self.row_count = row_count;
