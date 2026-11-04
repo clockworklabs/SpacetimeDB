@@ -256,7 +256,7 @@ Deleting a required value is rejected. Repeat `--unset-env` to delete multiple k
 
 The destructive `--delete-data` operation still clears all database data, including environment values. Supply required secrets again when resetting a database. `--env-only` cannot be combined with a reset.
 
-The same preservation rules apply to precompiled modules published with `--bin-path`. The CLI reads declarations from the artifact being published. HTTP clients and module procedures can use the [HTTP publish format](../../00300-resources/00200-reference/00200-http-api/00300-database.md#publishing-with-environment-values); project configuration and shell overrides are CLI conveniences.
+The same preservation rules apply to precompiled modules published with `--bin-path`. The CLI reads declarations from the artifact being published. HTTP clients and module procedures can use the [HTTP publish format](../../00300-resources/00200-http-api/00300-database.md#publishing-with-environment-values); project configuration and shell overrides are CLI conveniences.
 
 ## Inspect published values
 

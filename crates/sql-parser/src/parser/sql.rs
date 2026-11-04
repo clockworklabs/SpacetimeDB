@@ -445,6 +445,9 @@ mod tests {
             "update t set a = 1, b = 2",
             "update t set a = 1, b = 2 where c = 3",
             "update t set a = 1, b = 2 where x = :sender",
+            // View calls with positional literal arguments
+            "select * from v(42)",
+            "select w.* from v(42, 'x') as w",
         ] {
             assert!(parse_sql(sql).is_ok());
         }
@@ -481,6 +484,9 @@ mod tests {
             // Empty statement
             "",
             " ",
+            // View calls with arguments can't be joined
+            "select t.* from t join v(42) on t.a = v.a",
+            "select v.* from v(42) join t on v.a = t.a",
         ] {
             assert!(parse_sql(sql).is_err());
         }

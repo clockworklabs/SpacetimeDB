@@ -253,7 +253,7 @@ public partial struct TestDefaultFieldValues
     }
   },
   {/*
-
+        try {
             var returnValue = Module.ViewDefWrongContext((SpacetimeDB.ViewContext)ctx);
                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
                 var listSerializer = new SpacetimeDB.BSATN.List<Player, Player.BSATN>();
@@ -322,7 +322,7 @@ public partial struct TestDefaultFieldValues
     }
   },
   {/*
-
+        try {
             var returnValue = Module.ViewDefNoContext((SpacetimeDB.ViewContext)ctx);
                                      ^^^^^^^^^^^^^^^^
                 var listSerializer = new SpacetimeDB.BSATN.List<Player, Player.BSATN>();

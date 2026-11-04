@@ -226,8 +226,8 @@ namespace SpacetimeDB
         public new global::SpacetimeDB.ModuleEnvironment Env => default;
         private readonly Local _db = new();
 
-        internal HandlerContext(Random random, Timestamp time)
-            : base(random, time) { }
+        internal HandlerContext(Identity sender, string? senderJwt, Random random, Timestamp time)
+            : base(sender, senderJwt, random, time) { }
 
         protected override global::SpacetimeDB.LocalBase CreateLocal() => _db;
 
@@ -380,6 +380,11 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
 
         public static global::SpacetimeDB.Internal.Errno CallLocalHttpHandler(
             int id,
+            ulong sender_0,
+            ulong sender_1,
+            ulong sender_2,
+            ulong sender_3,
+            global::SpacetimeDB.Internal.BytesSource sender_jwt,
             global::SpacetimeDB.Timestamp timestamp,
             global::SpacetimeDB.Internal.BytesSource request,
             global::SpacetimeDB.Internal.BytesSource request_body,
@@ -388,6 +393,11 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
         ) =>
             global::ModuleRegistration.CallLocalHttpHandler(
                 id,
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                sender_jwt,
                 timestamp,
                 request,
                 request_body,
@@ -481,16 +491,26 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
 
     public static partial class AssemblyDescriptor
     {
-        private static class DemoTableSqlNameCache
-        {
-            internal static readonly global::SpacetimeDB.SqlTableName Name =
-                global::SpacetimeDB.Internal.Module.ResolveSqlName(
-                    "explicitnames, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "DemoTable"
-                );
+        private static global::SpacetimeDB.SqlTableName?[] DemoTableSqlNames =>
+            field ??= new global::SpacetimeDB.SqlTableName?[
+                global::SpacetimeDB.Internal.Module.InstanceCount
+            ];
 
-            // Prevent eager initialization before the root installs namespace placements.
-            static DemoTableSqlNameCache() { }
+        private static global::SpacetimeDB.SqlTableName DemoTableSqlName(int contextInstance)
+        {
+            var names = DemoTableSqlNames;
+            if (names[contextInstance] is { } name)
+            {
+                return name;
+            }
+            var instanceId = global::SpacetimeDB.Internal.Module.ResolveInstance(
+                contextInstance,
+                "explicitnames, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+            );
+            var resolvedName = names[instanceId] ??=
+                global::SpacetimeDB.Internal.Module.ResolveSqlName(instanceId, "DemoTable");
+            names[contextInstance] = resolvedName;
+            return resolvedName;
         }
 
         public readonly partial struct Queries
@@ -501,7 +521,7 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
                 DemoTableIxCols
             > DemoTable()
             {
-                var tableName = DemoTableSqlNameCache.Name;
+                var tableName = DemoTableSqlName(__instanceId);
                 return new(tableName, new DemoTableCols(tableName), new DemoTableIxCols(tableName));
             }
         }
@@ -515,7 +535,10 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
                 global::DemoTable,
                 DemoTableCols,
                 DemoTableIxCols
-            > DemoTable() => new AssemblyDescriptor.Queries().DemoTable();
+            > DemoTable() =>
+                new AssemblyDescriptor.Queries(
+                    global::SpacetimeDB.Internal.Module.GetInstanceId(from)
+                ).DemoTable();
         }
     }
 }
@@ -832,7 +855,8 @@ static class ModuleRegistration
                 new SpacetimeDB.ProcedureContext(identity, connectionId, random, time)
         );
         SpacetimeDB.Internal.Module.SetHandlerContextConstructor(
-            (random, time) => new SpacetimeDB.HandlerContext(random, time)
+            (sender, senderJwt, random, time) =>
+                new SpacetimeDB.HandlerContext(sender, senderJwt, random, time)
         );
 #endif
 
@@ -1197,6 +1221,11 @@ static class ModuleRegistration
 #endif
     public static SpacetimeDB.Internal.Errno __call_http_handler__(
         int id,
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        SpacetimeDB.Internal.BytesSource sender_jwt,
         SpacetimeDB.Timestamp timestamp,
         SpacetimeDB.Internal.BytesSource request,
         SpacetimeDB.Internal.BytesSource request_body,
@@ -1221,6 +1250,11 @@ static class ModuleRegistration
         )
             return global::SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.AssemblyDescriptor.CallLocalHttpHandler(
                 localId,
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                sender_jwt,
                 timestamp,
                 request,
                 request_body,
@@ -1236,6 +1270,11 @@ static class ModuleRegistration
 #else
         return CallLocalHttpHandler(
             id,
+            sender_0,
+            sender_1,
+            sender_2,
+            sender_3,
+            sender_jwt,
             timestamp,
             request,
             request_body,
@@ -1247,6 +1286,11 @@ static class ModuleRegistration
 
     internal static SpacetimeDB.Internal.Errno CallLocalHttpHandler(
         int id,
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        SpacetimeDB.Internal.BytesSource sender_jwt,
         SpacetimeDB.Timestamp timestamp,
         SpacetimeDB.Internal.BytesSource request,
         SpacetimeDB.Internal.BytesSource request_body,

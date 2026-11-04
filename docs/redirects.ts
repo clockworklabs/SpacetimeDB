@@ -152,6 +152,54 @@ const legacyRedirects: Redirect[] = [
   // Parts 3 and 4 were published under `/tutorials/Godot/` until the slug typo
   // was fixed. Those URLs are unrecoverable here — see
   // `rejectCaseOnlyRedirects` — and would have to be handled in front of S3.
+
+  // Docusaurus-era slugs that were later renamed, mostly in the docs
+  // restructuring of December 2025 and January 2026 (#3877, #3917, #4020,
+  // #4029). These came from `slug` front matter rather than `nav.ts`.
+  { from: '/procedures', to: '/functions/procedures' },
+  { from: '/tables/scheduled-tables', to: '/tables/schedule-tables' },
+  { from: '/tables/columns', to: '/tables/column-types' },
+  { from: '/databases/sql', to: '/reference/sql' },
+  { from: '/databases/sql/pg-wire', to: '/how-to/pg-wire' },
+  { from: '/how-to/migrating-to-2-0', to: '/upgrade' },
+  {
+    from: '/how-to/using-auth-claims',
+    to: '/core-concepts/authentication/usage',
+  },
+  { from: '/modules/creating', to: '/databases/developing' },
+  {
+    from: '/modules/building-publishing',
+    to: '/databases/building-publishing',
+  },
+  { from: '/modules/cheat-sheet', to: '/databases/cheat-sheet' },
+  { from: '/modules/deploying/maincloud', to: '/how-to/deploy/maincloud' },
+  {
+    from: '/modules/deploying/self-hosting',
+    to: '/how-to/deploy/self-hosting',
+  },
+  { from: '/modules/logging', to: '/how-to/logging' },
+  { from: '/modules/rls', to: '/how-to/rls' },
+  { from: '/old-modules', to: '/functions' },
+  { from: '/old-modules/c-sharp', to: '/functions' },
+  { from: '/old-modules/rust', to: '/functions' },
+  { from: '/old-modules/typescript', to: '/functions' },
+  { from: '/reference/appendix', to: '/tables/auto-increment' },
+  { from: '/sdks/api', to: '/clients/api' },
+  { from: '/sdks/codegen', to: '/clients/codegen' },
+  { from: '/sdks/connection', to: '/clients/connection' },
+  { from: '/sdks/unreal', to: '/clients/unreal' },
+  {
+    from: '/spacetimeauth/creating-a-project',
+    to: '/core-concepts/authentication/spacetimeauth/creating-a-project',
+  },
+  {
+    from: '/spacetimeauth/configuring-a-project',
+    to: '/core-concepts/authentication/spacetimeauth/configuring-a-project',
+  },
+  {
+    from: '/spacetimeauth/testing',
+    to: '/core-concepts/authentication/spacetimeauth/testing',
+  },
 ];
 
 function markdownFiles(dir: string): string[] {

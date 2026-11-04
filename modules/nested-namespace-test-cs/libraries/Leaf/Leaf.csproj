@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>NestedLeaf</AssemblyName>
+    <TargetName>$(AssemblyName)</TargetName>
+  </PropertyGroup>
+</Project>
