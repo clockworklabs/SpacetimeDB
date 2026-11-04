@@ -11,8 +11,8 @@ internal sealed class DatabaseBackend : IDatabaseBackend
     private readonly NativeDatastore datastore;
     private readonly IReadOnlyDictionary<string, RawEnvVarTypeV10> environmentDeclarations;
     private readonly Dictionary<string, string> environmentValues = new(StringComparer.Ordinal);
-    private readonly Dictionary<(string Assembly, string Table), uint> tableIds = [];
-    private readonly Dictionary<(string Assembly, string Index), uint> indexIds = [];
+    private readonly Dictionary<(int Instance, string Table), uint> tableIds = [];
+    private readonly Dictionary<(int Instance, string Index), uint> indexIds = [];
 
     public NamespaceRegistry Namespaces { get; }
     public Identity DatabaseIdentity => default;
@@ -120,42 +120,42 @@ internal sealed class DatabaseBackend : IDatabaseBackend
 
         public IDatabaseBackend Backend => backend;
 
-        private uint TableId(string assemblyIdentity, string table)
+        private uint TableId(int instanceId, string table)
         {
-            var key = (assemblyIdentity, table);
+            var key = (instanceId, table);
             if (!backend.tableIds.TryGetValue(key, out var id))
             {
-                id = transaction.TableId(backend.Namespaces.Resolve(assemblyIdentity, table));
+                id = transaction.TableId(backend.Namespaces.Resolve(instanceId, table));
                 backend.tableIds.Add(key, id);
             }
             return id;
         }
 
-        private uint IndexId(string assemblyIdentity, string index)
+        private uint IndexId(int instanceId, string index)
         {
-            var key = (assemblyIdentity, index);
+            var key = (instanceId, index);
             if (!backend.indexIds.TryGetValue(key, out var id))
             {
-                id = transaction.IndexId(backend.Namespaces.Resolve(assemblyIdentity, index));
+                id = transaction.IndexId(backend.Namespaces.Resolve(instanceId, index));
                 backend.indexIds.Add(key, id);
             }
             return id;
         }
 
-        public byte[] IndexScanPoint(string assemblyIdentity, string index, byte[] point)
+        public byte[] IndexScanPoint(int instanceId, string index, byte[] point)
         {
             CheckActive();
-            return transaction.IndexScanPoint(IndexId(assemblyIdentity, index), point);
+            return transaction.IndexScanPoint(IndexId(instanceId, index), point);
         }
 
-        public bool IndexDeletePoint(string assemblyIdentity, string index, byte[] point)
+        public bool IndexDeletePoint(int instanceId, string index, byte[] point)
         {
             CheckActive();
-            return transaction.IndexDeletePoint(IndexId(assemblyIdentity, index), point);
+            return transaction.IndexDeletePoint(IndexId(instanceId, index), point);
         }
 
         public byte[] IndexScanRange(
-            string assemblyIdentity,
+            int instanceId,
             string index,
             ushort prefixElems,
             byte[] prefix,
@@ -165,7 +165,7 @@ internal sealed class DatabaseBackend : IDatabaseBackend
         {
             CheckActive();
             return transaction.IndexScanRange(
-                IndexId(assemblyIdentity, index),
+                IndexId(instanceId, index),
                 prefixElems,
                 prefix,
                 start,
@@ -174,7 +174,7 @@ internal sealed class DatabaseBackend : IDatabaseBackend
         }
 
         public uint IndexDeleteRange(
-            string assemblyIdentity,
+            int instanceId,
             string index,
             ushort prefixElems,
             byte[] prefix,
@@ -184,7 +184,7 @@ internal sealed class DatabaseBackend : IDatabaseBackend
         {
             CheckActive();
             return transaction.IndexDeleteRange(
-                IndexId(assemblyIdentity, index),
+                IndexId(instanceId, index),
                 prefixElems,
                 prefix,
                 start,
@@ -192,44 +192,40 @@ internal sealed class DatabaseBackend : IDatabaseBackend
             );
         }
 
-        public byte[] Update(string assemblyIdentity, string table, string index, byte[] row)
+        public byte[] Update(int instanceId, string table, string index, byte[] row)
         {
             CheckActive();
-            return transaction.Update(
-                TableId(assemblyIdentity, table),
-                IndexId(assemblyIdentity, index),
-                row
-            );
+            return transaction.Update(TableId(instanceId, table), IndexId(instanceId, index), row);
         }
 
-        public ulong Count(string assemblyIdentity, string table)
+        public ulong Count(int instanceId, string table)
         {
             CheckActive();
-            return transaction.Count(TableId(assemblyIdentity, table));
+            return transaction.Count(TableId(instanceId, table));
         }
 
-        public byte[] Insert(string assemblyIdentity, string table, byte[] row)
+        public byte[] Insert(int instanceId, string table, byte[] row)
         {
             CheckActive();
-            return transaction.Insert(TableId(assemblyIdentity, table), row);
+            return transaction.Insert(TableId(instanceId, table), row);
         }
 
-        public bool Delete(string assemblyIdentity, string table, byte[] row)
+        public bool Delete(int instanceId, string table, byte[] row)
         {
             CheckActive();
-            return transaction.Delete(TableId(assemblyIdentity, table), row);
+            return transaction.Delete(TableId(instanceId, table), row);
         }
 
-        public ulong Clear(string assemblyIdentity, string table)
+        public ulong Clear(int instanceId, string table)
         {
             CheckActive();
-            return transaction.Clear(TableId(assemblyIdentity, table));
+            return transaction.Clear(TableId(instanceId, table));
         }
 
-        public byte[] Scan(string assemblyIdentity, string table)
+        public byte[] Scan(int instanceId, string table)
         {
             CheckActive();
-            return transaction.Scan(TableId(assemblyIdentity, table));
+            return transaction.Scan(TableId(instanceId, table));
         }
 
         public void CheckActive()

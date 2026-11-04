@@ -16,15 +16,15 @@ internal interface IDatabaseTransaction : IDisposable
     void CheckActive();
     void Commit();
     void Rollback();
-    ulong Count(string assemblyIdentity, string table);
-    byte[] Insert(string assemblyIdentity, string table, byte[] row);
-    bool Delete(string assemblyIdentity, string table, byte[] row);
-    ulong Clear(string assemblyIdentity, string table);
-    byte[] Scan(string assemblyIdentity, string table);
-    byte[] IndexScanPoint(string assemblyIdentity, string index, byte[] point);
-    bool IndexDeletePoint(string assemblyIdentity, string index, byte[] point);
+    ulong Count(int instanceId, string table);
+    byte[] Insert(int instanceId, string table, byte[] row);
+    bool Delete(int instanceId, string table, byte[] row);
+    ulong Clear(int instanceId, string table);
+    byte[] Scan(int instanceId, string table);
+    byte[] IndexScanPoint(int instanceId, string index, byte[] point);
+    bool IndexDeletePoint(int instanceId, string index, byte[] point);
     byte[] IndexScanRange(
-        string assemblyIdentity,
+        int instanceId,
         string index,
         ushort prefixElems,
         byte[] prefix,
@@ -32,14 +32,14 @@ internal interface IDatabaseTransaction : IDisposable
         byte[] end
     );
     uint IndexDeleteRange(
-        string assemblyIdentity,
+        int instanceId,
         string index,
         ushort prefixElems,
         byte[] prefix,
         byte[] start,
         byte[] end
     );
-    byte[] Update(string assemblyIdentity, string table, string index, byte[] row);
+    byte[] Update(int instanceId, string table, string index, byte[] row);
 }
 
 internal sealed class DatabaseAccess
