@@ -842,6 +842,7 @@ fn generate_module(module: &ModuleDef, options: &CodegenOptions, dir: &str, file
     let out = &mut output;
     print_auto_generated_file_comment(out);
 
+    // pre-populate with reserved words
     let mut used: BTreeSet<String> = [
         "schema",
         "table",
