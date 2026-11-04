@@ -24,8 +24,7 @@ Schema parity treats table and view names that differ only by case or underscore
 as the same, because prompts do not fix their casing. It matches lifecycle reducers
 by kind, not by name, because clients cannot call them. It accepts extra indexes and
 HTTP routes but fails a missing one. It ignores view primary keys except on the task that asks for
-one. It fails any C# table that sets `Name` without `Accessor`, because that is the
-1.x form. Behaviour checks
+one. Behaviour checks
 query a table or view by the module's own spelling when it differs only by case or
 underscores.
 
