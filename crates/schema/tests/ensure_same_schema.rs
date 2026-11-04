@@ -1,10 +1,13 @@
 // Wrap these tests in a `mod` whose name contains `csharp`
 // so that we can run tests with `--skip csharp` in environments without dotnet installed.
 use serial_test::serial;
+use spacetimedb_codegen::{generate_receiver_bindings, ReceiverLanguage};
+use spacetimedb_lib::db::raw_def::v10::{FunctionVisibility, RawModuleDefV10, RawModuleDefV10Section};
 use spacetimedb_schema::auto_migrate::{ponder_auto_migrate, AutoMigrateStep};
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::identifier::NamespacePath;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
+use std::collections::BTreeMap;
 
 fn get_normalized_schema(module_name: &str) -> ModuleDef {
     let module = CompiledModule::compile(module_name, CompilationMode::Debug);
@@ -148,4 +151,45 @@ fn ensure_same_schema_rust_csharp_benchmarks() {
 #[serial]
 fn esure_same_schema_case_conversion() {
     assert_identical_modules("sdk-test-case-conversion", "", "ts");
+}
+
+fn assert_identical_typescript_receiver_bindings(module_name: &str) {
+    let bindings = [module_name.to_owned(), format!("{module_name}-ts")].map(|name| {
+        let mut module = get_normalized_schema(&name);
+        if name == "sdk-test" {
+            // The Rust SDK fixture additionally defines delete_all_* reducers; the
+            // TypeScript fixture has no counterparts. Compare their shared interface.
+            let mut raw = RawModuleDefV10::from(module);
+            for section in &mut raw.sections {
+                if let RawModuleDefV10Section::Reducers(reducers) = section {
+                    for reducer in reducers {
+                        if reducer.source_name.starts_with("delete_all_") {
+                            reducer.visibility = FunctionVisibility::Private;
+                        }
+                    }
+                }
+            }
+            module = raw.try_into().unwrap();
+        }
+        generate_receiver_bindings(&module, ReceiverLanguage::TypeScript, None)
+            .unwrap()
+            .into_iter()
+            .map(|file| (file.filename, file.code))
+            .collect::<BTreeMap<_, _>>()
+    });
+    assert!(!bindings[0].is_empty());
+    // Compare the full output, including canonical names, argument types and signature hashes.
+    assert_eq!(bindings[0], bindings[1], "receiver bindings differ for {module_name}");
+}
+
+#[test]
+#[serial]
+fn ensure_same_typescript_receiver_bindings_case_conversion() {
+    assert_identical_typescript_receiver_bindings("sdk-test-case-conversion");
+}
+
+#[test]
+#[serial]
+fn ensure_same_typescript_receiver_bindings_sdk_test() {
+    assert_identical_typescript_receiver_bindings("sdk-test");
 }

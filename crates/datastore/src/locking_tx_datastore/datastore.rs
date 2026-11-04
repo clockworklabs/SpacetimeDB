@@ -3133,7 +3133,7 @@ pub(crate) mod tests {
             target_column: ColId(1),
             arg_columns: vec![ColId(2)],
             on_result_reducer: None,
-            signature_hash: "test-signature".into(),
+            signature_hash: spacetimedb_lib::Hash::ZERO,
         });
 
         let datastore = get_datastore()?;
@@ -3162,6 +3162,7 @@ pub(crate) mod tests {
         assert_eq!(stream_rows[0].next_seq, 3);
         assert_eq!(stream_rows[0].ack_prefix, 0);
 
+        let stream_id = stream_rows[0].stream_id;
         let mut outbound_rows = tx
             .iter(ST_OUTBOUND_MSG_ID)?
             .map(StOutboundMsgRow::try_from)
@@ -3172,6 +3173,64 @@ pub(crate) mod tests {
             outbound_rows.iter().map(|row| row.msg_id).collect::<Vec<_>>(),
             vec![10, 11]
         );
+
+        // Reads in a write transaction include uncommitted rows and isolate each stream.
+        let row = to_vec(&product![20u64, Identity::ZERO]).unwrap();
+        let row_ptr = datastore.insert_mut_tx(&mut tx, table_id, &row)?.1.pointer();
+        let other = tx.record_outbox_insert(table_id, row_ptr)?;
+        assert_ne!(stream_id, other.stream_id);
+        assert_eq!(
+            StOutboundMsgRow::try_from(tx.outbound_msg_by_stream_seq(stream_id, 1)?.unwrap())?.msg_id,
+            10
+        );
+        assert_eq!(
+            StOutboundMsgRow::try_from(tx.outbound_msg_by_stream_seq(other.stream_id, 1)?.unwrap())?.msg_id,
+            20
+        );
+        assert!(tx.outbound_msg_by_stream_seq(stream_id, 3)?.is_none());
+
+        // The same helpers work after commit through a read-only transaction.
+        datastore.commit_mut_tx(tx)?;
+        let tx = begin_tx(&datastore);
+        assert_eq!(tx.st_outbound_stream_by_id(stream_id)?.unwrap().next_seq, 3);
+        assert_eq!(
+            StOutboundMsgRow::try_from(tx.outbound_msg_by_stream_seq(stream_id, 2)?.unwrap())?.msg_id,
+            11
+        );
+        drop(tx);
+
+        let mut tx = begin_mut_tx(&datastore);
+        tx.record_outbound_idc_transport_error(stream_id, 1, "connection reset".into())?;
+        let row = StOutboundMsgRow::try_from(tx.outbound_msg_by_stream_seq(stream_id, 1)?.unwrap())?;
+        assert_eq!(row.retry_count, 1);
+        assert_eq!(row.last_transport_error.as_deref(), Some("connection reset"));
+        let payload = Bytes::from_static(b"reducer failed");
+        tx.record_outbound_idc_result(stream_id, 1, StInboundMsgResultStatus::Err, payload.clone())?;
+        let row = StOutboundMsgRow::try_from(tx.outbound_msg_by_stream_seq(stream_id, 1)?.unwrap())?;
+        assert_eq!(row.result_status, Some(StInboundMsgResultStatus::Err));
+        assert_eq!(row.result_payload, Some(payload));
+        assert_eq!(row.last_transport_error, None);
+
+        // Reject out-of-order acknowledgments before changing either the stream or its messages.
+        let stream_before = tx.st_outbound_stream_by_id(stream_id)?;
+        assert!(tx.ack_outbound_idc_msg(stream_id, 2).is_err());
+        assert_eq!(tx.st_outbound_stream_by_id(stream_id)?, stream_before);
+        assert!(tx.outbound_msg_by_stream_seq(stream_id, 1)?.is_some());
+        assert!(tx.outbound_msg_by_stream_seq(stream_id, 2)?.is_some());
+
+        // Repeated acknowledgments leave later messages and other streams alone.
+        let mut expected_stream = tx.st_outbound_stream_by_id(stream_id)?.unwrap();
+        expected_stream.ack_prefix = 1;
+        tx.ack_outbound_idc_msg(stream_id, 1)?;
+        tx.ack_outbound_idc_msg(stream_id, 1)?;
+        assert_eq!(tx.st_outbound_stream_by_id(stream_id)?, Some(expected_stream));
+        assert!(tx.outbound_msg_by_stream_seq(stream_id, 1)?.is_none());
+        assert!(tx.outbound_msg_by_stream_seq(stream_id, 2)?.is_some());
+        assert!(tx.outbound_msg_by_stream_seq(other.stream_id, 1)?.is_some());
+
+        tx.ack_outbound_idc_msg(stream_id, 2)?;
+        assert_eq!(tx.st_outbound_stream_by_id(stream_id)?.unwrap().ack_prefix, 2);
+        assert!(tx.outbound_msg_by_stream_seq(stream_id, 2)?.is_none());
 
         Ok(())
     }
@@ -3337,7 +3396,7 @@ pub(crate) mod tests {
             target_column: ColId(1),
             arg_columns: vec![],
             on_result_reducer: None,
-            signature_hash: "test-signature".into(),
+            signature_hash: spacetimedb_lib::Hash::ZERO,
         };
         let row = to_vec(&product![1u64, IdentityViaU256(Identity::ONE)]).unwrap();
 

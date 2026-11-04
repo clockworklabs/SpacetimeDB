@@ -43,7 +43,7 @@ tables. Use procedures only when you need side effects such as outbound HTTP.
 | Action                                    | Procedure                                                                 | Use a [procedure](/docs/functions/procedures) when the function needs side effects, especially outbound HTTP. If it only updates database state, migrate it to a reducer.                             |
 | HTTP Action                               | HTTP handler                                                              | Use an [HTTP handler](/docs/functions/http-handlers) for inbound HTTP routes such as webhooks or public HTTP APIs. Use a procedure for callable side-effecting functions that are not HTTP endpoints. |
 | Internal query / mutation / action        | Private reducer, private procedure, helper function, or private table     | Keep helper logic unexported when it should not be callable by clients. Use private tables for server-only data.                                                                                      |
-| Function args                             | Reducer, procedure, or view arguments                                     | Reducers and procedures accept typed arguments. Views currently do not accept user-defined arguments beyond the context.                                                                              |
+| Function args                             | Reducer, procedure, or view arguments                                     | Reducers, procedures, and views accept typed arguments. Views have [argument limitations](/docs/functions/views#limitations).                                                                         |
 | Function return value                     | Procedure return value, view result, subscribed rows, or event table row  | Reducers should not return data. Put durable state in tables, derived read results in views, one-shot notifications in event tables, and side-effect results in procedure returns.                    |
 | `ctx.db`                                  | `ctx.db` / `ctx.Db` / `ctx.db.*()`                                        | Reducers and views get transactional database access through their context. Procedures must open a transaction explicitly with `withTx` / `WithTx`.                                                   |
 | `ctx.auth.getUserIdentity()`              | `ctx.sender`, `ctx.Sender`, `ctx.sender()` and `senderAuth` claims        | Use the caller's `Identity` for authorization. Use auth claims when you need issuer, subject, audience, or custom claims.                                                                             |
@@ -306,10 +306,13 @@ export const messagesWithAuthors = spacetimeDb.anonymousView(
 );
 ```
 
-Views currently do not take arbitrary client arguments. If a Convex query takes
-arguments, either subscribe with a parameterized SQL/query-builder expression
-from the client, model the argument as part of the subscribed table data, or
-create a view whose result can be filtered by the client's subscription.
+If a Convex query takes arguments, define a
+[view with arguments](/docs/functions/views#views-with-arguments) and subscribe
+with `SELECT * FROM view_name(args)`. Arguments must be SQL literals, and the
+subscription cannot add filters, column lists, or joins to the view call. If you
+need filters or argument types that views don't support, you can model the
+arguments as part of the subscribed table data, or create a view whose result
+can be filtered by the client's subscription.
 
 ### 5. Split actions into reducers and procedures
 

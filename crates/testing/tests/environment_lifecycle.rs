@@ -64,6 +64,8 @@ fn real_module_reopen_and_environment_only_publication_preserve_values() -> anyh
             v8: V8Config::default(),
         };
         let mut env = Some(StandaloneEnv::init(config, &ca, data_dir.clone(), JobCores::without_pinned_cores()).await?);
+        // This in-process test does not run an HTTP listener.
+        env.as_ref().unwrap().configure_idc(0)?;
         let run = std::panic::AssertUnwindSafe(async {
             let initial = Values::from([
                 ("REQUIRED".into(), "initial-required".into()),
@@ -209,6 +211,7 @@ fn real_module_reopen_and_environment_only_publication_preserve_values() -> anyh
             drop(module);
             drop(env.take());
             env = Some(StandaloneEnv::init(config, &ca, data_dir.clone(), JobCores::without_pinned_cores()).await?);
+            env.as_ref().unwrap().configure_idc(0)?;
             // The first request after restart is env-only, before leader lookup has started a host.
             assert!(env
                 .as_ref()
