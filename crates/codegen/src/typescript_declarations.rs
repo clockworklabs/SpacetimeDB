@@ -2,8 +2,7 @@
 use super::*;
 use spacetimedb_schema::def::IndexAlgorithm;
 
-pub(super) fn generate(module: &ModuleDef, options: &CodegenOptions) -> Vec<OutputFile> {
-    let mut files = crate::generate_item_files(module, &TypeScript, options);
+pub(super) fn generate(module: &ModuleDef, options: &CodegenOptions, mut files: Vec<OutputFile>) -> Vec<OutputFile> {
     generate_module(module, options, "", &mut files);
     files.push(entry_point(module, options, ""));
     files

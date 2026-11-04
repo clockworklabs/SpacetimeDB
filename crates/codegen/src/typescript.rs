@@ -44,10 +44,6 @@ impl TypeScript {
 }
 
 impl Lang for TypeScript {
-    fn generate_module(&self, module: &ModuleDef, options: &CodegenOptions) -> Option<Vec<OutputFile>> {
-        Some(declarations::generate(module, options))
-    }
-
     fn generate_type_files(&self, _module: &ModuleDef, _typ: &TypeDef) -> Vec<OutputFile> {
         vec![]
     }
@@ -197,7 +193,7 @@ impl Lang for TypeScript {
             files.push(generate_types_file_with_path(owning_def, filename));
         }
 
-        files
+        declarations::generate(module, options, files)
     }
 }
 
