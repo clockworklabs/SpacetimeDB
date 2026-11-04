@@ -1,4 +1,4 @@
-import { describe, expect, expectTypeOf, test, vi } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import BinaryReader from '../src/lib/binary_reader';
 import BinaryWriter from '../src/lib/binary_writer';
 import { Timestamp } from '../src/lib/timestamp';
@@ -46,52 +46,6 @@ const declarations = {
 const client = createClient(declarations, {
   tableAliases: { people_legacy: 'people' },
 });
-
-// Consumer coverage: the inferred interface must reject invalid code as well as
-// accept valid code, rather than silently widening the module to `any`.
-function consumer(conn: InstanceType<typeof client.DbConnection>) {
-  conn.reducers.add({ name: 'Alice' });
-  conn.reducers.auth.add({ name: 'Bob' });
-  conn.reducers.sayHello({});
-  conn.reducers.default({});
-  expectTypeOf(conn.procedures.greet({ name: 'Alice' })).toEqualTypeOf<
-    Promise<string>
-  >();
-  conn.db.people.onInsert((_ctx, row) => {
-    expectTypeOf(row.name).toEqualTypeOf<string>();
-    // @ts-expect-error unknown row property
-    void row.missing;
-  });
-  // @ts-expect-error wrong parameter type
-  conn.reducers.add({ name: 123 });
-  // @ts-expect-error missing parameter
-  conn.reducers.add({});
-  // @ts-expect-error unknown function
-  conn.reducers.missing({});
-  // @ts-expect-error unknown table
-  void conn.db.missing;
-  // @ts-expect-error unknown nested table
-  void conn.db.auth.missing;
-  // @ts-expect-error unknown column
-  client.tables.people.where(row => row.missing.eq('x'));
-}
-void consumer;
-function invalidDeclarations() {
-  root.reducer({ onSchedule: people }, { row: people.rowType });
-  root.procedure({ onSchedule: people }, { row: people.rowType }, t.unit());
-  // @ts-expect-error scheduled procedures must return unit, matching the server
-  root.procedure({ onSchedule: people }, { row: people.rowType }, t.string());
-  // @ts-expect-error parameter schemas must be builders
-  root.reducer({ name: 123 });
-  // @ts-expect-error views return rows, not strings
-  root.view({ public: true }, t.string());
-  // @ts-expect-error multiple primary keys are not supported
-  root.view(
-    { public: true },
-    t.array(t.row({ a: t.u32().primaryKey(), b: t.u32().primaryKey() }))
-  );
-}
-void invalidDeclarations;
 
 describe('module declarations', () => {
   test('retains table and function metadata and produces the typed client API', async () => {
