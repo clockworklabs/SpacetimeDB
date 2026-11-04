@@ -77,6 +77,10 @@ function consumer(conn: InstanceType<typeof client.DbConnection>) {
 }
 void consumer;
 function invalidDeclarations() {
+  root.reducer({ onSchedule: people }, { row: people.rowType });
+  root.procedure({ onSchedule: people }, { row: people.rowType }, t.unit());
+  // @ts-expect-error scheduled procedures must return unit, matching the server
+  root.procedure({ onSchedule: people }, { row: people.rowType }, t.string());
   // @ts-expect-error parameter schemas must be builders
   root.reducer({ name: 123 });
   // @ts-expect-error views return rows, not strings

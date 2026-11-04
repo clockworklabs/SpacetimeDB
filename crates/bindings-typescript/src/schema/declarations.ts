@@ -3,13 +3,13 @@
  * preserving schemas and metadata while omitting server function bodies.
  */
 import type { ParamsObj } from '../lib/reducers';
-import type {
-  UntypedTableSchema,
-  ScheduleTableForParams,
-} from '../lib/table_schema';
+import type { UntypedTableSchema } from '../lib/table_schema';
 import { type TypeBuilder } from '../lib/type_builders';
-import type { CaseConversionPolicy } from '../lib/autogen/types';
+import type { ReducerOptsWithOptionalName } from '../server/reducers';
+import type { ProcedureOptsWithOptionalName } from '../server/procedures';
+import type { ModuleSettings } from '../server/schema';
 import type {
+  ViewOpts,
   ViewReturnTypeBuilder,
   ValidateViewPrimaryKey,
 } from '../server/views';
@@ -33,14 +33,13 @@ export type DeclarationKind =
   | 'view'
   | 'anonymousView';
 
-export type FunctionOptions<P extends ParamsObj = ParamsObj> = {
-  readonly name?: string;
-  readonly onSchedule?: ScheduleTableForParams<P>;
-};
-export type ViewOptions = { readonly name?: string; readonly public: true };
-export type SchemaOptions = {
-  readonly CASE_CONVERSION_POLICY?: CaseConversionPolicy;
-};
+export type FunctionOptions<P extends ParamsObj = ParamsObj> = Readonly<
+  ReducerOptsWithOptionalName<P>
+>;
+export type ViewOptions = Readonly<ViewOpts>;
+export type SchemaOptions = Readonly<
+  Pick<ModuleSettings, 'CASE_CONVERSION_POLICY'>
+>;
 
 /** Metadata for a remote function. It contains no executable server callback. */
 export class FunctionDeclaration<
@@ -110,7 +109,7 @@ export class Schema<Entries extends SchemaEntries> {
   procedure<
     const P extends ParamsObj,
     R extends TypeBuilder<any, any>,
-    const O extends FunctionOptions<P>,
+    const O extends Readonly<ProcedureOptsWithOptionalName<P, R>>,
   >(
     options: O,
     params: P,
