@@ -1,5 +1,7 @@
 #![warn(clippy::uninlined_format_args)]
 
+mod sdk_version;
+
 use anyhow::Context;
 use clap::parser::ValueSource;
 use clap::Arg;
@@ -52,7 +54,6 @@ fn build_generate_config_schema(command: &clap::Command) -> Result<CommandSchema
         .key(Key::new("build_options").module_specific())
         .key(Key::new("dotnet_version").module_specific())
         .key(Key::new("include_private"))
-        .key(Key::new("legacy").generate_entry_specific())
         .exclude("json_module")
         .exclude("force")
         .exclude("no_config")
@@ -263,12 +264,6 @@ pub fn cli() -> clap::Command {
                 .conflicts_with("js_file"),
         )
         .arg(
-            Arg::new("legacy")
-                .long("legacy")
-                .action(SetTrue)
-                .help("Generate legacy TypeScript bindings for older SDKs"),
-        )
-        .arg(
             Arg::new("include_private")
                 .long("include-private")
                 .action(SetTrue)
@@ -309,7 +304,6 @@ pub struct GenerateRunConfig {
     pub dotnet_version: Option<u8>,
     pub out_dir: PathBuf,
     pub include_private: bool,
-    pub legacy: bool,
 }
 
 fn prepare_generate_run_configs<'a>(
@@ -405,7 +399,6 @@ fn prepare_generate_run_configs<'a>(
             dotnet_version,
             out_dir,
             include_private,
-            legacy: command_config.get_one::<bool>("legacy")?.unwrap_or(false),
         });
     }
 
@@ -494,9 +487,7 @@ pub async fn run_prepared_generate_configs(
             return Err(anyhow::anyhow!("--namespace is only supported with --lang csharp"));
         }
 
-        if run.lang != Language::TypeScript && run.legacy {
-            anyhow::bail!("--legacy is only supported for TypeScript");
-        }
+        sdk_version::warn_if_incompatible(run.lang, &run.out_dir);
 
         let module: ModuleDef = if let Some(paths) = &json_module {
             let DeserializeWrapper::<RawModuleDef>(module) = if let Some(path) = paths.first() {
@@ -554,7 +545,6 @@ pub async fn run_prepared_generate_configs(
                 &unreal_cpp_lang as &dyn Lang
             }
             Language::Rust => &Rust,
-            Language::TypeScript if run.legacy => &spacetimedb_codegen::LegacyTypeScript,
             Language::TypeScript => &TypeScript,
         };
 

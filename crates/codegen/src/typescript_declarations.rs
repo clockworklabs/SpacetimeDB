@@ -7,12 +7,8 @@ pub(super) fn generate(module: &ModuleDef, options: &CodegenOptions) -> Vec<Outp
     generate_module(module, options, "", &mut files);
     files.push(entry_point(module, options, ""));
     // Keep the old import paths and schema exports outside the module-shaped
-    // declarations. Both formats share this compatibility surface.
-    files.extend(
-        crate::generate(module, &LegacyTypeScript, options)
-            .into_iter()
-            .filter(|file| file.filename != "index.ts"),
-    );
+    // declarations. These files preserve the existing client API.
+    files.extend(crate::generate_item_files(module, &TypeScript, options));
     files
 }
 

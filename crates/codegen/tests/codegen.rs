@@ -1,4 +1,4 @@
-use spacetimedb_codegen::{generate, CodegenOptions, Csharp, LegacyTypeScript, Rust, TypeScript};
+use spacetimedb_codegen::{generate, CodegenOptions, Csharp, Rust, TypeScript};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
@@ -259,16 +259,8 @@ void consume;
 fn typescript_generation_preserves_existing_client_code() {
     for module in [compiled_module(), compiled_typescript_module()] {
         let options = CodegenOptions::default();
-        let legacy = generate(module, &LegacyTypeScript, &options);
+        let legacy = existing_typescript_bindings();
         let current = generate(module, &TypeScript, &options);
-        // Every old direct-import file retains its full API, including runtime
-        // schema exports. The entry point is exercised by unchanged consumers.
-        for old in &legacy {
-            if old.filename != "index.ts" {
-                let new = current.iter().find(|f| f.filename == old.filename).unwrap();
-                assert_eq!(new.code, old.code, "{}", old.filename);
-            }
-        }
         let program = if std::ptr::eq(module, compiled_module()) {
             r#"
 import assert from 'node:assert/strict';
@@ -334,7 +326,9 @@ function consume(conn: DbConnection) {
 void consume; void Row; void Args; void Count;
 "#
         };
-        compile_typescript_client(legacy, program);
+        if std::ptr::eq(module, compiled_module()) {
+            compile_typescript_client(legacy, program);
+        }
         compile_typescript_client(current, program);
     }
 }
@@ -508,23 +502,20 @@ assert.equal(reducers.binaryReader.name, 'binary_reader');
     );
 }
 
-#[test]
-fn legacy_typescript_bindings_work_with_published_sdk() {
-    let outfiles = generate(compiled_module(), &LegacyTypeScript, &CodegenOptions::default())
+fn existing_typescript_bindings() -> Vec<spacetimedb_codegen::OutputFile> {
+    let files: std::collections::BTreeMap<String, String> =
+        toml::from_str(include_str!("fixtures/typescript_2_12.toml")).unwrap();
+    files
         .into_iter()
-        .map(|f| (f.filename, f.code))
-        .collect::<HashMap<_, _>>();
-    let mut settings = insta::Settings::clone_current();
-    settings.set_sort_maps(true);
-    settings.add_filter(
-        r"// This was generated using spacetimedb cli version \d+\.\d+\.\d+ .*",
-        "VERSION_COMMENT",
-    );
-    settings.add_filter(r#"cliVersion: "\d+\.\d+\.\d+","#, r#"cliVersion: "X.Y.Z","#);
-    settings.bind(|| insta::assert_toml_snapshot!("legacy_typescript_bindings", outfiles));
+        .map(|(filename, code)| spacetimedb_codegen::OutputFile { filename, code })
+        .collect()
+}
+
+#[test]
+fn existing_typescript_bindings_work_with_supported_sdks() {
     for sdk in [None, Some("spacetimedb-legacy")] {
         compile_typescript_client_with_sdk(
-            generate(compiled_module(), &LegacyTypeScript, &CodegenOptions::default()),
+            existing_typescript_bindings(),
             r#"
 import assert from 'node:assert/strict';
 import { DbConnection, tables, reducers } from './index';

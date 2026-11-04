@@ -11,7 +11,7 @@ mod util;
 
 pub use self::csharp::Csharp;
 pub use self::rust::Rust;
-pub use self::typescript::{LegacyTypeScript, TypeScript};
+pub use self::typescript::TypeScript;
 pub use self::unrealcpp::UnrealCpp;
 pub use util::private_table_names;
 pub use util::CodegenVisibility;
@@ -34,6 +34,10 @@ pub fn generate(module: &ModuleDef, lang: &dyn Lang, options: &CodegenOptions) -
     if let Some(files) = lang.generate_module(module, options) {
         return files;
     }
+    generate_item_files(module, lang, options)
+}
+
+pub(crate) fn generate_item_files(module: &ModuleDef, lang: &dyn Lang, options: &CodegenOptions) -> Vec<OutputFile> {
     itertools::chain!(
         util::iter_tables(module, options.visibility).map(|tbl| lang.generate_table_file(module, tbl)),
         module.views().map(|view| lang.generate_view_file(module, view)),
