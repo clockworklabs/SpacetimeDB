@@ -13,3 +13,7 @@ A path's review tier comes from the nearest `.deep` marker in its directory or a
 - Do not add, remove, move or edit a marker unless asked.
 
 These markers are provisional, and CI does not check any of this yet.
+
+# PR testing sections
+
+When writing or updating a PR's testing section, read [Writing testing sections](.agents/testing-sections.md). Describe concrete coverage concisely, distinguishing updated tests, added tests, and relevant existing coverage.
