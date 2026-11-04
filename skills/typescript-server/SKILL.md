@@ -275,7 +275,7 @@ const spacetimedb = schema({
 export default spacetimedb;
 ```
 
-`myAuth` is the accessor (`ctx.db.myAuth.<table>`); `auth_data` is the canonical namespace used in SQL and wire names. Without an explicit `name`, the root's case policy derives it (`myAuth` → `my_auth` by default). Pin `name` when renaming an accessor: changing the canonical namespace drops its tables and their data. The library keeps its own flat `ctx.db` accessors. To call a library function directly, pass `ctx.as.myAuth`; inside `withTx`, use `tx.as.myAuth`. Nested TypeScript submodules are supported, but the same module cannot be registered twice. Lifecycle reducers and nonempty environment declarations belong in the root. Submodule routers are ignored; register delegated handlers on the root router. Composition is not cross-language.
+`myAuth` is the accessor (`ctx.db.myAuth.<table>`); `auth_data` is the canonical namespace used in SQL and wire names. Without an explicit `name`, the root's case policy derives it (`myAuth` → `my_auth` by default). Pin `name` when renaming an accessor: changing the canonical namespace drops its tables and their data. The library keeps its own flat `ctx.db` accessors. To call a library function directly, pass `ctx.as.myAuth`; inside `withTx`, use `tx.as.myAuth`. Nested TypeScript submodules are supported. Lifecycle reducers and nonempty environment declarations belong in the root. Submodule routers are ignored; register delegated handlers on the root router. Composition is not cross-language.
 
 Official reusable libraries include `@spacetimedb/cron`, `@spacetimedb/retry`, `@spacetimedb/rate-limit`, and `@spacetimedb/crypto`. Their registration shapes differ: `@spacetimedb/rate-limit/submodule` is mountable, cron/retry expose factories, and crypto exports helpers. Consult the chosen package's README/exports rather than assuming every package root is a mountable module.
 
@@ -436,7 +436,7 @@ export const entityById = spacetimedb.anonymousView(
 );
 ```
 
-Floating-point arguments and primary keys are rejected on argument-bearing views. See client skills for SQL subscription syntax and restrictions.
+Floating-point arguments are rejected. Views with arguments have no primary key; TypeScript omits primary-key metadata from the returned row type automatically. See client skills for SQL subscription syntax and restrictions.
 
 ## Client Visibility Filters
 

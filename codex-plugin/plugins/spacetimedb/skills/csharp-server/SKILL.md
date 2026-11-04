@@ -244,18 +244,18 @@ timestamp.MicrosecondsSinceUnixEpoch / 1000
 
 ## Submodules
 
-C# assembly composition requires SpacetimeDB/Runtime 2.13+, .NET 10, and C# 14 in the root and dependencies. NativeAOT-LLVM module builds require Windows or Linux, not macOS. Reference module assemblies via `ProjectReference` or NuGet. If libraries live beneath the root project, exclude their source from the root compile glob (`<Compile Remove="libraries/**/*.cs" />`). Dependencies, including transitive ones, automatically register once in `public` unless the root assigns a namespace:
+C# assembly composition requires SpacetimeDB/Runtime 2.13+, .NET 10, and C# 14 in the root and dependencies. NativeAOT-LLVM module builds require Windows or Linux, not macOS. Reference module assemblies via `ProjectReference` or NuGet. If libraries live beneath the root project, exclude their source from the root compile glob (`<Compile Remove="libraries/**/*.cs" />`). Dependencies, including transitive ones, register once in `public` unless some module mounts them with a `Namespace` attribute:
 
 ```csharp
 // Root Lib.cs, before namespace/type declarations:
 [assembly: SpacetimeDB.Namespace(typeof(AuthLib.Marker), Accessor = "MyAuth", Name = "auth_data")]
 ```
 
-The marker is any accessible type in the dependency assembly. Root code uses `ctx.Db.MyAuth.User` and `ctx.From.MyAuth.User()`; library code keeps `ctx.Db.User` and `ctx.From.User()`. Pass the caller's context directly to a library helper: there is no TypeScript-style `ctx.as`. Helpers share the caller's transaction; namespaces are not helper security boundaries.
+The marker is any accessible type in the dependency assembly. Root code uses `ctx.Db.MyAuth.User` and `ctx.From.MyAuth.User()`; library code keeps `ctx.Db.User` and `ctx.From.User()`. To call a library helper, pass `ctx.As.MyAuth` (`tx.As.MyAuth` inside `WithTx`; 2.14+). Passing `ctx` directly works only while the library has one unambiguous instance; otherwise it throws `InvalidOperationException`. Helpers share the caller's transaction; namespaces are not helper security boundaries.
 
 `Accessor` controls C# members; `Name` pins the canonical namespace used in SQL (`auth_data.<table>`). Without `Name`, the root's case policy derives it (`MyAuth` → `my_auth` by default). Changing the canonical namespace drops its tables and their data; keep `Name` fixed to rename only accessors. Named dependencies retain their naming policy; `public` dependencies inherit the root's and cannot explicitly conflict with it.
 
-Only the root chooses placement. An assembly can be mounted once; nested mounts and cross-language composition are unsupported. Named dependencies cannot declare lifecycle reducers, nonempty environments, or RLS filters. Define RLS in the root with canonical qualified table names. Named-submodule routes are ignored; root handlers may delegate to library helpers. Dependencies in `public` can contribute lifecycle reducers (subject to uniqueness), environment declarations, and routes.
+In 2.14+, any module can mount its own dependencies, and the same assembly can be mounted more than once with independent tables at each path; 2.13 allows only root mounts, once per assembly. Cross-language composition is unsupported. Named dependencies cannot declare lifecycle reducers, nonempty environments, or RLS filters. Define RLS in the root with canonical qualified table names. Named-submodule routes are ignored; root handlers may delegate to library helpers. Dependencies in `public` can contribute lifecycle reducers (subject to uniqueness), environment declarations, and routes.
 
 ## Environment Variables
 
