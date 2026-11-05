@@ -48,12 +48,6 @@ import { ConnectionId } from '../lib/connection_id';
 /** Represents the current state of a managed connection. */
 export type ConnectionState = {
   isActive: boolean;
-  /**
-   * True while the SDK is retrying a dropped connection, from the drop until
-   * it reconnects or stops retrying. The connection, its client cache and its
-   * callbacks all survive this, so it can be told apart from a connection that
-   * is down for good.
-   */
   isReconnecting: boolean;
   identity?: Identity;
   token?: string;
