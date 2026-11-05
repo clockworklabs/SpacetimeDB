@@ -339,6 +339,24 @@ impl<'a> Tuple<'a> {
         }
     }
 
+    /// `self.clone().join(with)`, allocated once at the joined size
+    fn clone_join(&self, with: Self) -> Self {
+        let width = |t: &Self| match t {
+            Self::Row(_) => 1,
+            Self::Join(rows) => rows.len(),
+        };
+        let mut rows = Vec::with_capacity(width(self) + width(&with));
+        match self {
+            Self::Row(row) => rows.push(row.clone()),
+            Self::Join(ptrs) => rows.extend(ptrs.iter().cloned()),
+        }
+        match with {
+            Self::Row(row) => rows.push(row),
+            Self::Join(ptrs) => rows.extend(ptrs),
+        }
+        Self::Join(rows)
+    }
+
     fn join(self, with: Self) -> Self {
         match with {
             Self::Row(ptr) => self.append(ptr),

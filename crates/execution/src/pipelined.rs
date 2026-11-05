@@ -902,7 +902,7 @@ impl PipelinedIxJoin {
                 self.lhs.execute(tx, params, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
-                    iter_rhs(&u, &mut bytes_scanned, &mut |v| f(u.clone().join(v)))?;
+                    iter_rhs(&u, &mut bytes_scanned, &mut |v| f(u.clone_join(v)))?;
                     Ok(())
                 })?;
             }
@@ -1013,7 +1013,7 @@ impl BlockingHashJoin {
                 lhs.execute(tx, params, metrics, &mut |u| {
                     n += 1;
                     if let Some(v) = rhs_table.get(&project(&u, lhs_field, &mut bytes_scanned)) {
-                        f(u.clone().join(v.clone()))?;
+                        f(u.clone_join(v.clone()))?;
                     }
                     Ok(())
                 })?;
@@ -1097,7 +1097,7 @@ impl BlockingHashJoin {
                     n += 1;
                     if let Some(rhs_tuples) = rhs_table.get(&project(&u, lhs_field, &mut bytes_scanned)) {
                         for v in rhs_tuples {
-                            f(u.clone().join(v.clone()))?;
+                            f(u.clone_join(v.clone()))?;
                         }
                     }
                     Ok(())
@@ -1144,7 +1144,7 @@ impl BlockingNLJoin {
         self.lhs.execute(tx, params, metrics, &mut |u| {
             n += 1;
             for v in rhs.iter() {
-                f(u.clone().join(v.clone()))?;
+                f(u.clone_join(v.clone()))?;
             }
             Ok(())
         })?;
@@ -1253,13 +1253,10 @@ impl PipelinedBindingLookup {
             match &self.candidates {
                 BindingCandidates::All => {
                     // Every binding is read for each input tuple
-                    let mut visited: u64 = 0;
                     for row in bindings.iter() {
-                        visited += 1;
-                        f(t.clone().append(Row::Ref(row)))?;
+                        f(t.clone_join(Tuple::Row(Row::Ref(row))))?;
                     }
-                    assert_eq!(visited, bindings.len());
-                    rows_scanned += visited;
+                    rows_scanned += bindings.len();
                 }
                 BindingCandidates::Probe(probe) => {
                     index_seeks += 1;
@@ -1268,7 +1265,7 @@ impl PipelinedBindingLookup {
                     let ids = bindings.probe(probe.index, key);
                     assert!(ids.len() as u64 <= bindings.len());
                     for id in ids {
-                        f(t.clone().append(Row::Ref(bindings.get(*id))))?;
+                        f(t.clone_join(Tuple::Row(Row::Ref(bindings.get(*id)))))?;
                     }
                 }
             }
