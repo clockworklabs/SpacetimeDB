@@ -900,26 +900,6 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 
         public readonly struct Tables
         {
-#if !SPACETIMEDB_WASM_AOT
-            private global::SpacetimeDB.Internal.Local? __owner { get; }
-
-            public Tables(global::SpacetimeDB.Internal.Local? db)
-            {
-                __owner = db;
-            }
-
-            internal global::SpacetimeDB.Internal.TableHandles.BTreeMultiColumn BTreeMultiColumn =>
-                new();
-            internal global::SpacetimeDB.Internal.TableHandles.BTreeViews BTreeViews => new();
-            public global::SpacetimeDB.Internal.TableHandles.MultiTable1 MultiTable1 => new();
-            public global::SpacetimeDB.Internal.TableHandles.MultiTable2 MultiTable2 => new();
-            public global::SpacetimeDB.Internal.TableHandles.PrivateTable PrivateTable => new();
-            public global::SpacetimeDB.Internal.TableHandles.PublicTable PublicTable => new();
-            internal global::SpacetimeDB.Internal.TableHandles.RegressionMultipleUniqueIndexesHadSameName RegressionMultipleUniqueIndexesHadSameName =>
-                new();
-            public global::SpacetimeDB.Internal.TableHandles.SendMessageTimer SendMessageTimer =>
-                new();
-#else
             private readonly int __instanceId;
 
             public Tables(global::SpacetimeDB.Internal.Local? db)
@@ -938,36 +918,10 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 new();
             public global::SpacetimeDB.Internal.TableHandles.SendMessageTimer SendMessageTimer =>
                 new();
-#endif
         }
 
         public readonly struct ReadOnlyTables
         {
-#if !SPACETIMEDB_WASM_AOT
-            private global::SpacetimeDB.Internal.LocalReadOnly? __owner { get; }
-
-            public ReadOnlyTables(global::SpacetimeDB.Internal.LocalReadOnly? db)
-            {
-                __owner = db;
-            }
-
-            internal global::SpacetimeDB.Internal.ViewHandles.BTreeMultiColumnReadOnly BTreeMultiColumn =>
-                new();
-            internal global::SpacetimeDB.Internal.ViewHandles.BTreeViewsReadOnly BTreeViews =>
-                new();
-            public global::SpacetimeDB.Internal.ViewHandles.MultiTable1ReadOnly MultiTable1 =>
-                new();
-            public global::SpacetimeDB.Internal.ViewHandles.MultiTable2ReadOnly MultiTable2 =>
-                new();
-            public global::SpacetimeDB.Internal.ViewHandles.PrivateTableReadOnly PrivateTable =>
-                new();
-            public global::SpacetimeDB.Internal.ViewHandles.PublicTableReadOnly PublicTable =>
-                new();
-            internal global::SpacetimeDB.Internal.ViewHandles.RegressionMultipleUniqueIndexesHadSameNameReadOnly RegressionMultipleUniqueIndexesHadSameName =>
-                new();
-            public global::SpacetimeDB.Internal.ViewHandles.SendMessageTimerReadOnly SendMessageTimer =>
-                new();
-#else
             private readonly int __instanceId;
 
             public ReadOnlyTables(global::SpacetimeDB.Internal.LocalReadOnly? db)
@@ -991,26 +945,16 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 new();
             public global::SpacetimeDB.Internal.ViewHandles.SendMessageTimerReadOnly SendMessageTimer =>
                 new();
-#endif
         }
 
         public readonly partial struct Queries
         {
-#if !SPACETIMEDB_WASM_AOT
-            private global::SpacetimeDB.QueryBuilder __owner { get; }
-
-            public Queries(global::SpacetimeDB.QueryBuilder from)
-            {
-                __owner = from;
-            }
-#else
             private readonly int __instanceId;
 
             public Queries(global::SpacetimeDB.QueryBuilder from)
             {
                 __instanceId = global::SpacetimeDB.Internal.Module.GetInstanceId(from);
             }
-#endif
         }
     }
 
@@ -1090,7 +1034,6 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 
     public static partial class AssemblyDescriptor
     {
-#if SPACETIMEDB_WASM_AOT
         private static global::SpacetimeDB.SqlTableName?[] BTreeMultiColumnSqlNames =>
             field ??= new global::SpacetimeDB.SqlTableName?[
                 global::SpacetimeDB.Internal.Module.InstanceCount
@@ -1112,7 +1055,6 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
             names[contextInstance] = resolvedName;
             return resolvedName;
         }
-#endif
 
         public readonly partial struct Queries
         {
@@ -1187,7 +1129,6 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 
     public static partial class AssemblyDescriptor
     {
-#if SPACETIMEDB_WASM_AOT
         private static global::SpacetimeDB.SqlTableName?[] BTreeViewsSqlNames =>
             field ??= new global::SpacetimeDB.SqlTableName?[
                 global::SpacetimeDB.Internal.Module.InstanceCount
@@ -1209,7 +1150,6 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
             names[contextInstance] = resolvedName;
             return resolvedName;
         }
-#endif
 
         public readonly partial struct Queries
         {
@@ -1269,7 +1209,6 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 
     public static partial class AssemblyDescriptor
     {
-#if SPACETIMEDB_WASM_AOT
         private static global::SpacetimeDB.SqlTableName?[] MultiTable1SqlNames =>
             field ??= new global::SpacetimeDB.SqlTableName?[
                 global::SpacetimeDB.Internal.Module.InstanceCount
@@ -1291,7 +1230,6 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
             names[contextInstance] = resolvedName;
             return resolvedName;
         }
-#endif
 
         public readonly partial struct Queries
         {
@@ -1344,7 +1282,6 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 
     public static partial class AssemblyDescriptor
     {
-#if SPACETIMEDB_WASM_AOT
         private static global::SpacetimeDB.SqlTableName?[] MultiTable2SqlNames =>
             field ??= new global::SpacetimeDB.SqlTableName?[
                 global::SpacetimeDB.Internal.Module.InstanceCount
@@ -1366,7 +1303,6 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
             names[contextInstance] = resolvedName;
             return resolvedName;
         }
-#endif
 
         public readonly partial struct Queries
         {
@@ -1410,7 +1346,6 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 
     public static partial class AssemblyDescriptor
     {
-#if SPACETIMEDB_WASM_AOT
         private static global::SpacetimeDB.SqlTableName?[] PrivateTableSqlNames =>
             field ??= new global::SpacetimeDB.SqlTableName?[
                 global::SpacetimeDB.Internal.Module.InstanceCount
@@ -1432,7 +1367,6 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
             names[contextInstance] = resolvedName;
             return resolvedName;
         }
-#endif
 
         public readonly partial struct Queries
         {
@@ -1633,7 +1567,6 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 
     public static partial class AssemblyDescriptor
     {
-#if SPACETIMEDB_WASM_AOT
         private static global::SpacetimeDB.SqlTableName?[] PublicTableSqlNames =>
             field ??= new global::SpacetimeDB.SqlTableName?[
                 global::SpacetimeDB.Internal.Module.InstanceCount
@@ -1655,7 +1588,6 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
             names[contextInstance] = resolvedName;
             return resolvedName;
         }
-#endif
 
         public readonly partial struct Queries
         {
@@ -1722,7 +1654,6 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 
     public static partial class AssemblyDescriptor
     {
-#if SPACETIMEDB_WASM_AOT
         private static global::SpacetimeDB.SqlTableName?[] RegressionMultipleUniqueIndexesHadSameNameSqlNames =>
             field ??= new global::SpacetimeDB.SqlTableName?[
                 global::SpacetimeDB.Internal.Module.InstanceCount
@@ -1749,7 +1680,6 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
             names[contextInstance] = resolvedName;
             return resolvedName;
         }
-#endif
 
         public readonly partial struct Queries
         {
@@ -1826,7 +1756,6 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 
     public static partial class AssemblyDescriptor
     {
-#if SPACETIMEDB_WASM_AOT
         private static global::SpacetimeDB.SqlTableName?[] SendMessageTimerSqlNames =>
             field ??= new global::SpacetimeDB.SqlTableName?[
                 global::SpacetimeDB.Internal.Module.InstanceCount
@@ -1848,7 +1777,6 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
             names[contextInstance] = resolvedName;
             return resolvedName;
         }
-#endif
 
         public readonly partial struct Queries
         {

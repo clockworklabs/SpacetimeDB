@@ -32,6 +32,10 @@ public sealed record ReducerContext
 
     int Internal.IModuleContext.InstanceId => ModuleInstanceId;
 
+#if !SPACETIMEDB_WASM_RUNTIME
+    Internal.DatabaseAccess? Internal.IModuleContext.Access => Db.Access;
+#endif
+
     ReducerContext Internal.IModuleContext<ReducerContext>.SelectInstance(int instanceId)
     {
         if (instanceId == ModuleInstanceId)
@@ -207,6 +211,10 @@ public sealed partial class ProcedureContext
         Internal.IModuleContext<ProcedureContext>
 {
     int Internal.IModuleContext.InstanceId => ModuleInstanceId;
+
+#if !SPACETIMEDB_WASM_RUNTIME
+    Internal.DatabaseAccess? Internal.IModuleContext.Access => Access;
+#endif
 
     ProcedureContext Internal.IModuleContext<ProcedureContext>.SelectInstance(int instanceId)
     {
@@ -413,6 +421,10 @@ public sealed class ProcedureTxContext
 {
     int Internal.IModuleContext.InstanceId => Db.InstanceId;
 
+#if !SPACETIMEDB_WASM_RUNTIME
+    Internal.DatabaseAccess? Internal.IModuleContext.Access => Db.Access;
+#endif
+
     ProcedureTxContext Internal.IModuleContext<ProcedureTxContext>.SelectInstance(int instanceId)
     {
         if (instanceId == Db.InstanceId)
@@ -469,6 +481,10 @@ public sealed record ViewContext
 {
     int Internal.IModuleContext.InstanceId => ModuleInstanceId;
 
+#if !SPACETIMEDB_WASM_RUNTIME
+    Internal.DatabaseAccess? Internal.IModuleContext.Access => Db.Access;
+#endif
+
     ViewContext Internal.IModuleContext<ViewContext>.SelectInstance(int instanceId) =>
         instanceId == ModuleInstanceId
             ? this
@@ -512,6 +528,10 @@ public sealed record AnonymousViewContext
         Internal.IModuleContext<AnonymousViewContext>
 {
     int Internal.IModuleContext.InstanceId => ModuleInstanceId;
+
+#if !SPACETIMEDB_WASM_RUNTIME
+    Internal.DatabaseAccess? Internal.IModuleContext.Access => Db.Access;
+#endif
 
     AnonymousViewContext Internal.IModuleContext<AnonymousViewContext>.SelectInstance(
         int instanceId

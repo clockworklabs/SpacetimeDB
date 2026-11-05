@@ -107,12 +107,24 @@ public class AcceptanceTests
     }
 
     [Fact]
+    public void LogStopwatchDoesNothingWithoutAHost()
+    {
+        // With no host to report to, every call is a no-op, including repeats.
+        var error = Record.Exception(() =>
+        {
+            using var stopwatch = new LogStopwatch("no-op");
+            stopwatch.End();
+            stopwatch.End();
+        });
+        Assert.Null(error);
+    }
+
+    [Fact]
     public void UnsupportedServicesFailWithoutHostImports()
     {
         Assert.Throws<NotSupportedException>(() => ProcedureContext.Identity);
         Assert.Throws<NotSupportedException>(() => IReducerContext.GetDatabaseIdentity());
         Assert.Throws<NotSupportedException>(() => IViewContext.GetIdentity());
-        Assert.Throws<NotSupportedException>(() => new LogStopwatch("unsupported"));
         var connection = ConnectionId.FromHexString("00000000000000000000000000000001")!.Value;
         Assert.Throws<NotSupportedException>(
             () => AuthCtx.BuildFromSystemTables(connection, default)

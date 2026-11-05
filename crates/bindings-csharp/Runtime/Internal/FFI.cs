@@ -2,9 +2,7 @@ namespace SpacetimeDB.Internal;
 
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
-// The NuGet runtime DLL is shared by managed and WASM builds.
-// Keep the real import attributes: publishing a module to WASM
-// does not recompile this DLL.
+// .NET 8 has no WasmImportLinkageAttribute, so declare a stand-in there.
 #if NET10_0_OR_GREATER
 using WasmImportLinkageAttribute = System.Runtime.InteropServices.WasmImportLinkageAttribute;
 #else

@@ -8,22 +8,15 @@ namespace SpacetimeDB.Internal;
 /// <param name="accessor">The child's local accessor.</param>
 public sealed class NamespaceBinding(string? assemblyIdentity, string accessor)
 {
+    // Lazy because generated bindings are constructed together on first use. Managed test
+    // fixtures never install global namespaces and resolve through their own backend instead.
     private int[] Instances => field ??= Module.BindNamespace(assemblyIdentity, accessor);
 
 #if NET10_0_OR_GREATER
     public int ResolveContext(IModuleContext context, int contextInstance)
     {
 #if !SPACETIMEDB_WASM_RUNTIME
-        var access = context switch
-        {
-            ReducerContext reducer => reducer.Db.Access,
-            ProcedureContext procedure => procedure.Access,
-            ProcedureTxContext transaction => transaction.Db.Access,
-            ViewContext view => view.Db.Access,
-            AnonymousViewContext view => view.Db.Access,
-            _ => null,
-        };
-        return Resolve(contextInstance, DatabaseAccess.Require(access));
+        return Resolve(contextInstance, DatabaseAccess.Require(context.Access));
 #else
         return this[contextInstance];
 #endif

@@ -47,8 +47,18 @@ pub struct StdbTestTransaction {
     id: u64,
 }
 
+/// Execute one SELECT against committed state. `identity` is exactly one BSATN `Identity`
+/// (32 bytes), used as the database owner and caller, including `:sender`; this is not a
+/// caller-auth/RLS test. Results are a row snapshot of the projected product rows, and the
+/// caller supplies the result schema.
+///
+/// Queries open their own transaction. A pending explicit transaction returns
+/// `TRANSACTION_ACTIVE` without waiting for its lock. Non-SELECT statements are rejected
+/// without running (`NOT_SELECT` if they compile; parse and validation errors return
+/// `DATABASE_ERROR`). Query failures release locks and leave the datastore usable.
+///
 /// # Safety
-/// Pointers must satisfy the ownership and memory contract in the C header.
+/// Pointers must satisfy the ABI contract in the crate documentation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stdb_test_v1_query(
     datastore: *const StdbTestDatastore,
@@ -61,12 +71,8 @@ pub unsafe extern "C" fn stdb_test_v1_query(
 ) -> u32 {
     unsafe {
         with_output(out, error, || {
-            let datastore = datastore
-                .as_ref()
-                .ok_or_else(|| (INVALID_ARGUMENT, "Null datastore".into()))?;
-            let sql = std::str::from_utf8(input_bytes(sql, sql_len)?)
-                .map_err(|err| (INVALID_ARGUMENT, err.to_string()))?
-                .to_owned();
+            let datastore = handle(datastore, "datastore")?;
+            let sql = input_str(sql, sql_len)?.to_owned();
             let identity = input_bytes(identity, identity_len)?;
             if identity.len() != 32 {
                 return Err((
@@ -113,8 +119,13 @@ impl StdbTestTransaction {
     }
 }
 
+/// Begin the datastore's one pending transaction. A nested begin returns
+/// `TRANSACTION_ACTIVE` rather than waiting for the existing transaction's lock. The table
+/// and index functions use this explicit transaction and never open another. Table and
+/// index IDs belong to this datastore.
+///
 /// # Safety
-/// Pointers must satisfy the ownership and memory contract in the C header.
+/// Pointers must satisfy the ABI contract in the crate documentation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stdb_test_v1_transaction_begin(
     datastore: *const StdbTestDatastore,
@@ -123,9 +134,7 @@ pub unsafe extern "C" fn stdb_test_v1_transaction_begin(
 ) -> u32 {
     unsafe {
         with_output(out, error, || {
-            let datastore = datastore
-                .as_ref()
-                .ok_or_else(|| (INVALID_ARGUMENT, "Null datastore".into()))?;
+            let datastore = handle(datastore, "datastore")?;
             let id = request(&datastore.requests, |state| {
                 if state.transaction.is_some() {
                     return Err((TRANSACTION_ACTIVE, "A transaction is already active".into()));
@@ -149,17 +158,22 @@ pub unsafe extern "C" fn stdb_test_v1_transaction_begin(
 unsafe fn finish(transaction: *const StdbTestTransaction, error: *mut StdbTestBuffer, commit: bool) -> u32 {
     unsafe {
         with_output(&mut (), error, || {
-            let transaction = transaction
-                .as_ref()
-                .ok_or_else(|| (INVALID_ARGUMENT, "Null transaction".into()))?;
+            let transaction = handle(transaction, "transaction")?;
             let id = transaction.id;
             request(&transaction.requests, move |state| state.finish(id, commit))
         })
     }
 }
 
+/// Commit the transaction without freeing its handle, even if the database reports an
+/// error. Later operations return `TRANSACTION_FINISHED`. Argument errors do not finish
+/// it. Table-operation errors leave it pending; roll back to discard partial changes.
+///
+/// An internal error, including a panic, stops the worker and rolls back pending work;
+/// later calls report `INTERNAL_ERROR` with the original message.
+///
 /// # Safety
-/// Pointers must satisfy the ownership and memory contract in the C header.
+/// Pointers must satisfy the ABI contract in the crate documentation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stdb_test_v1_transaction_commit(
     transaction: *const StdbTestTransaction,
@@ -168,8 +182,11 @@ pub unsafe extern "C" fn stdb_test_v1_transaction_commit(
     unsafe { finish(transaction, error, true) }
 }
 
+/// Roll back the transaction without freeing its handle; see
+/// [`stdb_test_v1_transaction_commit`].
+///
 /// # Safety
-/// Pointers must satisfy the ownership and memory contract in the C header.
+/// Pointers must satisfy the ABI contract in the crate documentation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stdb_test_v1_transaction_rollback(
     transaction: *const StdbTestTransaction,
@@ -178,6 +195,12 @@ pub unsafe extern "C" fn stdb_test_v1_transaction_rollback(
     unsafe { finish(transaction, error, false) }
 }
 
+/// Consume the handle, rolling back if still pending. Null is a no-op. It may run on any
+/// caller thread, but never concurrently with another call using this handle.
+/// Datastore destruction rolls back pending work even if transaction handles survive it;
+/// those handles report `DATASTORE_CLOSED` and remain safe to destroy. Destroying a
+/// finished handle never affects a newer transaction.
+///
 /// # Safety
 /// The handle must be null or a live, exclusively owned transaction handle.
 #[unsafe(no_mangle)]
@@ -206,8 +229,10 @@ pub unsafe extern "C" fn stdb_test_v1_transaction_destroy(transaction: *mut Stdb
     .map_or_else(|(status, _)| status, |()| OK)
 }
 
+/// Look up a table by UTF-8 name.
+///
 /// # Safety
-/// Pointers must satisfy the ownership and memory contract in the C header.
+/// Pointers must satisfy the ABI contract in the crate documentation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stdb_test_v1_table_id(
     transaction: *const StdbTestTransaction,
@@ -218,19 +243,17 @@ pub unsafe extern "C" fn stdb_test_v1_table_id(
 ) -> u32 {
     unsafe {
         with_output(out, error, || {
-            let transaction = transaction
-                .as_ref()
-                .ok_or_else(|| (INVALID_ARGUMENT, "Null transaction".into()))?;
-            let name = std::str::from_utf8(input_bytes(name, name_len)?)
-                .map_err(|err| (INVALID_ARGUMENT, err.to_string()))?
-                .to_owned();
+            let transaction = handle(transaction, "transaction")?;
+            let name = input_str(name, name_len)?.to_owned();
             transaction.run(move |tx| tx.table_id(&name).map(|id| id.0))
         })
     }
 }
 
+/// Count a table's rows, including this transaction's changes.
+///
 /// # Safety
-/// Pointers must satisfy the ownership and memory contract in the C header.
+/// Pointers must satisfy the ABI contract in the crate documentation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stdb_test_v1_table_count(
     transaction: *const StdbTestTransaction,
@@ -240,16 +263,16 @@ pub unsafe extern "C" fn stdb_test_v1_table_count(
 ) -> u32 {
     unsafe {
         with_output(out, error, || {
-            let transaction = transaction
-                .as_ref()
-                .ok_or_else(|| (INVALID_ARGUMENT, "Null transaction".into()))?;
+            let transaction = handle(transaction, "transaction")?;
             transaction.run(move |tx| tx.table_row_count(TableId(table_id)))
         })
     }
 }
 
+/// Return a row snapshot of the table.
+///
 /// # Safety
-/// Pointers must satisfy the ownership and memory contract in the C header.
+/// Pointers must satisfy the ABI contract in the crate documentation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stdb_test_v1_table_scan(
     transaction: *const StdbTestTransaction,
@@ -259,17 +282,17 @@ pub unsafe extern "C" fn stdb_test_v1_table_scan(
 ) -> u32 {
     unsafe {
         with_output(out, error, || {
-            let transaction = transaction
-                .as_ref()
-                .ok_or_else(|| (INVALID_ARGUMENT, "Null transaction".into()))?;
+            let transaction = handle(transaction, "transaction")?;
             let bytes = transaction.run(move |tx| Ok(bsatn::to_vec(&tx.table_rows_bsatn(TableId(table_id))?)?))?;
             Ok(StdbTestBuffer::from_bytes(bytes))
         })
     }
 }
 
+/// Look up an index by UTF-8 name.
+///
 /// # Safety
-/// Pointers must satisfy the ownership and memory contract in the C header.
+/// Pointers must satisfy the ABI contract in the crate documentation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stdb_test_v1_index_id(
     transaction: *const StdbTestTransaction,
@@ -280,19 +303,18 @@ pub unsafe extern "C" fn stdb_test_v1_index_id(
 ) -> u32 {
     unsafe {
         with_output(out, error, || {
-            let transaction = transaction
-                .as_ref()
-                .ok_or_else(|| (INVALID_ARGUMENT, "Null transaction".into()))?;
-            let name = std::str::from_utf8(input_bytes(name, name_len)?)
-                .map_err(|err| (INVALID_ARGUMENT, err.to_string()))?
-                .to_owned();
+            let transaction = handle(transaction, "transaction")?;
+            let name = input_str(name, name_len)?.to_owned();
             transaction.run(move |tx| tx.index_id(&name).map(|id| id.0))
         })
     }
 }
 
+/// Return a row snapshot of the rows matching a point key. The key is encoded as the
+/// index key type: a scalar for one column, a product for several.
+///
 /// # Safety
-/// Pointers must satisfy the ownership and memory contract in the C header.
+/// Pointers must satisfy the ABI contract in the crate documentation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stdb_test_v1_index_scan_point(
     transaction: *const StdbTestTransaction,
@@ -304,9 +326,7 @@ pub unsafe extern "C" fn stdb_test_v1_index_scan_point(
 ) -> u32 {
     unsafe {
         with_output(out, error, || {
-            let transaction = transaction
-                .as_ref()
-                .ok_or_else(|| (INVALID_ARGUMENT, "Null transaction".into()))?;
+            let transaction = handle(transaction, "transaction")?;
             let point = input_bytes(point, point_len)?.to_vec();
             let bytes = transaction
                 .run(move |tx| Ok(bsatn::to_vec(&tx.index_scan_point_bsatn(IndexId(index_id), &point)?)?))?;
@@ -315,8 +335,11 @@ pub unsafe extern "C" fn stdb_test_v1_index_scan_point(
     }
 }
 
+/// Delete the rows matching a point key (encoded as for
+/// [`stdb_test_v1_index_scan_point`]) and return how many were deleted.
+///
 /// # Safety
-/// Pointers must satisfy the ownership and memory contract in the C header.
+/// Pointers must satisfy the ABI contract in the crate documentation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stdb_test_v1_index_delete_point(
     transaction: *const StdbTestTransaction,
@@ -328,17 +351,21 @@ pub unsafe extern "C" fn stdb_test_v1_index_delete_point(
 ) -> u32 {
     unsafe {
         with_output(out, error, || {
-            let transaction = transaction
-                .as_ref()
-                .ok_or_else(|| (INVALID_ARGUMENT, "Null transaction".into()))?;
+            let transaction = handle(transaction, "transaction")?;
             let point = input_bytes(point, point_len)?.to_vec();
             transaction.run(move |tx| tx.delete_by_index_scan_point_bsatn(IndexId(index_id), &point))
         })
     }
 }
 
+/// Return a row snapshot of a range. The first `prefix_elems` index columns are fixed to
+/// a BSATN product `prefix` (zero bytes when `prefix_elems` is 0). `start` and `end` are
+/// BSATN `Bound` values on the next column, using the engine's encoding: tag 0 is
+/// `Included(value)`, 1 is `Excluded(value)`, 2 is `Unbounded`. Both bounds are required,
+/// including the tag for `Unbounded`. Later columns are unrestricted.
+///
 /// # Safety
-/// Pointers must satisfy the ownership and memory contract in the C header.
+/// Pointers must satisfy the ABI contract in the crate documentation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stdb_test_v1_index_scan_range(
     transaction: *const StdbTestTransaction,
@@ -355,9 +382,7 @@ pub unsafe extern "C" fn stdb_test_v1_index_scan_range(
 ) -> u32 {
     unsafe {
         with_output(out, error, || {
-            let transaction = transaction
-                .as_ref()
-                .ok_or_else(|| (INVALID_ARGUMENT, "Null transaction".into()))?;
+            let transaction = handle(transaction, "transaction")?;
             let prefix = input_bytes(prefix, prefix_len)?.to_vec();
             let start = input_bytes(start, start_len)?.to_vec();
             let end = input_bytes(end, end_len)?.to_vec();
@@ -375,8 +400,11 @@ pub unsafe extern "C" fn stdb_test_v1_index_scan_range(
     }
 }
 
+/// Delete the rows in a range (encoded as for [`stdb_test_v1_index_scan_range`]) and
+/// return how many were deleted.
+///
 /// # Safety
-/// Pointers must satisfy the ownership and memory contract in the C header.
+/// Pointers must satisfy the ABI contract in the crate documentation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stdb_test_v1_index_delete_range(
     transaction: *const StdbTestTransaction,
@@ -393,9 +421,7 @@ pub unsafe extern "C" fn stdb_test_v1_index_delete_range(
 ) -> u32 {
     unsafe {
         with_output(out, error, || {
-            let transaction = transaction
-                .as_ref()
-                .ok_or_else(|| (INVALID_ARGUMENT, "Null transaction".into()))?;
+            let transaction = handle(transaction, "transaction")?;
             let prefix = input_bytes(prefix, prefix_len)?.to_vec();
             let start = input_bytes(start, start_len)?.to_vec();
             let end = input_bytes(end, end_len)?.to_vec();
@@ -406,8 +432,12 @@ pub unsafe extern "C" fn stdb_test_v1_index_delete_range(
     }
 }
 
+/// Update the row found through the unique index using key fields from the supplied full
+/// row. Returns generated columns exactly as [`stdb_test_v1_table_insert`] does, with the
+/// same constraint statuses.
+///
 /// # Safety
-/// Pointers must satisfy the ownership and memory contract in the C header.
+/// Pointers must satisfy the ABI contract in the crate documentation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stdb_test_v1_table_update(
     transaction: *const StdbTestTransaction,
@@ -420,9 +450,7 @@ pub unsafe extern "C" fn stdb_test_v1_table_update(
 ) -> u32 {
     unsafe {
         with_output(out, error, || {
-            let transaction = transaction
-                .as_ref()
-                .ok_or_else(|| (INVALID_ARGUMENT, "Null transaction".into()))?;
+            let transaction = handle(transaction, "transaction")?;
             let row = input_bytes(row, row_len)?.to_vec();
             let bytes = transaction
                 .run(move |tx| tx.update_bsatn_generated_cols(TableId(table_id), IndexId(index_id), &row))?;
@@ -431,8 +459,11 @@ pub unsafe extern "C" fn stdb_test_v1_table_update(
     }
 }
 
+/// Delete a row matching the entire row, not just its primary key. Returns 0 or 1. Event
+/// rows stay visible in their transaction but are not retained at commit.
+///
 /// # Safety
-/// Pointers must satisfy the ownership and memory contract in the C header.
+/// Pointers must satisfy the ABI contract in the crate documentation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stdb_test_v1_table_delete_row(
     transaction: *const StdbTestTransaction,
@@ -444,17 +475,18 @@ pub unsafe extern "C" fn stdb_test_v1_table_delete_row(
 ) -> u32 {
     unsafe {
         with_output(out, error, || {
-            let transaction = transaction
-                .as_ref()
-                .ok_or_else(|| (INVALID_ARGUMENT, "Null transaction".into()))?;
+            let transaction = handle(transaction, "transaction")?;
             let row = input_bytes(row, row_len)?.to_vec();
             transaction.run(move |tx| tx.delete_row_bsatn(TableId(table_id), &row))
         })
     }
 }
 
+/// Remove every row, preserving schema and sequence state, and return how many were
+/// removed. Like other table operations it can be rolled back.
+///
 /// # Safety
-/// Pointers must satisfy the ownership and memory contract in the C header.
+/// Pointers must satisfy the ABI contract in the crate documentation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stdb_test_v1_table_clear(
     transaction: *const StdbTestTransaction,
@@ -464,17 +496,20 @@ pub unsafe extern "C" fn stdb_test_v1_table_clear(
 ) -> u32 {
     unsafe {
         with_output(out, error, || {
-            let transaction = transaction
-                .as_ref()
-                .ok_or_else(|| (INVALID_ARGUMENT, "Null transaction".into()))?;
+            let transaction = handle(transaction, "transaction")?;
 
             transaction.run(move |tx| tx.clear_table(TableId(table_id)))
         })
     }
 }
 
+/// Insert a BSATN row and return the BSATN product of its generated column values, in
+/// the engine's generated-column order. Apply them to the caller's row, and free the
+/// buffer even if writeback fails. A row with no generated values returns an empty product
+/// (zero bytes). Constraint failures report `UNIQUE_VIOLATION` and `AUTO_INC_OVERFLOW`.
+///
 /// # Safety
-/// Pointers must satisfy the ownership and memory contract in the C header.
+/// Pointers must satisfy the ABI contract in the crate documentation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stdb_test_v1_table_insert(
     transaction: *const StdbTestTransaction,
@@ -486,9 +521,7 @@ pub unsafe extern "C" fn stdb_test_v1_table_insert(
 ) -> u32 {
     unsafe {
         with_output(out, error, || {
-            let transaction = transaction
-                .as_ref()
-                .ok_or_else(|| (INVALID_ARGUMENT, "Null transaction".into()))?;
+            let transaction = handle(transaction, "transaction")?;
             let row = input_bytes(row, row_len)?.to_vec();
             let bytes = transaction.run(move |tx| tx.insert_bsatn_generated_cols(TableId(table_id), &row))?;
             Ok(StdbTestBuffer::from_bytes(bytes))
