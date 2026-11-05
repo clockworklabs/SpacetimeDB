@@ -1785,7 +1785,7 @@ impl Table {
     }
 
     /// Visit each blob reference without loading the blob's contents. Two fields
-    /// pointing to the same blob must be visited twice: each owns a reference.
+    /// pointing to the same blob are visited twice: each owns a reference.
     fn for_each_blob_ref(&self, mut visit: impl FnMut(BlobHash) -> Result<(), BlobError>) -> Result<(), TableError> {
         if self.blob_store_bytes.0 == 0 {
             return Ok(());
