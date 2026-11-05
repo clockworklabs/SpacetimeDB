@@ -1,6 +1,6 @@
 Write a SpacetimeDB backend module in C# that moves stock between mounted inventory modules. Write only the root source. The project already references two fixed assemblies:
 - Inventory: public Item table (Id: ulong primary key, Quantity: uint) and Inventory.Functions helpers Set(ctx, id, quantity), Take(ctx, id, quantity) and Add(ctx, id, quantity). Take rejects a missing item or insufficient stock. Add uses checked arithmetic.
-- Branch: mounts that same Inventory assembly as Stock. Branch.Marker identifies the Branch assembly.
+- Branch: mounts that same Inventory assembly as Stock. Branch.Marker identifies the Branch assembly, and Inventory.Functions identifies the Inventory assembly.
 
 Mount Branch twice as East and West. Mount Inventory directly as Reserve. These must be independent instances, not aliases.
 
