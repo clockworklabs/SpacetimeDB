@@ -7,9 +7,7 @@ import { build } from 'tsup';
 import { createRequire } from 'node:module';
 import { test } from 'vitest';
 
-// The built `spacetimedb/schema` entry point must work with `createClient`
-// from the built `spacetimedb` package, through both import() and require().
-// Load them in Node so Vitest's module resolver cannot hide broken package exports.
+// Use native Node loaders so these checks exercise package exports, not Vite's resolver.
 test('built module schemas work with ESM and CommonJS clients', () => {
   execFileSync(
     process.execPath,
@@ -40,7 +38,6 @@ test('built module schemas work with ESM and CommonJS clients', () => {
   );
 });
 
-// Check that a client using both package entry points can be bundled for a browser.
 test('module schema clients bundle for browsers', async () => {
   const outDir = await mkdtemp(join(tmpdir(), 'spacetimedb-consumer-'));
   try {
