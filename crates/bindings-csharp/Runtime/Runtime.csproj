@@ -5,6 +5,7 @@
     <Version>2.15.0</Version>
     <Title>SpacetimeDB Module Runtime</Title>
     <Description>The SpacetimeDB Runtime implements the database runtime bindings for writing SpacetimeDB modules in C#.</Description>
+    <EnablePackageValidation>true</EnablePackageValidation>
   </PropertyGroup>
 
   <!-- Project references inherit the module RID. Pack also builds this variant
