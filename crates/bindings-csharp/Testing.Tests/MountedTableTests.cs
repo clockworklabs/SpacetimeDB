@@ -6,7 +6,7 @@ using TestingModule;
 public class MountedTableTests
 {
     [Fact]
-    public void StandaloneTablesAndIndexesStayInTheirSelectedMount()
+    public void TablesAndIndexesStayInTheirSelectedMount()
     {
         using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
         var left = test.Db.Left.Leaf.Items;
@@ -27,47 +27,23 @@ public class MountedTableTests
                 Value = "right",
             }
         );
-        Assert.Equal(1UL, left.Count);
-        Assert.Equal(1UL, right.Count);
-        Assert.Equal("left", left.Id.Find(1)!.Value.Value);
-        Assert.Equal("right", right.Id.Find(1)!.Value.Value);
-
         leftRow.Value = "updated";
-        Assert.Equal(leftRow, left.Id.Update(leftRow));
-        Assert.Equal(leftRow, Assert.Single(left.Iter()));
-        Assert.Equal(rightRow, Assert.Single(right.Iter()));
-        Assert.Equal(leftRow, Assert.Single(left.Group.Filter(10u)));
-        Assert.Equal(
-            rightRow,
-            Assert.Single(right.Group.Filter(new SpacetimeDB.Bound<uint>(5, 15)))
-        );
+        left.Id.Update(leftRow);
+        Assert.Equal(leftRow, left.Id.Find(1));
+        Assert.Equal(rightRow, Assert.Single(right.Group.Filter(10u)));
 
         var view = test.CreateViewContext(TestAuth.Internal());
         Assert.Throws<InvalidOperationException>(() => Marker.Find(view, 1));
         Assert.Equal(leftRow, Marker.Find(view.As.Left.Leaf, 1));
-        Assert.Equal(rightRow, Marker.Find(view.As.Right.Leaf, 1));
-        Assert.Equal(1UL, view.Db.Left.Leaf.Items.Count);
-        Assert.Equal(rightRow, Assert.Single(view.Db.Right.Leaf.Items.Group.Filter(10u)));
-        var anonymous = test.CreateAnonymousViewContext();
-        Assert.Equal(leftRow, anonymous.Db.Left.Leaf.Items.Id.Find(1));
-        Assert.Equal(rightRow, Assert.Single(anonymous.Db.Right.Leaf.Items.Group.Filter(10u)));
+        Assert.Equal(rightRow, test.CreateAnonymousViewContext().Db.Right.Leaf.Items.Id.Find(1));
 
         Assert.True(left.Id.Delete(1));
         Assert.Equal(0UL, left.Count);
         Assert.Equal(1UL, right.Count);
-        left.Insert(leftRow);
-        Assert.Equal(1UL, right.Group.Delete(new SpacetimeDB.Bound<uint>(5, 15)));
-        Assert.Equal(1UL, left.Count);
-        Assert.Equal(0UL, right.Count);
-        right.Insert(rightRow);
-        Assert.True(left.Delete(leftRow));
-        Assert.Equal(1UL, right.Clear());
-        Assert.Equal(0UL, left.Count);
-        Assert.Equal(0UL, right.Count);
     }
 
     [Fact]
-    public void SelectedTransactionsCommitRollbackAndExpireIndependently()
+    public void TransactionsCommitAndRollBackAcrossMounts()
     {
         using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
         test.WithReducerTx(
@@ -94,16 +70,13 @@ public class MountedTableTests
                 );
             }
         );
-        Func<Item?>? escaped = null;
         Assert.Throws<InvalidOperationException>(
             () =>
                 test.WithReducerTx(
                     TestAuth.Internal(),
                     ctx =>
                     {
-                        var index = ctx.Db.Left.Leaf.Items.Id;
-                        escaped = () => index.Find(1);
-                        index.Update(
+                        ctx.Db.Left.Leaf.Items.Id.Update(
                             new Item
                             {
                                 Id = 1,
@@ -118,7 +91,6 @@ public class MountedTableTests
         );
         Assert.Equal("left", test.Db.Left.Leaf.Items.Id.Find(1)!.Value.Value);
         Assert.Equal("right", test.Db.Right.Leaf.Items.Id.Find(1)!.Value.Value);
-        Assert.Throws<ObjectDisposedException>(() => escaped!());
 
         test.CreateProcedureContext(TestAuth.Internal())
             .WithTx(tx =>

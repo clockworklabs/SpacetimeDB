@@ -5,43 +5,6 @@ using TestingModule;
 public class ProcedureHookTests
 {
     [Fact]
-    public void SelectedContextsRunHooksOnceAndPropagateHookFailures()
-    {
-        using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
-        var calls = 0;
-        var failure = new InvalidOperationException("hook failure");
-        var procedure = test.CreateProcedureContextBuilder(TestAuth.Internal())
-            .AfterTxCommit(_ =>
-            {
-                calls++;
-                throw failure;
-            })
-            .Build();
-        var selected = ((Internal.IModuleContext<ProcedureContext>)procedure).SelectInstance(1);
-        Assert.Same(
-            failure,
-            Assert.Throws<InvalidOperationException>(
-                () =>
-                    selected.WithTx(tx =>
-                    {
-                        Assert.Equal(1, ((Internal.IModuleContext)tx).InstanceId);
-                        return 0;
-                    })
-            )
-        );
-        Assert.Equal(1, calls);
-        Assert.Same(
-            failure,
-            Assert.Throws<InvalidOperationException>(
-                () => selected.TryWithTx(_ => Result<int, Exception>.Ok(0))
-            )
-        );
-        Assert.Equal(2, calls);
-        Assert.False(selected.TryWithTx(_ => Result<int, Exception>.Err(failure)).IsSuccess);
-        Assert.Equal(2, calls);
-    }
-
-    [Fact]
     public void HooksRunAfterClosureAndOnlyForCommittedTransactions()
     {
         using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
@@ -87,16 +50,24 @@ public class ProcedureHookTests
     public void HookFailuresPropagateWithoutUndoingCommits()
     {
         using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
+        var calls = 0;
         var failure = new InvalidOperationException("hook failure");
         var procedure = test.CreateProcedureContextBuilder(TestAuth.Internal())
-            .AfterTxCommit(_ => throw failure)
+            .AfterTxCommit(_ =>
+            {
+                calls++;
+                throw failure;
+            })
             .Build();
+        // A selected context shares the procedure's hook and runs it once per commit.
+        var selected = ((Internal.IModuleContext<ProcedureContext>)procedure).SelectInstance(1);
         Assert.Same(
             failure,
             Assert.Throws<InvalidOperationException>(
-                () => procedure.WithTx(tx => tx.Db.Entries.Insert(new Entry { Text = "WithTx" }))
+                () => selected.WithTx(tx => tx.Db.Entries.Insert(new Entry { Text = "WithTx" }))
             )
         );
+        Assert.Equal(1, calls);
         Assert.Same(
             failure,
             Assert.Throws<InvalidOperationException>(

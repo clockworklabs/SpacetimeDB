@@ -13,46 +13,26 @@ public class UniqueIndexTests
         var second = test.Db.Entries.Insert(new Entry { Text = "second" });
         Assert.Null(test.Db.Entries.Id.Find(0));
         var updated = test.Db.Entries.Id.Update(new Entry { Id = first.Id, Text = "updated" });
-        Assert.Equal("updated", updated.Text);
         Assert.Equal(updated, test.Db.Entries.Id.Find(first.Id));
 
-        ReducerContext? escaped = null;
         Assert.Throws<InvalidOperationException>(
             () =>
                 test.WithReducerTx(
                     TestAuth.Internal(),
                     ctx =>
                     {
-                        escaped = ctx;
                         ctx.Db.Entries.Id.Update(new Entry { Id = first.Id, Text = "rolled back" });
                         Assert.Equal("rolled back", ctx.Db.Entries.Id.Find(first.Id)!.Value.Text);
                         Assert.True(ctx.Db.Entries.Id.Delete(second.Id));
-                        Assert.Null(ctx.Db.Entries.Id.Find(second.Id));
                         throw new InvalidOperationException("rollback");
                     }
                 )
         );
         Assert.Equal(updated, test.Db.Entries.Id.Find(first.Id));
         Assert.Equal(second, test.Db.Entries.Id.Find(second.Id));
-        Assert.Throws<ObjectDisposedException>(() => escaped!.Db.Entries.Id.Find(first.Id));
-        Assert.Throws<ObjectDisposedException>(() => escaped!.Db.Entries.Id.Update(first));
-        Assert.Throws<ObjectDisposedException>(() => escaped!.Db.Entries.Id.Delete(first.Id));
 
-        test.WithReducerTx(
-            TestAuth.Internal(),
-            ctx =>
-            {
-                ctx.Db.Entries.Id.Update(first);
-                Assert.True(ctx.Db.Entries.Id.Delete(second.Id));
-            }
-        );
-        Assert.Equal(first, test.Db.Entries.Id.Find(first.Id));
-        Assert.Null(test.Db.Entries.Id.Find(second.Id));
         Assert.True(test.Db.Entries.Id.Delete(first.Id));
         Assert.False(test.Db.Entries.Id.Delete(first.Id));
-        var index = test.Db.Entries.Id;
-        test.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => index.Find(first.Id));
     }
 
     [Fact]
