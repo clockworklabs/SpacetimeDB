@@ -82,7 +82,7 @@ This means that you can write your entire application in a single language and d
     </figcaption>
 </figure>
 
-SpacetimeDB is optimized for maximum speed and minimum latency. SpacetimeDB provides all the ACID guarantees of a traditional RDBMS, with all the speed of an optimized web server. All application state is held in memory for fast access, while a commit log on disk provides [durability](#durability) and crash recovery. The entire backend of our MMORPG [BitCraft Online](https://bitcraftonline.com) runs as a single SpacetimeDB module: chat, items, terrain, player positions, everything, synchronized to thousands of players in real-time.
+SpacetimeDB is optimized for maximum speed and minimum latency. SpacetimeDB provides all the ACID guarantees of a traditional RDBMS, with all the speed of an optimized web server. Hot data stays in memory for fast access and colder data lives on disk, while a commit log provides [durability](#durability) and crash recovery. The entire backend of our MMORPG [BitCraft Online](https://bitcraftonline.com) runs as a single SpacetimeDB module: chat, items, terrain, player positions, everything, synchronized to thousands of players in real-time.
 
 ## Quick Start
 
