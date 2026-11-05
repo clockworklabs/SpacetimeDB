@@ -3692,6 +3692,63 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn disk_to_memory_migration_rolls_back_when_over_budget() -> ResultTest<()> {
+        use TableCachePolicy::{RequiredInMemory, RequiredOnDisk};
+
+        const LIMIT_BYTES: u64 = 16 * 1024 * 1024;
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            low_water_bytes: 0,
+            soft_limit_bytes: LIMIT_BYTES,
+            hard_limit_bytes: LIMIT_BYTES,
+        })?;
+        let mut config = TieredStorageConfig::new_for_test();
+        config.resident_budget = budget.clone();
+        let datastore = Locking::bootstrap(Identity::ZERO, config)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        let mut schema = TableSchema::from_product_type([AlgebraicType::String].into());
+        schema.cache_policy = RequiredOnDisk;
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let row = product!["x".repeat(1024 * 1024)];
+        insert(&datastore, &mut tx, table_id, &row)?;
+        commit(&datastore, tx)?;
+
+        // Evict the blob, then leave too little memory to load it during migration.
+        let mut tx = begin_mut_tx(&datastore);
+        tx.alter_table_cache_policy(table_id, RequiredInMemory)?;
+        tx.committed_state_write_lock.storage.blobs().evict()?;
+        let reservation = budget.acquire(LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024)?;
+        let error = datastore.commit_mut_tx(tx).map(|_| ()).unwrap_err();
+        assert_matches!(
+            error,
+            DatastoreError::TableStorage(spacetimedb_table::table::TableError::Blob(error))
+                if matches!(*error, BlobError::MemoryLimitExceeded(_))
+        );
+        drop(reservation);
+
+        // Failure must restore both the cached schema and the system-table metadata.
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(tx.schema_for_table(table_id)?.cache_policy, RequiredOnDisk);
+        verify_schemas_consistent(&mut tx, table_id);
+        assert_eq!(all_rows(&datastore, &tx, table_id), [row]);
+        let blobs = tx.committed_state_write_lock.storage.blobs();
+        blobs.evict()?;
+        assert_eq!(blobs.resident_bytes_used_by_blobs(), 0);
+
+        // With the memory available again, retry and check that the blob stays resident.
+        tx.alter_table_cache_policy(table_id, RequiredInMemory)?;
+        commit(&datastore, tx)?;
+        let tx = begin_mut_tx(&datastore);
+        assert_eq!(tx.schema_for_table(table_id)?.cache_policy, RequiredInMemory);
+        let blobs = tx.committed_state_write_lock.storage.blobs();
+        let resident_bytes = blobs.resident_bytes_used_by_blobs();
+        assert!(resident_bytes > 0);
+        blobs.evict()?;
+        assert_eq!(blobs.resident_bytes_used_by_blobs(), resident_bytes);
+        Ok(())
+    }
+
+    #[test]
     fn test_drop_table_is_transactional() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
 
