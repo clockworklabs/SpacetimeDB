@@ -208,8 +208,9 @@ fn provider_retry_delay(error: &anyhow::Error) -> Option<u64> {
         502..=504 => Some(30),
         _ => None,
     };
-    if error.downcast_ref::<ProviderRefusal>().is_some() {
-        return None;
+    if let Some(refusal) = error.downcast_ref::<ProviderRefusal>() {
+        // A blank reply at the output limit can succeed on another try. A real refusal is final.
+        return (refusal.finish_reason.as_deref() == Some("length")).then_some(30);
     }
     if let Some(response) = error.downcast_ref::<HttpResponseError>() {
         return status_delay(u64::from(response.status));
@@ -240,7 +241,7 @@ fn provider_retry_delay(error: &anyhow::Error) -> Option<u64> {
     }
 }
 
-// A provider declining the request, or a blank reply at the output limit, counts against the model.
+// A provider declining the request, or a blank reply at the output limit after retries, counts against the model.
 // Any other provider error blocks the batch.
 fn is_content_rejection(error: &anyhow::Error) -> bool {
     use crate::llm::clients::{
@@ -1900,6 +1901,13 @@ mod build_cleanup_tests {
         }))
         .unwrap();
         assert_eq!(provider_retry_delay(&refusal.first_text().unwrap_err()), None);
+        let blank: OACompatResp = serde_json::from_value(serde_json::json!({
+            "id": "gen-blank", "choices": [{"finish_reason":"length", "message":{"content":null}}]
+        }))
+        .unwrap();
+        let blank = blank.first_text().unwrap_err();
+        assert_eq!(provider_retry_delay(&blank), Some(30));
+        assert!(is_content_rejection(&blank));
         for (status, expected) in [(429, Some(60)), (503, Some(30)), (402, None)] {
             let error = crate::llm::clients::http::HttpResponseError {
                 status,

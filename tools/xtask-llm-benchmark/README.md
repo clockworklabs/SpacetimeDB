@@ -48,7 +48,7 @@ tasks scored and one provider error**. It does not mean a complete 100% benchmar
 Zero scored tasks means no score, not 0%. An incomplete batch stays off the website.
 A content rejection is a failed task, so 99 passing tasks and one rejection means
 **99/100 tasks passed, with `refused_tasks` at 1**. A blank reply at the output limit
-counts the same way.
+is retried first, then counts the same way.
 Model mistakes have no fixed list of messages, so any candidate publish failure
 scores normally unless it matches a short list of environment errors, such as a
 full disk or a refused connection, or the server fails a health check afterward.

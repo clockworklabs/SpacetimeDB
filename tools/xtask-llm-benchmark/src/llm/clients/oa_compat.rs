@@ -146,7 +146,7 @@ impl OACompatResp {
                     .message
                     .as_ref()
                     .is_some_and(|m| m.refusal.as_deref().is_some_and(|text| !text.trim().is_empty()))
-                // Hitting the output limit before writing anything counts against the model too.
+                // Hitting the output limit before writing anything counts against the model too, once retries run out.
                 || (finish == Some("length")
                     && choice
                         .message
