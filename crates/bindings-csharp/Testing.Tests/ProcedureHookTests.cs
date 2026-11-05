@@ -7,17 +7,15 @@ public class ProcedureHookTests
     [Fact]
     public void SelectedContextsRunHooksOnceAndPropagateHookFailures()
     {
-        using var test = TestContext.Create(typeof(Entry).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
         var calls = 0;
         var failure = new InvalidOperationException("hook failure");
-        var procedure = test.ProcedureContextBuilder(TestAuth.Internal())
-            .Hooks(
-                new ProcedureTestHooks().AfterTxCommit(_ =>
-                {
-                    calls++;
-                    throw failure;
-                })
-            )
+        var procedure = test.CreateProcedureContextBuilder(TestAuth.Internal())
+            .AfterTxCommit(_ =>
+            {
+                calls++;
+                throw failure;
+            })
             .Build();
         var selected = ((Internal.IModuleContext<ProcedureContext>)procedure).SelectInstance(1);
         Assert.Same(
@@ -46,20 +44,21 @@ public class ProcedureHookTests
     [Fact]
     public void HooksRunAfterClosureAndOnlyForCommittedTransactions()
     {
-        using var test = TestContext.Create(typeof(Entry).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
         ProcedureTxContext? escaped = null;
         var calls = 0;
-        var hooks = new ProcedureTestHooks().AfterTxCommit(fixture =>
-        {
-            Assert.Same(test, fixture);
-            Assert.Throws<ObjectDisposedException>(() => escaped!.Db.Entries.Count);
-            Assert.Equal((ulong)(calls + 1), fixture.Db.Entries.Count);
-            fixture.Db.Entries.Insert(new Entry { Text = "hook" });
-            fixture.Clock.Advance(new TimeDuration(10));
-            calls++;
-        });
-        var procedure = test.ProcedureContextBuilder(TestAuth.Internal()).Hooks(hooks).Build();
-        hooks.AfterTxCommit(_ =>
+        var builder = test.CreateProcedureContextBuilder(TestAuth.Internal())
+            .AfterTxCommit(fixture =>
+            {
+                Assert.Same(test, fixture);
+                Assert.Throws<ObjectDisposedException>(() => escaped!.Db.Entries.Count);
+                Assert.Equal((ulong)(calls + 1), fixture.Db.Entries.Count);
+                fixture.Db.Entries.Insert(new Entry { Text = "hook" });
+                fixture.Clock.Advance(new TimeDuration(10));
+                calls++;
+            });
+        var procedure = builder.Build();
+        builder.AfterTxCommit(_ =>
             throw new InvalidOperationException("must not replace built hook")
         );
         procedure.WithTx(tx =>
@@ -87,10 +86,10 @@ public class ProcedureHookTests
     [Fact]
     public void HookFailuresPropagateWithoutUndoingCommits()
     {
-        using var test = TestContext.Create(typeof(Entry).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
         var failure = new InvalidOperationException("hook failure");
-        var procedure = test.ProcedureContextBuilder(TestAuth.Internal())
-            .Hooks(new ProcedureTestHooks().AfterTxCommit(_ => throw failure))
+        var procedure = test.CreateProcedureContextBuilder(TestAuth.Internal())
+            .AfterTxCommit(_ => throw failure)
             .Build();
         Assert.Same(
             failure,

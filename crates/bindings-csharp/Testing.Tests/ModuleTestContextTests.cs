@@ -2,12 +2,12 @@ namespace SpacetimeDB.Testing.Tests;
 
 using TestingModule;
 
-public class TestContextTests
+public class ModuleTestContextTests
 {
     [Fact]
     public void ReducerTransactionsCommitRollbackAndInvalidateHandles()
     {
-        using var test = TestContext.Create(typeof(Entry).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
         var auth = TestAuth.Internal();
         ReducerContext? escaped = null;
         var inserted = test.WithReducerTx(
@@ -66,8 +66,8 @@ public class TestContextTests
     [Fact]
     public void FixturesHaveIndependentClockAndRandomness()
     {
-        using var first = TestContext.Create(typeof(Entry).Assembly);
-        using var second = TestContext.Create(typeof(Entry).Assembly);
+        using var first = ModuleTestContext.Create(typeof(Entry).Assembly);
+        using var second = ModuleTestContext.Create(typeof(Entry).Assembly);
         var auth = TestAuth.Internal();
         Assert.Equal(Timestamp.UNIX_EPOCH, first.Clock.Now);
         first.Clock.Set(new Timestamp(100));
@@ -82,7 +82,7 @@ public class TestContextTests
         var sequence = first.WithReducerTx(auth, ctx => (ctx.Rng.Next(), ctx.Rng.Next()));
         first.Rng.SetSeed(42);
         Assert.Equal(sequence, first.WithReducerTx(auth, ctx => (ctx.Rng.Next(), ctx.Rng.Next())));
-        first.Rng.ClearSeed();
+        first.Rng.SetSeed(0);
         Assert.Equal(
             second.WithReducerTx(auth, ctx => ctx.Rng.Next()),
             first.WithReducerTx(auth, ctx => ctx.Rng.Next())
@@ -98,9 +98,9 @@ public class TestContextTests
     public void InvalidModulesAndUnsupportedCallbacksAreRejected()
     {
         Assert.Throws<ArgumentException>(
-            () => TestContext.Create(typeof(TestContextTests).Assembly)
+            () => ModuleTestContext.Create(typeof(ModuleTestContextTests).Assembly)
         );
-        using var test = TestContext.Create(typeof(Entry).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
         var auth = TestAuth.Internal();
         var called = false;
         async void AsyncVoid(ReducerContext _)

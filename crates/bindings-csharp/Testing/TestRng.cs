@@ -14,8 +14,6 @@ public sealed class TestRng
         source = new Random(seed);
     }
 
-    public void ClearSeed() => SetSeed(0);
-
     internal Random CreateRandom()
     {
         backend.CheckActive();

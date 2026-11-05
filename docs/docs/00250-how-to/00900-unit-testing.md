@@ -378,7 +378,7 @@ public static partial class Module
 
 ### Test successful calls and rollback
 
-Create a fresh fixture with `TestContext.Create(typeof(Module).Assembly)` and call your reducers inside `WithReducerTx`:
+Create a fresh fixture with `ModuleTestContext.Create(typeof(Module).Assembly)` and call your reducers inside `WithReducerTx`:
 
 ```csharp title="tests/ModuleTests.cs"
 using ChatModule;
@@ -395,11 +395,11 @@ public partial class ModuleTests
     [Fact]
     public void StoresCallerTimestampAndMessage()
     {
-        using var test = TestContext.Create(typeof(Module).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Module).Assembly);
         var now = new Timestamp(1_234_567);
         test.Clock.Set(now);
         var auth = AliceAuth();
-        var sender = test.ViewContext(auth).Sender;
+        var sender = auth.Sender!.Value;
 
         test.WithReducerTx(auth, ctx => Module.SendMessage(ctx, "Hello!"));
 
@@ -412,7 +412,7 @@ public partial class ModuleTests
     [Fact]
     public void RollsBackAllWritesWhenTheTransactionThrows()
     {
-        using var test = TestContext.Create(typeof(Module).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Module).Assembly);
 
         var error = Assert.Throws<ArgumentException>(() =>
             test.WithReducerTx(AliceAuth(), ctx =>
@@ -608,11 +608,11 @@ public partial class User
 ```
 
 ```csharp
-using var test = TestContext.Create(typeof(Module).Assembly);
+using var test = ModuleTestContext.Create(typeof(Module).Assembly);
 var alice = Principal("alice");
 test.Db.User.Insert(new Module.User
 {
-    Identity = test.ViewContext(alice).Sender,
+    Identity = alice.Sender!.Value,
     Admin = true,
 });
 ```
@@ -774,7 +774,7 @@ fn rejects_a_token_from_another_provider() {
 [InlineData("https://evil.example.com", "my-app", "This token was issued by another provider")]
 public void ChecksConnectionClaims(string issuer, string audience, string? expectedError)
 {
-    using var test = TestContext.Create(typeof(Module).Assembly);
+    using var test = ModuleTestContext.Create(typeof(Module).Assembly);
     var auth = Principal("alice", new() { ["iss"] = issuer, ["aud"] = audience });
     if (expectedError is null)
         test.WithReducerTx(auth, Module.ClientConnected);
@@ -830,7 +830,7 @@ public static void RecordServiceName(ReducerContext ctx) =>
 [Fact]
 public void ReadsFixtureEnvironment()
 {
-    using var test = TestContext.Create(typeof(Module).Assembly);
+    using var test = ModuleTestContext.Create(typeof(Module).Assembly);
     test.SetEnv("SERVICE_NAME", "test-service");
     test.WithReducerTx(TestAuth.Internal(), Module.RecordServiceName);
     Assert.Equal("test-service", Assert.Single(test.Db.Message.Iter()).Text);
@@ -948,13 +948,13 @@ fn rolls_the_same_dice_for_the_same_seed() {
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-`test.Rng.SetSeed(42)` makes subsequent contexts repeat the same random sequence. Existing contexts are unchanged. `ClearSeed()` resets the seed to `0`. Sequences may differ between .NET versions.
+`test.Rng.SetSeed(42)` makes subsequent contexts repeat the same random sequence. Existing contexts are unchanged. `SetSeed(0)` restores the default seed. Sequences may differ between .NET versions.
 
 ```csharp
 [Fact]
 public void RepeatsRandomSequenceAfterReseeding()
 {
-    using var test = TestContext.Create(typeof(Module).Assembly);
+    using var test = ModuleTestContext.Create(typeof(Module).Assembly);
     test.Rng.SetSeed(42);
     var first = test.WithReducerTx(TestAuth.Internal(), ctx => ctx.Rng.Next());
     test.Rng.SetSeed(42);
@@ -1152,7 +1152,7 @@ fn takes_edits_more_than_15_minutes_old_out_of_the_live_set() {
 [Fact]
 public void ExpiresOnlyEditsOlderThanFifteenMinutes()
 {
-    using var test = TestContext.Create(typeof(Module).Assembly);
+    using var test = ModuleTestContext.Create(typeof(Module).Assembly);
     var now = new Timestamp(2_000_000_000);
     test.Clock.Set(now);
     var ages = new[] { 16, 15, 1 };
@@ -1199,7 +1199,7 @@ Procedure APIs require the `unstable` feature on the dev-dependency: `features =
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-Call procedures with `test.ProcedureContext(auth)`. `WithTx` commits on normal return and rolls back on exceptions. `TryWithTx` also rolls back on `Result.Err`. Earlier commits survive later failures; there is no transaction around the whole procedure. Nested transactions and HTTP inside a transaction are rejected.
+Call procedures with `test.CreateProcedureContext(auth)`. `WithTx` commits on normal return and rolls back on exceptions. `TryWithTx` also rolls back on `Result.Err`. Earlier commits survive later failures; there is no transaction around the whole procedure. Nested transactions and HTTP inside a transaction are rejected.
 
 </TabItem>
 </Tabs>
@@ -1266,8 +1266,8 @@ The responder receives the test context and the request, and returns a `Response
 [Fact]
 public void ReadsMockedHttpResponseBody()
 {
-    using var test = TestContext.Create(typeof(Module).Assembly);
-    var ctx = test.ProcedureContextBuilder(TestAuth.Internal())
+    using var test = ModuleTestContext.Create(typeof(Module).Assembly);
+    var ctx = test.CreateProcedureContextBuilder(TestAuth.Internal())
         .Http((fixture, request) =>
         {
             Assert.Equal("https://example.invalid/status", request.Uri);
@@ -1452,7 +1452,7 @@ private sealed class FakeServer(params Result<HttpResponse, HttpError>[] replies
     private readonly Queue<Result<HttpResponse, HttpError>> pending = new(replies);
     public List<string> Paths { get; } = [];
 
-    public Result<HttpResponse, HttpError> Respond(TestContext test, HttpRequest request)
+    public Result<HttpResponse, HttpError> Respond(ModuleTestContext test, HttpRequest request)
     {
         Paths.Add(new Uri(request.Uri).AbsolutePath);
         Assert.NotEmpty(pending);
@@ -1527,9 +1527,9 @@ public void RecordsHttpAndTransportFailures()
     };
     foreach (var reply in replies)
     {
-        using var test = TestContext.Create(typeof(Module).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Module).Assembly);
         var server = new FakeServer(reply);
-        var ctx = test.ProcedureContextBuilder(TestAuth.Internal())
+        var ctx = test.CreateProcedureContextBuilder(TestAuth.Internal())
             .Http(server.Respond).Build();
 
         Module.CheckStatus(ctx);
@@ -1559,7 +1559,7 @@ Create the hooks with `ProcedureTestHooks::new()`, add them with `after_tx_commi
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-Pass `new ProcedureTestHooks().AfterTxCommit(fixture => { ... })` to `.Hooks(...)`. The callback can change data or advance the clock between successful transactions. It does not run after rollback, and a hook failure does not undo the commit. C# has no sleep hook.
+Call `.AfterTxCommit(fixture => { ... })` on the procedure context builder. The callback can change data or advance the clock between successful transactions. It does not run after rollback, and a hook failure does not undo the commit. C# has no sleep hook.
 
 </TabItem>
 </Tabs>
@@ -1707,14 +1707,14 @@ fn shows_each_client_only_their_own_notes() {
 [Fact]
 public void ShowsEachClientOnlyTheirOwnNotes()
 {
-    using var test = TestContext.Create(typeof(Module).Assembly);
+    using var test = ModuleTestContext.Create(typeof(Module).Assembly);
     var alice = Principal("alice");
     var bob = Principal("bob");
     test.WithReducerTx(alice, ctx => Module.AddNote(ctx, "from Alice"));
     test.WithReducerTx(bob, ctx => Module.AddNote(ctx, "from Bob"));
 
     string[] NotesFor(TestAuth auth) => test
-        .RunQuery(Module.MyNotes(test.ViewContext(auth)))
+        .RunQuery(Module.MyNotes(test.CreateViewContext(auth)))
         .Select(note => note.Text).ToArray();
 
     Assert.Equal(new[] { "from Alice" }, NotesFor(alice));
@@ -1722,7 +1722,7 @@ public void ShowsEachClientOnlyTheirOwnNotes()
 }
 ```
 
-Use `RunQuery` for views returning typed queries. For views returning rows directly, assert on the returned rows instead. Anonymous views take `test.AnonymousViewContext()`.
+Use `RunQuery` for views returning typed queries. For views returning rows directly, assert on the returned rows instead. Anonymous views take `test.CreateAnonymousViewContext()`.
 
 </TabItem>
 </Tabs>

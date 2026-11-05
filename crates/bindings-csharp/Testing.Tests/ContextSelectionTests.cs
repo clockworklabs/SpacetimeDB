@@ -15,7 +15,7 @@ public class ContextSelectionTests
     [Fact]
     public void GeneratedSelectorsUseTheFixtureWithoutInstallingGlobalNamespaces()
     {
-        using var test = TestContext.Create(typeof(Entry).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
         test.WithReducerTx(
             TestAuth.Internal(),
             ctx =>
@@ -28,19 +28,19 @@ public class ContextSelectionTests
             }
         );
 
-        var view = test.ViewContext(TestAuth.Internal());
+        var view = test.CreateViewContext(TestAuth.Internal());
         ViewContext leftView = view.As.Left.Leaf;
         ViewContext rightView = view.As.Right.Leaf;
         CheckSelected(leftView, rightView);
         Assert.Same(view.Db.Access, leftView.Db.Access);
 
-        var anonymous = test.AnonymousViewContext();
+        var anonymous = test.CreateAnonymousViewContext();
         AnonymousViewContext leftAnonymous = anonymous.As.Left.Leaf;
         AnonymousViewContext rightAnonymous = anonymous.As.Right.Leaf;
         CheckSelected(leftAnonymous, rightAnonymous);
         Assert.Same(anonymous.Db.Access, leftAnonymous.Db.Access);
 
-        var procedure = test.ProcedureContext(TestAuth.Internal());
+        var procedure = test.CreateProcedureContext(TestAuth.Internal());
         ProcedureContext leftProcedure = procedure.As.Left.Leaf;
         ProcedureContext rightProcedure = procedure.As.Right.Leaf;
         CheckSelected(leftProcedure, rightProcedure);
@@ -67,7 +67,7 @@ public class ContextSelectionTests
     [Fact]
     public void GeneratedSelectorsRejectExpiredOwners()
     {
-        using var test = TestContext.Create(typeof(Entry).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
         Action? selectFromReducer = null;
         test.WithReducerTx(
             TestAuth.Internal(),
@@ -82,7 +82,7 @@ public class ContextSelectionTests
         );
         Assert.Throws<ObjectDisposedException>(selectFromReducer!);
 
-        var procedure = test.ProcedureContext(TestAuth.Internal());
+        var procedure = test.CreateProcedureContext(TestAuth.Internal());
         Action? selectFromTransaction = null;
         procedure.WithTx(tx =>
         {
@@ -96,15 +96,15 @@ public class ContextSelectionTests
         Assert.Throws<ObjectDisposedException>(selectFromTransaction!);
 
         var procedurePath = procedure.As.Left;
-        var viewPath = test.ViewContext(TestAuth.Internal()).As.Left;
-        var anonymousPath = test.AnonymousViewContext().As.Left;
+        var viewPath = test.CreateViewContext(TestAuth.Internal()).As.Left;
+        var anonymousPath = test.CreateAnonymousViewContext().As.Left;
         test.Dispose();
         Assert.Throws<ObjectDisposedException>(() => procedurePath.Leaf);
         Assert.Throws<ObjectDisposedException>(() => viewPath.Leaf);
         Assert.Throws<ObjectDisposedException>(() => anonymousPath.Leaf);
 
-        using var other = TestContext.Create(typeof(Entry).Assembly);
-        var otherView = other.ViewContext(TestAuth.Internal());
+        using var other = ModuleTestContext.Create(typeof(Entry).Assembly);
+        var otherView = other.CreateViewContext(TestAuth.Internal());
         ViewContext left = otherView.As.Left.Leaf;
         ViewContext right = otherView.As.Right.Leaf;
         CheckSelected(left, right);

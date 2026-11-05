@@ -8,11 +8,11 @@ public class EnvironmentTests
     [Fact]
     public void ValuesAreLiveFixtureConfigurationNotTransactionalWrites()
     {
-        using var first = TestContext.Create(typeof(Entry).Assembly);
-        using var second = TestContext.Create(typeof(Entry).Assembly);
+        using var first = ModuleTestContext.Create(typeof(Entry).Assembly);
+        using var second = ModuleTestContext.Create(typeof(Entry).Assembly);
         var auth = TestAuth.Internal();
-        var view = first.ViewContext(auth);
-        var anonymous = first.AnonymousViewContext();
+        var view = first.CreateViewContext(auth);
+        var anonymous = first.CreateAnonymousViewContext();
         var selectedView = ((IModuleContext<ViewContext>)view).SelectInstance(1);
         var selectedAnonymous = ((IModuleContext<AnonymousViewContext>)anonymous).SelectInstance(1);
         Assert.Equal(1, ((IModuleContext)selectedView).InstanceId);
@@ -62,7 +62,7 @@ public class EnvironmentTests
     [Fact]
     public void ValuesMustMatchDeclarationsAndUtf8Limits()
     {
-        using var test = TestContext.Create(typeof(Entry).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
         var auth = TestAuth.Internal();
         test.SetEnv("LITERAL", "fixed");
         test.SetEnv("MODE", "development");
