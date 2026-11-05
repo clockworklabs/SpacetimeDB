@@ -46,7 +46,9 @@ pub fn spec() -> BenchmarkSpec {
             }
             s.expect_call_as(&alice, "log_search", json!(["a", "first"]), None)?;
             s.expect_rejected_as(&alice, "log_search", json!(["a", "changed"]), "request conflict")?;
+            let bob_before = Instant::now();
             s.expect_call_as(&bob, "log_search", json!(["a", "independent"]), None)?;
+            let bob_after = Instant::now();
             rows.push(json!(["a", "independent"]));
             s.rows("search_log", &["request_id", "term"], json!(rows))?;
             if accepted(s.call_as(&alice, "log_search", json!(["d", "next"]))?)? {
@@ -85,7 +87,10 @@ pub fn spec() -> BenchmarkSpec {
                 rows.push(json!(["g", "next"]));
             }
 
-            // Bob has been idle long enough to refill, but never above three tokens.
+            // Bob's tokens arrive every five seconds from his first call, which fell between
+            // bob_before and bob_after. Burst after the second arrives and before the third:
+            // his two spare intervals must not lift him above three tokens.
+            std::thread::sleep(Duration::from_secs(11).saturating_sub(bob_after.elapsed()));
             let mut admitted = 0;
             for id in ["b1", "b2", "b3", "b4"] {
                 if accepted(s.call_as(&bob, "log_search", json!([id, "burst"]))?)? {
@@ -93,8 +98,7 @@ pub fn spec() -> BenchmarkSpec {
                     rows.push(json!([id, "burst"]));
                 }
             }
-            // Bob's next token is not due before 15 seconds, so a slower run cannot assert this.
-            if started.elapsed() < Duration::from_secs(14) {
+            if bob_before.elapsed() < Duration::from_secs(15) {
                 anyhow::ensure!(admitted == 3, "bucket must hold three tokens, admitted {admitted}");
             }
             s.rows("search_log", &["request_id", "term"], json!(rows))?;
