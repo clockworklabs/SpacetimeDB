@@ -47,11 +47,12 @@ fn open_table_storage(
     dir: spacetimedb_paths::server::ReplicaDir,
     page_pool: PagePool,
 ) -> std::io::Result<TieredStorageConfig> {
+    let object_store = spacetimedb_tiered_storage::DiskStorage::open(dir.tables(), page_pool.clone())?;
     // Standalone still uses an unlimited memory budget. Per-database limits
     // are not wired into `resident_budget` yet.
     let mut config = TieredStorageConfig::new_for_memory_database(page_pool);
     config.local_store = BackingStore {
-        object_store: Box::new(spacetimedb_tiered_storage::DiskStorage::open(dir.tables())?),
+        object_store: Box::new(object_store),
         budget: ByteBudget::unlimited(),
     };
     Ok(config)

@@ -23,7 +23,10 @@ pub use self::{
     page_manager::{PageHandle, PageManager, ReservedPage},
     page_ref::{PageBorrow, PageRead, PageRef},
     page_set::{PageSet, PreparedCommit},
-    storage::{BackingStore, MemoryObjectStore, Object, ObjectBytes, ObjectMetadata, ObjectStore, TieredStorage},
+    storage::{
+        BackingStore, LocalBackingStore, LocalStorage, MemoryObjectStore, Object, ObjectBytes, ObjectMetadata,
+        ObjectStore, RemoteBackingStore, RemoteStorage, RemoveObject, TieredStorage,
+    },
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,8 +38,8 @@ pub enum EvictionPolicy {
 pub struct TieredStorageConfig {
     pub page_pool: PagePool,
     pub resident_budget: ByteBudget,
-    pub local_store: BackingStore,
-    pub remote_store: Option<BackingStore>,
+    pub local_store: LocalBackingStore,
+    pub remote_store: Option<RemoteBackingStore>,
 }
 
 impl TieredStorageConfig {

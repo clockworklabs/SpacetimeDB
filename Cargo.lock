@@ -9198,12 +9198,13 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-tiered-storage"
-version = "2.14.0"
+version = "2.14.1"
 dependencies = [
  "spacetimedb-fs-utils",
  "spacetimedb-paths",
  "spacetimedb-snapshot",
  "spacetimedb-table",
+ "tempfile",
 ]
 
 [[package]]
