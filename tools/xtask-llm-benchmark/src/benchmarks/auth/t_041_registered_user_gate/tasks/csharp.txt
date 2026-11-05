@@ -18,9 +18,9 @@ TABLES
 
 REDUCERS
 - RegisterUser(ctx, string name)
-  - If a User row already exists for ctx.Sender, throw exception with "already registered"
-  - Otherwise insert a new User with Identity = ctx.Sender and the given Name
+  - If a User row already exists for the caller's identity, fail with "already registered"
+  - Otherwise insert a new User with Identity = the caller's identity and the given Name
 
 - PostMessage(ctx, string text)
-  - If no User row exists for ctx.Sender, throw exception with "not registered"
-  - Otherwise insert a Message with Sender = ctx.Sender and the given Text, Id = 0 for AutoInc
+  - If no User row exists for the caller's identity, fail with "not registered"
+  - Otherwise insert a Message with Sender = the caller's identity and the given Text

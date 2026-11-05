@@ -1,9 +1,70 @@
 # LLM benchmark validation
 
-The catalog contains 101 tasks. Default selection runs every task that has a prompt
-for the requested language: 99 Rust, 100 C#, and 100 TypeScript tasks. All supported
+The catalog contains 103 tasks. Default selection runs every task that has a prompt
+for the requested language: 101 Rust, 102 C#, and 103 TypeScript tasks. All supported
 tasks are included in both context modes and the normal website task catalog.
 `--categories advanced` is only a development filter, not an opt-in gate.
+
+Provider errors or missing response content reject the whole model/language/mode
+batch after retries. No partial scores from that batch are uploaded. Other models
+still run, but the language job exits with failure if any batch fails. Response
+errors include the generation ID and finish reason when supplied by the provider.
+Generated code that fails compilation or grading remains a normal benchmark score.
+A provider rejecting the content also scores: the task fails all of its checks, with
+no retry. The batch still completes and uploads.
+
+C# uses a fresh server per model batch. Each active task publishes its own reference
+database and deletes it after scoring or a provider failure. This bounds live C#
+references by task concurrency, rather than loading all 96 before model generation.
+`--goldens-only` also validates and deletes each C# reference/candidate pair before
+starting the next task. Rust and TypeScript keep their batched reference builds.
+Cleanup errors block the batch, but completed scoring remains in the local record.
+Compiler errors in SDK-generated files score as normal failures. Saved batch
+records keep the evidence so suspected SDK defects can go to the core team.
+Schema parity treats table and view names that differ only by case or underscores
+as the same, because prompts do not fix their casing. It matches lifecycle reducers
+by kind, not by name, because clients cannot call them. It accepts extra indexes and
+HTTP routes but fails a missing one. It ignores view primary keys except on the task that asks for
+one. Behaviour checks
+query a table or view by the module's own spelling when it differs only by case or
+underscores.
+
+Each batch also saves an append-only JSONL record under
+`LLM_BENCHMARK_REPORT_DIR/batches`, or `tools/xtask-llm-benchmark/runs/batches`
+when that variable is not set. CI retains these files in its analysis artifacts,
+including on failure. They are not website uploads.
+
+The record contains the planned tasks, model identity, each finished task attempt,
+generated code, scorer details, and provider refusal details. Outer task retries
+remain in the record. The latest task attempt determines its status and the
+summary. Inner provider-call retries are not separate artifact entries; their
+status and retry counts remain in console logs. Raw refusal text, partial provider
+content, and HTTP error bodies stay in artifacts, not console errors. Treat these
+artifacts as source and provider-response data.
+
+Provider and infrastructure errors have no code score. Summaries keep task counts
+separate from scorer-check counts and always include coverage. For example, 99
+passing tasks and one provider error means **99/99 scored tasks passed, with 99/100
+tasks scored and one provider error**. It does not mean a complete 100% benchmark.
+Zero scored tasks means no score, not 0%. An incomplete batch stays off the website.
+A content rejection is a failed task, so 99 passing tasks and one rejection means
+**99/100 tasks passed, with `refused_tasks` at 1**. A blank reply at the output limit
+is retried first, then counts the same way.
+Model mistakes have no fixed list of messages, so any candidate publish failure
+scores normally unless it matches a short list of environment errors, such as a
+full disk or a refused connection, or the server fails a health check afterward.
+Migration setup failures also block the batch. A batch only completes if a known-good
+module still publishes at the end, so a build environment that breaks mid-run cannot
+upload misleading zeroes. A brief outage that matches none of these checks can score
+one task as a failure; its error stays in the batch record.
+
+Each finished attempt is saved before an error can stop the batch. If a task
+reports an infrastructure error, new tasks stop, but started tasks finish and save
+their results before the batch returns failure. If the process stops during a
+write, only the last JSONL line can be incomplete; earlier lines
+remain usable. Only a final `complete` event after the server health check marks
+the batch complete for scoring. It does not confirm a website upload. A record
+write failure blocks upload. This does not resume or upload partial runs.
 
 ## New behavioral tasks
 
@@ -38,9 +99,6 @@ client SDK cache code. Cache calls use a local HTTP fixture, never a paid servic
 The existing transfer (055), aggregate (065), projection (068), presence (070),
 and webhook (078) graders also have stronger checks. Task 065 now requires public
 `set_sale` and `remove_sale` reducers, so a hard-coded `exercise` result cannot pass.
-Event table task 024 checks live v2 events, repeated identical events and no history
-for late subscribers. Scheduled cleanup task 058 checks each transaction's delete
-count and group isolation, not only eventual emptiness. This does not measure scan cost.
 Scores are not directly comparable with the older 83- or 95-task suites.
 
 Task 100 asks for client code. Its server is fixed, and its supplied bindings use
@@ -87,7 +145,7 @@ cargo run -p xtask-llm-benchmark --bin llm_benchmark --locked -- run --lang rust
 The command publishes disposable local databases and runs the real graders. It
 makes no model requests and uploads no scores or catalog. Omitting `--tasks`
 validates all supported reference tasks for that language. To check this addition,
-use `--tasks t_024,t_058,t_095,t_096,t_097,t_098,t_099,t_100`; unsupported language
+use `--tasks t_095,t_096,t_097,t_098,t_099,t_100,t_101`; unsupported language
 pairs are skipped. Keep the weekly action disabled until these
 checks pass and the branch is reviewed.
 

@@ -76,6 +76,8 @@ jobs:
     name: Run benchmarks (${{ matrix.lang }})
     needs: prepare_matrix
     runs-on: spacetimedb-linux
+    # Models run one at a time, and a C# batch takes about 34 minutes.
+    timeout-minutes: 720
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       TARGET_TRIPLE: x86_64-unknown-linux-gnu
@@ -193,7 +195,7 @@ jobs:
           # Bound in-flight provider credit reservations across the three language jobs.
           LLM_BENCH_CONCURRENCY: "8"
           LLM_BENCH_RUST_CONCURRENCY: "4"
-          LLM_BENCH_CSHARP_CONCURRENCY: "2"
+          LLM_BENCH_CSHARP_CONCURRENCY: "4"
           LLM_BENCH_ROUTE_CONCURRENCY: "1"
           LLM_BENCHMARK_REPORT_DIR: ${{ runner.temp }}/llm-benchmark-reports
           LLM_BENCHMARK_DIAGNOSTICS_DIR: ${{ runner.temp }}/llm-benchmark-diagnostics

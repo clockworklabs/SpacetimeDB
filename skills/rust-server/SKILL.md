@@ -252,7 +252,7 @@ pub struct TickTimer {
 
 #[spacetimedb::reducer]
 pub fn tick(ctx: &ReducerContext, timer: TickTimer) {
-    // timer row is auto-deleted after this reducer runs
+    // a one-time row is deleted after this runs; an interval row stays
 }
 
 // One-time: fires once at a specific time
@@ -262,6 +262,8 @@ let at = ScheduleAt::Interval(std::time::Duration::from_secs(5).into());
 
 ctx.db.tick_timer().insert(TickTimer { scheduled_id: 0, scheduled_at: at });
 ```
+
+To let only the scheduler run a callback, reject calls where `ctx.sender() != ctx.database_identity()`.
 
 Construct a connection ID from a numeric representation with `ConnectionId::from_u128(value)`.
 

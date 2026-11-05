@@ -27,7 +27,7 @@ concurrency:
 jobs:
   validate-goldens:
     runs-on: spacetimedb-linux
-    timeout-minutes: 60
+    timeout-minutes: ${{ matrix.lang == 'csharp' && 180 || 60 }}
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       TARGET_TRIPLE: x86_64-unknown-linux-gnu
@@ -121,5 +121,15 @@ jobs:
           MSBUILDDISABLENODEREUSE: "1"
           DOTNET_CLI_USE_MSBUILD_SERVER: "0"
           LLM_BENCH_CSHARP_CONCURRENCY: "1"
+          LLM_BENCHMARK_DIAGNOSTICS_DIR: ${{ runner.temp }}/llm-golden-diagnostics
         run: |
-          llm_benchmark run --goldens-only --lang ${{ matrix.lang }}
+          llm_benchmark run --goldens-only --lang ${{ matrix.lang }} --dry-run --skip-task-catalog-upload
+
+      - name: Upload server diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-golden-diagnostics-${{ matrix.lang }}
+          path: ${{ runner.temp }}/llm-golden-diagnostics
+          if-no-files-found: ignore
+          retention-days: 14

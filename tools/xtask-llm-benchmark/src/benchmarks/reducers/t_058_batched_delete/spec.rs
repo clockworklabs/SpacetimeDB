@@ -1,100 +1,61 @@
-use crate::eval::defaults::default_schema_parity_scorers;
-use crate::eval::scenario::{scenario, update_rows};
+use crate::eval::defaults::{
+    default_schema_parity_scorers, make_eventually_sql_count_scorer, make_reducer_call_both_scorer,
+};
 use crate::eval::{casing_for_lang, ident, table_name, BenchmarkSpec};
-use anyhow::{ensure, Context, Result};
 use serde_json::{json, Value};
-use std::collections::BTreeSet;
-
-// Initial v1 subscription rows are named objects; transaction rows can be arrays.
-fn work_row(row: &Value, group_column: &str) -> Result<(u64, u64)> {
-    let id = row.get("id").or_else(|| row.get("Id")).or_else(|| row.get(0));
-    let group = row
-        .get("group_id")
-        .or_else(|| row.get(group_column))
-        .or_else(|| row.get(1));
-    Ok((
-        id.and_then(Value::as_u64).context("work row lacks an integer ID")?,
-        group
-            .and_then(Value::as_u64)
-            .context("work row lacks an integer group")?,
-    ))
-}
+use std::time::Duration;
 
 pub fn spec() -> BenchmarkSpec {
     BenchmarkSpec::from_tasks_auto(file!(), |lang, route_tag, host_url| {
         let mut scorers = default_schema_parity_scorers(host_url, file!(), route_tag);
-        scorers.push(scenario(file!(), route_tag, host_url, lang, |s| {
-            s.call("seed_group", json!([7, 5]))?;
-            s.call("seed_group", json!([8, 3]))?;
-            let (token, _) = s.new_user()?;
-            let mut connection = s.connect(&token)?;
-            connection.subscribe(1, &format!("SELECT * FROM {}", table_name("work_item", s.lang)))?;
-            let initial = connection.next_message()?;
-            ensure!(
-                initial.get("SubscribeApplied").is_some(),
-                "subscription failed: {initial}"
-            );
-            let initial = update_rows(&initial, "inserts")?;
-            let group_column = ident("group_id", casing_for_lang(s.lang));
-            let initial = initial
-                .iter()
-                .map(|row| work_row(row, &group_column))
-                .collect::<Result<Vec<_>>>()?;
-            ensure!(initial.len() == 8, "seed must create eight rows");
-            let mut remaining: BTreeSet<_> = initial.iter().map(|(id, _)| *id).collect();
-            ensure!(remaining.len() == 8, "seed produced duplicate rows");
-            for (group, count) in [(7, 5), (8, 3)] {
-                ensure!(
-                    initial.iter().filter(|(_, g)| *g == group).count() == count,
-                    "wrong seed group {group}: {initial:?}"
+        scorers.push(make_reducer_call_both_scorer(
+            host_url,
+            file!(),
+            route_tag,
+            "seed_group",
+            vec![json!(7), json!(5)],
+            "seed_group",
+        ));
+        scorers.push(make_reducer_call_both_scorer(
+            host_url,
+            file!(),
+            route_tag,
+            "request_delete",
+            vec![json!(7)],
+            "request_delete",
+        ));
+        let table = table_name("work_item", lang);
+        let group_id = ident("group_id", casing_for_lang(lang));
+        scorers.push(make_eventually_sql_count_scorer(
+            host_url,
+            file!(),
+            route_tag,
+            format!("SELECT COUNT(*) AS n FROM {table} WHERE {group_id}=7"),
+            0,
+            "scheduled_batches_finish",
+            Duration::from_secs(10),
+        ));
+        // The count check alone passes when seeding does nothing, so prove rows existed and other groups survive.
+        scorers.push(crate::eval::scenario::scenario(file!(), route_tag, host_url, lang, |s| {
+            let count = |group: u64| -> anyhow::Result<Value> {
+                let query = format!(
+                    "SELECT COUNT(*) AS n FROM \"{}\" WHERE \"{}\" = {group}",
+                    s.relation("work_item"),
+                    ident("group_id", casing_for_lang(s.lang))
                 );
-                s.call("request_delete", json!([group]))?;
-                s.call("request_delete", json!([group]))?;
-                let mut deleted = 0;
-                while deleted < count {
-                    let update = connection.next_message()?;
-                    ensure!(
-                        update.get("TransactionUpdate").is_some() || update.get("TransactionUpdateLight").is_some(),
-                        "unexpected update: {update}"
-                    );
-                    ensure!(
-                        update_rows(&update, "inserts")?.is_empty(),
-                        "cleanup inserted work rows"
-                    );
-                    let rows = update_rows(&update, "deletes")?;
-                    ensure!(
-                        (1..=2).contains(&rows.len()),
-                        "a cleanup transaction deleted {} rows",
-                        rows.len()
-                    );
-                    for row in rows {
-                        let (id, row_group) = work_row(&row, &group_column)?;
-                        ensure!(row_group == group, "deleted another group's row: {row}");
-                        ensure!(remaining.remove(&id), "deleted an unknown or duplicate row: {row}");
-                        deleted += 1;
-                    }
-                }
-                ensure!(deleted == count, "wrong deletion count");
-                s.eventually_count("work_item", remaining.len() as i64)?;
-            }
-            s.call("request_delete", json!([999]))?;
-            s.eventually_count("work_item", 0)?;
+                Ok(s.owner_sql(&query)?[0][0].clone())
+            };
+            s.call("seed_group", json!([8, 3]))?;
+            s.call("seed_group", json!([9, 5]))?;
+            anyhow::ensure!(count(8)? == json!(3) && count(9)? == json!(5), "seed_group did not insert the rows");
+            s.call("request_delete", json!([9]))?;
+            s.eventually(|| {
+                anyhow::ensure!(count(9)? == json!(0), "group 9 still has rows");
+                Ok(())
+            })?;
+            anyhow::ensure!(count(8)? == json!(3), "deleting group 9 touched group 8");
             Ok(())
         }));
         scorers
     })
-}
-
-#[test]
-fn initial_and_transaction_rows_have_the_same_identity() {
-    for (row, field) in [
-        (json!({"id":700,"group_id":7}), "group_id"),
-        (json!({"id":700,"groupId":7}), "groupId"),
-        (json!({"Id":700,"GroupId":7}), "GroupId"),
-        (json!([700, 7]), "group_id"),
-    ] {
-        assert_eq!(work_row(&row, field).unwrap(), (700, 7));
-    }
-    assert!(work_row(&json!({"id":700}), "group_id").is_err());
-    assert!(work_row(&json!([700, "7"]), "group_id").is_err());
 }

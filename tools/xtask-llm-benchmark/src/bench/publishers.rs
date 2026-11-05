@@ -367,6 +367,21 @@ fn database_cli_root(module_name: &str, remove_on_drop: bool) -> Result<CliRootD
     Ok(CliRootDir { path, remove_on_drop })
 }
 
+/// The token of the identity that published this database, which owns its private tables.
+pub(crate) fn database_owner_token(module_name: &str) -> Result<String> {
+    let db = sanitize_db_name(module_name);
+    let path = env::temp_dir()
+        .join(format!("stdb-llm-cli-{}-{db}", CLI_SESSION_TAG.as_str()))
+        .join("config/cli.toml");
+    let config = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    config
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("spacetimedb_token"))
+        .and_then(|value| value.trim_start().strip_prefix('='))
+        .map(|value| value.trim().trim_matches('"').to_owned())
+        .with_context(|| format!("no token in {}", path.display()))
+}
+
 /// Check if the process was killed by a signal (e.g., SIGSEGV = 11)
 #[cfg(unix)]
 fn signal_killed_by(status: &std::process::ExitStatus) -> Option<i32> {
@@ -724,6 +739,8 @@ impl DotnetPublisher {
             // when running multiple dotnet builds in parallel.
             .env("MSBUILDDISABLENODEREUSE", "1")
             .env("DOTNET_CLI_USE_MSBUILD_SERVER", "0")
+            // A slow model can idle the shared compiler long enough that later builds lose the SDK generators.
+            .env("UseSharedCompilation", "false")
     }
 }
 

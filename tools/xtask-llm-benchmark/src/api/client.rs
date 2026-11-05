@@ -457,7 +457,6 @@ mod tests {
                     Err(e) => panic!("upload request was not received: {e}"),
                 }
             };
-            // Windows accepted sockets inherit the listener's nonblocking mode.
             stream.set_nonblocking(false).unwrap();
             stream.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
             stream.set_write_timeout(Some(Duration::from_secs(10))).unwrap();

@@ -10,18 +10,18 @@ TABLES
 
 REDUCERS
 - RegisterUser(ctx)
-  - If a User row already exists for ctx.Sender, throw exception with "already registered"
-  - Insert User { Identity = ctx.Sender, Role = "member" }
+  - If a User row already exists for the caller's identity, fail with "already registered"
+  - Insert User { Identity = the caller's identity, Role = "member" }
 
 - Promote(ctx, Identity target)
-  - Load the User row for ctx.Sender; if missing, throw exception with "not registered"
-  - If the caller's Role is not "admin", throw exception with "not admin"
-  - Load the User row for target; if missing, throw exception with "target not registered"
+  - Load the User row for the caller's identity; if missing, fail with "not registered"
+  - If the caller's Role is not "admin", fail with "not admin"
+  - Load the User row for target; if missing, fail with "target not registered"
   - Update that row's Role to "admin"
 
 - MemberAction(ctx)
-  - Load the User row for ctx.Sender; if missing, throw exception with "not registered"
+  - Load the User row for the caller's identity; if missing, fail with "not registered"
 
 - AdminAction(ctx)
-  - Load the User row for ctx.Sender; if missing, throw exception with "not registered"
-  - If the Role is not "admin", throw exception with "not admin"
+  - Load the User row for the caller's identity; if missing, fail with "not registered"
+  - If the Role is not "admin", fail with "not admin"

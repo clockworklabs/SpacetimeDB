@@ -246,7 +246,7 @@ const tickTimer = table({
 export const tick = spacetimedb.reducer(
   { onSchedule: tickTimer },
   { timer: tickTimer.rowType },
-  (ctx, { timer }) => { /* timer row auto-deleted after this runs */ }
+  (ctx, { timer }) => { /* a one-time row is deleted after this runs; an interval row stays */ }
 );
 
 // `onSchedule` also works for scheduled procedures whose return type is `t.unit()`.
@@ -258,6 +258,8 @@ export const tick = spacetimedb.reducer(
 // Read time back from a scheduleAt value (tagged union):
 //   const micros = at.tag === 'time' ? at.value : at.value.microsSinceUnixEpoch;  // bigint
 ```
+
+To let only the scheduler run a callback, reject calls where `!ctx.sender.isEqual(ctx.databaseIdentity)`.
 
 ## Custom Types
 
