@@ -8,8 +8,8 @@ public class ProcedureTests
     [Fact]
     public void TransactionsCommitIndependentlyAndRollbackFailures()
     {
-        using var test = TestContext.Create(typeof(Entry).Assembly);
-        var procedure = test.ProcedureContext(TestAuth.Internal());
+        using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
+        var procedure = test.CreateProcedureContext(TestAuth.Internal());
         var committed = procedure.WithTx(tx =>
             tx.Db.Entries.Insert(new Entry { Text = "committed" })
         );
@@ -50,13 +50,13 @@ public class ProcedureTests
     [Fact]
     public void ContextsShareFixtureServicesButNeverReuseTransactionOwnership()
     {
-        using var test = TestContext.Create(typeof(Entry).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
         var auth = TestAuth.FromJwtPayload(
             """{"iss":"test","sub":"client"}""",
             ConnectionId.FromHexString("00000000000000000000000000000001")!.Value
         );
         test.Clock.Set(new Timestamp(10));
-        var procedure = test.ProcedureContext(auth);
+        var procedure = test.CreateProcedureContext(auth);
         Assert.Equal(new Timestamp(10), procedure.Timestamp);
         Assert.Equal("client", procedure.SenderAuth.Jwt!.Subject);
         test.SetEnv("OPTIONAL", "before");
@@ -105,8 +105,8 @@ public class ProcedureTests
     [Fact]
     public void AwaitableCallbacksAreRejectedBeforeCommit()
     {
-        using var test = TestContext.Create(typeof(Entry).Assembly);
-        var procedure = test.ProcedureContext(TestAuth.Internal());
+        using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
+        var procedure = test.CreateProcedureContext(TestAuth.Internal());
         Assert.Throws<ArgumentException>(() =>
         {
             _ = procedure.WithTx(async tx =>

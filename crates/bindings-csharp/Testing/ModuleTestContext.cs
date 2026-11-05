@@ -6,7 +6,7 @@ using SpacetimeDB.BSATN;
 using SpacetimeDB.Internal;
 
 /// <summary>An isolated managed module database. Use one execution flow per fixture.</summary>
-public sealed class TestContext : IDisposable
+public sealed class ModuleTestContext : IDisposable
 {
     private sealed record ModuleSchema(
         byte[] Bytes,
@@ -18,7 +18,7 @@ public sealed class TestContext : IDisposable
     private readonly DatabaseBackend backend;
     private readonly SpacetimeDB.Local db;
 
-    private TestContext(ModuleSchema schema)
+    private ModuleTestContext(ModuleSchema schema)
     {
         backend = new DatabaseBackend(schema.Bytes, schema.Namespaces, schema.Environment);
         db = new SpacetimeDB.Local(new DatabaseAccess(backend));
@@ -27,10 +27,10 @@ public sealed class TestContext : IDisposable
     }
 
     /// <summary>Registers the specified root and its dependencies without initializing WASM.</summary>
-    public static TestContext Create(Assembly module)
+    public static ModuleTestContext Create(Assembly module)
     {
         ArgumentNullException.ThrowIfNull(module);
-        return new TestContext(schemas.GetValue(module, BuildSchema));
+        return new ModuleTestContext(schemas.GetValue(module, BuildSchema));
     }
 
     private static ModuleSchema BuildSchema(Assembly module)
@@ -93,7 +93,7 @@ public sealed class TestContext : IDisposable
     public TestRng Rng { get; }
 
     /// <summary>Creates a fixture-owned read-only context for the specified caller.</summary>
-    public ViewContext ViewContext(TestAuth auth)
+    public ViewContext CreateViewContext(TestAuth auth)
     {
         ArgumentNullException.ThrowIfNull(auth);
         return new ViewContext(
@@ -103,24 +103,25 @@ public sealed class TestContext : IDisposable
     }
 
     /// <summary>Creates a fixture-owned read-only context without caller identity.</summary>
-    public AnonymousViewContext AnonymousViewContext() =>
+    public AnonymousViewContext CreateAnonymousViewContext() =>
         new(new LocalReadOnly(new DatabaseAccess(backend)));
 
     /// <summary>Creates a procedure context whose explicit transactions share this fixture.</summary>
-    public ProcedureContext ProcedureContext(TestAuth auth) => CreateProcedureContext(auth, null);
+    public ProcedureContext CreateProcedureContext(TestAuth auth) =>
+        BuildProcedureContext(auth, null);
 
-    /// <summary>Configures responders and hooks for a new procedure context.</summary>
-    public ProcedureContextBuilder ProcedureContextBuilder(TestAuth auth)
+    /// <summary>Configures an HTTP responder and after-commit callback for a new procedure context.</summary>
+    public ProcedureContextBuilder CreateProcedureContextBuilder(TestAuth auth)
     {
         ArgumentNullException.ThrowIfNull(auth);
         backend.CheckActive();
         return new(this, auth);
     }
 
-    internal ProcedureContext CreateProcedureContext(
+    internal ProcedureContext BuildProcedureContext(
         TestAuth auth,
-        Func<TestContext, HttpRequest, Result<HttpResponse, HttpError>>? responder,
-        Action<TestContext>? afterCommit = null
+        Func<ModuleTestContext, HttpRequest, Result<HttpResponse, HttpError>>? responder,
+        Action<ModuleTestContext>? afterCommit = null
     )
     {
         ArgumentNullException.ThrowIfNull(auth);
@@ -139,7 +140,7 @@ public sealed class TestContext : IDisposable
 
     private Result<HttpResponse, HttpError> SendHttp(
         HttpRequest request,
-        Func<TestContext, HttpRequest, Result<HttpResponse, HttpError>>? responder
+        Func<ModuleTestContext, HttpRequest, Result<HttpResponse, HttpError>>? responder
     )
     {
         backend.CheckActive();

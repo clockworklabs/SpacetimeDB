@@ -19,7 +19,7 @@ Module unit tests use a sibling .NET 10 test project with an ordinary module
 `ProjectReference` and the separate `SpacetimeDB.Testing` NuGet package, at exactly
 the module's Runtime version. Run with `dotnet test`; no server or Rust compiler
 is required. Keep Testing out of module dependencies and test sources outside
-the module directory. Use `using var test = TestContext.Create(typeof(Module).Assembly)`
+the module directory. Use `using var test = ModuleTestContext.Create(typeof(Module).Assembly)`
 and `test.WithReducerTx(TestAuth.Internal(), ctx => Module.Reducer(ctx))`.
 Callbacks are synchronous; one fixture supports one execution flow, while separate
 fixtures may run in parallel. The chat-console-cs template includes tests for

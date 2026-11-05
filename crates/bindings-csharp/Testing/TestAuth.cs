@@ -16,8 +16,8 @@ public sealed class TestAuth
         this.jwtPayload = jwtPayload;
     }
 
-    internal Identity? Sender { get; }
-    internal ConnectionId? ConnectionId { get; }
+    public Identity? Sender { get; }
+    public ConnectionId? ConnectionId { get; }
 
     // Keep lazy parsed claims scoped to each invocation, even when credentials are reused.
     internal AuthCtx SenderAuth =>

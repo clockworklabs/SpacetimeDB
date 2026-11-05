@@ -8,7 +8,7 @@ public class UniqueIndexTests
     [Fact]
     public void StructIndexesUseTheOwningTransaction()
     {
-        using var test = TestContext.Create(typeof(Entry).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
         var first = test.Db.Entries.Insert(new Entry { Text = "first" });
         var second = test.Db.Entries.Insert(new Entry { Text = "second" });
         Assert.Null(test.Db.Entries.Id.Find(0));
@@ -58,7 +58,7 @@ public class UniqueIndexTests
     [Fact]
     public void ClassIndexesPreserveConstraintsAndGeneratedColumns()
     {
-        using var test = TestContext.Create(typeof(Account).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Account).Assembly);
         var first = test.Db.Accounts.Insert(new Account { Id = 1, Name = "first" });
         test.Db.Accounts.Insert(new Account { Id = 2, Name = "second" });
         var updated = test.Db.Accounts.Id.Update(new Account { Id = 1, Name = "updated" });

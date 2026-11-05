@@ -16,7 +16,7 @@ public class AcceptanceTests
     [InlineData("https://evil.example.com", "my-app", "This token was issued by another provider")]
     public void ChecksConnectionClaims(string issuer, string audience, string? expectedError)
     {
-        using var test = TestContext.Create(typeof(Module).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Module).Assembly);
         var auth = TestAuth.FromJwtPayload(
             JsonSerializer.Serialize(
                 new
@@ -42,7 +42,7 @@ public class AcceptanceTests
     [Fact]
     public void ScheduledReducersRunOnlyWhenExplicitlyCalled()
     {
-        using var test = TestContext.Create(typeof(Module).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Module).Assembly);
         var now = new Timestamp(2_000_000_000);
         int[] ages = [16, 15, 1];
         for (var i = 0; i < ages.Length; i++)
@@ -75,7 +75,7 @@ public class AcceptanceTests
     [Fact]
     public void DocumentedProcedureRecordsHttpAndTransportFailures()
     {
-        using var test = TestContext.Create(typeof(Module).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Module).Assembly);
         var now = new Timestamp(100);
         test.Clock.Set(now);
         Result<HttpResponse, HttpError>[] replies =
@@ -85,7 +85,7 @@ public class AcceptanceTests
             Result<HttpResponse, HttpError>.Ok(new(200, HttpVersion.Http11, [], HttpBody.Empty)),
         ];
         var requests = 0;
-        var context = test.ProcedureContextBuilder(TestAuth.Internal())
+        var context = test.CreateProcedureContextBuilder(TestAuth.Internal())
             .Http(
                 (_, request) =>
                 {
@@ -118,8 +118,8 @@ public class AcceptanceTests
             () => AuthCtx.BuildFromSystemTables(connection, default)
         );
 #pragma warning disable STDB_UNSTABLE
-        using var test = TestContext.Create(typeof(Module).Assembly);
-        var procedure = test.ProcedureContext(TestAuth.Internal());
+        using var test = ModuleTestContext.Create(typeof(Module).Assembly);
+        var procedure = test.CreateProcedureContext(TestAuth.Internal());
         var selected = ((IModuleContext<ProcedureContext>)procedure).SelectInstance(1);
         Assert.Throws<NotSupportedException>(
             () => Module.VolatileNonatomicScheduleImmediateSendMessage(selected, "message")

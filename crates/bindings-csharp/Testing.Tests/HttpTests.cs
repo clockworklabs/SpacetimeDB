@@ -7,7 +7,7 @@ public class HttpTests
     [Fact]
     public void RespondersReceiveRequestsAndRemainScopedToBuiltContexts()
     {
-        using var test = TestContext.Create(typeof(Entry).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
         var response = new HttpResponse(
             503,
             HttpVersion.Http2,
@@ -23,7 +23,7 @@ public class HttpTests
             Version = HttpVersion.Http2,
             Timeout = TimeSpan.FromSeconds(300),
         };
-        var builder = test.ProcedureContextBuilder(TestAuth.Internal())
+        var builder = test.CreateProcedureContextBuilder(TestAuth.Internal())
             .Http(
                 (fixture, received) =>
                 {
@@ -50,7 +50,7 @@ public class HttpTests
         Assert.Same(transportError, Error(second.Http.Get(request.Uri)));
         Assert.Equal(
             "no test HTTP responder configured",
-            Error(test.ProcedureContext(TestAuth.Internal()).Http.Get(request.Uri)).Message
+            Error(test.CreateProcedureContext(TestAuth.Internal()).Http.Get(request.Uri)).Message
         );
         var failure = new InvalidOperationException("assertion failure");
         var throwing = builder.Http((_, _) => throw failure).Build();
@@ -64,9 +64,9 @@ public class HttpTests
     [Fact]
     public void HttpRejectsInvalidRequestsActiveTransactionsAndDisposedFixtures()
     {
-        using var test = TestContext.Create(typeof(Entry).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
         var calls = 0;
-        var builder = test.ProcedureContextBuilder(TestAuth.Internal())
+        var builder = test.CreateProcedureContextBuilder(TestAuth.Internal())
             .Http(
                 (_, _) =>
                 {
