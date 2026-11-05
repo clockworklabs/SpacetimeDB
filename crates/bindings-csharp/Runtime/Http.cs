@@ -3,11 +3,13 @@ namespace SpacetimeDB;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using System.IO;
 using System.Linq;
 using System.Text;
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
+using System.IO;
 using Internal;
 using SpacetimeDB.BSATN;
+#endif
 
 public enum HttpVersion : byte
 {
@@ -154,10 +156,19 @@ public sealed class HttpError(string message) : Exception(message)
 /// </remarks>
 public sealed class HttpClient
 {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    private readonly Func<HttpRequest, Result<HttpResponse, HttpError>>? responder;
+
+    public HttpClient() { }
+
+    internal HttpClient(Func<HttpRequest, Result<HttpResponse, HttpError>> responder) =>
+        this.responder = responder;
+#else
     private static readonly TimeSpan MaxTimeout = TimeSpan.FromSeconds(180);
     private static byte[] responseWireBuffer = new byte[0x10_000];
     private static byte[] responseBodyBuffer = new byte[0x10_000];
     private static byte[] errorWireBuffer = new byte[0x10_000];
+#endif
 
     /// <summary>
     /// Send a simple <c>GET</c> request to <paramref name="uri"/> with no headers.
@@ -282,6 +293,13 @@ public sealed class HttpClient
     )]
     public Result<HttpResponse, HttpError> Send(HttpRequest request)
     {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        return responder is null
+            ? Result<HttpResponse, HttpError>.Err(
+                new HttpError("no test HTTP responder configured")
+            )
+            : responder(request);
+#else
         // The host syscall expects BSATN-encoded spacetimedb_lib::http::Request bytes.
         // A mismatch in the wire layout can cause the host to trap during BSATN decode,
         // so the C# `Http*Wire` types must remain in lockstep with the Rust definitions.
@@ -380,8 +398,10 @@ public sealed class HttpClient
         {
             return Result<HttpResponse, HttpError>.Err(new HttpError(ex.ToString()));
         }
+#endif
     }
 
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
     private static T FromBytes<T>(IReadWrite<T> rw, MemoryStream ms)
     {
         using var reader = new BinaryReader(ms);
@@ -412,6 +432,7 @@ public sealed class HttpClient
             _ => new HttpMethodWire.Extension(m),
         };
     }
+#endif
 
     private static HttpVersionWire ToWireVersion(HttpVersion version) =>
         version switch
@@ -481,6 +502,7 @@ public sealed class HttpClient
             _ => throw new InvalidOperationException("Invalid HTTP version returned from host"),
         };
 
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
     private static (
         ushort statusCode,
         HttpVersion version,
@@ -495,4 +517,5 @@ public sealed class HttpClient
 
         return (responseWire.Code, version, headers);
     }
+#endif
 }

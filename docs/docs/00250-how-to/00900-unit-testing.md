@@ -15,16 +15,18 @@ The datastore is the real one, not a mock or a simulator, so tables enforce thei
 
 The harness controls everything a function would otherwise get from the host: who the caller is, what time it is, the random number seed and, for procedures, the replies to outgoing HTTP requests.
 
-The test utilities are available in the `spacetimedb` module libraries starting with version **2.12.0**. These are server-module tests, not client SDK tests. Keep integration tests against a running server for subscriptions, network connections, deployment, and durability behavior.
+These are server-module tests, not client SDK tests. Keep integration tests against a running server for subscriptions, network connections, deployment, and durability behavior.
 
 ## Set up and test a reducer
 
-The examples below use a small message table adapted from the [Rust chat template tests](https://github.com/clockworklabs/SpacetimeDB/blob/master/templates/chat-console-rs/spacetimedb/src/lib.rs) and [TypeScript chat template tests](https://github.com/clockworklabs/SpacetimeDB/blob/master/templates/chat-react-ts/spacetimedb/src/index.test.ts). Run the commands from your module directory, usually `spacetimedb/`.
+The examples below test a small chat module with a message table.
 
 <Tabs groupId="server-language" defaultValue="typescript">
 <TabItem value="typescript" label="TypeScript">
 
 ### Configure Vitest
+
+Test utilities are available in `spacetimedb` starting with version **2.12.0**. Run these commands from your module directory, usually `spacetimedb/`.
 
 Use a recent version of Node.js 22, 24, or 26 or later. Install the module library and test runner:
 
@@ -186,10 +188,16 @@ The harness exposes:
 | `viewContext(auth)`, `anonymousViewContext()` | Contexts for calling [views](#test-what-clients-will-see).                |
 | `runQuery(query)`                             | Runs a query built with the query builder, and returns its rows.          |
 
+The rollback examples deliberately call the reducer twice inside one test transaction to demonstrate atomicity. Calls from clients normally run in separate transactions; use one transaction per call when testing that behavior. Running several reducers in one transaction is still useful for setting up a scenario in a single step.
+
+The rest of this guide shows fragments rather than whole files. Code marked `// In the module:` extends the module above; add any new tables to its `schema({ ... })` call. Tests extend the test file above, importing the module functions they call.
+
 </TabItem>
 <TabItem value="rust" label="Rust">
 
 ### Enable the test utilities
+
+Test utilities are available in `spacetimedb` starting with version **2.12.0**. Run these commands from your module directory, usually `spacetimedb/`.
 
 Use Rust 1.97 or later for `spacetimedb` 2.12.0.
 
@@ -304,21 +312,146 @@ cargo test
 
 `TestContext` exposes the database's tables as `test.db`, the test clock as `test.clock` and the random number source as `test.rng`. The database's own identity is always `Identity::ZERO`.
 
+The rollback examples deliberately call the reducer twice inside one test transaction to demonstrate atomicity. Calls from clients normally run in separate transactions; use one transaction per call when testing that behavior. Running several reducers in one transaction is still useful for setting up a scenario in a single step.
+
+The rest of this guide shows fragments rather than whole files. Code marked `// In the module:` extends the module above. Tests go inside its `mod tests` module.
+
 </TabItem>
-</Tabs>
+<TabItem value="csharp" label="C#">
+
+### Create a test project
+
+Use .NET 10 and a separate test project referencing `SpacetimeDB.Testing`, at exactly the same version as your module's `SpacetimeDB.Runtime` package. These examples use xUnit. No server, Rust compiler, or WASI workload is needed.
+
+Keep tests in a sibling project, outside the module directory, so the module's default compile glob does not include test code:
+
+```text
+chat/
+  spacetimedb/
+    StdbModule.csproj
+    Lib.cs
+  tests/
+    Module.Tests.csproj
+    ModuleTests.cs
+```
+
+From `chat/`, run (replacing `[VERSION]` with your module's Runtime package version):
+
+```bash
+dotnet new xunit -f net10.0 -o tests -n Module.Tests
+dotnet add tests/Module.Tests.csproj package SpacetimeDB.Testing --version [VERSION]
+dotnet add tests/Module.Tests.csproj reference spacetimedb/StdbModule.csproj
+```
+
+### Define the module
+
+```csharp title="spacetimedb/Lib.cs"
+using SpacetimeDB;
+
+namespace ChatModule;
+
+public static partial class Module
+{
+    [Table(Accessor = "Message", Public = true)]
+    public partial class Message
+    {
+        public Identity Sender;
+        public Timestamp Sent;
+        public string Text = "";
+    }
+
+    [Reducer]
+    public static void SendMessage(ReducerContext ctx, string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            throw new ArgumentException("Messages must not be empty");
+
+        ctx.Db.Message.Insert(new Message
+        {
+            Sender = ctx.Sender,
+            Sent = ctx.Timestamp,
+            Text = text,
+        });
+    }
+}
+```
+
+### Test successful calls and rollback
+
+Create a fresh fixture with `TestContext.Create(typeof(Module).Assembly)` and call your reducers inside `WithReducerTx`:
+
+```csharp title="tests/ModuleTests.cs"
+using ChatModule;
+using SpacetimeDB;
+using SpacetimeDB.Testing;
+using Xunit;
+
+public partial class ModuleTests
+{
+    private static TestAuth AliceAuth() => TestAuth.FromJwtPayload(
+        """{"iss":"test-issuer","sub":"alice"}""",
+        ConnectionId.FromHexString("00000000000000000000000000000001")!.Value);
+
+    [Fact]
+    public void StoresCallerTimestampAndMessage()
+    {
+        using var test = TestContext.Create(typeof(Module).Assembly);
+        var now = new Timestamp(1_234_567);
+        test.Clock.Set(now);
+        var auth = AliceAuth();
+        var sender = test.ViewContext(auth).Sender;
+
+        test.WithReducerTx(auth, ctx => Module.SendMessage(ctx, "Hello!"));
+
+        var message = Assert.Single(test.Db.Message.Iter());
+        Assert.Equal(sender, message.Sender);
+        Assert.Equal(now, message.Sent);
+        Assert.Equal("Hello!", message.Text);
+    }
+
+    [Fact]
+    public void RollsBackAllWritesWhenTheTransactionThrows()
+    {
+        using var test = TestContext.Create(typeof(Module).Assembly);
+
+        var error = Assert.Throws<ArgumentException>(() =>
+            test.WithReducerTx(AliceAuth(), ctx =>
+            {
+                Module.SendMessage(ctx, "This write will roll back");
+                Module.SendMessage(ctx, "");
+            }));
+
+        Assert.Equal("Messages must not be empty", error.Message);
+        Assert.Equal(0UL, test.Db.Message.Count);
+    }
+}
+```
+
+Run from `chat/`:
+
+```bash
+dotnet test tests/Module.Tests.csproj
+```
+
+`WithReducerTx` commits when the callback returns normally and rolls back when it throws. Keep callbacks synchronous and do not use their contexts after they return.
+
+Reference one root module per test project; it may include module libraries. Dispose each fixture with `using`. Separate fixtures can run in parallel, but each fixture supports only one execution flow at a time.
 
 The rollback examples deliberately call the reducer twice inside one test transaction to demonstrate atomicity. Calls from clients normally run in separate transactions; use one transaction per call when testing that behavior. Running several reducers in one transaction is still useful for setting up a scenario in a single step.
 
-The rest of this guide shows fragments rather than whole files. Code marked `// In the module:` extends the module above; in TypeScript, add any new tables to its `schema({ ... })` call. Tests extend the test file above, importing the module functions they call in TypeScript, or inside its `mod tests` module in Rust.
+The rest of this guide shows fragments rather than whole files. Module members go inside `ChatModule.Module`, and test members inside `ModuleTests`, unless indicated otherwise. Snippets also use `System.Linq`, `System.Collections.Generic`, `System.Threading`, and `System.Text.Json` where needed.
+
+</TabItem>
+</Tabs>
 
 ## Choose the caller
 
-Every call into the module is made by someone, which decides `ctx.sender`. Each test call takes a `TestAuth` saying who the caller is, and there are two kinds of caller:
+Every call into the module has a sender. Each test call takes a `TestAuth` saying who the caller is, and there are two kinds of caller:
 
 - **The database itself.** Use it for [scheduled reducers](#test-scheduled-reducers), which the database calls on its own behalf. The sender is the module identity, there is no connection ID or JWT, and the reducer's context reports the call as internal.
 - **A client**, built from a JSON claims payload, not a signed token, and a connection ID. Use it for reducers that clients call, and for the client connected and client disconnected lifecycle reducers. The sender is derived from the `iss` and `sub` claims, so the same issuer and subject always give the same identity. The reducer sees the claims as it would for a real connection, including any custom claims. This tests module logic that reads claims; it does not test production JWT signature verification.
 
-The `init` [lifecycle reducer](../00200-core-concepts/00200-functions/00300-reducers/00500-lifecycle.md) is neither. On a published database its sender is the identity that owns the database, usually whoever published it, not the module identity. If your `init` ignores `ctx.sender`, either caller will do. If it reads the sender, for example to record an owner who alone may call admin reducers, call it as a client standing in for the publisher, and use that same client for the owner's calls later in the test. Calling it as the database itself would record the module identity as the owner, and the test's owner-only calls would then be refused.
+The initialization [lifecycle reducer](../00200-core-concepts/00200-functions/00300-reducers/00500-lifecycle.md) is neither. On a published database its sender is the identity that owns the database, usually whoever published it, not the module identity. If your initialization reducer ignores the sender, either caller will do. If it reads the sender, for example to record an owner who alone may call admin reducers, call it as a client standing in for the publisher, and use that same client for the owner's calls later in the test. Calling it as the database itself would record the module identity as the owner, and the test's owner-only calls would then be refused.
 
 The harness does not simulate clients connecting or automatically call your initialization or connection reducers. Invoke those functions explicitly inside a test transaction when they are part of your setup, as the chat templates do.
 
@@ -384,6 +517,32 @@ fn principal(subject: &str, claims: Value) -> TestAuth {
 ```
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+Use `TestAuth.Internal()` for the database itself or `TestAuth.FromJwtPayload(string, ConnectionId)` for a client. The latter validates JSON claims and derives the sender from `iss` and `sub`; invalid claims or a zero connection ID throw `ArgumentException`. It does not verify signatures. Auth values are immutable and reusable. In module code, inspect `ctx.SenderAuth.IsInternal` and `ctx.SenderAuth.Jwt`.
+
+```csharp
+private static long nextConnection;
+
+private static TestAuth Principal(
+    string subject, Dictionary<string, object>? claims = null)
+{
+    var payload = new Dictionary<string, object>
+    {
+        ["iss"] = "https://auth.example.com",
+        ["sub"] = subject,
+    };
+    if (claims is not null)
+        foreach (var claim in claims)
+            payload[claim.Key] = claim.Value;
+
+    var hex = Interlocked.Increment(ref nextConnection).ToString("x32");
+    return TestAuth.FromJwtPayload(
+        JsonSerializer.Serialize(payload), ConnectionId.FromHexString(hex)!.Value);
+}
+```
+
+</TabItem>
 </Tabs>
 
 ### Give a client a role
@@ -435,6 +594,30 @@ test.db.user().insert(User { identity: alice, admin: true });
 `Identity::from_claims(issuer, subject)` computes the same identity without a view context.
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+// In the module:
+[Table(Accessor = "User")]
+public partial class User
+{
+    [PrimaryKey]
+    public Identity Identity;
+    public bool Admin;
+}
+```
+
+```csharp
+using var test = TestContext.Create(typeof(Module).Assembly);
+var alice = Principal("alice");
+test.Db.User.Insert(new Module.User
+{
+    Identity = test.ViewContext(alice).Sender,
+    Admin = true,
+});
+```
+
+</TabItem>
 </Tabs>
 
 ### Check which tokens a client may connect with
@@ -483,6 +666,25 @@ pub fn on_connect(ctx: &ReducerContext) -> Result<(), String> {
         return Err("This token was issued for another application".to_string());
     }
     Ok(())
+}
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+The lifecycle reducer uses the existing JWT properties:
+
+```csharp
+// In the module:
+[Reducer(ReducerKind.ClientConnected)]
+public static void ClientConnected(ReducerContext ctx)
+{
+    var jwt = ctx.SenderAuth.Jwt
+        ?? throw new InvalidOperationException("A token is required to connect");
+    if (jwt.Issuer != "https://auth.example.com")
+        throw new InvalidOperationException("This token was issued by another provider");
+    if (!jwt.Audience.Contains("my-app"))
+        throw new InvalidOperationException("This token was issued for another application");
 }
 ```
 
@@ -563,15 +765,87 @@ fn rejects_a_token_from_another_provider() {
 ```
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+[Theory]
+[InlineData("https://auth.example.com", "my-app", null)]
+[InlineData("https://auth.example.com", "another-app", "This token was issued for another application")]
+[InlineData("https://evil.example.com", "my-app", "This token was issued by another provider")]
+public void ChecksConnectionClaims(string issuer, string audience, string? expectedError)
+{
+    using var test = TestContext.Create(typeof(Module).Assembly);
+    var auth = Principal("alice", new() { ["iss"] = issuer, ["aud"] = audience });
+    if (expectedError is null)
+        test.WithReducerTx(auth, Module.ClientConnected);
+    else
+        Assert.Equal(expectedError, Assert.Throws<InvalidOperationException>(() =>
+            test.WithReducerTx(auth, Module.ClientConnected)).Message);
+}
+```
+
+</TabItem>
 </Tabs>
 
 ## Set up and inspect tables
 
-The harness reads and writes the tables directly through `test.db`, outside any reducer, with the same accessors as a reducer's `ctx.db`. Use this to put the database into the state a test needs, rather than reaching that state through a series of reducer calls, and to check the result afterwards. Rows written this way obey the table's constraints, so inserting a duplicate primary key fails just as it would in a reducer.
+Use the fixture's tables to set up test data and inspect results without calling a reducer. Writes enforce the same constraints as reducer calls. Create a fresh fixture per test.
 
-Create a new harness or context per test. In Rust, `TestContext::clone()` shares the existing database rather than creating an independent one.
+<Tabs groupId="server-language" defaultValue="typescript">
+<TabItem value="typescript" label="TypeScript">
 
-The order of rows returned by `iter()` is not guaranteed. Sort them before comparing against a list, as the [scheduled reducer example](#test-scheduled-reducers) does.
+Use `test.db.message.insert(...)`, `.iter()`, and `.count()`, with the same accessors as `ctx.db`.
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+Use `test.db.message().insert(...)`, `.iter()`, and `.count()`, with the same accessors as `ctx.db`. Import the `spacetimedb::Table` trait.
+
+Create a new `TestContext` for each test: `TestContext::clone()` shares the existing database.
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+Use `test.Db.Message.Insert(...)`, `.Iter()`, and `.Count`, or generated indexes such as `test.Db.User.Identity.Find(identity)`. Each standalone mutation commits independently; group atomic setup in `WithReducerTx`. Class rows are detached values: changing a field does not persist until an explicit index `Update(row)`. Do not enumerate rows after disposing the fixture.
+
+### Set environment values
+
+Environment values belong to the fixture, not the test process's environment variables. Declare the available values with `[SpacetimeDB.Env]`:
+
+```csharp
+// At namespace scope in the module, outside the Module class:
+[SpacetimeDB.Env]
+public struct EnvironmentSchema
+{
+    public string? SERVICE_NAME;
+}
+
+// Inside Module:
+[Reducer]
+public static void RecordServiceName(ReducerContext ctx) =>
+    SendMessage(ctx, ctx.Env.SERVICE_NAME ?? "unset");
+```
+
+```csharp
+[Fact]
+public void ReadsFixtureEnvironment()
+{
+    using var test = TestContext.Create(typeof(Module).Assembly);
+    test.SetEnv("SERVICE_NAME", "test-service");
+    test.WithReducerTx(TestAuth.Internal(), Module.RecordServiceName);
+    Assert.Equal("test-service", Assert.Single(test.Db.Message.Iter()).Text);
+
+    test.UnsetEnv("SERVICE_NAME");
+    test.WithReducerTx(TestAuth.Internal(), ctx => Assert.Null(ctx.Env.SERVICE_NAME));
+}
+```
+
+Fixtures start with no environment values. `SetEnv` validates declared keys and values; `UnsetEnv` removes a value. Changes apply to all of the fixture's contexts and are not rolled back with a transaction.
+
+</TabItem>
+</Tabs>
+
+Row order is not guaranteed. Sort rows before comparing against a list, as the [scheduled reducer example](#test-scheduled-reducers) does.
 
 ## Control time
 
@@ -589,6 +863,8 @@ test.clock.set(Timestamp.fromDate(new Date('2026-10-12T12:00:00Z')));
 test.clock.advance(TimeDuration.fromMillis(15_000));
 ```
 
+When a procedure sleeps, the harness advances the test clock to the wake time instead of waiting.
+
 </TabItem>
 <TabItem value="rust" label="Rust">
 
@@ -599,10 +875,21 @@ test.clock.set(now);
 test.clock.advance(TimeDuration::from_micros(15_000_000));
 ```
 
+When a procedure sleeps, the harness advances the test clock to the wake time instead of waiting.
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+test.Clock.Set(new Timestamp(1_234_567));
+test.Clock.Advance(new TimeDuration(15_000_000));
+Assert.Equal(new Timestamp(16_234_567), test.Clock.Now);
+```
+
+New reducer contexts and procedure transactions take their timestamp from this clock. Changing it does not rewrite a reducer's existing `Timestamp`. C# currently has no procedure sleep API: `Thread.Sleep`, `Task.Delay`, and `DateTime.UtcNow` are not intercepted by the harness.
+
 </TabItem>
 </Tabs>
-
-When a procedure sleeps, the harness advances the test clock to the wake time instead of waiting.
 
 ## Control randomness
 
@@ -657,6 +944,24 @@ fn rolls_the_same_dice_for_the_same_seed() {
 ```
 
 `test.rng.set_seed(seed)` takes a `u64`. `test.rng` requires the `rand` feature, which is enabled by default.
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+`test.Rng.SetSeed(42)` makes subsequent contexts repeat the same random sequence. Existing contexts are unchanged. `ClearSeed()` resets the seed to `0`. Sequences may differ between .NET versions.
+
+```csharp
+[Fact]
+public void RepeatsRandomSequenceAfterReseeding()
+{
+    using var test = TestContext.Create(typeof(Module).Assembly);
+    test.Rng.SetSeed(42);
+    var first = test.WithReducerTx(TestAuth.Internal(), ctx => ctx.Rng.Next());
+    test.Rng.SetSeed(42);
+    var repeated = test.WithReducerTx(TestAuth.Internal(), ctx => ctx.Rng.Next());
+    Assert.Equal(first, repeated);
+}
+```
 
 </TabItem>
 </Tabs>
@@ -735,6 +1040,45 @@ pub fn expire_old_edits(ctx: &ReducerContext, _timer: ExpireTimer) {
 ```
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+// In the module:
+[Table(Accessor = "Edit")]
+public partial class Edit
+{
+    [PrimaryKey]
+    public ulong Id;
+    public Timestamp EditedAt;
+    public bool Live;
+}
+
+[Table(Accessor = "ExpireTimer", Scheduled = nameof(ExpireOldEdits),
+    ScheduledAt = nameof(ScheduledAt))]
+public partial struct ExpireTimer
+{
+    [PrimaryKey, AutoInc]
+    public ulong ScheduledId;
+    public ScheduleAt ScheduledAt;
+}
+
+[Reducer]
+public static void ExpireOldEdits(ReducerContext ctx, ExpireTimer timer)
+{
+    foreach (var edit in ctx.Db.Edit.Iter())
+    {
+        var age = ctx.Timestamp.MicrosecondsSinceUnixEpoch
+            - edit.EditedAt.MicrosecondsSinceUnixEpoch;
+        if (edit.Live && age > 15L * 60 * 1_000_000)
+        {
+            edit.Live = false;
+            ctx.Db.Edit.Id.Update(edit);
+        }
+    }
+}
+```
+
+</TabItem>
 </Tabs>
 
 The test writes the edits straight into the table, calls the reducer with a timer row, and checks which edits are still live:
@@ -802,6 +1146,40 @@ fn takes_edits_more_than_15_minutes_old_out_of_the_live_set() {
 ```
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+[Fact]
+public void ExpiresOnlyEditsOlderThanFifteenMinutes()
+{
+    using var test = TestContext.Create(typeof(Module).Assembly);
+    var now = new Timestamp(2_000_000_000);
+    test.Clock.Set(now);
+    var ages = new[] { 16, 15, 1 };
+    for (var i = 0; i < ages.Length; i++)
+        test.Db.Edit.Insert(new Module.Edit
+        {
+            Id = (ulong)i + 1,
+            EditedAt = new Timestamp(now.MicrosecondsSinceUnixEpoch
+                - ages[i] * 60L * 1_000_000),
+            Live = true,
+        });
+
+    var timer = new Module.ExpireTimer
+    {
+        ScheduledId = 1,
+        ScheduledAt = new ScheduleAt.Interval(new TimeDuration(300_000_000)),
+    };
+    test.WithReducerTx(TestAuth.Internal(), ctx => Module.ExpireOldEdits(ctx, timer));
+
+    Assert.Equal(new[] { false, true, true },
+        test.Db.Edit.Iter().OrderBy(e => e.Id).Select(e => e.Live).ToArray());
+}
+```
+
+Passing a timer row calls the reducer's logic only; it does not insert, remove, or reschedule a timer automatically.
+
+</TabItem>
 </Tabs>
 
 ## Test procedures and HTTP
@@ -817,6 +1195,11 @@ Create a procedure context with `test.procedureContext(auth)`. Inside the proced
 <TabItem value="rust" label="Rust">
 
 Procedure APIs require the `unstable` feature on the dev-dependency: `features = ["test-utils", "unstable"]`. Create a procedure context with `test.procedure_context(auth)`. Use `ctx.try_with_tx(...)` for database work; `ctx.with_tx(...)` currently panics in tests ([#6296](https://github.com/clockworklabs/SpacetimeDB/pull/6296)).
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+Call procedures with `test.ProcedureContext(auth)`. `WithTx` commits on normal return and rolls back on exceptions. `TryWithTx` also rolls back on `Result.Err`. Earlier commits survive later failures; there is no transaction around the whole procedure. Nested transactions and HTTP inside a transaction are rejected.
 
 </TabItem>
 </Tabs>
@@ -875,6 +1258,30 @@ fn reads_a_mocked_http_response_body() {
 ```
 
 The responder receives the test context and the request, and returns a `Response`. Returning `Err` looks like a network failure to the procedure.
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+[Fact]
+public void ReadsMockedHttpResponseBody()
+{
+    using var test = TestContext.Create(typeof(Module).Assembly);
+    var ctx = test.ProcedureContextBuilder(TestAuth.Internal())
+        .Http((fixture, request) =>
+        {
+            Assert.Equal("https://example.invalid/status", request.Uri);
+            return Result<HttpResponse, HttpError>.Ok(new HttpResponse(
+                200, SpacetimeDB.HttpVersion.Http11, [], HttpBody.FromString("healthy")));
+        })
+        .Build();
+
+    var response = ctx.Http.Get("https://example.invalid/status").UnwrapOrThrow();
+    Assert.Equal("healthy", response.Body.ToStringUtf8Lossy());
+}
+```
+
+Use `SpacetimeDB` HTTP types, not `System.Net.Http` types. Read request bodies through `request.Body`. Return `Result.Err(new HttpError(...))` for transport failures; an HTTP error status is still `Result.Ok`. Responder exceptions and failed assertions propagate to the test.
 
 </TabItem>
 </Tabs>
@@ -938,6 +1345,36 @@ pub fn check_status(ctx: &mut ProcedureContext) -> Result<(), String> {
     Ok(())
 }
 ```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+// In the module:
+[Table(Accessor = "FetchFailure")]
+public partial class FetchFailure
+{
+    [PrimaryKey, AutoInc]
+    public ulong Id;
+    public Timestamp At;
+}
+
+[Procedure]
+public static void CheckStatus(ProcedureContext ctx)
+{
+    var ok = ctx.Http.Get("https://example.invalid/status").Match(
+        response => response.StatusCode is >= 200 and < 300,
+        error => false);
+    if (!ok)
+        ctx.WithTx(tx =>
+        {
+            tx.Db.FetchFailure.Insert(new FetchFailure { At = tx.Timestamp });
+            return true;
+        });
+}
+```
+
+The return inside `WithTx` follows its existing `Func<ProcedureTxContext, TResult>` signature. It does not indicate whether to commit: every normal return commits.
 
 </TabItem>
 </Tabs>
@@ -1007,6 +1444,26 @@ fn fake_server(
 ```
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+private sealed class FakeServer(params Result<HttpResponse, HttpError>[] replies)
+{
+    private readonly Queue<Result<HttpResponse, HttpError>> pending = new(replies);
+    public List<string> Paths { get; } = [];
+
+    public Result<HttpResponse, HttpError> Respond(TestContext test, HttpRequest request)
+    {
+        Paths.Add(new Uri(request.Uri).AbsolutePath);
+        Assert.NotEmpty(pending);
+        return pending.Dequeue();
+    }
+
+    public void AssertConsumed() => Assert.Empty(pending);
+}
+```
+
+</TabItem>
 </Tabs>
 
 The test gives the procedure an error status, then a network failure, and checks that it asked for the right path and recorded one failure each time:
@@ -1056,9 +1513,38 @@ fn counts_http_errors_and_network_failures_as_failures() {
 ```
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+[Fact]
+public void RecordsHttpAndTransportFailures()
+{
+    var replies = new[]
+    {
+        Result<HttpResponse, HttpError>.Ok(new HttpResponse(
+            503, SpacetimeDB.HttpVersion.Http11, [], HttpBody.Empty)),
+        Result<HttpResponse, HttpError>.Err(new HttpError("connection reset")),
+    };
+    foreach (var reply in replies)
+    {
+        using var test = TestContext.Create(typeof(Module).Assembly);
+        var server = new FakeServer(reply);
+        var ctx = test.ProcedureContextBuilder(TestAuth.Internal())
+            .Http(server.Respond).Build();
+
+        Module.CheckStatus(ctx);
+
+        Assert.Equal(new[] { "/status" }, server.Paths);
+        Assert.Equal(1UL, test.Db.FetchFailure.Count);
+        server.AssertConsumed();
+    }
+}
+```
+
+</TabItem>
 </Tabs>
 
-A test can also act at points during a procedure, using hooks that run after each transaction the procedure commits and before each sleep. These let you test code that must re-check database state between transactions without relying on wall-clock delays. Pass the hooks to the procedure context builder:
+A test can use hooks to change database state between a procedure's transactions without relying on wall-clock delays. Pass the hooks to the procedure context builder:
 
 <Tabs groupId="server-language" defaultValue="typescript">
 <TabItem value="typescript" label="TypeScript">
@@ -1069,6 +1555,11 @@ Create the hooks with `createProcedureTestHooks()`, add them with `afterTxCommit
 <TabItem value="rust" label="Rust">
 
 Create the hooks with `ProcedureTestHooks::new()`, add them with `after_tx_commit` and `on_sleep`, and pass them to the builder's `hooks` method.
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+Pass `new ProcedureTestHooks().AfterTxCommit(fixture => { ... })` to `.Hooks(...)`. The callback can change data or advance the clock between successful transactions. It does not run after rollback, and a hook failure does not undo the commit. C# has no sleep hook.
 
 </TabItem>
 </Tabs>
@@ -1126,6 +1617,27 @@ pub fn add_note(ctx: &ReducerContext, text: String) {
 pub fn my_notes(ctx: &ViewContext) -> impl Query<Note> {
     ctx.from.note().r#where(|n| n.owner.eq(ctx.sender()))
 }
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+// In the module:
+[Table(Accessor = "Note")]
+public partial class Note
+{
+    public Identity Owner;
+    public string Text = "";
+}
+
+[Reducer]
+public static void AddNote(ReducerContext ctx, string text) =>
+    ctx.Db.Note.Insert(new Note { Owner = ctx.Sender, Text = text });
+
+[View(Accessor = "MyNotes", Public = true)]
+public static IQuery<Note> MyNotes(ViewContext ctx) =>
+    ctx.From.Note().Where(note => note.Owner.Eq(ctx.Sender));
 ```
 
 </TabItem>
@@ -1189,6 +1701,30 @@ fn shows_each_client_only_their_own_notes() {
 `test.run_query` also takes queries built directly from a `QueryBuilder`, including `r#where` filters and semijoins.
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+[Fact]
+public void ShowsEachClientOnlyTheirOwnNotes()
+{
+    using var test = TestContext.Create(typeof(Module).Assembly);
+    var alice = Principal("alice");
+    var bob = Principal("bob");
+    test.WithReducerTx(alice, ctx => Module.AddNote(ctx, "from Alice"));
+    test.WithReducerTx(bob, ctx => Module.AddNote(ctx, "from Bob"));
+
+    string[] NotesFor(TestAuth auth) => test
+        .RunQuery(Module.MyNotes(test.ViewContext(auth)))
+        .Select(note => note.Text).ToArray();
+
+    Assert.Equal(new[] { "from Alice" }, NotesFor(alice));
+    Assert.Equal(new[] { "from Bob" }, NotesFor(bob));
+}
+```
+
+Use `RunQuery` for views returning typed queries. For views returning rows directly, assert on the returned rows instead. Anonymous views take `test.AnonymousViewContext()`.
+
+</TabItem>
 </Tabs>
 
 ## Limitations
@@ -1218,10 +1754,35 @@ fn shows_each_client_only_their_own_notes() {
 - **Projects from the `chat-console-rs` template have an invalid dev-dependency** ([#6298](https://github.com/clockworklabs/SpacetimeDB/issues/6298)). `spacetime init` writes the template's `spacetimedb` dev-dependency with a `path` into the SpacetimeDB repository. Replace it with a version that matches the normal dependency, as shown in [Enable the test utilities](#enable-the-test-utilities).
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+- **No WASM execution.** Tests run managed module code against the native datastore. They do not verify WASM linking, exports, trimming, or host dispatch. Keep a publish/integration test for these.
+- **No interception of general .NET APIs.** Use `ctx.Timestamp`, `ctx.Rng`, and `ctx.Http` for controlled behavior. Ordinary static fields in user code remain process-wide; creating a fixture does not reset them.
+- **Unsupported host operations throw `NotSupportedException`.** These include immediate scheduling, `LogStopwatch`, static identity lookups, and `AuthCtx.BuildFromSystemTables`. Use `test.DatabaseIdentity`, context identity properties, and `TestAuth` instead.
+- **No incoming HTTP handler harness.** Procedure HTTP responders model outgoing requests; they do not simulate incoming HTTP dispatch.
+- **Event rows are transaction-scoped.** Event rows are removed at commit, including standalone fixture mutations and procedure transactions.
+
+</TabItem>
 </Tabs>
 
 ## More examples
 
-- [Rust chat module tests](https://github.com/clockworklabs/SpacetimeDB/blob/master/templates/chat-console-rs/spacetimedb/src/lib.rs): table registration, independent databases, authenticated reducer calls, procedures, typed queries, and HTTP mocks.
+<Tabs groupId="server-language" defaultValue="typescript">
+<TabItem value="typescript" label="TypeScript">
+
 - [TypeScript chat module tests](https://github.com/clockworklabs/SpacetimeDB/blob/master/templates/chat-react-ts/spacetimedb/src/index.test.ts): connection lifecycle, validation failures, caller identity, and timestamps.
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+- [Rust chat module tests](https://github.com/clockworklabs/SpacetimeDB/blob/master/templates/chat-console-rs/spacetimedb/src/lib.rs): table registration, independent databases, authenticated reducer calls, procedures, typed queries, and HTTP mocks.
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+- [C# chat module tests](https://github.com/clockworklabs/SpacetimeDB/blob/master/templates/chat-console-cs/tests/ModuleTests.cs): manual lifecycle calls, caller identity, timestamps, and transaction rollback.
+
+</TabItem>
+</Tabs>
+
 - Learn how [reducers](../00200-core-concepts/00200-functions/00300-reducers/00300-reducers.md) handle [errors](../00200-core-concepts/00200-functions/00300-reducers/00600-error-handling.md), which tests can check for.

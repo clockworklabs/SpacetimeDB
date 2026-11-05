@@ -4,11 +4,26 @@ using System;
 
 public sealed class AuthCtx
 {
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
     private static byte[] jwtBuffer = new byte[0x10_000];
+#endif
 
     // Computed on first use, since comparing the sender with the database's Identity needs a host call.
     private readonly Lazy<bool> _isInternal;
     private readonly Lazy<JwtClaims?> _jwtLazy;
+
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    internal static AuthCtx InternalForTesting() => new(true, static () => null);
+
+    internal static AuthCtx FromJwtPayload(string payload, Identity identity) =>
+        new(false, () => new JwtClaims(payload, identity));
+
+    private AuthCtx(bool isInternal, Func<JwtClaims?> jwtFactory)
+    {
+        _isInternal = new Lazy<bool>(() => isInternal);
+        _jwtLazy = new Lazy<JwtClaims?>(jwtFactory);
+    }
+#endif
 
     private AuthCtx(Identity sender, Func<JwtClaims?> jwtFactory)
     {
@@ -38,6 +53,11 @@ public sealed class AuthCtx
     /// </summary>
     private static AuthCtx FromConnectionId(ConnectionId connectionId, Identity identity)
     {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        throw new NotSupportedException(
+            "AuthCtx.BuildFromSystemTables cannot look up client credentials in managed module tests. Use TestAuth.FromJwtPayload."
+        );
+#else
         return new AuthCtx(
             identity,
             jwtFactory: () =>
@@ -48,6 +68,7 @@ public sealed class AuthCtx
                 return jwt == null ? null : new JwtClaims(jwt, identity);
             }
         );
+#endif
     }
 
     /// <summary>
@@ -67,12 +88,18 @@ public sealed class AuthCtx
     /// </summary>
     internal static string? ReadJwt(SpacetimeDB.Internal.BytesSource source)
     {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        throw new NotSupportedException(
+            "Reading JWT credentials from the host is unavailable in managed module tests. Use TestAuth.FromJwtPayload."
+        );
+#else
         using var stream = SpacetimeDB.Internal.Module.Consume(source, ref jwtBuffer);
         if (stream.Length == 0)
         {
             return null;
         }
         return System.Text.Encoding.UTF8.GetString(jwtBuffer, 0, checked((int)stream.Length));
+#endif
     }
 
     /// <summary>

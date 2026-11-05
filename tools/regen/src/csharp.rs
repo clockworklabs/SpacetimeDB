@@ -212,26 +212,36 @@ pub fn regen_dlls() -> Result<()> {
     let workspace = workspace_dir();
     let sdk = sdk_dir();
 
-    cmd!(
-        "dotnet",
-        "pack",
-        workspace.join("crates/bindings-csharp/BSATN.Runtime"),
-        "-c",
-        "Release"
-    )
-    .run()?;
-    cmd!(
-        "dotnet",
-        "pack",
-        workspace.join("crates/bindings-csharp/Runtime"),
-        "-c",
-        "Release"
-    )
-    .run()?;
+    let (bsatn_source, runtime_source) = if let Some(feed) = env::var_os("CSHARP_PACKAGE_FEED") {
+        let feed = fs::canonicalize(feed)?;
+        (feed.clone(), feed)
+    } else {
+        cmd!(
+            "dotnet",
+            "pack",
+            workspace.join("crates/bindings-csharp/BSATN.Runtime"),
+            "-c",
+            "Release"
+        )
+        .run()?;
+        cmd!(
+            "dotnet",
+            "pack",
+            workspace.join("crates/bindings-csharp/Runtime"),
+            "-c",
+            "Release"
+        )
+        .run()?;
+
+        (
+            workspace.join("crates/bindings-csharp/BSATN.Runtime/bin/Release"),
+            workspace.join("crates/bindings-csharp/Runtime/bin/Release"),
+        )
+    };
 
     let nuget_config_dir = tempfile::tempdir()?;
     let nuget_config_path = nuget_config_dir.path().join("nuget.config");
-    fs::write(&nuget_config_path, local_nuget_config(&workspace))?;
+    fs::write(&nuget_config_path, render_nuget_config(&bsatn_source, &runtime_source))?;
 
     clear_restored_package_dirs(BSATN_PACKAGE_ID)?;
     clear_restored_package_dirs(RUNTIME_PACKAGE_ID)?;

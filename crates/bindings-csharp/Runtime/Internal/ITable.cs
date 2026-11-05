@@ -129,6 +129,19 @@ public interface ITableView<View, T>
         return count;
     }
 
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    protected static ulong DoCount(TableAccessor accessor) => accessor.Count();
+    protected static IEnumerable<T> DoIter(TableAccessor accessor) => accessor.Iter<T>();
+    protected static T DoInsert(TableAccessor accessor, T row)
+    {
+        var generated = accessor.Insert(IStructuralReadWrite.ToBytes(row));
+        return IntegrateGeneratedColumns(row, generated, generated.Length);
+    }
+    protected static bool DoDelete(TableAccessor accessor, T row) =>
+        accessor.Delete(IStructuralReadWrite.ToBytes(row));
+    protected static ulong DoClear(TableAccessor accessor) => accessor.Clear();
+#endif
+
     protected static IEnumerable<T> DoIter() => new RawTableIter(tableId);
 
     protected static IEnumerable<T> DoIter(TableHandle table) => new RawTableIter(table.Id);

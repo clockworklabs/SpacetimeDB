@@ -16,6 +16,7 @@ use spacetimedb_execution::{Datastore, DeltaStore, Row};
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::bsatn::EncodeError;
 use spacetimedb_lib::bsatn::ToBsatn;
+use spacetimedb_lib::de::Error as _;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::query::Delta;
@@ -25,7 +26,6 @@ use spacetimedb_query::estimation::{check_row_limit, estimate_rows_scanned};
 use spacetimedb_query::{compile_sql_stmt, execute_select_stmt};
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::error::ValidationErrors;
-use spacetimedb_schema::schema::{Schema, TableSchema};
 use thiserror::Error;
 
 /// A [`RelationalDB`] initialized from a module definition for native unit tests.
@@ -49,9 +49,9 @@ impl TestDatastore {
         let db = test_db.db;
 
         tests_utils::with_auto_commit(&db, |tx| {
-            for table in module_def.tables() {
-                let schema = TableSchema::from_module_def(&module_def, table, (), TableId::SENTINEL);
-                db.create_table(tx, schema)?;
+            for (prefix, owning_def, table) in module_def.all_tables_with_prefix() {
+                spacetimedb_engine::update::create_table_from_def_with_prefix(&db, tx, owning_def, table, &prefix)
+                    .map_err(DBError::Other)?;
             }
             Ok::<(), TestDatastoreError>(())
         })?;
@@ -366,6 +366,24 @@ impl DeltaStore for NoDelta<'_> {
 }
 
 impl TestTransaction {
+    /// Delete a row by its complete BSATN value, returning zero or one.
+    pub fn delete_row_bsatn(&self, table_id: TableId, row: &[u8]) -> Result<u32, TestDatastoreError> {
+        self.with_mut_tx(|tx| {
+            let row_ty = self.db.row_schema_for_table(tx, table_id)?;
+            let mut bytes = row;
+            let row = ProductValue::decode(&row_ty, &mut bytes)?;
+            if !bytes.is_empty() {
+                return Err(spacetimedb_lib::bsatn::DecodeError::custom("Trailing bytes after row").into());
+            }
+            Ok(self.db.delete_by_rel(tx, table_id, [row]))
+        })
+    }
+
+    /// Clear the table without dropping its schema or resetting its sequences.
+    pub fn clear_table(&self, table_id: TableId) -> Result<u64, TestDatastoreError> {
+        self.with_mut_tx(|tx| Ok(self.db.clear_table(tx, table_id)?))
+    }
+
     fn with_mut_tx<T>(
         &self,
         f: impl FnOnce(&mut MutTx) -> Result<T, TestDatastoreError>,
@@ -545,6 +563,8 @@ pub enum TestDatastoreError {
     InvalidProjection(#[from] spacetimedb_lib::sats::product_value::InvalidFieldError),
     #[error("BSATN encode error: {0}")]
     BsatnEncode(#[from] EncodeError),
+    #[error("BSATN decode error: {0}")]
+    BsatnDecode(#[from] spacetimedb_lib::bsatn::DecodeError),
     #[error("query error: {0}")]
     Query(anyhow::Error),
     #[error("test query must be a SELECT statement")]
@@ -560,7 +580,8 @@ impl TestDatastoreError {
             Self::Database(DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(_)))) => {
                 Some(spacetimedb_primitives::errno::UNIQUE_ALREADY_EXISTS.get())
             }
-            Self::Database(DBError::Sequence2(SequenceError::Overflow(_))) => {
+            Self::Database(DBError::Sequence2(SequenceError::Overflow(_)))
+            | Self::Database(DBError::Datastore(DatastoreError::Sequence(SequenceError::Overflow(_)))) => {
                 Some(spacetimedb_primitives::errno::AUTO_INC_OVERFLOW.get())
             }
             _ => None,
@@ -574,6 +595,38 @@ mod tests {
     use spacetimedb_lib::{bsatn, AlgebraicType, ProductType, RawModuleDef};
 
     use super::*;
+
+    #[test]
+    fn sequence_overflow_errno_covers_both_database_error_paths() {
+        for error in [
+            DBError::Sequence2(SequenceError::Overflow(i128::MAX)),
+            DBError::Datastore(DatastoreError::Sequence(SequenceError::Overflow(i128::MAX))),
+        ] {
+            assert_eq!(
+                TestDatastoreError::Database(error).insert_errno_code(),
+                Some(spacetimedb_primitives::errno::AUTO_INC_OVERFLOW.get())
+            );
+        }
+    }
+
+    #[test]
+    fn event_rows_are_visible_only_in_their_transaction() {
+        let mut builder = spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder::new();
+        builder
+            .build_table_with_new_type("event", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .with_event(true)
+            .finish();
+        let db = TestDatastore::from_module_def(RawModuleDef::V10(builder.finish())).unwrap();
+        let table = db.table_id("event").unwrap();
+        let row = bsatn::to_vec(&(1_u64,)).unwrap();
+        db.insert_bsatn(table, &row).unwrap();
+        assert_eq!(db.table_row_count(table).unwrap(), 0);
+        let tx = db.begin_mut_tx();
+        tx.insert_bsatn_generated_cols(table, &row).unwrap();
+        assert_eq!(tx.table_rows_bsatn(table).unwrap(), [row]);
+        tx.commit().unwrap();
+        assert_eq!(db.table_row_count(table).unwrap(), 0);
+    }
 
     fn raw_module_def() -> RawModuleDef {
         let mut builder = RawModuleDefV9Builder::new();
