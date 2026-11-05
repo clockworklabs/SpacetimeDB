@@ -7,7 +7,9 @@ import { build } from 'tsup';
 import { createRequire } from 'node:module';
 import { test } from 'vitest';
 
-// Use native Node loaders so these checks exercise package exports, not Vite's resolver.
+// The built `spacetimedb/schema` entry point must work with `createClient`
+// from the built `spacetimedb` package, through both import() and require().
+// Load them in Node so Vitest's module resolver cannot hide broken package exports.
 test('built module schemas work with ESM and CommonJS clients', () => {
   execFileSync(
     process.execPath,
@@ -38,6 +40,7 @@ test('built module schemas work with ESM and CommonJS clients', () => {
   );
 });
 
+// Check that a client using both package entry points can be bundled for a browser.
 test('module schema clients bundle for browsers', async () => {
   const outDir = await mkdtemp(join(tmpdir(), 'spacetimedb-consumer-'));
   try {
@@ -56,7 +59,13 @@ test('module schema clients bundle for browsers', async () => {
   }
 });
 
+// Regression: Node bundling once pulled in both SDK source and built SDK classes.
+// `createClient` then rejected the schema with "Expected a module with a schema
+// default export" because its instanceof check used the other copy of Schema.
+// Bundle a client and start it in Node; constructing its client must succeed.
 test('module schemas share SDK classes in Node bundles', async () => {
+  // Use the separate client's directory so esbuild picks up its tsconfig,
+  // rather than the SDK's configuration for tests against its own source.
   const outDir = await mkdtemp(
     fileURLToPath(
       new URL('../case-conversion-test-client/.module-schema-', import.meta.url)
