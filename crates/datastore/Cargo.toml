@@ -61,7 +61,7 @@ default = ["durability", "execution", "unindexed_iter_by_col_range_warn"]
 test = ["spacetimedb-commitlog/test", "spacetimedb-schema/test"]
 
 [dev-dependencies]
-spacetimedb-fs-utils.workspace = true
+spacetimedb-fs-utils = { path = "../fs-utils" }
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }
 spacetimedb-sats = { path = "../sats", features = ["proptest"] }
 spacetimedb-commitlog = { path = "../commitlog", features = ["test"] }
