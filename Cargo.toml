@@ -44,6 +44,7 @@ members = [
   "crates/subscription",
   "crates/table",
   "crates/test-datastore",
+  "crates/test-datastore-ffi",
   "crates/testing",
   "crates/update",
   "modules/benchmarks",

@@ -62,6 +62,57 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
     }
 
     protected abstract ProcedureTxContextBase CreateTxContext(Internal.TxContext inner);
+
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    internal Internal.DatabaseAccess? Access { get; }
+
+    internal ProcedureContextBase(
+        Internal.IDatabaseBackend backend,
+        Func<Timestamp> clock,
+        Identity sender,
+        ConnectionId? connectionId,
+        Random random,
+        AuthCtx auth,
+        HttpClient http,
+        Action? afterCommit
+    )
+    {
+        Sender = sender;
+        ConnectionId = connectionId;
+        SenderAuth = auth;
+        Http = http;
+        Access = new Internal.DatabaseAccess(backend);
+        Env = new(Access);
+        txState = new(
+            random,
+            clock(),
+            timestamp => new Internal.TxContext(
+                CreateLocal(),
+                sender,
+                connectionId,
+                timestamp,
+                auth,
+                random
+            ),
+            inner => CreateTxContext(inner)
+        )
+        {
+            Backend = backend,
+            Clock = clock,
+            AfterCommit = afterCommit,
+            CreateManagedTxContext = (transaction, timestamp) =>
+                new Internal.TxContext(
+                    new Local(new Internal.DatabaseAccess(transaction)),
+                    sender,
+                    connectionId,
+                    timestamp,
+                    auth,
+                    random
+                ),
+        };
+    }
+#endif
+
     protected internal abstract LocalBase CreateLocal();
 
     public Internal.TxContext EnterTxContext(long timestampMicros) =>
@@ -151,7 +202,11 @@ public abstract class ProcedureTxContextBase(Internal.TxContext inner) : IRefres
 #else
     public LocalBase Db => (LocalBase)Inner.Db;
 #endif
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    public DatabaseEnvironment Env => new(Inner.Db.Access);
+#else
     public DatabaseEnvironment Env { get; } = DatabaseEnvironment.Instance;
+#endif
     public Identity Sender => Inner.Sender;
     public ConnectionId? ConnectionId => Inner.ConnectionId;
     public Timestamp Timestamp => Inner.Timestamp;
@@ -159,7 +214,15 @@ public abstract class ProcedureTxContextBase(Internal.TxContext inner) : IRefres
     public Random Rng => Inner.Rng;
 }
 
-public abstract class LocalBase : Internal.Local { }
+public abstract class LocalBase : Internal.Local
+{
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    protected LocalBase() { }
+
+    internal LocalBase(Internal.DatabaseAccess access)
+        : base(access) { }
+#endif
+}
 
 internal sealed partial class RuntimeProcedureContext(
     Identity sender,
