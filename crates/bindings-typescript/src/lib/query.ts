@@ -253,21 +253,19 @@ export type NamespacedQueryBuilder<SchemaDef extends UntypedSchemaDef> =
  * A runtime reference to a table. This materializes the RowExpr for us.
  * TODO: Maybe add the full SchemaDef to the type signature depending on how joins will work.
  */
-// Keep this named so TypeScript diagnostics show `TableRef` instead of its
-// expanded structure.
-export interface TableRef<TableDef extends TypedTableDef> {
-  readonly type: 'table';
-  readonly sourceName: TableDef['sourceName'];
-  readonly accessorName: string;
-  readonly cols: RowExpr<TableDef>;
-  readonly indexedCols: IndexedRowExpr<TableDef>;
-  readonly tableDef: TableDef;
+export type TableRef<TableDef extends TypedTableDef> = Readonly<{
+  type: 'table';
+  sourceName: TableDef['sourceName'];
+  accessorName: string;
+  cols: RowExpr<TableDef>;
+  indexedCols: IndexedRowExpr<TableDef>;
+  tableDef: TableDef;
   // Delegated UntypedTableDef properties for compatibility.
-  readonly columns: TableDef['columns'];
-  readonly indexes: TableDef['indexes'];
-  readonly rowType: TableDef['rowType'];
-  readonly constraints: any;
-}
+  columns: TableDef['columns'];
+  indexes: TableDef['indexes'];
+  rowType: TableDef['rowType'];
+  constraints: any;
+}>;
 
 class TableRefImpl<TableDef extends TypedTableDef>
   implements TableRef<TableDef>, From<TableDef>
