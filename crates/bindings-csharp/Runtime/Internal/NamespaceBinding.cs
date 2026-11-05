@@ -29,54 +29,33 @@ public sealed class NamespaceBinding(string? assemblyIdentity, string accessor)
 #endif
     }
 
+#if SPACETIMEDB_WASM_RUNTIME
+    // Generated namespace accessors call these on every table access. In WASM a database
+    // handle is just an instance id, so reuse the cached handle per instance instead of allocating.
+    public Local Select(Local db) => global::SpacetimeDB.Local.ForInstance(this[db.InstanceId]);
+
+    public LocalReadOnly Select(LocalReadOnly db) => LocalReadOnly.ForInstance(this[db.InstanceId]);
+
+    public QueryBuilder Select(QueryBuilder from) => new(this[from.InstanceId]);
+#else
+    // Managed handles also carry the test backend's transaction access, so they can't be shared.
     public Local Select(Local db) =>
-        new()
-        {
-            InstanceId = Resolve(db.InstanceId
-#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
-                , db.Access
-#endif
-            ),
-#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
-            Access = db.Access,
-#endif
-        };
+        new() { InstanceId = Resolve(db.InstanceId, db.Access), Access = db.Access };
 
     public LocalReadOnly Select(LocalReadOnly db) =>
-        new()
-        {
-            InstanceId = Resolve(db.InstanceId
-#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
-                , db.Access
-#endif
-            ),
-#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
-            Access = db.Access,
-#endif
-        };
+        new() { InstanceId = Resolve(db.InstanceId, db.Access), Access = db.Access };
 
     public QueryBuilder Select(QueryBuilder from) =>
         new(
             new LocalReadOnly
             {
-                InstanceId = Resolve(from.InstanceId
-#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
-                    , from.Access
-#endif
-                ),
-#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+                InstanceId = Resolve(from.InstanceId, from.Access),
                 Access = from.Access,
-#endif
             }
         );
 
-    private int Resolve(int contextInstance
-#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
-        , DatabaseAccess? access
-#endif
-    )
+    private int Resolve(int contextInstance, DatabaseAccess? access)
     {
-#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
         if (access is not null)
         {
             access.CheckActive();
@@ -89,9 +68,9 @@ public sealed class NamespaceBinding(string? assemblyIdentity, string accessor)
                 );
             return selected;
         }
-#endif
         return this[contextInstance];
     }
+#endif
 #endif
 
     public int this[int contextInstance]
