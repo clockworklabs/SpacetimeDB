@@ -17,6 +17,10 @@ const COMMANDS: &[Command] = &[
         package: "ci-test",
     },
     Command {
+        path: &["test-csharp-build"],
+        package: "ci-test-csharp-build",
+    },
+    Command {
         path: &["lint"],
         package: "ci-lint",
     },

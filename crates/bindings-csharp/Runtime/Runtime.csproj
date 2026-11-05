@@ -12,11 +12,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>SpacetimeDB</RootNamespace>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
-    <RestoreAdditionalProjectSources Condition="$(TargetFramework.StartsWith('net10.')) Or '$(EXPERIMENTAL_WASM_AOT)' == '1'">https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json;$(RestoreAdditionalProjectSources)</RestoreAdditionalProjectSources>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="$(TargetFramework.StartsWith('net10.'))">
-    <DefineConstants>$(DefineConstants);EXPERIMENTAL_WASM_AOT</DefineConstants>
+    <RestoreAdditionalProjectSources Condition="$(TargetFramework.StartsWith('net8.')) And '$(SPACETIMEDB_WASM_AOT)' == '1'">https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json;$(RestoreAdditionalProjectSources)</RestoreAdditionalProjectSources>
   </PropertyGroup>
 
   <ItemGroup>
@@ -30,14 +26,11 @@
     <ProjectReference Include="../Codegen/Codegen.csproj" ReferenceOutputAssembly="false" SetTargetFramework="TargetFramework=netstandard2.0" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
 
-  <!-- These must be explicit package dependencies so NuGet consumers can resolve the LLVM toolchain. -->
-  <ItemGroup Condition="$(TargetFramework.StartsWith('net8.')) And '$(EXPERIMENTAL_WASM_AOT)' == '1'">
+  <!-- Preserve .NET 8 packaging. .NET 10 modules reference the LLVM toolchain
+       directly so managed consumers of this runtime do not depend on it. -->
+  <ItemGroup Condition="$(TargetFramework.StartsWith('net8.')) And '$(SPACETIMEDB_WASM_AOT)' == '1'">
     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" IncludeAssets="All" />
     <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" IncludeAssets="All" />
-  </ItemGroup>
-  <ItemGroup Condition="$(TargetFramework.StartsWith('net10.'))">
-    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" IncludeAssets="All" />
-    <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" IncludeAssets="All" />
   </ItemGroup>
 
   <ItemGroup>
