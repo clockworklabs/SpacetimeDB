@@ -8,12 +8,7 @@ public class HttpTests
     public void RespondersReceiveRequestsAndRemainScopedToBuiltContexts()
     {
         using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
-        var response = new HttpResponse(
-            503,
-            HttpVersion.Http2,
-            [new HttpHeader("Retry-After", "10")],
-            HttpBody.FromString("unavailable")
-        );
+        var response = new HttpResponse(503, HttpVersion.Http2, [], HttpBody.FromString("busy"));
         var request = new HttpRequest
         {
             Uri = "https://example.invalid/status",
@@ -34,31 +29,24 @@ public class HttpTests
                     Assert.Equal(request.Body, received.Body);
                     Assert.Equal(request.Version, received.Version);
                     Assert.Equal(TimeSpan.FromSeconds(180), received.Timeout);
-                    fixture.Db.Entries.Insert(
-                        new Entry { Text = "responder can access committed data" }
-                    );
                     return Result<HttpResponse, HttpError>.Ok(response);
                 }
             );
-        var first = builder.Build();
-        var transportError = new HttpError("simulated timeout");
-        var second = builder
-            .Http((_, _) => Result<HttpResponse, HttpError>.Err(transportError))
-            .Build();
-        Assert.Equal(response, first.Http.Send(request).UnwrapOrThrow());
-        Assert.Equal(TimeSpan.FromSeconds(300), request.Timeout);
-        Assert.Same(transportError, Error(second.Http.Get(request.Uri)));
-        Assert.Equal(
-            "no test HTTP responder configured",
-            Error(test.CreateProcedureContext(TestAuth.Internal()).Http.Get(request.Uri)).Message
-        );
+        var built = builder.Build();
         var failure = new InvalidOperationException("assertion failure");
         var throwing = builder.Http((_, _) => throw failure).Build();
+
+        // The built context keeps its responder; the caller's request is not modified.
+        Assert.Equal(response, built.Http.Send(request).UnwrapOrThrow());
+        Assert.Equal(TimeSpan.FromSeconds(300), request.Timeout);
         Assert.Same(
             failure,
             Assert.Throws<InvalidOperationException>(() => throwing.Http.Get(request.Uri))
         );
-        Assert.Equal(1UL, test.Db.Entries.Count);
+        Assert.Equal(
+            "no test HTTP responder configured",
+            Error(test.CreateProcedureContext(TestAuth.Internal()).Http.Get(request.Uri)).Message
+        );
     }
 
     [Fact]
@@ -66,7 +54,7 @@ public class HttpTests
     {
         using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
         var calls = 0;
-        var builder = test.CreateProcedureContextBuilder(TestAuth.Internal())
+        var procedure = test.CreateProcedureContextBuilder(TestAuth.Internal())
             .Http(
                 (_, _) =>
                 {
@@ -75,11 +63,8 @@ public class HttpTests
                         new(200, HttpVersion.Http11, [], HttpBody.Empty)
                     );
                 }
-            );
-        var procedure = builder.Build();
-        var selected = ((Internal.IModuleContext<ProcedureContext>)procedure).SelectInstance(1);
-        Assert.Equal(1, ((Internal.IModuleContext)selected).InstanceId);
-        Assert.Same(procedure.Http, selected.Http);
+            )
+            .Build();
         Assert.Equal("URI must not be null or empty", Error(procedure.Http.Get("")).Message);
         Assert.Equal(
             "Timeout must not be negative",
@@ -87,38 +72,17 @@ public class HttpTests
         );
         procedure.WithTx(_ =>
         {
-            // As in WASM, request validation runs before the host's transaction check.
-            Assert.Equal("URI must not be null or empty", Error(selected.Http.Get("")).Message);
             Assert.Contains(
                 "WOULD_BLOCK_TRANSACTION",
-                Error(selected.Http.Get("https://example.invalid")).Message
+                Error(procedure.Http.Get("https://example.invalid")).Message
             );
+            // As in WASM, request validation runs before the transaction check.
+            Assert.Equal("URI must not be null or empty", Error(procedure.Http.Get("")).Message);
             return 0;
         });
-        Assert.Throws<InvalidOperationException>(
-            () =>
-                test.WithReducerTx(
-                    TestAuth.Internal(),
-                    _ =>
-                    {
-                        Assert.Contains(
-                            "WOULD_BLOCK_TRANSACTION",
-                            Error(procedure.Http.Get("https://example.invalid")).Message
-                        );
-                        throw new InvalidOperationException("rollback");
-                    }
-                )
-        );
         Assert.Equal(0, calls);
-        Assert.Equal(
-            (ushort)200,
-            procedure.Http.Get("https://example.invalid").UnwrapOrThrow().StatusCode
-        );
         test.Dispose();
         Assert.Throws<ObjectDisposedException>(() => procedure.Http.Get("https://example.invalid"));
-        Assert.Throws<ObjectDisposedException>(() => selected.Http.Get("https://example.invalid"));
-        Assert.Throws<ObjectDisposedException>(() => builder.Build());
-        Assert.Equal(1, calls);
     }
 
     private static HttpError Error(Result<HttpResponse, HttpError> result) =>

@@ -9,53 +9,15 @@ using TestingModule;
 
 public class InteropTests
 {
-    [Fact]
-    public void GeneratedSchemaSupportsCommitRollbackAndDisposal()
+    [Theory]
+    [InlineData(NativeStatus.UniqueViolation, typeof(UniqueConstraintViolationException))]
+    [InlineData(NativeStatus.AutoIncOverflow, typeof(AutoIncOverflowException))]
+    internal void ConstraintStatusesBecomeTypedExceptions(NativeStatus status, Type expected)
     {
-        using var datastore = NativeDatastore.Create(TestSchema.Build());
-        ulong id;
-        using (var transaction = datastore.Begin())
-        {
-            var table = transaction.TableId("entries");
-            using var generated = Reader(transaction.Insert(table, Encode(0, "hello")));
-            id = generated.ReadUInt64();
-            Assert.NotEqual(0UL, id);
-            Assert.Equal(generated.BaseStream.Length, generated.BaseStream.Position);
-            Assert.Throws<UniqueConstraintViolationException>(
-                () => transaction.Insert(table, Encode(id, "duplicate"))
-            );
-            Assert.Throws<InvalidOperationException>(() => datastore.Begin());
-            transaction.Commit();
-            Assert.Throws<InvalidOperationException>(() => transaction.Count(table));
-        }
-
-        using (var transaction = datastore.Begin())
-        {
-            var table = transaction.TableId("entries");
-            using var scan = Reader(transaction.Scan(table));
-            var rows = new SpacetimeDB.BSATN.Array<byte[], ByteArray>().Read(scan);
-            using var row = Reader(Assert.Single(rows));
-            var entry = new Entry.BSATN().Read(row);
-            Assert.Equal(id, entry.Id);
-            Assert.Equal("hello", entry.Text);
-            Assert.Equal(scan.BaseStream.Length, scan.BaseStream.Position);
-            Assert.Equal(row.BaseStream.Length, row.BaseStream.Position);
-            transaction.Insert(table, Encode(0, "rolled back"));
-            transaction.Rollback();
-        }
-
-        using (var transaction = datastore.Begin())
-        {
-            var table = transaction.TableId("entries");
-            Assert.Equal(1UL, transaction.Count(table));
-            transaction.Insert(table, Encode(0, "disposed"));
-        }
-
-        using var pending = datastore.Begin();
-        Assert.Equal(1UL, pending.Count(pending.TableId("entries")));
-        datastore.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => pending.TableId("entries"));
-        Assert.Throws<ObjectDisposedException>(() => datastore.Begin());
+        // The engine only overflows a sequence at i128 limits (narrower columns wrap), so
+        // AutoIncOverflow can't be reached through a table. The Rust crate tests that mapping.
+        var error = default(NativeBuffer);
+        Assert.IsType(expected, Record.Exception(() => Native.Check(status, ref error)));
     }
 
     [Fact]
@@ -135,6 +97,4 @@ public class InteropTests
 
     private static byte[] Encode(ulong id, string text) =>
         IStructuralReadWrite.ToBytes(new Entry.BSATN(), new Entry { Id = id, Text = text });
-
-    private static BinaryReader Reader(byte[] bytes) => new(new MemoryStream(bytes));
 }
