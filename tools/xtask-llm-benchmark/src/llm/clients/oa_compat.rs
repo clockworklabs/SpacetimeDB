@@ -145,7 +145,14 @@ impl OACompatResp {
                 || choice
                     .message
                     .as_ref()
-                    .is_some_and(|m| m.refusal.as_deref().is_some_and(|text| !text.trim().is_empty())))
+                    .is_some_and(|m| m.refusal.as_deref().is_some_and(|text| !text.trim().is_empty()))
+                // Hitting the output limit before writing anything counts against the model too.
+                || (finish == Some("length")
+                    && choice
+                        .message
+                        .as_ref()
+                        .and_then(|m| m.content.as_deref())
+                        .is_none_or(|text| text.trim().is_empty())))
         {
             return Err(ProviderRefusal {
                 generation_id: self.id.clone(),
@@ -187,6 +194,33 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(response.first_text().unwrap(), "valid code");
+    }
+
+    #[test]
+    fn only_a_blank_reply_at_the_output_limit_counts_as_a_refusal() {
+        let response = |finish: &str, content: Option<&str>| -> OACompatResp {
+            serde_json::from_value(serde_json::json!({
+                "choices": [{"finish_reason": finish, "message": {"content": content}}]
+            }))
+            .unwrap()
+        };
+        for content in [
+            None,
+            Some(""),
+            Some(
+                " 
+",
+            ),
+        ] {
+            let error = response("length", content).first_text().unwrap_err();
+            assert!(error.downcast_ref::<ProviderRefusal>().is_some(), "{error:#}");
+        }
+        assert_eq!(
+            response("length", Some("partial code")).first_text().unwrap(),
+            "partial code"
+        );
+        let error = response("stop", None).first_text().unwrap_err();
+        assert!(error.downcast_ref::<ProviderRefusal>().is_none(), "{error:#}");
     }
 
     #[test]

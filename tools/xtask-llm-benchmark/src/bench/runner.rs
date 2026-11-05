@@ -240,7 +240,8 @@ fn provider_retry_delay(error: &anyhow::Error) -> Option<u64> {
     }
 }
 
-// A provider declining the request counts against the model. Any other provider error blocks the batch.
+// A provider declining the request, or a blank reply at the output limit, counts against the model.
+// Any other provider error blocks the batch.
 fn is_content_rejection(error: &anyhow::Error) -> bool {
     use crate::llm::clients::{
         http::HttpResponseError,
