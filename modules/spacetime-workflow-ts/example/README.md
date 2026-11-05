@@ -33,11 +33,11 @@ Open <http://127.0.0.1:8806>.
 
 1. Ask a question and press Enter.
 2. When the plan appears, the run stops and waits. It uses nothing while it
-   waits. Click **Approve plan**.
+   waits. Edit, add or remove topics if you like, then click **Approve plan**.
 3. While the notes are appearing, stop the `spacetime start` terminal with
    Ctrl+C, then start it again.
-4. The page reconnects, and the run picks up where it stopped, within about a
-   minute. A message shows how many finished steps were kept and how many tokens
+4. The page reconnects, and the run picks up where it stopped, within about
+   30 seconds. A message shows how many finished steps were kept and how many tokens
    were not spent again.
 5. Open the page in a second window to watch the same run live.
 

@@ -8,11 +8,9 @@ import { type Infer as __Infer } from "spacetimedb";
 // Import all reducer arg schemas
 import ApprovePlanReducer from "../approve_plan_reducer";
 import CancelDossierReducer from "../cancel_dossier_reducer";
-import SetApiKeyReducer from "../set_api_key_reducer";
 import StartDossierReducer from "../start_dossier_reducer";
 
 export type ApprovePlanParams = __Infer<typeof ApprovePlanReducer>;
 export type CancelDossierParams = __Infer<typeof CancelDossierReducer>;
-export type SetApiKeyParams = __Infer<typeof SetApiKeyReducer>;
 export type StartDossierParams = __Infer<typeof StartDossierReducer>;
 

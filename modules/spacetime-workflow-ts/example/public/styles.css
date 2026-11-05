@@ -87,17 +87,11 @@ select:focus {
 }
 .sidebar.collapsed .brand,
 .sidebar.collapsed .sidebar-new,
-.sidebar.collapsed .threads,
-.sidebar.collapsed .conn {
+.sidebar.collapsed .threads {
   display: none;
 }
 .sidebar.collapsed .sidebar-head {
   padding: 8px;
-  justify-content: center;
-}
-.sidebar.collapsed .sidebar-foot {
-  padding: 8px;
-  margin-top: auto;
   justify-content: center;
 }
 .sidebar-head {
@@ -114,19 +108,6 @@ select:focus {
 }
 .sidebar-new .btn {
   width: 100%;
-}
-.sidebar-foot {
-  padding: 8px 10px;
-  border-top: 1px solid #142732;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--font-ibm);
-  font-size: 12px;
-  color: var(--color-muted);
-}
-.sidebar-foot .conn {
-  flex: 1;
 }
 .brand {
   display: flex;
@@ -165,8 +146,8 @@ select:focus {
   font-size: 12px;
   color: var(--color-muted);
 }
-.conn.err {
-  color: var(--color-red);
+.conn.warn {
+  color: var(--color-yellow);
 }
 .btn.toggle {
   width: 24px;
@@ -596,6 +577,26 @@ select:focus {
   white-space: pre-wrap;
   word-break: break-word;
   line-height: 1.6;
+}
+
+.plan-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.plan-row input {
+  flex: 1;
+  min-width: 0;
+}
+.plan-row .btn.icon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+}
+.plan-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
 }
 
 @media (max-width: 720px) {

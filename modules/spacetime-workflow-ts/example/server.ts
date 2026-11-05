@@ -35,18 +35,12 @@ const STDB_URI = process.env.STDB_URI ?? 'ws://127.0.0.1:3000';
 const STDB_SERVER = process.env.STDB_SERVER ?? 'http://127.0.0.1:3000';
 const DB_NAME = process.env.SPACETIMEDB_DB_NAME ?? 'spacetime-workflow-example';
 
-const apiKey = process.env.OPENROUTER_API_KEY?.trim();
-if (apiKey) {
+// Store the key as the database's environment variable. This updates the
+// stored value without republishing the module.
+if (process.env.OPENROUTER_API_KEY?.trim()) {
   const result = spawnSync(
     'spacetime',
-    [
-      'call',
-      '--server',
-      STDB_SERVER,
-      DB_NAME,
-      'set_api_key',
-      JSON.stringify(apiKey),
-    ],
+    ['publish', DB_NAME, '--env-only', '--yes', '--server', STDB_SERVER],
     { stdio: 'inherit', shell: false }
   );
   if (result.status !== 0) {

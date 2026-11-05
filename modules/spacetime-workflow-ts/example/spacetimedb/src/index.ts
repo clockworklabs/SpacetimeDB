@@ -13,6 +13,7 @@ import { client } from '@spacetimedb/workflow';
 const MODEL = 'openai/gpt-4o-mini';
 const MAX_QUESTION_LENGTH = 300;
 const MAX_TOPICS = 4;
+const MAX_TOPIC_LENGTH = 80;
 const SOURCES_PER_TOPIC = 3;
 
 const workflows = client({
@@ -24,15 +25,10 @@ const workflows = client({
       }),
       retry: { maxAttempts: 3, backoffSeconds: 5 },
       // Longer than the slowest model call.
-      stepTimeoutSeconds: 60,
+      stepTimeoutSeconds: 30,
     },
   },
 });
-
-const apiKey = table(
-  { name: 'api_key', public: false },
-  { singleton: t.bool().primaryKey(), key: t.string() }
-);
 
 const dossier = table(
   { name: 'dossier', public: false },
@@ -66,12 +62,10 @@ const topicNote = table(
   }
 );
 
-const spacetimedb = schema({
-  ...workflows.tables,
-  apiKey,
-  dossier,
-  topicNote,
-});
+const spacetimedb = schema(
+  { ...workflows.tables, dossier, topicNote },
+  { env: { OPENROUTER_API_KEY: t.string().optional() } }
+);
 export default spacetimedb;
 
 type Schema = InferSchema<typeof spacetimedb>;
@@ -89,7 +83,7 @@ interface ModelReply {
 }
 
 function callModel(ctx: Ctx, system: string, prompt: string): ModelReply {
-  const key = ctx.withTx(tx => tx.db.apiKey.singleton.find(true)?.key);
+  const key = ctx.env.OPENROUTER_API_KEY;
   if (!key) {
     throw new SenderError('Set OPENROUTER_API_KEY in .env and restart the app');
   }
@@ -110,7 +104,7 @@ function callModel(ctx: Ctx, system: string, prompt: string): ModelReply {
 function planTopics(ctx: Ctx, question: string) {
   const reply = callModel(
     ctx,
-    `Plan research for a question. Reply with only a JSON array of 2 to ${MAX_TOPICS} short Wikipedia search phrases.`,
+    `Plan research for a question. Choose 2 to ${MAX_TOPICS} distinct angles that do not overlap. Reply with only a JSON array of short Wikipedia search phrases, one per angle.`,
     question
   );
   const topics = JSON.parse(reply.text.replace(/```(json)?/g, '')) as string[];
@@ -148,11 +142,12 @@ function summarize(
   ctx: Ctx,
   question: string,
   topic: string,
+  otherTopics: string[],
   sources: Source[]
 ): ModelReply {
   return callModel(
     ctx,
-    'Summarize what these sources say that helps answer the question, in under 120 words. Use only the sources.',
+    `Summarize what these sources say about this topic that helps answer the question, in under 100 words. Use only the sources. Leave out background, which other notes cover: ${otherTopics.join(', ')}.`,
     `Question: ${question}\nTopic: ${topic}\n\n${sources
       .map(item => `${item.title}: ${item.extract}`)
       .join('\n\n')}`
@@ -188,41 +183,48 @@ export const workflowRunAttempt = workflows.register(spacetimedb, {
     });
 
     step.waitFor('plan-approved');
+    // The plan may have been edited before it was approved.
+    const topics = step.tx(
+      'Read the approved plan',
+      ctx => ctx.db.dossier.id.find(dossierId)!.topics
+    );
 
     // Every topic is researched at the same time, each in its own procedure.
-    const research = step.parallel(
-      'Research',
-      plan.topics,
-      (ctx, topic, run) => {
-        const sources = searchWikipedia(ctx, topic);
-        const note =
-          sources.length === 0
-            ? undefined
-            : summarize(ctx, question, topic, sources);
-        // Saved now, so the page shows it while other topics are still running.
-        // The key makes a retry replace its own note instead of adding one.
-        ctx.withTx(tx => {
-          const { owner } = tx.db.dossier.id.find(dossierId)!;
-          const row = {
-            id: 0n,
-            key: run.idempotencyKey,
-            dossierId,
-            owner,
-            topic,
-            summary: note?.text,
-            sources: sources.map(({ title, url }) => ({ title, url })),
-            tokens: note?.tokens ?? 0,
-            savedAt: tx.timestamp,
-          };
-          const saved = tx.db.topicNote.key.find(run.idempotencyKey);
-          if (saved) tx.db.topicNote.id.update({ ...row, id: saved.id });
-          else tx.db.topicNote.insert(row);
-        });
-        return note?.text;
-      }
-    );
+    const research = step.parallel('Research', topics, (ctx, topic, run) => {
+      const sources = searchWikipedia(ctx, topic);
+      const note =
+        sources.length === 0
+          ? undefined
+          : summarize(
+              ctx,
+              question,
+              topic,
+              topics.filter(other => other !== topic),
+              sources
+            );
+      // Saved now, so the page shows it while other topics are still running.
+      // The key makes a retry replace its own note instead of adding one.
+      ctx.withTx(tx => {
+        const { owner } = tx.db.dossier.id.find(dossierId)!;
+        const row = {
+          id: 0n,
+          key: run.idempotencyKey,
+          dossierId,
+          owner,
+          topic,
+          summary: note?.text,
+          sources: sources.map(({ title, url }) => ({ title, url })),
+          tokens: note?.tokens ?? 0,
+          savedAt: tx.timestamp,
+        };
+        const saved = tx.db.topicNote.key.find(run.idempotencyKey);
+        if (saved) tx.db.topicNote.id.update({ ...row, id: saved.id });
+        else tx.db.topicNote.insert(row);
+      });
+      return note?.text;
+    });
     // A topic that keeps failing is left out. The rest of the report goes on.
-    const notes = plan.topics.flatMap((topic, i) => {
+    const notes = topics.flatMap((topic, i) => {
       const result = research[i];
       return result.ok && result.value
         ? [{ topic, summary: result.value }]
@@ -250,18 +252,6 @@ export const workflowRunAttempt = workflows.register(spacetimedb, {
 export const init = spacetimedb.init(ctx => {
   workflows.install(ctx);
 });
-
-export const setApiKey = spacetimedb.reducer(
-  { key: t.string() },
-  (ctx, { key }) => {
-    workflows.requireAdmin(ctx);
-    if (ctx.db.apiKey.singleton.find(true)) {
-      ctx.db.apiKey.singleton.update({ singleton: true, key });
-    } else {
-      ctx.db.apiKey.insert({ singleton: true, key });
-    }
-  }
-);
 
 export const startDossier = spacetimedb.reducer(
   { question: t.string() },
@@ -300,9 +290,23 @@ function requireOwnedDossier(ctx: ReducerCtx<Schema>, id: bigint) {
 }
 
 export const approvePlan = spacetimedb.reducer(
-  { dossierId: t.u64() },
-  (ctx, { dossierId }) => {
+  { dossierId: t.u64(), topics: t.array(t.string()) },
+  (ctx, { dossierId, topics }) => {
     const row = requireOwnedDossier(ctx, dossierId);
+    if (ctx.db.workflowRun.id.find(row.runId)?.waitingFor !== 'plan-approved') {
+      throw new SenderError('This plan is no longer waiting for approval');
+    }
+    const plan = topics.map(topic => topic.trim()).filter(Boolean);
+    if (
+      plan.length === 0 ||
+      plan.length > MAX_TOPICS ||
+      plan.some(topic => topic.length > MAX_TOPIC_LENGTH)
+    ) {
+      throw new SenderError(
+        `A plan needs 1 to ${MAX_TOPICS} topics of up to ${MAX_TOPIC_LENGTH} characters`
+      );
+    }
+    ctx.db.dossier.id.update({ ...row, topics: plan });
     workflows.signal(ctx, row.runId, 'plan-approved');
   }
 );

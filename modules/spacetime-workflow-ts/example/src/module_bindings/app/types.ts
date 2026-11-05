@@ -10,12 +10,6 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export const ApiKey = __t.object("ApiKey", {
-  singleton: __t.bool(),
-  key: __t.string(),
-});
-export type ApiKey = __Infer<typeof ApiKey>;
-
 export const Dossier = __t.object("Dossier", {
   id: __t.u64(),
   owner: __t.identity(),

@@ -12,4 +12,5 @@ import {
 
 export default {
   dossierId: __t.u64(),
+  topics: __t.array(__t.string()),
 };

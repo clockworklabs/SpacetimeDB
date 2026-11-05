@@ -111,6 +111,61 @@ function stepLines(
     .join('\n');
 }
 
+function topicList(topics: string[]): HTMLElement {
+  const list = element('ol');
+  list.append(...topics.map(topic => element('li', undefined, topic)));
+  return list;
+}
+
+// The plan can be edited until it is approved. Drafts survive re-renders.
+const drafts = new Map<bigint, string[]>();
+const MAX_TOPICS = 4;
+
+function planEditor(dossier: { id: bigint; topics: string[] }): Node[] {
+  const draft = drafts.get(dossier.id) ?? [...dossier.topics];
+  drafts.set(dossier.id, draft);
+  const rows = draft.map((topic, index) => {
+    const row = element('div', 'plan-row');
+    const input = element('input');
+    input.value = topic;
+    input.maxLength = 80;
+    input.setAttribute('aria-label', `Topic ${index + 1}`);
+    input.addEventListener('input', () => {
+      draft[index] = input.value;
+    });
+    row.append(
+      input,
+      button('btn icon', '×', () => {
+        draft.splice(index, 1);
+        render();
+      })
+    );
+    row.lastElementChild!.setAttribute('aria-label', 'Remove topic');
+    return row;
+  });
+  const actions = element('div', 'plan-actions');
+  if (draft.length < MAX_TOPICS) {
+    actions.append(
+      button('btn small', '+ Add topic', () => {
+        draft.push('');
+        render();
+        const inputs =
+          document.querySelectorAll<HTMLInputElement>('.plan-row input');
+        inputs[inputs.length - 1]?.focus();
+      })
+    );
+  }
+  actions.append(
+    button('btn primary', 'Approve plan', () => {
+      conn?.reducers
+        .approvePlan({ dossierId: dossier.id, topics: draft })
+        .then(() => drafts.delete(dossier.id))
+        .catch(showError);
+    })
+  );
+  return [...rows, actions];
+}
+
 function renderMessages(): void {
   const wrap = $('msg-list');
   const dossier = [...conn!.db.myDossiers.iter()].find(
@@ -158,21 +213,13 @@ function renderMessages(): void {
   ];
 
   if (dossier.topics.length > 0) {
-    const topics = element('ol');
-    topics.append(
-      ...dossier.topics.map(topic => element('li', undefined, topic))
+    nodes.push(
+      message(
+        'assistant',
+        'Plan',
+        ...(waiting ? planEditor(dossier) : [topicList(dossier.topics)])
+      )
     );
-    const body: Node[] = [topics];
-    if (waiting) {
-      body.push(
-        button('btn primary', 'Approve plan', () => {
-          conn?.reducers
-            .approvePlan({ dossierId: dossier.id })
-            .catch(showError);
-        })
-      );
-    }
-    nodes.push(message('assistant', 'Plan', ...body));
   }
 
   // Steps that finished before the first lost attempt, and what they cost.
@@ -254,6 +301,12 @@ function renderMessages(): void {
     nodes.push(typing);
   }
 
+  if (
+    wrap.contains(document.activeElement) &&
+    document.activeElement?.tagName === 'INPUT'
+  ) {
+    return;
+  }
   const wasNearBottom =
     wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 100;
   const scrollTop = wrap.scrollTop;
@@ -270,7 +323,7 @@ function render(): void {
 
 function setConnected(connected: boolean): void {
   $<HTMLButtonElement>('btn-send').disabled = !connected;
-  $('conn-foot').hidden = connected;
+  $('conn-status').hidden = connected;
 }
 
 function connect(config: ServerConfig): void {
