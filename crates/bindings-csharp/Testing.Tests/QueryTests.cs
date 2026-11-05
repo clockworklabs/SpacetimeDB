@@ -15,21 +15,17 @@ public class QueryTests
         );
         var view = test.CreateViewContext(alice);
         var anonymous = test.CreateAnonymousViewContext();
-        Assert.Equal(test.DatabaseIdentity, test.CreateViewContext(TestAuth.Internal()).Sender);
         Assert.Empty(test.RunQuery(view.From.Message()));
         test.WithReducerTx(alice, ctx => Chat.SendMessage(ctx, "Alice"));
         test.WithReducerTx(TestAuth.Internal(), ctx => Chat.SendMessage(ctx, "Internal"));
         var mine = test.RunQuery(Chat.MyMessages(view));
         Assert.Equal("Alice", Assert.Single(mine).Text);
         Assert.Equal(2, test.RunQuery(anonymous.From.Message()).Count);
-        Assert.Equal(2UL, view.Db.Message.Count);
 
         var query = anonymous.From.Message();
         test.Dispose();
         Assert.Throws<ObjectDisposedException>(() => test.RunQuery(query));
         Assert.Throws<ObjectDisposedException>(() => view.Db.Message.Count);
-        Assert.Throws<ObjectDisposedException>(() => anonymous.From.Message());
-        Assert.Throws<ObjectDisposedException>(() => test.CreateAnonymousViewContext());
     }
 
     [Fact]

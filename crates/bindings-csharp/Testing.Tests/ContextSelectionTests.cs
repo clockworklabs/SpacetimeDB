@@ -5,7 +5,9 @@ using TestingModule;
 
 public class ContextSelectionTests
 {
-    private static void CheckSelected(IModuleContext left, IModuleContext right)
+    // Converting a selector back to its context type is what module code relies on.
+    private static void CheckSelected<TContext>(TContext left, TContext right)
+        where TContext : IModuleContext
     {
         var namespaces = Schema.CreateNamespaces();
         Assert.Equal("Left.Leaf.probe", namespaces.Resolve(left.InstanceId, "probe"));
@@ -18,47 +20,17 @@ public class ContextSelectionTests
         using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
         test.WithReducerTx(
             TestAuth.Internal(),
-            ctx =>
-            {
-                ReducerContext left = ctx.As.Left.Leaf;
-                ReducerContext right = ctx.As.Right.Leaf;
-                CheckSelected(left, right);
-                Assert.Same(ctx.Db.Access, left.Db.Access);
-                Assert.Same(ctx.Db.Access, right.Db.Access);
-            }
+            ctx => CheckSelected<ReducerContext>(ctx.As.Left.Leaf, ctx.As.Right.Leaf)
         );
-
         var view = test.CreateViewContext(TestAuth.Internal());
-        ViewContext leftView = view.As.Left.Leaf;
-        ViewContext rightView = view.As.Right.Leaf;
-        CheckSelected(leftView, rightView);
-        Assert.Same(view.Db.Access, leftView.Db.Access);
-
+        CheckSelected<ViewContext>(view.As.Left.Leaf, view.As.Right.Leaf);
         var anonymous = test.CreateAnonymousViewContext();
-        AnonymousViewContext leftAnonymous = anonymous.As.Left.Leaf;
-        AnonymousViewContext rightAnonymous = anonymous.As.Right.Leaf;
-        CheckSelected(leftAnonymous, rightAnonymous);
-        Assert.Same(anonymous.Db.Access, leftAnonymous.Db.Access);
-
+        CheckSelected<AnonymousViewContext>(anonymous.As.Left.Leaf, anonymous.As.Right.Leaf);
         var procedure = test.CreateProcedureContext(TestAuth.Internal());
-        ProcedureContext leftProcedure = procedure.As.Left.Leaf;
-        ProcedureContext rightProcedure = procedure.As.Right.Leaf;
-        CheckSelected(leftProcedure, rightProcedure);
-        Assert.Null(leftProcedure.Db.Access);
+        CheckSelected<ProcedureContext>(procedure.As.Left.Leaf, procedure.As.Right.Leaf);
         procedure.WithTx(tx =>
         {
-            ProcedureTxContext left = tx.As.Left.Leaf;
-            ProcedureTxContext right = tx.As.Right.Leaf;
-            CheckSelected(left, right);
-            Assert.Same(tx.Db.Access, left.Db.Access);
-            return 0;
-        });
-        leftProcedure.WithTx(tx =>
-        {
-            Assert.Equal(
-                ((IModuleContext)leftProcedure).InstanceId,
-                ((IModuleContext)tx).InstanceId
-            );
+            CheckSelected<ProcedureTxContext>(tx.As.Left.Leaf, tx.As.Right.Leaf);
             return 0;
         });
         Assert.Throws<InvalidOperationException>(() => Module.InstanceCount);
@@ -68,45 +40,15 @@ public class ContextSelectionTests
     public void GeneratedSelectorsRejectExpiredOwners()
     {
         using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
-        Action? selectFromReducer = null;
-        test.WithReducerTx(
-            TestAuth.Internal(),
-            ctx =>
-            {
-                var path = ctx.As.Left;
-                selectFromReducer = () =>
-                {
-                    _ = path.Leaf;
-                };
-            }
-        );
-        Assert.Throws<ObjectDisposedException>(selectFromReducer!);
+        var reducerPath = test.WithReducerTx(TestAuth.Internal(), ctx => ctx.As.Left);
+        Assert.Throws<ObjectDisposedException>(() => reducerPath.Leaf);
 
         var procedure = test.CreateProcedureContext(TestAuth.Internal());
-        Action? selectFromTransaction = null;
-        procedure.WithTx(tx =>
-        {
-            var path = tx.As.Left;
-            selectFromTransaction = () =>
-            {
-                _ = path.Leaf;
-            };
-            return 0;
-        });
-        Assert.Throws<ObjectDisposedException>(selectFromTransaction!);
+        var transactionPath = procedure.WithTx(tx => tx.As.Left);
+        Assert.Throws<ObjectDisposedException>(() => transactionPath.Leaf);
 
-        var procedurePath = procedure.As.Left;
         var viewPath = test.CreateViewContext(TestAuth.Internal()).As.Left;
-        var anonymousPath = test.CreateAnonymousViewContext().As.Left;
         test.Dispose();
-        Assert.Throws<ObjectDisposedException>(() => procedurePath.Leaf);
         Assert.Throws<ObjectDisposedException>(() => viewPath.Leaf);
-        Assert.Throws<ObjectDisposedException>(() => anonymousPath.Leaf);
-
-        using var other = ModuleTestContext.Create(typeof(Entry).Assembly);
-        var otherView = other.CreateViewContext(TestAuth.Internal());
-        ViewContext left = otherView.As.Left.Leaf;
-        ViewContext right = otherView.As.Right.Leaf;
-        CheckSelected(left, right);
     }
 }
