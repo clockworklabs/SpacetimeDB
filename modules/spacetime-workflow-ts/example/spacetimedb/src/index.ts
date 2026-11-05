@@ -130,18 +130,24 @@ function searchWikipedia(ctx: Ctx, topic: string): Source[] {
     'https://en.wikipedia.org/w/api.php?action=query&format=json&formatversion=2' +
     `&generator=search&gsrlimit=${SOURCES_PER_TOPIC}&gsrsearch=${encodeURIComponent(topic)}` +
     `&prop=extracts%7Cinfo&exintro=1&explaintext=1&exlimit=${SOURCES_PER_TOPIC}` +
-    '&exchars=1500&inprop=url';
+    '&exchars=1200&inprop=url';
   const response = ctx.http.fetch(url, {
-    headers: { 'User-Agent': 'spacetimedb-dossier-example' },
+    // Wikimedia asks API clients to identify themselves.
+    headers: {
+      'User-Agent': 'SpacetimeDB-Dossier-Example/0.1 (https://spacetimedb.com)',
+    },
   });
   if (response.status !== 200) {
     throw new Error(`Wikipedia returned ${response.status}`);
   }
-  const { query } = JSON.parse(response.text()) as {
+  const { query, error } = JSON.parse(response.text()) as {
     query?: {
       pages: { title: string; fullurl: string; extract?: string }[];
     };
+    error?: { code: string };
   };
+  // Errors such as rate limits come back as 200. Throwing retries the topic.
+  if (error) throw new Error(`Wikipedia returned ${error.code}`);
   return (query?.pages ?? []).map(page => ({
     title: page.title,
     url: page.fullurl,
