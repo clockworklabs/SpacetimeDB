@@ -1,6 +1,6 @@
 use crate::util::{
     is_reducer_invokable, iter_constraints, iter_indexes, iter_procedures, iter_reducers, iter_table_names_and_types,
-    iter_tables, iter_types, iter_views, print_auto_generated_version_comment,
+    iter_tables, iter_types,
 };
 use crate::{CodegenOptions, OutputFile};
 
@@ -8,7 +8,6 @@ use super::util::{collect_case, dependency_scoped_type_name, print_auto_generate
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write};
-use std::iter;
 use std::ops::Deref;
 
 use convert_case::{Case, Casing};
@@ -16,9 +15,7 @@ use spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_primitives::ColId;
-use spacetimedb_schema::def::{
-    ColumnDef, ConstraintDef, IndexDef, ModuleDef, ProcedureDef, ReducerDef, TableDef, TypeDef, ViewDef,
-};
+use spacetimedb_schema::def::{ColumnDef, IndexAlgorithm, ModuleDef, ReducerDef, TableDef, TypeDef};
 use spacetimedb_schema::identifier::{Identifier, NamespacePath};
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::TableSchema;
@@ -154,6 +151,13 @@ pub(super) fn generate_module_bindings(module: &ModuleDef, dependency_name: Opti
     }]
 }
 
+impl TypeScript {
+    /// Generate registered types for internal SDK schemas, without client wiring.
+    pub fn generate_type_builders(&self, module: &ModuleDef) -> OutputFile {
+        types_only(module)
+    }
+}
+
 impl Lang for TypeScript {
     fn generate_type_files(&self, _module: &ModuleDef, _typ: &TypeDef) -> Vec<OutputFile> {
         vec![]
@@ -187,7 +191,7 @@ impl Lang for TypeScript {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
-        print_file_header(out, false, true);
+        print_file_header(out);
 
         let type_ref = table.product_type_ref;
         let product_def = module.typespace_for_generate()[type_ref].as_product().unwrap();
@@ -228,7 +232,7 @@ impl Lang for TypeScript {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
-        print_file_header(out, false, true);
+        print_file_header(out);
 
         out.newline();
 
@@ -257,7 +261,7 @@ impl Lang for TypeScript {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
-        print_file_header(out, false, true);
+        print_file_header(out);
 
         out.newline();
 
@@ -290,625 +294,11 @@ impl Lang for TypeScript {
     }
 
     fn generate_global_files(&self, module: &ModuleDef, options: &CodegenOptions) -> Vec<OutputFile> {
-        let ext = self.import_extension.suffix();
-        let mut output = CodeIndenter::new(String::new(), INDENT);
-        let out = &mut output;
-
-        print_file_header(out, true, false);
-
-        writeln!(out);
-        writeln!(out, "// Import all reducer arg schemas");
-        for reducer in iter_reducers(module, options.visibility) {
-            if !is_reducer_invokable(reducer) {
-                // Skip system-defined reducers
-                continue;
-            }
-            let reducer_module_name = reducer_module_name(&reducer.accessor_name);
-            let args_type = reducer_args_type_name(&reducer.accessor_name);
-            writeln!(out, "import {args_type} from \"./{reducer_module_name}{ext}\";");
-        }
-
-        writeln!(out);
-        writeln!(out, "// Import all procedure arg schemas");
-        for procedure in iter_procedures(module, options.visibility) {
-            let procedure_module_name = procedure_module_name(&procedure.accessor_name);
-            let args_type = procedure_args_type_name(&procedure.accessor_name);
-            writeln!(out, "import * as {args_type} from \"./{procedure_module_name}{ext}\";");
-        }
-
-        writeln!(out);
-        writeln!(out, "// Import all table schema definitions");
-        for (_, accessor_name, _) in iter_table_names_and_types(module, options.visibility) {
-            let table_module_name = table_module_name(accessor_name);
-            let table_name_pascalcase = accessor_name.deref().to_case(Case::Pascal);
-            // TODO: This really shouldn't be necessary. We could also have `table()` accept
-            // `__t.object(...)`s.
-            writeln!(
-                out,
-                "import {table_name_pascalcase}Row from \"./{table_module_name}{ext}\";"
-            );
-        }
-
-        // Import row types for submodule namespace tables (public only)
-        let ns_tables: Vec<_> = module
-            .all_tables_with_prefix()
-            .into_iter()
-            .filter(|(prefix, _, table)| !prefix.is_empty() && table.table_access == TableAccess::Public)
-            .collect();
-        let ns_views: Vec<_> = module
-            .all_views_with_prefix()
-            .into_iter()
-            .filter(|(prefix, _, _)| !prefix.is_empty())
-            .collect();
-        let ns_reducers: Vec<_> = module
-            .all_reducers_with_prefix()
-            .into_iter()
-            .filter(|(prefix, _, reducer)| !prefix.is_empty() && !reducer.visibility.is_private())
-            .collect();
-        let ns_procedures: Vec<_> = module
-            .all_procedures_with_prefix()
-            .into_iter()
-            .filter(|(prefix, _, procedure)| !prefix.is_empty() && !procedure.visibility.is_private())
-            .collect();
-        if !ns_tables.is_empty() || !ns_views.is_empty() {
-            writeln!(out);
-            writeln!(out, "// Import namespace table schema definitions");
-            for (_, owning, table) in &ns_tables {
-                let ns_path = submodule_ns_path(owning.accessor_path());
-                let file_stem = table_module_name(&table.accessor_name);
-                let row_type = submodule_row_type_name(owning.accessor_path(), table.accessor_name.deref());
-                writeln!(out, "import {row_type}Row from \"./{ns_path}/{file_stem}{ext}\";");
-            }
-            for (_, owning, view) in &ns_views {
-                let ns_path = submodule_ns_path(owning.accessor_path());
-                let file_stem = table_module_name(&view.accessor_name);
-                let row_type = submodule_row_type_name(owning.accessor_path(), view.accessor_name.deref());
-                writeln!(out, "import {row_type}Row from \"./{ns_path}/{file_stem}{ext}\";");
-            }
-        }
-        if !ns_reducers.is_empty() {
-            writeln!(out);
-            writeln!(out, "// Import namespace reducer arg schemas");
-            for (_, owning, reducer) in &ns_reducers {
-                if !is_reducer_invokable(reducer) {
-                    continue;
-                }
-                let ns_path = submodule_ns_path(owning.accessor_path());
-                let module_name = reducer_module_name(&reducer.accessor_name);
-                let args_type = submodule_reducer_args_type_name(owning.accessor_path(), &reducer.accessor_name);
-                writeln!(out, "import {args_type} from \"./{ns_path}/{module_name}{ext}\";");
-            }
-        }
-        if !ns_procedures.is_empty() {
-            writeln!(out);
-            writeln!(out, "// Import namespace procedure arg schemas");
-            for (_, owning, procedure) in &ns_procedures {
-                let ns_path = submodule_ns_path(owning.accessor_path());
-                let module_name = procedure_module_name(&procedure.accessor_name);
-                let args_type = submodule_procedure_args_type_name(owning.accessor_path(), &procedure.accessor_name);
-                writeln!(out, "import * as {args_type} from \"./{ns_path}/{module_name}{ext}\";");
-            }
-        }
-
-        writeln!(out);
-        writeln!(out, "/** Type-only namespace exports for generated type groups. */");
-
-        writeln!(out);
-        writeln!(out, "/** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */");
-        writeln!(out, "const tablesSchema = __schema({{");
-        out.indent(1);
-        let mut table_accessor_aliases = Vec::new();
-        let mut table_accessor_names = BTreeSet::new();
-        for table in iter_tables(module, options.visibility) {
-            let type_ref = table.product_type_ref;
-            let table_accessor = table.accessor_name.deref().to_case(Case::Camel);
-            let table_name_pascalcase = table.accessor_name.deref().to_case(Case::Pascal);
-            table_accessor_names.insert(table_accessor.clone());
-            if table.accessor_name.deref() != table_accessor {
-                table_accessor_aliases.push((table.accessor_name.to_string(), table_accessor.clone()));
-            }
-            writeln!(out, "{table_accessor}: __table({{");
-            out.indent(1);
-            write_table_opts(
-                module,
-                out,
-                type_ref,
-                table.name.deref(),
-                iter_indexes(table),
-                iter_constraints(table),
-                table.is_event,
-            );
-            out.dedent(1);
-            writeln!(out, "}}, {}Row),", table_name_pascalcase);
-        }
-        for view in iter_views(module) {
-            let type_ref = view.product_type_ref;
-            let view_accessor = view.accessor_name.deref().to_case(Case::Camel);
-            let view_name_pascalcase = view.accessor_name.deref().to_case(Case::Pascal);
-            table_accessor_names.insert(view_accessor.clone());
-            if view.accessor_name.deref() != view_accessor {
-                table_accessor_aliases.push((view.accessor_name.to_string(), view_accessor.clone()));
-            }
-            writeln!(out, "{view_accessor}: __table({{");
-            out.indent(1);
-            write_table_opts(
-                module,
-                out,
-                type_ref,
-                view.name.deref(),
-                iter::empty(),
-                iter::empty(),
-                false,
-            );
-            out.dedent(1);
-            writeln!(out, "}}, {}Row),", view_name_pascalcase);
-        }
-        // Namespace tables from submodules
-        for (prefix, owning_def, table) in &ns_tables {
-            let source_name = submodule_source_name(prefix, table.name.deref());
-            let accessor_key = submodule_accessor_key(owning_def, &table.accessor_name);
-            let row_type = submodule_row_type_name(owning_def.accessor_path(), table.accessor_name.deref());
-            let type_ref = table.product_type_ref;
-            writeln!(out, "\"{accessor_key}\": __table({{");
-            out.indent(1);
-            write_table_opts(
-                owning_def,
-                out,
-                type_ref,
-                &source_name,
-                iter_indexes(table),
-                iter_constraints(table),
-                table.is_event,
-            );
-            out.dedent(1);
-            writeln!(out, "}}, {row_type}Row),");
-        }
-        // Namespace views from submodules.
-        // The source name uses the canonical `view.name` (not the accessor) to match the
-        // backing table name registered in the database by `create_view_with_prefix`.
-        for (prefix, owning_def, view) in &ns_views {
-            let source_name = submodule_source_name(prefix, view.name.deref());
-            let accessor_key = submodule_accessor_key(owning_def, &view.accessor_name);
-            let row_type = submodule_row_type_name(owning_def.accessor_path(), view.accessor_name.deref());
-            let type_ref = view.product_type_ref;
-            writeln!(out, "\"{accessor_key}\": __table({{");
-            out.indent(1);
-            write_table_opts(
-                owning_def,
-                out,
-                type_ref,
-                &source_name,
-                iter::empty(),
-                iter::empty(),
-                false,
-            );
-            out.dedent(1);
-            writeln!(out, "}}, {row_type}Row),");
-        }
-        out.dedent(1);
-        writeln!(out, "}});");
-
-        writeln!(out);
-        writeln!(out, "/** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */");
-        writeln!(out, "const reducersSchema = __reducers(");
-        out.indent(1);
-        for reducer in iter_reducers(module, options.visibility) {
-            if !is_reducer_invokable(reducer) {
-                // Skip system-defined reducers
-                continue;
-            }
-            let args_type = reducer_args_type_name(&reducer.accessor_name);
-            writeln!(out, "__reducerSchema(\"{}\", {}),", reducer.name, args_type);
-        }
-        for (_, owning, reducer) in &ns_reducers {
-            if !is_reducer_invokable(reducer) {
-                continue;
-            }
-            // `reducer.name` is already qualified; do not prefix it again.
-            let wire_name = reducer.name.to_string();
-            let args_type = submodule_reducer_args_type_name(owning.accessor_path(), &reducer.accessor_name);
-            let accessor_key = submodule_accessor_key(owning, &reducer.accessor_name);
-            writeln!(
-                out,
-                "__reducerSchema(\"{wire_name}\", {args_type}, \"{accessor_key}\"),"
-            );
-        }
-        out.dedent(1);
-        writeln!(out, ");");
-
-        writeln!(out);
-        writeln!(
-            out,
-            "/** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */"
-        );
-        writeln!(out, "const proceduresSchema = __procedures(");
-        out.indent(1);
-        for procedure in iter_procedures(module, options.visibility) {
-            let args_type = procedure_args_type_name(&procedure.accessor_name);
-            writeln!(
-                out,
-                "__procedureSchema(\"{}\", {args_type}.params, {args_type}.returnType),",
-                procedure.name,
-            );
-        }
-        for (prefix, owning, procedure) in &ns_procedures {
-            let wire_name = format!("{}{}", prefix, procedure.name);
-            let args_type = submodule_procedure_args_type_name(owning.accessor_path(), &procedure.accessor_name);
-            let accessor_key = submodule_accessor_key(owning, &procedure.accessor_name);
-            writeln!(
-                out,
-                "__procedureSchema(\"{wire_name}\", {args_type}.params, {args_type}.returnType, \"{accessor_key}\"),"
-            );
-        }
-        out.dedent(1);
-        writeln!(out, ");");
-
-        table_accessor_aliases.retain(|(deprecated_accessor, _)| !table_accessor_names.contains(deprecated_accessor));
-        let has_table_accessor_aliases = !table_accessor_aliases.is_empty();
-
-        if has_table_accessor_aliases {
-            writeln!(out);
-            writeln!(
-                out,
-                "type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, \"tables\"> & {{"
-            );
-            out.indent(1);
-            writeln!(out, "tables: typeof tablesSchema.schemaType.tables & {{");
-            out.indent(1);
-            for (deprecated_accessor, target_accessor) in &table_accessor_aliases {
-                writeln!(
-                    out,
-                    "/** @deprecated Use `{target_accessor}` instead. This alias will be removed in the next major version. */"
-                );
-                writeln!(
-                    out,
-                    "readonly {}: Omit<typeof tablesSchema.schemaType.tables[{}], \"accessorName\"> & {{ readonly accessorName: {} }};",
-                    ts_string_literal(deprecated_accessor),
-                    ts_string_literal(target_accessor),
-                    ts_string_literal(deprecated_accessor)
-                );
-            }
-            out.dedent(1);
-            writeln!(out, "}};");
-            out.dedent(1);
-            writeln!(out, "}};");
-        }
-
-        writeln!(out);
-        writeln!(
-            out,
-            "/** The remote SpacetimeDB module schema, both runtime and type information. */"
-        );
-        writeln!(out, "const REMOTE_MODULE = {{");
-        out.indent(1);
-        writeln!(out, "versionInfo: {{");
-        out.indent(1);
-        writeln!(out, "cliVersion: \"{}\" as const,", spacetimedb_lib_version());
-        out.dedent(1);
-        writeln!(out, "}},");
-        if has_table_accessor_aliases {
-            writeln!(
-                out,
-                "tables: tablesSchema.schemaType.tables as __SchemaWithTableAccessorAliases[\"tables\"],"
-            );
-        } else {
-            writeln!(out, "tables: tablesSchema.schemaType.tables,");
-        }
-        // `subscribeToAllTables` leaves these out, as it has no args to pass them.
-        // Emitted only when there are some, so other modules' bindings are unchanged.
-        let views_with_args: Vec<_> = iter_views(module)
-            .filter(|view| !view.params.elements.is_empty())
-            .map(|view| ts_string_literal(&view.name))
-            .chain(
-                ns_views
-                    .iter()
-                    .filter(|(_, _, view)| !view.params.elements.is_empty())
-                    .map(|(prefix, _, view)| ts_string_literal(&submodule_source_name(prefix, &view.name))),
-            )
-            .collect();
-        if !views_with_args.is_empty() {
-            writeln!(out, "viewsWithArgs: [{}],", views_with_args.join(", "));
-        }
-        writeln!(out, "reducers: reducersSchema.reducersType.reducers,");
-        writeln!(out, "...proceduresSchema,");
-        out.dedent(1);
-        writeln!(out, "}} satisfies __RemoteModule<");
-        out.indent(1);
-        if has_table_accessor_aliases {
-            writeln!(out, "__SchemaWithTableAccessorAliases,");
-        } else {
-            writeln!(out, "typeof tablesSchema.schemaType,");
-        }
-        writeln!(out, "typeof reducersSchema.reducersType,");
-        writeln!(out, "typeof proceduresSchema");
-        out.dedent(1);
-        writeln!(out, ">;");
-        out.dedent(1);
-
-        if has_table_accessor_aliases {
-            writeln!(out);
-            writeln!(out, "const tableAccessorAliases = {{");
-            out.indent(1);
-            for (deprecated_accessor, target_accessor) in &table_accessor_aliases {
-                writeln!(
-                    out,
-                    "{}: {},",
-                    ts_string_literal(deprecated_accessor),
-                    ts_string_literal(target_accessor)
-                );
-            }
-            out.dedent(1);
-            writeln!(out, "}} as const;");
-
-            writeln!(out);
-            writeln!(
-                out,
-                "function __withTableAccessorAliases<T extends object>(target: T, freeze = false): T {{"
-            );
-            out.indent(1);
-            writeln!(
-                out,
-                "const out = Object.create(Object.getPrototypeOf(target)) as T & Record<string, unknown>;"
-            );
-            writeln!(
-                out,
-                "Object.defineProperties(out, Object.getOwnPropertyDescriptors(target));"
-            );
-            writeln!(
-                out,
-                "for (const [deprecatedAccessor, targetAccessor] of Object.entries(tableAccessorAliases)) {{"
-            );
-            out.indent(1);
-            writeln!(out, "if (deprecatedAccessor in out) {{");
-            out.indent(1);
-            writeln!(out, "continue;");
-            out.dedent(1);
-            writeln!(out, "}}");
-            writeln!(out, "Object.defineProperty(out, deprecatedAccessor, {{");
-            out.indent(1);
-            writeln!(out, "enumerable: true,");
-            writeln!(out, "configurable: false,");
-            writeln!(out, "get: () => out[targetAccessor],");
-            out.dedent(1);
-            writeln!(out, "}});");
-            out.dedent(1);
-            writeln!(out, "}}");
-            writeln!(out, "return freeze ? Object.freeze(out) : out;");
-            out.dedent(1);
-            writeln!(out, "}}");
-
-            writeln!(out);
-            // The SDK types `db` from the aliased schema, deprecation notes included.
-            writeln!(
-                out,
-                "export type DbView = __DbConnectionImpl<typeof REMOTE_MODULE>[\"db\"];"
-            );
-
-            writeln!(out);
-            writeln!(
-                out,
-                "type __TablesBase = __QueryBuilder<typeof tablesSchema.schemaType>;"
-            );
-            writeln!(out, "export type Tables = __TablesBase & {{");
-            out.indent(1);
-            for (deprecated_accessor, target_accessor) in &table_accessor_aliases {
-                writeln!(
-                    out,
-                    "/** @deprecated Use `{target_accessor}` instead. This alias will be removed in the next major version. */"
-                );
-                writeln!(
-                    out,
-                    "readonly {}: __TablesBase[{}];",
-                    ts_string_literal(deprecated_accessor),
-                    ts_string_literal(target_accessor)
-                );
-            }
-            out.dedent(1);
-            writeln!(out, "}};");
-        }
-
-        writeln!(out);
-        writeln!(out, "/** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */");
-        if ns_tables.is_empty() && ns_views.is_empty() {
-            if has_table_accessor_aliases {
-                writeln!(
-                    out,
-                    "const tablesBase: __TablesBase = __makeQueryBuilder(tablesSchema.schemaType);"
-                );
-                writeln!(
-                    out,
-                    "export const tables: Tables = __withTableAccessorAliases(tablesBase, true) as Tables;"
-                );
-            } else {
-                writeln!(
-                    out,
-                    "export const tables: __QueryBuilder<typeof tablesSchema.schemaType> = __makeQueryBuilder(tablesSchema.schemaType);"
-                );
-            }
-        } else {
-            writeln!(out, "const __qb = __makeQueryBuilder(tablesSchema.schemaType);");
-            writeln!(out, "export const tables = {{");
-            out.indent(1);
-            // Root tables (use camelCase accessor, matching tablesSchema keys)
-            for table in iter_tables(module, options.visibility) {
-                let key = table.accessor_name.deref().to_case(Case::Camel);
-                writeln!(out, "{key}: __qb.{key},");
-            }
-            // Root views
-            for view in iter_views(module) {
-                let key = view.accessor_name.deref().to_case(Case::Camel);
-                writeln!(out, "{key}: __qb.{key},");
-            }
-            // Build and emit namespace tree
-            let tree = build_ns_tree(&ns_tables, &ns_views);
-            emit_ns_tree(out, &tree);
-            out.dedent(1);
-            writeln!(out, "}} as const;");
-        }
-        writeln!(out);
-        writeln!(out, "/** The reducers available in this remote SpacetimeDB module. */");
-        if ns_reducers.is_empty() {
-            writeln!(
-                out,
-                "export const reducers = __convertToAccessorMap(reducersSchema.reducersType.reducers);"
-            );
-        } else {
-            writeln!(
-                out,
-                "const __reducerAccessors = __convertToAccessorMap(reducersSchema.reducersType.reducers);"
-            );
-            writeln!(out, "export const reducers = {{");
-            out.indent(1);
-            for reducer in iter_reducers(module, options.visibility) {
-                if !is_reducer_invokable(reducer) {
-                    continue;
-                }
-                let key = reducer.accessor_name.deref().to_case(Case::Camel);
-                writeln!(out, "{key}: __reducerAccessors.{key},");
-            }
-            let tree = build_reducer_ns_tree(&ns_reducers);
-            emit_fn_ns_tree(out, "__reducerAccessors", &tree);
-            out.dedent(1);
-            writeln!(out, "}} as const;");
-        }
-
-        writeln!(out);
-        writeln!(
-            out,
-            "/** The procedures available in this remote SpacetimeDB module. */"
-        );
-        if ns_procedures.is_empty() {
-            writeln!(
-                out,
-                "export const procedures = __convertToAccessorMap(proceduresSchema.procedures);"
-            );
-        } else {
-            writeln!(
-                out,
-                "const __procedureAccessors = __convertToAccessorMap(proceduresSchema.procedures);"
-            );
-            writeln!(out, "export const procedures = {{");
-            out.indent(1);
-            for procedure in iter_procedures(module, options.visibility) {
-                let key = procedure.accessor_name.deref().to_case(Case::Camel);
-                writeln!(out, "{key}: __procedureAccessors.{key},");
-            }
-            let tree = build_procedure_ns_tree(&ns_procedures);
-            emit_fn_ns_tree(out, "__procedureAccessors", &tree);
-            out.dedent(1);
-            writeln!(out, "}} as const;");
-        }
-
-        // Write type aliases for EventContext, ReducerEventContext, SubscriptionEventContext, ErrorContext
-        writeln!(out);
-        writeln!(
-            out,
-            "/** The context type returned in callbacks for all possible events. */"
-        );
-        writeln!(
-            out,
-            "export type EventContext = __EventContextInterface<typeof REMOTE_MODULE>;"
-        );
-
-        writeln!(out, "/** The context type returned in callbacks for reducer events. */");
-        writeln!(
-            out,
-            "export type ReducerEventContext = __ReducerEventContextInterface<typeof REMOTE_MODULE>;"
-        );
-
-        writeln!(
-            out,
-            "/** The context type returned in callbacks for subscription events. */"
-        );
-        writeln!(
-            out,
-            "export type SubscriptionEventContext = __SubscriptionEventContextInterface<typeof REMOTE_MODULE>;"
-        );
-
-        writeln!(out, "/** The context type returned in callbacks for error events. */");
-        writeln!(
-            out,
-            "export type ErrorContext = __ErrorContextInterface<typeof REMOTE_MODULE>;"
-        );
-
-        writeln!(out, "/** The subscription handle type to manage active subscriptions created from a {{@link SubscriptionBuilder}}. */");
-        writeln!(
-            out,
-            "export type SubscriptionHandle = __SubscriptionHandleImpl<typeof REMOTE_MODULE>;"
-        );
-
-        writeln!(out);
-        writeln!(
-            out,
-            "/** Builder class to configure a new subscription to the remote SpacetimeDB instance. */"
-        );
-        writeln!(
-            out,
-            "export class SubscriptionBuilder extends __SubscriptionBuilderImpl<typeof REMOTE_MODULE> {{}}"
-        );
-
-        writeln!(out);
-        writeln!(
-            out,
-            "/** Builder class to configure a new database connection to the remote SpacetimeDB instance. */"
-        );
-        writeln!(
-            out,
-            "export class DbConnectionBuilder extends __DbConnectionBuilder<DbConnection> {{}}"
-        );
-
-        writeln!(out);
-        writeln!(out, "/** The typed database connection to manage connections to the remote SpacetimeDB instance. This class has type information specific to the generated module. */");
-        writeln!(
-            out,
-            "export class DbConnection extends __DbConnectionImpl<typeof REMOTE_MODULE> {{"
-        );
-        out.indent(1);
-        if has_table_accessor_aliases {
-            writeln!(
-                out,
-                "constructor(config: __DbConnectionConfig<typeof REMOTE_MODULE>) {{"
-            );
-            out.indent(1);
-            writeln!(out, "super(config);");
-            writeln!(out, "this.db = __withTableAccessorAliases(this.db);");
-            out.dedent(1);
-            writeln!(out, "}}");
-
-            writeln!(out);
-        }
-        writeln!(out, "/** Creates a new {{@link DbConnectionBuilder}} to configure and connect to the remote SpacetimeDB instance. */");
-        writeln!(out, "static builder = (): DbConnectionBuilder => {{");
-        out.indent(1);
-        writeln!(
-            out,
-            "return new DbConnectionBuilder(REMOTE_MODULE, (config: __DbConnectionConfig<typeof REMOTE_MODULE>) => new DbConnection(config));"
-        );
-        out.dedent(1);
-        writeln!(out, "}};");
-
-        writeln!(out);
-        writeln!(out, "/** Creates a new {{@link SubscriptionBuilder}} to configure a subscription to the remote SpacetimeDB instance. */");
-        writeln!(out, "override subscriptionBuilder = (): SubscriptionBuilder => {{");
-        out.indent(1);
-        writeln!(out, "return new SubscriptionBuilder(this);");
-
-        out.dedent(1);
-        writeln!(out, "}};");
-        out.dedent(1);
-        writeln!(out, "}}");
-        out.newline();
-
-        let index_file = OutputFile {
-            filename: "index.ts".to_string(),
-            code: output.into_inner(),
-        };
-
-        let reducers_file = generate_reducers_file(module, options, ext);
-        let procedures_file = generate_procedures_file(module, options, ext);
+        let reducers_file = generate_reducers_file(module, options, self.import_extension.suffix());
+        let procedures_file = generate_procedures_file(module, options, self.import_extension.suffix());
         let types_file = generate_types_file(module);
 
-        let mut files = vec![index_file, reducers_file, procedures_file, types_file];
+        let mut files = vec![reducers_file, procedures_file, types_file];
 
         // Generate types.ts for each submodule namespace so that the
         // namespace-scoped reducer/procedure/table files can resolve their
@@ -921,7 +311,7 @@ impl Lang for TypeScript {
             files.push(generate_types_file_with_path(owning_def, filename));
         }
 
-        files
+        generate_module_files(module, options, files, self.import_extension.suffix())
     }
 }
 
@@ -1000,10 +390,19 @@ fn generate_types_file(module: &ModuleDef) -> OutputFile {
 }
 
 fn generate_types_file_with_path(module: &ModuleDef, filename: String) -> OutputFile {
+    generate_types_file_with_reexports(module, filename, "", &BTreeSet::new())
+}
+
+fn generate_types_file_with_reexports(
+    module: &ModuleDef,
+    filename: String,
+    module_path: &str,
+    reexports: &BTreeSet<AlgebraicTypeRef>,
+) -> OutputFile {
     let mut output = CodeIndenter::new(String::new(), INDENT);
     let out = &mut output;
 
-    print_file_header(out, false, true);
+    print_file_header(out);
     out.newline();
 
     let reducer_type_names = module
@@ -1014,6 +413,14 @@ fn generate_types_file_with_path(module: &ModuleDef, filename: String) -> Output
     for ty in iter_types(module) {
         let type_name = collect_case(Case::Pascal, ty.accessor_name.name_segments());
         if reducer_type_names.contains(&type_name) {
+            continue;
+        }
+
+        if reexports.contains(&ty.ty) {
+            writeln!(out, "import {{ {type_name} }} from {};", ts_string_literal(module_path));
+            writeln!(out, "export {{ {type_name} }};");
+            writeln!(out, "export type {type_name} = __Infer<typeof {type_name}>;");
+            out.newline();
             continue;
         }
 
@@ -1055,46 +462,6 @@ fn collect_submodule_namespaces<'a>(
     }
 }
 
-fn print_index_imports(out: &mut Indenter) {
-    // All library imports are prefixed with `__` to avoid
-    // clashing with the names of user generated types.
-    let mut types = [
-        "TypeBuilder as __TypeBuilder",
-        "type AlgebraicTypeType as __AlgebraicTypeType",
-        "Uuid as __Uuid",
-        "DbConnectionBuilder as __DbConnectionBuilder",
-        "convertToAccessorMap as __convertToAccessorMap",
-        "makeQueryBuilder as __makeQueryBuilder",
-        "type QueryBuilder as __QueryBuilder",
-        "type EventContextInterface as __EventContextInterface",
-        "type ReducerEventContextInterface as __ReducerEventContextInterface",
-        "type SubscriptionEventContextInterface as __SubscriptionEventContextInterface",
-        "type SubscriptionHandleImpl as __SubscriptionHandleImpl",
-        "type ErrorContextInterface as __ErrorContextInterface",
-        "type RemoteModule as __RemoteModule",
-        "SubscriptionBuilderImpl as __SubscriptionBuilderImpl",
-        "DbConnectionImpl as __DbConnectionImpl",
-        "type Event as __Event",
-        "schema as __schema",
-        "table as __table",
-        "type Infer as __Infer",
-        "reducers as __reducers",
-        "reducerSchema as __reducerSchema",
-        "procedures as __procedures",
-        "procedureSchema as __procedureSchema",
-        "type DbConnectionConfig as __DbConnectionConfig",
-        "t as __t",
-    ];
-    types.sort();
-    writeln!(out, "import {{");
-    out.indent(1);
-    for ty in types {
-        writeln!(out, "{ty},");
-    }
-    out.dedent(1);
-    writeln!(out, "}} from \"spacetimedb\";");
-}
-
 fn print_type_builder_imports(out: &mut Indenter) {
     // All library imports are prefixed with `__` to avoid
     // clashing with the names of user generated types.
@@ -1114,17 +481,10 @@ fn print_type_builder_imports(out: &mut Indenter) {
     writeln!(out, "}} from \"spacetimedb\";");
 }
 
-fn print_file_header(output: &mut Indenter, include_version: bool, type_builder_only: bool) {
+fn print_file_header(output: &mut Indenter) {
     print_auto_generated_file_comment(output);
-    if include_version {
-        print_auto_generated_version_comment(output);
-    }
     print_lint_suppression(output);
-    if type_builder_only {
-        print_type_builder_imports(output);
-    } else {
-        print_index_imports(output);
-    }
+    print_type_builder_imports(output);
 }
 
 fn print_lint_suppression(output: &mut Indenter) {
@@ -1183,85 +543,6 @@ fn define_body_for_product(
     out.newline();
 }
 
-fn write_table_opts<'a>(
-    module: &ModuleDef,
-    out: &mut Indenter,
-    type_ref: AlgebraicTypeRef,
-    name: &str,
-    indexes: impl Iterator<Item = &'a IndexDef>,
-    constraints: impl Iterator<Item = &'a ConstraintDef>,
-    is_event: bool,
-) {
-    let product_def = module.typespace_for_generate()[type_ref].as_product().unwrap();
-    writeln!(out, "name: '{}',", name);
-    writeln!(out, "indexes: [");
-    out.indent(1);
-    for index_def in indexes {
-        if index_def.generated() {
-            // Skip system-defined indexes
-            continue;
-        }
-
-        // We're generating code for the client,
-        // and it does not care what the algorithm on the server is,
-        // as it an use a btree in all cases.
-        let columns = index_def.algorithm.columns();
-        let get_name_and_type = |col_pos: ColId| {
-            let (field_name, field_type) = &product_def.elements[col_pos.idx()];
-            let name_camel = field_name.deref().to_case(Case::Camel);
-            (name_camel, field_type)
-        };
-        let accessor_name = index_def.accessor_name.as_deref().unwrap_or(&index_def.name);
-        writeln!(
-            out,
-            "{{ accessor: '{}', name: '{}', algorithm: 'btree', columns: [",
-            accessor_name, index_def.name
-        );
-        out.indent(1);
-        for col_id in columns.iter() {
-            writeln!(out, "'{}',", get_name_and_type(col_id).0);
-        }
-        out.dedent(1);
-        writeln!(out, "] }},");
-    }
-    out.dedent(1);
-    writeln!(out, "],");
-    writeln!(out, "constraints: [");
-    out.indent(1);
-    // Unique constraints sorted by name for determinism
-    for constraint in constraints {
-        let columns: Vec<_> = constraint
-            .data
-            .unique_columns() // Option<&ColSet>
-            .into_iter() // Iterator over 0 or 1 item (&ColSet)
-            .flat_map(|cs| cs.iter()) // Iterator over the ColIds inside the set
-            .map(|col_id| {
-                let (field_name, _field_type) = &product_def.elements[col_id.idx()];
-                let field_name = field_name.deref().to_case(Case::Camel);
-                format!("'{}'", field_name)
-            })
-            .collect();
-
-        writeln!(
-            out,
-            "{{ name: '{}', constraint: 'unique', columns: [{}] }},",
-            constraint.name,
-            columns.join(", ")
-        );
-    }
-    out.dedent(1);
-    writeln!(out, "],");
-    if is_event {
-        writeln!(out, "event: true,");
-    }
-}
-
-/// e.g.
-/// ```ts
-///   x: __t.f32().primaryKey(),
-///   y: __t.f32(),
-///   fooBar: __t.string(),
-/// ```
 fn write_object_type_builder_fields(
     module: &ModuleDef,
     out: &mut Indenter,
@@ -1343,55 +624,65 @@ fn write_type_builder_field(
 
 /// e.g. `__t.option(__t.i32())`, `__t.string()`
 fn write_type_builder<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicTypeUse) -> fmt::Result {
+    write_type_builder_with_names(module, out, ty, "__t", "")
+}
+
+fn write_type_builder_with_names<W: Write>(
+    module: &ModuleDef,
+    out: &mut W,
+    ty: &AlgebraicTypeUse,
+    builder: &str,
+    types: &str,
+) -> fmt::Result {
     match ty {
-        AlgebraicTypeUse::Unit => write!(out, "__t.unit()")?,
-        AlgebraicTypeUse::Never => write!(out, "__t.never()")?,
-        AlgebraicTypeUse::Identity => write!(out, "__t.identity()")?,
-        AlgebraicTypeUse::ConnectionId => write!(out, "__t.connectionId()")?,
-        AlgebraicTypeUse::Timestamp => write!(out, "__t.timestamp()")?,
-        AlgebraicTypeUse::TimeDuration => write!(out, "__t.timeDuration()")?,
-        AlgebraicTypeUse::ScheduleAt => write!(out, "__t.scheduleAt()")?,
-        AlgebraicTypeUse::Uuid => write!(out, "__t.uuid()")?,
+        AlgebraicTypeUse::Unit => write!(out, "{builder}.unit()")?,
+        AlgebraicTypeUse::Never => write!(out, "{builder}.never()")?,
+        AlgebraicTypeUse::Identity => write!(out, "{builder}.identity()")?,
+        AlgebraicTypeUse::ConnectionId => write!(out, "{builder}.connectionId()")?,
+        AlgebraicTypeUse::Timestamp => write!(out, "{builder}.timestamp()")?,
+        AlgebraicTypeUse::TimeDuration => write!(out, "{builder}.timeDuration()")?,
+        AlgebraicTypeUse::ScheduleAt => write!(out, "{builder}.scheduleAt()")?,
+        AlgebraicTypeUse::Uuid => write!(out, "{builder}.uuid()")?,
         AlgebraicTypeUse::Option(inner_ty) => {
-            write!(out, "__t.option(")?;
-            write_type_builder(module, out, inner_ty)?;
+            write!(out, "{builder}.option(")?;
+            write_type_builder_with_names(module, out, inner_ty, builder, types)?;
             write!(out, ")")?;
         }
         AlgebraicTypeUse::Result { ok_ty, err_ty } => {
-            write!(out, "__t.result(")?;
-            write_type_builder(module, out, ok_ty)?;
+            write!(out, "{builder}.result(")?;
+            write_type_builder_with_names(module, out, ok_ty, builder, types)?;
             write!(out, ", ")?;
-            write_type_builder(module, out, err_ty)?;
+            write_type_builder_with_names(module, out, err_ty, builder, types)?;
             write!(out, ")")?;
         }
         AlgebraicTypeUse::Primitive(prim) => match prim {
-            PrimitiveType::Bool => write!(out, "__t.bool()")?,
-            PrimitiveType::I8 => write!(out, "__t.i8()")?,
-            PrimitiveType::U8 => write!(out, "__t.u8()")?,
-            PrimitiveType::I16 => write!(out, "__t.i16()")?,
-            PrimitiveType::U16 => write!(out, "__t.u16()")?,
-            PrimitiveType::I32 => write!(out, "__t.i32()")?,
-            PrimitiveType::U32 => write!(out, "__t.u32()")?,
-            PrimitiveType::I64 => write!(out, "__t.i64()")?,
-            PrimitiveType::U64 => write!(out, "__t.u64()")?,
-            PrimitiveType::I128 => write!(out, "__t.i128()")?,
-            PrimitiveType::U128 => write!(out, "__t.u128()")?,
-            PrimitiveType::I256 => write!(out, "__t.i256()")?,
-            PrimitiveType::U256 => write!(out, "__t.u256()")?,
-            PrimitiveType::F32 => write!(out, "__t.f32()")?,
-            PrimitiveType::F64 => write!(out, "__t.f64()")?,
+            PrimitiveType::Bool => write!(out, "{builder}.bool()")?,
+            PrimitiveType::I8 => write!(out, "{builder}.i8()")?,
+            PrimitiveType::U8 => write!(out, "{builder}.u8()")?,
+            PrimitiveType::I16 => write!(out, "{builder}.i16()")?,
+            PrimitiveType::U16 => write!(out, "{builder}.u16()")?,
+            PrimitiveType::I32 => write!(out, "{builder}.i32()")?,
+            PrimitiveType::U32 => write!(out, "{builder}.u32()")?,
+            PrimitiveType::I64 => write!(out, "{builder}.i64()")?,
+            PrimitiveType::U64 => write!(out, "{builder}.u64()")?,
+            PrimitiveType::I128 => write!(out, "{builder}.i128()")?,
+            PrimitiveType::U128 => write!(out, "{builder}.u128()")?,
+            PrimitiveType::I256 => write!(out, "{builder}.i256()")?,
+            PrimitiveType::U256 => write!(out, "{builder}.u256()")?,
+            PrimitiveType::F32 => write!(out, "{builder}.f32()")?,
+            PrimitiveType::F64 => write!(out, "{builder}.f64()")?,
         },
-        AlgebraicTypeUse::String => write!(out, "__t.string()")?,
+        AlgebraicTypeUse::String => write!(out, "{builder}.string()")?,
         AlgebraicTypeUse::Array(elem_ty) => {
             if matches!(&**elem_ty, AlgebraicTypeUse::Primitive(PrimitiveType::U8)) {
-                return write!(out, "__t.byteArray()");
+                return write!(out, "{builder}.byteArray()");
             }
-            write!(out, "__t.array(")?;
-            write_type_builder(module, out, elem_ty)?;
+            write!(out, "{builder}.array(")?;
+            write_type_builder_with_names(module, out, elem_ty, builder, types)?;
             write!(out, ")")?;
         }
         AlgebraicTypeUse::Ref(r) => {
-            write!(out, "{}", type_ref_name(module, *r))?;
+            write!(out, "{types}{}", type_ref_name(module, *r))?;
         }
     }
     Ok(())
@@ -1441,19 +732,6 @@ fn table_module_name(table_name: &Identifier) -> String {
 ///
 /// This is the *canonical* name, not the accessor name: it is what the host stores and
 /// what appears on the wire. E.g. namespace="lib.", name="fruit_basket" → "lib.fruit_basket".
-fn submodule_source_name(namespace: &NamespacePath, canonical_name: &str) -> String {
-    format!("{}{}", namespace, canonical_name)
-}
-
-/// TypeScript import symbol for a submodule namespace table/view row type.
-/// Uses `_` separator to avoid colliding with root tables that share the same PascalCase prefix.
-/// `namespace` is the *accessor* path, since this names a client-side symbol.
-/// E.g. namespace="myLib.", accessor_name="library_table" → "MyLib_LibraryTable"
-fn submodule_row_type_name(namespace: &NamespacePath, accessor_name: &str) -> String {
-    let ns_part = namespace.join_segments("_").to_case(Case::Pascal);
-    format!("{}_{}", ns_part, accessor_name.to_case(Case::Pascal))
-}
-
 fn reducer_args_type_name(reducer_name: &ReducerName) -> String {
     reducer_name.deref().to_case(Case::Pascal) + "Reducer"
 }
@@ -1479,163 +757,6 @@ fn submodule_ns_path(namespace: &NamespacePath) -> String {
 /// The key under which a submodule reducer or procedure is registered in the SDK's
 /// accessor map. This corresponds to the owning module's accessor path and the camelCase
 /// accessor name, joined by `.`, e.g. `myLib.libInsert`.
-fn submodule_accessor_key(owning: &ModuleDef, accessor_name: &str) -> String {
-    owning
-        .accessor_path()
-        .segments()
-        .iter()
-        .map(|segment| segment.to_string())
-        .chain(std::iter::once(accessor_name.to_case(Case::Camel)))
-        .collect::<Vec<_>>()
-        .join(".")
-}
-
-/// TypeScript import symbol for a submodule namespace reducer/procedure.
-/// Uses `_` separator to avoid colliding with root reducers/procedures sharing the same prefix.
-/// `prefix` is the *accessor* path, since this names a client-side symbol.
-/// E.g. prefix="myLib.", accessor_name="library_reducer" → "MyLib_LibraryReducer"
-fn submodule_fn_type_name(prefix: &NamespacePath, accessor_name: &str) -> String {
-    let ns_part = prefix.join_segments("_").to_case(Case::Pascal);
-    format!("{}_{}", ns_part, accessor_name.to_case(Case::Pascal))
-}
-
-fn submodule_reducer_args_type_name(prefix: &NamespacePath, accessor_name: &ReducerName) -> String {
-    submodule_fn_type_name(prefix, accessor_name.deref()) + "Reducer"
-}
-
-fn submodule_procedure_args_type_name(prefix: &NamespacePath, accessor_name: &Identifier) -> String {
-    submodule_fn_type_name(prefix, accessor_name.deref()) + "Procedure"
-}
-
-/// A node in the recursive namespace tree used to emit the nested `tables` export.
-struct NsTree {
-    /// (combined_qb_key, local_ts_key) for table/view entries at this level.
-    entries: Vec<(String, String)>,
-    /// Child namespace nodes keyed by namespace segment.
-    children: BTreeMap<String, NsTree>,
-}
-
-impl NsTree {
-    fn new() -> Self {
-        NsTree {
-            entries: Vec::new(),
-            children: BTreeMap::new(),
-        }
-    }
-
-    fn insert(&mut self, path_segs: &[&str], combined_qb_key: String, local_ts_key: String) {
-        if path_segs.is_empty() {
-            self.entries.push((combined_qb_key, local_ts_key));
-        } else {
-            self.children
-                .entry(path_segs[0].to_string())
-                .or_insert_with(NsTree::new)
-                .insert(&path_segs[1..], combined_qb_key, local_ts_key);
-        }
-    }
-}
-
-/// Build the namespace tree from all submodule tables and views.
-fn build_ns_tree<'a>(
-    ns_tables: &[(NamespacePath, &'a ModuleDef, &'a TableDef)],
-    ns_views: &[(NamespacePath, &'a ModuleDef, &'a ViewDef)],
-) -> BTreeMap<String, NsTree> {
-    // Query builder keys are the accessor keys the tablesSchema entries are registered under.
-    let mut tree: BTreeMap<String, NsTree> = BTreeMap::new();
-    for (_, owning, table) in ns_tables {
-        let accessor_key = submodule_accessor_key(owning, &table.accessor_name);
-        let local = table.accessor_name.deref().to_case(Case::Camel);
-        let segs: Vec<&str> = owning.accessor_path().segments().iter().map(|s| &**s).collect();
-        if let Some((first, rest)) = segs.split_first() {
-            tree.entry(first.to_string())
-                .or_insert_with(NsTree::new)
-                .insert(rest, accessor_key, local);
-        }
-    }
-    for (_, owning, view) in ns_views {
-        let accessor_key = submodule_accessor_key(owning, &view.accessor_name);
-        let local = view.accessor_name.deref().to_case(Case::Camel);
-        let segs: Vec<&str> = owning.accessor_path().segments().iter().map(|s| &**s).collect();
-        if let Some((first, rest)) = segs.split_first() {
-            tree.entry(first.to_string())
-                .or_insert_with(NsTree::new)
-                .insert(rest, accessor_key, local);
-        }
-    }
-    tree
-}
-
-/// Recursively emit the namespace tree as nested TypeScript object blocks.
-fn emit_ns_tree(out: &mut Indenter, tree: &BTreeMap<String, NsTree>) {
-    for (ns, node) in tree {
-        writeln!(out, "{ns}: {{");
-        out.indent(1);
-        for (qb_key, local_key) in &node.entries {
-            writeln!(out, "{local_key}: __qb[\"{qb_key}\"],");
-        }
-        emit_ns_tree(out, &node.children);
-        out.dedent(1);
-        writeln!(out, "}},");
-    }
-}
-
-/// Build namespace tree for submodule reducers (uses `.` path separator).
-/// Object keys follow the accessor path; `flat_key` is the accessor-map key the schema
-/// entry was registered under (see [`submodule_accessor_key`]). It contains dots, so
-/// bracket notation is required.
-fn build_reducer_ns_tree<'a>(
-    ns_reducers: &[(NamespacePath, &'a ModuleDef, &'a ReducerDef)],
-) -> BTreeMap<String, NsTree> {
-    let mut tree: BTreeMap<String, NsTree> = BTreeMap::new();
-    for (_, owning, reducer) in ns_reducers {
-        if !is_reducer_invokable(reducer) {
-            continue;
-        }
-        let flat_key = submodule_accessor_key(owning, &reducer.accessor_name);
-        let local = reducer.accessor_name.deref().to_case(Case::Camel);
-        let segs: Vec<&str> = owning.accessor_path().segments().iter().map(|s| &**s).collect();
-        if let Some((first, rest)) = segs.split_first() {
-            tree.entry(first.to_string())
-                .or_insert_with(NsTree::new)
-                .insert(rest, flat_key, local);
-        }
-    }
-    tree
-}
-
-/// Build namespace tree for submodule procedures (uses `.` path separator).
-fn build_procedure_ns_tree<'a>(
-    ns_procedures: &[(NamespacePath, &'a ModuleDef, &'a ProcedureDef)],
-) -> BTreeMap<String, NsTree> {
-    let mut tree: BTreeMap<String, NsTree> = BTreeMap::new();
-    for (_, owning, procedure) in ns_procedures {
-        let flat_key = submodule_accessor_key(owning, &procedure.accessor_name);
-        let local = procedure.accessor_name.deref().to_case(Case::Camel);
-        let segs: Vec<&str> = owning.accessor_path().segments().iter().map(|s| &**s).collect();
-        if let Some((first, rest)) = segs.split_first() {
-            tree.entry(first.to_string())
-                .or_insert_with(NsTree::new)
-                .insert(rest, flat_key, local);
-        }
-    }
-    tree
-}
-
-/// Emit a namespace tree for reducers/procedures using bracket notation.
-/// Flat keys contain `/` (e.g. `"lib/libraryReducer"`) so dot notation is invalid JS.
-fn emit_fn_ns_tree(out: &mut Indenter, map_var: &str, tree: &BTreeMap<String, NsTree>) {
-    for (ns, node) in tree {
-        writeln!(out, "{ns}: {{");
-        out.indent(1);
-        for (flat_key, local_key) in &node.entries {
-            writeln!(out, "{local_key}: {map_var}[\"{flat_key}\"],");
-        }
-        emit_fn_ns_tree(out, map_var, &node.children);
-        out.dedent(1);
-        writeln!(out, "}},");
-    }
-}
-
 pub fn type_name(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
     let mut s = String::new();
     write_type(module, &mut s, ty, None, None).unwrap();
@@ -1829,3 +950,820 @@ fn gen_and_print_imports<'a>(
 
 //     field_name
 // }
+
+fn generate_module_files(
+    module: &ModuleDef,
+    options: &CodegenOptions,
+    mut files: Vec<OutputFile>,
+    ext: &str,
+) -> Vec<OutputFile> {
+    generate_module(module, options, "", &mut files, ext);
+    files.push(entry_point(module, options, "", ext));
+    files
+}
+
+// Local names are readable by default; aliases are only needed for actual collisions.
+fn binding_name(preferred: &str, used: &mut BTreeSet<String>) -> String {
+    let mut name = preferred.to_string();
+    while used.contains(&name) {
+        name.push('_');
+    }
+    used.insert(name.clone());
+    name
+}
+
+fn generate_module(module: &ModuleDef, options: &CodegenOptions, dir: &str, files: &mut Vec<OutputFile>, ext: &str) {
+    let mut output = CodeIndenter::new(String::new(), INDENT);
+    let out = &mut output;
+    print_auto_generated_file_comment(out);
+
+    // pre-populate with reserved words
+    let mut used: BTreeSet<String> = [
+        "schema",
+        "table",
+        "t",
+        "spacetimedb",
+        "__BinaryReader",
+        "default",
+        "return",
+        "class",
+        "function",
+        "var",
+        "let",
+        "const",
+        "new",
+        "delete",
+        "switch",
+        "case",
+        "break",
+        "continue",
+        "for",
+        "while",
+        "do",
+        "if",
+        "else",
+        "try",
+        "catch",
+        "finally",
+        "throw",
+        "extends",
+        "import",
+        "export",
+        "in",
+        "instanceof",
+        "typeof",
+        "void",
+        "with",
+        "yield",
+        "await",
+        "enum",
+        "implements",
+        "interface",
+        "package",
+        "private",
+        "protected",
+        "public",
+        "static",
+        "super",
+        "this",
+        "null",
+        "true",
+        "false",
+        "debugger",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    // Reserve function exports before allocating table and child-module locals.
+    let mut functions = BTreeMap::new();
+    for accessor in iter_reducers(module, options.visibility)
+        .filter(|r| is_reducer_invokable(r))
+        .map(|r| r.accessor_name.deref())
+        .chain(iter_procedures(module, options.visibility).map(|p| p.accessor_name.deref()))
+        .chain(module.views().map(|v| v.accessor_name.deref()))
+    {
+        let accessor = accessor.to_case(Case::Camel);
+        let binding = binding_name(&accessor, &mut used);
+        functions.insert(accessor, binding);
+    }
+    let tables: Vec<_> = iter_tables(module, options.visibility).collect();
+    let mut rows = tables.clone();
+    for table in module.tables() {
+        if table.schedule.as_ref().is_some_and(|s| {
+            iter_reducers(module, options.visibility)
+                .any(|r| is_reducer_invokable(r) && local_name(&r.name) == local_name(&s.function_name))
+                || iter_procedures(module, options.visibility)
+                    .any(|p| local_name(&p.name) == local_name(&s.function_name))
+        }) && !rows.iter().any(|t| t.name == table.name)
+        {
+            rows.push(table);
+        }
+    }
+    let mut used_types: Vec<_> = rows
+        .iter()
+        .flat_map(|table| {
+            module.typespace_for_generate()[table.product_type_ref]
+                .as_product()
+                .unwrap()
+                .element_types()
+        })
+        .collect();
+    let scheduled = |name: &str| {
+        rows.iter().any(|t| {
+            t.schedule
+                .as_ref()
+                .is_some_and(|s| local_name(&s.function_name) == local_name(name))
+        })
+    };
+    used_types.extend(
+        iter_reducers(module, options.visibility)
+            .filter(|r| is_reducer_invokable(r) && !scheduled(&r.name))
+            .flat_map(|r| r.params_for_generate.element_types()),
+    );
+    for procedure in iter_procedures(module, options.visibility) {
+        if !scheduled(&procedure.name) {
+            used_types.extend(procedure.params_for_generate.element_types());
+        }
+        used_types.push(&procedure.return_type_for_generate);
+    }
+    used_types.extend(module.views().flat_map(|v| v.params_for_generate.element_types()));
+    for view in module.views() {
+        used_types.extend(
+            module.typespace_for_generate()[TableDef::from(view.clone()).product_type_ref]
+                .as_product()
+                .unwrap()
+                .element_types(),
+        );
+    }
+    // Row types already represented by a table or view need a separate builder
+    // only when another schema refers to them.
+    let row_models: Vec<_> = iter_tables(module, crate::CodegenVisibility::IncludePrivate)
+        .cloned()
+        .chain(module.views().cloned().map(TableDef::from))
+        .collect();
+    let named = selected_types(module, &used_types, &row_models);
+    // Reuse named object/enum builders, but retain object builders for row types:
+    // a RowBuilder in the module schema does not have the old ObjectBuilder API.
+    let reexports = named
+        .iter()
+        .filter(|ty| !row_models.iter().any(|row| row.product_type_ref == ty.ty))
+        .map(|ty| ty.ty)
+        .collect();
+    let accessor_dir = module.accessor_path().join_segments("/");
+    let filename = if accessor_dir.is_empty() {
+        "types.ts".to_string()
+    } else {
+        format!("{accessor_dir}/types.ts")
+    };
+    let prefix = if accessor_dir.is_empty() {
+        "./".to_string()
+    } else {
+        "../".repeat(module.accessor_path().segments().len())
+    };
+    let compatibility_types = generate_types_file_with_reexports(
+        module,
+        filename.clone(),
+        &format!("{prefix}{dir}module{ext}"),
+        &reexports,
+    );
+    files.retain(|file| file.filename != filename);
+    files.push(compatibility_types);
+
+    used.extend(
+        named
+            .iter()
+            .map(|ty| collect_case(Case::Pascal, ty.accessor_name.name_segments())),
+    );
+    let mut imports = vec!["schema"];
+    if !rows.is_empty() {
+        imports.push("table");
+    }
+    if !named.is_empty()
+        || module.views().next().is_some()
+        || used_types.iter().any(|t| !matches!(t, AlgebraicTypeUse::Ref(_)))
+    {
+        imports.push("t");
+    }
+    writeln!(out, "import {{ {} }} from 'spacetimedb/schema';", imports.join(", "));
+    if rows
+        .iter()
+        .copied()
+        .chain(
+            row_models
+                .iter()
+                .filter(|row| named.iter().any(|ty| ty.ty == row.product_type_ref)),
+        )
+        .any(|t| {
+            t.columns
+                .iter()
+                .any(|c| c.default_value.as_ref().is_some_and(|v| default_literal(v).is_none()))
+        })
+    {
+        writeln!(out, "import {{ BinaryReader as __BinaryReader }} from 'spacetimedb';");
+    }
+    let table_names: Vec<_> = rows
+        .iter()
+        .map(|t| binding_name(&t.accessor_name.deref().to_case(Case::Camel), &mut used))
+        .collect();
+    let children: Vec<_> = module
+        .submodules()
+        .iter()
+        .map(|(canonical, child)| {
+            let name = binding_name(&canonical.deref().to_case(Case::Camel), &mut used);
+            writeln!(out, "import * as {name} from './{canonical}/module{ext}';");
+            generate_module(child, options, &format!("{dir}{canonical}/"), files, ext);
+            (canonical, child, name)
+        })
+        .collect();
+    out.newline();
+    emit_named_types(module, out, &named, &row_models, false);
+    for (i, table) in rows.iter().enumerate() {
+        writeln!(out, "const {} = table(", table_names[i]);
+        out.indent(1);
+        table_options(out, table);
+        if let Some(name) = shared_row_name(table, &named, &row_models) {
+            writeln!(out, ", {name}");
+        } else {
+            writeln!(out, ", {{");
+            write_row_fields(module, out, table);
+            writeln!(out, "}}");
+        }
+        out.dedent(1);
+        writeln!(out, ");");
+        out.newline();
+    }
+    let view_rows: Vec<_> = module
+        .views()
+        .map(|view| {
+            let row = TableDef::from(view.clone());
+            if let Some(name) = shared_row_name(&row, &named, &row_models) {
+                return name;
+            }
+            let name = binding_name(
+                &format!("{}Row", view.accessor_name.deref().to_case(Case::Pascal)),
+                &mut used,
+            );
+            writeln!(out, "export const {name} = t.row({{");
+            write_row_fields(module, out, &row);
+            writeln!(out, "}});");
+            out.newline();
+            name
+        })
+        .collect();
+    writeln!(out, "const spacetimedb = schema({{");
+    out.indent(1);
+    for table in &tables {
+        let i = rows.iter().position(|t| t.name == table.name).unwrap();
+        let accessor = table.accessor_name.deref().to_case(Case::Camel);
+        if accessor == table_names[i] {
+            writeln!(out, "{accessor},");
+        } else {
+            writeln!(out, "{}: {},", ts_string_literal(&accessor), table_names[i]);
+        }
+    }
+    for (canonical, child, name) in children {
+        writeln!(
+            out,
+            "{}: {{ name: {}, module: {name} }},",
+            ts_string_literal(child.mount_accessor_name().unwrap_or(canonical)),
+            ts_string_literal(canonical)
+        );
+    }
+    out.dedent(1);
+    writeln!(out, "}});\nexport default spacetimedb;");
+    for reducer in iter_reducers(module, options.visibility).filter(|r| is_reducer_invokable(r)) {
+        let accessor = reducer.accessor_name.deref().to_case(Case::Camel);
+        let binding = &functions[&accessor];
+        out.newline();
+        function_start(out, &accessor, binding, "reducer");
+        function_args(
+            module,
+            out,
+            &reducer.name,
+            &accessor,
+            &reducer.params_for_generate.elements,
+            &rows,
+            &table_names,
+        );
+        writeln!(out, ");");
+        function_export(out, &accessor, binding);
+    }
+    for procedure in iter_procedures(module, options.visibility) {
+        let accessor = procedure.accessor_name.deref().to_case(Case::Camel);
+        let binding = &functions[&accessor];
+        out.newline();
+        function_start(out, &accessor, binding, "procedure");
+        function_args(
+            module,
+            out,
+            &procedure.name,
+            &accessor,
+            &procedure.params_for_generate.elements,
+            &rows,
+            &table_names,
+        );
+        write!(out, ", ");
+        write_type_builder_with_names(module, out, &procedure.return_type_for_generate, "t", "").unwrap();
+        writeln!(out, ");");
+        function_export(out, &accessor, binding);
+    }
+    for (i, view) in module.views().enumerate() {
+        let accessor = view.accessor_name.deref().to_case(Case::Camel);
+        let binding = &functions[&accessor];
+        let kind = if view.is_anonymous { "anonymousView" } else { "view" };
+        let cardinality = if matches!(view.return_type_for_generate, AlgebraicTypeUse::Option(_)) {
+            "option"
+        } else {
+            "array"
+        };
+        out.newline();
+        function_start(out, &accessor, binding, kind);
+        write!(
+            out,
+            "{{ name: {}, public: true }}, ",
+            ts_string_literal(local_name(&view.name))
+        );
+        if !view.params_for_generate.elements.is_empty() {
+            params(module, out, &view.params_for_generate.elements);
+            write!(out, ", ");
+        }
+        writeln!(out, "t.{cardinality}({}));", view_rows[i]);
+        function_export(out, &accessor, binding);
+    }
+    files.push(OutputFile {
+        filename: format!("{dir}module.ts"),
+        code: output.into_inner(),
+    });
+}
+
+fn selected_types<'a>(module: &'a ModuleDef, uses: &[&AlgebraicTypeUse], rows: &[TableDef]) -> Vec<&'a TypeDef> {
+    fn refs(ty: &AlgebraicTypeUse, needed: &mut BTreeSet<AlgebraicTypeRef>) {
+        match ty {
+            AlgebraicTypeUse::Ref(r) => {
+                needed.insert(*r);
+            }
+            AlgebraicTypeUse::Array(t) | AlgebraicTypeUse::Option(t) => refs(t, needed),
+            AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+                refs(ok_ty, needed);
+                refs(err_ty, needed);
+            }
+            _ => {}
+        }
+    }
+    let reducer_args = |ty: &TypeDef| {
+        module.reducers().any(|reducer| {
+            collect_case(Case::Pascal, ty.accessor_name.name_segments())
+                == reducer.accessor_name.deref().to_case(Case::Pascal)
+                && module.typespace_for_generate()[ty.ty]
+                    .as_product()
+                    .is_some_and(|p| p.elements == reducer.params_for_generate.elements)
+        })
+    };
+    let mut needed: BTreeSet<_> = module
+        .types()
+        .filter(|ty| !rows.iter().any(|r| r.product_type_ref == ty.ty) && !reducer_args(ty))
+        .map(|ty| ty.ty)
+        .collect();
+    for ty in uses {
+        refs(ty, &mut needed);
+    }
+    loop {
+        let previous = needed.clone();
+        for r in &previous {
+            match &module.typespace_for_generate()[*r] {
+                AlgebraicTypeDef::Product(p) => {
+                    for ty in p.element_types() {
+                        refs(ty, &mut needed);
+                    }
+                }
+                AlgebraicTypeDef::Sum(s) => {
+                    for (_, ty) in &s.variants {
+                        refs(ty, &mut needed);
+                    }
+                }
+                AlgebraicTypeDef::PlainEnum(_) => {}
+            }
+        }
+        if previous == needed {
+            break;
+        }
+    }
+    iter_types(module).filter(|ty| needed.contains(&ty.ty)).collect()
+}
+
+fn shared_row_name(table: &TableDef, types: &[&TypeDef], rows: &[TableDef]) -> Option<String> {
+    let ty = types.iter().find(|ty| ty.ty == table.product_type_ref)?;
+    let row = rows.iter().find(|row| row.product_type_ref == ty.ty)?;
+    let sequences = |t: &TableDef| t.sequences.values().map(|s| s.column).collect::<BTreeSet<_>>();
+    let same =
+        row.primary_key == table.primary_key
+            && sequences(row) == sequences(table)
+            && row.columns.iter().zip(&table.columns).all(|(a, b)| {
+                a.name == b.name && a.accessor_name == b.accessor_name && a.default_value == b.default_value
+            });
+    same.then(|| collect_case(Case::Pascal, ty.accessor_name.name_segments()))
+}
+
+// Internal SDK wire/schema generation needs the same named type builders,
+// without constructing a module or depending on the client runtime.
+fn types_only(module: &ModuleDef) -> OutputFile {
+    let mut output = CodeIndenter::new(String::new(), INDENT);
+    print_auto_generated_file_comment(&mut output);
+    writeln!(output, "import {{ t }} from 'spacetimedb/schema';");
+    emit_named_types(module, &mut output, &iter_types(module).collect::<Vec<_>>(), &[], true);
+    OutputFile {
+        filename: "types.ts".into(),
+        code: output.into_inner(),
+    }
+}
+
+// RowBuilder evaluates its fields at construction, unlike the lazy object and
+// enum builders. Define named dependencies first so shared rows can reuse them.
+fn ordered_types<'a>(module: &ModuleDef, types: &[&'a TypeDef]) -> Vec<&'a TypeDef> {
+    fn visit<'a>(
+        module: &ModuleDef,
+        ty: &'a TypeDef,
+        types: &[&'a TypeDef],
+        seen: &mut BTreeSet<AlgebraicTypeRef>,
+        out: &mut Vec<&'a TypeDef>,
+    ) {
+        if !seen.insert(ty.ty) {
+            return;
+        }
+        fn visit_use<'a>(
+            module: &ModuleDef,
+            usage: &AlgebraicTypeUse,
+            types: &[&'a TypeDef],
+            seen: &mut BTreeSet<AlgebraicTypeRef>,
+            out: &mut Vec<&'a TypeDef>,
+        ) {
+            match usage {
+                AlgebraicTypeUse::Ref(r) => {
+                    if let Some(ty) = types.iter().find(|ty| ty.ty == *r) {
+                        visit(module, ty, types, seen, out);
+                    }
+                }
+                AlgebraicTypeUse::Array(t) | AlgebraicTypeUse::Option(t) => visit_use(module, t, types, seen, out),
+                AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+                    visit_use(module, ok_ty, types, seen, out);
+                    visit_use(module, err_ty, types, seen, out);
+                }
+                _ => {}
+            }
+        }
+        match &module.typespace_for_generate()[ty.ty] {
+            AlgebraicTypeDef::Product(p) => {
+                for usage in p.element_types() {
+                    visit_use(module, usage, types, seen, out);
+                }
+            }
+            AlgebraicTypeDef::Sum(s) => {
+                for (_, usage) in &s.variants {
+                    visit_use(module, usage, types, seen, out);
+                }
+            }
+            AlgebraicTypeDef::PlainEnum(_) => {}
+        }
+        out.push(ty);
+    }
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::new();
+    for ty in types {
+        visit(module, ty, types, &mut seen, &mut out);
+    }
+    out
+}
+
+fn emit_named_types(module: &ModuleDef, out: &mut Indenter, types: &[&TypeDef], rows: &[TableDef], data_aliases: bool) {
+    if types.is_empty() {
+        return;
+    }
+    let mut names: BTreeSet<_> = types
+        .iter()
+        .map(|ty| collect_case(Case::Pascal, ty.accessor_name.name_segments()))
+        .collect();
+    let algebraic_type = names.contains("AlgebraicType");
+    let infer = binding_name("Infer", &mut names);
+    let type_builder = binding_name("TypeBuilder", &mut names);
+    let algebraic_type_type = binding_name("AlgebraicTypeType", &mut names);
+    let import = if infer == "Infer" {
+        "Infer".to_string()
+    } else {
+        format!("Infer as {infer}")
+    };
+    if data_aliases {
+        writeln!(out, "import type {{ {import} }} from 'spacetimedb/schema';");
+    }
+    if algebraic_type {
+        writeln!(out, "import type {{ TypeBuilder as {type_builder}, AlgebraicTypeType as {algebraic_type_type} }} from 'spacetimedb';");
+    }
+    for ty in ordered_types(module, types) {
+        let name = collect_case(Case::Pascal, ty.accessor_name.name_segments());
+        if let Some(row) = rows.iter().find(|row| row.product_type_ref == ty.ty) {
+            writeln!(out, "export const {name} = t.row({}, {{", ts_string_literal(&name));
+            write_row_fields(module, out, row);
+            writeln!(out, "}});");
+            if data_aliases {
+                writeln!(out, "export type {name} = {infer}<typeof {name}>;");
+            }
+            out.newline();
+            continue;
+        }
+        let (kind, fields, case) = match &module.typespace_for_generate()[ty.ty] {
+            AlgebraicTypeDef::Product(p) => ("object", p.elements.clone(), Case::Camel),
+            AlgebraicTypeDef::Sum(s) => ("enum", s.variants.clone(), Case::Pascal),
+            AlgebraicTypeDef::PlainEnum(e) => (
+                "enum",
+                e.variants
+                    .iter()
+                    .cloned()
+                    .map(|v| (v, AlgebraicTypeUse::Unit))
+                    .collect(),
+                Case::Pascal,
+            ),
+        };
+        out.newline();
+        if name == "AlgebraicType" {
+            write!(
+                out,
+                "export const {name}: {type_builder}<{algebraic_type_type}, {algebraic_type_type}>"
+            );
+        } else {
+            write!(out, "export const {name}");
+        }
+        writeln!(out, " = t.{kind}({}, {{", ts_string_literal(&name));
+        out.indent(1);
+        for (field, ty) in fields {
+            let field = field.deref().to_case(case);
+            let getter = type_contains_ref(&ty);
+            if getter {
+                write!(out, "get {field}() {{ return ");
+            } else {
+                write!(out, "{field}: ");
+            }
+            write_type_builder_with_names(module, out, &ty, "t", "").unwrap();
+            if getter {
+                writeln!(out, "; }},");
+            } else {
+                writeln!(out, ",");
+            }
+        }
+        out.dedent(1);
+        writeln!(out, "}});");
+        if data_aliases {
+            writeln!(out, "export type {name} = {infer}<typeof {name}>;");
+        }
+    }
+}
+
+fn params(module: &ModuleDef, out: &mut Indenter, elements: &[(Identifier, AlgebraicTypeUse)]) {
+    if elements.is_empty() {
+        write!(out, "{{}}");
+        return;
+    }
+    writeln!(out, "{{");
+    out.indent(1);
+    for (name, ty) in elements {
+        write!(out, "{}: ", name.deref().to_case(Case::Camel));
+        write_type_builder_with_names(module, out, ty, "t", "").unwrap();
+        writeln!(out, ",");
+    }
+    out.dedent(1);
+    write!(out, "}}");
+}
+
+fn function_args(
+    module: &ModuleDef,
+    out: &mut Indenter,
+    name: &str,
+    accessor: &str,
+    elements: &[(Identifier, AlgebraicTypeUse)],
+    rows: &[&TableDef],
+    names: &[String],
+) {
+    let scheduled = rows.iter().position(|t| {
+        t.schedule
+            .as_ref()
+            .is_some_and(|s| local_name(&s.function_name) == local_name(name))
+    });
+    // A camel-case wire name still needs an explicit name: the SDK otherwise
+    // converts the export accessor to snake_case.
+    if local_name(name) != accessor || accessor.bytes().any(|c| c.is_ascii_uppercase()) || scheduled.is_some() {
+        write!(out, "{{ name: {}", ts_string_literal(local_name(name)));
+        if let Some(i) = scheduled {
+            write!(out, ", onSchedule: {}", names[i]);
+        }
+        write!(out, " }}, ");
+    }
+    if let Some(i) = scheduled {
+        write!(
+            out,
+            "{{ {}: {}.rowType }}",
+            elements[0].0.deref().to_case(Case::Camel),
+            names[i]
+        );
+    } else {
+        params(module, out, elements);
+    }
+}
+
+fn function_start(out: &mut Indenter, accessor: &str, binding: &str, kind: &str) {
+    let export = if accessor == binding { "export " } else { "" };
+    write!(out, "{export}const {binding} = spacetimedb.{kind}(");
+}
+
+fn function_export(out: &mut Indenter, accessor: &str, binding: &str) {
+    if accessor == "default" {
+        writeln!(
+            out,
+            "export const __defaultFunction = spacetimedb.exportGroup({{ default: {binding} }});"
+        );
+    } else if accessor != binding {
+        writeln!(out, "export {{ {binding} as {accessor} }};");
+    }
+}
+
+fn local_name(name: &str) -> &str {
+    name.rsplit('.').next().unwrap()
+}
+
+fn write_row_fields(module: &ModuleDef, out: &mut Indenter, table: &TableDef) {
+    let product = module.typespace_for_generate()[table.product_type_ref]
+        .as_product()
+        .unwrap();
+    out.indent(1);
+    for (i, (_, ty)) in product.elements.iter().enumerate() {
+        let column = &table.columns[i];
+        let name = column.accessor_name.deref().to_case(Case::Camel);
+        let getter = type_contains_ref(ty);
+        if getter {
+            write!(out, "get {name}() {{ return ");
+        } else {
+            write!(out, "{name}: ");
+        }
+        write_type_builder_with_names(module, out, ty, "t", "").unwrap();
+        if table.primary_key.is_some_and(|pk| pk.idx() == i) {
+            write!(out, ".primaryKey()");
+        }
+        if table.sequences.values().any(|s| s.column.idx() == i) {
+            write!(out, ".autoInc()");
+        }
+        if column.name.deref() != name {
+            write!(out, ".name({})", ts_string_literal(&column.name));
+        }
+        if let Some(value) = &column.default_value {
+            write!(out, ".default(");
+            if let Some(literal) = default_literal(value) {
+                write!(out, "{literal}");
+            } else {
+                let bytes = spacetimedb_lib::sats::bsatn::to_vec(value).unwrap();
+                write_type_builder_with_names(module, out, ty, "t", "").unwrap();
+                write!(out, ".deserialize(new __BinaryReader(new Uint8Array({bytes:?})))");
+            }
+            write!(out, ")");
+        }
+        if getter {
+            writeln!(out, "; }},");
+        } else {
+            writeln!(out, ",");
+        }
+    }
+    out.dedent(1);
+}
+
+// Keep common defaults readable; arbitrary compound values retain their exact BSATN representation.
+fn default_literal(value: &spacetimedb_lib::AlgebraicValue) -> Option<String> {
+    use spacetimedb_lib::AlgebraicValue::*;
+    Some(match value {
+        Bool(v) => v.to_string(),
+        I8(v) => v.to_string(),
+        U8(v) => v.to_string(),
+        I16(v) => v.to_string(),
+        U16(v) => v.to_string(),
+        I32(v) => v.to_string(),
+        U32(v) => v.to_string(),
+        I64(v) => format!("{v}n"),
+        U64(v) => format!("{v}n"),
+        I128(v) => format!("{}n", { v.0 }),
+        U128(v) => format!("{}n", { v.0 }),
+        I256(v) => format!("{v}n"),
+        U256(v) => format!("{v}n"),
+        String(v) => ts_string_literal(v),
+        _ => return None,
+    })
+}
+
+fn table_options(out: &mut Indenter, table: &TableDef) {
+    write!(
+        out,
+        "{{ name: {}, public: {}",
+        ts_string_literal(&table.name),
+        table.table_access == TableAccess::Public
+    );
+    if table.is_event {
+        write!(out, ", event: true");
+    }
+    let indexes: Vec<_> = iter_indexes(table).filter(|i| !i.generated()).collect();
+    if !indexes.is_empty() {
+        writeln!(out, ", indexes: [");
+        out.indent(1);
+        for index in indexes {
+            let algorithm = match index.algorithm {
+                IndexAlgorithm::BTree(_) => "btree",
+                IndexAlgorithm::Hash(_) => "hash",
+                IndexAlgorithm::Direct(_) => "direct",
+                _ => panic!("unsupported index algorithm in TypeScript module schemas"),
+            };
+            let columns: Vec<_> = index
+                .algorithm
+                .columns()
+                .iter()
+                .map(|id| ts_string_literal(&table.columns[id.idx()].accessor_name.deref().to_case(Case::Camel)))
+                .collect();
+            write!(
+                out,
+                "{{ accessor: {}, name: {}, algorithm: '{algorithm}', ",
+                ts_string_literal(index.accessor_name.as_deref().unwrap_or(&index.name)),
+                ts_string_literal(&index.name)
+            );
+            if algorithm == "direct" {
+                writeln!(out, "column: {} }},", columns[0]);
+            } else {
+                writeln!(out, "columns: [{}] }},", columns.join(", "));
+            }
+        }
+        out.dedent(1);
+        write!(out, "]");
+    }
+    let constraints: Vec<_> = iter_constraints(table).collect();
+    if !constraints.is_empty() {
+        writeln!(out, ", constraints: [");
+        out.indent(1);
+        for constraint in constraints {
+            let columns: Vec<_> = constraint
+                .data
+                .unique_columns()
+                .into_iter()
+                .flat_map(|c| c.iter())
+                .map(|id| ts_string_literal(&table.columns[id.idx()].accessor_name.deref().to_case(Case::Camel)))
+                .collect();
+            writeln!(
+                out,
+                "{{ name: {}, constraint: 'unique', columns: [{}] }},",
+                ts_string_literal(&constraint.name),
+                columns.join(", ")
+            );
+        }
+        out.dedent(1);
+        write!(out, "]");
+    }
+    write!(out, " }}");
+}
+
+fn entry_point(module: &ModuleDef, options: &CodegenOptions, dir: &str, ext: &str) -> OutputFile {
+    let mut header = CodeIndenter::new(String::new(), INDENT);
+    print_auto_generated_file_comment(&mut header);
+    crate::util::print_auto_generated_version_comment(&mut header);
+    let mut code = header.into_inner();
+    writeln!(code, "import * as moduleSchema from './module{ext}';").unwrap();
+    writeln!(code, "import {{ createClient, type EventContextInterface, type ReducerEventContextInterface, type SubscriptionEventContextInterface, type ErrorContextInterface, type SubscriptionHandleImpl, type RemoteModuleOf }} from 'spacetimedb';").unwrap();
+    write!(
+        code,
+        "const client = createClient(moduleSchema, {{ cliVersion: {}, tableAliases: {{",
+        ts_string_literal(spacetimedb_lib_version())
+    )
+    .unwrap();
+    for (_, accessor, _) in iter_table_names_and_types(module, options.visibility) {
+        let camel = accessor.deref().to_case(Case::Camel);
+        if accessor.deref() != camel {
+            write!(code, "{}: {},", ts_string_literal(accessor), ts_string_literal(&camel)).unwrap();
+        }
+    }
+    writeln!(code, "}} }});").unwrap();
+    writeln!(code, "export const {{ DbConnection, DbConnectionBuilder, SubscriptionBuilder, tables, reducers, procedures }} = client;").unwrap();
+    writeln!(code, "export type DbConnection = InstanceType<typeof DbConnection>;\nexport type DbConnectionBuilder = InstanceType<typeof DbConnectionBuilder>;\nexport type SubscriptionBuilder = InstanceType<typeof SubscriptionBuilder>;").unwrap();
+    writeln!(code, "type RemoteModule = RemoteModuleOf<DbConnection>;\nexport type DbView = DbConnection['db'];\nexport type Tables = typeof tables;").unwrap();
+    for (name, interface) in [
+        ("EventContext", "EventContextInterface"),
+        ("ReducerEventContext", "ReducerEventContextInterface"),
+        ("SubscriptionEventContext", "SubscriptionEventContextInterface"),
+        ("ErrorContext", "ErrorContextInterface"),
+    ] {
+        writeln!(code, "export type {name} = {interface}<RemoteModule>;").unwrap();
+    }
+    writeln!(
+        code,
+        "export type SubscriptionHandle = SubscriptionHandleImpl<RemoteModule>;"
+    )
+    .unwrap();
+    // Preserve the existing reducer/procedure type namespaces.
+    writeln!(
+        code,
+        "export type * as Reducers from './types/reducers{ext}';\nexport type * as Procedures from './types/procedures{ext}';"
+    )
+    .unwrap();
+    OutputFile {
+        filename: format!("{dir}index.ts"),
+        code,
+    }
+}

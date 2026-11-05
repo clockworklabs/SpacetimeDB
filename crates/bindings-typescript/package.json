@@ -123,6 +123,12 @@
       "import": "./dist/solid/index.mjs",
       "require": "./dist/solid/index.cjs",
       "default": "./dist/solid/index.mjs"
+    },
+    "./schema": {
+      "types": "./dist/schema/index.d.ts",
+      "import": "./dist/schema/index.mjs",
+      "require": "./dist/schema/index.cjs",
+      "default": "./dist/schema/index.mjs"
     }
   },
   "size-limit": [
@@ -142,7 +148,7 @@
       "name": "esm (gzip)",
       "path": "dist/index.mjs",
       "gzip": true,
-      "limit": "60 kB"
+      "limit": "100 kB"
     },
     {
       "name": "esm (uncompressed)",

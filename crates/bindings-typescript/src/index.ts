@@ -14,3 +14,26 @@ export * from './lib/option.ts';
 export * from './lib/result.ts';
 export * from './lib/query.ts';
 export * from './sdk/index.ts';
+
+export {
+  schema as moduleSchema,
+  Schema as ModuleSchema,
+  FunctionSchema,
+} from './schema/module.ts';
+export type {
+  ModuleSchemaExports,
+  SchemaEntry,
+  SchemaEntries,
+  FunctionKind,
+  FunctionOptions,
+  ViewOptions,
+  SchemaOptions,
+} from './schema/module.ts';
+export { CaseConversionPolicy } from './lib/autogen/types.ts';
+
+export {
+  createClient,
+  type Client,
+  type ClientConnection,
+  type RemoteModuleOfSchema,
+} from './sdk/create_client.ts';

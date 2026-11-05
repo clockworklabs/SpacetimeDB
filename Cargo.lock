@@ -8187,6 +8187,7 @@ dependencies = [
  "rolldown_error",
  "rolldown_utils",
  "rustyline",
+ "semver",
  "serde",
  "serde_json",
  "serde_with",
@@ -8307,6 +8308,7 @@ dependencies = [
  "spacetimedb-schema",
  "spacetimedb-testing",
  "tempfile",
+ "toml 0.8.23",
 ]
 
 [[package]]
