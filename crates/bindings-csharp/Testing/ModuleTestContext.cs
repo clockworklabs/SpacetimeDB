@@ -154,25 +154,6 @@ public sealed class ModuleTestContext : IDisposable
             return Result<HttpResponse, HttpError>.Err(
                 new HttpError("no test HTTP responder configured")
             );
-        ArgumentNullException.ThrowIfNull(request);
-        if (string.IsNullOrEmpty(request.Uri))
-            return Result<HttpResponse, HttpError>.Err(
-                new HttpError("URI must not be null or empty")
-            );
-        if (request.Timeout < TimeSpan.Zero)
-            return Result<HttpResponse, HttpError>.Err(
-                new HttpError("Timeout must not be negative")
-            );
-        if (request.Timeout > TimeSpan.FromSeconds(180))
-            request = new HttpRequest
-            {
-                Uri = request.Uri,
-                Method = request.Method,
-                Headers = request.Headers,
-                Body = request.Body,
-                Version = request.Version,
-                Timeout = TimeSpan.FromSeconds(180),
-            };
         return responder(this, request);
     }
 
