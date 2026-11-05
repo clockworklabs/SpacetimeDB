@@ -4,7 +4,10 @@ use spacetimedb_lib::{
 };
 use spacetimedb_primitives::{TableId, ViewId};
 use spacetimedb_sats::raw_identifier::{RawIdentifier, RawNamespacedIdentifier};
-use spacetimedb_schema::{identifier::Identifier, schema::TableOrViewSchema};
+use spacetimedb_schema::{
+    identifier::Identifier,
+    schema::{TableOrViewSchema, VIEW_ARG_HASH_COL},
+};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use std::sync::Arc;
 
@@ -70,7 +73,7 @@ impl ProjectName {
         }
     }
 
-    /// Replaces the literal of each `field = literal` with a binding param.
+    /// Replaces the literal of each `field = literal`, and the arg hash of each view call, with a binding param.
     /// Returns the literals in slot order.
     pub fn lift_literals(&mut self) -> Literals {
         match self {
@@ -302,10 +305,12 @@ pub struct Relvar {
 /// The arguments of one parameterized view call
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ViewArgs {
-    /// The typed arguments
+    /// The typed arguments.
+    /// Empty once lifted, since the binding holds their hash.
     pub args: ProductValue,
     /// The call's `arg_hash`, which depends on the caller for sender-scoped views.
-    pub arg_hash: Option<AlgebraicValue>,
+    /// A value, or once lifted, a binding param.
+    pub arg_hash: Option<Expr>,
 }
 
 impl CollectViews for RelExpr {
@@ -324,7 +329,7 @@ impl CollectViews for RelExpr {
 }
 
 impl RelExpr {
-    /// Sets the `arg_hash` of every parameterized view call in this expression.
+    /// Sets the `arg_hash` of every parameterized view call in this expression that has none.
     /// Sender-scoped views hash the `caller` with their args, and anonymous views hash only their args.
     pub fn bind_view_arg_hashes(&mut self, caller: Identity) {
         self.visit_mut(&mut |expr| {
@@ -333,17 +338,21 @@ impl RelExpr {
                 view_args: Some(view_args),
                 ..
             }) = expr
+                // A template lifted its hashes already
+                && view_args.arg_hash.is_none()
             {
                 let sender = (!schema.is_anonymous_view()).then_some(caller);
-                view_args.arg_hash = Some(view_instance_arg_hash_value(sender, &view_args.args));
+                let hash = view_instance_arg_hash_value(sender, &view_args.args);
+                view_args.arg_hash = Some(Expr::Value(hash, AlgebraicType::U256));
             }
         });
     }
 
-    /// Replaces the literal of each `field = literal` with a binding param.
+    /// Replaces the literal of each `field = literal`, and the arg hash of each view call, with a binding param.
     /// Returns the literals in slot order.
     ///
     /// Slots are numbered by table and column, so reordered predicates get the same slots.
+    /// A view call's hash is numbered as its `arg_hash` column, and must be bound first.
     pub fn lift_literals(&mut self) -> Literals {
         // Positions, not aliases, so renaming a table doesn't change the slots
         let aliases = self.aliases();
@@ -355,6 +364,12 @@ impl RelExpr {
                 keys.push((table.expect("a filter reads a table in `FROM`"), field.field));
             }
         });
+        // After the filters, in both walks
+        for (table, relvar) in self.relvars_mut().into_iter().enumerate() {
+            if relvar.view_args.is_some() {
+                keys.push((table, VIEW_ARG_HASH_COL.idx()));
+            }
+        }
 
         // The sort is stable, so literals on the same column keep their order
         let mut order: Vec<usize> = (0..keys.len()).collect();
@@ -380,10 +395,36 @@ impl RelExpr {
                 literals[slot as usize] = Some((value, ty));
             }
         });
+        for relvar in self.relvars_mut() {
+            if let Some(view_args) = &mut relvar.view_args {
+                let Some(Expr::Value(hash, ty)) = view_args.arg_hash.take() else {
+                    panic!("view arg hashes are bound before lifting");
+                };
+                let slot = slots[next];
+                next += 1;
+                view_args.arg_hash = Some(Expr::Param(Param::Binding(slot), ty.clone()));
+                // So that calls with other args share the template
+                view_args.args = ProductValue::default();
+                literals[slot as usize] = Some((hash, ty));
+            }
+        }
         literals
             .into_iter()
             .map(|literal| literal.expect("every slot is filled"))
             .collect()
+    }
+
+    /// The tables in `FROM`, in order
+    fn relvars_mut(&mut self) -> Vec<&mut Relvar> {
+        match self {
+            Self::RelVar(relvar) => vec![relvar],
+            Self::Select(input, _) => input.relvars_mut(),
+            Self::LeftDeepJoin(join) | Self::EqJoin(join, ..) => {
+                let mut relvars = join.lhs.relvars_mut();
+                relvars.push(&mut join.rhs);
+                relvars
+            }
+        }
     }
 
     /// The aliases of the tables in `FROM`, in order

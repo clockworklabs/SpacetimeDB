@@ -4,7 +4,7 @@ use super::module_subscription_manager::{
     from_tx_offset, spawn_send_worker, BroadcastError, BroadcastQueue, Plan, SubscriptionGaugeStats,
     SubscriptionManager, TransactionOffset,
 };
-use super::query::{compile_query_with_hashes, CompiledQuery};
+use super::query::{compile_query_with_hashes, CompiledQuery, TemplateCache};
 use super::tx::DeltaTx;
 use super::TableUpdateType;
 use crate::client::messages::{
@@ -758,7 +758,18 @@ impl ModuleSubscriptions {
         let mut physical_plans = HashMap::default();
         let query = return_on_err_with_sql_bool!(
             existing_query.map(Ok).unwrap_or_else(|| {
-                compile_query_with_hashes(&auth, &*mut_tx, &sql, hash, hash_with_param).map(|compiled| {
+                // We always get the db lock before the subscription lock to avoid deadlocks.
+                // Locks only to look a template up; a second read lock here could deadlock.
+                let find = |key_hash, plans: &[_]| self.subscriptions.read().templates().find(key_hash, plans);
+                compile_query_with_hashes(
+                    &auth,
+                    &*mut_tx,
+                    &sql,
+                    hash,
+                    hash_with_param,
+                    &mut TemplateCache::new(&find),
+                )
+                .map(|compiled| {
                     let hash = compiled.plan.hash();
                     let query = Arc::new(compiled.plan);
                     physical_plans.insert(hash, compiled.physical_plans);
@@ -1179,6 +1190,9 @@ impl ModuleSubscriptions {
 
         let mut new_queries = 0;
         let mut compiled_queries: HashMap<QueryHash, Arc<Plan>> = HashMap::default();
+        // The queries share templates with each other too, before any is subscribed
+        let find = |key_hash, plans: &[_]| guard.templates().find(key_hash, plans);
+        let mut templates = TemplateCache::new(&find);
         let mut physical_plans: HashMap<QueryHash, Vec<ProjectPlan>> = HashMap::default();
 
         if subscribe_to_all_tables {
@@ -1187,6 +1201,7 @@ impl ModuleSubscriptions {
                 &self.relational_db,
                 mut_tx,
                 auth,
+                &mut templates,
             )? {
                 add_compiled_query(
                     compiled,
@@ -1214,11 +1229,12 @@ impl ModuleSubscriptions {
                             plans.push(unit);
                         }
                         _ => {
-                            let compiled = compile_query_with_hashes(auth, mut_tx, sql, hash, hash_with_param)
-                                .map_err(|err| DBError::WithSql {
-                                    error: Box::new(DBError::Other(err.into())),
-                                    sql: sql.into(),
-                                })?;
+                            let compiled =
+                                compile_query_with_hashes(auth, mut_tx, sql, hash, hash_with_param, &mut templates)
+                                    .map_err(|err| DBError::WithSql {
+                                        error: Box::new(DBError::Other(err.into())),
+                                        sql: sql.into(),
+                                    })?;
                             add_compiled_query(
                                 compiled,
                                 &guard,
@@ -2343,8 +2359,11 @@ mod tests {
     use crate::subscription::query::compile_read_only_query;
     use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
     use crate::subscription::TableUpdateType;
+    use futures::FutureExt as _;
     use itertools::Itertools;
     use pretty_assertions::assert_matches;
+    use proptest::collection::vec;
+    use proptest::prelude::*;
     use spacetimedb_client_api_messages::energy::FunctionBudget;
     use spacetimedb_client_api_messages::websocket::{common::RowListLen as _, v1 as ws_v1, v2 as ws_v2};
     use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
@@ -2359,6 +2378,7 @@ mod tests {
     use spacetimedb_lib::{error::ResultTest, AlgebraicType, Identity};
     use spacetimedb_primitives::TableId;
     use spacetimedb_sats::product;
+    use std::collections::BTreeSet;
     use std::future::Future;
     use std::time::Instant;
     use std::{sync::Arc, time::Duration};
@@ -2555,7 +2575,7 @@ mod tests {
     async fn subscribe_single(
         subs: &ModuleSubscriptions,
         auth: AuthCtx,
-        sql: &'static str,
+        sql: &str,
         sender: Arc<ClientConnectionSender>,
         counter: &mut u32,
     ) -> anyhow::Result<()> {
@@ -4185,15 +4205,15 @@ mod tests {
         )
         .await;
 
-        // We should have evaluated all of the queries
-        assert_eq!(metrics.delta_queries_evaluated, 4);
+        // The queries share a template, which runs once for all of their bindings
+        assert_eq!(metrics.delta_queries_evaluated, 1);
         assert_eq!(metrics.delta_queries_matched, 1);
 
         // Insert a non-matching row in `u`
         let metrics = commit_tx(&db, &subs, [], [(u_id, product![3u64, 0u64, 0u64])])?;
 
-        // We should have evaluated all of the queries
-        assert_eq!(metrics.delta_queries_evaluated, 4);
+        // The queries share a template, which runs once for all of their bindings
+        assert_eq!(metrics.delta_queries_evaluated, 1);
         assert_eq!(metrics.delta_queries_matched, 0);
 
         Ok(())
@@ -4309,9 +4329,9 @@ mod tests {
         // Results in a no-op
         assert_tx_update_for_table(rx.recv(), u_id, &schema, [], []).await;
 
-        // We should have evaluated queries for `x = 1` and `x = 2`
-        assert_eq!(metrics.delta_queries_evaluated, 2);
-        assert_eq!(metrics.delta_queries_matched, 2);
+        // The queries share a template, which runs once
+        assert_eq!(metrics.delta_queries_evaluated, 1);
+        assert_eq!(metrics.delta_queries_matched, 1);
 
         // Insert new row into `u` that joins with `x = 3`
         // UPDATE v SET x = 4 WHERE id = 3
@@ -4324,8 +4344,8 @@ mod tests {
 
         assert_tx_update_for_table(rx.recv(), u_id, &schema, [product![3u64, 4u64, 5u64]], []).await;
 
-        // We should have evaluated queries for `x = 3` and `x = 4`
-        assert_eq!(metrics.delta_queries_evaluated, 2);
+        // The queries share a template, which runs once
+        assert_eq!(metrics.delta_queries_evaluated, 1);
         assert_eq!(metrics.delta_queries_matched, 1);
 
         // UPDATE v SET x = 0 WHERE id = 3
@@ -4338,7 +4358,7 @@ mod tests {
 
         assert_tx_update_for_table(rx.recv(), u_id, &schema, [], [product![3u64, 4u64, 5u64]]).await;
 
-        // We should only have evaluated the query for `x = 4`
+        // The queries share a template, which runs once
         assert_eq!(metrics.delta_queries_evaluated, 1);
         assert_eq!(metrics.delta_queries_matched, 1);
 
@@ -4352,7 +4372,7 @@ mod tests {
             [(v_id, product![5u64, 6u64, 6u64]), (u_id, product![5u64, 6u64, 7u64])],
         )?;
 
-        // We should only have evaluated the query for `x = 5`
+        // The queries share a template, which runs once
         assert_eq!(metrics.delta_queries_evaluated, 1);
         assert_eq!(metrics.delta_queries_matched, 0);
 
@@ -4782,6 +4802,469 @@ mod tests {
         assert_tx_update_for_table(rx_for_a.recv(), table_id, &schema, [product![1_u8]], []).await;
         assert_tx_update_for_table(rx_for_b.recv(), table_id, &schema, [product![2_u8]], []).await;
 
+        Ok(())
+    }
+
+    /// A row of `t(id, a, b)`
+    type ModelT = (u64, u8, u8);
+    /// A row of `s(id, x)`
+    type ModelS = (u64, u8);
+
+    /// The rows of `t` and `s`, from which [`model_queries`] compute their results
+    #[derive(Clone, Default)]
+    struct ModelTables {
+        t: BTreeSet<ModelT>,
+        s: BTreeSet<ModelS>,
+    }
+
+    /// The rows a query returns from the model, as a bag
+    type ModelRows = Box<dyn Fn(&ModelTables) -> Vec<ProductValue>>;
+
+    fn t_row(&(id, a, b): &ModelT) -> ProductValue {
+        product![id, a, b]
+    }
+
+    fn s_row(&(id, x): &ModelS) -> ProductValue {
+        product![id, x]
+    }
+
+    /// `t JOIN s ON t.id = s.id`, one pair per match
+    fn model_join(m: &ModelTables) -> Vec<(ModelT, ModelS)> {
+        m.t.iter()
+            .flat_map(|t| m.s.iter().filter(move |s| s.0 == t.0).map(move |s| (*t, *s)))
+            .collect()
+    }
+
+    /// Queries of every shape, many of which share a template or a binding, with their results from the model
+    fn model_queries() -> Vec<(String, ModelRows)> {
+        let a_is_v: fn(&ModelTables, u8) -> Vec<ProductValue> =
+            |m, v| m.t.iter().filter(|t| t.1 == v).map(t_row).collect();
+        let mut queries: Vec<(String, ModelRows)> = vec![
+            ("select * from t".into(), Box::new(|m| m.t.iter().map(t_row).collect())),
+            // The same query as the one before, for a client of the other protocol
+            ("select * from t".into(), Box::new(|m| m.t.iter().map(t_row).collect())),
+            (
+                "select t.* from t join s on t.id = s.id".into(),
+                Box::new(|m| model_join(m).iter().map(|(t, _)| t_row(t)).collect()),
+            ),
+        ];
+        for v in 0..3u8 {
+            queries.push((
+                format!("select * from t where a = {v}"),
+                Box::new(move |m| a_is_v(m, v)),
+            ));
+            // The same binding from other text
+            queries.push((
+                format!("select * from t where {v} = a"),
+                Box::new(move |m| a_is_v(m, v)),
+            ));
+            // Ranges stay in the plan, so each is its own template
+            queries.push((
+                format!("select * from t where b > {v}"),
+                Box::new(move |m| m.t.iter().filter(|t| t.2 > v).map(t_row).collect()),
+            ));
+            queries.push((
+                format!("select t.* from t join s on t.id = s.id where s.x = {v}"),
+                Box::new(move |m| {
+                    model_join(m)
+                        .iter()
+                        .filter(|(_, s)| s.1 == v)
+                        .map(|(t, _)| t_row(t))
+                        .collect()
+                }),
+            ));
+            for w in 0..3u8 {
+                queries.push((
+                    format!("select * from t where a = {v} and b = {w}"),
+                    Box::new(move |m| m.t.iter().filter(|t| t.1 == v && t.2 == w).map(t_row).collect()),
+                ));
+                queries.push((
+                    format!("select * from t where a = {v} or b = {w}"),
+                    Box::new(move |m| m.t.iter().filter(|t| t.1 == v || t.2 == w).map(t_row).collect()),
+                ));
+                queries.push((
+                    format!("select s.* from s join t on s.id = t.id where t.a = {v} and s.x = {w}"),
+                    Box::new(move |m| {
+                        model_join(m)
+                            .iter()
+                            .filter(|(t, s)| t.1 == v && s.1 == w)
+                            .map(|(_, s)| s_row(s))
+                            .collect()
+                    }),
+                ));
+                queries.push((
+                    format!("select t.* from t join s on t.id = s.id where t.b = {v} or s.x = {w}"),
+                    Box::new(move |m| {
+                        model_join(m)
+                            .iter()
+                            .filter(|(t, s)| t.2 == v || s.1 == w)
+                            .map(|(t, _)| t_row(t))
+                            .collect()
+                    }),
+                ));
+            }
+        }
+        queries
+    }
+
+    /// How a query's result changed, as row counts: positive for inserts, negative for deletes
+    fn model_delta(before: Vec<ProductValue>, after: Vec<ProductValue>) -> HashMap<ProductValue, i32> {
+        let mut delta = HashMap::new();
+        for row in after {
+            *delta.entry(row).or_insert(0) += 1;
+        }
+        for row in before {
+            *delta.entry(row).or_insert(0) -= 1;
+        }
+        delta.retain(|_, n| *n != 0);
+        delta
+    }
+
+    /// The row counts of a v1 or v2 transaction update
+    fn received_delta(msg: OutboundMessage, schema: &ProductType) -> HashMap<ProductValue, i32> {
+        let mut rows = HashMap::new();
+        match msg {
+            OutboundMessage::V1(SerializableMessage::TxUpdate(TransactionUpdateMessage {
+                database_update:
+                    SubscriptionUpdateMessage {
+                        database_update: ws_v1::FormatSwitch::Bsatn(ws_v1::DatabaseUpdate { tables }),
+                        ..
+                    },
+                ..
+            })) => {
+                for table in tables {
+                    // We should not be sending empty updates to clients
+                    assert_ne!(table.num_rows, 0);
+                    for update in table.updates {
+                        let ws_v1::CompressableQueryUpdate::Uncompressed(update) = update else {
+                            panic!("expected an uncompressed table update")
+                        };
+                        update_row_counts(&mut rows, schema, &update.inserts, &update.deletes);
+                    }
+                }
+            }
+            OutboundMessage::V2(ws_v2::ServerMessage::TransactionUpdate(update)) => {
+                for query_set in &update.query_sets {
+                    for table in &query_set.tables {
+                        for table_rows in table.rows.iter() {
+                            let ws_v2::TableUpdateRows::PersistentTable(table_rows) = table_rows else {
+                                panic!("expected a persistent-table update")
+                            };
+                            update_row_counts(&mut rows, schema, &table_rows.inserts, &table_rows.deletes);
+                        }
+                    }
+                }
+            }
+            msg => panic!("expected a transaction update, but got {msg:#?}"),
+        }
+        rows.retain(|_, n| *n != 0);
+        rows
+    }
+
+    /// One change to the model's tables
+    #[derive(Clone, Debug)]
+    enum ModelChange {
+        /// Insert into `t`, unless a row has the id
+        InsertT(ModelT),
+        /// Remove `t`'s row with the id, if any, and put it back with new values if given
+        UpdateT(u64, Option<(u8, u8)>),
+        InsertS(ModelS),
+        /// Remove the `s` row with the id and the smallest `x`, if any
+        RemoveS(u64),
+    }
+
+    fn model_change() -> impl Strategy<Value = ModelChange> {
+        // Few ids and values, so rows join and bindings match often.
+        // One more value than the queries use, so some rows match no binding.
+        let id = || 0..6u64;
+        let value = || 0..4u8;
+        prop_oneof![
+            1 => (id(), value(), value()).prop_map(ModelChange::InsertT),
+            2 => (id(), proptest::option::of((value(), value()))).prop_map(|(id, new)| ModelChange::UpdateT(id, new)),
+            1 => (id(), value()).prop_map(ModelChange::InsertS),
+            1 => id().prop_map(ModelChange::RemoveS),
+        ]
+    }
+
+    fn change_model(m: &mut ModelTables, change: &ModelChange) {
+        match *change {
+            ModelChange::InsertT(row) => {
+                if !m.t.iter().any(|t| t.0 == row.0) {
+                    m.t.insert(row);
+                }
+            }
+            ModelChange::UpdateT(id, new) => {
+                if let Some(old) = m.t.iter().find(|t| t.0 == id).copied() {
+                    m.t.remove(&old);
+                    // An update keeps the id
+                    if let Some((a, b)) = new {
+                        m.t.insert((id, a, b));
+                    }
+                }
+            }
+            ModelChange::InsertS(row) => {
+                m.s.insert(row);
+            }
+            ModelChange::RemoveS(id) => {
+                if let Some(old) = m.s.iter().find(|s| s.0 == id).copied() {
+                    m.s.remove(&old);
+                }
+            }
+        }
+    }
+
+    /// A client subscribed to one of [`model_queries`], with what it must receive and what it did
+    struct ModelClient {
+        sql: String,
+        rows: ModelRows,
+        schema: ProductType,
+        /// Keeps the connection open
+        _sender: Arc<ClientConnectionSender>,
+        rx: ClientConnectionReceiver,
+        expected: Vec<HashMap<ProductValue, i32>>,
+        received: Vec<HashMap<ProductValue, i32>>,
+    }
+
+    impl ModelClient {
+        /// Receives the updates queued so far.
+        /// A client's queue is small, so this runs after every transaction.
+        fn drain(&mut self) {
+            while let Some(msg) = self.rx.recv().now_or_never() {
+                let msg = msg.expect("the receiver is open");
+                self.received.push(received_delta(msg, &self.schema));
+            }
+        }
+    }
+
+    proptest! {
+        // Each case subscribes a client to every query
+        #![proptest_config(ProptestConfig::with_cases(8))]
+
+        /// Differential test of subscription deltas against a model of the tables.
+        /// Many v1 and v2 clients subscribe to queries that share templates and bindings.
+        /// After each transaction, each client must receive what its query's result gained and lost.
+        #[test]
+        fn deltas_match_a_model_of_the_tables(txs in vec(vec(model_change(), 1..=3), 1..=40)) {
+            // The module subscription worker runs in parallel
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(1)
+                .enable_all()
+                .build()
+                .unwrap();
+            runtime.block_on(check_deltas_against_model(&txs)).unwrap();
+        }
+    }
+
+    async fn check_deltas_against_model(txs: &[Vec<ModelChange>]) -> anyhow::Result<()> {
+        let db = relational_db()?;
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
+
+        let t_schema = [
+            ("id", AlgebraicType::U64),
+            ("a", AlgebraicType::U8),
+            ("b", AlgebraicType::U8),
+        ];
+        let s_schema = [("id", AlgebraicType::U64), ("x", AlgebraicType::U8)];
+        let t_id = db.create_table_for_test("t", &t_schema, &[0.into(), 1.into()])?;
+        let s_id = db.create_table_for_test("s", &s_schema, &[0.into()])?;
+        let z_id = db.create_table_for_test("z", &[("n", AlgebraicType::U64)], &[])?;
+        let t_type = ProductType::from(t_schema);
+        let s_type = ProductType::from(s_schema);
+
+        // A client per query, alternating v1 and v2.
+        // So a client gets at most one message per transaction, which `expected` counts on.
+        let mut counter = 0;
+        let mut clients = vec![];
+        for (i, (sql, rows)) in model_queries().into_iter().enumerate() {
+            let client_id = client_id_from_u8(u8::try_from(i + 2).unwrap());
+            let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
+            let (sender, rx) = if i % 2 == 0 {
+                let (sender, mut rx) = client_connection(client_id, &db);
+                subscribe_single(&subs, auth, &sql, sender.clone(), &mut counter).await?;
+                assert_matches!(
+                    rx.recv().await,
+                    Some(OutboundMessage::V1(SerializableMessage::Subscription(_)))
+                );
+                (sender, rx)
+            } else {
+                let (sender, mut rx) = v2_client_connection(client_id, &db);
+                subs.add_v2_subscription_inner::<crate::host::wasmtime::WasmtimeInstance>(
+                    None,
+                    sender.clone(),
+                    auth,
+                    ws_v2::Subscribe {
+                        request_id: 1,
+                        query_set_id: ws_v2::QuerySetId::new(1),
+                        query_strings: [sql.clone().into()].into(),
+                    },
+                    Instant::now(),
+                    None,
+                )?;
+                assert_matches!(
+                    rx.recv().await,
+                    Some(OutboundMessage::V2(ws_v2::ServerMessage::SubscribeApplied(_)))
+                );
+                (sender, rx)
+            };
+            let schema = if sql.starts_with("select s.") { &s_type } else { &t_type };
+            clients.push(ModelClient {
+                schema: schema.clone(),
+                sql,
+                rows,
+                _sender: sender,
+                rx,
+                expected: vec![],
+                received: vec![],
+            });
+        }
+
+        // Each transaction also changes `z`.
+        // The send worker sends the updates of each transaction in turn,
+        // so once this client has a transaction's update, every update of the one before is queued.
+        let sync_id = client_id_from_u8(1);
+        let (sync, mut sync_rx) = client_connection(sync_id, &db);
+        let auth = AuthCtx::new(db.owner_identity(), sync_id.identity);
+        subscribe_single(&subs, auth, "select * from z", sync, &mut counter).await?;
+        assert_matches!(
+            sync_rx.recv().await,
+            Some(OutboundMessage::V1(SerializableMessage::Subscription(_)))
+        );
+
+        let mut model = ModelTables::default();
+        for (n, changes) in txs.iter().enumerate() {
+            let before = model.clone();
+            for change in changes {
+                change_model(&mut model, change);
+            }
+
+            let deletes = (before.t.difference(&model.t).map(|t| (t_id, t_row(t))))
+                .chain(before.s.difference(&model.s).map(|s| (s_id, s_row(s))));
+            let inserts = (model.t.difference(&before.t).map(|t| (t_id, t_row(t))))
+                .chain(model.s.difference(&before.s).map(|s| (s_id, s_row(s))))
+                .chain([(z_id, product![n as u64])]);
+            commit_tx(&db, &subs, deletes.collect::<Vec<_>>(), inserts.collect::<Vec<_>>())?;
+            sync_rx.recv().await.expect("the sync client gets each update");
+
+            for client in &mut clients {
+                let delta = model_delta((client.rows)(&before), (client.rows)(&model));
+                if !delta.is_empty() {
+                    client.expected.push(delta);
+                }
+                client.drain();
+            }
+        }
+
+        // Queues the updates of the last transaction
+        commit_tx(&db, &subs, [], [(z_id, product![u64::MAX])])?;
+        sync_rx.recv().await.expect("the sync client gets each update");
+
+        for mut client in clients {
+            client.drain();
+            assert_eq!(client.received, client.expected, "`{}`", client.sql);
+        }
+
+        Ok(())
+    }
+
+    /// A query's snapshot comes from its own plans and its deltas from its template,
+    /// so the template's plans with the query's values must be the query's own plans
+    #[test]
+    fn templates_with_their_values_are_the_queries_plans() -> anyhow::Result<()> {
+        use crate::db::sql::ast::SchemaViewer;
+        use crate::subscription::query::{compile_template, TemplateCache};
+        use spacetimedb_execution::bindings::{BindingParams, BindingRelation};
+        use spacetimedb_execution::ExecutionParams;
+        use spacetimedb_physical_plan::plan::{PhysicalExpr, PhysicalPlan, ProjectPlan};
+        use spacetimedb_primitives::ColList;
+
+        let db = relational_db()?;
+        let t_schema = [
+            ("id", AlgebraicType::U64),
+            ("a", AlgebraicType::U8),
+            ("b", AlgebraicType::U8),
+        ];
+        let u_schema = [
+            ("id", AlgebraicType::U64),
+            ("owner", AlgebraicType::identity()),
+            ("x", AlgebraicType::U8),
+        ];
+        db.create_table_for_test("t", &t_schema, &[0.into(), 1.into()])?;
+        db.create_table_for_test(
+            "s",
+            &[("id", AlgebraicType::U64), ("x", AlgebraicType::U8)],
+            &[0.into()],
+        )?;
+        let u_id = db.create_table_for_test("u", &u_schema, &[1.into()])?;
+        insert_rls_rules(&db, [u_id], ["select * from u where owner = :sender"])?;
+        // Its only index on `t_id` is on `(rank, t_id)`, so its join keeps its literals
+        let g_schema = [
+            ("id", AlgebraicType::U64),
+            ("t_id", AlgebraicType::U64),
+            ("rank", AlgebraicType::U8),
+        ];
+        db.create_table_for_test_multi_column("g", &g_schema, ColList::from_iter([2, 1]))?;
+
+        let mut queries = model_queries().into_iter().map(|(sql, _)| sql).collect_vec();
+        queries.extend(
+            [
+                "select * from t where b > 1 and a = 2",
+                "select * from t where a = 1 or b = 2",
+                "select * from t where a = 1 and a = 1",
+                "select * from u where x = 3",
+                "select * from u where owner = :sender and x = 3",
+                "select u.* from u join t on u.id = t.id where t.a = 1 and u.x = 2",
+                "select g.* from g join t on g.t_id = t.id where t.a = 1 and g.rank = 2",
+            ]
+            .map(String::from),
+        );
+
+        // Sorts the operands of every `AND` and `OR`, since a template puts its binding equalities first
+        let normalize = |mut plans: Vec<ProjectPlan>| {
+            for plan in &mut plans {
+                plan.visit_mut(&mut |plan| {
+                    if let PhysicalPlan::Filter(_, expr) = plan {
+                        expr.visit_mut(&mut |expr| {
+                            if let PhysicalExpr::LogOp(_, exprs) = expr {
+                                exprs.sort_by_cached_key(|expr| format!("{expr:?}"));
+                            }
+                        });
+                    }
+                });
+            }
+            plans
+        };
+
+        let caller = client_id_from_u8(2).identity;
+        let auth = AuthCtx::new(db.owner_identity(), caller);
+        let builtins = ExecutionParams::from_auth(&auth);
+        let read_tx = begin_tx(&db);
+        let tx = SchemaViewer::new(&read_tx, &auth);
+        for sql in queries {
+            let (plans, ..) = spacetimedb_query::compile_subscription(&sql, &tx, &auth)?;
+            let own = plans
+                .into_iter()
+                .map(|mut plan| {
+                    plan.inline_params(&builtins);
+                    plan.canonicalize()
+                })
+                .collect();
+
+            // The template a subscribe uses, which may keep its literals
+            let (template, values) = compile_template(&sql, &tx, &auth, &mut TemplateCache::default())?;
+            let mut bindings = BindingRelation::new(template.param_types().to_vec(), vec![]);
+            let binding = bindings.insert(values);
+            let with_values = template
+                .key()
+                .iter()
+                .cloned()
+                .map(|mut plan| {
+                    plan.inline_params(&BindingParams::new(bindings.get(binding)));
+                    plan.canonicalize()
+                })
+                .collect();
+
+            assert_eq!(normalize(with_values), normalize(own), "`{sql}`");
+        }
         Ok(())
     }
 }

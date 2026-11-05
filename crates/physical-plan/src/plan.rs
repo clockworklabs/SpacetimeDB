@@ -3,16 +3,18 @@ use derive_more::From;
 use either::Either;
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_expr::{
-    expr::{AggType, CollectViews, ViewArgs, ViewCall},
+    expr::{AggType, CollectViews, Expr, Param, ViewArgs, ViewCall},
     StatementSource,
 };
 use spacetimedb_lib::{query::Delta, sats::size_of::SizeOf, AlgebraicType, AlgebraicValue, ProductValue};
-use spacetimedb_primitives::{ColId, ColOrCols, ColSet, IndexId, TableId};
+use spacetimedb_primitives::{ColId, ColList, ColOrCols, ColSet, IndexId};
 use spacetimedb_schema::schema::{IndexSchema, TableSchema, VIEW_ARG_HASH_COL};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use spacetimedb_table::table::RowRef;
 use std::{
     borrow::Cow,
+    hash::{Hash, Hasher},
+    mem,
     ops::{Bound, Deref, DerefMut},
     sync::Arc,
 };
@@ -23,7 +25,7 @@ use crate::rules::{
 };
 
 /// Table aliases are replaced with labels in the physical plan
-#[derive(Debug, Clone, Copy, PartialEq, Eq, From)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, From)]
 pub struct Label(pub usize);
 
 /// Resolves formal parameters during expression evaluation.
@@ -132,6 +134,123 @@ impl ProjectPlan {
             Self::None(plan) => Self::None(plan.map(&PhysicalPlan::canonicalize)),
             Self::Name(plan, label, pos) => Self::Name(plan.map(&PhysicalPlan::canonicalize), label, pos),
         }
+    }
+
+    /// Feeds `state` the parts of this plan that `Eq` compares, so equal plans hash equally
+    pub fn hash_structure(&self, state: &mut impl Hasher) {
+        match self {
+            Self::None(plan) => {
+                0u8.hash(state);
+                plan.hash_structure(state);
+            }
+            Self::Name(plan, label, pos) => {
+                1u8.hash(state);
+                label.hash(state);
+                pos.hash(state);
+                plan.hash_structure(state);
+            }
+        }
+    }
+
+    /// Puts a lookup of the matching bindings at the top of a template's plan.
+    /// Each predicate that reads a binding moves from its filter to the lookup:
+    /// `field = binding` becomes the probe key, and the others read the binding row above it.
+    /// `indexes` holds the columns of each binding index of the template, and gains the probed one if it's new.
+    /// Run before `optimize`.
+    pub fn insert_binding_lookup(self, indexes: &mut Vec<ColList>) -> Self {
+        let (plan, returns) = match self {
+            Self::Name(plan, label, _) => (plan, Some(label)),
+            Self::None(plan) => (plan, None),
+        };
+
+        let mut lifted = vec![];
+        let plan = plan.lift_binding_predicates(&mut lifted);
+        // Binding equalities first, by slot, as in `canonicalize`
+        lifted.sort_by_key(|expr| expr.binding_eq_index().map_or(u32::MAX, u32::from));
+
+        // In an unoptimized plan, only scans introduce labels
+        let mut labels = vec![];
+        let mut deltas = vec![];
+        plan.visit(&mut |plan| {
+            if let PhysicalPlan::TableScan(scan, label) = plan {
+                labels.push(*label);
+                deltas.extend(scan.delta.map(|_| *label));
+            }
+        });
+        // The lookup widens each tuple, so name the returned rows
+        let returns = returns.unwrap_or_else(|| match labels[..] {
+            [label] => label,
+            _ => panic!("whole rows need exactly one table scan: {plan:#?}"),
+        });
+        let label = Label(labels.iter().map(|label| label.0 + 1).max().unwrap_or_default());
+
+        // Binding row column `k + 1` holds binding `k`, after the id
+        let column = |k: u16| k as usize + 1;
+        let mut key = vec![];
+        let mut cols = vec![];
+        let mut rest = vec![];
+        for expr in lifted {
+            match (expr.binding_eq_index(), expr) {
+                // A binding used twice is probed once and compared the second time
+                (Some(k), PhysicalExpr::BinOp(_, field, _)) if !cols.contains(&column(k)) => {
+                    let PhysicalExpr::Field(field) = *field else {
+                        unreachable!("a binding equality compares a field");
+                    };
+                    key.push(field);
+                    cols.push(column(k));
+                }
+                (_, mut expr) => {
+                    expr.visit_mut(&mut |expr| {
+                        if let PhysicalExpr::Param(slot, _) = expr
+                            && let Some(k) = slot.binding_index()
+                        {
+                            *expr = PhysicalExpr::Field(TupleField {
+                                label,
+                                label_pos: None,
+                                field_pos: column(k),
+                            });
+                        }
+                    });
+                    rest.push(expr);
+                }
+            }
+        }
+
+        let candidates = match key.is_empty() {
+            true => BindingCandidates::All,
+            false => {
+                // A template's fragments share its bindings, so they share its indexes
+                let cols = ColList::from_iter(cols.into_iter().map(ColId::from));
+                let i = match indexes.iter().position(|index| *index == cols) {
+                    Some(i) => i,
+                    None => {
+                        indexes.push(cols);
+                        indexes.len() - 1
+                    }
+                };
+                let index = BindingIndexId(u32::try_from(i).expect("too many binding indexes"));
+                BindingCandidates::Probe(BindingProbe { index, key })
+            }
+        };
+        // In a join, when the changed table alone gives the key, look up right after its delta scan,
+        // so that changed rows no binding matches never reach the join
+        let early = match (&candidates, &deltas[..]) {
+            (BindingCandidates::Probe(probe), [delta]) if labels.len() > 1 => {
+                probe.key.iter().all(|field| field.label == *delta).then_some(*delta)
+            }
+            _ => None,
+        };
+        let lookup = BindingLookup { label, candidates };
+        let plan = match early {
+            Some(delta) => plan.look_up_after_scan(delta, &mut Some(lookup)),
+            None => PhysicalPlan::BindingLookup(Box::new(plan), lookup),
+        };
+        let plan = match rest.len() {
+            0 => plan,
+            1 => PhysicalPlan::Filter(Box::new(plan), rest.remove(0)),
+            _ => PhysicalPlan::Filter(Box::new(plan), PhysicalExpr::LogOp(LogOp::And, rest)),
+        };
+        Self::Name(plan, returns, None)
     }
 
     pub fn optimize(self) -> Result<Self> {
@@ -327,7 +446,7 @@ impl ProjectListPlan {
 ///
 /// The former is consistent across rewrites.
 /// The latter is only computed once after optimization.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TupleField {
     pub label: Label,
     pub label_pos: Option<usize>,
@@ -649,13 +768,12 @@ impl PhysicalPlan {
             return Self::TableScan(scan, label);
         }
         let arg_hash = match &scan.view_args {
-            // A parameterized call's hash was bound at compile time
-            Some(view_args) => PhysicalExpr::Value(
-                view_args
-                    .arg_hash
-                    .clone()
-                    .expect("bind_view_arg_hashes must run before physical compilation"),
-            ),
+            // A parameterized call's hash was bound at compile time, or lifted into a binding
+            Some(view_args) => match &view_args.arg_hash {
+                Some(Expr::Value(hash, _)) => PhysicalExpr::Value(hash.clone()),
+                Some(Expr::Param(Param::Binding(i), ty)) => PhysicalExpr::Param(ParamSlot::binding(*i), ty.clone()),
+                arg_hash => panic!("bind_view_arg_hashes must run before physical compilation: {arg_hash:?}"),
+            },
             None => {
                 let param = if scan.schema.is_anonymous_view() {
                     PARAM_VIEW_ARG_HASH_EMPTY
@@ -1108,6 +1226,102 @@ impl PhysicalPlan {
         });
     }
 
+    /// Replaces each param, such as `:sender`, with its value from `params`
+    pub fn inline_params(&mut self, params: &impl ParamResolver) {
+        self.visit_exprs_mut(&mut |expr| {
+            if let PhysicalExpr::Param(slot, ty) = expr {
+                *expr = PhysicalExpr::Value(params.resolve_param(*slot, ty));
+            }
+        });
+    }
+
+    /// Feeds `state` the parts of this plan that `Eq` compares.
+    /// Operators that only appear once a plan is optimized hash as just their kind.
+    fn hash_structure(&self, state: &mut impl Hasher) {
+        self.visit(&mut |plan| {
+            mem::discriminant(plan).hash(state);
+            match plan {
+                Self::TableScan(scan, label) => {
+                    scan.schema.table_id.hash(state);
+                    scan.limit.hash(state);
+                    scan.delta.map(|delta| mem::discriminant(&delta)).hash(state);
+                    label.hash(state);
+                }
+                Self::Filter(_, expr) => expr.hash_structure(state),
+                Self::HashJoin(join, semi) => {
+                    join.lhs_field.hash(state);
+                    join.rhs_field.hash(state);
+                    join.unique.hash(state);
+                    mem::discriminant(semi).hash(state);
+                }
+                Self::IxScan(..) | Self::IxJoin(..) | Self::NLJoin(..) | Self::BindingLookup(..) => {}
+            }
+        });
+    }
+
+    /// Moves each predicate that reads a binding out of the plan's filters into `lifted`, once each.
+    /// An unoptimized join keeps both sides, so its filters can move above it.
+    fn lift_binding_predicates(self, lifted: &mut Vec<PhysicalExpr>) -> Self {
+        match self {
+            Self::Filter(input, expr) => {
+                let input = input.lift_binding_predicates(lifted);
+                let exprs = match expr {
+                    PhysicalExpr::LogOp(LogOp::And, exprs) => exprs,
+                    expr => vec![expr],
+                };
+                let (reads, mut keep): (Vec<_>, Vec<_>) = exprs.into_iter().partition(PhysicalExpr::reads_binding);
+                for expr in reads {
+                    // RLS can repeat a predicate
+                    if !lifted.contains(&expr) {
+                        lifted.push(expr);
+                    }
+                }
+                match keep.len() {
+                    0 => input,
+                    1 => Self::Filter(Box::new(input), keep.remove(0)),
+                    _ => Self::Filter(Box::new(input), PhysicalExpr::LogOp(LogOp::And, keep)),
+                }
+            }
+            Self::NLJoin(lhs, rhs) => Self::NLJoin(
+                Box::new(lhs.lift_binding_predicates(lifted)),
+                Box::new(rhs.lift_binding_predicates(lifted)),
+            ),
+            Self::HashJoin(join, Semi::All) => Self::HashJoin(
+                HashJoin {
+                    lhs: Box::new(join.lhs.lift_binding_predicates(lifted)),
+                    rhs: Box::new(join.rhs.lift_binding_predicates(lifted)),
+                    ..join
+                },
+                Semi::All,
+            ),
+            Self::TableScan(..) => self,
+            _ => panic!("not an unoptimized plan: {self:#?}"),
+        }
+    }
+
+    /// Puts `lookup` directly above the scan labeled `scan`, in an unoptimized plan
+    fn look_up_after_scan(self, scan: Label, lookup: &mut Option<BindingLookup>) -> Self {
+        match self {
+            Self::TableScan(_, label) if label == scan => {
+                Self::BindingLookup(Box::new(self), lookup.take().expect("a label has one scan"))
+            }
+            Self::Filter(input, expr) => Self::Filter(Box::new(input.look_up_after_scan(scan, lookup)), expr),
+            Self::NLJoin(lhs, rhs) => Self::NLJoin(
+                Box::new(lhs.look_up_after_scan(scan, lookup)),
+                Box::new(rhs.look_up_after_scan(scan, lookup)),
+            ),
+            Self::HashJoin(join, semi) => Self::HashJoin(
+                HashJoin {
+                    lhs: Box::new(join.lhs.look_up_after_scan(scan, lookup)),
+                    rhs: Box::new(join.rhs.look_up_after_scan(scan, lookup)),
+                    ..join
+                },
+                semi,
+            ),
+            plan => plan,
+        }
+    }
+
     /// Calls `f` on each node of each expression in the plan
     fn visit_exprs_mut(&mut self, f: &mut impl FnMut(&mut PhysicalExpr)) {
         self.visit_mut(&mut |plan| match plan {
@@ -1201,41 +1415,14 @@ impl PhysicalPlan {
     }
 
     /// Is this operator a scan, index or otherwise, of a delta table?
+    /// A filter or binding lookup on such a scan counts too, so the delta still drives a join.
     pub fn is_delta_scan(&self) -> bool {
         match self {
             Self::TableScan(scan, _) => scan.delta.is_some(),
             Self::IxScan(scan, _) => scan.delta.is_some(),
-            Self::Filter(input, _) => input.is_delta_scan(),
+            Self::Filter(input, _) | Self::BindingLookup(input, _) => input.is_delta_scan(),
             _ => false,
         }
-    }
-
-    /// If this plan has any simple equality filters such as `x = 0`,
-    /// this method returns the values along with the appropriate table and column.
-    /// Note, this excludes compound equality filters such as `x = 0 and y = 1`.
-    /// Note, this must be called on an optimized plan.
-    /// Hence we must assume index scans have already been generated.
-    pub fn search_args(&self, params: &impl ParamResolver) -> Vec<(TableId, ColId, AlgebraicValue)> {
-        let mut args = vec![];
-        self.visit(&mut |op| match op {
-            PhysicalPlan::IxScan(scan, _) => {
-                if let Some((col_id, value)) = scan.single_col_point(params) {
-                    args.push((scan.schema.table_id, col_id, value));
-                }
-            }
-            PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, a, b)) => {
-                if let (PhysicalExpr::Field(field), Some(value)) = (&**a, b.const_or_param_value(params)) {
-                    input.visit(&mut |op| match op {
-                        PhysicalPlan::TableScan(scan, name) if *name == field.label => {
-                            args.push((scan.schema.table_id, field.field_pos.into(), value.clone()));
-                        }
-                        _ => {}
-                    });
-                }
-            }
-            _ => {}
-        });
-        args
     }
 
     /// Does this plan select or return whole (unprojected) rows from a single table?
@@ -1522,14 +1709,6 @@ impl IxScan {
         })
     }
 
-    pub fn single_col_point(&self, params: &impl ParamResolver) -> Option<(ColId, AlgebraicValue)> {
-        let terms = self.point_terms(|expr| expr.const_or_param_value(params))?;
-        let [(col, value)] = terms.as_slice() else {
-            return None;
-        };
-        Some((*col, value.clone()))
-    }
-
     fn point_terms(
         &self,
         mut value_of: impl FnMut(&PhysicalExpr) -> Option<AlgebraicValue>,
@@ -1618,14 +1797,6 @@ impl ProjectField for &'_ ProductValue {
 }
 
 impl PhysicalExpr {
-    pub fn const_or_param_value(&self, params: &impl ParamResolver) -> Option<AlgebraicValue> {
-        match self {
-            Self::Value(value) => Some(value.clone()),
-            Self::Param(param, ty) => Some(params.resolve_param(*param, ty)),
-            _ => None,
-        }
-    }
-
     /// Walks the expression tree and calls `f` on every subexpression
     pub fn visit(&self, f: &mut impl FnMut(&Self)) {
         f(self);
@@ -1776,6 +1947,34 @@ impl PhysicalExpr {
             },
             _ => None,
         }
+    }
+
+    /// Feeds `state` the parts of this expression that `Eq` compares
+    fn hash_structure(&self, state: &mut impl Hasher) {
+        self.visit(&mut |expr| {
+            mem::discriminant(expr).hash(state);
+            match expr {
+                // The number of children tells where each one ends
+                Self::LogOp(op, exprs) => {
+                    mem::discriminant(op).hash(state);
+                    exprs.len().hash(state);
+                }
+                Self::BinOp(op, ..) => mem::discriminant(op).hash(state),
+                Self::Value(value) => value.hash(state),
+                Self::Param(slot, _) => slot.0.hash(state),
+                Self::Field(field) => field.hash(state),
+                Self::Product(exprs) => exprs.len().hash(state),
+            }
+        });
+    }
+
+    /// Does this expression read a binding param?
+    fn reads_binding(&self) -> bool {
+        let mut reads = false;
+        self.visit(&mut |expr| {
+            reads |= matches!(expr, Self::Param(slot, _) if slot.is_binding());
+        });
+        reads
     }
 }
 
@@ -3066,11 +3265,11 @@ mod tests {
         }
     }
 
-    /// The base plan and fragments of `sql` as a template: literals lifted, built-ins remapped.
-    /// Also returns the source of each binding param.
     /// The plan of a template before optimization, in the form templates are compared in
     fn template_plan(sql: &str, db: &SchemaViewer) -> (ProjectPlan, Vec<(ParamSource, AlgebraicType)>) {
         let mut plan = parse_and_type_sub(sql, db).unwrap();
+        // View calls' hashes are lifted too, so they're bound first
+        plan.bind_view_arg_hashes(Identity::ONE);
         let literals = plan.lift_literals();
         let mut params: Vec<_> = literals
             .into_iter()
@@ -3081,6 +3280,8 @@ mod tests {
         (plan.canonicalize(), params)
     }
 
+    /// The base plan and fragments of `sql` as a template: literals lifted, built-ins remapped.
+    /// Also returns the source of each binding param.
     fn template_plans(sql: &str, db: &SchemaViewer) -> (Vec<ProjectPlan>, Vec<(ParamSource, AlgebraicType)>) {
         let (plan, params) = template_plan(sql, db);
         let mut labels = vec![];
@@ -3105,12 +3306,16 @@ mod tests {
         indexes
     }
 
-    /// account(id: identity, n: u32)
+    /// account(id: identity, n: u32, owner: identity)
     fn account_db() -> SchemaViewer {
         let account = schema(
             TableId(1),
             "account",
-            &[("id", AlgebraicType::identity()), ("n", AlgebraicType::U32)],
+            &[
+                ("id", AlgebraicType::identity()),
+                ("n", AlgebraicType::U32),
+                ("owner", AlgebraicType::identity()),
+            ],
             &[&[0]],
             &[&[0]],
             Some(0),
@@ -3193,9 +3398,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn remap_moves_view_arg_hashes() {
-        // A sender-scoped view without params, with its hidden `arg_hash` column
+    /// v(arg_hash: u256, x: u8), a sender-scoped view with `params`, with its hidden `arg_hash` column
+    fn sender_view_db(params: ProductType) -> SchemaViewer {
         let mut v = TableSchema::clone(
             &schema(
                 TableId(1),
@@ -3210,16 +3414,313 @@ mod tests {
         v.view_info = Some(ViewDefInfo {
             view_id: ViewId(1),
             is_anonymous: false,
-            params: ProductType::unit(),
+            params,
         });
-        let db = SchemaViewer {
+        SchemaViewer {
             schemas: vec![Arc::new(TableOrViewSchema::from(Arc::new(v)))],
-        };
-        let (plans, params) = template_plans("select * from v", &db);
+        }
+    }
+
+    #[test]
+    fn remap_moves_view_arg_hashes() {
+        let (plans, params) = template_plans("select * from v", &sender_view_db(ProductType::unit()));
         let hash = (ParamSource::Builtin(PARAM_VIEW_ARG_HASH_SENDER), AlgebraicType::U256);
         assert_eq!(params, vec![hash]);
         for mut plan in plans {
             assert_eq!(binding_indexes(&mut plan), vec![0]);
         }
+    }
+
+    /// `sql`'s template plan with its binding lookup inserted, the binding indexes, and the lookup
+    fn lookup_plan(sql: &str, db: &SchemaViewer) -> (ProjectPlan, Vec<ColList>, BindingLookup) {
+        let (plan, _) = template_plan(sql, db);
+        let mut indexes = vec![];
+        let plan = plan.insert_binding_lookup(&mut indexes);
+        let (_, lookup) = find_lookup(plan.physical_plan());
+        (plan, indexes, lookup)
+    }
+
+    /// Every fragment of a plan with a lookup reads no param, optimizes, and returns its binding row
+    fn assert_lookup_fragments(plan: &ProjectPlan, lookup: &BindingLookup) {
+        let mut plan = plan.clone();
+        assert_eq!(binding_indexes(&mut plan), Vec::<u16>::new());
+        let mut labels = vec![];
+        plan.visit(&mut |plan| {
+            if let PhysicalPlan::TableScan(_, label) = plan {
+                labels.push(*label);
+            }
+        });
+        assert!(!labels.contains(&lookup.label));
+        for plan in optimize_base_and_fragments(&plan, &labels) {
+            assert!(plan.binding_position().is_some(), "no binding row: {plan:#?}");
+            assert_eq!(plan.binding_position(), plan.physical_plan().position(&lookup.label));
+        }
+    }
+
+    /// The lookup probes every `field = binding`, and the other predicates stay below it
+    #[test]
+    fn binding_lookup_probes_binding_equalities() {
+        let db = player_team_db();
+        let sql = "select p.* from player p join team t on p.team_id = t.id \
+                   where t.region = 'west' and p.rank = 3 and p.score >= 100";
+        let (plan, indexes, lookup) = lookup_plan(sql, &db);
+        let player = label_for(&plan, PLAYER_ID);
+        let team = label_for(&plan, TEAM_ID);
+        // Slots follow the `FROM` order: `p.rank` is binding 0, `t.region` binding 1
+        assert_eq!(lookup.candidates, probe(vec![field(player, 2), field(team, 1)]));
+        assert_eq!(indexes, vec![ColList::from_iter([1, 2])]);
+        let PhysicalPlan::BindingLookup(input, _) = plan.physical_plan() else {
+            panic!("expected the lookup at the root: {plan:#?}");
+        };
+        assert!(
+            matches!(**input, PhysicalPlan::Filter(..)),
+            "the range stays below: {input:#?}"
+        );
+        assert_lookup_fragments(&plan, &lookup);
+    }
+
+    /// Predicates that read a binding but don't probe it read the binding row above the lookup
+    #[test]
+    fn binding_lookup_filters_other_binding_predicates_above() {
+        let (plan, indexes, lookup) =
+            lookup_plan("select * from player where rank = 3 or score = 5", &player_team_db());
+        assert_eq!(lookup.candidates, BindingCandidates::All);
+        assert!(indexes.is_empty());
+        // The lookup adds a field to each tuple, so the returned rows are named
+        let ProjectPlan::Name(PhysicalPlan::Filter(input, expr), ..) = &plan else {
+            panic!("expected a filter at the root: {plan:#?}");
+        };
+        assert!(matches!(**input, PhysicalPlan::BindingLookup(..)));
+        let player = label_for(&plan, PLAYER_ID);
+        let expected = PhysicalExpr::LogOp(
+            LogOp::Or,
+            vec![
+                PhysicalExpr::BinOp(
+                    BinOp::Eq,
+                    Box::new(PhysicalExpr::Field(field(player, 2))),
+                    Box::new(PhysicalExpr::Field(field(lookup.label, 1))),
+                ),
+                PhysicalExpr::BinOp(
+                    BinOp::Eq,
+                    Box::new(PhysicalExpr::Field(field(player, 3))),
+                    Box::new(PhysicalExpr::Field(field(lookup.label, 2))),
+                ),
+            ],
+        );
+        assert_eq!(*expr, expected);
+        assert_lookup_fragments(&plan, &lookup);
+    }
+
+    /// A query without params has one empty binding, which pairs with every row
+    #[test]
+    fn binding_lookup_without_params_pairs_every_row() {
+        let (plan, indexes, lookup) = lookup_plan("select * from player", &player_team_db());
+        assert_eq!(lookup.candidates, BindingCandidates::All);
+        assert!(indexes.is_empty());
+        assert!(matches!(plan, ProjectPlan::Name(PhysicalPlan::BindingLookup(..), ..)));
+        assert_lookup_fragments(&plan, &lookup);
+    }
+
+    /// Binding predicates in nested filters, such as a view's arg hash below a `WHERE`, move to the lookup
+    #[test]
+    fn binding_lookup_lifts_nested_binding_predicates() {
+        let db = sender_view_db(ProductType::unit());
+        let (plan, indexes, lookup) = lookup_plan("select * from v where x = 1", &db);
+        let v = label_for(&plan, TableId(1));
+        // `x` is binding 0 and the hash binding 1
+        assert_eq!(lookup.candidates, probe(vec![field(v, 1), field(v, 0)]));
+        assert_eq!(indexes, vec![ColList::from_iter([1, 2])]);
+        assert!(matches!(
+            plan,
+            ProjectPlan::Name(PhysicalPlan::BindingLookup(ref input, _), ..) if matches!(**input, PhysicalPlan::TableScan(..))
+        ));
+        assert_lookup_fragments(&plan, &lookup);
+    }
+
+    /// A predicate repeated in another filter, as RLS can repeat one, is probed once
+    #[test]
+    fn binding_lookup_lifts_a_repeated_predicate_once() {
+        let (plan, _) = template_plan("select * from player where rank = 3", &player_team_db());
+        let ProjectPlan::None(PhysicalPlan::Filter(_, expr)) = &plan else {
+            panic!("expected a filter: {plan:#?}");
+        };
+        let expr = expr.clone();
+        let (ProjectPlan::None(inner) | ProjectPlan::Name(inner, ..)) = plan;
+        let plan = ProjectPlan::None(PhysicalPlan::Filter(Box::new(inner), expr));
+
+        let plan = plan.insert_binding_lookup(&mut vec![]);
+        let player = label_for(&plan, PLAYER_ID);
+        let (_, lookup) = find_lookup(plan.physical_plan());
+        assert_eq!(lookup.candidates, probe(vec![field(player, 2)]));
+        assert!(matches!(plan, ProjectPlan::Name(PhysicalPlan::BindingLookup(..), ..)));
+    }
+
+    /// A view call's lifted arg hash is probed
+    #[test]
+    fn binding_lookup_probes_a_view_calls_arg_hash() {
+        let db = sender_view_db(ProductType::from_iter([("id", AlgebraicType::U32)]));
+        let (plan, indexes, lookup) = lookup_plan("select * from v(3)", &db);
+        let v = label_for(&plan, TableId(1));
+        assert_eq!(lookup.candidates, probe(vec![field(v, 0)]));
+        assert_eq!(indexes, vec![ColList::from_iter([1])]);
+        assert_lookup_fragments(&plan, &lookup);
+    }
+
+    /// A binding compared twice, such as `:sender` on two columns, is probed once
+    /// and compared against the binding row the second time
+    #[test]
+    fn binding_lookup_probes_a_repeated_binding_once() {
+        let sql = "select * from account where id = :sender and owner = :sender";
+        let (plan, indexes, lookup) = lookup_plan(sql, &account_db());
+        let account = label_for(&plan, TableId(1));
+        assert_eq!(lookup.candidates, probe(vec![field(account, 0)]));
+        assert_eq!(indexes, vec![ColList::from_iter([1])]);
+        let ProjectPlan::Name(PhysicalPlan::Filter(_, expr), ..) = &plan else {
+            panic!("expected a filter above the lookup: {plan:#?}");
+        };
+        let expected = PhysicalExpr::BinOp(
+            BinOp::Eq,
+            Box::new(PhysicalExpr::Field(field(account, 2))),
+            Box::new(PhysicalExpr::Field(field(lookup.label, 1))),
+        );
+        assert_eq!(*expr, expected);
+        assert_lookup_fragments(&plan, &lookup);
+    }
+
+    /// Fragments that probe the same columns share an index, and others add one
+    #[test]
+    fn binding_lookup_shares_a_templates_indexes() {
+        let db = player_team_db();
+        let (rank, _) = template_plan("select * from player where rank = 3", &db);
+        let (both, _) = template_plan("select * from player where rank = 3 and score = 4", &db);
+        let mut indexes = vec![];
+        let index_of = |plan: ProjectPlan, indexes: &mut Vec<ColList>| {
+            let plan = plan.insert_binding_lookup(indexes);
+            match find_lookup(plan.physical_plan()).1.candidates {
+                BindingCandidates::Probe(probe) => probe.index,
+                BindingCandidates::All => panic!("expected a probe: {plan:#?}"),
+            }
+        };
+        assert_eq!(index_of(rank.clone(), &mut indexes), BindingIndexId(0));
+        assert_eq!(index_of(both, &mut indexes), BindingIndexId(1));
+        assert_eq!(index_of(rank, &mut indexes), BindingIndexId(0));
+        assert_eq!(indexes, vec![ColList::from_iter([1]), ColList::from_iter([1, 2])]);
+    }
+
+    /// When the changed table alone gives the key, the lookup follows its delta scan,
+    /// so its rows that no binding matches never reach the join
+    #[test]
+    fn binding_lookup_follows_a_delta_scan_with_the_key() {
+        let db = player_team_db();
+        let sql = "select p.* from player p join team t on p.team_id = t.id where t.region = 'west'";
+        let (plan, _) = template_plan(sql, &db);
+        let team = label_for(&plan, TEAM_ID);
+        let player = label_for(&plan, PLAYER_ID);
+        let changed = |label: Label| {
+            let mut plan = plan.clone();
+            plan.visit_mut(&mut |plan| {
+                if let PhysicalPlan::TableScan(scan, var) = plan
+                    && *var == label
+                {
+                    scan.delta = Some(Delta::Inserts);
+                }
+            });
+            plan.insert_binding_lookup(&mut vec![])
+        };
+        let scan_below_lookup = |plan: &PhysicalPlan| {
+            let (PhysicalPlan::BindingLookup(input, _), _) = find_lookup(plan) else {
+                unreachable!("`find_lookup` returns a lookup");
+            };
+            matches!(*input, PhysicalPlan::TableScan(_, var) if var == team)
+        };
+
+        // A team changed: its region is the key, so look up before fetching its players
+        let team_changed = changed(team);
+        assert!(scan_below_lookup(team_changed.physical_plan()), "{team_changed:#?}");
+        let optimized = team_changed.clone().optimize().unwrap();
+        assert!(scan_below_lookup(optimized.physical_plan()), "{optimized:#?}");
+
+        // A player changed: the join finds the key
+        let player_changed = changed(player);
+        assert!(matches!(
+            player_changed.physical_plan(),
+            PhysicalPlan::BindingLookup(..)
+        ));
+
+        for plan in [team_changed, player_changed] {
+            let (_, lookup) = find_lookup(plan.physical_plan());
+            let plan = plan.optimize().unwrap();
+            assert_eq!(plan.binding_position(), plan.physical_plan().position(&lookup.label));
+            assert!(plan.binding_position().is_some());
+        }
+    }
+
+    /// Every delta fragment of a join with indexes on its join columns joins by index, wherever its lookup goes
+    #[test]
+    fn binding_lookup_keeps_delta_joins_on_indexes() {
+        let db = player_team_db();
+        let join = "select p.* from player p join team t on p.team_id = t.id";
+        for filter in [
+            "t.region = 'west'",
+            // A fixed filter on the other side used to stop the delta from driving the join
+            "t.region = 'west' and p.score >= 100",
+            "t.id = 3",
+            "p.rank = 2",
+            "t.region = 'west' and p.rank = 2",
+            "t.region = 'west' or p.rank = 2",
+        ] {
+            let sql = format!("{join} where {filter}");
+            let (plan, _) = template_plan(&sql, &db);
+            let labels = [label_for(&plan, PLAYER_ID), label_for(&plan, TEAM_ID)];
+            for deltas in [
+                vec![(labels[0], Delta::Inserts)],
+                vec![(labels[1], Delta::Inserts)],
+                vec![(labels[0], Delta::Inserts), (labels[1], Delta::Deletes)],
+            ] {
+                let mut plan = plan.clone();
+                plan.visit_mut(&mut |plan| {
+                    if let PhysicalPlan::TableScan(scan, var) = plan
+                        && let Some((_, delta)) = deltas.iter().find(|(label, _)| label == var)
+                    {
+                        scan.delta = Some(*delta);
+                    }
+                });
+                let plan = plan.insert_binding_lookup(&mut vec![]).optimize().unwrap();
+                assert!(
+                    !plan.any(&|plan| matches!(plan, PhysicalPlan::HashJoin(..) | PhysicalPlan::NLJoin(..))),
+                    "`{sql}` with deltas {deltas:?}: {plan:#?}"
+                );
+            }
+        }
+    }
+
+    /// Templates that compare equal hash equally, and ranges and shapes still tell templates apart
+    #[test]
+    fn equal_templates_hash_equally() {
+        let db = player_team_db();
+        let hash = |sql: &str| {
+            let (plan, _) = template_plan(sql, &db);
+            let mut state = std::collections::hash_map::DefaultHasher::new();
+            plan.hash_structure(&mut state);
+            std::hash::Hasher::finish(&state)
+        };
+        let base = hash("select * from player where rank = 1 and score > 2");
+        assert_eq!(base, hash("select * from player where score > 2 and 5 = rank"));
+        assert_ne!(base, hash("select * from player where rank = 1 and score > 3"));
+        assert_ne!(base, hash("select * from player where rank = 1 and score < 2"));
+        assert_ne!(base, hash("select * from player where rank = 1"));
+        assert_ne!(
+            hash("select * from player where (id > 1 and team_id > 2) or rank > 3 or score > 4"),
+            hash("select * from player where (id > 1 and team_id > 2 and rank > 3) or score > 4")
+        );
+        let join = "select p.* from player p join team t on p.team_id = t.id";
+        assert_eq!(
+            hash(&format!("{join} where t.region = 'a'")),
+            hash(&format!("{join} where 'b' = t.region"))
+        );
+        assert_ne!(
+            hash(&format!("{join} where t.region = 'a'")),
+            hash(&format!("{join} where p.rank = 1"))
+        );
     }
 }

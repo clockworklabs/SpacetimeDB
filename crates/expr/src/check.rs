@@ -841,6 +841,30 @@ mod tests {
         assert_eq!(lift("select * from t"), (vec![], vec![]));
     }
 
+    /// A view call's hash is lifted like a literal, so calls with other args lift to the same expression
+    #[test]
+    fn lift_literals_lifts_view_arg_hashes() {
+        let tx = SchemaViewer(module_def_with_views());
+        let parse = |sql| {
+            let mut expr = parse_and_type_sub(sql, &tx).unwrap();
+            expr.bind_view_arg_hashes(Identity::ONE);
+            expr
+        };
+
+        let ProjectName::None(RelExpr::RelVar(bound)) = parse("select * from v(42)") else {
+            panic!("expected a relvar");
+        };
+        let Some(Expr::Value(hash, ty)) = bound.view_args.expect("v should be a view call").arg_hash else {
+            panic!("expected a bound hash");
+        };
+
+        let mut v42 = parse("select * from v(42)");
+        let mut v43 = parse("select * from v(43)");
+        assert_eq!(v42.lift_literals(), vec![(hash, ty)]);
+        v43.lift_literals();
+        assert_eq!(v42, v43);
+    }
+
     #[test]
     fn invalid_view_args() {
         let tx = SchemaViewer(module_def_with_views());

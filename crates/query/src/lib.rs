@@ -34,7 +34,7 @@ pub fn compile_subscription(
         return_name,
         has_param,
         ..
-    } = compile(sql, tx, auth, false)?;
+    } = compile(sql, tx, auth, CompileTarget::Query)?;
     Ok((plans, return_id, return_name, has_param))
 }
 
@@ -51,10 +51,31 @@ pub struct SubscriptionTemplate {
 
 /// Like [`compile_subscription`], but lifts each `field = literal` and built-in into a binding param
 pub fn compile_subscription_template(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> Result<SubscriptionTemplate> {
-    compile(sql, tx, auth, true)
+    compile(sql, tx, auth, CompileTarget::Template)
 }
 
-fn compile(sql: &str, tx: &impl SchemaView, auth: &AuthCtx, template: bool) -> Result<SubscriptionTemplate> {
+/// Like [`compile_subscription_template`], but keeps each literal in the plan and makes each built-in a value,
+/// so only the same query from the same caller shares the template
+pub fn compile_subscription_template_with_literals(
+    sql: &str,
+    tx: &impl SchemaView,
+    auth: &AuthCtx,
+) -> Result<SubscriptionTemplate> {
+    compile(sql, tx, auth, CompileTarget::TemplateWithLiterals)
+}
+
+/// What `compile` builds
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CompileTarget {
+    /// A query compiled for itself alone
+    Query,
+    /// A template shared by queries that differ only in their values: literals and built-ins become binding params
+    Template,
+    /// A template that keeps its literals and makes each built-in, such as `:sender`, this caller's value
+    TemplateWithLiterals,
+}
+
+fn compile(sql: &str, tx: &impl SchemaView, auth: &AuthCtx, target: CompileTarget) -> Result<SubscriptionTemplate> {
     if sql.len() > MAX_SQL_LENGTH {
         bail!("SQL query exceeds maximum allowed length: \"{sql:.120}...\"")
     }
@@ -62,7 +83,13 @@ fn compile(sql: &str, tx: &impl SchemaView, auth: &AuthCtx, template: bool) -> R
     let (mut plan, mut has_param) = parse_and_type_sub(sql, tx, auth)?;
 
     // Before RLS, so the literals of its rules stay literal
-    let literals = if template { plan.lift_literals() } else { vec![] };
+    let literals = if target == CompileTarget::Template {
+        // View calls' hashes are lifted too, so they're bound first
+        plan.bind_view_arg_hashes(auth.caller());
+        plan.lift_literals()
+    } else {
+        vec![]
+    };
     let mut params: Vec<_> = literals
         .into_iter()
         .map(|(value, ty)| (ParamSource::Literal(value), ty))
@@ -82,12 +109,14 @@ fn compile(sql: &str, tx: &impl SchemaView, auth: &AuthCtx, template: bool) -> R
         .map(|mut fragment| {
             fragment.bind_view_arg_hashes(auth.caller());
             let mut plan = compile_select(fragment);
-            // The fragments share the lifted literals, so they share the built-ins' slots too
-            if template {
-                plan.remap_builtin_params(&mut params);
-                // Templates are compared in this form
-                plan = plan.canonicalize();
+            match target {
+                CompileTarget::Query => return plan,
+                // The fragments share the lifted literals, so they share the built-ins' slots too
+                CompileTarget::Template => plan.remap_builtin_params(&mut params),
+                CompileTarget::TemplateWithLiterals => plan.inline_params(&ExecutionParams::from_auth(auth)),
             }
+            // Templates are compared in this form
+            plan = plan.canonicalize();
             plan
         })
         .collect::<Vec<_>>();
