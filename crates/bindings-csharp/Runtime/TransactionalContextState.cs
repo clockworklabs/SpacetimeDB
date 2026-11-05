@@ -65,13 +65,9 @@ internal sealed class TransactionalContextState<TTxContext>(
         return cachedUserTxContext;
     }
 
-    public TResult WithTx<TResult>(Func<TTxContext, TResult> body)
-    {
-#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
-        TransactionCallback.Validate(body, typeof(TResult));
-#endif
-        return TryWithTx(tx => Result<TResult, Exception>.Ok(body(tx))).UnwrapOrThrow();
-    }
+    // Callers validate the user's callback before it reaches this state.
+    public TResult WithTx<TResult>(Func<TTxContext, TResult> body) =>
+        TryWithTx(tx => Result<TResult, Exception>.Ok(body(tx))).UnwrapOrThrow();
 
     public TxOutcomeCore<TResult> TryWithTx<TResult, TError>(
         Func<TTxContext, Result<TResult, TError>> body
@@ -83,9 +79,6 @@ internal sealed class TransactionalContextState<TTxContext>(
 #endif
         try
         {
-#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
-            TransactionCallback.Validate(body, typeof(TResult));
-#endif
             var result = RunTransaction(body);
 
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME

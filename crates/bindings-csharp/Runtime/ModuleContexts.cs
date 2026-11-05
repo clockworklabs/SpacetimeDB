@@ -273,7 +273,7 @@ public sealed partial class ProcedureContext
 #if !SPACETIMEDB_WASM_RUNTIME
         Internal.TransactionCallback.Validate(body, typeof(TResult));
 #endif
-        return base.WithTx(tx => body((ProcedureTxContext)tx));
+        return WithTxCore(tx => body((ProcedureTxContext)tx));
     }
 
     public TxOutcome<TResult> TryWithTx<TResult, TError>(
@@ -284,7 +284,7 @@ public sealed partial class ProcedureContext
 #if !SPACETIMEDB_WASM_RUNTIME
         Internal.TransactionCallback.Validate(body, typeof(TResult));
 #endif
-        return base.TryWithTx(tx => body((ProcedureTxContext)tx));
+        return TryWithTxCore(tx => body((ProcedureTxContext)tx));
     }
 
     /// <summary>
@@ -372,14 +372,25 @@ public sealed partial class HandlerContext
     private HandlerTxContext? _cached;
 
     [Experimental("STDB_UNSTABLE")]
-    public TResult WithTx<TResult>(Func<HandlerTxContext, TResult> body) =>
-        base.WithTx(tx => body((HandlerTxContext)tx));
+    public TResult WithTx<TResult>(Func<HandlerTxContext, TResult> body)
+    {
+#if !SPACETIMEDB_WASM_RUNTIME
+        Internal.TransactionCallback.Validate(body, typeof(TResult));
+#endif
+        return WithTxCore(tx => body((HandlerTxContext)tx));
+    }
 
     [Experimental("STDB_UNSTABLE")]
     public TxOutcome<TResult> TryWithTx<TResult, TError>(
         Func<HandlerTxContext, Result<TResult, TError>> body
     )
-        where TError : Exception => base.TryWithTx(tx => body((HandlerTxContext)tx));
+        where TError : Exception
+    {
+#if !SPACETIMEDB_WASM_RUNTIME
+        Internal.TransactionCallback.Validate(body, typeof(TResult));
+#endif
+        return TryWithTxCore(tx => body((HandlerTxContext)tx));
+    }
 
     public Uuid NewUuidV4()
     {

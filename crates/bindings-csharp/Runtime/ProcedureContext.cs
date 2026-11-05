@@ -25,13 +25,13 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
 
     // Keep captured callbacks off the ordinary, unselected transaction path.
     private TResult WithSelectedTx<TResult>(Func<ProcedureTxContextBase, TResult> body) =>
-        SelectionSource!.WithTx(tx => body(SelectTxContext(tx)));
+        SelectionSource!.WithTxCore(tx => body(SelectTxContext(tx)));
 
     private TxOutcome<TResult> TryWithSelectedTx<TResult, TError>(
         Func<ProcedureTxContextBase, Result<TResult, TError>> body
     )
         where TError : Exception =>
-        SelectionSource!.TryWithTx<TResult, TError>(tx => body(SelectTxContext(tx)));
+        SelectionSource!.TryWithTxCore<TResult, TError>(tx => body(SelectTxContext(tx)));
 #endif
 
     private readonly TransactionalContextState<ProcedureTxContextBase> txState;
@@ -144,6 +144,15 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
 
     public TResult WithTx<TResult>(Func<ProcedureTxContextBase, TResult> body)
     {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        Internal.TransactionCallback.Validate(body, typeof(TResult));
+#endif
+        return WithTxCore(body);
+    }
+
+    // Public entry points validate the caller's callback once; the core doesn't repeat it.
+    private protected TResult WithTxCore<TResult>(Func<ProcedureTxContextBase, TResult> body)
+    {
 #if NET10_0_OR_GREATER
         if (SelectionSource is not null)
         {
@@ -154,6 +163,17 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
     }
 
     public TxOutcome<TResult> TryWithTx<TResult, TError>(
+        Func<ProcedureTxContextBase, Result<TResult, TError>> body
+    )
+        where TError : Exception
+    {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        Internal.TransactionCallback.Validate(body, typeof(TResult));
+#endif
+        return TryWithTxCore(body);
+    }
+
+    private protected TxOutcome<TResult> TryWithTxCore<TResult, TError>(
         Func<ProcedureTxContextBase, Result<TResult, TError>> body
     )
         where TError : Exception
