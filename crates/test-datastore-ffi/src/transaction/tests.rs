@@ -5,12 +5,13 @@ use spacetimedb_lib::{AlgebraicType, ProductType};
 struct Database(*mut StdbTestDatastore);
 struct Transaction(*mut StdbTestTransaction);
 
-fn call(expected: u32, f: impl FnOnce(*mut StdbTestBuffer) -> u32) {
+fn call(expected: u32, f: impl FnOnce(*mut StdbTestBuffer) -> u32) -> String {
     let mut error = StdbTestBuffer::EMPTY;
     let status = f(&mut error);
     let message = String::from_utf8(take_buffer(error)).unwrap();
     assert_eq!(status, expected, "{message}");
     assert_eq!(message.is_empty(), status == OK);
+    message
 }
 
 fn take_buffer(mut buffer: StdbTestBuffer) -> Vec<u8> {
@@ -537,10 +538,17 @@ fn datastore_shutdown_and_worker_panic_invalidate_surviving_handles() {
         }
         drop(db); // Joins the owner thread, including rollback of pending work.
         let mut count = 123;
-        call(DATASTORE_CLOSED, |error| unsafe {
+        let expected = if panic { INTERNAL_ERROR } else { DATASTORE_CLOSED };
+        let message = call(expected, |error| unsafe {
             stdb_test_v1_table_count(tx.0, 0, &mut count, error)
         });
         assert_eq!(count, 0);
+        // After a panic, later calls name the panic rather than reporting a closed datastore.
+        assert_eq!(
+            message.contains("Native test datastore panicked: operation panicked"),
+            panic,
+            "{message}"
+        );
         drop(tx);
     }
 }
