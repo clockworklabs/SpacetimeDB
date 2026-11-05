@@ -1,3 +1,6 @@
+#[cfg(feature = "estimation")]
+pub mod estimation;
+
 use anyhow::{bail, Result};
 use spacetimedb_execution::{
     dml::{MutDatastore, MutExecutor},

@@ -8780,6 +8780,8 @@ name = "spacetimedb-query"
 version = "2.15.0"
 dependencies = [
  "anyhow",
+ "spacetimedb-datastore",
+ "spacetimedb-engine",
  "spacetimedb-execution",
  "spacetimedb-expr",
  "spacetimedb-lib",
@@ -9085,8 +9087,9 @@ version = "2.15.0"
 dependencies = [
  "anyhow",
  "scopeguard",
- "spacetimedb-core",
  "spacetimedb-datastore",
+ "spacetimedb-engine",
+ "spacetimedb-execution",
  "spacetimedb-expr",
  "spacetimedb-lib",
  "spacetimedb-primitives",
