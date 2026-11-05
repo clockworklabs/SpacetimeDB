@@ -8,6 +8,13 @@ using System.Diagnostics.CodeAnalysis;
 
 public sealed class Local : LocalBase
 {
+    public Local() { }
+
+#if !SPACETIMEDB_WASM_RUNTIME
+    internal Local(Internal.DatabaseAccess access)
+        : base(access) { }
+#endif
+
     private static readonly Local Root = new();
 
     private static Local?[] Instances => field ??= new Local?[Internal.Module.InstanceCount];
@@ -31,13 +38,27 @@ public sealed record ReducerContext
         {
             return this;
         }
-        var selected = this with { Db = Local.ForInstance(instanceId) };
+        var selected = this with
+        {
+#if !SPACETIMEDB_WASM_RUNTIME
+            Db = Db.Access is { } access
+                ? new Local(access) { InstanceId = instanceId }
+                : Local.ForInstance(instanceId),
+#else
+            Db = Local.ForInstance(instanceId),
+#endif
+        };
         selected.selectionSource = selectionSource ?? this;
         return selected;
     }
 
     internal int ModuleInstanceId => Db.InstanceId;
-    public DatabaseEnvironment Env => default;
+    public DatabaseEnvironment Env =>
+#if SPACETIMEDB_WASM_RUNTIME
+        default;
+#else
+        new(Db.Access);
+#endif
     public readonly Identity Sender;
     public readonly ConnectionId? ConnectionId;
     public readonly Random Rng;
@@ -46,7 +67,19 @@ public sealed record ReducerContext
 
     // **Note:** must be 0..=u32::MAX
     internal int CounterUuid;
-    public Identity DatabaseIdentity => Internal.IReducerContext.GetDatabaseIdentity();
+    public Identity DatabaseIdentity
+    {
+        get
+        {
+#if SPACETIMEDB_WASM_RUNTIME
+            return Internal.IReducerContext.GetDatabaseIdentity();
+#else
+            var access = Internal.DatabaseAccess.Require(Db.Access);
+            access.CheckActive();
+            return access.Backend.DatabaseIdentity;
+#endif
+        }
+    }
 
     // We keep this property for compatibility with existing module code.
     [global::System.Obsolete(
@@ -62,13 +95,30 @@ public sealed record ReducerContext
         AuthCtx? senderAuth = null,
         int instanceId = 0
     )
-        : base(Local.ForInstance(instanceId))
+        : this(
+            Local.ForInstance(instanceId),
+            identity,
+            connectionId,
+            random,
+            time,
+            senderAuth ?? AuthCtx.BuildFromSystemTables(connectionId, identity)
+        ) { }
+
+    internal ReducerContext(
+        Local db,
+        Identity identity,
+        ConnectionId? connectionId,
+        Random random,
+        Timestamp time,
+        AuthCtx senderAuth
+    )
+        : base(db)
     {
         Sender = identity;
         ConnectionId = connectionId;
         Rng = random;
         Timestamp = time;
-        SenderAuth = senderAuth ?? AuthCtx.BuildFromSystemTables(connectionId, identity);
+        SenderAuth = senderAuth;
         CounterUuid = 0;
     }
 
@@ -125,6 +175,31 @@ public readonly struct QueryBuilder
     internal readonly int InstanceId;
 
     internal QueryBuilder(int instanceId) => InstanceId = instanceId;
+
+#if SPACETIMEDB_WASM_RUNTIME
+    internal QueryBuilder(Internal.LocalReadOnly db) => InstanceId = db.InstanceId;
+#endif
+
+#if !SPACETIMEDB_WASM_RUNTIME
+    internal readonly Internal.DatabaseAccess? Access;
+
+    internal QueryBuilder(Internal.LocalReadOnly db)
+    {
+        InstanceId = db.InstanceId;
+        Access = db.Access;
+    }
+
+    public SqlTableName ResolveTableName(string assemblyIdentity, string table)
+    {
+        var access = Internal.DatabaseAccess.Require(Access);
+        access.CheckActive();
+        var namespaces = access.Backend.Namespaces;
+        return namespaces.ResolveSqlName(
+            namespaces.ResolveInstance(InstanceId, assemblyIdentity),
+            table
+        );
+    }
+#endif
 }
 
 public sealed partial class ProcedureContext
@@ -140,7 +215,11 @@ public sealed partial class ProcedureContext
             return this;
         }
         var selected = (ProcedureContext)MemberwiseClone();
+#if !SPACETIMEDB_WASM_RUNTIME
+        selected.Db = new Local { InstanceId = instanceId };
+#else
         selected.Db = Local.ForInstance(instanceId);
+#endif
         selected.SelectionSource = SelectionSource ?? this;
         return selected;
     }
@@ -165,19 +244,48 @@ public sealed partial class ProcedureContext
 
     protected override global::SpacetimeDB.ProcedureTxContextBase CreateTxContext(
         Internal.TxContext inner
-    ) => _cached ??= new ProcedureTxContext(inner);
+    ) =>
+#if SPACETIMEDB_WASM_RUNTIME
+        _cached ??= new ProcedureTxContext(inner);
 
     private ProcedureTxContext? _cached;
+#else
+        new ProcedureTxContext(inner);
+
+    internal ProcedureContext(
+        Internal.IDatabaseBackend backend,
+        Func<Timestamp> clock,
+        Identity sender,
+        ConnectionId? connectionId,
+        Random random,
+        AuthCtx auth,
+        HttpClient http,
+        Action? afterCommit
+    )
+        : base(backend, clock, sender, connectionId, random, auth, http, afterCommit) =>
+        Db = new Local();
+#endif
 
     public Local Db { get; private set; }
 
-    public TResult WithTx<TResult>(Func<ProcedureTxContext, TResult> body) =>
-        base.WithTx(tx => body((ProcedureTxContext)tx));
+    public TResult WithTx<TResult>(Func<ProcedureTxContext, TResult> body)
+    {
+#if !SPACETIMEDB_WASM_RUNTIME
+        Internal.TransactionCallback.Validate(body, typeof(TResult));
+#endif
+        return base.WithTx(tx => body((ProcedureTxContext)tx));
+    }
 
     public TxOutcome<TResult> TryWithTx<TResult, TError>(
         Func<ProcedureTxContext, Result<TResult, TError>> body
     )
-        where TError : Exception => base.TryWithTx(tx => body((ProcedureTxContext)tx));
+        where TError : Exception
+    {
+#if !SPACETIMEDB_WASM_RUNTIME
+        Internal.TransactionCallback.Validate(body, typeof(TResult));
+#endif
+        return base.TryWithTx(tx => body((ProcedureTxContext)tx));
+    }
 
     /// <summary>
     /// Create a new random <see cref="Uuid"/> `v4` using the built-in RNG.
@@ -302,7 +410,13 @@ public sealed class ProcedureTxContext
         }
         var selected = (ProcedureTxContext)MemberwiseClone();
         selected.SelectionSource = SelectionSource ?? this;
+#if !SPACETIMEDB_WASM_RUNTIME
+        selected.LocalDb = Db.Access is { } access
+            ? new Local(access) { InstanceId = instanceId }
+            : Local.ForInstance(instanceId);
+#else
         selected.LocalDb = Local.ForInstance(instanceId);
+#endif
         return selected;
     }
 
@@ -349,14 +463,30 @@ public sealed record ViewContext
             ? this
             : this with
             {
+#if !SPACETIMEDB_WASM_RUNTIME
+                Db = Db.Access is { } access
+                    ? new Internal.LocalReadOnly(access) { InstanceId = instanceId }
+                    : Internal.LocalReadOnly.ForInstance(instanceId),
+#else
                 Db = Internal.LocalReadOnly.ForInstance(instanceId),
+#endif
             };
 
     internal int ModuleInstanceId => Db.InstanceId;
-    public DatabaseEnvironment Env => default;
+    public DatabaseEnvironment Env =>
+#if SPACETIMEDB_WASM_RUNTIME
+        default;
+#else
+        new(Db.Access);
+#endif
     public Identity Sender { get; }
 
-    public QueryBuilder From => new(ModuleInstanceId);
+    public QueryBuilder From =>
+#if SPACETIMEDB_WASM_RUNTIME
+        new(ModuleInstanceId);
+#else
+        new(Db);
+#endif
 
     internal ViewContext(Identity sender, Internal.LocalReadOnly db)
         : base(db)
@@ -379,12 +509,28 @@ public sealed record AnonymousViewContext
             ? this
             : this with
             {
+#if !SPACETIMEDB_WASM_RUNTIME
+                Db = Db.Access is { } access
+                    ? new Internal.LocalReadOnly(access) { InstanceId = instanceId }
+                    : Internal.LocalReadOnly.ForInstance(instanceId),
+#else
                 Db = Internal.LocalReadOnly.ForInstance(instanceId),
+#endif
             };
 
     internal int ModuleInstanceId => Db.InstanceId;
-    public DatabaseEnvironment Env => default;
-    public QueryBuilder From => new(ModuleInstanceId);
+    public DatabaseEnvironment Env =>
+#if SPACETIMEDB_WASM_RUNTIME
+        default;
+#else
+        new(Db.Access);
+#endif
+    public QueryBuilder From =>
+#if SPACETIMEDB_WASM_RUNTIME
+        new(ModuleInstanceId);
+#else
+        new(Db);
+#endif
 
     internal AnonymousViewContext(Internal.LocalReadOnly db)
         : base(db) { }

@@ -1,8 +1,10 @@
 ﻿namespace SpacetimeDB;
 
 using System.Runtime.CompilerServices;
-using System.Text;
 using SpacetimeDB.Internal;
+#if !(NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME)
+using System.Text;
+#endif
 
 public static class Log
 {
@@ -161,6 +163,9 @@ public static class Log
         int lineNumber
     )
     {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        Console.Error.WriteLine($"[{level}] {target}: {text}");
+#else
         var target_bytes = Encoding.UTF8.GetBytes(target);
         var filename_bytes = Encoding.UTF8.GetBytes(filename);
         var text_bytes = Encoding.UTF8.GetBytes(text);
@@ -175,5 +180,6 @@ public static class Log
             text_bytes,
             text_bytes.Length
         );
+#endif
     }
 }

@@ -5,6 +5,10 @@ using System.Collections.Generic;
 using System.Linq;
 using SpacetimeDB.BSATN;
 
+/// <summary>
+/// Mutable schema registration state. Use a fresh builder for each independent registration;
+/// builders and the mutable definitions they produce must not be shared between fixtures.
+/// </summary>
 public sealed class ModuleBuilder
 {
     private Module.TypeRegistrar TypeRegistrar { get; }
@@ -251,7 +255,8 @@ public sealed class ModuleBuilder
     public void RegisterExplicitIndexName(string sourceName, string canonicalName) =>
         explicitNames.Add(new ExplicitNameEntry.Index(new NameMapping(sourceName, canonicalName)));
 
-    internal RawModuleDefV10 BuildModuleDefinition()
+    // The result retains builder-owned collections; this is not an immutable snapshot.
+    public RawModuleDefV10 BuildModuleDefinition()
     {
         var builtTables = new List<RawTableDefV10>(tableDefs.Count);
         foreach (var table in tableDefs)
