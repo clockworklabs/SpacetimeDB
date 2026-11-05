@@ -46,10 +46,10 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
         Sender = sender;
         ConnectionId = connectionId;
         SenderAuth = AuthCtx.BuildFromSystemTables(connectionId, sender);
-        txState = new(
-            random,
-            time,
-            timestamp => new Internal.TxContext(
+        txState = new(random, time, inner => CreateTxContext(inner))
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
+        {
+            CreateInitialTxContext = timestamp => new Internal.TxContext(
                 CreateLocal(),
                 Sender,
                 ConnectionId,
@@ -57,8 +57,9 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
                 SenderAuth,
                 random
             ),
-            inner => CreateTxContext(inner)
-        );
+        }
+#endif
+        ;
     }
 
     protected abstract ProcedureTxContextBase CreateTxContext(Internal.TxContext inner);
@@ -83,19 +84,7 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
         Http = http;
         Access = new Internal.DatabaseAccess(backend);
         Env = new(Access);
-        txState = new(
-            random,
-            clock(),
-            timestamp => new Internal.TxContext(
-                CreateLocal(),
-                sender,
-                connectionId,
-                timestamp,
-                auth,
-                random
-            ),
-            inner => CreateTxContext(inner)
-        )
+        txState = new(random, clock(), inner => CreateTxContext(inner))
         {
             Backend = backend,
             Clock = clock,
@@ -115,10 +104,22 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
 
     protected internal abstract LocalBase CreateLocal();
 
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    public Internal.TxContext EnterTxContext(long timestampMicros) =>
+        throw new NotSupportedException(
+            "Host transactions are unavailable in managed module tests."
+        );
+
+    public void ExitTxContext() =>
+        throw new NotSupportedException(
+            "Host transactions are unavailable in managed module tests."
+        );
+#else
     public Internal.TxContext EnterTxContext(long timestampMicros) =>
         txState.EnterTxContext(timestampMicros);
 
     public void ExitTxContext() => txState.ExitTxContext();
+#endif
 
     public readonly struct TxOutcome<TResult>(bool isSuccess, TResult? value, Exception? error)
     {
