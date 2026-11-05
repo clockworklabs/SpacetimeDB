@@ -1872,12 +1872,12 @@ jobs:
 
       - name: Generate client bindings
         working-directory: demo/Blackholio/server-rust
-        run: bash ./generate.sh -y
+        run: spacetime generate -y
 
       - name: Check for changes
         run: |
           tools/check-diff.sh demo/Blackholio/client-unity/Assets/Scripts/autogen || {
-              echo 'Error: Bindings are dirty. Please run `demo/Blackholio/server-rust/generate.sh`.'
+              echo 'Error: Bindings are dirty. Please run `spacetime generate` in `demo/Blackholio/server-rust`.'
               exit 1
           }
 
@@ -1902,7 +1902,7 @@ jobs:
         working-directory: demo/Blackholio/server-rust
         run: |
           spacetime logout && spacetime login --server-issued-login local
-          bash ./publish.sh
+          spacetime publish --delete-data -y
 
       - name: Patch com.clockworklabs.spacetimedbsdk dependency in manifest.json
         working-directory: demo/Blackholio/client-unity/Packages
@@ -2067,12 +2067,12 @@ jobs:
 
       - name: Generate client bindings
         working-directory: demo/Blackholio/server-rust
-        run: bash ./generate.sh -y
+        run: spacetime generate -y
 
       - name: Check for changes
         run: |
           tools/check-diff.sh demo/Blackholio/client-godot/module_bindings || {
-              echo 'Error: Godot bindings are dirty. Please run `demo/Blackholio/server-rust/generate.sh`.'
+              echo 'Error: Godot bindings are dirty. Please run `spacetime generate` in `demo/Blackholio/server-rust`.'
               exit 1
           }
 
@@ -2106,7 +2106,7 @@ jobs:
         working-directory: demo/Blackholio/server-rust
         run: |
           spacetime login --server-issued-login local
-          bash ./publish.sh
+          spacetime publish --delete-data -y
 
       - name: Run Godot tests
         working-directory: demo/Blackholio/client-godot
