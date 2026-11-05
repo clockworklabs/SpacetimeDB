@@ -1,45 +1,48 @@
 import { moduleHooks } from 'spacetime:sys@2.0';
 
-import { AlgebraicType } from '../../lib/algebraic_type';
-import BinaryReader from '../../lib/binary_reader';
-import type { ConnectionId } from '../../lib/connection_id';
-import { Identity } from '../../lib/identity';
-import type { AuthCtx, JwtClaims, ReducerCtx } from '../../lib/reducers';
-import type { UntypedSchemaDef } from '../../lib/schema';
-import { Timestamp } from '../../lib/timestamp';
-import type { TimeDuration } from '../../lib/time_duration';
-import { type HttpRequest, type HttpResponse } from '../../lib/autogen/types';
-import type { Table } from '../../lib/table';
-import type { DbView } from '../db_view';
+import { AlgebraicType } from '../../lib/algebraic_type.ts';
+import BinaryReader from '../../lib/binary_reader.ts';
+import type { ConnectionId } from '../../lib/connection_id.ts';
+import { Identity } from '../../lib/identity.ts';
+import type { AuthCtx, JwtClaims, ReducerCtx } from '../../lib/reducers.ts';
+import type { UntypedSchemaDef } from '../../lib/schema.ts';
+import { Timestamp } from '../../lib/timestamp.ts';
+import type { TimeDuration } from '../../lib/time_duration.ts';
+import {
+  type HttpRequest,
+  type HttpResponse,
+} from '../../lib/autogen/types.ts';
+import type { Table } from '../../lib/table.ts';
+import type { DbView } from '../db_view.ts';
 import {
   Headers,
   type HttpClient,
   type RequestOptions,
-} from '../http_internal';
+} from '../http_internal.ts';
 import {
   deserializeHeaders,
   serializeHeaders,
   serializeMethod,
   SyncResponse,
-} from '../http_shared';
-import { makeTableView, ReducerCtxImpl } from '../runtime';
-import type { ProcedureCtx } from '../procedures';
-import { ProcedureCtxImpl } from '../procedures';
-import { makeRandomFromSeed } from '../rng';
-import type { Schema } from '../schema';
-import type { AnonymousViewCtx, ViewCtx } from '../views';
+} from '../http_shared.ts';
+import { makeTableView, ReducerCtxImpl } from '../runtime.ts';
+import type { ProcedureCtx } from '../procedures.ts';
+import { ProcedureCtxImpl } from '../procedures.ts';
+import { makeRandomFromSeed } from '../rng.ts';
+import type { Schema } from '../schema.ts';
+import type { AnonymousViewCtx, ViewCtx } from '../views.ts';
 import {
   makeQueryBuilder,
   getQueryAccessorName,
   toSql,
   type Query,
-} from '../query';
-import { TestDatastoreBackend } from './backend';
+} from '../query.ts';
+import { TestDatastoreBackend } from './backend.ts';
 import {
   loadTestRuntime,
   type TestRuntimeContext,
   type TestRuntimeTx,
-} from './runtime';
+} from './runtime.ts';
 
 const freeze = Object.freeze;
 const nextSeed = Symbol('nextSeed');

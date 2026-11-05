@@ -1,14 +1,14 @@
-import type { OutboxMetadata } from './table_schema';
-import { table } from './table';
+import type { OutboxMetadata } from './table_schema.ts';
+import { table } from './table.ts';
 import {
   IdentityBuilder,
   t,
   type ElementsObj,
   type RowBuilder,
   type RowObj,
-} from './type_builders';
-import { deepEqual } from './util';
-import type { Identity } from './identity';
+} from './type_builders.ts';
+import { deepEqual } from './util.ts';
+import type { Identity } from './identity.ts';
 
 /** An Identity with a compile-time receiver-module brand and the unchanged wire type. */
 export type ReceiverIdentity<Module extends symbol> = Identity & {

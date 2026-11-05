@@ -1,9 +1,9 @@
-import type { RowType, table, UntypedTableDef } from './table';
-import type { ColumnMetadata, IndexTypes } from './type_builders';
-import type { CollapseTuple, Prettify } from './type_util';
-import type { Identity } from './identity';
-import { Range } from '../server/range';
-import type { ColumnIsUnique } from './constraints';
+import type { RowType, table, UntypedTableDef } from './table.ts';
+import type { ColumnMetadata, IndexTypes } from './type_builders.ts';
+import type { CollapseTuple, Prettify } from './type_util.ts';
+import type { Identity } from './identity.ts';
+import { Range } from '../server/range.ts';
+import type { ColumnIsUnique } from './constraints.ts';
 
 /**
  * Index helper type used *inside* {@link table} to enforce that only
