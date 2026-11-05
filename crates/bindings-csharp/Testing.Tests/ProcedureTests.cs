@@ -124,6 +124,15 @@ public class ProcedureTests
                     return Task.CompletedTask;
                 })
         );
+        // Invalid callbacks are rejected before the transaction starts, not reported as outcomes.
+        Assert.Throws<ArgumentException>(
+            () =>
+                procedure.TryWithTx<Task, Exception>(tx =>
+                {
+                    tx.Db.Entries.Insert(new Entry { Text = "must not run" });
+                    return Result<Task, Exception>.Ok(Task.CompletedTask);
+                })
+        );
         var result = procedure.TryWithTx<object, Exception>(tx =>
         {
             tx.Db.Entries.Insert(new Entry { Text = "also rolled back" });
