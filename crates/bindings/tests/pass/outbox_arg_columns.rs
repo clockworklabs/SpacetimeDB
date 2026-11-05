@@ -5,6 +5,9 @@ mod remote_bindings {
     pub(crate) use crate::receiver;
 }
 
+spacetimedb::outbox!(receiver::receive_ping);
+spacetimedb::outbox!(receiver::noop, name = "WireNoopOutbox", accessor = named_noop_outbox);
+
 #[spacetimedb::table(
     accessor = outbound_ping,
     name = "WireOutbox",
@@ -68,6 +71,21 @@ fn main() {
         outboxes::plain_ping__TableHandle::OUTBOX.unwrap().remote_reducer_name,
         "wire_ping"
     );
+    assert_eq!(receive_ping_outbox__TableHandle::OUTBOX.unwrap().arg_columns, &[2]);
+    assert_eq!(receive_ping_outbox__TableHandle::OUTBOX.unwrap().target_column, 1);
+    assert!(named_noop_outbox__TableHandle::OUTBOX.unwrap().arg_columns.is_empty());
+    assert_eq!(
+        named_noop_outbox__TableHandle::OUTBOX.unwrap().signature_hash,
+        <receiver::noop as spacetimedb::rt::RemoteReducer>::SIGNATURE_HASH
+    );
+}
+
+fn insert_generated(ctx: &spacetimedb::ReducerContext, target: receiver::Identity) {
+    ctx.db.receive_ping_outbox().insert(ReceivePingOutbox {
+        msg_id: 0,
+        target,
+        body: String::new(),
+    });
 }
 
 // Outbox tables retain inserts and reads, including primary-key lookups.

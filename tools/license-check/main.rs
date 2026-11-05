@@ -43,7 +43,7 @@ fn check_license_symlinks(repo_root: &Path) -> Result<()> {
     let licenses_dir_canon = fs::canonicalize(&licenses_dir)
         .with_context(|| format!("Could not canonicalize licenses dir: {}", licenses_dir.display()))?;
 
-    let ignore_list = ["LICENSE.txt", "crates/sqltest/standards/LICENSE"];
+    let ignore_list = ["LICENSE.txt"];
     let mut errors: Vec<String> = Vec::new();
 
     for entry in WalkDir::new(repo_root).into_iter().filter_map(Result::ok) {

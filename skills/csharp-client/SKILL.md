@@ -99,6 +99,29 @@ conn.SubscriptionBuilder()
     });
 ```
 
+## Submodule Accessors and View Arguments
+
+A namespace accessor `MyAuth` is nested in the generated table, reducer, and procedure APIs:
+
+```csharp
+conn.SubscriptionBuilder()
+    .AddQuery(q => q.From.MyAuth.User())
+    .Subscribe();
+// Rows: conn.Db.MyAuth.User
+// Reducers: conn.Reducers.MyAuth.Add(10)
+// Procedures: conn.Procedures.MyAuth.CountUsers((ctx, result) => { ... })
+```
+
+The query builder and calls encode canonical names automatically. Raw SQL/HTTP/CLI calls use canonical qualified names, such as `auth_data.<table>` for a namespace explicitly named `auth_data`. All namespaces share the connection and cache.
+
+For views with arguments (2.13+), use raw SQL; C# has no typed argument-bearing view query builder yet:
+
+```csharp
+conn.SubscriptionBuilder().Subscribe(new[] { "SELECT * FROM by_id(42)" });
+```
+
+Use explicit queries for every table on that connection, not subscribe-all, which skips views with arguments. Only `SELECT * FROM view_name(literal_args)` is supported. All argument values share one cache table; unsubscribe from obsolete arguments to avoid combining their rows. Validate/encode dynamic values as SQL literals rather than concatenating untrusted input. Keep calling `FrameTick()` to process subscription updates.
+
 ## Row Callbacks
 
 ```csharp
