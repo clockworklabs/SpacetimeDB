@@ -19,7 +19,7 @@
 
 import { DbConnection, tables } from './module_bindings/index.js';
 
-const SERVER_URL = process.env.SPACETIME_SDK_TEST_SERVER_URL ?? '';
+const SERVER_URL = process.env.SPACETIME_SDK_TEST_SERVER_URL;
 if (!SERVER_URL) {
   throw new Error('Missing SPACETIME_SDK_TEST_SERVER_URL');
 }
