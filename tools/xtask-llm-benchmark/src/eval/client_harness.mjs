@@ -151,19 +151,27 @@ try {
   });
   assert.ok(tokenResponse.ok);
   ({ token } = await tokenResponse.json());
+  // Connected, but the subscription has not applied, so data is not ready.
+  transport.holdAfterFirstFrame(true);
   await rpc('start', {
     uri: transport.uri,
     database,
   });
+  await sleep(1500);
+  const connecting = await rpc('snapshot');
+  assert.equal(connecting.ready, false, 'ready before the subscription applied');
+  transport.holdAfterFirstFrame(false);
   const initial = await until(s => s.ready && s.value === 0);
   assert.ok(initial.identity, 'client identity missing');
+  assert.equal(initial.outcome, 'idle', 'no call has been made yet');
   await rpc('add', { delta: 3 });
   const first = await until(s => s.outcome === 'committed' && s.value === 3);
   assert.equal(first.changes, 1);
 
   // Let the reducer commit, but do not deliver its result or cache update.
   transport.hideReplies(true);
-  await rpc('add', { delta: 5 });
+  const sent = await rpc('add', { delta: 5 });
+  assert.equal(sent.outcome, 'pending', 'no reply can have arrived yet');
   const deadline = Date.now() + 10000;
   while ((await serverValue()) !== 8) {
     assert.ok(
@@ -211,12 +219,40 @@ try {
     3,
     'callbacks or subscriptions were registered twice'
   );
+  await rpc('add', { delta: 0 });
+  const failed = await until(s => s.outcome === 'failed');
+  assert.equal(failed.value, 17, 'a failed call must not change the value');
+  assert.equal(failed.changes, 3, 'a failed call must not count as a change');
+  await rpc('add', { delta: 1 });
+  await until(s => s.outcome === 'committed' && s.value === 18);
+
+  // With no call in flight, an outage must not change the last outcome.
+  transport.setOnline(false);
+  const down = await until(s => !s.ready);
+  assert.equal(down.outcome, 'committed', 'no call was in flight during this outage');
+
+  // Connected, but the subscription has not applied, so data is not ready.
+  transport.holdAfterFirstFrame(true);
+  transport.setOnline(true);
+  await sleep(1500);
+  const applying = await rpc('snapshot');
+  assert.equal(applying.ready, false, 'ready before the subscription applied');
+  transport.holdAfterFirstFrame(false);
+  const back = await until(s => s.ready && s.value === 18);
+  assert.equal(back.changes, 4, 'an empty replay must not count as a change');
+
   await rpc('stop');
   await addOnServer(11);
   await sleep(1500);
   const stopped = await rpc('snapshot');
   assert.equal(stopped.ready, false);
-  assert.equal(stopped.changes, 3, 'stopped client kept receiving updates');
+  assert.equal(stopped.changes, 4, 'stopped client kept receiving updates');
+  // A correct C# client still shows this connection open. The cause is not known yet.
+  if (language === 'typescript') {
+    const closing = Date.now() + 10000;
+    while (transport.openSockets() > 0 && Date.now() < closing) await sleep(50);
+    assert.equal(transport.openSockets(), 0, 'stop must close the connection');
+  }
   console.log('CLIENT_RECOVERY_OK');
 } finally {
   const cleanup = spawnSync('docker', ['rm', '-f', containerName], {

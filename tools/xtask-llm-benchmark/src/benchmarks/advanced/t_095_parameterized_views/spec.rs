@@ -1,6 +1,6 @@
 use crate::eval::defaults::default_schema_parity_scorers;
 use crate::eval::scenario::scenario;
-use crate::eval::{table_name, BenchmarkSpec};
+use crate::eval::BenchmarkSpec;
 use serde_json::json;
 
 pub fn spec() -> BenchmarkSpec {
@@ -12,8 +12,9 @@ pub fn spec() -> BenchmarkSpec {
             s.expect_call_as(&alice, "put_note", json!([1, "red", "first"]), None)?;
             s.expect_call_as(&alice, "put_note", json!([2, "blue", "second"]), None)?;
             s.expect_call_as(&bob, "put_note", json!([3, "red", "private"]), None)?;
-            s.expect_call_as(&bob, "put_note", json!([1, "red", "stolen"]), Some("owner only"))?;
-            let query = |tag: &str| format!("SELECT * FROM {}('{tag}')", table_name("notes_for_tag", s.lang));
+            s.expect_rejected_as(&bob, "put_note", json!([1, "red", "stolen"]), "owner only")?;
+            let view = s.relation("notes_for_tag");
+            let query = |tag: &str| format!("SELECT * FROM {view}('{tag}')");
             let mut red = s.connect(&alice)?;
             let mut blue = s.connect(&alice)?;
             red.subscribe(1, &query("red"))?;
@@ -23,16 +24,17 @@ pub fn spec() -> BenchmarkSpec {
             s.expect_call_as(&alice, "put_note", json!([1, "blue", "moved"]), None)?;
             red.expect_update("TransactionUpdate", json!([]), json!([[1, "first"]]))?;
             blue.expect_update("TransactionUpdate", json!([[1, "moved"]]), json!([]))?;
-            s.expect_call_as(&bob, "remove_note", json!([2]), Some("owner only"))?;
+            s.expect_rejected_as(&bob, "remove_note", json!([2]), "owner only")?;
             s.expect_call_as(&alice, "remove_note", json!([2]), None)?;
             blue.expect_update("TransactionUpdate", json!([]), json!([[2, "second"]]))?;
+            s.expect_call_as(&alice, "remove_note", json!([404]), None)?;
             let mut other = s.connect(&bob)?;
             other.subscribe(1, &query("blue"))?;
             other.expect_update("SubscribeApplied", json!([]), json!([]))?;
             let mut fresh = s.connect(&alice)?;
             fresh.subscribe(1, &query("blue"))?;
             fresh.expect_update("SubscribeApplied", json!([[1, "moved"]]), json!([]))?;
-            let (status, _) = s.sql_as(&bob, &format!("SELECT * FROM {}", table_name("private_note", s.lang)))?;
+            let (status, _) = s.sql_as(&bob, &format!("SELECT * FROM {}", s.relation("private_note")))?;
             anyhow::ensure!((400..500).contains(&status), "private source exposed: {status}");
             Ok(())
         }));

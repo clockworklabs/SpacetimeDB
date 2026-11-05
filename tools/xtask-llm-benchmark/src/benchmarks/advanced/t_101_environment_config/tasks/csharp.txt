@@ -13,4 +13,4 @@ Reducers:
 - RecordDeployment(uint id): insert a row holding the current REGION, MODE and BANNER. Use "(none)" for Banner when BANNER is absent. Reject an existing id with "note exists". Never overwrite a row.
 - RequireDevelopment(): fail with "production locked" when MODE is production. Otherwise succeed.
 
-Public anonymous view CurrentDeployment: returns exactly one row with Region (string) and Mode (string), in that order, read from the environment variables.
+Public anonymous view CurrentDeployment: returns a List holding exactly one row with Region (string) and Mode (string), in that order, read from the environment variables.

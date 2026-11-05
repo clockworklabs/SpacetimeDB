@@ -13,4 +13,4 @@ Reducers:
 - record_deployment(id: u32): insert a row holding the current REGION, MODE and BANNER. Use "(none)" for banner when BANNER is absent. Reject an existing id with "note exists". Never overwrite a row.
 - require_development(): fail with "production locked" when MODE is production. Otherwise succeed.
 
-Public anonymous view current_deployment: returns exactly one row with region (string) and mode (string), in that order, read from the environment variables.
+Public anonymous view current_deployment: returns an array holding exactly one row with region (string) and mode (string), in that order, read from the environment variables.

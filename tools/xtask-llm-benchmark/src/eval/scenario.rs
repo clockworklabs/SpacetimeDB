@@ -258,6 +258,34 @@ impl Scenario {
         self.rows_as(&self.owner_token()?, table, columns, expected)
     }
 
+    /// Replaces the published environment values, as `spacetime publish --env-only` does.
+    pub fn set_env(&self, values: Value) -> Result<()> {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(15))
+            .build()?;
+        let url = format!("{}/v1/database/{}/environment", self.server, self.db);
+        let token = self.owner_token()?;
+        let metadata: Value = client
+            .get(&url)
+            .bearer_auth(&token)
+            .send()?
+            .error_for_status()?
+            .json()?;
+        let hash = metadata["module_hash"]
+            .as_str()
+            .ok_or_else(|| anyhow!("environment metadata has no module_hash: {metadata}"))?;
+        let response = client
+            .put(&url)
+            .query(&[("expected_module_hash", hash)])
+            .bearer_auth(&token)
+            .json(&values)
+            .send()?;
+        let status = response.status();
+        let body = response.text()?;
+        ensure!(status.is_success(), "set environment: HTTP {status}: {body}");
+        Ok(())
+    }
+
     pub fn owner_sql(&self, query: &str) -> Result<Value> {
         let (status, body) = self.sql_as(&self.owner_token()?, query)?;
         ensure!(status == 200, "{query}: HTTP {status}: {body}");

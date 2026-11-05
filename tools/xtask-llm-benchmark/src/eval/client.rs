@@ -1,6 +1,8 @@
 //! Actual SDK client checks. The fixed harness cuts a real connection after a committed call.
 use super::{derive_cat_task_from_file, Lang, ScoreDetails, Scorer};
-use crate::bench::{runner::with_build_cleanup, templates::materialize_client, utils::sanitize_db_name};
+use crate::bench::{
+    publishers::DotnetPublisher, runner::with_build_cleanup, templates::materialize_client, utils::sanitize_db_name,
+};
 use anyhow::{ensure, Result};
 use serde_json::json;
 use std::{path::Path, process::Command, time::Duration};
@@ -94,6 +96,7 @@ impl ClientCheck {
                 }
                 Lang::CSharp => {
                     let mut build = Command::new("dotnet");
+                    DotnetPublisher::configure_dotnet_env(&mut build);
                     build.args(["build", "client.csproj", "--configuration", "Release"]);
                     build.arg(format!(
                         "-p:RestoreConfigFile={}",
@@ -124,6 +127,12 @@ impl Scorer for ClientCheck {
     }
     fn score(&self, output: &str) -> ScoreDetails {
         let result = self.check(output);
+        if result.is_err() {
+            // A panic stops the batch as an infrastructure error instead of scoring the model.
+            if let Err(error) = check_runtime(self.lang) {
+                panic!("client sandbox unavailable: {error:#}");
+            }
+        }
         ScoreDetails {
             pass: result.is_ok(),
             partial: if result.is_ok() { 1.0 } else { 0.0 },

@@ -183,7 +183,7 @@ fn catalog_entry(ctx: &AnonymousViewContext) -> Vec<CatalogEntry> { ... }
 
 Procedural-view primary keys are explicit schema metadata. Add one only when the view itself is required to expose a primary key; a source table's primary key is not inherited by the view.
 
-Parameterized views accept arguments after the context, for example `fn notes_for_tag(ctx: &ViewContext, tag: String) -> Vec<Note>`. Read through an index, such as `ctx.db.note().owner().filter(ctx.sender())`, then filter or project the result. Subscribe with explicit SQL: `SELECT * FROM notes_for_tag('red')`. Arguments are positional literals. These views cannot have a primary key, and view calls cannot be combined with SQL filters or joins. Subscribe-all skips them. Identity and arguments determine each evaluation.
+Parameterized views accept arguments after the context, for example `fn tickets_for_project(ctx: &ViewContext, project: String) -> Vec<Ticket>`. Read through an index, such as `ctx.db.ticket().owner().filter(ctx.sender())`, then filter or project the result. Subscribe with explicit SQL: `SELECT * FROM tickets_for_project('alpha')`. Arguments are positional literals. These views cannot have a primary key, and view calls cannot be combined with SQL filters or joins. Subscribe-all skips them. Identity and arguments determine each evaluation.
 
 ### Inter-database calls
 

@@ -10,6 +10,8 @@ pub fn spec() -> BenchmarkSpec {
             s.call("create_event", json!([7, 2]))?;
             s.call("create_event", json!([8, 1]))?;
             s.reject("create_event", json!([7, 99]), "event exists")?;
+            s.reject("create_event", json!([9, 0]), "invalid capacity")?;
+            s.rows("seat_event", &["id", "capacity"], json!([[7, 2], [8, 1]]))?;
             let users = (0..5)
                 .map(|_| s.new_user().map(|u| u.0))
                 .collect::<anyhow::Result<Vec<_>>>()?;
@@ -31,7 +33,10 @@ pub fn spec() -> BenchmarkSpec {
                     [6, 8, "seated"]
                 ]),
             )?;
-            s.expect_call_as(&users[4], "cancel_booking", json!([1]), Some("owner only"))?;
+            // A waiter on another event, with a smaller ID than later waiters on event 7.
+            s.expect_call_as(&users[1], "join_event", json!([8]), None)?;
+            s.expect_rejected_as(&users[4], "cancel_booking", json!([1]), "owner only")?;
+            s.expect_call_as(&users[0], "cancel_booking", json!([404]), None)?;
             std::thread::scope(|scope| {
                 let a = scope.spawn(|| s.expect_call_as(&users[0], "cancel_booking", json!([1]), None));
                 let b = scope.spawn(|| s.expect_call_as(&users[1], "cancel_booking", json!([2]), None));
@@ -48,10 +53,27 @@ pub fn spec() -> BenchmarkSpec {
                     [3, "seated"],
                     [4, "seated"],
                     [5, "waiting"],
-                    [6, "seated"]
+                    [6, "seated"],
+                    [7, "waiting"]
                 ]),
             )?;
+            // Cancelling a waiting booking must leave the next waiter waiting.
+            s.expect_call_as(&users[1], "join_event", json!([7]), None)?;
             s.expect_call_as(&users[4], "cancel_booking", json!([5]), None)?;
+            s.rows(
+                "booking",
+                &["id", "status"],
+                json!([
+                    [1, "cancelled"],
+                    [2, "cancelled"],
+                    [3, "seated"],
+                    [4, "seated"],
+                    [5, "cancelled"],
+                    [6, "seated"],
+                    [7, "waiting"],
+                    [8, "waiting"]
+                ]),
+            )?;
             s.expect_call_as(&users[0], "join_event", json!([7]), None)?;
             s.expect_call_as(&users[2], "cancel_booking", json!([3]), None)?;
             s.rows(
@@ -64,11 +86,13 @@ pub fn spec() -> BenchmarkSpec {
                     [4, "seated"],
                     [5, "cancelled"],
                     [6, "seated"],
-                    [7, "seated"]
+                    [7, "waiting"],
+                    [8, "seated"],
+                    [9, "waiting"]
                 ]),
             )?;
-            s.expect_call_as(&users[0], "join_event", json!([404]), Some("missing event"))?;
-            s.eventually_count("booking", 7)?;
+            s.expect_rejected_as(&users[0], "join_event", json!([404]), "missing event")?;
+            s.eventually_count("booking", 9)?;
             Ok(())
         }));
         scorers

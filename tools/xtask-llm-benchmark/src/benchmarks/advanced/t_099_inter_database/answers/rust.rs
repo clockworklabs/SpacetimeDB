@@ -35,6 +35,7 @@ pub struct Outgoing {
 #[spacetimedb::table(accessor = delivery_result, public)]
 pub struct DeliveryResult {
     #[primary_key]
+    #[auto_inc]
     id: u64,
     body: String,
     succeeded: bool,
@@ -61,7 +62,7 @@ pub fn send_message(
 #[spacetimedb::reducer(on_result(self::outgoing))]
 pub fn on_delivery(ctx: &ReducerContext, row: Outgoing, result: Result<(), String>) {
     ctx.db.delivery_result().insert(DeliveryResult {
-        id: row.id,
+        id: 0,
         body: row.body,
         succeeded: result.is_ok(),
     });

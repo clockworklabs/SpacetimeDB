@@ -200,7 +200,7 @@ Declare a procedural view primary key in its attribute: `[SpacetimeDB.View(Acces
 
 Procedural-view primary keys are explicit schema metadata. Add one only when the view itself is required to expose a primary key; a source table's primary key is not inherited by the view.
 
-Parameterized views accept arguments after the context, for example `public static List<Note> NotesForTag(ViewContext ctx, string tag)`. Read through an index such as `ctx.Db.Note.Owner.Filter(ctx.Sender)`, then filter or project the result. Use explicit SQL: `SELECT * FROM notes_for_tag('red')`. Arguments are positional literals. These views cannot have a primary key, and view calls cannot be combined with SQL filters or joins. Subscribe-all skips them. Identity and arguments determine each evaluation.
+Parameterized views accept arguments after the context, for example `public static List<Ticket> TicketsForProject(ViewContext ctx, string project)`. Read through an index such as `ctx.Db.Ticket.Owner.Filter(ctx.Sender)`, then filter or project the result. Use explicit SQL: `SELECT * FROM tickets_for_project('alpha')`. Arguments are positional literals. These views cannot have a primary key, and view calls cannot be combined with SQL filters or joins. Subscribe-all skips them. Identity and arguments determine each evaluation.
 
 ## Nested submodules (.NET 10)
 

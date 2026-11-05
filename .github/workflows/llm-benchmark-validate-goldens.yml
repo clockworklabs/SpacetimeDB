@@ -87,7 +87,7 @@ jobs:
           dotnet pack -c Release crates/bindings-csharp/Runtime
 
       - name: Set up Node.js
-        if: matrix.lang == 'typescript'
+        if: matrix.lang != 'rust'
         uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -102,6 +102,16 @@ jobs:
         if: matrix.lang == 'typescript'
         run: pnpm build
         working-directory: crates/bindings-typescript
+
+      - name: Prepare client checks
+        if: matrix.lang != 'rust'
+        env:
+          BENCH_LANGUAGE: ${{ matrix.lang }}
+        run: |
+          docker pull node:22-bookworm-slim
+          if [ "$BENCH_LANGUAGE" = csharp ]; then
+            docker pull mcr.microsoft.com/dotnet/runtime:10.0
+          fi
 
       - name: Build llm-benchmark tool
         run: cargo install --path tools/xtask-llm-benchmark --locked

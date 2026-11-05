@@ -104,7 +104,8 @@ Scores are not directly comparable with the older 83- or 95-task suites.
 Task 100 asks for client code. Its server is fixed, and its supplied bindings use
 the local SDK. A local TCP proxy lets a non-idempotent reducer commit, hides its
 reply, then drops the connection. The grader checks an unknown outcome, retained
-cache, subscription replay, stable identity, no duplicate callbacks and no retry.
+cache, subscription replay, stable identity, a failed call, a clean outage, no
+duplicate callbacks and no retry.
 It does not replace these checks with a raw WebSocket simulation of an SDK.
 Generated clients run in read-only, non-root Docker containers with CPU, memory,
 process and time limits. Client output is limited to 1 MiB. Only compiled client files are mounted. The container

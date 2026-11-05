@@ -8,7 +8,10 @@ fn accepted((status, body): (u16, String)) -> anyhow::Result<bool> {
     if (200..300).contains(&status) {
         return Ok(true);
     }
-    anyhow::ensure!(status == 530 && body.contains("rate limited"), "unexpected failure: {status}: {body}");
+    anyhow::ensure!(
+        status == 530 && (body.contains("rate limited") || body.contains("fatal error")),
+        "unexpected failure: {status}: {body}"
+    );
     Ok(false)
 }
 
@@ -26,18 +29,23 @@ pub fn spec() -> BenchmarkSpec {
         scorers.push(scenario(file!(), route, host, lang, |s| {
             let (alice, _) = s.new_user()?;
             let (bob, _) = s.new_user()?;
-            s.expect_call_as(&alice, "log_search", json!(["bad", ""]), Some("empty term"))?;
+            s.expect_rejected_as(&alice, "log_search", json!(["bad", ""]), "empty term")?;
             s.rows("search_log", &["request_id"], json!([]))?;
             let started = Instant::now();
             let mut successes = 0;
             let mut rows = Vec::new();
-            for id in ["a", "b", "c"] {
+            // The bucket exists once this returns, so time refills from here, never earlier.
+            s.expect_call_as(&alice, "log_search", json!(["a", "first"]), None)?;
+            let bucket_exists = Instant::now();
+            successes += 1;
+            rows.push(json!(["a", "first"]));
+            for id in ["b", "c"] {
                 s.expect_call_as(&alice, "log_search", json!([id, "first"]), None)?;
                 successes += 1;
                 rows.push(json!([id, "first"]));
             }
             s.expect_call_as(&alice, "log_search", json!(["a", "first"]), None)?;
-            s.expect_call_as(&alice, "log_search", json!(["a", "changed"]), Some("request conflict"))?;
+            s.expect_rejected_as(&alice, "log_search", json!(["a", "changed"]), "request conflict")?;
             s.expect_call_as(&bob, "log_search", json!(["a", "independent"]), None)?;
             rows.push(json!(["a", "independent"]));
             s.rows("search_log", &["request_id", "term"], json!(rows))?;
@@ -66,6 +74,30 @@ pub fn spec() -> BenchmarkSpec {
             anyhow::ensure!(successes > before, "no request admitted after a full refill interval");
             check_budget(successes, started.elapsed())?;
             s.rows("search_log", &["request_id", "term"], json!(rows))?;
+
+            // Partial intervals carry over: after two full intervals, five tokens have been earned in total.
+            std::thread::sleep(Duration::from_millis(10_100).saturating_sub(bucket_exists.elapsed()));
+            if successes < 5 {
+                anyhow::ensure!(
+                    accepted(s.call_as(&alice, "log_search", json!(["g", "next"]))?)?,
+                    "partial refill interval was lost"
+                );
+                rows.push(json!(["g", "next"]));
+            }
+
+            // Bob has been idle long enough to refill, but never above three tokens.
+            let mut admitted = 0;
+            for id in ["b1", "b2", "b3", "b4"] {
+                if accepted(s.call_as(&bob, "log_search", json!([id, "burst"]))?)? {
+                    admitted += 1;
+                    rows.push(json!([id, "burst"]));
+                }
+            }
+            // Bob's next token is not due before 15 seconds, so a slower run cannot assert this.
+            if started.elapsed() < Duration::from_secs(14) {
+                anyhow::ensure!(admitted == 3, "bucket must hold three tokens, admitted {admitted}");
+            }
+            s.rows("search_log", &["request_id", "term"], json!(rows))?;
             Ok(())
         }));
         scorers
@@ -80,5 +112,6 @@ fn admission_budget_allows_delayed_refills_but_rejects_overspending() {
     assert!(check_budget(5, Duration::from_secs(11)).is_ok());
     assert!(check_budget(6, Duration::from_secs(11)).is_err());
     assert!(accepted((530, "rate limited".into())).is_ok());
+    assert!(accepted((530, "fatal error".into())).is_ok());
     assert!(accepted((500, "rate limited".into())).is_err());
 }

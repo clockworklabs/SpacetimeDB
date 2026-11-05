@@ -1,7 +1,10 @@
-Write a SpacetimeDB rust backend for private notes grouped by tag.
+Write a SpacetimeDB backend module in Rust that stores private notes and shows each user their notes for a given tag.
 
-Store notes in the private table private_note (id: u64, owner: Identity, tag: String, text: String). The id is the primary key. Index owner for per-user reads.
+Tables (fields in this order; the first field is the primary key):
+- private private_note: id: u64, owner: Identity (btree index), tag: String, text: String
 
-Expose reducers put_note(id, tag, text) and remove_note(id). The caller owns a new note. Only its owner may replace or remove it; otherwise fail with "owner only". Removing a missing note is harmless.
+Reducers:
+- put_note(id: u64, tag: String, text: String): The caller owns a new note. Only its owner may replace it; otherwise fail with "owner only".
+- remove_note(id: u64): Only the note's owner may remove it; otherwise fail with "owner only". Removing a missing note succeeds and changes nothing.
 
-Expose a public, per-user view notes_for_tag(tag: string). It accepts a tag argument and returns only the caller's notes with that exact tag, projected to id and text in that order. The view has no primary key. Users may subscribe to several argument values. Moving a note to another tag, editing it, or deleting it must update the matching subscriptions. Never expose another user's notes or the private source table.
+Expose a public, per-user view notes_for_tag(tag: String). It takes the tag as an argument and returns only the caller's notes with that exact tag, as id and text in that order. The view has no primary key. Users may subscribe to several tags at once. Moving a note to another tag, editing it or deleting it must update the matching subscriptions. Other users must not see the caller's notes or read the private table.

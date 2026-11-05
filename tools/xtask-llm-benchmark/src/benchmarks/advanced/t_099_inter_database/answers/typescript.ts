@@ -20,7 +20,7 @@ const outgoing = table(
 const deliveryResult = table(
   { name: 'delivery_result', public: true },
   {
-    id: t.u64().primaryKey(),
+    id: t.u64().primaryKey().autoInc(),
     body: t.string(),
     succeeded: t.bool(),
   }
@@ -51,7 +51,7 @@ export const on_delivery = db.reducer(
   { row: outgoing.rowType, result: t.result(t.unit(), t.string()) },
   (ctx, { row, result }) =>
     ctx.db.deliveryResult.insert({
-      id: row.id,
+      id: 0n,
       body: row.body,
       succeeded: 'ok' in result,
     })

@@ -331,15 +331,15 @@ Procedural views read through `ctx.db` and return materialized values such as ar
 ### Parameterized views
 
 ```typescript
-export const notesForTag = spacetimedb.view(
-  { name: 'notes_for_tag', public: true },
-  { tag: t.string() },
-  t.array(note.rowType),
-  (ctx, { tag }) => [...ctx.db.note.owner.filter(ctx.sender)].filter(row => row.tag === tag)
+export const ticketsForProject = spacetimedb.view(
+  { name: 'tickets_for_project', public: true },
+  { project: t.string() },
+  t.array(ticket.rowType),
+  (ctx, { project }) => [...ctx.db.ticket.owner.filter(ctx.sender)].filter(row => row.project === project)
 );
 ```
 
-Use explicit SQL such as `SELECT * FROM notes_for_tag('red')`. Arguments are positional literals. Parameterized views cannot have a primary key, and calls cannot be combined with SQL filters or joins. Subscribe-all does not include them. Each identity and argument tuple has its own view evaluation; the client cache merges rows from all active subscriptions.
+Use explicit SQL such as `SELECT * FROM tickets_for_project('alpha')`. Arguments are positional literals. Parameterized views cannot have a primary key, and calls cannot be combined with SQL filters or joins. Subscribe-all does not include them. Each identity and argument tuple has its own view evaluation; the client cache merges rows from all active subscriptions.
 
 ### Inter-database calls
 

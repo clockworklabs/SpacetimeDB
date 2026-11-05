@@ -1,6 +1,6 @@
 using System.Text.Json;
 ClientApp? app = null;
-var input = Console.In.ReadLineAsync();
+var input = Task.Run(Console.ReadLine);
 while (true)
 {
     app?.Tick();
@@ -27,7 +27,7 @@ while (true)
             }));
         }
         catch (Exception error) { Console.WriteLine("EVAL:" + JsonSerializer.Serialize(new { id, error = error.ToString() })); }
-        input = Console.In.ReadLineAsync();
+        input = Task.Run(Console.ReadLine);
     }
     Thread.Sleep(5);
 }

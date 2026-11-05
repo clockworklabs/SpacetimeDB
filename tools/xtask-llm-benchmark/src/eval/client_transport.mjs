@@ -5,6 +5,14 @@ import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createInterface } from 'node:readline';
 
+// Server frames are unmasked, so the length is all that follows the two header bytes.
+function webSocketFrameLength(data) {
+  const length = data[1] & 0x7f;
+  if (length === 126) return 4 + data.readUInt16BE(2);
+  if (length === 127) return 10 + Number(data.readBigUInt64BE(2));
+  return 2 + length;
+}
+
 export async function startTransport(host, database) {
   const target = new URL(host);
   assert.equal(target.protocol, 'http:');
@@ -48,6 +56,7 @@ export async function startTransport(host, database) {
   const sockets = new Map();
   let online = true;
   let hideReplies = false;
+  let holding = false;
   let failure;
   const send = message => child.stdin.write(JSON.stringify(message) + '\n');
   function disconnect(id) {
@@ -142,7 +151,7 @@ export async function startTransport(host, database) {
           path: message.path,
           headers: message.headers,
         });
-        const connection = { request, socket: null };
+        const connection = { request, socket: null, held: [] };
         sockets.set(message.id, connection);
         request.on('error', () => disconnect(message.id));
         request.on('response', response => {
@@ -157,6 +166,7 @@ export async function startTransport(host, database) {
             return;
           }
           connection.socket = socket;
+          connection.sentFirstFrame = head.length > 0;
           socket.setTimeout(0);
           const headers = [];
           for (let i = 0; i < response.rawHeaders.length; i += 2) {
@@ -174,7 +184,18 @@ export async function startTransport(host, database) {
               head,
             ]).toString('base64'),
           });
-          socket.on('data', data => {
+          socket.on('data', received => {
+            let data = received;
+            if (holding) {
+              if (connection.sentFirstFrame) {
+                connection.held.push(data);
+                return;
+              }
+              connection.sentFirstFrame = true;
+              const length = webSocketFrameLength(data);
+              connection.held.push(data.subarray(length));
+              data = data.subarray(0, length);
+            }
             if (
               !hideReplies &&
               !send({
@@ -253,6 +274,20 @@ export async function startTransport(host, database) {
     },
     hideReplies(value) {
       hideReplies = value;
+    },
+    // Lets a connection open but keeps later replies, such as the subscription, until release.
+    holdAfterFirstFrame(value) {
+      holding = value;
+      if (holding) return;
+      for (const [id, connection] of sockets) {
+        for (const data of connection.held ?? []) {
+          send({ type: 'data', id, data: data.toString('base64') });
+        }
+        connection.held = [];
+      }
+    },
+    openSockets() {
+      return sockets.size;
     },
     close,
   };
