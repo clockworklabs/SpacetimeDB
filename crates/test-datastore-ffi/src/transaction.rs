@@ -43,7 +43,7 @@ impl Worker {
 }
 
 pub struct StdbTestTransaction {
-    requests: Sender<Command>,
+    requests: Requests,
     id: u64,
 }
 
@@ -185,6 +185,10 @@ pub unsafe extern "C" fn stdb_test_v1_transaction_destroy(transaction: *mut Stdb
     contain_panic(|| {
         if !transaction.is_null() {
             let transaction = unsafe { Box::from_raw(transaction) };
+            // A stopped worker has already rolled back any pending transaction.
+            if transaction.requests.has_stopped() {
+                return Ok(());
+            }
             let id = transaction.id;
             match request(&transaction.requests, move |state| {
                 if state.transaction(id).is_ok() {
