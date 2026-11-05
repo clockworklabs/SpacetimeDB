@@ -164,7 +164,10 @@ If you're migrating from SpacetimeDB 1.*, replace `name = {sym}` with `accessor 
                 sym::cache_policy => {
                     check_duplicate(&cache_policy, &meta)?;
                     let value: Ident = meta.value()?.parse()?;
-                    if !matches!(value.to_string().as_str(), "required_in_memory" | "required_on_disk" | "no_requirement") {
+                    if value != sym::required_in_memory
+                        && value != sym::required_on_disk
+                        && value != sym::no_requirement
+                    {
                         return Err(syn::Error::new_spanned(value,
                             "expected required_in_memory, required_on_disk, or no_requirement"));
                     }
@@ -1362,11 +1365,14 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
     let field_types = fields.iter().map(|f| f.ty).collect::<Vec<_>>();
     let cache_policy = args.cache_policy.as_ref().map(|policy| {
-        let variant = match policy.to_string().as_str() {
-            "required_in_memory" => "RequiredInMemory",
-            "required_on_disk" => "RequiredOnDisk",
-            "no_requirement" => "NoRequirement",
-            _ => unreachable!("table cache policy was validated during parsing"),
+        let variant = if policy == sym::required_in_memory {
+            "RequiredInMemory"
+        } else if policy == sym::required_on_disk {
+            "RequiredOnDisk"
+        } else if policy == sym::no_requirement {
+            "NoRequirement"
+        } else {
+            unreachable!("table cache policy was validated during parsing")
         };
         let variant = Ident::new(variant, policy.span());
         quote! {

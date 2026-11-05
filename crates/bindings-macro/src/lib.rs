@@ -154,10 +154,13 @@ mod sym {
     symbol!(index);
     symbol!(init);
     symbol!(name);
+    symbol!(no_requirement);
     symbol!(primary_key);
     symbol!(private);
     symbol!(public);
     symbol!(repr);
+    symbol!(required_in_memory);
+    symbol!(required_on_disk);
     symbol!(sats);
     symbol!(scheduled);
     symbol!(outbox);
