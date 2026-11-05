@@ -75,6 +75,7 @@ members = [
   "sdks/rust/tests/event-table-client",
   "tools/ci",
   "tools/ci/commands/test",
+  "tools/ci/commands/test-csharp-build",
   "tools/ci/commands/lint",
   "tools/ci/commands/module-latest-deps",
   "tools/ci/commands/smoketests",
