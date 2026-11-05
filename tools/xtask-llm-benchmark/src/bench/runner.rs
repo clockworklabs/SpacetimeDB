@@ -460,7 +460,8 @@ impl TaskRunner {
             const MAX_ATTEMPTS: u32 = 3;
             // Slow models (Gemini 3.1 Pro, DeepSeek Reasoner, Grok 4.7) can take 8+ minutes on large contexts.
             let timeout_secs = match cfg.route.display_name.to_ascii_lowercase() {
-                n if n.contains("gemini") || n.contains("deepseek") || n.contains("grok") => 600,
+                n if n.contains("grok") => 1200,
+                n if n.contains("gemini") || n.contains("deepseek") => 600,
                 _ => 300,
             };
             let mut last_err: anyhow::Error = anyhow!("no attempts made");

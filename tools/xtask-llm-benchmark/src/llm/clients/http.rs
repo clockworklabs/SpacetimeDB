@@ -75,7 +75,7 @@ impl HttpClient {
     pub fn new() -> Result<Self> {
         let inner = Client::builder()
             .user_agent("xtask-llm-benchmark/0.1")
-            .timeout(Duration::from_secs(660)) // longer than any per-model Tokio timeout
+            .timeout(Duration::from_secs(1260)) // longer than any per-model Tokio timeout
             .pool_idle_timeout(Duration::from_secs(30))
             .build()
             .context("build reqwest client")?;
