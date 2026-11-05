@@ -4208,6 +4208,9 @@ mod tests {
         // The queries share a template, which runs once for all of their bindings
         assert_eq!(metrics.delta_queries_evaluated, 1);
         assert_eq!(metrics.delta_queries_matched, 1);
+        // Each changed row probes `v`, then the bindings, rather than scanning every binding
+        assert_eq!(metrics.index_seeks, 4);
+        assert_eq!(metrics.rows_scanned, 8);
 
         // Insert a non-matching row in `u`
         let metrics = commit_tx(&db, &subs, [], [(u_id, product![3u64, 0u64, 0u64])])?;
@@ -4215,6 +4218,9 @@ mod tests {
         // The queries share a template, which runs once for all of their bindings
         assert_eq!(metrics.delta_queries_evaluated, 1);
         assert_eq!(metrics.delta_queries_matched, 0);
+        // The row joins no `v` row, so it never reaches the bindings
+        assert_eq!(metrics.index_seeks, 1);
+        assert_eq!(metrics.rows_scanned, 2);
 
         Ok(())
     }
@@ -4332,6 +4338,9 @@ mod tests {
         // The queries share a template, which runs once
         assert_eq!(metrics.delta_queries_evaluated, 1);
         assert_eq!(metrics.delta_queries_matched, 1);
+        // Each changed row probes the bindings before joining `u`, rather than scanning every binding
+        assert_eq!(metrics.index_seeks, 4);
+        assert_eq!(metrics.rows_scanned, 8);
 
         // Insert new row into `u` that joins with `x = 3`
         // UPDATE v SET x = 4 WHERE id = 3
@@ -4347,6 +4356,8 @@ mod tests {
         // The queries share a template, which runs once
         assert_eq!(metrics.delta_queries_evaluated, 1);
         assert_eq!(metrics.delta_queries_matched, 1);
+        assert_eq!(metrics.index_seeks, 10);
+        assert_eq!(metrics.rows_scanned, 20);
 
         // UPDATE v SET x = 0 WHERE id = 3
         let metrics = commit_tx(
@@ -4361,6 +4372,9 @@ mod tests {
         // The queries share a template, which runs once
         assert_eq!(metrics.delta_queries_evaluated, 1);
         assert_eq!(metrics.delta_queries_matched, 1);
+        // `x = 0` matches no binding, so its row stops at the lookup and is never joined
+        assert_eq!(metrics.index_seeks, 3);
+        assert_eq!(metrics.rows_scanned, 6);
 
         // Insert new row into `u` that joins with `x = 5`
         // UPDATE v SET x = 6 WHERE id = 5
@@ -4375,6 +4389,8 @@ mod tests {
         // The queries share a template, which runs once
         assert_eq!(metrics.delta_queries_evaluated, 1);
         assert_eq!(metrics.delta_queries_matched, 0);
+        assert_eq!(metrics.index_seeks, 9);
+        assert_eq!(metrics.rows_scanned, 16);
 
         Ok(())
     }
