@@ -1546,7 +1546,9 @@ fn function_args(
             .as_ref()
             .is_some_and(|s| local_name(&s.function_name) == local_name(name))
     });
-    if local_name(name) != accessor || scheduled.is_some() {
+    // A camel-case wire name still needs an explicit name: the SDK otherwise
+    // converts the export accessor to snake_case.
+    if local_name(name) != accessor || accessor.bytes().any(|c| c.is_ascii_uppercase()) || scheduled.is_some() {
         write!(out, "{{ name: {}", ts_string_literal(local_name(name)));
         if let Some(i) = scheduled {
             write!(out, ", onSchedule: {}", names[i]);

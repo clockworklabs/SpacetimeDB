@@ -666,9 +666,13 @@ fn typescript_function_exports_preserve_reserved_names() {
         "t",
         "types",
         "binary_reader",
+        "banPlayer1",
     ] {
         builder.add_reducer(name, spacetimedb_lib::ProductType::unit());
     }
+    let mut names = spacetimedb_lib::db::raw_def::v10::ExplicitNames::default();
+    names.insert_function("banPlayer1", "banPlayer1");
+    builder.add_explicit_names(names);
     let infer = builder
         .build_table_with_new_type("infer", spacetimedb_lib::ProductType::unit(), true)
         .finish();
@@ -690,6 +694,7 @@ assert.equal(reducers.table.name, 'table');
 assert.equal(reducers.t.name, 't');
 assert.equal(reducers.types.name, 'types');
 assert.equal(reducers.binaryReader.name, 'binary_reader');
+assert.equal(reducers.banPlayer1.name, 'banPlayer1');
 "#,
     );
 }

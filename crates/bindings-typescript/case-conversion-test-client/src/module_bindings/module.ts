@@ -103,10 +103,13 @@ export const addPerson2 = spacetimedb.reducer(
   }
 );
 
-export const banPlayer1 = spacetimedb.reducer({
-  player1Id: t.u32(),
-  banUntil6: t.u32(),
-});
+export const banPlayer1 = spacetimedb.reducer(
+  { name: 'banPlayer1' },
+  {
+    player1Id: t.u32(),
+    banUntil6: t.u32(),
+  }
+);
 
 export const createPlayer1 = spacetimedb.reducer(
   { name: 'create_player_1' },
