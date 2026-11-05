@@ -51,11 +51,9 @@ fn open_table_storage(
     // are not wired into `resident_budget` yet.
     let mut config = TieredStorageConfig::new_for_memory_database(page_pool);
     config.local_store = BackingStore {
-        object_store: Box::new(spacetimedb_disk_table::DiskStorage::open(dir.tables())?),
+        object_store: Box::new(spacetimedb_tiered_storage::DiskStorage::open(dir.tables())?),
         budget: ByteBudget::unlimited(),
     };
-    config.evict_pages = true;
-    config.evict_blobs = false;
     Ok(config)
 }
 

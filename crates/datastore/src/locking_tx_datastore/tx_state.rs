@@ -6,7 +6,7 @@ use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
 use spacetimedb_schema::{
     identifier::{Identifier, NamespacedIdentifier},
-    schema::{ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, SequenceSchema},
+    schema::{ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, SequenceSchema, TableCachePolicy},
 };
 use spacetimedb_table::{
     indexes::{RowPointer, SquashedOffset},
@@ -132,6 +132,10 @@ pub enum PendingSchemaChange {
     /// The access of the table with [`TableId`] was changed.
     /// The old access was stored.
     TableAlterAccess(TableId, StAccess),
+    /// This entry stores the previous cache policy so rollback can restore the cached schema.
+    /// Page storage and blob pin counts change only after commit applies all row
+    /// changes, so rollback does not need to reverse a storage conversion.
+    TableAlterCachePolicy(TableId, TableCachePolicy),
     /// The row type of the table with [`TableId`] was changed.
     /// The old column schemas was stored.
     /// Only non-representational row-type changes are allowed here,
@@ -176,6 +180,7 @@ impl MemoryUsage for PendingSchemaChange {
             Self::TableRemoved(table_id, table) => table_id.heap_usage() + table.heap_usage(),
             Self::TableAdded(table_id) => table_id.heap_usage(),
             Self::TableAlterAccess(table_id, st_access) => table_id.heap_usage() + st_access.heap_usage(),
+            Self::TableAlterCachePolicy(table_id, _) => table_id.heap_usage(),
             Self::TableAlterRowType(table_id, column_schemas) => table_id.heap_usage() + column_schemas.heap_usage(),
             Self::TableAlterPrimaryKey(table_id, pk) => table_id.heap_usage() + pk.heap_usage(),
             Self::TableAlterOutbox(table_id, outbox) => {

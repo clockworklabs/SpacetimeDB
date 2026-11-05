@@ -29,12 +29,12 @@ spacetimedb-client-api-messages.workspace = true
 spacetimedb-client-api.workspace = true
 spacetimedb-core.workspace = true
 spacetimedb-datastore.workspace = true
-spacetimedb-disk-table.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-paths.workspace = true
 spacetimedb-pg.workspace = true
-spacetimedb-table.workspace = true
 spacetimedb-schema.workspace = true
+spacetimedb-table.workspace = true
+spacetimedb-tiered-storage.workspace = true
 
 anyhow.workspace = true
 async-trait.workspace = true

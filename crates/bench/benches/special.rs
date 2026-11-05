@@ -9,7 +9,7 @@ use spacetimedb_lib::sats::{self, bsatn};
 use spacetimedb_lib::{bsatn::ToBsatn as _, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::table_name::TableName;
-use spacetimedb_table::tiered::{PageEvictionPolicy, PageManager};
+use spacetimedb_table::tiered::{EvictionPolicy, PageManager};
 use spacetimedb_testing::modules::{Csharp, ModuleLanguage, Rust};
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -142,7 +142,7 @@ fn serialize_benchmarks<
         Arc::new(table_schema),
         spacetimedb_table::indexes::SquashedOffset::COMMITTED_STATE,
         PageManager::new_for_test().into(),
-        PageEvictionPolicy::NeverEvict,
+        EvictionPolicy::NeverEvict,
     );
     let blob_store = spacetimedb_table::tiered::BlobSet::new_for_test();
 

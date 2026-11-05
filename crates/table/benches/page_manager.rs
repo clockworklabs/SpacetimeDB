@@ -20,7 +20,7 @@ use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::pages::Pages;
 use spacetimedb_table::row_type_visitor::{row_type_visitor, VarLenVisitorProgram};
 use spacetimedb_table::table::Table;
-use spacetimedb_table::tiered::{BlobSet, PageEvictionPolicy, PageManager};
+use spacetimedb_table::tiered::{BlobSet, EvictionPolicy, PageManager};
 use spacetimedb_table::var_len::{NullVarLenVisitor, VarLenGranule, VarLenMembers, VarLenRef};
 
 fn time<R>(acc: &mut Duration, body: impl FnOnce() -> R) -> R {
@@ -268,7 +268,7 @@ fn make_table(c: &mut Criterion) {
                         schema.into(),
                         SquashedOffset::COMMITTED_STATE,
                         PageManager::new_for_test().into(),
-                        PageEvictionPolicy::NeverEvict,
+                        EvictionPolicy::NeverEvict,
                     ));
                 }
                 let elapsed = WallTime.end(start);
@@ -292,7 +292,7 @@ fn make_table_for_row_type<R: Row>(name: &str) -> Table {
         schema.into(),
         SquashedOffset::COMMITTED_STATE,
         PageManager::new_for_test().into(),
-        PageEvictionPolicy::NeverEvict,
+        EvictionPolicy::NeverEvict,
     )
 }
 
@@ -525,7 +525,7 @@ fn make_table_with_index<R: IndexedRow>(unique: bool) -> (Table, IndexId) {
         schema.into(),
         SquashedOffset::COMMITTED_STATE,
         PageManager::new_for_test().into(),
-        PageEvictionPolicy::NeverEvict,
+        EvictionPolicy::NeverEvict,
     );
 
     let cols = R::indexed_columns();

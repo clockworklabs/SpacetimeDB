@@ -56,8 +56,8 @@ use spacetimedb_schema::{
 };
 use spacetimedb_table::{
     indexes::{RowPointer, SquashedOffset},
-    table::{RowRef, Table, TableAndIndex},
-    tiered::{BlobHandle, BlobSet, PageEvictionPolicy, PreparedCommit, TieredDatabaseStorage},
+    table::{PreparedBlobRelease, PreparedEvictionPolicy, RowRef, Table, TableAndIndex},
+    tiered::{BlobHandle, BlobSet, EvictionPolicy, PreparedCommit, TieredDatabaseStorage},
 };
 use std::sync::Arc;
 use std::{collections::BTreeMap, iter};
@@ -581,7 +581,7 @@ impl CommittedState {
     fn prepare_merge(&mut self, tx_state: &TxState) -> Result<PreparedMerge> {
         // Prepare transaction-local blobs before planning page mutations. This
         // installs and pins their frames without publishing logical references.
-        let blobs: Box<[BlobHandle]> = tx_state.blob_store.pin_all()?;
+        let blobs: Box<[BlobHandle]> = tx_state.blob_store.fault_all()?;
         let mut prepared = PreparedMerge::with_pinned_blobs(blobs);
         // Skip row planning only if every modified table can be applied without
         // faults or memory-limit errors. Otherwise prepare the whole transaction
@@ -601,6 +601,10 @@ impl CommittedState {
         for change in &tx_state.pending_schema_changes {
             if let PendingSchemaChange::TableRemoved(table_id, table) = change {
                 assert!(!prepared.mutated_tables.contains_key(table_id));
+                // Dropped tables bypass normal row deletion. Prepare their
+                // reference releases, but keep counts intact until every
+                // fallible commit step has succeeded so rollback can restore them.
+                let blob_release = table.prepare_blob_release()?;
                 let rows = table
                     .scan_rows(self.storage.blobs())
                     .map(|row| Ok(row?.to_product_value()))
@@ -609,6 +613,7 @@ impl CommittedState {
                     id: *table_id,
                     name: table.get_schema().table_name.clone(),
                     rows,
+                    blob_release,
                 });
             }
         }
@@ -648,7 +653,35 @@ impl CommittedState {
             prepared.insert(table_id, commit);
         }
 
+        prepared.policy_changes = self.prepare_cache_policy_changes(tx_state)?;
+
         Ok(prepared)
+    }
+
+    /// During commit, load and pin the pages and blobs needed for each cache-policy change.
+    /// Page loads and memory reservations can still fail here, before committed
+    /// rows have changed. Preparation leaves page ownership and blob pin counts
+    /// unchanged, so failure needs no reverse conversion: dropping the plans
+    /// releases their temporary pins, and rollback restores the policy metadata.
+    fn prepare_cache_policy_changes(&self, tx_state: &TxState) -> Result<BTreeMap<TableId, PreparedEvictionPolicy>> {
+        let mut changes = BTreeMap::new();
+        for change in &tx_state.pending_schema_changes {
+            let PendingSchemaChange::TableAlterCachePolicy(table_id, _) = change else {
+                continue;
+            };
+            // A table may have several schema changes. Its cached schema holds
+            // the final requested policy, so only prepare one conversion.
+            let std::collections::btree_map::Entry::Vacant(entry) = changes.entry(*table_id) else {
+                continue;
+            };
+            let Some(table) = self.get_table(*table_id) else {
+                // The transaction dropped this table; there is nothing to convert.
+                continue;
+            };
+            let policy = self.page_eviction_policy(table.get_schema());
+            entry.insert(table.prepare_eviction_policy(self.storage.blobs(), policy)?);
+        }
+        Ok(changes)
     }
 
     pub(super) fn merge(
@@ -727,11 +760,31 @@ impl CommittedState {
             }
         }
 
+        // Finish cache-policy migrations during commit. The inserts and deletes
+        // above have already been applied using each table's old storage policy.
+        //
+        // Converting a disk table to memory requires direct ownership of its pages.
+        // The completed row plans have released their page handles, so conversion
+        // can take that ownership after releasing its own preparation pins.
+        for (table_id, change) in prepared.policy_changes {
+            let (table, blobs, _) = self
+                .get_table_and_blob_store_mut(table_id)
+                .expect("prepared table exists");
+            change.apply(table, blobs);
+        }
+
         // All page mutations have finished, so pinned blob frames no longer
         // need to be pinned by the commit guard.
         drop(prepared.pinned_blobs);
 
-        for PreparedRemovedTable { id, name, rows } in prepared.removed_tables {
+        for PreparedRemovedTable {
+            id,
+            name,
+            rows,
+            blob_release,
+        } in prepared.removed_tables
+        {
+            blob_release.apply(self.storage.blobs());
             truncates.insert(id);
             tx_data.set_deletes_for_table(id, &name, rows);
         }
@@ -851,6 +904,10 @@ impl CommittedState {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.table_access = access);
             }
+            TableAlterCachePolicy(table_id, policy) => {
+                let table = self.tables.get_mut(&table_id)?;
+                table.with_mut_schema(|schema| schema.cache_policy = policy);
+            }
             // A table's primary key was changed. Change back to the old one.
             TableAlterPrimaryKey(table_id, old_pk) => {
                 let table = self.tables.get_mut(&table_id)?;
@@ -964,15 +1021,12 @@ impl CommittedState {
         Ok((table, self.storage.blobs(), &mut self.index_id_map))
     }
 
-    pub(super) fn page_eviction_policy(&self, schema: &TableSchema) -> PageEvictionPolicy {
+    pub(super) fn page_eviction_policy(&self, schema: &TableSchema) -> EvictionPolicy {
         // Schema recovery needs system tables to stay in memory.
-        if schema.table_type == StTableType::System
-            || !self.storage.page_eviction_enabled()
-            || schema.cache_policy == TableCachePolicy::RequiredInMemory
-        {
-            PageEvictionPolicy::NeverEvict
+        if schema.table_type == StTableType::System || schema.cache_policy == TableCachePolicy::RequiredInMemory {
+            EvictionPolicy::NeverEvict
         } else {
-            PageEvictionPolicy::Evictable
+            EvictionPolicy::Evictable
         }
     }
 
@@ -1058,12 +1112,14 @@ pub(super) struct PreparedMerge {
     mutated_tables: BTreeMap<TableId, PreparedCommit>,
     removed_tables: Vec<PreparedRemovedTable>,
     pinned_blobs: Box<[BlobHandle]>,
+    policy_changes: BTreeMap<TableId, PreparedEvictionPolicy>,
 }
 
 struct PreparedRemovedTable {
     id: TableId,
     name: TableName,
     rows: Arc<[ProductValue]>,
+    blob_release: PreparedBlobRelease,
 }
 
 impl PreparedMerge {
@@ -1071,6 +1127,7 @@ impl PreparedMerge {
         Self {
             mutated_tables: <_>::default(),
             removed_tables: <_>::default(),
+            policy_changes: <_>::default(),
             pinned_blobs,
             resident: false,
         }

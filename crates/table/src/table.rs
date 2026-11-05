@@ -1,9 +1,10 @@
 use crate::{
     bflatn_to::required_var_len_granules_for_row,
+    blob_store::BlobHash,
     page,
     tiered::{
-        BlobError, BlobReadSet, BlobSet, PageBorrow, PageError, PageEvictionPolicy, PageHandle, PageManager, PageRef,
-        PageSet, PreparedCommit, ReservedPage,
+        BlobError, BlobHandle, BlobReadSet, BlobSet, EvictionPolicy, PageBorrow, PageError, PageHandle, PageManager,
+        PageRef, PageSet, PreparedCommit, ReservedPage,
     },
     var_len::VarLenMembers as _,
 };
@@ -141,6 +142,10 @@ pub struct Table {
     ///
     /// This is an optimization to avoid checking the schema in e.g., `InstanceEnv::insert`.
     is_outbox: bool,
+    /// The eviction policy for this table.
+    ///
+    /// The value stored here determines whether referenced blobs get pinned into memory.
+    eviction_policy: EvictionPolicy,
 }
 
 type StaticLayoutInTable = Option<(StaticLayout, StaticBsatnValidator)>;
@@ -303,6 +308,7 @@ impl MemoryUsage for Table {
             blob_store_bytes,
             is_scheduler,
             is_outbox,
+            eviction_policy: _,
         } = self;
         inner.heap_usage()
             + pointer_map.heap_usage()
@@ -451,7 +457,7 @@ impl Table {
         schema: Arc<TableSchema>,
         squashed_offset: SquashedOffset,
         page_manager: Arc<PageManager>,
-        eviction_policy: PageEvictionPolicy,
+        eviction_policy: EvictionPolicy,
     ) -> Self {
         let (row_layout, static_layout, visitor_prog) = table_row_type_dependents(schema.get_row_type().clone());
 
@@ -847,6 +853,7 @@ impl Table {
                 &self.inner.row_layout,
                 row,
                 self.squashed_offset,
+                self.eviction_policy,
             )
         }?;
 
@@ -911,6 +918,7 @@ impl Table {
                     &self.inner.row_layout,
                     row,
                     self.squashed_offset,
+                    self.eviction_policy,
                 )
             }?
         };
@@ -1741,6 +1749,7 @@ impl Table {
                 &self.inner.row_layout,
                 row,
                 self.squashed_offset,
+                self.eviction_policy,
             )
         }?;
         // The just written page is resident.
@@ -1775,43 +1784,90 @@ impl Table {
         result
     }
 
-    /// Clears this table, removing all present rows from it.
-    pub fn clear(&mut self, blobs: &BlobSet) -> Result<u64, TableError> {
-        // Collect blob references before mutating anything: a later page fault
-        // must not leave a partially cleared table during replay or a live tx.
+    /// Visit each blob reference without loading the blob's contents. Two fields
+    /// pointing to the same blob are visited twice: each owns a reference.
+    fn for_each_blob_ref(&self, mut visit: impl FnMut(BlobHash) -> Result<(), BlobError>) -> Result<(), TableError> {
+        if self.blob_store_bytes.0 == 0 {
+            return Ok(());
+        }
+        for index in 0..self.inner.pages.num_pages() {
+            let Some(page) = self.inner.pages.get_page(PageIndex(index as _))? else {
+                continue;
+            };
+            let page = page.read();
+            for offset in page.iter_fixed_len(self.row_size()) {
+                let row = page.get_row_data(offset, self.row_size());
+                // SAFETY: The iterator yields live rows of this table,
+                // whose layout matches the table's visitor program.
+                for var_len in
+                    unsafe { self.inner.visitor_prog.visit_var_len(row) }.filter(|var_len| var_len.is_large_blob())
+                {
+                    // SAFETY: A live large-blob reference points to a
+                    // valid granule containing its content hash.
+                    let granule = unsafe { page.iter_var_len_object(var_len.first_granule) }
+                        .next()
+                        .expect("large blob has a hash granule");
+                    visit(granule.blob_hash())?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Pin the pages and blobs needed for a cache-policy migration.
+    /// The storage policy stays unchanged until apply, so a failed preparation
+    /// can be discarded without undoing a conversion.
+    pub fn prepare_eviction_policy(
+        &self,
+        blobs: &BlobSet,
+        policy: EvictionPolicy,
+    ) -> Result<PreparedEvictionPolicy, TableError> {
+        let mut prepared = PreparedEvictionPolicy {
+            old_policy: self.eviction_policy,
+            policy,
+            pinned_pages: Vec::new(),
+            pinned_blobs: Vec::new(),
+        };
+        if policy == self.eviction_policy || policy == EvictionPolicy::Evictable {
+            return Ok(prepared);
+        }
+
+        // Keep disk-table data resident until apply installs the memory policy.
+        prepared.pinned_pages = self.inner.pages.pin_all_pages()?;
+        self.for_each_blob_ref(|hash| {
+            prepared.pinned_blobs.push(blobs.get(hash.into())?);
+            Ok(())
+        })?;
+        Ok(prepared)
+    }
+
+    /// Prepare release of every large-blob reference owned by this table.
+    ///
+    /// Used when the table is dropped.
+    ///
+    /// Reads row pages without faulting blob contents or changing reference counts.
+    /// Repeated references to the same blob are retained individually.
+    pub fn prepare_blob_release(&self) -> Result<PreparedBlobRelease, TableError> {
         // We only need hashes, not blob contents, and can release each page
         // between reads rather than pinning the entire table in memory.
         let mut blob_refs = Vec::new();
-        if !self.inner.row_layout.layout().fixed {
-            for index in 0..self.inner.pages.num_pages() {
-                let Some(page) = self.inner.pages.get_page(PageIndex(index as _))? else {
-                    continue;
-                };
-                page.with_page(|page| {
-                    for offset in page.iter_fixed_len(self.row_size()) {
-                        let row = page.get_row_data(offset, self.row_size());
-                        // SAFETY: The iterator yields live rows of this table,
-                        // whose layout matches the table's visitor program.
-                        for var_len in unsafe { self.inner.visitor_prog.visit_var_len(row) }
-                            .filter(|var_len| var_len.is_large_blob())
-                        {
-                            // SAFETY: A live large-blob reference points to a
-                            // valid granule containing its content hash.
-                            let granule = unsafe { page.iter_var_len_object(var_len.first_granule) }
-                                .next()
-                                .expect("large blob has a hash granule");
-                            blob_refs.push(granule.blob_hash().into());
-                        }
-                    }
-                });
-            }
-        }
+        self.for_each_blob_ref(|hash| {
+            blob_refs.push(hash);
+            Ok(())
+        })?;
 
-        // No fallible storage operations remain. Each reference belongs to a
-        // live row, so it must exist in the catalog even if its blob is evicted.
-        for hash in blob_refs {
-            blobs.free_ref(hash).expect("live row has a valid blob reference");
-        }
+        Ok(PreparedBlobRelease {
+            blob_refs,
+            eviction_policy: self.eviction_policy,
+        })
+    }
+
+    /// Clears this table, removing all present rows from it.
+    pub fn clear(&mut self, blobs: &BlobSet) -> Result<u64, TableError> {
+        // Complete all page reads before mutating anything.
+        let blob_refs_to_free = self.prepare_blob_release()?;
+
+        blob_refs_to_free.apply(blobs);
         // Free all pages, marking them as absent.
         self.inner.pages.clear();
         // Clear indexes.
@@ -2202,10 +2258,56 @@ impl Table {
     pub unsafe fn set_pages(&mut self, pages: Vec<Option<Box<Page>>>, blobs: &BlobSet) -> Result<(), TableError> {
         self.inner.pages.set_contents(pages, self.inner.row_layout.size());
 
-        // Recompute table metadata based on the new pages.
-        // Compute the row count first, in case later computations want to use it as a capacity to pre-allocate.
-        self.compute_row_count(blobs)?;
-        self.pointer_map = Some(self.rebuild_pointer_map(blobs)?);
+        // Compute the row count and blob store size, build the pointer map, and
+        // pin blobs if this is a never-evict table.
+        //
+        // Do this within a single table scan, rather than calling
+        // `self.rebuild_pointer_map`.
+        let mut row_count = 0;
+        let mut blob_store_bytes = 0;
+        let mut pointer_map = Vec::new();
+        for row in self.scan_rows(blobs) {
+            let row = row?;
+
+            row_count += 1;
+            pointer_map.push((row.row_hash(), row.pointer()));
+
+            // Reconstruct `blob_store_bytes`.
+            //
+            // Blobs are accounted per-reference, without deduplication, so we
+            // need to inspect the row rather than just using the row's
+            // BlobReadSet.
+            //
+            // If this is a `NeverEvict` table, also pin all the blobs. Again,
+            // we need one pin count per reference, without deduplication.
+            let (page, offset) = row.page_and_offset();
+            page.with_page(|page| -> Result<(), BlobError> {
+                let data = page.get_row_data(offset, self.inner.row_layout.size());
+                let visitor = &self.inner.visitor_prog;
+
+                // SAFETY: Forward caller requirements.
+                for var_len in unsafe { visitor.visit_var_len(data) }.filter(|var_len| var_len.is_large_blob()) {
+                    // SAFETY: A live large-blob reference points to a hash granule.
+                    let granule = unsafe { page.iter_var_len_object(var_len.first_granule) }
+                        .next()
+                        .expect("large blob has a hash granule");
+                    let blob_hash = granule.blob_hash();
+                    let blob = blobs.get(blob_hash.into())?;
+
+                    blob_store_bytes += blob.size() as usize;
+
+                    if let EvictionPolicy::NeverEvict = self.eviction_policy {
+                        blobs.pin_handle(&blob)?;
+                    }
+                }
+
+                Ok(())
+            })?;
+        }
+
+        self.row_count = row_count;
+        self.blob_store_bytes = blob_store_bytes.into();
+        self.pointer_map = Some(pointer_map.into_iter().collect());
 
         Ok(())
     }
@@ -2621,17 +2723,6 @@ impl<'a> RowRef<'a> {
     {
         self.to_bsatn_extend(scratch)?;
         Ok(bsatn::from_slice::<T>(scratch)?)
-    }
-
-    /// Return the number of bytes in the blob store to which this object holds a reference.
-    ///
-    /// Used to compute the table's `blob_store_bytes` when reconstructing a snapshot.
-    ///
-    /// Even within a single row, this is a conservative overestimate,
-    /// as a row may contain multiple references to the same large blob.
-    /// This seems unlikely to occur in practice.
-    fn blob_store_bytes(&self) -> usize {
-        self.blobs.iter().map(|(_, blob)| blob.size() as usize).sum()
     }
 
     pub fn into_page(self) -> PageRef<'a> {
@@ -3128,7 +3219,7 @@ impl Table {
         squashed_offset: SquashedOffset,
         pointer_map: Option<PointerMap>,
         page_manager: Arc<PageManager>,
-        eviction_policy: PageEvictionPolicy,
+        eviction_policy: EvictionPolicy,
     ) -> Self {
         let fixed_row_size = row_layout.size();
         Self {
@@ -3146,6 +3237,7 @@ impl Table {
             squashed_offset,
             row_count: 0,
             blob_store_bytes: BlobNumBytes::default(),
+            eviction_policy,
         }
     }
 
@@ -3220,25 +3312,6 @@ impl Table {
             .map(|row_ref| row_ref.map(|row_ref| (row_ref.row_hash(), row_ref.pointer())))
             .collect()
     }
-
-    /// Compute and store `self.row_count` and `self.blob_store_bytes`
-    /// by iterating over all the rows in `self` and counting them.
-    ///
-    /// Called when restoring from a snapshot after installing the pages,
-    /// since snapshots do not save this metadata.
-    fn compute_row_count(&mut self, blobs: &BlobSet) -> Result<(), TableError> {
-        let mut row_count = 0;
-        let mut blob_store_bytes = 0;
-        for row in self.scan_rows(blobs) {
-            let row = row?;
-            row_count += 1;
-            blob_store_bytes += row.blob_store_bytes();
-        }
-        self.row_count = row_count as u64;
-        self.blob_store_bytes = blob_store_bytes.into();
-
-        Ok(())
-    }
 }
 
 /// An insert planned during [Table::prepare_commit].
@@ -3269,6 +3342,73 @@ enum PreparedInsertInner {
         source_page: PageHandle,
         source_offset: PageOffset,
     },
+}
+
+/// Page and blob pins held until a cache-policy migration is applied.
+///
+/// Apply after row changes have finished and released their page handles. Keep
+/// the commit's insertion blob handles alive: they protect any newly added blobs
+/// that were not referenced by the table's committed rows during preparation.
+pub struct PreparedEvictionPolicy {
+    old_policy: EvictionPolicy,
+    policy: EvictionPolicy,
+    pinned_pages: Vec<PageHandle>,
+    pinned_blobs: Vec<BlobHandle>,
+}
+
+impl PreparedEvictionPolicy {
+    pub fn apply(self, table: &mut Table, blobs: &BlobSet) {
+        assert_eq!(table.eviction_policy, self.old_policy);
+        if self.policy == self.old_policy {
+            return;
+        }
+        // Inserts and deletes have finished. Update eviction pins for the remaining
+        // blob references without changing their reference counts.
+        //
+        // For memory tables, the old policy keeps pages and blobs resident.
+        // For disk tables, preparation holds the existing pages and blobs in memory.
+        // The commit's insertion handles keep newly inserted blobs resident.
+        table
+            .for_each_blob_ref(|hash| match self.policy {
+                EvictionPolicy::NeverEvict => blobs.pin(hash.into()),
+                EvictionPolicy::Evictable => {
+                    blobs.unpin(hash.into());
+                    Ok(())
+                }
+            })
+            .expect("preparation and insertion pins keep pages and blobs resident");
+        // Exclusive table access prevents page eviction during conversion.
+        // Release our page handles so conversion can unwrap the shared frames.
+        drop(self.pinned_pages);
+        table.inner.pages.apply_eviction_policy(self.policy);
+        table.eviction_policy = self.policy;
+    }
+}
+
+/// Prepared release of a table's large-blob references.
+///
+/// Used to defer freeing blob references when a table is dropped.
+///
+/// Created by [Table::prepare_blob_release].
+pub struct PreparedBlobRelease {
+    /// All blob hashes referenced by the table, without deduplication.
+    ///
+    /// `apply` will decrement both usage and pin counts, so we need to ensure
+    /// each blob is accounted for.
+    blob_refs: Vec<BlobHash>,
+    /// The eviction policy of the table. Needed for `free_ref` to decide
+    /// whether the pin count needs to be decremented.
+    eviction_policy: EvictionPolicy,
+}
+
+impl PreparedBlobRelease {
+    pub fn apply(self, blobs: &BlobSet) {
+        for hash in self.blob_refs {
+            blobs
+                .free_ref(hash.into(), self.eviction_policy)
+                .expect("prepared reference belongs to a live row");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -3303,7 +3443,7 @@ pub(crate) mod test {
             schema.into(),
             SquashedOffset::COMMITTED_STATE,
             page_manager,
-            PageEvictionPolicy::NeverEvict,
+            EvictionPolicy::NeverEvict,
         )
     }
 
@@ -3331,7 +3471,7 @@ pub(crate) mod test {
             schema.into(),
             SquashedOffset::COMMITTED_STATE,
             PageManager::new_for_test().into(),
-            PageEvictionPolicy::NeverEvict,
+            EvictionPolicy::NeverEvict,
         );
         let blob_store = &mut BlobSet::new_for_test();
         let cols = ColList::new(0.into());
@@ -4038,7 +4178,7 @@ pub(crate) mod test {
             schema.clone().into(),
             SquashedOffset::COMMITTED_STATE,
             manager.clone(),
-            PageEvictionPolicy::Evictable,
+            EvictionPolicy::Evictable,
         );
         let blobs = BlobSet::new_for_test();
         let index_id = IndexId(1);
@@ -4063,7 +4203,7 @@ pub(crate) mod test {
             schema.into(),
             SquashedOffset::TX_STATE,
             manager,
-            PageEvictionPolicy::Evictable,
+            EvictionPolicy::Evictable,
         );
         let (_, blocker_pin) = blocker.insert(&blobs, &product![1_u64]).unwrap();
 
@@ -4103,7 +4243,7 @@ pub(crate) mod test {
             schema.clone().into(),
             SquashedOffset::COMMITTED_STATE,
             manager.clone(),
-            PageEvictionPolicy::Evictable,
+            EvictionPolicy::Evictable,
         );
         let blobs = BlobSet::new_for_test();
         let index_id = IndexId(1);
@@ -4127,7 +4267,7 @@ pub(crate) mod test {
             schema.into(),
             SquashedOffset::TX_STATE,
             manager,
-            PageEvictionPolicy::Evictable,
+            EvictionPolicy::Evictable,
         );
         let (_, blocker_pin) = blocker.insert(&blobs, &product![1_u64]).unwrap();
 
@@ -4178,7 +4318,7 @@ pub(crate) mod test {
             schema.into(),
             SquashedOffset::COMMITTED_STATE,
             Arc::new(manager),
-            PageEvictionPolicy::Evictable,
+            EvictionPolicy::Evictable,
         );
         let blobs = BlobSet::new_for_test();
 
@@ -4224,7 +4364,7 @@ pub(crate) mod test {
             schema.into(),
             SquashedOffset::COMMITTED_STATE,
             manager,
-            PageEvictionPolicy::Evictable,
+            EvictionPolicy::Evictable,
         );
         let mut expected = Vec::new();
         loop {
@@ -4278,7 +4418,7 @@ pub(crate) mod test {
             schema.into(),
             SquashedOffset::COMMITTED_STATE,
             manager,
-            PageEvictionPolicy::Evictable,
+            EvictionPolicy::Evictable,
         );
 
         // The two blobs can be written one at a time, evicting the previous one,
@@ -4382,7 +4522,7 @@ pub(crate) mod test {
                 schema.into(),
                 SquashedOffset::TX_STATE,
                 manager,
-                PageEvictionPolicy::Evictable,
+                EvictionPolicy::Evictable,
             );
             let row = product![first, second];
 
@@ -4430,7 +4570,7 @@ pub(crate) mod test {
                 schema.into(),
                 SquashedOffset::COMMITTED_STATE,
                 manager,
-                PageEvictionPolicy::Evictable,
+                EvictionPolicy::Evictable,
             );
             // Keep an index in both cases: clearing must discard its entries,
             // whether set semantics are provided by it or by a pointer map.
@@ -4447,7 +4587,7 @@ pub(crate) mod test {
             table.insert(&blobs, &product![1_u64, large.clone()]).unwrap();
             // Another owner still references the same blob, so clear must
             // decrement the reference count rather than remove it outright.
-            let other_use = blobs.insert(large.as_bytes()).unwrap();
+            let other_use = blobs.insert(EvictionPolicy::Evictable, large.as_bytes()).unwrap();
             let hash = other_use.hash();
             // Drop the residency pin, but retain the logical reference created
             // by insert. Eviction can now move the bytes out of memory.
@@ -4472,7 +4612,7 @@ pub(crate) mod test {
             let index = table.get_index_by_id(index_id).unwrap();
             let key = AlgebraicValue::U64(0);
             assert!(index.seek_point(&index.key_from_algebraic_value(&key)).next().is_none());
-            blobs.free_ref(hash).unwrap();
+            blobs.free_ref(hash, EvictionPolicy::Evictable).unwrap();
             assert_eq!(blobs.num_blobs(), 0);
             // The empty index and page set must remain usable after clear.
             table.insert(&blobs, &product![0_u64, "new"]).unwrap();
@@ -4501,7 +4641,7 @@ pub(crate) mod test {
             schema.into(),
             SquashedOffset::COMMITTED_STATE,
             manager,
-            PageEvictionPolicy::Evictable,
+            EvictionPolicy::Evictable,
         );
         let large = "x".repeat(VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
         // Distinct IDs make every row unique; the shared string gives one blob
@@ -4565,7 +4705,7 @@ pub(crate) mod test {
             schema.into(),
             SquashedOffset::COMMITTED_STATE,
             manager,
-            PageEvictionPolicy::Evictable,
+            EvictionPolicy::Evictable,
         );
         let row = product![0_u64, large.clone()];
         committed.insert(&blobs, &row).unwrap();
@@ -4621,7 +4761,7 @@ pub(crate) mod test {
             schema.into(),
             SquashedOffset::COMMITTED_STATE,
             manager,
-            PageEvictionPolicy::Evictable,
+            EvictionPolicy::Evictable,
         );
         // Fill the first page completely. Remove the row that overflowed onto
         // the second page so the next insertion can allocate a fresh page
@@ -4657,6 +4797,222 @@ pub(crate) mod test {
         assert_eq!(table.scan_all_row_ptrs().unwrap().len() as u64, count_before);
     }
 
+    #[test]
+    fn clearing_never_evict_table_releases_shared_blob_policy_pin() {
+        let blobs = BlobSet::new_for_test();
+        let mut table = table(ProductType::from([AlgebraicType::String]));
+        let large = "x".repeat(VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+
+        // An evictable table still logically owns the bytes after this table
+        // is cleared. Drop its read handle so it does not pin residency itself.
+        let other_owner = blobs.insert(EvictionPolicy::Evictable, large.as_bytes()).unwrap();
+        let hash = other_owner.hash();
+        drop(other_owner);
+        drop(table.insert(&blobs, &product![large]).unwrap());
+        assert_eq!(blobs.usage_counter().get(&hash), Some(&2));
+
+        assert_eq!(table.clear(&blobs).unwrap(), 1);
+        assert_eq!(blobs.usage_counter().get(&hash), Some(&1));
+        // The remaining owner allows eviction. A policy pin belonging to the
+        // deleted row must not keep these bytes in the resident memory budget.
+        assert_eq!(blobs.evict().unwrap().accounted_bytes(), 0);
+    }
+
+    #[test]
+    fn temporary_never_evict_lookup_does_not_pin_another_tables_blob() {
+        let blobs = BlobSet::new_for_test();
+        let mut table = table(ProductType::from([AlgebraicType::String]));
+        let large = "x".repeat(VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+        let other_owner = blobs.insert(EvictionPolicy::Evictable, large.as_bytes()).unwrap();
+        let hash = other_owner.hash();
+        drop(other_owner);
+
+        // Replay looks up a missing row by inserting it temporarily. Even
+        // though no row is ever retained here, it visits the shared blob.
+        assert_eq!(table.delete_equal_row(&blobs, &product![large]).unwrap(), None);
+        assert_eq!(table.num_rows(), 0);
+        assert!(table.scan_all_row_ptrs().unwrap().is_empty());
+        assert_eq!(blobs.usage_counter().get(&hash), Some(&1));
+
+        // Cleanup must undo residency policy as well as the logical reference.
+        assert_eq!(blobs.evict().unwrap().accounted_bytes(), 0);
+    }
+
+    #[test]
+    fn row_insertion_applies_table_policy_to_blobs() {
+        for policy in [EvictionPolicy::Evictable, EvictionPolicy::NeverEvict] {
+            for use_bsatn in [false, true] {
+                let blobs = &mut BlobSet::new_for_test();
+                let schema = TableSchema::from_product_type(ProductType::from([AlgebraicType::String]));
+                let mut table = Table::new(
+                    schema.into(),
+                    SquashedOffset::COMMITTED_STATE,
+                    PageManager::new_for_test().into(),
+                    policy,
+                );
+                let large = "x".repeat(VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+                let row = product![large.clone()];
+
+                // Exercise both serializers: BSATN's variable-length path must
+                // receive the policy just as ProductValue insertion does.
+                if use_bsatn {
+                    drop(table.insert_physically_bsatn(blobs, &to_vec(&row).unwrap()).unwrap());
+                } else {
+                    drop(table.insert(blobs, &row).unwrap());
+                }
+                let usage = blobs.evict().unwrap().accounted_bytes();
+                assert_eq!(
+                    usage,
+                    match policy {
+                        EvictionPolicy::NeverEvict => large.len() as u64,
+                        EvictionPolicy::Evictable => 0,
+                    }
+                );
+                // Reading after eviction must preserve the stored value too.
+                assert_eq!(table.scan_rows(blobs).next().unwrap().unwrap().to_product_value(), row);
+            }
+        }
+    }
+
+    #[test]
+    fn snapshot_restore_applies_table_policy_to_shared_blobs() {
+        for policy in [EvictionPolicy::Evictable, EvictionPolicy::NeverEvict] {
+            let blobs = BlobSet::new_for_test();
+            let schema = TableSchema::from_product_type(ProductType::from([AlgebraicType::U64, AlgebraicType::String]));
+            let mut table = Table::new(
+                schema.into(),
+                SquashedOffset::COMMITTED_STATE,
+                PageManager::new_for_test().into(),
+                policy,
+            );
+            let large = "x".repeat(VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+            let rows = [product![1_u64, large.clone()], product![2_u64, large.clone()]];
+            let mut page = Page::new(table.row_size());
+            for row in &rows {
+                // Build snapshot contents without policy pins. Recovery must
+                // derive residency from the restored table, not the writer.
+                // SAFETY: The page, layout, visitor and values share the schema above.
+                unsafe {
+                    crate::bflatn_to::write_row_to_page(
+                        &mut page,
+                        &blobs,
+                        &table.inner.visitor_prog,
+                        &table.inner.row_layout,
+                        row,
+                        EvictionPolicy::Evictable,
+                    )
+                }
+                .unwrap();
+            }
+            assert_eq!(blobs.evict().unwrap().accounted_bytes(), 0);
+
+            // SAFETY: These pages were written using this exact table's layout.
+            unsafe { table.set_pages(vec![Some(page)], &blobs) }.unwrap();
+            assert_eq!(table.num_rows(), 2);
+            assert_eq!(table.blob_store_bytes.0, 2 * large.len());
+            assert_eq!(blobs.num_blobs(), 1);
+            let hash = blobs.usage_counter().into_keys().next().unwrap();
+            assert_eq!(blobs.usage_counter().get(&hash), Some(&2));
+
+            // No RowRef remains live here. Only recovery's permanent policy
+            // pins may keep the shared bytes resident after this eviction.
+            assert_eq!(
+                blobs.evict().unwrap().accounted_bytes(),
+                match policy {
+                    EvictionPolicy::NeverEvict => large.len() as u64,
+                    EvictionPolicy::Evictable => 0,
+                }
+            );
+            let actual = table
+                .scan_rows(&blobs)
+                .map(|row| row.unwrap().to_product_value())
+                .collect::<Vec<_>>();
+            assert_eq!(actual, rows);
+            // Reconstructed pointer-map entries must enforce set semantics.
+            assert!(matches!(table.insert(&blobs, &rows[0]), Err(InsertError::Duplicate(_))));
+            assert_eq!(table.num_rows(), 2);
+            assert_eq!(blobs.usage_counter().get(&hash), Some(&2));
+        }
+    }
+
+    #[test]
+    fn restored_duplicate_blob_fields_retain_pins_after_deleting_one_row() {
+        let blobs = BlobSet::new_for_test();
+        let mut table = table(ProductType::from([
+            AlgebraicType::U64,
+            AlgebraicType::String,
+            AlgebraicType::String,
+        ]));
+        let large = "x".repeat(VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+        let rows = [
+            product![1_u64, large.clone(), large.clone()],
+            product![2_u64, large.clone(), large.clone()],
+        ];
+        let mut page = Page::new(table.row_size());
+        for row in &rows {
+            // Snapshot bytes have four logical references to the same blob.
+            // Recovery must reconstruct a policy pin for each reference, even
+            // though reading a row only needs one deduplicated blob handle.
+            // SAFETY: The page, visitor and values use this table's layout.
+            unsafe {
+                crate::bflatn_to::write_row_to_page(
+                    &mut page,
+                    &blobs,
+                    &table.inner.visitor_prog,
+                    &table.inner.row_layout,
+                    row,
+                    EvictionPolicy::Evictable,
+                )
+            }
+            .unwrap();
+        }
+        assert_eq!(blobs.evict().unwrap().accounted_bytes(), 0);
+        // SAFETY: This page was written with this exact table's layout.
+        unsafe { table.set_pages(vec![Some(page)], &blobs) }.unwrap();
+        assert_eq!(blobs.usage_counter().into_values().collect::<Vec<_>>(), [4]);
+        assert_eq!(blobs.evict().unwrap().accounted_bytes(), large.len() as u64);
+
+        // Deleting either row releases two references, but the other row still
+        // belongs to a never-evict table and must retain its residency pins.
+        assert!(table.delete_equal_row(&blobs, &rows[0]).unwrap().is_some());
+        assert_eq!(table.num_rows(), 1);
+        assert_eq!(blobs.usage_counter().into_values().collect::<Vec<_>>(), [2]);
+        assert_eq!(blobs.evict().unwrap().accounted_bytes(), large.len() as u64);
+    }
+
+    #[test]
+    fn clearing_evictable_table_preserves_never_evict_blob_policy_pin() {
+        let blobs = BlobSet::new_for_test();
+        let schema = Arc::new(TableSchema::from_product_type(ProductType::from([
+            AlgebraicType::String,
+        ])));
+        let manager = Arc::new(PageManager::new_for_test());
+        let mut required = Table::new(
+            schema.clone(),
+            SquashedOffset::COMMITTED_STATE,
+            manager.clone(),
+            EvictionPolicy::NeverEvict,
+        );
+        let mut evictable = Table::new(
+            schema,
+            SquashedOffset::COMMITTED_STATE,
+            manager,
+            EvictionPolicy::Evictable,
+        );
+        let large = "x".repeat(VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+        let row = product![large.clone()];
+        drop(required.insert(&blobs, &row).unwrap());
+        drop(evictable.insert(&blobs, &row).unwrap());
+        assert_eq!(blobs.num_blobs(), 1);
+
+        // Removing an evictable owner must not consume the required table's
+        // policy pin. Both RowRefs have been dropped, so they cannot mask it.
+        assert_eq!(evictable.clear(&blobs).unwrap(), 1);
+        assert_eq!(required.num_rows(), 1);
+        assert_eq!(blobs.usage_counter().into_values().collect::<Vec<_>>(), [1]);
+        assert_eq!(blobs.evict().unwrap().accounted_bytes(), large.len() as u64);
+    }
+
     fn assert_prepared_commit_protects_pointer_map_candidates(fail_during_preparation: bool, fixed_rows: bool) {
         use std::sync::atomic::Ordering;
 
@@ -4679,7 +5035,7 @@ pub(crate) mod test {
             schema.into(),
             SquashedOffset::COMMITTED_STATE,
             manager,
-            PageEvictionPolicy::Evictable,
+            EvictionPolicy::Evictable,
         );
         let value: AlgebraicValue = if fixed_rows {
             42_u64.into()
