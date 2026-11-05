@@ -296,7 +296,9 @@ describe('DbConnection', () => {
       )
     ).not.toThrow();
 
-    expect(await onDisconnectPromise.promise).toBeInstanceOf(RangeError);
+    const error = await onDisconnectPromise.promise;
+    expect(error?.message).toBe('Invalid server message');
+    expect(error?.cause).toBeInstanceOf(RangeError);
     expect(client.isActive).toBe(false);
     expect(wsAdapter.closed).toBe(true);
 
@@ -319,6 +321,45 @@ describe('DbConnection', () => {
       })
     );
     expect(inserted).toEqual([]);
+  });
+
+  test('reports a message it cannot apply before connecting through onConnectError', async () => {
+    const onConnectErrorPromise = new Deferred<Error>();
+    const onDisconnect = vi.fn();
+    const wsAdapter = new WebsocketTestAdapter();
+
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.openWebSocket)
+      .onConnectError((_ctx, error) => onConnectErrorPromise.resolve(error))
+      .onDisconnect(onDisconnect)
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    // A truncated row before `InitialConnection` stands in for any first
+    // message the client cannot process: the connection was never up.
+    const truncatedPlayer = encodePlayer({
+      id: 1,
+      userId: anIdentity,
+      name: 'drogus',
+      location: { x: 0, y: 0 },
+    }).slice(0, -1);
+    expect(() =>
+      wsAdapter.sendToClient(
+        ServerMessage.TransactionUpdate({
+          querySets: [makeQuerySetUpdate(0, 'player', truncatedPlayer)],
+        })
+      )
+    ).not.toThrow();
+
+    const error = await onConnectErrorPromise.promise;
+    expect(error.message).toBe('Invalid server message');
+    expect(error.cause).toBeInstanceOf(RangeError);
+    expect(onDisconnect).not.toHaveBeenCalled();
+    expect(client.isActive).toBe(false);
+    expect(wsAdapter.closed).toBe(true);
   });
 
   test('marks disconnect as requested when disconnect() is called', async () => {
