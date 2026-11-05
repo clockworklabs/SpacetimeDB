@@ -52,24 +52,24 @@ source revision as the managed package.
 
 ## Standalone Package Acceptance
 
-The `csharp_testing_pack` GitHub Actions job assembles Testing with all three
-tested Release bridges, verifies their packaged bytes, and uploads a single
-`spacetimedb-testing-packages` artifact with matching Runtime and BSATN.Runtime
-packages. A separate negative restore check treats NuGet's out-of-range dependency
-warning (NU1608) as an error to verify Testing's exact Runtime dependency.
+Pull requests build, test and pack linux-x64 only, as a prerelease partial package.
+Pushes to master, the merge queue and releases cover all three platforms.
 
-The `csharp_testing_packages` matrix downloads that same package set on every
-supported platform. It copies the chat template module and sibling test project
+The `csharp_testing_pack` GitHub Actions job assembles Testing with the tested
+Release bridges, verifies their packaged bytes, and uploads a single
+`spacetimedb-testing-packages` artifact with matching Runtime and BSATN.Runtime
+packages. It also checks that Testing's nuspec pins the exact Runtime version.
+
+The `csharp_testing_packages` matrix downloads that same package set on each
+tested platform. It copies the chat template module and sibling test project
 outside the checkout, restores with fresh NuGet caches,
 and runs `dotnet test`. SpacetimeDB packages must come from the downloaded feed;
 test-framework dependencies come from NuGet.org. Temporary files are removed
 when the step finishes. The Test Suite aggregate requires the matrix to pass.
 
 The chat tests cover fixture creation, caller identity and time, reducer commit
-and rollback, indexed lookup, and disposal. The matrix also creates a new xUnit
-project with the documented `dotnet new`, `dotnet add`, and `dotnet test` commands
-and runs the same tests. Both paths use the packaged analyzers and native library
-without repository project references, manual native-library copying, or
+and rollback, indexed lookup, and disposal. They use the packaged analyzers and
+native library without repository project references, manual native-library copying, or
 `NativeTestLibrary`. The consumer workflow does not invoke Cargo or a WASI toolchain.
 The `csharp_testing_native` matrix builds the Release bridge and runs the managed
 integration suite natively on Linux x64, Linux ARM64, and Windows x64 before uploading
@@ -77,7 +77,7 @@ integration suite natively on Linux x64, Linux ARM64, and Windows x64 before upl
 Linux builds use Ubuntu 22.04 (glibc 2.35); CI rejects newer glibc requirements.
 Windows builds and tests use Windows Server 2022 with MSVC. These are the tested
 OS baselines, not a claim of compatibility with older systems. musl and macOS
-are outside this matrix. CI logs include native architecture and dependency reports.
+are outside this matrix. CI logs include Linux native architecture and dependency reports.
 The existing `csharp-testsuite` managed/WASM build check also consumes the same
 package set. It checks WASM Runtime selection and rejects Testing dependencies
 or native bridge files in module assets and build outputs. Platform support is
