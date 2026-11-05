@@ -23,16 +23,12 @@ internal readonly struct TxOutcomeCore<TResult>(bool isSuccess, TResult? value, 
 internal sealed class TransactionalContextState<TTxContext>(
     Random random,
     Timestamp time,
-    Func<Timestamp, Internal.TxContext> createInitialTxContext,
     Func<Internal.TxContext, TTxContext> createTxContext
 )
     where TTxContext : class, IRefreshableTxContext
 {
     public Random Rng { get; } = random;
     public Timestamp Timestamp { get; private set; } = time;
-
-    private Internal.TxContext? txContext;
-    private TTxContext? cachedUserTxContext;
 
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
     internal IDatabaseBackend? Backend { private get; init; }
@@ -43,13 +39,22 @@ internal sealed class TransactionalContextState<TTxContext>(
         private get;
         init;
     }
-#endif
+#else
+    // Only host (WASM) transactions enter a shared transaction context.
+    internal required Func<Timestamp, Internal.TxContext> CreateInitialTxContext
+    {
+        private get;
+        init;
+    }
+
+    private Internal.TxContext? txContext;
+    private TTxContext? cachedUserTxContext;
 
     public Internal.TxContext EnterTxContext(long timestampMicros)
     {
         var timestamp = new Timestamp(timestampMicros);
         Timestamp = timestamp;
-        txContext = txContext?.WithTimestamp(timestamp) ?? createInitialTxContext(timestamp);
+        txContext = txContext?.WithTimestamp(timestamp) ?? CreateInitialTxContext(timestamp);
         return txContext;
     }
 
@@ -64,6 +69,7 @@ internal sealed class TransactionalContextState<TTxContext>(
         cachedUserTxContext.Refresh(inner);
         return cachedUserTxContext;
     }
+#endif
 
     // Callers validate the user's callback before it reaches this state.
     public TResult WithTx<TResult>(Func<TTxContext, TResult> body) =>

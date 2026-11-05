@@ -1758,7 +1758,7 @@ Use `RunQuery` for views returning typed queries. For views returning rows direc
 
 - **No WASM execution.** Tests run managed module code against the native datastore. They do not verify WASM linking, exports, trimming, or host dispatch. Keep a publish/integration test for these.
 - **No interception of general .NET APIs.** Use `ctx.Timestamp`, `ctx.Rng`, and `ctx.Http` for controlled behavior. Ordinary static fields in user code remain process-wide; creating a fixture does not reset them.
-- **Unsupported host operations throw `NotSupportedException`.** These include immediate scheduling, `LogStopwatch`, static identity lookups, and `AuthCtx.BuildFromSystemTables`. Use `test.DatabaseIdentity`, context identity properties, and `TestAuth` instead.
+- **Unsupported host operations throw `NotSupportedException`.** These include immediate scheduling, static identity lookups, and `AuthCtx.BuildFromSystemTables`.
 - **No incoming HTTP handler harness.** Procedure HTTP responders model outgoing requests; they do not simulate incoming HTTP dispatch.
 - **Event rows are transaction-scoped.** Event rows are removed at commit, including standalone fixture mutations and procedure transactions.
 
