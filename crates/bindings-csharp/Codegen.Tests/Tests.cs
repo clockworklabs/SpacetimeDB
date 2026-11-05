@@ -53,11 +53,34 @@ public static class GeneratorSnapshotTests
 
     record struct StepOutput(string Key, IncrementalStepRunReason Reason, object Value);
 
-    private class Fixture(string projectDir, CSharpCompilation sampleCompilation)
+    private class Fixture(
+        string projectDir,
+        CSharpCompilation sampleCompilation,
+        string snapshotSuffix = ""
+    )
     {
         public CSharpCompilation SampleCompilation { get; } = sampleCompilation;
         public CSharpParseOptions ParseOptions { get; } =
             (CSharpParseOptions)sampleCompilation.SyntaxTrees.First().Options;
+
+        /// <summary>
+        /// The same fixture compiled for WASM AOT. The generator emits WASM code when
+        /// <c>SPACETIMEDB_WASM_AOT</c> is defined, and managed code otherwise.
+        /// </summary>
+        public Fixture WithWasmAot()
+        {
+            var options = ParseOptions.WithPreprocessorSymbols(
+                ParseOptions.PreprocessorSymbolNames.Append("SPACETIMEDB_WASM_AOT")
+            );
+            var compilation = SampleCompilation
+                .RemoveAllSyntaxTrees()
+                .AddSyntaxTrees(
+                    SampleCompilation.SyntaxTrees.Select(tree =>
+                        CSharpSyntaxTree.ParseText(tree.GetText(), options, tree.FilePath)
+                    )
+                );
+            return new(projectDir, compilation, snapshotSuffix + ".wasm");
+        }
 
         public static async Task<Fixture> Compile(string name)
         {
@@ -84,6 +107,7 @@ public static class GeneratorSnapshotTests
             {
                 fileName += ".net10";
             }
+            fileName += snapshotSuffix;
             return Verifier
                 .Verify(target)
                 .UseDirectory($"{projectDir}/snapshots")
@@ -130,12 +154,26 @@ public static class GeneratorSnapshotTests
             return driver.RunGenerators(SampleCompilation).GetRunResult();
         }
 
-        public async Task<CSharpCompilation> RunAndCheckGenerators(
+        public Task<CSharpCompilation> RunAndCheckGenerators(
             params IIncrementalGenerator[] generators
+        ) => RunAndCheckGenerators(generators, unverified: []);
+
+        /// <summary>
+        /// Snapshots the output of <paramref name="generators"/>, and also adds the output of
+        /// <paramref name="unverified"/> so the result compiles without snapshotting it.
+        /// </summary>
+        public async Task<CSharpCompilation> RunAndCheckGenerators(
+            IIncrementalGenerator[] generators,
+            IIncrementalGenerator[] unverified
         ) =>
             SampleCompilation.AddSyntaxTrees(
                 (await Task.WhenAll(generators.Select(RunAndCheckGenerator)))
                     .SelectMany(output => output)
+                    .Concat(
+                        unverified.SelectMany(generator =>
+                            RunGeneratorAndGetResult(generator).GeneratedTrees
+                        )
+                    )
                     .Concat(
                         generators.Any(generator => generator is SpacetimeDB.Codegen.Module)
                             ? RunGeneratorAndGetResult(new EnvironmentGenerator()).GeneratedTrees
@@ -289,38 +327,27 @@ public static class GeneratorSnapshotTests
     }
 
 #if NET10_0_OR_GREATER
+    // The plain .NET 10 snapshots record managed output, so these snapshot the WASM output too.
+    // The Type generator's output doesn't depend on the mode, so it isn't snapshotted again.
+    private static async Task<CSharpCompilation> RunWasmModuleGenerator(Fixture fixture)
+    {
+        var wasm = fixture.WithWasmAot();
+        var output = await wasm.RunAndCheckGenerators([new Module()], unverified: [new Type()]);
+        Assert.Empty(GetCompilationErrors(output));
+        return output;
+    }
+
     [Fact]
     public static async Task WasmHandlesDoNotCarryManagedRouting()
     {
         var fixture = await Fixture.Compile("server");
-        var options = fixture.ParseOptions.WithPreprocessorSymbols(
-            fixture.ParseOptions.PreprocessorSymbolNames.Append("SPACETIMEDB_WASM_AOT")
-        );
-        var input = fixture
-            .SampleCompilation.RemoveAllSyntaxTrees()
-            .AddSyntaxTrees(
-                fixture.SampleCompilation.SyntaxTrees.Select(tree =>
-                    CSharpSyntaxTree.ParseText(tree.GetText(), options)
-                )
-            );
-        CSharpGeneratorDriver
-            .Create(
-                [
-                    new Type().AsSourceGenerator(),
-                    new Module().AsSourceGenerator(),
-                    new EnvironmentGenerator().AsSourceGenerator(),
-                ],
-                parseOptions: options
-            )
-            .RunGeneratorsAndUpdateCompilation(input, out var output, out var diagnostics);
-        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Empty(GetCompilationErrors(output));
+        var output = await RunWasmModuleGenerator(fixture);
 
         // Inspect active syntax, excluding managed-only preprocessor branches.
         var generated = string.Join(
             " ",
             output
-                .SyntaxTrees.Skip(input.SyntaxTrees.Length)
+                .SyntaxTrees.Skip(fixture.SampleCompilation.SyntaxTrees.Length)
                 .SelectMany(tree => tree.GetRoot().DescendantTokens())
                 .Select(token => token.Text)
         );
@@ -330,6 +357,10 @@ public static class GeneratorSnapshotTests
         Assert.Contains("__ResolveScheduleInsertDataName", generated);
         Assert.DoesNotContain("unavailable in managed module tests", generated);
     }
+
+    [Fact]
+    public static async Task WasmSettingsAndExplicitNames() =>
+        await RunWasmModuleGenerator(await Fixture.Compile("explicitnames"));
 
     [Fact]
     public static async Task NamespaceDeclarationsParseAndValidate()
