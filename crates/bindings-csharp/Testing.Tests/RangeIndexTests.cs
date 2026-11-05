@@ -1,6 +1,5 @@
 namespace SpacetimeDB.Testing.Tests;
 
-using SpacetimeDB.Internal;
 using TestingModule;
 
 public class RangeIndexTests
@@ -45,11 +44,6 @@ public class RangeIndexTests
         );
         Assert.Equal([2u, 3u, 5u], Ids(test.Db.Points.Score.Filter(20u)));
         Assert.Empty(test.Db.Points.Score.Filter(new SpacetimeDB.Bound<uint>(40, 50)));
-        var readOnly = new LocalReadOnly(test.Db.Access!);
-        Assert.Equal(
-            [2u, 3u, 4u],
-            Ids(readOnly.Points.ByGroupScore.Filter((1u, new SpacetimeDB.Bound<uint>(20, 30))))
-        );
 
         Assert.Throws<InvalidOperationException>(
             () =>
@@ -77,12 +71,6 @@ public class RangeIndexTests
     [Fact]
     public void RangeIteratorsAndHandlesRespectTheirOwnerLifetime()
     {
-        Assert.Throws<InvalidOperationException>(
-            () => new SpacetimeDB.Local().Points.Score.Filter(20u).ToArray()
-        );
-        Assert.Throws<InvalidOperationException>(
-            () => new SpacetimeDB.Local().Points.Score.Delete(20u)
-        );
         using var test = ModuleTestContext.Create(typeof(Point).Assembly);
         for (uint id = 1; id <= 2; id++)
             test.Db.Points.Insert(

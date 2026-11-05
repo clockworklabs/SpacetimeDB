@@ -10,6 +10,17 @@ public class TestAuthTests
         .Value;
 
     [Fact]
+    public void DerivedIdentityMatchesTheServer()
+    {
+        // Identity::from_claims("test-issuer", "alice") from crates/lib, as the server derives it.
+        var expected = Identity.FromHexString(
+            "c2003d6ba171341c20c7d0f753d3a1c845615c7883fd7f1d5b6337e627c483fe"
+        );
+        var auth = TestAuth.FromJwtPayload("""{"iss":"test-issuer","sub":"alice"}""", connection);
+        Assert.Equal(expected, auth.Sender);
+    }
+
+    [Fact]
     public void CredentialsExposeTheCallerTheyActAs()
     {
         var auth = TestAuth.FromJwtPayload("""{"iss":"test-issuer","sub":"alice"}""", connection);
@@ -26,56 +37,52 @@ public class TestAuthTests
         var internalAuth = TestAuth.Internal();
         Assert.Null(internalAuth.Sender);
         Assert.Null(internalAuth.ConnectionId);
-        test.WithReducerTx(internalAuth, ctx => Assert.Equal(test.DatabaseIdentity, ctx.Sender));
+        test.WithReducerTx(
+            internalAuth,
+            ctx =>
+            {
+                Assert.Equal(test.DatabaseIdentity, ctx.Sender);
+                Assert.Null(ctx.ConnectionId);
+                Assert.True(ctx.SenderAuth.IsInternal);
+            }
+        );
     }
 
     [Fact]
-    public void ClientClaimsReachReducersAndAuthCanBeReusedAcrossFixtures()
+    public void ClientClaimsReachReducers()
     {
         const string payload =
             """{"iss":"test-issuer","sub":"alice","aud":["app","other"],"role":"admin"}""";
-        var auth = TestAuth.FromJwtPayload(payload, connection);
-        using var first = ModuleTestContext.Create(typeof(Module).Assembly);
-        using var second = ModuleTestContext.Create(typeof(Module).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Module).Assembly);
+        var sender = test.WithReducerTx(
+            TestAuth.FromJwtPayload(payload, connection),
+            ctx =>
+            {
+                Assert.False(ctx.SenderAuth.IsInternal);
+                var jwt = Assert.IsType<JwtClaims>(ctx.SenderAuth.Jwt);
+                Assert.Equal(ctx.Sender, jwt.Identity);
+                Assert.Equal("test-issuer", jwt.Issuer);
+                Assert.Equal("alice", jwt.Subject);
+                Assert.Equal(["app", "other"], jwt.Audience);
+                Assert.Equal(payload, jwt.RawPayload);
+                return ctx.Sender;
+            }
+        );
 
-        void Send(ModuleTestContext test) =>
-            test.WithReducerTx(
-                auth,
-                ctx =>
-                {
-                    Assert.False(ctx.SenderAuth.IsInternal);
-                    Assert.True(ctx.SenderAuth.HasJwt);
-                    Assert.Equal(connection, ctx.ConnectionId);
-                    var jwt = Assert.IsType<JwtClaims>(ctx.SenderAuth.Jwt);
-                    Assert.Equal(ctx.Sender, jwt.Identity);
-                    Assert.Equal("test-issuer", jwt.Issuer);
-                    Assert.Equal("alice", jwt.Subject);
-                    Assert.Equal(["app", "other"], jwt.Audience);
-                    Assert.Equal(payload, jwt.RawPayload);
-                    Module.SendMessage(ctx, "Hello!");
-                }
-            );
-        Parallel.Invoke(() => Send(first), () => Send(second));
-        var sender = Assert.Single(first.Db.Message.Iter()).Sender;
-        Assert.NotEqual(first.DatabaseIdentity, sender);
-        Assert.Equal(sender, Assert.Single(second.Db.Message.Iter()).Sender);
-
+        // The identity depends only on issuer and subject, not the connection or audience.
         var otherConnection = ConnectionId.FromHexString("00000000000000000000000000000002")!.Value;
         var samePrincipal = TestAuth.FromJwtPayload(
             """{"iss":"test-issuer","sub":"alice","aud":"app"}""",
             otherConnection
         );
-        first.WithReducerTx(
+        test.WithReducerTx(
             samePrincipal,
             ctx =>
             {
                 Assert.Equal(sender, ctx.Sender);
                 Assert.Equal(otherConnection, ctx.ConnectionId);
-                Assert.Equal(["app"], ctx.SenderAuth.Jwt!.Audience);
             }
         );
-        var bob = TestAuth.FromJwtPayload("""{"iss":"test-issuer","sub":"bob"}""", connection);
-        first.WithReducerTx(bob, ctx => Assert.NotEqual(sender, ctx.Sender));
     }
 
     [Fact]

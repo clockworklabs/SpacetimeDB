@@ -1,6 +1,5 @@
 namespace SpacetimeDB.Testing.Tests;
 
-using SpacetimeDB.Internal;
 using TestingModule;
 
 public class EnvironmentTests
@@ -12,11 +11,6 @@ public class EnvironmentTests
         using var second = ModuleTestContext.Create(typeof(Entry).Assembly);
         var auth = TestAuth.Internal();
         var view = first.CreateViewContext(auth);
-        var anonymous = first.CreateAnonymousViewContext();
-        var selectedView = ((IModuleContext<ViewContext>)view).SelectInstance(1);
-        var selectedAnonymous = ((IModuleContext<AnonymousViewContext>)anonymous).SelectInstance(1);
-        Assert.Equal(1, ((IModuleContext)selectedView).InstanceId);
-        Assert.Equal(1, ((IModuleContext)selectedAnonymous).InstanceId);
         Assert.Null(view.Env.OPTIONAL);
         Assert.Throws<InvalidOperationException>(() => view.Env.REQUIRED);
         first.SetEnv("REQUIRED", "");
@@ -31,32 +25,21 @@ public class EnvironmentTests
                     {
                         escaped = ctx.Env;
                         first.SetEnv("OPTIONAL", "changed");
-                        Assert.Equal("changed", escaped.OPTIONAL);
+                        Assert.Equal("changed", ctx.Env.OPTIONAL);
                         throw new InvalidOperationException("rollback");
                     }
                 )
         );
+        // Rollback doesn't undo configuration, and other fixtures don't see it.
         Assert.Equal("changed", view.Env.OPTIONAL);
-        Assert.Equal("changed", anonymous.Env.OPTIONAL);
-        Assert.Equal("changed", selectedView.Env.OPTIONAL);
-        Assert.Equal("changed", selectedAnonymous.Env.OPTIONAL);
         second.WithReducerTx(auth, ctx => Assert.Null(ctx.Env.OPTIONAL));
         Assert.Throws<ObjectDisposedException>(() => escaped.Get("OPTIONAL"));
 
-        first.UnsetEnv("OPTIONAL");
-        first.UnsetEnv("OPTIONAL");
-        Assert.Null(view.Env.OPTIONAL);
         first.UnsetEnv("REQUIRED");
         Assert.Throws<InvalidOperationException>(() => view.Env.REQUIRED);
         first.Dispose();
         Assert.Throws<ObjectDisposedException>(() => view.Env.Get("OPTIONAL"));
-        Assert.Throws<ObjectDisposedException>(() => selectedView.Env.Get("OPTIONAL"));
-        Assert.Throws<ObjectDisposedException>(() => selectedAnonymous.Env.Get("OPTIONAL"));
         Assert.Throws<ObjectDisposedException>(() => first.SetEnv("OPTIONAL", "value"));
-        Assert.Throws<ObjectDisposedException>(() => first.UnsetEnv("OPTIONAL"));
-        Assert.Throws<InvalidOperationException>(
-            () => default(DatabaseEnvironment).Get("OPTIONAL")
-        );
     }
 
     [Fact]

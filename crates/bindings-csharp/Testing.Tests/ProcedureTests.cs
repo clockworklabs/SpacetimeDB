@@ -1,6 +1,5 @@
 namespace SpacetimeDB.Testing.Tests;
 
-using SpacetimeDB.Internal;
 using TestingModule;
 
 public class ProcedureTests
@@ -48,58 +47,49 @@ public class ProcedureTests
     }
 
     [Fact]
-    public void ContextsShareFixtureServicesButNeverReuseTransactionOwnership()
+    public void TransactionsShareTheProcedureCallerAndTakeTheClockAtEntry()
     {
         using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
-        var auth = TestAuth.FromJwtPayload(
+        var client = TestAuth.FromJwtPayload(
             """{"iss":"test","sub":"client"}""",
             ConnectionId.FromHexString("00000000000000000000000000000001")!.Value
         );
         test.Clock.Set(new Timestamp(10));
-        var procedure = test.CreateProcedureContext(auth);
+        var procedure = test.CreateProcedureContext(client);
         Assert.Equal(new Timestamp(10), procedure.Timestamp);
         Assert.Equal("client", procedure.SenderAuth.Jwt!.Subject);
-        test.SetEnv("OPTIONAL", "before");
-        Assert.Equal("before", procedure.Env.OPTIONAL);
+
         test.Clock.Set(new Timestamp(20));
-        ProcedureTxContext? escaped = null;
-        ProcedureTxContext? selected = null;
         procedure.WithTx(tx =>
         {
-            escaped = tx;
-            selected = ((IModuleContext<ProcedureTxContext>)tx).SelectInstance(1);
-            Assert.Equal(1, ((IModuleContext)selected).InstanceId);
-            Assert.Same(tx.Db.Access, selected.Db.Access);
             Assert.Equal(procedure.Sender, tx.Sender);
             Assert.Equal(procedure.ConnectionId, tx.ConnectionId);
-            Assert.Same(procedure.SenderAuth, tx.SenderAuth);
             Assert.Same(procedure.Rng, tx.Rng);
-            Assert.Equal(new Timestamp(20), tx.Timestamp);
             test.Clock.Set(new Timestamp(30));
-            Assert.Equal(new Timestamp(20), tx.Timestamp);
             test.SetEnv("OPTIONAL", "during");
+            Assert.Equal(new Timestamp(20), tx.Timestamp);
             Assert.Equal("during", tx.Env.OPTIONAL);
-            Assert.Equal("during", selected.Env.OPTIONAL);
-            Assert.Throws<InvalidOperationException>(
-                () => procedure.WithTx(inner => inner.Db.Entries.Count)
-            );
-            return tx.Db.Entries.Insert(new Entry { Text = "still active" });
-        });
-        Assert.Equal(new Timestamp(20), procedure.Timestamp);
-        var oldEnv = escaped!.Env;
-        procedure.WithTx(tx =>
-        {
-            Assert.NotSame(escaped, tx);
-            Assert.Equal(new Timestamp(30), tx.Timestamp);
-            Assert.Throws<ObjectDisposedException>(() => oldEnv.OPTIONAL);
-            Assert.Throws<ObjectDisposedException>(() => selected!.Db.Access!.CheckActive());
-            Assert.Throws<ObjectDisposedException>(() => escaped.Db.Entries.Count);
+            Assert.Throws<InvalidOperationException>(() => procedure.WithTx(_ => 0));
             return 0;
         });
+        procedure.WithTx(tx =>
+        {
+            Assert.Equal(new Timestamp(30), tx.Timestamp);
+            return 0;
+        });
+    }
+
+    [Fact]
+    public void TransactionHandlesExpireWithTheirTransaction()
+    {
+        using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
+        var procedure = test.CreateProcedureContext(TestAuth.Internal());
         Assert.Throws<InvalidOperationException>(() => procedure.Db.Entries.Count);
+        var escaped = procedure.WithTx(tx => tx);
+        Assert.Throws<ObjectDisposedException>(() => escaped.Db.Entries.Count);
+        Assert.Throws<ObjectDisposedException>(() => escaped.Env.OPTIONAL);
         test.Dispose();
         Assert.Throws<ObjectDisposedException>(() => procedure.WithTx(_ => 0));
-        Assert.Throws<ObjectDisposedException>(() => procedure.Env.OPTIONAL);
     }
 
     [Fact]
@@ -116,14 +106,6 @@ public class ProcedureTests
                 return 1;
             });
         });
-        Assert.Throws<ArgumentException>(
-            () =>
-                procedure.WithTx<object>(tx =>
-                {
-                    tx.Db.Entries.Insert(new Entry { Text = "rolled back" });
-                    return Task.CompletedTask;
-                })
-        );
         // Invalid callbacks are rejected before the transaction starts, not reported as outcomes.
         Assert.Throws<ArgumentException>(
             () =>

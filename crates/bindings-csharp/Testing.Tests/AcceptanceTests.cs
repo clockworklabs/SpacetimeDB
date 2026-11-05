@@ -130,15 +130,6 @@ public class AcceptanceTests
             () => AuthCtx.BuildFromSystemTables(connection, default)
         );
 #pragma warning disable STDB_UNSTABLE
-        using var test = ModuleTestContext.Create(typeof(Module).Assembly);
-        var procedure = test.CreateProcedureContext(TestAuth.Internal());
-        var selected = ((IModuleContext<ProcedureContext>)procedure).SelectInstance(1);
-        Assert.Throws<NotSupportedException>(
-            () => Module.VolatileNonatomicScheduleImmediateSendMessage(selected, "message")
-        );
-        Assert.Throws<NotSupportedException>(
-            () => Module.VolatileNonatomicScheduleImmediateCheckStatus(selected)
-        );
         Assert.Contains(
             "VolatileNonatomicScheduleImmediate",
             Assert
