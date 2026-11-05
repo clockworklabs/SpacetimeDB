@@ -82,7 +82,7 @@ write failure blocks upload. This does not resume or upload partial runs.
 | 093 | Private source tables, owner checks, live permission revocation and reconnect |
 | 094 | Real multi-connection presence, partial disconnect and reconnect |
 
-These are SpacetimeDB contracts, not copies of Convex APIs. Pagination checks
+Pagination checks
 correctness, not index scan cost. Backfill checks an online data migration
 algorithm, not deployment schema conversion. Quota is lifetime-based, not a
 timed rate limiter. Presence checks module behavior; it does not grade generated
