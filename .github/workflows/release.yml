@@ -159,15 +159,17 @@ jobs:
   release-csharp:
     needs: [build-cargo-release, validate-csharp-packages]
     runs-on: spacetimedb-linux
-    cache-mode: none
     if: ${{ inputs.release_csharp }}
     env:
       CARGO_TERM_COLOR: always
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
-      CSHARP_PACKAGE_FEED: ${{ runner.temp }}/validated-csharp-packages
 
     steps:
+      # The runner context isn't available in job-level env, so set the feed path here.
+      - name: Set validated package feed path
+        run: echo "CSHARP_PACKAGE_FEED=$RUNNER_TEMP/validated-csharp-packages" >> "$GITHUB_ENV"
+
       - name: Checkout release source
         uses: actions/checkout@v4
         with:

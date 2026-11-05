@@ -18,9 +18,6 @@ on:
 permissions:
   contents: read
 
-# Package validation needs artifacts, not Actions caches.
-cache-mode: none
-
 jobs:
   prepare:
     runs-on: ubuntu-22.04
