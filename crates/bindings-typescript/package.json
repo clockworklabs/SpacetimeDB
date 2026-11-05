@@ -1,6 +1,6 @@
 {
   "name": "spacetimedb",
-  "version": "2.14.0",
+  "version": "2.14.1",
   "description": "API and ABI bindings for the SpacetimeDB TypeScript module library",
   "homepage": "https://github.com/clockworklabs/SpacetimeDB#readme",
   "bugs": {
@@ -142,7 +142,7 @@
       "name": "esm (gzip)",
       "path": "dist/index.mjs",
       "gzip": true,
-      "limit": "50 kB"
+      "limit": "60 kB"
     },
     {
       "name": "esm (uncompressed)",

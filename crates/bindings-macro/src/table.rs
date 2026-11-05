@@ -80,6 +80,10 @@ enum IndexType {
 }
 
 impl TableArgs {
+    pub(crate) fn use_call_site_accessor_span(&mut self) {
+        self.accessor.set_span(Span::call_site());
+    }
+
     pub(crate) fn parse(input: TokenStream, struct_ident: &Ident) -> syn::Result<Self> {
         let mut access = None;
         let mut scheduled = None;
