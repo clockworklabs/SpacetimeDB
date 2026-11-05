@@ -48,6 +48,9 @@
         # The Rust toolchain that we actually build with.
         rustStable = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
 
+        # Node.js and pnpm for the devShell, at the versions package.json asks for.
+        jsToolchain = pkgs.callPackage ./js-toolchain.nix {};
+
         # An additional Rust toolchain we put in our devShell for rust-analyzer.
         rustNightly = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.rust-analyzer);
 
@@ -203,6 +206,9 @@
               # Pinned to match WASM_BINDGEN_VERSION in
               # crates/bindings-typescript/scripts/generate-test-utils-wasm.mjs.
               pkgs.wasm-bindgen-cli_0_2_104
+              # Versions come from package.json; see js-toolchain.nix.
+              jsToolchain.nodejs
+              jsToolchain.pnpm
             ];
           };
         }
