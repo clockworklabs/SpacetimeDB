@@ -1,14 +1,14 @@
-import type { ProductType } from './algebraic_type';
+import type { ProductType } from './algebraic_type.ts';
 import type {
   RawOutboxDefV10,
   RawScheduleDefV10,
   RawTableDefV10,
-} from './autogen/types';
-import type { IndexOpts } from './indexes';
-import type { ModuleContext } from './schema';
-import type { ColumnBuilder, RowBuilder } from './type_builders';
-import type { HasExactlyOneKnownKey } from './type_util';
-import type { ProcedureExport, ReducerExport } from '../server';
+} from './autogen/types.ts';
+import type { IndexOpts } from './indexes.ts';
+import type { ModuleContext } from './schema.ts';
+import type { ColumnBuilder, RowBuilder } from './type_builders.ts';
+import type { HasExactlyOneKnownKey } from './type_util.ts';
+import type { ProcedureExport, ReducerExport } from '../server/index.ts';
 
 /**
  * Internal erased form of a scheduled reducer/procedure export.

@@ -1,9 +1,9 @@
-import type { ConnectionId } from './connection_id';
-import type { Identity } from './identity';
-import type { ScheduleAt } from './schedule_at';
-import type { TimeDuration } from './time_duration';
-import type { Timestamp } from './timestamp';
-import type { Uuid } from './uuid';
+import type { ConnectionId } from './connection_id.ts';
+import type { Identity } from './identity.ts';
+import type { ScheduleAt } from './schedule_at.ts';
+import type { TimeDuration } from './time_duration.ts';
+import type { Timestamp } from './timestamp.ts';
+import type { Uuid } from './uuid.ts';
 
 type DoNotPrettify =
   | Identity
