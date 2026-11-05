@@ -241,7 +241,7 @@ timestamp.to_micros_since_unix_epoch() / 1000
 
 ## Environment Variables
 
-Declare every environment key the module reads in one `#[spacetimedb::env]` struct. Values are strings. An enum deriving `EnvironmentValue` restricts the allowed strings, and `Option<T>` permits absence. Reducers, procedures and views read values from `ctx.env`; reading an undeclared key fails.
+Declare every environment key the module reads in one `#[spacetimedb::env]` struct, and read values from `ctx.env`. An enum deriving `EnvironmentValue` restricts the allowed strings, and `Option<T>` permits absence.
 
 ```rust
 #[derive(spacetimedb::EnvironmentValue)]
@@ -261,8 +261,6 @@ pub struct Env {
 let api_key: String = ctx.env.API_KEY();
 let log_level: Option<LogLevel> = ctx.env.LOG_LEVEL();
 ```
-
-Values come from the publishing shell or the `env` map in `spacetime.json`, and stored values persist across publishes. `spacetime publish --env-only` changes them without republishing the module.
 
 ## Scheduled Tables
 

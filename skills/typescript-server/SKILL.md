@@ -231,7 +231,7 @@ ctx.db.shipment.deliverBy.filter(new Range(
 
 ## Environment Variables
 
-Declare every environment key the module reads in the `env` option of `schema`. Values are strings. `t.enum(...)` restricts the allowed strings, and `.optional()` permits absence. Reducers, procedures and views read values from `ctx.env`; reading an undeclared key fails.
+Declare every environment key the module reads in the `env` option of `schema`, and read values from `ctx.env`. `t.enum(...)` restricts the allowed strings, and `.optional()` permits absence.
 
 ```typescript
 const spacetimedb = schema(
@@ -247,8 +247,6 @@ const spacetimedb = schema(
 const apiKey: string = ctx.env.API_KEY;
 const logLevel: 'info' | 'debug' | undefined = ctx.env.LOG_LEVEL;
 ```
-
-Values come from the publishing shell or the `env` map in `spacetime.json`, and stored values persist across publishes. `spacetime publish --env-only` changes them without republishing the module.
 
 ## Scheduled Tables
 
@@ -370,7 +368,7 @@ Insert an outbox row inside a reducer. Its transaction must commit before delive
 
 ## Submodules
 
-Mount another module's default export under a key in `schema`. Import it with `import * as`; a default import exposes only its schema, without its reducers and helpers. Mounting the same module under two keys gives independent table instances. Its tables are at `ctx.db.<key>`, and `ctx.as.<key>` is a context scoped to it that its reducers and helper functions accept. A nested mount adds a level: `ctx.db.outer.inner.<table>` and `ctx.as.outer.as.inner`.
+Mount another module under a key in `schema`, importing it with `import * as`. Each key is an independent instance with tables at `ctx.db.<key>`; pass `ctx.as.<key>` to its reducers and helpers. Nested mounts chain: `ctx.db.outer.inner.<table>` and `ctx.as.outer.as.inner`. Helpers run in the caller's transaction, so a thrown error rolls back every instance.
 
 ```typescript
 import * as authLib from './auth_lib';
@@ -378,10 +376,7 @@ import * as authLib from './auth_lib';
 const spacetimedb = schema({ players, myauth: authLib, backup: authLib });
 
 authLib.verifyToken(ctx.as.myauth, { token });
-const user = ctx.db.myauth.users.identity.find(ctx.sender);
 ```
-
-Helpers run inside the caller's transaction, so a thrown error rolls back writes in every mounted instance. Lifecycle reducers are allowed only in the root module.
 
 ## Client Visibility Filters
 

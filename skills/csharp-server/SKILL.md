@@ -244,7 +244,7 @@ timestamp.MicrosecondsSinceUnixEpoch / 1000
 
 ## Environment Variables
 
-Declare every environment key the module reads in one `[SpacetimeDB.Env]` struct. Values are strings: `string` requires a value, `string?` permits absence, and `[SpacetimeDB.EnvValues(...)]` restricts the allowed strings. Reducers, procedures and views read values from `ctx.Env`; reading an undeclared key fails.
+Declare every environment key the module reads in one `[SpacetimeDB.Env]` struct, and read values from `ctx.Env`. `[SpacetimeDB.EnvValues(...)]` restricts the allowed strings, and `string?` permits absence.
 
 ```csharp
 [SpacetimeDB.Env]
@@ -258,8 +258,6 @@ public partial struct EnvironmentSchema
 string apiKey = ctx.Env.API_KEY;
 string? logLevel = ctx.Env.LOG_LEVEL;
 ```
-
-Values come from the publishing shell or the `env` map in `spacetime.json`, and stored values persist across publishes. `spacetime publish --env-only` changes them without republishing the module.
 
 ## Scheduled Tables
 
