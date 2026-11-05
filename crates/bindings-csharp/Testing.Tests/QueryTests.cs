@@ -61,7 +61,7 @@ public class QueryTests
         Assert.Throws<InvalidOperationException>(
             () => test.RunQuery(new SqlQuery("DELETE FROM Entries"))
         );
-        Assert.Throws<EndOfStreamException>(
+        Assert.Throws<InvalidDataException>(
             () => test.RunQuery(new SqlQuery("SELECT Id FROM Entries"))
         );
         Assert.Equal("committed", Assert.Single(test.RunQuery(query)).Text);

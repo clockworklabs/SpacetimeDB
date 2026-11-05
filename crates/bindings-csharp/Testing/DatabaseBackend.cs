@@ -84,20 +84,15 @@ internal sealed class DatabaseBackend : IDatabaseBackend
         CheckActive();
         ArgumentNullException.ThrowIfNull(query);
         var snapshot = datastore.Query(query.ToSql(), DatabaseIdentity);
-        using var reader = new BinaryReader(new MemoryStream(snapshot));
-        // The bridge returns BSATN array<array<u8>>; decode framed rows without copying each one.
-        var count = checked((int)reader.ReadUInt32());
+        var offset = 0;
+        var count = FramedRows.ReadCount(snapshot, ref offset);
+        // Each row takes at least its 4-byte length, so this bounds the allocation.
+        if (count > (uint)(snapshot.Length - offset) / sizeof(uint))
+            throw new InvalidDataException("Truncated native row snapshot.");
         var rows = new T[count];
-        for (var i = 0; i < count; i++)
-        {
-            var length = reader.ReadUInt32();
-            var end = reader.BaseStream.Position + length;
-            rows[i] = IStructuralReadWrite.Read<T>(reader);
-            if (reader.BaseStream.Position != end)
-                throw new InvalidDataException("Query result row does not match its BSATN schema.");
-        }
-        if (reader.BaseStream.Position != reader.BaseStream.Length)
-            throw new InvalidDataException("Trailing bytes in native query result.");
+        for (var i = 0; i < rows.Length; i++)
+            rows[i] = FramedRows.ReadRow<T>(snapshot, ref offset);
+        FramedRows.CheckEnd(snapshot, offset);
         return rows;
     }
 
