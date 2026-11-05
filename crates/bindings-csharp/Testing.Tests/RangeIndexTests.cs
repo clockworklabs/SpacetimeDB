@@ -8,7 +8,7 @@ public class RangeIndexTests
     [Fact]
     public void InclusiveRangesAndCompositePrefixesUseTheOwningTransaction()
     {
-        using var test = TestContext.Create(typeof(Point).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Point).Assembly);
         test.WithReducerTx(
             TestAuth.Internal(),
             ctx =>
@@ -83,7 +83,7 @@ public class RangeIndexTests
         Assert.Throws<InvalidOperationException>(
             () => new SpacetimeDB.Local().Points.Score.Delete(20u)
         );
-        using var test = TestContext.Create(typeof(Point).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Point).Assembly);
         for (uint id = 1; id <= 2; id++)
             test.Db.Points.Insert(
                 new Point

@@ -9,8 +9,8 @@ public class OwnershipTests
     public void FixtureAndTransactionAccessHaveIndependentLifetimes()
     {
         var namespaces = Schema.CreateNamespaces();
-        using var backend = new DatabaseBackend(Schema.Build(), namespaces);
-        using var otherBackend = new DatabaseBackend(Schema.Build(), Schema.CreateNamespaces());
+        using var backend = new DatabaseBackend(TestSchema.Build(), namespaces);
+        using var otherBackend = new DatabaseBackend(TestSchema.Build(), Schema.CreateNamespaces());
         var fixture = new DatabaseAccess(backend);
         var otherFixture = new DatabaseAccess(otherBackend);
         Assert.Same(namespaces, fixture.Backend.Namespaces);

@@ -8,7 +8,7 @@ public class ReducerTests
     [Fact]
     public void ReducerCommitsCallerTimestampAndMessageAndRollsBackOnFailure()
     {
-        using var test = TestContext.Create(typeof(Module).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Module).Assembly);
         var auth = TestAuth.Internal();
         var now = new Timestamp(1_234_567);
         test.Clock.Set(now);
@@ -39,11 +39,11 @@ public class ReducerTests
     [Fact]
     public void ParallelFixturesHaveIndependentMessagesAndIds()
     {
-        using var first = TestContext.Create(typeof(Module).Assembly);
-        using var second = TestContext.Create(typeof(Module).Assembly);
+        using var first = ModuleTestContext.Create(typeof(Module).Assembly);
+        using var second = ModuleTestContext.Create(typeof(Module).Assembly);
         var auth = TestAuth.Internal();
 
-        void Send(TestContext test, string text) =>
+        void Send(ModuleTestContext test, string text) =>
             test.WithReducerTx(
                 auth,
                 ctx =>
