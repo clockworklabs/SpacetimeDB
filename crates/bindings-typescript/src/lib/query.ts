@@ -1,24 +1,24 @@
-import { ConnectionId } from './connection_id';
-import { Identity } from './identity';
+import { ConnectionId } from './connection_id.ts';
+import { Identity } from './identity.ts';
 import type {
   ColumnIndex,
   IndexColumns,
   IndexOpts,
   UnbrandedIdentity,
-} from './indexes';
-import type { UntypedSchemaDef } from './schema';
-import type { UntypedTableDef } from './table';
-import type { UntypedTableSchema } from './table_schema';
-import { Timestamp } from './timestamp';
+} from './indexes.ts';
+import type { UntypedSchemaDef } from './schema.ts';
+import type { UntypedTableDef } from './table.ts';
+import type { UntypedTableSchema } from './table_schema.ts';
+import { Timestamp } from './timestamp.ts';
 import type {
   ColumnBuilder,
   ColumnMetadata,
   RowBuilder,
   TypeBuilder,
-} from './type_builders';
-import type { Values } from './type_util';
-import type { Bool as SatsBool } from './algebraic_type_variants';
-import { Uuid } from './uuid';
+} from './type_builders.ts';
+import type { Values } from './type_util.ts';
+import type { Bool as SatsBool } from './algebraic_type_variants.ts';
+import { Uuid } from './uuid.ts';
 
 /**
  * Helper to get the set of table names.

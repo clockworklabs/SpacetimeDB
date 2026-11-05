@@ -1,8 +1,8 @@
-import { getByAccessorPath } from '../lib/accessor_path';
+import { getByAccessorPath } from '../lib/accessor_path.ts';
 import { shallowRef, watch, onUnmounted } from 'vue';
-import { useSpacetimeDB } from './useSpacetimeDB';
-import type { UntypedReducerDef } from '../sdk/reducers';
-import type { ParamsType } from '../sdk';
+import { useSpacetimeDB } from './useSpacetimeDB.ts';
+import type { UntypedReducerDef } from '../sdk/reducers.ts';
+import type { ParamsType } from '../sdk/index.ts';
 
 export function useReducer<ReducerDef extends UntypedReducerDef>(
   reducerDef: ReducerDef
