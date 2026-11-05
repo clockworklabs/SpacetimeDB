@@ -98,8 +98,9 @@ uint32_t STDB_TEST_CALL stdb_test_v1_transaction_begin(
 /* Commit/rollback finish the transaction but do not free its handle, even if the
  * database reports an error. Further operations return TRANSACTION_FINISHED.
  * Argument errors do not finish it. Table-operation errors leave it pending;
- * callers should roll back to discard any partial changes. An internal panic
- * stops the worker and rolls back pending work; later calls report DATASTORE_CLOSED.
+ * callers should roll back to discard any partial changes. An internal error,
+ * including a panic, stops the worker and rolls back pending work; later calls
+ * report INTERNAL_ERROR with the original message.
  */
 uint32_t STDB_TEST_CALL stdb_test_v1_transaction_commit(
     const StdbTestTransaction *transaction, StdbTestBuffer *error);
