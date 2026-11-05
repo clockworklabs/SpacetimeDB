@@ -1598,6 +1598,43 @@ impl MutTxId {
         Ok(())
     }
 
+    /// Request a cache-policy change as part of a migration transaction.
+    /// Only metadata changes here. Commit loads the required pages and blobs,
+    /// applies row changes under the old policy, then converts pages and adjusts blob pins.
+    /// Deferring conversion avoids having to reverse it if a later migration step fails.
+    pub(crate) fn alter_table_cache_policy(&mut self, table_id: TableId, policy: TableCachePolicy) -> Result<()> {
+        let schema = self.schema_for_table(table_id)?;
+        let old_policy = schema.cache_policy;
+        if old_policy == policy {
+            return Ok(());
+        }
+        if schema.table_type == spacetimedb_lib::db::auth::StTableType::System {
+            return Err(anyhow!("system tables must remain in memory").into());
+        }
+        if old_policy == TableCachePolicy::NoRequirement || policy == TableCachePolicy::NoRequirement {
+            return Err(anyhow!("cache-policy migrations involving object storage are not supported").into());
+        }
+
+        // Update the requested policy in the cached schemas. Pages and blobs
+        // keep using the old policy until commit has applied all row changes.
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+        tx_table.with_mut_schema_and_clone(commit_table, |schema| schema.cache_policy = policy);
+        // Record the old value before updating system-table rows: those updates
+        // can fail, in which case rollback must restore the cached schema.
+        self.push_schema_change(PendingSchemaChange::TableAlterCachePolicy(table_id, old_policy));
+
+        self.delete_col_eq(
+            ST_TABLE_CACHE_POLICY_ID,
+            StTableCachePolicyFields::TableId.col_id(),
+            &table_id.into(),
+        )?;
+        // No policy row means RequiredInMemory, including after a disk-to-memory migration.
+        if policy != TableCachePolicy::RequiredInMemory {
+            self.insert_via_serialize_bsatn(ST_TABLE_CACHE_POLICY_ID, &StTableCachePolicyRow { table_id, policy })?;
+        }
+        Ok(())
+    }
+
     /// Change the primary key of the table identified by `table_id`.
     ///
     /// Updates both the in-memory schema and the `st_table` system table.

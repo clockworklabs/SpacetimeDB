@@ -199,6 +199,8 @@ type NormalizeIndexColumns<
 export type TableOpts<Row extends RowObj> = {
   name?: string;
   public?: boolean;
+  /** The furthest storage tier the table's pages and blobs may reside in. */
+  cachePolicy?: 'required_in_memory' | 'required_on_disk' | 'no_requirement';
   indexes?: IndexOpts<keyof Row & string>[]; // declarative multi‑column indexes
   constraints?: ConstraintOpts<keyof Row & string>[];
   /**
@@ -373,6 +375,7 @@ export function table<
   const {
     name,
     public: isPublic = false,
+    cachePolicy = 'required_in_memory',
     indexes: userIndexes = [],
     scheduled,
     event: isEvent = false,
@@ -545,6 +548,20 @@ export function table<
     tableName: name,
     rowSpacetimeType: productType,
     tableDef: (ctx, accName) => {
+      if (cachePolicy !== 'required_in_memory') {
+        let policy;
+        switch (cachePolicy) {
+          case 'required_on_disk':
+            policy = { tag: 'RequiredOnDisk' } as const;
+            break;
+          case 'no_requirement':
+            policy = { tag: 'NoRequirement' } as const;
+            break;
+          default:
+            throw new TypeError(`Invalid cachePolicy: ${cachePolicy}`);
+        }
+        ctx.moduleDef.tableCachePolicies.push({ tableName: accName, policy });
+      }
       const tableName = name ?? accName;
       if (row.typeName === undefined) {
         row.typeName = toPascalCase(tableName);

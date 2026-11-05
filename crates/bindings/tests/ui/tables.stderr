@@ -213,9 +213,9 @@ error[E0277]: `&'a Alpha` cannot appear as an argument to an index filtering ope
              &Identity
              &Lifecycle
              &TableAccess
+             &TableCachePolicy
              &TableType
              &bool
-             &ethnum::int::I256
            and $N others
 note: required by a bound in `UniqueColumn::<Tbl, <Col as spacetimedb::table::Column>::ColType, Col>::find`
   --> src/table.rs
@@ -245,9 +245,9 @@ help: the trait `FilterableValue` is not implemented for `Alpha`
              &Identity
              &Lifecycle
              &TableAccess
+             &TableCachePolicy
              &TableType
              &bool
-             &ethnum::int::I256
            and $N others
    = note: required for `Alpha` to implement `spacetimedb::table::IndexScanRangeBounds<(Alpha,), spacetimedb::table::SingleBound>`
 note: required by a bound in `RangedIndex::<Tbl, IndexType, Idx>::filter`

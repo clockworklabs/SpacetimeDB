@@ -397,6 +397,17 @@ impl BlobSet {
         Ok(())
     }
 
+    /// Release one in-memory row reference's protection against eviction.
+    /// The blob's logical reference count is unchanged.
+    pub(crate) fn unpin(&self, hash: BlobHashWrapper) {
+        let mut entries = self.entries.write();
+        let Some(BlobEntry::Resident { pins, .. }) = entries.get_mut(&hash) else {
+            unreachable!("a policy pin keeps the blob resident")
+        };
+        assert!(*pins > 0, "each in-memory reference owns a policy pin");
+        *pins -= 1;
+    }
+
     /// Apply a fallible operation to each blob in this set.
     ///
     /// Note that non-resident blobs will not be faulted in, but read directly

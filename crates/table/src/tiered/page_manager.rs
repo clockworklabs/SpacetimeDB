@@ -440,6 +440,39 @@ pub struct PageManager {
 }
 
 impl PageManager {
+    /// Wrap a memory table's page in a tiered slot, keeping its allocation and
+    /// memory charge. An empty slot must stay empty to preserve page indices.
+    pub(super) fn adopt_resident(
+        &self,
+        page: Option<(Box<Page>, BudgetPermit)>,
+        fixed_row_size: Size,
+    ) -> PageSlotHandle {
+        let Some((page, permit)) = page else {
+            return PageSlotHandle {
+                slot: Arc::new(Mutex::new(PageSlot::Absent)),
+            };
+        };
+        let metadata = page.metadata(fixed_row_size);
+        let inner = self
+            .resident
+            .reserve_page_with_permit(permit, PooledPage::new(page, self.pool.clone()));
+        self.redeem(ReservedPage { inner, metadata }, EvictionPolicy::Evictable)
+    }
+
+    /// Take a loaded page out of its slot so a memory table can own it directly.
+    /// The caller must release all other slot handles, page pins, and read/write
+    /// guards first; unwrapping the Arcs below checks that requirement.
+    pub(super) fn detach_resident(&self, slot: PageSlotHandle) -> Option<(Box<Page>, BudgetPermit)> {
+        let slot = Arc::try_unwrap(slot.slot)
+            .expect("page ownership transfer requires exclusive slot ownership")
+            .into_inner();
+        match slot {
+            PageSlot::Absent => None,
+            PageSlot::Resident { handle, .. } => Some(self.resident.detach_page(handle.frame)),
+            PageSlot::NonResident { .. } => unreachable!("conversion preparation loaded and pinned every page"),
+        }
+    }
+
     pub(super) fn has_unlimited_budget(&self) -> bool {
         self.resident.has_unlimited_budget()
     }

@@ -22,7 +22,7 @@ use std::hash::Hash;
 use crate::error::{IdentifierError, ValidationErrors};
 use crate::identifier::{Identifier, NamespacePath, NamespacedIdentifier};
 use crate::reducer_name::ReducerName;
-use crate::schema::{Schema, TableSchema};
+use crate::schema::{Schema, TableCachePolicy, TableSchema};
 use crate::type_for_generate::{AlgebraicTypeUse, ProductTypeDef, TypespaceForGenerate};
 use deserialize::ArgsSeed;
 use enum_map::EnumMap;
@@ -35,8 +35,8 @@ use spacetimedb_lib::db::raw_def::v10::{
     ExplicitNames, MethodOrAny, RawColumnDefaultValueV10, RawConstraintDefV10, RawHttpHandlerDefV10,
     RawHttpRouteDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section,
     RawOutboxDefV10, RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10,
-    RawScopedTypeNameV10, RawSequenceDefV10, RawSubmoduleV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10,
-    RawViewPrimaryKeyDefV10,
+    RawScopedTypeNameV10, RawSequenceDefV10, RawSubmoduleV10, RawTableCachePolicyV10, RawTableDefV10, RawTypeDefV10,
+    RawViewDefV10, RawViewPrimaryKeyDefV10,
 };
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
@@ -1151,9 +1151,16 @@ impl From<ModuleDef> for RawModuleDefV10 {
         // Also collect ExplicitNames for tables: accessor_name → source_name, name → canonical_name.
         let mut schedules = Vec::new();
         let mut outboxes = Vec::new();
+        let mut cache_policies = Vec::new();
         let raw_tables: Vec<RawTableDefV10> = tables
             .into_values()
             .map(|td| {
+                if td.cache_policy != TableCachePolicy::RequiredInMemory {
+                    cache_policies.push(RawTableCachePolicyV10 {
+                        table_name: td.accessor_name.clone().into(),
+                        policy: td.cache_policy,
+                    });
+                }
                 // Always emit name as ExplicitNames canonical_name.
                 explicit_names.insert_table(
                     RawIdentifier::from(td.accessor_name.clone()),
@@ -1184,6 +1191,9 @@ impl From<ModuleDef> for RawModuleDefV10 {
             .collect();
         if !raw_tables.is_empty() {
             sections.push(RawModuleDefV10Section::Tables(raw_tables));
+        }
+        if !cache_policies.is_empty() {
+            sections.push(RawModuleDefV10Section::TableCachePolicies(cache_policies));
         }
 
         // Collect ExplicitNames for reducers: accessor_name → source_name, name → canonical_name.
@@ -1408,6 +1418,9 @@ pub struct TableDef {
     /// Whether this table is public or private.
     pub table_access: TableAccess,
 
+    /// Residency requirement for this table's pages and blobs.
+    pub cache_policy: TableCachePolicy,
+
     /// Whether this is an event table.
     ///
     /// Event tables persist to the commitlog but are not merged into committed state.
@@ -1490,7 +1503,8 @@ impl From<TableDef> for RawTableDefV10 {
             table_access,
             is_event,
             accessor_name,
-            outbox: _, // V10 stores outboxes in a separate section; handled in From<ModuleDef>.
+            outbox: _,       // V10 stores outboxes in a separate section; handled in From<ModuleDef>.
+            cache_policy: _, // Stored in the optional TableCachePolicies section.
         } = val;
 
         RawTableDefV10 {
@@ -1541,6 +1555,7 @@ impl From<ViewDef> for TableDef {
             schedule: None,
             table_type: TableType::User,
             table_access: if is_public { Public } else { Private },
+            cache_policy: TableCachePolicy::RequiredInMemory,
             is_event: false,
             accessor_name,
             outbox: None,
