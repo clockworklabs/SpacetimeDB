@@ -18,8 +18,8 @@ spacetimedb-physical-plan.workspace = true
 spacetimedb-schema.workspace = true
 
 [dev-dependencies]
-spacetimedb-engine = { workspace = true, features = ["test"] }
-spacetimedb-sats.workspace = true
+spacetimedb-engine = { path = "../engine", features = ["test"] }
+spacetimedb-sats = { path = "../sats" }
 
 [features]
 # Native engine integration; leave disabled for portable datastore builds.
