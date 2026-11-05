@@ -44,7 +44,7 @@ fn main() -> anyhow::Result<()> {
             let code = regex_replace!(
                 &code,
                 r#"from ['"]spacetimedb(?:/schema)?['"];"#,
-                r#"from "../../lib/type_builders";"#
+                r#"from "../../lib/type_builders.ts";"#
             );
 
             // Elide types which are related to client-side only things

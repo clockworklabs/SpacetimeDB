@@ -1144,6 +1144,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ci-test-csharp-build"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ci-common",
+ "duct",
+ "serde_json",
+ "tempfile",
+ "xmltree",
+]
+
+[[package]]
 name = "ci-typescript-submodules"
 version = "0.1.0"
 dependencies = [

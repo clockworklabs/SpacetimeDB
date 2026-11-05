@@ -3,7 +3,7 @@
 
 // This was generated using spacetimedb cli version 2.13.0 (commit 21e0f6b14c0ec89ea76d800dbe01cc79dba02d95).
 
-import * as moduleSchema from './module';
+import * as moduleSchema from './module.ts';
 import {
   createClient,
   type EventContextInterface,
@@ -12,7 +12,7 @@ import {
   type ErrorContextInterface,
   type SubscriptionHandleImpl,
   type RemoteModuleOf,
-} from '../../index';
+} from '../../index.ts';
 const client = createClient(moduleSchema, {
   cliVersion: '2.13.0',
   tableAliases: {},
@@ -37,5 +37,5 @@ export type SubscriptionEventContext =
   SubscriptionEventContextInterface<RemoteModule>;
 export type ErrorContext = ErrorContextInterface<RemoteModule>;
 export type SubscriptionHandle = SubscriptionHandleImpl<RemoteModule>;
-export type * as Reducers from './types/reducers';
-export type * as Procedures from './types/procedures';
+export type * as Reducers from './types/reducers.ts';
+export type * as Procedures from './types/procedures.ts';

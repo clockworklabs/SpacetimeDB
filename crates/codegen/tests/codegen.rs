@@ -869,6 +869,19 @@ fn typescript_import_extension_applies_to_every_relative_import() {
     }
 }
 
+/// Babel, which React Native and Expo build with, rejects `declare` class fields by default.
+#[test]
+fn typescript_bindings_have_no_declare_fields() {
+    let module = compiled_module();
+    for file in generate(module, &TypeScript::default(), &CodegenOptions::default()) {
+        assert!(
+            !file.code.lines().any(|line| line.trim_start().starts_with("declare ")),
+            "{} has a `declare` field",
+            file.filename
+        );
+    }
+}
+
 fn compile_typescript_receiver_bindings(module: &ModuleDef, sender: &str) {
     let project = tempfile::tempdir().unwrap();
     for dependency in ["receiver", "other"] {

@@ -1,46 +1,46 @@
-import { environment, type EnvironmentFor } from './environment';
+import { environment, type EnvironmentFor } from './environment.ts';
 import {
   AlgebraicType,
   ProductType,
   type Deserializer,
   type Serializer,
-} from '../lib/algebraic_type';
-import { FunctionVisibility } from '../lib/autogen/types';
-import BinaryReader from '../lib/binary_reader';
-import BinaryWriter from '../lib/binary_writer';
-import type { ConnectionId } from '../lib/connection_id';
-import { Identity } from '../lib/identity';
-import type { ParamsObj, ReducerCtx } from '../lib/reducers';
-import { type UntypedSchemaDef } from '../lib/schema';
-import type { TimeDuration } from '../lib/time_duration';
-import type { ScheduleTableForParams } from '../lib/table_schema';
-import { Timestamp } from '../lib/timestamp';
+} from '../lib/algebraic_type.ts';
+import { FunctionVisibility } from '../lib/autogen/types.ts';
+import BinaryReader from '../lib/binary_reader.ts';
+import BinaryWriter from '../lib/binary_writer.ts';
+import type { ConnectionId } from '../lib/connection_id.ts';
+import { Identity } from '../lib/identity.ts';
+import type { ParamsObj, ReducerCtx } from '../lib/reducers.ts';
+import { type UntypedSchemaDef } from '../lib/schema.ts';
+import type { TimeDuration } from '../lib/time_duration.ts';
+import type { ScheduleTableForParams } from '../lib/table_schema.ts';
+import { Timestamp } from '../lib/timestamp.ts';
 import {
   type Infer,
   type InferTypeOfRow,
   type t,
   type TypeBuilder,
-} from '../lib/type_builders';
-import { bsatnBaseSize } from '../lib/util';
-import { Uuid } from '../lib/uuid';
-import { httpClient, type HttpClient } from './http_internal';
-import type { DbView } from './db_view';
-import { makeRandom, makeRandomFromSeed, type Random } from './rng';
+} from '../lib/type_builders.ts';
+import { bsatnBaseSize } from '../lib/util.ts';
+import { Uuid } from '../lib/uuid.ts';
+import { httpClient, type HttpClient } from './http_internal.ts';
+import type { DbView } from './db_view.ts';
+import { makeRandom, makeRandomFromSeed, type Random } from './rng.ts';
 import {
   assignTxAliasViews,
   buildProcedureAliasCtxMap,
   callUserFunction,
   ReducerCtxImpl,
   runWithTx,
-} from './runtime';
-import { hostBackend, type DatastoreBackend } from './backend';
+} from './runtime.ts';
+import { hostBackend, type DatastoreBackend } from './backend.ts';
 import {
   exportContext,
   registerExport,
   type SubmoduleDispatchInfo,
   type ModuleExport,
   type SchemaInner,
-} from './schema';
+} from './schema.ts';
 
 export type ProcedureExport<
   S extends UntypedSchemaDef,

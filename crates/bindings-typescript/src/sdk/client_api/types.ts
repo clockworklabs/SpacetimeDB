@@ -8,140 +8,140 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../lib/type_builders';
+} from '../../lib/type_builders.ts';
 
-import { BsatnRowList } from './module';
+import { BsatnRowList } from './module.ts';
 export { BsatnRowList };
 export type BsatnRowList = __Infer<typeof BsatnRowList>;
 
-import { CallProcedure } from './module';
+import { CallProcedure } from './module.ts';
 export { CallProcedure };
 export type CallProcedure = __Infer<typeof CallProcedure>;
 
-import { CallReducer } from './module';
+import { CallReducer } from './module.ts';
 export { CallReducer };
 export type CallReducer = __Infer<typeof CallReducer>;
 
-import { ClientMessage } from './module';
+import { ClientMessage } from './module.ts';
 export { ClientMessage };
 export type ClientMessage = __Infer<typeof ClientMessage>;
 
-import { EventTableRows } from './module';
+import { EventTableRows } from './module.ts';
 export { EventTableRows };
 export type EventTableRows = __Infer<typeof EventTableRows>;
 
-import { InitialConnection } from './module';
+import { InitialConnection } from './module.ts';
 export { InitialConnection };
 export type InitialConnection = __Infer<typeof InitialConnection>;
 
-import { OneOffQuery } from './module';
+import { OneOffQuery } from './module.ts';
 export { OneOffQuery };
 export type OneOffQuery = __Infer<typeof OneOffQuery>;
 
-import { OneOffQueryResult } from './module';
+import { OneOffQueryResult } from './module.ts';
 export { OneOffQueryResult };
 export type OneOffQueryResult = __Infer<typeof OneOffQueryResult>;
 
-import { PersistentTableRows } from './module';
+import { PersistentTableRows } from './module.ts';
 export { PersistentTableRows };
 export type PersistentTableRows = __Infer<typeof PersistentTableRows>;
 
-import { ProcedureResult } from './module';
+import { ProcedureResult } from './module.ts';
 export { ProcedureResult };
 export type ProcedureResult = __Infer<typeof ProcedureResult>;
 
-import { ProcedureStatus } from './module';
+import { ProcedureStatus } from './module.ts';
 export { ProcedureStatus };
 export type ProcedureStatus = __Infer<typeof ProcedureStatus>;
 
-import { QueryRows } from './module';
+import { QueryRows } from './module.ts';
 export { QueryRows };
 export type QueryRows = __Infer<typeof QueryRows>;
 
-import { QuerySetId } from './module';
+import { QuerySetId } from './module.ts';
 export { QuerySetId };
 export type QuerySetId = __Infer<typeof QuerySetId>;
 
-import { QuerySetUpdate } from './module';
+import { QuerySetUpdate } from './module.ts';
 export { QuerySetUpdate };
 export type QuerySetUpdate = __Infer<typeof QuerySetUpdate>;
 
-import { ReducerOk } from './module';
+import { ReducerOk } from './module.ts';
 export { ReducerOk };
 export type ReducerOk = __Infer<typeof ReducerOk>;
 
-import { ReducerOutcome } from './module';
+import { ReducerOutcome } from './module.ts';
 export { ReducerOutcome };
 export type ReducerOutcome = __Infer<typeof ReducerOutcome>;
 
-import { ReducerResult } from './module';
+import { ReducerResult } from './module.ts';
 export { ReducerResult };
 export type ReducerResult = __Infer<typeof ReducerResult>;
 
-import { RowSizeHint } from './module';
+import { RowSizeHint } from './module.ts';
 export { RowSizeHint };
 export type RowSizeHint = __Infer<typeof RowSizeHint>;
 
-import { ServerMessage } from './module';
+import { ServerMessage } from './module.ts';
 export { ServerMessage };
 export type ServerMessage = __Infer<typeof ServerMessage>;
 
-import { SingleTableRows } from './module';
+import { SingleTableRows } from './module.ts';
 export { SingleTableRows };
 export type SingleTableRows = __Infer<typeof SingleTableRows>;
 
-import { Subscribe } from './module';
+import { Subscribe } from './module.ts';
 export { Subscribe };
 export type Subscribe = __Infer<typeof Subscribe>;
 
-import { SubscribeApplied } from './module';
+import { SubscribeApplied } from './module.ts';
 export { SubscribeApplied };
 export type SubscribeApplied = __Infer<typeof SubscribeApplied>;
 
-import { SubscribeBatch } from './module';
+import { SubscribeBatch } from './module.ts';
 export { SubscribeBatch };
 export type SubscribeBatch = __Infer<typeof SubscribeBatch>;
 
-import { SubscribeBatchApplied } from './module';
+import { SubscribeBatchApplied } from './module.ts';
 export { SubscribeBatchApplied };
 export type SubscribeBatchApplied = __Infer<typeof SubscribeBatchApplied>;
 
-import { SubscribeSet } from './module';
+import { SubscribeSet } from './module.ts';
 export { SubscribeSet };
 export type SubscribeSet = __Infer<typeof SubscribeSet>;
 
-import { SubscribeSetOutcome } from './module';
+import { SubscribeSetOutcome } from './module.ts';
 export { SubscribeSetOutcome };
 export type SubscribeSetOutcome = __Infer<typeof SubscribeSetOutcome>;
 
-import { SubscribeSetResult } from './module';
+import { SubscribeSetResult } from './module.ts';
 export { SubscribeSetResult };
 export type SubscribeSetResult = __Infer<typeof SubscribeSetResult>;
 
-import { SubscriptionError } from './module';
+import { SubscriptionError } from './module.ts';
 export { SubscriptionError };
 export type SubscriptionError = __Infer<typeof SubscriptionError>;
 
-import { TableUpdate } from './module';
+import { TableUpdate } from './module.ts';
 export { TableUpdate };
 export type TableUpdate = __Infer<typeof TableUpdate>;
 
-import { TableUpdateRows } from './module';
+import { TableUpdateRows } from './module.ts';
 export { TableUpdateRows };
 export type TableUpdateRows = __Infer<typeof TableUpdateRows>;
 
-import { TransactionUpdate } from './module';
+import { TransactionUpdate } from './module.ts';
 export { TransactionUpdate };
 export type TransactionUpdate = __Infer<typeof TransactionUpdate>;
 
-import { Unsubscribe } from './module';
+import { Unsubscribe } from './module.ts';
 export { Unsubscribe };
 export type Unsubscribe = __Infer<typeof Unsubscribe>;
 
-import { UnsubscribeApplied } from './module';
+import { UnsubscribeApplied } from './module.ts';
 export { UnsubscribeApplied };
 export type UnsubscribeApplied = __Infer<typeof UnsubscribeApplied>;
 
-import { UnsubscribeFlags } from './module';
+import { UnsubscribeFlags } from './module.ts';
 export { UnsubscribeFlags };
 export type UnsubscribeFlags = __Infer<typeof UnsubscribeFlags>;

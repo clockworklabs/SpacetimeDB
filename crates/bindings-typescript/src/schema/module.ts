@@ -2,21 +2,21 @@
  * Mirrors the module schema API in ../server/schema.ts for generated client bindings,
  * preserving schemas and metadata while omitting server function bodies.
  */
-import type { ParamsObj } from '../lib/reducers';
-import type { UntypedTableSchema } from '../lib/table_schema';
-import { type TypeBuilder } from '../lib/type_builders';
-import type { ReducerOptsWithOptionalName } from '../server/reducers';
-import type { ProcedureOptsWithOptionalName } from '../server/procedures';
-import type { ModuleSettings } from '../server/schema';
+import type { ParamsObj } from '../lib/reducers.ts';
+import type { UntypedTableSchema } from '../lib/table_schema.ts';
+import { type TypeBuilder } from '../lib/type_builders.ts';
+import type { ReducerOptsWithOptionalName } from '../server/reducers.ts';
+import type { ProcedureOptsWithOptionalName } from '../server/procedures.ts';
+import type { ModuleSettings } from '../server/schema.ts';
 import type {
   ViewOpts,
   ViewReturnTypeBuilder,
   ValidateViewPrimaryKey,
-} from '../server/views';
+} from '../server/views.ts';
 
-export * from '../lib/type_builders';
-export { table } from '../lib/table';
-export { CaseConversionPolicy } from '../lib/autogen/types';
+export * from '../lib/type_builders.ts';
+export { table } from '../lib/table.ts';
+export { CaseConversionPolicy } from '../lib/autogen/types.ts';
 
 export type ModuleSchemaExports = { readonly default: Schema<any> };
 export type SchemaEntry =

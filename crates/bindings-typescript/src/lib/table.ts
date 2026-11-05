@@ -1,7 +1,7 @@
-import type { RemoteReducer } from './remote_module';
-import { makeOutbox } from './remote_module';
-import type { ProcedureExport, ReducerExport, t } from '../server';
-import type { errors } from '../server/errors';
+import type { RemoteReducer } from './remote_module.ts';
+import { makeOutbox } from './remote_module.ts';
+import type { ProcedureExport, ReducerExport, t } from '../server/index.ts';
+import type { errors } from '../server/errors.ts';
 import {
   ExplicitNameEntry,
   RawColumnDefaultValueV10,
@@ -10,9 +10,9 @@ import {
   RawIndexDefV10,
   RawSequenceDefV10,
   RawTableDefV10,
-} from './autogen/types';
-import BinaryWriter from './binary_writer';
-import type { AllUnique, ConstraintOpts } from './constraints';
+} from './autogen/types.ts';
+import BinaryWriter from './binary_writer.ts';
+import type { AllUnique, ConstraintOpts } from './constraints.ts';
 import type {
   ColumnIndex,
   IndexColumns,
@@ -20,13 +20,13 @@ import type {
   IndexOpts,
   ReadonlyIndexes,
   UntypedIndex,
-} from './indexes';
-import ScheduleAt from './schedule_at';
+} from './indexes.ts';
+import ScheduleAt from './schedule_at.ts';
 import type {
   OutboxMetadata,
   TableSchema,
   TableSchedule,
-} from './table_schema';
+} from './table_schema.ts';
 import {
   RowBuilder,
   type ColumnBuilder,
@@ -34,13 +34,13 @@ import {
   type InferTypeOfRow,
   type RowObj,
   type TypeBuilder,
-} from './type_builders';
+} from './type_builders.ts';
 import type {
   InvalidColumnMetadata,
   Prettify,
   ValidateColumnMetadata,
-} from './type_util';
-import { toPascalCase } from './util';
+} from './type_util.ts';
+import { toPascalCase } from './util.ts';
 
 export type AlgebraicTypeRef = number;
 type ColId = number;

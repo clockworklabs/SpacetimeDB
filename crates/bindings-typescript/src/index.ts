@@ -1,25 +1,25 @@
-export * from './lib/connection_id';
-export * from './lib/errors';
-export * from './lib/algebraic_type';
-export * from './lib/algebraic_value';
-export { default as BinaryReader } from './lib/binary_reader';
-export { default as BinaryWriter } from './lib/binary_writer';
-export * from './lib/schedule_at';
-export * from './lib/time_duration';
-export * from './lib/timestamp';
-export * from './lib/uuid';
-export * from './lib/util';
-export * from './lib/identity';
-export * from './lib/option';
-export * from './lib/result';
-export * from './lib/query';
-export * from './sdk';
+export * from './lib/connection_id.ts';
+export * from './lib/errors.ts';
+export * from './lib/algebraic_type.ts';
+export * from './lib/algebraic_value.ts';
+export { default as BinaryReader } from './lib/binary_reader.ts';
+export { default as BinaryWriter } from './lib/binary_writer.ts';
+export * from './lib/schedule_at.ts';
+export * from './lib/time_duration.ts';
+export * from './lib/timestamp.ts';
+export * from './lib/uuid.ts';
+export * from './lib/util.ts';
+export * from './lib/identity.ts';
+export * from './lib/option.ts';
+export * from './lib/result.ts';
+export * from './lib/query.ts';
+export * from './sdk/index.ts';
 
 export {
   schema as moduleSchema,
   Schema as ModuleSchema,
   FunctionSchema,
-} from './schema/module';
+} from './schema/module.ts';
 export type {
   ModuleSchemaExports,
   SchemaEntry,
@@ -28,12 +28,12 @@ export type {
   FunctionOptions,
   ViewOptions,
   SchemaOptions,
-} from './schema/module';
-export { CaseConversionPolicy } from './lib/autogen/types';
+} from './schema/module.ts';
+export { CaseConversionPolicy } from './lib/autogen/types.ts';
 
 export {
   createClient,
   type Client,
   type ClientConnection,
   type RemoteModuleOfSchema,
-} from './sdk/create_client';
+} from './sdk/create_client.ts';

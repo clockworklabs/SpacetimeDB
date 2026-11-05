@@ -4,26 +4,26 @@ import {
   Schema,
   type ModuleSchemaExports,
   type SchemaEntries,
-} from '../schema/module';
+} from '../schema/module.ts';
 import {
   ModuleContext,
   tableToSchema,
   type TableToSchema,
-} from '../lib/schema';
-import { table, type CoerceRow, type UntypedTableDef } from '../lib/table';
-import type { TableSchema, UntypedTableSchema } from '../lib/table_schema';
-import { ArrayBuilder, OptionBuilder, RowBuilder } from '../lib/type_builders';
-import { makeQueryBuilder, type QueryBuilder } from '../lib/query';
-import type { NestAccessors, SnakeCase } from '../lib/type_util';
-import { toSnakeCase, type CoerceParams } from '../lib/util';
-import type { DbConnectionConfig } from './db_connection_impl';
-import { DbConnectionImpl } from './db_connection_impl';
-import { DbConnectionBuilder as Builder } from './db_connection_builder';
-import { SubscriptionBuilderImpl } from './subscription_builder_impl';
-import { reducerSchema, reducersToSchema } from './reducers';
-import { procedureSchema } from './procedures';
-import { _MINIMUM_CLI_VERSION } from './version';
-import type { UntypedRemoteModule } from './spacetime_module';
+} from '../lib/schema.ts';
+import { table, type CoerceRow, type UntypedTableDef } from '../lib/table.ts';
+import type { TableSchema, UntypedTableSchema } from '../lib/table_schema.ts';
+import { ArrayBuilder, OptionBuilder, RowBuilder } from '../lib/type_builders.ts';
+import { makeQueryBuilder, type QueryBuilder } from '../lib/query.ts';
+import type { NestAccessors, SnakeCase } from '../lib/type_util.ts';
+import { toSnakeCase, type CoerceParams } from '../lib/util.ts';
+import type { DbConnectionConfig } from './db_connection_impl.ts';
+import { DbConnectionImpl } from './db_connection_impl.ts';
+import { DbConnectionBuilder as Builder } from './db_connection_builder.ts';
+import { SubscriptionBuilderImpl } from './subscription_builder_impl.ts';
+import { reducerSchema, reducersToSchema } from './reducers.ts';
+import { procedureSchema } from './procedures.ts';
+import { _MINIMUM_CLI_VERSION } from './version.ts';
+import type { UntypedRemoteModule } from './spacetime_module.ts';
 
 // The SDK consumes the same module schema at runtime and at the type level.
 type AnyFunction = FunctionSchema<any, any, any, any>;

@@ -48,8 +48,9 @@ fn run_capture(cmd: &str, args: &[&str]) -> Result<String> {
 
 fn main() -> Result<()> {
     let out_dir = "src/sdk/client_api";
-    let index_replacement = "../../index";
-    let other_replacement = "../../lib/type_builders";
+    // Explicit extensions keep the emitted .d.ts files resolvable under NodeNext.
+    let index_replacement = "../../index.ts";
+    let other_replacement = "../../lib/type_builders.ts";
 
     let workspace_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -91,6 +92,8 @@ fn main() -> Result<()> {
             "-y",
             "--lang",
             "typescript",
+            "--import-extension",
+            "ts",
             "--out-dir",
             out_dir,
             "--module-def",
@@ -103,8 +106,8 @@ fn main() -> Result<()> {
     // here would create a runtime cycle through the connection implementation.
     let module_schema = Path::new(out_dir).join("module.ts");
     let code = fs::read_to_string(&module_schema)?
-        .replace("'spacetimedb/schema'", "'../../schema/module'")
-        .replace("\"spacetimedb/schema\"", "\"../../schema/module\"");
+        .replace("'spacetimedb/schema'", "'../../schema/module.ts'")
+        .replace("\"spacetimedb/schema\"", "\"../../schema/module.ts\"");
     fs::write(module_schema, code)?;
 
     // 5) Replace "spacetimedb" references under out_dir

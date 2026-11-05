@@ -1,9 +1,9 @@
-import BinaryReader from '../lib/binary_reader';
-import BinaryWriter from '../lib/binary_writer';
+import BinaryReader from '../lib/binary_reader.ts';
+import BinaryWriter from '../lib/binary_writer.ts';
 import status from 'statuses';
-import { HttpRequest, HttpResponse } from '../lib/autogen/types';
-import type { TimeDuration } from '../lib/time_duration';
-import { bsatnBaseSize } from '../lib/util';
+import { HttpRequest, HttpResponse } from '../lib/autogen/types.ts';
+import type { TimeDuration } from '../lib/time_duration.ts';
+import { bsatnBaseSize } from '../lib/util.ts';
 import {
   type BodyInit,
   type HeadersInit,
@@ -13,8 +13,8 @@ import {
   serializeHeaders,
   serializeMethod,
   SyncResponse,
-} from './http_shared';
-import { sys } from './runtime';
+} from './http_shared.ts';
+import { sys } from './runtime.ts';
 
 export { Headers };
 
