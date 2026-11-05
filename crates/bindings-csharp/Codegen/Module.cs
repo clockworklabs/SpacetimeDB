@@ -497,6 +497,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     private readonly bool isRowStruct;
     private readonly string assemblyIdentity;
     private readonly bool sharedContexts;
+    private readonly bool managedAccess;
     private readonly string handlesNamespace;
 
     private string TableHandlesNamespace => handlesNamespace + ".TableHandles";
@@ -514,7 +515,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
     private string HandleCache(string typeName) =>
         $$"""
-            private static readonly {{typeName}}?[] __instances = new {{typeName}}?[global::SpacetimeDB.Internal.Module.InstanceCount];
+            private static {{typeName}}?[] __instances => field ??= new {{typeName}}?[global::SpacetimeDB.Internal.Module.InstanceCount];
             private readonly int __instanceId;
             static {{typeName}}() { }
 
@@ -533,7 +534,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             """;
 
     private string IndexInstanceCache(string typeName, string identifier) =>
-        sharedContexts
+        sharedContexts && !managedAccess
             ? $$"""
                 private {{typeName}}? __{{identifier.TrimStart('@')}};
                 """
@@ -544,11 +545,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         bool writable = false,
         bool primaryKey = false
     ) =>
-        sharedContexts
+        managedAccess ? "new(__access)"
+        : sharedContexts
             ? writable
-                ? $"__state.__index_{identifier.TrimStart('@')} ??= new(__state.InstanceId{(primaryKey ? ", __state" : "")})"
+                    ? $"__state.__index_{identifier.TrimStart('@')} ??= new(__state.InstanceId{(primaryKey ? ", __state" : "")})"
                 : $"__{identifier.TrimStart('@')} ??= new(__instanceId)"
-            : "new()";
+        : "new()";
 
     private IEnumerable<string> WritableIndexCaches(TableAccessor table)
     {
@@ -566,6 +568,16 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             yield return $"internal {identifier}Index? __index_{identifier.TrimStart('@')};";
         }
     }
+
+    private string ManagedIndexConstructor(string typeName, string name) =>
+        managedAccess
+            ? $"internal {typeName}(global::SpacetimeDB.Internal.TableAccessor accessor) : base(accessor, {SymbolDisplay.FormatLiteral(name, true)}) {{ }}"
+            : "";
+
+    private string ManagedTableAccess(string name, string owner = "db") =>
+        managedAccess
+            ? $"new global::SpacetimeDB.Internal.TableAccessor({owner}, {SymbolDisplay.FormatLiteral(assemblyIdentity, true)}, {SymbolDisplay.FormatLiteral(name, true)})"
+            : "";
 
     public int? GetColumnIndex(AttributeData attrContext, string name, DiagReporter diag)
     {
@@ -588,6 +600,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         var compilation = context.SemanticModel.Compilation;
         assemblyIdentity = compilation.Assembly.Identity.ToString();
         sharedContexts = Module.UsesSharedContexts(compilation);
+        managedAccess =
+            sharedContexts
+            && !compilation.SyntaxTrees.Any(tree =>
+                tree.Options is CSharpParseOptions options
+                && options.PreprocessorSymbolNames.Contains("SPACETIMEDB_WASM_AOT")
+            );
         handlesNamespace = sharedContexts
             ? Module.AssemblyNamespace(compilation.Assembly)
             : "SpacetimeDB.Internal";
@@ -668,6 +686,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     "Insert",
                     "Delete",
                     "Clear",
+                    "__access",
                     "__GetInstance",
                     "__CreateInstance",
                     "__instances",
@@ -680,6 +699,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             foreach (
                 var member in new[]
                 {
+                    "__access",
                     "__GetInstance",
                     "__CreateInstance",
                     "__instances",
@@ -720,9 +740,9 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 Index(index.AccessorIdentifier, false, $"index '{index.AccessorName}' of {owner}");
 
             foreach (var container in new[] { "Tables", "ReadOnlyTables", "Queries" })
-                if (table.Name == container)
+                if (table.Name == container || table.Name == "__owner")
                 {
-                    names.Add(container, container, "enclosing descriptor container");
+                    names.Add(container, table.Identifier, "generated descriptor member");
                 }
 
             foreach (var container in new[] { "Tables", "ReadOnlyTables", "Queries" })
@@ -794,16 +814,14 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             }
             var standardIndexName = ct.ToIndex().StandardIndexName(tableAccessor);
             var primaryKey = ct.Attr.HasFlag(ColumnAttrs.PrimaryKey);
-            var instanceTable = sharedContexts && primaryKey;
+            var instanceTable = sharedContexts && !managedAccess && primaryKey;
             var updateMethod = primaryKey
                 ? $"public {globalName} Update({globalName} row) => DoUpdate(row{(instanceTable ? ", __table" : "")});"
                 : "";
             yield return $$"""
                 {{vis}} sealed class {{f.Identifier}}UniqueIndex : {{uniqueIndexBase}}<{{tableAccessor.Identifier}}, {{globalName}}, {{f.Type.Name}}, {{f.Type.BSATNName}}> {
                     {{(instanceTable ? "private readonly global::SpacetimeDB.Internal.TableHandle __table;" : "")}}
-                    internal {{f.Identifier}}UniqueIndex({{(sharedContexts ? "int instanceId" + (instanceTable ? ", global::SpacetimeDB.Internal.TableHandle table" : "") : "")}}) : base({{HandleLookupName(
-                    standardIndexName
-                )}}) { {{(instanceTable ? "__table = table;" : "")}} }
+                    {{(managedAccess ? ManagedIndexConstructor(f.Identifier + "UniqueIndex", standardIndexName) : $"internal {f.Identifier}UniqueIndex({(sharedContexts ? "int instanceId" + (instanceTable ? ", global::SpacetimeDB.Internal.TableHandle table" : "") : "")}) : base({HandleLookupName(standardIndexName)}) {{ {(instanceTable ? "__table = table;" : "")} }}")}}
                     // Important: don't move this to the base class.
                     // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
                     // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
@@ -831,7 +849,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             var members = index.Columns.Select(c => Members[c.Index]).ToArray();
             var standardIndexName = index.StandardIndexName(tableAccessor);
 
-            yield return $$"""
+            yield return managedAccess
+                ? $$"""
+                    {{vis}} sealed class {{identifierName}}Index : SpacetimeDB.Internal.IndexBase<{{globalName}}> {
+                        {{ManagedIndexConstructor(identifierName + "Index", standardIndexName)}}
+                    """
+                : $$"""
                     {{vis}} sealed class {{identifierName}}Index({{(sharedContexts ? "int instanceId" : "")}}) : SpacetimeDB.Internal.IndexBase<{{globalName}}>({{HandleLookupName(
                     standardIndexName
                 )}}) {
@@ -908,9 +931,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                           {{{f.Type.Name}}},
                           {{{f.Type.BSATNName}}}>
                 {
-                    internal {{{f.Identifier}}}Index({{{(sharedContexts ? "int instanceId" : "")}}}) : base({{{HandleLookupName(
-                    standardIndexName
-                )}}}) { }
+                    {{{(managedAccess ? ManagedIndexConstructor(f.Identifier + "Index", standardIndexName) : $"internal {f.Identifier}Index({(sharedContexts ? "int instanceId" : "")}) : base({HandleLookupName(standardIndexName)}) {{ }}")}}}
 
                     public {{{globalName}}}? Find({{{f.Type.Name}}} key) => FindSingle(key);
                 }
@@ -940,9 +961,11 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     public sealed class {{{identifierName}}}Index
                     : global::SpacetimeDB.Internal.ReadOnlyIndexBase<{{{globalName}}}>
                     {
-                    internal {{{identifierName}}}Index({{{(sharedContexts ? "int instanceId" : "")}}}) : base({{{HandleLookupName(
-                        standardIndexName
-                    )}}}) {}
+                    {{{(
+                        managedAccess
+                            ? ManagedIndexConstructor(identifierName + "Index", standardIndexName)
+                            : $"internal {identifierName}Index({(sharedContexts ? "int instanceId" : "")}) : base({HandleLookupName(standardIndexName)}) {{ }}"
+                    )}}}
                     """,
             };
 
@@ -1001,11 +1024,13 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     /// <param name="TableName">Fully qualified name of the table type</param>
     /// <param name="TableAccessor">C# source code for the accessor implementation</param>
     /// <param name="Getter">C# property getter for accessing the accessor</param>
+    /// <param name="DescriptorGetter">Getter using the assembly descriptor's owner</param>
     public record struct GeneratedTableAccessor(
         string TableAccessorName,
         string TableName,
         string TableAccessor,
-        string Getter
+        string Getter,
+        string DescriptorGetter
     );
 
     /// <summary>
@@ -1033,10 +1058,17 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 v.CachePolicy == TableCachePolicy.RequiredInMemory
                     ? ""
                     : $"\n\npublic static SpacetimeDB.TableCachePolicy CachePolicy => SpacetimeDB.TableCachePolicy.{v.CachePolicy};";
-            var tableArgument = sharedContexts ? "__state" : "";
-            var rowArgument = sharedContexts ? "row, __state" : "row";
-            var instanceMembers = sharedContexts
-                ? $$"""
+            var tableArgument =
+                managedAccess ? "__access"
+                : sharedContexts ? "__state"
+                : "";
+            var rowArgument =
+                managedAccess ? "__access, row"
+                : sharedContexts ? "row, __state"
+                : "row";
+            var instanceMembers =
+                sharedContexts && !managedAccess
+                    ? $$"""
                     private sealed class __InstanceState(int instanceId) : global::SpacetimeDB.Internal.TableHandle({{HandleLookupName(
                         v.Name
                     )}})
@@ -1045,7 +1077,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                         {{string.Join("\n", WritableIndexCaches(v))}}
                     }
 
-                    private static readonly __InstanceState?[] __instances = new __InstanceState?[global::SpacetimeDB.Internal.Module.InstanceCount];
+                    private static __InstanceState?[] __instances => field ??= new __InstanceState?[global::SpacetimeDB.Internal.Module.InstanceCount];
                     private readonly __InstanceState __state;
                     static {{accessorIdentifier}}() { }
                     public {{accessorIdentifier}}() : this(__GetInstance(0).__state) { }
@@ -1063,13 +1095,14 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                         return __instances[instanceId] ??= new(instanceId);
                     }
                     """
-                : "";
+                    : "";
             yield return new(
                 v.Name,
                 globalName,
                 $$$"""
             {{{SyntaxFacts.GetText(Visibility)}}} readonly struct {{{accessorIdentifier}}} : {{{iTable}}} {
                 {{{instanceMembers}}}
+                {{{(managedAccess ? $"private readonly global::SpacetimeDB.Internal.TableAccessor __access; internal {accessorIdentifier}(global::SpacetimeDB.Internal.TableAccessor access) => __access = access;" : "")}}}
                 public static {{{globalName}}} ReadGenFields(System.IO.BinaryReader reader, {{{globalName}}} row) {
                     {{{string.Join(
                         "\n",
@@ -1127,7 +1160,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 {{{string.Join("\n", GenerateTableAccessorFilters(v))}}}
             }
             """,
-                $"{SyntaxFacts.GetText(Visibility)} global::{TableHandlesNamespace}.{accessorIdentifier} {accessorIdentifier} => {(sharedContexts ? $"global::{TableHandlesNamespace}.{accessorIdentifier}.__GetInstance(global::SpacetimeDB.Internal.Module.GetInstanceId(db))" : "new()")};"
+                $"{SyntaxFacts.GetText(Visibility)} global::{TableHandlesNamespace}.{accessorIdentifier} {accessorIdentifier} => {(managedAccess ? $"new({ManagedTableAccess(v.Name)})" : sharedContexts ? $"global::{TableHandlesNamespace}.{accessorIdentifier}.__GetInstance(global::SpacetimeDB.Internal.Module.GetInstanceId(db))" : "new()")};",
+                $"{SyntaxFacts.GetText(Visibility)} global::{TableHandlesNamespace}.{accessorIdentifier} {accessorIdentifier} => {(managedAccess ? $"new({ManagedTableAccess(v.Name, "__owner")})" : sharedContexts ? $"global::{TableHandlesNamespace}.{accessorIdentifier}.__GetInstance(global::SpacetimeDB.Internal.Module.GetInstanceId(__owner))" : "new()")};"
             );
         }
     }
@@ -1136,7 +1170,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         string TableAccessorName,
         string TableName,
         string ReadOnlyAccessor,
-        string ReadOnlyGetter
+        string ReadOnlyGetter,
+        string DescriptorGetter
     );
 
     public IEnumerable<GeneratedReadOnlyAccessor> GenerateReadOnlyAccessors()
@@ -1160,10 +1195,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 {{{visibility}}} sealed class {{{accessorIdentifier}}}ReadOnly
                     : global::SpacetimeDB.Internal.ReadOnlyTableView<{{{globalName}}}>
                 {
-                    {{{(sharedContexts ? HandleCache(accessorIdentifier + "ReadOnly") : "")}}}
-                    internal {{{accessorIdentifier}}}ReadOnly({{{(sharedContexts ? "int instanceId" : "")}}}) : base({{{HandleLookupName(
-                    accessor.Name
-                )}}}) { {{{(sharedContexts ? "__instanceId = instanceId;" : "")}}} }
+                    {{{(
+                    managedAccess
+                        ? $"internal {accessorIdentifier}ReadOnly(global::SpacetimeDB.Internal.TableAccessor access) : base(access) {{ }}"
+                        : (sharedContexts ? HandleCache(accessorIdentifier + "ReadOnly") : "")
+                            + $"internal {accessorIdentifier}ReadOnly({(sharedContexts ? "int instanceId" : "")}) : base({HandleLookupName(accessor.Name)}) {{ {(sharedContexts ? "__instanceId = instanceId;" : "")} }}"
+                )}}}
 
                     /// <summary>
                     /// Returns the number of rows in this table.
@@ -1176,7 +1213,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     {{{readOnlyIndexDecls}}}
                 }
                 """,
-                $"{visibility} global::{ViewHandlesNamespace}.{accessorIdentifier}ReadOnly {accessorIdentifier} => {(sharedContexts ? $"global::{ViewHandlesNamespace}.{accessorIdentifier}ReadOnly.__GetInstance(global::SpacetimeDB.Internal.Module.GetInstanceId(db))" : "new()")};"
+                $"{visibility} global::{ViewHandlesNamespace}.{accessorIdentifier}ReadOnly {accessorIdentifier} => {(managedAccess ? $"new({ManagedTableAccess(accessor.Name)})" : sharedContexts ? $"global::{ViewHandlesNamespace}.{accessorIdentifier}ReadOnly.__GetInstance(global::SpacetimeDB.Internal.Module.GetInstanceId(db))" : "new()")};",
+                $"{visibility} global::{ViewHandlesNamespace}.{accessorIdentifier}ReadOnly {accessorIdentifier} => {(managedAccess ? $"new({ManagedTableAccess(accessor.Name, "__owner")})" : sharedContexts ? $"global::{ViewHandlesNamespace}.{accessorIdentifier}ReadOnly.__GetInstance(global::SpacetimeDB.Internal.Module.GetInstanceId(__owner))" : "new()")};"
             );
         }
     }
@@ -1263,6 +1301,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 ? $$"""
                     public static partial class AssemblyDescriptor
                     {
+                        #if SPACETIMEDB_WASM_AOT
                         private static global::SpacetimeDB.SqlTableName?[] {{accessorIdentifier}}SqlNames => field ??= new global::SpacetimeDB.SqlTableName?[global::SpacetimeDB.Internal.Module.InstanceCount];
 
                         private static global::SpacetimeDB.SqlTableName {{accessorIdentifier}}SqlName(int contextInstance)
@@ -1280,12 +1319,13 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                             names[contextInstance] = resolvedName;
                             return resolvedName;
                         }
+                        #endif
 
                         public readonly partial struct Queries
                         {
                             {{vis}} {{queryType}} {{accessorIdentifier}}()
                             {
-                                var tableName = {{accessorIdentifier}}SqlName(__instanceId);
+                                var tableName = {{(managedAccess ? $"__owner.ResolveTableName({SymbolDisplay.FormatLiteral(assemblyIdentity, true)}, {SymbolDisplay.FormatLiteral(tableName, true)})" : $"{accessorIdentifier}SqlName(__instanceId)")}};
                                 return new(tableName, new {{colsTypeName}}(tableName), new {{ixColsTypeName}}(tableName));
                             }
                         }
@@ -1295,7 +1335,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     {
                         extension(global::SpacetimeDB.QueryBuilder from)
                         {
-                            {{vis}} {{queryType}} {{accessorIdentifier}}() => new AssemblyDescriptor.Queries(global::SpacetimeDB.Internal.Module.GetInstanceId(from)).{{accessorIdentifier}}();
+                            {{vis}} {{queryType}} {{accessorIdentifier}}() => new AssemblyDescriptor.Queries(from).{{accessorIdentifier}}();
                         }
                     }
                     """
@@ -1804,6 +1844,7 @@ record ViewDeclaration
 /// </summary>
 record ReducerDeclaration
 {
+    private readonly bool managedAccess;
     private readonly string? declaringAssembly;
     public readonly string Name;
     public readonly string? CanonicalName;
@@ -1817,6 +1858,12 @@ record ReducerDeclaration
 
     public ReducerDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
+        managedAccess =
+            Module.UsesSharedContexts(context.SemanticModel.Compilation)
+            && !context.SemanticModel.Compilation.SyntaxTrees.Any(tree =>
+                tree.Options is CSharpParseOptions options
+                && options.PreprocessorSymbolNames.Contains("SPACETIMEDB_WASM_AOT")
+            );
         declaringAssembly = Module.UsesSharedContexts(context.SemanticModel.Compilation)
             ? context.SemanticModel.Compilation.Assembly.Identity.ToString()
             : null;
@@ -1900,6 +1947,27 @@ record ReducerDeclaration
     public Scope.Extensions GenerateSchedule()
     {
         var extensions = new Scope.Extensions(Scope, FullName);
+        if (managedAccess)
+        {
+            extensions.Contents.Append(
+                $$"""
+                [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
+                public static void VolatileNonatomicScheduleImmediate{{Name}}({{string.Join(
+                    ", ",
+                    Args.Select(a => $"{a.Type.Name} {a.Identifier}")
+                )}}) =>
+                    throw new System.NotSupportedException("VolatileNonatomicScheduleImmediate is unavailable in managed module tests. Call the function directly.");
+
+                [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
+                public static void VolatileNonatomicScheduleImmediate{{Name}}<__Context>(__Context __context{{string.Concat(
+                    Args.Select(a => $", {a.Type.Name} {a.Identifier}")
+                )}})
+                    where __Context : global::SpacetimeDB.Internal.IModuleContext =>
+                    throw new System.NotSupportedException("VolatileNonatomicScheduleImmediate is unavailable in managed module tests. Call the function directly.");
+                """
+            );
+            return extensions;
+        }
         var functionName = string.IsNullOrEmpty(CanonicalName)
             ? $"nameof({Identifier})"
             : SymbolDisplay.FormatLiteral(CanonicalName!, true);
@@ -1963,6 +2031,7 @@ record ReducerDeclaration
 /// </summary>
 record ProcedureDeclaration
 {
+    private readonly bool managedAccess;
     private readonly string? declaringAssembly;
     public readonly string Name;
     public readonly string? CanonicalName;
@@ -1979,6 +2048,12 @@ record ProcedureDeclaration
 
     public ProcedureDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
+        managedAccess =
+            Module.UsesSharedContexts(context.SemanticModel.Compilation)
+            && !context.SemanticModel.Compilation.SyntaxTrees.Any(tree =>
+                tree.Options is CSharpParseOptions options
+                && options.PreprocessorSymbolNames.Contains("SPACETIMEDB_WASM_AOT")
+            );
         declaringAssembly = Module.UsesSharedContexts(context.SemanticModel.Compilation)
             ? context.SemanticModel.Compilation.Assembly.Identity.ToString()
             : null;
@@ -2159,6 +2234,27 @@ record ProcedureDeclaration
         var functionName = string.IsNullOrEmpty(CanonicalName)
             ? $"nameof({Identifier})"
             : SymbolDisplay.FormatLiteral(CanonicalName!, true);
+        if (managedAccess)
+        {
+            extensions.Contents.Append(
+                $$"""
+                [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
+                public static void VolatileNonatomicScheduleImmediate{{Name}}({{string.Join(
+                    ", ",
+                    Args.Select(a => $"{a.Type.Name} {a.Identifier}")
+                )}}) =>
+                    throw new System.NotSupportedException("VolatileNonatomicScheduleImmediate is unavailable in managed module tests. Call the function directly.");
+
+                [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
+                public static void VolatileNonatomicScheduleImmediate{{Name}}<__Context>(__Context __context{{string.Concat(
+                    Args.Select(a => $", {a.Type.Name} {a.Identifier}")
+                )}})
+                    where __Context : global::SpacetimeDB.Internal.IModuleContext =>
+                    throw new System.NotSupportedException("VolatileNonatomicScheduleImmediate is unavailable in managed module tests. Call the function directly.");
+                """
+            );
+            return extensions;
+        }
         if (declaringAssembly is not null)
         {
             var cacheName = $"__Schedule{Name}Name";
@@ -2489,7 +2585,7 @@ public class Module : IIncrementalGenerator
                         }
                         used.Add(table.Name, contributor);
                         members.Add(
-                            $"public {table.TypeName} {EscapeIdentifier(table.Name)}{invocation} => new {assembly.DescriptorTypeName}.{container}(__instanceId).{EscapeIdentifier(table.Name)}{invocation};"
+                            $"public {table.TypeName} {EscapeIdentifier(table.Name)}{invocation} => new {assembly.DescriptorTypeName}.{container}(__owner).{EscapeIdentifier(table.Name)}{invocation};"
                         );
                     }
                 }
@@ -2514,14 +2610,22 @@ public class Module : IIncrementalGenerator
                     }
                     used.Add(mount.Accessor, mount.AssemblyIdentity);
                     members.Add(
-                        $"public {NamespaceContainerType(child, container, extensionNamespace, assemblies)} {mount.AccessorIdentifier} => new(NamespaceBindings.Child{child.Id}[__instanceId]);"
+                        $"public {NamespaceContainerType(child, container, extensionNamespace, assemblies)} {mount.AccessorIdentifier} => new(NamespaceBindings.Child{child.Id}.Select(__owner));"
                     );
                 }
                 containers.Add(
                     $$"""
                     public readonly struct {{container}} {
-                        private readonly int __instanceId;
-                        public {{container}}(int instanceId) { __instanceId = instanceId; }
+                        private readonly {{(
+                        container == "Queries" ? "global::SpacetimeDB.QueryBuilder"
+                        : container == "Tables" ? "global::SpacetimeDB.Internal.Local"
+                        : "global::SpacetimeDB.Internal.LocalReadOnly"
+                    )}} __owner;
+                        public {{container}}({{(
+                        container == "Queries" ? "global::SpacetimeDB.QueryBuilder"
+                        : container == "Tables" ? "global::SpacetimeDB.Internal.Local"
+                        : "global::SpacetimeDB.Internal.LocalReadOnly"
+                    )}} owner) { __owner = owner; }
                         {{IndentGeneratedCode(string.Join("\n", members), 4)}}
                     }
                     """
@@ -2578,7 +2682,7 @@ public class Module : IIncrementalGenerator
             }
             var members = node.Children.Select(
                 (child, index) =>
-                    $"public Scope{child.Id}<TContext> {child.Mount!.AccessorIdentifier} => new(__context, NamespaceBindings.{(node.Id == 0 ? $"Mount{index}" : $"Child{child.Id}")}[__instanceId]);"
+                    $"public Scope{child.Id}<TContext> {child.Mount!.AccessorIdentifier} => new(__context, NamespaceBindings.{(node.Id == 0 ? $"Mount{index}" : $"Child{child.Id}")}.ResolveContext(__context, __instanceId));"
             );
             scopes.Add(
                 $$"""
@@ -2607,6 +2711,47 @@ public class Module : IIncrementalGenerator
             """;
     }
 
+    internal static IEnumerable<IAssemblySymbol> TraverseAssemblies(
+        IEnumerable<IAssemblySymbol> references,
+        CancellationToken cancellationToken
+    )
+    {
+        var visited = new HashSet<AssemblyIdentity>();
+        var pending = new Stack<IAssemblySymbol>(references);
+        while (pending.Count > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var reference = pending.Pop();
+            if (!visited.Add(reference.Identity))
+                continue;
+
+            yield return reference;
+            foreach (
+                var dependency in reference.Modules.SelectMany(module =>
+                    module.ReferencedAssemblySymbols
+                )
+            )
+                pending.Push(dependency);
+        }
+    }
+
+    internal static INamedTypeSymbol? GetModuleDescriptor(
+        IAssemblySymbol assembly,
+        INamedTypeSymbol markerType
+    )
+    {
+        var marker = assembly
+            .GetAttributes()
+            .FirstOrDefault(attribute =>
+                SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, markerType)
+            );
+        return
+            marker is { ConstructorArguments.Length: 1 }
+            && marker.ConstructorArguments[0].Kind == TypedConstantKind.Type
+            ? marker.ConstructorArguments[0].Value as INamedTypeSymbol
+            : null;
+    }
+
     private static EquatableArray<AssemblyDeclaration> DiscoverAssemblies(
         Compilation compilation,
         DiagReporter diag,
@@ -2630,41 +2775,16 @@ public class Module : IIncrementalGenerator
             return new(ImmutableArray<AssemblyDeclaration>.Empty);
         }
 
-        var visited = new HashSet<AssemblyIdentity> { compilation.Assembly.Identity };
-        var pending = new Stack<IAssemblySymbol>(
-            compilation.SourceModule.ReferencedAssemblySymbols
-        );
         var assemblies = new List<AssemblyDeclaration>();
         var symbols = new Dictionary<string, IAssemblySymbol>(StringComparer.Ordinal);
-        while (pending.Count > 0)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var assembly = pending.Pop();
-            if (!visited.Add(assembly.Identity))
-            {
-                continue;
-            }
-
-            // Unmarked utility assemblies may reference contributing modules.
-            foreach (var module in assembly.Modules)
-            {
-                foreach (var reference in module.ReferencedAssemblySymbols)
-                {
-                    pending.Push(reference);
-                }
-            }
-
-            var marker = assembly
-                .GetAttributes()
-                .FirstOrDefault(attribute =>
-                    SymbolEqualityComparer.Default.Equals(attribute.AttributeClass, markerType)
-                );
-            if (
-                marker is null
-                || marker.ConstructorArguments.Length != 1
-                || marker.ConstructorArguments[0].Kind != TypedConstantKind.Type
-                || marker.ConstructorArguments[0].Value is not INamedTypeSymbol descriptor
+        foreach (
+            var assembly in TraverseAssemblies(
+                compilation.SourceModule.ReferencedAssemblySymbols,
+                cancellationToken
             )
+        )
+        {
+            if (GetModuleDescriptor(assembly, markerType) is not { } descriptor)
             {
                 continue;
             }
@@ -2910,6 +3030,8 @@ public class Module : IIncrementalGenerator
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
+        var isTestProject = TestModule.IsTestProject(context);
+        TestModule.Register(context, isTestProject);
         var settings = context
             .SyntaxProvider.ForAttributeWithMetadataName(
                 fullyQualifiedMetadataName: typeof(SettingsAttribute).FullName,
@@ -3158,23 +3280,32 @@ public class Module : IIncrementalGenerator
             .Combine(environment)
             .Select(
                 (input, _) =>
-                    (
-                        input.Left.Name,
-                        input.Left.Identity,
-                        input.Left.SharedContexts,
-                        HasEnvironment: input.Right.HasDeclarations,
-                        EnvironmentRegistrations: input.Right.Registrations
-                    )
+                {
+                    var (assemblyInfo, environmentInfo) = input;
+                    return (
+                        assemblyInfo.Name,
+                        assemblyInfo.Identity,
+                        assemblyInfo.SharedContexts,
+                        HasEnvironment: environmentInfo.HasDeclarations,
+                        EnvironmentRegistrations: environmentInfo.Registrations
+                    );
+                }
             );
 
         var referencedAssemblies = context
-            .CompilationProvider.SelectMany(
-                (compilation, ct) =>
+            .CompilationProvider.Combine(isTestProject)
+            .SelectMany(
+                (input, ct) =>
                     new[]
                     {
                         DiagReporter.With(
                             Location.None,
-                            diag => DiscoverAssemblies(compilation, diag, ct)
+                            diag =>
+                                input.Right
+                                    ? new EquatableArray<AssemblyDeclaration>(
+                                        ImmutableArray<AssemblyDeclaration>.Empty
+                                    )
+                                    : DiscoverAssemblies(input.Left, diag, ct)
                         ),
                     }
             )
@@ -3194,23 +3325,26 @@ public class Module : IIncrementalGenerator
             .Combine(tableDecls)
             .SelectMany(
                 (input, ct) =>
-                    new[]
+                {
+                    var ((compilation, moduleAssemblies), tableDeclarations) = input;
+                    return new[]
                     {
                         DiagReporter.With(
                             Location.None,
                             diag =>
                                 NamespaceDeclaration.Parse(
-                                    input.Left.Left,
-                                    input.Left.Left.Assembly,
-                                    input.Left.Right.Select(assembly => assembly.Identity),
-                                    input.Right.SelectMany(t =>
+                                    compilation,
+                                    compilation.Assembly,
+                                    moduleAssemblies.Select(assembly => assembly.Identity),
+                                    tableDeclarations.SelectMany(t =>
                                         t.TableAccessors.Select(a => a.Name)
                                     ),
                                     diag,
                                     ct
                                 )
                         ),
-                    }
+                    };
+                }
             )
             .ReportDiagnostics(context)
             .WithTrackingName("SpacetimeDB.Namespace.Parse")
@@ -3245,9 +3379,13 @@ public class Module : IIncrementalGenerator
             moduleOutputInputs
                 .Combine(extensionNamespace)
                 .Combine(referencedAssemblies)
-                .Combine(composition.Collect()),
+                .Combine(composition.Collect())
+                .Combine(isTestProject),
             (context, input) =>
             {
+                var (moduleInputs, testProject) = input;
+                if (testProject)
+                    return;
                 var (
                     (
                         (
@@ -3263,7 +3401,7 @@ public class Module : IIncrementalGenerator
                         assemblies
                     ),
                     compositions
-                ) = input;
+                ) = moduleInputs;
                 if (compositions.Length != 1 || !compositions[0].IsValid)
                 {
                     return;
@@ -3430,7 +3568,7 @@ public class Module : IIncrementalGenerator
                             Add(
                                 mount.Accessor,
                                 assembly.Identity,
-                                $"public {NamespaceContainerType(child, container, extensionNamespaceName, assemblyByIdentity)} {mount.AccessorIdentifier} => new(NamespaceBindings.Mount{index}[global::SpacetimeDB.Internal.Module.GetInstanceId({receiver})]);"
+                                $"public {NamespaceContainerType(child, container, extensionNamespaceName, assemblyByIdentity)} {mount.AccessorIdentifier} => new(NamespaceBindings.Mount{index}.Select({receiver}));"
                             );
                         }
                         else
@@ -3446,7 +3584,7 @@ public class Module : IIncrementalGenerator
                                 Add(
                                     table.Name,
                                     assembly.Identity,
-                                    $"public {table.TypeName} {EscapeIdentifier(table.Name)}{invocation} => new {assembly.DescriptorTypeName}.{container}(global::SpacetimeDB.Internal.Module.GetInstanceId({receiver})).{EscapeIdentifier(table.Name)}{invocation};"
+                                    $"public {table.TypeName} {EscapeIdentifier(table.Name)}{invocation} => new {assembly.DescriptorTypeName}.{container}({receiver}).{EscapeIdentifier(table.Name)}{invocation};"
                                 );
                         }
                     }
@@ -3484,23 +3622,19 @@ public class Module : IIncrementalGenerator
                         : assemblyByIdentity[node.Contributors.Array[0]].CaseConversionPolicy
                             ?? "SnakeCase";
                 string BuilderName(CompositionNode node) =>
-                    node.Id == 0
-                        ? "global::SpacetimeDB.Internal.Module.RootBuilder"
-                        : $"child{node.Id - 1}";
+                    node.Id == 0 ? "builder" : $"child{node.Id - 1}";
 
-                var compositionRegistration = new List<string>
-                {
-                    !sharedContexts
-                        ? $"global::SpacetimeDB.Internal.Module.InstallNamespaces(new global::SpacetimeDB.Internal.NamespaceRegistry({SymbolDisplay.FormatLiteral(identity, true)}, global::SpacetimeDB.CaseConversionPolicy.{rootCasePolicy}, new (string, string, string?, global::SpacetimeDB.CaseConversionPolicy)[] {{}}));"
-                        : "global::SpacetimeDB.Internal.Module.InstallNamespaces(new global::SpacetimeDB.Internal.NamespaceRegistry(new (int, string, string?, global::SpacetimeDB.CaseConversionPolicy, string[])[] {"
-                            + string.Join(
-                                ",",
-                                nodes.Select(node =>
-                                    $"({node.ParentId ?? -1}, {SymbolDisplay.FormatLiteral(node.Mount?.Accessor ?? "", true)}, {(node.Mount?.Name is { } name ? SymbolDisplay.FormatLiteral(name, true) : "null")}, global::SpacetimeDB.CaseConversionPolicy.{Policy(node)}, new string[] {{ {string.Join(",", node.Contributors.Select(contributor => SymbolDisplay.FormatLiteral(contributor, true)))} }})"
-                                )
+                var namespaceRegistry = !sharedContexts
+                    ? $"new global::SpacetimeDB.Internal.NamespaceRegistry({SymbolDisplay.FormatLiteral(identity, true)}, global::SpacetimeDB.CaseConversionPolicy.{rootCasePolicy}, new (string, string, string?, global::SpacetimeDB.CaseConversionPolicy)[] {{}})"
+                    : "new global::SpacetimeDB.Internal.NamespaceRegistry(new (int, string, string?, global::SpacetimeDB.CaseConversionPolicy, string[])[] {"
+                        + string.Join(
+                            ",",
+                            nodes.Select(node =>
+                                $"({node.ParentId ?? -1}, {SymbolDisplay.FormatLiteral(node.Mount?.Accessor ?? "", true)}, {(node.Mount?.Name is { } name ? SymbolDisplay.FormatLiteral(name, true) : "null")}, global::SpacetimeDB.CaseConversionPolicy.{Policy(node)}, new string[] {{ {string.Join(",", node.Contributors.Select(contributor => SymbolDisplay.FormatLiteral(contributor, true)))} }})"
                             )
-                            + "}));",
-                };
+                        )
+                        + "})";
+                var compositionRegistration = new List<string>();
                 foreach (var node in nodes)
                 {
                     if (node.Id != 0)
@@ -4009,22 +4143,52 @@ public class Module : IIncrementalGenerator
                                 id, args, sink{{instanceArgument}}
                             );
 
+                            /// <summary>Registers only this assembly's declarations.</summary>
                             public static void Register(
                                 global::SpacetimeDB.Internal.ModuleBuilder builder)
                                 => global::ModuleRegistration.Register(builder);
 
+                            /// <summary>Registers this root and its dependencies without initializing the WASM host.</summary>
+                            public static void RegisterModule(
+                                global::SpacetimeDB.Internal.ModuleBuilder builder)
+                                => global::ModuleRegistration.RegisterModule(builder);
+
+                            /// <summary>Creates this root's assembly placements without installing global state.</summary>
+                            public static global::SpacetimeDB.Internal.NamespaceRegistry CreateNamespaces()
+                                => {{namespaceRegistry}};
+
                             public readonly struct Tables {
-                                {{IndentGeneratedCode(sharedContexts ? "private readonly int __instanceId;\npublic Tables(int instanceId) { __instanceId = instanceId; }" : "", 12)}}
-                                {{IndentGeneratedCode(string.Join("\n", tableAccessors.Select(v => v.Getter.Replace("global::SpacetimeDB.Internal.Module.GetInstanceId(db)", "__instanceId"))), 12)}}
+                                #if !SPACETIMEDB_WASM_AOT
+                                private global::SpacetimeDB.Internal.Local? __owner { get; }
+                                public Tables(global::SpacetimeDB.Internal.Local? db) { __owner = db; }
+                                {{IndentGeneratedCode(string.Join("\n", tableAccessors.Select(v => v.DescriptorGetter)), 12)}}
+                                #else
+                                private readonly int __instanceId;
+                                public Tables(global::SpacetimeDB.Internal.Local? db) { __instanceId = global::SpacetimeDB.Internal.Module.GetInstanceId(db); }
+                                {{IndentGeneratedCode(string.Join("\n", tableAccessors.Select(v => v.DescriptorGetter.Replace("global::SpacetimeDB.Internal.Module.GetInstanceId(__owner)", "__instanceId"))), 12)}}
+                                #endif
                             }
 
                             public readonly struct ReadOnlyTables {
-                                {{IndentGeneratedCode(sharedContexts ? "private readonly int __instanceId;\npublic ReadOnlyTables(int instanceId) { __instanceId = instanceId; }" : "", 12)}}
-                                {{IndentGeneratedCode(string.Join("\n", readOnlyAccessors.Select(v => v.ReadOnlyGetter.Replace("global::SpacetimeDB.Internal.Module.GetInstanceId(db)", "__instanceId"))), 12)}}
+                                #if !SPACETIMEDB_WASM_AOT
+                                private global::SpacetimeDB.Internal.LocalReadOnly? __owner { get; }
+                                public ReadOnlyTables(global::SpacetimeDB.Internal.LocalReadOnly? db) { __owner = db; }
+                                {{IndentGeneratedCode(string.Join("\n", readOnlyAccessors.Select(v => v.DescriptorGetter)), 12)}}
+                                #else
+                                private readonly int __instanceId;
+                                public ReadOnlyTables(global::SpacetimeDB.Internal.LocalReadOnly? db) { __instanceId = global::SpacetimeDB.Internal.Module.GetInstanceId(db); }
+                                {{IndentGeneratedCode(string.Join("\n", readOnlyAccessors.Select(v => v.DescriptorGetter.Replace("global::SpacetimeDB.Internal.Module.GetInstanceId(__owner)", "__instanceId"))), 12)}}
+                                #endif
                             }
 
                             public readonly partial struct Queries {
-                                {{IndentGeneratedCode(sharedContexts ? "private readonly int __instanceId;\npublic Queries(int instanceId) { __instanceId = instanceId; }" : "", 12)}}
+                                #if !SPACETIMEDB_WASM_AOT
+                                private global::SpacetimeDB.QueryBuilder __owner { get; }
+                                public Queries(global::SpacetimeDB.QueryBuilder from) { __owner = from; }
+                                #else
+                                private readonly int __instanceId;
+                                public Queries(global::SpacetimeDB.QueryBuilder from) { __instanceId = global::SpacetimeDB.Internal.Module.GetInstanceId(from); }
+                                #endif
                             }
                         }
                         public static class LocalTableExtensions {
@@ -4115,11 +4279,20 @@ public class Module : IIncrementalGenerator
                             #endif
 
                             #if NET10_0_OR_GREATER
-                            {{IndentGeneratedCode(string.Join("\n", compositionRegistration), 8)}}
+                            global::SpacetimeDB.Internal.Module.InstallNamespaces(global::{{extensionNamespaceName}}.AssemblyDescriptor.CreateNamespaces());
+                            RegisterModule(global::SpacetimeDB.Internal.Module.RootBuilder);
                             #else
                             Register(global::SpacetimeDB.Internal.Module.RootBuilder);
                             #endif
                         }
+
+                        #if NET10_0_OR_GREATER
+                        internal static void RegisterModule(
+                            global::SpacetimeDB.Internal.ModuleBuilder builder)
+                        {
+                            {{IndentGeneratedCode(string.Join("\n", compositionRegistration), 8)}}
+                        }
+                        #endif
 
                         internal static void Register(
                             global::SpacetimeDB.Internal.ModuleBuilder builder)
