@@ -7,7 +7,7 @@ public class ModuleTests
     [Fact]
     public void ConnectedUserCanSendMessage()
     {
-        using var test = TestContext.Create(typeof(Module).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Module).Assembly);
         var auth = TestAuth.FromJwtPayload(
             """{"iss":"test-issuer","sub":"alice"}""",
             ConnectionId.FromHexString("00000000000000000000000000000001")!.Value
@@ -31,7 +31,7 @@ public class ModuleTests
     [Fact]
     public void FailedTransactionRollsBackEarlierWrites()
     {
-        using var test = TestContext.Create(typeof(Module).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Module).Assembly);
         var auth = TestAuth.Internal();
 
         Assert.Throws<ArgumentException>(() => test.WithReducerTx(auth, ctx =>

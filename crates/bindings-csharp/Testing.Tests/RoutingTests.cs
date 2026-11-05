@@ -27,7 +27,7 @@ public class RoutingTests
     [Fact]
     public void GeneratedTablesUseStandaloneAndBoundTransactions()
     {
-        using var backend = new DatabaseBackend(Schema.Build(), Schema.CreateNamespaces());
+        using var backend = new DatabaseBackend(TestSchema.Build(), Schema.CreateNamespaces());
         var db = new SpacetimeDB.Local(new DatabaseAccess(backend));
         var inserted = db.Entries.Insert(new Entry { Text = "committed" });
         Assert.NotEqual(0UL, inserted.Id);
@@ -64,8 +64,8 @@ public class RoutingTests
     [Fact]
     public void SameGeneratedHandlesResolveDifferentMountedRoots()
     {
-        var (schemaA, namespacesA) = Schema.BuildMounted("first");
-        var (schemaB, namespacesB) = Schema.BuildMounted("second");
+        var (schemaA, namespacesA) = TestSchema.BuildMounted("first");
+        var (schemaB, namespacesB) = TestSchema.BuildMounted("second");
         using var backendA = new DatabaseBackend(schemaA, namespacesA);
         using var backendB = new DatabaseBackend(schemaB, namespacesB);
         var dbA = new SpacetimeDB.Local(new DatabaseAccess(backendA));

@@ -8,14 +8,14 @@ public class QueryTests
     [Fact]
     public void ViewsReadCommittedRowsForTheirCaller()
     {
-        using var test = TestContext.Create(typeof(Chat).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Chat).Assembly);
         var alice = TestAuth.FromJwtPayload(
             """{"iss":"test","sub":"alice"}""",
             ConnectionId.FromHexString("00000000000000000000000000000001")!.Value
         );
-        var view = test.ViewContext(alice);
-        var anonymous = test.AnonymousViewContext();
-        Assert.Equal(test.DatabaseIdentity, test.ViewContext(TestAuth.Internal()).Sender);
+        var view = test.CreateViewContext(alice);
+        var anonymous = test.CreateAnonymousViewContext();
+        Assert.Equal(test.DatabaseIdentity, test.CreateViewContext(TestAuth.Internal()).Sender);
         Assert.Empty(test.RunQuery(view.From.Message()));
         test.WithReducerTx(alice, ctx => Chat.SendMessage(ctx, "Alice"));
         test.WithReducerTx(TestAuth.Internal(), ctx => Chat.SendMessage(ctx, "Internal"));
@@ -29,17 +29,17 @@ public class QueryTests
         Assert.Throws<ObjectDisposedException>(() => test.RunQuery(query));
         Assert.Throws<ObjectDisposedException>(() => view.Db.Message.Count);
         Assert.Throws<ObjectDisposedException>(() => anonymous.From.Message());
-        Assert.Throws<ObjectDisposedException>(() => test.AnonymousViewContext());
+        Assert.Throws<ObjectDisposedException>(() => test.CreateAnonymousViewContext());
     }
 
     [Fact]
     public void SemijoinsMaterializeTypedRows()
     {
-        using var test = TestContext.Create(typeof(Entry).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
         var entry = test.Db.Entries.Insert(new Entry { Text = "matched" });
         test.Db.Entries.Insert(new Entry { Text = "unmatched" });
         test.Db.Accounts.Insert(new Account { Id = entry.Id, Name = "account" });
-        var from = test.AnonymousViewContext().From;
+        var from = test.CreateAnonymousViewContext().From;
         var query = from.Entries()
             .LeftSemijoin(from.Accounts(), (entry, account) => entry.Id.Eq(account.Id));
         Assert.Equal("matched", Assert.Single(test.RunQuery(query)).Text);
@@ -48,8 +48,8 @@ public class QueryTests
     [Fact]
     public void QueryFailuresLeaveTheDatastoreUsable()
     {
-        using var test = TestContext.Create(typeof(Entry).Assembly);
-        var query = test.AnonymousViewContext().From.Entries();
+        using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
+        var query = test.CreateAnonymousViewContext().From.Entries();
         test.WithReducerTx(
             TestAuth.Internal(),
             ctx =>

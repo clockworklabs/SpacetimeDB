@@ -7,7 +7,7 @@ public class TableMutationTests
     [Fact]
     public void DeleteAndClearUseTheOwningTransaction()
     {
-        using var test = TestContext.Create(typeof(Entry).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
         var auth = TestAuth.Internal();
         var first = test.Db.Entries.Insert(new Entry { Text = "first" });
         var second = test.Db.Entries.Insert(new Entry { Text = "second" });
@@ -51,7 +51,7 @@ public class TableMutationTests
     [Fact]
     public void EventRowsExistOnlyInsideTheirTransaction()
     {
-        using var test = TestContext.Create(typeof(TestEvent).Assembly);
+        using var test = ModuleTestContext.Create(typeof(TestEvent).Assembly);
         var auth = TestAuth.Internal();
         test.WithReducerTx(
             auth,

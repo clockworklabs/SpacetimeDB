@@ -10,15 +10,35 @@ public class TestAuthTests
         .Value;
 
     [Fact]
+    public void CredentialsExposeTheCallerTheyActAs()
+    {
+        var auth = TestAuth.FromJwtPayload("""{"iss":"test-issuer","sub":"alice"}""", connection);
+        using var test = ModuleTestContext.Create(typeof(Module).Assembly);
+        test.WithReducerTx(
+            auth,
+            ctx =>
+            {
+                Assert.Equal(ctx.Sender, auth.Sender);
+                Assert.Equal(ctx.ConnectionId, auth.ConnectionId);
+            }
+        );
+
+        var internalAuth = TestAuth.Internal();
+        Assert.Null(internalAuth.Sender);
+        Assert.Null(internalAuth.ConnectionId);
+        test.WithReducerTx(internalAuth, ctx => Assert.Equal(test.DatabaseIdentity, ctx.Sender));
+    }
+
+    [Fact]
     public void ClientClaimsReachReducersAndAuthCanBeReusedAcrossFixtures()
     {
         const string payload =
             """{"iss":"test-issuer","sub":"alice","aud":["app","other"],"role":"admin"}""";
         var auth = TestAuth.FromJwtPayload(payload, connection);
-        using var first = TestContext.Create(typeof(Module).Assembly);
-        using var second = TestContext.Create(typeof(Module).Assembly);
+        using var first = ModuleTestContext.Create(typeof(Module).Assembly);
+        using var second = ModuleTestContext.Create(typeof(Module).Assembly);
 
-        void Send(TestContext test) =>
+        void Send(ModuleTestContext test) =>
             test.WithReducerTx(
                 auth,
                 ctx =>

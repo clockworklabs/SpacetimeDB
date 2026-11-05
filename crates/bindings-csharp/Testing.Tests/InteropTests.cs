@@ -12,7 +12,7 @@ public class InteropTests
     [Fact]
     public void GeneratedSchemaSupportsCommitRollbackAndDisposal()
     {
-        using var datastore = NativeDatastore.Create(Schema.Build());
+        using var datastore = NativeDatastore.Create(TestSchema.Build());
         ulong id;
         using (var transaction = datastore.Begin())
         {
@@ -61,7 +61,7 @@ public class InteropTests
     [Fact]
     public void FinalizersRespectHandleLifetimes()
     {
-        using var datastore = NativeDatastore.Create(Schema.Build());
+        using var datastore = NativeDatastore.Create(TestSchema.Build());
         AbandonTransaction(datastore);
         GC.Collect();
         GC.WaitForPendingFinalizers();
@@ -82,7 +82,7 @@ public class InteropTests
         out WeakReference<NativeDatastore> owner
     )
     {
-        var datastore = NativeDatastore.Create(Schema.Build());
+        var datastore = NativeDatastore.Create(TestSchema.Build());
         owner = new(datastore);
         return datastore.Begin();
     }

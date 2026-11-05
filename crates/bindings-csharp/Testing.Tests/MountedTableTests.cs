@@ -8,7 +8,7 @@ public class MountedTableTests
     [Fact]
     public void StandaloneTablesAndIndexesStayInTheirSelectedMount()
     {
-        using var test = TestContext.Create(typeof(Entry).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
         var left = test.Db.Left.Leaf.Items;
         var right = test.Db.Right.Leaf.Items;
         var leftRow = left.Insert(
@@ -42,13 +42,13 @@ public class MountedTableTests
             Assert.Single(right.Group.Filter(new SpacetimeDB.Bound<uint>(5, 15)))
         );
 
-        var view = test.ViewContext(TestAuth.Internal());
+        var view = test.CreateViewContext(TestAuth.Internal());
         Assert.Throws<InvalidOperationException>(() => Marker.Find(view, 1));
         Assert.Equal(leftRow, Marker.Find(view.As.Left.Leaf, 1));
         Assert.Equal(rightRow, Marker.Find(view.As.Right.Leaf, 1));
         Assert.Equal(1UL, view.Db.Left.Leaf.Items.Count);
         Assert.Equal(rightRow, Assert.Single(view.Db.Right.Leaf.Items.Group.Filter(10u)));
-        var anonymous = test.AnonymousViewContext();
+        var anonymous = test.CreateAnonymousViewContext();
         Assert.Equal(leftRow, anonymous.Db.Left.Leaf.Items.Id.Find(1));
         Assert.Equal(rightRow, Assert.Single(anonymous.Db.Right.Leaf.Items.Group.Filter(10u)));
 
@@ -69,7 +69,7 @@ public class MountedTableTests
     [Fact]
     public void SelectedTransactionsCommitRollbackAndExpireIndependently()
     {
-        using var test = TestContext.Create(typeof(Entry).Assembly);
+        using var test = ModuleTestContext.Create(typeof(Entry).Assembly);
         test.WithReducerTx(
             TestAuth.Internal(),
             ctx =>
@@ -120,7 +120,7 @@ public class MountedTableTests
         Assert.Equal("right", test.Db.Right.Leaf.Items.Id.Find(1)!.Value.Value);
         Assert.Throws<ObjectDisposedException>(() => escaped!());
 
-        test.ProcedureContext(TestAuth.Internal())
+        test.CreateProcedureContext(TestAuth.Internal())
             .WithTx(tx =>
             {
                 tx.Db.Left.Leaf.Items.Id.Update(
@@ -140,8 +140,8 @@ public class MountedTableTests
     [Fact]
     public void IdenticalMountsInDifferentFixturesDoNotShareCachesOrRows()
     {
-        using var first = TestContext.Create(typeof(Entry).Assembly);
-        using var second = TestContext.Create(typeof(Entry).Assembly);
+        using var first = ModuleTestContext.Create(typeof(Entry).Assembly);
+        using var second = ModuleTestContext.Create(typeof(Entry).Assembly);
         first.Db.Left.Leaf.Items.Insert(new Item { Id = 1, Value = "first" });
         second.Db.Left.Leaf.Items.Insert(new Item { Id = 1, Value = "second" });
         Assert.Equal("first", first.Db.Left.Leaf.Items.Id.Find(1)!.Value.Value);
