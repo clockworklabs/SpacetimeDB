@@ -305,6 +305,8 @@ pub enum AutoMigrateStep<'def> {
     ChangeTableAccessorName(<TableDef as ModuleDefLookup>::Key<'def>),
     /// Change IDC outbox metadata on an existing table.
     ChangeOutbox(<TableDef as ModuleDefLookup>::Key<'def>),
+    /// Change residency after the transaction's row and schema changes are prepared.
+    ChangeCachePolicy(<TableDef as ModuleDefLookup>::Key<'def>),
     /// Change the accessor name alias of an existing column.
     ChangeColumnAccessorName(<TableDef as ModuleDefLookup>::Key<'def>, &'def Identifier),
 
@@ -783,17 +785,19 @@ fn auto_migrate_table<'def>(
         }
         .into())
     };
-    // Changing residency also requires converting pages and adjusting blob pins.
-    // Until that migration exists, reject the update before applying any changes.
     let cache_policy_ok: Result<()> = if old.cache_policy == new.cache_policy {
         Ok(())
-    } else {
+    } else if old.cache_policy == TableCachePolicy::NoRequirement || new.cache_policy == TableCachePolicy::NoRequirement
+    {
         Err(AutoMigrateError::ChangeTableCachePolicy {
             table: old.name.clone(),
             old: old.cache_policy,
             new: new.cache_policy,
         }
         .into())
+    } else {
+        plan.steps.push(AutoMigrateStep::ChangeCachePolicy(key));
+        Ok(())
     };
     let event_ok: Result<()> = if old.is_event == new.is_event {
         Ok(())

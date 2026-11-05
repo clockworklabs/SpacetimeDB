@@ -56,7 +56,7 @@ use spacetimedb_schema::{
 };
 use spacetimedb_table::{
     indexes::{RowPointer, SquashedOffset},
-    table::{PreparedBlobRelease, RowRef, Table, TableAndIndex},
+    table::{PreparedBlobRelease, PreparedEvictionPolicy, RowRef, Table, TableAndIndex},
     tiered::{BlobHandle, BlobSet, EvictionPolicy, PreparedCommit, TieredDatabaseStorage},
 };
 use std::sync::Arc;
@@ -653,7 +653,35 @@ impl CommittedState {
             prepared.insert(table_id, commit);
         }
 
+        prepared.policy_changes = self.prepare_cache_policy_changes(tx_state)?;
+
         Ok(prepared)
+    }
+
+    /// During commit, load and pin the pages and blobs needed for each cache-policy change.
+    /// Page loads and memory reservations can still fail here, before committed
+    /// rows have changed. Preparation leaves page ownership and blob pin counts
+    /// unchanged, so failure needs no reverse conversion: dropping the plans
+    /// releases their temporary pins, and rollback restores the policy metadata.
+    fn prepare_cache_policy_changes(&self, tx_state: &TxState) -> Result<BTreeMap<TableId, PreparedEvictionPolicy>> {
+        let mut changes = BTreeMap::new();
+        for change in &tx_state.pending_schema_changes {
+            let PendingSchemaChange::TableAlterCachePolicy(table_id, _) = change else {
+                continue;
+            };
+            // A table may have several schema changes. Its cached schema holds
+            // the final requested policy, so only prepare one conversion.
+            let std::collections::btree_map::Entry::Vacant(entry) = changes.entry(*table_id) else {
+                continue;
+            };
+            let Some(table) = self.get_table(*table_id) else {
+                // The transaction dropped this table; there is nothing to convert.
+                continue;
+            };
+            let policy = self.page_eviction_policy(table.get_schema());
+            entry.insert(table.prepare_eviction_policy(self.storage.blobs(), policy)?);
+        }
+        Ok(changes)
     }
 
     pub(super) fn merge(
@@ -730,6 +758,19 @@ impl CommittedState {
             } else {
                 self.sub_datastore_page_bytes(page_bytes_before - page_bytes_after);
             }
+        }
+
+        // Finish cache-policy migrations during commit. The inserts and deletes
+        // above have already been applied using each table's old storage policy.
+        //
+        // Converting a disk table to memory requires direct ownership of its pages.
+        // The completed row plans have released their page handles, so conversion
+        // can take that ownership after releasing its own preparation pins.
+        for (table_id, change) in prepared.policy_changes {
+            let (table, blobs, _) = self
+                .get_table_and_blob_store_mut(table_id)
+                .expect("prepared table exists");
+            change.apply(table, blobs);
         }
 
         // All page mutations have finished, so pinned blob frames no longer
@@ -862,6 +903,10 @@ impl CommittedState {
             TableAlterAccess(table_id, access) => {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.table_access = access);
+            }
+            TableAlterCachePolicy(table_id, policy) => {
+                let table = self.tables.get_mut(&table_id)?;
+                table.with_mut_schema(|schema| schema.cache_policy = policy);
             }
             // A table's primary key was changed. Change back to the old one.
             TableAlterPrimaryKey(table_id, old_pk) => {
@@ -1067,6 +1112,7 @@ pub(super) struct PreparedMerge {
     mutated_tables: BTreeMap<TableId, PreparedCommit>,
     removed_tables: Vec<PreparedRemovedTable>,
     pinned_blobs: Box<[BlobHandle]>,
+    policy_changes: BTreeMap<TableId, PreparedEvictionPolicy>,
 }
 
 struct PreparedRemovedTable {
@@ -1081,6 +1127,7 @@ impl PreparedMerge {
         Self {
             mutated_tables: <_>::default(),
             removed_tables: <_>::default(),
+            policy_changes: <_>::default(),
             pinned_blobs,
             resident: false,
         }

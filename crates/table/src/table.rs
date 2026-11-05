@@ -3,8 +3,8 @@ use crate::{
     blob_store::BlobHash,
     page,
     tiered::{
-        BlobError, BlobReadSet, BlobSet, EvictionPolicy, PageBorrow, PageError, PageHandle, PageManager, PageRef,
-        PageSet, PreparedCommit, ReservedPage,
+        BlobError, BlobHandle, BlobReadSet, BlobSet, EvictionPolicy, PageBorrow, PageError, PageHandle, PageManager,
+        PageRef, PageSet, PreparedCommit, ReservedPage,
     },
     var_len::VarLenMembers as _,
 };
@@ -1784,6 +1784,63 @@ impl Table {
         result
     }
 
+    /// Visit each blob reference without loading the blob's contents. Two fields
+    /// pointing to the same blob are visited twice: each owns a reference.
+    fn for_each_blob_ref(&self, mut visit: impl FnMut(BlobHash) -> Result<(), BlobError>) -> Result<(), TableError> {
+        if self.blob_store_bytes.0 == 0 {
+            return Ok(());
+        }
+        for index in 0..self.inner.pages.num_pages() {
+            let Some(page) = self.inner.pages.get_page(PageIndex(index as _))? else {
+                continue;
+            };
+            let page = page.read();
+            for offset in page.iter_fixed_len(self.row_size()) {
+                let row = page.get_row_data(offset, self.row_size());
+                // SAFETY: The iterator yields live rows of this table,
+                // whose layout matches the table's visitor program.
+                for var_len in
+                    unsafe { self.inner.visitor_prog.visit_var_len(row) }.filter(|var_len| var_len.is_large_blob())
+                {
+                    // SAFETY: A live large-blob reference points to a
+                    // valid granule containing its content hash.
+                    let granule = unsafe { page.iter_var_len_object(var_len.first_granule) }
+                        .next()
+                        .expect("large blob has a hash granule");
+                    visit(granule.blob_hash())?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Pin the pages and blobs needed for a cache-policy migration.
+    /// The storage policy stays unchanged until apply, so a failed preparation
+    /// can be discarded without undoing a conversion.
+    pub fn prepare_eviction_policy(
+        &self,
+        blobs: &BlobSet,
+        policy: EvictionPolicy,
+    ) -> Result<PreparedEvictionPolicy, TableError> {
+        let mut prepared = PreparedEvictionPolicy {
+            old_policy: self.eviction_policy,
+            policy,
+            pinned_pages: Vec::new(),
+            pinned_blobs: Vec::new(),
+        };
+        if policy == self.eviction_policy || policy == EvictionPolicy::Evictable {
+            return Ok(prepared);
+        }
+
+        // Keep disk-table data resident until apply installs the memory policy.
+        prepared.pinned_pages = self.inner.pages.pin_all_pages()?;
+        self.for_each_blob_ref(|hash| {
+            prepared.pinned_blobs.push(blobs.get(hash.into())?);
+            Ok(())
+        })?;
+        Ok(prepared)
+    }
+
     /// Prepare release of every large-blob reference owned by this table.
     ///
     /// Used when the table is dropped.
@@ -1794,30 +1851,10 @@ impl Table {
         // We only need hashes, not blob contents, and can release each page
         // between reads rather than pinning the entire table in memory.
         let mut blob_refs = Vec::new();
-        if !self.inner.row_layout.layout().fixed {
-            for index in 0..self.inner.pages.num_pages() {
-                let Some(page) = self.inner.pages.get_page(PageIndex(index as _))? else {
-                    continue;
-                };
-                page.with_page(|page| {
-                    for offset in page.iter_fixed_len(self.row_size()) {
-                        let row = page.get_row_data(offset, self.row_size());
-                        // SAFETY: The iterator yields live rows of this table,
-                        // whose layout matches the table's visitor program.
-                        for var_len in unsafe { self.inner.visitor_prog.visit_var_len(row) }
-                            .filter(|var_len| var_len.is_large_blob())
-                        {
-                            // SAFETY: A live large-blob reference points to a
-                            // valid granule containing its content hash.
-                            let granule = unsafe { page.iter_var_len_object(var_len.first_granule) }
-                                .next()
-                                .expect("large blob has a hash granule");
-                            blob_refs.push(granule.blob_hash());
-                        }
-                    }
-                });
-            }
-        }
+        self.for_each_blob_ref(|hash| {
+            blob_refs.push(hash);
+            Ok(())
+        })?;
 
         Ok(PreparedBlobRelease {
             blob_refs,
@@ -3305,6 +3342,47 @@ enum PreparedInsertInner {
         source_page: PageHandle,
         source_offset: PageOffset,
     },
+}
+
+/// Page and blob pins held until a cache-policy migration is applied.
+///
+/// Apply after row changes have finished and released their page handles. Keep
+/// the commit's insertion blob handles alive: they protect any newly added blobs
+/// that were not referenced by the table's committed rows during preparation.
+pub struct PreparedEvictionPolicy {
+    old_policy: EvictionPolicy,
+    policy: EvictionPolicy,
+    pinned_pages: Vec<PageHandle>,
+    pinned_blobs: Vec<BlobHandle>,
+}
+
+impl PreparedEvictionPolicy {
+    pub fn apply(self, table: &mut Table, blobs: &BlobSet) {
+        assert_eq!(table.eviction_policy, self.old_policy);
+        if self.policy == self.old_policy {
+            return;
+        }
+        // Inserts and deletes have finished. Update eviction pins for the remaining
+        // blob references without changing their reference counts.
+        //
+        // For memory tables, the old policy keeps pages and blobs resident.
+        // For disk tables, preparation holds the existing pages and blobs in memory.
+        // The commit's insertion handles keep newly inserted blobs resident.
+        table
+            .for_each_blob_ref(|hash| match self.policy {
+                EvictionPolicy::NeverEvict => blobs.pin(hash.into()),
+                EvictionPolicy::Evictable => {
+                    blobs.unpin(hash.into());
+                    Ok(())
+                }
+            })
+            .expect("preparation and insertion pins keep pages and blobs resident");
+        // Exclusive table access prevents page eviction during conversion.
+        // Release our page handles so conversion can unwrap the shared frames.
+        drop(self.pinned_pages);
+        table.inner.pages.apply_eviction_policy(self.policy);
+        table.eviction_policy = self.policy;
+    }
 }
 
 /// Prepared release of a table's large-blob references.
