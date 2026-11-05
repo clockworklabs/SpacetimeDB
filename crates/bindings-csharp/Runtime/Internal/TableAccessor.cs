@@ -122,23 +122,15 @@ public readonly struct TableAccessor
         where T : IStructuralReadWrite, new()
     {
         var snapshot = Execute(scan);
-        using var reader = new BinaryReader(new MemoryStream(snapshot));
-        // The native snapshot is BSATN array<array<u8>>. Decode each framed row
-        // directly from it rather than allocating another byte array per row.
-        var count = reader.ReadUInt32();
+        var offset = 0;
+        var count = FramedRows.ReadCount(snapshot, ref offset);
         for (uint i = 0; i < count; i++)
         {
             access!.CheckActive();
-            var length = reader.ReadUInt32();
-            var end = reader.BaseStream.Position + length;
-            var row = IStructuralReadWrite.Read<T>(reader);
-            if (reader.BaseStream.Position != end)
-                throw new InvalidDataException("Native table row does not match its BSATN schema.");
-            yield return row;
+            yield return FramedRows.ReadRow<T>(snapshot, ref offset);
         }
         access!.CheckActive();
-        if (reader.BaseStream.Position != reader.BaseStream.Length)
-            throw new InvalidDataException("Trailing bytes in native table snapshot.");
+        FramedRows.CheckEnd(snapshot, offset);
     }
 }
 #endif
