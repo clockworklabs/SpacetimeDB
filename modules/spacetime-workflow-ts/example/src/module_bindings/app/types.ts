@@ -18,7 +18,13 @@ export const Dossier = __t.object("Dossier", {
   topics: __t.array(__t.string()),
   planTokens: __t.u32(),
   report: __t.option(__t.string()),
+  get reportSources() {
+    return __t.array(Source);
+  },
   reportTokens: __t.u32(),
+  reportedAt: __t.option(__t.timestamp()),
+  updateEverySeconds: __t.u32(),
+  nextUpdateAt: __t.option(__t.timestamp()),
   createdAt: __t.timestamp(),
 });
 export type Dossier = __Infer<typeof Dossier>;
@@ -38,6 +44,7 @@ export type MySteps = __Infer<typeof MySteps>;
 export const ResearchArgs = __t.object("ResearchArgs", {
   dossierId: __t.u64(),
   question: __t.string(),
+  everySeconds: __t.u32(),
 });
 export type ResearchArgs = __Infer<typeof ResearchArgs>;
 

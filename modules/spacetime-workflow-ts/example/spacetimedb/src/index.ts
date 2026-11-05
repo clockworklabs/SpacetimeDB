@@ -7,6 +7,7 @@ import {
   type ProcedureCtx,
   type ReducerCtx,
 } from 'spacetimedb/server';
+import { Timestamp } from 'spacetimedb';
 import { callChat, openRouterProvider } from '@spacetimedb/agents';
 import { client } from '@spacetimedb/workflow';
 
@@ -15,6 +16,8 @@ const MAX_QUESTION_LENGTH = 300;
 const MAX_TOPICS = 4;
 const MAX_TOPIC_LENGTH = 80;
 const SOURCES_PER_TOPIC = 3;
+const MIN_UPDATE_SECONDS = 60;
+const MAX_UPDATE_SECONDS = 7 * 24 * 60 * 60;
 
 const workflows = client({
   workflows: {
@@ -22,6 +25,8 @@ const workflows = client({
       args: t.object('ResearchArgs', {
         dossierId: t.u64(),
         question: t.string(),
+        /** 0 for a new dossier. Otherwise, update it this often. */
+        everySeconds: t.u32(),
       }),
       retry: { maxAttempts: 3, backoffSeconds: 5 },
       // Longer than the slowest model call.
@@ -29,6 +34,8 @@ const workflows = client({
     },
   },
 });
+
+const source = t.object('Source', { title: t.string(), url: t.string() });
 
 const dossier = table(
   { name: 'dossier', public: false },
@@ -40,12 +47,16 @@ const dossier = table(
     topics: t.array(t.string()),
     planTokens: t.u32(),
     report: t.option(t.string()),
+    /** The report cites these as [1], [2], and so on. */
+    reportSources: t.array(source),
     reportTokens: t.u32(),
+    reportedAt: t.option(t.timestamp()),
+    /** 0 when the dossier is not kept up to date. */
+    updateEverySeconds: t.u32(),
+    nextUpdateAt: t.option(t.timestamp()),
     createdAt: t.timestamp(),
   }
 );
-
-const source = t.object('Source', { title: t.string(), url: t.string() });
 
 const topicNote = table(
   { name: 'topic_note', public: false },
@@ -154,22 +165,127 @@ function summarize(
   );
 }
 
+interface Note {
+  topic: string;
+  summary: string;
+  sources: { title: string; url: string }[];
+}
+
 function writeReport(
   ctx: Ctx,
   question: string,
-  notes: { topic: string; summary: string }[]
+  notes: Note[],
+  cited: { title: string; url: string }[]
 ): ModelReply {
+  const number = (url: string) => cited.findIndex(s => s.url === url) + 1;
   return callModel(
     ctx,
-    'Answer the question in a short plain-text report of up to four paragraphs, using only these notes. Say what the notes could not answer. Do not use markdown.',
+    'Answer the question in a short plain-text report of up to four paragraphs, using only these notes. After each claim, cite the notes it came from by their source numbers, like [2] or [1][3]. Say what the notes could not answer. Do not use markdown.',
     `Question: ${question}\n\n${notes
-      .map(note => `${note.topic}: ${note.summary}`)
+      .map(
+        note =>
+          `${note.topic} (sources ${note.sources
+            .map(s => `[${number(s.url)}]`)
+            .join('')}): ${note.summary}`
+      )
       .join('\n\n')}`
   );
 }
 
 export const workflowRunAttempt = workflows.register(spacetimedb, {
-  research(step, { dossierId, question }) {
+  research(step, { dossierId, question, everySeconds }) {
+    const researchAndReport = (topics: string[]) => {
+      // Every topic is researched at the same time, each in its own procedure.
+      const research = step.parallel('Research', topics, (ctx, topic) => {
+        const sources = searchWikipedia(ctx, topic);
+        const note =
+          sources.length === 0
+            ? undefined
+            : summarize(
+                ctx,
+                question,
+                topic,
+                topics.filter(other => other !== topic),
+                sources
+              );
+        // Saved now, so the page shows it while other topics are still
+        // running. A retry or a later update replaces the topic's note.
+        ctx.withTx(tx => {
+          const { owner } = tx.db.dossier.id.find(dossierId)!;
+          const key = `${dossierId}:${topic}`;
+          const row = {
+            id: 0n,
+            key,
+            dossierId,
+            owner,
+            topic,
+            summary: note?.text,
+            sources: sources.map(({ title, url }) => ({ title, url })),
+            tokens: note?.tokens ?? 0,
+            savedAt: tx.timestamp,
+          };
+          const saved = tx.db.topicNote.key.find(key);
+          if (saved) tx.db.topicNote.id.update({ ...row, id: saved.id });
+          else tx.db.topicNote.insert(row);
+        });
+        return note
+          ? {
+              summary: note.text,
+              sources: sources.map(({ title, url }) => ({ title, url })),
+            }
+          : undefined;
+      });
+      // A topic that keeps failing is left out. The rest of the report goes on.
+      const notes: Note[] = topics.flatMap((topic, i) => {
+        const result = research[i];
+        return result.ok && result.value ? [{ topic, ...result.value }] : [];
+      });
+      if (notes.length === 0) {
+        throw new Error('Could not find any sources for this question');
+      }
+      // Number every source once, in note order, for the report to cite.
+      const cited = notes
+        .flatMap(note => note.sources)
+        .filter((s, i, all) => all.findIndex(o => o.url === s.url) === i);
+
+      const report = step.call('Write the report', ctx =>
+        writeReport(ctx, question, notes, cited)
+      );
+      step.tx('Publish', ctx => {
+        const row = ctx.db.dossier.id.find(dossierId)!;
+        ctx.db.dossier.id.update({
+          ...row,
+          report: report.text,
+          reportSources: cited,
+          reportTokens: report.tokens,
+          reportedAt: ctx.timestamp,
+        });
+      });
+    };
+
+    // An update run reuses the approved plan. A new dossier asks for one.
+    if (everySeconds > 0) {
+      const topics = step.tx(
+        'Read the plan',
+        ctx => ctx.db.dossier.id.find(dossierId)!.topics
+      );
+      // The run sleeps between updates and uses nothing while it waits.
+      for (;;) {
+        step.tx('Schedule the next update', ctx => {
+          const row = ctx.db.dossier.id.find(dossierId)!;
+          ctx.db.dossier.id.update({
+            ...row,
+            nextUpdateAt: new Timestamp(
+              ctx.timestamp.microsSinceUnixEpoch +
+                BigInt(everySeconds) * 1_000_000n
+            ),
+          });
+        });
+        step.sleep(everySeconds);
+        researchAndReport(topics);
+      }
+    }
+
     const plan = step.call('Plan the research', ctx =>
       planTopics(ctx, question)
     );
@@ -181,71 +297,14 @@ export const workflowRunAttempt = workflows.register(spacetimedb, {
         planTokens: plan.tokens,
       });
     });
-
     step.waitFor('plan-approved');
     // The plan may have been edited before it was approved.
-    const topics = step.tx(
-      'Read the approved plan',
-      ctx => ctx.db.dossier.id.find(dossierId)!.topics
+    researchAndReport(
+      step.tx(
+        'Read the approved plan',
+        ctx => ctx.db.dossier.id.find(dossierId)!.topics
+      )
     );
-
-    // Every topic is researched at the same time, each in its own procedure.
-    const research = step.parallel('Research', topics, (ctx, topic, run) => {
-      const sources = searchWikipedia(ctx, topic);
-      const note =
-        sources.length === 0
-          ? undefined
-          : summarize(
-              ctx,
-              question,
-              topic,
-              topics.filter(other => other !== topic),
-              sources
-            );
-      // Saved now, so the page shows it while other topics are still running.
-      // The key makes a retry replace its own note instead of adding one.
-      ctx.withTx(tx => {
-        const { owner } = tx.db.dossier.id.find(dossierId)!;
-        const row = {
-          id: 0n,
-          key: run.idempotencyKey,
-          dossierId,
-          owner,
-          topic,
-          summary: note?.text,
-          sources: sources.map(({ title, url }) => ({ title, url })),
-          tokens: note?.tokens ?? 0,
-          savedAt: tx.timestamp,
-        };
-        const saved = tx.db.topicNote.key.find(run.idempotencyKey);
-        if (saved) tx.db.topicNote.id.update({ ...row, id: saved.id });
-        else tx.db.topicNote.insert(row);
-      });
-      return note?.text;
-    });
-    // A topic that keeps failing is left out. The rest of the report goes on.
-    const notes = topics.flatMap((topic, i) => {
-      const result = research[i];
-      return result.ok && result.value
-        ? [{ topic, summary: result.value }]
-        : [];
-    });
-
-    if (notes.length === 0) {
-      throw new Error('Could not find any sources for this question');
-    }
-
-    const report = step.call('Write the report', ctx =>
-      writeReport(ctx, question, notes)
-    );
-    step.tx('Publish', ctx => {
-      const row = ctx.db.dossier.id.find(dossierId)!;
-      ctx.db.dossier.id.update({
-        ...row,
-        report: report.text,
-        reportTokens: report.tokens,
-      });
-    });
   },
 });
 
@@ -270,12 +329,17 @@ export const startDossier = spacetimedb.reducer(
       topics: [],
       planTokens: 0,
       report: undefined,
+      reportSources: [],
       reportTokens: 0,
+      reportedAt: undefined,
+      updateEverySeconds: 0,
+      nextUpdateAt: undefined,
       createdAt: ctx.timestamp,
     });
     const runId = workflows.start(ctx, 'research', {
       dossierId: row.id,
       question: trimmed,
+      everySeconds: 0,
     });
     ctx.db.dossier.id.update({ ...row, runId });
   }
@@ -316,6 +380,43 @@ export const cancelDossier = spacetimedb.reducer(
   (ctx, { dossierId }) => {
     const row = requireOwnedDossier(ctx, dossierId);
     workflows.cancel(ctx, row.runId);
+    ctx.db.dossier.id.update({
+      ...row,
+      updateEverySeconds: 0,
+      nextUpdateAt: undefined,
+    });
+  }
+);
+
+export const keepUpdated = spacetimedb.reducer(
+  { dossierId: t.u64(), everySeconds: t.u32() },
+  (ctx, { dossierId, everySeconds }) => {
+    const row = requireOwnedDossier(ctx, dossierId);
+    if (
+      everySeconds < MIN_UPDATE_SECONDS ||
+      everySeconds > MAX_UPDATE_SECONDS
+    ) {
+      throw new SenderError('Updates can run from every minute to every week');
+    }
+    const status = ctx.db.workflowRun.id.find(row.runId)?.status.tag;
+    const active = status === 'Running' || status === 'Waiting';
+    if (!row.report || (active && row.updateEverySeconds === 0)) {
+      throw new SenderError(
+        'Wait for the first report before scheduling updates'
+      );
+    }
+    // Replace any earlier schedule.
+    if (active) workflows.cancel(ctx, row.runId);
+    const runId = workflows.start(ctx, 'research', {
+      dossierId,
+      question: row.question,
+      everySeconds,
+    });
+    ctx.db.dossier.id.update({
+      ...row,
+      runId,
+      updateEverySeconds: everySeconds,
+    });
   }
 );
 

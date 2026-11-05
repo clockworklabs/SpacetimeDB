@@ -39,7 +39,10 @@ Open <http://127.0.0.1:8806>.
 4. The page reconnects, and the run picks up where it stopped, within about
    30 seconds. A message shows how many finished steps were kept and how many tokens
    were not spent again.
-5. Open the page in a second window to watch the same run live.
+5. Click **Update daily** under the report. The run sleeps until the next day,
+   using nothing while it waits, then researches the plan again and replaces the
+   report.
+6. Open the page in a second window to watch the same run live.
 
 ## How it works
 

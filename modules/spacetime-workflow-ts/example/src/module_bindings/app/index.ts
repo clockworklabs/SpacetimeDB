@@ -36,6 +36,7 @@ import {
 // Import all reducer arg schemas
 import ApprovePlanReducer from "./approve_plan_reducer";
 import CancelDossierReducer from "./cancel_dossier_reducer";
+import KeepUpdatedReducer from "./keep_updated_reducer";
 import StartDossierReducer from "./start_dossier_reducer";
 
 // Import all procedure arg schemas
@@ -84,6 +85,7 @@ const tablesSchema = __schema({
 const reducersSchema = __reducers(
   __reducerSchema("approve_plan", ApprovePlanReducer),
   __reducerSchema("cancel_dossier", CancelDossierReducer),
+  __reducerSchema("keep_updated", KeepUpdatedReducer),
   __reducerSchema("start_dossier", StartDossierReducer),
 );
 

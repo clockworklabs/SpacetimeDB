@@ -9,6 +9,7 @@ interface ServerConfig {
 const TOKEN_KEY = 'dossier-token';
 const RECONNECT_MILLIS = 2_000;
 const STEP_LOST = 'workflow.step_lost';
+const UPDATE_EVERY_SECONDS = 24 * 60 * 60;
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
   document.getElementById(id) as T;
@@ -60,6 +61,24 @@ function runOf(dossier: { runId: bigint }) {
   return [...conn!.db.myRuns.iter()].find(row => row.id === dossier.runId);
 }
 
+// Busy unless it waits for approval, or sleeps until its next update.
+function isBusy(
+  run:
+    | { status: { tag: string }; waitingFor?: string; lastStep?: string }
+    | undefined
+): boolean {
+  if (run?.status.tag === 'Waiting') return run.waitingFor !== 'plan-approved';
+  return run?.status.tag === 'Running' && run.lastStep !== 'sleep';
+}
+
+function untilLabel(at: { microsSinceUnixEpoch: bigint }): string {
+  const minutes = Math.max(
+    1,
+    Math.round((Number(at.microsSinceUnixEpoch / 1000n) - Date.now()) / 60_000)
+  );
+  return minutes < 60 ? `${minutes}m` : `${Math.round(minutes / 60)}h`;
+}
+
 function renderList(): void {
   const dossiers = [...conn!.db.myDossiers.iter()].sort((a, b) =>
     Number(b.id - a.id)
@@ -76,11 +95,11 @@ function renderList(): void {
         'div',
         dossier.id === activeId ? 'thread-item active' : 'thread-item'
       );
-      const status = runOf(dossier)?.status.tag;
-      if (status === 'Running' || status === 'Waiting') {
+      const run = runOf(dossier);
+      if (isBusy(run) || run?.waitingFor === 'plan-approved') {
         const dot = element('span', 'busy-dot');
         dot.title =
-          runOf(dossier)?.waitingFor === 'plan-approved'
+          run?.waitingFor === 'plan-approved'
             ? 'needs your approval'
             : 'researching';
         item.append(dot);
@@ -111,9 +130,31 @@ function stepLines(
     .join('\n');
 }
 
-function topicList(topics: string[]): HTMLElement {
+// While research runs, each topic shows its latest attempt.
+function topicList(
+  topics: string[],
+  steps?: { step: string; status: { tag: string }; error?: string }[]
+): HTMLElement {
   const list = element('ol');
-  list.append(...topics.map(topic => element('li', undefined, topic)));
+  topics.forEach((topic, index) => {
+    const item = element('li', undefined, topic);
+    const last = steps
+      ?.filter(row => row.step === `Research #${index + 1}`)
+      .at(-1);
+    const [state, label] = !steps
+      ? []
+      : !last
+        ? ['active', 'researching']
+        : last.status.tag === 'Ok'
+          ? ['done', 'done']
+          : last.status.tag === 'GaveUp'
+            ? ['skipped', 'skipped']
+            : last.error === STEP_LOST
+              ? ['retrying', 'interrupted, retrying']
+              : ['retrying', 'retrying'];
+    if (state) item.append(element('span', `topic-status ${state}`, label));
+    list.append(item);
+  });
   return list;
 }
 
@@ -166,6 +207,104 @@ function planEditor(dossier: { id: bigint; topics: string[] }): Node[] {
   return [...rows, actions];
 }
 
+// Turns [n] in the report into links to its numbered sources.
+function citedText(
+  text: string,
+  sources: { title: string; url: string }[]
+): HTMLElement {
+  const report = element('p', 'report');
+  for (const part of text.split(/(\[\d+\])/)) {
+    const number = /^\[(\d+)\]$/.exec(part)?.[1];
+    const source = number ? sources[Number(number) - 1] : undefined;
+    if (!source) {
+      report.append(part);
+      continue;
+    }
+    const link = element('a', 'cite', part);
+    link.href = source.url;
+    link.title = source.title;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    report.append(link);
+  }
+  return report;
+}
+
+function sourceList(sources: { title: string; url: string }[]): HTMLElement {
+  const list = element('ol', 'report-sources');
+  for (const source of sources) {
+    const link = element('a', undefined, source.title);
+    link.href = source.url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    const item = element('li');
+    item.append(link);
+    list.append(item);
+  }
+  return list;
+}
+
+function reportActions(
+  dossier: {
+    id: bigint;
+    report?: string;
+    reportSources: { title: string; url: string }[];
+    reportedAt?: { microsSinceUnixEpoch: bigint };
+    updateEverySeconds: number;
+    nextUpdateAt?: { microsSinceUnixEpoch: bigint };
+  },
+  idle: boolean
+): HTMLElement {
+  const actions = element('div', 'report-actions');
+  const copy = button('btn small', 'Copy', () => {
+    const sources = dossier.reportSources
+      .map((source, i) => `[${i + 1}] ${source.title} ${source.url}`)
+      .join('\n');
+    void navigator.clipboard
+      .writeText(`${dossier.report}\n\nSources\n${sources}`)
+      .then(() => {
+        copy.textContent = 'Copied';
+        setTimeout(() => (copy.textContent = 'Copy'), 1500);
+      });
+  });
+  actions.append(copy);
+  if (dossier.updateEverySeconds > 0) {
+    actions.append(
+      button('btn small', 'Stop updates', () => {
+        conn?.reducers
+          .cancelDossier({ dossierId: dossier.id })
+          .catch(showError);
+      })
+    );
+  } else if (idle) {
+    actions.append(
+      button('btn small', 'Update daily', () => {
+        conn?.reducers
+          .keepUpdated({
+            dossierId: dossier.id,
+            everySeconds: UPDATE_EVERY_SECONDS,
+          })
+          .catch(showError);
+      })
+    );
+  }
+  const notes: string[] = [];
+  if (dossier.reportedAt) {
+    notes.push(
+      `Updated ${new Date(
+        Number(dossier.reportedAt.microsSinceUnixEpoch / 1000n)
+      ).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`
+    );
+  }
+  if (dossier.updateEverySeconds > 0 && dossier.nextUpdateAt) {
+    notes.push(`next update in ${untilLabel(dossier.nextUpdateAt)}`);
+  }
+  if (notes.length > 0) {
+    actions.append(element('span', 'report-meta', notes.join('  ·  ')));
+  }
+  return actions;
+}
+
 function renderMessages(): void {
   const wrap = $('msg-list');
   const dossier = [...conn!.db.myDossiers.iter()].find(
@@ -184,7 +323,7 @@ function renderMessages(): void {
   const status = run?.status.tag;
   // The run also waits while its topics are researched in parallel.
   const waiting = run?.waitingFor === 'plan-approved';
-  const running = status === 'Running' || (status === 'Waiting' && !waiting);
+  const running = isBusy(run);
   // Topics finish in any order. Show them in the plan's order.
   const notes = [...conn!.db.myNotes.iter()]
     .filter(row => row.dossierId === dossier.id)
@@ -208,6 +347,11 @@ function renderMessages(): void {
       : [])
   );
 
+  // An update round starts after its scheduling step.
+  const roundStart =
+    steps.findLast(row => row.step === 'Schedule the next update')?.id ?? 0n;
+  const currentRound = steps.filter(row => row.id > roundStart);
+
   const nodes: HTMLElement[] = [
     message('user', 'You', document.createTextNode(dossier.question)),
   ];
@@ -217,7 +361,9 @@ function renderMessages(): void {
       message(
         'assistant',
         'Plan',
-        ...(waiting ? planEditor(dossier) : [topicList(dossier.topics)])
+        ...(waiting
+          ? planEditor(dossier)
+          : [topicList(dossier.topics, running ? currentRound : undefined)])
       )
     );
   }
@@ -262,14 +408,21 @@ function renderMessages(): void {
   }
 
   if (dossier.report) {
-    const report = element('p', 'report', dossier.report);
-    nodes.push(message('assistant', 'Report', report));
+    nodes.push(
+      message(
+        'assistant',
+        'Report',
+        citedText(dossier.report, dossier.reportSources),
+        sourceList(dossier.reportSources),
+        reportActions(dossier, status === 'Completed' || !running)
+      )
+    );
   }
   if (run?.error) {
     nodes.push(message('error', 'Error', document.createTextNode(run.error)));
   }
 
-  if (status === 'Cancelled') {
+  if (status === 'Cancelled' && !dossier.report) {
     nodes.push(
       message(
         'tool',
