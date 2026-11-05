@@ -8,7 +8,7 @@ use spacetimedb_sats::Typespace;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Identifies one binding of a template
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BindingId(pub u64);
 
 impl BindingId {
@@ -59,15 +59,17 @@ impl BindingIndex {
         let mut values = values.into_iter();
         // One column is a bare value, like `ProductValue::project`
         let key = if column_count == 1 {
-            values.next()
+            values.next().expect("a binding key is missing a value")
         } else {
             let product = ProductValue::from_iter(values.by_ref().take(column_count as usize));
-            let complete = product.elements.len() as u64 == column_count as u64;
-            complete.then_some(AlgebraicValue::Product(product))
+            assert_eq!(
+                product.elements.len() as u64,
+                column_count as u64,
+                "a binding key is missing a value"
+            );
+            AlgebraicValue::Product(product)
         };
-        let Some(key) = key.filter(|_| values.next().is_none()) else {
-            panic!("wrong number of key values");
-        };
+        assert!(values.next().is_none(), "a binding key has an extra value");
         key
     }
 }
@@ -395,13 +397,13 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "wrong number of key values")]
+    #[should_panic(expected = "a binding key is missing a value")]
     fn probe_rejects_a_partial_key() {
         region_rank().probe(REGION_RANK, region("west"));
     }
 
     #[test]
-    #[should_panic(expected = "wrong number of key values")]
+    #[should_panic(expected = "a binding key has an extra value")]
     fn probe_rejects_an_extra_value() {
         region_rank().probe(REGION, west_3());
     }
