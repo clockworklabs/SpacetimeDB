@@ -90,7 +90,7 @@ write failure blocks upload. This does not resume or upload partial runs.
 | 100 | Actual SDK client cache recovery, lost call results and no unsafe retry (C#/TypeScript) |
 | 101 | Typed environment declarations read from reducers and views, with hidden published values |
 
-These are SpacetimeDB contracts, not copies of Convex APIs. Pagination checks
+Pagination checks
 correctness, not index scan cost. Backfill checks an online data migration
 algorithm, not deployment schema conversion. Quota is lifetime-based, not a
 timed rate limiter. Presence checks module behavior; it does not grade generated
