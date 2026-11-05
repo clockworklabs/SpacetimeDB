@@ -114,6 +114,8 @@ pub enum ObjectStoreError {
     StorageLimitExceeded(#[from] Box<BudgetExceeded>),
     #[error(transparent)]
     Io(#[from] io::Error),
+    #[error("failed to deserialize stored object")]
+    Serialization(#[from] spacetimedb_sats::buffer::DecodeError),
 }
 
 impl ObjectStoreError {
@@ -121,7 +123,8 @@ impl ObjectStoreError {
         match self {
             ObjectStoreError::UnknownObject(_)
             | ObjectStoreError::MissingObject(_)
-            | ObjectStoreError::HashMismatch { .. } => false,
+            | ObjectStoreError::HashMismatch { .. }
+            | ObjectStoreError::Serialization(_) => false,
 
             ObjectStoreError::StorageLimitExceeded(_) | ObjectStoreError::Io(_) => true,
         }

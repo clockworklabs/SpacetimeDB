@@ -9142,6 +9142,7 @@ dependencies = [
  "spacetimedb-paths",
  "spacetimedb-snapshot",
  "spacetimedb-table",
+ "tempfile",
 ]
 
 [[package]]
