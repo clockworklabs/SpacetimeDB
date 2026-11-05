@@ -1256,6 +1256,9 @@ jobs:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     uses: ./.github/workflows/csharp-testing.yml
+    with:
+      # The merge queue and master still cover every platform before and after landing.
+      all-platforms: ${{ github.event_name != 'pull_request' }}
 
   test:
     needs:
