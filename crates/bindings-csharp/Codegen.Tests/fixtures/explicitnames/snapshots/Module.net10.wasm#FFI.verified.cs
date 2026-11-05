@@ -468,19 +468,6 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
 
         public readonly struct Tables
         {
-#if !SPACETIMEDB_WASM_AOT
-            private global::SpacetimeDB.Internal.Local? __owner { get; }
-
-            public Tables(global::SpacetimeDB.Internal.Local? db)
-            {
-                __owner = db;
-            }
-
-            public global::SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.TableHandles.DemoTable DemoTable =>
-                global::SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.TableHandles.DemoTable.__GetInstance(
-                    global::SpacetimeDB.Internal.Module.GetInstanceId(__owner)
-                );
-#else
             private readonly int __instanceId;
 
             public Tables(global::SpacetimeDB.Internal.Local? db)
@@ -492,24 +479,10 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
                 global::SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.TableHandles.DemoTable.__GetInstance(
                     __instanceId
                 );
-#endif
         }
 
         public readonly struct ReadOnlyTables
         {
-#if !SPACETIMEDB_WASM_AOT
-            private global::SpacetimeDB.Internal.LocalReadOnly? __owner { get; }
-
-            public ReadOnlyTables(global::SpacetimeDB.Internal.LocalReadOnly? db)
-            {
-                __owner = db;
-            }
-
-            public global::SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.ViewHandles.DemoTableReadOnly DemoTable =>
-                global::SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.ViewHandles.DemoTableReadOnly.__GetInstance(
-                    global::SpacetimeDB.Internal.Module.GetInstanceId(__owner)
-                );
-#else
             private readonly int __instanceId;
 
             public ReadOnlyTables(global::SpacetimeDB.Internal.LocalReadOnly? db)
@@ -521,26 +494,16 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
                 global::SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.ViewHandles.DemoTableReadOnly.__GetInstance(
                     __instanceId
                 );
-#endif
         }
 
         public readonly partial struct Queries
         {
-#if !SPACETIMEDB_WASM_AOT
-            private global::SpacetimeDB.QueryBuilder __owner { get; }
-
-            public Queries(global::SpacetimeDB.QueryBuilder from)
-            {
-                __owner = from;
-            }
-#else
             private readonly int __instanceId;
 
             public Queries(global::SpacetimeDB.QueryBuilder from)
             {
                 __instanceId = global::SpacetimeDB.Internal.Module.GetInstanceId(from);
             }
-#endif
         }
     }
 
@@ -595,7 +558,6 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
 
     public static partial class AssemblyDescriptor
     {
-#if SPACETIMEDB_WASM_AOT
         private static global::SpacetimeDB.SqlTableName?[] DemoTableSqlNames =>
             field ??= new global::SpacetimeDB.SqlTableName?[
                 global::SpacetimeDB.Internal.Module.InstanceCount
@@ -617,7 +579,6 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
             names[contextInstance] = resolvedName;
             return resolvedName;
         }
-#endif
 
         public readonly partial struct Queries
         {
@@ -662,8 +623,9 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.TableHandles
             internal ByIdIndex? __index_ById;
         }
 
-        private static __InstanceState?[] __instances =>
-            field ??= new __InstanceState?[global::SpacetimeDB.Internal.Module.InstanceCount];
+        private static readonly __InstanceState?[] __instances = new __InstanceState?[
+            global::SpacetimeDB.Internal.Module.InstanceCount
+        ];
         private readonly __InstanceState __state;
 
         static DemoTable() { }
@@ -866,8 +828,9 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.ViewHandles
     public sealed class DemoTableReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::DemoTable>
     {
-        private static DemoTableReadOnly?[] __instances =>
-            field ??= new DemoTableReadOnly?[global::SpacetimeDB.Internal.Module.InstanceCount];
+        private static readonly DemoTableReadOnly?[] __instances = new DemoTableReadOnly?[
+            global::SpacetimeDB.Internal.Module.InstanceCount
+        ];
         private readonly int __instanceId;
 
         static DemoTableReadOnly() { }

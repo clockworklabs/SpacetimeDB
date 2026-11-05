@@ -350,7 +350,7 @@ public partial struct TestDefaultFieldValues
                                                                                                                                                                                                                            ^^^^^^^^^^^^^^^^^^^^^^
         }
 */
-    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.Queries.TestDuplicateTableName() [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(881)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.Queries.TestDuplicateTableName() [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1139)]',
+    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.Queries.TestDuplicateTableName() [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(829)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.Queries.TestDuplicateTableName() [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1027)]',
     Severity: Error,
     Descriptor: {
       Id: CS0121,
@@ -373,7 +373,7 @@ public partial struct TestDefaultFieldValues
                                                                                                                                                                                                         ^^^^^^^^^^^^^^^^^^^^^^
         }
 */
-    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.Queries.TestDuplicateTableName() [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(881)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.Queries.TestDuplicateTableName() [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1139)]',
+    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.Queries.TestDuplicateTableName() [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(829)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.AssemblyDescriptor.Queries.TestDuplicateTableName() [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1027)]',
     Severity: Error,
     Descriptor: {
       Id: CS0121,
@@ -396,7 +396,7 @@ public partial struct TestDefaultFieldValues
                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
             }
 */
-    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameCols.TestDuplicateTableNameCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(844)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameCols.TestDuplicateTableNameCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1102)]',
+    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameCols.TestDuplicateTableNameCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(807)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameCols.TestDuplicateTableNameCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1005)]',
     Severity: Error,
     Descriptor: {
       Id: CS0121,
@@ -419,7 +419,7 @@ public partial struct TestDefaultFieldValues
                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
             }
 */
-    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameCols.TestDuplicateTableNameCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(844)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameCols.TestDuplicateTableNameCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1102)]',
+    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameCols.TestDuplicateTableNameCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(807)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameCols.TestDuplicateTableNameCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1005)]',
     Severity: Error,
     Descriptor: {
       Id: CS0121,
@@ -442,7 +442,7 @@ public partial struct TestDefaultFieldValues
                                                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
             }
 */
-    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(854)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1112)]',
+    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(817)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1015)]',
     Severity: Error,
     Descriptor: {
       Id: CS0121,
@@ -465,7 +465,7 @@ public partial struct TestDefaultFieldValues
                                                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
             }
 */
-    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(854)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1112)]',
+    Message: The call is ambiguous between the following methods or properties: 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(817)]' and 'SpacetimeDB.Generated.diag_4F830E2879BB50E3.TestDuplicateTableNameIxCols.TestDuplicateTableNameIxCols(SpacetimeDB.SqlTableName) [{ProjectDirectory}fixtures/diag/SpacetimeDB.Codegen/SpacetimeDB.Codegen.Module/FFI.cs(1015)]',
     Severity: Error,
     Descriptor: {
       Id: CS0121,

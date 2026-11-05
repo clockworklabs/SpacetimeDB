@@ -46,10 +46,10 @@ public abstract class HandlerContextBase
     {
         Sender = sender;
         var senderAuth = AuthCtx.FromJwt(senderJwt, sender);
-        txState = new(
-            random,
-            time,
-            timestamp => new Internal.TxContext(
+        txState = new(random, time, inner => CreateTxContext(inner))
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
+        {
+            CreateInitialTxContext = timestamp => new Internal.TxContext(
                 CreateLocal(),
                 Sender,
                 null,
@@ -57,17 +57,30 @@ public abstract class HandlerContextBase
                 senderAuth,
                 random
             ),
-            inner => CreateTxContext(inner)
-        );
+        }
+#endif
+        ;
     }
 
     protected abstract HandlerTxContextBase CreateTxContext(Internal.TxContext inner);
     protected abstract LocalBase CreateLocal();
 
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    public Internal.TxContext EnterTxContext(long timestampMicros) =>
+        throw new NotSupportedException(
+            "Host transactions are unavailable in managed module tests."
+        );
+
+    public void ExitTxContext() =>
+        throw new NotSupportedException(
+            "Host transactions are unavailable in managed module tests."
+        );
+#else
     public Internal.TxContext EnterTxContext(long timestampMicros) =>
         txState.EnterTxContext(timestampMicros);
 
     public void ExitTxContext() => txState.ExitTxContext();
+#endif
 
     public readonly struct TxOutcome<TResult>(bool isSuccess, TResult? value, Exception? error)
     {

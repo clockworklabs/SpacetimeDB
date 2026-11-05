@@ -169,11 +169,13 @@ public abstract class UniqueIndex<Handle, Row, T, RW> : IndexBase<Row>
 
     private static BTreeIndexBounds<T, RW> ToBounds(T key) => new(key);
 
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
     private sealed class RawPointIter(FFI.IndexId indexId, byte[] point) : RawTableIterBase<Row>
     {
         protected override void IterStart(out FFI.RowIter handle) =>
             FFI.datastore_index_scan_point_bsatn(indexId, point, point.Length, out handle);
     }
+#endif
 
     protected IEnumerable<Row> DoFilter(T key) => DoFilter(ToBounds(key));
 
@@ -267,11 +269,13 @@ public abstract class RefUniqueIndex<Handle, Row, T, RW> : IndexBase<Row>
 
     private static BTreeIndexBounds<T, RW> ToBounds(T key) => new(key);
 
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
     private sealed class RawPointIter(FFI.IndexId indexId, byte[] point) : RawTableIterBase<Row>
     {
         protected override void IterStart(out FFI.RowIter handle) =>
             FFI.datastore_index_scan_point_bsatn(indexId, point, point.Length, out handle);
     }
+#endif
 
     protected IEnumerable<Row> DoFilter(T key) => DoFilter(ToBounds(key));
 
@@ -365,11 +369,13 @@ public abstract class ReadOnlyUniqueIndex<Handle, Row, T, RW> : ReadOnlyIndexBas
 
     private static BTreeIndexBounds<T, RW> ToBounds(T key) => new(key);
 
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
     private sealed class RawPointIter(FFI.IndexId indexId, byte[] point) : RawTableIterBase<Row>
     {
         protected override void IterStart(out FFI.RowIter handle) =>
             FFI.datastore_index_scan_point_bsatn(indexId, point, point.Length, out handle);
     }
+#endif
 
     protected IEnumerable<Row> Filter(T key) => Filter(ToBounds(key));
 
@@ -415,11 +421,13 @@ public abstract class ReadOnlyRefUniqueIndex<Handle, Row, T, RW> : ReadOnlyIndex
 
     private static BTreeIndexBounds<T, RW> ToBounds(T key) => new(key);
 
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
     private sealed class RawPointIter(FFI.IndexId indexId, byte[] point) : RawTableIterBase<Row>
     {
         protected override void IterStart(out FFI.RowIter handle) =>
             FFI.datastore_index_scan_point_bsatn(indexId, point, point.Length, out handle);
     }
+#endif
 
     protected IEnumerable<Row> Filter(T key) => Filter(ToBounds(key));
 

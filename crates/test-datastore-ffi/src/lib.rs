@@ -1,4 +1,26 @@
-//! Native test ABI. See include/spacetimedb_test_datastore.h for the ownership contract.
+//! Native C ABI for Spacetime module test datastores. The SpacetimeDB.Testing NuGet
+//! package calls it through P/Invoke (`crates/bindings-csharp/Testing/Native.cs`).
+//!
+//! # ABI contract
+//!
+//! - Functions use the C calling convention (`cdecl` on Windows) and return a `u32`
+//!   status code. Rust panics never unwind across the ABI. Process aborts, allocation
+//!   failure and invalid caller memory are not recoverable.
+//! - Check [`stdb_test_abi_version`] before calling any `v1` function.
+//! - All pointers must refer to valid, aligned, nonoverlapping storage. Inputs are
+//!   borrowed only for the duration of the call. Strings are UTF-8, not NUL terminated.
+//! - Output slots and `error` are required, and are initialized on failure as well as
+//!   success: scalars are zeroed, and buffers and handles are null or empty. On failure
+//!   `error` holds an owned UTF-8 diagnostic, not NUL terminated; it is empty on success.
+//!   Diagnostic text is not a machine-readable error discriminator.
+//! - Free returned buffers with [`stdb_test_v1_buffer_free`], never with the caller's
+//!   allocator.
+//! - Calls using a handle must be serialized by the caller, including destruction.
+//!   Handles may move between caller threads: native state lives on a dedicated owner
+//!   thread, so transactions can be released from any thread, including a finalizer.
+//! - Row snapshots from scans and queries are BSATN `array<array<u8>>`, each inner array
+//!   one BSATN row. Row order is unspecified, and an empty result is an encoded empty
+//!   array, not an empty buffer.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
@@ -12,6 +34,7 @@ use spacetimedb_test_datastore::{TestDatastore, TestDatastoreError};
 mod transaction;
 use transaction::Worker;
 
+// Status codes. Keep in sync with `NativeStatus` in `crates/bindings-csharp/Testing/Native.cs`.
 const OK: u32 = 0;
 const INVALID_ARGUMENT: u32 = 1;
 const INVALID_SCHEMA: u32 = 2;
@@ -173,6 +196,16 @@ unsafe fn with_output<T: Default>(
     }
 }
 
+/// Borrow a handle passed across the ABI, rejecting null.
+unsafe fn handle<'a, T>(ptr: *const T, what: &str) -> Result<&'a T, Failure> {
+    unsafe { ptr.as_ref() }.ok_or_else(|| (INVALID_ARGUMENT, format!("Null {what}")))
+}
+
+/// Borrow a UTF-8 string (not NUL terminated) passed across the ABI.
+unsafe fn input_str<'a>(data: *const u8, len: u64) -> Result<&'a str, Failure> {
+    std::str::from_utf8(unsafe { input_bytes(data, len)? }).map_err(|err| (INVALID_ARGUMENT, err.to_string()))
+}
+
 unsafe fn input_bytes<'a>(data: *const u8, len: u64) -> Result<&'a [u8], Failure> {
     if (data.is_null() && len != 0) || len > isize::MAX as u64 {
         return Err((INVALID_ARGUMENT, "Invalid input pointer or length".into()));
@@ -201,10 +234,13 @@ fn contain_panic<T>(f: impl FnOnce() -> Result<T, Failure>) -> Result<T, Failure
     })
 }
 
-/// Derive an identity from UTF-8 issuer and subject strings, without a datastore.
+/// Derive an identity from UTF-8 issuer and subject strings using the production
+/// algorithm. Claims validation is the caller's responsibility, and no signature is
+/// verified. The output is one BSATN `Identity` (32 little-endian bytes). This call is
+/// stateless and needs no datastore or handle lock.
 ///
 /// # Safety
-/// Pointers must satisfy the ownership and memory contract in the C header.
+/// Pointers must satisfy the ABI contract in the crate documentation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stdb_test_v1_identity_from_claims(
     issuer: *const u8,
@@ -216,10 +252,8 @@ pub unsafe extern "C" fn stdb_test_v1_identity_from_claims(
 ) -> u32 {
     unsafe {
         with_output(out, error, || {
-            let issuer = std::str::from_utf8(input_bytes(issuer, issuer_len)?)
-                .map_err(|err| (INVALID_ARGUMENT, err.to_string()))?;
-            let subject = std::str::from_utf8(input_bytes(subject, subject_len)?)
-                .map_err(|err| (INVALID_ARGUMENT, err.to_string()))?;
+            let issuer = input_str(issuer, issuer_len)?;
+            let subject = input_str(subject, subject_len)?;
             let identity = spacetimedb_lib::Identity::from_claims(issuer, subject);
             let bytes = bsatn::to_vec(&identity).map_err(|err| (INTERNAL_ERROR, err.to_string()))?;
             Ok(StdbTestBuffer::from_bytes(bytes))
@@ -284,13 +318,18 @@ fn create(schema: &[u8]) -> Result<StdbTestDatastore, Failure> {
     })
 }
 
+/// The ABI version. Callers check it before calling any `v1` function.
 #[unsafe(no_mangle)]
 pub extern "C" fn stdb_test_abi_version() -> u32 {
     1
 }
 
+/// Create a datastore from one complete BSATN `RawModuleDef`, including its version
+/// discriminant. A null `schema` is permitted only with length zero (an invalid schema).
+/// Both outputs are initialized even on failure.
+///
 /// # Safety
-/// Pointers must satisfy the ownership and memory contract in the C header.
+/// Pointers must satisfy the ABI contract in the crate documentation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn stdb_test_v1_datastore_create(
     schema: *const u8,
@@ -306,6 +345,10 @@ pub unsafe extern "C" fn stdb_test_v1_datastore_create(
     }
 }
 
+/// Destroy a datastore, waiting for owner-thread cleanup. A non-null handle is consumed
+/// even on failure and must never be reused; null is a no-op. Invalid or stale pointers
+/// are caller errors, not checked handles.
+///
 /// # Safety
 /// The handle must be null or a live, exclusively owned handle returned by create.
 #[unsafe(no_mangle)]
@@ -324,6 +367,9 @@ pub unsafe extern "C" fn stdb_test_v1_datastore_destroy(datastore: *mut StdbTest
     .map_or_else(|(status, _)| status, |()| OK)
 }
 
+/// Free an unmodified returned buffer exactly once, then zero the supplied slot. Null and
+/// an empty buffer are no-ops. Copies of a buffer do not share ownership.
+///
 /// # Safety
 /// The slot must be null or contain an unmodified, exclusively owned returned buffer.
 #[unsafe(no_mangle)]
