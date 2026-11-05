@@ -1,8 +1,10 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { copyFile, mkdtemp, rm } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { build } from 'tsup';
+import { createRequire } from 'node:module';
 import { test } from 'vitest';
 
 // Use native Node loaders so these checks exercise package exports, not Vite's resolver.
@@ -49,6 +51,37 @@ test('module schema clients bundle for browsers', async () => {
       noExternal: ['spacetimedb'],
       silent: true,
     });
+  } finally {
+    await rm(outDir, { recursive: true, force: true });
+  }
+});
+
+test('module schemas share SDK classes in Node bundles', async () => {
+  const outDir = await mkdtemp(
+    fileURLToPath(
+      new URL('../case-conversion-test-client/.module-schema-', import.meta.url)
+    )
+  );
+  try {
+    const outfile = join(outDir, 'consumer.cjs');
+    const entry = join(outDir, 'consumer.ts');
+    await copyFile('tests/consumer/module-schema-browser.ts', entry);
+    const require = createRequire(
+      new URL('../case-conversion-test-client/package.json', import.meta.url)
+    );
+    execFileSync(
+      process.execPath,
+      [
+        require.resolve('esbuild/bin/esbuild'),
+        entry,
+        '--bundle',
+        '--platform=node',
+        '--format=cjs',
+        `--outfile=${outfile}`,
+      ],
+      { stdio: 'pipe' }
+    );
+    execFileSync(process.execPath, [outfile], { stdio: 'pipe' });
   } finally {
     await rm(outDir, { recursive: true, force: true });
   }
