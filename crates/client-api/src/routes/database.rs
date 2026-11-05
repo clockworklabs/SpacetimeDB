@@ -1945,19 +1945,21 @@ mod tests {
         let missing = || EnvironmentSchemaError::MissingRequired { key: "API_KEY".into() };
         for response in [
             publish_error(anyhow::Error::new(missing()).context("publication failed")),
-            publish_migration_error(spacetimedb::db::environment::EnvironmentError::Schema(missing()).into()),
+            publish_migration_error(MigrationExecutionError::Other(
+                spacetimedb::db::environment::EnvironmentError::Schema(missing()).into(),
+            )),
             publish_error(
                 spacetimedb::host::module_host::InitDatabaseError::Other(
                     spacetimedb::db::environment::EnvironmentError::Schema(missing()).into(),
                 )
                 .into(),
             ),
-            publish_migration_error(
+            publish_migration_error(MigrationExecutionError::Other(
                 spacetimedb::host::module_host::InitDatabaseError::Other(
                     spacetimedb::db::environment::EnvironmentError::Schema(missing()).into(),
                 )
                 .into(),
-            ),
+            )),
         ] {
             let response = Err::<(), _>(response).into_response();
             assert_eq!(response.status(), StatusCode::BAD_REQUEST);
