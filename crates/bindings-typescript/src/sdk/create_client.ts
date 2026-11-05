@@ -12,7 +12,11 @@ import {
 } from '../lib/schema.ts';
 import { table, type CoerceRow, type UntypedTableDef } from '../lib/table.ts';
 import type { TableSchema, UntypedTableSchema } from '../lib/table_schema.ts';
-import { ArrayBuilder, OptionBuilder, RowBuilder } from '../lib/type_builders.ts';
+import {
+  ArrayBuilder,
+  OptionBuilder,
+  RowBuilder,
+} from '../lib/type_builders.ts';
 import { makeQueryBuilder, type QueryBuilder } from '../lib/query.ts';
 import type { NestAccessors, SnakeCase } from '../lib/type_util.ts';
 import { toSnakeCase, type CoerceParams } from '../lib/util.ts';
