@@ -3,6 +3,7 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
 use std::sync::mpsc::{self, Sender};
+use std::sync::{Arc, OnceLock};
 use std::thread::{self, JoinHandle};
 
 use spacetimedb_lib::{bsatn, RawModuleDef};
@@ -61,11 +62,42 @@ impl Default for StdbTestBuffer {
 // Only the channel and join handle cross threads. In particular, a
 // TestTransaction must stay on the owner thread: MutTxId is explicitly !Send.
 pub struct StdbTestDatastore {
-    requests: Sender<Command>,
+    requests: Requests,
     worker: JoinHandle<()>,
 }
 
 type Failure = (u32, String);
+
+/// Sends work to the owner thread. Clones share the error that stopped the worker, if any.
+#[derive(Clone)]
+struct Requests {
+    sender: Sender<Command>,
+    stopped_by: Arc<OnceLock<String>>,
+}
+
+impl Requests {
+    fn new(sender: Sender<Command>) -> Self {
+        Self {
+            sender,
+            stopped_by: Arc::default(),
+        }
+    }
+
+    fn has_stopped(&self) -> bool {
+        self.stopped_by.get().is_some()
+    }
+
+    /// A worker that stopped on an internal error reports that error, not a closed datastore.
+    fn unavailable(&self, closed: &str) -> Failure {
+        match self.stopped_by.get() {
+            Some(message) => (
+                INTERNAL_ERROR,
+                format!("Datastore stopped after an earlier error: {message}"),
+            ),
+            None => (DATASTORE_CLOSED, closed.into()),
+        }
+    }
+}
 
 enum Command {
     Run(Box<dyn FnOnce(&mut Worker) -> bool + Send>),
@@ -73,23 +105,31 @@ enum Command {
 }
 
 fn request<T: Send + 'static>(
-    requests: &Sender<Command>,
+    requests: &Requests,
     f: impl FnOnce(&mut Worker) -> Result<T, Failure> + Send + 'static,
 ) -> Result<T, Failure> {
     let (reply, response) = mpsc::sync_channel(1);
+    let stopped_by = requests.stopped_by.clone();
     requests
+        .sender
         .send(Command::Run(Box::new(move |state| {
             let result = contain_panic(|| f(state));
             // A panicking operation may have left the transaction inconsistent.
             // Stop this worker, rolling back before accepting any further work.
-            let healthy = !matches!(&result, Err((INTERNAL_ERROR, _)));
+            let healthy = match &result {
+                Err((INTERNAL_ERROR, message)) => {
+                    let _ = stopped_by.set(message.clone());
+                    false
+                }
+                _ => true,
+            };
             let _ = reply.send(result);
             healthy
         })))
-        .map_err(|_| (DATASTORE_CLOSED, "Datastore is closed".into()))?;
+        .map_err(|_| requests.unavailable("Datastore is closed"))?;
     response
         .recv()
-        .map_err(|_| (DATASTORE_CLOSED, "Datastore worker stopped".into()))?
+        .map_err(|_| requests.unavailable("Datastore worker stopped"))?
 }
 
 fn database_error(err: TestDatastoreError) -> Failure {
@@ -148,10 +188,16 @@ fn contain_panic<T>(f: impl FnOnce() -> Result<T, Failure>) -> Result<T, Failure
     catch_unwind(AssertUnwindSafe(f)).unwrap_or_else(|payload| {
         // Release ordinary payloads, but don't let a payload's destructor unwind
         // across the ABI. Only a second, panicking destructor forces a leak.
+        let detail = payload
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+            .unwrap_or("non-string panic payload");
+        let message = format!("Native test datastore panicked: {detail}");
         if let Err(nested) = catch_unwind(AssertUnwindSafe(|| drop(payload))) {
             std::mem::forget(nested);
         }
-        Err((INTERNAL_ERROR, "Native test datastore panicked".into()))
+        Err((INTERNAL_ERROR, message))
     })
 }
 
@@ -232,7 +278,10 @@ fn create(schema: &[u8]) -> Result<StdbTestDatastore, Failure> {
         }
         return Err(err);
     }
-    Ok(StdbTestDatastore { requests, worker })
+    Ok(StdbTestDatastore {
+        requests: Requests::new(requests),
+        worker,
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -264,7 +313,7 @@ pub unsafe extern "C" fn stdb_test_v1_datastore_destroy(datastore: *mut StdbTest
     contain_panic(|| {
         if !datastore.is_null() {
             let StdbTestDatastore { requests, worker } = *unsafe { Box::from_raw(datastore) };
-            let _ = requests.send(Command::Shutdown);
+            let _ = requests.sender.send(Command::Shutdown);
             drop(requests);
             if let Err(payload) = worker.join() {
                 std::panic::resume_unwind(payload);
@@ -411,10 +460,11 @@ mod tests {
     }
 
     #[test]
-    fn panics_become_internal_errors() {
-        assert_eq!(
-            contain_panic::<()>(|| panic!("test panic")).unwrap_err().0,
-            INTERNAL_ERROR
-        );
+    fn panics_become_internal_errors_with_their_message() {
+        let (status, message) = contain_panic::<()>(|| panic!("test panic")).unwrap_err();
+        assert_eq!(status, INTERNAL_ERROR);
+        assert_eq!(message, "Native test datastore panicked: test panic");
+        let (_, message) = contain_panic::<()>(|| panic!("formatted {}", 1)).unwrap_err();
+        assert_eq!(message, "Native test datastore panicked: formatted 1");
     }
 }
