@@ -239,6 +239,31 @@ let roll: u32 = ctx.rng().gen_range(1..=6);   // any rand::Rng method
 timestamp.to_micros_since_unix_epoch() / 1000
 ```
 
+## Environment Variables
+
+Declare every environment key the module reads in one `#[spacetimedb::env]` struct. Values are strings. An enum deriving `EnvironmentValue` restricts the allowed strings, and `Option<T>` permits absence. Reducers, procedures and views read values from `ctx.env`; reading an undeclared key fails.
+
+```rust
+#[derive(spacetimedb::EnvironmentValue)]
+pub enum LogLevel {
+    #[env(value = "debug")]
+    Debug,
+    #[env(value = "info")]
+    Info,
+}
+
+#[spacetimedb::env]
+pub struct Env {
+    pub API_KEY: String,
+    pub LOG_LEVEL: Option<LogLevel>,
+}
+
+let api_key: String = ctx.env.API_KEY();
+let log_level: Option<LogLevel> = ctx.env.LOG_LEVEL();
+```
+
+Values come from the publishing shell or the `env` map in `spacetime.json`, and stored values persist across publishes. `spacetime publish --env-only` changes them without republishing the module.
+
 ## Scheduled Tables
 
 ```rust

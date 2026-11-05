@@ -242,6 +242,25 @@ double f = ctx.Rng.NextDouble();        // [0.0, 1.0)
 timestamp.MicrosecondsSinceUnixEpoch / 1000
 ```
 
+## Environment Variables
+
+Declare every environment key the module reads in one `[SpacetimeDB.Env]` struct. Values are strings: `string` requires a value, `string?` permits absence, and `[SpacetimeDB.EnvValues(...)]` restricts the allowed strings. Reducers, procedures and views read values from `ctx.Env`; reading an undeclared key fails.
+
+```csharp
+[SpacetimeDB.Env]
+public partial struct EnvironmentSchema
+{
+    public string API_KEY;
+    [SpacetimeDB.EnvValues("info", "debug")]
+    public string? LOG_LEVEL;
+}
+
+string apiKey = ctx.Env.API_KEY;
+string? logLevel = ctx.Env.LOG_LEVEL;
+```
+
+Values come from the publishing shell or the `env` map in `spacetime.json`, and stored values persist across publishes. `spacetime publish --env-only` changes them without republishing the module.
+
 ## Scheduled Tables
 
 Declare the scheduled table and its reducer in the same `Module` class so `nameof(...)` resolves:

@@ -229,6 +229,27 @@ ctx.db.shipment.deliverBy.filter(new Range(
 ));
 ```
 
+## Environment Variables
+
+Declare every environment key the module reads in the `env` option of `schema`. Values are strings. `t.enum(...)` restricts the allowed strings, and `.optional()` permits absence. Reducers, procedures and views read values from `ctx.env`; reading an undeclared key fails.
+
+```typescript
+const spacetimedb = schema(
+  { entity },
+  {
+    env: {
+      API_KEY: t.string(),
+      LOG_LEVEL: t.enum('LogLevel', ['info', 'debug']).optional(),
+    },
+  }
+);
+
+const apiKey: string = ctx.env.API_KEY;
+const logLevel: 'info' | 'debug' | undefined = ctx.env.LOG_LEVEL;
+```
+
+Values come from the publishing shell or the `env` map in `spacetime.json`, and stored values persist across publishes. `spacetime publish --env-only` changes them without republishing the module.
+
 ## Scheduled Tables
 
 The reducer or procedure referenced by a table's `scheduled` option must be exported.
@@ -346,6 +367,21 @@ Use explicit SQL such as `SELECT * FROM tickets_for_project('alpha')`. Arguments
 Generate receiver bindings with `spacetime generate --bindings module --lang typescript`. Only root receiver reducers are supported. Import the generated module and declare an outbox with `table({ outbox: { receiver: remote.reducers.receive } }, columns)`. Include an auto-increment `u64` primary key, one `remote.identity().target()` column, and columns matching receiver parameters by name and type.
 
 Insert an outbox row inside a reducer. Its transaction must commit before delivery. Register the result callback with `db.reducer({ onResult: outbox }, { row: outbox.rowType, result: t.result(t.unit(), t.string()) }, callback)`. Test `'ok' in result` or `'err' in result`. Successful callback writes and host outbox cleanup commit together. Do not manually delete outbox rows. Receiver-typed identities are not an authorization check; validate trusted targets or callers when required.
+
+## Submodules
+
+Mount another module's default export under a key in `schema`. Import it with `import * as`; a default import exposes only its schema, without its reducers and helpers. Mounting the same module under two keys gives independent table instances. Its tables are at `ctx.db.<key>`, and `ctx.as.<key>` is a context scoped to it that its reducers and helper functions accept. A nested mount adds a level: `ctx.db.outer.inner.<table>` and `ctx.as.outer.as.inner`.
+
+```typescript
+import * as authLib from './auth_lib';
+
+const spacetimedb = schema({ players, myauth: authLib, backup: authLib });
+
+authLib.verifyToken(ctx.as.myauth, { token });
+const user = ctx.db.myauth.users.identity.find(ctx.sender);
+```
+
+Helpers run inside the caller's transaction, so a thrown error rolls back writes in every mounted instance. Lifecycle reducers are allowed only in the root module.
 
 ## Client Visibility Filters
 
