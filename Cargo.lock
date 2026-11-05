@@ -8544,6 +8544,7 @@ dependencies = [
  "spacetimedb-data-structures",
  "spacetimedb-durability",
  "spacetimedb-execution",
+ "spacetimedb-fs-utils",
  "spacetimedb-lib",
  "spacetimedb-metrics",
  "spacetimedb-paths",
