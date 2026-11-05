@@ -16,7 +16,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SpacetimeDB.Runtime" Version="2.14.*" />
+    <PackageReference Include="SpacetimeDB.Runtime" Version="2.15.*" />
   </ItemGroup>
 
   <ItemGroup Condition="$(TargetFramework.StartsWith('net10.')) And '$(RuntimeIdentifier)' == 'wasi-wasm'">
