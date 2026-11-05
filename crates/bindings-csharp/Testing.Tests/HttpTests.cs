@@ -80,10 +80,15 @@ public class HttpTests
         var selected = ((Internal.IModuleContext<ProcedureContext>)procedure).SelectInstance(1);
         Assert.Equal(1, ((Internal.IModuleContext)selected).InstanceId);
         Assert.Same(procedure.Http, selected.Http);
-        Error(procedure.Http.Get(""));
-        Error(procedure.Http.Get("https://example.invalid", TimeSpan.FromSeconds(-1)));
+        Assert.Equal("URI must not be null or empty", Error(procedure.Http.Get("")).Message);
+        Assert.Equal(
+            "Timeout must not be negative",
+            Error(procedure.Http.Get("https://example.invalid", TimeSpan.FromSeconds(-1))).Message
+        );
         procedure.WithTx(_ =>
         {
+            // As in WASM, request validation runs before the host's transaction check.
+            Assert.Equal("URI must not be null or empty", Error(selected.Http.Get("")).Message);
             Assert.Contains(
                 "WOULD_BLOCK_TRANSACTION",
                 Error(selected.Http.Get("https://example.invalid")).Message
