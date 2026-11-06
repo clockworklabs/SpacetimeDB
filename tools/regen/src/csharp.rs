@@ -1,6 +1,6 @@
 #![allow(clippy::disallowed_macros)]
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use duct::cmd;
 use std::env;
 use std::fs;
@@ -183,6 +183,31 @@ fn copy_overlay_dir(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Renders a NuGet config that restores `SpacetimeDB.BSATN.Runtime` and `SpacetimeDB.Runtime`
+/// from their `dotnet pack -c Release` output in `workspace`.
+fn local_nuget_config(workspace: &Path) -> String {
+    render_nuget_config(
+        &workspace.join("crates/bindings-csharp/BSATN.Runtime/bin/Release"),
+        &workspace.join("crates/bindings-csharp/Runtime/bin/Release"),
+    )
+}
+
+/// Writes `NuGet.Config` at the repository root and in `sdks/csharp`, so that C# projects in the
+/// repository restore the locally packed runtime packages instead of the published ones.
+///
+/// NuGet reads every `NuGet.Config` from a project's directory up to the root, so the root file
+/// covers projects such as `demo/Blackholio/server-csharp`. The `sdks/csharp` copy is the one CI
+/// passes to `--configfile`, and it replaces any stale config left there.
+pub fn write_nuget_config() -> Result<()> {
+    let workspace = workspace_dir();
+    let config = local_nuget_config(&workspace);
+    for path in [workspace.join("NuGet.Config"), sdk_dir().join("NuGet.Config")] {
+        fs::write(&path, &config).with_context(|| format!("failed to write {}", path.display()))?;
+        println!("Wrote {}", path.display());
+    }
+    Ok(())
+}
+
 pub fn regen_dlls() -> Result<()> {
     let workspace = workspace_dir();
     let sdk = sdk_dir();
@@ -206,13 +231,7 @@ pub fn regen_dlls() -> Result<()> {
 
     let nuget_config_dir = tempfile::tempdir()?;
     let nuget_config_path = nuget_config_dir.path().join("nuget.config");
-    fs::write(
-        &nuget_config_path,
-        render_nuget_config(
-            &workspace.join("crates/bindings-csharp/BSATN.Runtime/bin/Release"),
-            &workspace.join("crates/bindings-csharp/Runtime/bin/Release"),
-        ),
-    )?;
+    fs::write(&nuget_config_path, local_nuget_config(&workspace))?;
 
     clear_restored_package_dirs(BSATN_PACKAGE_ID)?;
     clear_restored_package_dirs(RUNTIME_PACKAGE_ID)?;

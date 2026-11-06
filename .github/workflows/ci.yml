@@ -471,8 +471,7 @@ jobs:
         run: |
           dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
           dotnet pack -c Release crates/bindings-csharp/Runtime
-          cd sdks/csharp
-          ./tools~/write-nuget-config.sh ../..
+          cargo regen csharp nuget-config
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
@@ -629,8 +628,7 @@ jobs:
         run: |
           dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
           dotnet pack -c Release crates/bindings-csharp/Runtime
-          cd sdks/csharp
-          ./tools~/write-nuget-config.sh ../..
+          cargo regen csharp nuget-config
 
       - name: Build SDK test modules
         shell: bash
@@ -1830,6 +1828,11 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Install Rust toolchain
+        uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
       - name: Override NuGet packages
         run: |
           dotnet pack crates/bindings-csharp/BSATN.Runtime
@@ -1841,8 +1844,7 @@ jobs:
           # This means that (if version numbers match) we will test the local versions of the C# packages, even
           # if they're not pushed to NuGet.
           # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
-          cd sdks/csharp
-          ./tools~/write-nuget-config.sh ../..
+          cargo regen csharp nuget-config
 
       - name: Restore .NET solution
         working-directory: sdks/csharp
@@ -1854,11 +1856,6 @@ jobs:
         run: |
           sed -i "s|spacetimedb *=.*|spacetimedb = \{ path = \"../../../crates/bindings\" \}|" Cargo.toml
           cat Cargo.toml
-
-      - name: Install Rust toolchain
-        uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - *download-build-artifacts
       - *extract-build-artifacts
@@ -2031,6 +2028,11 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Install Rust toolchain
+        uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
       - name: Override NuGet packages
         run: |
           dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
@@ -2042,8 +2044,7 @@ jobs:
           # This means that (if version numbers match) we will test the local versions of the C# packages, even
           # if they're not pushed to NuGet.
           # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
-          cd sdks/csharp
-          ./tools~/write-nuget-config.sh ../..
+          cargo regen csharp nuget-config
 
       - name: Restore .NET solution
         working-directory: sdks/csharp
@@ -2055,11 +2056,6 @@ jobs:
         run: |
           sed -i "s|spacetimedb *=.*|spacetimedb = \{ path = \"../../../crates/bindings\" \}|" Cargo.toml
           cat Cargo.toml
-
-      - name: Install Rust toolchain
-        uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - *download-build-artifacts
       - *extract-build-artifacts
@@ -2154,6 +2150,11 @@ jobs:
             dotnet workload install wasi-experimental --version 8.0.416
           )
 
+      - name: Install Rust toolchain
+        uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
       - name: Override NuGet packages
         run: |
           dotnet pack crates/bindings-csharp/BSATN.Runtime
@@ -2165,8 +2166,7 @@ jobs:
           # This means that (if version numbers match) we will test the local versions of the C# packages, even
           # if they're not pushed to NuGet.
           # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
-          cd sdks/csharp
-          ./tools~/write-nuget-config.sh ../..
+          cargo regen csharp nuget-config
 
       - name: Restore .NET solution
         working-directory: sdks/csharp
@@ -2179,11 +2179,6 @@ jobs:
       - name: Verify C# formatting
         working-directory: sdks/csharp
         run: dotnet format --no-restore --verify-no-changes SpacetimeDB.ClientSDK.sln
-
-      - name: Install Rust toolchain
-        uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - *download-build-artifacts
       - *extract-build-artifacts

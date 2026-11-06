@@ -8,7 +8,7 @@ To build `server-csharp` against the C# bindings in this repository instead of t
 dotnet nuget locals all --clear
 dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
 dotnet pack -c Release crates/bindings-csharp/Runtime
-sdks/csharp/tools~/write-nuget-config.sh .
+cargo regen csharp nuget-config
 ```
 
 The last command writes a `NuGet.Config` at the repository root that points every C# project in the repository, including `server-csharp`, at the local packages. Clearing the NuGet caches first matters because NuGet reuses a cached package that has the same version number.
