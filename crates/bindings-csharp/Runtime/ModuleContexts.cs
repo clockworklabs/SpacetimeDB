@@ -193,6 +193,7 @@ public readonly struct QueryBuilder
         Access = db.Access;
     }
 
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     public SqlTableName ResolveTableName(string assemblyIdentity, string table)
     {
         var access = Internal.DatabaseAccess.Require(Access);
