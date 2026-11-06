@@ -153,7 +153,45 @@ describe('BinaryReader/Writer', () => {
     const deserializedTransactionUpdate = ServerMessage.deserialize(
       new BinaryReader(rawBytes)
     );
+
     expect(deserializedTransactionUpdate).toEqual(transactionUpdate);
+  });
+
+  test('round-trips a zero-sized row list encoded with row offsets', () => {
+    const rowList = {
+      sizeHint: RowSizeHint.RowOffsets([0n]),
+      rowsData: new Uint8Array([]),
+    };
+
+    const transactionUpdate = ServerMessage.TransactionUpdate({
+      querySets: [
+        {
+          querySetId: { id: 0 },
+          tables: [
+            {
+              tableName: 'empty',
+              rows: [
+                TableUpdateRows.PersistentTable({
+                  inserts: rowList,
+                  deletes: {
+                    sizeHint: RowSizeHint.RowOffsets([]),
+                    rowsData: new Uint8Array([]),
+                  },
+                }),
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    const writer = new BinaryWriter(1024);
+    ServerMessage.serialize(writer, transactionUpdate);
+    const rawBytes = writer.getBuffer();
+    const deserialized = ServerMessage.deserialize(new BinaryReader(rawBytes));
+
+    expect(deserialized.tag).toBe('TransactionUpdate');
+    expect(deserialized).toEqual(transactionUpdate);
   });
 });
 
