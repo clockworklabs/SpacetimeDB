@@ -33,7 +33,6 @@ jobs:
       TARGET_OWNER: clockworklabs
       TARGET_REPO: SpacetimeDBPrivate
     steps:
-      # TODO: This used to be required for an invocation of `dorner/paths-filter` but that was removed. Do we still need a checkout?
       - name: Checkout
         uses: actions/checkout@v4
 
