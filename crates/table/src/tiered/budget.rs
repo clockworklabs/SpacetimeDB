@@ -36,6 +36,10 @@ impl ByteBudget {
         Self::try_from(ByteBudgetConfig::unlimited()).unwrap()
     }
 
+    pub fn config(&self) -> &ByteBudgetConfig {
+        &self.config
+    }
+
     pub fn usage(&self) -> ByteBudgetUsage {
         ByteBudgetUsage {
             accounted_bytes: self.state.lock().unwrap().accounted_bytes,

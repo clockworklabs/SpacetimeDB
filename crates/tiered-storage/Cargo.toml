@@ -10,5 +10,7 @@ spacetimedb-paths.workspace = true
 spacetimedb-snapshot.workspace = true
 spacetimedb-table.workspace = true
 
+tempfile.workspace = true
+
 [lints]
 workspace = true

@@ -38,6 +38,12 @@ impl From<&Page> for PageHash {
     }
 }
 
+impl From<PageHash> for blake3::Hash {
+    fn from(hash: PageHash) -> Self {
+        hash.0
+    }
+}
+
 impl ValidAsIdentityHash for PageHash {}
 
 /// Wrapper around a [crate::blob_store::BlobHash] that allows it to be used as
@@ -79,6 +85,12 @@ impl Deref for BlobHashWrapper {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl From<BlobHashWrapper> for blake3::Hash {
+    fn from(hash: BlobHashWrapper) -> Self {
+        hash.0.into()
     }
 }
 
