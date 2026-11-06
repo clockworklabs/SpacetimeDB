@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>SpacetimeDB.Testing</AssemblyName>
+    <RootNamespace>SpacetimeDB.Testing</RootNamespace>
+    <Version>2.15.0</Version>
+    <Title>Spacetime Module Testing</Title>
+    <Description>Native datastore-backed unit testing for managed .NET 10 SpacetimeDB modules.</Description>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <TestingNativeRids Condition="'$(TestingNativeRids)' == ''">linux-x64;linux-arm64;win-x64</TestingNativeRids>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PackTestingNativeAssets</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Runtime/Runtime.csproj" PrivateAssets="none" />
+    <InternalsVisibleTo Include="SpacetimeDB.Testing.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="" />
+  </ItemGroup>
+
+  <Target Name="PackTestingNativeAssets">
+    <Error Condition="'$(TestingNativeArtifactsDir)' == ''"
+           Text="Set TestingNativeArtifactsDir to the native artifact staging directory before packing Testing." />
+    <Error Condition="'$(TestingLocalPackage)' != 'true' And '$(TestingNativeRids)' != 'linux-x64;linux-arm64;win-x64'"
+           Text="Release packages require linux-x64, linux-arm64, and win-x64. Partial local packages require TestingLocalPackage=true." />
+    <Error Condition="'$(TestingLocalPackage)' == 'true' And !$([System.String]::Copy('$(PackageVersion)').Contains('-'))"
+           Text="Local testing packages require an explicit prerelease PackageVersion (for example, 2.13.0-local). Do not publish partial packages." />
+    <ItemGroup>
+      <_TestingNativeAsset Include="$(TestingNativeRids)" />
+      <_TestingNativeAsset Condition="'%(_TestingNativeAsset.Identity)' == 'linux-x64' Or '%(_TestingNativeAsset.Identity)' == 'linux-arm64'">
+        <NativeFileName>libspacetimedb_test_datastore_ffi.so</NativeFileName>
+      </_TestingNativeAsset>
+      <_TestingNativeAsset Condition="'%(_TestingNativeAsset.Identity)' == 'win-x64'">
+        <NativeFileName>spacetimedb_test_datastore_ffi.dll</NativeFileName>
+      </_TestingNativeAsset>
+    </ItemGroup>
+    <Error Condition="'%(_TestingNativeAsset.NativeFileName)' == ''"
+           Text="Unsupported testing native RID: %(_TestingNativeAsset.Identity)." />
+    <Error Condition="!Exists('$(TestingNativeArtifactsDir)/%(_TestingNativeAsset.Identity)/%(_TestingNativeAsset.NativeFileName)')"
+           Text="Missing testing native asset: $(TestingNativeArtifactsDir)/%(_TestingNativeAsset.Identity)/%(_TestingNativeAsset.NativeFileName)." />
+    <ItemGroup>
+      <TfmSpecificPackageFile Include="$(TestingNativeArtifactsDir)/%(_TestingNativeAsset.Identity)/%(_TestingNativeAsset.NativeFileName)"
+                              PackagePath="runtimes/%(_TestingNativeAsset.Identity)/native" />
+    </ItemGroup>
+  </Target>
+
+  <!-- NuGet normally turns project references into minimum-version dependencies.
+       Pin the version returned by Runtime's pack target, including release overrides. -->
+  <Target Name="PinTestingRuntimeDependency" AfterTargets="_GetProjectReferenceVersions">
+    <ItemGroup>
+      <_ProjectReferencesWithVersions Condition="'%(_ProjectReferencesWithVersions.Filename)' == 'Runtime'">
+        <ProjectVersion>[%(_ProjectReferencesWithVersions.ProjectVersion)]</ProjectVersion>
+      </_ProjectReferencesWithVersions>
+    </ItemGroup>
+  </Target>
+</Project>

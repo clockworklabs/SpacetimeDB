@@ -5,6 +5,18 @@
     <Version>2.15.0</Version>
     <Title>SpacetimeDB Module Runtime</Title>
     <Description>The SpacetimeDB Runtime implements the database runtime bindings for writing SpacetimeDB modules in C#.</Description>
+    <EnablePackageValidation>true</EnablePackageValidation>
+  </PropertyGroup>
+
+  <!-- Project references inherit the module RID. Pack also builds this variant
+       without a RID: it contains IL, not a native compiler/toolchain dependency. -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'wasi-wasm' Or '$(_SpacetimeDBWasmRuntime)' == 'true'">
+    <DefineConstants>$(DefineConstants);SPACETIMEDB_WASM_RUNTIME</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(_SpacetimeDBWasmRuntime)' == 'true'">
+    <OutputPath>bin/$(Configuration)/wasm/</OutputPath>
+    <IntermediateOutputPath>obj/$(Configuration)/wasm/$(TargetFramework)/</IntermediateOutputPath>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -36,6 +48,8 @@
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="" />
     <None Include="build/*" Pack="true" PackagePath="build" />
+    <!-- NuGet prefers buildTransitive props over build props. Keep .NET 8 on its existing early WASI configuration. -->
+    <None Include="buildTransitive/net10.0/*" Pack="true" PackagePath="buildTransitive/net10.0" />
     <None Include="bindings.c" Pack="true" PackagePath="" />
     <None Include="driver.h" Pack="true" PackagePath="" />
     <!-- We want all users who depends on Runtime to automatically get the Roslyn codegen component as well. -->
@@ -43,8 +57,28 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="SpacetimeDB.Testing" />
+    <InternalsVisibleTo Include="SpacetimeDB.Testing.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <UpToDateCheckInput Include="bindings.c" />
     <UpToDateCheckInput Include="driver.h" />
   </ItemGroup>
+
+  <PropertyGroup>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PackWasmRuntime</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+
+  <Target Name="PackWasmRuntime" Condition="'$(TargetFramework)' == 'net10.0'">
+    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="Build"
+             Properties="TargetFramework=net10.0;_SpacetimeDBWasmRuntime=true"
+             RemoveProperties="RuntimeIdentifier;SelfContained">
+      <Output TaskParameter="TargetOutputs" ItemName="_WasmRuntimeAssembly" />
+    </MSBuild>
+    <ItemGroup>
+      <TfmSpecificPackageFile Include="@(_WasmRuntimeAssembly)" PackagePath="runtimes/wasi-wasm/lib/net10.0" />
+    </ItemGroup>
+  </Target>
 
 </Project>

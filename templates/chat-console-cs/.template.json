@@ -2,6 +2,9 @@
   "description": "C# server/client implementing quickstart chat",
   "client_lang": "csharp",
   "server_lang": "csharp",
+  "file_requirements": {
+    "tests": { "min_dotnet_version": 10 }
+  },
   "builtWith": [
     "SpacetimeDB.Runtime"
   ]

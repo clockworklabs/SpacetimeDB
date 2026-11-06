@@ -3,11 +3,13 @@ namespace SpacetimeDB;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using System.IO;
 using System.Linq;
 using System.Text;
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
+using System.IO;
 using Internal;
 using SpacetimeDB.BSATN;
+#endif
 
 public enum HttpVersion : byte
 {
@@ -98,6 +100,19 @@ public sealed class HttpRequest
     /// The SpacetimeDB host clamps all timeouts to a maximum of 180 seconds.
     /// </remarks>
     public TimeSpan? Timeout { get; init; }
+
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    internal HttpRequest WithTimeout(TimeSpan? timeout) =>
+        new()
+        {
+            Uri = Uri,
+            Method = Method,
+            Headers = Headers,
+            Body = Body,
+            Version = Version,
+            Timeout = timeout,
+        };
+#endif
 }
 
 /// <summary>
@@ -155,9 +170,19 @@ public sealed class HttpError(string message) : Exception(message)
 public sealed class HttpClient
 {
     private static readonly TimeSpan MaxTimeout = TimeSpan.FromSeconds(180);
+
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    private readonly Func<HttpRequest, Result<HttpResponse, HttpError>>? responder;
+
+    public HttpClient() { }
+
+    internal HttpClient(Func<HttpRequest, Result<HttpResponse, HttpError>> responder) =>
+        this.responder = responder;
+#else
     private static byte[] responseWireBuffer = new byte[0x10_000];
     private static byte[] responseBodyBuffer = new byte[0x10_000];
     private static byte[] errorWireBuffer = new byte[0x10_000];
+#endif
 
     /// <summary>
     /// Send a simple <c>GET</c> request to <paramref name="uri"/> with no headers.
@@ -282,35 +307,23 @@ public sealed class HttpClient
     )]
     public Result<HttpResponse, HttpError> Send(HttpRequest request)
     {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        ArgumentNullException.ThrowIfNull(request);
+        if (Validate(request, out var timeout) is { } error)
+            return Result<HttpResponse, HttpError>.Err(error);
+        if (responder is null)
+            return Result<HttpResponse, HttpError>.Err(
+                new HttpError("no test HTTP responder configured")
+            );
+        return responder(timeout == request.Timeout ? request : request.WithTimeout(timeout));
+#else
         // The host syscall expects BSATN-encoded spacetimedb_lib::http::Request bytes.
         // A mismatch in the wire layout can cause the host to trap during BSATN decode,
         // so the C# `Http*Wire` types must remain in lockstep with the Rust definitions.
         try
         {
-            if (string.IsNullOrEmpty(request.Uri))
-            {
-                return Result<HttpResponse, HttpError>.Err(
-                    new HttpError("URI must not be null or empty")
-                );
-            }
-
-            // The host clamps all HTTP timeouts to a maximum of 180 seconds.
-            // Clamp here as well to keep C# behavior aligned with the Rust docs and to reduce surprises.
-            var timeout = request.Timeout;
-            if (timeout is not null)
-            {
-                if (timeout.Value < TimeSpan.Zero)
-                {
-                    return Result<HttpResponse, HttpError>.Err(
-                        new HttpError("Timeout must not be negative")
-                    );
-                }
-
-                if (timeout.Value > MaxTimeout)
-                {
-                    timeout = MaxTimeout;
-                }
-            }
+            if (Validate(request, out var timeout) is { } error)
+                return Result<HttpResponse, HttpError>.Err(error);
 
             var requestWire = new HttpRequestWire
             {
@@ -380,8 +393,25 @@ public sealed class HttpClient
         {
             return Result<HttpResponse, HttpError>.Err(new HttpError(ex.ToString()));
         }
+#endif
     }
 
+    // Checks a request before it is sent, in both WASM and managed test builds. The timeout
+    // is clamped to 180 seconds; the host clamps too, but doing it here keeps C# behavior
+    // aligned with the Rust docs.
+    private static HttpError? Validate(HttpRequest request, out TimeSpan? timeout)
+    {
+        timeout = request.Timeout;
+        if (string.IsNullOrEmpty(request.Uri))
+            return new HttpError("URI must not be null or empty");
+        if (timeout < TimeSpan.Zero)
+            return new HttpError("Timeout must not be negative");
+        if (timeout > MaxTimeout)
+            timeout = MaxTimeout;
+        return null;
+    }
+
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
     private static T FromBytes<T>(IReadWrite<T> rw, MemoryStream ms)
     {
         using var reader = new BinaryReader(ms);
@@ -412,6 +442,7 @@ public sealed class HttpClient
             _ => new HttpMethodWire.Extension(m),
         };
     }
+#endif
 
     private static HttpVersionWire ToWireVersion(HttpVersion version) =>
         version switch
@@ -481,6 +512,7 @@ public sealed class HttpClient
             _ => throw new InvalidOperationException("Invalid HTTP version returned from host"),
         };
 
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
     private static (
         ushort statusCode,
         HttpVersion version,
@@ -495,4 +527,5 @@ public sealed class HttpClient
 
         return (responseWire.Code, version, headers);
     }
+#endif
 }

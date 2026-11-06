@@ -24,9 +24,15 @@ public sealed class EnvironmentGenerator : IIncrementalGenerator
                 )
         );
         context.RegisterSourceOutput(
-            declarations.Combine(assembly),
+            declarations.Combine(assembly).Combine(TestModule.IsTestProject(context)),
             (ctx, input) =>
-                Generate(ctx, input.Left, input.Right.SharedContexts, input.Right.Namespace)
+            {
+                var ((types, (sharedContexts, assemblyNamespace)), isTestProject) = input;
+                if (!isTestProject)
+                {
+                    Generate(ctx, types, sharedContexts, assemblyNamespace);
+                }
+            }
         );
     }
 

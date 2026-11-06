@@ -8,13 +8,69 @@ namespace SpacetimeDB.Internal;
 /// <param name="accessor">The child's local accessor.</param>
 public sealed class NamespaceBinding(string? assemblyIdentity, string accessor)
 {
-    private readonly int[] instances = Module.BindNamespace(assemblyIdentity, accessor);
+    // Lazy because generated bindings are constructed together on first use. Managed test
+    // fixtures never install global namespaces and resolve through their own backend instead.
+    private int[] Instances => field ??= Module.BindNamespace(assemblyIdentity, accessor);
+
+#if NET10_0_OR_GREATER
+    public int ResolveContext(IModuleContext context, int contextInstance)
+    {
+#if !SPACETIMEDB_WASM_RUNTIME
+        return Resolve(contextInstance, DatabaseAccess.Require(context.Access));
+#else
+        return this[contextInstance];
+#endif
+    }
+
+#if SPACETIMEDB_WASM_RUNTIME
+    // Generated namespace accessors call these on every table access. In WASM a database
+    // handle is just an instance id, so reuse the cached handle per instance instead of allocating.
+    public Local Select(Local db) => global::SpacetimeDB.Local.ForInstance(this[db.InstanceId]);
+
+    public LocalReadOnly Select(LocalReadOnly db) => LocalReadOnly.ForInstance(this[db.InstanceId]);
+
+    public QueryBuilder Select(QueryBuilder from) => new(this[from.InstanceId]);
+#else
+    // Managed handles also carry the test backend's transaction access, so they can't be shared.
+    public Local Select(Local db) =>
+        new() { InstanceId = Resolve(db.InstanceId, db.Access), Access = db.Access };
+
+    public LocalReadOnly Select(LocalReadOnly db) =>
+        new() { InstanceId = Resolve(db.InstanceId, db.Access), Access = db.Access };
+
+    public QueryBuilder Select(QueryBuilder from) =>
+        new(
+            new LocalReadOnly
+            {
+                InstanceId = Resolve(from.InstanceId, from.Access),
+                Access = from.Access,
+            }
+        );
+
+    private int Resolve(int contextInstance, DatabaseAccess? access)
+    {
+        if (access is not null)
+        {
+            access.CheckActive();
+            var selected = access.Backend.Namespaces.BindNamespace(assemblyIdentity, accessor)[
+                contextInstance
+            ];
+            if (selected < 0)
+                throw new InvalidOperationException(
+                    $"Namespace '{accessor}' is unavailable or ambiguous in this context."
+                );
+            return selected;
+        }
+        return this[contextInstance];
+    }
+#endif
+#endif
 
     public int this[int contextInstance]
     {
         get
         {
-            var instance = instances[contextInstance];
+            var instance = Instances[contextInstance];
             if (instance < 0)
             {
                 throw new InvalidOperationException(
