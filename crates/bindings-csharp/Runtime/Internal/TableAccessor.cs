@@ -4,6 +4,7 @@ namespace SpacetimeDB.Internal;
 using SpacetimeDB.BSATN;
 
 /// <summary>Ownership carried by generated table and index handles.</summary>
+[System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
 public readonly struct TableAccessor
 {
     private readonly DatabaseAccess? access;
