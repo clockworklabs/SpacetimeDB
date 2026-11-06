@@ -12,4 +12,13 @@
   <ItemGroup>
     <PackageReference Include="SpacetimeDB.Runtime" Version="{SPACETIME_CSHARP_RUNTIME_VERSION}" />
   </ItemGroup>
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">
+    <PublishTrimmed>true</PublishTrimmed>
+    <SelfContained>true</SelfContained>
+    <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'wasi-wasm'">
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
+    <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
+  </ItemGroup>
 </Project>
