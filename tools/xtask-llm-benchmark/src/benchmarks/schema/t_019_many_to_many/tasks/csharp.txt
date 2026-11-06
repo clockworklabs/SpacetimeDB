@@ -1,13 +1,13 @@
 Write a SpacetimeDB backend module in C# that defines three tables modeling a many-to-many relationship and seeds rows.
 
 TABLES
-- User
+- User (private)
   - Struct: User
   - Fields:
     - UserId: ulong (primary key, auto-increment)
     - Name: string
 
-- Group
+- Group (private)
   - Struct: Group
   - Fields:
     - GroupId: ulong (primary key, auto-increment)

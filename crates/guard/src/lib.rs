@@ -121,12 +121,20 @@ impl SpacetimeDbGuard {
         Self::spawn_in_temp_data_dir_with_pg_port(None)
     }
 
+    /// Start a temporary server, returning startup errors after cleaning up the child.
+    pub fn try_spawn_in_temp_data_dir() -> std::io::Result<Self> {
+        let temp_dir = tempfile::tempdir()?;
+        let data_dir = temp_dir.path().to_path_buf();
+        Self::spawn_spacetime_start_with_data_dir(false, None, data_dir, Some(temp_dir))
+    }
+
     /// Start `spacetimedb` in a temporary data directory with optional PostgreSQL wire protocol.
     pub fn spawn_in_temp_data_dir_with_pg_port(pg_port: Option<u16>) -> Self {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let data_dir_path = temp_dir.path().to_path_buf();
 
         Self::spawn_spacetime_start_with_data_dir(false, pg_port, data_dir_path, Some(temp_dir))
+            .expect("failed to start SpacetimeDB")
     }
 
     /// Start `spacetimedb` in a temporary data directory via:
@@ -136,6 +144,7 @@ impl SpacetimeDbGuard {
         let data_dir_path = temp_dir.path().to_path_buf();
 
         Self::spawn_spacetime_start_with_data_dir(true, None, data_dir_path, Some(temp_dir))
+            .expect("failed to start SpacetimeDB")
     }
 
     /// Start `spacetimedb` with an explicit data directory (for restart scenarios).
@@ -143,7 +152,7 @@ impl SpacetimeDbGuard {
     /// Unlike `spawn_in_temp_data_dir`, this method does not create a temporary directory.
     /// The caller is responsible for managing the data directory lifetime.
     pub fn spawn_with_data_dir(data_dir: PathBuf, pg_port: Option<u16>) -> Self {
-        Self::spawn_spacetime_start_with_data_dir(false, pg_port, data_dir, None)
+        Self::spawn_spacetime_start_with_data_dir(false, pg_port, data_dir, None).expect("failed to start SpacetimeDB")
     }
 
     fn spawn_spacetime_start_with_data_dir(
@@ -151,11 +160,11 @@ impl SpacetimeDbGuard {
         pg_port: Option<u16>,
         data_dir: PathBuf,
         _data_dir_handle: Option<tempfile::TempDir>,
-    ) -> Self {
+    ) -> std::io::Result<Self> {
         let spawn_id = next_spawn_id();
         let (child, logs, host_url, reader_threads) =
-            Self::spawn_server(&data_dir, pg_port, spawn_id, use_installed_cli);
-        SpacetimeDbGuard {
+            Self::spawn_server(&data_dir, pg_port, spawn_id, use_installed_cli)?;
+        Ok(SpacetimeDbGuard {
             child,
             host_url,
             logs,
@@ -164,7 +173,7 @@ impl SpacetimeDbGuard {
             _data_dir_handle,
             reader_threads,
             use_installed_cli,
-        }
+        })
     }
 
     /// Stop the server process without dropping the guard.
@@ -192,7 +201,8 @@ impl SpacetimeDbGuard {
 
         eprintln!("[RESTART-{:03}] Spawning new server", spawn_id);
         let (child, logs, host_url, reader_threads) =
-            Self::spawn_server(&self.data_dir, self.pg_port, spawn_id, self.use_installed_cli);
+            Self::spawn_server(&self.data_dir, self.pg_port, spawn_id, self.use_installed_cli)
+                .expect("failed to restart SpacetimeDB");
         eprintln!(
             "[RESTART-{:03}] New server ready, pid={}, url={}",
             spawn_id,
@@ -214,7 +224,11 @@ impl SpacetimeDbGuard {
 
     /// Kills the current server process and waits for it to exit.
     fn kill_process(&mut self) {
-        let pid = self.child.id();
+        Self::kill_child(&mut self.child, &mut self.reader_threads);
+    }
+
+    fn kill_child(child: &mut Child, reader_threads: &mut Vec<thread::JoinHandle<()>>) {
+        let pid = child.id();
         eprintln!("[KILL] Killing process tree for pid={}", pid);
 
         // Kill the process tree to ensure all child processes are terminated.
@@ -232,16 +246,16 @@ impl SpacetimeDbGuard {
 
         #[cfg(not(windows))]
         {
-            let result = self.child.kill();
+            let result = child.kill();
             eprintln!("[KILL] kill result for pid={}: {:?}", pid, result);
         }
 
-        let wait_result = self.child.wait();
+        let wait_result = child.wait();
         eprintln!("[KILL] wait() result for pid={}: {:?}", pid, wait_result);
 
         // Join reader threads to prevent leaks.
         // The threads will exit naturally once the process is killed and pipes close.
-        let threads = std::mem::take(&mut self.reader_threads);
+        let threads = std::mem::take(reader_threads);
         for handle in threads {
             let _ = handle.join();
         }
@@ -250,18 +264,19 @@ impl SpacetimeDbGuard {
 
     /// Spawns a new server process with the given data directory.
     /// Returns (child, logs, host_url, reader_threads).
+    #[allow(clippy::type_complexity)]
     fn spawn_server(
         data_dir: &Path,
         pg_port: Option<u16>,
         spawn_id: u64,
         use_installed_cli: bool,
-    ) -> (Child, Arc<Mutex<String>>, String, Vec<thread::JoinHandle<()>>) {
+    ) -> std::io::Result<(Child, Arc<Mutex<String>>, String, Vec<thread::JoinHandle<()>>)> {
         let cmd = if use_installed_cli {
             eprintln!("[SPAWN-{:03}] START Using installed CLI", spawn_id);
             Command::new("spacetime")
         } else {
             // Use the built CLI (common case)
-            let cli_path = ensure_binaries_built();
+            let cli_path = cli_binary_path();
             Command::new(&cli_path)
         };
         eprintln!(
@@ -288,64 +303,73 @@ impl SpacetimeDbGuard {
         }
 
         eprintln!("[SPAWN-{:03}] Spawning child process", spawn_id);
-        let (child, logs, reader_threads) = Self::spawn_child(cmd, &args, spawn_id);
+        let (mut child, logs, mut reader_threads) = Self::spawn_child(cmd, &args, spawn_id)?;
         eprintln!("[SPAWN-{:03}] Child spawned pid={}", spawn_id, child.id());
-
-        // Wait for the server to be ready
-        eprintln!("[SPAWN-{:03}] Waiting for listen address", spawn_id);
-        let listen_addr = wait_for_listen_addr(&logs, Duration::from_secs(10), spawn_id).unwrap_or_else(|| {
-            // Dump diagnostic info on failure
-            let buf = logs.lock().unwrap();
-            eprintln!("[SPAWN-{:03}] TIMEOUT after 10s", spawn_id);
-            eprintln!(
-                "[SPAWN-{:03}] Captured {} bytes, {} lines",
-                spawn_id,
-                buf.len(),
-                buf.lines().count()
-            );
-            eprintln!(
-                "[SPAWN-{:03}] Contains 'Starting SpacetimeDB': {}",
-                spawn_id,
-                buf.contains("Starting SpacetimeDB")
-            );
-            // Check if process is still running
-            drop(buf); // Release lock before try_wait
-            panic!("Timed out waiting for SpacetimeDB to report listen address")
-        });
-        eprintln!("[SPAWN-{:03}] Got listen_addr={}", spawn_id, listen_addr);
-
-        let host_url = format!("http://{}", listen_addr);
-
-        // Wait until HTTP is ready
-        eprintln!("[SPAWN-{:03}] Waiting for HTTP ready", spawn_id);
-        let client = Client::new();
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while Instant::now() < deadline {
-            let url = format!("{}/v1/ping", host_url);
-            if let Ok(resp) = client.get(&url).send()
-                && resp.status().is_success()
-            {
-                eprintln!("[SPAWN-{:03}] HTTP ready at {}", spawn_id, host_url);
-                return (child, logs, host_url, reader_threads);
-            }
-            sleep(Duration::from_millis(50));
-        }
-        panic!("Timed out waiting for SpacetimeDB HTTP /v1/ping at {}", host_url);
+        let host_url = Self::finish_server_start(
+            &mut child,
+            &logs,
+            &mut reader_threads,
+            spawn_id,
+            Duration::from_secs(10),
+        )?;
+        Ok((child, logs, host_url, reader_threads))
     }
 
+    fn finish_server_start(
+        child: &mut Child,
+        logs: &Arc<Mutex<String>>,
+        reader_threads: &mut Vec<thread::JoinHandle<()>>,
+        spawn_id: u64,
+        timeout: Duration,
+    ) -> std::io::Result<String> {
+        let result = (|| {
+            let listen_addr = wait_for_listen_addr(logs, timeout, spawn_id).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "SpacetimeDB did not report its listen address",
+                )
+            })?;
+            let host_url = format!("http://{listen_addr}");
+            let client = Client::builder()
+                .timeout(timeout)
+                .build()
+                .map_err(std::io::Error::other)?;
+            let deadline = Instant::now() + timeout;
+            while Instant::now() < deadline {
+                if let Ok(resp) = client
+                    .get(format!("{host_url}/v1/ping"))
+                    .timeout(deadline.saturating_duration_since(Instant::now()))
+                    .send()
+                    && resp.status().is_success()
+                {
+                    eprintln!("[SPAWN-{:03}] HTTP ready at {}", spawn_id, host_url);
+                    return Ok(host_url);
+                }
+                sleep(Duration::from_millis(50));
+            }
+            Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("SpacetimeDB HTTP /v1/ping not ready at {host_url}"),
+            ))
+        })();
+        if result.is_err() {
+            Self::kill_child(child, reader_threads);
+            if let Ok(logs) = logs.lock() {
+                eprintln!("[SPAWN-{spawn_id:03}] startup failed; server logs:\n{logs}");
+            }
+        }
+        result
+    }
+
+    #[allow(clippy::type_complexity)]
     fn spawn_child(
         mut cmd: Command,
         args: &[&str],
         spawn_id: u64,
-    ) -> (Child, Arc<Mutex<String>>, Vec<thread::JoinHandle<()>>) {
+    ) -> std::io::Result<(Child, Arc<Mutex<String>>, Vec<thread::JoinHandle<()>>)> {
         eprintln!("[SPAWN-{:03}] spawn_child: about to spawn", spawn_id);
 
-        let mut child = cmd
-            .args(args)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("failed to spawn spacetimedb-cli");
+        let mut child = cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
 
         let pid = child.id();
         eprintln!("[SPAWN-{:03}] spawn_child: spawned pid={}", spawn_id, pid);
@@ -406,7 +430,7 @@ impl SpacetimeDbGuard {
         }
 
         eprintln!("[SPAWN-{:03}] spawn_child: readers attached", spawn_id);
-        (child, logs, reader_threads)
+        Ok((child, logs, reader_threads))
     }
 }
 
@@ -493,6 +517,46 @@ impl Drop for SpacetimeDbGuard {
                     "\n===== SpacetimeDB child logs (only on failure) =====\n{}\n====================================================",
                     *logs
                 );
+        }
+    }
+}
+
+#[cfg(test)]
+mod startup_tests {
+    use super::*;
+
+    #[test]
+    fn waiting_child() {
+        if env::var_os("SPACETIMEDB_GUARD_TEST_CHILD").is_some() {
+            sleep(Duration::from_secs(60));
+        }
+    }
+
+    #[test]
+    fn startup_timeout_reaps_child_for_both_readiness_phases() {
+        for reported_address in [false, true] {
+            let mut command = Command::new(env::current_exe().unwrap());
+            command.env("SPACETIMEDB_GUARD_TEST_CHILD", "1");
+            let (mut child, logs, mut readers) =
+                SpacetimeDbGuard::spawn_child(command, &["--exact", "startup_tests::waiting_child"], 0).unwrap();
+            assert!(!readers.is_empty());
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let log = if reported_address {
+                format!("Starting SpacetimeDB listening on {}\n", listener.local_addr().unwrap())
+            } else {
+                String::new()
+            };
+            *logs.lock().unwrap() = log;
+            let error =
+                SpacetimeDbGuard::finish_server_start(&mut child, &logs, &mut readers, 0, Duration::from_millis(10))
+                    .unwrap_err();
+            assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+            assert_eq!(error.to_string().contains("HTTP"), reported_address);
+            assert!(
+                child.try_wait().unwrap().is_some(),
+                "failed startup left its child alive"
+            );
+            assert!(readers.is_empty());
         }
     }
 }
