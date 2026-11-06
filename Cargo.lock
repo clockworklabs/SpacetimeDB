@@ -8631,6 +8631,7 @@ dependencies = [
  "spacetimedb-schema",
  "spacetimedb-snapshot",
  "spacetimedb-table",
+ "spacetimedb-tiered-storage",
  "sqlparser",
  "tempfile",
  "thiserror 1.0.69",

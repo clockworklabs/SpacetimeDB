@@ -53,4 +53,5 @@ pretty_assertions.workspace = true
 spacetimedb-commitlog = { path = "../commitlog", features = ["test"] }
 spacetimedb-datastore = { path = "../datastore", features = ["test"] }
 spacetimedb-schema = { path = "../schema", features = ["test"] }
+spacetimedb-tiered-storage = { path = "../tiered-storage" }
 tokio.workspace = true

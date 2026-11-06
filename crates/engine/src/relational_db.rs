@@ -2573,6 +2573,9 @@ pub mod tests_utils {
 }
 
 #[cfg(test)]
+mod tiered_storage_tests;
+
+#[cfg(test)]
 mod tests {
     #![allow(clippy::disallowed_macros)]
 
