@@ -67,7 +67,7 @@ export interface Random {
 const { asUintN } = BigInt;
 
 /** Based on the function of the same name in `rand_core::SeedableRng::seed_from_u64` */
-function pcg32(state: bigint): number {
+export function pcg32(state: bigint): number {
   const MUL = 6364136223846793005n;
   const INC = 11634580027462260723n;
 
@@ -75,7 +75,7 @@ function pcg32(state: bigint): number {
   const xorshifted = Number(asUintN(32, ((state >> 18n) ^ state) >> 27n));
   const rot = Number(asUintN(32, state >> 59n));
   // rotate `xorshifted` right by `rot` bits
-  return (xorshifted >> rot) | (xorshifted << (32 - rot));
+  return ((xorshifted >>> rot) | (xorshifted << (32 - rot))) >>> 0;
 }
 
 /** From the `pure-rand` README */
