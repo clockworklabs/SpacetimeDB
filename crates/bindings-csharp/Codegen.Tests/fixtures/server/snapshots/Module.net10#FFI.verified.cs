@@ -2516,6 +2516,9 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
 
         public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
 
+        public static SpacetimeDB.TableCachePolicy CachePolicy =>
+            SpacetimeDB.TableCachePolicy.RequiredOnDisk;
+
         /// <summary>
         /// Returns the number of rows in this table.
         ///
@@ -2714,6 +2717,9 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
             );
 
         public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
+
+        public static SpacetimeDB.TableCachePolicy CachePolicy =>
+            SpacetimeDB.TableCachePolicy.NoRequirement;
 
         /// <summary>
         /// Returns the number of rows in this table.
