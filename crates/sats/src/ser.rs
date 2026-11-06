@@ -6,8 +6,10 @@ mod impls;
 pub mod serde;
 
 use crate::de::DeserializeSeed;
-use crate::{algebraic_value::ser::ValueSerializer, bsatn, buffer::BufWriter, ProductValue, SumValue, ValueWithType};
-use crate::{AlgebraicValue, WithTypespace};
+use crate::{
+    algebraic_value::ser::ValueSerializer, bsatn, buffer::BufWriter, ArrayValue, ProductValue, SumValue, ValueWithType,
+};
+use crate::{AlgebraicType, AlgebraicValue, WithTypespace};
 use core::marker::PhantomData;
 use core::{convert::Infallible, fmt};
 use ethnum::{i256, u256};
@@ -140,6 +142,44 @@ pub trait Serializer: Sized {
         let (tag, val) = (sv.tag, &*sv.value);
         let var_ty = &sum.ty().variants[tag as usize]; // Extract the variant type by tag.
         self.serialize_variant(tag, var_ty.name().map(|n| &**n), &sum.with(&var_ty.algebraic_type, val))
+    }
+
+    /// Serialize an array value with its static element type.
+    ///
+    /// Allow to override the default serialization for formats that can encode
+    /// array values directly rather than streaming each element independently.
+    fn serialize_array_raw(self, value: &ValueWithType<'_, ArrayValue>) -> Result<Self::Ok, Self::Error> {
+        let mut ty = &*value.ty().elem_ty;
+        loop {
+            // We're doing this because of `Ref`s.
+            break match (value.value(), ty) {
+                (_, &AlgebraicType::Ref(r)) => {
+                    ty = &value.typespace()[r];
+                    continue;
+                }
+                (ArrayValue::Sum(v), AlgebraicType::Sum(ty)) => value.with(ty, v).serialize(self),
+                (ArrayValue::Product(v), AlgebraicType::Product(ty)) => value.with(ty, v).serialize(self),
+                (ArrayValue::Bool(v), AlgebraicType::Bool) => v.serialize(self),
+                (ArrayValue::I8(v), AlgebraicType::I8) => v.serialize(self),
+                (ArrayValue::U8(v), AlgebraicType::U8) => v.serialize(self),
+                (ArrayValue::I16(v), AlgebraicType::I16) => v.serialize(self),
+                (ArrayValue::U16(v), AlgebraicType::U16) => v.serialize(self),
+                (ArrayValue::I32(v), AlgebraicType::I32) => v.serialize(self),
+                (ArrayValue::U32(v), AlgebraicType::U32) => v.serialize(self),
+                (ArrayValue::I64(v), AlgebraicType::I64) => v.serialize(self),
+                (ArrayValue::U64(v), AlgebraicType::U64) => v.serialize(self),
+                (ArrayValue::I128(v), AlgebraicType::I128) => v.serialize(self),
+                (ArrayValue::U128(v), AlgebraicType::U128) => v.serialize(self),
+                (ArrayValue::I256(v), AlgebraicType::I256) => v.serialize(self),
+                (ArrayValue::U256(v), AlgebraicType::U256) => v.serialize(self),
+                (ArrayValue::F32(v), AlgebraicType::F32) => v.serialize(self),
+                (ArrayValue::F64(v), AlgebraicType::F64) => v.serialize(self),
+                (ArrayValue::String(v), AlgebraicType::String) => v.serialize(self),
+                (ArrayValue::Array(v), AlgebraicType::Array(ty)) => value.with(ty, v).serialize(self),
+                (val, _) if val.is_empty() => self.serialize_array(0)?.end(),
+                (val, ty) => panic!("mismatched value and schema: {val:?} {ty:?}"),
+            };
+        }
     }
 
     /// Serialize a sum value provided the chosen `tag`, `name`, and `value`.
