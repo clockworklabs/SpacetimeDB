@@ -227,6 +227,27 @@ pub fn table_helper(input: StdTokenStream) -> StdTokenStream {
     schema_type(input)
 }
 
+/// Alias for `derive(SpacetimeType)` used on the items of a `#[spacetimedb::migration]` module.
+///
+/// Unlike `SpacetimeType`, this does not register the type with the module,
+/// since the types in a migration's `dropped` module belong to the old schema
+/// and are only added to the migration's own typespace, via its tables.
+/// Also provides the helper attributes for tables, like [`table_helper`].
+#[doc(hidden)]
+#[proc_macro_derive(
+    __MigrationTypeHelper,
+    attributes(sats, unique, auto_inc, primary_key, index, default)
+)]
+pub fn migration_type_helper(input: StdTokenStream) -> StdTokenStream {
+    sats_derive(input, true, |ty| {
+        TokenStream::from_iter([
+            sats::derive_satstype(ty),
+            sats::derive_deserialize(ty),
+            sats::derive_serialize(ty),
+        ])
+    })
+}
+
 #[proc_macro]
 pub fn duration(input: StdTokenStream) -> StdTokenStream {
     let dur = syn::parse_macro_input!(input with parse_duration);

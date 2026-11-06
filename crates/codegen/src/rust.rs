@@ -6,6 +6,7 @@ use crate::util::{
     print_auto_generated_file_comment, print_auto_generated_version_comment, CodegenVisibility,
 };
 use crate::CodegenOptions;
+use crate::DroppedSchema;
 use crate::OutputFile;
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
@@ -18,6 +19,8 @@ use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse};
 use std::collections::BTreeSet;
 use std::fmt::{self, Write};
 use std::ops::Deref;
+
+mod migration;
 
 /// Pairs of (module_name, TypeName).
 type Imports = BTreeSet<AlgebraicTypeRef>;
@@ -735,6 +738,10 @@ impl {func_name} for super::RemoteProcedures {{
             code: output.into_inner(),
         }]
     }
+
+    fn generate_migration(&self, dropped: &DroppedSchema) -> anyhow::Result<OutputFile> {
+        Ok(migration::generate_migration(dropped))
+    }
 }
 
 /// Implements `HasCols` for the given `AlgebraicTypeRef` struct type.
@@ -906,26 +913,55 @@ pub fn implement_query_table_accessor(table: &TableDef, out: &mut impl Write, st
     )
 }
 
+/// Where [`write_type_in`] finds the types that the SpacetimeDB crates provide.
+struct TypePaths {
+    /// Path to the crate exporting `Identity`, `Timestamp`, etc.
+    lib: &'static str,
+    /// Path to the `spacetimedb_sats` crate.
+    sats: &'static str,
+    /// Opens the generic arguments of `Option`, `Vec`, etc.
+    generics: &'static str,
+}
+
+/// Paths available in client bindings, via [`SPACETIMEDB_IMPORTS`].
+const CLIENT_PATHS: TypePaths = TypePaths {
+    lib: "__sdk",
+    sats: "__sats",
+    generics: "::<",
+};
+
+/// Paths available in module code.
+const MODULE_PATHS: TypePaths = TypePaths {
+    lib: "spacetimedb",
+    sats: "spacetimedb::sats",
+    generics: "<",
+};
+
 pub fn write_type<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicTypeUse) -> fmt::Result {
+    write_type_in(module, out, ty, &CLIENT_PATHS)
+}
+
+fn write_type_in<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicTypeUse, paths: &TypePaths) -> fmt::Result {
+    let TypePaths { lib, sats, generics } = paths;
     match ty {
         AlgebraicTypeUse::Unit => write!(out, "()")?,
         AlgebraicTypeUse::Never => write!(out, "std::convert::Infallible")?,
-        AlgebraicTypeUse::Identity => write!(out, "__sdk::Identity")?,
-        AlgebraicTypeUse::ConnectionId => write!(out, "__sdk::ConnectionId")?,
-        AlgebraicTypeUse::Timestamp => write!(out, "__sdk::Timestamp")?,
-        AlgebraicTypeUse::TimeDuration => write!(out, "__sdk::TimeDuration")?,
-        AlgebraicTypeUse::Uuid => write!(out, "__sdk::Uuid")?,
-        AlgebraicTypeUse::ScheduleAt => write!(out, "__sdk::ScheduleAt")?,
+        AlgebraicTypeUse::Identity => write!(out, "{lib}::Identity")?,
+        AlgebraicTypeUse::ConnectionId => write!(out, "{lib}::ConnectionId")?,
+        AlgebraicTypeUse::Timestamp => write!(out, "{lib}::Timestamp")?,
+        AlgebraicTypeUse::TimeDuration => write!(out, "{lib}::TimeDuration")?,
+        AlgebraicTypeUse::Uuid => write!(out, "{lib}::Uuid")?,
+        AlgebraicTypeUse::ScheduleAt => write!(out, "{lib}::ScheduleAt")?,
         AlgebraicTypeUse::Option(inner_ty) => {
-            write!(out, "Option::<")?;
-            write_type(module, out, inner_ty)?;
+            write!(out, "Option{generics}")?;
+            write_type_in(module, out, inner_ty, paths)?;
             write!(out, ">")?;
         }
         AlgebraicTypeUse::Result { ok_ty, err_ty } => {
-            write!(out, "Result::<")?;
-            write_type(module, out, ok_ty)?;
+            write!(out, "Result{generics}")?;
+            write_type_in(module, out, ok_ty, paths)?;
             write!(out, ", ")?;
-            write_type(module, out, err_ty)?;
+            write_type_in(module, out, err_ty, paths)?;
             write!(out, ">")?;
         }
         AlgebraicTypeUse::Primitive(prim) => match prim {
@@ -940,15 +976,15 @@ pub fn write_type<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicTypeU
             PrimitiveType::U64 => write!(out, "u64")?,
             PrimitiveType::I128 => write!(out, "i128")?,
             PrimitiveType::U128 => write!(out, "u128")?,
-            PrimitiveType::I256 => write!(out, "__sats::i256")?,
-            PrimitiveType::U256 => write!(out, "__sats::u256")?,
+            PrimitiveType::I256 => write!(out, "{sats}::i256")?,
+            PrimitiveType::U256 => write!(out, "{sats}::u256")?,
             PrimitiveType::F32 => write!(out, "f32")?,
             PrimitiveType::F64 => write!(out, "f64")?,
         },
         AlgebraicTypeUse::String => write!(out, "String")?,
         AlgebraicTypeUse::Array(elem_ty) => {
-            write!(out, "Vec::<")?;
-            write_type(module, out, elem_ty)?;
+            write!(out, "Vec{generics}")?;
+            write_type_in(module, out, elem_ty, paths)?;
             write!(out, ">")?;
         }
         AlgebraicTypeUse::Ref(r) => {

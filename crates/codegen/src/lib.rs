@@ -1,4 +1,6 @@
 use spacetimedb_lib::db::raw_def::v9::TableAccess;
+use spacetimedb_lib::Hash;
+use spacetimedb_schema::auto_migrate::ponder_manual_migrate;
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, TypeDef, ViewDef};
 use spacetimedb_schema::schema::{Schema, TableSchema};
 mod code_indenter;
@@ -138,4 +140,53 @@ pub trait Lang {
         file.filename = format!("{}/{}", ns_path, file.filename);
         file
     }
+
+    /// Generate the skeleton of a manual migration, to be added to the module's source.
+    fn generate_migration(&self, dropped: &DroppedSchema) -> anyhow::Result<OutputFile> {
+        let _ = dropped;
+        anyhow::bail!("generating migrations is not supported for this language")
+    }
+}
+
+/// The part of an old schema that a manual migration reads from.
+pub struct DroppedSchema<'a> {
+    /// The old module definition, i.e. the schema of the database being migrated.
+    pub old: &'a ModuleDef,
+    /// The hash of `old`, which the server uses to pick the migration to run.
+    pub hash: Hash,
+    /// The tables that the migration sees under the `dropped` namespace:
+    /// those that the new schema removes or changes incompatibly.
+    /// They're the tables of `old`, with the automatic migration steps that precede
+    /// the manual migration applied, e.g. indexes the new schema removes are gone.
+    /// Their row types are still described by `old`'s typespace.
+    /// Their rows are deleted once the migration finishes.
+    pub tables: Vec<TableDef>,
+}
+
+impl<'a> DroppedSchema<'a> {
+    /// Determine what a manual migration from `old` to `new` needs to declare.
+    ///
+    /// Only tables in the root namespace are included;
+    /// tables dropped from submodules are migrated by those submodules.
+    pub fn new(old: &'a ModuleDef, new: &ModuleDef) -> anyhow::Result<Self> {
+        let plan = ponder_manual_migrate(old, new)?;
+        let hash = plan
+            .manual
+            .as_ref()
+            .expect("ponder_manual_migrate always plans a manual migration")
+            .hash;
+        let mut tables: Vec<TableDef> = plan
+            .dropped_tables()
+            .into_iter()
+            .filter(|((namespace, _), _)| namespace.is_empty())
+            .map(|(_, table)| table)
+            .collect();
+        tables.sort_by(|a, b| a.accessor_name.cmp(&b.accessor_name));
+        Ok(Self { old, hash, tables })
+    }
+}
+
+/// Generate the skeleton of a manual migration from the schema `old` to the schema `new`.
+pub fn generate_migration(old: &ModuleDef, new: &ModuleDef, lang: &dyn Lang) -> anyhow::Result<OutputFile> {
+    lang.generate_migration(&DroppedSchema::new(old, new)?)
 }

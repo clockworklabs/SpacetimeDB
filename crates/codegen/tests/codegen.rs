@@ -1,5 +1,7 @@
-use spacetimedb_codegen::{generate, CodegenOptions, Csharp, Rust, TypeScript};
+use spacetimedb_codegen::{generate, generate_migration, CodegenOptions, Csharp, Rust, TypeScript};
 use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+use spacetimedb_lib::hash_value;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
 use std::sync::OnceLock;
@@ -59,6 +61,32 @@ fn test_typescript_table_handles_are_camel_case() {
     assert!(index.contains(
         r#"/** @deprecated Use `loggedOutPlayer` instead. This alias will be removed in the next major version. */"#
     ));
+}
+
+/// Migrating `module-test` to an empty schema drops every table,
+/// so the generated `dropped` module declares all of them along with the types they use.
+#[test]
+fn test_codegen_rust_migration() {
+    let old = compiled_module();
+    let new: ModuleDef = RawModuleDefV10Builder::new().finish().try_into().unwrap();
+    let file = generate_migration(old, &new, &Rust).unwrap();
+    assert_eq!(
+        file.filename,
+        format!("migration_{}.rs", &hash_value(old).to_hex()[..16])
+    );
+    // The hash changes whenever `module-test` does, which shouldn't churn the snapshot.
+    let code = file.code.replace(&*hash_value(old).to_hex(), "HASH");
+    insta::assert_snapshot!(code);
+}
+
+/// Tables the new schema keeps compatibly stay where they are, so the migration doesn't declare them.
+#[test]
+fn test_codegen_rust_migration_only_declares_dropped_tables() {
+    let old = compiled_module();
+    let new = old.clone();
+    let file = generate_migration(old, &new, &Rust).unwrap();
+    assert!(file.code.contains("mod dropped {}"), "{}", file.code);
+    assert!(file.code.contains("fn migrate(_ctx: &MigrationContext<Dropped>)"));
 }
 
 /// A submodule reducer's wire name must be qualified exactly once, with the canonical
