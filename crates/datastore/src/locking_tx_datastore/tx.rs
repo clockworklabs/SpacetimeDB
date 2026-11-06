@@ -1,14 +1,14 @@
 use super::{
     committed_state::CommittedState,
     datastore::{Result, TxMetrics},
-    state_view::{IterByColRangeTx, StateView},
+    state_view::{IterByColRangeTx, StateView, TableScanIter},
     time::Instant,
     IterByColEqTx, SharedReadGuard,
 };
-#[cfg(feature = "execution")]
-use crate::error::IndexError;
 use crate::execution_context::ExecutionContext;
 use crate::traits::TxOffset;
+#[cfg(feature = "execution")]
+use crate::{error::IndexError, locking_tx_datastore::state_view::ErrInto};
 #[cfg(feature = "execution")]
 use spacetimedb_execution::Datastore;
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -17,7 +17,6 @@ use spacetimedb_primitives::IndexId;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::{reducer_name::ReducerName, schema::TableSchema};
-use spacetimedb_table::table::TableScanIter;
 #[cfg(feature = "execution")]
 use spacetimedb_table::table::{IndexScanPointIter, IndexScanRangeIter, TableAndIndex};
 #[cfg(feature = "execution")]
@@ -40,17 +39,17 @@ pub struct TxId {
 #[cfg(feature = "execution")]
 impl Datastore for TxId {
     type TableIter<'a>
-        = TableScanIter<'a>
+        = ErrInto<TableScanIter<'a>, anyhow::Error>
     where
         Self: 'a;
 
     type RangeIndexIter<'a>
-        = IndexScanRangeIter<'a>
+        = ErrInto<IndexScanRangeIter<'a>, anyhow::Error>
     where
         Self: 'a;
 
     type PointIndexIter<'a>
-        = IndexScanPointIter<'a>
+        = ErrInto<IndexScanPointIter<'a>, anyhow::Error>
     where
         Self: 'a;
 
@@ -63,6 +62,7 @@ impl Datastore for TxId {
     fn table_scan<'a>(&'a self, table_id: TableId) -> anyhow::Result<Self::TableIter<'a>> {
         self.committed_state_shared_lock
             .table_scan(table_id)
+            .map(ErrInto::new)
             .ok_or_else(|| anyhow::anyhow!("TableId `{table_id}` does not exist"))
     }
 
@@ -73,6 +73,7 @@ impl Datastore for TxId {
         range: &impl RangeBounds<AlgebraicValue>,
     ) -> anyhow::Result<Self::RangeIndexIter<'a>> {
         self.with_index(table_id, index_id, |i| i.seek_range_via_algebraic_value(range))?
+            .map(ErrInto::new)
             .map_err(|IndexCannotSeekRange| IndexError::IndexCannotSeekRange(index_id).into())
     }
 
@@ -83,6 +84,7 @@ impl Datastore for TxId {
         point: &AlgebraicValue,
     ) -> anyhow::Result<Self::PointIndexIter<'a>> {
         self.with_index(table_id, index_id, |i| i.seek_point_via_algebraic_value(point))
+            .map(ErrInto::new)
     }
 }
 
@@ -142,7 +144,7 @@ impl TxId {
             .ok_or_else(|| anyhow::anyhow!("TableId `{table_id}` does not exist"))
             .and_then(|table| {
                 table
-                    .get_index_by_id_with_table(&self.committed_state_shared_lock.blob_store, index_id)
+                    .get_index_by_id_with_table(self.committed_state_shared_lock.storage.blobs(), index_id)
                     .map(seek)
                     .ok_or_else(|| anyhow::anyhow!("IndexId `{index_id}` does not exist"))
             })

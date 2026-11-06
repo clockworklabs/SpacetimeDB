@@ -24,6 +24,7 @@ pub mod static_bsatn_validator;
 pub mod static_layout;
 pub mod table;
 pub mod table_index;
+pub mod tiered;
 pub mod var_len;
 
 #[doc(hidden)] // Used in tests and benchmarks.

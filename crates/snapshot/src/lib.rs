@@ -38,14 +38,11 @@ use spacetimedb_paths::server::{ArchivedSnapshotDirPath, SnapshotDirPath, Snapsh
 use spacetimedb_paths::FromPathUnchecked;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{bsatn, de::Deserialize, ser::Serialize};
-use spacetimedb_table::{
-    blob_store::{BlobHash, BlobStore, HashMapBlobStore},
-    page::Page,
-    page_pool::PagePool,
-    table::Table,
-};
+use spacetimedb_table::tiered::{BlobError, BlobMap, BlobSet, ObjectStoreError, PageError};
+use spacetimedb_table::{blob_store::BlobHash, page::Page, page_pool::PagePool, table::Table};
 use std::fs::{self, File};
 use std::io;
+use std::num::NonZeroUsize;
 use std::ops::{Range, RangeBounds};
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -172,6 +169,12 @@ pub enum SnapshotError {
     Lockfile(#[from] LockfileError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Page(#[from] PageError),
+    #[error(transparent)]
+    Blob(#[from] BlobError),
+    #[error(transparent)]
+    ObjectStore(#[from] ObjectStoreError),
 }
 
 impl SnapshotError {
@@ -360,7 +363,7 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    /// Insert a single large blob from a [`BlobStore`]
+    /// Insert a single large blob from a [`BlobSet`]
     /// into the in-memory snapshot `self`
     /// and the on-disk object repository `object_repo`.
     ///
@@ -396,13 +399,14 @@ impl Snapshot {
     fn write_all_blobs(
         &mut self,
         object_repo: &DirTrie,
-        blobs: &dyn BlobStore,
+        blobs: &BlobSet,
         prev_snapshot: Option<&DirTrie>,
         counter: &mut CountCreated,
     ) -> Result<(), SnapshotError> {
-        for (hash, uses, blob) in blobs.iter_blobs() {
-            self.write_blob(object_repo, hash, uses, blob, prev_snapshot, counter)?;
-        }
+        blobs.try_for_each(|hash, uses, blob| {
+            self.write_blob(object_repo, &hash, uses.get(), blob, prev_snapshot, counter)
+        })?;
+
         Ok(())
     }
 
@@ -445,16 +449,15 @@ impl Snapshot {
         prev_snapshot: Option<&DirTrie>,
         counter: &mut CountCreated,
     ) -> Result<(), SnapshotError> {
-        let pages = table
-            .iter_pages_with_hashes()
-            .map(|option| {
-                if let Some((hash, page)) = option {
-                    Self::write_page(object_repo, page, hash, prev_snapshot, counter)
-                } else {
-                    Ok(ZERO_HASH_DENOTING_ABSENT_PAGE)
-                }
-            })
-            .collect::<Result<Vec<blake3::Hash>, SnapshotError>>()?;
+        let mut pages = Vec::new();
+        for page in table.iter_pages_with_hashes() {
+            let hash = match page? {
+                None => ZERO_HASH_DENOTING_ABSENT_PAGE,
+                Some((hash, page)) => Self::write_page(object_repo, &page.read(), hash, prev_snapshot, counter)?,
+            };
+
+            pages.push(hash);
+        }
 
         self.tables.push(TableEntry {
             table_id: table.schema.table_id,
@@ -568,7 +571,7 @@ impl Snapshot {
         Ok((buf, disk_bytes))
     }
 
-    /// Construct a [`HashMapBlobStore`] containing all the blobs referenced in `self`,
+    /// Construct a [`BlobMap`] containing all the blobs referenced in `self`,
     /// reading their data from files in the `object_repo`.
     ///
     /// Fails if any of the object files is missing or corrupted,
@@ -577,8 +580,8 @@ impl Snapshot {
         &self,
         object_repo: &DirTrie,
         metrics: &mut SnapshotReadKindMetrics,
-    ) -> Result<HashMapBlobStore, SnapshotError> {
-        let mut blob_store = HashMapBlobStore::default();
+    ) -> Result<BlobMap, SnapshotError> {
+        let mut blob_store = BlobMap::default();
 
         for BlobEntry { hash, uses } in &self.blobs {
             // Read the bytes of the blob object.
@@ -602,7 +605,9 @@ impl Snapshot {
                 });
             }
 
-            blob_store.insert_with_uses(hash, *uses as usize, buf.into_boxed_slice());
+            if let Some(uses) = NonZeroUsize::new(*uses as usize) {
+                blob_store.insert_with_uses(hash, uses, buf.into());
+            }
         }
 
         Ok(blob_store)
@@ -882,7 +887,7 @@ impl SnapshotRepository {
     pub fn create_snapshot<'db>(
         &self,
         tables: impl Iterator<Item = &'db mut Table>,
-        blobs: &'db dyn BlobStore,
+        blobs: &BlobSet,
         tx_offset: TxOffset,
     ) -> Result<UnflushedSnapshot, SnapshotError> {
         // Invalidate equal to or newer than `tx_offset`.
@@ -1504,10 +1509,10 @@ pub trait SnapshotRepo: Send + Sync {
     fn database_identity(&self) -> Identity;
 
     /// Start creating a snapshot at `tx_offset` from the provided tables and blob store.
-    fn create_snapshot<'db>(
+    fn create_snapshot(
         &self,
-        tables: &mut dyn Iterator<Item = &'db mut Table>,
-        blobs: &'db dyn BlobStore,
+        tables: &mut dyn Iterator<Item = &mut Table>,
+        blobs: &BlobSet,
         tx_offset: TxOffset,
     ) -> Result<Self::Pending, SnapshotError>;
 
@@ -1545,10 +1550,10 @@ impl SnapshotRepo for SnapshotRepository {
         SnapshotRepository::database_identity(self)
     }
 
-    fn create_snapshot<'db>(
+    fn create_snapshot(
         &self,
-        tables: &mut dyn Iterator<Item = &'db mut Table>,
-        blobs: &'db dyn BlobStore,
+        tables: &mut dyn Iterator<Item = &mut Table>,
+        blobs: &BlobSet,
         tx_offset: TxOffset,
     ) -> Result<Self::Pending, SnapshotError> {
         Ok(Box::new(SnapshotRepository::create_snapshot(
@@ -1592,7 +1597,7 @@ pub struct ReconstructedSnapshot {
     pub module_abi_version: [u16; 2],
 
     /// The blob store of the snapshotted state.
-    pub blob_store: HashMapBlobStore,
+    pub blob_store: BlobMap,
 
     /// All the tables from the snapshotted state, sans schema information and indexes.
     ///

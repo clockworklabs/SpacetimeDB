@@ -52,6 +52,7 @@ use spacetimedb_sats::hash::Hash;
 use spacetimedb_schema::auto_migrate::{ponder_migrate, AutoMigrateError, MigrationPolicy, PrettyPrintStyle};
 use spacetimedb_schema::def::{ModuleDef, RawModuleDefVersion};
 use spacetimedb_table::page_pool::PagePool;
+use spacetimedb_table::tiered::{ByteBudget, MemoryObjectStore, TieredStorageConfig};
 use std::future::Future;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -1280,7 +1281,7 @@ impl Host {
                 EmptyHistory::new(),
                 None,
                 Some(tx_metrics_queue),
-                page_pool.clone(),
+                TieredStorageConfig::new_for_memory_database(page_pool.clone()),
             )?,
             db::Storage::Disk => {
                 // Replay from the local state.
@@ -1291,12 +1292,18 @@ impl Host {
                     owner_identity: database.owner_identity,
                 };
                 let persistence = persistence.persistence(&persistence_db, replica_id).await?;
+                // TODO(disk-tables): Figure out where the config comes from.
+                let storage = TieredStorageConfig {
+                    page_pool: page_pool.clone(),
+                    local_object_store: Box::new(MemoryObjectStore::default()),
+                    remote_object_store: None,
+                    resident_budget: ByteBudget::unlimited(),
+                };
                 // Loading a database from persistent storage involves heavy
                 // blocking I/O. `asyncify` to avoid blocking the async worker.
                 let (db, clients) = asyncify({
                     let database_identity = database.database_identity;
                     let owner_identity = database.owner_identity;
-                    let page_pool = page_pool.clone();
                     move || {
                         RelationalDB::open(
                             database_identity,
@@ -1304,7 +1311,7 @@ impl Host {
                             history,
                             Some(persistence),
                             Some(tx_metrics_queue),
-                            page_pool,
+                            storage,
                         )
                     }
                 })
@@ -1553,7 +1560,7 @@ impl Host {
             EmptyHistory::new(),
             None,
             None,
-            page_pool,
+            TieredStorageConfig::new_for_module_check(page_pool),
         )?;
         let memory_observer: Arc<dyn MemoryObserver> = Arc::new(());
 
