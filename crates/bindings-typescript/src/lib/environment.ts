@@ -3,7 +3,7 @@ import type {
   StringBuilder,
   TypeBuilder,
   t,
-} from './type_builders';
+} from './type_builders.ts';
 
 /** Only strings and simple, payload-free enums constrain environment strings. */
 export type EnvironmentString =

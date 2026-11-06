@@ -1,7 +1,7 @@
-import { registerExport, schema } from './schema';
-import type { ProcedureExport } from './procedures';
-import { table } from '../lib/table';
-import t from '../lib/type_builders';
+import { registerExport, schema } from './schema.ts';
+import type { ProcedureExport } from './procedures.ts';
+import { table } from '../lib/table.ts';
+import t from '../lib/type_builders.ts';
 
 const person = table(
   {

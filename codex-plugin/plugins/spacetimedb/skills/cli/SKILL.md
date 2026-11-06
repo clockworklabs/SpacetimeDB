@@ -20,6 +20,8 @@ triggers:
   - spacetime server
   - spacetime login
   - spacetime generate
+  - spacetime env
+  - spacetime auth
   - how do I use the CLI
   - CLI command
 ---
@@ -52,11 +54,28 @@ spacetime generate --lang unrealcpp --uproject-dir ./MyGame --module-path ./serv
 
 ### Client and Module Bindings
 
-`spacetime generate --bindings client` (default) generates bindings for clients connecting to a database. `--bindings module` generates receiver bindings used inside a **calling database module** to call reducers in another **receiving database** through asynchronous IDC. Rust and TypeScript module bindings are supported; C#/C++ module bindings are not implemented yet. `unrealcpp` is client-only; `cpp` is accepted only in module mode.
+`spacetime generate --bindings client` (default) generates bindings for clients connecting to a database. `--bindings module` generates receiver bindings used inside a **sending database module** to call reducers in another **receiving database** through asynchronous IDC. Rust and TypeScript module bindings are supported; C#/C++ module bindings are not implemented yet. `unrealcpp` is client-only; `cpp` is accepted only in module mode.
 
-In `spacetime.json`, each calling database's non-inherited `dependencies` array requires its own `module-path` and dependency `name` plus receiving-module `module-path` or `database`. A `database` reference resolves another target's local source/build settings in the same config; it does not fetch a running database's schema. A direct receiving module source takes precedence. Dependencies do not themselves publish receiving databases or inherit the calling module's build settings. `generate <calling-database>` processes both its regular `generate` entries (client bindings by default) and `dependencies` (module bindings automatically); no `--bindings` flag or second `generate` entry is needed for a dependency. For dependencies, module binding language defaults to the calling module's language and Rust/TypeScript output defaults to `<calling module-path>/src/remote_bindings`. Explicit config `out-dir` is config-relative. A regular `generate` entry can select `"bindings": "module"`, but does not use dependency language or output defaults. The CLI `--bindings` override is allowed only when a single generation entry is selected.
+In `spacetime.json`, each sending database's non-inherited `dependencies` array requires its own `module-path` and dependency `name` plus receiving-module `module-path` or `database`. A `database` reference resolves another target's local source/build settings in the same config; it does not fetch a running database's schema. A direct receiving module source takes precedence. Dependencies do not themselves publish receiving databases or inherit the sending module's build settings. `generate <sending-database>` processes both its regular `generate` entries (client bindings by default) and `dependencies` (module bindings automatically); no `--bindings` flag or second `generate` entry is needed for a dependency. For dependencies, module binding language defaults to the sending module's language and Rust/TypeScript output defaults to `<sending module-path>/src/remote_bindings`. Explicit config `out-dir` is config-relative. A regular `generate` entry can select `"bindings": "module"`, but does not use dependency language or output defaults. The CLI `--bindings` override is allowed only when a single generation entry is selected.
 
-`dev` generates only root dependencies before building the calling module, and watches their source paths. Child targets are available for source lookup, not recursive dependency generation. `--skip-generate` skips receiver/client generation and receiver-only watching; `--skip-publish` does not. See https://spacetimedb.com/docs/cli-reference/spacetime-json#receiver-dependencies for examples.
+`dev` generates only root dependencies before building the sending module, and watches their source paths. Child targets are available for source lookup, not recursive dependency generation. `--skip-generate` skips receiver/client generation and receiver-only watching; `--skip-publish` does not. See https://spacetimedb.com/docs/cli-reference/spacetime-json#receiver-dependencies for examples.
+
+### C# Build Modes
+
+For new .NET 10 modules, `dotnet build` produces a managed library.
+`spacetime build` and `spacetime publish` explicitly select `wasi-wasm` and use
+NativeAOT-LLVM; `--native-aot` is not required. The manual WASM equivalent is
+`dotnet publish -c Release -r wasi-wasm` from the module directory.
+Use `spacetime init --lang csharp --dotnet-version 10 my-project` to select
+.NET 10 explicitly.
+
+Do not make the project permanently WASM-only to fix a managed build: keep LLVM
+package references and WASM settings conditional on the RID. Let dotnet restore
+when changing build modes. Managed builds alone do not enable C# module unit tests.
+
+.NET 8 retains WASM/JIT by default and requires `--native-aot` to select NativeAOT
+where supported. The CLI manages `SPACETIMEDB_WASM_AOT` and its legacy alias
+`EXPERIMENTAL_WASM_AOT`; users do not need to set either for .NET 10.
 
 ### Publishing & Deployment
 
@@ -70,6 +89,29 @@ spacetime publish my-database --server local --yes
 # Clear database and republish
 spacetime publish my-database --delete-data=always --yes
 ```
+
+### Database Environment
+
+Module declarations validate string values before initialization/migration. Publishing preserves unspecified stored values. For each declared key, precedence is publishing-process environment → resolved config `env` map → stored database value. Undeclared keys can be staged explicitly in JSON, but module code cannot read them until declared. Keep secrets out of checked-in config; use process variables or ignored local config files.
+
+```bash
+# Supply declared values while publishing; use a disposable value for local development
+API_KEY='development-only' spacetime publish my-database --server local --yes
+
+# Change only the environment of an existing database (no module build/upload)
+API_KEY='development-only' spacetime publish my-database --server local --env-only --yes
+
+# Explicitly remove an optional or undeclared key
+spacetime publish my-database --server local --env-only --unset-env LOG_LEVEL --yes
+
+# Inspect stored values (these commands print secrets; authorization is required)
+spacetime env list my-database --server local
+spacetime env get my-database MODE --server local
+```
+
+Before `--unset-env`, remove that key from effective JSON/process inputs. Required values cannot be unset. `--replace-env` replaces the whole store and deletes omitted keys; it cannot be combined with `--unset-env`. `--delete-data` also clears environment values; supply required values again after a reset. `--env-only` requires an existing database and cannot be combined with a reset. An empty string is a value, not deletion. `--env` selects a project configuration environment; it does not assign a database environment variable.
+
+There is no separate `spacetime env set`: updates use validated publishing. For full merge/validation semantics see https://spacetimedb.com/docs/databases/environment-variables.
 
 ### Database Interaction
 
@@ -147,6 +189,21 @@ spacetime login show
 # Logout
 spacetime logout
 ```
+
+### SpacetimeAuth Management (2.13+)
+
+`spacetime auth` manages SpacetimeAuth settings; it is not a replacement for `spacetime login`. Log in and enable SpacetimeAuth for the database first. Pass the database **name**, not its identity. For example:
+
+```bash
+spacetime auth config set my-database display_name 'My App'
+spacetime auth idp enable my-database github
+spacetime auth client create my-database --name web
+spacetime auth client set my-database --name web web true
+spacetime auth client get my-database --name web
+spacetime auth client set my-database --name web redirect_uris 'https://example.com/callback'
+```
+
+The command families are `config set/reset`, `idp set/enable/disable`, and `client create/delete/get/set`. `idp set <database> <idp> <client_id>` prompts for the OAuth secret when omitted (or reads it from stdin); avoid embedding real secrets in shell history. `client get --include-secret` explicitly prints a client's secret; ordinary create/get output does not. These commands use the SpacetimeAuth management service, not the database `--server` target. Use each subcommand's `--help` for supported providers, settings, and values.
 
 ## Default Servers
 
