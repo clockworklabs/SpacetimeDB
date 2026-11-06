@@ -1,9 +1,9 @@
 name: Runner S3 staging smoke
 
 on:
-  push:
+  pull_request:
     branches:
-      - jdetter-openclaw/runner-s3-staging-smoke
+      - master
 
 permissions:
   contents: read
