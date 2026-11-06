@@ -125,3 +125,55 @@ impl spacetimedb::rt::RemoteReducer for noop {
     const SIGNATURE_HASH: &'static str = "bc436888fd947d2bfd49ed6bddad31f0245c34fd42c85f9360fa0b477aa957fc";
     type Args = NoopArgs;
 }
+
+#[doc(hidden)]
+macro_rules! __spacetimedb_outbox {
+    (receive_ping, $module:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = receive_ping_outbox $(, name = $name)?, outbox($module::receive_ping))]
+        pub struct ReceivePingOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+            pub body: ::std::string::String,
+        }
+    };
+    (receive_ping, $module:ident, accessor = $accessor:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = $accessor $(, name = $name)?, outbox($module::receive_ping))]
+        pub struct ReceivePingOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+            pub body: ::std::string::String,
+        }
+    };
+    (noop, $module:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = noop_outbox $(, name = $name)?, outbox($module::noop))]
+        pub struct NoopOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+        }
+    };
+    (noop, $module:ident, accessor = $accessor:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = $accessor $(, name = $name)?, outbox($module::noop))]
+        pub struct NoopOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+        }
+    };
+    ($reducer:ident, $module:ident) => {
+        compile_error!("unknown remote reducer or unsupported outbox options");
+    };
+}
+
+#[doc(hidden)]
+pub(crate) use __spacetimedb_outbox;

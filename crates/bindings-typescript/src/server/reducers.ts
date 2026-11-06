@@ -1,22 +1,22 @@
-import { AlgebraicType } from '../lib/algebraic_type';
-import { FunctionVisibility, type Lifecycle } from '../lib/autogen/types';
-import type { ParamsObj, Reducer } from '../lib/reducers';
-import { type UntypedSchemaDef } from '../lib/schema';
-import { deepEqual } from '../lib/util';
-import { t } from '../lib/type_builders';
+import { AlgebraicType } from '../lib/algebraic_type.ts';
+import { FunctionVisibility, type Lifecycle } from '../lib/autogen/types.ts';
+import type { ParamsObj, Reducer } from '../lib/reducers.ts';
+import { type UntypedSchemaDef } from '../lib/schema.ts';
+import { deepEqual } from '../lib/util.ts';
+import { t } from '../lib/type_builders.ts';
 import type {
   OutboxMetadata,
   ScheduleTableForParams,
   UntypedTableSchema,
-} from '../lib/table_schema';
-import { RowBuilder, type RowObj } from '../lib/type_builders';
-import { toPascalCase } from '../lib/util';
+} from '../lib/table_schema.ts';
+import { RowBuilder, type RowObj } from '../lib/type_builders.ts';
+import { toPascalCase } from '../lib/util.ts';
 import {
   exportContext,
   registerExport,
   type ModuleExport,
   type SchemaInner,
-} from './schema';
+} from './schema.ts';
 
 export interface ReducerExport<
   S extends UntypedSchemaDef,

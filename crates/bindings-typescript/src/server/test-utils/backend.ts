@@ -1,10 +1,10 @@
 import type { u128, u16, u256, u32 } from 'spacetime:sys@2.0';
-import type { DatastoreBackend } from '../backend';
+import type { DatastoreBackend } from '../backend.ts';
 import type {
   TestRuntimeContext,
   TestRuntimeTarget,
   TestRuntimeTx,
-} from './runtime';
+} from './runtime.ts';
 
 class RowIteratorRegistry {
   #next = 1;
