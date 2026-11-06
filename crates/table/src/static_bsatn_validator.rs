@@ -371,7 +371,12 @@ pub(crate) unsafe fn validate_bsatn(
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use crate::{bflatn_to::write_row_to_page, page::Page, row_type_visitor::row_type_visitor, tiered::BlobSet};
+    use crate::{
+        bflatn_to::write_row_to_page,
+        page::Page,
+        row_type_visitor::row_type_visitor,
+        tiered::{BlobSet, EvictionPolicy},
+    };
     use proptest::{prelude::*, prop_assert_eq, proptest};
     use spacetimedb_sats::bsatn::to_vec;
     use spacetimedb_sats::proptest::generate_typed_row;
@@ -399,7 +404,16 @@ pub mod test {
             let mut page = Page::new(ty.size());
             let visitor = row_type_visitor(&ty);
             let blob_store = &mut BlobSet::new_for_test();
-            let res_write = unsafe { write_row_to_page(&mut page, blob_store, &visitor, &ty, &val) };
+            let res_write = unsafe {
+                write_row_to_page(
+                    &mut page,
+                    blob_store,
+                    &visitor,
+                    &ty,
+                    &val,
+                    EvictionPolicy::NeverEvict
+                )
+            };
 
             prop_assert_eq!(res_validate.is_ok(), res_write.is_ok());
         }

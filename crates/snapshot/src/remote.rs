@@ -833,6 +833,7 @@ mod tests {
     use spacetimedb_paths::{server::SnapshotsPath, FromPathUnchecked};
     use spacetimedb_sats::bsatn;
     use spacetimedb_sats::layout::{row_size_for_type, Size};
+    use spacetimedb_table::tiered::EvictionPolicy;
     use spacetimedb_table::{indexes::PageOffset, page::Page, tiered::BlobSet, var_len::AlignedVarLenOffsets};
     use std::io::Cursor;
     use tempfile::tempdir;
@@ -985,6 +986,7 @@ mod tests {
                 &[] as &[&[u8]],
                 u64_var_len_visitor(),
                 &mut BlobSet::new_for_test(),
+                EvictionPolicy::NeverEvict,
             )
         }
         .expect("Failed to insert first row")

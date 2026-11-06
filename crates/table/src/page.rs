@@ -32,7 +32,7 @@
 //!   See the post [Two Kinds of Invariants: Safety and Validity][ralf_safe_valid]
 //!   for a discussion on safety and validity invariants.
 
-use crate::tiered::{BlobError, BlobSet};
+use crate::tiered::{BlobError, BlobSet, EvictionPolicy};
 
 use super::{
     blob_store::BlobHash,
@@ -748,10 +748,11 @@ impl<'page> VarView<'page> {
     pub unsafe fn write_large_blob_hash_to_granule(
         &mut self,
         blobs: &BlobSet,
+        eviction_policy: EvictionPolicy,
         var_len_obj: &impl AsRef<[u8]>,
         vlr: VarLenRef,
     ) -> Result<BlobNumBytes, BlobError> {
-        let hash = blobs.insert(var_len_obj.as_ref())?.hash();
+        let hash = blobs.insert(eviction_policy, var_len_obj.as_ref())?.hash();
 
         let granule = vlr.first_granule;
         // SAFETY:
@@ -902,7 +903,7 @@ impl<'page> VarView<'page> {
     /// SAFETY: `offset` must point to a valid [`VarLenGranule`] or be NULL.
     #[cold]
     #[inline(never)]
-    unsafe fn free_blob(&self, offset: PageOffset, blobs: &BlobSet) -> BlobNumBytes {
+    unsafe fn free_blob(&self, offset: PageOffset, blobs: &BlobSet, eviction_policy: EvictionPolicy) -> BlobNumBytes {
         assert!(!offset.is_var_len_null());
 
         // SAFETY: Per caller contract + the assertion above,
@@ -912,7 +913,7 @@ impl<'page> VarView<'page> {
         // `free_ref` never faults, and `granule.blob_hash()` must exist in the
         // blob set.
         blobs
-            .free_ref(granule.blob_hash().into())
+            .free_ref(granule.blob_hash().into(), eviction_policy)
             .expect("blob with hash in granule must exist")
             .into()
     }
@@ -953,14 +954,19 @@ impl<'page> VarView<'page> {
     /// Frees an entire var-len linked-list object.
     ///
     /// SAFETY: `var_len_obj.first_granule` must point to a valid [`VarLenGranule`] or be NULL.
-    unsafe fn free_object(&mut self, var_len_obj: VarLenRef, blobs: &BlobSet) -> BlobNumBytes {
+    unsafe fn free_object(
+        &mut self,
+        var_len_obj: VarLenRef,
+        blobs: &BlobSet,
+        eviction_policy: EvictionPolicy,
+    ) -> BlobNumBytes {
         let mut blob_store_deleted_bytes = BlobNumBytes::default();
         // For large blob objects, extract the hash and tell `blob_store` to discard it.
         if var_len_obj.is_large_blob() {
             // SAFETY: `var_len_obj.first_granule` was promised to
             // point to a valid [`VarLenGranule`] or be NULL, as required.
             unsafe {
-                blob_store_deleted_bytes = self.free_blob(var_len_obj.first_granule, blobs);
+                blob_store_deleted_bytes = self.free_blob(var_len_obj.first_granule, blobs, eviction_policy);
             }
         }
 
@@ -1375,6 +1381,7 @@ impl Page {
         var_len_objects: &[impl AsRef<[u8]>],
         var_len_visitor: &impl VarLenMembers,
         blobs: &mut BlobSet,
+        eviction_policy: EvictionPolicy,
     ) -> Result<PageOffset, Error> {
         // Allocate the fixed-len row.
         let fixed_row_size = Size(fixed_row.len() as u16);
@@ -1403,7 +1410,7 @@ impl Page {
                 // As `in_blob` holds, it is also unused, as required.
                 // We'll now make that granule valid.
                 unsafe {
-                    var.write_large_blob_hash_to_granule(blobs, var_len_obj, var_len_ref)
+                    var.write_large_blob_hash_to_granule(blobs, eviction_policy, var_len_obj, var_len_ref)
                         .expect("legacy Page::insert_row cannot propagate blob errors");
                 }
             }
@@ -1560,6 +1567,7 @@ impl Page {
         fixed_row_size: Size,
         var_len_visitor: &impl VarLenMembers,
         blobs: &BlobSet,
+        eviction_policy: EvictionPolicy,
     ) -> BlobNumBytes {
         // We're modifying the page, so clear the unmodified hash.
         self.header.unmodified_hash = None;
@@ -1577,7 +1585,7 @@ impl Page {
             // which we've justified that the above is,
             // returns an iterator, that will only yield `var_len_ref`s,
             // where `var_len_ref.first_granule` points to a valid `VarLenGranule` or is NULL.
-            blob_store_deleted_bytes += unsafe { var.free_object(*var_len_ref, blobs) }
+            blob_store_deleted_bytes += unsafe { var.free_object(*var_len_ref, blobs, eviction_policy) }
         }
 
         // SAFETY: Caller promised that `fixed_row` points to a valid row in the page.
@@ -2169,6 +2177,7 @@ pub(crate) mod tests {
                 &[] as &[&[u8]],
                 u64_var_len_visitor(),
                 &mut BlobSet::new_for_test(),
+                EvictionPolicy::NeverEvict,
             )
         }
         .expect("Failed to insert first row")
@@ -2308,7 +2317,15 @@ pub(crate) mod tests {
         // Delete rows.
         let blobs = &mut BlobSet::new_for_test();
         for row_offset in odds {
-            unsafe { page.delete_row(row_offset, u64_row_size(), u64_var_len_visitor(), blobs) };
+            unsafe {
+                page.delete_row(
+                    row_offset,
+                    u64_row_size(),
+                    u64_var_len_visitor(),
+                    blobs,
+                    EvictionPolicy::NeverEvict,
+                )
+            };
         }
 
         // The hash should have been cleared.
@@ -2355,6 +2372,7 @@ pub(crate) mod tests {
                 u64_row_size(),
                 u64_var_len_visitor(),
                 &BlobSet::new_for_test(),
+                EvictionPolicy::NeverEvict,
             )
         };
 
@@ -2397,6 +2415,7 @@ pub(crate) mod tests {
                 &[data],
                 str_var_len_visitor(),
                 &mut BlobSet::new_for_test(),
+                EvictionPolicy::NeverEvict,
             )
         }
         .expect("Failed to insert row")
@@ -2419,7 +2438,15 @@ pub(crate) mod tests {
 
         for offset in offsets.into_iter().step_by(2) {
             capacity.release_row(one_granule_count);
-            unsafe { page.delete_row(offset, STR_ROW_SIZE, str_var_len_visitor(), blobs) };
+            unsafe {
+                page.delete_row(
+                    offset,
+                    STR_ROW_SIZE,
+                    str_var_len_visitor(),
+                    blobs,
+                    EvictionPolicy::NeverEvict,
+                )
+            };
             assert_page_summaries_match(&page, &capacity, STR_ROW_SIZE);
         }
 
@@ -2547,7 +2574,15 @@ pub(crate) mod tests {
 
         let hash_pre_del = hash_unmodified_save_get(&mut page);
 
-        unsafe { page.delete_row(offset_0, STR_ROW_SIZE, str_var_len_visitor(), blobs) };
+        unsafe {
+            page.delete_row(
+                offset_0,
+                STR_ROW_SIZE,
+                str_var_len_visitor(),
+                blobs,
+                EvictionPolicy::NeverEvict,
+            )
+        };
 
         let hash_pre_ins = hash_unmodified_save_get(&mut page);
 
@@ -2589,7 +2624,15 @@ pub(crate) mod tests {
         assert_eq!(page.header.var.first.idx(), data_sub_n_vlg(4));
 
         // Delete the row.
-        unsafe { page.delete_row(offset_0, STR_ROW_SIZE, str_var_len_visitor(), blobs) };
+        unsafe {
+            page.delete_row(
+                offset_0,
+                STR_ROW_SIZE,
+                str_var_len_visitor(),
+                blobs,
+                EvictionPolicy::NeverEvict,
+            )
+        };
 
         // Allocate a new 4-granule var-len object.
         // This should use the same storage as the original row.
@@ -2640,7 +2683,15 @@ pub(crate) mod tests {
         assert_ne!(hash_pre_ins, hash_pre_del);
 
         // Delete the first row.
-        unsafe { page.delete_row(offset_0, STR_ROW_SIZE, str_var_len_visitor(), blobs) };
+        unsafe {
+            page.delete_row(
+                offset_0,
+                STR_ROW_SIZE,
+                str_var_len_visitor(),
+                blobs,
+                EvictionPolicy::NeverEvict,
+            )
+        };
 
         // Hash is cleared by deleting.
         let hash_post_del = hash_unmodified_save_get(&mut page);
@@ -2744,7 +2795,15 @@ pub(crate) mod tests {
 
         // Delete the rows.
         for row_offset in odds {
-            unsafe { page.delete_row(row_offset, STR_ROW_SIZE, str_var_len_visitor(), blobs) };
+            unsafe {
+                page.delete_row(
+                    row_offset,
+                    STR_ROW_SIZE,
+                    str_var_len_visitor(),
+                    blobs,
+                    EvictionPolicy::NeverEvict,
+                )
+            };
         }
 
         // Hash was cleared by deleting and is different now.
@@ -2806,7 +2865,15 @@ pub(crate) mod tests {
             .enumerate()
             .filter_map(|(i, offset)| {
                 if i % 2 == 0 {
-                    unsafe { page.delete_row(offset, u64_row_size(), u64_var_len_visitor(), blobs) };
+                    unsafe {
+                        page.delete_row(
+                            offset,
+                            u64_row_size(),
+                            u64_var_len_visitor(),
+                            blobs,
+                            EvictionPolicy::NeverEvict,
+                        )
+                    };
                     None
                 } else {
                     Some(offset)

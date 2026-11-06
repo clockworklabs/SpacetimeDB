@@ -8482,6 +8482,7 @@ dependencies = [
  "spacetimedb-data-structures",
  "spacetimedb-durability",
  "spacetimedb-execution",
+ "spacetimedb-fs-utils",
  "spacetimedb-lib",
  "spacetimedb-metrics",
  "spacetimedb-paths",
@@ -8493,16 +8494,6 @@ dependencies = [
  "strum",
  "thin-vec",
  "thiserror 1.0.69",
-]
-
-[[package]]
-name = "spacetimedb-disk-table"
-version = "2.14.0"
-dependencies = [
- "spacetimedb-fs-utils",
- "spacetimedb-paths",
- "spacetimedb-snapshot",
- "spacetimedb-table",
 ]
 
 [[package]]
@@ -9040,6 +9031,7 @@ dependencies = [
  "spacetimedb-pg",
  "spacetimedb-schema",
  "spacetimedb-table",
+ "spacetimedb-tiered-storage",
  "tempfile",
  "thiserror 1.0.69",
  "tikv-jemallocator",
@@ -9140,6 +9132,16 @@ dependencies = [
  "tempfile",
  "tokio",
  "tower",
+]
+
+[[package]]
+name = "spacetimedb-tiered-storage"
+version = "2.16.0"
+dependencies = [
+ "spacetimedb-fs-utils",
+ "spacetimedb-paths",
+ "spacetimedb-snapshot",
+ "spacetimedb-table",
 ]
 
 [[package]]

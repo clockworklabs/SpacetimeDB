@@ -6,7 +6,7 @@ use crate::{
     blob_store::BlobHash,
     indexes::PageIndex,
     table::TableError,
-    tiered::{BlobError, BlobSet, PageError, PageSet, ReservedPage},
+    tiered::{BlobError, BlobSet, EvictionPolicy, PageError, PageSet, ReservedPage},
 };
 
 use super::{
@@ -62,9 +62,10 @@ pub unsafe fn write_row_to_pages_bsatn(
     ty: &RowTypeLayout,
     mut bytes: &[u8],
     squashed_offset: SquashedOffset,
+    eviction_policy: EvictionPolicy,
 ) -> Result<(RowPointer, BlobNumBytes), Error> {
     let val = ty.product().deserialize(bsatn::Deserializer::new(&mut bytes))?;
-    unsafe { write_row_to_pages(pages, None, visitor, blobs, ty, &val, squashed_offset) }
+    unsafe { write_row_to_pages(pages, None, visitor, blobs, ty, &val, squashed_offset, eviction_policy) }
 }
 
 /// Writes `row` typed at `ty` to `pages`
@@ -78,6 +79,7 @@ pub unsafe fn write_row_to_pages_bsatn(
 /// This includes that its `visitor` must be prepared to visit var-len members within `ty`,
 /// and must do so in the same order as a `VarLenVisitorProgram` for `ty` would,
 /// i.e. by monotonically increasing offsets.
+#[allow(clippy::too_many_arguments)]
 pub unsafe fn write_row_to_pages(
     pages: &mut PageSet,
     reservation: Option<(PageIndex, ReservedPage)>,
@@ -86,6 +88,7 @@ pub unsafe fn write_row_to_pages(
     ty: &RowTypeLayout,
     val: &ProductValue,
     squashed_offset: SquashedOffset,
+    eviction_policy: EvictionPolicy,
 ) -> Result<(RowPointer, BlobNumBytes), Error> {
     let num_granules = if ty.layout().fixed {
         // Fast-path: The row type doesn't contain var-len members,
@@ -102,7 +105,7 @@ pub unsafe fn write_row_to_pages(
         // - Caller promised that `visitor` is prepared to visit for `ty`
         //   and in the same order as a `VarLenVisitorProgram` for `ty` would.
         // - `visitor` came from `pages` which we can trust to visit in the right order.
-        unsafe { write_row_to_page(page, blobs, visitor, ty, val) }
+        unsafe { write_row_to_page(page, blobs, visitor, ty, val, eviction_policy) }
     })? {
         (page, Ok((offset, blob_inserted))) => {
             Ok((RowPointer::new(false, page, offset, squashed_offset), blob_inserted))
@@ -132,6 +135,7 @@ pub unsafe fn write_row_to_page(
     visitor: &impl VarLenMembers,
     ty: &RowTypeLayout,
     val: &ProductValue,
+    eviction_policy: EvictionPolicy,
 ) -> Result<(PageOffset, BlobNumBytes), Error> {
     let fixed_row_size = ty.size();
     // SAFETY: We've used the right `row_size` and we trust that others have too.
@@ -146,6 +150,7 @@ pub unsafe fn write_row_to_page(
         var_view,
         last_allocated_var_len_index: 0,
         large_blob_insertions: Vec::new(),
+        eviction_policy,
     };
 
     // Write the row to the page.
@@ -197,6 +202,8 @@ struct BflatnSerializedRowBuffer<'page> {
 
     /// The mutable view of the variable section of the page.
     var_view: VarView<'page>,
+
+    eviction_policy: EvictionPolicy,
 }
 
 impl BflatnSerializedRowBuffer<'_> {
@@ -230,7 +237,10 @@ impl BflatnSerializedRowBuffer<'_> {
             // so it is properly aligned for a `VarLenGranule` and in bounds of the page.
             // However, as it was added to `self.large_blob_insertions`,
             // we have not yet written the hash to that granule.
-            let inserted_bytes = unsafe { self.var_view.write_large_blob_hash_to_granule(blobs, value, *vlr) };
+            let inserted_bytes = unsafe {
+                self.var_view
+                    .write_large_blob_hash_to_granule(blobs, self.eviction_policy, value, *vlr)
+            };
             match inserted_bytes {
                 Ok(inserted_bytes) => {
                     blob_store_inserted_bytes += inserted_bytes;
@@ -240,7 +250,7 @@ impl BflatnSerializedRowBuffer<'_> {
                     for (_, value) in self.large_blob_insertions[..i].iter().rev() {
                         let hash = BlobHash::hash_from_bytes(value);
                         blobs
-                            .free_ref(hash.into())
+                            .free_ref(hash.into(), self.eviction_policy)
                             .expect("blob was inserted by this operation");
                     }
                     return Err(e);
@@ -610,14 +620,15 @@ pub mod test {
         // Pin the first blob so inserting the second cannot evict it. Writing
         // the row will therefore succeed for the first field and fail for the
         // second, exercising rollback after a partial blob-set mutation.
-        let first_pin = blobs.insert(first.as_bytes()).unwrap();
+        let first_pin = blobs.insert(EvictionPolicy::Evictable, first.as_bytes()).unwrap();
         let first_hash = first_pin.hash();
         let ty: RowTypeLayout = ProductType::from([AlgebraicType::String, AlgebraicType::String]).into();
         let visitor = row_type_visitor(&ty);
         let row = spacetimedb_sats::product![first.clone(), second.clone()];
         let mut page = Page::new(ty.size());
 
-        let error = unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &row) }.unwrap_err();
+        let error = unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &row, EvictionPolicy::Evictable) }
+            .unwrap_err();
         assert!(matches!(error, Error::Blobs(BlobError::MemoryLimitExceeded(_))));
         assert_eq!(page.num_rows(), 0);
         assert_eq!(blobs.num_blobs(), 1);
@@ -625,10 +636,53 @@ pub mod test {
 
         // The failed row's page allocations must also be reusable.
         drop(first_pin);
-        let (offset, _) = unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &row) }.unwrap();
-        unsafe { page.delete_row(offset, ty.size(), &visitor, &blobs) };
+        let (offset, _) =
+            unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &row, EvictionPolicy::Evictable) }.unwrap();
+        unsafe { page.delete_row(offset, ty.size(), &visitor, &blobs, EvictionPolicy::Evictable) };
         assert_eq!(page.num_rows(), 0);
         assert_eq!(blobs.usage_counter().get(&first_hash), Some(&1));
+    }
+
+    #[test]
+    fn failed_never_evict_blob_write_releases_shared_blob_policy_pin() {
+        let blob_size = VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1;
+        let first = "a".repeat(blob_size);
+        let second = "b".repeat(blob_size);
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            low_water_bytes: 0,
+            soft_limit_bytes: blob_size as u64,
+            hard_limit_bytes: blob_size as u64,
+        })
+        .unwrap();
+        let blobs = BlobSet::new(
+            Arc::new(ResidentObjects::new(budget)),
+            Arc::new(TieredStorage::new_for_test()),
+        );
+        // This owner allows eviction. Keep its handle during the write so the
+        // second field deterministically fails the one-blob memory limit.
+        let first_handle = blobs.insert(EvictionPolicy::Evictable, first.as_bytes()).unwrap();
+        let hash = first_handle.hash();
+        let ty: RowTypeLayout = ProductType::from([AlgebraicType::String, AlgebraicType::String]).into();
+        let visitor = row_type_visitor(&ty);
+        let row = spacetimedb_sats::product![first, second.clone()];
+        let mut page = Page::new(ty.size());
+
+        // SAFETY: The page, visitor and row all use the same two-string layout.
+        let error = unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &row, EvictionPolicy::NeverEvict) }
+            .unwrap_err();
+        assert!(matches!(error, Error::Blobs(BlobError::MemoryLimitExceeded(_))));
+        assert_eq!(page.num_rows(), 0);
+        assert_eq!(blobs.num_blobs(), 1);
+        assert_eq!(blobs.usage_counter().get(&hash), Some(&1));
+
+        // The failed insertion never created a never-evict owner. After the
+        // reader goes away, a different evictable blob must fit in its place.
+        drop(first_handle);
+        let replacement = blobs.insert(EvictionPolicy::Evictable, second.as_bytes());
+        assert!(
+            replacement.is_ok(),
+            "failed write retained a policy pin: {replacement:?}"
+        );
     }
 
     proptest! {
@@ -642,7 +696,7 @@ pub mod test {
 
             let hash_pre_ins = hash_unmodified_save_get(&mut page);
 
-            let (offset, _) = unsafe { write_row_to_page(&mut page, blobs, &visitor, &ty, &val).unwrap() };
+            let (offset, _) = unsafe { write_row_to_page(&mut page, blobs, &visitor, &ty, &val, EvictionPolicy::Evictable).unwrap() };
 
             let hash_pre_ser = hash_unmodified_save_get(&mut page);
             assert_ne!(hash_pre_ins, hash_pre_ser);

@@ -15,7 +15,11 @@ pub struct DiskStorage {
 
 impl DiskStorage {
     pub fn open(dir: TablesDir) -> io::Result<Self> {
-        fs::remove_dir_all(&dir)?;
+        if let Err(e) = fs::remove_dir_all(&dir)
+            && e.kind() != io::ErrorKind::NotFound
+        {
+            return Err(e);
+        }
         fs::create_dir_all(&dir)?;
         let dir_trie = DirTrie::open(dir.0)?;
 

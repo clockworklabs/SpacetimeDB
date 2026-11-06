@@ -20,11 +20,17 @@ pub use self::{
     error::{BlobError, ObjectStoreError, PageError},
     map::ObjectKey,
     mem::ResidentObjects,
-    page_manager::{PageEvictionPolicy, PageHandle, PageManager, ReservedPage},
+    page_manager::{PageHandle, PageManager, ReservedPage},
     page_ref::{PageBorrow, PageRead, PageRef},
     page_set::{PageSet, PreparedCommit},
     storage::{BackingStore, MemoryObjectStore, Object, ObjectBytes, ObjectMetadata, ObjectStore, TieredStorage},
 };
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EvictionPolicy {
+    Evictable,
+    NeverEvict,
+}
 
 pub struct TieredStorageConfig {
     pub page_pool: PagePool,

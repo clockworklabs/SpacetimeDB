@@ -80,6 +80,8 @@ public interface ITableView<View, T>
 
     static abstract RawScheduleDefV10? MakeScheduleDesc();
 
+    static virtual TableCachePolicy CachePolicy => TableCachePolicy.RequiredInMemory;
+
     static abstract T ReadGenFields(BinaryReader reader, T row);
 
     static virtual string LookupName => tableName;

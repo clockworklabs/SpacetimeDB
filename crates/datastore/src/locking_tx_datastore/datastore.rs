@@ -39,7 +39,9 @@ use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_schema::{
     reducer_name::ReducerName,
-    schema::{ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, SequenceSchema, TableSchema},
+    schema::{
+        ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, SequenceSchema, TableCachePolicy, TableSchema,
+    },
 };
 #[cfg(feature = "durability")]
 use spacetimedb_snapshot::{BoxedPendingSnapshot, DynSnapshotRepo, ReconstructedSnapshot};
@@ -324,6 +326,15 @@ impl Locking {
             .ok_or_else(|| TableError::NotFound(name.into()))?;
 
         tx.alter_table_access(table_id, access)
+    }
+
+    pub fn alter_table_cache_policy_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        policy: TableCachePolicy,
+    ) -> Result<()> {
+        tx.alter_table_cache_policy(table_id, policy)
     }
 
     pub fn alter_table_primary_key_mut_tx(
@@ -1137,9 +1148,10 @@ pub(crate) mod tests {
         ST_CONSTRAINT_NAME, ST_EVENT_TABLE_ID, ST_EVENT_TABLE_NAME, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_NAME,
         ST_INDEX_ID, ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID,
         ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME,
-        ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_NAME, ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME, ST_VIEW_ARG_ID,
-        ST_VIEW_ARG_NAME, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME, ST_VIEW_PARAM_ID,
-        ST_VIEW_PARAM_NAME, ST_VIEW_SUB_ID, ST_VIEW_SUB_NAME,
+        ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_NAME, ST_TABLE_CACHE_POLICY_ID, ST_TABLE_CACHE_POLICY_NAME,
+        ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME, ST_VIEW_ARG_ID, ST_VIEW_ARG_NAME, ST_VIEW_COLUMN_ID,
+        ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_NAME, ST_VIEW_SUB_ID,
+        ST_VIEW_SUB_NAME,
     };
     use crate::system_tables::{
         ST_ENV_ID, ST_ENV_NAME, ST_INBOUND_MSG_ID, ST_INBOUND_MSG_NAME, ST_INBOUND_STREAM_ID, ST_INBOUND_STREAM_NAME,
@@ -1169,9 +1181,10 @@ pub(crate) mod tests {
     use spacetimedb_schema::reducer_name::ReducerName;
     use spacetimedb_schema::schema::{
         columns_to_row_type, ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, RowLevelSecuritySchema,
-        ScheduleSchema, SequenceSchema,
+        ScheduleSchema, SequenceSchema, TableCachePolicy,
     };
     use spacetimedb_schema::table_name::TableName;
+    use spacetimedb_table::blob_store::BlobHash;
     use spacetimedb_table::tiered::{BlobError, ByteBudget, ByteBudgetConfig};
 
     /// For the first user-created table, sequences in the system tables start
@@ -1462,7 +1475,7 @@ pub(crate) mod tests {
         schedule: Option<ScheduleSchema>,
         pk: Option<ColId>,
     ) -> TableSchema {
-        TableSchema::new(
+        let mut schema = TableSchema::new(
             TableId::SENTINEL,
             TableName::for_test("Foo"),
             None,
@@ -1477,7 +1490,10 @@ pub(crate) mod tests {
             false,
             None,
             None,
-        )
+        );
+        schema.cache_policy = TableCachePolicy::NoRequirement;
+
+        schema
     }
 
     fn basic_table_schema_with_indices(
@@ -1616,7 +1632,7 @@ pub(crate) mod tests {
             TableRow { id: ST_INBOUND_STREAM_ID.into(), name: ST_INBOUND_STREAM_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
             TableRow { id: ST_INBOUND_MSG_ID.into(), name: ST_INBOUND_MSG_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
             TableRow { id: ST_OUTBOX_ID.into(), name: ST_OUTBOX_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
-
+            TableRow { id: ST_TABLE_CACHE_POLICY_ID.into(), name: ST_TABLE_CACHE_POLICY_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_columns()?, map_array([
@@ -1746,6 +1762,9 @@ pub(crate) mod tests {
             ColRow { table: ST_OUTBOX_ID.into(), pos: 3, name: "arg_columns", ty: resolved_type_via_v9::<Vec<ColId>>() },
             ColRow { table: ST_OUTBOX_ID.into(), pos: 4, name: "on_result_reducer", ty: AlgebraicType::option(resolved_type_via_v9::<NamespacedIdentifier>()) },
             ColRow { table: ST_OUTBOX_ID.into(), pos: 5, name: "signature_hash", ty: AlgebraicType::String },
+
+            ColRow { table: ST_TABLE_CACHE_POLICY_ID.into(), pos: 0, name: "table_id", ty: TableId::get_type() },
+            ColRow { table: ST_TABLE_CACHE_POLICY_ID.into(), pos: 1, name: "policy", ty: resolved_type_via_v9::<TableCachePolicy>() },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
@@ -1786,6 +1805,7 @@ pub(crate) mod tests {
             IndexRow { id: 35, table: ST_INBOUND_MSG_ID.into(), col: col_list![0, 1, 2], name: "st_inbound_msg_sender_identity_stream_id_seq_idx_btree", },
             IndexRow { id: 36, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 1], name: "st_outbound_msg_stream_id_msg_id_idx_btree", },
             IndexRow { id: 37, table: ST_OUTBOX_ID.into(), col: col(0), name: "st_outbox_table_id_idx_btree", },
+            IndexRow { id: 38, table: ST_TABLE_CACHE_POLICY_ID.into(), col: col(0), name: "st_table_cache_policy_table_id_idx_btree", },
         ]));
         let start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
         #[rustfmt::skip]
@@ -1840,6 +1860,7 @@ pub(crate) mod tests {
             ConstraintRow { constraint_id: 31, table_id: ST_INBOUND_MSG_ID.into(), unique_columns: col_list![0, 1, 2], constraint_name: "st_inbound_msg_sender_identity_stream_id_seq_key", },
             ConstraintRow { constraint_id: 32, table_id: ST_OUTBOUND_MSG_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_outbound_msg_stream_id_msg_id_key", },
             ConstraintRow { constraint_id: 33, table_id: ST_OUTBOX_ID.into(), unique_columns: col(0), constraint_name: "st_outbox_table_id_key", },
+            ConstraintRow { constraint_id: 34, table_id: ST_TABLE_CACHE_POLICY_ID.into(), unique_columns: col(0), constraint_name: "st_table_cache_policy_table_id_key", },
             ]));
 
         // Verify we get back the tables correctly with the proper ids...
@@ -2412,6 +2433,7 @@ pub(crate) mod tests {
             IndexRow { id: 35, table: ST_INBOUND_MSG_ID.into(), col: col_list![0, 1, 2], name: "st_inbound_msg_sender_identity_stream_id_seq_idx_btree", },
             IndexRow { id: 36, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 1], name: "st_outbound_msg_stream_id_msg_id_idx_btree", },
             IndexRow { id: 37, table: ST_OUTBOX_ID.into(), col: col(0), name: "st_outbox_table_id_idx_btree", },
+            IndexRow { id: 38, table: ST_TABLE_CACHE_POLICY_ID.into(), col: col(0), name: "st_table_cache_policy_table_id_idx_btree" },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree",  },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree",  },
@@ -3687,6 +3709,216 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn dropped_tables_release_repeated_blob_references_with_their_own_policy() -> ResultTest<()> {
+        for dropped_policy in [TableCachePolicy::RequiredInMemory, TableCachePolicy::NoRequirement] {
+            for retained_policy in [TableCachePolicy::RequiredInMemory, TableCachePolicy::NoRequirement] {
+                let datastore = get_datastore()?;
+                let mut tx = begin_mut_tx(&datastore);
+                let baseline_bytes = tx.committed_state_write_lock.storage.resident_bytes_used_by_blobs();
+                let mut schema = TableSchema::from_product_type(
+                    [AlgebraicType::U64, AlgebraicType::String, AlgebraicType::String].into(),
+                );
+                schema.table_name = TableName::for_test("dropped");
+                schema.cache_policy = dropped_policy;
+                let dropped = datastore.create_table_mut_tx(&mut tx, schema.clone())?;
+                schema.table_name = TableName::for_test("retained");
+                schema.cache_policy = retained_policy;
+                let retained = datastore.create_table_mut_tx(&mut tx, schema)?;
+
+                let shared = "s".repeat(2048);
+                let unique = "u".repeat(2048);
+                let shared_hash = BlobHash::hash_from_bytes(shared.as_bytes());
+                let unique_hash = BlobHash::hash_from_bytes(unique.as_bytes());
+                let dropped_rows = [
+                    product![1_u64, shared.clone(), shared.clone()],
+                    product![2_u64, shared.clone(), unique],
+                ];
+                for row in &dropped_rows {
+                    tx.insert_via_serialize_bsatn(dropped, row)?;
+                }
+                tx.insert_via_serialize_bsatn(retained, &product![3_u64, shared.clone(), shared.clone()])?;
+                commit(&datastore, tx)?;
+
+                // Schema removal is reversible until commit. Rolling it back
+                // must restore the rows without changing any blob reference.
+                let mut tx = begin_mut_tx(&datastore);
+                tx.drop_table(dropped)?;
+                let _ = datastore.rollback_mut_tx(tx);
+                let mut tx = begin_mut_tx(&datastore);
+                assert_eq!(all_rows(&datastore, &tx, dropped), dropped_rows);
+                let blobs = tx.committed_state_write_lock.storage.blobs();
+                assert_eq!(blobs.uses(shared_hash.into()).unwrap_or_default(), 5);
+                assert_eq!(blobs.uses(unique_hash.into()).unwrap_or_default(), 1);
+
+                tx.drop_table(dropped)?;
+                let changes = commit(&datastore, tx)?;
+                let (_, entry) = changes.iter_table_entries().find(|(id, _)| *id == dropped).unwrap();
+                assert!(entry.truncated);
+                assert_eq!(&*entry.deletes, dropped_rows.as_slice());
+
+                // The shared hash occurred three times in the dropped table,
+                // so now there must be two references remaining.
+                // The unique hash must be gone from the set.
+                let mut tx = begin_mut_tx(&datastore);
+                let blobs = tx.committed_state_write_lock.storage.blobs();
+                assert_eq!(blobs.uses(shared_hash.into()).unwrap_or_default(), 2);
+                assert_eq!(blobs.uses(unique_hash.into()), None);
+                blobs.evict()?;
+                let retained_bytes = match retained_policy {
+                    TableCachePolicy::RequiredInMemory => shared.len() as u64 + BlobHash::SIZE as u64,
+                    _ => 0,
+                };
+                assert_eq!(blobs.resident_bytes_used_by_blobs(), baseline_bytes + retained_bytes);
+
+                // Releasing the remaining owners must remove the entry entirely.
+                tx.clear_table(retained)?;
+                commit(&datastore, tx)?;
+
+                let tx = begin_mut_tx(&datastore);
+                let blobs = tx.committed_state_write_lock.storage.blobs();
+                assert_eq!(blobs.uses(shared_hash.into()), None);
+                assert_eq!(blobs.resident_bytes_used_by_blobs(), baseline_bytes);
+                commit(&datastore, tx)?;
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn failed_commit_preserves_prepared_dropped_table_blob_references() -> ResultTest<()> {
+        const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            low_water_bytes: 0,
+            soft_limit_bytes: HARD_LIMIT_BYTES,
+            hard_limit_bytes: HARD_LIMIT_BYTES,
+        })?;
+        let mut config = TieredStorageConfig::new_for_test();
+        config.resident_budget = budget.clone();
+        let datastore = Locking::bootstrap(Identity::ZERO, config)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+
+        let mut schema = TableSchema::from_product_type([AlgebraicType::String].into());
+        schema.table_name = TableName::for_test("dropped");
+        let dropped = datastore.create_table_mut_tx(&mut tx, schema.clone())?;
+        schema.table_name = TableName::for_test("faulting");
+        schema.cache_policy = TableCachePolicy::NoRequirement;
+
+        let faulting = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let required = "r".repeat(2048);
+        let required_hash = BlobHash::hash_from_bytes(required.as_bytes());
+        let required_row = product![required.clone()];
+        tx.insert_via_serialize_bsatn(dropped, &required_row)?;
+
+        let large_row = product!["x".repeat(1024 * 1024)];
+        tx.insert_via_serialize_bsatn(faulting, &large_row)?;
+
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        tx.drop_table(dropped)?;
+        tx.clear_table(faulting)?;
+        tx.committed_state_write_lock.storage.blobs().evict()?;
+        // The dropped table's small required blob stays resident, so its release
+        // plan and deleted-row values can be prepared. The later deletion from
+        // another table must fault a 1 MiB blob and fail before application.
+        let reservation = budget.acquire(HARD_LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024)?;
+        let result = datastore.commit_mut_tx(tx);
+        assert!(matches!(
+            result,
+            Err(DatastoreError::TableStorage(spacetimedb_table::table::TableError::Blob(error)))
+                if matches!(*error, BlobError::MemoryLimitExceeded(_))
+        ));
+        drop(reservation);
+
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(all_rows(&datastore, &tx, dropped), [required_row]);
+        assert_eq!(all_rows(&datastore, &tx, faulting), [large_row]);
+        let blobs = tx.committed_state_write_lock.storage.blobs();
+        assert_eq!(blobs.uses(required_hash.into()).unwrap_or_default(), 1);
+        blobs.evict()?;
+        assert_eq!(
+            blobs.resident_bytes_used_by_blobs(),
+            required.len() as u64 + BlobHash::SIZE as u64
+        );
+
+        // A retry after releasing memory pressure must still have valid rows
+        // and references to release, including the restored required policy pin.
+        tx.drop_table(dropped)?;
+        commit(&datastore, tx)?;
+
+        let tx = begin_mut_tx(&datastore);
+        assert_eq!(
+            tx.committed_state_write_lock
+                .storage
+                .blobs()
+                .uses(required_hash.into())
+                .unwrap_or_default(),
+            0
+        );
+        commit(&datastore, tx)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn disk_to_memory_migration_rolls_back_when_over_budget() -> ResultTest<()> {
+        use TableCachePolicy::{RequiredInMemory, RequiredOnDisk};
+
+        const LIMIT_BYTES: u64 = 16 * 1024 * 1024;
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            low_water_bytes: 0,
+            soft_limit_bytes: LIMIT_BYTES,
+            hard_limit_bytes: LIMIT_BYTES,
+        })?;
+        let mut config = TieredStorageConfig::new_for_test();
+        config.resident_budget = budget.clone();
+        let datastore = Locking::bootstrap(Identity::ZERO, config)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        let mut schema = TableSchema::from_product_type([AlgebraicType::String].into());
+        schema.cache_policy = RequiredOnDisk;
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let row = product!["x".repeat(1024 * 1024)];
+        insert(&datastore, &mut tx, table_id, &row)?;
+        commit(&datastore, tx)?;
+
+        // Evict the blob, then leave too little memory to load it during migration.
+        let mut tx = begin_mut_tx(&datastore);
+        tx.alter_table_cache_policy(table_id, RequiredInMemory)?;
+        tx.committed_state_write_lock.storage.blobs().evict()?;
+        let reservation = budget.acquire(LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024)?;
+        let error = datastore.commit_mut_tx(tx).map(|_| ()).unwrap_err();
+        assert_matches!(
+            error,
+            DatastoreError::TableStorage(spacetimedb_table::table::TableError::Blob(error))
+                if matches!(*error, BlobError::MemoryLimitExceeded(_))
+        );
+        drop(reservation);
+
+        // Failure must restore both the cached schema and the system-table metadata.
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(tx.schema_for_table(table_id)?.cache_policy, RequiredOnDisk);
+        verify_schemas_consistent(&mut tx, table_id);
+        assert_eq!(all_rows(&datastore, &tx, table_id), [row]);
+        let blobs = tx.committed_state_write_lock.storage.blobs();
+        blobs.evict()?;
+        assert_eq!(blobs.resident_bytes_used_by_blobs(), 0);
+
+        // With the memory available again, retry and check that the blob stays resident.
+        tx.alter_table_cache_policy(table_id, RequiredInMemory)?;
+        commit(&datastore, tx)?;
+        let tx = begin_mut_tx(&datastore);
+        assert_eq!(tx.schema_for_table(table_id)?.cache_policy, RequiredInMemory);
+        let blobs = tx.committed_state_write_lock.storage.blobs();
+        let resident_bytes = blobs.resident_bytes_used_by_blobs();
+        assert!(resident_bytes > 0);
+        blobs.evict()?;
+        assert_eq!(blobs.resident_bytes_used_by_blobs(), resident_bytes);
+        Ok(())
+    }
+
+    #[test]
     fn test_drop_table_is_transactional() -> ResultTest<()> {
         let (datastore, mut tx, table_id) = setup_table()?;
 
@@ -4519,12 +4751,15 @@ pub(crate) mod tests {
         // Two backing indices exercise undo of an earlier successful pair as
         // well as the pair whose committed-table pointer-map rebuild fails.
         let mut tx = begin_mut_tx(&datastore);
+
         let indices = vec![
             IndexSchema::for_test("Foo_id_first", BTreeAlgorithm::from(0)),
             IndexSchema::for_test("Foo_id_second", BTreeAlgorithm::from(0)),
         ];
         let constraints = vec![ConstraintSchema::unique_for_test("Foo_id_key", 0u16)];
-        let table_id = datastore.create_table_mut_tx(&mut tx, basic_table_schema_with_indices(indices, constraints))?;
+        let schema = basic_table_schema_with_indices(indices, constraints);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+
         let large = "x".repeat(1024 * 1024);
         insert(&datastore, &mut tx, table_id, &u32_str_u32(1, &large, 30))?;
         commit(&datastore, tx)?;
@@ -4595,7 +4830,8 @@ pub(crate) mod tests {
         let datastore = Locking::bootstrap(Identity::ZERO, config)?;
 
         let mut tx = begin_mut_tx(&datastore);
-        let table_id = datastore.create_table_mut_tx(&mut tx, table_with_non_unique_index(0u16))?;
+        let schema = table_with_non_unique_index(0u16);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
         let large = "x".repeat(1024 * 1024);
         insert(&datastore, &mut tx, table_id, &u32_str_u32(1, &large, 30))?;
         commit(&datastore, tx)?;
@@ -4901,10 +5137,12 @@ pub(crate) mod tests {
         config.resident_budget = budget.clone();
         let datastore = Locking::bootstrap(Identity::ZERO, config)?;
         let mut tx = begin_mut_tx(&datastore);
+
         let schema = basic_table_schema_with_indices(
             vec![IndexSchema::for_test("Foo_id_idx", BTreeAlgorithm::from(0))],
             vec![ConstraintSchema::unique_for_test("Foo_id_key", 0u16)],
         );
+
         let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
         // This is the only unique index. Removing it requires a pointer map,
         // which hashes whole rows and therefore reads this large string even
