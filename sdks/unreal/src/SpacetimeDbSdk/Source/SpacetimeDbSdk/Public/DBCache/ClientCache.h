@@ -137,6 +137,7 @@ public:
                 // (which only emits Diff.Deletes on refcount == 0) by not
                 // emitting a spurious Diff.Inserts entry here.
                 Table->Entries.Add(Key, FRowEntry<RowType>{NewRow, Entry->RefCount + 1});
+                DeletedEntries.Remove(Key); // A replay retained this row; no net delete or insert.
             }
         }
 

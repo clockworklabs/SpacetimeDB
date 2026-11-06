@@ -60,5 +60,6 @@ public:
 private:
     const FString TableName = TEXT("result_simple_enum_i_32");
 
+    friend class UDbConnectionBase; // Read-only replay snapshots through the registered table adapter.
     TSharedPtr<UClientCache<FResultSimpleEnumI32Type>> Data;
 };

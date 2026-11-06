@@ -137,5 +137,6 @@ public:
 private:
     const FString TableName = TEXT("view_pk_membership_secondary");
 
+    friend class UDbConnectionBase; // Read-only replay snapshots through the registered table adapter.
     TSharedPtr<UClientCache<FViewPkMembershipSecondaryType>> Data;
 };

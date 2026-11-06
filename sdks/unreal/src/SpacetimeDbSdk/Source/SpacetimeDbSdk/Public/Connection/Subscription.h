@@ -33,19 +33,31 @@ public:
 
 	/** True once the subscription has ended */
 	UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
-	bool IsEnded() const { return bEnded; }
+	bool IsEnded() const
+	{
+		return bEnded;
+	}
 
 	/** True while the subscription is active */
 	UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
-	bool IsActive() const { return bActive; }
+	bool IsActive() const
+	{
+		return bActive;
+	}
 
 	/** True if the unsubscibe has been called*/
 	UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
-	bool IsUnsubscribeCalled() const { return bUnsubscribeCalled; }
+	bool IsUnsubscribeCalled() const
+	{
+		return bUnsubscribeCalled;
+	}
 
 	/** Get the SQL queries associated with this subscription */
 	UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
-	TArray<FString> GetQuerySqls() const { return QuerySqls; }
+	TArray<FString> GetQuerySqls() const
+	{
+		return QuerySqls;
+	}
 
 	/** Internal API used by the connection to signal events */
 	void TriggerApplied(const FSubscriptionEventContextBase& Context);
@@ -53,7 +65,6 @@ public:
 	void TriggerError(const FErrorContextBase& Context);
 
 private:
-
 	// Whether the subscription has ended
 	bool bEnded = false;
 	// Whether the subscription is currently active
@@ -65,8 +76,11 @@ private:
 	TArray<FString> QuerySqls;
 
 	// Delegate callbacks for subscription events
+	UPROPERTY()
 	FSubscriptionEventDelegate AppliedDelegate;
+	UPROPERTY()
 	FSubscriptionErrorDelegate ErrorDelegate;
+	UPROPERTY()
 	FSubscriptionEventDelegate EndDelegate;
 
 	/** Identifier for this subscription */
@@ -77,6 +91,7 @@ private:
 	friend class USubscriptionBuilder;
 
 	/** Owning connection used for subscribe/unsubscribe messages */
+	UPROPERTY()
 	UDbConnectionBase* ConnInternal = nullptr;
 };
 
@@ -89,9 +104,7 @@ class SPACETIMEDBSDK_API USubscriptionBuilderBase : public UObject
 public:
 	USubscriptionBuilderBase();
 
-
 protected:
-
 	/** Register a callback to run when the subscription is applied */
 	UFUNCTION()
 	USubscriptionBuilderBase* OnAppliedBase(FSubscriptionEventDelegate Callback);
@@ -104,9 +117,10 @@ protected:
 	UFUNCTION()
 	USubscriptionHandleBase* SubscribeBase(const TArray<FString>& QuerySqls, USubscriptionHandleBase* Handle);
 
-
 private:
 	// Delegate callbacks for subscription events
+	UPROPERTY()
 	FSubscriptionEventDelegate AppliedDelegate;
+	UPROPERTY()
 	FSubscriptionErrorDelegate ErrorDelegate;
 };
