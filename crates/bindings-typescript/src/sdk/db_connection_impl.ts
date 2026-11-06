@@ -1873,8 +1873,14 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     }
   }
 
+  /**
+   * End the connection over a server message that could not be decoded or
+   * applied. A retry would not fix it, so this never reconnects. The error
+   * goes to `onConnectError` if the connection was not yet established, and
+   * to `onDisconnect` otherwise.
+   */
   #handleProtocolError(cause: unknown): void {
-    if (!this.#automaticReconnect) throw cause;
+    stdbLogger('error', 'Failed to process a server message', cause);
     const error = new WebSocketProtocolError('Invalid server message', {
       cause,
     });
@@ -1907,6 +1913,13 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           this.#processMessage(data);
         }
       }
+    } catch (e) {
+      // A message that could not be applied leaves the client cache
+      // inconsistent, and rethrowing from a WebSocket listener crashes Node
+      // hosts. Handle it like a message that could not be decoded: end the
+      // connection, which drops what is queued and settles calls in flight.
+      // (Callback errors never get here; `EventEmitter` logs them.)
+      this.#handleProtocolError(e);
     } finally {
       if (this.#inboundQueueOffset >= this.#inboundQueue.length) {
         this.#inboundQueue.length = 0;
