@@ -957,7 +957,7 @@ You now have usernames that are unique and checked before anyone sees them:
 
 To learn more about the features used here, see [Constraints](../../00200-core-concepts/00300-tables/00240-constraints.md), [Procedures](../../00200-core-concepts/00200-functions/00400-procedures.md) and [Environment Variables](../../00200-core-concepts/00100-databases/00700-environment-variables.md).
 
-To allow each player a number of name requests per time window, such as 5 per minute, instead of one request every 5 seconds, use the [Rate Limit submodule](https://spacetimedb.com/submodules/rate-limit) in a TypeScript module. It's a package you add to your module.
+To allow each player a number of name requests per time window, such as 5 per minute, instead of one request every 5 seconds, include the [Rate Limit module](https://spacetimedb.com/modules/rate-limit) from npm in a TypeScript module.
 
 To call other web services from your module the same way, see [Call an AI model from your module](../01200-common-app-patterns/00550-call-ai-model.md).
 

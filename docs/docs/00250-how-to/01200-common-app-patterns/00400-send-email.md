@@ -666,8 +666,8 @@ To adapt it to your app:
 - **Duplicate emails.** If the provider accepts an email but its reply is lost, `send_email` sends it again. To avoid that, store an id with each email that stays the same across attempts, and send it in Resend's `Idempotency-Key` header.
 - **HTML emails.** Send an `html` field along with `text`. Keep `text` for email apps that don't show HTML.
 - **Unsubscribe.** Add a reducer that deletes the caller's `player_email` row, and tell players about it in each email.
-- **Track delivery.** In a TypeScript module, the [Resend submodule](https://spacetimedb.com/submodules/resend), a package you add to your module, sends email through Resend and stores whether each email was delivered, delayed or bounced, from Resend's webhooks.
-- **Wait longer between attempts.** In a TypeScript module, the [Retry submodule](https://spacetimedb.com/submodules/retry) retries background tasks with a limit on attempts, and waits twice as long before each new attempt.
+- **Track delivery.** In a TypeScript module, the [Resend module](https://spacetimedb.com/modules/resend), a package you include in your module, sends email through Resend and stores whether each email was delivered, delayed or bounced, from Resend's webhooks.
+- **Wait longer between attempts.** In a TypeScript module, the [Retry module](https://spacetimedb.com/modules/retry) retries background tasks with a limit on attempts, and waits twice as long before each new attempt.
 
 To learn more about the features used here, see [Procedures](../../00200-core-concepts/00200-functions/00400-procedures.md), [Schedule Tables](../../00200-core-concepts/00300-tables/00500-schedule-tables.md) and [Environment Variables](../../00200-core-concepts/00100-databases/00700-environment-variables.md).
 

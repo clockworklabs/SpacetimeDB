@@ -1,22 +1,22 @@
 ---
-title: Submodules
-slug: /submodules
+title: Modules
+slug: /modules
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-A **submodule** is a SpacetimeDB module that can be included in another module's database. The submodule's tables and functions register under a **namespace** you choose, keeping them separate from the consumer's own tables and from other submodules.
+A SpacetimeDB module can include other modules in its database. Each included module's tables and functions register under a **namespace** you choose, keeping them separate from the consumer's own tables and from other included modules. Modules fill the role that components fill in Convex.
 
-Submodules let you package reusable database logic as a library that any consumer can integrate without coordinating table names.
+Modules let you package reusable database logic as a library that any consumer can integrate without coordinating table names. Official and community modules are listed at [spacetimedb.com/modules](https://spacetimedb.com/modules).
 
 :::note
-Submodules are supported in TypeScript and C# (.NET 10 only). Cross-language composition is not supported.
+Including modules is supported in TypeScript and C# (.NET 10 only). Cross-language composition is not supported.
 :::
 
-## Writing a Submodule
+## Writing a Reusable Module
 
-A submodule is a regular SpacetimeDB module. The same module can be published independently or included by another module; no special root/library build role is required.
+A module you include is a regular SpacetimeDB module. The same module can be published independently or included by another module; no special root/library build role is required.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -69,7 +69,7 @@ export const router = spacetimedb.httpRouter(
 );
 ```
 
-The same file can be published as a standalone database or used as a submodule by another module. The module does not need to declare which role it plays.
+The same file can be published as a standalone database or included by another module. The module does not need to declare which role it plays.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -120,7 +120,7 @@ Library code uses its own flat accessors, such as `ctx.Db.User`, regardless of t
 </TabItem>
 </Tabs>
 
-## Using a Submodule
+## Including a Module
 
 The consumer controls the namespace name. The accessor name is used in module code and generated bindings; the canonical name is used in SQL and network calls.
 
@@ -141,13 +141,13 @@ const spacetimedb = schema({
 export default spacetimedb;
 ```
 
-`export default spacetimedb` is the only JS export required from the consumer. Registering the submodule adds all of its reducers, procedures, views, scheduled tables, and HTTP handlers automatically.
+`export default spacetimedb` is the only JS export required from the consumer. Registering `auth_lib` adds all of its reducers, procedures, views, scheduled tables, and HTTP handlers automatically.
 
 ### Accessor and canonical namespace names
 
-Like a table, a namespace has two names. The key you register the submodule under is its **accessor name**: the name module code and generated client bindings use, such as `ctx.db.myAuth` or `tables.myAuth.users`. The **canonical name** is what the database stores and what SQL, subscriptions, the CLI, and the HTTP API use, such as `my_auth.users`. By default the canonical name is derived from the accessor name by the module's case conversion policy, exactly as it is for tables and reducers: `myAuth` in TypeScript becomes `my_auth` in the database.
+Like a table, a namespace has two names. The key you register the module under is its **accessor name**: the name module code and generated client bindings use, such as `ctx.db.myAuth` or `tables.myAuth.users`. The **canonical name** is what the database stores and what SQL, subscriptions, the CLI, and the HTTP API use, such as `my_auth.users`. By default the canonical name is derived from the accessor name by the module's case conversion policy, exactly as it is for tables and reducers: `myAuth` in TypeScript becomes `my_auth` in the database.
 
-To store a namespace under a specific canonical name instead, register the submodule as a `{ name, module }` object. `name` is used verbatim, and the key remains the accessor name:
+To store a namespace under a specific canonical name instead, register the module as a `{ name, module }` object. `name` is used verbatim, and the key remains the accessor name:
 
 ```typescript
 const spacetimedb = schema({
@@ -166,7 +166,7 @@ The canonical namespace is part of every table's identity. Publishing a module w
 import authLib from 'auth_lib';        // ❌ misses all named exports
 import * as authLib from 'auth_lib';   // ✅ correct
 ```
-A default-only import exposes only the submodule's schema, not its named exports (reducers, procedures, views, handlers). The submodule walker requires the full module-namespace object. A clear error is raised if you use the wrong form.
+A default-only import exposes only the included module's schema, not its named exports (reducers, procedures, views, handlers). Registration requires the full module-namespace object. A clear error is raised if you use the wrong form.
 :::
 
 </TabItem>
@@ -202,21 +202,21 @@ The canonical namespace is part of each table's identity. Changing it removes th
 </TabItem>
 </Tabs>
 
-## Accessing Submodule Tables and Views
+## Accessing an Included Module's Tables and Views
 
-Submodule tables appear under a namespace accessor. The accessor does not change when you pin a different canonical name. Submodule views are also accessible in client subscriptions and SQL as `<namespace>.<view_name>`, using canonical names.
+An included module's tables appear under its namespace accessor. The accessor does not change when you pin a different canonical name. Its views are also accessible in client subscriptions and SQL as `<namespace>.<view_name>`, using canonical names.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
-Access submodule tables through `ctx.db.myauth`. The `activeSessions` view is `myauth.active_sessions` in SQL.
+Access `auth_lib`'s tables through `ctx.db.myauth`. The `activeSessions` view is `myauth.active_sessions` in SQL.
 
 ```typescript
 export const example = spacetimedb.reducer((ctx) => {
   // Consumer's own tables (no namespace)
   for (const player of ctx.db.players.iter()) { /* ... */ }
 
-  // Submodule tables, registered as "myauth"
+  // auth_lib's tables, registered as "myauth"
   const user = ctx.db.myauth.users.identity.find(ctx.sender);
   for (const session of ctx.db.myauth.sessions.iter()) { /* ... */ }
 });
@@ -225,7 +225,7 @@ export const example = spacetimedb.reducer((ctx) => {
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-Access submodule tables through `ctx.Db.MyAuth`. The explicitly named table is `auth_data.auth_users` in SQL, and the `Users` view is `auth_data.users`.
+Access `AuthLib`'s tables through `ctx.Db.MyAuth`. The explicitly named table is `auth_data.auth_users` in SQL, and the `Users` view is `auth_data.users`.
 
 ```csharp
 [Reducer]
@@ -239,7 +239,7 @@ public static void LookupAuthUser(ReducerContext ctx, uint id)
 }
 ```
 
-Root views can also query submodule tables using `ctx.From.MyAuth.User()`.
+Root views can also query its tables using `ctx.From.MyAuth.User()`.
 
 ```csharp
 [View(Accessor = "AuthUsers", Public = true)]
@@ -250,29 +250,29 @@ public static IQuery<AuthLib.User> AuthUsers(AnonymousViewContext ctx) =>
 </TabItem>
 </Tabs>
 
-## Calling Submodule Functions
+## Calling an Included Module's Functions
 
-A consumer can call public submodule functions directly. A namespace is not a security boundary between ordinary helper calls.
+A consumer can call an included module's public functions directly. A namespace is not a security boundary between ordinary helper calls.
 
 ### From a Reducer
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
-Call a submodule reducer or a plain helper function typed against the submodule's schema using `ctx.as.<alias>`:
+Call an included module's reducer, or a plain helper function typed against its schema, using `ctx.as.<alias>`:
 
 ```typescript
-// auth_lib: plain helper function typed against the submodule's own schema
+// auth_lib: plain helper function typed against auth_lib's own schema
 export function sessionCountHelper(ctx: ReducerCtx<typeof spacetimedb.schemaType>): bigint {
   return ctx.db.sessions.count();
 }
 
-// my-database: call submodule reducer and helper from a consumer reducer
+// my-database: call auth_lib's reducer and helper from a consumer reducer
 export const onLogin = spacetimedb.reducer({ token: t.string() }, (ctx, { token }) => {
-  // call a submodule reducer
+  // call an auth_lib reducer
   authLib.verifyToken(ctx.as.myauth, { token });
 
-  // call a submodule helper function
+  // call an auth_lib helper function
   const count = authLib.sessionCountHelper(ctx.as.myauth);
   console.log(`Active sessions: ${count}`);
 });
@@ -280,7 +280,7 @@ export const onLogin = spacetimedb.reducer({ token: t.string() }, (ctx, { token 
 
 `ctx.as.myauth` is a `ReducerCtx` scoped to the `myauth` namespace. It shares the same sender, timestamp, and connectionId as the parent context, but its `ctx.db` points at `ctx.db.myauth`.
 
-For reducers registered through the submodule's own schema (via `schema.reducer(...)`), the host passes a scoped context automatically when invoked directly. `ctx.as` is only needed when the consumer calls a submodule function explicitly.
+For reducers registered through the included module's own schema (via `schema.reducer(...)`), the host passes a scoped context automatically when invoked directly. `ctx.as` is only needed when the consumer calls one of its functions explicitly.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -296,7 +296,7 @@ public static void AddAuthUser(ReducerContext ctx, uint id)
 }
 ```
 
-`ctx.As.MyAuth` supplies a `ReducerContext` for that instance. Library code still uses flat accessors such as `ctx.Db.User`. Selection preserves the caller's sender, connection, timestamp, and shared state without changing the original context. These calls run in the root reducer's transaction. If the reducer fails, its writes to both root and submodule tables roll back together.
+`ctx.As.MyAuth` supplies a `ReducerContext` for that instance. Library code still uses flat accessors such as `ctx.Db.User`. Selection preserves the caller's sender, connection, timestamp, and shared state without changing the original context. These calls run in the root reducer's transaction. If the reducer fails, its writes to both root and library tables roll back together.
 
 Passing `ctx` directly remains supported when the library's instance is unambiguous. If multiple instances are accessible, select one explicitly with `ctx.As`; ambiguous access throws an `InvalidOperationException`. Host-dispatched functions receive the appropriate instance context automatically.
 
@@ -308,22 +308,22 @@ Passing `ctx` directly remains supported when the library's instance is unambigu
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
-Use `ctx.as.<alias>` to pass a submodule-scoped `ProcedureCtx` to a submodule procedure. To call a submodule reducer from inside a procedure, open a transaction first with `ctx.withTx` and then narrow with `tx.as.<alias>`:
+Use `ctx.as.<alias>` to pass a namespace-scoped `ProcedureCtx` to an included module's procedure. To call one of its reducers from inside a procedure, open a transaction first with `ctx.withTx` and then narrow with `tx.as.<alias>`:
 
 ```typescript
-// call a submodule procedure
+// call an auth_lib procedure
 export const stats = spacetimedb.procedure(
   t.u64(),
   (ctx) => authLib.sessionCount(ctx.as.myauth)
 );
 
-// call a submodule reducer inside a withTx block
+// call an auth_lib reducer inside a withTx block
 export const transactAndCount = spacetimedb.procedure(
   { token: t.string() },
   t.u64(),
   (ctx, { token }) => {
     ctx.withTx(tx => {
-      // tx is a root ReducerCtx; narrow to the submodule namespace
+      // tx is a root ReducerCtx; narrow to the myauth namespace
       authLib.verifyToken(tx.as.myauth, { token });
     });
     return authLib.sessionCount(ctx.as.myauth);
@@ -360,12 +360,12 @@ Root and library writes within the same `WithTx` block share a transaction.
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
-Delegate to a submodule's HTTP handler by passing `ctx.as.<alias>` and the request to the submodule handler function, then register it on the consumer's router:
+Delegate to an included module's HTTP handler by passing `ctx.as.<alias>` and the request to its handler function, then register it on the consumer's router:
 
 ```typescript
 import { Router } from 'spacetimedb/server';
 
-// delegate the /health route to the submodule's handler
+// delegate the /health route to auth_lib's handler
 export const healthCheck = spacetimedb.httpHandler((ctx, req) => {
   return authLib.health(ctx.as.myauth, req);
 });
@@ -403,9 +403,9 @@ public static Router Routes() =>
 </TabItem>
 </Tabs>
 
-## Multiple and Nested Submodules
+## Multiple and Nested Modules
 
-You can include multiple submodules under different namespaces. Tables and functions in separate namespaces can use the same names. A submodule can itself include other submodules.
+You can include multiple modules under different namespaces. Tables and functions in separate namespaces can use the same names. An included module can itself include other modules.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -422,7 +422,7 @@ const spacetimedb = schema({
 export default spacetimedb;
 ```
 
-A submodule can itself include other submodules using the same syntax. The nested submodule's tables appear under a two-level path in the top-level consumer:
+An included module can itself include other modules using the same syntax. The nested module's tables appear under a two-level path in the top-level consumer:
 
 ```typescript
 // auth_lib includes session_lib as "sessions"
@@ -433,7 +433,7 @@ export default authSchema;
 // session_lib's tables are at ctx.db.myauth.sessions.<table>
 ```
 
-**Lifecycle reducers** (`init`, `clientConnected`, `clientDisconnected`) are an exception: these are only allowed for the root module. Modules containing submodules which define lifecycle reducers will fail to publish.
+**Lifecycle reducers** (`init`, `clientConnected`, `clientDisconnected`) are an exception: these are only allowed for the root module. A module fails to publish if any module it includes defines lifecycle reducers.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -515,22 +515,22 @@ AuthLib.Functions.VolatileNonatomicScheduleImmediateCountUsers(ctx.As.Forum.MyAu
 #pragma warning restore STDB_UNSTABLE
 ```
 
-Dependencies in named scopes cannot define lifecycle reducers (`Init`, `ClientConnected`, `ClientDisconnected`). Such reducers remain valid when the dependency is published independently or contributes to the root's `public` scope, subject to the usual lifecycle uniqueness checks. A `public` dependency inside a named submodule still belongs to that named scope.
+Dependencies in named scopes cannot define lifecycle reducers (`Init`, `ClientConnected`, `ClientDisconnected`). Such reducers remain valid when the dependency is published independently or contributes to the root's `public` scope, subject to the usual lifecycle uniqueness checks. A `public` dependency inside a named dependency still belongs to that named scope.
 
 </TabItem>
 </Tabs>
 
 ## Environment variables
 
-Named submodules cannot declare a nonempty [environment](./00700-environment-variables.md). Such declarations cause composition or publication to fail. A module with environment declarations can still be published independently as a root module.
+Modules included under a namespace cannot declare a nonempty [environment](./00700-environment-variables.md). Such declarations cause composition or publication to fail. A module with environment declarations can still be published independently as a root module.
 
 In C#, dependencies registered in the default `public` scope are an exception: their declarations contribute to the root environment schema.
 
-Named submodules have no separate environment-variable namespace, and their host-dispatched entry points cannot read the root module's environment. Root module code can pass configuration values to helpers explicitly. Ordinary helper calls retain the calling entry point's access, including calls to helpers defined in submodules.
+Included modules have no separate environment-variable namespace, and their host-dispatched entry points cannot read the root module's environment. Root module code can pass configuration values to helpers explicitly. Ordinary helper calls retain the calling entry point's access, including calls to helpers defined in included modules.
 
 ## Client Subscriptions
 
-Client subscriptions use the same namespace structure as server-side access. Submodule tables and views are queried as `<namespace>.<name>`, using canonical names on the wire and accessor names in generated bindings.
+Client subscriptions use the same namespace structure as server-side access. An included module's tables and views are queried as `<namespace>.<name>`, using canonical names on the wire and accessor names in generated bindings.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -569,13 +569,13 @@ var cachedUser = conn.Db.MyAuth.User.Id.Find(10);
 </TabItem>
 </Tabs>
 
-## Calling Submodule Reducers and Procedures from the Client
+## Calling an Included Module's Reducers and Procedures from the Client
 
-Submodule reducers and procedures are identified by their fully-qualified name, using `.` as the separator between namespace and function name.
+An included module's reducers and procedures are identified by their fully-qualified name, using `.` as the separator between namespace and function name.
 
 ### Client SDK
 
-In generated bindings, submodule tables, views, reducers, and procedures appear under the namespace accessor.
+In generated bindings, an included module's tables, views, reducers, and procedures appear under its namespace accessor.
 
 <Tabs groupId="client-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -586,15 +586,15 @@ React hooks:
 import { tables, reducers, procedures } from './module_bindings';
 import { useTable, useReducer, useProcedure } from 'spacetimedb/react';
 
-// subscribe to a submodule table and view
+// subscribe to an auth_lib table and view
 const [users] = useTable(tables.myauth.users);
 const [activeSessions] = useTable(tables.myauth.activeSessions);
 
-// call a submodule reducer
+// call an auth_lib reducer
 const verifyToken = useReducer(reducers.myauth.verifyToken);
 verifyToken({ token: 'abc123' });
 
-// call a submodule procedure
+// call an auth_lib procedure
 const sessionCount = useProcedure(procedures.myauth.sessionCount);
 sessionCount().then(count => console.log(`Sessions: ${count}`));
 ```
@@ -683,14 +683,14 @@ Both parts of the wire name are canonical: the namespace prefix and the function
 
 ## Namespace Name Rules
 
-Each accessor and canonical namespace segment must be a valid SpacetimeDB identifier: start with a letter or underscore, continue with letters, digits, or underscores, maximum 63 UTF-8 bytes, case-insensitive for resolution. Two submodules in the same parent scope cannot share a canonical name, so `myAuth` and `my_auth` cannot both be registered there under the default policy. Different parent scopes can reuse the same child namespace name.
+Each accessor and canonical namespace segment must be a valid SpacetimeDB identifier: start with a letter or underscore, continue with letters, digits, or underscores, maximum 63 UTF-8 bytes, case-insensitive for resolution. Two included modules in the same parent scope cannot share a canonical name, so `myAuth` and `my_auth` cannot both be registered there under the default policy. Different parent scopes can reuse the same child namespace name.
 
-The reserved namespaces `st`, `spacetimedb`, and names starting with `pg_` cannot be used. `public` is the default scope, not a named submodule namespace.
+The reserved namespaces `st`, `spacetimedb`, and names starting with `pg_` cannot be used. `public` is the default scope, not a named namespace.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
-The schema key is the accessor name. The canonical name is derived from it unless explicitly set with `name`. A submodule can be registered under at most one namespace per consumer module.
+The schema key is the accessor name. The canonical name is derived from it unless explicitly set with `name`. A module can be registered under at most one namespace per consumer module.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -704,18 +704,18 @@ Accessors must also be valid C# identifiers. For a keyword, use its plain spelli
 
 ## Limitations
 
-### Submodule routers are not applied automatically
+### Included modules' routers are not applied automatically
 
-Routes from named submodules are ignored. Register handlers explicitly on the root router, as shown in the [HTTP handler section](#from-an-http-handler). In C#, dependencies registered in `public` can contribute routes to root-level routing.
+Routes from modules included under a namespace are ignored. Register handlers explicitly on the root router, as shown in the [HTTP handler section](#from-an-http-handler). In C#, dependencies registered in `public` can contribute routes to root-level routing.
 
 ### Row-level security belongs in the root
 
-Define [row-level security](../../00250-how-to/00400-row-level-security.md) filters in the root, referring to canonical qualified table names. Filters declared inside named submodules do not protect their tables.
+Define [row-level security](../../00250-how-to/00400-row-level-security.md) filters in the root, referring to canonical qualified table names. Filters declared inside included modules do not protect their tables.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
-Submodule filter declarations are accepted by the SDK, but the host does not install them. Export filters from the root schema instead, using qualified table names such as `myauth.users`.
+Filter declarations in an included module are accepted by the SDK, but the host does not install them. Export filters from the root schema instead, using qualified table names such as `myauth.users`.
 
 </TabItem>
 <TabItem value="csharp" label="C#">

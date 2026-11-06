@@ -99,7 +99,7 @@ conn.SubscriptionBuilder()
     });
 ```
 
-## Submodule Accessors and View Arguments
+## Included Module Accessors and View Arguments
 
 A namespace accessor `MyAuth` is nested in the generated table, reducer, and procedure APIs:
 

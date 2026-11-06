@@ -9,7 +9,7 @@ import { QuickstartLinks } from "@site/src/components/QuickstartLinks";
 
 :::tip Coming from Convex?
 
-Most Convex concepts have a direct SpacetimeDB counterpart: mutations are [reducers](/docs/functions/reducers), actions are [procedures](/docs/functions/procedures), queries are [views](/docs/functions/views) and [subscriptions](/docs/clients/subscriptions), HTTP actions are [HTTP handlers](/docs/functions/http-handlers), scheduled functions are [schedule tables](/docs/tables/schedule-tables), and components are [submodules](/docs/submodules). [Migrating from Convex](/docs/migrating-from-convex) maps the rest and walks through a migration.
+Most Convex concepts have a direct SpacetimeDB counterpart: mutations are [reducers](/docs/functions/reducers), actions are [procedures](/docs/functions/procedures), queries are [views](/docs/functions/views) and [subscriptions](/docs/clients/subscriptions), HTTP actions are [HTTP handlers](/docs/functions/http-handlers), scheduled functions are [schedule tables](/docs/tables/schedule-tables), and components are [modules](/docs/modules) that you include in your own module. [Migrating from Convex](/docs/migrating-from-convex) maps the rest and walks through a migration.
 
 :::
 
