@@ -377,6 +377,12 @@ fn compile_csharp_client(files: Vec<spacetimedb_codegen::OutputFile>, program: &
         .join("../..")
         .canonicalize()
         .unwrap();
+    // `canonicalize` returns a verbatim `\\?\` path on Windows, which MSBuild
+    // percent-escapes, breaking its `*.props` wildcard imports (MSB4019).
+    let repo = match repo.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
+        Some(stripped) => std::path::PathBuf::from(stripped),
+        None => repo,
+    };
     // Use the local runtime, never a published package or an old NuGet cache entry.
     let config = project.path().join("NuGet.Config");
     fs_err::write(
