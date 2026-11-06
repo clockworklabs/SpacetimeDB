@@ -130,15 +130,24 @@ public interface ITableView<View, T>
     }
 
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     protected static ulong DoCount(TableAccessor accessor) => accessor.Count();
+
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     protected static IEnumerable<T> DoIter(TableAccessor accessor) => accessor.Iter<T>();
+
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     protected static T DoInsert(TableAccessor accessor, T row)
     {
         var generated = accessor.Insert(IStructuralReadWrite.ToBytes(row));
         return IntegrateGeneratedColumns(row, generated, generated.Length);
     }
+
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     protected static bool DoDelete(TableAccessor accessor, T row) =>
         accessor.Delete(IStructuralReadWrite.ToBytes(row));
+
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     protected static ulong DoClear(TableAccessor accessor) => accessor.Clear();
 #endif
 

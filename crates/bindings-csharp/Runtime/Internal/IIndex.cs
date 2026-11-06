@@ -21,17 +21,21 @@ public abstract class IndexBase<Row>
     private readonly TableAccessor accessor;
     private readonly string indexName;
 
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     protected IndexBase(TableAccessor accessor, string name)
     {
         this.accessor = accessor;
         indexName = name;
     }
 
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     protected IEnumerable<Row> ScanPoint(byte[] point) =>
         accessor.IndexScanPoint<Row>(indexName, point);
 
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     protected bool DeletePoint(byte[] point) => accessor.IndexDeletePoint(indexName, point);
 
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     protected byte[] UpdateRow(byte[] row) => accessor.Update(indexName, row);
 #endif
 
@@ -146,6 +150,7 @@ public abstract class ReadOnlyIndexBase<Row> : IndexBase<Row>
         : base(name) { }
 
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     protected ReadOnlyIndexBase(TableAccessor accessor, string name)
         : base(accessor, name) { }
 #endif
@@ -163,6 +168,7 @@ public abstract class UniqueIndex<Handle, Row, T, RW> : IndexBase<Row>
         : base(name) { }
 
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     protected UniqueIndex(TableAccessor accessor, string name)
         : base(accessor, name) { }
 #endif
@@ -263,6 +269,7 @@ public abstract class RefUniqueIndex<Handle, Row, T, RW> : IndexBase<Row>
         : base(name) { }
 
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     protected RefUniqueIndex(TableAccessor accessor, string name)
         : base(accessor, name) { }
 #endif
@@ -363,6 +370,7 @@ public abstract class ReadOnlyUniqueIndex<Handle, Row, T, RW> : ReadOnlyIndexBas
         : base(name) { }
 
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     protected ReadOnlyUniqueIndex(TableAccessor accessor, string name)
         : base(accessor, name) { }
 #endif
@@ -415,6 +423,7 @@ public abstract class ReadOnlyRefUniqueIndex<Handle, Row, T, RW> : ReadOnlyIndex
         : base(name) { }
 
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     protected ReadOnlyRefUniqueIndex(TableAccessor accessor, string name)
         : base(accessor, name) { }
 #endif
@@ -465,8 +474,10 @@ public abstract class ReadOnlyTableView<Row>
     private readonly FFI.TableId tableId;
 #endif
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     protected readonly TableAccessor __access;
 
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     protected ReadOnlyTableView(TableAccessor accessor)
     {
         __access = accessor;

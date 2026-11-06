@@ -258,6 +258,7 @@ public sealed class ModuleBuilder
     // The result retains builder-owned collections; this is not an immutable snapshot.
     // Public only for Codegen.Tests: its schema check is compiled at test time into an
     // assembly that InternalsVisibleTo can't target. Not intended for module code.
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     public RawModuleDefV10 BuildModuleDefinition()
     {
         var builtTables = new List<RawTableDefV10>(tableDefs.Count);
