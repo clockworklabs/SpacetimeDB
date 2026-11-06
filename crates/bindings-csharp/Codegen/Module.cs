@@ -1305,8 +1305,14 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                         {
                             return name;
                         }
-                        var instanceId = global::SpacetimeDB.Internal.Module.ResolveInstance(contextInstance, {{SymbolDisplay.FormatLiteral(assemblyIdentity, true)}});
-                        var resolvedName = names[instanceId] ??= global::SpacetimeDB.Internal.Module.ResolveSqlName(instanceId, {{SymbolDisplay.FormatLiteral(tableName, true)}});
+                        var instanceId = global::SpacetimeDB.Internal.Module.ResolveInstance(contextInstance, {{SymbolDisplay.FormatLiteral(
+                        assemblyIdentity,
+                        true
+                    )}});
+                        var resolvedName = names[instanceId] ??= global::SpacetimeDB.Internal.Module.ResolveSqlName(instanceId, {{SymbolDisplay.FormatLiteral(
+                        tableName,
+                        true
+                    )}});
                         names[contextInstance] = resolvedName;
                         return resolvedName;
                     }
@@ -1321,7 +1327,11 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                         {
                             {{vis}} {{queryType}} {{accessorIdentifier}}()
                             {
-                                var tableName = {{(managedAccess ? $"__owner.ResolveTableName({SymbolDisplay.FormatLiteral(assemblyIdentity, true)}, {SymbolDisplay.FormatLiteral(tableName, true)})" : $"{accessorIdentifier}SqlName(__instanceId)")}};
+                                var tableName = {{(
+                        managedAccess
+                            ? $"__owner.ResolveTableName({SymbolDisplay.FormatLiteral(assemblyIdentity, true)}, {SymbolDisplay.FormatLiteral(tableName, true)})"
+                            : $"{accessorIdentifier}SqlName(__instanceId)"
+                    )}};
                                 return new(tableName, new {{colsTypeName}}(tableName), new {{ixColsTypeName}}(tableName));
                             }
                         }
