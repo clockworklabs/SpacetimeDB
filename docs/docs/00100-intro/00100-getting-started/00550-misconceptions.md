@@ -87,7 +87,7 @@ Event tables broadcast rows to subscribers when a transaction commits, without k
 
 ## "There's no file storage."
 
-Files can be stored as bytes in table columns, where they take part in transactions and subscriptions. For large files, a procedure can store them in S3 or a similar service and keep a reference in a table. See [File storage](../../00200-core-concepts/00300-tables/00210-file-storage.md) and [Store files in S3](../../00250-how-to/01200-common-app-patterns/00700-store-files-in-s3.md).
+Files can be stored as bytes in table columns, where they take part in transactions and subscriptions. In a TypeScript module, the [Files module](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-files-ts) adds uploads, listing, renaming and deletion on top of this, and keeps each file private or serves it through an HTTP download route. For large files, a procedure can store them in S3 or a similar service and keep a reference in a table. See [File storage](../../00200-core-concepts/00300-tables/00210-file-storage.md) and [Store files in S3](../../00250-how-to/01200-common-app-patterns/00700-store-files-in-s3.md).
 
 ## "There's no way to run cron jobs or background work."
 
