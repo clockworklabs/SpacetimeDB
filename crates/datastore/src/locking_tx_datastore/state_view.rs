@@ -13,6 +13,7 @@ use crate::system_tables::{
     ST_OUTBOUND_MSG_ID, ST_OUTBOUND_STREAM_ID, ST_OUTBOX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID,
     ST_TABLE_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID,
 };
+use crate::system_tables::{StTableCachePolicyFields, StTableCachePolicyRow, ST_TABLE_CACHE_POLICY_ID};
 use anyhow::anyhow;
 use core::ops::RangeBounds;
 use spacetimedb_lib::ConnectionId;
@@ -344,7 +345,21 @@ pub trait StateView {
             Err(DatastoreError::Table(TableError::IdNotFound(..))) => None,
             Err(e) => return Err(e),
         };
-        Ok(TableSchema::new(
+        // Older snapshots may not have this system table. If the table or the
+        // policy row is missing, default to keeping pages in memory.
+        let cache_policy =
+            match self.iter_by_col_eq(ST_TABLE_CACHE_POLICY_ID, StTableCachePolicyFields::TableId, value_eq) {
+                Ok(mut iter) => iter
+                    .next()
+                    .transpose()?
+                    .map(StTableCachePolicyRow::try_from)
+                    .transpose()?
+                    .map(|row| row.policy)
+                    .unwrap_or_default(),
+                Err(DatastoreError::Table(TableError::IdNotFound(..))) => Default::default(),
+                Err(e) => return Err(e),
+            };
+        let mut schema = TableSchema::new(
             table_id,
             table_name,
             view_info,
@@ -359,7 +374,9 @@ pub trait StateView {
             is_event,
             table_alias,
             outbox,
-        ))
+        );
+        schema.cache_policy = cache_policy;
+        Ok(schema)
     }
 
     /// Reads the schema information for the specified `table_id`, consulting the `cache` first.

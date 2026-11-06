@@ -17,8 +17,8 @@ use crate::{
     tiered::{
         blob_set::BlobHandle,
         mem::{PageEvictionCandidate, PageId},
-        page_manager::{PageEvictionPolicy, PageHandle, PageManager, PageSlot, PageSlotHandle, ReservedPage},
-        BlobSet, BudgetPermit, PageError, PageRead, PageRef,
+        page_manager::{PageHandle, PageManager, PageSlot, PageSlotHandle, ReservedPage},
+        BlobSet, BudgetPermit, EvictionPolicy, PageError, PageRead, PageRef,
     },
     var_len::VarLenMembers,
 };
@@ -26,7 +26,7 @@ use crate::{
 /// The set of pages of a [Table].
 #[derive(Debug)]
 pub struct PageSet {
-    pub eviction_policy: PageEvictionPolicy,
+    pub eviction_policy: EvictionPolicy,
     fixed_row_size: Size,
     pub(crate) manager: Arc<PageManager>,
     storage: PageStorage,
@@ -105,6 +105,24 @@ impl Drop for PageSet {
 }
 
 impl ResidentPages {
+    fn into_tiered(mut self, manager: &PageManager, fixed_row_size: Size) -> TieredPages {
+        assert_eq!(self.pages.len(), self.permits.len());
+        let mut tiered = TieredPages {
+            free_page_slots: std::mem::take(&mut self.pages.free_page_slots),
+            non_full_pages: std::mem::take(&mut self.pages.non_full_pages),
+            ..TieredPages::default()
+        };
+        // Move each allocation together with its existing memory charge. Keep
+        // empty slots too: compacting the slots would invalidate row pointers.
+        for (page, permit) in self.pages.into_page_slots().zip(self.permits) {
+            assert_eq!(page.is_some(), permit.is_some());
+            tiered
+                .slots
+                .push(manager.adopt_resident(page.zip(permit), fixed_row_size));
+        }
+        tiered
+    }
+
     #[inline(always)]
     fn with_page_to_insert_row<T>(
         &mut self,
@@ -159,6 +177,22 @@ impl ResidentPages {
 }
 
 impl TieredPages {
+    fn into_resident(self, manager: &PageManager, fixed_row_size: Size) -> ResidentPages {
+        let mut pages = Vec::with_capacity(self.slots.len());
+        let mut permits = smallvec::SmallVec::with_capacity(self.slots.len());
+        for slot in self.slots {
+            let (page, permit) = manager.detach_resident(slot).unzip();
+            pages.push(page);
+            permits.push(permit);
+        }
+        let mut resident = Pages::default();
+        resident.set_contents(pages, fixed_row_size);
+        ResidentPages {
+            pages: resident,
+            permits,
+        }
+    }
+
     fn with_eviction_retry<T>(
         &self,
         manager: &PageManager,
@@ -276,6 +310,39 @@ impl PageInfo<'_> {
 type EvictionScratch = (Box<Vec<PageEvictionCandidate>>, Box<IntMap<PageId, PageIndex>>);
 
 impl PageSet {
+    /// Load and pin all existing disk-table pages for a policy conversion.
+    pub(crate) fn pin_all_pages(&self) -> Result<Vec<PageHandle>, PageError> {
+        assert!(!self.is_resident());
+        let mut pins = Vec::with_capacity(self.num_present_pages());
+        for index in 0..self.num_pages() {
+            if let Some(PageRef::Tiered(pin)) = self.get_page(PageIndex(index as u64))? {
+                pins.push(pin);
+            }
+        }
+        assert_eq!(pins.len(), self.num_present_pages());
+        Ok(pins)
+    }
+
+    /// Change who owns the existing page allocations, without copying their contents.
+    /// All page handles must be released first. Disk-table pages must already be loaded.
+    pub(crate) fn apply_eviction_policy(&mut self, policy: EvictionPolicy) {
+        if policy == self.eviction_policy {
+            return;
+        }
+        let old = std::mem::replace(&mut self.storage, PageStorage::Tiered(TieredPages::default()));
+        self.storage = match old {
+            PageStorage::Resident(resident) => {
+                assert_eq!(policy, EvictionPolicy::Evictable);
+                PageStorage::Tiered(resident.into_tiered(&self.manager, self.fixed_row_size))
+            }
+            PageStorage::Tiered(tiered) => {
+                assert_eq!(policy, EvictionPolicy::NeverEvict);
+                PageStorage::Resident(tiered.into_resident(&self.manager, self.fixed_row_size))
+            }
+        };
+        self.eviction_policy = policy;
+    }
+
     #[inline]
     pub(crate) fn is_resident(&self) -> bool {
         matches!(self.storage, PageStorage::Resident(_))
@@ -315,13 +382,13 @@ impl PageSet {
     }
 
     /// Create a fresh, empty page set.
-    pub fn new(manager: Arc<PageManager>, eviction_policy: PageEvictionPolicy, fixed_row_size: Size) -> Self {
+    pub fn new(manager: Arc<PageManager>, eviction_policy: EvictionPolicy, fixed_row_size: Size) -> Self {
         let storage = match eviction_policy {
-            PageEvictionPolicy::NeverEvict => PageStorage::Resident(ResidentPages {
+            EvictionPolicy::NeverEvict => PageStorage::Resident(ResidentPages {
                 pages: Pages::default(),
                 permits: smallvec::SmallVec::new(),
             }),
-            PageEvictionPolicy::Evictable => PageStorage::Tiered(TieredPages::default()),
+            EvictionPolicy::Evictable => PageStorage::Tiered(TieredPages::default()),
         };
         Self {
             eviction_policy,
@@ -560,6 +627,7 @@ impl PageSet {
         blobs: &BlobSet,
     ) -> Result<BlobNumBytes, PageError> {
         let page_index = row_ptr.page_index();
+        let eviction_policy = self.eviction_policy;
         let (blob_bytes_deleted, is_empty, available_granules) =
             self.with_page_mut(page_index, fixed_row_size, |page| {
                 // SAFETY:
@@ -568,8 +636,15 @@ impl PageSet {
                 //
                 // - `fixed_row_size` is consistent with the size in bytes of the fixed part of the row.
                 //   The size is also conistent with `var_len_visitor`.
-                let blob_bytes_deleted =
-                    unsafe { page.delete_row(row_ptr.page_offset(), fixed_row_size, var_len_visitor, blobs) };
+                let blob_bytes_deleted = unsafe {
+                    page.delete_row(
+                        row_ptr.page_offset(),
+                        fixed_row_size,
+                        var_len_visitor,
+                        blobs,
+                        eviction_policy,
+                    )
+                };
 
                 (
                     blob_bytes_deleted,
@@ -1325,7 +1400,7 @@ mod tests {
             PagePool::new_for_test(),
             Arc::new(TieredStorage::new_for_test()),
         );
-        PageSet::new(Arc::new(manager), PageEvictionPolicy::Evictable, Size(8))
+        PageSet::new(Arc::new(manager), EvictionPolicy::Evictable, Size(8))
     }
 
     #[test]

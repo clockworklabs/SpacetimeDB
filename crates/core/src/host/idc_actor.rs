@@ -896,17 +896,16 @@ mod tests {
     use tokio::net::TcpListener;
 
     fn open_test_db() -> Arc<RelationalDB> {
-        open_test_db_with_persistence(None)
+        open_test_db_with_persistence(Persistence::ephemeral(TieredStorageConfig::new_for_test()))
     }
 
-    fn open_test_db_with_persistence(persistence: Option<Persistence>) -> Arc<RelationalDB> {
+    fn open_test_db_with_persistence(persistence: Persistence) -> Arc<RelationalDB> {
         let (db, _) = RelationalDB::open(
             Identity::ZERO,
             Identity::ZERO,
             spacetimedb_durability::EmptyHistory::new(),
             persistence,
             None,
-            TieredStorageConfig::new_for_test(),
         )
         .expect("failed to open test database");
         Arc::new(db)
@@ -930,13 +929,14 @@ mod tests {
 
     fn open_pending_db() -> (Arc<RelationalDB>, tokio::sync::watch::Sender<Option<TxOffset>>) {
         let (durable, rx) = tokio::sync::watch::channel(None);
-        let persistence = Persistence::new(
-            PendingDurability(rx),
-            || Ok(Default::default()),
+        let persistence = Persistence::persistent(
+            Arc::new(PendingDurability(rx)),
+            Arc::new(|| Ok(Default::default())),
             None,
+            TieredStorageConfig::new_for_test(),
             spacetimedb_runtime::Handle::tokio(tokio::runtime::Handle::current()),
         );
-        (open_test_db_with_persistence(Some(persistence)), durable)
+        (open_test_db_with_persistence(persistence), durable)
     }
 
     fn outbox_schema() -> TableSchema {
