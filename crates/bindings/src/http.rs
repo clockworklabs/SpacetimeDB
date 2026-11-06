@@ -492,7 +492,8 @@ impl HttpClient {
     ///
     /// Include a [`Timeout`] in the [`Request::extensions`] via [`http::request::Builder::extension`]
     /// to impose a timeout on the request.
-    /// All HTTP requests in SpacetimeDB are subject to a maximum timeout of 500 milliseconds.
+    /// Requests without a [`Timeout`] use a default of 30 seconds,
+    /// and the host clamps all timeouts to a maximum of 180 seconds.
     /// All other extensions in `request` are ignored.
     ///
     /// The returned [`Response`] may have a status code other than 200 OK.
