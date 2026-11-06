@@ -9,15 +9,16 @@ using TestingModule;
 
 public class InteropTests
 {
-    [Theory]
-    [InlineData(NativeStatus.UniqueViolation, typeof(UniqueConstraintViolationException))]
-    [InlineData(NativeStatus.AutoIncOverflow, typeof(AutoIncOverflowException))]
-    internal void ConstraintStatusesBecomeTypedExceptions(NativeStatus status, Type expected)
+    [Fact]
+    public void AutoIncOverflowBecomesTypedException()
     {
         // The engine only overflows a sequence at i128 limits (narrower columns wrap), so
         // AutoIncOverflow can't be reached through a table. The Rust crate tests that mapping.
+        // UniqueViolation is covered end to end by the table and index tests.
         var error = default(NativeBuffer);
-        Assert.IsType(expected, Record.Exception(() => Native.Check(status, ref error)));
+        Assert.Throws<AutoIncOverflowException>(
+            () => Native.Check(NativeStatus.AutoIncOverflow, ref error)
+        );
     }
 
     [Fact]
