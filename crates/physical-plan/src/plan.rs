@@ -20,8 +20,8 @@ use std::{
 };
 
 use crate::rules::{
-    ComputePositions, HashToIxJoin, IxScanFromPredicates, PushConstAnd, PushConstEq, PushLimit, ReorderDeltaJoinRhs,
-    ReorderHashJoin, RewriteRule, UniqueHashJoinRule, UniqueIxJoinRule,
+    ComputePositions, HashToIxJoin, HashToIxJoinFromLhs, IxScanFromPredicates, PushConstAnd, PushConstEq, PushLimit,
+    ReorderDeltaJoinRhs, ReorderHashJoin, RewriteRule, UniqueHashJoinRule, UniqueIxJoinRule,
 };
 
 /// Table aliases are replaced with labels in the physical plan
@@ -687,6 +687,7 @@ impl PhysicalPlan {
             .apply_rec::<ReorderDeltaJoinRhs>()?
             .apply_rec::<ReorderHashJoin>()?
             .apply_rec::<HashToIxJoin>()?
+            .apply_rec::<HashToIxJoinFromLhs>()?
             .apply_rec::<IxScanFromPredicates>()?
             .apply_rec::<UniqueIxJoinRule>()?
             .apply_rec::<UniqueHashJoinRule>()?
@@ -1171,7 +1172,7 @@ impl PhysicalPlan {
     }
 
     /// Does this plan introduce this label?
-    fn has_label(&self, label: &Label) -> bool {
+    pub(crate) fn has_label(&self, label: &Label) -> bool {
         self.any(&|plan| match plan {
             Self::TableScan(_, var)
             | Self::IxScan(_, var)
@@ -3692,6 +3693,112 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// player(id, team_id, rank, score), whose only index on `team_id` is `(rank, team_id)`, and team(id, region)
+    fn player_rank_team_index_db() -> SchemaViewer {
+        let player = schema(
+            PLAYER_ID,
+            "player",
+            &[
+                ("id", AlgebraicType::U64),
+                ("team_id", AlgebraicType::U64),
+                ("rank", AlgebraicType::U32),
+                ("score", AlgebraicType::U32),
+            ],
+            &[&[0], &[2, 1]],
+            &[&[0]],
+            Some(0),
+        );
+        let team = schema(
+            TEAM_ID,
+            "team",
+            &[("id", AlgebraicType::U64), ("region", AlgebraicType::String)],
+            &[&[0], &[1]],
+            &[&[0]],
+            Some(0),
+        );
+        SchemaViewer {
+            schemas: vec![Arc::new(player), Arc::new(team)],
+        }
+    }
+
+    /// An index join whose index needs a binding's value, as `(rank, team_id)` needs a rank,
+    /// probes it with the binding row of a lookup below the join, but not of one above it
+    #[test]
+    fn binding_lookup_below_a_join_probes_its_index_with_the_binding_row() {
+        let db = player_rank_team_index_db();
+        let (plan, _) = template_plan("select p.* from player p join team t on p.team_id = t.id", &db);
+        let player = label_for(&plan, PLAYER_ID);
+        let team = label_for(&plan, TEAM_ID);
+        let (ProjectPlan::None(mut plan) | ProjectPlan::Name(mut plan, ..)) = plan;
+        plan.visit_mut(&mut |plan| {
+            if let PhysicalPlan::TableScan(scan, var) = plan
+                && *var == team
+            {
+                scan.delta = Some(Delta::Inserts);
+            }
+        });
+        // The binding row is [id, region, rank, score]
+        let filter = PhysicalExpr::LogOp(
+            LogOp::And,
+            vec![
+                fields_eq(field(player, 2), field(BINDINGS, 2)),
+                fields_eq(field(BINDINGS, 3), field(player, 3)),
+            ],
+        );
+        let lookup = BindingLookup {
+            label: BINDINGS,
+            candidates: probe(vec![field(team, 1)]),
+        };
+
+        // Looked up right after the team scan
+        let early = plan.clone().look_up_after_scan(team, &mut Some(lookup.clone()));
+        let early = PhysicalPlan::Filter(Box::new(early), filter.clone());
+        let early = ProjectPlan::Name(early, player, None).optimize().unwrap();
+        let PhysicalPlan::Filter(input, residual) = early.physical_plan() else {
+            panic!("expected the score check above the join: {early:#?}");
+        };
+        let PhysicalPlan::IxJoin(join, Semi::All) = &**input else {
+            panic!("expected an index join: {early:#?}");
+        };
+        // The probe takes the rank from the binding row
+        assert_eq!(join.rhs_index, 1.into());
+        let PhysicalExpr::Product(key) = &join.probe else {
+            panic!("expected a composite probe: {join:#?}");
+        };
+        let key: Vec<_> = key
+            .iter()
+            .map(|expr| match expr {
+                PhysicalExpr::Field(field) => (field.label, field.field_pos),
+                expr => panic!("expected a field: {expr:?}"),
+            })
+            .collect();
+        assert_eq!(key, vec![(BINDINGS, 2), (team, 0)]);
+        // The score isn't in the index, so it's still compared
+        let mut compared = vec![];
+        residual.visit(&mut |expr| {
+            if let PhysicalExpr::Field(field) = expr {
+                compared.push((field.label.0, field.field_pos));
+            }
+        });
+        compared.sort();
+        let mut expected = vec![(player.0, 3), (BINDINGS.0, 3)];
+        expected.sort();
+        assert_eq!(compared, expected);
+
+        // Looked up above the join, the binding row comes too late for the probe
+        let late = with_binding_lookup(
+            ProjectPlan::Name(plan, player, None),
+            player,
+            lookup.candidates,
+            Some(filter),
+        );
+        let late = late.optimize().unwrap();
+        assert!(
+            late.any(&|plan| matches!(plan, PhysicalPlan::HashJoin(..))),
+            "{late:#?}"
+        );
     }
 
     /// Templates that compare equal hash equally, and ranges and shapes still tell templates apart

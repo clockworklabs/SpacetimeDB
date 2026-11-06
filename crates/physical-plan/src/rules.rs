@@ -14,6 +14,8 @@
 //!   Reorder the sides of a hash join with delta tables
 //! * [HashToIxJoin]
 //!   Convert hash join to index join
+//! * [HashToIxJoinFromLhs]
+//!   Convert hash join to index join whose key also reads the lhs
 //! * [UniqueIxJoinRule]
 //!   Mark index join as unique
 //! * [UniqueHashJoinRule]
@@ -903,6 +905,113 @@ impl RewriteRule for HashToIxJoin {
             }
             _ => bail!("{INVARIANT_VIOLATION}: Failed to rewrite hash join as index join"),
         }
+    }
+}
+
+/// Convert a hash join to an index join whose leading index columns are fixed by fields of the lhs,
+/// such as the values of the bindings the lhs looked up:
+/// `rhs.a = lhs.b` in a filter above the join, with an index on `(a, join column)`
+pub(crate) struct HashToIxJoinFromLhs;
+
+/// Collect predicates of the form `rhs.col = lhs.field`, in either order
+fn rhs_eq_lhs_fields(expr: &PhysicalExpr, rhs_label: Label, lhs: &PhysicalPlan) -> Vec<EqConstFilterTerm> {
+    match expr {
+        PhysicalExpr::BinOp(BinOp::Eq, a, b) => match (&**a, &**b) {
+            (PhysicalExpr::Field(rhs), PhysicalExpr::Field(field))
+            | (PhysicalExpr::Field(field), PhysicalExpr::Field(rhs))
+                if rhs.label == rhs_label && lhs.has_label(&field.label) =>
+            {
+                vec![(ColId(rhs.field_pos as u16), PhysicalExpr::Field(field.clone()))]
+            }
+            _ => vec![],
+        },
+        PhysicalExpr::LogOp(LogOp::And, exprs) => exprs
+            .iter()
+            .flat_map(|expr| rhs_eq_lhs_fields(expr, rhs_label, lhs))
+            .collect(),
+        _ => vec![],
+    }
+}
+
+/// Removes the predicates that an index join's probe now checks
+fn remove_consumed_lhs_fields(
+    expr: PhysicalExpr,
+    rhs_label: Label,
+    lhs: &PhysicalPlan,
+    consumed_filter_terms: &[EqConstFilterTerm],
+) -> Option<PhysicalExpr> {
+    match expr {
+        PhysicalExpr::LogOp(LogOp::And, exprs) => and_expr(
+            exprs
+                .into_iter()
+                .filter_map(|expr| remove_consumed_lhs_fields(expr, rhs_label, lhs, consumed_filter_terms))
+                .collect(),
+        ),
+        expr => match rhs_eq_lhs_fields(&expr, rhs_label, lhs)[..] {
+            [ref term] if consumed_filter_terms.contains(term) => None,
+            _ => Some(expr),
+        },
+    }
+}
+
+impl RewriteRule for HashToIxJoinFromLhs {
+    type Plan = PhysicalPlan;
+    type Info = HashToIxJoinInfo;
+
+    fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
+        let PhysicalPlan::Filter(input, expr) = plan else {
+            return None;
+        };
+        let PhysicalPlan::HashJoin(
+            HashJoin {
+                lhs,
+                rhs,
+                lhs_field,
+                rhs_field: TupleField { field_pos, .. },
+                ..
+            },
+            _,
+        ) = &**input
+        else {
+            return None;
+        };
+        let (base, filters) = peel_filters_ref(rhs);
+        let PhysicalPlan::TableScan(
+            TableScan {
+                schema, limit: None, ..
+            },
+            rhs_label,
+        ) = base
+        else {
+            return None;
+        };
+        let lhs_fields = rhs_eq_lhs_fields(expr, *rhs_label, lhs);
+        if lhs_fields.is_empty() {
+            return None;
+        }
+        let mut terms = rhs_eq_constants_from_filters(filters, *rhs_label);
+        terms.extend(lhs_fields);
+        ix_join_candidate(schema, *field_pos, lhs_field, &terms)
+    }
+
+    fn rewrite(plan: PhysicalPlan, info: Self::Info) -> Result<PhysicalPlan> {
+        let PhysicalPlan::Filter(input, expr) = plan else {
+            bail!("{INVARIANT_VIOLATION}: Failed to rewrite hash join as index join");
+        };
+        let PhysicalPlan::HashJoin(join, _) = &*input else {
+            bail!("{INVARIANT_VIOLATION}: Failed to rewrite hash join as index join");
+        };
+        let PhysicalPlan::TableScan(_, rhs_label) = peel_filters_ref(&join.rhs).0 else {
+            bail!("{INVARIANT_VIOLATION}: Failed to rewrite hash join as index join");
+        };
+        let rhs_label = *rhs_label;
+        let residual = remove_consumed_lhs_fields(expr, rhs_label, &join.lhs, &info.consumed_filter_terms);
+        // The rhs filters' constants are consumed as in a plain index join
+        let ix_join = HashToIxJoin::rewrite(*input, info)?;
+        Ok(match residual {
+            Some(expr) => PhysicalPlan::Filter(Box::new(ix_join), expr),
+            None => ix_join,
+        })
     }
 }
 
