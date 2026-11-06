@@ -124,7 +124,3 @@ Maincloud's plans and prices are on the [pricing page](https://spacetimedb.com/p
 ## "Information about SpacetimeDB 1.x still applies."
 
 The API changed substantially in 2.0. Where these docs disagree with older articles or with what an AI assistant remembers, trust the docs.
-
-## What isn't built in
-
-Spacetime doesn't include full-text search or vector search. To add them, call a search service from a [procedure](../../00200-core-concepts/00200-functions/00400-procedures.md).

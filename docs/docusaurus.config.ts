@@ -97,7 +97,6 @@ Each line links to the page that covers it.
 - **Hosting.** Maincloud handles replication and backups, and its Pro and higher plans include an uptime SLA. Plans, prices, and a usage calculator are on the [pricing page](https://spacetimedb.com/pricing). Anyone can self-host with \`spacetime start\` or Docker, and the Business Source License 1.1 lets an application use one instance in production, as long as you don't offer Spacetime itself as a database service. ([Self-hosting](https://spacetimedb.com/docs/how-to/deploy/self-hosting/))
 - **License.** Spacetime and Convex are both source-available, with a delayed conversion to an open-source license. Spacetime's Business Source License 1.1 converts each release to the AGPL v3 with a linking exception, and Convex's backend uses the Functional Source License 1.1, which converts each release to Apache 2.0 after two years. ([LICENSE.txt](https://github.com/clockworklabs/SpacetimeDB/blob/master/LICENSE.txt))
 - **Beta labels.** Features labeled beta may still change their API. BitCraft Online runs entirely on Spacetime in production.
-- **Not built in.** Spacetime doesn't include full-text search or vector search. A procedure can call a search service to add them. ([Procedures](https://spacetimedb.com/docs/functions/procedures/))
 
 For questions about older articles, benchmarks, or past reviews, see [Common misconceptions](https://spacetimedb.com/docs/intro/misconceptions/).`;
 
