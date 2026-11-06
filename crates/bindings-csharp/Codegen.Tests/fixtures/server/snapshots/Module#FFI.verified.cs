@@ -3545,7 +3545,7 @@ static class ModuleRegistration
     public static List<T> ToListOrEmpty<T>(T? value)
         where T : class => value is null ? new List<T>() : new List<T> { value };
 
-#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+#if SPACETIMEDB_WASM_AOT
     // In AOT mode we're building a library.
     // Main method won't be called automatically, so we need to export it as a preinit function.
     [UnmanagedCallersOnly(EntryPoint = "__preinit__10_init_csharp")]
@@ -3654,7 +3654,7 @@ static class ModuleRegistration
 
     // Export entrypoints live in generated module code so all build modes can
     // dispatch directly to concrete generated functions.
-#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+#if SPACETIMEDB_WASM_AOT
     [UnmanagedCallersOnly(EntryPoint = "__describe_module__")]
 #endif
     public static void __describe_module__(SpacetimeDB.Internal.BytesSink d) =>
@@ -3972,7 +3972,7 @@ static class ModuleRegistration
         }
     }
 
-#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+#if SPACETIMEDB_WASM_AOT
     [UnmanagedCallersOnly(EntryPoint = "__call_reducer__")]
 #endif
     public static SpacetimeDB.Internal.Errno __call_reducer__(
@@ -4129,7 +4129,7 @@ static class ModuleRegistration
             ),
         };
 
-#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+#if SPACETIMEDB_WASM_AOT
     [UnmanagedCallersOnly(EntryPoint = "__call_procedure__")]
 #endif
     public static SpacetimeDB.Internal.Errno __call_procedure__(
@@ -4215,7 +4215,7 @@ static class ModuleRegistration
             ),
         };
 
-#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+#if SPACETIMEDB_WASM_AOT
     [UnmanagedCallersOnly(EntryPoint = "__call_http_handler__")]
 #endif
     public static SpacetimeDB.Internal.Errno __call_http_handler__(
@@ -4305,7 +4305,7 @@ static class ModuleRegistration
             ),
         };
 
-#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+#if SPACETIMEDB_WASM_AOT
     [UnmanagedCallersOnly(EntryPoint = "__call_view__")]
 #endif
     public static SpacetimeDB.Internal.Errno __call_view__(
@@ -4365,7 +4365,7 @@ static class ModuleRegistration
             _ => UnknownViewId(id),
         };
 
-#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+#if SPACETIMEDB_WASM_AOT
     [UnmanagedCallersOnly(EntryPoint = "__call_view_anon__")]
 #endif
     public static SpacetimeDB.Internal.Errno __call_view_anon__(

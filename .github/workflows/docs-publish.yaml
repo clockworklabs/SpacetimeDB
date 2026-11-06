@@ -21,7 +21,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '22'
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
       
       - uses: ./.github/actions/setup-pnpm
         with:
