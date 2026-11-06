@@ -2159,33 +2159,38 @@ mod tests {
         Ok(())
     }
 
-    /// A value that a delta plan needs to probe an index stays in the template, which then shares only that value
+    /// A value that a delta plan needs to probe an index comes from the binding row, so queries still share a template
     #[test]
-    fn queries_keep_values_their_delta_plans_probe_indexes_with() -> ResultTest<()> {
+    fn queries_share_templates_whose_delta_plans_probe_indexes_with_binding_values() -> ResultTest<()> {
         let db = TestDB::durable()?;
-        // The only index on `gamer.team_id` is on `(rank, team_id)`, so a changed team probes it with a rank
-        let gamer = [
+        // The only index on `player.team_id` is on `(rank, team_id)`, so a changed team probes it with a rank
+        let player = [
             ("id", AlgebraicType::U64),
             ("team_id", AlgebraicType::U64),
             ("rank", AlgebraicType::U32),
         ];
         let team = [("id", AlgebraicType::U64), ("region", AlgebraicType::String)];
-        db.create_table_for_test_with_the_works("gamer", &gamer, &[ColList::from_iter([2, 1])], &[], StAccess::Public)?;
+        db.create_table_for_test_with_the_works(
+            "player",
+            &player,
+            &[ColList::from_iter([2, 1])],
+            &[],
+            StAccess::Public,
+        )?;
         db.create_table_for_test_with_the_works("team", &team, &[ColList::new(0.into())], &[], StAccess::Public)?;
 
         let sql = |rank: u32| {
             format!(
-                "select g.* from gamer g join team t on g.team_id = t.id where t.region = 'west' and g.rank = {rank}"
+                "select p.* from player p join team t on p.team_id = t.id where t.region = 'west' and p.rank = {rank}"
             )
         };
         let rank_3 = compile_plan(&db, &sql(3))?;
         let rank_4 = compile_plan(&db, &sql(4))?;
         assert!(!rank_3.template.has_non_index_join());
-        assert_ne!(rank_3.template.key(), rank_4.template.key());
-        // Each keeps its literals, so its binding holds no values
-        assert!(rank_3.values.elements.is_empty());
+        assert_eq!(rank_3.template.key(), rank_4.template.key());
+        assert_ne!(rank_3.values, rank_4.values);
 
-        // So does `:sender`, which is then each caller's own value
+        // So does `:sender`
         let pet = [
             ("id", AlgebraicType::U64),
             ("team_id", AlgebraicType::U64),
@@ -2197,25 +2202,8 @@ mod tests {
         let caller_1 = compile_plan_with_auth(&db, sql, auth(1))?;
         let caller_2 = compile_plan_with_auth(&db, sql, auth(2))?;
         assert!(!caller_1.template.has_non_index_join());
-        assert_ne!(caller_1.template.key(), caller_2.template.key());
-        assert!(caller_1.values.elements.is_empty());
-
-        // Without the composite index's help, the same query shares one template across ranks
-        let player = [
-            ("id", AlgebraicType::U64),
-            ("team_id", AlgebraicType::U64),
-            ("rank", AlgebraicType::U32),
-        ];
-        db.create_table_for_test_with_the_works("player", &player, &[ColList::new(1.into())], &[], StAccess::Public)?;
-        let sql = |rank: u32| {
-            format!(
-                "select p.* from player p join team t on p.team_id = t.id where t.region = 'west' and p.rank = {rank}"
-            )
-        };
-        assert_eq!(
-            compile_plan(&db, &sql(3))?.template.key(),
-            compile_plan(&db, &sql(4))?.template.key()
-        );
+        assert_eq!(caller_1.template.key(), caller_2.template.key());
+        assert_ne!(caller_1.values, caller_2.values);
 
         Ok(())
     }

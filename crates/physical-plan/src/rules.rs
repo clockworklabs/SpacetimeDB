@@ -781,6 +781,31 @@ fn ix_join_candidate(
     })
 }
 
+/// Can a join probe an index of `rhs` on `rhs_field`,
+/// with its leading columns fixed by `rhs`'s equality filters and by `fixed`?
+pub(crate) fn joins_by_index(
+    rhs: &PhysicalPlan,
+    rhs_field: &TupleField,
+    lhs_field: &TupleField,
+    fixed: &[(ColId, PhysicalExpr)],
+) -> bool {
+    let (
+        PhysicalPlan::TableScan(
+            TableScan {
+                schema, limit: None, ..
+            },
+            rhs_label,
+        ),
+        filters,
+    ) = peel_filters_ref(rhs)
+    else {
+        return false;
+    };
+    let mut terms = rhs_eq_constants_from_filters(filters, *rhs_label);
+    terms.extend_from_slice(fixed);
+    ix_join_candidate(schema, rhs_field.field_pos, lhs_field, &terms).is_some()
+}
+
 fn remove_consumed_filter_terms(
     expr: PhysicalExpr,
     rhs_label: Label,
