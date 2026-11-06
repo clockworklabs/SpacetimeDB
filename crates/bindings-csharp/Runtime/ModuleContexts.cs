@@ -180,10 +180,6 @@ public readonly struct QueryBuilder
 
     internal QueryBuilder(int instanceId) => InstanceId = instanceId;
 
-#if SPACETIMEDB_WASM_RUNTIME
-    internal QueryBuilder(Internal.LocalReadOnly db) => InstanceId = db.InstanceId;
-#endif
-
 #if !SPACETIMEDB_WASM_RUNTIME
     internal readonly Internal.DatabaseAccess? Access;
 
