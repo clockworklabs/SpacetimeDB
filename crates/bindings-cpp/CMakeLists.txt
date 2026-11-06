@@ -2,7 +2,7 @@
 
 cmake_minimum_required(VERSION 3.15)
 project(SpacetimeDBCppModuleLibrary 
-    VERSION 2.14.1
+    VERSION 2.15.0
     LANGUAGES CXX)
 
 # Generate version header from template

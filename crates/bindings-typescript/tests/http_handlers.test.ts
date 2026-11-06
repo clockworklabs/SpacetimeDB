@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
-const registerExport = Symbol('SpacetimeDB.registerExport');
-const exportContext = Symbol('SpacetimeDB.exportContext');
+const registerExport: typeof import('../src/server/schema').registerExport =
+  Symbol(
+    'SpacetimeDB.registerExport'
+  ) as typeof import('../src/server/schema').registerExport;
+const exportContext: typeof import('../src/server/schema').exportContext =
+  Symbol(
+    'SpacetimeDB.exportContext'
+  ) as typeof import('../src/server/schema').exportContext;
 
 vi.mock('../src/server/schema', () => ({
   exportContext,
@@ -135,7 +141,7 @@ describe('http handler exports', async () => {
       return new SyncResponse('ok');
     });
 
-    expect((handler as Record<symbol, unknown>)[exportContext]).toBe(ctx);
+    expect(handler[exportContext]).toBe(ctx);
   });
 });
 

@@ -36,7 +36,7 @@ You can of course choose to delete the historical data, but it should be **your 
 
 Won't it be slow to persist everything? No. Spacetime is designed so that persistence guarantees only ever increase latency and never decrease throughput! Modern SSDs can write upwards of 15 GB/s of data to disk. DRAM can only do about 4x more. Let's actually use that Samsung-given bandwidth.
 
-Spacetime holds all your data in memory for blazing-fast access, but automatically persists everything to disk. You get the speed of in-memory computing with the durability of a traditional database.
+Spacetime keeps hot data in memory for blazing-fast access, keeps colder data on disk, and automatically persists everything. You get the speed of in-memory computing with the durability of a traditional database.
 
 You will be tempted to ask for "ephemeral state". This is a mistake. Persistent everything allows your app to recover to the *exact* state it was in. In principle, you could even debug your production app in the state it was in in the past with a time-traveling debugger.
 
@@ -109,7 +109,7 @@ Never settle for less than Turing complete.
 Here's what that takes off your plate:
 
 - **No backend servers to deploy** - your logic runs in the database
-- **No caching layer to manage** - the database is already in memory
+- **No caching layer to manage** - hot data is already in memory
 - **No sync code to write** - subscriptions handle it automatically
 - **No rollback logic to maintain** - transactions handle it automatically
 - **No limitations on your logic** - it's just code
