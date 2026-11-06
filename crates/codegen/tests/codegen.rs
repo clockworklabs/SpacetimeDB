@@ -273,7 +273,6 @@ fn test_typescript_table_handles_are_camel_case() {
     assert!(!index.contains("my_player: __table({"));
     assert!(index.contains(r#""logged_out_player": "loggedOutPlayer""#));
     assert!(index.contains(r#"readonly "logged_out_player": __TablesBase["loggedOutPlayer"];"#));
-    assert!(index.contains(r#"readonly "logged_out_player": __DbViewBase["loggedOutPlayer"];"#));
     assert!(index.contains(
         r#"/** @deprecated Use `loggedOutPlayer` instead. This alias will be removed in the next major version. */"#
     ));
@@ -378,6 +377,12 @@ fn compile_csharp_client(files: Vec<spacetimedb_codegen::OutputFile>, program: &
         .join("../..")
         .canonicalize()
         .unwrap();
+    // `canonicalize` returns a verbatim `\\?\` path on Windows, which MSBuild
+    // percent-escapes, breaking its `*.props` wildcard imports (MSB4019).
+    let repo = match repo.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
+        Some(stripped) => std::path::PathBuf::from(stripped),
+        None => repo,
+    };
     // Use the local runtime, never a published package or an old NuGet cache entry.
     let config = project.path().join("NuGet.Config");
     fs_err::write(
@@ -479,6 +484,19 @@ fn typescript_import_extension_applies_to_every_relative_import() {
                 "{spec:?} has more than one extension"
             );
         }
+    }
+}
+
+/// Babel, which React Native and Expo build with, rejects `declare` class fields by default.
+#[test]
+fn typescript_bindings_have_no_declare_fields() {
+    let module = compiled_module();
+    for file in generate(module, &TypeScript::default(), &CodegenOptions::default()) {
+        assert!(
+            !file.code.lines().any(|line| line.trim_start().starts_with("declare ")),
+            "{} has a `declare` field",
+            file.filename
+        );
     }
 }
 

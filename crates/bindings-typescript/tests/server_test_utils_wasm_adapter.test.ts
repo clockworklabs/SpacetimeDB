@@ -2,13 +2,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { schema, table, t } from '../src/server';
 import { createModuleTestHarness, TestAuth } from '../src/server/test-utils';
+import type { WasmPortableTransaction } from '../src/server/test-utils/wasm';
 import { createWasmTestRuntime } from '../src/server/test-utils/wasm';
 
 type CommitMode = 'Normal' | 'DropEventTableRows';
 
 class FakeTx {
-  readonly __testRuntimeTxBrand!: unique symbol;
-  readonly __wasmTxBrand!: unique symbol;
+  readonly __testRuntimeTxBrand!: WasmPortableTransaction['__testRuntimeTxBrand'];
+  readonly __wasmTxBrand!: WasmPortableTransaction['__wasmTxBrand'];
 
   constructor(public rows: Uint8Array[]) {}
 }

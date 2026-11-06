@@ -8,13 +8,8 @@
     "src/lib/**/*",
     "src/sdk/**/*",
     "src/react/**/*",
+    "src/server/**/*",
     "test-app/**/*"
   ],
-  "exclude": [
-    "node_modules",
-    "dist/**/*",
-    "src/svelte/**/*",
-    "src/vue/**/*",
-    "src/server/**/*"
-  ]
+  "exclude": ["node_modules", "dist/**/*", "src/svelte/**/*", "src/vue/**/*"]
 }
