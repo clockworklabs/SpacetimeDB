@@ -33,9 +33,16 @@ jobs:
     outputs:
       # A reused failure also skips fresh jobs; the final step reports that failure on this commit.
       skip: ${{ steps.compare.outputs.skip == 'true' || steps.reuse.outputs.reused == 'true' }}
+      # Also true when the change only touches docs. Jobs that check the docs themselves (lints, the
+      # docs build and the CLI docs check) use `skip` instead, so they still run for docs-only changes.
+      skip_tests: ${{ steps.compare.outputs.skip == 'true' || steps.reuse.outputs.reused == 'true' || steps.docs.outputs.docs-only == 'true' }}
     steps:
       - name: Checkout merge queue commit
         uses: actions/checkout@v4
+
+      - name: Detect docs-only changes
+        id: docs
+        uses: ./.github/actions/detect-docs-only
 
       - name: Compare merge queue commit to PR head
         id: compare
@@ -93,7 +100,7 @@ jobs:
 
   upload-build-artifacts-linux:
     needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: Upload build artifacts (Linux)
     runs-on: spacetimedb-linux
     timeout-minutes: 15
@@ -281,7 +288,7 @@ jobs:
 
   upload-build-artifacts-windows:
     needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: Upload build artifacts (Windows)
     runs-on: spacetimedb-windows-runner
     timeout-minutes: 15
@@ -567,7 +574,7 @@ jobs:
   # and skipping this check means that the matrix isn't "populated" so the required checks wouldn't be met.
   smoketests_noop:
     needs: [merge_queue_noop]
-    if: ${{ needs.merge_queue_noop.outputs.skip == 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests == 'true' }}
     name: Smoketests (${{ matrix.name }})
     strategy:
       matrix:
@@ -577,15 +584,15 @@ jobs:
           - name: Windows 2/4
           - name: Windows 3/4
           - name: Windows 4/4
-    # These no-op jobs only preserve required smoketest check names after CI reuse.
+    # These no-op jobs only preserve required smoketest check names after CI reuse or for docs-only changes.
     runs-on: spacetimedb-linux-small
     steps:
-      - name: Skip duplicate merge queue smoketest
-        run: echo "Merge queue commit has the same tree as the PR head; smoketest already ran for the PR."
+      - name: Skip smoketest
+        run: echo "Smoketests already ran for an equivalent commit, or the change only touches docs."
 
   sdk_test_modules:
     needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: Build SDK test modules
     runs-on: spacetimedb-linux
     timeout-minutes: 15
@@ -663,7 +670,7 @@ jobs:
 
   sdk_test_archives:
     needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: Build SDK test archives
     runs-on: spacetimedb-linux
     timeout-minutes: 15
@@ -939,7 +946,7 @@ jobs:
 
   sdk_tests_noop:
     needs: [merge_queue_noop]
-    if: ${{ needs.merge_queue_noop.outputs.skip == 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests == 'true' }}
     name: SDK Tests (${{ matrix.mode }} ${{ matrix.partition }}/2)
     strategy:
       matrix:
@@ -947,12 +954,12 @@ jobs:
         partition: [1, 2]
     runs-on: ubuntu-latest
     steps:
-      - name: Skip duplicate merge queue SDK test
-        run: echo "Merge queue commit has the same tree as the PR head; SDK tests already ran for the PR."
+      - name: Skip SDK test
+        run: echo "SDK tests already ran for an equivalent commit, or the change only touches docs."
 
   rust_test_build:
     needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: Test Suite - Rust Build
     runs-on: spacetimedb-linux
     timeout-minutes: 15
@@ -1173,7 +1180,7 @@ jobs:
 
   csharp_tests:
     needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: Test Suite - C#
     runs-on: spacetimedb-linux
     timeout-minutes: 10
@@ -1211,7 +1218,7 @@ jobs:
 
   cpp_compile_tests:
     needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: Test Suite - C++ Compile (${{ matrix.suite }})
     runs-on: spacetimedb-linux
     timeout-minutes: 10
@@ -1266,7 +1273,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Check component results
-        if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+        if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
         env:
           RUST_RESULT: ${{ needs.rust_tests.result }}
           RUST_BUILD_RESULT: ${{ needs.rust_test_build.result }}
@@ -1285,16 +1292,16 @@ jobs:
           test "${SDK_BROWSER_RESULT}" = success
 
       - name: Reuse merge queue result
-        if: ${{ needs.merge_queue_noop.outputs.skip == 'true' }}
+        if: ${{ needs.merge_queue_noop.outputs.skip_tests == 'true' }}
         env:
           SDK_NOOP_RESULT: ${{ needs.sdk_tests_noop.result }}
         run: |
           test "${SDK_NOOP_RESULT}" = success
-          echo "Test Suite already ran for the equivalent PR head."
+          echo "Test Suite already ran for the equivalent PR head, or the change only touches docs."
 
   index_scan_bench:
     needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: Index Scan Bench
     runs-on: spacetimedb-benchmark-runner
     concurrency:
@@ -1451,7 +1458,7 @@ jobs:
 
   module_latest_deps:
     needs: [merge_queue_noop, upload-build-artifacts-linux]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: Build and test wasm bindings
     runs-on: spacetimedb-linux
     env:
@@ -1478,6 +1485,8 @@ jobs:
       - *show-sccache-stats
 
   portable_datastore:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: Check portable datastore
     runs-on: spacetimedb-linux
     env:
@@ -1565,7 +1574,7 @@ jobs:
 
   update:
     needs: [merge_queue_noop]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: Test spacetimedb-update flow (${{ matrix.target }})
     permissions: read-all
     strategy:
@@ -1620,7 +1629,7 @@ jobs:
   # and skipping this check means that the matrix isn't "populated" so the required checks wouldn't be met.
   update_noop:
     needs: [merge_queue_noop]
-    if: ${{ needs.merge_queue_noop.outputs.skip == 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests == 'true' }}
     name: Test spacetimedb-update flow (${{ matrix.target }})
     permissions: read-all
     strategy:
@@ -1629,11 +1638,11 @@ jobs:
           - { target: x86_64-unknown-linux-gnu }
           - { target: aarch64-apple-darwin }
           - { target: x86_64-pc-windows-msvc }
-    # These no-op jobs only preserve required update-flow check names after CI reuse.
+    # These no-op jobs only preserve required update-flow check names after CI reuse or for docs-only changes.
     runs-on: spacetimedb-linux-small
     steps:
-      - name: Skip duplicate merge queue update test
-        run: echo "Merge queue commit has the same tree as the PR head; update-flow already ran for the PR."
+      - name: Skip update test
+        run: echo "The update flow already ran for an equivalent commit, or the change only touches docs."
 
   unreal_engine_tests:
     name: Unreal Engine Tests
@@ -1796,7 +1805,7 @@ jobs:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     # Skip if this is an external contribution.
     # The license secrets will be empty, so the step would fail anyway.
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
     permissions:
       contents: read
       checks: write
@@ -1945,7 +1954,7 @@ jobs:
     needs: [merge_queue_noop, lints]
     # Skip if this is an external contribution.
     # The license secrets will be empty, so the step would fail anyway.
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
     permissions:
       contents: read
     runs-on: spacetimedb-unity-runner
@@ -2011,7 +2020,7 @@ jobs:
 
   godot-testsuite:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     permissions:
       contents: read
     # The .NET packaging, Godot project build, and integration test make this too heavy for a small runner.
@@ -2116,7 +2125,7 @@ jobs:
 
   csharp-testsuite:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     # The C# SDK build and tests saturated the small runner's CPU, so keep this on the main runner.
     runs-on: spacetimedb-linux
     timeout-minutes: 30
@@ -2371,7 +2380,7 @@ jobs:
 
   typescript-test:
     needs: [merge_queue_noop, upload-build-artifacts-linux]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: TypeScript - Tests
     runs-on: spacetimedb-linux
     env:
@@ -2451,7 +2460,7 @@ jobs:
 
   typescript-submodules:
     needs: [merge_queue_noop, upload-build-artifacts-linux]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: TypeScript - Submodules
     runs-on: spacetimedb-linux
     env:
