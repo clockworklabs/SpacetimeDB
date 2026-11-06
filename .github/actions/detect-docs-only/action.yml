@@ -3,7 +3,8 @@ description: >-
   Report whether every file this event changes is documentation or agent
   guidance that no build or test reads: docs/, skills/, the agent plugins,
   .agents/, and Markdown files at the repository root. Crate READMEs are not
-  included, because some are compiled as doc tests. Requires a prior checkout.
+  included, because some are compiled as doc tests, and neither are docs pages
+  whose code a test builds and runs. Requires a prior checkout.
 outputs:
   docs-only:
     description: "'true' if every changed file is documentation, otherwise 'false'."
@@ -45,7 +46,15 @@ runs:
         git fetch --no-tags --quiet --depth=1 origin "${base}" || run_everything "Could not fetch base commit ${base}"
         changed="$(git diff --no-renames --name-only "${base}" "${GITHUB_SHA}")" || run_everything "Could not diff against ${base}"
 
+        # Some tests build and run the code in a docs page, such as the quickstart smoketest with the
+        # chat app tutorial, so a change to one of those pages is a code change. This finds them by
+        # their full path, so tests should name such pages that way.
+        tested_pages="$(git grep -h -o -E 'docs/docs/[A-Za-z0-9_./-]+[.]md' -- crates sdks tools || true)"
+
         while IFS= read -r path; do
+          if [[ -n "${path}" ]] && grep -qxF -- "${path}" <<<"${tested_pages}"; then
+            run_everything "Tests run the code in ${path}"
+          fi
           case "${path}" in
             "" | docs/* | skills/* | codex-plugin/* | .claude-plugin/* | .agents/*) ;;
             # Markdown only at the root: crate READMEs can be compiled as doc tests.
