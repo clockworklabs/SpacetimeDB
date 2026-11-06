@@ -1,0 +1,22 @@
+/** SenderError codes thrown by the API key reducers, procedures, and helpers. */
+export const errors = {
+  notAuthorized: 'api_keys.not_authorized',
+  cannotRemoveLastAdmin: 'api_keys.cannot_remove_last_admin',
+  configMissing: 'api_keys.config_missing',
+  secretRequired: 'api_keys.secret_required',
+  invalidSecret: 'api_keys.invalid_secret',
+  invalidUsageRetention: 'api_keys.invalid_usage_retention_seconds',
+  invalidKeyPrefix: 'api_keys.invalid_key_prefix',
+  invalidName: 'api_keys.invalid_name',
+  invalidOwnerSubject: 'api_keys.invalid_owner_subject',
+  invalidAction: 'api_keys.invalid_action',
+  invalidRequiredScope: 'api_keys.invalid_required_scope',
+  invalidScopesJson: 'api_keys.invalid_scopes_json',
+  invalidMetadataJson: 'api_keys.invalid_metadata_json',
+  invalidExpiresInSeconds: 'api_keys.invalid_expires_in_seconds',
+  activeKeyLimitReached: 'api_keys.active_key_limit_reached',
+  invalidKeyId: 'api_keys.invalid_key_id',
+  notFound: 'api_keys.not_found',
+  keyRevoked: 'api_keys.key_revoked',
+  keyExpired: 'api_keys.key_expired',
+} as const;
