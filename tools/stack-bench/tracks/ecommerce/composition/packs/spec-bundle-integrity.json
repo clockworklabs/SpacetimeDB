@@ -1,0 +1,187 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.spec.bundle-integrity",
+  "moduleType": "specification",
+  "title": "Bundle integrity",
+  "description": "Shared inventory, authority, and historical return accounting.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser",
+    "database-observation",
+    "direct-database-write",
+    "direct-server-call",
+    "backend-lifecycle"
+  ],
+  "evidence": [
+    "browser-observation",
+    "database-observation",
+    "fresh-client-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 480000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.spec.bundle-integrity.product-bundles",
+        "path": "prompts/modular/later-specifications.md",
+        "order": 6500,
+        "from": "## Product bundles",
+        "until": "## Bundle checkout",
+        "modes": [
+          "fresh",
+          "upgrade"
+        ],
+        "requiresFeatures": [
+          "ecommerce.feature.product-bundles"
+        ]
+      },
+      {
+        "id": "ecommerce.spec.bundle-integrity.bundle-checkout",
+        "path": "prompts/modular/later-specifications.md",
+        "order": 6501,
+        "from": "## Bundle checkout",
+        "until": "## Bundle returns",
+        "modes": [
+          "fresh",
+          "upgrade"
+        ],
+        "requiresFeatures": [
+          "ecommerce.feature.bundle-checkout"
+        ]
+      },
+      {
+        "id": "ecommerce.spec.bundle-integrity.bundle-returns",
+        "path": "prompts/modular/later-specifications.md",
+        "order": 6502,
+        "from": "## Bundle returns",
+        "until": "## Store credit",
+        "modes": [
+          "fresh",
+          "upgrade"
+        ],
+        "requiresFeatures": [
+          "ecommerce.feature.bundle-returns"
+        ]
+      }
+    ],
+    "contracts": []
+  },
+  "checks": [
+    {
+      "id": "bundle-743",
+      "source": "scenarios/progression-product-bundles.json",
+      "feature": 743,
+      "criteria": [
+        "743a"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.product-bundles"
+      ]
+    },
+    {
+      "id": "bundle-744",
+      "source": "scenarios/progression-bundle-checkout.json",
+      "feature": 744,
+      "criteria": [
+        "744a"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.bundle-checkout"
+      ]
+    },
+    {
+      "id": "bundle-745",
+      "source": "scenarios/progression-bundle-checkout.json",
+      "feature": 745,
+      "criteria": [
+        "745a"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.bundle-checkout"
+      ]
+    },
+    {
+      "id": "bundle-746",
+      "source": "scenarios/progression-bundle-checkout.json",
+      "feature": 746,
+      "criteria": [
+        "746a"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.bundle-checkout"
+      ]
+    },
+    {
+      "id": "bundle-747",
+      "source": "scenarios/progression-bundle-checkout.json",
+      "feature": 747,
+      "criteria": [
+        "747a"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.bundle-checkout"
+      ]
+    },
+    {
+      "id": "bundle-742",
+      "source": "scenarios/progression-bundle-returns.json",
+      "feature": 742,
+      "criteria": [
+        "742b"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.bundle-returns"
+      ]
+    },
+    {
+      "id": "bundle-748",
+      "source": "scenarios/progression-bundle-returns.json",
+      "feature": 748,
+      "criteria": [
+        "748a"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.bundle-returns"
+      ]
+    }
+  ]
+}

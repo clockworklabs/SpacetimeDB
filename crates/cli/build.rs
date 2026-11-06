@@ -6,6 +6,7 @@ use std::process::Command;
 use toml::Value;
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=SPACETIMEDB_NIX_BUILD_GIT_COMMIT");
     let git_hash = find_git_hash();
     println!("cargo:rustc-env=GIT_HASH={git_hash}");
 
