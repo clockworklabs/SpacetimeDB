@@ -1,0 +1,211 @@
+---
+source: crates/codegen/tests/codegen.rs
+expression: code
+---
+// A migration from the database schema with hash
+// HASH.
+//
+// Include it in your module with `mod migration_95a00106bdf5bd06;`, then fill in `migrate`.
+//
+// When this module is published to a database with that schema,
+// every table that the new schema removes or changes incompatibly is moved under `dropped`,
+// and the new tables are created empty. `migrate` then runs, in the same transaction as the rest
+// of the update, to copy the rows worth keeping into the new tables. The dropped tables are
+// deleted after it returns. If it fails, the publish is aborted and the database is unchanged.
+//
+// `mod dropped` declares the old schema of those tables. Don't change it, but you can remove
+// tables you don't need to read from.
+
+use spacetimedb::MigrationContext;
+
+#[spacetimedb::migration(
+    function = migrate,
+    hash = 0xHASH,
+)]
+mod dropped {
+    #[spacetimedb::table(accessor = has_special_stuff)]
+    pub struct HasSpecialStuff {
+        pub identity: spacetimedb::Identity,
+        pub connection_id: spacetimedb::ConnectionId,
+    }
+
+    #[spacetimedb::table(accessor = logged_out_player, public)]
+    pub struct LoggedOutPlayer {
+        #[primary_key]
+        pub identity: spacetimedb::Identity,
+        #[unique]
+        #[auto_inc]
+        pub player_id: u64,
+        #[unique]
+        pub name: String,
+    }
+
+    #[spacetimedb::table(accessor = nonrepeating_test_arg)]
+    pub struct NonrepeatingTestArg {
+        #[primary_key]
+        #[auto_inc]
+        pub scheduled_id: u64,
+        pub scheduled_at: spacetimedb::ScheduleAt,
+        pub prev_time: spacetimedb::Timestamp,
+    }
+
+    #[spacetimedb::table(accessor = person, public)]
+    pub struct Person {
+        #[primary_key]
+        #[auto_inc]
+        pub id: u32,
+        pub name: String,
+        #[index(btree)]
+        pub age: u8,
+    }
+
+    #[spacetimedb::table(accessor = pk_multi_identity)]
+    pub struct PkMultiIdentity {
+        #[primary_key]
+        pub id: u32,
+        #[unique]
+        #[auto_inc]
+        pub other: u32,
+    }
+
+    #[spacetimedb::table(accessor = player, public)]
+    pub struct Player {
+        #[primary_key]
+        pub identity: spacetimedb::Identity,
+        #[unique]
+        #[auto_inc]
+        pub player_id: u64,
+        #[unique]
+        pub name: String,
+    }
+
+    #[spacetimedb::table(
+        accessor = points,
+        index(accessor = multi_column_index, btree(columns = [x, y])),
+    )]
+    pub struct Point {
+        pub x: i64,
+        pub y: i64,
+    }
+
+    #[spacetimedb::table(accessor = private_table)]
+    pub struct PrivateTable {
+        pub name: String,
+    }
+
+    #[spacetimedb::table(accessor = repeating_test_arg)]
+    pub struct RepeatingTestArg {
+        #[primary_key]
+        #[auto_inc]
+        pub scheduled_id: u64,
+        pub scheduled_at: spacetimedb::ScheduleAt,
+        pub prev_time: spacetimedb::Timestamp,
+    }
+
+    #[spacetimedb::table(accessor = table_to_remove)]
+    pub struct RemoveTable {
+        pub id: u32,
+    }
+
+    #[spacetimedb::table(accessor = test_a, index(accessor = foo, btree(columns = [x])))]
+    pub struct TestA {
+        pub x: u32,
+        pub y: u32,
+        pub z: String,
+    }
+
+    #[spacetimedb::table(accessor = test_d, public)]
+    pub struct TestD {
+        pub test_c: Option<NamespaceTestC>,
+        pub test_c_nested: Option<Vec<NamespaceTestC>>,
+    }
+
+    #[spacetimedb::table(accessor = test_e)]
+    pub struct TestE {
+        #[primary_key]
+        #[auto_inc]
+        pub id: u64,
+        #[index(btree)]
+        pub name: String,
+    }
+
+    #[spacetimedb::table(accessor = test_f, public)]
+    pub struct TestFoobar {
+        pub field: Foobar,
+    }
+
+    #[derive(spacetimedb::SpacetimeType)]
+    pub struct Baz {
+        pub field: String,
+    }
+
+    #[derive(spacetimedb::SpacetimeType)]
+    pub enum Foobar {
+        Baz(Baz),
+        Bar,
+        Har(u32),
+    }
+
+    #[derive(spacetimedb::SpacetimeType)]
+    pub enum NamespaceTestC {
+        Foo,
+        Bar,
+    }
+}
+
+/// Copies the rows the new schema should keep out of the tables in [`dropped`].
+///
+/// Anything not copied is lost once this returns.
+fn migrate(ctx: &MigrationContext<Dropped>) -> Result<(), String> {
+    // TODO: Copy the rows of each dropped table into the new tables. For example,
+    // with `spacetimedb::Table` and the new table's accessor in scope:
+    //
+    //     for row in ctx.dropped.has_special_stuff().iter() {
+    //         ctx.db.has_special_stuff().insert(..);
+    //     }
+    //
+    // Until then, refuse to delete any rows.
+    if ctx.dropped.has_special_stuff().count() != 0 {
+        return Err("rows of the old `has_special_stuff` table have not been migrated".into());
+    }
+    if ctx.dropped.logged_out_player().count() != 0 {
+        return Err("rows of the old `logged_out_player` table have not been migrated".into());
+    }
+    if ctx.dropped.nonrepeating_test_arg().count() != 0 {
+        return Err("rows of the old `nonrepeating_test_arg` table have not been migrated".into());
+    }
+    if ctx.dropped.person().count() != 0 {
+        return Err("rows of the old `person` table have not been migrated".into());
+    }
+    if ctx.dropped.pk_multi_identity().count() != 0 {
+        return Err("rows of the old `pk_multi_identity` table have not been migrated".into());
+    }
+    if ctx.dropped.player().count() != 0 {
+        return Err("rows of the old `player` table have not been migrated".into());
+    }
+    if ctx.dropped.points().count() != 0 {
+        return Err("rows of the old `points` table have not been migrated".into());
+    }
+    if ctx.dropped.private_table().count() != 0 {
+        return Err("rows of the old `private_table` table have not been migrated".into());
+    }
+    if ctx.dropped.repeating_test_arg().count() != 0 {
+        return Err("rows of the old `repeating_test_arg` table have not been migrated".into());
+    }
+    if ctx.dropped.table_to_remove().count() != 0 {
+        return Err("rows of the old `table_to_remove` table have not been migrated".into());
+    }
+    if ctx.dropped.test_a().count() != 0 {
+        return Err("rows of the old `test_a` table have not been migrated".into());
+    }
+    if ctx.dropped.test_d().count() != 0 {
+        return Err("rows of the old `test_d` table have not been migrated".into());
+    }
+    if ctx.dropped.test_e().count() != 0 {
+        return Err("rows of the old `test_e` table have not been migrated".into());
+    }
+    if ctx.dropped.test_f().count() != 0 {
+        return Err("rows of the old `test_f` table have not been migrated".into());
+    }
+    Ok(())
+}

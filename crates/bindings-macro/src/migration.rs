@@ -2,7 +2,8 @@ use heck::ToUpperCamelCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use syn::parse::{ParseStream, Parser};
-use syn::{parse_quote, Result};
+use syn::punctuated::Punctuated;
+use syn::{parse_quote, Result, Token};
 
 use crate::util::{check_duplicate, match_meta, preinit, superize_path, HexLiteral};
 use crate::{sats, sym};
@@ -115,12 +116,21 @@ pub(crate) fn migration_impl(args: MigrationArgs, mod_: &mut syn::ItemMod) -> Re
 }
 
 fn process_item(item: &mut syn::Item, migration: &mut MigrationData) -> Result<TokenStream> {
-    let syn::Item::Struct(struc) = item else {
-        return Err(syn::Error::new_spanned(item, "must be struct"));
+    let struc = match item {
+        syn::Item::Struct(struc) => struc,
+        syn::Item::Enum(enu) => {
+            if let syn::Visibility::Inherited = enu.vis {
+                enu.vis = parse_quote!(pub(super));
+            }
+            replace_spacetimetype_derive(&mut enu.attrs)?;
+            return Ok(Default::default());
+        }
+        _ => return Err(syn::Error::new_spanned(item, "must be struct or enum")),
     };
     if let syn::Visibility::Inherited = struc.vis {
         struc.vis = parse_quote!(pub(super));
     }
+    replace_spacetimetype_derive(&mut struc.attrs)?;
     let Some(attr) = struc
         .attrs
         .extract_if(.., |attr| {
@@ -131,13 +141,41 @@ fn process_item(item: &mut syn::Item, migration: &mut MigrationData) -> Result<T
         return Ok(Default::default());
     };
 
-    let derive_table_helper = super::derive_table_helper_attr();
-    if !struc.attrs.contains(&derive_table_helper) {
-        struc.attrs.push(derive_table_helper);
+    let derive_helper = migration_type_helper_attr();
+    if !struc.attrs.contains(&derive_helper) {
+        struc.attrs.push(derive_helper);
     }
 
     let sats_ty = sats::extract_sats_type_from_item_struct(struc, quote!(spacetimedb::spacetimedb_lib))?;
     let args = attr.meta.require_list()?.tokens.clone();
     let args = crate::table::TableArgs::parse(args, attr.bracket_token.span.join(), &struc.ident)?;
     crate::table::table_impl_inner(args, &struc.vis, sats_ty, Some(migration))
+}
+
+fn migration_type_helper_attr() -> syn::Attribute {
+    parse_quote!(#[derive(spacetimedb::__MigrationTypeHelper)])
+}
+
+/// Swaps `derive(SpacetimeType)` for `derive(__MigrationTypeHelper)`.
+///
+/// `SpacetimeType` registers the type with the module, which would put the old schema's types
+/// into the new module's typespace, and collide with any type of the same name in the new module.
+fn replace_spacetimetype_derive(attrs: &mut [syn::Attribute]) -> Result<()> {
+    for attr in attrs {
+        if !attr.path().is_ident("derive") {
+            continue;
+        }
+        let mut paths = attr.parse_args_with(Punctuated::<syn::Path, Token![,]>::parse_terminated)?;
+        let mut changed = false;
+        for path in &mut paths {
+            if path.segments.last().is_some_and(|seg| seg.ident == "SpacetimeType") {
+                *path = parse_quote!(spacetimedb::__MigrationTypeHelper);
+                changed = true;
+            }
+        }
+        if changed {
+            *attr = parse_quote!(#[derive(#paths)]);
+        }
+    }
+    Ok(())
 }
