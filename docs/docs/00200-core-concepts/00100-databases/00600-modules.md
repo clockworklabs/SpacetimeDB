@@ -6,7 +6,7 @@ slug: /modules
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-Any SpacetimeDB module can be mounted in another module's database, where it is called a **submodule**. The submodule's tables and functions register under a **namespace** you choose, keeping them separate from the consumer's own tables and from other submodules. Modules fill the role that components fill in Convex.
+Any SpacetimeDB module can be mounted in another module's database, where it is called a **submodule**. The submodule's tables and functions register under a **namespace** you choose, keeping them separate from the consumer's own tables and from other submodules.
 
 Modules let you package reusable database logic as a library that any consumer can mount without coordinating table names. Official and community modules are listed at [spacetimedb.com/modules](https://spacetimedb.com/modules).
 
