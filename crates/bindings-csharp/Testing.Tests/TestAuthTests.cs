@@ -21,19 +21,9 @@ public class TestAuthTests
     }
 
     [Fact]
-    public void CredentialsExposeTheCallerTheyActAs()
+    public void InternalCredentialsActAsTheDatabase()
     {
-        var auth = TestAuth.FromJwtPayload("""{"iss":"test-issuer","sub":"alice"}""", connection);
         using var test = ModuleTestContext.Create(typeof(Module).Assembly);
-        test.WithReducerTx(
-            auth,
-            ctx =>
-            {
-                Assert.Equal(ctx.Sender, auth.Sender);
-                Assert.Equal(ctx.ConnectionId, auth.ConnectionId);
-            }
-        );
-
         var internalAuth = TestAuth.Internal();
         Assert.Null(internalAuth.Sender);
         Assert.Null(internalAuth.ConnectionId);
@@ -54,10 +44,13 @@ public class TestAuthTests
         const string payload =
             """{"iss":"test-issuer","sub":"alice","aud":["app","other"],"role":"admin"}""";
         using var test = ModuleTestContext.Create(typeof(Module).Assembly);
+        var auth = TestAuth.FromJwtPayload(payload, connection);
         var sender = test.WithReducerTx(
-            TestAuth.FromJwtPayload(payload, connection),
+            auth,
             ctx =>
             {
+                Assert.Equal(auth.Sender, ctx.Sender);
+                Assert.Equal(auth.ConnectionId, ctx.ConnectionId);
                 Assert.False(ctx.SenderAuth.IsInternal);
                 var jwt = Assert.IsType<JwtClaims>(ctx.SenderAuth.Jwt);
                 Assert.Equal(ctx.Sender, jwt.Identity);

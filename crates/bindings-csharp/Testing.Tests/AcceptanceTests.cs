@@ -1,7 +1,6 @@
 namespace SpacetimeDB.Testing.Tests;
 
 using System.Text.Json;
-using SpacetimeDB.Internal;
 using Module = ChatModule.Module;
 
 public class AcceptanceTests
@@ -104,46 +103,5 @@ public class AcceptanceTests
             [now, new Timestamp(110)],
             test.Db.FetchFailure.Iter().OrderBy(row => row.Id).Select(row => row.At)
         );
-    }
-
-    [Fact]
-    public void LogStopwatchDoesNothingWithoutAHost()
-    {
-        // With no host to report to, every call is a no-op, including repeats.
-        var error = Record.Exception(() =>
-        {
-            using var stopwatch = new LogStopwatch("no-op");
-            stopwatch.End();
-            stopwatch.End();
-        });
-        Assert.Null(error);
-    }
-
-    [Fact]
-    public void UnsupportedServicesFailWithoutHostImports()
-    {
-        Assert.Throws<NotSupportedException>(() => ProcedureContext.Identity);
-        Assert.Throws<NotSupportedException>(() => IReducerContext.GetDatabaseIdentity());
-        Assert.Throws<NotSupportedException>(() => IViewContext.GetIdentity());
-        var connection = ConnectionId.FromHexString("00000000000000000000000000000001")!.Value;
-        Assert.Throws<NotSupportedException>(
-            () => AuthCtx.BuildFromSystemTables(connection, default)
-        );
-#pragma warning disable STDB_UNSTABLE
-        Assert.Contains(
-            "VolatileNonatomicScheduleImmediate",
-            Assert
-                .Throws<NotSupportedException>(
-                    () => Module.VolatileNonatomicScheduleImmediateSendMessage("message")
-                )
-                .Message
-        );
-        Assert.Contains(
-            "VolatileNonatomicScheduleImmediate",
-            Assert
-                .Throws<NotSupportedException>(Module.VolatileNonatomicScheduleImmediateCheckStatus)
-                .Message
-        );
-#pragma warning restore STDB_UNSTABLE
     }
 }

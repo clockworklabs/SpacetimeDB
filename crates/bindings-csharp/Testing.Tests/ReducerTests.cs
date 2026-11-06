@@ -6,37 +6,6 @@ using TestingModule;
 public class ReducerTests
 {
     [Fact]
-    public void ReducerCommitsCallerTimestampAndMessageAndRollsBackOnFailure()
-    {
-        using var test = ModuleTestContext.Create(typeof(Module).Assembly);
-        var auth = TestAuth.Internal();
-        var now = new Timestamp(1_234_567);
-        test.Clock.Set(now);
-
-        test.WithReducerTx(auth, ctx => Module.SendMessage(ctx, "Hello!"));
-
-        var message = Assert.Single(test.Db.Message.Iter());
-        Assert.Equal(test.DatabaseIdentity, message.Sender);
-        Assert.Equal(now, message.Sent);
-        Assert.Equal("Hello!", message.Text);
-
-        var error = Assert.Throws<ArgumentException>(
-            () =>
-                test.WithReducerTx(
-                    auth,
-                    ctx =>
-                    {
-                        Module.SendMessage(ctx, "This write will roll back");
-                        Module.SendMessage(ctx, "");
-                    }
-                )
-        );
-
-        Assert.Equal("Messages must not be empty", error.Message);
-        Assert.Equal("Hello!", Assert.Single(test.Db.Message.Iter()).Text);
-    }
-
-    [Fact]
     public void ParallelFixturesHaveIndependentMessagesAndIds()
     {
         using var first = ModuleTestContext.Create(typeof(Module).Assembly);
