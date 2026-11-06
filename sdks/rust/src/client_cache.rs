@@ -341,6 +341,10 @@ pub struct ClientCache<M: SpacetimeModule + ?Sized> {
     ///
     /// The strings are table names, since we may have multiple tables with the same row type.
     tables: Map<dyn Any + Send + Sync>,
+    // One synthetic delete builder per table. Auto-reconnect combines these deletes
+    // with new subscription inserts and applies them through the existing DbUpdate code.
+    synthetic_delete_builders:
+        HashMap<&'static str, fn(&Self, &'static str) -> spacetimedb_client_api_messages::websocket::v2::TableUpdate>,
 
     /// Clone of the [`crate::db_connection::DbContextImpl::extra_logging`].
     extra_logging: Option<SharedCell<File>>,
@@ -352,9 +356,17 @@ impl<M: SpacetimeModule> ClientCache<M> {
     pub(crate) fn new(extra_logging: Option<SharedCell<File>>) -> Self {
         Self {
             tables: Map::new(),
+            synthetic_delete_builders: HashMap::default(),
             extra_logging,
             _module: PhantomData,
         }
+    }
+
+    pub(crate) fn build_synthetic_deletes(&self) -> Vec<spacetimedb_client_api_messages::websocket::v2::TableUpdate> {
+        self.synthetic_delete_builders
+            .iter()
+            .map(|(&name, build_deletes)| build_deletes(self, name))
+            .collect()
     }
 
     /// Get a handle on the [`TableCache`] which stores rows of type `Row` for the table `table_name`.
@@ -373,6 +385,29 @@ impl<M: SpacetimeModule> ClientCache<M> {
         &mut self,
         table_name: &'static str,
     ) -> &mut TableCache<Row> {
+        self.synthetic_delete_builders
+            .entry(table_name)
+            .or_insert(|cache, name| {
+                use spacetimedb_client_api_messages::websocket::{common::RowSizeHint, v2};
+                let mut bytes = Vec::new();
+                let mut offsets = Vec::new();
+                if let Some(table) = cache.get_table::<Row>(name) {
+                    for (bsatn, entry) in &table.entries {
+                        for _ in 0..entry.ref_count {
+                            offsets.push(bytes.len() as u64);
+                            bytes.extend_from_slice(bsatn);
+                        }
+                    }
+                }
+                v2::TableUpdate {
+                    table_name: name.into(),
+                    rows: vec![v2::TableUpdateRows::PersistentTable(v2::PersistentTableRows {
+                        inserts: v2::BsatnRowList::default(),
+                        deletes: v2::BsatnRowList::new(RowSizeHint::RowOffsets(offsets.into()), bytes.into()),
+                    })]
+                    .into(),
+                }
+            });
         self.tables
             .entry::<HashMap<&'static str, TableCache<Row>>>()
             .or_default()

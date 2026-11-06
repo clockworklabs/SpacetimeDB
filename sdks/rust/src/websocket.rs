@@ -79,6 +79,13 @@ pub enum WsError {
         source: Arc<TokioTungsteniteError>,
     },
 
+    #[cfg(not(feature = "browser"))]
+    #[error("Token cannot be represented as an HTTP authorization header")]
+    InvalidToken,
+
+    #[error("WebSocket closed with code {code}: {reason}")]
+    Closed { code: u16, reason: String },
+
     #[error("Received empty raw message, but valid messages always start with a one-byte compression flag")]
     EmptyMessage,
 
@@ -102,6 +109,46 @@ pub enum WsError {
     #[cfg(feature = "browser")]
     #[error("Token verification error: {0}")]
     TokenVerification(String),
+}
+
+impl WsError {
+    pub(crate) fn is_auth(&self) -> bool {
+        #[cfg(not(feature = "browser"))]
+        if matches!(self, Self::InvalidToken) {
+            return true;
+        }
+        #[cfg(not(feature = "browser"))]
+        if let Self::Tungstenite { source, .. } = self
+            && let TokioTungsteniteError::Http(response) = &**source
+        {
+            return matches!(response.status().as_u16(), 400 | 401 | 403);
+        }
+        #[cfg(feature = "browser")]
+        if let Self::TokenVerification(message) = self {
+            return ["HTTP error: 400", "HTTP error: 401", "HTTP error: 403"]
+                .iter()
+                .any(|prefix| message.starts_with(prefix));
+        }
+        false
+    }
+    pub(crate) fn is_terminal(&self) -> bool {
+        match self {
+            #[cfg(not(feature = "browser"))]
+            Self::InvalidToken => false,
+            Self::Closed { code, .. } => matches!(code, 1002 | 1003 | 1007 | 1008),
+            Self::UriError(_)
+            | Self::EmptyMessage
+            | Self::DeserializeMessage { .. }
+            | Self::Decompress { .. }
+            | Self::UnknownCompressionScheme { .. } => true,
+            #[cfg(not(feature = "browser"))]
+            Self::Tungstenite { source, .. } => {
+                matches!(&**source, TokioTungsteniteError::Protocol(error) if !matches!(error, tokio_tungstenite::tungstenite::error::ProtocolError::ResetWithoutClosingHandshake))
+            }
+            #[cfg(feature = "browser")]
+            _ => false,
+        }
+    }
 }
 
 pub(crate) struct WsConnection {
@@ -135,6 +182,7 @@ pub(crate) struct WsParams {
     /// `Some(false)` to disable them.
     /// `None` to not set the parameter and let the server choose.
     pub confirmed: Option<bool>,
+    pub session_id: Option<ConnectionId>,
 }
 
 #[cfg(not(feature = "browser"))]
@@ -197,6 +245,11 @@ fn make_uri_impl(
         path.push_str(&cid.to_hex());
     }
 
+    if let Some(session_id) = params.session_id {
+        path.push_str("&session_id=");
+        path.push_str(&session_id.to_hex());
+    }
+
     // Enable confirmed reads if requested.
     if let Some(confirmed) = params.confirmed {
         path.push_str("&confirmed=");
@@ -239,7 +292,7 @@ fn make_request(
         source: Arc::new(source),
     })?;
     request_insert_protocol_header(&mut req);
-    request_insert_auth_header(&mut req, token);
+    request_insert_auth_header(&mut req, token)?;
     Ok(req)
 }
 
@@ -252,11 +305,15 @@ fn request_insert_protocol_header(req: &mut http::Request<()>) {
 }
 
 #[cfg(not(feature = "browser"))]
-fn request_insert_auth_header(req: &mut http::Request<()>, token: Option<&str>) {
+fn request_insert_auth_header(req: &mut http::Request<()>, token: Option<&str>) -> Result<(), WsError> {
     if let Some(token) = token {
-        let auth = ["Bearer ", token].concat().try_into().unwrap();
+        let auth = ["Bearer ", token]
+            .concat()
+            .try_into()
+            .map_err(|_| WsError::InvalidToken)?;
         req.headers_mut().insert(http::header::AUTHORIZATION, auth);
     }
+    Ok(())
 }
 
 #[cfg(feature = "browser")]
@@ -393,7 +450,7 @@ impl WsConnection {
     #[cfg(not(feature = "browser"))]
     async fn message_loop(
         mut self,
-        incoming_messages: mpsc::UnboundedSender<ws::v2::ServerMessage>,
+        incoming_messages: mpsc::UnboundedSender<Result<ws::v2::ServerMessage, WsError>>,
         outgoing_messages: mpsc::UnboundedReceiver<ws::v2::ClientMessage>,
         extra_logging: Option<Arc<Mutex<File>>>,
     ) {
@@ -448,27 +505,33 @@ impl WsConnection {
                     },
 
                     Err(e) => {
-                        maybe_log_error!(
-                            &extra_logging,
-                            "Error reading message from read WebSocket stream",
-                            Result::<(), _>::Err(e)
-                        );
+                        let error = WsError::Tungstenite { uri: http::Uri::default(), source: Arc::new(e) };
+                        let _ = incoming_messages.unbounded_send(Err(error));
                         break;
                     },
+
+                    Ok(Some(WebSocketMessage::Close(frame))) => {
+                        if let Some(frame) = frame {
+                            let _ = incoming_messages.unbounded_send(Err(WsError::Closed {
+                                code: frame.code.into(), reason: frame.reason.to_string(),
+                            }));
+                        }
+                        break;
+                    },
+
 
                     Ok(Some(WebSocketMessage::Binary(bytes))) => {
                         idle = false;
                         record_metrics(bytes.len());
                         match Self::parse_response(&bytes) {
-                            Err(e) => maybe_log_error!(
-                                &extra_logging,
-                                "Error decoding WebSocketMessage::Binary payload",
-                                Result::<(), _>::Err(e)
-                            ),
+                            Err(e) => {
+                                let _ = incoming_messages.unbounded_send(Err(e));
+                                break;
+                            },
                             Ok(msg) => maybe_log_error!(
                                 &extra_logging,
                                 "Error sending decoded message to incoming_messages queue",
-                                incoming_messages.unbounded_send(msg)
+                                incoming_messages.unbounded_send(Ok(msg))
                             ),
                         }
                     }
@@ -529,7 +592,7 @@ impl WsConnection {
                     }
                     None => {
                         maybe_log_error!(&extra_logging, "Error sending close frame", SinkExt::close(&mut self.sock).await);
-                        outgoing_messages = None;
+                        break;
                     }
                 },
             }
@@ -543,7 +606,7 @@ impl WsConnection {
         extra_logging: Option<Arc<Mutex<File>>>,
     ) -> (
         JoinHandle<()>,
-        mpsc::UnboundedReceiver<ws::v2::ServerMessage>,
+        mpsc::UnboundedReceiver<Result<ws::v2::ServerMessage, WsError>>,
         mpsc::UnboundedSender<ws::v2::ClientMessage>,
     ) {
         let (outgoing_send, outgoing_recv) = mpsc::unbounded();
@@ -556,7 +619,7 @@ impl WsConnection {
     pub(crate) fn spawn_message_loop(
         self,
     ) -> (
-        mpsc::UnboundedReceiver<ws::v2::ServerMessage>,
+        mpsc::UnboundedReceiver<Result<ws::v2::ServerMessage, WsError>>,
         mpsc::UnboundedSender<ws::v2::ClientMessage>,
     ) {
         let websocket_received = CLIENT_METRICS.websocket_received.with_label_values(&self.db_name);
@@ -569,7 +632,7 @@ impl WsConnection {
         };
 
         let (outgoing_tx, outgoing_rx) = mpsc::unbounded::<ws::v2::ClientMessage>();
-        let (incoming_tx, incoming_rx) = mpsc::unbounded::<ws::v2::ServerMessage>();
+        let (incoming_tx, incoming_rx) = mpsc::unbounded::<Result<ws::v2::ServerMessage, WsError>>();
 
         let (mut ws_writer, ws_reader) = self.sock.split();
 
@@ -590,20 +653,23 @@ impl WsConnection {
                             record_metrics(bytes.len());
                             // parse + forward into `incoming_tx`
                             match Self::parse_response(&bytes) {
-                                Ok(msg) => if let Err(_e) = incoming_tx.unbounded_send(msg) {
+                                Ok(msg) => if let Err(_e) = incoming_tx.unbounded_send(Ok(msg)) {
                                     gloo_console::warn!("Incoming receiver dropped.");
                                     break;
                                 },
                                 Err(e) => {
-                                    gloo_console::warn!(
-                                        "Error decoding WebSocketMessage::Binay payload: ",
-                                        format!("{:?}", e)
-                                    );
+                                    let _ = incoming_tx.unbounded_send(Err(e));
+                                    break;
                                 },
                             }
                         },
 
                         Some(Ok(WebSocketMessage::Close(r))) => {
+                            if let Some(ref frame) = r {
+                                let _ = incoming_tx.unbounded_send(Err(WsError::Closed {
+                                    code: frame.code.into(), reason: frame.reason.to_string(),
+                                }));
+                            }
                             let reason: String = if let Some(r) = r {
                                 format!("{}:{:?}", r, r.code)
                             } else {String::default()};

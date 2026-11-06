@@ -245,6 +245,10 @@ impl __sdk::DbContext for DbConnection {
         self.imp.is_active()
     }
 
+    fn is_reconnecting(&self) -> bool {
+        self.imp.is_reconnecting()
+    }
+
     fn disconnect(&self) -> __sdk::Result<()> {
         self.imp.disconnect()
     }
@@ -461,6 +465,10 @@ impl __sdk::DbContext for EventContext {
         self.imp.is_active()
     }
 
+    fn is_reconnecting(&self) -> bool {
+        self.imp.is_reconnecting()
+    }
+
     fn disconnect(&self) -> __sdk::Result<()> {
         self.imp.disconnect()
     }
@@ -537,6 +545,10 @@ impl __sdk::DbContext for ReducerEventContext {
         self.imp.is_active()
     }
 
+    fn is_reconnecting(&self) -> bool {
+        self.imp.is_reconnecting()
+    }
+
     fn disconnect(&self) -> __sdk::Result<()> {
         self.imp.disconnect()
     }
@@ -609,6 +621,10 @@ impl __sdk::DbContext for ProcedureEventContext {
         self.imp.is_active()
     }
 
+    fn is_reconnecting(&self) -> bool {
+        self.imp.is_reconnecting()
+    }
+
     fn disconnect(&self) -> __sdk::Result<()> {
         self.imp.disconnect()
     }
@@ -679,6 +695,10 @@ impl __sdk::DbContext for SubscriptionEventContext {
 
     fn is_active(&self) -> bool {
         self.imp.is_active()
+    }
+
+    fn is_reconnecting(&self) -> bool {
+        self.imp.is_reconnecting()
     }
 
     fn disconnect(&self) -> __sdk::Result<()> {
@@ -755,6 +775,10 @@ impl __sdk::DbContext for ErrorContext {
 
     fn is_active(&self) -> bool {
         self.imp.is_active()
+    }
+
+    fn is_reconnecting(&self) -> bool {
+        self.imp.is_reconnecting()
     }
 
     fn disconnect(&self) -> __sdk::Result<()> {
