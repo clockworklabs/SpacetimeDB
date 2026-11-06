@@ -91,7 +91,7 @@ Files can be stored as bytes in table columns, where they take part in transacti
 
 ## "There's no way to run cron jobs or background work."
 
-Schedule tables run reducers or procedures at a specific time or on a repeating interval. See [Schedule tables](../../00200-core-concepts/00300-tables/00500-schedule-tables.md).
+Schedule tables run reducers or procedures at a specific time or on a repeating interval. In a TypeScript module, the [Cron module](https://spacetimedb.com/modules/cron) adds calendar schedules with time zones, which your module can change or cancel at runtime. See [Schedule tables](../../00200-core-concepts/00300-tables/00500-schedule-tables.md).
 
 ## "There's no hot reload."
 
