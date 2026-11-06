@@ -912,8 +912,17 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     if (!this.#automaticReconnect || this.#livenessCleanup) {
       return;
     }
-    const doc = typeof document !== 'undefined' ? document : undefined;
-    const win = typeof window !== 'undefined' ? window : undefined;
+    // React Native defines `window` without the DOM event API.
+    const hasEvents = (target: unknown): boolean =>
+      typeof (target as EventTarget | undefined)?.addEventListener ===
+        'function' &&
+      typeof (target as EventTarget).removeEventListener === 'function';
+    const doc =
+      typeof document !== 'undefined' && hasEvents(document)
+        ? document
+        : undefined;
+    const win =
+      typeof window !== 'undefined' && hasEvents(window) ? window : undefined;
     if (!doc && !win) {
       return;
     }
