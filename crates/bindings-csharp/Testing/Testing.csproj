@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>SpacetimeDB.Testing</AssemblyName>
     <RootNamespace>SpacetimeDB.Testing</RootNamespace>
-    <Version>2.14.1</Version>
+    <Version>2.15.0</Version>
     <Title>Spacetime Module Testing</Title>
     <Description>Native datastore-backed unit testing for managed .NET 10 SpacetimeDB modules.</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
