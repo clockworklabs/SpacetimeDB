@@ -483,11 +483,11 @@ mod tests {
         def::ModuleDef,
         schema::{Schema, TableOrViewSchema, TableSchema},
     };
-    use spacetimedb_sql_parser::ast::{BinOp, Parameter};
+    use spacetimedb_sql_parser::ast::BinOp;
 
     use crate::{
         check::{parse_and_type_sub, test_utils::build_module_def, SchemaView},
-        expr::{Expr, FieldProject, LeftDeepJoin, ProjectName, RelExpr, Relvar},
+        expr::{Expr, FieldProject, LeftDeepJoin, Param, ProjectName, RelExpr, Relvar},
     };
 
     use super::resolve_views_for_sub;
@@ -500,6 +500,7 @@ mod tests {
                 "users" => Some(TableId(0)),
                 "admins" => Some(TableId(1)),
                 "player" => Some(TableId(2)),
+                "items" => Some(TableId(3)),
                 _ => None,
             }
         }
@@ -509,6 +510,7 @@ mod tests {
                 0 => Some((TableId(0), "users")),
                 1 => Some((TableId(1), "admins")),
                 2 => Some((TableId(2), "player")),
+                3 => Some((TableId(3), "items")),
                 _ => None,
             }
             .and_then(|(table_id, name)| {
@@ -528,6 +530,7 @@ mod tests {
                     "select player.* from player join users u on player.id = u.id".into(),
                     "select player.* from player join admins".into(),
                 ]),
+                TableId(3) => Ok(vec!["select * from items where kind = 1".into()]),
                 _ => Ok(vec![]),
             }
         }
@@ -547,6 +550,10 @@ mod tests {
                 "player",
                 ProductType::from([("id", AlgebraicType::U64), ("level_num", AlgebraicType::U64)]),
             ),
+            (
+                "items",
+                ProductType::from([("id", AlgebraicType::U64), ("kind", AlgebraicType::U64)]),
+            ),
         ])
     }
 
@@ -554,6 +561,32 @@ mod tests {
     fn resolve(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> anyhow::Result<Vec<ProjectName>> {
         let (expr, _) = parse_and_type_sub(sql, tx, auth)?;
         resolve_views_for_sub(tx, expr, auth, &mut false)
+    }
+
+    /// Lifting runs before RLS, so only the query's literals are lifted, not the rule's
+    #[test]
+    fn rls_rule_literals_are_not_lifted() -> anyhow::Result<()> {
+        let tx = SchemaViewer(module_def());
+        let auth = AuthCtx::new(Identity::ZERO, Identity::ONE);
+        let (mut expr, _) = parse_and_type_sub("select * from items where id = 7", &tx, &auth)?;
+        assert_eq!(expr.lift_literals(), vec![(AlgebraicValue::U64(7), AlgebraicType::U64)]);
+
+        let mut values = vec![];
+        let mut params = vec![];
+        for expr in resolve_views_for_sub(&tx, expr, &auth, &mut false)? {
+            expr.unwrap().visit_mut(&mut |expr| {
+                if let RelExpr::Select(_, filter) = expr {
+                    filter.visit_mut(&mut |expr| match expr {
+                        Expr::Value(value, _) => values.push(value.clone()),
+                        Expr::Param(param, _) => params.push(*param),
+                        _ => {}
+                    });
+                }
+            });
+        }
+        assert_eq!(values, vec![AlgebraicValue::U64(1)]);
+        assert_eq!(params, vec![Param::Binding(0)]);
+        Ok(())
     }
 
     #[test]
@@ -604,7 +637,7 @@ mod tests {
                             field: 0,
                             ty: AlgebraicType::identity(),
                         })),
-                        Box::new(Expr::Param(Parameter::Sender, AlgebraicType::identity()))
+                        Box::new(Expr::Param(Param::Sender, AlgebraicType::identity()))
                     )
                 ),
                 "users".into()
@@ -653,7 +686,7 @@ mod tests {
                                         field: 0,
                                         ty: AlgebraicType::identity(),
                                     })),
-                                    Box::new(Expr::Param(Parameter::Sender, AlgebraicType::identity())),
+                                    Box::new(Expr::Param(Param::Sender, AlgebraicType::identity())),
                                 ),
                             )),
                             Expr::BinOp(
@@ -706,7 +739,7 @@ mod tests {
                                     field: 0,
                                     ty: AlgebraicType::identity(),
                                 })),
-                                Box::new(Expr::Param(Parameter::Sender, AlgebraicType::identity())),
+                                Box::new(Expr::Param(Param::Sender, AlgebraicType::identity())),
                             ),
                         )),
                         Expr::BinOp(

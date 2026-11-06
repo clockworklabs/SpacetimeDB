@@ -1,5 +1,5 @@
 use super::execution_unit::QueryHash;
-use super::query::CompiledQuery;
+use super::query::{compile_template, CompiledQuery, TemplateCache};
 use crate::db::relational_db::RelationalDB;
 use crate::db::sql::ast::SchemaViewer;
 use crate::error::DBError;
@@ -11,11 +11,13 @@ use spacetimedb_subscription::SubscriptionPlan;
 use std::sync::Arc;
 
 /// Queries all visible user tables right now and turns them into subscription plans.
+/// Each shares the template of a query in `templates` if one compiles to the same.
 pub(crate) fn get_all<T, F, I>(
     get_all_tables: F,
     relational_db: &RelationalDB,
     tx: &T,
     auth: &AuthCtx,
+    templates: &mut TemplateCache,
 ) -> Result<Vec<CompiledQuery>, DBError>
 where
     T: StateView,
@@ -29,13 +31,18 @@ where
         .map(|schema| {
             let sql = format!("SELECT * FROM {}", schema.table_name);
             let tx = SchemaViewer::new(tx, auth);
-            SubscriptionPlan::compile_plans(&sql, &tx, auth).map(|(plans, has_param, physical_plans)| CompiledQuery {
-                plan: super::module_subscription_manager::Plan::new(
-                    plans,
-                    QueryHash::from_string(&sql, auth.caller(), auth.bypass_rls() || has_param),
-                    sql,
-                ),
-                physical_plans,
+            SubscriptionPlan::compile_plans(&sql, &tx, auth).and_then(|(plans, has_param, physical_plans)| {
+                let (template, values) = compile_template(&sql, &tx, auth, templates)?;
+                Ok(CompiledQuery {
+                    plan: super::module_subscription_manager::Plan::new(
+                        plans,
+                        template,
+                        values,
+                        QueryHash::from_string(&sql, auth.caller(), auth.bypass_rls() || has_param),
+                        sql,
+                    ),
+                    physical_plans,
+                })
             })
         })
         .collect::<Result<_, _>>()?)

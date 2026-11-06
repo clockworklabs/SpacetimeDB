@@ -1,13 +1,14 @@
 use crate::host::module_host::UpdatesRelValue;
 use anyhow::Result;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
-use spacetimedb_execution::{Datastore, DeltaStore, RelValue, Row};
+use spacetimedb_execution::{bindings::BindingId, Datastore, DeltaStore, RelValue, Row};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_primitives::ColList;
 use spacetimedb_sats::product_value::InvalidFieldError;
-use spacetimedb_subscription::SubscriptionPlan;
-/// Evaluate a subscription over a delta update.
-/// Returns `None` for empty updates.
+use spacetimedb_subscription::TemplateFragment;
+use std::collections::BTreeMap;
+/// Evaluate a template over a delta update, grouping the rows by the binding they matched.
+/// Leaves out the bindings without updates.
 ///
 /// IMPORTANT: This does and must implement bag semantics.
 /// That is, we must not remove duplicate rows.
@@ -19,12 +20,12 @@ use spacetimedb_subscription::SubscriptionPlan;
 pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
     tx: &'a Tx,
     metrics: &mut ExecutionMetrics,
-    plan: &SubscriptionPlan,
-) -> Result<Option<UpdatesRelValue<'a>>> {
+    plan: &TemplateFragment,
+) -> Result<BTreeMap<BindingId, UpdatesRelValue<'a>>> {
     metrics.delta_queries_evaluated += 1;
 
-    let mut inserts = vec![];
-    let mut deletes = vec![];
+    let mut inserts = BTreeMap::<BindingId, Vec<RelValue<'a>>>::new();
+    let mut deletes = BTreeMap::<BindingId, Vec<RelValue<'a>>>::new();
 
     let mut duplicate_rows_evaluated = 0;
     let mut duplicate_rows_sent = 0;
@@ -41,24 +42,25 @@ pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
 
     if !plan.is_join() {
         // Single table plans will never return redundant rows,
+        // and a lookup pairs a row with each binding once,
         // so there's no need to track row counts.
-        plan.for_each_insert(tx, metrics, &mut |row| {
-            inserts.push(maybe_project(row)?);
+        plan.for_each_insert(tx, metrics, &mut |id, row| {
+            inserts.entry(id).or_default().push(maybe_project(row)?);
             Ok(())
         })?;
 
-        plan.for_each_delete(tx, metrics, &mut |row| {
-            deletes.push(maybe_project(row)?);
+        plan.for_each_delete(tx, metrics, &mut |id, row| {
+            deletes.entry(id).or_default().push(maybe_project(row)?);
             Ok(())
         })?;
     } else {
         // Query plans for joins may return redundant rows.
-        // We track row counts to avoid sending them to clients.
+        // We track row counts, per binding, to avoid sending them to clients.
         let mut insert_counts = HashMap::new();
         let mut delete_counts = HashMap::new();
 
-        plan.for_each_insert(tx, metrics, &mut |row| {
-            let row = maybe_project(row)?;
+        plan.for_each_insert(tx, metrics, &mut |id, row| {
+            let row = (id, maybe_project(row)?);
             let n = insert_counts.entry(row).or_default();
             if *n > 0 {
                 duplicate_rows_evaluated += 1;
@@ -67,8 +69,8 @@ pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
             Ok(())
         })?;
 
-        plan.for_each_delete(tx, metrics, &mut |row| {
-            let row = maybe_project(row)?;
+        plan.for_each_delete(tx, metrics, &mut |id, row| {
+            let row = (id, maybe_project(row)?);
             match insert_counts.get_mut(&row) {
                 // We have not seen an insert for this row.
                 // If we have seen a delete, increment the metric.
@@ -102,24 +104,32 @@ pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
             Ok(())
         })?;
 
-        for (row, n) in insert_counts.into_iter().filter(|(_, n)| *n > 0) {
+        for ((id, row), n) in insert_counts.into_iter().filter(|(_, n)| *n > 0) {
             duplicate_rows_sent += n as u64 - 1;
-            inserts.extend(std::iter::repeat_n(row, n));
+            inserts.entry(id).or_default().extend(std::iter::repeat_n(row, n));
         }
-        for (row, n) in delete_counts.into_iter().filter(|(_, n)| *n > 0) {
+        for ((id, row), n) in delete_counts.into_iter().filter(|(_, n)| *n > 0) {
             duplicate_rows_sent += n as u64 - 1;
-            deletes.extend(std::iter::repeat_n(row, n));
+            deletes.entry(id).or_default().extend(std::iter::repeat_n(row, n));
         }
     }
 
-    // Return `None` for empty updates
+    // Return no bindings for empty updates
     if inserts.is_empty() && deletes.is_empty() {
-        return Ok(None);
+        return Ok(BTreeMap::new());
     }
 
     metrics.delta_queries_matched += 1;
     metrics.duplicate_rows_evaluated += duplicate_rows_evaluated;
     metrics.duplicate_rows_sent += duplicate_rows_sent;
 
-    Ok(Some(UpdatesRelValue { inserts, deletes }))
+    // Pair each binding's inserts and deletes
+    let mut updates = BTreeMap::<BindingId, UpdatesRelValue<'a>>::new();
+    for (id, rows) in inserts {
+        updates.entry(id).or_default().inserts = rows;
+    }
+    for (id, rows) in deletes {
+        updates.entry(id).or_default().deletes = rows;
+    }
+    Ok(updates)
 }
