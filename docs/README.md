@@ -175,4 +175,4 @@ wiped by the next release. Land the change on `master` and re-release instead.
 ## License
 
 This documentation repository is licensed under Apache 2.0.
-See LICENSE.txt for more details
+See LICENSE.txt for more details.
