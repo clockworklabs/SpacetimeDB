@@ -105,6 +105,16 @@ describe('Random', () => {
     expect(new Set(first)).toEqual(new Set(values));
     expect(first).toHaveLength(values.length);
   });
+
+  test('distinct timestamps start distinct streams', () => {
+    const start = 1_791_964_800_000_000n;
+    const seen = new Set<string>();
+    for (let i = 0n; i < 100_000n; i++) {
+      const random = makeRandom(new Timestamp(start + i));
+      seen.add(random.fill(new Uint8Array(16)).join(','));
+    }
+    expect(seen.size).toBe(100_000);
+  });
 });
 
 function isNonZero(value: number | bigint): boolean {
