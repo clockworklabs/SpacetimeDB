@@ -391,6 +391,55 @@ describe('ConnectionManager during SDK-managed reconnection', () => {
     ConnectionManager.release(key);
   });
 
+  test('isReconnecting follows the SDK retrying a dropped connection', () => {
+    const key = nextKey();
+    const builder = new MockBuilder();
+
+    const first = retainMock(key, builder);
+    expect(ConnectionManager.getSnapshot(key)?.isReconnecting).toBe(false);
+    first.simulateConnect();
+    expect(ConnectionManager.getSnapshot(key)?.isReconnecting).toBe(false);
+
+    first.simulateDisconnect(new Error('connection lost'), 1, 1000);
+    expect(ConnectionManager.getSnapshot(key)?.isReconnecting).toBe(true);
+
+    // A failed attempt with another one coming is still reconnecting.
+    first.simulateConnectError(new Error('still down'), 2, 2000);
+    expect(ConnectionManager.getSnapshot(key)?.isReconnecting).toBe(true);
+
+    first.simulateAutomaticReconnect();
+    expect(ConnectionManager.getSnapshot(key)?.isReconnecting).toBe(false);
+
+    ConnectionManager.release(key);
+  });
+
+  test('isReconnecting is false once the SDK stops retrying', () => {
+    const key = nextKey();
+    const builder = new MockBuilder();
+
+    const first = retainMock(key, builder);
+    first.simulateConnect();
+    first.simulateDisconnect(new Error('connection lost'), 1, 1000);
+    expect(ConnectionManager.getSnapshot(key)?.isReconnecting).toBe(true);
+
+    first.simulateConnectError(new Error('wrong identity'));
+    expect(ConnectionManager.getSnapshot(key)?.isReconnecting).toBe(false);
+
+    ConnectionManager.release(key);
+  });
+
+  test('isReconnecting is false after a manual disconnect', () => {
+    const key = nextKey();
+    const builder = new MockBuilder();
+
+    const first = retainMock(key, builder);
+    first.simulateConnect();
+    first.disconnect();
+    expect(ConnectionManager.getSnapshot(key)?.isReconnecting).toBe(false);
+
+    ConnectionManager.release(key);
+  });
+
   test('a successful SDK reconnect restores the state snapshot', () => {
     const key = nextKey();
     const builder = new MockBuilder();
