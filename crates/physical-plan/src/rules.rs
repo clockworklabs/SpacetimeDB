@@ -77,6 +77,15 @@ impl RewriteRule for ComputePositions {
                 });
                 name_and_position
             }
+            PhysicalPlan::BindingLookup(input, lookup) => {
+                let mut name_and_position = None;
+                for TupleField { label, label_pos, .. } in lookup.key_fields() {
+                    if label_pos.is_none() {
+                        name_and_position = input.position(label).map(|i| (*label, i));
+                    }
+                }
+                name_and_position
+            }
             PhysicalPlan::HashJoin(
                 HashJoin {
                     lhs: input,
@@ -118,6 +127,13 @@ impl RewriteRule for ComputePositions {
                     }
                     _ => {}
                 });
+            }
+            PhysicalPlan::BindingLookup(_, lookup) => {
+                for t in lookup.key_fields_mut() {
+                    if t.label_pos.is_none() && t.label == name {
+                        t.label_pos = Some(pos);
+                    }
+                }
             }
             PhysicalPlan::HashJoin(
                 HashJoin {

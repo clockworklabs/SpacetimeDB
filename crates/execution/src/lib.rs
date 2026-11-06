@@ -1,4 +1,5 @@
 use anyhow::Result;
+use bindings::BindingRelation;
 use core::hash::{Hash, Hasher};
 use core::ops::RangeBounds;
 use spacetimedb_lib::{
@@ -15,6 +16,7 @@ use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{impl_serialize, u256, AlgebraicValue, ProductValue};
 use spacetimedb_table::{static_assert_size, table::RowRef};
 
+pub mod bindings;
 pub mod dml;
 pub mod pipelined;
 
@@ -127,6 +129,11 @@ pub trait DeltaStore {
         delta: Delta,
         point: &AlgebraicValue,
     ) -> impl Iterator<Item = Row<'_>>;
+
+    /// The bindings of the template being evaluated, which live as long as the store's rows
+    fn bindings(&self) -> Option<&BindingRelation> {
+        None
+    }
 
     fn delta_scan(&self, table_id: TableId, inserts: bool) -> DeltaScanIter<'_> {
         match inserts {
@@ -330,6 +337,24 @@ impl<'a> Tuple<'a> {
                 Self::Join(rows)
             }
         }
+    }
+
+    /// `self.clone().join(with)`, allocated once at the joined size
+    fn clone_join(&self, with: Self) -> Self {
+        let width = |t: &Self| match t {
+            Self::Row(_) => 1,
+            Self::Join(rows) => rows.len(),
+        };
+        let mut rows = Vec::with_capacity(width(self) + width(&with));
+        match self {
+            Self::Row(row) => rows.push(row.clone()),
+            Self::Join(ptrs) => rows.extend(ptrs.iter().cloned()),
+        }
+        match with {
+            Self::Row(row) => rows.push(row),
+            Self::Join(ptrs) => rows.extend(ptrs),
+        }
+        Self::Join(rows)
     }
 
     fn join(self, with: Self) -> Self {
