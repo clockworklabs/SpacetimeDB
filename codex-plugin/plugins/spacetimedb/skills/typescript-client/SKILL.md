@@ -136,9 +136,9 @@ conn.db.user.onDelete((ctx, user) => console.log('Left:', user.name));
 conn.db.user.onUpdate((ctx, oldUser, newUser) => console.log('Updated:', newUser.name));
 ```
 
-## Included Module Accessors and View Arguments
+## Submodule Accessors and View Arguments
 
-Generated bindings preserve the accessors of included modules as nested members. For a namespace accessor `myAuth` pinned to canonical `auth_data`:
+Generated bindings preserve submodule accessors as nested members. For a namespace accessor `myAuth` pinned to canonical `auth_data`:
 
 ```typescript
 conn.subscriptionBuilder().subscribe([tables.myAuth.users]);

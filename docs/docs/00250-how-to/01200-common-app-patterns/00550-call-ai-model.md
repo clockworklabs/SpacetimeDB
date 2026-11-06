@@ -812,7 +812,7 @@ You now have a module that generates text with an AI model on behalf of its clie
 - The API key lives in an environment variable on the database, never on the client.
 - The `generate_text` procedure rejects oversized prompts and players who call it too often, calls the model outside any transaction, and returns errors as values that every client can read.
 
-To allow each player a number of calls per time window, such as 10 per minute, instead of one call every 5 seconds, include the [Rate Limit module](https://spacetimedb.com/modules/rate-limit) from npm in a TypeScript module.
+To allow each player a number of calls per time window, such as 10 per minute, instead of one call every 5 seconds, use the [Rate Limit module](https://spacetimedb.com/modules/rate-limit) in a TypeScript module. It's a package you add to your module.
 
 To learn more about the features used here, see [Procedures](../../00200-core-concepts/00200-functions/00400-procedures.md), [Environment Variables](../../00200-core-concepts/00100-databases/00700-environment-variables.md) and [Access Permissions](../../00200-core-concepts/00300-tables/00400-access-permissions.md).
 

@@ -543,7 +543,7 @@ To change a reducer without failing calls from databases that haven't regenerate
 
 - The sending and receiving databases must be published to the same server or cluster. A database can't call a database on another server, such as a database on Maincloud from a self-hosted one.
 - Receiver bindings are generated from the receiving module's source code, so the sending module's project needs a copy of it. They can't be generated from a published database alone.
-- Receiver bindings include only the receiving module's own reducers, not the reducers of the [modules it includes](./00600-modules.md).
+- Receiver bindings include only the receiving module's own reducers, not the reducers of its [submodules](./00600-modules.md).
 - Outbox rows can't be updated or deleted, so a pending call can't be cancelled.
 - A call that can't be delivered, for example because no database has the target identity, stays pending and holds up later calls through the same outbox to the same database.
 - In Rust, an index on a column of a receiver's identity type, such as `game_world::Identity`, can't be used for lookups. Iterate over the table and compare instead.

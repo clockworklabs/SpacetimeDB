@@ -40,9 +40,9 @@ export const addRecord = spacetimedb.reducer(
 );
 ```
 
-`schema({...})` accepts table definitions and namespace registrations for included modules. Row and object builders used as reducer arguments or view return types are not schema entries. Environment declarations go in the second argument: `schema(tables, { env: { ... } })`.
+`schema({...})` accepts table definitions and submodule namespace registrations. Row and object builders used as reducer arguments or view return types are not schema entries. Environment declarations go in the second argument: `schema(tables, { env: { ... } })`.
 
-Export the default schema and every reducer, lifecycle hook, view, procedure, HTTP export, and visibility filter to register. Root-entry named exports must be registered SpacetimeDB values: keep ordinary root helpers/constants unexported. A library module may export ordinary helpers for its consumer to call, because registration ignores non-SpacetimeDB exports; do not re-export those helpers from the root entry.
+Export the default schema and every reducer, lifecycle hook, view, procedure, HTTP export, and visibility filter to register. Root-entry named exports must be registered SpacetimeDB values: keep ordinary root helpers/constants unexported. A submodule library may export ordinary helpers for its consumer to call, because submodule discovery ignores non-module exports; do not re-export those helpers from the root entry.
 
 ## Imports
 
@@ -261,7 +261,7 @@ export const tick = spacetimedb.reducer(
 //   const micros = at.tag === 'time' ? at.value : at.value.microsSinceUnixEpoch;  // bigint
 ```
 
-## Including Other Modules
+## Submodules
 
 Import the library's full module-namespace object, not just its default schema:
 
@@ -275,7 +275,7 @@ const spacetimedb = schema({
 export default spacetimedb;
 ```
 
-`myAuth` is the accessor (`ctx.db.myAuth.<table>`); `auth_data` is the canonical namespace used in SQL and wire names. Without an explicit `name`, the root's case policy derives it (`myAuth` → `my_auth` by default). Pin `name` when renaming an accessor: changing the canonical namespace drops its tables and their data. The library keeps its own flat `ctx.db` accessors. To call a library function directly, pass `ctx.as.myAuth`; inside `withTx`, use `tx.as.myAuth`. Included modules can include other modules. Lifecycle reducers and nonempty environment declarations belong in the root. Included modules' routers are ignored; register delegated handlers on the root router. Composition is not cross-language.
+`myAuth` is the accessor (`ctx.db.myAuth.<table>`); `auth_data` is the canonical namespace used in SQL and wire names. Without an explicit `name`, the root's case policy derives it (`myAuth` → `my_auth` by default). Pin `name` when renaming an accessor: changing the canonical namespace drops its tables and their data. The library keeps its own flat `ctx.db` accessors. To call a library function directly, pass `ctx.as.myAuth`; inside `withTx`, use `tx.as.myAuth`. Nested TypeScript submodules are supported. Lifecycle reducers and nonempty environment declarations belong in the root. Submodule routers are ignored; register delegated handlers on the root router. Composition is not cross-language.
 
 Official reusable libraries include `@spacetimedb/cron`, `@spacetimedb/retry`, `@spacetimedb/rate-limit`, and `@spacetimedb/crypto`. Their registration shapes differ: `@spacetimedb/rate-limit/submodule` is mountable, cron/retry expose factories, and crypto exports helpers. Consult the chosen package's README/exports rather than assuming every package root is a mountable module.
 

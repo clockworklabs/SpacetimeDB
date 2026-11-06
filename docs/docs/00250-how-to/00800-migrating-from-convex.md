@@ -68,7 +68,7 @@ tables. Use procedures only when you need side effects such as outbound HTTP.
 
 ## Components and Modules
 
-Convex [components](https://www.convex.dev/components) package reusable backend code and data. The SpacetimeDB equivalent is a [module](/docs/modules) that you install from npm and include in your own module. TypeScript and C# modules can both include other modules, and the official modules below are TypeScript packages.
+Convex [components](https://www.convex.dev/components) package reusable backend code and data. The SpacetimeDB equivalent is a [module](/docs/modules) that you install from npm and mount in your own module as a submodule. TypeScript and C# modules can both mount submodules, and the official modules below are TypeScript packages.
 
 | Convex component             | SpacetimeDB module        | Notes                                                                     |
 | ---------------------------- | ------------------------- | ------------------------------------------------------------------------- |
@@ -400,7 +400,7 @@ For browser uploads, a common pattern is:
 Convex Components package code and data behind explicit interfaces. In
 SpacetimeDB, model that boundary explicitly:
 
-- Include existing modules where they are available for reusable isolated systems.
+- Mount existing modules as submodules where they are available for reusable isolated systems.
 - Use separate databases when you need operational isolation.
 - Keep reusable pure logic in ordinary libraries or packages.
 - Keep integration boundaries explicit with procedures, HTTP handlers, and
