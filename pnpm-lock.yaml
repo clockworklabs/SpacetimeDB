@@ -384,6 +384,199 @@ importers:
         specifier: ~5.6.2
         version: 5.6.3
 
+  modules/spacetime-agents-ts:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      eslint:
+        specifier: ^9.17.0
+        version: 9.33.0(jiti@2.6.1)
+      prettier:
+        specifier: ^3.3.3
+        version: 3.6.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../crates/bindings-typescript
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  modules/spacetime-agents-ts/example:
+    dependencies:
+      '@spacetimedb/example-ui':
+        specifier: workspace:*
+        version: link:../../spacetime-example-ui-ts
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
+      express:
+        specifier: ^4.21.2
+        version: 4.21.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../crates/bindings-typescript
+    devDependencies:
+      '@types/express':
+        specifier: ^4.17.21
+        version: 4.17.23
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.2
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  modules/spacetime-agents-ts/example/spacetimedb:
+    dependencies:
+      '@spacetimedb/agents':
+        specifier: workspace:*
+        version: link:../..
+      '@spacetimedb/auth':
+        specifier: workspace:*
+        version: link:../../../spacetime-auth-ts
+      '@spacetimedb/files':
+        specifier: workspace:*
+        version: link:../../../spacetime-files-ts
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  modules/spacetime-agents-ts/spacetimedb:
+    dependencies:
+      '@spacetimedb/agents':
+        specifier: workspace:*
+        version: link:..
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  modules/spacetime-auth-ts:
+    dependencies:
+      '@noble/curves':
+        specifier: ^2.2.0
+        version: 2.4.0
+      '@noble/hashes':
+        specifier: ^2.2.0
+        version: 2.4.0
+      '@spacetimedb/crypto':
+        specifier: workspace:^
+        version: link:../spacetime-crypto-ts
+      '@spacetimedb/rate-limit':
+        specifier: workspace:^
+        version: link:../spacetime-rate-limit-ts
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      eslint:
+        specifier: ^9.17.0
+        version: 9.33.0(jiti@2.6.1)
+      prettier:
+        specifier: ^3.3.3
+        version: 3.6.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../crates/bindings-typescript
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  modules/spacetime-auth-ts/example:
+    dependencies:
+      '@spacetimedb/example-ui':
+        specifier: workspace:*
+        version: link:../../spacetime-example-ui-ts
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
+      express:
+        specifier: ^4.21.2
+        version: 4.21.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../crates/bindings-typescript
+    devDependencies:
+      '@types/express':
+        specifier: ^4.17.21
+        version: 4.17.23
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.2
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  modules/spacetime-auth-ts/example/spacetimedb:
+    dependencies:
+      '@spacetimedb/auth':
+        specifier: workspace:*
+        version: link:../..
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  modules/spacetime-auth-ts/spacetimedb:
+    dependencies:
+      '@spacetimedb/auth':
+        specifier: workspace:*
+        version: link:..
+      '@spacetimedb/rate-limit':
+        specifier: workspace:*
+        version: link:../../spacetime-rate-limit-ts
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   modules/spacetime-cron-ts:
     dependencies:
       cron-parser:
@@ -514,6 +707,165 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.12)(@types/node@22.18.0)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2)
+
+  modules/spacetime-files-ts:
+    dependencies:
+      '@spacetimedb/crypto':
+        specifier: workspace:^
+        version: link:../spacetime-crypto-ts
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      eslint:
+        specifier: ^9.17.0
+        version: 9.33.0(jiti@2.6.1)
+      prettier:
+        specifier: ^3.3.3
+        version: 3.6.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../crates/bindings-typescript
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  modules/spacetime-files-ts/example:
+    dependencies:
+      '@spacetimedb/example-ui':
+        specifier: workspace:*
+        version: link:../../spacetime-example-ui-ts
+      '@spacetimedb/files':
+        specifier: workspace:*
+        version: link:..
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
+      express:
+        specifier: ^4.21.2
+        version: 4.21.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../crates/bindings-typescript
+    devDependencies:
+      '@types/express':
+        specifier: ^4.17.21
+        version: 4.17.23
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.2
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  modules/spacetime-files-ts/example/spacetimedb:
+    dependencies:
+      '@spacetimedb/files':
+        specifier: workspace:*
+        version: link:../..
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  modules/spacetime-posthog-ts:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      eslint:
+        specifier: ^9.17.0
+        version: 9.33.0(jiti@2.6.1)
+      prettier:
+        specifier: ^3.3.3
+        version: 3.6.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../crates/bindings-typescript
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  modules/spacetime-posthog-ts/example:
+    dependencies:
+      '@spacetimedb/example-ui':
+        specifier: workspace:*
+        version: link:../../spacetime-example-ui-ts
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
+      express:
+        specifier: ^4.21.2
+        version: 4.21.2
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../crates/bindings-typescript
+    devDependencies:
+      '@types/express':
+        specifier: ^4.17.21
+        version: 4.17.23
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.2
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  modules/spacetime-posthog-ts/example/spacetimedb:
+    dependencies:
+      '@spacetimedb/posthog':
+        specifier: workspace:*
+        version: link:../..
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  modules/spacetime-posthog-ts/spacetimedb:
+    dependencies:
+      '@spacetimedb/posthog':
+        specifier: workspace:*
+        version: link:..
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../../crates/bindings-typescript
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.18.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
 
   modules/spacetime-rate-limit-ts:
     devDependencies:
@@ -4524,42 +4876,49 @@ packages:
     engines: {node: '>= 10'}
     cpu: [arm64]
     os: [linux]
+    libc: [glibc]
 
   '@napi-rs/nice-linux-arm64-musl@1.1.1':
     resolution: {integrity: sha512-+2Rzdb3nTIYZ0YJF43qf2twhqOCkiSrHx2Pg6DJaCPYhhaxbLcdlV8hCRMHghQ+EtZQWGNcS2xF4KxBhSGeutg==}
     engines: {node: '>= 10'}
     cpu: [arm64]
     os: [linux]
+    libc: [musl]
 
   '@napi-rs/nice-linux-ppc64-gnu@1.1.1':
     resolution: {integrity: sha512-4FS8oc0GeHpwvv4tKciKkw3Y4jKsL7FRhaOeiPei0X9T4Jd619wHNe4xCLmN2EMgZoeGg+Q7GY7BsvwKpL22Tg==}
     engines: {node: '>= 10'}
     cpu: [ppc64]
     os: [linux]
+    libc: [glibc]
 
   '@napi-rs/nice-linux-riscv64-gnu@1.1.1':
     resolution: {integrity: sha512-HU0nw9uD4FO/oGCCk409tCi5IzIZpH2agE6nN4fqpwVlCn5BOq0MS1dXGjXaG17JaAvrlpV5ZeyZwSon10XOXw==}
     engines: {node: '>= 10'}
     cpu: [riscv64]
     os: [linux]
+    libc: [glibc]
 
   '@napi-rs/nice-linux-s390x-gnu@1.1.1':
     resolution: {integrity: sha512-2YqKJWWl24EwrX0DzCQgPLKQBxYDdBxOHot1KWEq7aY2uYeX+Uvtv4I8xFVVygJDgf6/92h9N3Y43WPx8+PAgQ==}
     engines: {node: '>= 10'}
     cpu: [s390x]
     os: [linux]
+    libc: [glibc]
 
   '@napi-rs/nice-linux-x64-gnu@1.1.1':
     resolution: {integrity: sha512-/gaNz3R92t+dcrfCw/96pDopcmec7oCcAQ3l/M+Zxr82KT4DljD37CpgrnXV+pJC263JkW572pdbP3hP+KjcIg==}
     engines: {node: '>= 10'}
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
   '@napi-rs/nice-linux-x64-musl@1.1.1':
     resolution: {integrity: sha512-xScCGnyj/oppsNPMnevsBe3pvNaoK7FGvMjT35riz9YdhB2WtTG47ZlbxtOLpjeO9SqqQ2J2igCmz6IJOD5JYw==}
     engines: {node: '>= 10'}
     cpu: [x64]
     os: [linux]
+    libc: [musl]
 
   '@napi-rs/nice-openharmony-arm64@1.1.1':
     resolution: {integrity: sha512-6uJPRVwVCLDeoOaNyeiW0gp2kFIM4r7PL2MczdZQHkFi9gVlgm+Vn+V6nTWRcu856mJ2WjYJiumEajfSm7arPQ==}
@@ -4594,6 +4953,10 @@ packages:
 
   '@napi-rs/wasm-runtime@1.1.1':
     resolution: {integrity: sha512-p64ah1M1ld8xjWv3qbvFwHiFVWrq1yFvV4f7w+mzaqiR4IlSgkqhcRdHwsGgomwzBH51sRY4NEowLxnaBjcW/A==}
+
+  '@noble/curves@2.4.0':
+    resolution: {integrity: sha512-P4/62zrgfH33CneE3Dn4WhJVA22YUU0eR51wKIan4NVRvwsA0YnPTwWGpNbpuacSujmSFLvyzpyuR30+fbq2Ew==}
+    engines: {node: '>= 20.19.0'}
 
   '@noble/hashes@2.4.0':
     resolution: {integrity: sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==}
@@ -4915,24 +5278,28 @@ packages:
     engines: {node: '>=14.0.0'}
     cpu: [arm64]
     os: [linux]
+    libc: [glibc]
 
   '@oxc-parser/binding-linux-arm64-musl@0.56.5':
     resolution: {integrity: sha512-SCIqrL5apVbrtMoqOpKX/Ez+c46WmW0Tyhtu+Xby281biH+wYu70m+fux9ZsGmbHc2ojd4FxUcaUdCZtb5uTOQ==}
     engines: {node: '>=14.0.0'}
     cpu: [arm64]
     os: [linux]
+    libc: [musl]
 
   '@oxc-parser/binding-linux-x64-gnu@0.56.5':
     resolution: {integrity: sha512-I2mpX35NWo83hay4wrnzFLk3VuGK1BBwHaqvEdqsCode8iG8slYJRJPICVbCEWlkR3rotlTQ+608JcRU0VqZ5Q==}
     engines: {node: '>=14.0.0'}
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
   '@oxc-parser/binding-linux-x64-musl@0.56.5':
     resolution: {integrity: sha512-xfzUHGYOh3PGWZdBuY5r1czvE8EGWPAmhTWHqkw3/uAfUVWN/qrrLjMojiaiWyUgl/9XIFg05m5CJH9dnngh5Q==}
     engines: {node: '>=14.0.0'}
     cpu: [x64]
     os: [linux]
+    libc: [musl]
 
   '@oxc-parser/binding-wasm32-wasi@0.56.5':
     resolution: {integrity: sha512-+z3Ofmc1v5kcu8fXgG5vn7T1f52P47ceTTmTXsm5HPY7rq5EMYRUaBnxH6cesXwY1OVVCwYlIZbCiy8Pm1w8zQ==}
@@ -5042,36 +5409,42 @@ packages:
     engines: {node: '>= 10.0.0'}
     cpu: [arm]
     os: [linux]
+    libc: [glibc]
 
   '@parcel/watcher-linux-arm-musl@2.5.6':
     resolution: {integrity: sha512-Ve3gUCG57nuUUSyjBq/MAM0CzArtuIOxsBdQ+ftz6ho8n7s1i9E1Nmk/xmP323r2YL0SONs1EuwqBp2u1k5fxg==}
     engines: {node: '>= 10.0.0'}
     cpu: [arm]
     os: [linux]
+    libc: [musl]
 
   '@parcel/watcher-linux-arm64-glibc@2.5.6':
     resolution: {integrity: sha512-f2g/DT3NhGPdBmMWYoxixqYr3v/UXcmLOYy16Bx0TM20Tchduwr4EaCbmxh1321TABqPGDpS8D/ggOTaljijOA==}
     engines: {node: '>= 10.0.0'}
     cpu: [arm64]
     os: [linux]
+    libc: [glibc]
 
   '@parcel/watcher-linux-arm64-musl@2.5.6':
     resolution: {integrity: sha512-qb6naMDGlbCwdhLj6hgoVKJl2odL34z2sqkC7Z6kzir8b5W65WYDpLB6R06KabvZdgoHI/zxke4b3zR0wAbDTA==}
     engines: {node: '>= 10.0.0'}
     cpu: [arm64]
     os: [linux]
+    libc: [musl]
 
   '@parcel/watcher-linux-x64-glibc@2.5.6':
     resolution: {integrity: sha512-kbT5wvNQlx7NaGjzPFu8nVIW1rWqV780O7ZtkjuWaPUgpv2NMFpjYERVi0UYj1msZNyCzGlaCWEtzc+exjMGbQ==}
     engines: {node: '>= 10.0.0'}
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
   '@parcel/watcher-linux-x64-musl@2.5.6':
     resolution: {integrity: sha512-1JRFeC+h7RdXwldHzTsmdtYR/Ku8SylLgTU/reMuqdVD7CtLwf0VR1FqeprZ0eHQkO0vqsbvFLXUmYm/uNKJBg==}
     engines: {node: '>= 10.0.0'}
     cpu: [x64]
     os: [linux]
+    libc: [musl]
 
   '@parcel/watcher-wasm@2.5.6':
     resolution: {integrity: sha512-byAiBZ1t3tXQvc8dMD/eoyE7lTXYorhn+6uVW5AC+JGI1KtJC/LvDche5cfUE+qiefH+Ybq0bUCJU0aB1cSHUA==}
@@ -5886,24 +6259,28 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [arm64]
     os: [linux]
+    libc: [glibc]
 
   '@rolldown/binding-linux-arm64-musl@1.0.0-rc.4':
     resolution: {integrity: sha512-lU+6rgXXViO61B4EudxtVMXSOfiZONR29Sys5VGSetUY7X8mg9FCKIIjcPPj8xNDeYzKl+H8F/qSKOBVFJChCQ==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [arm64]
     os: [linux]
+    libc: [musl]
 
   '@rolldown/binding-linux-x64-gnu@1.0.0-rc.4':
     resolution: {integrity: sha512-DZaN1f0PGp/bSvKhtw50pPsnln4T13ycDq1FrDWRiHmWt1JeW+UtYg9touPFf8yt993p8tS2QjybpzKNTxYEwg==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
   '@rolldown/binding-linux-x64-musl@1.0.0-rc.4':
     resolution: {integrity: sha512-RnGxwZLN7fhMMAItnD6dZ7lvy+TI7ba+2V54UF4dhaWa/p8I/ys1E73KO6HmPmgz92ZkfD8TXS1IMV8+uhbR9g==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [x64]
     os: [linux]
+    libc: [musl]
 
   '@rolldown/binding-openharmony-arm64@1.0.0-rc.4':
     resolution: {integrity: sha512-6lcI79+X8klGiGd8yHuTgQRjuuJYNggmEml+RsyN596P23l/zf9FVmJ7K0KVKkFAeYEdg0iMUKyIxiV5vebDNQ==}
@@ -6076,121 +6453,145 @@ packages:
     resolution: {integrity: sha512-9VlPY/BN3AgbukfVHAB8zNFWB/lKEuvzRo1NKev0Po8sYFKx0i+AQlCYftgEjcL43F2h9Ui1ZSdVBc4En/sP2w==}
     cpu: [arm]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-arm-gnueabihf@4.56.0':
     resolution: {integrity: sha512-E8jKK87uOvLrrLN28jnAAAChNq5LeCd2mGgZF+fGF5D507WlG/Noct3lP/QzQ6MrqJ5BCKNwI9ipADB6jyiq2A==}
     cpu: [arm]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-arm-musleabihf@4.50.2':
     resolution: {integrity: sha512-+GdKWOvsifaYNlIVf07QYan1J5F141+vGm5/Y8b9uCZnG/nxoGqgCmR24mv0koIWWuqvFYnbURRqw1lv7IBINw==}
     cpu: [arm]
     os: [linux]
+    libc: [musl]
 
   '@rollup/rollup-linux-arm-musleabihf@4.56.0':
     resolution: {integrity: sha512-jQosa5FMYF5Z6prEpTCCmzCXz6eKr/tCBssSmQGEeozA9tkRUty/5Vx06ibaOP9RCrW1Pvb8yp3gvZhHwTDsJw==}
     cpu: [arm]
     os: [linux]
+    libc: [musl]
 
   '@rollup/rollup-linux-arm64-gnu@4.50.2':
     resolution: {integrity: sha512-df0Eou14ojtUdLQdPFnymEQteENwSJAdLf5KCDrmZNsy1c3YaCNaJvYsEUHnrg+/DLBH612/R0xd3dD03uz2dg==}
     cpu: [arm64]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-arm64-gnu@4.56.0':
     resolution: {integrity: sha512-uQVoKkrC1KGEV6udrdVahASIsaF8h7iLG0U0W+Xn14ucFwi6uS539PsAr24IEF9/FoDtzMeeJXJIBo5RkbNWvQ==}
     cpu: [arm64]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-arm64-musl@4.50.2':
     resolution: {integrity: sha512-iPeouV0UIDtz8j1YFR4OJ/zf7evjauqv7jQ/EFs0ClIyL+by++hiaDAfFipjOgyz6y6xbDvJuiU4HwpVMpRFDQ==}
     cpu: [arm64]
     os: [linux]
+    libc: [musl]
 
   '@rollup/rollup-linux-arm64-musl@4.56.0':
     resolution: {integrity: sha512-vLZ1yJKLxhQLFKTs42RwTwa6zkGln+bnXc8ueFGMYmBTLfNu58sl5/eXyxRa2RarTkJbXl8TKPgfS6V5ijNqEA==}
     cpu: [arm64]
     os: [linux]
+    libc: [musl]
 
   '@rollup/rollup-linux-loong64-gnu@4.50.2':
     resolution: {integrity: sha512-OL6KaNvBopLlj5fTa5D5bau4W82f+1TyTZRr2BdnfsrnQnmdxh4okMxR2DcDkJuh4KeoQZVuvHvzuD/lyLn2Kw==}
     cpu: [loong64]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-loong64-gnu@4.56.0':
     resolution: {integrity: sha512-FWfHOCub564kSE3xJQLLIC/hbKqHSVxy8vY75/YHHzWvbJL7aYJkdgwD/xGfUlL5UV2SB7otapLrcCj2xnF1dg==}
     cpu: [loong64]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-loong64-musl@4.56.0':
     resolution: {integrity: sha512-z1EkujxIh7nbrKL1lmIpqFTc/sr0u8Uk0zK/qIEFldbt6EDKWFk/pxFq3gYj4Bjn3aa9eEhYRlL3H8ZbPT1xvA==}
     cpu: [loong64]
     os: [linux]
+    libc: [musl]
 
   '@rollup/rollup-linux-ppc64-gnu@4.50.2':
     resolution: {integrity: sha512-I21VJl1w6z/K5OTRl6aS9DDsqezEZ/yKpbqlvfHbW0CEF5IL8ATBMuUx6/mp683rKTK8thjs/0BaNrZLXetLag==}
     cpu: [ppc64]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-ppc64-gnu@4.56.0':
     resolution: {integrity: sha512-iNFTluqgdoQC7AIE8Q34R3AuPrJGJirj5wMUErxj22deOcY7XwZRaqYmB6ZKFHoVGqRcRd0mqO+845jAibKCkw==}
     cpu: [ppc64]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-ppc64-musl@4.56.0':
     resolution: {integrity: sha512-MtMeFVlD2LIKjp2sE2xM2slq3Zxf9zwVuw0jemsxvh1QOpHSsSzfNOTH9uYW9i1MXFxUSMmLpeVeUzoNOKBaWg==}
     cpu: [ppc64]
     os: [linux]
+    libc: [musl]
 
   '@rollup/rollup-linux-riscv64-gnu@4.50.2':
     resolution: {integrity: sha512-Hq6aQJT/qFFHrYMjS20nV+9SKrXL2lvFBENZoKfoTH2kKDOJqff5OSJr4x72ZaG/uUn+XmBnGhfr4lwMRrmqCQ==}
     cpu: [riscv64]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-riscv64-gnu@4.56.0':
     resolution: {integrity: sha512-in+v6wiHdzzVhYKXIk5U74dEZHdKN9KH0Q4ANHOTvyXPG41bajYRsy7a8TPKbYPl34hU7PP7hMVHRvv/5aCSew==}
     cpu: [riscv64]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-riscv64-musl@4.50.2':
     resolution: {integrity: sha512-82rBSEXRv5qtKyr0xZ/YMF531oj2AIpLZkeNYxmKNN6I2sVE9PGegN99tYDLK2fYHJITL1P2Lgb4ZXnv0PjQvw==}
     cpu: [riscv64]
     os: [linux]
+    libc: [musl]
 
   '@rollup/rollup-linux-riscv64-musl@4.56.0':
     resolution: {integrity: sha512-yni2raKHB8m9NQpI9fPVwN754mn6dHQSbDTwxdr9SE0ks38DTjLMMBjrwvB5+mXrX+C0npX0CVeCUcvvvD8CNQ==}
     cpu: [riscv64]
     os: [linux]
+    libc: [musl]
 
   '@rollup/rollup-linux-s390x-gnu@4.50.2':
     resolution: {integrity: sha512-4Q3S3Hy7pC6uaRo9gtXUTJ+EKo9AKs3BXKc2jYypEcMQ49gDPFU2P1ariX9SEtBzE5egIX6fSUmbmGazwBVF9w==}
     cpu: [s390x]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-s390x-gnu@4.56.0':
     resolution: {integrity: sha512-zhLLJx9nQPu7wezbxt2ut+CI4YlXi68ndEve16tPc/iwoylWS9B3FxpLS2PkmfYgDQtosah07Mj9E0khc3Y+vQ==}
     cpu: [s390x]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-x64-gnu@4.50.2':
     resolution: {integrity: sha512-9Jie/At6qk70dNIcopcL4p+1UirusEtznpNtcq/u/C5cC4HBX7qSGsYIcG6bdxj15EYWhHiu02YvmdPzylIZlA==}
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-x64-gnu@4.56.0':
     resolution: {integrity: sha512-MVC6UDp16ZSH7x4rtuJPAEoE1RwS8N4oK9DLHy3FTEdFoUTCFVzMfJl/BVJ330C+hx8FfprA5Wqx4FhZXkj2Kw==}
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-x64-musl@4.50.2':
     resolution: {integrity: sha512-HPNJwxPL3EmhzeAnsWQCM3DcoqOz3/IC6de9rWfGR8ZCuEHETi9km66bH/wG3YH0V3nyzyFEGUZeL5PKyy4xvw==}
     cpu: [x64]
     os: [linux]
+    libc: [musl]
 
   '@rollup/rollup-linux-x64-musl@4.56.0':
     resolution: {integrity: sha512-ZhGH1eA4Qv0lxaV00azCIS1ChedK0V32952Md3FtnxSqZTBTd6tgil4nZT5cU8B+SIw3PFYkvyR4FKo2oyZIHA==}
     cpu: [x64]
     os: [linux]
+    libc: [musl]
 
   '@rollup/rollup-openbsd-x64@4.56.0':
     resolution: {integrity: sha512-O16XcmyDeFI9879pEcmtWvD/2nyxR9mF7Gs44lf1vGGx8Vg2DRNx11aVXBEqOQhWb92WN4z7fW/q4+2NYzCbBA==}
@@ -19702,6 +20103,10 @@ snapshots:
       '@emnapi/runtime': 1.8.1
       '@tybys/wasm-util': 0.10.1
     optional: true
+
+  '@noble/curves@2.4.0':
+    dependencies:
+      '@noble/hashes': 2.4.0
 
   '@noble/hashes@2.4.0': {}
 

@@ -1397,6 +1397,7 @@ fn generate_module_bindings_root_file(module: &ModuleDef, type_refs: &BTreeSet<A
         print_module_binding_reducer_handle(module, out, reducer, &args_type);
         out.newline();
     }
+    print_module_binding_outbox_macro(module, out);
 
     OutputFile {
         filename: "lib.rs".to_owned(),
@@ -1580,6 +1581,59 @@ impl spacetimedb::rt::RemoteReducer for {handle_name} {{
     type Args = {args_type};
 }}
 "
+    );
+}
+
+fn print_module_binding_outbox_macro(module: &ModuleDef, out: &mut Indenter) {
+    writeln!(
+        out,
+        r#"#[doc(hidden)]
+macro_rules! __spacetimedb_outbox {{"#
+    );
+    for reducer in iter_reducers(module, CodegenVisibility::OnlyPublic) {
+        let handle = reducer_function_name(reducer);
+        let accessor = format!("{handle}_outbox");
+        let row_name = format!("{}Outbox", handle.to_case(Case::Pascal));
+        for (matcher, table_accessor) in [
+            (
+                format!("({handle}, $module:ident $(, name = $name:literal)?)"),
+                accessor.as_str(),
+            ),
+            (
+                format!("({handle}, $module:ident, accessor = $accessor:ident $(, name = $name:literal)?)"),
+                "$accessor",
+            ),
+        ] {
+            writeln!(
+                out,
+                r#"    {matcher} => {{
+        #[::spacetimedb::generated_outbox_table(accessor = {table_accessor} $(, name = $name)?, outbox($module::{handle}))]
+        pub struct {row_name} {{
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,"#
+            );
+            for (arg, ty) in &reducer.params_for_generate.elements {
+                let field = arg.deref().to_case(Case::Snake);
+                let mut field_type = String::new();
+                write_type_in_context(module, &mut field_type, ty, TypeContext::OutboxMacro).unwrap();
+                writeln!(out, "            pub {field}: {field_type},");
+            }
+            writeln!(out, "        }}");
+            writeln!(out, "    }};");
+        }
+    }
+    writeln!(
+        out,
+        r#"    ($reducer:ident, $module:ident) => {{
+        compile_error!("unknown remote reducer or unsupported outbox options");
+    }};
+}}
+
+#[doc(hidden)]
+pub(crate) use __spacetimedb_outbox;"#
     );
 }
 

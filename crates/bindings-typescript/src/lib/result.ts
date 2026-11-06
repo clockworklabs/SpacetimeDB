@@ -1,4 +1,4 @@
-import { AlgebraicType } from './algebraic_type';
+import { AlgebraicType } from './algebraic_type.ts';
 
 export type ResultAlgebraicType<
   T extends AlgebraicType = AlgebraicType,

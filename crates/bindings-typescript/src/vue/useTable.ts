@@ -1,5 +1,5 @@
-import type { UntypedClientTable } from '../sdk/client_table';
-import { getByAccessorPath } from '../lib/accessor_path';
+import type { UntypedClientTable } from '../sdk/client_table.ts';
+import { getByAccessorPath } from '../lib/accessor_path.ts';
 import {
   onUnmounted,
   computed,
@@ -10,12 +10,12 @@ import {
   type DeepReadonly,
   type Ref,
 } from 'vue';
-import { useSpacetimeDB } from './useSpacetimeDB';
+import { useSpacetimeDB } from './useSpacetimeDB.ts';
 
-import type { EventContextInterface } from '../sdk/db_connection_impl';
-import type { UntypedRemoteModule } from '../sdk/spacetime_module';
-import type { RowType, UntypedTableDef } from '../lib/table';
-import type { Prettify } from '../lib/type_util';
+import type { EventContextInterface } from '../sdk/db_connection_impl.ts';
+import type { UntypedRemoteModule } from '../sdk/spacetime_module.ts';
+import type { RowType, UntypedTableDef } from '../lib/table.ts';
+import type { Prettify } from '../lib/type_util.ts';
 import {
   type Query,
   type BooleanExpr,
@@ -23,7 +23,7 @@ import {
   evaluateBooleanExpr,
   getQueryAccessorName,
   getQueryWhereClause,
-} from '../lib/query';
+} from '../lib/query.ts';
 
 export interface UseTableCallbacks<RowType> {
   onInsert?: (row: RowType) => void;

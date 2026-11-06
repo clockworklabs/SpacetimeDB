@@ -1,6 +1,7 @@
 ---
 title: CLI Reference
 slug: /cli-reference
+toc_max_heading_level: 4
 ---
 
 # Command-Line Help for `spacetime`
@@ -12,8 +13,8 @@ This document contains the help content for the `spacetime` command-line program
 * [`spacetime`↴](#spacetime)
 * [`spacetime publish`↴](#spacetime-publish)
 * [`spacetime env`↴](#spacetime-env)
-* [`spacetime env get`↴](#spacetime-env-get)
-* [`spacetime env list`↴](#spacetime-env-list)
+  * [`spacetime env get`↴](#spacetime-env-get)
+  * [`spacetime env list`↴](#spacetime-env-list)
 * [`spacetime delete`↴](#spacetime-delete)
 * [`spacetime logs`↴](#spacetime-logs)
 * [`spacetime call`↴](#spacetime-call)
@@ -25,36 +26,36 @@ This document contains the help content for the `spacetime` command-line program
 * [`spacetime generate`↴](#spacetime-generate)
 * [`spacetime list`↴](#spacetime-list)
 * [`spacetime login`↴](#spacetime-login)
-* [`spacetime login show`↴](#spacetime-login-show)
+  * [`spacetime login show`↴](#spacetime-login-show)
 * [`spacetime logout`↴](#spacetime-logout)
 * [`spacetime init`↴](#spacetime-init)
 * [`spacetime build`↴](#spacetime-build)
 * [`spacetime server`↴](#spacetime-server)
-* [`spacetime server list`↴](#spacetime-server-list)
-* [`spacetime server set-default`↴](#spacetime-server-set-default)
-* [`spacetime server add`↴](#spacetime-server-add)
-* [`spacetime server remove`↴](#spacetime-server-remove)
-* [`spacetime server fingerprint`↴](#spacetime-server-fingerprint)
-* [`spacetime server ping`↴](#spacetime-server-ping)
-* [`spacetime server edit`↴](#spacetime-server-edit)
-* [`spacetime server clear`↴](#spacetime-server-clear)
+  * [`spacetime server list`↴](#spacetime-server-list)
+  * [`spacetime server set-default`↴](#spacetime-server-set-default)
+  * [`spacetime server add`↴](#spacetime-server-add)
+  * [`spacetime server remove`↴](#spacetime-server-remove)
+  * [`spacetime server fingerprint`↴](#spacetime-server-fingerprint)
+  * [`spacetime server ping`↴](#spacetime-server-ping)
+  * [`spacetime server edit`↴](#spacetime-server-edit)
+  * [`spacetime server clear`↴](#spacetime-server-clear)
 * [`spacetime subscribe`↴](#spacetime-subscribe)
 * [`spacetime start`↴](#spacetime-start)
 * [`spacetime lock`↴](#spacetime-lock)
 * [`spacetime unlock`↴](#spacetime-unlock)
 * [`spacetime auth`↴](#spacetime-auth)
-* [`spacetime auth config`↴](#spacetime-auth-config)
-* [`spacetime auth config set`↴](#spacetime-auth-config-set)
-* [`spacetime auth config reset`↴](#spacetime-auth-config-reset)
-* [`spacetime auth idp`↴](#spacetime-auth-idp)
-* [`spacetime auth idp set`↴](#spacetime-auth-idp-set)
-* [`spacetime auth idp enable`↴](#spacetime-auth-idp-enable)
-* [`spacetime auth idp disable`↴](#spacetime-auth-idp-disable)
-* [`spacetime auth client`↴](#spacetime-auth-client)
-* [`spacetime auth client create`↴](#spacetime-auth-client-create)
-* [`spacetime auth client delete`↴](#spacetime-auth-client-delete)
-* [`spacetime auth client get`↴](#spacetime-auth-client-get)
-* [`spacetime auth client set`↴](#spacetime-auth-client-set)
+  * [`spacetime auth config`↴](#spacetime-auth-config)
+    * [`spacetime auth config set`↴](#spacetime-auth-config-set)
+    * [`spacetime auth config reset`↴](#spacetime-auth-config-reset)
+  * [`spacetime auth idp`↴](#spacetime-auth-idp)
+    * [`spacetime auth idp set`↴](#spacetime-auth-idp-set)
+    * [`spacetime auth idp enable`↴](#spacetime-auth-idp-enable)
+    * [`spacetime auth idp disable`↴](#spacetime-auth-idp-disable)
+  * [`spacetime auth client`↴](#spacetime-auth-client)
+    * [`spacetime auth client create`↴](#spacetime-auth-client-create)
+    * [`spacetime auth client delete`↴](#spacetime-auth-client-delete)
+    * [`spacetime auth client get`↴](#spacetime-auth-client-get)
+    * [`spacetime auth client set`↴](#spacetime-auth-client-set)
 * [`spacetime version`↴](#spacetime-version)
 
 ## `spacetime`
@@ -171,7 +172,7 @@ Inspect published database environment variables
 
 
 
-## `spacetime env get`
+### `spacetime env get`
 
 Read one published environment value
 
@@ -195,7 +196,7 @@ Read one published environment value
 
 
 
-## `spacetime env list`
+### `spacetime env list`
 
 List published environment keys and values
 
@@ -524,7 +525,7 @@ Manage your login to the SpacetimeDB CLI
 
 
 
-## `spacetime login show`
+### `spacetime login show`
 
 Show the current login info
 
@@ -608,7 +609,7 @@ Manage the connection to the SpacetimeDB server. WARNING: This command is UNSTAB
 
 
 
-## `spacetime server list`
+### `spacetime server list`
 
 List stored server configurations
 
@@ -616,7 +617,7 @@ List stored server configurations
 
 
 
-## `spacetime server set-default`
+### `spacetime server set-default`
 
 Set the default server for future operations
 
@@ -628,7 +629,7 @@ Set the default server for future operations
 
 
 
-## `spacetime server add`
+### `spacetime server add`
 
 Add a new server configuration
 
@@ -646,7 +647,7 @@ Add a new server configuration
 
 
 
-## `spacetime server remove`
+### `spacetime server remove`
 
 Remove a saved server configuration
 
@@ -662,7 +663,7 @@ Remove a saved server configuration
 
 
 
-## `spacetime server fingerprint`
+### `spacetime server fingerprint`
 
 Show or update a saved server's fingerprint
 
@@ -678,7 +679,7 @@ Show or update a saved server's fingerprint
 
 
 
-## `spacetime server ping`
+### `spacetime server ping`
 
 Checks to see if a SpacetimeDB host is online
 
@@ -690,7 +691,7 @@ Checks to see if a SpacetimeDB host is online
 
 
 
-## `spacetime server edit`
+### `spacetime server edit`
 
 Update a saved server's nickname, host name or protocol
 
@@ -709,7 +710,7 @@ Update a saved server's nickname, host name or protocol
 
 
 
-## `spacetime server clear`
+### `spacetime server clear`
 
 Deletes all data from all local databases
 
@@ -835,7 +836,7 @@ Manage SpacetimeAuth for a database
 
 
 
-## `spacetime auth config`
+### `spacetime auth config`
 
 Manage SpacetimeAuth configuration for a database
 
@@ -848,7 +849,7 @@ Manage SpacetimeAuth configuration for a database
 
 
 
-## `spacetime auth config set`
+#### `spacetime auth config set`
 
 Set a SpacetimeAuth configuration value for a database
 
@@ -865,7 +866,7 @@ Set a SpacetimeAuth configuration value for a database
 
 
 
-## `spacetime auth config reset`
+#### `spacetime auth config reset`
 
 Reset the SpacetimeAuth configuration of a database to its defaults, keeping the display name and Steam settings
 
@@ -877,7 +878,7 @@ Reset the SpacetimeAuth configuration of a database to its defaults, keeping the
 
 
 
-## `spacetime auth idp`
+### `spacetime auth idp`
 
 Manage identity providers for a database
 
@@ -891,7 +892,7 @@ Manage identity providers for a database
 
 
 
-## `spacetime auth idp set`
+#### `spacetime auth idp set`
 
 Configure and enable an identity provider for a database
 
@@ -909,7 +910,7 @@ Configure and enable an identity provider for a database
 
 
 
-## `spacetime auth idp enable`
+#### `spacetime auth idp enable`
 
 Enable an identity provider for a database
 
@@ -925,7 +926,7 @@ Enable an identity provider for a database
 
 
 
-## `spacetime auth idp disable`
+#### `spacetime auth idp disable`
 
 Disable an identity provider for a database
 
@@ -941,7 +942,7 @@ Disable an identity provider for a database
 
 
 
-## `spacetime auth client`
+### `spacetime auth client`
 
 Manage OAuth clients for a database
 
@@ -956,7 +957,7 @@ Manage OAuth clients for a database
 
 
 
-## `spacetime auth client create`
+#### `spacetime auth client create`
 
 Create a new OAuth client
 
@@ -975,7 +976,7 @@ Create a new OAuth client
 
 
 
-## `spacetime auth client delete`
+#### `spacetime auth client delete`
 
 Delete an OAuth client
 
@@ -993,7 +994,7 @@ Delete an OAuth client
 
 
 
-## `spacetime auth client get`
+#### `spacetime auth client get`
 
 Get an OAuth client
 
@@ -1012,7 +1013,7 @@ Get an OAuth client
 
 
 
-## `spacetime auth client set`
+#### `spacetime auth client set`
 
 Set a configuration value for an OAuth client
 
