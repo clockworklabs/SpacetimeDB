@@ -9100,7 +9100,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-test-datastore-ffi"
-version = "2.14.1"
+version = "2.15.0"
 dependencies = [
  "spacetimedb-lib",
  "spacetimedb-primitives",
