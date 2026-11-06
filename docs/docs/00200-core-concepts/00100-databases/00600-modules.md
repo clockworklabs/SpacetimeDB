@@ -1,14 +1,14 @@
 ---
-title: Submodules
-slug: /submodules
+title: Modules
+slug: /modules
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-A **submodule** is a SpacetimeDB module that can be included in another module's database. The submodule's tables and functions register under a **namespace** you choose, keeping them separate from the consumer's own tables and from other submodules.
+Any SpacetimeDB module can be mounted in another module's database, where it is called a **submodule**. The submodule's tables and functions register under a **namespace** you choose, keeping them separate from the consumer's own tables and from other submodules.
 
-Submodules let you package reusable database logic as a library that any consumer can integrate without coordinating table names.
+Modules let you package reusable database logic as a library that any consumer can mount without coordinating table names. Official and community modules are listed at [spacetimedb.com/modules](https://spacetimedb.com/modules).
 
 :::note
 Submodules are supported in TypeScript and C# (.NET 10 only). Cross-language composition is not supported.
@@ -120,7 +120,7 @@ Library code uses its own flat accessors, such as `ctx.Db.User`, regardless of t
 </TabItem>
 </Tabs>
 
-## Using a Submodule
+## Mounting a Module as a Submodule
 
 The consumer controls the namespace name. The accessor name is used in module code and generated bindings; the canonical name is used in SQL and network calls.
 
