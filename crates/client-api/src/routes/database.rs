@@ -537,7 +537,8 @@ fn forwarded_header(headers: &http::HeaderMap, name: &str) -> Option<String> {
 }
 
 fn assert_content_type_json(content_type: headers::ContentType) -> axum::response::Result<()> {
-    if content_type != headers::ContentType::json() {
+    // Compare only the type and subtype, so parameters such as `charset=utf-8` are accepted.
+    if mime::Mime::from(content_type).essence_str() != mime::APPLICATION_JSON.essence_str() {
         Err(axum::extract::rejection::MissingJsonContentType::default().into())
     } else {
         Ok(())
@@ -2137,6 +2138,22 @@ mod tests {
     use std::convert::Infallible;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use tower::util::ServiceExt;
+
+    #[test]
+    fn json_content_type_ignores_parameters() {
+        for accepted in [
+            "application/json",
+            "application/json; charset=utf-8",
+            "Application/JSON;charset=UTF-8",
+        ] {
+            let content_type = accepted.parse::<mime::Mime>().unwrap().into();
+            assert!(assert_content_type_json(content_type).is_ok(), "{accepted}");
+        }
+        for rejected in ["text/plain; charset=utf-8", "application/octet-stream"] {
+            let content_type = rejected.parse::<mime::Mime>().unwrap().into();
+            assert!(assert_content_type_json(content_type).is_err(), "{rejected}");
+        }
+    }
 
     #[test]
     fn idc_signature_hash_query_uses_digest_hex() {
