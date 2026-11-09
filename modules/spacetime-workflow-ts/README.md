@@ -118,8 +118,12 @@ That gives the function three rules:
   or the network directly.
 - Make the same step calls each time. Do not branch on `Date.now()` or
   `Math.random()` outside a step. Get those values from a step, so they are saved.
-- Keep step results small and JSON-compatible, up to 64 KiB. `bigint` is
-  supported. Other classes, such as `Timestamp`, come back as plain objects.
+- Keep step results small, up to 64 KiB. A result can hold plain objects,
+  arrays, strings, finite numbers, booleans, `null`, `bigint`, `Uint8Array`,
+  and the SpacetimeDB types `Timestamp`, `TimeDuration`, `Identity`,
+  `ConnectionId`, and `Uuid`. Each comes back as the same type. Any other
+  value, such as a `Map` or a `Date`, fails the step with
+  `workflow.unsupported_value`.
 
 A run can have up to 10,000 steps. Each sleep and wait counts as one.
 
@@ -192,7 +196,8 @@ finished:
 - `errors` holds the `workflow.*` codes these operations throw as `SenderError`s:
   `notAuthorized`, `invalidEvent`, `tooManyEvents`, and `cannotRemoveLastAdmin`.
 - `failures` holds the `workflow.*` errors recorded on runs: `stepLost`,
-  `tooManySteps`, `resultTooLarge`, `asyncStep`, `replayMismatch`, and `tooManyBranches`.
+  `tooManySteps`, `resultTooLarge`, `asyncStep`, `replayMismatch`, `tooManyBranches`,
+  and `unsupportedValue`.
 
 Package entrypoints:
 

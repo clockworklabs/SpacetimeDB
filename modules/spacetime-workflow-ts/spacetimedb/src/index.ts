@@ -1,4 +1,5 @@
 import { schema, table, t } from 'spacetimedb/server';
+import { Identity, Timestamp } from 'spacetimedb';
 import { client } from '@spacetimedb/workflow';
 
 const workflows = client({
@@ -68,7 +69,7 @@ export const workflowRunAttempt = workflows.register(spacetimedb, {
       });
       // The insert above must roll back with the failed attempt.
       if (run.attempt <= args.failTimes) throw new Error('flaky.failure');
-      return { big: 7n, text: 'saved' };
+      return { big: 7n, text: 'saved', at: ctx.timestamp, who: ctx.sender };
     });
     step.sleep(1);
     step.waitFor('go');
@@ -79,7 +80,7 @@ export const workflowRunAttempt = workflows.register(spacetimedb, {
         step: run.step,
         attempt: run.attempt,
         // Read after a sleep and an event, so it came from the saved result.
-        note: `${value.text}:${value.big + 1n}`,
+        note: `${value.text}:${value.big + 1n}:${value.at instanceof Timestamp}:${value.who instanceof Identity}`,
       });
     });
   },

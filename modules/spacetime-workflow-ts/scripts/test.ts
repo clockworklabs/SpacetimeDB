@@ -1,5 +1,11 @@
 import * as assert from 'node:assert/strict';
-import { Identity, Timestamp } from 'spacetimedb';
+import {
+  ConnectionId,
+  Identity,
+  TimeDuration,
+  Timestamp,
+  Uuid,
+} from 'spacetimedb';
 import { schema, SenderError, t } from 'spacetimedb/server';
 import {
   client,
@@ -161,11 +167,27 @@ const workflowRunAttempt = workflows.register(schema({ ...workflows.tables }), {
     const value = step.tx('value', () => ({
       big: 12345678901234567890n,
       list: [1, 'two', { nested: 3n }],
+      at: new Timestamp(5n),
+      took: new TimeDuration(6n),
+      who: new Identity(7n),
+      conn: new ConnectionId(8n),
+      id: new Uuid(9n),
+      bytes: new Uint8Array([0, 15, 255]),
     }));
     const empty = step.tx('empty', () => {});
     step.sleep(1);
     step.tx('check', ctx => {
       logOf(ctx).push(`${value.big}:${value.list.length}:${empty}`);
+      // Saved before the sleep, so these come back from the journal.
+      assert.ok(value.at instanceof Timestamp);
+      assert.equal(value.at.microsSinceUnixEpoch, 5n);
+      assert.ok(value.took instanceof TimeDuration);
+      assert.equal(value.took.micros, 6n);
+      assert.ok(value.who.isEqual(new Identity(7n)));
+      assert.ok(value.conn.isEqual(new ConnectionId(8n)));
+      assert.ok(value.id instanceof Uuid);
+      assert.equal(value.id.asBigInt(), 9n);
+      assert.deepEqual(value.bytes, new Uint8Array([0, 15, 255]));
     });
   },
   overLimit(step) {
@@ -178,6 +200,14 @@ const workflowRunAttempt = workflows.register(schema({ ...workflows.tables }), {
       step.tx('async', async () => 1);
     } catch (error) {
       appLog.push((error as Error).message);
+    }
+    // Values that would not come back as the same type are refused.
+    for (const value of [new Map(), { when: new Date(0) }, NaN]) {
+      try {
+        step.tx('unsupported', () => value);
+      } catch (error) {
+        appLog.push((error as Error).message);
+      }
     }
   },
   loops(step) {
@@ -714,12 +744,18 @@ assert.ok(admins.has(admin.toHexString()));
   assert.equal(run(id).error, `${failures.replayMismatch}:0:renamed:one`);
 }
 
-// Oversized and async results give up without retrying.
+// Oversized, async, and unsupported results give up without retrying.
 {
   reset();
   const id = workflows.start(tx, 'overLimit', { count: 0 });
   runDue();
-  assert.deepEqual(appLog, [failures.resultTooLarge, failures.asyncStep]);
+  assert.deepEqual(appLog, [
+    failures.resultTooLarge,
+    failures.asyncStep,
+    `${failures.unsupportedValue}:Map`,
+    `${failures.unsupportedValue}:Date`,
+    `${failures.unsupportedValue}:NaN`,
+  ]);
   assert.equal(statusOf(id), 'Completed');
 }
 

@@ -230,7 +230,7 @@ try {
     stepLog(waiting.id)
       .map(row => [row.step, row.note])
       .at(-1),
-    ['finish', 'saved:8']
+    ['finish', 'saved:8:true:true']
   );
   assert.equal(
     sql(`SELECT * FROM workflow_journal WHERE runId = ${waiting.id}`).length,

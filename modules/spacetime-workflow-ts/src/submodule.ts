@@ -9,7 +9,13 @@ import {
   type SumBuilder,
   type VariantsObj,
 } from 'spacetimedb/server';
-import type { Identity, Timestamp } from 'spacetimedb';
+import {
+  ConnectionId,
+  Identity,
+  TimeDuration,
+  Timestamp,
+  Uuid,
+} from 'spacetimedb';
 
 const ONE_SECOND_MICROS = 1_000_000n;
 const MAX_ATTEMPTS = 10;
@@ -41,6 +47,7 @@ export const failures = {
   asyncStep: 'workflow.async_step',
   replayMismatch: 'workflow.replay_mismatch',
   tooManyBranches: 'workflow.too_many_branches',
+  unsupportedValue: 'workflow.unsupported_value',
 } as const;
 
 /** Thrown inside a workflow function when a step gives up. Safe to catch. */
@@ -379,14 +386,61 @@ function errorText(error: unknown): string {
   return text.slice(0, MAX_ERROR_LENGTH);
 }
 
+// SpacetimeDB values, found by their single bigint field rather than
+// instanceof, because the server and client bundles each have their own copy
+// of these classes. They come back as the classes exported by 'spacetimedb'.
+const SPACETIME_TYPES = [
+  ['$timestamp', Timestamp, '__timestamp_micros_since_unix_epoch__'],
+  ['$duration', TimeDuration, '__time_duration_micros__'],
+  ['$identity', Identity, '__identity__'],
+  ['$connectionId', ConnectionId, '__connection_id__'],
+  ['$uuid', Uuid, '__uuid__'],
+] as const;
+
+function typeName(value: unknown): string {
+  return (value as object).constructor?.name ?? typeof value;
+}
+
+/** Encodes a step result, rejecting values that would not come back the same. */
 function encodeResult(value: unknown): string | undefined {
   if (
     typeof (value as { then?: unknown } | null | undefined)?.then === 'function'
   ) {
     throw new SenderError(failures.asyncStep);
   }
-  const json = JSON.stringify(value, (_key, item) =>
-    typeof item === 'bigint' ? { $bigint: item.toString() } : item
+  const json = JSON.stringify(
+    value,
+    function (this: Record<string, unknown>, key: string) {
+      // The raw value, before JSON.stringify applies any toJSON method.
+      const item = this[key];
+      if (typeof item === 'bigint') return { $bigint: item.toString() };
+      if (typeof item === 'number' && !Number.isFinite(item)) {
+        throw new SenderError(`${failures.unsupportedValue}:${item}`);
+      }
+      if (typeof item === 'function' || typeof item === 'symbol') {
+        throw new SenderError(`${failures.unsupportedValue}:${typeof item}`);
+      }
+      if (item === null || typeof item !== 'object') return item;
+      if (Array.isArray(item)) return item;
+      const fields = Object.keys(item);
+      const only = (item as Record<string, unknown>)[fields[0]];
+      if (fields.length === 1 && typeof only === 'bigint') {
+        const known = SPACETIME_TYPES.find(
+          ([, , field]) => field === fields[0]
+        );
+        if (known) return { [known[0]]: only.toString() };
+      }
+      const proto = Object.getPrototypeOf(item);
+      if (proto === Object.prototype || proto === null) return item;
+      if (item instanceof Uint8Array && proto === Uint8Array.prototype) {
+        return {
+          $bytes: Array.from(item, b => b.toString(16).padStart(2, '0')).join(
+            ''
+          ),
+        };
+      }
+      throw new SenderError(`${failures.unsupportedValue}:${typeName(item)}`);
+    }
   );
   if (json !== undefined && json.length > MAX_RESULT_LENGTH) {
     throw new SenderError(failures.resultTooLarge);
@@ -396,9 +450,21 @@ function encodeResult(value: unknown): string | undefined {
 
 function decodeResult(json: string | undefined): unknown {
   if (json === undefined) return undefined;
-  return JSON.parse(json, (_key, item) =>
-    typeof item?.$bigint === 'string' ? BigInt(item.$bigint) : item
-  );
+  return JSON.parse(json, (_key, item) => {
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+      return item;
+    }
+    if (typeof item.$bigint === 'string') return BigInt(item.$bigint);
+    if (typeof item.$bytes === 'string') {
+      return Uint8Array.from(item.$bytes.match(/../g) ?? [], (h: string) =>
+        parseInt(h, 16)
+      );
+    }
+    for (const [tag, type] of SPACETIME_TYPES) {
+      if (typeof item[tag] === 'string') return new type(BigInt(item[tag]));
+    }
+    return item;
+  });
 }
 
 function validate(name: string, def: WorkflowDefinition): void {
