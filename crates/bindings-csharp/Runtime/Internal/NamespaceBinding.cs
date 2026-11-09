@@ -20,7 +20,6 @@ public sealed class NamespaceBinding(string? assemblyIdentity, string accessor)
         this[contextInstance];
 #endif
 
-
 #if SPACETIMEDB_WASM_RUNTIME
     // Generated namespace accessors call these on every table access. In WASM a database
     // handle is just an instance id, so reuse the cached handle per instance instead of allocating.
