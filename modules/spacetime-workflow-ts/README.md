@@ -16,10 +16,14 @@ Requires SpacetimeDB SDK, CLI, and server 2.12 or later.
 
 ## Integrate into an application
 
-Add the workflow tables to your module, register the procedure that runs
-workflows, then define each workflow. In this example, replace `reserveStock`,
-`chargeCard`, `releaseStock`, `queueReceipt`, `queueReview`,
-`requireOrderOwner`, and `requireWarehouse` with your application's functions.
+This example runs an order checkout. Replace `reserveStock`, `chargeCard`,
+`releaseStock`, `queueReview`, `markOrder`, `requireOrderOwner`, and
+`requireWarehouse` with your application's functions.
+
+### 1. Set up the module
+
+Add the workflow tables to your schema, make the publisher the first workflow
+admin, and register the procedure that runs workflows:
 
 ```ts
 import { schema, t } from 'spacetimedb/server';
@@ -27,12 +31,19 @@ import { client } from '@spacetimedb/workflow';
 
 const workflows = client();
 
-const db = schema({ ...workflows.tables });
+const db = schema({ order, ...workflows.tables });
 export default db;
 
 export const init = db.init(ctx => workflows.install(ctx));
 export const workflowRunAttempt = workflows.register(db);
+```
 
+Export the result of `register`. It is the scheduled procedure that runs every
+workflow in the module.
+
+### 2. Define a workflow
+
+```ts
 const checkout = workflows.define(
   db,
   'checkout',
@@ -53,29 +64,73 @@ const checkout = workflows.define(
       throw error;
     }
 
-    step.waitFor('shipped');
-    step.tx('receipt', ctx => queueReceipt(ctx, receiptId));
-
+    const tracking = step.waitFor<string>('shipped');
     step.sleep(7 * 24 * 60 * 60);
-    step.tx('review', ctx => queueReview(ctx, orderId));
+    step.tx('review', ctx => queueReview(ctx, orderId, tracking));
+    return { receiptId };
+  },
+  (ctx, { args, status, result, error }) => {
+    markOrder(ctx, args.orderId, status, result?.receiptId, error);
   }
 );
-
-export const placeOrder = db.reducer({ orderId: t.u64() }, (ctx, args) => {
-  requireOrderOwner(ctx, args.orderId);
-  workflows.start(ctx, checkout, args);
-});
-
-export const markShipped = db.reducer({ runId: t.u64() }, (ctx, { runId }) => {
-  requireWarehouse(ctx);
-  workflows.signal(ctx, runId, 'shipped');
-});
 ```
 
-`define` returns a handle that `start` takes, so a run's arguments are
-type-checked. Define workflows when the module loads, in any file. Do not export
-a handle from the module's entry file, because SpacetimeDB rejects exports it
-does not recognize.
+`define` takes:
+
+- `db`, so steps receive your module's typed contexts.
+- A name. It is saved on every run, and finds the function when the run resumes.
+- Options: the argument type, and optionally `retry` and `stepTimeoutSeconds`.
+  They apply to every step.
+- The workflow function. It receives `step` and the run's arguments, and does all
+  its work in [steps](#steps). Its return value is saved as the run's result.
+- Optionally, `onComplete`, which runs once when the run completes, fails, or is
+  cancelled. See [When a run ends](#when-a-run-ends).
+
+It returns a handle to pass to `start`. Define workflows when the module loads,
+in any file. Do not export a handle from the module's entry file, because
+SpacetimeDB rejects exports it does not recognize.
+
+### 3. Start runs from your reducers
+
+A run starts only when your code calls `start`. The package has no public
+reducer for it, because only your application knows who may start a workflow.
+Check that in your own reducer, then start the run:
+
+```ts
+export const placeOrder = db.reducer(
+  { orderId: t.u64() },
+  (ctx, { orderId }) => {
+    const order = requireOrderOwner(ctx, orderId);
+    const runId = workflows.start(ctx, checkout, { orderId });
+    ctx.db.order.id.update({ ...order, runId });
+  }
+);
+```
+
+- `start` saves the run and schedules it, and the workflow runs in the
+  background. TypeScript checks the arguments against the handle.
+- The run is saved in the reducer's transaction. If the reducer fails, no run
+  starts.
+- Keep the returned id, for example on the row the run is about. You need it to
+  signal or cancel the run.
+
+### 4. Signal and cancel runs
+
+`waitFor` pauses a run until your code delivers its event. Check who may do that,
+then call `signal` with the event's value:
+
+```ts
+export const markShipped = db.reducer(
+  { orderId: t.u64(), tracking: t.string() },
+  (ctx, { orderId, tracking }) => {
+    const order = requireWarehouse(ctx, orderId);
+    workflows.signal(ctx, order.runId, 'shipped', tracking);
+  }
+);
+```
+
+`workflows.cancel(ctx, runId)` stops a run the same way. Like `start`, `signal`
+and `cancel` do not check permissions.
 
 See the [Dossier example](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-workflow-ts/example)
 for a research agent that keeps its work across restarts.
@@ -116,24 +171,9 @@ core by default. Items beyond that wait for a free instance.
 
 The workflow function can return a value. It is saved as the run's `result`.
 
-Pass `onComplete` after the function to react when a run completes, fails, or is
-cancelled. It runs in its own transaction, with your module's context:
-
-```ts
-const checkout = workflows.define(
-  db,
-  'checkout',
-  { args: CheckoutArgs },
-  (step, { orderId }) => {
-    // ...
-    return { receiptId };
-  },
-  (ctx, { status, args, result, error }) => {
-    // status is 'Completed', 'Failed', or 'Cancelled'.
-    markOrder(ctx, args.orderId, status, result?.receiptId, error);
-  }
-);
-```
+`onComplete` receives the run's `runId`, `args`, `status` (`Completed`,
+`Failed`, or `Cancelled`), `result`, and `error`. It runs in its own transaction,
+with your module's context.
 
 Its writes commit together with the record that it ran, so it takes effect once.
 If it throws, its writes roll back and it is retried like a step, using the
