@@ -210,14 +210,15 @@ pub struct CallProcedure {
 /// The server responds with a [`Pong`] which echoes `client_send_time`,
 /// and adds when the server received the `Ping` and how long it held it before replying.
 ///
-/// When a `Ping` arrives alone in its websocket message,
-/// the server answers it as soon as it is read from the socket,
+/// The server answers a `Ping` as soon as it is read from the socket,
 /// ahead of any earlier client messages which are still being processed,
 /// so the measurement excludes e.g. query evaluation for a preceding [`Subscribe`].
-/// Its [`Pong`] may therefore arrive before the responses to those earlier messages.
+/// This holds even when the `Ping` is batched with other messages in one v3 payload.
 ///
-/// A `Ping` batched with other messages in one v3 payload is instead answered in order,
-/// so clients should send each `Ping` in its own websocket message.
+/// Its [`Pong`] may therefore arrive before the responses to earlier messages,
+/// including those batched ahead of it in the same payload.
+/// A `Ping` is a latency probe, not a barrier:
+/// a `Pong` says nothing about whether earlier messages have been processed.
 #[derive(SpacetimeType, Clone, Copy, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct Ping {
