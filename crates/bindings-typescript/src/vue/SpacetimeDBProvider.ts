@@ -12,12 +12,12 @@ import {
   type DbConnectionImpl,
   type ErrorContextInterface,
   type RemoteModuleOf,
-} from '../sdk/db_connection_impl';
-import { ConnectionId } from '../lib/connection_id';
+} from '../sdk/db_connection_impl.ts';
+import { ConnectionId } from '../lib/connection_id.ts';
 import {
   SPACETIMEDB_INJECTION_KEY,
   type ConnectionState,
-} from './connection_state';
+} from './connection_state.ts';
 
 export interface SpacetimeDBProviderProps<
   DbConnection extends DbConnectionImpl<any>,
@@ -48,7 +48,8 @@ function setupConnection<DbConnection extends DbConnectionImpl<any>>(
 
   provide(SPACETIMEDB_INJECTION_KEY, state);
 
-  let onConnectCallback: ((conn: DbConnection) => void) | null = null;
+  let onConnectCallback: ((conn: NonNullable<typeof connRef>) => void) | null =
+    null;
   let onDisconnectCallback:
     | ((ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>) => void)
     | null = null;
@@ -69,7 +70,7 @@ function setupConnection<DbConnection extends DbConnectionImpl<any>>(
       connRef = connectionBuilder.build();
     }
 
-    onConnectCallback = (conn: DbConnection) => {
+    onConnectCallback = conn => {
       state.isActive = conn.isActive;
       state.identity = conn.identity;
       state.token = conn.token;
@@ -92,6 +93,7 @@ function setupConnection<DbConnection extends DbConnectionImpl<any>>(
     };
 
     connectionBuilder.onConnect(onConnectCallback);
+    connectionBuilder.onAutomaticReconnect(onConnectCallback);
     connectionBuilder.onDisconnect(onDisconnectCallback);
     connectionBuilder.onConnectError(onConnectErrorCallback);
 
@@ -107,7 +109,8 @@ function setupConnection<DbConnection extends DbConnectionImpl<any>>(
   const cleanup = () => {
     if (connRef) {
       if (onConnectCallback) {
-        connRef.removeOnConnect?.(onConnectCallback as any);
+        connRef.removeOnConnect(onConnectCallback);
+        connRef.removeOnAutomaticReconnect(onConnectCallback);
       }
       if (onDisconnectCallback) {
         connRef.removeOnDisconnect?.(onDisconnectCallback as any);

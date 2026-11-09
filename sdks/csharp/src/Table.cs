@@ -37,6 +37,7 @@ namespace SpacetimeDB
         /// </summary>
         /// <returns>An <see cref="IParsedTableUpdate"/> representing the parsed update.</returns>
         internal IParsedTableUpdate MakeParsedTableUpdate();
+        internal void AddSnapshotDeletes(ParsedDatabaseUpdate update);
 
         /// <summary>
         /// Parses an insert-only table update and applies the results to the specified parsed database update.
@@ -102,13 +103,15 @@ namespace SpacetimeDB
         // and therefore avoids using reflection when initializing the row object.
 
         public abstract class IndexBase<Column>
-            where Column : IEquatable<Column>
+            // where Column : IEquatable<Column> // TODO: Revisit. Enums don't satisfy the `IEquatable<Column>` constraint. It shouldn't be needed though.
+            where Column : notnull
         {
             protected abstract Column GetKey(Row row);
         }
 
         public abstract class UniqueIndexBase<Column> : IndexBase<Column>
-            where Column : IEquatable<Column>
+            // where Column : IEquatable<Column> // TODO: Revisit. Enums don't satisfy the `IEquatable<Column>` constraint. It shouldn't be needed though: `Dictionary<TKey, TValue>` does not require `TKey : IEquatable<TKey>`; it uses `EqualityComparer<TKey>.Default`.
+            where Column : notnull
         {
             private readonly Dictionary<Column, Row> cache = new();
 
@@ -122,7 +125,8 @@ namespace SpacetimeDB
         }
 
         public abstract class BTreeIndexBase<Column> : IndexBase<Column>
-            where Column : IEquatable<Column>, IComparable<Column>
+            // where Column : IEquatable<Column>, IComparable<Column> // TODO: Revisit. Enums don't satisfy the `IEquatable<Column>` constraint. It shouldn't be needed though: `Dictionary<TKey, TValue>` does not require `TKey : IEquatable<TKey>`; it uses `EqualityComparer<TKey>.Default`. And if we change it to `SortedDictionary<TKey, TValue>`, it uses `Comparer<SimpleEnum>.Default`.
+            where Column : notnull
         {
             // TODO: change to SortedDictionary when adding support for range queries.
             private readonly Dictionary<Column, HashSet<Row>> cache = new();
@@ -175,6 +179,9 @@ namespace SpacetimeDB
 
         public abstract string RemoteTableName { get; }
         string IRemoteTableHandle.RemoteTableName => RemoteTableName;
+
+        /// <summary>The SQL identifier, separate from the wire/cache key.</summary>
+        protected virtual SqlTableName RemoteSqlTableName => new(RemoteTableName);
 
         /// <summary>
         /// Whether this table is an event table.
@@ -292,6 +299,22 @@ namespace SpacetimeDB
         IParsedTableUpdate IRemoteTableHandle.MakeParsedTableUpdate()
         {
             return new ParsedTableUpdate();
+        }
+
+        void IRemoteTableHandle.AddSnapshotDeletes(ParsedDatabaseUpdate update)
+        {
+            if (IsEventTable)
+            {
+                return;
+            }
+            var delta = ((ParsedTableUpdate)update.UpdateForTable(this)).Delta;
+            foreach (var entry in Entries.Entries)
+            {
+                for (var i = 0u; i < Entries.Multiplicity(entry.Key); i++)
+                {
+                    delta.Remove(entry.Key, entry.Value);
+                }
+            }
         }
 
         /// <summary>
@@ -417,7 +440,7 @@ namespace SpacetimeDB
         public IEnumerable<Row> Iter() => Entries.Values;
 
         public Task<Row[]> RemoteQuery(string query) =>
-            conn.RemoteQuery<Row>($"SELECT {RemoteTableName}.* FROM {RemoteTableName} {query}");
+            conn.RemoteQuery<Row>($"SELECT {RemoteSqlTableName}.* FROM {RemoteSqlTableName} {query}");
 
         void InvokeInsert(IEventContext context, IStructuralReadWrite row)
         {
@@ -451,7 +474,11 @@ namespace SpacetimeDB
         {
             // Fully qualified to avoid clash with UnityEngine.Debug
             System.Diagnostics.Debug.Assert(wasInserted.Count == 0 && wasUpdated.Count == 0 && wasRemoved.Count == 0, "Call Apply and PostApply before calling PreApply again");
-            if (IsEventTable) return; // Event tables have no deletes.
+            if (IsEventTable)
+            {
+                return; // Event tables have no deletes.
+            }
+
             var delta = (ParsedTableUpdate)parsedTableUpdate;
             foreach (var (_, value) in Entries.WillRemove(delta.Delta))
             {

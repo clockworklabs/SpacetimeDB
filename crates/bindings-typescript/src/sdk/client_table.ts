@@ -1,16 +1,16 @@
-import type { ReadonlyIndexes } from '../lib/indexes';
-import type { TableNamesOf } from '../lib/schema';
+import type { ReadonlyIndexes } from '../lib/indexes.ts';
+import type { TableNamesOf } from '../lib/schema.ts';
 import type {
   ReadonlyTableMethods,
   RowType,
   TableIndexes,
   UntypedTableDef,
-} from '../lib/table';
-import type { ColumnBuilder } from '../lib/type_builders';
-import type { Prettify } from '../lib/type_util';
-import type { TableDefForTableName } from './client_cache';
-import type { EventContextInterface } from './event_context';
-import type { UntypedRemoteModule } from './spacetime_module';
+} from '../lib/table.ts';
+import type { ColumnBuilder } from '../lib/type_builders.ts';
+import type { Prettify } from '../lib/type_util.ts';
+import type { TableDefForTableName } from './client_cache.ts';
+import type { EventContextInterface } from './event_context.ts';
+import type { UntypedRemoteModule } from './spacetime_module.ts';
 
 export type ClientTablePrimaryKeyMethods<
   RemoteModule extends UntypedRemoteModule,
@@ -107,6 +107,12 @@ export type ClientTableMethods<
  * - UCV: unique-constraint violation error type (never if none)
  * - AIO: auto-increment overflow error type (never if none)
  */
+/** A client table handle for a connection whose module type is not known statically. */
+export type UntypedClientTable = ClientTable<
+  UntypedRemoteModule,
+  TableNamesOf<UntypedRemoteModule>
+>;
+
 export type ClientTable<
   RemoteModule extends UntypedRemoteModule,
   TableName extends TableNamesOf<RemoteModule>,

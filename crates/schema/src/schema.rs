@@ -14,6 +14,7 @@ use itertools::Itertools;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::raw_def::v9::RawSql;
 use spacetimedb_lib::db::raw_def::{generate_cols_name, RawConstraintDefV8};
+use spacetimedb_lib::Hash as SpacetimeHash;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::raw_identifier::{RawIdentifier, RawNamespacedIdentifier};
@@ -22,10 +23,11 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::def::{
-    ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup,
+    ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup, OutboxDef,
     RawModuleDefVersion, ScheduleDef, SequenceDef, TableDef, UniqueConstraintData, ViewColumnDef, ViewDef,
 };
 use crate::identifier::{Identifier, NamespacePath, NamespacedIdentifier};
+use crate::reducer_name::ReducerName;
 
 /// The local part of a stored, possibly namespaced name.
 ///
@@ -64,10 +66,29 @@ pub trait Schema: Sized {
     fn check_compatible(&self, module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error>;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ViewDefInfo {
     pub view_id: ViewId,
     pub is_anonymous: bool,
+    /// The view's declared parameters, in position order, as stored in `st_view_param`.
+    ///
+    /// Types are unresolved: a user-defined parameter type is an [`AlgebraicType::Ref`].
+    /// These are not SQL-ready column types.
+    /// They are used to check argument counts, and to decide which parameters SQL literals can express.
+    pub params: ProductType,
+}
+
+impl ViewDefInfo {
+    /// Builds [`Self::params`] from a view's parameter columns.
+    ///
+    /// Both schema paths use this: the one built from a [`ViewDef`] and the one loaded from `st_view_param`,
+    /// so a fresh schema and a reloaded one agree.
+    pub fn params_from_columns(columns: impl IntoIterator<Item = (RawIdentifier, AlgebraicType)>) -> ProductType {
+        columns
+            .into_iter()
+            .map(|(name, ty)| ProductTypeElement::new_named(ty, name))
+            .collect()
+    }
 }
 
 pub const VIEW_ARG_HASH_COL: ColId = ColId(0);
@@ -86,7 +107,7 @@ impl From<Arc<TableSchema>> for TableOrViewSchema {
     fn from(inner: Arc<TableSchema>) -> Self {
         Self {
             table_id: inner.table_id,
-            view_info: inner.view_info,
+            view_info: inner.view_info.clone(),
             table_name: inner.table_name.clone(),
             table_access: inner.table_access,
             inner,
@@ -188,6 +209,9 @@ pub struct TableSchema {
     /// Whether this is an event table.
     pub is_event: bool,
 
+    /// Outbox configuration if this is an outbox table.
+    pub outbox: Option<OutboxSchema>,
+
     /// Cache for `row_type_for_table` in the data store.
     pub row_type: ProductType,
 }
@@ -214,6 +238,7 @@ impl TableSchema {
         primary_key: Option<ColId>,
         is_event: bool,
         alias: Option<NamespacedIdentifier>,
+        outbox: Option<OutboxSchema>,
     ) -> Self {
         Self {
             row_type: columns_to_row_type(&columns),
@@ -230,6 +255,7 @@ impl TableSchema {
             primary_key,
             is_event,
             alias,
+            outbox,
         }
     }
 
@@ -267,6 +293,7 @@ impl TableSchema {
             None,
             None,
             false,
+            None,
             None,
         )
     }
@@ -783,6 +810,7 @@ impl TableSchema {
             view_primary_key,
             false,
             None,
+            None,
         )
     }
 
@@ -836,6 +864,7 @@ impl TableSchema {
             is_anonymous,
             primary_key,
             return_columns,
+            param_columns,
             accessor_name,
             ..
         } = view_def;
@@ -910,6 +939,11 @@ impl TableSchema {
         let view_info = ViewDefInfo {
             view_id: ViewId::SENTINEL,
             is_anonymous: *is_anonymous,
+            params: ViewDefInfo::params_from_columns(
+                param_columns
+                    .iter()
+                    .map(|col| (col.name.clone().into(), col.ty.clone())),
+            ),
         };
 
         TableSchema::new(
@@ -926,6 +960,7 @@ impl TableSchema {
             None,
             false,
             Some(accessor_name.clone().into()),
+            None,
         )
     }
 }
@@ -957,6 +992,7 @@ impl Schema for TableSchema {
             table_access,
             is_event,
             accessor_name,
+            outbox,
             ..
         } = def;
 
@@ -983,6 +1019,14 @@ impl Schema for TableSchema {
             .as_ref()
             .map(|schedule| ScheduleSchema::from_module_def(module_def, schedule, table_id, ScheduleId::SENTINEL));
 
+        let outbox = outbox.as_ref().map(|outbox| OutboxSchema {
+            remote_reducer: outbox.remote_reducer.clone(),
+            target_column: outbox.target_column,
+            arg_columns: outbox.arg_columns.clone(),
+            on_result_reducer: outbox.on_result_reducer.clone(),
+            signature_hash: outbox.signature_hash,
+        });
+
         TableSchema::new(
             table_id,
             TableName::new(name.clone()),
@@ -997,6 +1041,7 @@ impl Schema for TableSchema {
             *primary_key,
             *is_event,
             Some(accessor_name.clone().into()),
+            outbox,
         )
     }
 
@@ -1071,6 +1116,15 @@ impl Schema for TableSchema {
             def.schedule.is_some(),
             "Schedule presence mismatch"
         );
+
+        if let Some(outbox) = &self.outbox {
+            let outbox_def = def
+                .outbox
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Outbox not found in definition"))?;
+            outbox.check_compatible(outbox_def)?;
+        }
+        ensure_eq!(self.outbox.is_some(), def.outbox.is_some(), "Outbox presence mismatch");
         Ok(())
     }
 }
@@ -1401,6 +1455,44 @@ impl Schema for ScheduleSchema {
             strip_namespace(&self.function_name, &def.namespace)?,
             &def.function_name[..],
             "Schedule function name mismatch"
+        );
+        Ok(())
+    }
+}
+
+/// Marks a table as an outbox table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutboxSchema {
+    /// The reducer to invoke on the target database.
+    pub remote_reducer: ReducerName,
+    /// Column containing the receiver database identity.
+    pub target_column: ColId,
+    /// Columns to encode as reducer arguments, in receiver parameter order.
+    pub arg_columns: Vec<ColId>,
+    /// Local reducer to invoke with the remote result before acknowledging this stream.
+    pub on_result_reducer: Option<ReducerName>,
+    /// Hash of the receiver reducer signature as seen by the sender bindings.
+    pub signature_hash: SpacetimeHash,
+}
+
+impl OutboxSchema {
+    fn check_compatible(&self, def: &OutboxDef) -> Result<(), anyhow::Error> {
+        ensure_eq!(
+            &self.remote_reducer,
+            &def.remote_reducer,
+            "Outbox remote reducer mismatch"
+        );
+        ensure_eq!(self.target_column, def.target_column, "Outbox target column mismatch");
+        ensure_eq!(&self.arg_columns, &def.arg_columns, "Outbox arg columns mismatch");
+        ensure_eq!(
+            &self.on_result_reducer,
+            &def.on_result_reducer,
+            "Outbox on_result reducer mismatch"
+        );
+        ensure_eq!(
+            &self.signature_hash,
+            &def.signature_hash,
+            "Outbox signature hash mismatch"
         );
         Ok(())
     }

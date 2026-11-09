@@ -14,7 +14,7 @@ npm add spacetimedb
 
 You can use the package in the browser, using a bundler like vite/parcel/rsbuild, in server-side applications like NodeJS, Deno, Bun, NextJS, Remix, and in Cloudflare Workers.
 
-> NOTE: For usage in NodeJS 18-21, you need to install the `undici` package as a peer dependency: `npm add spacetimedb undici`. Node 22 and later are supported out of the box.
+> Use a recent version of Node.js 22, 24, or 26 or later.
 
 ### Usage
 
@@ -26,22 +26,31 @@ import { DbConnection, tables } from './module_bindings';
 const connection = DbConnection.builder()
   .withUri('ws://localhost:3000')
   .withDatabaseName('MODULE_NAME')
-  .onDisconnect(() => {
-    console.log('disconnected');
+  .withAutomaticReconnect()
+  .onConnect((_connection, identity) => {
+    console.log('Connected:', identity.toHexString());
   })
-  .onConnectError(() => {
-    console.log('client_error');
+  .onAutomaticReconnect((_connection, identity) => {
+    console.log('Reconnected:', identity.toHexString());
   })
-  .onConnect((connection, identity, _token) => {
+  .onDisconnect((_ctx, error, attempt, delayMs) => {
     console.log(
-      'Connected to SpacetimeDB with identity:',
-      identity.toHexString()
+      attempt === undefined
+        ? 'Disconnected'
+        : `Retry ${attempt} in ${delayMs} ms`,
+      error
     );
-
-    connection.subscriptionBuilder().subscribe(tables.player);
+  })
+  .onConnectError((_ctx, error, attempt) => {
+    console.error(
+      attempt === undefined ? 'Connection failed' : 'Retry failed',
+      error
+    );
   })
   .withToken('TOKEN')
   .build();
+
+connection.subscriptionBuilder().subscribe(tables.player);
 ```
 
 If you need to disconnect the client:
@@ -49,6 +58,10 @@ If you need to disconnect the client:
 ```ts
 connection.disconnect();
 ```
+
+Automatic reconnection preserves the connection, cache, handles, and callbacks. Register subscriptions and row callbacks once after `build()` or inside `onConnect`, which fires once per connection object. Successful automatic reconnects fire `onAutomaticReconnect(connection, identity, token)` instead. This callback runs before subscription replay; wait for subscription `onApplied` callbacks when you need refreshed data. Cache reads remain available during outages. Initial connection failures are not retried by the core SDK.
+
+For expiring credentials, pass the initial token with `withToken` and add `withTokenProvider(() => auth.getAccessToken())`. The SDK asks for a fresh token before reconnecting when the retained token is near expiry. The provider must return a token for the same identity. If your application persists tokens, save the token from both `onConnect` and `onAutomaticReconnect` to include refreshed credentials.
 
 Typically, you will use the SDK with types generated from SpacetimeDB module. For example, given a table named `Player` you can subscribe to player updates like this:
 
@@ -235,3 +248,76 @@ by the host in a submodule fail at runtime; ordinary helpers retain their caller
 scope. Values are private, durable database configuration for secrets and other settings.
 Database owners and authorized collaborators can read them; module code can expose
 them through its own outputs.
+
+### Inter-database communication
+
+Generate receiver bindings with `spacetime generate --bindings module --lang typescript`,
+or declare dependencies in `spacetime.json` and run `spacetime generate <sender>`.
+Dependency bindings are written to `src/remote_bindings/<dependency>/index.ts` by
+default. Import them as source modules; no receiver package dependency is needed.
+Receiver generation currently covers root-module reducers only.
+
+```ts
+import { schema, table, t } from 'spacetimedb/server';
+import gw from './remote_bindings/game_world';
+
+const pingOutbox = table(
+  { outbox: { receiver: gw.reducers.receivePing } },
+  {
+    msgId: t.u64().primaryKey().autoInc(),
+    target: gw.identity().target(),
+    note: t.string(),
+  }
+);
+// Alternatively: const pingOutbox = gw.outbox.receivePing();
+// Like table(), it takes an optional name; the schema key defines the accessor.
+const db = schema({ pingOutbox });
+export default db;
+
+export const ping = db.reducer(
+  { to: gw.identity(), note: t.string() },
+  (ctx, { to, note }) => {
+    ctx.db.pingOutbox.insert({ msgId: 0n, target: to, note });
+  }
+);
+
+export const onPingResult = db.reducer(
+  { onResult: pingOutbox },
+  { row: pingOutbox.rowType, result: t.result(t.unit(), t.string()) },
+  (_ctx, { row, result }) => {
+    if ('err' in result)
+      console.warn(`Ping to ${row.target} failed: ${result.err}`);
+  }
+);
+```
+
+Outboxes require one auto-incrementing `u64` primary key and one identity column
+marked `.target()`. Receiver parameters map to columns by name, independently of
+column order. Outboxes expose inserts and reads; updates, deletes, and `clear`
+are unavailable. A result callback accepts the outbox row followed by
+`Result<Unit, String>`. The host commits successful callback changes atomically
+with outbox cleanup.
+
+The shorthand reserves `msgId` and `target` for its metadata columns. If the
+receiver has a parameter with either name, declare the outbox with `table()`
+and use different metadata column names, such as `deliveryId` and `destination`.
+
+A `gw.identity()` type records which module your code means to send to. Nothing
+checks it against the database it names, and any caller can pass any identity
+as a reducer argument. To reply to a calling database, look `ctx.sender` up in a
+table of databases you trust and send to the stored identity. Index lookups
+accept a plain `Identity`, while rows keep the receiver's type, so inserting
+`ctx.sender` as a target does not compile.
+
+```ts
+import { SenderError } from 'spacetimedb/server';
+
+// Register it with the outbox: schema({ pingOutbox, trustedWorld }).
+const trustedWorld = table({}, { world: gw.identity().primaryKey() });
+
+export const pingBack = db.reducer({ note: t.string() }, (ctx, { note }) => {
+  const caller = ctx.db.trustedWorld.world.find(ctx.sender);
+  if (!caller) throw new SenderError('Unknown caller');
+  ctx.db.pingOutbox.insert({ msgId: 0n, target: caller.world, note });
+});
+```

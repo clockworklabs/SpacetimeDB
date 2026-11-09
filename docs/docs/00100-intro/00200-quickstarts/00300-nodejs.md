@@ -12,7 +12,7 @@ Get a SpacetimeDB Node.js app running in under 5 minutes.
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) 18+ installed
+- A recent version of [Node.js](https://nodejs.org/) 22, 24, or 26 or later
 - [SpacetimeDB CLI](https://spacetimedb.com/install) installed
 
 <InstallCardLink />
@@ -134,35 +134,36 @@ spacetime sql "SELECT * FROM person"
 
   <Step title="Understand the client code">
     <StepText>
-      Open `src/main.ts` to see the Node.js client. It uses `DbConnection.builder()` to connect to SpacetimeDB, subscribes to tables, and registers callbacks for insert/delete events. Unlike browser apps, Node.js stores the authentication token in a file instead of localStorage.
+      Open `src/main.ts` to see the Node.js client. It uses `DbConnection.builder()` to connect to SpacetimeDB, subscribes to tables, and registers callbacks for insert/delete events. Unlike browser apps, Node.js stores the authentication token in a file instead of localStorage. Enable `withAutomaticReconnect()` to recover after connection loss. `onConnect` fires once per connection object, so subscriptions and row callbacks can be initialized there or once after `build()`. Successful automatic reconnects fire `onAutomaticReconnect` instead, before subscriptions are replayed.
     </StepText>
     <StepCode>
 ```typescript
 import { DbConnection } from './module_bindings/index.js';
 
-DbConnection.builder()
+const conn = DbConnection.builder()
   .withUri(HOST)
   .withDatabaseName(DB_NAME)
-  .withToken(loadToken())  // Load saved token from file
-  .onConnect((conn, identity, token) => {
+  .withToken(loadToken())
+  .withAutomaticReconnect()
+  .onConnect((_conn, identity, token) => {
     console.log('Connected! Identity:', identity.toHexString());
-    saveToken(token);  // Save token for future connections
-
-    // Subscribe to all tables
-    conn.subscriptionBuilder()
-      .onApplied((ctx) => {
-        // Show current people
-        const people = [...ctx.db.person.iter()];
-        console.log('Current people:', people.length);
-      })
-      .subscribeToAllTables();
-
-    // Listen for table changes
-    conn.db.person.onInsert((ctx, person) => {
-      console.log(`[Added] ${person.name}`);
-    });
+    saveToken(token);
+  })
+  .onAutomaticReconnect((_conn, identity, token) => {
+    console.log('Reconnected! Identity:', identity.toHexString());
+    saveToken(token);
   })
   .build();
+
+conn.subscriptionBuilder()
+  .onApplied(ctx => {
+    console.log('Current people:', [...ctx.db.person.iter()].length);
+  })
+  .subscribeToAllTables();
+
+conn.db.person.onInsert((_ctx, person) => {
+  console.log(`[Added] ${person.name}`);
+});
 ````
 
     </StepCode>
@@ -207,8 +208,6 @@ spacetime logs
 
   <Step title="Node.js considerations">
     <StepText>
-      **WebSocket support:** Node.js 22+ has native WebSocket support. For Node.js 18-21, the SDK automatically uses the `undici` package (included in devDependencies).
-
       **Environment variables:** Configure the connection using `SPACETIMEDB_HOST` and `SPACETIMEDB_DB_NAME` environment variables.
 
       **Exiting:** Press Ctrl+C to stop the client.

@@ -1,5 +1,5 @@
 use crate::sym;
-use crate::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta};
+use crate::util::{check_duplicate, check_duplicate_msg, ident_to_litstr, match_meta, native_test_utils_registration};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::parse::Parser as _;
@@ -10,6 +10,7 @@ use syn::{FnArg, Ident, ItemFn, LitStr, PatType};
 pub(crate) struct ReducerArgs {
     name: Option<LitStr>,
     lifecycle: Option<LifecycleReducer>,
+    on_result: Option<syn::Path>,
 }
 
 enum LifecycleReducer {
@@ -50,6 +51,12 @@ impl ReducerArgs {
                 sym::name => {
                     check_duplicate(&args.name, &meta)?;
                     args.name = Some(meta.value()?.parse()?);
+                }
+                sym::on_result => {
+                    check_duplicate(&args.on_result, &meta)?;
+                    let content;
+                    syn::parenthesized!(content in meta.input);
+                    args.on_result = Some(content.parse()?);
                 }
             });
             Ok(())
@@ -101,6 +108,19 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
     assert_only_lifetime_generics(original_function, "reducers")?;
 
     let lifecycle = args.lifecycle.iter().filter_map(|lc| lc.to_lifecycle_value());
+    let on_result_outbox = args.on_result.as_ref().map(|path| {
+        let accessor = &path.segments.last().unwrap().ident;
+        quote!(
+            const ON_RESULT_OUTBOX: Option<&'static str> =
+                Some(spacetimedb::rt::on_result_outbox(#path::#accessor));
+        )
+    });
+    let on_result_typecheck = args.on_result.as_ref().map(|path| {
+        let accessor = &path.segments.last().unwrap().ident;
+        quote! {
+            spacetimedb::rt::on_result_typecheck(#func_name, #path::#accessor);
+        }
+    });
 
     let typed_args = extract_typed_args(original_function)?;
 
@@ -140,10 +160,14 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
             spacetimedb::rt::register_reducer::<_, #func_name>(#func_name)
         }
     };
+    let test_utils_registration = native_test_utils_registration(quote! {
+        __register_describer()
+    });
 
     Ok(quote! {
         const _: () = {
             #generated_describe_function
+            #test_utils_registration
         };
         #[allow(non_camel_case_types)]
         #vis struct #func_name { _never: ::core::convert::Infallible }
@@ -152,6 +176,7 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
                 #(let _ = <#first_arg_ty as spacetimedb::rt::ReducerContextArg>::_ITEM;)*
                 #(let _ = <#rest_arg_tys as spacetimedb::rt::ReducerArg>::_ITEM;)*
                 #(let _ = <#ret_ty as spacetimedb::rt::IntoReducerResult>::into_result;)*
+                #on_result_typecheck
             }
         };
         impl #func_name {
@@ -166,6 +191,7 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
             type FnKind = spacetimedb::rt::FnKindReducer;
             const NAME: &'static str = #reducer_name;
             #(const LIFECYCLE: Option<spacetimedb::rt::LifecycleReducer> = Some(#lifecycle);)*
+            #on_result_outbox
             const ARG_NAMES: &'static [Option<&'static str>] = &[#(#opt_arg_names),*];
             const INVOKE: Self::Invoke = #func_name::invoke;
         }

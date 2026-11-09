@@ -1,10 +1,11 @@
+import { getByAccessorPath } from '../lib/accessor_path.ts';
 import { shallowRef, watch, onUnmounted } from 'vue';
-import { useSpacetimeDB } from './useSpacetimeDB';
-import type { UntypedProcedureDef } from '../sdk/procedures';
+import { useSpacetimeDB } from './useSpacetimeDB.ts';
+import type { UntypedProcedureDef } from '../sdk/procedures.ts';
 import type {
   ProcedureParamsType,
   ProcedureReturnType,
-} from '../sdk/type_utils';
+} from '../sdk/type_utils.ts';
 
 export function useProcedure<ProcedureDef extends UntypedProcedureDef>(
   procedureDef: ProcedureDef
@@ -28,7 +29,7 @@ export function useProcedure<ProcedureDef extends UntypedProcedureDef>(
       const connection = conn.getConnection();
       if (!connection) return;
 
-      const fn = (connection.procedures as any)[procedureName] as (
+      const fn = getByAccessorPath(connection.procedures, procedureName) as (
         ...p: ProcedureParamsType<ProcedureDef>
       ) => Promise<ProcedureReturnType<ProcedureDef>>;
       if (queueRef.value.length) {
@@ -54,7 +55,7 @@ export function useProcedure<ProcedureDef extends UntypedProcedureDef>(
         }
       );
     }
-    const fn = (connection.procedures as any)[procedureName] as (
+    const fn = getByAccessorPath(connection.procedures, procedureName) as (
       ...p: ProcedureParamsType<ProcedureDef>
     ) => Promise<ProcedureReturnType<ProcedureDef>>;
     return fn(...params);

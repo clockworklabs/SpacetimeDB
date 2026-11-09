@@ -2,25 +2,29 @@ use super::{
     committed_state::CommittedState,
     datastore::{Result, TxMetrics},
     state_view::{IterByColRangeTx, StateView},
+    time::Instant,
     IterByColEqTx, SharedReadGuard,
 };
-use crate::{error::IndexError, execution_context::ExecutionContext};
-use spacetimedb_durability::TxOffset;
+#[cfg(feature = "execution")]
+use crate::error::IndexError;
+use crate::execution_context::ExecutionContext;
+use crate::traits::TxOffset;
+#[cfg(feature = "execution")]
 use spacetimedb_execution::Datastore;
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_primitives::{ColList, IndexId, TableId};
+#[cfg(feature = "execution")]
+use spacetimedb_primitives::IndexId;
+use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::{reducer_name::ReducerName, schema::TableSchema};
-use spacetimedb_table::{
-    table::{IndexScanPointIter, IndexScanRangeIter, TableAndIndex, TableScanIter},
-    table_index::IndexCannotSeekRange,
-};
+use spacetimedb_table::table::TableScanIter;
+#[cfg(feature = "execution")]
+use spacetimedb_table::table::{IndexScanPointIter, IndexScanRangeIter, TableAndIndex};
+#[cfg(feature = "execution")]
+use spacetimedb_table::table_index::IndexCannotSeekRange;
 use std::sync::Arc;
 use std::{future, num::NonZeroU64};
-use std::{
-    ops::RangeBounds,
-    time::{Duration, Instant},
-};
+use std::{ops::RangeBounds, time::Duration};
 
 /// A read-only transaction with a shared lock on the committed state.
 pub struct TxId {
@@ -33,6 +37,7 @@ pub struct TxId {
     pub metrics: ExecutionMetrics,
 }
 
+#[cfg(feature = "execution")]
 impl Datastore for TxId {
     type TableIter<'a>
         = TableScanIter<'a>
@@ -125,6 +130,7 @@ impl StateView for TxId {
 }
 
 impl TxId {
+    #[cfg(feature = "execution")]
     fn with_index<'a, R>(
         &'a self,
         table_id: TableId,

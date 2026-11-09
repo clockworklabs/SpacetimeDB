@@ -1,6 +1,4 @@
-use super::module_host::{
-    CallReducerParams, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, WeakModuleHost,
-};
+use super::module_host::{CallReducerParams, WeakModuleHost};
 use super::{FunctionArgs, ModuleHost};
 use crate::db::relational_db::RelationalDB;
 use crate::host::module_host::{CallProcedureParams, ModuleInfo};
@@ -13,7 +11,6 @@ use futures::future::BoxFuture;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
 use prometheus::IntGauge;
-use spacetimedb_client_api_messages::energy::FunctionBudget;
 use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::system_tables::{StScheduledFields, ST_SCHEDULED_ID};
@@ -24,11 +21,12 @@ use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::bsatn::ToBsatn as _;
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_table::table::RowRef;
+use std::collections::HashMap;
 use std::panic;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
-use tokio_util::time::delay_queue::{DelayQueue, Expired};
+use tokio_util::time::delay_queue::{DelayQueue, Expired, Key};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct ScheduledFunctionId {
@@ -91,6 +89,7 @@ impl SchedulerStarter {
     // time to make it better right now.
     pub fn start(mut self, module_host: &ModuleHost) -> anyhow::Result<()> {
         let mut queue: DelayQueue<QueueItem> = DelayQueue::new();
+        let mut queued_ids = HashMap::new();
         let tx = self.db.begin_tx(Workload::Internal);
 
         // Draining rx before processing schedules from the DB to ensure there are no in-flight messages,
@@ -128,7 +127,9 @@ impl SchedulerStarter {
                     id_column,
                     at_column,
                 };
-                queue.insert_at(
+                insert_scheduled_queue_item(
+                    &mut queue,
+                    &mut queued_ids,
                     QueueItem::Id {
                         id,
                         function_name: function_name.clone(),
@@ -144,6 +145,7 @@ impl SchedulerStarter {
             SchedulerActor {
                 rx: self.rx,
                 queue,
+                queued_ids,
                 inflight_calls: FuturesUnordered::new(),
                 active_calls_metric: WORKER_METRICS
                     .scheduler_active_scheduled_functions
@@ -274,6 +276,7 @@ impl Scheduler {
 struct SchedulerActor {
     rx: mpsc::UnboundedReceiver<MsgOrExit<SchedulerMessage>>,
     queue: DelayQueue<QueueItem>,
+    queued_ids: HashMap<ScheduledFunctionId, Key>,
     inflight_calls: FuturesUnordered<ScheduledFunctionFuture>,
     active_calls_metric: IntGauge,
     module_host: WeakModuleHost,
@@ -371,7 +374,7 @@ impl SchedulerActor {
                 effective_at,
                 real_at,
             } => {
-                self.queue.insert_at(
+                self.insert_scheduled(
                     QueueItem::Id {
                         id,
                         function_name,
@@ -392,6 +395,9 @@ impl SchedulerActor {
 
     fn handle_queued(&mut self, expired: Expired<QueueItem>) {
         let item = expired.into_inner();
+        if let QueueItem::Id { id, .. } = item {
+            self.queued_ids.remove(&id);
+        }
 
         let Some(module_host) = self.module_host.upgrade() else {
             return;
@@ -430,7 +436,7 @@ impl SchedulerActor {
                     ..
                 } = item
                 {
-                    self.queue.insert_at(
+                    self.insert_scheduled(
                         QueueItem::Id {
                             id,
                             function_name,
@@ -444,8 +450,27 @@ impl SchedulerActor {
         }
     }
 
+    fn insert_scheduled(&mut self, item: QueueItem, real_at: Instant) {
+        insert_scheduled_queue_item(&mut self.queue, &mut self.queued_ids, item, real_at);
+    }
+
     fn update_active_calls_metric(&self) {
         self.active_calls_metric.set(self.inflight_calls.len() as i64);
+    }
+}
+
+fn insert_scheduled_queue_item(
+    queue: &mut DelayQueue<QueueItem>,
+    queued_ids: &mut HashMap<ScheduledFunctionId, Key>,
+    item: QueueItem,
+    real_at: Instant,
+) {
+    if let QueueItem::Id { id, .. } = item {
+        if let Some(key) = queued_ids.remove(&id) {
+            queue.remove(&key);
+        }
+        let key = queue.insert_at(item, real_at);
+        queued_ids.insert(id, key);
     }
 }
 
@@ -576,7 +601,6 @@ fn prepare_scheduled_procedure_call(
             log::error!("could not determine scheduled procedure or its parameters: {err:#}");
             let reschedule = id.zip(invocation.as_ref()).and_then(|(id, invocation)| {
                 delete_scheduled_function_row(
-                    module_info,
                     db,
                     (id, invocation.row_hash),
                     Some(tx),
@@ -597,7 +621,6 @@ fn prepare_scheduled_procedure_call(
     // so we must remove the schedule row before executing.
     let reschedule = id.zip(invocation.as_ref()).and_then(|(id, invocation)| {
         delete_scheduled_function_row(
-            module_info,
             db,
             (id, invocation.row_hash),
             Some(tx),
@@ -646,7 +669,6 @@ fn call_scheduled_reducer_until_done(
             log::error!("could not determine scheduled reducer or its parameters: {err:#}");
             let reschedule = id.zip(invocation.as_ref()).and_then(|(id, invocation)| {
                 delete_scheduled_function_row(
-                    module_info,
                     db,
                     (id, invocation.row_hash),
                     Some(tx),
@@ -752,15 +774,7 @@ fn call_scheduled_reducer_with_tx(
         inst_common.call_reducer_with_tx(Some(tx), params, inst)
     }));
     let reschedule = scheduled.and_then(|(id, row_hash)| {
-        delete_scheduled_function_row(
-            module_info,
-            db,
-            (id, row_hash),
-            None,
-            reschedule_from,
-            inst_common,
-            inst,
-        )
+        delete_scheduled_function_row(db, (id, row_hash), None, reschedule_from, inst_common, inst)
     });
     // Currently, we drop the return value from the function call. In the future,
     // we might want to handle it somehow.
@@ -778,7 +792,6 @@ fn call_scheduled_reducer_with_tx(
 /// One-shot schedules are deleted and committed immediately. Interval schedules are not
 /// deleted here; instead their `ScheduleAt` is returned to the caller as a `Reschedule`.
 fn delete_scheduled_function_row(
-    module_info: &ModuleInfo,
     db: &RelationalDB,
     (id, row_hash): (ScheduledFunctionId, Hash),
     tx: Option<MutTxId>,
@@ -787,7 +800,7 @@ fn delete_scheduled_function_row(
     inst: &mut impl WasmInstance,
 ) -> Option<Reschedule> {
     let tx = tx.unwrap_or_else(|| db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal));
-    let schedule_at = delete_scheduled_function_row_with_tx(module_info, db, tx, id, row_hash, inst_common, inst)?;
+    let schedule_at = delete_scheduled_function_row_with_tx(db, tx, id, row_hash, inst_common, inst)?;
     let ScheduleAt::Interval(dur) = schedule_at else {
         return None;
     };
@@ -837,7 +850,6 @@ fn next_interval_tick_after(last_intended_at: Timestamp, interval: TimeDuration,
 ///
 /// Interval schedules are left in place and returned to the caller for rescheduling.
 fn delete_scheduled_function_row_with_tx(
-    module_info: &ModuleInfo,
     db: &RelationalDB,
     mut tx: MutTxId,
     id: ScheduledFunctionId,
@@ -874,49 +886,11 @@ fn delete_scheduled_function_row_with_tx(
 
     let row_ptr = schedule_row.pointer();
     db.delete(&mut tx, id.table_id, [row_ptr]);
-    refresh_views_then_commit_and_broadcast(tx, module_info, inst_common, inst);
+    let (result, _) = inst_common.refresh_views_then_commit_and_broadcast(tx, inst);
+    if let Err(e) = result {
+        log::error!("Failed to commit scheduled-row cleanup: {e:#}");
+    }
     None
-}
-
-/// Refreshes stale views, commits transaction, and broadcasts subscription updates.
-fn refresh_views_then_commit_and_broadcast(
-    tx: MutTxId,
-    module_info: &ModuleInfo,
-    inst_common: &mut InstanceCommon,
-    inst: &mut impl WasmInstance,
-) {
-    let timestamp = Timestamp::now();
-    let (view_result, _n_evaluated, trapped) =
-        inst_common.call_views_with_tx(tx, module_info.database_identity, inst, timestamp);
-    let mut status = match view_result.outcome {
-        crate::host::module_host::ViewOutcome::Success => EventStatus::Committed(DatabaseUpdate::default()),
-        crate::host::module_host::ViewOutcome::Failed(err) => EventStatus::FailedInternal(err),
-        crate::host::module_host::ViewOutcome::BudgetExceeded => EventStatus::OutOfEnergy,
-    };
-    if trapped && matches!(status, EventStatus::Committed(_)) {
-        status = EventStatus::FailedInternal("The instance encountered a fatal error.".into());
-    }
-
-    let event = ModuleEvent {
-        timestamp,
-        caller_identity: module_info.database_identity,
-        caller_connection_id: None,
-        function_call: ModuleFunctionCall::default(),
-        status,
-        reducer_return_value: None,
-        //Keeping them 0 as it is internal transaction, not by reducer
-        execution_budget_used: FunctionBudget::ZERO,
-        host_execution_duration: Duration::from_millis(0),
-        request_id: None,
-        timer: None,
-    };
-
-    if let Err(e) = module_info
-        .subscriptions
-        .commit_and_broadcast_event(None, event, view_result.tx)
-    {
-        log::error!("Failed to broadcast deletion event: {e:#}");
-    }
 }
 
 fn reducer_call_params_for_queued_item(
@@ -1081,5 +1055,34 @@ mod tests {
     fn next_interval_tick_is_strictly_after_now_on_boundary() {
         let next = next_interval_tick_after(ts(1_000), TimeDuration::from_micros(100), ts(1_300));
         assert_eq!(next, ts(1_400));
+    }
+
+    #[tokio::test]
+    async fn scheduling_same_row_replaces_pending_queue_entry() {
+        let mut queue = DelayQueue::new();
+        let mut queued_ids = HashMap::new();
+        let id = ScheduledFunctionId {
+            table_id: TableId(1),
+            schedule_id: 1,
+            id_column: ColId(0),
+            at_column: ColId(1),
+        };
+
+        for at in [ts(1_000), ts(2_000)] {
+            insert_scheduled_queue_item(
+                &mut queue,
+                &mut queued_ids,
+                QueueItem::Id {
+                    id,
+                    function_name: Arc::from("tick"),
+                    at,
+                    row_hash: Hash::ZERO,
+                },
+                Instant::now() + Duration::from_secs(60),
+            );
+        }
+
+        assert_eq!(queue.len(), 1);
+        assert_eq!(queued_ids.len(), 1);
     }
 }

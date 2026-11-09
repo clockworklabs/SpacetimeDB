@@ -10,7 +10,9 @@ use spacetimedb_lib::db::raw_def::v10::{
 };
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableType, ViewResultHeader};
-use spacetimedb_lib::de::{self, Deserialize, DeserializeOwned, Error as _, SeqProductAccess};
+#[cfg(any(target_arch = "wasm32", feature = "unstable"))]
+use spacetimedb_lib::de::DeserializeOwned;
+use spacetimedb_lib::de::{self, Deserialize, Error as _, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
@@ -168,6 +170,9 @@ pub trait FnInfo: ExplicitNames {
     /// Currently only views use this metadata.
     const VIEW_PRIMARY_KEY_COLUMNS: &'static [&'static str] = &[];
 
+    /// The source name of the outbox table whose results this reducer handles.
+    const ON_RESULT_OUTBOX: Option<&'static str> = None;
+
     /// The function to invoke.
     const INVOKE: Self::Invoke;
 
@@ -176,6 +181,25 @@ pub trait FnInfo: ExplicitNames {
     fn return_type(_ts: &mut impl TypespaceBuilder) -> Option<AlgebraicType> {
         None
     }
+}
+
+/// Metadata for a reducer handle generated from a remote module schema.
+///
+/// Unlike FnInfo, this does not describe a locally exported callable and
+/// therefore has no invocation function. It is used by module-side macros to
+/// typecheck calls into another database.
+pub trait RemoteReducer {
+    /// The reducer name in the remote module schema.
+    const NAME: &'static str;
+
+    /// Hash of the reducer signature as seen by the generated receiver bindings.
+    const SIGNATURE_HASH: &'static str;
+
+    /// Reducer argument product, excluding the reducer context.
+    ///
+    /// Fields preserve the remote reducer's parameter product order, matching the
+    /// signature hash and positional BSATN arguments.
+    type Args;
 }
 
 pub trait Procedure<'de, A: Args<'de>, Ret: IntoProcedureResult> {
@@ -448,6 +472,19 @@ impl ViewRegistrar<ViewContext> {
     {
         register_view::<A, I, T>(view)
     }
+
+    #[cfg(feature = "test-utils")]
+    #[inline]
+    #[doc(hidden)]
+    pub fn register_for_tests<'a, A, I, T, V>(view: V)
+    where
+        A: Args<'a>,
+        T: ViewReturn,
+        I: FnInfo<Invoke = ViewFn>,
+        V: View<'a, A, T>,
+    {
+        register_view_for_tests::<A, I, T>(view)
+    }
 }
 
 impl ViewRegistrar<AnonymousViewContext> {
@@ -461,6 +498,19 @@ impl ViewRegistrar<AnonymousViewContext> {
     {
         register_anonymous_view::<A, I, T>(view)
     }
+
+    #[cfg(feature = "test-utils")]
+    #[inline]
+    #[doc(hidden)]
+    pub fn register_for_tests<'a, A, I, T, V>(view: V)
+    where
+        A: Args<'a>,
+        T: ViewReturn,
+        I: FnInfo<Invoke = AnonymousFn>,
+        V: AnonymousView<'a, A, T>,
+    {
+        register_anonymous_view_for_tests::<A, I, T>(view)
+    }
 }
 
 /// Assert that a reducer type-checks with a given type.
@@ -469,6 +519,25 @@ where
     Row: SpacetimeType + Serialize + Deserialize<'de>,
 {
     core::mem::forget(_x);
+}
+
+/// Resolve an outbox accessor to its registered table source name.
+pub const fn on_result_outbox<T, Tbl>(_table: fn(&crate::Local) -> T) -> &'static str
+where
+    T: core::ops::Deref<Target = crate::table::OutboxTable<Tbl>>,
+    Tbl: crate::Table,
+{
+    Tbl::TABLE_NAME
+}
+
+/// Assert that an `on_result` reducer accepts the outbox row and delivery result.
+pub fn on_result_typecheck<T, Tbl, F, Ret>(_f: F, _table: fn(&crate::Local) -> T)
+where
+    T: core::ops::Deref<Target = crate::table::OutboxTable<Tbl>>,
+    Tbl: crate::Table,
+    F: Fn(&ReducerContext, Tbl::Row, Result<(), String>) -> Ret,
+    Ret: IntoReducerResult,
+{
 }
 
 /// Tacit marker argument to [`ExportFunctionForScheduledTable`] for reducers.
@@ -549,6 +618,9 @@ impl<T: SpacetimeType> TableColumn for T {}
 /// Assert that the primary_key column of a scheduled table is a u64.
 pub const fn assert_scheduled_table_primary_key<T: ScheduledTablePrimaryKey>() {}
 
+/// Assert that the primary_key column of an outbox table is a u64.
+pub const fn assert_outbox_table_primary_key<T: OutboxTablePrimaryKey>() {}
+
 mod sealed {
     pub trait Sealed {}
 }
@@ -559,6 +631,13 @@ mod sealed {
 pub trait ScheduledTablePrimaryKey: sealed::Sealed {}
 impl sealed::Sealed for u64 {}
 impl ScheduledTablePrimaryKey for u64 {}
+
+#[diagnostic::on_unimplemented(
+    message = "outbox table primary key must be a `u64`",
+    label = "should be `u64`, not `{Self}`"
+)]
+pub trait OutboxTablePrimaryKey: sealed::Sealed {}
+impl OutboxTablePrimaryKey for u64 {}
 
 /// Used in the last type parameter of `Reducer` to indicate that the
 /// context argument *should* be passed to the reducer logic.
@@ -778,6 +857,18 @@ pub fn register_table<T: Table>() {
 
         table.finish();
 
+        if let Some(outbox) = T::OUTBOX {
+            module.inner.add_outbox(
+                T::TABLE_NAME,
+                outbox.remote_reducer_name,
+                outbox.target_column,
+                outbox.arg_columns.iter().copied().map(Into::into),
+                None::<&str>,
+                spacetimedb_lib::Hash::from_hex(outbox.signature_hash)
+                    .expect("generated outbox signature hash must be valid hex"),
+            );
+        }
+
         module.inner.add_explicit_names(T::explicit_names());
     })
 }
@@ -805,7 +896,25 @@ pub fn register_reducer<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl 
         } else {
             module.inner.add_reducer(I::NAME, params);
         }
+        if let Some(outbox_table) = I::ON_RESULT_OUTBOX {
+            module.on_result_reducers.push((outbox_table, I::NAME));
+        }
         module.reducers.push(I::INVOKE);
+
+        module.inner.add_explicit_names(I::explicit_names());
+    })
+}
+
+#[cfg(feature = "test-utils")]
+#[doc(hidden)]
+pub fn register_reducer_for_tests<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl Reducer<'a, A>) {
+    register_describer(|module| {
+        let params = A::schema::<I>(&mut module.inner);
+        if let Some(lifecycle) = I::LIFECYCLE {
+            module.inner.add_lifecycle_reducer(lifecycle, I::NAME, params);
+        } else {
+            module.inner.add_reducer(I::NAME, params);
+        }
 
         module.inner.add_explicit_names(I::explicit_names());
     })
@@ -822,6 +931,23 @@ where
         let ret_ty = <Ret as SpacetimeType>::make_type(&mut module.inner);
         module.inner.add_procedure(I::NAME, params, ret_ty);
         module.procedures.push(I::INVOKE);
+
+        module.inner.add_explicit_names(I::explicit_names());
+    })
+}
+
+#[cfg(all(feature = "test-utils", feature = "unstable"))]
+#[doc(hidden)]
+pub fn register_procedure_for_tests<'a, A, Ret, I>(_: impl Procedure<'a, A, Ret>)
+where
+    A: Args<'a>,
+    Ret: SpacetimeType + Serialize,
+    I: FnInfo<Invoke = ProcedureFn>,
+{
+    register_describer(|module| {
+        let params = A::schema::<I>(&mut module.inner);
+        let ret_ty = <Ret as SpacetimeType>::make_type(&mut module.inner);
+        module.inner.add_procedure(I::NAME, params, ret_ty);
 
         module.inner.add_explicit_names(I::explicit_names());
     })
@@ -846,6 +972,25 @@ where
                 .add_view_primary_key(I::NAME, I::VIEW_PRIMARY_KEY_COLUMNS.iter().copied());
         }
         module.views.push(I::INVOKE);
+
+        module.inner.add_explicit_names(I::explicit_names());
+    })
+}
+
+#[cfg(feature = "test-utils")]
+#[doc(hidden)]
+pub fn register_view_for_tests<'a, A, I, T>(_: impl View<'a, A, T>)
+where
+    A: Args<'a>,
+    I: FnInfo<Invoke = ViewFn>,
+    T: ViewReturn,
+{
+    register_describer(|module| {
+        let params = A::schema::<I>(&mut module.inner);
+        let return_type = I::return_type(&mut module.inner).unwrap();
+        module
+            .inner
+            .add_view(I::NAME, module.views.len(), true, false, params, return_type);
 
         module.inner.add_explicit_names(I::explicit_names());
     })
@@ -890,6 +1035,25 @@ where
                 .add_view_primary_key(I::NAME, I::VIEW_PRIMARY_KEY_COLUMNS.iter().copied());
         }
         module.views_anon.push(I::INVOKE);
+
+        module.inner.add_explicit_names(I::explicit_names());
+    })
+}
+
+#[cfg(feature = "test-utils")]
+#[doc(hidden)]
+pub fn register_anonymous_view_for_tests<'a, A, I, T>(_: impl AnonymousView<'a, A, T>)
+where
+    A: Args<'a>,
+    I: FnInfo<Invoke = AnonymousFn>,
+    T: ViewReturn,
+{
+    register_describer(|module| {
+        let params = A::schema::<I>(&mut module.inner);
+        let return_type = I::return_type(&mut module.inner).unwrap();
+        module
+            .inner
+            .add_view(I::NAME, module.views_anon.len(), true, true, params, return_type);
 
         module.inner.add_explicit_names(I::explicit_names());
     })
@@ -1016,6 +1180,7 @@ pub struct ModuleBuilder {
     views: Vec<ViewFn>,
     /// The anonymous views of the module.
     views_anon: Vec<AnonymousFn>,
+    on_result_reducers: Vec<(&'static str, &'static str)>,
 }
 
 // Not actually a mutex; because WASM is single-threaded this basically just turns into a refcell.
@@ -1042,6 +1207,25 @@ static VIEWS: OnceLock<Vec<ViewFn>> = OnceLock::new();
 pub type AnonymousFn = fn(AnonymousViewContext, &[u8]) -> Vec<u8>;
 static ANONYMOUS_VIEWS: OnceLock<Vec<AnonymousFn>> = OnceLock::new();
 
+#[cfg(feature = "test-utils")]
+#[doc(hidden)]
+pub fn module_def_for_tests() -> RawModuleDef {
+    RawModuleDef::V10(describe_module().inner.finish())
+}
+
+fn describe_module() -> ModuleBuilder {
+    let mut module = ModuleBuilder::default();
+    for describer in &mut *DESCRIBERS.lock().unwrap() {
+        describer(&mut module)
+    }
+
+    // Tables and reducers can register in either order, so link callbacks last.
+    for (outbox_table, reducer) in module.on_result_reducers.drain(..) {
+        module.inner.set_outbox_on_result(outbox_table, reducer);
+    }
+    module
+}
+
 /// Called by the host when the module is initialized
 /// to describe the module into a serialized form that is returned.
 ///
@@ -1059,11 +1243,7 @@ static ANONYMOUS_VIEWS: OnceLock<Vec<AnonymousFn>> = OnceLock::new();
 /// After initialization, the module cannot alter the schema.
 #[unsafe(no_mangle)]
 extern "C" fn __describe_module__(description: BytesSink) {
-    // Collect the `module`.
-    let mut module = ModuleBuilder::default();
-    for describer in &mut *DESCRIBERS.lock().unwrap() {
-        describer(&mut module)
-    }
+    let module = describe_module();
 
     // Serialize the module to bsatn.
     let module_def = module.inner.finish();
@@ -1136,7 +1316,7 @@ extern "C" fn __call_reducer__(
 
     // Assemble the `ReducerContext`.
     let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp as i64);
-    let ctx = ReducerContext::new(crate::Local {}, sender, conn_id, timestamp);
+    let ctx = ReducerContext::new(crate::Local::__host(), sender, conn_id, timestamp);
 
     // Fetch reducer function.
     let reducers = REDUCERS.get().unwrap();
@@ -1250,6 +1430,9 @@ extern "C" fn __call_procedure__(
 /// Called by the host to execute the HTTP handler identified by `id`
 /// in response to the HTTP request `(request, request_body)`.
 ///
+/// The `sender_{0-3}` are the pieces of the random `[u8; 32]` `Identity`
+/// that the host created for this request, and `sender_jwt` holds the payload of its JWT.
+///
 /// The `timestamp` will be the time as of the handler's invocation,
 /// encoded appropriately for conversion to a `spacetimedb_lib::Timestamp`,
 /// i.e. as microseconds since the Unix epoch.
@@ -1270,14 +1453,23 @@ extern "C" fn __call_procedure__(
 #[unsafe(no_mangle)]
 extern "C" fn __call_http_handler__(
     id: usize,
+    sender_0: u64,
+    sender_1: u64,
+    sender_2: u64,
+    sender_3: u64,
+    sender_jwt: BytesSource,
     timestamp: u64,
     request: BytesSource,
     request_body: BytesSource,
     response_sink: BytesSink,
     response_body_sink: BytesSink,
 ) -> i16 {
+    let sender = reconstruct_sender_identity(sender_0, sender_1, sender_2, sender_3);
+    // Read the JWT now, since the host reuses the ids of bytes sources in later calls.
+    let sender_jwt = read_jwt(sender_jwt);
+    let sender_auth = crate::AuthCtx::for_sender(sender, move || sender_jwt);
     let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp as i64);
-    let mut ctx = HandlerContext::new(timestamp);
+    let mut ctx = HandlerContext::new(sender, sender_auth, timestamp);
 
     let handlers = HTTP_HANDLERS.get().unwrap();
     let request = read_bytes_source_as::<spacetimedb_lib::http::Request>(request);
@@ -1393,8 +1585,12 @@ const NO_SUCH_BYTES: u16 = errno::NO_SUCH_BYTES.get();
 
 /// Look up the jwt associated with `connection_id`.
 pub fn get_jwt(connection_id: ConnectionId) -> Option<String> {
+    read_jwt(sys::get_jwt(connection_id.as_le_byte_array())?)
+}
+
+/// Read the jwt that the host wrote to `source`.
+pub(crate) fn read_jwt(source: BytesSource) -> Option<String> {
     let mut buf = IterBuf::take();
-    let source = sys::get_jwt(connection_id.as_le_byte_array())?;
     if source == BytesSource::INVALID {
         return None;
     }
@@ -1491,6 +1687,37 @@ macro_rules! __make_register_reftype {
             extern "C" fn __register_describer() {
                 $crate::rt::register_reftype::<$ty>()
             }
+
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            #[used]
+            #[cfg_attr(
+                any(
+                    target_os = "linux",
+                    target_os = "android",
+                    target_os = "freebsd",
+                    target_os = "dragonfly",
+                    target_os = "netbsd",
+                    target_os = "openbsd",
+                ),
+                unsafe(link_section = ".init_array")
+            )]
+            #[cfg_attr(
+                any(
+                    target_os = "macos",
+                    target_os = "ios",
+                    target_os = "tvos",
+                    target_os = "watchos",
+                    target_os = "visionos",
+                ),
+                unsafe(link_section = "__DATA,__mod_init_func")
+            )]
+            #[cfg_attr(target_os = "windows", unsafe(link_section = ".CRT$XCU"))]
+            static _STDB_TEST_UTILS_INIT: unsafe extern "C" fn() = {
+                unsafe extern "C" fn __stdb_test_utils_register() {
+                    $crate::rt::register_reftype::<$ty>()
+                }
+                __stdb_test_utils_register
+            };
         };
     };
 }
@@ -1511,7 +1738,7 @@ pub fn volatile_nonatomic_schedule_immediate<'de, A: Args<'de>, R: Reducer<'de, 
 ///
 /// Panics if the bytes from `source` fail to deserialize as `T`.
 /// The type name of `T` will be included in the panic message.
-#[cfg_attr(not(feature = "unstable"), allow(unused))]
+#[cfg(any(target_arch = "wasm32", feature = "unstable"))]
 pub(crate) fn read_bytes_source_as<T: DeserializeOwned + 'static>(source: BytesSource) -> T {
     let mut buf = IterBuf::take();
     read_bytes_source_into(source, &mut buf);

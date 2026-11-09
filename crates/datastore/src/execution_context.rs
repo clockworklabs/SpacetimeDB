@@ -1,11 +1,16 @@
+#[cfg(feature = "durability")]
 use std::sync::Arc;
 
 use bytes::Bytes;
 use derive_more::Display;
+#[cfg(feature = "durability")]
 use spacetimedb_commitlog::{payload::txdata, Varchar};
 use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
+#[cfg(feature = "durability")]
 use spacetimedb_sats::{bsatn, raw_identifier::RawIdentifier};
-use spacetimedb_schema::{identifier::Identifier, reducer_name::ReducerName};
+#[cfg(feature = "durability")]
+use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::reducer_name::ReducerName;
 
 /// Represents the context under which a database runtime method is executed.
 /// In particular it provides details about the currently executing txn to runtime operations.
@@ -40,6 +45,7 @@ pub struct ReducerContext {
     pub arg_bsatn: Bytes,
 }
 
+#[cfg(feature = "durability")]
 impl From<ReducerContext> for txdata::Inputs {
     fn from(
         ReducerContext {
@@ -71,6 +77,7 @@ impl From<ReducerContext> for txdata::Inputs {
     }
 }
 
+#[cfg(feature = "durability")]
 impl TryFrom<&txdata::Inputs> for ReducerContext {
     type Error = bsatn::DecodeError;
 
@@ -107,11 +114,14 @@ pub enum Workload {
     Update,
     Procedure,
     Internal,
+    /// Inter-database message bookkeeping outside reducer execution.
+    Idc,
 }
 
 impl Workload {
     /// Returns a reducer workload with no arguments to the reducer
     /// and the current timestamp.
+    #[allow(deprecated)]
     pub fn reducer_no_args(name: ReducerName, id: Identity, conn_id: ConnectionId) -> Self {
         Self::Reducer(ReducerContext {
             name,
@@ -134,6 +144,7 @@ impl Workload {
             Self::Update => WorkloadType::Update,
             Self::Procedure => WorkloadType::Procedure,
             Self::Internal => WorkloadType::Internal,
+            Self::Idc => WorkloadType::Idc,
         }
     }
 }
@@ -153,6 +164,8 @@ pub enum WorkloadType {
     Internal,
     View,
     Procedure,
+    /// Inter-database message bookkeeping outside reducer execution.
+    Idc,
 }
 
 impl ExecutionContext {
@@ -177,6 +190,7 @@ impl ExecutionContext {
             Workload::Unsubscribe => Self::new(database, None, WorkloadType::Unsubscribe),
             Workload::Update => Self::new(database, None, WorkloadType::Update),
             Workload::Procedure => Self::new(database, None, WorkloadType::Procedure),
+            Workload::Idc => Self::new(database, None, WorkloadType::Idc),
         }
     }
 

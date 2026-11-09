@@ -48,6 +48,18 @@ var conn = DbConnection.Builder()
 
 Compression options are `Compression.Brotli`, `Compression.Gzip`, and `Compression.None`. The SDK uses Brotli when `WithCompression` is omitted.
 
+## Automatic Reconnect and Token Refresh
+
+Automatic reconnect is opt-in: add `.WithAutomaticReconnect()` to the builder. Initial connection failures do not retry. After an established connection is lost, the SDK retries with exponential backoff and jitter from `MinDelay` (default 1 s) up to `MaxDelay` (default 30 s); tune them with `.WithAutomaticReconnect(new AutomaticReconnectOptions { MinDelay = ..., MaxDelay = ... })`. Values below the 500 ms and 1 s floors are raised with a warning, so that retrying clients cannot overwhelm the database. `Disconnect()` permanently stops recovery.
+
+Keep calling `FrameTick()` while `IsActive` is false. `IsReconnecting` is true while recovering before the next handshake. Use `.OnDisconnect((conn, error, next) => ...)` and `.OnConnectError((error, next) => ...)` to inspect `NextReconnect?`: a non-null value provides `Attempt` and `Delay`; null means no retry is scheduled. Existing callback overloads still work.
+
+`OnConnect` runs on every successful reconnect, so create the subscription in the example above only on the first connection, or move it after `Build()`. Register row callbacks once as well. The same connection, identity, table handles, and subscriptions survive; each attempt gets a fresh `ConnectionId`. Cached rows stay readable but stale during outages. The SDK replays subscriptions in one batch and emits only net row changes. Subscription `OnApplied` runs again after replay; use it to mark data ready, not for repeated one-time setup.
+
+For expiring credentials, combine `.WithToken(initialToken)` with `.WithTokenProvider(() => RefreshTokenAsync())`, where your provider returns `Task<string>` for the same identity. The provider is not called for the initial connection. Before retries, it is called when remaining validity is at most 30 seconds or 5% of the token lifetime, whichever is greater, when expiry cannot be read, or after a reused token is rejected. Provider failures retry; rejection of a freshly provided token is terminal. No periodic refresh runs while connected. Disconnecting ignores a pending provider result but does not cancel the provider's own work.
+
+Calls made while disconnected fail immediately. Pending reducer calls receive `Status.UnknownResult`; pending procedures and one-off queries fail with `UnknownResultException`. These calls may already have executed and are never replayed. Regenerate bindings so unhandled unknown reducer outcomes reach `OnUnhandledReducerError`.
+
 ## Event Loop (Critical)
 
 **`FrameTick()` must be called in your main loop.** The SDK queues all network messages and only processes them when you call `FrameTick()`. Without it, no callbacks fire.
@@ -86,6 +98,29 @@ conn.SubscriptionBuilder()
         "SELECT * FROM game_state"
     });
 ```
+
+## Submodule Accessors and View Arguments
+
+A namespace accessor `MyAuth` is nested in the generated table, reducer, and procedure APIs:
+
+```csharp
+conn.SubscriptionBuilder()
+    .AddQuery(q => q.From.MyAuth.User())
+    .Subscribe();
+// Rows: conn.Db.MyAuth.User
+// Reducers: conn.Reducers.MyAuth.Add(10)
+// Procedures: conn.Procedures.MyAuth.CountUsers((ctx, result) => { ... })
+```
+
+The query builder and calls encode canonical names automatically. Raw SQL/HTTP/CLI calls use canonical qualified names, such as `auth_data.<table>` for a namespace explicitly named `auth_data`. All namespaces share the connection and cache.
+
+For views with arguments (2.13+), use raw SQL; C# has no typed argument-bearing view query builder yet:
+
+```csharp
+conn.SubscriptionBuilder().Subscribe(new[] { "SELECT * FROM by_id(42)" });
+```
+
+Use explicit queries for every table on that connection, not subscribe-all, which skips views with arguments. Only `SELECT * FROM view_name(literal_args)` is supported. All argument values share one cache table; unsubscribe from obsolete arguments to avoid combining their rows. Validate/encode dynamic values as SQL literals rather than concatenating untrusted input. Keep calling `FrameTick()` to process subscription updates.
 
 ## Row Callbacks
 
@@ -153,6 +188,8 @@ conn.Reducers.OnSendMessage += (ReducerEventContext ctx, string text) =>
         Console.WriteLine($"Message sent: {text}");
     else if (ctx.Event.Status is Status.Failed(var reason))
         Console.Error.WriteLine($"Send failed: {reason}");
+    else if (ctx.Event.Status is Status.UnknownResult)
+        Console.Error.WriteLine("Connection lost before the result arrived; the message may have been sent.");
 };
 ```
 

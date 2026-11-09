@@ -1,16 +1,13 @@
-import type { AlgebraicType } from './algebraic_type';
-import type { Typespace } from './autogen/types';
-import BinaryReader from './binary_reader';
-import BinaryWriter from './binary_writer';
-import type { ParamsObj } from './reducers';
-import type { ColumnBuilder, TypeBuilder } from './type_builders';
-import type { CamelCase, SnakeCase } from './type_util';
+import type { AlgebraicType } from './algebraic_type.ts';
+import type { Typespace } from './autogen/types.ts';
+import BinaryReader from './binary_reader.ts';
+import BinaryWriter from './binary_writer.ts';
+import type { ParamsObj } from './reducers.ts';
+import type { ColumnBuilder, TypeBuilder } from './type_builders.ts';
+import type { CamelCase, SnakeCase } from './type_util.ts';
 
-export function deepEqual(obj1: any, obj2: any): boolean {
-  // If both are strictly equal (covers primitives and reference equality), return true
+export function deepEqual(obj1: unknown, obj2: unknown): boolean {
   if (obj1 === obj2) return true;
-
-  // If either is a primitive type or one is null, return false since we already checked for strict equality
   if (
     typeof obj1 !== 'object' ||
     obj1 === null ||
@@ -20,20 +17,31 @@ export function deepEqual(obj1: any, obj2: any): boolean {
     return false;
   }
 
-  // Get keys of both objects
+  let firstKey = 0;
+  if (obj1 instanceof Uint8Array && obj2 instanceof Uint8Array) {
+    if (obj1.length !== obj2.length) return false;
+    for (let i = 0; i < obj1.length; i++) {
+      if (obj1[i] !== obj2[i]) return false;
+    }
+    // Typed-array indices precede other enumerable keys and are already equal.
+    firstKey = obj1.length;
+  }
+
   const keys1 = Object.keys(obj1);
   const keys2 = Object.keys(obj2);
-
-  // If number of keys is different, return false
   if (keys1.length !== keys2.length) return false;
 
-  // Check all keys and compare values recursively
-  for (const key of keys1) {
-    if (!keys2.includes(key) || !deepEqual(obj1[key], obj2[key])) {
+  const values1 = obj1 as Record<string, unknown>;
+  const values2 = obj2 as Record<string, unknown>;
+  for (let i = firstKey; i < keys1.length; i++) {
+    const key = keys1[i];
+    if (
+      !Object.prototype.propertyIsEnumerable.call(obj2, key) ||
+      !deepEqual(values1[key], values2[key])
+    ) {
       return false;
     }
   }
-
   return true;
 }
 

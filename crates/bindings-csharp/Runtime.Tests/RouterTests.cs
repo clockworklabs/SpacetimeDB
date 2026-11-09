@@ -95,7 +95,8 @@ public class RouterTests
         Assert.Contains("Cannot nest router", ex.Message);
     }
 
-    private sealed class TestHandlerContext() : HandlerContextBase(new System.Random(), default)
+    private sealed class TestHandlerContext()
+        : HandlerContextBase(default, null, new System.Random(), default)
     {
         protected override HandlerTxContextBase CreateTxContext(
             SpacetimeDB.Internal.TxContext inner

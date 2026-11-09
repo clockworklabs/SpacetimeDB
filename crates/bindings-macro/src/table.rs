@@ -1,6 +1,6 @@
 use crate::sats;
 use crate::sym;
-use crate::util::{check_duplicate, check_duplicate_msg, match_meta};
+use crate::util::{check_duplicate, check_duplicate_msg, match_meta, native_test_utils_registration};
 use core::slice;
 use heck::ToSnakeCase;
 use proc_macro2::{Span, TokenStream};
@@ -19,6 +19,7 @@ pub(crate) struct TableArgs {
     access: Option<TableAccess>,
     name: Option<LitStr>,
     scheduled: Option<ScheduledArg>,
+    outbox: Option<OutboxArg>,
     accessor: Ident,
     indices: Vec<IndexArg>,
     event: Option<Span>,
@@ -45,6 +46,10 @@ struct ScheduledArg {
     span: Span,
     reducer_or_procedure: Path,
     at: Option<Ident>,
+}
+
+struct OutboxArg {
+    receiver_reducer: Path,
 }
 
 struct IndexArg {
@@ -75,9 +80,14 @@ enum IndexType {
 }
 
 impl TableArgs {
+    pub(crate) fn use_call_site_accessor_span(&mut self) {
+        self.accessor.set_span(Span::call_site());
+    }
+
     pub(crate) fn parse(input: TokenStream, struct_ident: &Ident) -> syn::Result<Self> {
         let mut access = None;
         let mut scheduled = None;
+        let mut outbox = None;
         let mut accessor = None;
         let mut name: Option<LitStr> = None;
         let mut indices = Vec::new();
@@ -145,6 +155,10 @@ If you're migrating from SpacetimeDB 1.*, replace `name = {sym}` with `accessor 
                     check_duplicate(&scheduled, &meta)?;
                     scheduled = Some(ScheduledArg::parse_meta(meta)?);
                 }
+                sym::outbox => {
+                    check_duplicate(&outbox, &meta)?;
+                    outbox = Some(OutboxArg::parse_meta(meta)?);
+                }
                 sym::event => {
                     check_duplicate(&event, &meta)?;
                     event = Some(meta.path.span());
@@ -184,11 +198,28 @@ If you're migrating from SpacetimeDB 1.*, replace `name = {name_str_value:?}` wi
         Ok(TableArgs {
             access,
             scheduled,
+            outbox,
             accessor,
             indices,
             name,
             event,
         })
+    }
+}
+
+impl OutboxArg {
+    fn parse_meta(meta: ParseNestedMeta) -> syn::Result<Self> {
+        let mut receiver_reducer = None;
+
+        meta.parse_nested_meta(|meta| {
+            check_duplicate_msg(&receiver_reducer, &meta, "can only specify one outbox receiver reducer")?;
+            receiver_reducer = Some(meta.path);
+            Ok(())
+        })?;
+
+        let receiver_reducer = receiver_reducer
+            .ok_or_else(|| meta.error("must specify outbox receiver reducer: outbox(receiver::reducer)"))?;
+        Ok(Self { receiver_reducer })
     }
 }
 
@@ -563,15 +594,22 @@ impl ValidatedIndex<'_> {
         row_type_ident: &Ident,
         tbl_type_ident: &Ident,
         flavor: AccessorType,
+        backend: TokenStream,
     ) -> TokenStream {
         if self.is_unique {
-            self.unique_accessor(row_type_ident, tbl_type_ident, flavor)
+            self.unique_accessor(row_type_ident, tbl_type_ident, flavor, backend)
         } else {
-            self.non_unique_accessor(vis, row_type_ident, tbl_type_ident, flavor)
+            self.non_unique_accessor(vis, row_type_ident, tbl_type_ident, flavor, backend)
         }
     }
 
-    fn unique_accessor(&self, row_type_ident: &Ident, tbl_type_ident: &Ident, flavor: AccessorType) -> TokenStream {
+    fn unique_accessor(
+        &self,
+        row_type_ident: &Ident,
+        tbl_type_ident: &Ident,
+        flavor: AccessorType,
+        backend: TokenStream,
+    ) -> TokenStream {
         let col = self.kind.one_col().unwrap();
         let index_ident = self.accessor_name;
         let vis = col.vis;
@@ -589,7 +627,7 @@ impl ValidatedIndex<'_> {
         quote! {
             #[doc = #doc]
             #vis fn #column_ident(&self) -> #unique_ty<#tbl_token, #col_ty, __indices::#index_ident> {
-                #unique_ty::__NEW
+                #unique_ty::__new(#backend)
             }
         }
     }
@@ -600,6 +638,7 @@ impl ValidatedIndex<'_> {
         row_type_ident: &Ident,
         tbl_type_ident: &Ident,
         flavor: AccessorType,
+        backend: TokenStream,
     ) -> TokenStream {
         let index_ident = self.accessor_name;
         let cols = self.kind.columns();
@@ -630,7 +669,7 @@ impl ValidatedIndex<'_> {
         quote! {
             #[doc = #doc]
             #vis fn #index_ident(&self) -> #handle_ty<#tbl_token, (#(#col_tys,)*), __indices::#index_ident> {
-                #handle_ty::__NEW
+                #handle_ty::__new(#backend)
             }
         }
     }
@@ -677,6 +716,8 @@ impl ValidatedIndex<'_> {
             #vis struct #index_ident;
             impl spacetimedb::table::#index_kind_trait for #index_ident {}
             impl spacetimedb::table::Index for #index_ident {
+                // Test backends resolve the index by name; the host uses the cached `index_id` below.
+                const INDEX_NAME: &'static str = #index_name;
                 const NUM_COLS_INDEXED: usize = #num_cols;
                 fn index_id() -> spacetimedb::table::IndexId {
                     static INDEX_ID: std::sync::OnceLock<spacetimedb::table::IndexId> = std::sync::OnceLock::new();
@@ -738,6 +779,7 @@ struct Column<'a> {
     vis: &'a syn::Visibility,
     ident: &'a syn::Ident,
     ty: &'a syn::Type,
+    param_name: String,
     default_value: Option<syn::Expr>,
 }
 
@@ -767,8 +809,10 @@ enum ColumnAttr {
     Unique(Span),
     AutoInc(Span),
     PrimaryKey(Span),
+    Target(Span),
     Index(IndexArg),
     Default(syn::Expr, Span),
+    ParamName(Ident),
 }
 
 impl ColumnAttr {
@@ -788,12 +832,31 @@ impl ColumnAttr {
         } else if ident == sym::primary_key {
             attr.meta.require_path_only()?;
             Some(ColumnAttr::PrimaryKey(ident.span()))
+        } else if ident == sym::target {
+            attr.meta.require_path_only()?;
+            Some(ColumnAttr::Target(ident.span()))
+        } else if ident == sym::param {
+            Some(ColumnAttr::ParamName(parse_param_attr(attr)?))
         } else if ident == sym::default {
             Some(parse_default_attr(attr, ident)?)
         } else {
             None
         })
     }
+}
+
+fn parse_param_attr(attr: &syn::Attribute) -> syn::Result<Ident> {
+    let mut name = None;
+    attr.parse_nested_meta(|meta| {
+        match_meta!(match meta {
+            sym::name => {
+                check_duplicate(&name, &meta)?;
+                name = Some(meta.value()?.parse()?);
+            }
+        });
+        Ok(())
+    })?;
+    name.ok_or_else(|| syn::Error::new_spanned(&attr.meta, "expected `#[param(name = parameter_name)]`"))
 }
 
 fn parse_default_attr(attr: &syn::Attribute, ident: &Ident) -> syn::Result<ColumnAttr> {
@@ -867,6 +930,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let mut unique_columns = vec![];
     let mut sequenced_columns = vec![];
     let mut primary_key_column = None;
+    let mut outbox_target_column = None;
 
     for (i, field) in fields.iter().enumerate() {
         let col_num = i as u16;
@@ -875,7 +939,9 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         let mut unique = None;
         let mut auto_inc = None;
         let mut primary_key = None;
+        let mut target = None;
         let mut default_value = None;
+        let mut param_name = None;
         for attr in field.original_attrs {
             let Some(attr) = ColumnAttr::parse(attr, field_ident)? else {
                 continue;
@@ -893,10 +959,18 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                     check_duplicate(&primary_key, span)?;
                     primary_key = Some(span);
                 }
+                ColumnAttr::Target(span) => {
+                    check_duplicate(&target, span)?;
+                    target = Some(span);
+                }
                 ColumnAttr::Index(index_arg) => args.indices.push(index_arg),
                 ColumnAttr::Default(expr, span) => {
                     check_duplicate(&default_value, span)?;
                     default_value = Some(expr);
+                }
+                ColumnAttr::ParamName(name) => {
+                    check_duplicate(&param_name, name.span())?;
+                    param_name = Some(name);
                 }
             }
         }
@@ -915,6 +989,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             ident: field_ident,
             vis: field.vis,
             ty: field.ty,
+            param_name: param_name.as_ref().unwrap_or(field_ident).unraw().to_string(),
             default_value,
         };
 
@@ -927,6 +1002,14 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         if let Some(span) = primary_key {
             check_duplicate_msg(&primary_key_column, span, "can only have one primary key per table")?;
             primary_key_column = Some(column.clone());
+        }
+        if let Some(span) = target {
+            check_duplicate_msg(
+                &outbox_target_column,
+                span,
+                "can only have one target column per outbox table",
+            )?;
+            outbox_target_column = Some((column.clone(), span));
         }
 
         columns.push(column.clone());
@@ -974,14 +1057,41 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
     let tablehandle_ident = format_ident!("{}__TableHandle", table_ident);
     let viewhandle_ident = format_ident!("{}__ViewHandle", table_ident);
+    let outboxhandle_ident = format_ident!("{}__OutboxHandle", table_ident);
+    let public_handle_ident = if args.outbox.is_some() {
+        &outboxhandle_ident
+    } else {
+        &tablehandle_ident
+    };
 
     let index_descs = indices.iter().map(|index| index.desc());
-    let index_accessors_rw = indices
-        .iter()
-        .map(|index| index.accessor(vis, original_struct_ident, &tablehandle_ident, AccessorType::ReadWrite));
-    let index_accessors_ro = indices
-        .iter()
-        .map(|index| index.accessor(vis, original_struct_ident, &tablehandle_ident, AccessorType::Read));
+    let index_accessors_rw = indices.iter().map(|index| {
+        index.accessor(
+            vis,
+            original_struct_ident,
+            &tablehandle_ident,
+            AccessorType::ReadWrite,
+            quote!(self.__backend.clone()),
+        )
+    });
+    let index_accessors_ro = indices.iter().map(|index| {
+        index.accessor(
+            vis,
+            original_struct_ident,
+            &tablehandle_ident,
+            AccessorType::Read,
+            quote!(self.__backend.clone()),
+        )
+    });
+    let outbox_index_accessors = indices.iter().map(|index| {
+        index.accessor(
+            vis,
+            original_struct_ident,
+            &tablehandle_ident,
+            AccessorType::Read,
+            quote!(self.__table.__backend().clone()),
+        )
+    });
     let index_marker_types: Vec<_> = indices
         .iter()
         .map(|index| index.marker_type(vis, &tablehandle_ident, primary_key_column.as_ref()))
@@ -1100,7 +1210,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                              `scheduled(my_reducer, at = custom_scheduled_at)`",
                 )
             })?;
-            let primary_key_column = primary_key_column.ok_or_else(|| {
+            let primary_key_column = primary_key_column.clone().ok_or_else(|| {
                 syn::Error::new(
                     sched.span,
                     "scheduled tables must have a `#[primary_key] #[auto_inc] scheduled_id: u64` column",
@@ -1131,6 +1241,106 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         .unzip();
     let schedule = schedule.into_iter();
 
+    if let Some(outbox) = &args.outbox {
+        if let Some(scheduled) = &args.scheduled {
+            return Err(syn::Error::new(
+                scheduled.span,
+                "outbox tables cannot also be scheduled tables",
+            ));
+        }
+        let primary_key_column = primary_key_column.as_ref().ok_or_else(|| {
+            syn::Error::new_spanned(
+                &outbox.receiver_reducer,
+                "outbox tables must have a `#[primary_key] #[auto_inc]` column of type `u64`",
+            )
+        })?;
+        if !sequenced_columns
+            .iter()
+            .any(|col| col.index == primary_key_column.index)
+        {
+            return Err(syn::Error::new_spanned(
+                primary_key_column.ident,
+                "outbox tables must have a `#[primary_key] #[auto_inc]` column of type `u64`",
+            ));
+        }
+    }
+
+    let mut outbox_arg_columns = None;
+    let outbox_typecheck = args
+        .outbox
+        .iter()
+        .map(|outbox| {
+            let receiver_reducer = &outbox.receiver_reducer;
+            let Some((target_column, _)) = &outbox_target_column else {
+                return Err(syn::Error::new_spanned(
+                    receiver_reducer,
+                    "outbox tables must have a `#[target]` column",
+                ));
+            };
+            let target_ty = target_column.ty;
+            let mut receiver_module = receiver_reducer.clone();
+            receiver_module.segments.pop();
+            receiver_module.segments.pop_punct();
+            if receiver_module.segments.is_empty() {
+                return Err(syn::Error::new_spanned(
+                    receiver_reducer,
+                    "outbox receiver reducer must be qualified, e.g. `outbox(receiver::reducer)`",
+                ));
+            }
+            let mut receiver_identity = receiver_module.clone();
+            receiver_identity.segments.push(parse_quote!(Identity));
+            let mut receiver_outbox_typecheck = receiver_module.clone();
+            let reducer_ident = receiver_reducer
+                .segments
+                .last()
+                .expect("receiver reducer path checked above")
+                .ident
+                .unraw();
+            receiver_outbox_typecheck
+                .segments
+                .push(parse_quote!(__spacetimedb_typecheck_outbox));
+            let reducer_name = receiver_outbox_typecheck
+                .segments
+                .last_mut()
+                .expect("receiver reducer path checked above");
+            reducer_name.ident = format_ident!("__spacetimedb_typecheck_outbox_{}", reducer_ident);
+            let outbox_columns = columns.iter().map(|col| {
+                let ident = col.ident;
+                let ty = col.ty;
+                let param = Ident::new(&col.param_name, ident.span());
+                let index = col.index;
+                quote!((#index, #ident: #ty as #param),)
+            });
+            outbox_arg_columns = Some(quote! {
+                #receiver_outbox_typecheck!(#receiver_module, { #(#outbox_columns)* })
+            });
+            let primary_key_typecheck = primary_key_column.as_ref().map(|col| {
+                let ty = col.ty;
+                quote!(spacetimedb::rt::assert_outbox_table_primary_key::<#ty>();)
+            });
+            Ok(quote! {
+                let _ = |x: #target_ty| { let _: #receiver_identity = x; };
+                #primary_key_typecheck
+            })
+        })
+        .collect::<syn::Result<Vec<_>>>()?;
+
+    let outbox_desc = match (&args.outbox, &outbox_target_column) {
+        (Some(outbox), Some((target_column, _))) => {
+            let receiver_reducer = &outbox.receiver_reducer;
+            let target_col = target_column.index;
+            quote! {
+                const OUTBOX: Option<spacetimedb::table::OutboxDesc<'static>> = Some(spacetimedb::table::OutboxDesc {
+                    remote_reducer_name: <#receiver_reducer as spacetimedb::rt::RemoteReducer>::NAME,
+                    arg_columns: #outbox_arg_columns,
+                    target_column: #target_col,
+                    signature_hash: <#receiver_reducer as spacetimedb::rt::RemoteReducer>::SIGNATURE_HASH,
+                });
+            }
+        }
+        _ => quote! {},
+    };
+
     let unique_err = if !unique_columns.is_empty() {
         quote!(spacetimedb::UniqueConstraintViolation)
     } else {
@@ -1143,7 +1353,6 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     };
 
     let field_types = fields.iter().map(|f| f.ty).collect::<Vec<_>>();
-
     let tabletype_impl = quote! {
         use spacetimedb::Serialize;
         impl spacetimedb::Table for #tablehandle_ident {
@@ -1164,8 +1373,13 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             #(const PRIMARY_KEY: Option<u16> = Some(#primary_col_id);)*
             const SEQUENCES: &'static [u16] = &[#(#sequence_col_ids),*];
             #(const SCHEDULE: Option<spacetimedb::table::ScheduleDesc<'static>> = Some(#schedule);)*
+            #outbox_desc
 
             #table_id_from_name_func
+
+            fn __backend(&self) -> &spacetimedb::table::TableHandleBackend {
+                &self.__backend
+            }
             #default_fn
         }
     };
@@ -1182,17 +1396,30 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         }
     };
 
+    let table_handle_value = quote! {
+        #tablehandle_ident { __backend: self.__table_backend() }
+    };
+    let public_handle_value = if args.outbox.is_some() {
+        quote! {
+            #outboxhandle_ident {
+                __table: spacetimedb::table::OutboxTable::__new(#table_handle_value),
+            }
+        }
+    } else {
+        table_handle_value
+    };
+
     // Output all macro data
     let trait_def = quote_spanned! {table_ident.span()=>
         #[allow(non_camel_case_types, dead_code)]
         #vis trait #table_ident {
             #[allow(non_camel_case_types, dead_code)]
-            fn #table_ident(&self) -> &#tablehandle_ident;
+            fn #table_ident(&self) -> #public_handle_ident;
         }
         impl #table_ident for spacetimedb::Local {
             #[allow(non_camel_case_types, dead_code)]
-            fn #table_ident(&self) -> &#tablehandle_ident {
-                &#tablehandle_ident {}
+            fn #table_ident(&self) -> #public_handle_ident {
+                #public_handle_value
             }
         }
     };
@@ -1201,12 +1428,14 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         #[allow(non_camel_case_types, dead_code)]
         #vis trait #view_trait_ident {
             #[allow(non_camel_case_types, dead_code)]
-            fn #table_ident(&self) -> &#viewhandle_ident;
+            fn #table_ident(&self) -> #viewhandle_ident;
         }
         impl #view_trait_ident for spacetimedb::LocalReadOnly {
             #[inline]
-            fn #table_ident(&self) -> &#viewhandle_ident {
-                &#viewhandle_ident {}
+            fn #table_ident(&self) -> #viewhandle_ident {
+                #viewhandle_ident {
+                    __backend: self.__table_backend(),
+                }
             }
         }
     };
@@ -1293,13 +1522,44 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let tablehandle_def = quote! {
         #[allow(non_camel_case_types)]
         #[non_exhaustive]
-        #vis struct #tablehandle_ident {}
+        #vis struct #tablehandle_ident {
+            #[doc(hidden)]
+            pub __backend: spacetimedb::table::TableHandleBackend,
+        }
     };
+
+    // Keep the existing Table API intact. Outboxes expose a separate facade whose
+    // deref target shares insertion/iteration, but never exposes the mutable handle.
+    let outboxhandle_def = args.outbox.is_some().then(|| {
+        quote! {
+            #[allow(non_camel_case_types)]
+            #[non_exhaustive]
+            #vis struct #outboxhandle_ident {
+                __table: spacetimedb::table::OutboxTable<#tablehandle_ident>,
+            }
+        }
+    });
+    let outboxhandle_impl = args.outbox.is_some().then(|| {
+        quote! {
+            impl #outboxhandle_ident {
+                #(#outbox_index_accessors)*
+            }
+            impl ::core::ops::Deref for #outboxhandle_ident {
+                type Target = spacetimedb::table::OutboxTable<#tablehandle_ident>;
+                fn deref(&self) -> &Self::Target {
+                    &self.__table
+                }
+            }
+        }
+    });
 
     let viewhandle_def = quote! {
         #[allow(non_camel_case_types)]
         #[non_exhaustive]
-        #vis struct #viewhandle_ident {}
+        #vis struct #viewhandle_ident {
+            #[doc(hidden)]
+            pub __backend: spacetimedb::table::TableHandleBackend,
+        }
     };
 
     let struct_name = original_struct_ident.to_string();
@@ -1311,10 +1571,18 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         quote! {}
     };
 
+    let test_utils_registration = native_test_utils_registration(quote! {
+        spacetimedb::rt::register_table::<#tablehandle_ident>();
+        spacetimedb::test_utils::__register_table_name(
+            <#tablehandle_ident as spacetimedb::table::TableInternal>::TABLE_NAME,
+        );
+    });
+
     let emission = quote! {
         const _: () = {
             #(let _ = <#field_types as spacetimedb::rt::TableColumn>::_ITEM;)*
             #schedule_typecheck
+            #(#outbox_typecheck)*
             #default_type_check
         };
 
@@ -1322,11 +1590,13 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         #trait_def_view
 
         #tablehandle_def
+        #outboxhandle_def
         #viewhandle_def
         #table_query_handle_def
         #struct_level_query_impl
 
         const _: () = {
+            #outboxhandle_impl
             impl #tablehandle_ident {
                 #(#index_accessors_rw)*
             }
@@ -1334,7 +1604,13 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             impl #viewhandle_ident {
                 #[inline]
                 pub fn count(&self) -> u64 {
-                    spacetimedb::table::count::<#tablehandle_ident>()
+                    let table_id = self
+                        .__backend
+                        .table_id(<#tablehandle_ident as spacetimedb::table::TableInternal>::TABLE_NAME)
+                        .expect("table_id_from_name() call failed");
+                    self.__backend
+                        .table_row_count(table_id)
+                        .expect("datastore_table_row_count() call failed")
                 }
 
                 #(#index_accessors_ro)*
@@ -1352,6 +1628,8 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             }
 
             #describe_table_func
+
+            #test_utils_registration
         };
     };
 

@@ -6,6 +6,7 @@
 //! It allows easier future extensibility to add new kinds of definitions.
 
 use crate::db::raw_def::v9::{Lifecycle, RawIndexAlgorithm, TableAccess, TableType};
+use crate::Hash;
 use core::fmt;
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
@@ -104,6 +105,9 @@ pub enum RawModuleDefV10Section {
 
     /// Declared publish-only configuration. Even an empty section requires ENV support.
     Environment(Vec<RawEnvironmentDeclarationV10>),
+
+    /// Outbox table definitions.
+    Outboxes(Vec<RawOutboxDefV10>),
 }
 
 #[derive(Debug, Clone, SpacetimeType)]
@@ -346,6 +350,25 @@ pub struct RawColumnDefaultValueV10 {
     /// A BSATN-encoded [`AlgebraicValue`] valid at the column's type.
     /// (We cannot use `AlgebraicValue` directly as it isn't `SpacetimeType`.)
     pub value: Box<[u8]>,
+}
+
+/// Marks a table as an IDC outbox table.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawOutboxDefV10 {
+    /// The `source_name` of the outbox table.
+    pub table_name: RawIdentifier,
+    /// The reducer to call on the target database.
+    pub remote_reducer: RawIdentifier,
+    /// Column containing the receiver database identity.
+    pub target_column: ColId,
+    /// Columns to encode as reducer arguments, in receiver parameter order.
+    pub arg_columns: Vec<ColId>,
+    /// Optional local reducer called with the delivery result.
+    pub on_result_reducer: Option<RawIdentifier>,
+    /// Hash of the receiver reducer signature as seen by sender bindings.
+    pub signature_hash: Hash,
 }
 
 /// A reducer definition.
@@ -695,6 +718,14 @@ impl RawModuleDefV10 {
             .expect("Tables section must exist for tests")
     }
 
+    /// Get the outboxes section, if present.
+    pub fn outboxes(&self) -> Option<&Vec<RawOutboxDefV10>> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::Outboxes(outboxes) => Some(outboxes),
+            _ => None,
+        })
+    }
+
     // Get the row-level security section, if present.
     pub fn row_level_security(&self) -> Option<&Vec<RawRowLevelSecurityDefV10>> {
         self.sections.iter().find_map(|s| match s {
@@ -987,6 +1018,24 @@ impl RawModuleDefV10Builder {
         match &mut self.module.sections[idx] {
             RawModuleDefV10Section::HttpRoutes(routes) => routes,
             _ => unreachable!("Just ensured HttpRoutes section exists"),
+        }
+    }
+
+    /// Get mutable access to the outboxes section, creating it if missing.
+    fn outboxes_mut(&mut self) -> &mut Vec<RawOutboxDefV10> {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::Outboxes(_)))
+            .unwrap_or_else(|| {
+                self.module.sections.push(RawModuleDefV10Section::Outboxes(Vec::new()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::Outboxes(outboxes) => outboxes,
+            _ => unreachable!("Just ensured Outboxes section exists"),
         }
     }
 
@@ -1290,6 +1339,48 @@ impl RawModuleDefV10Builder {
 
     pub fn add_explicit_names(&mut self, names: ExplicitNames) {
         self.explicit_names_mut().merge(names);
+    }
+
+    /// Register an IDC outbox table.
+    pub fn add_outbox(
+        &mut self,
+        table_name: impl Into<RawIdentifier>,
+        remote_reducer: impl Into<RawIdentifier>,
+        target_column: impl Into<ColId>,
+        arg_columns: impl IntoIterator<Item = ColId>,
+        on_result_reducer: Option<impl Into<RawIdentifier>>,
+        signature_hash: Hash,
+    ) {
+        self.outboxes_mut().push(RawOutboxDefV10 {
+            table_name: table_name.into(),
+            remote_reducer: remote_reducer.into(),
+            target_column: target_column.into(),
+            arg_columns: arg_columns.into_iter().collect(),
+            on_result_reducer: on_result_reducer.map(Into::into),
+            signature_hash,
+        });
+    }
+
+    pub fn set_outbox_on_result(
+        &mut self,
+        table_name: impl Into<RawIdentifier>,
+        on_result_reducer: impl Into<RawIdentifier>,
+    ) {
+        let table_name = table_name.into();
+        let on_result_reducer = Some(on_result_reducer.into());
+        if let Some(outbox) = self
+            .outboxes_mut()
+            .iter_mut()
+            .find(|outbox| outbox.table_name == table_name)
+        {
+            assert!(
+                outbox.on_result_reducer.is_none(),
+                "outbox table `{table_name}` has multiple on_result reducers"
+            );
+            outbox.on_result_reducer = on_result_reducer;
+        } else {
+            panic!("on_result reducer references unknown outbox table `{table_name}`");
+        }
     }
 
     pub fn add_submodule(&mut self, namespace: impl Into<String>, module: RawModuleDefV10) {

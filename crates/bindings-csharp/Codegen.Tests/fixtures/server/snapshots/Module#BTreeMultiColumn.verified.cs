@@ -6,6 +6,11 @@ partial struct BTreeMultiColumn
     : System.IEquatable<BTreeMultiColumn>,
         SpacetimeDB.BSATN.IStructuralReadWrite
 {
+#if NET10_0_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
+#endif
     public void ReadFields(System.IO.BinaryReader reader)
     {
         X = BSATN.XRW.Read(reader);
@@ -55,7 +60,7 @@ partial struct BTreeMultiColumn
                     {
                         new("X", XRW.GetAlgebraicType(registrar)),
                         new("Y", YRW.GetAlgebraicType(registrar)),
-                        new("Z", ZRW.GetAlgebraicType(registrar))
+                        new("Z", ZRW.GetAlgebraicType(registrar)),
                     }
                 )
             );
@@ -84,16 +89,7 @@ partial struct BTreeMultiColumn
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as BTreeMultiColumn?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is BTreeMultiColumn t && Equals(t);
     }
 
     public static bool operator ==(BTreeMultiColumn this_, BTreeMultiColumn that)

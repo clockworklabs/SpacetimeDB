@@ -154,7 +154,13 @@ where
     T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Authorization + Clone + 'static,
 {
     async fn exe_sql(&self, query: String) -> PgWireResult<Vec<Response>> {
-        let params = self.cached.lock().await.clone().unwrap();
+        let params = self.cached.lock().await.clone().ok_or_else(|| {
+            PgWireError::UserError(Box::new(ErrorInfo::new(
+                "FATAL".to_owned(),
+                "28000".to_owned(),
+                "Client is not authenticated".to_owned(),
+            )))
+        })?;
         let name_or_identity = database::NameOrIdentity::Name(DatabaseName(params.database.clone()));
         let database_identity = response(name_or_identity.resolve(&self.ctx).await, &params.database).await?;
         #[expect(clippy::result_large_err)]
@@ -310,8 +316,8 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                     caller_identity,
                     caller_auth,
                 };
-                self.cached.lock().await.clone_from(&Some(metadata));
                 finish_authentication(client, &self.parameter_provider).await?;
+                self.cached.lock().await.clone_from(&Some(metadata));
             }
             // The other messages are for features not supported by SpacetimeDB, that are rejected by the parser.
             // This includes TLS negotiation - any TLS negotiation done with the client will happen before
@@ -378,8 +384,6 @@ pub async fn start_pg<T>(shutdown: Arc<Notify>, ctx: T, tcp: TcpListener)
 where
     T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Authorization + Clone + 'static,
 {
-    let factory = Arc::new(PgSpacetimeDBFactory::new(ctx));
-
     log::debug!(
         "PG: Starting SpacetimeDB Protocol listening on {}",
         tcp.local_addr().unwrap()
@@ -389,9 +393,10 @@ where
             accept_result = tcp.accept() => {
                 match accept_result {
                     Ok((stream, _addr)) => {
-                        let factory_ref = factory.clone();
+                        // Authentication state is stored in the handler, so each socket needs its own.
+                        let factory = PgSpacetimeDBFactory::new(ctx.clone());
                         tokio::spawn(async move {
-                            process_socket(stream, None, factory_ref).await.inspect_err(|err|{
+                            process_socket(stream, None, factory).await.inspect_err(|err|{
                                 // TODO: Review log level after client/disconnect errors can be distinguished from internal failures.
                                 log::warn!("PG: Error processing socket: {err:?}");
                             })

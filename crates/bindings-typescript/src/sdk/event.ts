@@ -1,5 +1,5 @@
-import type { ReducerEvent } from './reducer_event';
-import type { ReducerEventInfo } from './reducers';
+import type { ReducerEvent } from './reducer_event.ts';
+import type { ReducerEventInfo } from './reducers.ts';
 
 type WithId = {
   /**

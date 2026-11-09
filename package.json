@@ -2,12 +2,12 @@
   "private": true,
   "packageManager": "pnpm@10.16.0",
   "engines": {
-    "node": ">=18.0.0",
+    "node": "^22.23.4 || ^24.22.1 || >=26.12.1",
     "pnpm": ">=10.16.0"
   },
   "type": "module",
   "scripts": {
-    "run-all": "pnpm -r -F ./crates/bindings-typescript -F ./crates/bindings-typescript/examples/quickstart-chat -F ./crates/bindings-typescript/test-app -F ./docs -F \"./templates/**\" run",
+    "run-all": "pnpm -r -F ./crates/bindings-typescript -F ./crates/bindings-typescript/test-app -F ./docs -F \"./templates/**\" -F \"./modules/spacetime-*-ts/**\" run",
     "format": "pnpm run-all format && prettier eslint.config.js --write",
     "lint": "pnpm run-all lint && prettier eslint.config.js --check",
     "build": "pnpm run-all build",

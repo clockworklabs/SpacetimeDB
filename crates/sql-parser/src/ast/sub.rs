@@ -15,7 +15,7 @@ pub struct SqlSelect {
 impl SqlSelect {
     pub fn qualify_vars(self) -> Self {
         match &self.from {
-            SqlFrom::Expr(_, alias) => Self {
+            SqlFrom::Expr(_, alias, _) => Self {
                 project: self.project.qualify_vars(alias.clone()),
                 filter: self.filter.map(|expr| expr.qualify_vars(alias.clone())),
                 from: self.from,
