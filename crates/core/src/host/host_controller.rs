@@ -823,10 +823,10 @@ impl HostController {
             defer!(remove_database_gauges(&database_identity, table_names));
 
             info!("replica={replica_id} database={database_identity} exiting module");
-            module.replica_ctx().shutdown.cancel();
+            module.replica_ctx().procedures_running.cancel();
             module.exit().await;
             info!("replica={replica_id} database={database_identity} exiting database");
-            // Procedures can't start a transaction once `shutdown` is cancelled,
+            // Procedures can't start a transaction once `procedures_running` is cancelled,
             // so acquiring the lock waits for the ones still running to commit.
             let db = module.relational_db().clone();
             asyncify(move || {
@@ -1028,7 +1028,7 @@ async fn make_replica_ctx(
         subscriptions,
         module_instance_memory_tracker,
         module_http,
-        shutdown: Default::default(),
+        procedures_running: Default::default(),
     })
 }
 

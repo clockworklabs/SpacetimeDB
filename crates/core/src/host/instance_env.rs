@@ -864,7 +864,7 @@ impl InstanceEnv {
             .begin_mut_tx(IsolationLevel::Serializable, Workload::Procedure);
         // Checked after acquiring the lock, so that `HostController::exit_module_host`
         // can wait for procedure transactions by acquiring the lock itself.
-        if self.replica_ctx.shutdown.is_cancelled() {
+        if self.replica_ctx.procedures_running.is_cancelled() {
             self.rollback_procedure_tx(tx);
             return Err(NodesError::ShuttingDown);
         }
@@ -1028,7 +1028,7 @@ impl InstanceEnv {
             return Err(NodesError::WouldBlockTransaction(super::AbiCall::ProcedureHttpRequest));
         }
 
-        if self.replica_ctx.shutdown.is_cancelled() {
+        if self.replica_ctx.procedures_running.is_cancelled() {
             return Err(NodesError::ShuttingDown);
         }
 
@@ -1140,10 +1140,10 @@ impl InstanceEnv {
         .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()));
 
         let database_identity = *self.database_identity();
-        let shutdown = self.replica_ctx.shutdown.clone();
+        let procedures_running = self.replica_ctx.procedures_running.clone();
 
         Ok(async move {
-            let (response, body) = shutdown
+            let (response, body) = procedures_running
                 .run_until_cancelled(response_fut)
                 .await
                 .ok_or(NodesError::ShuttingDown)?
@@ -1562,7 +1562,7 @@ pub(super) mod test {
                 subscriptions: subs,
                 module_instance_memory_tracker: ModuleInstanceMemoryTracker::new(Identity::ZERO, Arc::new(())),
                 module_http,
-                shutdown: Default::default(),
+                procedures_running: Default::default(),
             },
             runtime,
         ))

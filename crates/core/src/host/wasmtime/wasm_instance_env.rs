@@ -1717,8 +1717,8 @@ impl WasmInstanceEnv {
                 return get_current_time(caller);
             };
 
-            let shutdown = caller.data().instance_env.replica_ctx.shutdown.clone();
-            if shutdown
+            let procedures_running = caller.data().instance_env.replica_ctx.procedures_running.clone();
+            if procedures_running
                 .run_until_cancelled(tokio::time::sleep(duration))
                 .await
                 .is_none()

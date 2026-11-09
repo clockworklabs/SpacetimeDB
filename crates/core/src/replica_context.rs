@@ -23,7 +23,7 @@ pub struct ReplicaContext {
     pub subscriptions: ModuleSubscriptions,
     pub module_instance_memory_tracker: ModuleInstanceMemoryTracker,
     pub module_http: ModuleHttpConfig,
-    pub shutdown: CancellationToken,
+    pub procedures_running: CancellationToken,
 }
 
 impl ReplicaContext {
