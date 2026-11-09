@@ -15,16 +15,20 @@ internal static class TransactionCallback
             || IsAwaitable(returnType)
             || IsAwaitable(body.Method.ReturnType)
         )
+        {
             throw new ArgumentException(
                 "Transactions require a single synchronous callback; async void, Task and ValueTask are not supported.",
                 nameof(body)
             );
+        }
     }
 
     internal static void ValidateResult<T>(T result)
     {
         if (result is not null && IsAwaitable(result.GetType()))
+        {
             throw new ArgumentException("Transaction callbacks must not return Task or ValueTask.");
+        }
     }
 
     private static bool IsAwaitable(Type type) =>

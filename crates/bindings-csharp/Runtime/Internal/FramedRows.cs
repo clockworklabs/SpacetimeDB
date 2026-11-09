@@ -13,7 +13,10 @@ internal static class FramedRows
     internal static uint ReadCount(byte[] snapshot, ref int offset)
     {
         if (snapshot.Length - offset < sizeof(uint))
+        {
             throw new InvalidDataException("Truncated native row snapshot.");
+        }
+
         var value = BinaryPrimitives.ReadUInt32LittleEndian(snapshot.AsSpan(offset));
         offset += sizeof(uint);
         return value;
@@ -23,31 +26,40 @@ internal static class FramedRows
         where T : IStructuralReadWrite, new()
     {
         var length = ReadCount(snapshot, ref offset);
-        if (length > (uint)(snapshot.Length - offset))
-            throw new InvalidDataException("Truncated native row snapshot.");
+        if (length <= (uint)(snapshot.Length - offset))
+        {
+            using var reader = new BinaryReader(
+                new MemoryStream(snapshot, offset, (int)length, writable: false)
+            );
+            T row;
+            try
+            {
+                row = IStructuralReadWrite.Read<T>(reader);
+            }
+            catch (EndOfStreamException e)
+            {
+                throw new InvalidDataException("Native row does not match its BSATN schema.", e);
+            }
+
+            if (reader.BaseStream.Position != length)
+            {
+                throw new InvalidDataException("Native row does not match its BSATN schema.");
+            }
+            
+            offset += (int)length;
+            return row;
+        }
+
         // Slice the existing buffer so a row can't read into the next one.
-        using var reader = new BinaryReader(
-            new MemoryStream(snapshot, offset, (int)length, writable: false)
-        );
-        T row;
-        try
-        {
-            row = IStructuralReadWrite.Read<T>(reader);
-        }
-        catch (EndOfStreamException e)
-        {
-            throw new InvalidDataException("Native row does not match its BSATN schema.", e);
-        }
-        if (reader.BaseStream.Position != length)
-            throw new InvalidDataException("Native row does not match its BSATN schema.");
-        offset += (int)length;
-        return row;
+        throw new InvalidDataException("Truncated native row snapshot.");
     }
 
     internal static void CheckEnd(byte[] snapshot, int offset)
     {
         if (offset != snapshot.Length)
+        {
             throw new InvalidDataException("Trailing bytes in native row snapshot.");
+        }
     }
 }
 #endif
