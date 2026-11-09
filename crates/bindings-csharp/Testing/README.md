@@ -18,10 +18,7 @@ start at root seed zero. `Clock.Set`/`Advance` and `Rng.SetSeed` control
 subsequent contexts. Managed module logging writes to standard error.
 
 `SetEnv(key, value)` and `UnsetEnv(key)` configure fixture-local environment values
-declared by the root module. Keys are case-sensitive; values must satisfy declared
-literal/union constraints and the engine's 8192-byte UTF-8 limit. Fixtures start
-with no values. Required generated accessors throw for missing values; empty
-strings remain present. Reads see current values, and transaction rollback does
+declared by the root module. Reads see current values, and transaction rollback does
 not undo environment changes. Environment handles expire with their owning context.
 
 `CreateViewContext(auth)` and `CreateAnonymousViewContext()` create fixture-owned read-only
@@ -44,7 +41,8 @@ Use `tx.Db` inside the callback, not `procedure.Db`; nested transactions and
 async/awaitable callbacks are rejected.
 
 Call `AfterTxCommit(fixture => { ... })` on `CreateProcedureContextBuilder(auth)` to run
-a synchronous callback after each successful procedure transaction has committed and closed. Hooks can access committed data and advance
+a synchronous callback after each successful procedure transaction has committed and closed.
+Hooks can access committed data and advance
 the fixture clock for the next transaction. They do not run after rollback.
 Hook exceptions propagate directly from both `WithTx` and `TryWithTx`, without
 undoing the commit or being converted into `TxOutcome` failures. Built contexts
