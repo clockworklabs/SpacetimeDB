@@ -36,6 +36,8 @@ let starts = 0;
 let onCall: () => void = () => {};
 // onComplete throws while this is above zero.
 let completeFailures = 0;
+// The fixable workflow's charge step fails while this is true.
+let declined = false;
 
 const logOf = (ctx: unknown) => (ctx as { appLog: string[] }).appLog;
 
@@ -292,6 +294,18 @@ const w = {
       );
     }
   ),
+  fixable: workflows.define(db, 'fixable', { args: Args }, step => {
+    step.tx('reserve', ctx => {
+      logOf(ctx).push('reserve');
+    });
+    step.call('charge', () => {
+      appLog.push('charge');
+      if (declined) throw new Error('card declined');
+    });
+    step.tx('ship', ctx => {
+      logOf(ctx).push('ship');
+    });
+  }),
 };
 
 // Steps, results, and arguments are typed.
@@ -406,6 +420,7 @@ const ctx = {
       delete: (row: Branch) => branches.delete(row.id),
     },
     workflowFinished: {
+      runId: { delete: (runId: bigint) => finished.delete(runId) },
       finishedAt: {
         filter: () => byTime(finished.values(), row => row.finishedAt),
       },
@@ -760,6 +775,73 @@ assert.ok(admins.has(admin.toHexString()));
   completeFailures = 0;
 }
 
+// A failed run restarts from the step that failed it, keeping earlier steps.
+{
+  reset();
+  declined = true;
+  const id = workflows.start(tx, w.fixable, { count: 0 });
+  runDue();
+  assert.equal(statusOf(id), 'Failed');
+  assert.equal(run(id).error, 'card declined');
+  assert.deepEqual(appLog, ['reserve', 'charge']);
+  assert.ok(finished.has(id));
+
+  declined = false;
+  assert.equal(workflows.restart(tx, id), true);
+  assert.equal(statusOf(id), 'Running');
+  assert.equal(run(id).error, undefined);
+  assert.equal(run(id).lastStep, 'reserve');
+  assert.ok(!finished.has(id));
+  runDue();
+  assert.deepEqual(appLog, ['reserve', 'charge', 'charge', 'ship']);
+  assert.equal(statusOf(id), 'Completed');
+  assert.equal(journalOf(id).length, 0);
+  assert.equal(workflows.restart(tx, id), false, 'only failed or cancelled');
+}
+
+// A restart can start from an earlier step, by name or position.
+{
+  reset();
+  declined = true;
+  const id = workflows.start(tx, w.fixable, { count: 0 });
+  runDue();
+  assert.throws(() => workflows.restart(tx, id, 'missing'), {
+    message: errors.unknownStep,
+  });
+  assert.throws(() => workflows.restart(tx, id, 3), {
+    message: errors.unknownStep,
+  });
+  declined = false;
+  assert.equal(workflows.restart(tx, id, 'reserve'), true);
+  runDue();
+  assert.deepEqual(appLog, ['reserve', 'charge', 'reserve', 'charge', 'ship']);
+  assert.equal(statusOf(id), 'Completed');
+}
+
+// A cancelled run restarts where it stopped. A run waits for its onComplete.
+{
+  reset();
+  const id = workflows.start(tx, w.waits, { count: 0 });
+  runDue();
+  workflows.cancel(tx, id);
+  assert.equal(workflows.restart(tx, id), true);
+  runDue();
+  assert.equal(statusOf(id), 'Waiting');
+  assert.equal(run(id).waitingFor, 'go');
+  workflows.cancel(tx, id);
+
+  completeFailures = 1;
+  const pending = workflows.start(tx, w.finishes, { count: 99 });
+  runDue();
+  assert.equal(run(pending).completing, true);
+  assert.equal(workflows.restart(tx, pending), false);
+  advance(1n);
+  assert.equal(workflows.restart(tx, pending), true);
+  completeFailures = 0;
+  runDue();
+  assert.equal(statusOf(pending), 'Failed');
+}
+
 // Cancelling removes scheduled work, and only applies to active runs.
 {
   reset();
@@ -896,7 +978,8 @@ assert.ok(admins.has(admin.toHexString()));
   runDue();
   assert.equal(statusOf(id), 'Failed');
   assert.equal(run(id).error, failures.tooManySteps);
-  assert.equal(journalOf(id).length, 0);
+  // A failed run keeps its steps, so it can be restarted.
+  assert.equal(journalOf(id).length, 10_000);
 }
 
 // Only the scheduler can run an attempt.

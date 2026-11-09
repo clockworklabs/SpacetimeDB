@@ -266,6 +266,20 @@ try {
   });
   assert.equal(failedRun.error, 'boom');
 
+  // A failed run keeps its steps, and restarts from the one that failed it.
+  const failedAttempts = () =>
+    sql(`SELECT step FROM workflow_history WHERE runId = ${failedRun.id}`);
+  assert.equal(failedAttempts().length, 1);
+  call('restart_run', String(failedRun.id));
+  await poll('the restarted run to fail again', () => {
+    const latest = latestRun();
+    return latest.id === failedRun.id &&
+      latest.status === 'Failed' &&
+      failedAttempts().length === 2
+      ? latest
+      : undefined;
+  });
+
   // Parallel items run at the same time, and their results come back in order.
   call('start_overlap', JSON.stringify('overlap'));
   const overlap = await poll('the parallel run to complete', () => {

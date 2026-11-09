@@ -37,6 +37,7 @@ export const errors = {
   invalidEvent: 'workflow.invalid_event',
   tooManyEvents: 'workflow.too_many_events',
   cannotRemoveLastAdmin: 'workflow.cannot_remove_last_admin',
+  unknownStep: 'workflow.unknown_step',
 } as const;
 
 /** Errors recorded on a run or in its history. */
@@ -274,6 +275,7 @@ export interface WorkflowCtx {
       delete(row: WorkflowBranchRow): boolean;
     };
     readonly workflowFinished: {
+      readonly runId: { delete(runId: bigint): boolean };
       readonly finishedAt: {
         filter(
           range: Range<Timestamp>
@@ -648,9 +650,17 @@ export function client() {
       if (oldest) {
         finished.delete(oldest);
         ctx.db.workflowRun.id.delete(oldest.runId);
+        deleteJournal(ctx, oldest.runId, 0);
       }
     }
     finished.insert({ runId, finishedAt: ctx.timestamp });
+  }
+
+  /** Delete a run's saved steps from `index` on. */
+  function deleteJournal(ctx: WorkflowCtx, runId: bigint, index: number): void {
+    for (const entry of [...ctx.db.workflowJournal.runId.filter(runId)]) {
+      if (entry.index >= index) ctx.db.workflowJournal.delete(entry);
+    }
   }
 
   function finish(
@@ -661,9 +671,8 @@ export function client() {
     result?: string
   ): void {
     clearFires(ctx, run.id);
-    for (const entry of [...ctx.db.workflowJournal.runId.filter(run.id)]) {
-      ctx.db.workflowJournal.delete(entry);
-    }
+    // Failed and cancelled runs keep their steps until pruned, for `restart`.
+    if (tag === 'Completed') deleteJournal(ctx, run.id, 0);
     for (const branch of [...ctx.db.workflowBranch.runId.filter(run.id)]) {
       ctx.db.workflowBranch.delete(branch);
     }
@@ -1391,6 +1400,54 @@ export function client() {
     return true;
   }
 
+  function restart(
+    ctx: WorkflowCtx,
+    runId: bigint,
+    from?: number | string
+  ): boolean {
+    const run = ctx.db.workflowRun.id.find(runId);
+    if (
+      (run?.status.tag !== 'Failed' && run?.status.tag !== 'Cancelled') ||
+      run.completing
+    ) {
+      return false;
+    }
+    const journal = [...ctx.db.workflowJournal.runId.filter(runId)].sort(
+      (a, b) => a.index - b.index
+    );
+    const last = journal.at(-1);
+    // By default, retry the step that gave up and failed the run.
+    const index =
+      from === undefined
+        ? last?.error !== undefined
+          ? last.index
+          : journal.length
+        : typeof from === 'number'
+          ? from
+          : journal.findIndex(entry => entry.name === from);
+    if (!Number.isInteger(index) || index < 0 || index > journal.length) {
+      throw new SenderError(errors.unknownStep);
+    }
+    deleteJournal(ctx, runId, index);
+    ctx.db.workflowFinished.runId.delete(runId);
+    clearFires(ctx, runId);
+    const restarted = ctx.db.workflowRun.id.update({
+      ...run,
+      status: { tag: 'Running' },
+      generation: run.generation + 1n,
+      attempt: 0,
+      inFlight: false,
+      stepCount: index,
+      lastStep: journal[index - 1]?.name,
+      waitingFor: undefined,
+      error: undefined,
+      result: undefined,
+      updatedAt: ctx.timestamp,
+    });
+    schedule(ctx, restarted, 0n);
+    return true;
+  }
+
   return {
     tables,
     /**
@@ -1514,6 +1571,13 @@ export function client() {
     },
     /** Stop an active run. Returns false if it already finished. The caller authorizes. */
     cancel,
+    /**
+     * Run a failed or cancelled run again from a step, given by its position or
+     * the first step with that name. Saved steps before it are kept. Defaults to
+     * the step that failed the run. Returns false if the run is not failed or
+     * cancelled, or its `onComplete` has not run yet. The caller authorizes.
+     */
+    restart,
     requireAdmin,
     views: {
       /** The latest runs, newest first. */
@@ -1537,6 +1601,16 @@ export function client() {
         handler(ctx: WorkflowCtx, { runId }: { runId: bigint }): void {
           requireAdmin(ctx);
           cancel(ctx, runId);
+        },
+      },
+      restartWorkflowRun: {
+        params: { runId: t.u64(), from: t.option(t.u32()) },
+        handler(
+          ctx: WorkflowCtx,
+          { runId, from }: { runId: bigint; from: number | undefined }
+        ): void {
+          requireAdmin(ctx);
+          restart(ctx, runId, from);
         },
       },
       addWorkflowAdminIdentity: {

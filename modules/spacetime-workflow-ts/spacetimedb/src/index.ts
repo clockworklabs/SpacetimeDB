@@ -244,6 +244,13 @@ export const signalRun = spacetimedb.reducer(
   }
 );
 
+export const restartRun = spacetimedb.reducer(
+  { runId: t.u64() },
+  (ctx, { runId }) => {
+    workflows.restart(ctx, runId);
+  }
+);
+
 export const cancelWorkflowRun = spacetimedb.reducer(
   workflows.reducers.cancelWorkflowRun.params,
   workflows.reducers.cancelWorkflowRun.handler

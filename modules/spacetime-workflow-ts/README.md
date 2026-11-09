@@ -220,6 +220,28 @@ A run can have up to 10,000 steps. Each sleep and wait counts as one.
   above your slowest step.
 - A long-running procedure delays other scheduled work in the same module.
 
+## Restarting a run
+
+After you fix what failed a run, `restart` runs it again from a step. Steps
+before it keep their saved results, so they do not run again:
+
+```ts
+workflows.restart(ctx, runId); // from the step that failed the run
+workflows.restart(ctx, runId, 'charge'); // from the first step named 'charge'
+workflows.restart(ctx, runId, 0); // from the first step
+```
+
+- Only `Failed` and `Cancelled` runs restart, after their `onComplete` has run.
+- Without a step, it starts from the step that gave up and failed the run. If the
+  function failed outside a step, or the run was cancelled, it continues after the
+  last saved step.
+- Steps from that point run again, including sleeps, and waits need their events
+  again. A sleep is named `sleep`, and a wait is `wait:<event>`.
+- `onComplete` runs again when the restarted run ends.
+
+Failed and cancelled runs keep their saved steps until they are pruned, so they
+can be restarted.
+
 ## Reading progress
 
 The `workflowRun` table holds each run's `workflow` name, `status`, `lastStep`, `stepCount`,
@@ -268,15 +290,19 @@ finished:
   authorization check.
 - `signal(ctx, runId, event, value?)` delivers an event and its value, without an
   authorization check. It returns `false` if the run is unknown or finished.
+- `restart(ctx, runId, from?)` runs a failed or cancelled run again from a step,
+  without an authorization check. It returns `false` if the run cannot restart.
 - `cancel(ctx, runId)` stops an active run, without an authorization check. It
   returns `false` if the run already finished. A `call` step already running
   finishes its work, and its result is ignored.
-- `reducers.cancelWorkflowRun`, `reducers.addWorkflowAdminIdentity`, and
+- `reducers.cancelWorkflowRun`, `reducers.restartWorkflowRun`,
+  `reducers.addWorkflowAdminIdentity`, and
   `reducers.removeWorkflowAdminIdentity` require a workflow admin.
 - `views.workflowRunsAdmin` and `views.workflowHistoryAdmin` return up to 1,000
   runs and attempts, newest first, to workflow admins.
 - `errors` holds the `workflow.*` codes these operations throw as `SenderError`s:
-  `notAuthorized`, `invalidEvent`, `tooManyEvents`, and `cannotRemoveLastAdmin`.
+  `notAuthorized`, `invalidEvent`, `tooManyEvents`, `cannotRemoveLastAdmin`, and
+  `unknownStep`.
 - `failures` holds the `workflow.*` errors recorded on runs: `stepLost`,
   `tooManySteps`, `resultTooLarge`, `asyncStep`, `replayMismatch`, `tooManyBranches`,
   `unsupportedValue`, and `unknownWorkflow`.
