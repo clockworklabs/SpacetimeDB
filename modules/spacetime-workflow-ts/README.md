@@ -80,7 +80,7 @@ const checkout = workflows.define(
 - `db`, so steps receive your module's typed contexts.
 - A name. It is saved on every run, and finds the function when the run resumes.
 - Options: the argument type, and optionally `retry` and `stepTimeoutSeconds`.
-  They apply to every step.
+  They apply to every step, unless a step sets its own `retry`.
 - The workflow function. It receives `step` and the run's arguments, and does all
   its work in [steps](#steps). Its return value is saved as the run's result.
 - Optionally, `onComplete`, which runs once when the run completes, fails, or is
@@ -167,6 +167,15 @@ const fetched = pages.flatMap(page => (page.ok ? [page.value] : []));
 Parallel items share the module's procedure pool, which has one instance per CPU
 core by default. Items beyond that wait for a free instance.
 
+`tx`, `call`, and `parallel` take an optional last argument. Its `retry` replaces
+the workflow's for that step, so one flaky call can retry without the rest:
+
+```ts
+const page = step.call('fetch', ctx => fetchPage(ctx, url), {
+  retry: { maxAttempts: 5, backoffSeconds: 2 },
+});
+```
+
 ## When a run ends
 
 The workflow function can return a value. It is saved as the run's `result`.
@@ -206,7 +215,8 @@ A run can have up to 10,000 steps. Each sleep and wait counts as one.
 ## Failures and restarts
 
 - A step that throws is retried with `backoffSeconds * 2^(attempt - 1)` between
-  attempts, up to `retry.maxAttempts`. Without `retry`, a step gets one attempt.
+  attempts, up to `retry.maxAttempts`. The step's own `retry` is used if it has
+  one, then the workflow's. Without either, a step gets one attempt.
 - A thrown `SenderError` means the input is invalid, so the step is not retried.
 - When a step gives up, it throws a `WorkflowStepError` in the workflow function.
   Catch it to clean up or carry on. If nothing catches it, the run ends as

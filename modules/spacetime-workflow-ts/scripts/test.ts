@@ -294,6 +294,34 @@ const w = {
       );
     }
   ),
+  // The workflow does not retry, but some of its steps do.
+  mixed: workflows.define(db, 'mixed', { args: Args }, step => {
+    step.call(
+      'flaky',
+      (_ctx, run) => {
+        appLog.push(`flaky:${run.attempt}`);
+        if (run.attempt < 3) throw new Error('try again');
+      },
+      { retry: { maxAttempts: 3, backoffSeconds: 5 } }
+    );
+    const items = step.parallel(
+      'items',
+      ['a'],
+      (_ctx, item, run) => {
+        appLog.push(`${item}:${run.attempt}`);
+        if (run.attempt === 1) throw new Error('item failed');
+        return item;
+      },
+      { retry: { maxAttempts: 2, backoffSeconds: 1 } }
+    );
+    step.tx('once', ctx => {
+      logOf(ctx).push(`once:${items.map(r => r.ok).join()}`);
+      throw new Error('no retry');
+    });
+  }),
+  badOptions: workflows.define(db, 'badOptions', { args: Args }, step => {
+    step.tx('bad', () => {}, { retry: { maxAttempts: 0, backoffSeconds: 1 } });
+  }),
   fixable: workflows.define(db, 'fixable', { args: Args }, step => {
     step.tx('reserve', ctx => {
       logOf(ctx).push('reserve');
@@ -773,6 +801,34 @@ assert.ok(admins.has(admin.toHexString()));
     ['Failed', 'GaveUp']
   );
   completeFailures = 0;
+}
+
+// A step's own retry settings replace the workflow's.
+{
+  reset();
+  const id = workflows.start(tx, w.mixed, { count: 0 });
+  runDue();
+  assert.deepEqual(appLog, ['flaky:1']);
+  advance(5n);
+  assert.deepEqual(appLog, ['flaky:1', 'flaky:2']);
+  advance(9n);
+  assert.deepEqual(appLog, ['flaky:1', 'flaky:2'], 'backoff doubles');
+  advance(1n);
+  assert.deepEqual(appLog, ['flaky:1', 'flaky:2', 'flaky:3', 'a:1']);
+  advance(1n);
+  // The item succeeds on its second attempt. The last step has one attempt.
+  assert.deepEqual(appLog, ['flaky:1', 'flaky:2', 'flaky:3', 'a:1', 'a:2']);
+  assert.equal(statusOf(id), 'Failed');
+  assert.equal(run(id).error, 'no retry');
+  assert.equal(attemptsOf(id).filter(row => row.step === 'once').length, 1);
+
+  const bad = workflows.start(tx, w.badOptions, { count: 0 });
+  runDue();
+  assert.equal(statusOf(bad), 'Failed');
+  assert.equal(
+    run(bad).error,
+    'workflow.invalid_step_options:bad:max_attempts'
+  );
 }
 
 // A failed run restarts from the step that failed it, keeping earlier steps.

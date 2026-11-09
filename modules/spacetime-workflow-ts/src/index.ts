@@ -15,10 +15,12 @@ export {
   type WorkflowOptions,
   type WorkflowOutcome,
   type WorkflowProcedureCtx,
+  type WorkflowRetry,
   type WorkflowRunRow,
   type WorkflowSchema,
   type WorkflowSettled,
   type WorkflowStepInfo,
+  type WorkflowStepOptions,
   type WorkflowSteps,
   type WorkflowViewCtx,
 } from './submodule.js';

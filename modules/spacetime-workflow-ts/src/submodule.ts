@@ -311,11 +311,22 @@ export interface WorkflowProcedureCtx<Tx extends WorkflowCtx = WorkflowCtx> {
   withTx<T>(body: (tx: Tx) => T): T;
 }
 
+/** Up to `maxAttempts` tries, `backoffSeconds * 2^(attempt - 1)` apart. */
+export interface WorkflowRetry {
+  maxAttempts: number;
+  backoffSeconds: number;
+}
+
+/** Overrides the workflow's options for one step. */
+export interface WorkflowStepOptions {
+  retry?: WorkflowRetry;
+}
+
 export interface WorkflowOptions<Args extends VariantsObj[string]> {
   /** The run's arguments. Saved like step results. */
   args: Args;
   /** Attempts per step. Defaults to one attempt with no retry. */
-  retry?: { maxAttempts: number; backoffSeconds: number };
+  retry?: WorkflowRetry;
   /**
    * How long to wait for an attempt before treating it as lost and starting
    * another. Set it above the slowest `call` step. Defaults to 300.
@@ -347,9 +358,17 @@ export interface WorkflowSteps<Tx, Proc> {
    * Run `fn` in one transaction and save its result. Its writes and the saved
    * result commit together. `fn` must not call outside services.
    */
-  tx<T>(name: string, fn: (ctx: Tx, run: WorkflowStepInfo) => T): T;
+  tx<T>(
+    name: string,
+    fn: (ctx: Tx, run: WorkflowStepInfo) => T,
+    options?: WorkflowStepOptions
+  ): T;
   /** Run `fn` in a procedure and save its result. It can run more than once. */
-  call<T>(name: string, fn: (ctx: Proc, run: WorkflowStepInfo) => T): T;
+  call<T>(
+    name: string,
+    fn: (ctx: Proc, run: WorkflowStepInfo) => T,
+    options?: WorkflowStepOptions
+  ): T;
   /** Pause for `seconds`. Nothing runs in the meantime. */
   sleep(seconds: number): void;
   /**
@@ -365,7 +384,8 @@ export interface WorkflowSteps<Tx, Proc> {
   parallel<I, T>(
     name: string,
     items: readonly I[],
-    fn: (ctx: Proc, item: I, run: WorkflowStepInfo) => T
+    fn: (ctx: Proc, item: I, run: WorkflowStepInfo) => T,
+    options?: WorkflowStepOptions
   ): WorkflowSettled<T>[];
 }
 
@@ -510,20 +530,13 @@ function decodeResult(json: string | undefined): unknown {
   });
 }
 
-function validate(
-  name: string,
-  def: WorkflowOptions<VariantsObj[string]>,
-  taken: boolean
-): void {
-  const fail = (detail: string): never => {
-    throw new Error(`workflow.invalid_definition:${name}:${detail}`);
-  };
-  if (name.length === 0 || name.length > MAX_EVENT_LENGTH) fail('name');
-  if (taken) fail('duplicate_name');
-  const { maxAttempts, backoffSeconds } = def.retry ?? {
-    maxAttempts: 1,
-    backoffSeconds: 1,
-  };
+const NO_RETRY: WorkflowRetry = { maxAttempts: 1, backoffSeconds: 1 };
+
+function validateRetry(
+  retry: WorkflowRetry | undefined,
+  fail: (detail: string) => never
+): WorkflowRetry {
+  const { maxAttempts, backoffSeconds } = retry ?? NO_RETRY;
   if (
     !Number.isInteger(maxAttempts) ||
     maxAttempts < 1 ||
@@ -538,6 +551,31 @@ function validate(
   ) {
     fail('backoff_seconds');
   }
+  return { maxAttempts, backoffSeconds };
+}
+
+/** A step's retry settings: its own, else the workflow's. */
+function stepRetry(
+  workflow: Defined,
+  step: string,
+  options: WorkflowStepOptions | undefined
+): WorkflowRetry {
+  return validateRetry(options?.retry ?? workflow.options.retry, detail => {
+    throw new Error(`workflow.invalid_step_options:${step}:${detail}`);
+  });
+}
+
+function validate(
+  name: string,
+  def: WorkflowOptions<VariantsObj[string]>,
+  taken: boolean
+): void {
+  const fail = (detail: string): never => {
+    throw new Error(`workflow.invalid_definition:${name}:${detail}`);
+  };
+  if (name.length === 0 || name.length > MAX_EVENT_LENGTH) fail('name');
+  if (taken) fail('duplicate_name');
+  validateRetry(def.retry, fail);
   const timeout = def.stepTimeoutSeconds ?? DEFAULT_STEP_TIMEOUT_SECONDS;
   if (
     !Number.isInteger(timeout) ||
@@ -719,7 +757,8 @@ export function client() {
     if (claimed === null) return true;
     const { run } = claimed;
     const workflow = defined.get(run.workflow);
-    const maxAttempts = workflow?.options.retry?.maxAttempts ?? 1;
+    const retry = workflow?.options.retry ?? NO_RETRY;
+    const maxAttempts = retry.maxAttempts;
     const current = (tx: WorkflowCtx) => {
       const row = tx.db.workflowRun.id.find(run.id);
       return row?.completing && row.generation === run.generation
@@ -736,7 +775,7 @@ export function client() {
       });
       retire(tx, row.id);
     };
-    const fail = (error: string, retry: boolean) =>
+    const fail = (error: string, again: boolean) =>
       ctx.withTx(tx => {
         const row = current(tx);
         if (!row) return;
@@ -744,17 +783,17 @@ export function client() {
           tx,
           row,
           'onComplete',
-          retry ? 'Failed' : 'GaveUp',
+          again ? 'Failed' : 'GaveUp',
           error
         );
-        if (!retry) return settle(tx, row);
+        if (!again) return settle(tx, row);
         clearFires(tx, row.id);
         const moved = tx.db.workflowRun.id.update({
           ...row,
           generation: row.generation + 1n,
           inFlight: false,
         });
-        schedule(tx, moved, retryDelayMicros(moved, row.attempt));
+        schedule(tx, moved, retryDelayMicros(retry, row.attempt));
       });
 
     if (claimed.lost && run.attempt > maxAttempts) {
@@ -861,9 +900,9 @@ export function client() {
     };
   }
 
-  function retryDelayMicros(run: WorkflowRunRow, attempt: number): bigint {
+  function retryDelayMicros(retry: WorkflowRetry, attempt: number): bigint {
     return (
-      BigInt(optionsOf(run)?.retry?.backoffSeconds ?? 1) *
+      BigInt(retry.backoffSeconds) *
       (1n << BigInt(attempt - 1)) *
       ONE_SECOND_MICROS
     );
@@ -986,29 +1025,10 @@ export function client() {
       });
       return;
     }
-    const maxAttempts = workflow.options.retry?.maxAttempts ?? 1;
     const settle = (outcome: { result?: string; error?: string }) =>
       ctx.withTx(tx =>
         settleBranch(tx, run.id, run.generation, branch, outcome)
       );
-
-    if (claimed.lost) {
-      if (row.attempt > maxAttempts) {
-        settle({ error: failures.stepLost });
-        return;
-      }
-      ctx.withTx(tx => {
-        if (waitingOnBranches(tx, run.id, run.generation)) {
-          recordAttempt(
-            tx,
-            { ...run, attempt: row.attempt - 1 },
-            `${run.waitingFor!.slice(PARALLEL_PREFIX.length)} #${branch + 1}`,
-            'Failed',
-            failures.stepLost
-          );
-        }
-      });
-    }
 
     let cursor = 0;
     let done = false;
@@ -1038,7 +1058,12 @@ export function client() {
       parallel<I, T>(
         name: string,
         items: readonly I[],
-        fn: (ctx: WorkflowProcedureCtx<Tx>, item: I, run: WorkflowStepInfo) => T
+        fn: (
+          ctx: WorkflowProcedureCtx<Tx>,
+          item: I,
+          run: WorkflowStepInfo
+        ) => T,
+        options?: WorkflowStepOptions
       ): WorkflowSettled<T>[] {
         if (done) stop();
         const index = cursor;
@@ -1053,9 +1078,34 @@ export function client() {
           settle({ error: failures.replayMismatch });
           return stop();
         }
+        let retry: WorkflowRetry;
+        try {
+          retry = stepRetry(workflow, name, options);
+        } catch (caught) {
+          settle({ error: errorText(caught) });
+          return stop();
+        }
+        const label = `${name} #${branch + 1}`;
+        if (claimed.lost) {
+          if (row.attempt > retry.maxAttempts) {
+            settle({ error: failures.stepLost });
+            return stop();
+          }
+          ctx.withTx(tx => {
+            if (waitingOnBranches(tx, run.id, run.generation)) {
+              recordAttempt(
+                tx,
+                { ...run, attempt: row.attempt - 1 },
+                label,
+                'Failed',
+                failures.stepLost
+              );
+            }
+          });
+        }
         const info: WorkflowStepInfo = {
           runId: run.id,
-          step: `${name} #${branch + 1}`,
+          step: label,
           attempt: row.attempt,
           idempotencyKey: `${run.id}:${index}:${branch}`,
           startedBy: run.startedBy,
@@ -1065,7 +1115,10 @@ export function client() {
         } catch (caught) {
           if (caught instanceof WorkflowSuspended) throw caught;
           const error = errorText(caught);
-          if (caught instanceof SenderError || row.attempt >= maxAttempts) {
+          if (
+            caught instanceof SenderError ||
+            row.attempt >= retry.maxAttempts
+          ) {
             settle({ error });
           } else {
             ctx.withTx(tx => {
@@ -1084,7 +1137,7 @@ export function client() {
                 tx.db.workflowBranch.id.update({ ...current, inFlight: false });
               }
               clearFires(tx, run.id, branch);
-              schedule(tx, run, retryDelayMicros(run, row.attempt), branch);
+              schedule(tx, run, retryDelayMicros(retry, row.attempt), branch);
             });
           }
         }
@@ -1131,7 +1184,6 @@ export function client() {
       });
       return;
     }
-    const maxAttempts = workflow.options.retry?.maxAttempts ?? 1;
     let attempt = loaded.run.attempt;
     let lost = loaded.lost;
     let cursor = 0;
@@ -1201,16 +1253,20 @@ export function client() {
       });
     };
 
-    const handleFailure = (name: string, caught: unknown): never => {
+    const handleFailure = (
+      name: string,
+      caught: unknown,
+      retry: WorkflowRetry
+    ): never => {
       if (caught instanceof WorkflowSuspended) throw caught;
       const error = errorText(caught);
       // A `SenderError` rejects the step's input, so retrying cannot help.
-      if (caught instanceof SenderError || attempt >= maxAttempts) {
+      if (caught instanceof SenderError || attempt >= retry.maxAttempts) {
         giveUp(name, error);
       }
       commit((tx, run) => {
         recordAttempt(tx, run, name, 'Failed', error);
-        pause(tx, run, {}, retryDelayMicros(run, attempt));
+        pause(tx, run, {}, retryDelayMicros(retry, attempt));
       });
       return suspend();
     };
@@ -1234,9 +1290,14 @@ export function client() {
     };
 
     const steps: WorkflowSteps<Tx, WorkflowProcedureCtx<Tx>> = {
-      tx<T>(name: string, fn: (tx: Tx, run: WorkflowStepInfo) => T): T {
+      tx<T>(
+        name: string,
+        fn: (tx: Tx, run: WorkflowStepInfo) => T,
+        options?: WorkflowStepOptions
+      ): T {
         const saved = replay(name);
         if (saved) return saved.value as T;
+        const retry = stepRetry(workflow, name, options);
         // Nothing commits if the host stops during a transaction, so a lost
         // attempt is safe to repeat up to the overall limit.
         accountForLostAttempt(name, MAX_ATTEMPTS);
@@ -1250,23 +1311,25 @@ export function client() {
           attempt = 1;
           return decodeResult(result) as T;
         } catch (caught) {
-          return handleFailure(name, caught);
+          return handleFailure(name, caught, retry);
         }
       },
       call<T>(
         name: string,
-        fn: (ctx: WorkflowProcedureCtx<Tx>, run: WorkflowStepInfo) => T
+        fn: (ctx: WorkflowProcedureCtx<Tx>, run: WorkflowStepInfo) => T,
+        options?: WorkflowStepOptions
       ): T {
         const saved = replay(name);
         if (saved) return saved.value as T;
-        accountForLostAttempt(name, maxAttempts);
+        const retry = stepRetry(workflow, name, options);
+        accountForLostAttempt(name, retry.maxAttempts);
         try {
           const encoded = encodeResult(fn(ctx, info(name)));
           commit((tx, run) => finishStep(tx, run, name, encoded));
           attempt = 1;
           return decodeResult(encoded) as T;
         } catch (caught) {
-          return handleFailure(name, caught);
+          return handleFailure(name, caught, retry);
         }
       },
       sleep(seconds: number): void {
