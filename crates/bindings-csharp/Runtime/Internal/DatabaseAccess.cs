@@ -68,10 +68,14 @@ internal sealed class DatabaseAccess
 
     internal void CheckActive()
     {
-        if (Transaction is { } transaction)
-            transaction.CheckActive();
+        if (Transaction != null)
+        {
+            Transaction.CheckActive();
+        }
         else
+        {
             Backend.CheckActive();
+        }
     }
 }
 #endif

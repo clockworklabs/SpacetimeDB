@@ -256,8 +256,9 @@ public sealed class ModuleBuilder
         explicitNames.Add(new ExplicitNameEntry.Index(new NameMapping(sourceName, canonicalName)));
 
     // The result retains builder-owned collections; this is not an immutable snapshot.
-    // Public only for Codegen.Tests: its schema check is compiled at test time into an
-    // assembly that InternalsVisibleTo can't target. Not intended for module code.
+    // This is public only for Codegen.Tests: its schema check is compiled at test time into an
+    // assembly that InternalsVisibleTo can't target. Not intended for module code. We may want to make it internal
+    // and refactor Codegen.Tests in the future.
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     public RawModuleDefV10 BuildModuleDefinition()
     {
