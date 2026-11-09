@@ -31,6 +31,7 @@ mod cluster {
     mod new_user_flow;
     mod panic;
     mod permissions;
+    mod ping_pong;
     mod publish_upgrade_prompt;
     mod quickstart;
     mod rls;
