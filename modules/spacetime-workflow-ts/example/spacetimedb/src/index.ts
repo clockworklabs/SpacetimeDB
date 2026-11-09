@@ -13,7 +13,9 @@ import { client } from '@spacetimedb/workflow';
 
 const MODEL = 'openai/gpt-4o-mini';
 const MAX_QUESTION_LENGTH = 300;
-const MAX_TOPICS = 4;
+// The model proposes up to 4 topics. You can add more, up to 8.
+const PLANNED_TOPICS = 4;
+const MAX_TOPICS = 8;
 const MAX_TOPIC_LENGTH = 80;
 const SOURCES_PER_TOPIC = 3;
 const MIN_UPDATE_SECONDS = 60;
@@ -115,12 +117,12 @@ function callModel(ctx: Ctx, system: string, prompt: string): ModelReply {
 function planTopics(ctx: Ctx, question: string) {
   const reply = callModel(
     ctx,
-    `Plan research for a question. Choose 2 to ${MAX_TOPICS} distinct angles that do not overlap. Reply with only a JSON array of short Wikipedia search phrases, one per angle.`,
+    `Plan research for a question. Choose 2 to ${PLANNED_TOPICS} distinct angles that do not overlap. Reply with only a JSON array of short Wikipedia search phrases, one per angle.`,
     question
   );
   const topics = JSON.parse(reply.text.replace(/```(json)?/g, '')) as string[];
   return {
-    topics: topics.map(String).slice(0, MAX_TOPICS),
+    topics: topics.map(String).slice(0, PLANNED_TOPICS),
     tokens: reply.tokens,
   };
 }

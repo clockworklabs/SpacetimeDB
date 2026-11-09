@@ -160,7 +160,7 @@ function topicList(
 
 // The plan can be edited until it is approved. Drafts survive re-renders.
 const drafts = new Map<bigint, string[]>();
-const MAX_TOPICS = 4;
+const MAX_TOPICS = 8;
 
 function planEditor(dossier: { id: bigint; topics: string[] }): Node[] {
   const draft = drafts.get(dossier.id) ?? [...dossier.topics];
