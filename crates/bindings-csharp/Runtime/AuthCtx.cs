@@ -28,7 +28,7 @@ public sealed class AuthCtx
     private AuthCtx(Identity sender, Func<JwtClaims?> jwtFactory)
     {
         _isInternal = new Lazy<bool>(
-            () => sender == SpacetimeDB.Internal.IReducerContext.GetDatabaseIdentity()
+            () => sender == Internal.IReducerContext.GetDatabaseIdentity()
         );
         _jwtLazy = new Lazy<JwtClaims?>(() => jwtFactory?.Invoke());
     }
@@ -39,14 +39,10 @@ public sealed class AuthCtx
     /// Ideally this would not be part of the public API.
     /// This should only be called inside of a reducer.
     /// </summary>
-    public static AuthCtx BuildFromSystemTables(ConnectionId? connectionId, Identity identity)
-    {
-        if (connectionId == null)
-        {
-            return new AuthCtx(identity, jwtFactory: static () => null);
-        }
-        return FromConnectionId(connectionId.Value, identity);
-    }
+    public static AuthCtx BuildFromSystemTables(ConnectionId? connectionId, Identity identity) =>
+        connectionId == null
+            ? new AuthCtx(identity, jwtFactory: static () => null)
+            : FromConnectionId(connectionId.Value, identity);
 
     /// <summary>
     /// Create an AuthCtx that reads JWT for a given connection ID.

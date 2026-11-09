@@ -138,9 +138,7 @@ public readonly record struct HttpResponse(
 /// </remarks>
 public sealed class HttpError(string message) : Exception(message)
 {
-    private readonly string message = message;
-
-    public override string Message => message;
+    public override string Message { get; } = message;
 }
 
 /// <summary>
@@ -172,12 +170,12 @@ public sealed class HttpClient
     private static readonly TimeSpan MaxTimeout = TimeSpan.FromSeconds(180);
 
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
-    private readonly Func<HttpRequest, Result<HttpResponse, HttpError>>? responder;
+    private readonly Func<HttpRequest, Result<HttpResponse, HttpError>>? _responder;
 
     public HttpClient() { }
 
     internal HttpClient(Func<HttpRequest, Result<HttpResponse, HttpError>> responder) =>
-        this.responder = responder;
+        this._responder = responder;
 #else
     private static byte[] responseWireBuffer = new byte[0x10_000];
     private static byte[] responseBodyBuffer = new byte[0x10_000];
@@ -309,13 +307,14 @@ public sealed class HttpClient
     {
 #if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
         ArgumentNullException.ThrowIfNull(request);
-        if (Validate(request, out var timeout) is { } error)
-            return Result<HttpResponse, HttpError>.Err(error);
-        if (responder is null)
-            return Result<HttpResponse, HttpError>.Err(
-                new HttpError("no test HTTP responder configured")
-            );
-        return responder(timeout == request.Timeout ? request : request.WithTimeout(timeout));
+        return Validate(request, out var timeout) is { } error
+                ? Result<HttpResponse, HttpError>.Err(error)
+            : _responder is null
+                ? Result<HttpResponse, HttpError>.Err(
+                    new HttpError("no test HTTP responder configured")
+                )
+            : _responder(timeout == request.Timeout ? request : request.WithTimeout(timeout));
+
 #else
         // The host syscall expects BSATN-encoded spacetimedb_lib::http::Request bytes.
         // A mismatch in the wire layout can cause the host to trap during BSATN decode,
@@ -403,11 +402,20 @@ public sealed class HttpClient
     {
         timeout = request.Timeout;
         if (string.IsNullOrEmpty(request.Uri))
+        {
             return new HttpError("URI must not be null or empty");
+        }
+
         if (timeout < TimeSpan.Zero)
+        {
             return new HttpError("Timeout must not be negative");
+        }
+
         if (timeout > MaxTimeout)
+        {
             timeout = MaxTimeout;
+        }
+
         return null;
     }
 
