@@ -35,7 +35,10 @@ public readonly struct TableAccessor
     {
         var access = DatabaseAccess.Require(this._access);
         access.CheckActive();
-        var instance = access.Backend.Namespaces.ResolveInstance(_contextInstance, _assemblyIdentity);
+        var instance = access.Backend.Namespaces.ResolveInstance(
+            _contextInstance,
+            _assemblyIdentity
+        );
         if (access.Transaction is { } transaction)
         {
             return body(transaction, instance);
@@ -78,9 +81,12 @@ public readonly struct TableAccessor
         return Iter<T>((tx, instance) => tx.Scan(instance, name));
     }
 
-    internal IEnumerable<T> IndexScanPoint<T>(string index, byte[] point) where T : IStructuralReadWrite, new() => Iter<T>((tx, instance) => tx.IndexScanPoint(instance, index, point));
+    internal IEnumerable<T> IndexScanPoint<T>(string index, byte[] point)
+        where T : IStructuralReadWrite, new() =>
+        Iter<T>((tx, instance) => tx.IndexScanPoint(instance, index, point));
 
-    internal bool IndexDeletePoint(string index, byte[] point) => Execute((tx, instance) => tx.IndexDeletePoint(instance, index, point));
+    internal bool IndexDeletePoint(string index, byte[] point) =>
+        Execute((tx, instance) => tx.IndexDeletePoint(instance, index, point));
 
     internal IEnumerable<T> IndexScanRange<T>(
         string index,

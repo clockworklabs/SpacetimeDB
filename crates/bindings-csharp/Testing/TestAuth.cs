@@ -111,6 +111,8 @@ public sealed class TestAuth
         {
             throw new ArgumentException($"Invalid JWT '{name}' string.", error);
         }
-        return Encoding.UTF8.GetByteCount(text) is 0 or > 128 ? throw new ArgumentException($"JWT '{name}' must contain 1 to 128 UTF-8 bytes.") : text;
+        return Encoding.UTF8.GetByteCount(text) is 0 or > 128
+            ? throw new ArgumentException($"JWT '{name}' must contain 1 to 128 UTF-8 bytes.")
+            : text;
     }
 }

@@ -37,5 +37,6 @@ public sealed class ProcedureContextBuilder
         return this;
     }
 
-    public ProcedureContext Build() => _fixture.BuildProcedureContext(_auth, _responder, _afterCommit);
+    public ProcedureContext Build() =>
+        _fixture.BuildProcedureContext(_auth, _responder, _afterCommit);
 }

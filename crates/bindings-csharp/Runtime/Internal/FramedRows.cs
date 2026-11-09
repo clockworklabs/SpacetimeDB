@@ -45,7 +45,7 @@ internal static class FramedRows
             {
                 throw new InvalidDataException("Native row does not match its BSATN schema.");
             }
-            
+
             offset += (int)length;
             return row;
         }
