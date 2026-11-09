@@ -13,14 +13,13 @@ public sealed class NamespaceBinding(string? assemblyIdentity, string accessor)
     private int[] Instances => field ??= Module.BindNamespace(assemblyIdentity, accessor);
 
 #if NET10_0_OR_GREATER
-    public int ResolveContext(IModuleContext context, int contextInstance)
-    {
+    public int ResolveContext(IModuleContext context, int contextInstance) =>
 #if !SPACETIMEDB_WASM_RUNTIME
-        return Resolve(contextInstance, DatabaseAccess.Require(context.Access));
+        Resolve(contextInstance, DatabaseAccess.Require(context.Access));
 #else
-        return this[contextInstance];
+        this[contextInstance];
 #endif
-    }
+
 
 #if SPACETIMEDB_WASM_RUNTIME
     // Generated namespace accessors call these on every table access. In WASM a database
@@ -49,19 +48,20 @@ public sealed class NamespaceBinding(string? assemblyIdentity, string accessor)
 
     private int Resolve(int contextInstance, DatabaseAccess? access)
     {
-        if (access is not null)
+        if (access is null)
         {
-            access.CheckActive();
-            var selected = access.Backend.Namespaces.BindNamespace(assemblyIdentity, accessor)[
-                contextInstance
-            ];
-            if (selected < 0)
-                throw new InvalidOperationException(
-                    $"Namespace '{accessor}' is unavailable or ambiguous in this context."
-                );
-            return selected;
+            return this[contextInstance];
         }
-        return this[contextInstance];
+
+        access.CheckActive();
+        var selected = access.Backend.Namespaces.BindNamespace(assemblyIdentity, accessor)[
+            contextInstance
+        ];
+        return selected < 0
+            ? throw new InvalidOperationException(
+                $"Namespace '{accessor}' is unavailable or ambiguous in this context."
+            )
+            : selected;
     }
 #endif
 #endif
@@ -71,13 +71,11 @@ public sealed class NamespaceBinding(string? assemblyIdentity, string accessor)
         get
         {
             var instance = Instances[contextInstance];
-            if (instance < 0)
-            {
-                throw new InvalidOperationException(
+            return instance < 0
+                ? throw new InvalidOperationException(
                     $"Namespace '{accessor}' is unavailable or ambiguous in this context."
-                );
-            }
-            return instance;
+                )
+                : instance;
         }
     }
 }
