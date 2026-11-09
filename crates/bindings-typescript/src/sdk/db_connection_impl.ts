@@ -1266,13 +1266,33 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   ): Operation[] {
     const buffer = rowList.rowsData;
     const reader = this.#rowListReader;
-    reader.reset(buffer);
     const rows: Operation[] = [];
 
     const deserializeRow = this.#rowDeserializers[tableName];
     const { primaryKeyColName, primaryKeyColType } =
       this.#rowIdMetadata[tableName];
-    const pushRow = (rowBytes: Uint8Array, row: any) => {
+
+    // Decode each row from its own slice, using the boundaries the server
+    // sends. A module can add columns to the end of a table without breaking
+    // clients built against the old schema: their bindings read the columns
+    // they know, and the rest of the row is skipped.
+    const sizeHint = rowList.sizeHint;
+    if (sizeHint.tag === 'FixedSize' && sizeHint.value === 0) {
+      throw new Error('Fixed-size BSATN row list cannot have zero-sized rows');
+    }
+    const rowCount =
+      sizeHint.tag === 'RowOffsets'
+        ? sizeHint.value.length
+        : Math.floor(buffer.length / sizeHint.value);
+    const rowStart = (i: number) =>
+      sizeHint.tag === 'RowOffsets'
+        ? Number(sizeHint.value[i])
+        : i * sizeHint.value;
+    for (let i = 0; i < rowCount; i++) {
+      const end = i + 1 < rowCount ? rowStart(i + 1) : buffer.length;
+      const rowBytes = buffer.subarray(rowStart(i), end);
+      reader.reset(rowBytes);
+      const row = deserializeRow(reader);
       let rowId: ComparablePrimitive | undefined = undefined;
       if (primaryKeyColName !== undefined && primaryKeyColType !== undefined) {
         rowId = AlgebraicType.intoMapKey(
@@ -1284,37 +1304,6 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         rowId = fromByteArray(rowBytes);
       }
       rows.push({ type, rowId, row });
-    };
-
-    // Decode each row from its own slice, using the boundaries the server
-    // sends. A module can add columns to the end of a table without breaking
-    // clients built against the old schema: their bindings read the columns
-    // they know, and the rest of the row is skipped.
-    const sizeHint = rowList.sizeHint;
-    if (sizeHint.tag === 'RowOffsets' || sizeHint.value > 0) {
-      const rowCount =
-        sizeHint.tag === 'RowOffsets'
-          ? sizeHint.value.length
-          : Math.floor(buffer.length / sizeHint.value);
-      const rowStart = (i: number) =>
-        sizeHint.tag === 'RowOffsets'
-          ? Number(sizeHint.value[i])
-          : i * sizeHint.value;
-      for (let i = 0; i < rowCount; i++) {
-        const end = i + 1 < rowCount ? rowStart(i + 1) : buffer.length;
-        const rowBytes = buffer.subarray(rowStart(i), end);
-        reader.reset(rowBytes);
-        pushRow(rowBytes, deserializeRow(reader));
-      }
-      return rows;
-    }
-
-    // The server never sends a zero fixed size; read rows back to back.
-    let previousOffset = 0;
-    while (reader.remaining > 0) {
-      const row = deserializeRow(reader);
-      pushRow(buffer.subarray(previousOffset, reader.offset), row);
-      previousOffset = reader.offset;
     }
     return rows;
   }
