@@ -224,7 +224,7 @@ try {
     [['flaky', 3]],
     'failed attempts must leave no writes behind'
   );
-  call('signal_run', String(waiting.id), JSON.stringify('go'));
+  call('send_run_event', String(waiting.id), JSON.stringify('go'));
   await pollRun(waiting.id, 'Completed');
   // onComplete runs in its own procedure after the run finishes.
   const completed = await poll('the demo onComplete', () => {

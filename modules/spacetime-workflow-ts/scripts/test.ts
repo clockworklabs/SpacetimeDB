@@ -686,15 +686,15 @@ assert.ok(admins.has(admin.toHexString()));
   assert.equal(statusOf(id), 'Waiting');
   assert.equal(run(id).waitingFor, 'go');
   assert.equal(firesOf(id).length, 0);
-  assert.equal(workflows.signal(tx, id, 'other'), true);
+  assert.equal(workflows.sendEvent(tx, id, 'other'), true);
   assert.equal(statusOf(id), 'Waiting');
-  assert.equal(workflows.signal(tx, id, 'go'), true);
+  assert.equal(workflows.sendEvent(tx, id, 'go'), true);
   runDue();
   assert.deepEqual(appLog, ['resumed']);
   assert.equal(statusOf(id), 'Completed');
-  assert.equal(workflows.signal(tx, id, 'go'), false);
-  assert.equal(workflows.signal(tx, 12345n, 'go'), false);
-  assert.throws(() => workflows.signal(tx, id, ''), {
+  assert.equal(workflows.sendEvent(tx, id, 'go'), false);
+  assert.equal(workflows.sendEvent(tx, 12345n, 'go'), false);
+  assert.throws(() => workflows.sendEvent(tx, id, ''), {
     message: errors.invalidEvent,
   });
 }
@@ -703,8 +703,8 @@ assert.ok(admins.has(admin.toHexString()));
 {
   reset();
   const id = workflows.start(tx, w.waits, { count: 0 });
-  assert.equal(workflows.signal(tx, id, 'go'), true);
-  assert.equal(workflows.signal(tx, id, 'go'), true);
+  assert.equal(workflows.sendEvent(tx, id, 'go'), true);
+  assert.equal(workflows.sendEvent(tx, id, 'go'), true);
   assert.deepEqual(
     run(id).pendingEvents.map(e => e.name),
     ['go', 'go']
@@ -719,8 +719,8 @@ assert.ok(admins.has(admin.toHexString()));
   );
 
   const capped = workflows.start(tx, w.waits, { count: 0 });
-  for (let i = 0; i < 32; i++) workflows.signal(tx, capped, `event${i}`);
-  assert.throws(() => workflows.signal(tx, capped, 'one-too-many'), {
+  for (let i = 0; i < 32; i++) workflows.sendEvent(tx, capped, `event${i}`);
+  assert.throws(() => workflows.sendEvent(tx, capped, 'one-too-many'), {
     message: errors.tooManyEvents,
   });
   workflows.cancel(tx, capped);
@@ -730,15 +730,15 @@ assert.ok(admins.has(admin.toHexString()));
 {
   reset();
   const id = workflows.start(tx, w.answers, { count: 0 });
-  workflows.signal(tx, id, 'answer', { at: new Timestamp(5n) });
+  workflows.sendEvent(tx, id, 'answer', { at: new Timestamp(5n) });
   runDue();
   assert.equal(run(id).waitingFor, 'answer');
-  workflows.signal(tx, id, 'answer', 7);
+  workflows.sendEvent(tx, id, 'answer', 7);
   runDue();
   advance(1n);
   assert.deepEqual(appLog, ['true:5:7']);
   assert.equal(statusOf(id), 'Completed');
-  assert.throws(() => workflows.signal(tx, id, 'answer', new Map()), {
+  assert.throws(() => workflows.sendEvent(tx, id, 'answer', new Map()), {
     message: `${failures.unsupportedValue}:Map`,
   });
 }
@@ -1187,7 +1187,7 @@ assert.ok(admins.has(admin.toHexString()));
 {
   reset();
   const id = workflows.start(tx, w.waits, { count: 0 });
-  assert.throws(() => workflows.signal(tx, id, 'parallel:fetch'), {
+  assert.throws(() => workflows.sendEvent(tx, id, 'parallel:fetch'), {
     message: errors.invalidEvent,
   });
   workflows.cancel(tx, id);

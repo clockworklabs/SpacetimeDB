@@ -112,24 +112,24 @@ export const placeOrder = db.reducer(
 - The run is saved in the reducer's transaction. If the reducer fails, no run
   starts.
 - Keep the returned id, for example on the row the run is about. You need it to
-  signal or cancel the run.
+  send the run events, cancel it, or restart it.
 
-### 4. Signal and cancel runs
+### 4. Send events and cancel runs
 
 `waitFor` pauses a run until your code delivers its event. Check who may do that,
-then call `signal` with the event's value:
+then call `sendEvent` with the event's value:
 
 ```ts
 export const markShipped = db.reducer(
   { orderId: t.u64(), tracking: t.string() },
   (ctx, { orderId, tracking }) => {
     const order = requireWarehouse(ctx, orderId);
-    workflows.signal(ctx, order.runId, 'shipped', tracking);
+    workflows.sendEvent(ctx, order.runId, 'shipped', tracking);
   }
 );
 ```
 
-`workflows.cancel(ctx, runId)` stops a run the same way. Like `start`, `signal`
+`workflows.cancel(ctx, runId)` stops a run the same way. Like `start`, `sendEvent`
 and `cancel` do not check permissions.
 
 See the [Dossier example](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-workflow-ts/example)
@@ -149,7 +149,7 @@ Loops, branches, local variables, and `try/catch` work as usual around these:
   attempts of a step. Writes made through `ctx.withTx` are committed even if the
   step later fails.
 - `step.sleep(seconds)` pauses the run. Nothing runs in the meantime.
-- `step.waitFor(event)` pauses until `signal` delivers `event`, and returns the
+- `step.waitFor(event)` pauses until `sendEvent` delivers `event`, and returns the
   value sent with it. Events that arrive early are kept, oldest first, until the
   run waits for them. Each wait takes one. Pass the expected type, as in
   `step.waitFor<string[]>('approved')`. It is not checked.
@@ -288,7 +288,7 @@ finished:
 ## API
 
 - `client()` returns `tables`, `register`, `define`, `install`, `start`,
-  `signal`, `cancel`, `requireAdmin`, `views`, and `reducers`.
+  `sendEvent`, `cancel`, `requireAdmin`, `views`, and `reducers`.
 - `register(schema)` registers the scheduled procedure that runs workflows.
   Export its result.
 - `define(schema, name, { args, retry?, stepTimeoutSeconds? }, fn, onComplete?)`
@@ -298,7 +298,7 @@ finished:
   your module's `init` reducer.
 - `start(ctx, handle, args)` starts a run and returns its id, without an
   authorization check.
-- `signal(ctx, runId, event, value?)` delivers an event and its value, without an
+- `sendEvent(ctx, runId, event, value?)` delivers an event and its value, without an
   authorization check. It returns `false` if the run is unknown or finished.
 - `restart(ctx, runId, from?)` runs a failed or cancelled run again from a step,
   without an authorization check. It returns `false` if the run cannot restart.

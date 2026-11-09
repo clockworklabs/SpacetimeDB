@@ -101,7 +101,7 @@ const runColumns = {
   stepCount: t.u32(),
   lastStep: t.option(t.string()),
   waitingFor: t.option(t.string()),
-  /** Events signalled before the run waited for them, oldest first. */
+  /** Events sent before the run waited for them, oldest first. */
   pendingEvents: t.array(pendingEvent),
   error: t.option(t.string()),
   /** What the workflow function returned, saved like step results. */
@@ -372,7 +372,7 @@ export interface WorkflowSteps<Tx, Proc> {
   /** Pause for `seconds`. Nothing runs in the meantime. */
   sleep(seconds: number): void;
   /**
-   * Pause until `signal` delivers `event`, and return the value sent with it.
+   * Pause until `sendEvent` delivers `event`, and return the value sent with it.
    * The value's type is not checked.
    */
   waitFor<T = unknown>(event: string): T;
@@ -1594,7 +1594,7 @@ export function client() {
      * run that is not waiting for it yet keeps it until it does. Returns false if
      * the run is unknown or finished. The caller authorizes.
      */
-    signal(
+    sendEvent(
       ctx: WorkflowCtx,
       runId: bigint,
       event: string,

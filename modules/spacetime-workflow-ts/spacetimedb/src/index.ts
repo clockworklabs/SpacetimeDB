@@ -237,10 +237,10 @@ export const startParked = spacetimedb.reducer(
   }
 );
 
-export const signalRun = spacetimedb.reducer(
+export const sendRunEvent = spacetimedb.reducer(
   { runId: t.u64(), event: t.string() },
   (ctx, { runId, event }) => {
-    workflows.signal(ctx, runId, event, `${event}:value`);
+    workflows.sendEvent(ctx, runId, event, `${event}:value`);
   }
 );
 

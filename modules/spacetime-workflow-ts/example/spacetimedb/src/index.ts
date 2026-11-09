@@ -374,7 +374,7 @@ export const approvePlan = spacetimedb.reducer(
       );
     }
     ctx.db.dossier.id.update({ ...row, topics: plan });
-    workflows.signal(ctx, row.runId, 'plan-approved', plan);
+    workflows.sendEvent(ctx, row.runId, 'plan-approved', plan);
   }
 );
 
