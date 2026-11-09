@@ -106,6 +106,23 @@ pub trait ObjectStore: fmt::Debug + Send + Sync + 'static {
     fn write(&self, object: Object) -> Result<ObjectKey, ObjectStoreError>;
 }
 
+impl<T: ObjectStore> ObjectStore for Arc<T> {
+    #[inline]
+    fn stat(&self, key: ObjectKey) -> Result<Option<ObjectMetadata>, ObjectStoreError> {
+        (**self).stat(key)
+    }
+
+    #[inline]
+    fn read(&self, key: ObjectKey) -> Result<Option<ObjectBytes>, ObjectStoreError> {
+        (**self).read(key)
+    }
+
+    #[inline]
+    fn write(&self, object: Object) -> Result<ObjectKey, ObjectStoreError> {
+        (**self).write(object)
+    }
+}
+
 impl ObjectStore for () {
     fn stat(&self, _: ObjectKey) -> Result<Option<ObjectMetadata>, ObjectStoreError> {
         unimplemented!("null object store does not support `stat`")
