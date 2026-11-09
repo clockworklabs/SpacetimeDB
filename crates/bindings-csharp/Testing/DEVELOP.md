@@ -33,8 +33,7 @@ dotnet pack crates/bindings-csharp/Testing -c Release \
 
 All three assets are required by default and are packaged under
 `runtimes/<rid>/native`. Packing does not compile Rust or inspect the binaries'
-architecture; CI must build and execute them on each supported platform. macOS
-is outside the initial release matrix.
+architecture; CI must build and execute them on each supported platform.
 
 For a partial local package, explicitly opt in, select the RID, and use a
 prerelease package version. Do not publish partial packages:
@@ -76,8 +75,8 @@ integration suite natively on Linux x64, Linux ARM64, and Windows x64 before upl
 `spacetimedb-testing-native-<rid>` artifacts containing `<rid>/<native-library>`.
 Linux builds use Ubuntu 22.04 (glibc 2.35); CI rejects newer glibc requirements.
 Windows builds and tests use Windows Server 2022 with MSVC. These are the tested
-OS baselines, not a claim of compatibility with older systems. musl and macOS
-are outside this matrix. CI logs include Linux native architecture and dependency reports.
+OS baselines, not a claim of compatibility with older systems. macOS
+is outside this matrix. CI logs include Linux native architecture and dependency reports.
 The existing `csharp-testsuite` managed/WASM build check also consumes the same
 package set. It checks WASM Runtime selection and rejects Testing dependencies
 or native bridge files in module assets and build outputs. Platform support is
