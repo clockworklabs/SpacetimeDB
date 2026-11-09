@@ -461,6 +461,30 @@ pub use spacetimedb_bindings_macro::settings;
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::table;
 
+#[doc(hidden)]
+pub use spacetimedb_bindings_macro::generated_outbox_table;
+
+/// Declare an outbox table for a reducer in generated module bindings.
+///
+/// `outbox!(receiver::reducer)` creates a table with a message ID, a target,
+/// and one column for each reducer argument. Pass `accessor = custom_outbox`
+/// and/or `name = "CustomOutbox"` to override the table's names. Use [`table`]
+/// for a custom layout.
+/// The receiver must be in scope as a module identifier.
+/// If an argument is named `msg_id` or `target`, use [`table`] to name the
+/// metadata columns differently.
+/// To define multiple outbox tables for the same remote reducer, declare them
+/// manually with [`table`].
+#[macro_export]
+macro_rules! outbox {
+    ($module:ident :: $reducer:ident, name = $name:literal, accessor = $accessor:ident $(,)?) => {
+        $crate::outbox!($module::$reducer, accessor = $accessor, name = $name);
+    };
+    ($module:ident :: $reducer:ident $(, accessor = $accessor:ident)? $(, name = $name:literal)? $(,)?) => {
+        $module::__spacetimedb_outbox!($reducer, $module $(, accessor = $accessor)? $(, name = $name)?);
+    };
+}
+
 /// Marks a function as a spacetimedb reducer.
 ///
 /// A reducer is a function with read/write access to the database

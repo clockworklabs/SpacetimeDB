@@ -32,6 +32,95 @@ fn write_config(test: &Smoketest, config: &toml::Table) {
     fs::write(&test.config_path, raw).expect("Failed to write config");
 }
 
+fn list_without_login() -> (tempfile::TempDir, assert_cmd::Command) {
+    let root = tempfile::tempdir().expect("Failed to create tempdir");
+    let mut command = assert_cmd::Command::new(spacetimedb_guard::ensure_binaries_built());
+    command
+        .current_dir(root.path())
+        .arg("--config-path")
+        .arg(root.path().join("config.toml"))
+        .args(["list", "--no-config", "--server", "http://127.0.0.1:1"])
+        .timeout(Duration::from_secs(5));
+    (root, command)
+}
+
+fn assert_no_login_saved(root: &std::path::Path) {
+    let config = fs::read_to_string(root.join("config.toml")).expect("Failed to read config");
+    let config = config.parse::<toml::Table>().expect("Failed to parse config");
+    assert!(config.get("spacetimedb_token").is_none());
+    assert!(config.get("web_session_token").is_none());
+}
+
+#[test]
+fn cli_list_without_login_warns_before_server_issued_login() {
+    let (root, mut command) = list_without_login();
+    command
+        // Decline web login, then press Enter to reject the server-issued identity.
+        .write_stdin("n\n\n")
+        .assert()
+        .failure()
+        .stdout(predicates::str::contains("WARNING"))
+        .stderr(predicates::str::contains("Login cancelled."));
+    assert_no_login_saved(root.path());
+}
+
+#[test]
+fn cli_list_without_login_accepts_yes() {
+    assert_list_creates_server_issued_identity(&["--yes"]);
+}
+
+#[test]
+fn cli_list_without_login_uses_server_issued_identity_on_eof() {
+    assert_list_creates_server_issued_identity(&[]);
+}
+
+fn assert_list_creates_server_issued_identity(extra_args: &[&str]) {
+    require_server_issued_login!();
+    let test = Smoketest::builder()
+        .precompiled_module("noop")
+        .autopublish(false)
+        .build();
+    fs::write(&test.config_path, "").unwrap();
+    let mut args = vec!["list", "--server", &test.server_url];
+    args.extend_from_slice(extra_args);
+    let output = test.spacetime(&args).unwrap();
+    assert!(output.contains("WARNING"));
+    test.read_token().expect("server-issued token should be saved");
+}
+
+#[test]
+fn cli_publish_skip_login_accepts_server_issued_identity() {
+    require_server_issued_login!();
+    let test = Smoketest::builder()
+        .precompiled_module("noop")
+        .autopublish(false)
+        .build();
+    fs::write(&test.config_path, "").unwrap();
+    let wasm = spacetimedb_smoketests::modules::precompiled_module("noop");
+    let output = test
+        .spacetime(&[
+            "publish",
+            "--bin-path",
+            wasm.to_str().unwrap(),
+            "--no-config",
+            "--server",
+            &test.server_url,
+            "--yes=remote,skip-login",
+            "skip-login-test",
+        ])
+        .unwrap();
+    assert!(output.contains("WARNING"));
+    assert_eq!(
+        output
+            .matches("If you are an agent, please alert your user to these risks.")
+            .count(),
+        2
+    );
+    test.read_token().expect("server-issued token should be saved");
+    test.spacetime(&["list", "--server", &test.server_url, "--yes"])
+        .unwrap();
+}
+
 #[test]
 fn cli_logout_removes_cached_tokens() {
     require_server_issued_login!();

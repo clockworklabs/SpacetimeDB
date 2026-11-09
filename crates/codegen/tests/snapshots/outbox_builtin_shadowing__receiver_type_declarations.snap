@@ -30,6 +30,40 @@ impl spacetimedb::rt::RemoteReducer for noop {
     const NAME: &'static str = "noop";
     const SIGNATURE_HASH: &'static str = "bc436888fd947d2bfd49ed6bddad31f0245c34fd42c85f9360fa0b477aa957fc";
     type Args = NoopArgs;
+}
+pub struct NoopAccessorArgs {
+    }
+pub struct noop_accessor;
+impl spacetimedb::rt::RemoteReducer for noop_accessor {
+    const NAME: &'static str = "noop_accessor";
+    const SIGNATURE_HASH: &'static str = "bc436888fd947d2bfd49ed6bddad31f0245c34fd42c85f9360fa0b477aa957fc";
+    type Args = NoopAccessorArgs;
+}
+pub struct NoopNameArgs {
+    }
+pub struct noop_name;
+impl spacetimedb::rt::RemoteReducer for noop_name {
+    const NAME: &'static str = "noop_name";
+    const SIGNATURE_HASH: &'static str = "bc436888fd947d2bfd49ed6bddad31f0245c34fd42c85f9360fa0b477aa957fc";
+    type Args = NoopNameArgs;
+}
+pub struct WithTargetArgs {
+    pub target: ::std::string::String,
+}
+pub struct with_target;
+impl spacetimedb::rt::RemoteReducer for with_target {
+    const NAME: &'static str = "with_target";
+    const SIGNATURE_HASH: &'static str = "4499ba5827d8178ca4effc177e66fc44ce1bb1fbd57637c69b8d855cb38a6005";
+    type Args = WithTargetArgs;
+}
+pub struct WithMsgIdArgs {
+    pub msg_id: ::core::primitive::u64,
+}
+pub struct with_msg_id;
+impl spacetimedb::rt::RemoteReducer for with_msg_id {
+    const NAME: &'static str = "with_msg_id";
+    const SIGNATURE_HASH: &'static str = "1b2cd18acc204992e7e36c6605cce01df76ac351fc35007c6c3cd63ed1667144";
+    type Args = WithMsgIdArgs;
 }'''
 "receive_args_type.rs" = '''
 pub struct ReceiveArgs {

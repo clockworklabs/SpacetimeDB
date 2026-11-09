@@ -1,9 +1,9 @@
-import type { ConnectionId } from './connection_id';
-import type { Identity } from './identity';
-import type { ScheduleAt } from './schedule_at';
-import type { TimeDuration } from './time_duration';
-import type { Timestamp } from './timestamp';
-import type { Uuid } from './uuid';
+import type { ConnectionId } from './connection_id.ts';
+import type { Identity } from './identity.ts';
+import type { ScheduleAt } from './schedule_at.ts';
+import type { TimeDuration } from './time_duration.ts';
+import type { Timestamp } from './timestamp.ts';
+import type { Uuid } from './uuid.ts';
 
 type DoNotPrettify =
   | Identity
@@ -97,17 +97,26 @@ type CamelCaseImpl<S extends string> = S extends `${infer Head}_${infer Tail}`
  */
 export type CamelCase<S extends string> = Uncapitalize<CamelCaseImpl<S>>;
 
-type AccessorHead<K extends string> = K extends `${infer H}.${string}` ? H : K;
 type AccessorTail<
   K extends string,
   H extends string,
 > = K extends `${H}.${infer R}` ? R : never;
 
-/** Splits dotted keys into nested objects: `{ 'a.b': X, c: Y }` becomes `{ a: { b: X }, c: Y }`. */
-export type NestAccessors<T extends Record<string, unknown>> = {
-  readonly [H in AccessorHead<keyof T & string>]: H extends keyof T
-    ? T[H]
-    : NestAccessors<{ [K in keyof T & string as AccessorTail<K, H>]: T[K] }>;
+type DottedHead<K extends string> = K extends `${infer H}.${string}`
+  ? H
+  : never;
+type PlainKey<K extends string> = K extends `${string}.${string}` ? never : K;
+
+/**
+ * Splits dotted keys into nested objects: `{ 'a.b': X, c: Y }` becomes `{ a: { b: X }, c: Y }`.
+ * Plain keys go through `Pick`, which keeps each property's declaration and so its doc comment.
+ */
+export type NestAccessors<T extends Record<string, unknown>> = Readonly<
+  Pick<T, PlainKey<keyof T & string>>
+> & {
+  readonly [H in DottedHead<keyof T & string>]: NestAccessors<{
+    [K in keyof T & string as AccessorTail<K, H>]: T[K];
+  }>;
 };
 
 /** Type safe conversion from "some_identifier-name" to "some_identifier_name"
