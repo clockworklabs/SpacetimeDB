@@ -5,15 +5,15 @@ using SpacetimeDB.Internal;
 /// <summary>Configures a procedure context without changing other contexts on the fixture.</summary>
 public sealed class ProcedureContextBuilder
 {
-    private readonly ModuleTestContext fixture;
-    private readonly TestAuth auth;
-    private Func<ModuleTestContext, HttpRequest, Result<HttpResponse, HttpError>>? responder;
-    private Action<ModuleTestContext>? afterCommit;
+    private readonly ModuleTestContext _fixture;
+    private readonly TestAuth _auth;
+    private Func<ModuleTestContext, HttpRequest, Result<HttpResponse, HttpError>>? _responder;
+    private Action<ModuleTestContext>? _afterCommit;
 
     internal ProcedureContextBuilder(ModuleTestContext fixture, TestAuth auth)
     {
-        this.fixture = fixture;
-        this.auth = auth;
+        this._fixture = fixture;
+        this._auth = auth;
     }
 
     /// <summary>Sets a responder. Exceptions, including assertion failures, propagate unchanged.</summary>
@@ -22,7 +22,7 @@ public sealed class ProcedureContextBuilder
     )
     {
         ArgumentNullException.ThrowIfNull(responder);
-        this.responder = responder;
+        this._responder = responder;
         return this;
     }
 
@@ -33,9 +33,9 @@ public sealed class ProcedureContextBuilder
     public ProcedureContextBuilder AfterTxCommit(Action<ModuleTestContext> callback)
     {
         TransactionCallback.Validate(callback, typeof(void));
-        afterCommit = callback;
+        _afterCommit = callback;
         return this;
     }
 
-    public ProcedureContext Build() => fixture.BuildProcedureContext(auth, responder, afterCommit);
+    public ProcedureContext Build() => _fixture.BuildProcedureContext(_auth, _responder, _afterCommit);
 }
