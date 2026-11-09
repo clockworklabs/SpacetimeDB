@@ -524,6 +524,204 @@ void OnConnected(UDbConnection* Connection, FSpacetimeDBIdentity Identity, const
 
 The [identity](../../00100-intro/00100-getting-started/00400-key-architecture.md#identity) persists across connections and represents the user, while the [connection ID](../../00100-intro/00100-getting-started/00400-key-architecture.md#connectionid) is unique to each connection session.
 
+## Connection Metrics
+
+While connected, the SDK pings the server once a second to measure the connection's round-trip time and to estimate the server's clock. Read a snapshot of the results from the connection:
+
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+const stats = conn.networkStats;
+if (stats) {
+  console.log(`RTT ${stats.rtt.toFixed(1)} ms, jitter ${stats.jitter.toFixed(1)} ms`);
+}
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+var stats = conn.stats.Network;
+if (stats != null)
+{
+    Console.WriteLine($"RTT {stats.Rtt.TotalMilliseconds:F1} ms, jitter {stats.Jitter.TotalMilliseconds:F1} ms");
+}
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+if let Some(stats) = conn.network_stats() {
+    println!("RTT {:?}, jitter {:?}", stats.rtt, stats.jitter);
+}
+```
+
+</TabItem>
+<TabItem value="unreal" label="Unreal">
+
+Connection metrics for the Unreal C++ SDK are coming soon.
+
+</TabItem>
+</Tabs>
+
+The stats are absent (`undefined`, `null` or `None`) until the first ping is answered, and again after the connection closes. Once present, every field is set. Each read returns a fresh snapshot, so read the stats again whenever you want current values.
+
+| TypeScript         | C#                 | Rust                 | Meaning |
+| ------------------ | ------------------ | -------------------- | ------- |
+| `rtt`              | `Rtt`              | `rtt`                | Smoothed round-trip time, using the same smoothing as TCP (RFC 6298). |
+| `rttLatest`        | `RttLatest`        | `rtt_latest`         | The most recent round-trip time sample. |
+| `rttMin`           | `RttMin`           | `rtt_min`            | The lowest round-trip time over the last 10 samples. |
+| `jitter`           | `Jitter`           | `jitter`             | How much the round-trip time varies (RFC 6298's RTTVAR). |
+| `serverNow`        | `ServerNow`        | `server_now`         | The estimated current time on the server. |
+| `serverTimeLatest` | `ServerTimeLatest` | `server_time_latest` | When the server received the most recent ping. It doesn't advance between pings. |
+| `pongWait`         | `PongWait`         | `pong_wait`          | How long the oldest unanswered ping has been waiting, or zero if every ping has been answered. |
+
+Round-trip times exclude the time the server spent handling each ping, so they measure the network, not server load. Durations are milliseconds as a `number` in TypeScript, `TimeSpan` in C#, and `Duration` in Rust.
+
+`pongWait` is the field to watch for a stalled connection. On a healthy connection it stays below `rtt`. The other fields only change when a ping is answered, so if the network fails silently they keep showing their last good values, while `pongWait` keeps rising.
+
+### Server Time
+
+`serverNow` is on the same clock as a reducer's `ctx.timestamp`, so you can compare it with timestamps written by your module, for example to show how long ago a row was inserted, or to interpolate game state. It adjusts gradually as new measurements arrive and never goes backwards.
+
+The SDK doesn't fall back to the local clock before the first ping is answered. If your app wants a fallback, choose one explicitly:
+
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+const now = conn.networkStats?.serverNow ?? Timestamp.now();
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+Timestamp now = conn.stats.Network?.ServerNow ?? (Timestamp)DateTimeOffset.UtcNow;
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+let now = conn
+    .network_stats()
+    .map_or_else(Timestamp::now, |stats| stats.server_now);
+```
+
+</TabItem>
+<TabItem value="unreal" label="Unreal">
+
+Connection metrics for the Unreal C++ SDK are coming soon.
+
+</TabItem>
+</Tabs>
+
+### Ping Interval
+
+Change how often the SDK pings on the connection builder. The default is one second, and the first ping is sent as soon as the connection is established. An interval of zero disables periodic pinging. The stats then stay absent unless you call `ping()` yourself.
+
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+DbConnection.builder()
+  .withPingInterval(5000) // milliseconds; 0 disables
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+DbConnection.Builder()
+    .WithPingInterval(TimeSpan.FromSeconds(5)) // TimeSpan.Zero disables
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+DbConnection::builder()
+    .with_ping_interval(Duration::from_secs(5)) // Duration::ZERO disables
+```
+
+</TabItem>
+<TabItem value="unreal" label="Unreal">
+
+Connection metrics for the Unreal C++ SDK are coming soon.
+
+</TabItem>
+</Tabs>
+
+### One-off Pings
+
+To measure the connection on demand, for a debug overlay or a "test my connection" button, call `ping()`. It sends a ping immediately and completes with a `PingResult` for that ping alone. Its sample also feeds the connection's stats, and it works with periodic pinging disabled.
+
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+const result = await conn.ping();
+console.log(`RTT ${result.rtt.toFixed(1)} ms`);
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+var result = await conn.Ping();
+Console.WriteLine($"RTT {result.Rtt.TotalMilliseconds:F1} ms");
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+let result = conn.ping().await?;
+println!("RTT {:?}", result.rtt);
+```
+
+</TabItem>
+<TabItem value="unreal" label="Unreal">
+
+Connection metrics for the Unreal C++ SDK are coming soon.
+
+</TabItem>
+</Tabs>
+
+A `PingResult` has the ping's `rtt`, plus the measurements behind it: the total `roundTrip`, the time the server held the ping (`serverHold`), when the server received it (`serverReceiveTime`), and local monotonic clock readings for when it was sent and answered (`sentAt` and `receivedAt`). `ping()` fails if the connection isn't established, or if it closes before the ping is answered.
+
+### Detecting a Dead Connection
+
+A network that fails silently leaves the WebSocket open with nothing arriving: no close and no error. The browser's `WebSocket` gives the SDK no way to notice, so there the SDK uses its pings instead. Once the oldest unanswered ping is older than the ping timeout, and at least one more ping has been sent since, the connection is treated as lost. It reconnects if automatic reconnect is enabled, and disconnects with an error otherwise.
+
+The ping timeout defaults to 10 seconds, or a few round-trip timeouts if that is longer, on a slow link. The check runs once per ping interval, so detection can take up to one interval longer than the timeout. Disabling periodic pinging disables the check.
+
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+The TypeScript SDK applies the ping timeout in every environment, including Node.js. Change it with `.withPingTimeout(ms)`.
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+The ping timeout applies to Unity WebGL builds only. Change it with `.WithPingTimeout(TimeSpan)`, which only exists when building for WebGL. Other builds don't detect a silently failed network, so watch `PongWait` if your app needs to notice one.
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+The ping timeout applies under the `browser` feature only. Change it with `.with_ping_timeout(Duration)`, which only exists under that feature. Native builds instead send a WebSocket ping frame after 30 seconds with nothing received, and close the connection if another 30 seconds pass without a reply.
+
+</TabItem>
+<TabItem value="unreal" label="Unreal">
+
+Connection metrics for the Unreal C++ SDK are coming soon.
+
+</TabItem>
+</Tabs>
+
 ## Next Steps
 
 Now that you have a connection established, you can:

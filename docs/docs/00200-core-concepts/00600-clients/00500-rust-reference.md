@@ -174,6 +174,27 @@ impl DbConnectionBuilder {
 
 Chain a call to `.with_token(token)` to your builder to provide an OpenID Connect compliant JSON Web Token to authenticate with, or to explicitly select an anonymous connection. If this method is not called or `None` is passed, SpacetimeDB will generate a new `Identity` and sign a new private access token for the connection.
 
+#### Method `with_ping_interval`
+
+```rust
+impl DbConnectionBuilder {
+    fn with_ping_interval(self, interval: Duration) -> Self;
+}
+```
+
+Set how often the connection pings the server to measure [`network_stats`](#method-network_stats). The first ping is sent as soon as the connection is established. Defaults to 1 second. `Duration::ZERO` disables periodic pinging, which leaves `network_stats` `None` unless [`ping`](#method-ping) is called, and under the `browser` feature turns off the dead-connection check described under [`with_ping_timeout`](#method-with_ping_timeout).
+
+#### Method `with_ping_timeout`
+
+```rust
+#[cfg(feature = "browser")]
+impl DbConnectionBuilder {
+    fn with_ping_timeout(self, timeout: Duration) -> Self;
+}
+```
+
+Only available under the `browser` feature. Set how long pings may go unanswered before the connection is treated as lost. Defaults to 10 seconds. A silently failed network closes the connection once the oldest unanswered ping is older than this, or than a few round-trip timeouts on a slow link, and another ping has been sent since, calling [`on_disconnect`](#callback-on_disconnect) with `Error::ConnectionUnresponsive`. The check runs once per ping interval. Native builds detect a dead connection with WebSocket ping frames instead. See [Detecting a Dead Connection](./00300-connection.md#detecting-a-dead-connection). Panics if `timeout` is zero.
+
 #### Method `build`
 
 ```rust
@@ -661,6 +682,47 @@ trait DbContext {
 ```
 
 `true` if the connection has not yet disconnected. Note that a connection `is_active` when it is constructed, before its [`on_connect` callback](#callback-on_connect) is invoked.
+
+#### Method `network_stats`
+
+```rust
+impl DbConnection {
+    fn network_stats(&self) -> Option<NetworkStats>;
+}
+
+#[non_exhaustive]
+pub struct NetworkStats {
+    pub rtt: Duration,
+    pub rtt_latest: Duration,
+    pub rtt_min: Duration,
+    pub jitter: Duration,
+    pub server_now: Timestamp,
+    pub server_time_latest: Timestamp,
+    pub pong_wait: Duration,
+}
+```
+
+A snapshot of the connection's network statistics, measured by periodically pinging the server. `None` until the first ping is answered, after the connection closes, and always when pinging is disabled with [`with_ping_interval`](#method-with_ping_interval). Each call returns a fresh snapshot. `server_now` estimates the server's current time on the same clock as a reducer's `ctx.timestamp`; it adjusts gradually and never goes backwards. See [Connection Metrics](./00300-connection.md#connection-metrics) for what each field means.
+
+#### Method `ping`
+
+```rust
+impl DbConnection {
+    fn ping(&self) -> impl Future<Output = spacetimedb_sdk::Result<PingResult>> + Send + 'static;
+}
+
+#[non_exhaustive]
+pub struct PingResult {
+    pub rtt: Duration,
+    pub round_trip: Duration,
+    pub server_hold: Duration,
+    pub server_receive_time: Timestamp,
+    pub sent_at: Instant,
+    pub received_at: Instant,
+}
+```
+
+Send a single ping and resolve with the timings from its reply. The ping is sent when `ping` is called, not when the future is first polled. `rtt` is `round_trip - server_hold`, floored at zero. `sent_at` and `received_at` are `std::time::Instant`s, or `web_time::Instant`s under the `browser` feature. The sample also feeds [`network_stats`](#method-network_stats), and this works even with periodic pinging disabled. Resolves to `Error::NotYetConnected` if called before the connection is established, or `Error::Disconnected` if the connection is closed, or closes before the reply arrives.
 
 ## Type `EventContext`
 
