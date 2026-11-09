@@ -3,6 +3,7 @@ namespace SpacetimeDB.Testing;
 using System.Runtime.InteropServices;
 using System.Text;
 
+// Status codes returned by the native testing library. Keep in sync with the status code constants in `crates/test-datastore-ffi/src/lib.rs`.
 internal enum NativeStatus : uint
 {
     Ok = 0,
@@ -29,7 +30,7 @@ internal unsafe struct NativeBuffer : IDisposable
     public void Dispose() => Native.BufferFree(ref this);
 }
 
-internal static unsafe class Native
+internal static unsafe partial class Native
 {
     private const string Library = "spacetimedb_test_datastore_ffi";
     private const uint AbiVersion = 1;
@@ -87,12 +88,8 @@ internal static unsafe class Native
         }
     }
 
-    [DllImport(
-        Library,
-        EntryPoint = "stdb_test_v1_identity_from_claims",
-        CallingConvention = CallingConvention.Cdecl
-    )]
-    private static extern NativeStatus IdentityFromClaimsNative(
+    [LibraryImport(Library, EntryPoint = "stdb_test_v1_identity_from_claims")]
+    private static partial NativeStatus IdentityFromClaimsNative(
         byte* issuer,
         ulong issuerLength,
         byte* subject,
@@ -104,9 +101,11 @@ internal static unsafe class Native
     internal static void ValidateVersion(uint version)
     {
         if (version != AbiVersion)
+        {
             throw new InvalidOperationException(
                 $"Native testing ABI mismatch: expected {AbiVersion}, found {version}. Restore matching SpacetimeDB.Testing managed and native assets."
             );
+        }
     }
 
     internal static void Check(NativeStatus status, ref NativeBuffer error)
@@ -114,7 +113,10 @@ internal static unsafe class Native
         try
         {
             if (status == NativeStatus.Ok)
+            {
                 return;
+            }
+
             var message = Encoding.UTF8.GetString(error.Bytes);
             throw status switch
             {
@@ -145,7 +147,7 @@ internal static unsafe class Native
         try
         {
             Check(status, ref error);
-            return output.Bytes.ToArray();
+            return [.. output.Bytes];
         }
         finally
         {
@@ -153,56 +155,32 @@ internal static unsafe class Native
         }
     }
 
-    [DllImport(
-        Library,
-        EntryPoint = "stdb_test_abi_version",
-        CallingConvention = CallingConvention.Cdecl
-    )]
-    private static extern uint GetAbiVersion();
+    [LibraryImport(Library, EntryPoint = "stdb_test_abi_version")]
+    private static partial uint GetAbiVersion();
 
-    [DllImport(
-        Library,
-        EntryPoint = "stdb_test_v1_buffer_free",
-        CallingConvention = CallingConvention.Cdecl
-    )]
-    internal static extern NativeStatus BufferFree(ref NativeBuffer buffer);
+    [LibraryImport(Library, EntryPoint = "stdb_test_v1_buffer_free")]
+    internal static partial NativeStatus BufferFree(ref NativeBuffer buffer);
 
-    [DllImport(
-        Library,
-        EntryPoint = "stdb_test_v1_datastore_create",
-        CallingConvention = CallingConvention.Cdecl
-    )]
-    internal static extern NativeStatus Create(
+    [LibraryImport(Library, EntryPoint = "stdb_test_v1_datastore_create")]
+    internal static partial NativeStatus Create(
         byte* schema,
         ulong length,
         out nint datastore,
         out NativeBuffer error
     );
 
-    [DllImport(
-        Library,
-        EntryPoint = "stdb_test_v1_datastore_destroy",
-        CallingConvention = CallingConvention.Cdecl
-    )]
-    internal static extern NativeStatus Destroy(nint datastore);
+    [LibraryImport(Library, EntryPoint = "stdb_test_v1_datastore_destroy")]
+    internal static partial NativeStatus Destroy(nint datastore);
 
-    [DllImport(
-        Library,
-        EntryPoint = "stdb_test_v1_transaction_begin",
-        CallingConvention = CallingConvention.Cdecl
-    )]
-    internal static extern NativeStatus Begin(
+    [LibraryImport(Library, EntryPoint = "stdb_test_v1_transaction_begin")]
+    internal static partial NativeStatus Begin(
         NativeDatastore datastore,
         out nint transaction,
         out NativeBuffer error
     );
 
-    [DllImport(
-        Library,
-        EntryPoint = "stdb_test_v1_query",
-        CallingConvention = CallingConvention.Cdecl
-    )]
-    internal static extern NativeStatus Query(
+    [LibraryImport(Library, EntryPoint = "stdb_test_v1_query")]
+    internal static partial NativeStatus Query(
         NativeDatastore datastore,
         byte* sql,
         ulong sqlLength,
@@ -212,39 +190,23 @@ internal static unsafe class Native
         out NativeBuffer error
     );
 
-    [DllImport(
-        Library,
-        EntryPoint = "stdb_test_v1_transaction_destroy",
-        CallingConvention = CallingConvention.Cdecl
-    )]
-    internal static extern NativeStatus DestroyTransaction(nint transaction);
+    [LibraryImport(Library, EntryPoint = "stdb_test_v1_transaction_destroy")]
+    internal static partial NativeStatus DestroyTransaction(nint transaction);
 
-    [DllImport(
-        Library,
-        EntryPoint = "stdb_test_v1_transaction_commit",
-        CallingConvention = CallingConvention.Cdecl
-    )]
-    internal static extern NativeStatus Commit(
+    [LibraryImport(Library, EntryPoint = "stdb_test_v1_transaction_commit")]
+    internal static partial NativeStatus Commit(
         NativeTransaction transaction,
         out NativeBuffer error
     );
 
-    [DllImport(
-        Library,
-        EntryPoint = "stdb_test_v1_transaction_rollback",
-        CallingConvention = CallingConvention.Cdecl
-    )]
-    internal static extern NativeStatus Rollback(
+    [LibraryImport(Library, EntryPoint = "stdb_test_v1_transaction_rollback")]
+    internal static partial NativeStatus Rollback(
         NativeTransaction transaction,
         out NativeBuffer error
     );
 
-    [DllImport(
-        Library,
-        EntryPoint = "stdb_test_v1_table_id",
-        CallingConvention = CallingConvention.Cdecl
-    )]
-    internal static extern NativeStatus TableId(
+    [LibraryImport(Library, EntryPoint = "stdb_test_v1_table_id")]
+    internal static partial NativeStatus TableId(
         NativeTransaction transaction,
         byte* name,
         ulong length,
@@ -252,24 +214,16 @@ internal static unsafe class Native
         out NativeBuffer error
     );
 
-    [DllImport(
-        Library,
-        EntryPoint = "stdb_test_v1_table_count",
-        CallingConvention = CallingConvention.Cdecl
-    )]
-    internal static extern NativeStatus Count(
+    [LibraryImport(Library, EntryPoint = "stdb_test_v1_table_count")]
+    internal static partial NativeStatus Count(
         NativeTransaction transaction,
         uint table,
         out ulong count,
         out NativeBuffer error
     );
 
-    [DllImport(
-        Library,
-        EntryPoint = "stdb_test_v1_table_insert",
-        CallingConvention = CallingConvention.Cdecl
-    )]
-    internal static extern NativeStatus Insert(
+    [LibraryImport(Library, EntryPoint = "stdb_test_v1_table_insert")]
+    internal static partial NativeStatus Insert(
         NativeTransaction transaction,
         uint table,
         byte* row,
@@ -278,12 +232,8 @@ internal static unsafe class Native
         out NativeBuffer error
     );
 
-    [DllImport(
-        Library,
-        EntryPoint = "stdb_test_v1_index_id",
-        CallingConvention = CallingConvention.Cdecl
-    )]
-    internal static extern NativeStatus IndexId(
+    [LibraryImport(Library, EntryPoint = "stdb_test_v1_index_id")]
+    internal static partial NativeStatus IndexId(
         NativeTransaction transaction,
         byte* name,
         ulong length,
@@ -291,12 +241,8 @@ internal static unsafe class Native
         out NativeBuffer error
     );
 
-    [DllImport(
-        Library,
-        EntryPoint = "stdb_test_v1_index_scan_point",
-        CallingConvention = CallingConvention.Cdecl
-    )]
-    internal static extern NativeStatus IndexScanPoint(
+    [LibraryImport(Library, EntryPoint = "stdb_test_v1_index_scan_point")]
+    internal static partial NativeStatus IndexScanPoint(
         NativeTransaction transaction,
         uint index,
         byte* point,
@@ -305,12 +251,8 @@ internal static unsafe class Native
         out NativeBuffer error
     );
 
-    [DllImport(
-        Library,
-        EntryPoint = "stdb_test_v1_index_delete_point",
-        CallingConvention = CallingConvention.Cdecl
-    )]
-    internal static extern NativeStatus IndexDeletePoint(
+    [LibraryImport(Library, EntryPoint = "stdb_test_v1_index_delete_point")]
+    internal static partial NativeStatus IndexDeletePoint(
         NativeTransaction transaction,
         uint index,
         byte* point,
@@ -319,12 +261,8 @@ internal static unsafe class Native
         out NativeBuffer error
     );
 
-    [DllImport(
-        Library,
-        EntryPoint = "stdb_test_v1_index_scan_range",
-        CallingConvention = CallingConvention.Cdecl
-    )]
-    internal static extern NativeStatus IndexScanRange(
+    [LibraryImport(Library, EntryPoint = "stdb_test_v1_index_scan_range")]
+    internal static partial NativeStatus IndexScanRange(
         NativeTransaction transaction,
         uint index,
         byte* prefix,
@@ -338,12 +276,8 @@ internal static unsafe class Native
         out NativeBuffer error
     );
 
-    [DllImport(
-        Library,
-        EntryPoint = "stdb_test_v1_index_delete_range",
-        CallingConvention = CallingConvention.Cdecl
-    )]
-    internal static extern NativeStatus IndexDeleteRange(
+    [LibraryImport(Library, EntryPoint = "stdb_test_v1_index_delete_range")]
+    internal static partial NativeStatus IndexDeleteRange(
         NativeTransaction transaction,
         uint index,
         byte* prefix,
@@ -357,12 +291,8 @@ internal static unsafe class Native
         out NativeBuffer error
     );
 
-    [DllImport(
-        Library,
-        EntryPoint = "stdb_test_v1_table_update",
-        CallingConvention = CallingConvention.Cdecl
-    )]
-    internal static extern NativeStatus Update(
+    [LibraryImport(Library, EntryPoint = "stdb_test_v1_table_update")]
+    internal static partial NativeStatus Update(
         NativeTransaction transaction,
         uint table,
         uint index,
@@ -372,12 +302,8 @@ internal static unsafe class Native
         out NativeBuffer error
     );
 
-    [DllImport(
-        Library,
-        EntryPoint = "stdb_test_v1_table_delete_row",
-        CallingConvention = CallingConvention.Cdecl
-    )]
-    internal static extern NativeStatus DeleteRow(
+    [LibraryImport(Library, EntryPoint = "stdb_test_v1_table_delete_row")]
+    internal static partial NativeStatus DeleteRow(
         NativeTransaction transaction,
         uint table,
         byte* row,
@@ -386,24 +312,16 @@ internal static unsafe class Native
         out NativeBuffer error
     );
 
-    [DllImport(
-        Library,
-        EntryPoint = "stdb_test_v1_table_clear",
-        CallingConvention = CallingConvention.Cdecl
-    )]
-    internal static extern NativeStatus Clear(
+    [LibraryImport(Library, EntryPoint = "stdb_test_v1_table_clear")]
+    internal static partial NativeStatus Clear(
         NativeTransaction transaction,
         uint table,
         out ulong count,
         out NativeBuffer error
     );
 
-    [DllImport(
-        Library,
-        EntryPoint = "stdb_test_v1_table_scan",
-        CallingConvention = CallingConvention.Cdecl
-    )]
-    internal static extern NativeStatus Scan(
+    [LibraryImport(Library, EntryPoint = "stdb_test_v1_table_scan")]
+    internal static partial NativeStatus Scan(
         NativeTransaction transaction,
         uint table,
         out NativeBuffer output,

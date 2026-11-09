@@ -87,6 +87,8 @@ internal sealed unsafe class NativeDatastore : SafeHandleZeroOrMinusOneIsInvalid
     protected override bool ReleaseHandle()
     {
         lock (Sync)
+        {
             return Native.Destroy(handle) == NativeStatus.Ok;
+        }
     }
 }

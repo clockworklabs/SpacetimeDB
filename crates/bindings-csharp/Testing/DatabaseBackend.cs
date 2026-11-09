@@ -8,11 +8,11 @@ using SpacetimeDB.Internal;
 // destruction separately because finalizers can run on another thread.
 internal sealed class DatabaseBackend : IDatabaseBackend
 {
-    private readonly NativeDatastore datastore;
-    private readonly IReadOnlyDictionary<string, RawEnvVarTypeV10> environmentDeclarations;
-    private readonly Dictionary<string, string> environmentValues = new(StringComparer.Ordinal);
-    private readonly Dictionary<(int Instance, string Table), uint> tableIds = [];
-    private readonly Dictionary<(int Instance, string Index), uint> indexIds = [];
+    private readonly NativeDatastore _datastore;
+    private readonly IReadOnlyDictionary<string, RawEnvVarTypeV10> _environmentDeclarations;
+    private readonly Dictionary<string, string> _environmentValues = new(StringComparer.Ordinal);
+    private readonly Dictionary<(int Instance, string Table), uint> _tableIds = [];
+    private readonly Dictionary<(int Instance, string Index), uint> _indexIds = [];
 
     public NamespaceRegistry Namespaces { get; }
     public Identity DatabaseIdentity => default;
@@ -25,8 +25,8 @@ internal sealed class DatabaseBackend : IDatabaseBackend
     )
     {
         Namespaces = namespaces;
-        datastore = NativeDatastore.Create(schema);
-        environmentDeclarations =
+        _datastore = NativeDatastore.Create(schema);
+        _environmentDeclarations =
             environment ?? new Dictionary<string, RawEnvVarTypeV10>(StringComparer.Ordinal);
     }
 
@@ -34,7 +34,7 @@ internal sealed class DatabaseBackend : IDatabaseBackend
     {
         CheckActive();
         ArgumentNullException.ThrowIfNull(key);
-        return environmentDeclarations.TryGetValue(key, out var declaration)
+        return _environmentDeclarations.TryGetValue(key, out var declaration)
             ? declaration
             : throw new ArgumentException(
                 "Environment key is not declared by the root module.",
@@ -45,7 +45,7 @@ internal sealed class DatabaseBackend : IDatabaseBackend
     public string? GetEnv(string key)
     {
         EnvironmentDeclaration(key);
-        return environmentValues.GetValueOrDefault(key);
+        return _environmentValues.GetValueOrDefault(key);
     }
 
     internal void SetEnv(string key, string value)
@@ -65,17 +65,20 @@ internal sealed class DatabaseBackend : IDatabaseBackend
             _ => throw new InvalidOperationException("Unknown environment declaration type."),
         };
         if (!allowed)
+        {
             throw new ArgumentException(
                 "Environment value does not satisfy its declared constraint.",
                 nameof(value)
             );
-        environmentValues[key] = value;
+        }
+
+        _environmentValues[key] = value;
     }
 
     internal void UnsetEnv(string key)
     {
         EnvironmentDeclaration(key);
-        environmentValues.Remove(key);
+        _environmentValues.Remove(key);
     }
 
     internal IReadOnlyList<T> RunQuery<T>(IQuery<T> query)
@@ -83,30 +86,36 @@ internal sealed class DatabaseBackend : IDatabaseBackend
     {
         CheckActive();
         ArgumentNullException.ThrowIfNull(query);
-        var snapshot = datastore.Query(query.ToSql(), DatabaseIdentity);
+        var snapshot = _datastore.Query(query.ToSql(), DatabaseIdentity);
         var offset = 0;
         var count = FramedRows.ReadCount(snapshot, ref offset);
         // Each row takes at least its 4-byte length, so this bounds the allocation.
         if (count > (uint)(snapshot.Length - offset) / sizeof(uint))
+        {
             throw new InvalidDataException("Truncated native row snapshot.");
+        }
+
         var rows = new T[count];
         for (var i = 0; i < rows.Length; i++)
+        {
             rows[i] = FramedRows.ReadRow<T>(snapshot, ref offset);
+        }
+
         FramedRows.CheckEnd(snapshot, offset);
         return rows;
     }
 
-    public void CheckActive() => ObjectDisposedException.ThrowIf(datastore.IsClosed, this);
+    public void CheckActive() => ObjectDisposedException.ThrowIf(_datastore.IsClosed, this);
 
     public IDatabaseTransaction BeginTransaction()
     {
         CheckActive();
-        var transaction = new Transaction(this, datastore.Begin());
+        var transaction = new Transaction(this, _datastore.Begin());
         HasActiveTransaction = true;
         return transaction;
     }
 
-    public void Dispose() => datastore.Dispose();
+    public void Dispose() => _datastore.Dispose();
 
     private sealed class Transaction(DatabaseBackend backend, NativeTransaction transaction)
         : IDatabaseTransaction
@@ -118,10 +127,10 @@ internal sealed class DatabaseBackend : IDatabaseBackend
         private uint TableId(int instanceId, string table)
         {
             var key = (instanceId, table);
-            if (!backend.tableIds.TryGetValue(key, out var id))
+            if (!backend._tableIds.TryGetValue(key, out var id))
             {
                 id = transaction.TableId(backend.Namespaces.Resolve(instanceId, table));
-                backend.tableIds.Add(key, id);
+                backend._tableIds.Add(key, id);
             }
             return id;
         }
@@ -129,10 +138,10 @@ internal sealed class DatabaseBackend : IDatabaseBackend
         private uint IndexId(int instanceId, string index)
         {
             var key = (instanceId, index);
-            if (!backend.indexIds.TryGetValue(key, out var id))
+            if (!backend._indexIds.TryGetValue(key, out var id))
             {
                 id = transaction.IndexId(backend.Namespaces.Resolve(instanceId, index));
-                backend.indexIds.Add(key, id);
+                backend._indexIds.Add(key, id);
             }
             return id;
         }
@@ -260,7 +269,10 @@ internal sealed class DatabaseBackend : IDatabaseBackend
         private void Finish()
         {
             if (finished)
+            {
                 return;
+            }
+
             finished = true;
             backend.HasActiveTransaction = false;
         }
