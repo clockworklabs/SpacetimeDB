@@ -14,23 +14,22 @@ public sealed class ModuleTestContext : IDisposable
         IReadOnlyDictionary<string, RawEnvVarTypeV10> Environment
     );
 
-    private static readonly ConditionalWeakTable<Assembly, ModuleSchema> schemas = [];
-    private readonly DatabaseBackend backend;
-    private readonly SpacetimeDB.Local db;
+    private static readonly ConditionalWeakTable<Assembly, ModuleSchema> Schemas = [];
+    private readonly DatabaseBackend _backend;
 
     private ModuleTestContext(ModuleSchema schema)
     {
-        backend = new DatabaseBackend(schema.Bytes, schema.Namespaces, schema.Environment);
-        db = new SpacetimeDB.Local(new DatabaseAccess(backend));
-        Clock = new TestClock(backend);
-        Rng = new TestRng(backend);
+        _backend = new DatabaseBackend(schema.Bytes, schema.Namespaces, schema.Environment);
+        Db = new SpacetimeDB.Local(new DatabaseAccess(_backend));
+        Clock = new TestClock(_backend);
+        Rng = new TestRng(_backend);
     }
 
     /// <summary>Registers the specified root and its dependencies without initializing WASM.</summary>
     public static ModuleTestContext Create(Assembly module)
     {
         ArgumentNullException.ThrowIfNull(module);
-        return new ModuleTestContext(schemas.GetValue(module, BuildSchema));
+        return new ModuleTestContext(Schemas.GetValue(module, BuildSchema));
     }
 
     private static ModuleSchema BuildSchema(Assembly module)
@@ -75,8 +74,8 @@ public sealed class ModuleTestContext : IDisposable
     {
         get
         {
-            backend.CheckActive();
-            return db;
+            _backend.CheckActive();
+            return field;
         }
     }
 
@@ -84,8 +83,8 @@ public sealed class ModuleTestContext : IDisposable
     {
         get
         {
-            backend.CheckActive();
-            return backend.DatabaseIdentity;
+            _backend.CheckActive();
+            return _backend.DatabaseIdentity;
         }
     }
 
@@ -97,14 +96,14 @@ public sealed class ModuleTestContext : IDisposable
     {
         ArgumentNullException.ThrowIfNull(auth);
         return new ViewContext(
-            auth.Sender ?? backend.DatabaseIdentity,
-            new LocalReadOnly(new DatabaseAccess(backend))
+            auth.Sender ?? _backend.DatabaseIdentity,
+            new LocalReadOnly(new DatabaseAccess(_backend))
         );
     }
 
     /// <summary>Creates a fixture-owned read-only context without caller identity.</summary>
     public AnonymousViewContext CreateAnonymousViewContext() =>
-        new(new LocalReadOnly(new DatabaseAccess(backend)));
+        new(new LocalReadOnly(new DatabaseAccess(_backend)));
 
     /// <summary>Creates a procedure context whose explicit transactions share this fixture.</summary>
     public ProcedureContext CreateProcedureContext(TestAuth auth) =>
@@ -114,8 +113,8 @@ public sealed class ModuleTestContext : IDisposable
     public ProcedureContextBuilder CreateProcedureContextBuilder(TestAuth auth)
     {
         ArgumentNullException.ThrowIfNull(auth);
-        backend.CheckActive();
-        return new(this, auth);
+        _backend.CheckActive();
+        return new ProcedureContextBuilder(this, auth);
     }
 
     internal ProcedureContext BuildProcedureContext(
@@ -125,11 +124,11 @@ public sealed class ModuleTestContext : IDisposable
     )
     {
         ArgumentNullException.ThrowIfNull(auth);
-        backend.CheckActive();
+        _backend.CheckActive();
         return new ProcedureContext(
-            backend,
+            _backend,
             () => Clock.Now,
-            auth.Sender ?? backend.DatabaseIdentity,
+            auth.Sender ?? _backend.DatabaseIdentity,
             auth.ConnectionId,
             Rng.CreateRandom(),
             auth.SenderAuth,
@@ -143,29 +142,29 @@ public sealed class ModuleTestContext : IDisposable
         Func<ModuleTestContext, HttpRequest, Result<HttpResponse, HttpError>>? responder
     )
     {
-        backend.CheckActive();
-        if (backend.HasActiveTransaction)
-            return Result<HttpResponse, HttpError>.Err(
-                new HttpError(
-                    "HTTP requests cannot be performed while a mutable transaction is open (WOULD_BLOCK_TRANSACTION)."
+        _backend.CheckActive();
+        return _backend.HasActiveTransaction
+                ? Result<HttpResponse, HttpError>.Err(
+                    new HttpError(
+                        "HTTP requests cannot be performed while a mutable transaction is open (WOULD_BLOCK_TRANSACTION)."
+                    )
                 )
-            );
-        if (responder is null)
-            return Result<HttpResponse, HttpError>.Err(
-                new HttpError("no test HTTP responder configured")
-            );
-        return responder(this, request);
+            : responder is null
+                ? Result<HttpResponse, HttpError>.Err(
+                    new HttpError("no test HTTP responder configured")
+                )
+            : responder(this, request);
     }
 
     /// <summary>Materializes a SELECT against committed data. Rejects active transactions.</summary>
     public IReadOnlyList<T> RunQuery<T>(IQuery<T> query)
-        where T : IStructuralReadWrite, new() => backend.RunQuery(query);
+        where T : IStructuralReadWrite, new() => _backend.RunQuery(query);
 
     /// <summary>Sets a declared value for this fixture, independently of database transactions.</summary>
-    public void SetEnv(string key, string value) => backend.SetEnv(key, value);
+    public void SetEnv(string key, string value) => _backend.SetEnv(key, value);
 
     /// <summary>Removes a declared value, including a required one for testing missing-value behavior.</summary>
-    public void UnsetEnv(string key) => backend.UnsetEnv(key);
+    public void UnsetEnv(string key) => _backend.UnsetEnv(key);
 
     /// <summary>Commits on normal return; rolls back and rethrows on failure.</summary>
     public void WithReducerTx(TestAuth auth, Action<ReducerContext> body)
@@ -191,10 +190,10 @@ public sealed class ModuleTestContext : IDisposable
     private T Run<T>(TestAuth auth, Func<ReducerContext, T> body)
     {
         ArgumentNullException.ThrowIfNull(auth);
-        using var transaction = backend.BeginTransaction();
+        using var transaction = _backend.BeginTransaction();
         var context = new ReducerContext(
             new SpacetimeDB.Local(new DatabaseAccess(transaction)),
-            auth.Sender ?? backend.DatabaseIdentity,
+            auth.Sender ?? _backend.DatabaseIdentity,
             auth.ConnectionId,
             Rng.CreateRandom(),
             Clock.Now,
@@ -206,5 +205,5 @@ public sealed class ModuleTestContext : IDisposable
         return result;
     }
 
-    public void Dispose() => backend.Dispose();
+    public void Dispose() => _backend.Dispose();
 }

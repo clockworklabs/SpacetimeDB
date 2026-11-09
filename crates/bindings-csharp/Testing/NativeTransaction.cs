@@ -32,6 +32,7 @@ internal sealed unsafe class NativeTransaction(NativeDatastore datastore)
     {
         var utf8 = Encoding.UTF8.GetBytes(name);
         lock (datastore.Sync)
+        {
             fixed (byte* bytes = utf8)
             {
                 var status = Native.TableId(
@@ -44,6 +45,7 @@ internal sealed unsafe class NativeTransaction(NativeDatastore datastore)
                 Native.Check(status, ref error);
                 return id;
             }
+        }
     }
 
     internal ulong Count(uint table)
@@ -59,6 +61,7 @@ internal sealed unsafe class NativeTransaction(NativeDatastore datastore)
     internal byte[] Insert(uint table, ReadOnlySpan<byte> row)
     {
         lock (datastore.Sync)
+        {
             fixed (byte* bytes = row)
             {
                 var status = Native.Insert(
@@ -71,12 +74,14 @@ internal sealed unsafe class NativeTransaction(NativeDatastore datastore)
                 );
                 return Native.TakeBytes(status, ref output, ref error);
             }
+        }
     }
 
     internal uint IndexId(string name)
     {
         var utf8 = Encoding.UTF8.GetBytes(name);
         lock (datastore.Sync)
+        {
             fixed (byte* bytes = utf8)
             {
                 var status = Native.IndexId(
@@ -89,11 +94,13 @@ internal sealed unsafe class NativeTransaction(NativeDatastore datastore)
                 Native.Check(status, ref error);
                 return id;
             }
+        }
     }
 
     internal byte[] IndexScanPoint(uint index, ReadOnlySpan<byte> point)
     {
         lock (datastore.Sync)
+        {
             fixed (byte* bytes = point)
             {
                 var status = Native.IndexScanPoint(
@@ -106,11 +113,13 @@ internal sealed unsafe class NativeTransaction(NativeDatastore datastore)
                 );
                 return Native.TakeBytes(status, ref output, ref error);
             }
+        }
     }
 
     internal bool IndexDeletePoint(uint index, ReadOnlySpan<byte> point)
     {
         lock (datastore.Sync)
+        {
             fixed (byte* bytes = point)
             {
                 var status = Native.IndexDeletePoint(
@@ -124,6 +133,7 @@ internal sealed unsafe class NativeTransaction(NativeDatastore datastore)
                 Native.Check(status, ref error);
                 return deleted != 0;
             }
+        }
     }
 
     internal byte[] IndexScanRange(
@@ -135,6 +145,7 @@ internal sealed unsafe class NativeTransaction(NativeDatastore datastore)
     )
     {
         lock (datastore.Sync)
+        {
             fixed (
                 byte* prefixBytes = prefix,
                     startBytes = start,
@@ -156,6 +167,7 @@ internal sealed unsafe class NativeTransaction(NativeDatastore datastore)
                 );
                 return Native.TakeBytes(status, ref output, ref error);
             }
+        }
     }
 
     internal uint IndexDeleteRange(
@@ -167,6 +179,7 @@ internal sealed unsafe class NativeTransaction(NativeDatastore datastore)
     )
     {
         lock (datastore.Sync)
+        {
             fixed (
                 byte* prefixBytes = prefix,
                     startBytes = start,
@@ -189,11 +202,13 @@ internal sealed unsafe class NativeTransaction(NativeDatastore datastore)
                 Native.Check(status, ref error);
                 return deleted;
             }
+        }
     }
 
     internal byte[] Update(uint table, uint index, ReadOnlySpan<byte> row)
     {
         lock (datastore.Sync)
+        {
             fixed (byte* bytes = row)
             {
                 var status = Native.Update(
@@ -207,11 +222,13 @@ internal sealed unsafe class NativeTransaction(NativeDatastore datastore)
                 );
                 return Native.TakeBytes(status, ref output, ref error);
             }
+        }
     }
 
     internal bool Delete(uint table, ReadOnlySpan<byte> row)
     {
         lock (datastore.Sync)
+        {
             fixed (byte* bytes = row)
             {
                 var status = Native.DeleteRow(
@@ -225,6 +242,7 @@ internal sealed unsafe class NativeTransaction(NativeDatastore datastore)
                 Native.Check(status, ref error);
                 return deleted != 0;
             }
+        }
     }
 
     internal ulong Clear(uint table)
@@ -249,6 +267,8 @@ internal sealed unsafe class NativeTransaction(NativeDatastore datastore)
     protected override bool ReleaseHandle()
     {
         lock (datastore.Sync)
+        {
             return Native.DestroyTransaction(handle) == NativeStatus.Ok;
+        }
     }
 }
