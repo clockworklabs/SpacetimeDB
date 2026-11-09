@@ -1698,27 +1698,36 @@ impl WasmInstanceEnv {
     ///
     /// - The calling WASM instance is holding open a transaction.
     /// - The calling WASM instance is not executing a procedure.
+    /// - The database shuts down while sleeping.
     // TODO(procedure-sleep-until): remove this
     pub fn procedure_sleep_until<'caller>(
         caller: Caller<'caller, Self>,
         (wake_at_micros_since_unix_epoch,): (i64,),
-    ) -> Fut<'caller, i64> {
+    ) -> Fut<'caller, RtResult<i64>> {
         Self::async_with_span(caller, AbiCall::ProcedureSleepUntil, move |caller| async move {
             use std::time::SystemTime;
-            let get_current_time = || (caller, Timestamp::now().to_micros_since_unix_epoch());
+            let get_current_time = |caller| (caller, Ok(Timestamp::now().to_micros_since_unix_epoch()));
 
             if wake_at_micros_since_unix_epoch < 0 {
-                return get_current_time();
+                return get_current_time(caller);
             }
 
             let wake_at = Timestamp::from_micros_since_unix_epoch(wake_at_micros_since_unix_epoch);
             let Ok(duration) = SystemTime::from(wake_at).duration_since(SystemTime::now()) else {
-                return get_current_time();
+                return get_current_time(caller);
             };
 
-            tokio::time::sleep(duration).await;
+            let shutdown = caller.data().instance_env.replica_ctx.shutdown.clone();
+            if shutdown
+                .run_until_cancelled(tokio::time::sleep(duration))
+                .await
+                .is_none()
+            {
+                let err = WasmError::Db(NodesError::ShuttingDown);
+                return (caller, Self::convert_wasm_result(AbiCall::ProcedureSleepUntil, err));
+            }
 
-            get_current_time()
+            get_current_time(caller)
         })
     }
 

@@ -10,6 +10,7 @@ use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use std::io;
 use std::ops::Deref;
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 
 pub type Result<T> = anyhow::Result<T>;
 
@@ -22,6 +23,9 @@ pub struct ReplicaContext {
     pub subscriptions: ModuleSubscriptions,
     pub module_instance_memory_tracker: ModuleInstanceMemoryTracker,
     pub module_http: ModuleHttpConfig,
+    /// Cancelled when the replica is shutting down, e.g. because the database was paused.
+    /// Running procedures stop at their next sleep, HTTP request or transaction start.
+    pub shutdown: CancellationToken,
 }
 
 impl ReplicaContext {

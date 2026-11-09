@@ -43,7 +43,7 @@ use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::system_tables::ModuleKind;
-use spacetimedb_datastore::traits::Program;
+use spacetimedb_datastore::traits::{IsolationLevel, Program};
 use spacetimedb_durability::{self as durability};
 use spacetimedb_lib::{identity::AuthCtx, AlgebraicValue, Identity, Timestamp};
 use spacetimedb_paths::server::{ModuleLogsDir, ServerDataDir};
@@ -823,8 +823,16 @@ impl HostController {
             defer!(remove_database_gauges(&database_identity, table_names));
 
             info!("replica={replica_id} database={database_identity} exiting module");
+            module.replica_ctx().shutdown.cancel();
             module.exit().await;
             info!("replica={replica_id} database={database_identity} exiting database");
+            // Procedures can't start a transaction once `shutdown` is cancelled,
+            // so acquiring the lock waits for the ones still running to commit.
+            let db = module.relational_db().clone();
+            asyncify(move || {
+                let _ = db.rollback_mut_tx(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal));
+            })
+            .await;
             module.relational_db().shutdown().await;
             info!("replica={replica_id} database={database_identity} module host exited");
         })
@@ -1020,6 +1028,7 @@ async fn make_replica_ctx(
         subscriptions,
         module_instance_memory_tracker,
         module_http,
+        shutdown: Default::default(),
     })
 }
 
