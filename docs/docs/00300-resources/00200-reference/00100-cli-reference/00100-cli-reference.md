@@ -21,6 +21,8 @@ This document contains the help content for the `spacetime` command-line program
 * [`spacetime dev`↴](#spacetime-dev)
 * [`spacetime sql`↴](#spacetime-sql)
 * [`spacetime mcp`↴](#spacetime-mcp)
+* [`spacetime migrate`↴](#spacetime-migrate)
+* [`spacetime migrate generate`↴](#spacetime-migrate-generate)
 * [`spacetime rename`↴](#spacetime-rename)
 * [`spacetime generate`↴](#spacetime-generate)
 * [`spacetime list`↴](#spacetime-list)
@@ -59,6 +61,7 @@ This document contains the help content for the `spacetime` command-line program
 * `dev` — Start development mode with auto-regenerate client module bindings, auto-rebuild, and auto-publish on file changes.
 * `sql` — Runs a SQL query on the database. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `mcp` — Serve SpacetimeDB to MCP-aware agents and editors over stdio. WARNING: This command is UNSTABLE and subject to breaking changes.
+* `migrate` — Manage manual migrations of a database's schema
 * `rename` — Rename a database
 * `generate` — Generate client files for a spacetime module.
 * `list` — Lists the databases attached to an identity. WARNING: This command is UNSTABLE and subject to breaking changes.
@@ -398,6 +401,45 @@ Run `spacetime help mcp` for more detailed information.
 
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
 * `--anonymous` — Perform this action with an anonymous identity
+* `--no-config` — Ignore spacetime.json configuration
+
+
+
+## `spacetime migrate`
+
+Manage manual migrations of a database's schema
+
+**Usage:** `spacetime migrate <COMMAND>`
+
+###### **Subcommands:**
+
+* `generate` — Generate a manual migration from a database's current schema to the module's schema
+
+
+
+## `spacetime migrate generate`
+
+Generate a manual migration from a database's current schema to the module's schema.
+
+Builds the module, compares its schema to the one the database is running, and writes a Rust file declaring the tables the new schema removes or changes incompatibly, along with a `migrate` function to fill in. Add the file to your module and publish it to migrate the database's data to the new schema.
+
+**Usage:** `spacetime migrate generate [OPTIONS] [database]`
+
+###### **Arguments:**
+
+* `<DATABASE>` — The name or identity of the database to migrate
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
+* `--module-path <MODULE_PATH>` — Path to the Rust module project. Defaults to the project's configured module path
+* `--bin-path <WASM_FILE>` — Read the new schema from this compiled module, instead of building the module
+* `--build-options <BUILD_OPTIONS>` — Options to pass to the build command, for example --build-options='--lint-dir='
+
+  Default value: ``
+* `-o`, `--out <OUT>` — Where to write the migration, instead of asking. Defaults to `src/migration_<hash>.rs` in the module
+* `--anonymous` — Perform this action with an anonymous identity
+* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
 * `--no-config` — Ignore spacetime.json configuration
 
 

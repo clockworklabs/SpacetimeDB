@@ -79,6 +79,92 @@ fn test_codegen_rust_migration() {
     insta::assert_snapshot!(code);
 }
 
+/// `spacetime migrate generate` rebuilds the database's schema from the JSON of the server's
+/// `RawModuleDefV10`, and the migration it generates only runs if that rebuilt schema
+/// has the same hash as the server's own.
+#[test]
+fn migration_hash_survives_schema_endpoint_round_trip() {
+    use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
+    use spacetimedb_lib::de::serde::DeserializeWrapper;
+    use spacetimedb_lib::sats::serde::SerdeWrapper;
+
+    let old = compiled_module();
+    // What the server's `schema?version=10` endpoint sends.
+    let json = serde_json::to_string(&SerdeWrapper(RawModuleDefV10::from(old.clone()))).unwrap();
+    // What the CLI does with it.
+    let DeserializeWrapper::<RawModuleDefV10>(raw) = serde_json::from_str(&json).unwrap();
+    let rebuilt: ModuleDef = raw.try_into().unwrap();
+    assert_eq!(hash_value(&rebuilt), hash_value(old));
+}
+
+/// Only a changed table has a new version to copy rows into, so the example in `migrate` uses one,
+/// and the check on a removed table says how to discard its rows instead.
+#[test]
+fn test_codegen_rust_migration_distinguishes_removed_tables() {
+    use spacetimedb_lib::{AlgebraicType, ProductType};
+    fn def(tables: &[(&'static str, AlgebraicType)]) -> ModuleDef {
+        let mut builder = RawModuleDefV10Builder::new();
+        for (name, ty) in tables {
+            builder
+                .build_table_with_new_type(*name, ProductType::from([("x", ty.clone())]), true)
+                .finish();
+        }
+        builder.finish().try_into().unwrap()
+    }
+    let old = def(&[("apples", AlgebraicType::U8), ("pears", AlgebraicType::U8)]);
+    let new = def(&[("apples", AlgebraicType::String)]);
+    let code = generate_migration(&old, &new, &Rust).unwrap().code;
+    assert!(
+        code.contains("//     for row in ctx.dropped.apples().iter() {"),
+        "{code}"
+    );
+    assert!(
+        code.contains("\"the new schema removes the `pears` table; delete this check to discard its rows\""),
+        "{code}"
+    );
+    assert!(
+        code.contains("\"rows of the old `apples` table have not been migrated\""),
+        "{code}"
+    );
+}
+
+/// The server continues a changed table's sequence only in a new sequence of the same name,
+/// so a sequence whose name the new table lacks loses its state.
+#[test]
+fn migration_reports_lost_sequences() {
+    use spacetimedb_codegen::DroppedSchema;
+    use spacetimedb_lib::{AlgebraicType, ProductType};
+    // A table whose sequences are on columns `seq_cols`, and whose `n` column has type `n`,
+    // plus a `pears` table with a sequence if `pears`.
+    fn def(seq_cols: [&'static str; 2], n: AlgebraicType, pears: bool) -> ModuleDef {
+        let mut builder = RawModuleDefV10Builder::new();
+        let columns = [
+            (seq_cols[0], AlgebraicType::U64),
+            (seq_cols[1], AlgebraicType::U64),
+            ("n", n),
+        ];
+        builder
+            .build_table_with_new_type("apples", ProductType::from(columns), true)
+            .with_column_sequence(0)
+            .with_column_sequence(1)
+            .finish();
+        if pears {
+            builder
+                .build_table_with_new_type("pears", ProductType::from([("id", AlgebraicType::U64)]), true)
+                .with_column_sequence(0)
+                .finish();
+        }
+        builder.finish().try_into().unwrap()
+    }
+    let old = def(["id", "count"], AlgebraicType::U8, true);
+    // `apples` changes, keeping its `count` sequence but not its `id` one.
+    // Removing `pears` loses its sequence too, but that's no surprise.
+    let new = def(["renamed_id", "count"], AlgebraicType::String, false);
+    let dropped = DroppedSchema::new(&old, &new).unwrap();
+    let lost: Vec<_> = dropped.lost_sequences.iter().map(|l| (&*l.table, &*l.column)).collect();
+    assert_eq!(lost, [("apples", "id")]);
+}
+
 /// Tables the new schema keeps compatibly stay where they are, so the migration doesn't declare them.
 #[test]
 fn test_codegen_rust_migration_only_declares_dropped_tables() {

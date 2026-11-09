@@ -803,7 +803,7 @@ async fn execute_publish_configs<'a>(
     Ok(())
 }
 
-fn default_publish_module_path(current_dir: &std::path::Path) -> PathBuf {
+pub(crate) fn default_publish_module_path(current_dir: &std::path::Path) -> PathBuf {
     let spacetimedb_dir = current_dir.join("spacetimedb");
     if spacetimedb_dir.is_dir() {
         spacetimedb_dir

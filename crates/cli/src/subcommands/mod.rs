@@ -14,6 +14,7 @@ pub mod login;
 pub mod logout;
 pub mod logs;
 pub mod mcp;
+pub mod migrate;
 pub mod publish;
 pub mod repl;
 pub mod server;

@@ -157,55 +157,49 @@ mod dropped {
 ///
 /// Anything not copied is lost once this returns.
 fn migrate(ctx: &MigrationContext<Dropped>) -> Result<(), String> {
-    // TODO: Copy the rows of each dropped table into the new tables. For example,
-    // with `spacetimedb::Table` and the new table's accessor in scope:
-    //
-    //     for row in ctx.dropped.has_special_stuff().iter() {
-    //         ctx.db.has_special_stuff().insert(..);
-    //     }
-    //
+    // TODO: Copy the rows of each dropped table into the new tables.
     // Until then, refuse to delete any rows.
     if ctx.dropped.has_special_stuff().count() != 0 {
-        return Err("rows of the old `has_special_stuff` table have not been migrated".into());
+        return Err("the new schema removes the `has_special_stuff` table; delete this check to discard its rows".into());
     }
     if ctx.dropped.logged_out_player().count() != 0 {
-        return Err("rows of the old `logged_out_player` table have not been migrated".into());
+        return Err("the new schema removes the `logged_out_player` table; delete this check to discard its rows".into());
     }
     if ctx.dropped.nonrepeating_test_arg().count() != 0 {
-        return Err("rows of the old `nonrepeating_test_arg` table have not been migrated".into());
+        return Err("the new schema removes the `nonrepeating_test_arg` table; delete this check to discard its rows".into());
     }
     if ctx.dropped.person().count() != 0 {
-        return Err("rows of the old `person` table have not been migrated".into());
+        return Err("the new schema removes the `person` table; delete this check to discard its rows".into());
     }
     if ctx.dropped.pk_multi_identity().count() != 0 {
-        return Err("rows of the old `pk_multi_identity` table have not been migrated".into());
+        return Err("the new schema removes the `pk_multi_identity` table; delete this check to discard its rows".into());
     }
     if ctx.dropped.player().count() != 0 {
-        return Err("rows of the old `player` table have not been migrated".into());
+        return Err("the new schema removes the `player` table; delete this check to discard its rows".into());
     }
     if ctx.dropped.points().count() != 0 {
-        return Err("rows of the old `points` table have not been migrated".into());
+        return Err("the new schema removes the `points` table; delete this check to discard its rows".into());
     }
     if ctx.dropped.private_table().count() != 0 {
-        return Err("rows of the old `private_table` table have not been migrated".into());
+        return Err("the new schema removes the `private_table` table; delete this check to discard its rows".into());
     }
     if ctx.dropped.repeating_test_arg().count() != 0 {
-        return Err("rows of the old `repeating_test_arg` table have not been migrated".into());
+        return Err("the new schema removes the `repeating_test_arg` table; delete this check to discard its rows".into());
     }
     if ctx.dropped.table_to_remove().count() != 0 {
-        return Err("rows of the old `table_to_remove` table have not been migrated".into());
+        return Err("the new schema removes the `table_to_remove` table; delete this check to discard its rows".into());
     }
     if ctx.dropped.test_a().count() != 0 {
-        return Err("rows of the old `test_a` table have not been migrated".into());
+        return Err("the new schema removes the `test_a` table; delete this check to discard its rows".into());
     }
     if ctx.dropped.test_d().count() != 0 {
-        return Err("rows of the old `test_d` table have not been migrated".into());
+        return Err("the new schema removes the `test_d` table; delete this check to discard its rows".into());
     }
     if ctx.dropped.test_e().count() != 0 {
-        return Err("rows of the old `test_e` table have not been migrated".into());
+        return Err("the new schema removes the `test_e` table; delete this check to discard its rows".into());
     }
     if ctx.dropped.test_f().count() != 0 {
-        return Err("rows of the old `test_f` table have not been migrated".into());
+        return Err("the new schema removes the `test_f` table; delete this check to discard its rows".into());
     }
     Ok(())
 }

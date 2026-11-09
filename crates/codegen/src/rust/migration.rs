@@ -14,6 +14,7 @@ use spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_schema::def::{ConstraintData, IndexAlgorithm, IndexDef, ModuleDef, TableDef};
+use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ops::Deref;
@@ -72,7 +73,7 @@ pub(super) fn generate_migration(dropped: &DroppedSchema) -> OutputFile {
     }
     writeln!(out);
 
-    define_migrate_fn(out, &tables);
+    define_migrate_fn(out, &tables, &dropped.removed);
 
     OutputFile {
         filename: format!("{mod_name}.rs"),
@@ -142,7 +143,7 @@ fn print_header(out: &mut Indenter, hash: &str, mod_name: &str) {
     );
 }
 
-fn define_migrate_fn(out: &mut Indenter, tables: &[(&TableDef, String)]) {
+fn define_migrate_fn(out: &mut Indenter, tables: &[(&TableDef, String)], removed: &[Identifier]) {
     writeln!(
         out,
         "\
@@ -150,7 +151,7 @@ fn define_migrate_fn(out: &mut Indenter, tables: &[(&TableDef, String)]) {
 ///
 /// Anything not copied is lost once this returns."
     );
-    let Some((example, _)) = tables.first() else {
+    if tables.is_empty() {
         block(
             out,
             "fn migrate(_ctx: &MigrationContext<Dropped>) -> Result<(), String>",
@@ -160,32 +161,40 @@ fn define_migrate_fn(out: &mut Indenter, tables: &[(&TableDef, String)]) {
             },
         );
         return;
-    };
-    let example = ident(&example.accessor_name);
+    }
+    let is_removed = |table: &TableDef| removed.contains(&table.name);
     block(
         out,
         "fn migrate(ctx: &MigrationContext<Dropped>) -> Result<(), String>",
         |out| {
-            writeln!(
-                out,
-                "\
-// TODO: Copy the rows of each dropped table into the new tables. For example,
-// with `spacetimedb::Table` and the new table's accessor in scope:
+            writeln!(out, "// TODO: Copy the rows of each dropped table into the new tables.");
+            // Only a changed table has a new version to copy rows into.
+            if let Some((example, _)) = tables.iter().find(|(table, _)| !is_removed(table)) {
+                let example = ident(&example.accessor_name);
+                writeln!(
+                    out,
+                    "\
+// For example, with `spacetimedb::Table` and the new table's accessor in scope:
 //
 //     for row in ctx.dropped.{example}().iter() {{
 //         ctx.db.{example}().insert(..);
 //     }}
-//
-// Until then, refuse to delete any rows."
-            );
+//"
+                );
+            }
+            writeln!(out, "// Until then, refuse to delete any rows.");
             for (table, _) in tables {
                 let accessor = ident(&table.accessor_name);
-                block(out, &format!("if ctx.dropped.{accessor}().count() != 0"), |out| {
-                    writeln!(
-                        out,
-                        "return Err(\"rows of the old `{}` table have not been migrated\".into());",
+                let message = if is_removed(table) {
+                    format!(
+                        "the new schema removes the `{}` table; delete this check to discard its rows",
                         table.accessor_name
-                    );
+                    )
+                } else {
+                    format!("rows of the old `{}` table have not been migrated", table.accessor_name)
+                };
+                block(out, &format!("if ctx.dropped.{accessor}().count() != 0"), |out| {
+                    writeln!(out, "return Err({message:?}.into());");
                 });
             }
             writeln!(out, "Ok(())");
