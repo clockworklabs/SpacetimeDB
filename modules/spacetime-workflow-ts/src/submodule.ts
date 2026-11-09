@@ -79,6 +79,11 @@ const status: WorkflowStatusBuilder = t.enum('WorkflowStatus', {
   Cancelled: t.unit(),
 });
 
+const pendingEvent = t.object('WorkflowPendingEvent', {
+  name: t.string(),
+  value: t.option(t.string()),
+});
+
 const runOptions = { name: 'workflow_run', public: false } as const;
 const runColumns = {
   id: t.u64().primaryKey().autoInc(),
@@ -95,8 +100,13 @@ const runColumns = {
   stepCount: t.u32(),
   lastStep: t.option(t.string()),
   waitingFor: t.option(t.string()),
-  pendingEvents: t.array(t.string()),
+  /** Events signalled before the run waited for them, oldest first. */
+  pendingEvents: t.array(pendingEvent),
   error: t.option(t.string()),
+  /** What the workflow function returned, saved like step results. */
+  result: t.option(t.string()),
+  /** The run finished and its `onComplete` has not run yet. */
+  completing: t.bool(),
   startedBy: t.identity().index(),
   startedAt: t.timestamp(),
   updatedAt: t.timestamp(),
@@ -340,8 +350,11 @@ export interface WorkflowSteps<Tx, Proc> {
   call<T>(name: string, fn: (ctx: Proc, run: WorkflowStepInfo) => T): T;
   /** Pause for `seconds`. Nothing runs in the meantime. */
   sleep(seconds: number): void;
-  /** Pause until `signal` delivers `event`. */
-  waitFor(event: string): void;
+  /**
+   * Pause until `signal` delivers `event`, and return the value sent with it.
+   * The value's type is not checked.
+   */
+  waitFor<T = unknown>(event: string): T;
   /**
    * Run `fn` once per item, each in its own procedure, at the same time. Waits
    * for all of them and returns their outcomes in item order. Each item retries
@@ -360,9 +373,28 @@ export type WorkflowSettled<T> =
   | { ok: false; error: string };
 
 /** A workflow function. It must make the same step calls on every rerun. */
-export type WorkflowFunction<Args, Tx, Proc> = (
+export type WorkflowFunction<Args, Result, Tx, Proc> = (
   step: WorkflowSteps<Tx, Proc>,
   args: Args
+) => Result;
+
+/** How a run ended. Passed to `onComplete`. */
+export interface WorkflowOutcome<Args, Result> {
+  readonly runId: bigint;
+  readonly args: Args;
+  readonly status: 'Completed' | 'Failed' | 'Cancelled';
+  /** What the function returned, if it completed. */
+  readonly result: Result | undefined;
+  readonly error: string | undefined;
+}
+
+/**
+ * Runs once in its own transaction after a run finishes. Retried like a step if
+ * it throws.
+ */
+export type WorkflowOnComplete<Args, Result, Tx> = (
+  ctx: Tx,
+  outcome: WorkflowOutcome<Args, Result>
 ) => void;
 
 /** The scheduled function that runs workflows. */
@@ -383,7 +415,11 @@ export interface WorkflowSchema<
 
 interface Defined {
   options: WorkflowOptions<VariantsObj[string]>;
-  fn: (step: unknown, args: unknown) => void;
+  fn: (step: unknown, args: unknown) => unknown;
+  onComplete?: (
+    ctx: unknown,
+    outcome: WorkflowOutcome<unknown, unknown>
+  ) => void;
 }
 
 function errorText(error: unknown): string {
@@ -602,12 +638,8 @@ export function client() {
     });
   }
 
-  function finish(
-    ctx: WorkflowCtx,
-    run: WorkflowRunRow,
-    tag: 'Completed' | 'Failed' | 'Cancelled',
-    error: string | undefined
-  ): void {
+  /** Mark a finished run for pruning, oldest first. */
+  function retire(ctx: WorkflowCtx, runId: bigint): void {
     const finished = ctx.db.workflowFinished;
     if (finished.count() >= MAX_ROWS) {
       const oldest = finished.finishedAt
@@ -618,6 +650,16 @@ export function client() {
         ctx.db.workflowRun.id.delete(oldest.runId);
       }
     }
+    finished.insert({ runId, finishedAt: ctx.timestamp });
+  }
+
+  function finish(
+    ctx: WorkflowCtx,
+    run: WorkflowRunRow,
+    tag: 'Completed' | 'Failed' | 'Cancelled',
+    error: string | undefined,
+    result?: string
+  ): void {
     clearFires(ctx, run.id);
     for (const entry of [...ctx.db.workflowJournal.runId.filter(run.id)]) {
       ctx.db.workflowJournal.delete(entry);
@@ -625,16 +667,112 @@ export function client() {
     for (const branch of [...ctx.db.workflowBranch.runId.filter(run.id)]) {
       ctx.db.workflowBranch.delete(branch);
     }
-    ctx.db.workflowRun.id.update({
+    const completing = defined.get(run.workflow)?.onComplete !== undefined;
+    const ended = ctx.db.workflowRun.id.update({
       ...run,
       status: { tag },
       generation: run.generation + 1n,
+      attempt: completing ? 0 : run.attempt,
       inFlight: false,
       waitingFor: undefined,
       error,
+      result,
+      completing,
       updatedAt: ctx.timestamp,
     });
-    finished.insert({ runId: run.id, finishedAt: ctx.timestamp });
+    // A run is only pruned once its onComplete has run.
+    if (completing) schedule(ctx, ended, 0n);
+    else retire(ctx, run.id);
+  }
+
+  /** Run a finished run's `onComplete`. Returns false if the run has not finished. */
+  function complete<Tx extends WorkflowCtx>(
+    ctx: WorkflowProcedureCtx<Tx>,
+    arg: WorkflowFireRow
+  ): boolean {
+    const claimed = ctx.withTx(tx => {
+      const run = tx.db.workflowRun.id.find(arg.runId);
+      if (run?.status.tag === 'Running' || run?.status.tag === 'Waiting') {
+        return undefined;
+      }
+      if (!run?.completing || run.generation !== arg.generation) return null;
+      const updated = tx.db.workflowRun.id.update({
+        ...run,
+        generation: run.generation + 1n,
+        attempt: run.attempt + 1,
+        inFlight: true,
+        updatedAt: tx.timestamp,
+      });
+      replaceGuard(tx, updated);
+      return { run: updated, lost: run.inFlight };
+    });
+    if (claimed === undefined) return false;
+    if (claimed === null) return true;
+    const { run } = claimed;
+    const workflow = defined.get(run.workflow);
+    const maxAttempts = workflow?.options.retry?.maxAttempts ?? 1;
+    const current = (tx: WorkflowCtx) => {
+      const row = tx.db.workflowRun.id.find(run.id);
+      return row?.completing && row.generation === run.generation
+        ? row
+        : undefined;
+    };
+    const settle = (tx: WorkflowCtx, row: WorkflowRunRow) => {
+      clearFires(tx, row.id);
+      tx.db.workflowRun.id.update({
+        ...row,
+        generation: row.generation + 1n,
+        inFlight: false,
+        completing: false,
+      });
+      retire(tx, row.id);
+    };
+    const fail = (error: string, retry: boolean) =>
+      ctx.withTx(tx => {
+        const row = current(tx);
+        if (!row) return;
+        recordAttempt(
+          tx,
+          row,
+          'onComplete',
+          retry ? 'Failed' : 'GaveUp',
+          error
+        );
+        if (!retry) return settle(tx, row);
+        clearFires(tx, row.id);
+        const moved = tx.db.workflowRun.id.update({
+          ...row,
+          generation: row.generation + 1n,
+          inFlight: false,
+        });
+        schedule(tx, moved, retryDelayMicros(moved, row.attempt));
+      });
+
+    if (claimed.lost && run.attempt > maxAttempts) {
+      fail(failures.stepLost, false);
+      return true;
+    }
+    try {
+      ctx.withTx(tx => {
+        const row = current(tx);
+        if (!row) return;
+        workflow?.onComplete?.(tx, {
+          runId: row.id,
+          args: decodeResult(row.args),
+          status: row.status.tag as WorkflowOutcome<unknown, unknown>['status'],
+          result: decodeResult(row.result),
+          error: row.error,
+        });
+        recordAttempt(tx, row, 'onComplete', 'Ok');
+        settle(tx, row);
+      });
+    } catch (caught) {
+      fail(
+        errorText(caught),
+        !(caught instanceof SenderError) && run.attempt < maxAttempts
+      );
+    }
+    return true;
   }
 
   function appendJournal(
@@ -887,7 +1025,7 @@ export function client() {
       tx: <T>(name: string) => replay(name) as T,
       call: <T>(name: string) => replay(name) as T,
       sleep: () => void replay('sleep'),
-      waitFor: (event: string) => void replay(`wait:${event}`),
+      waitFor: <T>(event: string) => replay(`wait:${event}`) as T,
       parallel<I, T>(
         name: string,
         items: readonly I[],
@@ -964,6 +1102,7 @@ export function client() {
       runBranch(ctx, arg, arg.branch);
       return;
     }
+    if (complete(ctx, arg)) return;
     const loaded = ctx.withTx(tx => claim(tx, arg));
     if (!loaded) return;
     const { journal } = loaded;
@@ -1135,14 +1274,19 @@ export function client() {
         });
         suspend();
       },
-      waitFor(event: string): void {
+      waitFor<T>(event: string): T {
         const name = `wait:${event}`;
-        if (replay(name)) return;
+        const saved = replay(name);
+        if (saved) return saved.value as T;
         const ready = commit((tx, run) => {
-          if (run.pendingEvents.includes(event)) {
-            const pendingEvents = run.pendingEvents.filter(e => e !== event);
-            commitStep(tx, { ...run, pendingEvents }, name, {});
-            return true;
+          const index = run.pendingEvents.findIndex(e => e.name === event);
+          if (index >= 0) {
+            const { value } = run.pendingEvents[index];
+            const pendingEvents = run.pendingEvents.filter(
+              (_, i) => i !== index
+            );
+            commitStep(tx, { ...run, pendingEvents }, name, { result: value });
+            return { value };
           }
           clearFires(tx, run.id);
           tx.db.workflowRun.id.update({
@@ -1154,10 +1298,11 @@ export function client() {
             waitingFor: event,
             updatedAt: tx.timestamp,
           });
-          return false;
+          return undefined;
         });
-        if (!ready) suspend();
+        if (!ready) return suspend();
         attempt = 1;
+        return decodeResult(ready.value) as T;
       },
       parallel<I, T>(name: string, items: readonly I[]): WorkflowSettled<T>[] {
         const label = `${PARALLEL_PREFIX}${name}`;
@@ -1201,8 +1346,9 @@ export function client() {
     };
 
     let error: string | undefined;
+    let result: string | undefined;
     try {
-      workflow.fn(steps, decodeResult(loaded.run.args));
+      result = encodeResult(workflow.fn(steps, decodeResult(loaded.run.args)));
     } catch (caught) {
       if (caught instanceof WorkflowSuspended) return;
       error = errorText(caught);
@@ -1211,7 +1357,13 @@ export function client() {
     ctx.withTx(tx => {
       const run = current(tx);
       if (run) {
-        finish(tx, run, error === undefined ? 'Completed' : 'Failed', error);
+        finish(
+          tx,
+          run,
+          error === undefined ? 'Completed' : 'Failed',
+          error,
+          error === undefined ? result : undefined
+        );
       }
     });
   }
@@ -1266,14 +1418,20 @@ export function client() {
       Tx extends WorkflowCtx,
       Proc extends WorkflowProcedureCtx<Tx>,
       Args extends VariantsObj[string],
+      Result,
     >(
       _spacetimedb: WorkflowSchema<Tx, Proc>,
       name: string,
       options: WorkflowOptions<Args>,
-      fn: WorkflowFunction<Infer<Args>, Tx, Proc>
+      fn: WorkflowFunction<Infer<Args>, Result, Tx, Proc>,
+      onComplete?: WorkflowOnComplete<Infer<Args>, Result, Tx>
     ): WorkflowHandle<Infer<Args>> {
       validate(name, options, defined.has(name));
-      defined.set(name, { options, fn: fn as Defined['fn'] });
+      defined.set(name, {
+        options,
+        fn: fn as Defined['fn'],
+        onComplete: onComplete as Defined['onComplete'],
+      });
       return { name };
     },
     /** Call from your module's init reducer to make the publisher an admin. */
@@ -1302,6 +1460,8 @@ export function client() {
         waitingFor: undefined,
         pendingEvents: [],
         error: undefined,
+        result: undefined,
+        completing: false,
         startedBy: ctx.sender,
         startedAt: ctx.timestamp,
         updatedAt: ctx.timestamp,
@@ -1310,11 +1470,16 @@ export function client() {
       return run.id;
     },
     /**
-     * Deliver an event. An active run that is not waiting for it yet keeps it
-     * until it does. Returns false if the run is unknown or finished. The caller
-     * authorizes.
+     * Deliver an event, with an optional value that `waitFor` returns. An active
+     * run that is not waiting for it yet keeps it until it does. Returns false if
+     * the run is unknown or finished. The caller authorizes.
      */
-    signal(ctx: WorkflowCtx, runId: bigint, event: string): boolean {
+    signal(
+      ctx: WorkflowCtx,
+      runId: bigint,
+      event: string,
+      value?: unknown
+    ): boolean {
       if (
         event.length === 0 ||
         event.length > MAX_EVENT_LENGTH ||
@@ -1322,13 +1487,14 @@ export function client() {
       ) {
         throw new SenderError(errors.invalidEvent);
       }
+      const encoded = encodeResult(value);
       const run = ctx.db.workflowRun.id.find(runId);
       if (run?.status.tag !== 'Running' && run?.status.tag !== 'Waiting') {
         return false;
       }
       if (run.waitingFor === event) {
         const name = `wait:${event}`;
-        appendJournal(ctx, run, name, {});
+        appendJournal(ctx, run, name, { result: encoded });
         pause(
           ctx,
           run,
@@ -1337,13 +1503,12 @@ export function client() {
         );
         return true;
       }
-      if (run.pendingEvents.includes(event)) return true;
       if (run.pendingEvents.length >= MAX_PENDING_EVENTS) {
         throw new SenderError(errors.tooManyEvents);
       }
       ctx.db.workflowRun.id.update({
         ...run,
-        pendingEvents: [...run.pendingEvents, event],
+        pendingEvents: [...run.pendingEvents, { name: event, value: encoded }],
       });
       return true;
     },

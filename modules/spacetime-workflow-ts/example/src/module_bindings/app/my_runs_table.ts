@@ -11,6 +11,7 @@ import {
 } from "spacetimedb";
 import {
   WorkflowStatus,
+  WorkflowPendingEvent,
 } from "./types";
 
 
@@ -27,8 +28,12 @@ export default __t.row({
   stepCount: __t.u32().name("step_count"),
   lastStep: __t.option(__t.string()).name("last_step"),
   waitingFor: __t.option(__t.string()).name("waiting_for"),
-  pendingEvents: __t.array(__t.string()).name("pending_events"),
+  get pendingEvents() {
+    return __t.array(WorkflowPendingEvent).name("pending_events");
+  },
   error: __t.option(__t.string()),
+  result: __t.option(__t.string()),
+  completing: __t.bool(),
   startedBy: __t.identity().name("started_by"),
   startedAt: __t.timestamp().name("started_at"),
   updatedAt: __t.timestamp().name("updated_at"),

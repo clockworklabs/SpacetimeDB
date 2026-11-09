@@ -94,8 +94,10 @@ Loops, branches, local variables, and `try/catch` work as usual around these:
   attempts of a step. Writes made through `ctx.withTx` are committed even if the
   step later fails.
 - `step.sleep(seconds)` pauses the run. Nothing runs in the meantime.
-- `step.waitFor(event)` pauses until `signal` delivers `event`. An event that
-  arrives early is kept until the run waits for it.
+- `step.waitFor(event)` pauses until `signal` delivers `event`, and returns the
+  value sent with it. Events that arrive early are kept, oldest first, until the
+  run waits for them. Each wait takes one. Pass the expected type, as in
+  `step.waitFor<string[]>('approved')`. It is not checked.
 - `step.parallel(name, items, (ctx, item, run) => result)` runs the function once
   per item, each in its own procedure, at the same time. It waits for all of them
   and returns `{ ok: true, value }` or `{ ok: false, error }` for each item, in
@@ -110,6 +112,34 @@ const fetched = pages.flatMap(page => (page.ok ? [page.value] : []));
 Parallel items share the module's procedure pool, which has one instance per CPU
 core by default. Items beyond that wait for a free instance.
 
+## When a run ends
+
+The workflow function can return a value. It is saved as the run's `result`.
+
+Pass `onComplete` after the function to react when a run completes, fails, or is
+cancelled. It runs in its own transaction, with your module's context:
+
+```ts
+const checkout = workflows.define(
+  db,
+  'checkout',
+  { args: CheckoutArgs },
+  (step, { orderId }) => {
+    // ...
+    return { receiptId };
+  },
+  (ctx, { status, args, result, error }) => {
+    // status is 'Completed', 'Failed', or 'Cancelled'.
+    markOrder(ctx, args.orderId, status, result?.receiptId, error);
+  }
+);
+```
+
+Its writes commit together with the record that it ran, so it takes effect once.
+If it throws, its writes roll back and it is retried like a step, using the
+workflow's `retry` settings. A run is only pruned from the history after its
+`onComplete` has run or given up.
+
 ## How a run resumes
 
 A workflow function can stop and run again from the top, after a sleep, an event,
@@ -123,7 +153,8 @@ That gives the function three rules:
   or the network directly.
 - Make the same step calls each time. Do not branch on `Date.now()` or
   `Math.random()` outside a step. Get those values from a step, so they are saved.
-- Keep step results and arguments small, up to 64 KiB. They can hold plain objects,
+- Keep step results, arguments, event values, and the returned value small, up
+  to 64 KiB. They can hold plain objects,
   arrays, strings, finite numbers, booleans, `null`, `bigint`, `Uint8Array`,
   and the SpacetimeDB types `Timestamp`, `TimeDuration`, `Identity`,
   `ConnectionId`, and `Uuid`. Each comes back as the same type. Any other
@@ -152,7 +183,8 @@ A run can have up to 10,000 steps. Each sleep and wait counts as one.
 ## Reading progress
 
 The `workflowRun` table holds each run's `workflow` name, `status`, `lastStep`, `stepCount`,
-`attempt`, `waitingFor`, `error`, and `startedBy`. A run is `Waiting` while it
+`attempt`, `waitingFor`, `error`, `result`, and `startedBy`. `completing` is true
+until its `onComplete` has run. A run is `Waiting` while it
 waits for an event, or for parallel items, when `waitingFor` is
 `parallel:<name>`. Its tables are private, so expose what your users need through
 a view:
@@ -187,15 +219,15 @@ finished:
   `signal`, `cancel`, `requireAdmin`, `views`, and `reducers`.
 - `register(schema)` registers the scheduled procedure that runs workflows.
   Export its result.
-- `define(schema, name, { args, retry?, stepTimeoutSeconds? }, fn)` adds a
-  workflow and returns its handle. It throws if the name is taken or an option
-  is out of range.
+- `define(schema, name, { args, retry?, stepTimeoutSeconds? }, fn, onComplete?)`
+  adds a workflow and returns its handle. It throws if the name is taken or an
+  option is out of range.
 - `install(ctx)` seeds the publishing identity as the initial admin. Call it from
   your module's `init` reducer.
 - `start(ctx, handle, args)` starts a run and returns its id, without an
   authorization check.
-- `signal(ctx, runId, event)` delivers an event, without an authorization check.
-  It returns `false` if the run is unknown or finished.
+- `signal(ctx, runId, event, value?)` delivers an event and its value, without an
+  authorization check. It returns `false` if the run is unknown or finished.
 - `cancel(ctx, runId)` stops an active run, without an authorization check. It
   returns `false` if the run already finished. A `call` step already running
   finishes its work, and its result is ignored.

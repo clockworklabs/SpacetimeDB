@@ -226,11 +226,17 @@ try {
   );
   call('signal_run', String(waiting.id), JSON.stringify('go'));
   await pollRun(waiting.id, 'Completed');
+  // onComplete runs in its own procedure after the run finishes.
+  const completed = await poll('the demo onComplete', () => {
+    const rows = stepLog(waiting.id);
+    return rows.at(-1)?.step === 'onComplete' ? rows : undefined;
+  });
   assert.deepEqual(
-    stepLog(waiting.id)
-      .map(row => [row.step, row.note])
-      .at(-1),
-    ['finish', 'saved:8:true:true']
+    completed.slice(-2).map(row => [row.step, row.note]),
+    [
+      ['finish', 'saved:8:true:true:go:value'],
+      ['onComplete', 'Completed:demo:done'],
+    ]
   );
   assert.equal(
     sql(`SELECT * FROM workflow_journal WHERE runId = ${waiting.id}`).length,

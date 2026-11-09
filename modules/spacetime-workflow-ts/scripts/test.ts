@@ -34,6 +34,8 @@ const appLog: string[] = [];
 const keys: string[] = [];
 let starts = 0;
 let onCall: () => void = () => {};
+// onComplete throws while this is above zero.
+let completeFailures = 0;
 
 const logOf = (ctx: unknown) => (ctx as { appLog: string[] }).appLog;
 
@@ -261,6 +263,35 @@ const w = {
       () => 1
     );
   }),
+  // The first answer arrives before the wait, the second during it.
+  answers: workflows.define(db, 'answers', { args: Args }, step => {
+    const first = step.waitFor<{ at: Timestamp }>('answer');
+    const second = step.waitFor<number>('answer');
+    step.sleep(1);
+    step.tx('log', ctx => {
+      logOf(ctx).push(
+        `${first.at instanceof Timestamp}:${first.at.microsSinceUnixEpoch}:${second}`
+      );
+    });
+  }),
+  // A count of 99 fails the run.
+  finishes: workflows.define(
+    db,
+    'finishes',
+    { args: Args, retry: { maxAttempts: 2, backoffSeconds: 1 } },
+    (step, args) => {
+      const count = step.tx('count', () => args.count);
+      if (count === 99) throw new Error('bad count');
+      return { doubled: count * 2 };
+    },
+    (ctx, outcome) => {
+      if (completeFailures-- > 0) throw new Error('callback broke');
+      const doubled: number | undefined = outcome.result?.doubled;
+      logOf(ctx).push(
+        `${outcome.status}:${outcome.args.count}:${doubled}:${outcome.error}`
+      );
+    }
+  ),
 };
 
 // Steps, results, and arguments are typed.
@@ -631,11 +662,18 @@ assert.ok(admins.has(admin.toHexString()));
   const id = workflows.start(tx, w.waits, { count: 0 });
   assert.equal(workflows.signal(tx, id, 'go'), true);
   assert.equal(workflows.signal(tx, id, 'go'), true);
-  assert.deepEqual(run(id).pendingEvents, ['go']);
+  assert.deepEqual(
+    run(id).pendingEvents.map(e => e.name),
+    ['go', 'go']
+  );
   runDue();
   assert.deepEqual(appLog, ['resumed']);
   assert.equal(statusOf(id), 'Completed');
-  assert.deepEqual(run(id).pendingEvents, []);
+  // Each wait takes one event, oldest first.
+  assert.deepEqual(
+    run(id).pendingEvents.map(e => e.name),
+    ['go']
+  );
 
   const capped = workflows.start(tx, w.waits, { count: 0 });
   for (let i = 0; i < 32; i++) workflows.signal(tx, capped, `event${i}`);
@@ -643,6 +681,83 @@ assert.ok(admins.has(admin.toHexString()));
     message: errors.tooManyEvents,
   });
   workflows.cancel(tx, capped);
+}
+
+// Events carry values, whether they arrive before or during the wait.
+{
+  reset();
+  const id = workflows.start(tx, w.answers, { count: 0 });
+  workflows.signal(tx, id, 'answer', { at: new Timestamp(5n) });
+  runDue();
+  assert.equal(run(id).waitingFor, 'answer');
+  workflows.signal(tx, id, 'answer', 7);
+  runDue();
+  advance(1n);
+  assert.deepEqual(appLog, ['true:5:7']);
+  assert.equal(statusOf(id), 'Completed');
+  assert.throws(() => workflows.signal(tx, id, 'answer', new Map()), {
+    message: `${failures.unsupportedValue}:Map`,
+  });
+}
+
+// onComplete runs once after a run ends, with its result or error.
+{
+  reset();
+  const done = workflows.start(tx, w.finishes, { count: 2 });
+  const failed = workflows.start(tx, w.finishes, { count: 99 });
+  const cancelled = workflows.start(tx, w.finishes, { count: 5 });
+  workflows.cancel(tx, cancelled);
+  assert.equal(run(cancelled).completing, true);
+  assert.ok(!finished.has(cancelled), 'kept until onComplete runs');
+  runDue();
+  assert.deepEqual(appLog.sort(), [
+    'Cancelled:5:undefined:undefined',
+    'Completed:2:4:undefined',
+    'Failed:99:undefined:bad count',
+  ]);
+  for (const id of [done, failed, cancelled]) {
+    assert.equal(run(id).completing, false);
+    assert.equal(firesOf(id).length, 0);
+    assert.ok(finished.has(id));
+  }
+  assert.equal(run(done).result, '{"doubled":4}');
+}
+
+// A failing onComplete is retried, then given up on.
+{
+  reset();
+  completeFailures = 1;
+  const retried = workflows.start(tx, w.finishes, { count: 1 });
+  runDue();
+  assert.deepEqual(appLog, []);
+  assert.equal(run(retried).completing, true);
+  advance(1n);
+  assert.deepEqual(appLog, ['Completed:1:2:undefined']);
+  assert.deepEqual(
+    attemptsOf(retried)
+      .filter(row => row.step === 'onComplete')
+      .map(row => [row.status.tag, row.error]),
+    [
+      ['Failed', 'callback broke'],
+      ['Ok', undefined],
+    ]
+  );
+
+  reset();
+  completeFailures = 2;
+  const abandoned = workflows.start(tx, w.finishes, { count: 1 });
+  runDue();
+  advance(1n);
+  assert.deepEqual(appLog, []);
+  assert.equal(run(abandoned).completing, false);
+  assert.equal(statusOf(abandoned), 'Completed');
+  assert.deepEqual(
+    attemptsOf(abandoned)
+      .filter(row => row.step === 'onComplete')
+      .map(row => row.status.tag),
+    ['Failed', 'GaveUp']
+  );
+  completeFailures = 0;
 }
 
 // Cancelling removes scheduled work, and only applies to active runs.

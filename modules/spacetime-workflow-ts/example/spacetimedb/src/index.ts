@@ -306,14 +306,8 @@ const research = workflows.define(
         planTokens: plan.tokens,
       });
     });
-    step.waitFor('plan-approved');
-    // The plan may have been edited before it was approved.
-    researchAndReport(
-      step.tx(
-        'Read the approved plan',
-        ctx => ctx.db.dossier.id.find(dossierId)!.topics
-      )
-    );
+    // Approving sends the plan, which may have been edited.
+    researchAndReport(step.waitFor<string[]>('plan-approved'));
   }
 );
 
@@ -380,7 +374,7 @@ export const approvePlan = spacetimedb.reducer(
       );
     }
     ctx.db.dossier.id.update({ ...row, topics: plan });
-    workflows.signal(ctx, row.runId, 'plan-approved');
+    workflows.signal(ctx, row.runId, 'plan-approved', plan);
   }
 );
 

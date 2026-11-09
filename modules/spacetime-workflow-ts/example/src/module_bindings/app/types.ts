@@ -126,6 +126,12 @@ export const WorkflowJournal = __t.object("WorkflowJournal", {
 });
 export type WorkflowJournal = __Infer<typeof WorkflowJournal>;
 
+export const WorkflowPendingEvent = __t.object("WorkflowPendingEvent", {
+  name: __t.string(),
+  value: __t.option(__t.string()),
+});
+export type WorkflowPendingEvent = __Infer<typeof WorkflowPendingEvent>;
+
 export const WorkflowRun = __t.object("WorkflowRun", {
   id: __t.u64(),
   workflow: __t.string(),
@@ -139,8 +145,12 @@ export const WorkflowRun = __t.object("WorkflowRun", {
   stepCount: __t.u32(),
   lastStep: __t.option(__t.string()),
   waitingFor: __t.option(__t.string()),
-  pendingEvents: __t.array(__t.string()),
+  get pendingEvents() {
+    return __t.array(WorkflowPendingEvent);
+  },
   error: __t.option(__t.string()),
+  result: __t.option(__t.string()),
+  completing: __t.bool(),
   startedBy: __t.identity(),
   startedAt: __t.timestamp(),
   updatedAt: __t.timestamp(),

@@ -32,7 +32,7 @@ function blockUntilHostStops(): never {
 
 export const workflowRunAttempt = workflows.register(spacetimedb);
 
-// Covers retries, rollback, results, sleep, and events.
+// Covers retries, rollback, results, sleep, events, and onComplete.
 const demo = workflows.define(
   spacetimedb,
   'demo',
@@ -54,7 +54,7 @@ const demo = workflows.define(
       return { big: 7n, text: 'saved', at: ctx.timestamp, who: ctx.sender };
     });
     step.sleep(1);
-    step.waitFor('go');
+    const go = step.waitFor<string>('go');
     step.tx('finish', (ctx, run) => {
       ctx.db.stepLog.insert({
         id: 0n,
@@ -62,8 +62,18 @@ const demo = workflows.define(
         step: run.step,
         attempt: run.attempt,
         // Read after a sleep and an event, so it came from the saved result.
-        note: `${value.text}:${value.big + 1n}:${value.at instanceof Timestamp}:${value.who instanceof Identity}`,
+        note: `${value.text}:${value.big + 1n}:${value.at instanceof Timestamp}:${value.who instanceof Identity}:${go}`,
       });
+    });
+    return `${args.label}:done`;
+  },
+  (ctx, outcome) => {
+    ctx.db.stepLog.insert({
+      id: 0n,
+      runId: outcome.runId,
+      step: 'onComplete',
+      attempt: 1,
+      note: `${outcome.status}:${outcome.result}`,
     });
   }
 );
@@ -230,7 +240,7 @@ export const startParked = spacetimedb.reducer(
 export const signalRun = spacetimedb.reducer(
   { runId: t.u64(), event: t.string() },
   (ctx, { runId, event }) => {
-    workflows.signal(ctx, runId, event);
+    workflows.signal(ctx, runId, event, `${event}:value`);
   }
 );
 
