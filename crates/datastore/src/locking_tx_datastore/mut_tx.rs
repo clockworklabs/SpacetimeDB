@@ -749,7 +749,7 @@ impl MutTxId {
         }
 
         for (table_id, inserted_table) in &self.tx_state.insert_tables {
-            let (table, blob_store, _) = self
+            let (table, ..) = self
                 .committed_state_write_lock
                 .get_table_and_blob_store(*table_id)
                 .expect("table must exist in committed state for inserted table");
@@ -758,6 +758,7 @@ impl MutTxId {
                 continue;
             }
 
+            let blob_store = &self.tx_state.blob_store;
             for row_ref in inserted_table.scan_rows(blob_store) {
                 process_views(table_id, row_ref?);
             }
