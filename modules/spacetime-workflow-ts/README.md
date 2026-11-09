@@ -16,8 +16,8 @@ Requires SpacetimeDB SDK, CLI, and server 2.12 or later.
 
 ## Integrate into an application
 
-Declare each workflow's arguments, add the workflow tables to your module, then
-register a function for each workflow. In this example, replace `reserveStock`,
+Add the workflow tables to your module, register the procedure that runs
+workflows, then define each workflow. In this example, replace `reserveStock`,
 `chargeCard`, `releaseStock`, `queueReceipt`, `queueReview`,
 `requireOrderOwner`, and `requireWarehouse` with your application's functions.
 
@@ -25,22 +25,22 @@ register a function for each workflow. In this example, replace `reserveStock`,
 import { schema, t } from 'spacetimedb/server';
 import { client } from '@spacetimedb/workflow';
 
-const workflows = client({
-  workflows: {
-    checkout: {
-      args: t.object('CheckoutArgs', { orderId: t.u64() }),
-      retry: { maxAttempts: 3, backoffSeconds: 2 },
-    },
-  },
-});
+const workflows = client();
 
 const db = schema({ ...workflows.tables });
 export default db;
 
 export const init = db.init(ctx => workflows.install(ctx));
+export const workflowRunAttempt = workflows.register(db);
 
-export const workflowRunAttempt = workflows.register(db, {
-  checkout(step, { orderId }) {
+const checkout = workflows.define(
+  db,
+  'checkout',
+  {
+    args: t.object('CheckoutArgs', { orderId: t.u64() }),
+    retry: { maxAttempts: 3, backoffSeconds: 2 },
+  },
+  (step, { orderId }) => {
     step.tx('reserve', ctx => reserveStock(ctx, orderId));
 
     let receiptId: string;
@@ -58,12 +58,12 @@ export const workflowRunAttempt = workflows.register(db, {
 
     step.sleep(7 * 24 * 60 * 60);
     step.tx('review', ctx => queueReview(ctx, orderId));
-  },
-});
+  }
+);
 
 export const placeOrder = db.reducer({ orderId: t.u64() }, (ctx, args) => {
   requireOrderOwner(ctx, args.orderId);
-  workflows.start(ctx, 'checkout', args);
+  workflows.start(ctx, checkout, args);
 });
 
 export const markShipped = db.reducer({ runId: t.u64() }, (ctx, { runId }) => {
@@ -71,6 +71,11 @@ export const markShipped = db.reducer({ runId: t.u64() }, (ctx, { runId }) => {
   workflows.signal(ctx, runId, 'shipped');
 });
 ```
+
+`define` returns a handle that `start` takes, so a run's arguments are
+type-checked. Define workflows when the module loads, in any file. Do not export
+a handle from the module's entry file, because SpacetimeDB rejects exports it
+does not recognize.
 
 See the [Dossier example](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-workflow-ts/example)
 for a research agent that keeps its work across restarts.
@@ -118,7 +123,7 @@ That gives the function three rules:
   or the network directly.
 - Make the same step calls each time. Do not branch on `Date.now()` or
   `Math.random()` outside a step. Get those values from a step, so they are saved.
-- Keep step results small, up to 64 KiB. A result can hold plain objects,
+- Keep step results and arguments small, up to 64 KiB. They can hold plain objects,
   arrays, strings, finite numbers, booleans, `null`, `bigint`, `Uint8Array`,
   and the SpacetimeDB types `Timestamp`, `TimeDuration`, `Identity`,
   `ConnectionId`, and `Uuid`. Each comes back as the same type. Any other
@@ -135,7 +140,7 @@ A run can have up to 10,000 steps. Each sleep and wait counts as one.
 - When a step gives up, it throws a `WorkflowStepError` in the workflow function.
   Catch it to clean up or carry on. If nothing catches it, the run ends as
   `Failed`.
-- If the host stops during an attempt, another attempt starts after
+- If the server stops during an attempt, another attempt starts after
   `stepTimeoutSeconds` (default 300). A `tx` step never committed, so it repeats. A
   `call` step counts this against `maxAttempts`, because its outside calls may have
   happened.
@@ -146,7 +151,7 @@ A run can have up to 10,000 steps. Each sleep and wait counts as one.
 
 ## Reading progress
 
-The `workflowRun` table holds each run's `status`, `lastStep`, `stepCount`,
+The `workflowRun` table holds each run's `workflow` name, `status`, `lastStep`, `stepCount`,
 `attempt`, `waitingFor`, `error`, and `startedBy`. A run is `Waiting` while it
 waits for an event, or for parallel items, when `waitingFor` is
 `parallel:<name>`. Its tables are private, so expose what your users need through
@@ -172,17 +177,22 @@ finished:
 - Renaming, removing, or reordering finished steps fails those runs with
   `workflow.replay_mismatch`. For an incompatible change, add a workflow under a
   new name and keep the old one until its runs finish.
-- Changing an argument type requires a SpacetimeDB schema migration.
+- Changing a workflow's arguments does not change the schema. Active runs keep the
+  arguments they started with, so add fields as optional.
+- Removing a workflow fails its active runs with `workflow.unknown_workflow`.
 
 ## API
 
-- `client({ workflows })` returns `tables`, `register`, `install`, `start`,
+- `client()` returns `tables`, `register`, `define`, `install`, `start`,
   `signal`, `cancel`, `requireAdmin`, `views`, and `reducers`.
-- `register(schema, handlers)` registers the scheduled procedure that runs
-  workflows. Export its result.
+- `register(schema)` registers the scheduled procedure that runs workflows.
+  Export its result.
+- `define(schema, name, { args, retry?, stepTimeoutSeconds? }, fn)` adds a
+  workflow and returns its handle. It throws if the name is taken or an option
+  is out of range.
 - `install(ctx)` seeds the publishing identity as the initial admin. Call it from
-  the host's `init` reducer.
-- `start(ctx, name, args)` starts a run and returns its id, without an
+  your module's `init` reducer.
+- `start(ctx, handle, args)` starts a run and returns its id, without an
   authorization check.
 - `signal(ctx, runId, event)` delivers an event, without an authorization check.
   It returns `false` if the run is unknown or finished.
@@ -197,7 +207,7 @@ finished:
   `notAuthorized`, `invalidEvent`, `tooManyEvents`, and `cannotRemoveLastAdmin`.
 - `failures` holds the `workflow.*` errors recorded on runs: `stepLost`,
   `tooManySteps`, `resultTooLarge`, `asyncStep`, `replayMismatch`, `tooManyBranches`,
-  and `unsupportedValue`.
+  `unsupportedValue`, and `unknownWorkflow`.
 
 Package entrypoints:
 

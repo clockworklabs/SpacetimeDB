@@ -21,21 +21,7 @@ const SOURCES_PER_TOPIC = 3;
 const MIN_UPDATE_SECONDS = 60;
 const MAX_UPDATE_SECONDS = 7 * 24 * 60 * 60;
 
-const workflows = client({
-  workflows: {
-    research: {
-      args: t.object('ResearchArgs', {
-        dossierId: t.u64(),
-        question: t.string(),
-        /** 0 for a new dossier. Otherwise, update it this often. */
-        everySeconds: t.u32(),
-      }),
-      retry: { maxAttempts: 3, backoffSeconds: 5 },
-      // Longer than the slowest model call.
-      stepTimeoutSeconds: 30,
-    },
-  },
-});
+const workflows = client();
 
 const source = t.object('Source', { title: t.string(), url: t.string() });
 
@@ -200,11 +186,26 @@ function writeReport(
   );
 }
 
-export const workflowRunAttempt = workflows.register(spacetimedb, {
-  research(step, { dossierId, question, everySeconds }) {
+export const workflowRunAttempt = workflows.register(spacetimedb);
+
+const research = workflows.define(
+  spacetimedb,
+  'research',
+  {
+    args: t.object('ResearchArgs', {
+      dossierId: t.u64(),
+      question: t.string(),
+      /** 0 for a new dossier. Otherwise, update it this often. */
+      everySeconds: t.u32(),
+    }),
+    retry: { maxAttempts: 3, backoffSeconds: 5 },
+    // Longer than the slowest model call.
+    stepTimeoutSeconds: 30,
+  },
+  (step, { dossierId, question, everySeconds }) => {
     const researchAndReport = (topics: string[]) => {
       // Every topic is researched at the same time, each in its own procedure.
-      const research = step.parallel('Research', topics, (ctx, topic) => {
+      const researched = step.parallel('Research', topics, (ctx, topic) => {
         const sources = searchWikipedia(ctx, topic);
         const note =
           sources.length === 0
@@ -245,7 +246,7 @@ export const workflowRunAttempt = workflows.register(spacetimedb, {
       });
       // A topic that keeps failing is left out. The rest of the report goes on.
       const notes: Note[] = topics.flatMap((topic, i) => {
-        const result = research[i];
+        const result = researched[i];
         return result.ok && result.value ? [{ topic, ...result.value }] : [];
       });
       if (notes.length === 0) {
@@ -313,8 +314,8 @@ export const workflowRunAttempt = workflows.register(spacetimedb, {
         ctx => ctx.db.dossier.id.find(dossierId)!.topics
       )
     );
-  },
-});
+  }
+);
 
 export const init = spacetimedb.init(ctx => {
   workflows.install(ctx);
@@ -344,7 +345,7 @@ export const startDossier = spacetimedb.reducer(
       nextUpdateAt: undefined,
       createdAt: ctx.timestamp,
     });
-    const runId = workflows.start(ctx, 'research', {
+    const runId = workflows.start(ctx, research, {
       dossierId: row.id,
       question: trimmed,
       everySeconds: 0,
@@ -415,7 +416,7 @@ export const keepUpdated = spacetimedb.reducer(
     }
     // Replace any earlier schedule.
     if (active) workflows.cancel(ctx, row.runId);
-    const runId = workflows.start(ctx, 'research', {
+    const runId = workflows.start(ctx, research, {
       dossierId,
       question: row.question,
       everySeconds,

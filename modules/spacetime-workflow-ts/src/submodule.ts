@@ -48,6 +48,7 @@ export const failures = {
   replayMismatch: 'workflow.replay_mismatch',
   tooManyBranches: 'workflow.too_many_branches',
   unsupportedValue: 'workflow.unsupported_value',
+  unknownWorkflow: 'workflow.unknown_workflow',
 } as const;
 
 /** Thrown inside a workflow function when a step gives up. Safe to catch. */
@@ -78,33 +79,31 @@ const status: WorkflowStatusBuilder = t.enum('WorkflowStatus', {
   Cancelled: t.unit(),
 });
 
-function runColumns(args: SumBuilder<VariantsObj>) {
-  return {
-    id: t.u64().primaryKey().autoInc(),
-    args,
-    status,
-    /** Changes when an attempt starts or the run pauses, so older ones stop. */
-    generation: t.u64(),
-    attempt: t.u32(),
-    /** An attempt has started and has not recorded its result. */
-    inFlight: t.bool(),
-    stepCount: t.u32(),
-    lastStep: t.option(t.string()),
-    waitingFor: t.option(t.string()),
-    pendingEvents: t.array(t.string()),
-    error: t.option(t.string()),
-    startedBy: t.identity().index(),
-    startedAt: t.timestamp(),
-    updatedAt: t.timestamp(),
-  };
-}
-
 const runOptions = { name: 'workflow_run', public: false } as const;
-function runTable(
-  args: SumBuilder<VariantsObj>
-): ReturnType<typeof table<ReturnType<typeof runColumns>, typeof runOptions>> {
-  return table(runOptions, runColumns(args));
-}
+const runColumns = {
+  id: t.u64().primaryKey().autoInc(),
+  /** The name given to `define`. */
+  workflow: t.string(),
+  /** The run's arguments, saved like step results. */
+  args: t.string(),
+  status,
+  /** Changes when an attempt starts or the run pauses, so older ones stop. */
+  generation: t.u64(),
+  attempt: t.u32(),
+  /** An attempt has started and has not recorded its result. */
+  inFlight: t.bool(),
+  stepCount: t.u32(),
+  lastStep: t.option(t.string()),
+  waitingFor: t.option(t.string()),
+  pendingEvents: t.array(t.string()),
+  error: t.option(t.string()),
+  startedBy: t.identity().index(),
+  startedAt: t.timestamp(),
+  updatedAt: t.timestamp(),
+};
+const workflowRun: ReturnType<
+  typeof table<typeof runColumns, typeof runOptions>
+> = table(runOptions, runColumns);
 
 const journalOptions = { name: 'workflow_journal', public: false } as const;
 const journalColumns = {
@@ -193,7 +192,7 @@ const workflowAdminIdentity: ReturnType<
 > = table(adminOptions, adminColumns);
 
 interface WorkflowTables {
-  workflowRun: ReturnType<typeof runTable>;
+  workflowRun: typeof workflowRun;
   workflowJournal: typeof workflowJournal;
   workflowFire: typeof workflowFire;
   workflowBranch: typeof workflowBranch;
@@ -202,7 +201,7 @@ interface WorkflowTables {
   workflowAdminIdentity: typeof workflowAdminIdentity;
 }
 
-export type WorkflowRunRow = Infer<ReturnType<typeof runTable>['rowType']>;
+export type WorkflowRunRow = Infer<typeof workflowRun.rowType>;
 export type WorkflowJournalRow = Infer<typeof workflowJournal.rowType>;
 export type WorkflowFireRow = Infer<typeof workflowFire.rowType>;
 export type WorkflowBranchRow = Infer<typeof workflowBranch.rowType>;
@@ -300,9 +299,9 @@ export interface WorkflowProcedureCtx<Tx extends WorkflowCtx = WorkflowCtx> {
   withTx<T>(body: (tx: Tx) => T): T;
 }
 
-export interface WorkflowDefinition {
-  /** The run's typed arguments. Part of the module's schema. */
-  args: VariantsObj[string];
+export interface WorkflowOptions<Args extends VariantsObj[string]> {
+  /** The run's arguments. Saved like step results. */
+  args: Args;
   /** Attempts per step. Defaults to one attempt with no retry. */
   retry?: { maxAttempts: number; backoffSeconds: number };
   /**
@@ -312,7 +311,12 @@ export interface WorkflowDefinition {
   stepTimeoutSeconds?: number;
 }
 
-export type WorkflowDefinitions = Record<string, WorkflowDefinition>;
+/** Returned by `define`. Pass it to `start`. */
+export interface WorkflowHandle<Args> {
+  readonly name: string;
+  /** Carries the argument type. Never set. */
+  readonly __args?: Args;
+}
 
 /** Identifies the current attempt of a step. */
 export interface WorkflowStepInfo {
@@ -355,13 +359,11 @@ export type WorkflowSettled<T> =
   | { ok: true; value: T }
   | { ok: false; error: string };
 
-/** One function per workflow. It must make the same step calls on every rerun. */
-export type WorkflowHandlers<Defs extends WorkflowDefinitions, Tx, Proc> = {
-  [Name in keyof Defs & string]: (
-    step: WorkflowSteps<Tx, Proc>,
-    args: Infer<Defs[Name]['args']>
-  ) => void;
-};
+/** A workflow function. It must make the same step calls on every rerun. */
+export type WorkflowFunction<Args, Tx, Proc> = (
+  step: WorkflowSteps<Tx, Proc>,
+  args: Args
+) => void;
 
 /** The scheduled function that runs workflows. */
 export type WorkflowFunctionExport<Ctx> = ModuleExport &
@@ -379,7 +381,10 @@ export interface WorkflowSchema<
   procedure(...args: unknown[]): WorkflowFunctionExport<Proc>;
 }
 
-type InternalHandler = (step: unknown, args: unknown) => void;
+interface Defined {
+  options: WorkflowOptions<VariantsObj[string]>;
+  fn: (step: unknown, args: unknown) => void;
+}
 
 function errorText(error: unknown): string {
   const text = error instanceof Error ? error.message : String(error);
@@ -467,10 +472,16 @@ function decodeResult(json: string | undefined): unknown {
   });
 }
 
-function validate(name: string, def: WorkflowDefinition): void {
+function validate(
+  name: string,
+  def: WorkflowOptions<VariantsObj[string]>,
+  taken: boolean
+): void {
   const fail = (detail: string): never => {
     throw new Error(`workflow.invalid_definition:${name}:${detail}`);
   };
+  if (name.length === 0 || name.length > MAX_EVENT_LENGTH) fail('name');
+  if (taken) fail('duplicate_name');
   const { maxAttempts, backoffSeconds } = def.retry ?? {
     maxAttempts: 1,
     backoffSeconds: 1,
@@ -500,18 +511,9 @@ function validate(name: string, def: WorkflowDefinition): void {
 }
 
 /** Create the workflow tables and the functions that manage them. */
-export function client<const Defs extends WorkflowDefinitions>({
-  workflows,
-}: {
-  workflows: Defs;
-}) {
-  const defs: WorkflowDefinitions = workflows;
-  const variants: VariantsObj = {};
-  for (const [name, def] of Object.entries(defs)) {
-    validate(name, def);
-    variants[name] = def.args;
-  }
-  const workflowRun = runTable(t.enum('WorkflowArgs', variants));
+export function client() {
+  const defined = new Map<string, Defined>();
+  const optionsOf = (run: WorkflowRunRow) => defined.get(run.workflow)?.options;
   const tables: WorkflowTables = {
     workflowRun,
     workflowJournal,
@@ -522,12 +524,9 @@ export function client<const Defs extends WorkflowDefinitions>({
     workflowAdminIdentity,
   };
 
-  let handlers: Record<string, InternalHandler> | undefined;
-
   const stepTimeoutMicros = (run: WorkflowRunRow): bigint =>
-    BigInt(
-      defs[run.args.tag].stepTimeoutSeconds ?? DEFAULT_STEP_TIMEOUT_SECONDS
-    ) * ONE_SECOND_MICROS;
+    BigInt(optionsOf(run)?.stepTimeoutSeconds ?? DEFAULT_STEP_TIMEOUT_SECONDS) *
+    ONE_SECOND_MICROS;
 
   /** Remove a run's fires, or only one parallel item's. */
   function clearFires(ctx: WorkflowCtx, runId: bigint, branch?: number): void {
@@ -717,7 +716,7 @@ export function client<const Defs extends WorkflowDefinitions>({
 
   function retryDelayMicros(run: WorkflowRunRow, attempt: number): bigint {
     return (
-      BigInt(defs[run.args.tag].retry?.backoffSeconds ?? 1) *
+      BigInt(optionsOf(run)?.retry?.backoffSeconds ?? 1) *
       (1n << BigInt(attempt - 1)) *
       ONE_SECOND_MICROS
     );
@@ -825,7 +824,22 @@ export function client<const Defs extends WorkflowDefinitions>({
     });
     if (!claimed) return;
     const { run, row, journal } = claimed;
-    const maxAttempts = defs[run.args.tag].retry?.maxAttempts ?? 1;
+    const workflow = defined.get(run.workflow);
+    if (!workflow) {
+      ctx.withTx(tx => {
+        const waiting = waitingOnBranches(tx, run.id, run.generation);
+        if (waiting) {
+          finish(
+            tx,
+            waiting,
+            'Failed',
+            `${failures.unknownWorkflow}:${run.workflow}`
+          );
+        }
+      });
+      return;
+    }
+    const maxAttempts = workflow.options.retry?.maxAttempts ?? 1;
     const settle = (outcome: { result?: string; error?: string }) =>
       ctx.withTx(tx =>
         settleBranch(tx, run.id, run.generation, branch, outcome)
@@ -931,9 +945,8 @@ export function client<const Defs extends WorkflowDefinitions>({
       },
     };
 
-    const args = 'value' in run.args ? run.args.value : undefined;
     try {
-      handlers![run.args.tag](steps, args);
+      workflow.fn(steps, decodeResult(run.args));
     } catch {
       // The function stops at this item, or failed before reaching it.
     }
@@ -955,9 +968,22 @@ export function client<const Defs extends WorkflowDefinitions>({
     if (!loaded) return;
     const { journal } = loaded;
     const { id: runId, generation, startedBy } = loaded.run;
-    const tag = loaded.run.args.tag;
-    const def = defs[tag];
-    const maxAttempts = def.retry?.maxAttempts ?? 1;
+    const workflow = defined.get(loaded.run.workflow);
+    if (!workflow) {
+      ctx.withTx(tx => {
+        const run = tx.db.workflowRun.id.find(runId);
+        if (run?.status.tag === 'Running' && run.generation === generation) {
+          finish(
+            tx,
+            run,
+            'Failed',
+            `${failures.unknownWorkflow}:${run.workflow}`
+          );
+        }
+      });
+      return;
+    }
+    const maxAttempts = workflow.options.retry?.maxAttempts ?? 1;
     let attempt = loaded.run.attempt;
     let lost = loaded.lost;
     let cursor = 0;
@@ -1174,10 +1200,9 @@ export function client<const Defs extends WorkflowDefinitions>({
       },
     };
 
-    const args = 'value' in loaded.run.args ? loaded.run.args.value : undefined;
     let error: string | undefined;
     try {
-      handlers![tag](steps, args);
+      workflow.fn(steps, decodeResult(loaded.run.args));
     } catch (caught) {
       if (caught instanceof WorkflowSuspended) return;
       error = errorText(caught);
@@ -1221,10 +1246,8 @@ export function client<const Defs extends WorkflowDefinitions>({
      * `schema()` and export the result.
      */
     register<Tx extends WorkflowCtx, Proc extends WorkflowProcedureCtx<Tx>>(
-      spacetimedb: WorkflowSchema<Tx, Proc>,
-      workflowHandlers: WorkflowHandlers<Defs, Tx, Proc>
+      spacetimedb: WorkflowSchema<Tx, Proc>
     ): WorkflowFunctionExport<Proc> {
-      handlers = workflowHandlers as unknown as typeof handlers;
       return spacetimedb.procedure(
         { name: 'workflow_run_attempt', onSchedule: workflowFire },
         { arg: workflowFire.rowType },
@@ -1235,19 +1258,41 @@ export function client<const Defs extends WorkflowDefinitions>({
         }
       );
     },
-    /** Call from the host's init reducer to seed the publishing identity as admin. */
+    /**
+     * Add a workflow when the module loads. The schema types its step contexts.
+     * Do not export the returned handle from the module's entry file.
+     */
+    define<
+      Tx extends WorkflowCtx,
+      Proc extends WorkflowProcedureCtx<Tx>,
+      Args extends VariantsObj[string],
+    >(
+      _spacetimedb: WorkflowSchema<Tx, Proc>,
+      name: string,
+      options: WorkflowOptions<Args>,
+      fn: WorkflowFunction<Infer<Args>, Tx, Proc>
+    ): WorkflowHandle<Infer<Args>> {
+      validate(name, options, defined.has(name));
+      defined.set(name, { options, fn: fn as Defined['fn'] });
+      return { name };
+    },
+    /** Call from your module's init reducer to make the publisher an admin. */
     install(ctx: WorkflowCtx): void {
       addAdmin(ctx, ctx.sender);
     },
     /** Start a run and return its id. The caller authorizes. */
-    start<Name extends keyof Defs & string>(
+    start<Args>(
       ctx: WorkflowCtx,
-      name: Name,
-      args: Infer<Defs[Name]['args']>
+      workflow: WorkflowHandle<Args>,
+      args: Args
     ): bigint {
+      if (!defined.has(workflow.name)) {
+        throw new Error(`${failures.unknownWorkflow}:${workflow.name}`);
+      }
       const run = ctx.db.workflowRun.insert({
         id: 0n,
-        args: { tag: name, value: args },
+        workflow: workflow.name,
+        args: encodeResult(args) ?? 'null',
         status: { tag: 'Running' },
         generation: 0n,
         attempt: 0,
@@ -1260,7 +1305,7 @@ export function client<const Defs extends WorkflowDefinitions>({
         startedBy: ctx.sender,
         startedAt: ctx.timestamp,
         updatedAt: ctx.timestamp,
-      } as WorkflowRunRow);
+      });
       schedule(ctx, run, 0n);
       return run.id;
     },

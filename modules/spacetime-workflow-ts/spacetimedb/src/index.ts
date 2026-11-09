@@ -2,34 +2,7 @@ import { schema, table, t } from 'spacetimedb/server';
 import { Identity, Timestamp } from 'spacetimedb';
 import { client } from '@spacetimedb/workflow';
 
-const workflows = client({
-  workflows: {
-    // Covers retries, rollback, results, sleep, and events.
-    demo: {
-      args: t.object('DemoArgs', { label: t.string(), failTimes: t.u32() }),
-      retry: { maxAttempts: 3, backoffSeconds: 1 },
-    },
-    // Blocks until the recovery test kills the host.
-    crash: {
-      args: t.object('CrashArgs', { label: t.string() }),
-      retry: { maxAttempts: 3, backoffSeconds: 1 },
-      stepTimeoutSeconds: 3,
-    },
-    // Catches a step that gives up, and cleans up in another step.
-    caught: {
-      args: t.object('CaughtArgs', { label: t.string() }),
-      retry: { maxAttempts: 2, backoffSeconds: 1 },
-    },
-    uncaught: { args: t.object('UncaughtArgs', { label: t.string() }) },
-    // Each item waits until all have started, so it only finishes if they overlap.
-    overlap: {
-      args: t.object('OverlapArgs', { label: t.string() }),
-      stepTimeoutSeconds: 30,
-    },
-    // Waits for an event that never arrives, so the test can cancel it.
-    parked: { args: t.object('ParkedArgs', { label: t.string() }) },
-  },
-});
+const workflows = client();
 const { workflowRun, workflowHistory } = workflows.tables;
 
 const stepLog = table(
@@ -57,8 +30,17 @@ function blockUntilHostStops(): never {
   }
 }
 
-export const workflowRunAttempt = workflows.register(spacetimedb, {
-  demo(step, args) {
+export const workflowRunAttempt = workflows.register(spacetimedb);
+
+// Covers retries, rollback, results, sleep, and events.
+const demo = workflows.define(
+  spacetimedb,
+  'demo',
+  {
+    args: t.object('DemoArgs', { label: t.string(), failTimes: t.u32() }),
+    retry: { maxAttempts: 3, backoffSeconds: 1 },
+  },
+  (step, args) => {
     const value = step.tx('flaky', (ctx, run) => {
       ctx.db.stepLog.insert({
         id: 0n,
@@ -83,8 +65,19 @@ export const workflowRunAttempt = workflows.register(spacetimedb, {
         note: `${value.text}:${value.big + 1n}:${value.at instanceof Timestamp}:${value.who instanceof Identity}`,
       });
     });
+  }
+);
+
+// Blocks until the recovery test kills the host.
+const crash = workflows.define(
+  spacetimedb,
+  'crash',
+  {
+    args: t.object('CrashArgs', { label: t.string() }),
+    retry: { maxAttempts: 3, backoffSeconds: 1 },
+    stepTimeoutSeconds: 3,
   },
-  crash(step) {
+  step => {
     step.call('block', (ctx, run) => {
       ctx.withTx(tx => {
         tx.db.stepLog.insert({
@@ -98,8 +91,18 @@ export const workflowRunAttempt = workflows.register(spacetimedb, {
       if (run.attempt === 1) blockUntilHostStops();
     });
     step.tx('after', () => {});
+  }
+);
+
+// Catches a step that gives up, and cleans up in another step.
+const caught = workflows.define(
+  spacetimedb,
+  'caught',
+  {
+    args: t.object('CaughtArgs', { label: t.string() }),
+    retry: { maxAttempts: 2, backoffSeconds: 1 },
   },
-  caught(step) {
+  step => {
     try {
       step.tx('boom', () => {
         throw new Error('boom');
@@ -115,8 +118,18 @@ export const workflowRunAttempt = workflows.register(spacetimedb, {
         });
       });
     }
+  }
+);
+
+// Each item waits until all have started, so it only finishes if they overlap.
+const overlap = workflows.define(
+  spacetimedb,
+  'overlap',
+  {
+    args: t.object('OverlapArgs', { label: t.string() }),
+    stepTimeoutSeconds: 30,
   },
-  overlap(step) {
+  step => {
     const results = step.parallel('overlap', [0, 1, 2], (ctx, item, run) => {
       const started = () =>
         ctx.withTx(
@@ -148,56 +161,69 @@ export const workflowRunAttempt = workflows.register(spacetimedb, {
         note: results.map(r => (r.ok ? r.value : r.error)).join(','),
       });
     });
-  },
-  uncaught(step) {
+  }
+);
+
+const uncaught = workflows.define(
+  spacetimedb,
+  'uncaught',
+  { args: t.object('UncaughtArgs', { label: t.string() }) },
+  step => {
     step.tx('boom', () => {
       throw new Error('boom');
     });
-  },
-  parked(step) {
+  }
+);
+
+// Waits for an event that never arrives, so the test can cancel it.
+const parked = workflows.define(
+  spacetimedb,
+  'parked',
+  { args: t.object('ParkedArgs', { label: t.string() }) },
+  step => {
     step.waitFor('never');
-  },
-});
+  }
+);
 
 export const startDemo = spacetimedb.reducer(
   { label: t.string(), failTimes: t.u32() },
   (ctx, args) => {
-    workflows.start(ctx, 'demo', args);
+    workflows.start(ctx, demo, args);
   }
 );
 
 export const startCrash = spacetimedb.reducer(
   { label: t.string() },
   (ctx, args) => {
-    workflows.start(ctx, 'crash', args);
+    workflows.start(ctx, crash, args);
   }
 );
 
 export const startCaught = spacetimedb.reducer(
   { label: t.string() },
   (ctx, args) => {
-    workflows.start(ctx, 'caught', args);
+    workflows.start(ctx, caught, args);
   }
 );
 
 export const startOverlap = spacetimedb.reducer(
   { label: t.string() },
   (ctx, args) => {
-    workflows.start(ctx, 'overlap', args);
+    workflows.start(ctx, overlap, args);
   }
 );
 
 export const startUncaught = spacetimedb.reducer(
   { label: t.string() },
   (ctx, args) => {
-    workflows.start(ctx, 'uncaught', args);
+    workflows.start(ctx, uncaught, args);
   }
 );
 
 export const startParked = spacetimedb.reducer(
   { label: t.string() },
   (ctx, args) => {
-    workflows.start(ctx, 'parked', args);
+    workflows.start(ctx, parked, args);
   }
 );
 

@@ -37,39 +37,12 @@ let onCall: () => void = () => {};
 
 const logOf = (ctx: unknown) => (ctx as { appLog: string[] }).appLog;
 
-const workflows = client({
-  workflows: {
-    chain: { args: Args },
-    flaky: { args: Args, retry: { maxAttempts: 3, backoffSeconds: 2 } },
-    rejected: { args: Args, retry: { maxAttempts: 3, backoffSeconds: 1 } },
-    caught: { args: Args },
-    swallows: { args: Args },
-    uncaught: { args: Args },
-    plainThrow: { args: Args },
-    waits: { args: Args },
-    slowCall: {
-      args: Args,
-      retry: { maxAttempts: 2, backoffSeconds: 1 },
-      stepTimeoutSeconds: 5,
-    },
-    slowCallOnce: { args: Args, stepTimeoutSeconds: 5 },
-    lostTx: { args: Args, stepTimeoutSeconds: 5 },
-    changing: { args: Args },
-    results: { args: Args },
-    overLimit: { args: Args },
-    loops: { args: Args },
-    fanOut: {
-      args: Args,
-      retry: { maxAttempts: 2, backoffSeconds: 1 },
-      stepTimeoutSeconds: 5,
-    },
-    emptyFanOut: { args: Args },
-    wideFanOut: { args: Args },
-  },
-});
+const workflows = client();
+const db = schema({ ...workflows.tables });
+const workflowRunAttempt = workflows.register(db);
 
-const workflowRunAttempt = workflows.register(schema({ ...workflows.tables }), {
-  chain(step, args) {
+const w = {
+  chain: workflows.define(db, 'chain', { args: Args }, (step, args) => {
     starts++;
     const one = step.tx('one', ctx => {
       logOf(ctx).push('one');
@@ -83,21 +56,31 @@ const workflowRunAttempt = workflows.register(schema({ ...workflows.tables }), {
     step.tx('three', ctx => {
       logOf(ctx).push(`three:${two}`);
     });
-  },
-  flaky(step, args) {
-    step.tx('attempt', (ctx, run) => {
-      logOf(ctx).push(`write:${run.attempt}`);
-      keys.push(run.idempotencyKey);
-      if (run.attempt <= args.count) throw new Error('x'.repeat(3000));
-    });
-    step.tx('after', () => {});
-  },
-  rejected(step) {
-    step.tx('attempt', () => {
-      throw new SenderError('order.not_found');
-    });
-  },
-  caught(step) {
+  }),
+  flaky: workflows.define(
+    db,
+    'flaky',
+    { args: Args, retry: { maxAttempts: 3, backoffSeconds: 2 } },
+    (step, args) => {
+      step.tx('attempt', (ctx, run) => {
+        logOf(ctx).push(`write:${run.attempt}`);
+        keys.push(run.idempotencyKey);
+        if (run.attempt <= args.count) throw new Error('x'.repeat(3000));
+      });
+      step.tx('after', () => {});
+    }
+  ),
+  rejected: workflows.define(
+    db,
+    'rejected',
+    { args: Args, retry: { maxAttempts: 3, backoffSeconds: 1 } },
+    step => {
+      step.tx('attempt', () => {
+        throw new SenderError('order.not_found');
+      });
+    }
+  ),
+  caught: workflows.define(db, 'caught', { args: Args }, step => {
     try {
       step.tx('attempt', () => {
         throw new Error('broke');
@@ -110,9 +93,9 @@ const workflowRunAttempt = workflows.register(schema({ ...workflows.tables }), {
         logOf(ctx).push(`undo:${failed}:${error.message}`);
       });
     }
-  },
+  }),
   // Swallowing the pause signal must not let the function run on.
-  swallows(step) {
+  swallows: workflows.define(db, 'swallows', { args: Args }, step => {
     try {
       step.sleep(30);
     } catch {
@@ -122,48 +105,67 @@ const workflowRunAttempt = workflows.register(schema({ ...workflows.tables }), {
     step.tx('late', ctx => {
       logOf(ctx).push('late');
     });
-  },
-  uncaught(step) {
+  }),
+  uncaught: workflows.define(db, 'uncaught', { args: Args }, step => {
     step.tx('attempt', () => {
       throw new Error('broke');
     });
-  },
-  plainThrow() {
+  }),
+  plainThrow: workflows.define(db, 'plainThrow', { args: Args }, () => {
     throw new Error('bug in the function');
-  },
-  waits(step) {
+  }),
+  waits: workflows.define(db, 'waits', { args: Args }, step => {
     step.waitFor('go');
     step.tx('resumed', ctx => {
       logOf(ctx).push('resumed');
     });
-  },
-  slowCall(step) {
-    step.call('call', (_ctx, run) => {
-      appLog.push(`call:${run.attempt}`);
-      keys.push(run.idempotencyKey);
-      if (run.attempt === 1) onCall();
-    });
-    step.tx('after', ctx => {
-      logOf(ctx).push('after');
-    });
-  },
-  slowCallOnce(step) {
-    step.call('call', () => {
-      onCall();
-    });
-  },
-  lostTx(step) {
-    step.sleep(1);
-    step.tx('work', ctx => {
-      logOf(ctx).push('work');
-    });
-  },
-  changing(step) {
+  }),
+  slowCall: workflows.define(
+    db,
+    'slowCall',
+    {
+      args: Args,
+      retry: { maxAttempts: 2, backoffSeconds: 1 },
+      stepTimeoutSeconds: 5,
+    },
+    step => {
+      step.call('call', (_ctx, run) => {
+        appLog.push(`call:${run.attempt}`);
+        keys.push(run.idempotencyKey);
+        if (run.attempt === 1) onCall();
+      });
+      step.tx('after', ctx => {
+        logOf(ctx).push('after');
+      });
+    }
+  ),
+  slowCallOnce: workflows.define(
+    db,
+    'slowCallOnce',
+    { args: Args, stepTimeoutSeconds: 5 },
+    step => {
+      step.call('call', () => {
+        onCall();
+      });
+    }
+  ),
+  lostTx: workflows.define(
+    db,
+    'lostTx',
+    { args: Args, stepTimeoutSeconds: 5 },
+    step => {
+      step.sleep(1);
+      step.tx('work', ctx => {
+        logOf(ctx).push('work');
+      });
+    }
+  ),
+  changing: workflows.define(db, 'changing', { args: Args }, step => {
     step.tx('one', () => {});
     step.sleep(1);
     step.tx('two', () => {});
-  },
-  results(step) {
+  }),
+  results: workflows.define(db, 'results', { args: Args }, step => {
     const value = step.tx('value', () => ({
       big: 12345678901234567890n,
       list: [1, 'two', { nested: 3n }],
@@ -189,8 +191,8 @@ const workflowRunAttempt = workflows.register(schema({ ...workflows.tables }), {
       assert.equal(value.id.asBigInt(), 9n);
       assert.deepEqual(value.bytes, new Uint8Array([0, 15, 255]));
     });
-  },
-  overLimit(step) {
+  }),
+  overLimit: workflows.define(db, 'overLimit', { args: Args }, step => {
     try {
       step.tx('huge', () => 'x'.repeat(70_000));
     } catch (error) {
@@ -209,62 +211,75 @@ const workflowRunAttempt = workflows.register(schema({ ...workflows.tables }), {
         appLog.push((error as Error).message);
       }
     }
-  },
-  loops(step) {
+  }),
+  loops: workflows.define(db, 'loops', { args: Args }, step => {
     for (;;) step.tx('again', () => {});
-  },
+  }),
   // Item "flaky" fails once, item "bad" always fails, item "slow" calls onCall.
-  fanOut(step, args) {
-    starts++;
-    const before = step.tx('before', () => args.count);
-    const results = step.parallel(
-      'fetch',
-      ['a', 'flaky', 'bad', 'slow'],
-      (_ctx, item, run) => {
-        appLog.push(`${item}:${run.attempt}`);
-        keys.push(run.idempotencyKey);
-        if (item === 'flaky' && run.attempt === 1) throw new Error('flaky');
-        if (item === 'bad') throw new SenderError('bad.item');
-        if (item === 'slow' && run.attempt === 1) onCall();
-        return { item, big: BigInt(before) + 1n };
-      }
-    );
-    step.tx('after', ctx => {
-      logOf(ctx).push(
-        results
-          .map(r => (r.ok ? `${r.value.item}:${r.value.big}` : r.error))
-          .join(',')
+  fanOut: workflows.define(
+    db,
+    'fanOut',
+    {
+      args: Args,
+      retry: { maxAttempts: 2, backoffSeconds: 1 },
+      stepTimeoutSeconds: 5,
+    },
+    (step, args) => {
+      starts++;
+      const before = step.tx('before', () => args.count);
+      const results = step.parallel(
+        'fetch',
+        ['a', 'flaky', 'bad', 'slow'],
+        (_ctx, item, run) => {
+          appLog.push(`${item}:${run.attempt}`);
+          keys.push(run.idempotencyKey);
+          if (item === 'flaky' && run.attempt === 1) throw new Error('flaky');
+          if (item === 'bad') throw new SenderError('bad.item');
+          if (item === 'slow' && run.attempt === 1) onCall();
+          return { item, big: BigInt(before) + 1n };
+        }
       );
-    });
-  },
-  emptyFanOut(step) {
+      step.tx('after', ctx => {
+        logOf(ctx).push(
+          results
+            .map(r => (r.ok ? `${r.value.item}:${r.value.big}` : r.error))
+            .join(',')
+        );
+      });
+    }
+  ),
+  emptyFanOut: workflows.define(db, 'emptyFanOut', { args: Args }, step => {
     const results = step.parallel('none', [] as string[], () => 1);
     step.tx('after', ctx => {
       logOf(ctx).push(`empty:${results.length}`);
     });
-  },
-  wideFanOut(step) {
+  }),
+  wideFanOut: workflows.define(db, 'wideFanOut', { args: Args }, step => {
     step.parallel(
       'wide',
       Array.from({ length: 33 }, (_, i) => i),
       () => 1
     );
-  },
-});
+  }),
+};
 
-// Steps and their results are typed.
+// Steps, results, and arguments are typed.
 {
-  const typed = client({ workflows: { only: { args: Args } } });
-  typed.register(schema({ ...typed.tables }), {
-    only(step, args) {
-      const count: number = step.tx('value', () => args.count);
-      // @ts-expect-error A step's result keeps its type.
-      const wrong: string = step.tx('value', () => args.count);
-      void [count, wrong];
-    },
+  const typed = client();
+  const typedDb = schema({ ...typed.tables });
+  const only = typed.define(typedDb, 'only', { args: Args }, (step, args) => {
+    const count: number = step.tx('value', () => args.count);
+    // @ts-expect-error A step's result keeps its type.
+    const wrong: string = step.tx('value', () => args.count);
+    void [count, wrong];
   });
-  // @ts-expect-error Every workflow needs a function.
-  typed.register(schema({ ...typed.tables }), {});
+  void ((ctx: WorkflowCtx) =>
+    // @ts-expect-error Arguments must match the workflow.
+    typed.start(ctx, only, { count: 'one' }));
+  assert.throws(
+    () => typed.define(typedDb, 'only', { args: Args }, () => {}),
+    /workflow\.invalid_definition:only:duplicate_name/
+  );
 }
 
 const runs = new Map<bigint, Run>();
@@ -466,7 +481,7 @@ assert.ok(admins.has(admin.toHexString()));
 // function only reruns after the sleep, not after every step.
 {
   reset();
-  const id = workflows.start(tx, 'chain', { count: 0 });
+  const id = workflows.start(tx, w.chain, { count: 0 });
   assert.equal(run(id).startedBy, admin);
   runDue();
   assert.deepEqual(appLog, ['one', 'two']);
@@ -496,7 +511,7 @@ assert.ok(admins.has(admin.toHexString()));
 // Results survive a rerun, including bigints and undefined.
 {
   reset();
-  const id = workflows.start(tx, 'results', { count: 0 });
+  const id = workflows.start(tx, w.results, { count: 0 });
   runDue();
   advance(1n);
   assert.deepEqual(appLog, ['12345678901234567890:3:undefined']);
@@ -506,7 +521,7 @@ assert.ok(admins.has(admin.toHexString()));
 // A failed attempt rolls back its writes, then retries with growing backoff.
 {
   reset();
-  const id = workflows.start(tx, 'flaky', { count: 2 });
+  const id = workflows.start(tx, w.flaky, { count: 2 });
   runDue();
   assert.deepEqual(appLog, []);
   assert.equal(run(id).attempt, 1);
@@ -529,7 +544,7 @@ assert.ok(admins.has(admin.toHexString()));
 // Running out of attempts fails the run if the function does not catch it.
 {
   reset();
-  const id = workflows.start(tx, 'flaky', { count: 3 });
+  const id = workflows.start(tx, w.flaky, { count: 3 });
   advance(0n);
   advance(2n);
   advance(4n);
@@ -542,7 +557,7 @@ assert.ok(admins.has(admin.toHexString()));
 // A SenderError means the input is bad, so it does not retry.
 {
   reset();
-  const id = workflows.start(tx, 'rejected', { count: 0 });
+  const id = workflows.start(tx, w.rejected, { count: 0 });
   runDue();
   assert.equal(statusOf(id), 'Failed');
   assert.equal(run(id).error, 'order.not_found');
@@ -552,7 +567,7 @@ assert.ok(admins.has(admin.toHexString()));
 // A function can catch a step that gave up. The same error comes back on a rerun.
 {
   reset();
-  const id = workflows.start(tx, 'caught', { count: 0 });
+  const id = workflows.start(tx, w.caught, { count: 0 });
   runDue();
   assert.equal(statusOf(id), 'Running');
   advance(1n);
@@ -564,7 +579,7 @@ assert.ok(admins.has(admin.toHexString()));
 // Catching the pause signal does not keep the function going.
 {
   reset();
-  const id = workflows.start(tx, 'swallows', { count: 0 });
+  const id = workflows.start(tx, w.swallows, { count: 0 });
   runDue();
   assert.equal(statusOf(id), 'Running', 'a swallowed signal must not finish');
   assert.equal(firesOf(id).length, 2);
@@ -578,12 +593,12 @@ assert.ok(admins.has(admin.toHexString()));
 // Anything the function does not catch fails the run.
 {
   reset();
-  const id = workflows.start(tx, 'uncaught', { count: 0 });
+  const id = workflows.start(tx, w.uncaught, { count: 0 });
   runDue();
   assert.equal(statusOf(id), 'Failed');
   assert.equal(run(id).error, 'broke');
 
-  const thrower = workflows.start(tx, 'plainThrow', { count: 0 });
+  const thrower = workflows.start(tx, w.plainThrow, { count: 0 });
   runDue();
   assert.equal(statusOf(thrower), 'Failed');
   assert.equal(run(thrower).error, 'bug in the function');
@@ -592,7 +607,7 @@ assert.ok(admins.has(admin.toHexString()));
 // A waiting run holds no scheduled work and resumes on its event.
 {
   reset();
-  const id = workflows.start(tx, 'waits', { count: 0 });
+  const id = workflows.start(tx, w.waits, { count: 0 });
   runDue();
   assert.equal(statusOf(id), 'Waiting');
   assert.equal(run(id).waitingFor, 'go');
@@ -613,7 +628,7 @@ assert.ok(admins.has(admin.toHexString()));
 // An event that arrives before the wait is kept, and pending events are capped.
 {
   reset();
-  const id = workflows.start(tx, 'waits', { count: 0 });
+  const id = workflows.start(tx, w.waits, { count: 0 });
   assert.equal(workflows.signal(tx, id, 'go'), true);
   assert.equal(workflows.signal(tx, id, 'go'), true);
   assert.deepEqual(run(id).pendingEvents, ['go']);
@@ -622,7 +637,7 @@ assert.ok(admins.has(admin.toHexString()));
   assert.equal(statusOf(id), 'Completed');
   assert.deepEqual(run(id).pendingEvents, []);
 
-  const capped = workflows.start(tx, 'waits', { count: 0 });
+  const capped = workflows.start(tx, w.waits, { count: 0 });
   for (let i = 0; i < 32; i++) workflows.signal(tx, capped, `event${i}`);
   assert.throws(() => workflows.signal(tx, capped, 'one-too-many'), {
     message: errors.tooManyEvents,
@@ -633,7 +648,7 @@ assert.ok(admins.has(admin.toHexString()));
 // Cancelling removes scheduled work, and only applies to active runs.
 {
   reset();
-  const id = workflows.start(tx, 'chain', { count: 0 });
+  const id = workflows.start(tx, w.chain, { count: 0 });
   assert.equal(workflows.cancel(tx, id), true);
   assert.equal(statusOf(id), 'Cancelled');
   assert.equal(firesOf(id).length, 0);
@@ -645,7 +660,7 @@ assert.ok(admins.has(admin.toHexString()));
 // A result that arrives after cancelling is ignored, and later steps do not run.
 {
   reset();
-  const id = workflows.start(tx, 'slowCall', { count: 0 });
+  const id = workflows.start(tx, w.slowCall, { count: 0 });
   onCall = () => workflows.cancel(tx, id);
   runDue();
   assert.equal(statusOf(id), 'Cancelled');
@@ -657,7 +672,7 @@ assert.ok(admins.has(admin.toHexString()));
 // An attempt that outlives its timeout is retried. Its late result is ignored.
 {
   reset();
-  const id = workflows.start(tx, 'slowCall', { count: 0 });
+  const id = workflows.start(tx, w.slowCall, { count: 0 });
   onCall = () => {
     onCall = () => {};
     advance(5n);
@@ -679,7 +694,7 @@ assert.ok(admins.has(admin.toHexString()));
 // A lost `call` with no attempts left gives up, which fails an uncaught run.
 {
   reset();
-  const id = workflows.start(tx, 'slowCallOnce', { count: 0 });
+  const id = workflows.start(tx, w.slowCallOnce, { count: 0 });
   onCall = () => {
     onCall = () => {};
     advance(5n);
@@ -692,7 +707,7 @@ assert.ok(admins.has(admin.toHexString()));
 // A lost `tx` step never committed, so it repeats even with one attempt.
 {
   reset();
-  const id = workflows.start(tx, 'lostTx', { count: 0 });
+  const id = workflows.start(tx, w.lostTx, { count: 0 });
   runDue();
   now += SECOND;
   const row = run(id);
@@ -720,7 +735,7 @@ assert.ok(admins.has(admin.toHexString()));
 // attempt is counted as lost.
 {
   reset();
-  const id = workflows.start(tx, 'slowCall', { count: 0 });
+  const id = workflows.start(tx, w.slowCall, { count: 0 });
   const [first, second] = firesOf(id);
   fires.delete(first.scheduledId);
   assert.ok(second);
@@ -735,7 +750,7 @@ assert.ok(admins.has(admin.toHexString()));
 // Code that no longer matches the saved steps fails the run with a clear error.
 {
   reset();
-  const id = workflows.start(tx, 'changing', { count: 0 });
+  const id = workflows.start(tx, w.changing, { count: 0 });
   runDue();
   const saved = journalOf(id)[0];
   journal.set(saved.id, { ...saved, name: 'renamed' });
@@ -747,7 +762,7 @@ assert.ok(admins.has(admin.toHexString()));
 // Oversized, async, and unsupported results give up without retrying.
 {
   reset();
-  const id = workflows.start(tx, 'overLimit', { count: 0 });
+  const id = workflows.start(tx, w.overLimit, { count: 0 });
   runDue();
   assert.deepEqual(appLog, [
     failures.resultTooLarge,
@@ -762,7 +777,7 @@ assert.ok(admins.has(admin.toHexString()));
 // A function that never stops adding steps is stopped.
 {
   reset();
-  const id = workflows.start(tx, 'loops', { count: 0 });
+  const id = workflows.start(tx, w.loops, { count: 0 });
   runDue();
   assert.equal(statusOf(id), 'Failed');
   assert.equal(run(id).error, failures.tooManySteps);
@@ -772,7 +787,7 @@ assert.ok(admins.has(admin.toHexString()));
 // Only the scheduler can run an attempt.
 {
   reset();
-  const id = workflows.start(tx, 'chain', { count: 0 });
+  const id = workflows.start(tx, w.chain, { count: 0 });
   const [fire] = firesOf(id);
   assert.throws(() => workflowRunAttempt(ctx as never, { arg: fire }), {
     message: errors.notAuthorized,
@@ -788,7 +803,7 @@ assert.ok(admins.has(admin.toHexString()));
     addWorkflowAdminIdentity,
     removeWorkflowAdminIdentity,
   } = workflows.reducers;
-  const id = workflows.start(tx, 'waits', { count: 0 });
+  const id = workflows.start(tx, w.waits, { count: 0 });
   sender = stranger;
   assert.throws(() => cancelWorkflowRun.handler(tx, { runId: id }), {
     message: errors.notAuthorized,
@@ -810,13 +825,13 @@ assert.ok(admins.has(admin.toHexString()));
 // Finished runs and history stay capped. Active runs are not removed.
 {
   reset();
-  const active = workflows.start(tx, 'waits', { count: 0 });
+  const active = workflows.start(tx, w.waits, { count: 0 });
   runDue();
-  const first = workflows.start(tx, 'chain', { count: 0 });
+  const first = workflows.start(tx, w.chain, { count: 0 });
   workflows.cancel(tx, first);
   for (let i = 0; i < 1100; i++) {
     now += SECOND;
-    workflows.cancel(tx, workflows.start(tx, 'chain', { count: 0 }));
+    workflows.cancel(tx, workflows.start(tx, w.chain, { count: 0 }));
   }
   assert.equal(finished.size, 1000);
   assert.equal(runs.has(first), false);
@@ -824,7 +839,7 @@ assert.ok(admins.has(admin.toHexString()));
 
   for (let i = 0; i < 1100; i++) {
     now += SECOND;
-    workflows.start(tx, 'rejected', { count: 0 });
+    workflows.start(tx, w.rejected, { count: 0 });
     runDue();
   }
   assert.equal(history.size, 1000);
@@ -834,7 +849,7 @@ assert.ok(admins.has(admin.toHexString()));
 // item order. Failures are returned, not thrown, and the run carries on.
 {
   reset();
-  const id = workflows.start(tx, 'fanOut', { count: 41 });
+  const id = workflows.start(tx, w.fanOut, { count: 41 });
   const startsBefore = starts;
   now += SECOND;
   // Run only the main fire: it saves `before`, then hands off to the items.
@@ -892,7 +907,7 @@ assert.ok(admins.has(admin.toHexString()));
 // Cancelling during a parallel step drops the items and their late results.
 {
   reset();
-  const id = workflows.start(tx, 'fanOut', { count: 0 });
+  const id = workflows.start(tx, w.fanOut, { count: 0 });
   onCall = () => workflows.cancel(tx, id);
   runDue();
   assert.equal(statusOf(id), 'Cancelled');
@@ -903,12 +918,12 @@ assert.ok(admins.has(admin.toHexString()));
 // No items finishes straight away. Too many items fails the run.
 {
   reset();
-  const empty = workflows.start(tx, 'emptyFanOut', { count: 0 });
+  const empty = workflows.start(tx, w.emptyFanOut, { count: 0 });
   runDue();
   assert.deepEqual(appLog, ['empty:0']);
   assert.equal(statusOf(empty), 'Completed');
 
-  const wide = workflows.start(tx, 'wideFanOut', { count: 0 });
+  const wide = workflows.start(tx, w.wideFanOut, { count: 0 });
   runDue();
   assert.equal(statusOf(wide), 'Failed');
   assert.equal(run(wide).error, failures.tooManyBranches);
@@ -917,7 +932,7 @@ assert.ok(admins.has(admin.toHexString()));
 // A host cannot wake a parallel step by sending its internal event name.
 {
   reset();
-  const id = workflows.start(tx, 'waits', { count: 0 });
+  const id = workflows.start(tx, w.waits, { count: 0 });
   assert.throws(() => workflows.signal(tx, id, 'parallel:fetch'), {
     message: errors.invalidEvent,
   });
@@ -932,10 +947,23 @@ for (const [detail, def] of [
   ['step_timeout_seconds', { stepTimeoutSeconds: 0 }],
 ] as const) {
   assert.throws(
-    () =>
-      client({
-        workflows: { bad: { args: Args, ...def } as never },
-      }),
+    () => workflows.define(db, 'bad', { args: Args, ...def }, () => {}),
     { message: `workflow.invalid_definition:bad:${detail}` }
   );
+}
+assert.throws(() => workflows.define(db, '', { args: Args }, () => {}), {
+  message: 'workflow.invalid_definition::name',
+});
+
+// A run whose workflow was removed from the code fails with a clear error.
+{
+  reset();
+  const id = workflows.start(tx, w.waits, { count: 0 });
+  runs.set(id, { ...run(id), workflow: 'removed' });
+  runDue();
+  assert.equal(statusOf(id), 'Failed');
+  assert.equal(run(id).error, `${failures.unknownWorkflow}:removed`);
+  assert.throws(() => workflows.start(tx, { name: 'other' }, {}), {
+    message: `${failures.unknownWorkflow}:other`,
+  });
 }

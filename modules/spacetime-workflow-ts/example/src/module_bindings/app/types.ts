@@ -41,13 +41,6 @@ export type MyRuns = __Infer<typeof MyRuns>;
 export const MySteps = __t.object("MySteps", {});
 export type MySteps = __Infer<typeof MySteps>;
 
-export const ResearchArgs = __t.object("ResearchArgs", {
-  dossierId: __t.u64(),
-  question: __t.string(),
-  everySeconds: __t.u32(),
-});
-export type ResearchArgs = __Infer<typeof ResearchArgs>;
-
 export const Source = __t.object("Source", {
   title: __t.string(),
   url: __t.string(),
@@ -74,14 +67,6 @@ export const WorkflowAdminIdentity = __t.object("WorkflowAdminIdentity", {
   addedAt: __t.timestamp(),
 });
 export type WorkflowAdminIdentity = __Infer<typeof WorkflowAdminIdentity>;
-
-// The tagged union or sum type for the algebraic type `WorkflowArgs`.
-export const WorkflowArgs = __t.enum("WorkflowArgs", {
-  get Research() {
-    return ResearchArgs;
-  },
-});
-export type WorkflowArgs = __Infer<typeof WorkflowArgs>;
 
 export const WorkflowBranch = __t.object("WorkflowBranch", {
   id: __t.u64(),
@@ -143,9 +128,8 @@ export type WorkflowJournal = __Infer<typeof WorkflowJournal>;
 
 export const WorkflowRun = __t.object("WorkflowRun", {
   id: __t.u64(),
-  get args() {
-    return WorkflowArgs;
-  },
+  workflow: __t.string(),
+  args: __t.string(),
   get status() {
     return WorkflowStatus;
   },

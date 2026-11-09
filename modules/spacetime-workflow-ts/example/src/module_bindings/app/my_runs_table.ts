@@ -10,16 +10,14 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 import {
-  WorkflowArgs,
   WorkflowStatus,
 } from "./types";
 
 
 export default __t.row({
   id: __t.u64().primaryKey(),
-  get args() {
-    return WorkflowArgs;
-  },
+  workflow: __t.string(),
+  args: __t.string(),
   get status() {
     return WorkflowStatus;
   },
