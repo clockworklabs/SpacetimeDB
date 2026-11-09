@@ -1,6 +1,6 @@
 ---
 name: mcp
-description: Operate a running SpacetimeDB database through MCP tools rather than the CLI - list databases, read schemas, run SQL, and call reducers. Use when the client exposes spacetimedb MCP tools and the task is to inspect or change data in a live database.
+description: Operate a running SpacetimeDB database through MCP tools rather than the CLI - list databases, read schemas, run SQL, and call reducers or procedures. Use when the client exposes spacetimedb MCP tools and the task is to inspect or change data in a live database.
 license: Apache-2.0
 metadata:
   author: clockworklabs
@@ -15,6 +15,7 @@ triggers:
   - list my databases
   - read the schema
   - call a reducer
+  - call a procedure
   - use the MCP server
   - spacetimedb MCP
 ---
@@ -33,7 +34,7 @@ Check the tool list before deciding they are missing. The tools are passive: the
 
 | Task | Use |
 | --- | --- |
-| List databases, read a schema, run SQL, call a reducer | **MCP tools** |
+| List databases, read a schema, run SQL, call a reducer or procedure | **MCP tools** |
 | init, build, publish, generate, start, logs | **`spacetime` CLI** (see the `cli` skill) |
 
 The MCP tools only operate a database that already exists. They cannot scaffold a project, compile a
@@ -46,13 +47,15 @@ destructive ones. When no MCP client is attached, the equivalent CLI commands ar
 | Tool | Arguments | Returns |
 | --- | --- | --- |
 | `list_databases` | none | the databases **you own**, with identity and names |
-| `get_schema` | `database` | tables and reducers as JSON |
+| `get_schema` | `database` | tables, reducers and procedures as JSON, procedures under `misc_exports` |
 | `sql` | `database`, `sql`, optional `confirmed` | rows as JSON |
-| `call` | `database`, `reducer`, optional `args` (JSON array) | the reducer outcome |
+| `call` | `database`, `reducer` (a reducer or procedure name), optional `args` (JSON array), optional `confirmed` | the reducer outcome, or the procedure's return value as JSON |
 | `ping` | optional `message` | a health check |
 
 `list_databases` lists only your own databases, so it is empty for an anonymous identity. Start there
 when you do not know the database name.
+
+`call` tries the name as a reducer first and as a procedure when no reducer matches.
 
 ## Two shapes, so read `tools/list` first
 
@@ -81,8 +84,9 @@ database from the config; omitting the database argument still means host-wide m
 The tools run with your identity, exactly as the HTTP API does. The model is the same as everywhere
 else, so the `concepts` skill still governs:
 
-1. **Reducers are the write path.** Use `call` to change data. It runs in a transaction that either
-   fully commits or fully rolls back.
+1. **Reducers are the write path.** Use `call` to change data. A reducer runs in a transaction that
+   either fully commits or fully rolls back. A procedure runs its own transactions and may call
+   external services, so a failed procedure can leave some of its work in place.
 2. **SQL writes require ownership.** `sql` reads public tables; writing through it needs you to own
    the database. Prefer `call`.
 3. **Private tables are not client-readable.** `get_schema` still shows a private table's
@@ -98,9 +102,13 @@ list_databases {}
 get_schema     { "database": "mydb" }
 sql            { "database": "mydb", "sql": "SELECT * FROM message" }
 call           { "database": "mydb", "reducer": "send_message", "args": ["hello"] }
+call           { "database": "mydb", "reducer": "add_two_numbers", "args": [1, 2] }
 ```
 
-Pass `"confirmed": true` to `sql` to wait for a durably confirmed read.
+The second `call` names a procedure, so its result is the return value, `3`, as JSON.
+
+Pass `"confirmed": true` to `sql` to wait for a durably confirmed read. For `call`, `confirmed`
+waits for the call's transactions to be durable and defaults to `true`.
 
 ## Troubleshooting
 
