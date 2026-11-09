@@ -333,6 +333,30 @@ public readonly struct NextReconnect
 
 Retry information supplied to the connection-error and disconnect callbacks. `Attempt` starts at 1 and `Delay` is the scheduled wait before that attempt. A nullable `NextReconnect` value of `null` means no retry is scheduled. A server response indicating that the previous session is still closing retains the current attempt number and uses the initial backoff delay.
 
+#### Method `WithPingInterval`
+
+```csharp
+class DbConnectionBuilder
+{
+    public DbConnectionBuilder<DbConnection> WithPingInterval(TimeSpan interval);
+}
+```
+
+Set how often the connection pings the server to measure [`stats.Network`](#property-statsnetwork). The first ping is sent as soon as the connection is established, then one every `interval`, checked on each `FrameTick()`. Defaults to 1 second. `TimeSpan.Zero` disables periodic pinging, which leaves `stats.Network` null unless [`Ping()`](#method-ping) is called. Throws `ArgumentOutOfRangeException` if `interval` is negative.
+
+#### Method `WithPingTimeout`
+
+```csharp
+#if UNITY_WEBGL
+class DbConnectionBuilder
+{
+    public DbConnectionBuilder<DbConnection> WithPingTimeout(TimeSpan timeout);
+}
+#endif
+```
+
+Only available when building for Unity WebGL. Set how long pings may go unanswered before the connection is treated as lost. Defaults to 10 seconds. A silently failed network closes the connection once the oldest unanswered ping is older than this, or than a few round-trip timeouts on a slow link, and another ping has been sent since. It reconnects if [automatic reconnect](#method-withautomaticreconnect) is enabled, and disconnects with an error otherwise. The check runs once per ping interval, and is off when periodic pinging is disabled. See [Detecting a Dead Connection](./00300-connection.md#detecting-a-dead-connection). Throws `ArgumentOutOfRangeException` if `timeout` is not positive.
+
 #### Method `Build`
 
 ```csharp
@@ -809,6 +833,49 @@ class DbConnection
 ```
 
 `true` while an automatically reconnecting connection that previously succeeded is waiting for a retry, obtaining a token, or connecting again. It is false during the initial connection, after a successful reconnect handshake, and after a terminal failure or explicit `Disconnect()`. Continue ticking the connection while this property is true.
+
+#### Property `stats.Network`
+
+```csharp
+class Stats
+{
+    public NetworkStats? Network { get; }
+}
+
+public sealed class NetworkStats
+{
+    public TimeSpan Rtt { get; }
+    public TimeSpan RttLatest { get; }
+    public TimeSpan RttMin { get; }
+    public TimeSpan Jitter { get; }
+    public Timestamp ServerNow { get; }
+    public Timestamp ServerTimeLatest { get; }
+    public TimeSpan PongWait { get; }
+}
+```
+
+A snapshot of the connection's network statistics, measured by periodically pinging the server, read from the connection's `stats` object as `conn.stats.Network`. Null until the first ping is answered, after the connection closes or is lost, and always when pinging is disabled with [`WithPingInterval(TimeSpan.Zero)`](#method-withpinginterval). Each read returns a fresh snapshot. `ServerNow` estimates the server's current time on the same clock as a reducer's `ctx.Timestamp`; it adjusts gradually and never goes backwards. See [Connection Metrics](./00300-connection.md#connection-metrics) for what each property means.
+
+#### Method `Ping`
+
+```csharp
+class DbConnection
+{
+    public Task<PingResult> Ping();
+}
+
+public sealed class PingResult
+{
+    public TimeSpan Rtt { get; }
+    public TimeSpan RoundTrip { get; }
+    public TimeSpan ServerHold { get; }
+    public Timestamp ServerReceiveTime { get; }
+    public long SentAt { get; }
+    public long ReceivedAt { get; }
+}
+```
+
+Send a single ping now and complete with the timings from its reply. `Rtt` is `RoundTrip - ServerHold`, floored at zero. `SentAt` and `ReceivedAt` are `Stopwatch.GetTimestamp()` readings. The sample also feeds [`stats.Network`](#property-statsnetwork), and this works even with periodic pinging disabled. Like a one-off query, the task completes on a background thread, without waiting for `FrameTick()`. Fails immediately if the connection isn't established, and fails if the connection closes before the reply arrives.
 
 ## Type `EventContext`
 

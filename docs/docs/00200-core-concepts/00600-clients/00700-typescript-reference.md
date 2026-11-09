@@ -340,6 +340,26 @@ A recognized rejection of the retained token forces a refresh on the next attemp
 
 Refresh happens before reconnecting, not on a periodic timer while connected. The SDK retains tokens in memory; persistence across page reloads remains the application's responsibility. If your application persists tokens, save the token from both `onConnect` and `onAutomaticReconnect` so that successful reconnects also save refreshed credentials.
 
+#### Method `withPingInterval`
+
+```typescript
+class DbConnectionBuilder {
+  public withPingInterval(intervalMs: number): DbConnectionBuilder;
+}
+```
+
+Set how often the connection pings the server to measure [`networkStats`](#field-networkstats), in milliseconds. The first ping is sent as soon as the connection is established. Defaults to `1000`. `0` disables periodic pinging, which leaves `networkStats` `undefined` unless [`ping()`](#method-ping) is called, and turns off the dead-connection check described under [`withPingTimeout`](#method-withpingtimeout). Throws a `RangeError` if `intervalMs` is negative or not an integer.
+
+#### Method `withPingTimeout`
+
+```typescript
+class DbConnectionBuilder {
+  public withPingTimeout(timeoutMs: number): DbConnectionBuilder;
+}
+```
+
+Set how long pings may go unanswered before the connection is treated as lost, in milliseconds. Defaults to `10000`. A silently failed network closes the connection with an error once the oldest unanswered ping is older than this, or than a few round-trip timeouts on a slow link, and another ping has been sent since. It reconnects if [`withAutomaticReconnect`](#method-withautomaticreconnect) is set, and disconnects otherwise. The check runs once per ping interval. See [Detecting a Dead Connection](./00300-connection.md#detecting-a-dead-connection). Throws a `RangeError` if `timeoutMs` is not a positive integer.
+
 #### Method `build`
 
 ```typescript
@@ -703,6 +723,45 @@ class DbConnection {
 ```
 
 `true` after losing an established connection while the SDK is waiting for or attempting a reconnect. It is `false` during the initial connection, after a successful reconnect, and after the connection ends. This field is on `DbConnection`, not the general `DbContext` interface.
+
+#### Field `networkStats`
+
+```typescript
+class DbConnection {
+  readonly networkStats: NetworkStats | undefined;
+}
+
+type NetworkStats = Readonly<{
+  rtt: number;
+  rttLatest: number;
+  rttMin: number;
+  jitter: number;
+  serverNow: Timestamp;
+  serverTimeLatest: Timestamp;
+  pongWait: number;
+}>;
+```
+
+A snapshot of the connection's network statistics, measured by periodically pinging the server. Durations are in milliseconds. `undefined` until the first ping is answered, after the connection closes, and always when pinging is disabled with [`withPingInterval(0)`](#method-withpinginterval). Each access returns a fresh snapshot. `serverNow` estimates the server's current time on the same clock as a reducer's `ctx.timestamp`; it adjusts gradually and never goes backwards. See [Connection Metrics](./00300-connection.md#connection-metrics) for what each field means.
+
+#### Method `ping`
+
+```typescript
+class DbConnection {
+  ping(): Promise<PingResult>;
+}
+
+type PingResult = Readonly<{
+  rtt: number;
+  roundTrip: number;
+  serverHold: number;
+  serverReceiveTime: Timestamp;
+  sentAt: number;
+  receivedAt: number;
+}>;
+```
+
+Send a single ping now and resolve with the timings from its reply. `rtt` is `roundTrip - serverHold`, floored at zero; durations are in milliseconds, and `sentAt` and `receivedAt` are `performance.now()` readings. The sample also feeds [`networkStats`](#field-networkstats), and this works even with periodic pinging disabled. Rejects if the connection isn't established, including during an automatic reconnect, or if it closes before the reply arrives.
 
 ## Type `EventContext`
 
