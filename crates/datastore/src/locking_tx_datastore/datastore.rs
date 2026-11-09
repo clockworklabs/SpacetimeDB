@@ -1138,6 +1138,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::error::IndexError;
     use crate::locking_tx_datastore::tx_state::PendingSchemaChange;
+    use crate::locking_tx_datastore::ViewCallInfo;
     use crate::system_tables::{
         system_tables, IdentityViaU256, StColumnRow, StConnectionCredentialsFields, StConstraintData,
         StConstraintFields, StConstraintRow, StEventTableFields, StInboundMsgResultStatus, StInboundMsgRow,
@@ -5244,6 +5245,26 @@ pub(crate) mod tests {
         assert_eq!(table.scan_all_row_ptrs()?.len(), 1);
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![old]);
         let _ = datastore.rollback_mut_tx(tx);
+        Ok(())
+    }
+
+    #[test]
+    fn view_refresh_reads_new_blobs_from_transaction_storage() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = basic_table_schema_with_indices(basic_indices(), basic_constraints());
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let view = ViewCallInfo::anonymous(ViewId(10_000));
+        tx.read_sets.insert_full_table_scan(table_id, view.clone());
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        // The new string exists only in the transaction's blob set.
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, &"x".repeat(4096), 30))?;
+        assert!(tx.tx_state.blob_store.num_blobs() > 0);
+        let refreshed = tx.views_for_refresh()?.cloned().collect::<Vec<_>>();
+        assert_eq!(refreshed, vec![view]);
+
         Ok(())
     }
 }
