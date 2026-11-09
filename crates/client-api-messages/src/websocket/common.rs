@@ -95,6 +95,11 @@ impl BsatnRowList {
     }
 }
 
+/// NOTE(centril, 1.0): We might want to add a `None` variant to this
+/// where the client has to decode in a loop until `rows_data` has been exhausted.
+/// The use-case for this is clients who are bandwidth limited and where every byte counts.
+/// This depends on the client and server negotiating a schema (see the TODO on `BsatnRowList::size_hint`).
+/// Until then, clients need row boundaries to skip columns they don't know about.
 #[derive(SpacetimeType, Debug, Clone)]
 #[sats(crate = spacetimedb_lib)]
 pub enum RowSizeHint {
