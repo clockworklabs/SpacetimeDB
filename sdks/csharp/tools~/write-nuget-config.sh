@@ -1,3 +1,6 @@
+# Deprecated: use `cargo regen csharp nuget-config` instead. This script remains only because
+# SpacetimeDBPrivate's CI still runs it. Delete it once that CI uses the cargo command.
+
 set -ueo pipefail
 
 SPACETIMEDB_REPO_PATH="$(readlink -f "$1")"

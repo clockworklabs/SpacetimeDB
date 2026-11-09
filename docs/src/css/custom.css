@@ -336,6 +336,11 @@ p {
   margin-bottom: 1.25rem;
 }
 
+.markdown li > ul,
+.markdown li > ol {
+  margin-bottom: 0;
+}
+
 /* Code 3 - per the style guide */
 .tmp {
   font-family: var(--clockworklabs-font-source);
@@ -988,7 +993,7 @@ a.card {
 
 .step {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 32px;
   align-items: start;
   counter-increment: step-counter;
@@ -1046,9 +1051,9 @@ a.card {
 }
 
 /* Responsive: stack on smaller screens */
-@media screen and (max-width: 996px) {
+@media screen and (max-width: 1279px) {
   .step {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .step-code {

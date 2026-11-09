@@ -36,6 +36,7 @@ convert_case.workspace = true
 spacetimedb-lib = { path = "../lib", features = ["test", "proptest"] }
 # these are circular dependencies, but only in tests, so it's fine
 spacetimedb-testing = { path = "../testing" }
+spacetimedb-codegen = { path = "../codegen" }
 
 proptest.workspace = true
 serial_test.workspace = true

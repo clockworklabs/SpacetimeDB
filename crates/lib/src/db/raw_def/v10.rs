@@ -1361,6 +1361,28 @@ impl RawModuleDefV10Builder {
         });
     }
 
+    pub fn set_outbox_on_result(
+        &mut self,
+        table_name: impl Into<RawIdentifier>,
+        on_result_reducer: impl Into<RawIdentifier>,
+    ) {
+        let table_name = table_name.into();
+        let on_result_reducer = Some(on_result_reducer.into());
+        if let Some(outbox) = self
+            .outboxes_mut()
+            .iter_mut()
+            .find(|outbox| outbox.table_name == table_name)
+        {
+            assert!(
+                outbox.on_result_reducer.is_none(),
+                "outbox table `{table_name}` has multiple on_result reducers"
+            );
+            outbox.on_result_reducer = on_result_reducer;
+        } else {
+            panic!("on_result reducer references unknown outbox table `{table_name}`");
+        }
+    }
+
     pub fn add_submodule(&mut self, namespace: impl Into<String>, module: RawModuleDefV10) {
         let submodule = RawSubmoduleV10 {
             namespace: namespace.into(),

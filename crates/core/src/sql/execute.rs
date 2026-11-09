@@ -1282,6 +1282,23 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn test_not_equal() -> ResultTest<()> {
+        let (db, _) = create_data(3)?;
+
+        for op in ["<>", "!="] {
+            let mut result = run_for_testing(
+                &db,
+                &format!("SELECT inventory_id FROM inventory WHERE inventory_id {op} 2"),
+            )?;
+
+            result.sort();
+
+            assert_eq!(result, vec![product![1u64], product![3u64]], "Inventory with {op}");
+        }
+        Ok(())
+    }
+
+    #[test]
     fn test_or() -> ResultTest<()> {
         let (db, _) = create_data(2)?;
 
