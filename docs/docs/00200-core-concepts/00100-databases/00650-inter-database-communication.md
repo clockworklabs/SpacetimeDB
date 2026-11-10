@@ -11,7 +11,7 @@ Asynchronous inter-database communication, or **async IDC**, lets a reducer in o
 This page calls the database that sends the message the **sending database**, and the database whose reducer runs the **receiving database**. The receiving reducer is an ordinary reducer. Nothing marks it as callable from other databases, and the receiving module needs no changes to accept calls.
 
 :::note
-Outbox tables can be declared in Rust and TypeScript modules as of today. A database with a Rust module can call one with a TypeScript module, and the other way around.
+Outbox tables can be declared in Rust, TypeScript, and C# modules. A database with a module in any of these languages can call a database with a module in any other.
 :::
 
 ## Why databases call each other
@@ -83,6 +83,36 @@ export const admitPlayer = spacetimedb.reducer(
 ```
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+// game_world/Lib.cs
+using SpacetimeDB;
+
+public static partial class Module
+{
+    const ulong MaxPlayers = 2;
+
+    [SpacetimeDB.Table(Accessor = "Player", Public = true)]
+    public partial struct Player
+    {
+        [SpacetimeDB.PrimaryKey]
+        public string Name;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void AdmitPlayer(ReducerContext ctx, string name)
+    {
+        if (ctx.Db.Player.Count >= MaxPlayers)
+        {
+            throw new Exception("The world is full");
+        }
+        ctx.Db.Player.Insert(new Player { Name = name });
+    }
+}
+```
+
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 ```rust
@@ -110,7 +140,7 @@ pub fn admit_player(ctx: &ReducerContext, name: String) -> Result<(), String> {
 </TabItem>
 </Tabs>
 
-`admit_player` may turn away a player by failing with an error message, which rolls back the transaction.
+`admit_player` may turn away a player by failing with an error message, which rolls back the transaction. In C#, a reducer fails by throwing an exception, and the exception's message is the error.
 
 ### Generate the receiver bindings
 
@@ -134,7 +164,7 @@ The sending module needs **receiver bindings**: code generated from the receivin
 spacetime generate lobby
 ```
 
-This writes the bindings for `game_world` to `lobby/src/remote_bindings/game_world`. Generate them again whenever the receiving module's reducers change. [`spacetime dev`](./00200-spacetime-dev.md#receiver-dependencies) regenerates them before each build. See [Receiver dependencies](../../00300-resources/00100-cli-reference/00300-spacetime-json.md#receiver-dependencies) for other ways to configure them.
+This writes the bindings for `game_world` to `lobby/src/remote_bindings/game_world` for a Rust or TypeScript module, and to `lobby/remote_bindings/game_world` for a C# module. C# bindings go in the `RemoteBindings.GameWorld` namespace by default, and the module's project compiles them like any other source file. Generate them again whenever the receiving module's reducers change. [`spacetime dev`](./00200-spacetime-dev.md#receiver-dependencies) regenerates them before each build. See [Receiver dependencies](../../00300-resources/00100-cli-reference/00300-spacetime-json.md#receiver-dependencies) for other ways to configure them.
 
 ### Declare an outbox and send calls
 
@@ -198,6 +228,66 @@ export const onAdmitPlayerResult = spacetimedb.reducer(
 ```
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+// lobby/Lib.cs
+using SpacetimeDB;
+using Gw = RemoteBindings.GameWorld;
+
+public static partial class Module
+{
+    [SpacetimeDB.Table(Accessor = "WaitingPlayer", Public = true)]
+    public partial struct WaitingPlayer
+    {
+        [SpacetimeDB.PrimaryKey]
+        public string Name;
+    }
+
+    // Each row is a call to `AdmitPlayer` in a game world.
+    [SpacetimeDB.Table(Accessor = "AdmitPlayerOutbox", Outbox = typeof(Gw.Reducers.AdmitPlayer))]
+    public partial struct AdmitPlayerOutbox
+    {
+        [SpacetimeDB.PrimaryKey, SpacetimeDB.AutoInc]
+        public ulong MsgId;
+
+        [SpacetimeDB.Target]
+        public Gw.Identity World;
+
+        public string Name;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void JoinLobby(ReducerContext ctx, string name)
+    {
+        ctx.Db.WaitingPlayer.Insert(new WaitingPlayer { Name = name });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void SendToWorld(ReducerContext ctx, string name, Gw.Identity world)
+    {
+        if (!ctx.Db.WaitingPlayer.Name.Delete(name))
+        {
+            throw new Exception($"{name} is not in the lobby");
+        }
+        // The call is sent if, and only if, this transaction commits.
+        ctx.Db.AdmitPlayerOutbox.Insert(new AdmitPlayerOutbox { MsgId = 0, World = world, Name = name });
+    }
+
+    [SpacetimeDB.Reducer, SpacetimeDB.OnResult(typeof(AdmitPlayerOutbox))]
+    public static void OnAdmitPlayerResult(ReducerContext ctx, AdmitPlayerOutbox row, Result<Unit, string> result)
+    {
+        if (result is Result<Unit, string>.ErrR(var error))
+        {
+            // The world turned the player away, so put them back in the lobby.
+            Log.Warn($"{row.Name} was not admitted: {error}");
+            ctx.Db.WaitingPlayer.Insert(new WaitingPlayer { Name = row.Name });
+        }
+    }
+}
+```
+
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 ```rust
@@ -254,7 +344,7 @@ pub fn on_admit_player_result(ctx: &ReducerContext, row: AdmitPlayerOutbox, resu
 </TabItem>
 </Tabs>
 
-For clarity, the rest of this page uses the "canonical names" for tables and columns. Canonical names are the names that are used in SQL and the CLI, such as `admit_player_outbox`. Canonical names are distinguished from "accessor names", which are used as identifiers in source code. For example, TypeScript code typically uses camel case, such as `admitPlayerOutbox`.
+For clarity, the rest of this page uses the "canonical names" for tables and columns. Canonical names are the names that are used in SQL and the CLI, such as `admit_player_outbox`. Canonical names are distinguished from "accessor names", which are used as identifiers in source code. For example, TypeScript code typically uses camel case, such as `admitPlayerOutbox`, and C# code uses Pascal case, such as `AdmitPlayerOutbox`.
 
 `admit_player_outbox` is the outbox table. Its outbox option declares the reducer it calls, `admit_player` from the `game_world` bindings, and each of its rows corresponds to a single reducer call. `msg_id` identifies the row and the call. `world` is the target column, which holds the identity of the database to call. `name` supplies the `name` parameter of `admit_player`. [Outbox tables](#outbox-tables) describes these rules in full.
 
@@ -324,18 +414,18 @@ We can see in the lobby's log, by running `spacetime logs lobby`, the reason why
 
 An outbox table's rows are calls to one reducer in another database. To declare one, give a table the outbox option with a reducer from the receiver bindings:
 
-| | TypeScript | Rust |
-| --- | --- | --- |
-| Outbox option | `outbox: { receiver: gw.reducers.admitPlayer }` in the options of `table()` | `outbox(game_world::admit_player)` in `#[table(...)]` |
-| Message ID column | `t.u64().primaryKey().autoInc()` | `#[primary_key]` and `#[auto_inc]` on a `u64` |
-| Target column | `gw.identity().target()` | `#[target]` on a `game_world::Identity` |
-| Parameter alias | `.param({ name: 'name' })` | `#[param(name = name)]` |
+| | TypeScript | C# | Rust |
+| --- | --- | --- | --- |
+| Outbox option | `outbox: { receiver: gw.reducers.admitPlayer }` in the options of `table()` | `Outbox = typeof(Gw.Reducers.AdmitPlayer)` in `[Table(...)]` | `outbox(game_world::admit_player)` in `#[table(...)]` |
+| Message ID column | `t.u64().primaryKey().autoInc()` | `[PrimaryKey, AutoInc]` on a `ulong` | `#[primary_key]` and `#[auto_inc]` on a `u64` |
+| Target column | `gw.identity().target()` | `[Target]` on a `Gw.Identity` | `#[target]` on a `game_world::Identity` |
+| Parameter alias | `.param({ name: 'name' })` | `[Param("name")]` | `#[param(name = name)]` |
 
 Columns in an outbox table must follow these rules:
 
 - **One message ID** The primary key must be a single `u64` column with auto-increment. If a `0` value is specified, Spacetime will automatically assign the ID on insert. The column can have any name.
 - **One target** The target column references the identity of the database to call. It must have the identity type from the receiving module's bindings, and be marked as the target. A plain `Identity` column can't be the target. The column can have any name.
-- **One column for each parameter** For each parameter of the receiving reducer, exactly one column must have the same name and type. The columns can be in any order. To give a column a different name, map it to its parameter with an alias. The message ID and target columns can supply parameters too.
+- **One column for each parameter** For each parameter of the receiving reducer, exactly one column must have the same name and type. Names are compared as canonical names, so in C# a `PlayerName` field matches a `player_name` parameter. The columns can be in any order. To give a column a different name, map it to its parameter with an alias. An alias is the parameter's canonical name, and it's case-sensitive. The message ID and target columns can supply parameters too.
 
 The table can have other columns. Spacetime doesn't send them, but they stay on the row, so the `on_result` reducer can read them. This version of the lobby's outbox records when each call was requested, and specifies the `name` of the column as `player_name`:
 
@@ -354,6 +444,28 @@ const admitPlayerOutbox = table(
     requestedAt: t.timestamp(),
   }
 );
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+[SpacetimeDB.Table(Accessor = "AdmitPlayerOutbox", Outbox = typeof(Gw.Reducers.AdmitPlayer))]
+public partial struct AdmitPlayerOutbox
+{
+    [SpacetimeDB.PrimaryKey, SpacetimeDB.AutoInc]
+    public ulong MsgId;
+
+    [SpacetimeDB.Target]
+    public Gw.Identity World;
+
+    // Supplies the `name` parameter of AdmitPlayer.
+    [SpacetimeDB.Param("name")]
+    public string PlayerName;
+
+    // Not sent. The OnResult reducer can read it.
+    public Timestamp RequestedAt;
+}
 ```
 
 </TabItem>
@@ -390,7 +502,12 @@ spacetime sql lobby "SELECT * FROM admit_player_outbox"
 
 ### Generated outbox declarations
 
-You can always declare an outbox by manually specifying the table and types. However, in TypeScript, the receiver bindings can declare an outbox for you. `gw.outbox.admitPlayer()` returns an outbox table with a `msgId` message ID column, a `target` column, and a column for each parameter of the reducer:
+You can always declare an outbox by manually specifying the table and types. However, in TypeScript and C#, the receiver bindings can declare an outbox for you, with a message ID column, a target column, and a column for each parameter of the reducer:
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+`gw.outbox.admitPlayer()` returns an outbox table with a `msgId` message ID column and a `target` column:
 
 ```typescript
 const spacetimedb = schema({
@@ -403,6 +520,24 @@ ctx.db.admitPlayerOutbox.insert({ msgId: 0n, target: world, name });
 ```
 
 Like `table()`, it takes an optional `name`. Without one, the table is named after its key in `schema()`. It can't declare an outbox for a reducer with a parameter named `msgId` or `target`. For that reducer, use `table()` to manually declare an outbox table, and give the message ID and target columns other names.
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+The bindings have an attribute for each reducer, such as `Gw.Outbox.AdmitPlayer`. Put it on an empty `partial struct`, in place of `[Table]`, and it declares the struct as an outbox table with a `MsgId` message ID column and a `Target` column:
+
+```csharp
+[Gw.Outbox.AdmitPlayer(Accessor = "AdmitPlayerOutbox")]
+public partial struct AdmitPlayerOutbox { }
+
+// Inside a reducer:
+ctx.Db.AdmitPlayerOutbox.Insert(new AdmitPlayerOutbox { MsgId = 0, Target = world, Name = name });
+```
+
+Like `[Table]`, it takes an `Accessor`, and optionally a `Name` and `Public`. It can't declare an outbox for a reducer with a parameter named `msg_id` or `target`. For that reducer, use `[Table]` to manually declare an outbox table, and give the message ID and target columns other names.
+
+</TabItem>
+</Tabs>
 
 ## Receiving calls
 
@@ -428,6 +563,28 @@ export const admitPlayer = spacetimedb.reducer(
     ctx.db.player.insert({ name });
   }
 );
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+[SpacetimeDB.Table(Accessor = "TrustedLobby")]
+public partial struct TrustedLobby
+{
+    [SpacetimeDB.PrimaryKey]
+    public Identity Identity;
+}
+
+[SpacetimeDB.Reducer]
+public static void AdmitPlayer(ReducerContext ctx, string name)
+{
+    if (ctx.Db.TrustedLobby.Identity.Find(ctx.Sender) is null)
+    {
+        throw new Exception("Only a trusted lobby can admit players");
+    }
+    ctx.Db.Player.Insert(new Player { Name = name });
+}
 ```
 
 </TabItem>
@@ -479,6 +636,22 @@ export const onAdmitPlayerResult = spacetimedb.reducer(
 ```
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+[SpacetimeDB.Reducer, SpacetimeDB.OnResult(typeof(AdmitPlayerOutbox))]
+public static void OnAdmitPlayerResult(ReducerContext ctx, AdmitPlayerOutbox row, Result<Unit, string> result)
+{
+    if (result is Result<Unit, string>.ErrR(var error))
+    {
+        // The call failed, and `error` says why.
+    }
+}
+```
+
+`[OnResult]` takes the outbox table's row type. If the row type has more than one outbox table, also give the table's accessor, as in `[OnResult(typeof(AdmitPlayerOutbox), Table = "AdmitPlayerOutbox")]`. The reducer must take the `ReducerContext`, the row, and a `Result<Unit, string>`, and the compiler reports an error otherwise.
+
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 ```rust
@@ -513,11 +686,11 @@ If the `on_result` reducer itself fails, its changes roll back, but SpacetimeDB 
 
 ## Target identities
 
-A target column's type comes from the receiving module's bindings: `gw.identity()` in TypeScript, and `game_world::Identity` in Rust. Each set of bindings has its own identity type, so the compiler rejects a row that sends one module's reducer to an identity meant for another module. In the database and to clients, the column is an ordinary `Identity`.
+A target column's type comes from the receiving module's bindings: `gw.identity()` in TypeScript, `Gw.Identity` in C#, and `game_world::Identity` in Rust. Each set of bindings has its own identity type, so the compiler rejects a row that sends one module's reducer to an identity meant for another module. In the database and to clients, the column is an ordinary `Identity`.
 
 The type records which module you mean to call. It doesn't check that the identity belongs to a database running that module. A call to a database that doesn't have a matching reducer fails with an error. A call to an identity of a database which doesn't exist is never delivered, and Spacetime keeps retrying it indefinitely until it is removed from the outbox.
 
-A reducer can take a target as an argument, as `send_to_world` does, or read one from a table column of the same type. In Rust, wrap a plain `Identity` to get one: `game_world::Identity(identity)`. In TypeScript, a plain `Identity` can't be a target, but index lookups on a column of the target's type accept one. To call back the database that called you, look up `ctx.sender` in a table of databases you trust, and use the identity in the row that the lookup returns.
+A reducer can take a target as an argument, as `send_to_world` does, or read one from a table column of the same type. In Rust, wrap a plain `Identity` to get one: `game_world::Identity(identity)`. In C#, convert it explicitly: `(Gw.Identity)identity`. A `Gw.Identity` converts back to a plain `Identity` implicitly. In TypeScript, a plain `Identity` can't be a target, but index lookups on a column of the target's type accept one. To call back the database that called you, look up `ctx.sender` in a table of databases you trust, and use the identity in the row that the lookup returns.
 
 ## Changing a receiving reducer
 
@@ -527,7 +700,7 @@ Receiver bindings capture the receiving reducer's name and parameters when you g
 IDC reducer signature mismatch for admit_player: expected 085a98d187205ddd5cb574208fc8f7aa6728c078ae72865f742a48751056824d, got c9d10b4c604f6cb0f1a51826e6b23b0779772ff375d196fd26b0d5754af9b56a
 ```
 
-To pick up the change, regenerate the bindings and republish the sending database. If the outbox no longer matches the reducer, the sending module fails to compile, with an error that points to the issue with parameters:
+To pick up the change, regenerate the bindings and republish the sending database. If the outbox no longer matches the reducer, the sending module fails to compile, with an error that points to the issue with parameters. In Rust, for example:
 
 ```text
 error: outbox has no column matching remote reducer parameter `level`
@@ -539,8 +712,7 @@ To change a reducer without failing calls from databases that haven't regenerate
 
 ## Current limitations
 
-- Only Rust and TypeScript modules can declare outbox tables.
-
+- Only Rust, TypeScript, and C# modules can declare outbox tables.
 - The sending and receiving databases must be published to the same server or cluster. A database can't call a database on another server, such as a database on Maincloud from a self-hosted one.
 - Receiver bindings are generated from the receiving module's source code, so the sending module's project needs a copy of it. They can't be generated from a published database alone.
 - Receiver bindings include only the receiving module's own reducers, not the reducers of its [submodules](./00600-modules.md).
