@@ -224,7 +224,7 @@ impl ProjectPlan {
             }
             _ => None,
         };
-        // When the other side's only index on the join column needs the rest of the key,
+        // When the other side can be joined by index only once the bindings give the rest of the key,
         // look up right after the side that probes it, and probe it with the binding row
         if early.is_none()
             && !deltas.is_empty()
@@ -249,8 +249,8 @@ impl ProjectPlan {
                 .map(|(field, &col)| (ColId(field.field_pos as u16), binding(col)))
                 .collect();
             if !fixed.is_empty()
-                && !joins_by_index(rhs, rhs_field, lhs_field, &[])
-                && joins_by_index(rhs, rhs_field, lhs_field, &fixed)
+                && !joins_by_index(rhs, rhs_field, lhs_field, &[], label)
+                && joins_by_index(rhs, rhs_field, lhs_field, &fixed, label)
             {
                 early = labels.iter().copied().find(|label| lhs.has_label(label));
                 let (lhs_key, rhs_key): (Vec<_>, Vec<_>) = mem::take(&mut key)
@@ -1395,7 +1395,7 @@ impl PhysicalPlan {
     }
 
     /// The label of this plan's binding lookup, if it has one
-    fn binding_label(&self) -> Option<Label> {
+    pub(crate) fn binding_label(&self) -> Option<Label> {
         let mut labels = vec![];
         self.visit(&mut |plan| {
             if let PhysicalPlan::BindingLookup(_, lookup) = plan {
@@ -3732,16 +3732,20 @@ mod tests {
             "t.region = 'west' or p.rank = 2",
         ]
         .map(|filter| (&player_team, format!("{join} where {filter}")));
-        // The only index on `player.team_id` needs a rank, which the bindings give, in either `FROM` order
+        // The only index on `player.team_id` needs a rank, or there's only one on `rank`,
+        // which the bindings give, in either `FROM` order
         let rank_team = player_rank_team_index_db();
+        let rank = player_rank_index_db();
         let flipped = "select p.* from team t join player p on p.team_id = t.id";
-        let rank_cases = [join, flipped].into_iter().flat_map(|join| {
-            [
-                "p.rank = 2",
-                "t.region = 'west' and p.rank = 2",
-                "p.rank = 2 and p.score >= 100",
-            ]
-            .map(|filter| (&rank_team, format!("{join} where {filter}")))
+        let rank_cases = [&rank_team, &rank].into_iter().flat_map(|db| {
+            [join, flipped].into_iter().flat_map(move |join| {
+                [
+                    "p.rank = 2",
+                    "t.region = 'west' and p.rank = 2",
+                    "p.rank = 2 and p.score >= 100",
+                ]
+                .map(|filter| (db, format!("{join} where {filter}")))
+            })
         });
         for (db, sql) in cases.into_iter().chain(rank_cases) {
             let (plan, _) = template_plan(&sql, db);
@@ -3770,6 +3774,16 @@ mod tests {
 
     /// player(id, team_id, rank, score), whose only index on `team_id` is `(rank, team_id)`, and team(id, region)
     fn player_rank_team_index_db() -> SchemaViewer {
+        player_index_db(&[2, 1])
+    }
+
+    /// player(id, team_id, rank, score), with no index on `team_id` but one on `rank`, and team(id, region)
+    fn player_rank_index_db() -> SchemaViewer {
+        player_index_db(&[2])
+    }
+
+    /// player(id, team_id, rank, score), indexed on `id` and on the columns `index`, and team(id, region)
+    fn player_index_db(index: &[usize]) -> SchemaViewer {
         let player = schema(
             PLAYER_ID,
             "player",
@@ -3779,7 +3793,7 @@ mod tests {
                 ("rank", AlgebraicType::U32),
                 ("score", AlgebraicType::U32),
             ],
-            &[&[0], &[2, 1]],
+            &[&[0], index],
             &[&[0]],
             Some(0),
         );
@@ -3916,6 +3930,79 @@ mod tests {
         assert!(
             late.any(&|plan| matches!(plan, PhysicalPlan::HashJoin(..))),
             "{late:#?}"
+        );
+    }
+
+    /// Without an index on the join column, an index join probes one the bindings fix, as `rank` alone,
+    /// with the binding row, and compares the join columns after
+    #[test]
+    fn binding_lookup_below_a_join_probes_an_index_without_the_join_column() {
+        let db = player_rank_index_db();
+        let sql = "select p.* from player p join team t on p.team_id = t.id where p.rank = 2";
+        let (mut plan, _) = template_plan(sql, &db);
+        let player = label_for(&plan, PLAYER_ID);
+        let team = label_for(&plan, TEAM_ID);
+        plan.visit_mut(&mut |plan| {
+            if let PhysicalPlan::TableScan(scan, var) = plan
+                && *var == team
+            {
+                scan.delta = Some(Delta::Inserts);
+            }
+        });
+        let plan = plan.insert_binding_lookup(&mut vec![]);
+        let (_, lookup) = find_lookup(plan.physical_plan());
+        // No part of the key is on the team, so the changed team pairs with every binding
+        assert_eq!(lookup.candidates, BindingCandidates::All);
+        let bindings = lookup.label;
+
+        let plan = plan.optimize().unwrap();
+        let PhysicalPlan::Filter(input, residual) = plan.physical_plan() else {
+            panic!("expected the join columns compared above the join: {plan:#?}");
+        };
+        let PhysicalPlan::IxJoin(join, Semi::All) = &**input else {
+            panic!("expected an index join: {plan:#?}");
+        };
+        // The probe is the binding's rank
+        assert_eq!(join.rhs_index, 1.into());
+        assert!(
+            matches!(&join.probe, PhysicalExpr::Field(field) if (field.label, field.field_pos) == (bindings, 1)),
+            "{join:#?}"
+        );
+        let mut compared = vec![];
+        residual.visit(&mut |expr| {
+            if let PhysicalExpr::Field(field) = expr {
+                compared.push((field.label.0, field.field_pos));
+            }
+        });
+        compared.sort();
+        let mut expected = vec![(player.0, 1), (team.0, 0)];
+        expected.sort();
+        assert_eq!(compared, expected);
+    }
+
+    /// Without bindings, a join with no index on either join column stays a hash join,
+    /// even when an index of the rhs is fixed by a field of the lhs
+    #[test]
+    fn join_without_bindings_probes_no_index_without_the_join_column() {
+        let SchemaViewer { mut schemas } = player_rank_index_db();
+        // team(id, level), with no index on `id`
+        let team = schema(
+            TEAM_ID,
+            "team",
+            &[("id", AlgebraicType::U64), ("level", AlgebraicType::U32)],
+            &[],
+            &[],
+            None,
+        );
+        schemas[1] = Arc::new(team);
+        let db = SchemaViewer { schemas };
+        let sql = "select p.* from team t join player p on p.team_id = t.id where p.rank = t.level";
+        let plan = compile_select(parse_and_type_sub(sql, &db).unwrap())
+            .optimize()
+            .unwrap();
+        assert!(
+            plan.any(&|plan| matches!(plan, PhysicalPlan::HashJoin(..))),
+            "{plan:#?}"
         );
     }
 

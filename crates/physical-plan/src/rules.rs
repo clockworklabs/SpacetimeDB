@@ -781,13 +781,58 @@ fn ix_join_candidate(
     })
 }
 
+/// An index a join can probe without its join column, because `terms` fix all of its columns,
+/// at least one by a field of the `bindings` row. The join checks its own equality after the probe.
+fn ix_candidate_without_join_column(
+    schema: &TableSchema,
+    terms: &[EqConstFilterTerm],
+    bindings: Label,
+) -> Option<HashToIxJoinInfo> {
+    schema.indexes.iter().find_map(|ix| {
+        let mut key_parts = vec![];
+        let mut consumed_filter_terms = vec![];
+        for col in ix.index_algorithm.columns().iter() {
+            let (_, value) = terms.iter().find(|(candidate, _)| *candidate == col)?;
+            key_parts.push(value.clone());
+            consumed_filter_terms.push((col, value.clone()));
+        }
+        // Only for bindings, which would otherwise need a plan each;
+        // for anything else a hash join can be better, as the index may barely narrow the rows
+        let from_bindings = key_parts
+            .iter()
+            .any(|part| matches!(part, PhysicalExpr::Field(field) if field.label == bindings));
+        from_bindings.then(|| HashToIxJoinInfo {
+            rhs_index: ix.index_id,
+            probe: index_key_expr(key_parts),
+            consumed_filter_terms,
+        })
+    })
+}
+
+/// An index of the rhs a join can probe: one ending in its join column, else one the `bindings` row fixes,
+/// for which the `bool` is set, as the join checks its own equality after the probe
+fn ix_join_probe(
+    schema: &TableSchema,
+    rhs_field_pos: usize,
+    lhs_field: &TupleField,
+    terms: &[EqConstFilterTerm],
+    bindings: Option<Label>,
+) -> Option<(HashToIxJoinInfo, bool)> {
+    match ix_join_candidate(schema, rhs_field_pos, lhs_field, terms) {
+        Some(ix) => Some((ix, false)),
+        None => ix_candidate_without_join_column(schema, terms, bindings?).map(|ix| (ix, true)),
+    }
+}
+
 /// Can a join probe an index of `rhs` on `rhs_field`,
-/// with its leading columns fixed by `rhs`'s equality filters and by `fixed`?
+/// with its leading columns fixed by `rhs`'s equality filters and by `fixed`,
+/// or an index fixed by them and `fixed`, which reads the `bindings` row?
 pub(crate) fn joins_by_index(
     rhs: &PhysicalPlan,
     rhs_field: &TupleField,
     lhs_field: &TupleField,
     fixed: &[(ColId, PhysicalExpr)],
+    bindings: Label,
 ) -> bool {
     let (
         PhysicalPlan::TableScan(
@@ -803,7 +848,7 @@ pub(crate) fn joins_by_index(
     };
     let mut terms = rhs_eq_constants_from_filters(filters, *rhs_label);
     terms.extend_from_slice(fixed);
-    ix_join_candidate(schema, rhs_field.field_pos, lhs_field, &terms).is_some()
+    ix_join_probe(schema, rhs_field.field_pos, lhs_field, &terms, Some(bindings)).is_some()
 }
 
 fn remove_consumed_filter_terms(
@@ -935,7 +980,8 @@ impl RewriteRule for HashToIxJoin {
 
 /// Convert a hash join to an index join whose leading index columns are fixed by fields of the lhs,
 /// such as the values of the bindings the lhs looked up:
-/// `rhs.a = lhs.b` in a filter above the join, with an index on `(a, join column)`
+/// `rhs.a = lhs.b` in a filter above the join, with an index on `(a, join column)`.
+/// Without one, when `lhs.b` is a binding's value, an index on `a` alone does, and the join's equality moves to the filter.
 pub(crate) struct HashToIxJoinFromLhs;
 
 /// Collect predicates of the form `rhs.col = lhs.field`, in either order
@@ -981,7 +1027,8 @@ fn remove_consumed_lhs_fields(
 
 impl RewriteRule for HashToIxJoinFromLhs {
     type Plan = PhysicalPlan;
-    type Info = HashToIxJoinInfo;
+    /// The index, and whether the filter checks the join's equality, as when the index doesn't have its column
+    type Info = (HashToIxJoinInfo, bool);
 
     fn matches(plan: &PhysicalPlan) -> Option<Self::Info> {
         let PhysicalPlan::Filter(input, expr) = plan else {
@@ -1016,7 +1063,7 @@ impl RewriteRule for HashToIxJoinFromLhs {
         }
         let mut terms = rhs_eq_constants_from_filters(filters, *rhs_label);
         terms.extend(lhs_fields);
-        ix_join_candidate(schema, *field_pos, lhs_field, &terms)
+        ix_join_probe(schema, *field_pos, lhs_field, &terms, lhs.binding_label())
     }
 
     fn rewrite(plan: PhysicalPlan, info: Self::Info) -> Result<PhysicalPlan> {
@@ -1030,9 +1077,18 @@ impl RewriteRule for HashToIxJoinFromLhs {
             bail!("{INVARIANT_VIOLATION}: Failed to rewrite hash join as index join");
         };
         let rhs_label = *rhs_label;
-        let residual = remove_consumed_lhs_fields(expr, rhs_label, &join.lhs, &info.consumed_filter_terms);
+        let (ix, checks_join) = info;
+        let residual = remove_consumed_lhs_fields(expr, rhs_label, &join.lhs, &ix.consumed_filter_terms);
+        let join_eq = checks_join.then(|| {
+            PhysicalExpr::BinOp(
+                BinOp::Eq,
+                Box::new(PhysicalExpr::Field(join.lhs_field.clone())),
+                Box::new(PhysicalExpr::Field(join.rhs_field.clone())),
+            )
+        });
+        let residual = and_expr(residual.into_iter().chain(join_eq).collect());
         // The rhs filters' constants are consumed as in a plain index join
-        let ix_join = HashToIxJoin::rewrite(*input, info)?;
+        let ix_join = HashToIxJoin::rewrite(*input, ix)?;
         Ok(match residual {
             Some(expr) => PhysicalPlan::Filter(Box::new(ix_join), expr),
             None => ix_join,

@@ -2190,6 +2190,16 @@ mod tests {
         assert_eq!(rank_3.template.key(), rank_4.template.key());
         assert_ne!(rank_3.values, rank_4.values);
 
+        // `ranked` has `player`'s columns, but its only index is on `rank`,
+        // so a changed team probes it with the binding's rank, and compares team ids after
+        db.create_table_for_test_with_the_works("ranked", &player, &[ColList::new(2.into())], &[], StAccess::Public)?;
+        let sql = |rank: u32| format!("select t.* from ranked r join team t on r.team_id = t.id where r.rank = {rank}");
+        let rank_3 = compile_plan(&db, &sql(3))?;
+        let rank_4 = compile_plan(&db, &sql(4))?;
+        assert!(!rank_3.template.has_non_index_join());
+        assert_eq!(rank_3.template.key(), rank_4.template.key());
+        assert_ne!(rank_3.values, rank_4.values);
+
         // So does `:sender`
         let pet = [
             ("id", AlgebraicType::U64),
