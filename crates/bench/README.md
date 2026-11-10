@@ -19,12 +19,12 @@ RUN_ONE_MILLION=true cargo bench --bench generic --bench special
 ```
 
 To run the callgrind benchmarks, you need valgrind installed.
-The easiest way to get it is to use the docker image in this folder. 
-There's a handy bash script:
+The easiest way to get it is to use the docker image in this folder.
+From this directory, build the image and run the callgrind benchmarks inside it:
 ```bash
-bash callgrind-docker.sh 
+docker build . --tag rust-iai-callgrind:latest
+docker run --privileged -v "$(realpath ../..):/projects/SpacetimeDB" -w /projects/SpacetimeDB/crates/bench rust-iai-callgrind:latest cargo bench --bench callgrind
 ```
-Which will build the docker image and run the callgrind benchmarks inside of it.
 
 You can also comment "benchmarks please" or "callgrind please" on a pull request in the SpacetimeDB repository to run the criterion/callgrind benchmarks on that PR. The results will be posted in a comment on the PR.
 
@@ -115,6 +115,28 @@ cargo test --release --package spacetimedb-testing --test standalone_integration
 cargo test --release --package spacetimedb-testing --test standalone_integration_test test_calling_bench_db_circles -- --exact --nocapture
 ```
 
+## Comparing C# artifacts
+
+The `csharp_artifact` example accepts an already-built `benchmarks-cs` WASM module.
+It measures empty reducer dispatch, a 10,000-row string-table scan, and the existing
+circles cross-join workload (`initial_load = 100`). It uses the
+same in-process host and excludes compilation and publication from measurements.
+
+Build each revision with the same .NET SDK, NativeAOT toolchain, and release CLI
+settings in separate worktrees. Use the optimized `StdbModule.opt.wasm` artifacts
+from the `native` output directory. Build the runner once, then run it directly:
+
+```sh
+cargo build --release -p spacetimedb-bench --example csharp_artifact
+CSHARP_BENCH_WASM=/absolute/path/to/before.wasm target/release/examples/csharp_artifact --bench --save-baseline before
+CSHARP_BENCH_WASM=/absolute/path/to/after.wasm target/release/examples/csharp_artifact --bench --baseline before
+```
+
+Defaults are 30 samples, 3 seconds warmup, and 20 seconds measurement per workload.
+Criterion options can override these. Do not run builds or other tests during
+measurement; repeat in reverse order before attributing a small change to code.
+This checks existing flat modules, not nested-instance startup cost or memory use.
+
 ## Pretty report
 To generate a nicely formatted markdown report, you can use the "summarize" binary.
 This is used on CI (see [`../../.github/workflows/benchmarks.yml`](../../.github/workflows/benchmarks.yml)).
@@ -196,8 +218,8 @@ brew install cargo-instruments
 ```
 
 ```bash
-# ./instruments.sh TEMPLATE BENCHMARK BENCHMARK_FILTER
-./instruments.sh time generic stdb_raw/mem/insert_bulk/location/multi_index/load=0/count=100
+# cargo instruments -t TEMPLATE --bench BENCHMARK -- BENCHMARK_FILTER --profile-time 10
+cargo instruments -t time --bench generic -- stdb_raw/mem/insert_bulk/location/multi_index/load=0/count=100 --profile-time 10
 ```
 
 Where `TEMPLATE` is one from 
@@ -215,9 +237,9 @@ cargo instruments --list-templates
 cargo install flamegraph
 ```
 
-You can generate flamegraphs using `flamegraph.sh` script:
+You can generate flamegraphs with `cargo flamegraph`:
 
 ```bash
-# ./flamegraph.sh BENCH_EXECUTABLE FILTER SVG_PATH
-./flamegraph.sh generic stdb_raw/mem/insert_bulk/location/multi_index/load=0/count=100 result.svg"
+# cargo flamegraph --bench BENCHMARK --deterministic -o SVG_PATH -- BENCHMARK_FILTER --profile-time 10
+cargo flamegraph --bench generic --deterministic -o result.svg -- stdb_raw/mem/insert_bulk/location/multi_index/load=0/count=100 --profile-time 10
 ```

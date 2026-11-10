@@ -31,7 +31,7 @@ import {
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
   type SubscriptionHandleImpl as __SubscriptionHandleImpl,
-} from '../../index';
+} from '../../index.ts';
 
 // Import all reducer arg schemas
 

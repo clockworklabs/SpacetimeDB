@@ -9,6 +9,6 @@ TABLE
 
 REDUCERS
 - generate()
-  - Store ctx.timestamp in createdAt
-  - Store a random integer from ctx.random in randomValue
+  - Store the reducer context timestamp in createdAt
+  - Store a random integer from the reducer context RNG in randomValue
   - Do not use Date, Math.random, or a separately seeded RNG

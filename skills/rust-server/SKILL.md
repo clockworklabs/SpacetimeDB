@@ -195,6 +195,17 @@ ctx.from.subscription().right_semijoin(
 
 Query-builder comparisons against a `String` column take an owned `String`, for example `row.label.eq("active".to_string())`.
 
+Views can also accept arguments (2.13+), after the context:
+
+```rust
+#[spacetimedb::view(accessor = entity_by_id, public)]
+pub fn entity_by_id(ctx: &spacetimedb::AnonymousViewContext, id: u64) -> Option<Entity> {
+    ctx.db.entity().id().find(id)
+}
+```
+
+Floating-point arguments and primary keys are rejected on argument-bearing views. See client skills for SQL subscription syntax and restrictions.
+
 ## Client Visibility Filters
 
 ```rust
@@ -231,6 +242,24 @@ let roll: u32 = ctx.rng().gen_range(1..=6);   // any rand::Rng method
 timestamp.to_micros_since_unix_epoch() / 1000
 ```
 
+## Environment Variables
+
+```rust
+#[spacetimedb::env]
+pub struct Env {
+    pub API_KEY: String,
+    pub LOG_LEVEL: Option<String>,
+}
+// Inside a root entry point:
+// ctx.env.API_KEY() -> String
+// ctx.env.LOG_LEVEL() -> Option<String>
+// ctx.env.get("LOG_LEVEL") -> Option<String>
+```
+
+For constrained values, derive `spacetimedb::EnvironmentValue` on a payload-free enum and use it as a field type (or `Option<Enum>`). `#[env(value = "production")]` on a variant supplies its exact accepted string; without it, the Rust variant name is used. `#[env(values("info", "debug"))]` also constrains `String`/`Option<String>` fields.
+
+See the concepts skill for shared environment and secret-handling rules.
+
 ## Scheduled Tables
 
 ```rust
@@ -244,7 +273,7 @@ pub struct TickTimer {
 
 #[spacetimedb::reducer]
 pub fn tick(ctx: &ReducerContext, timer: TickTimer) {
-    // timer row is auto-deleted after this reducer runs
+    // a one-time row is deleted after this runs; an interval row stays
 }
 
 // One-time: fires once at a specific time
@@ -255,7 +284,66 @@ let at = ScheduleAt::Interval(std::time::Duration::from_secs(5).into());
 ctx.db.tick_timer().insert(TickTimer { scheduled_id: 0, scheduled_at: at });
 ```
 
+To let only the scheduler run a callback, reject calls where `ctx.sender() != ctx.database_identity()`.
+
 Construct a connection ID from a numeric representation with `ConnectionId::from_u128(value)`.
+
+## Inter-Database Calls (Async IDC)
+
+A reducer calls a reducer in another database by inserting a row into an outbox table. The call is sent only if the transaction commits, runs exactly once, and runs in order with other calls through the same outbox to the same database. The sending reducer doesn't wait for it. Both databases must be on the same server.
+
+Generate receiver bindings by listing the receiving module under `dependencies` in the sending database's `spacetime.json`, then running `spacetime generate <sending-database>`. Rust bindings are written to `src/remote_bindings/`.
+
+```json
+{
+  "database": "lobby",
+  "module-path": "./lobby",
+  "dependencies": [{ "name": "game_world", "database": "game-world" }],
+  "children": [{ "database": "game-world", "module-path": "./game_world" }]
+}
+```
+
+```rust
+mod remote_bindings;
+use remote_bindings::game_world;
+
+// Each row is one call to game_world's `admit_player(name: String)` reducer.
+#[spacetimedb::table(accessor = admit_player_outbox, outbox(game_world::admit_player))]
+pub struct AdmitPlayerOutbox {
+    #[primary_key]
+    #[auto_inc]
+    msg_id: u64,                 // exactly one u64 auto_inc primary key
+    #[target]
+    world: game_world::Identity, // exactly one target, typed by the bindings
+    name: String,                // one column per reducer parameter, same name and type
+    // #[param(name = name)] player_name: String,  // alias a column to a parameter
+    // Extra columns are allowed. They aren't sent, but on_result can read them.
+}
+
+#[spacetimedb::reducer]
+pub fn send_to_world(ctx: &ReducerContext, name: String, world: game_world::Identity) {
+    // Sent if and only if this transaction commits.
+    ctx.db.admit_player_outbox().insert(AdmitPlayerOutbox { msg_id: 0, world, name });
+}
+
+// Optional, at most one per outbox. Private. Runs once per row, then the row is deleted.
+#[spacetimedb::reducer(on_result(admit_player_outbox))]
+pub fn on_admit_player_result(ctx: &ReducerContext, row: AdmitPlayerOutbox, result: Result<(), String>) {
+    if let Err(error) = result {
+        log::warn!("{} was not admitted: {error}", row.name);
+    }
+}
+```
+
+- The receiving reducer is an ordinary reducer and needs no changes. In it, `ctx.sender()` is the sending database's identity, so authorize calls by checking it against an allow-list table.
+- The receiving database runs `client_connected` and `client_disconnected` around every delivered call, with no JWT. If `client_connected` rejects the sending database, the call is retried forever.
+- Outbox rows are insert-only, so a pending call can't be cancelled. A call is never retried once it has a result. To try again, insert a new row, for example from `on_result`.
+- Wrap a plain `Identity` to get a target: `game_world::Identity(identity)`.
+- Index lookups (`find`, `filter`) on a `game_world::Identity` column don't compile. Iterate and compare instead.
+- An outbox table can't also be a scheduled table or an event table.
+- After the receiving reducer's parameters change, regenerate the bindings and republish the sending database. Calls built from old bindings fail with a signature mismatch error.
+
+See https://spacetimedb.com/docs/databases/inter-database-communication for details.
 
 ## Procedures and HTTP
 
@@ -383,3 +471,40 @@ pub fn add_record(ctx: &ReducerContext, value: u32) {
     });
 }
 ```
+
+## Module Unit Tests
+
+The native in-memory harness is available in 2.12+. Keep the same `spacetimedb` version in normal and dev dependencies, enabling `test-utils` only for tests:
+
+```toml
+[dependencies]
+spacetimedb = { version = "2.13.0", features = ["unstable"] }
+
+[dev-dependencies]
+spacetimedb = { version = "2.13.0", features = ["test-utils"] }
+icu_calendar = ">=2.1, <2.2" # temporal_rs requires icu_calendar 2.1.x
+```
+
+Run `cargo test` natively, not with a WebAssembly target. For the `create_entity` reducer above:
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spacetimedb::test_utils::{TestAuth, TestContext};
+
+    #[test]
+    fn inserts_entity() {
+        let test = TestContext::new().expect("test database");
+        test.with_reducer_tx(TestAuth::internal(), |ctx| {
+            create_entity(ctx, "Alice".to_owned());
+            Ok::<(), String>(())
+        }).expect("transaction");
+        assert_eq!(test.db.entity().count(), 1);
+    }
+}
+```
+
+`with_reducer_tx` commits on `Ok` and rolls back on `Err` or panic unwinding; propagate reducer errors with `?` when the reducer returns `Result`. Create a new `TestContext` for each test: cloning shares the database. Use `TestAuth::from_jwt_payload(payload, connection_id)?` for client calls and `TestAuth::internal()` for the database itself. The harness exposes `clock`, `rng`, procedure/view contexts, and query execution. It does not simulate subscriptions, RLS, lifecycle calls, or timers. Invoke lifecycle/scheduled reducers explicitly and retain integration tests for host behavior.
+
+See https://spacetimedb.com/docs/how-to/unit-testing for test setup, HTTP mocking, and current limitations.

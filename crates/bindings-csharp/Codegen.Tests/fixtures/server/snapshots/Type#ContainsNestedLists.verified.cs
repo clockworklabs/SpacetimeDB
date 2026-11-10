@@ -6,6 +6,11 @@ partial class ContainsNestedLists
     : System.IEquatable<ContainsNestedLists>,
         SpacetimeDB.BSATN.IStructuralReadWrite
 {
+#if NET10_0_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
+#endif
     public void ReadFields(System.IO.BinaryReader reader)
     {
         IntList = BSATN.IntListRW.Read(reader);

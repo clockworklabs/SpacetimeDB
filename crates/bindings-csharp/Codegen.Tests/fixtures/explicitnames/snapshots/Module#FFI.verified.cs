@@ -491,16 +491,26 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
 
     public static partial class AssemblyDescriptor
     {
-        private static class DemoTableSqlNameCache
-        {
-            internal static readonly global::SpacetimeDB.SqlTableName Name =
-                global::SpacetimeDB.Internal.Module.ResolveSqlName(
-                    "explicitnames, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    "DemoTable"
-                );
+        private static global::SpacetimeDB.SqlTableName?[] DemoTableSqlNames =>
+            field ??= new global::SpacetimeDB.SqlTableName?[
+                global::SpacetimeDB.Internal.Module.InstanceCount
+            ];
 
-            // Prevent eager initialization before the root installs namespace placements.
-            static DemoTableSqlNameCache() { }
+        private static global::SpacetimeDB.SqlTableName DemoTableSqlName(int contextInstance)
+        {
+            var names = DemoTableSqlNames;
+            if (names[contextInstance] is { } name)
+            {
+                return name;
+            }
+            var instanceId = global::SpacetimeDB.Internal.Module.ResolveInstance(
+                contextInstance,
+                "explicitnames, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+            );
+            var resolvedName = names[instanceId] ??=
+                global::SpacetimeDB.Internal.Module.ResolveSqlName(instanceId, "DemoTable");
+            names[contextInstance] = resolvedName;
+            return resolvedName;
         }
 
         public readonly partial struct Queries
@@ -511,7 +521,7 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
                 DemoTableIxCols
             > DemoTable()
             {
-                var tableName = DemoTableSqlNameCache.Name;
+                var tableName = DemoTableSqlName(__instanceId);
                 return new(tableName, new DemoTableCols(tableName), new DemoTableIxCols(tableName));
             }
         }
@@ -525,7 +535,10 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31
                 global::DemoTable,
                 DemoTableCols,
                 DemoTableIxCols
-            > DemoTable() => new AssemblyDescriptor.Queries().DemoTable();
+            > DemoTable() =>
+                new AssemblyDescriptor.Queries(
+                    global::SpacetimeDB.Internal.Module.GetInstanceId(from)
+                ).DemoTable();
         }
     }
 }
@@ -811,7 +824,7 @@ static class ModuleRegistration
     public static List<T> ToListOrEmpty<T>(T? value)
         where T : class => value is null ? new List<T>() : new List<T> { value };
 
-#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+#if SPACETIMEDB_WASM_AOT
     // In AOT mode we're building a library.
     // Main method won't be called automatically, so we need to export it as a preinit function.
     [UnmanagedCallersOnly(EntryPoint = "__preinit__10_init_csharp")]
@@ -890,7 +903,7 @@ static class ModuleRegistration
 
     // Export entrypoints live in generated module code so all build modes can
     // dispatch directly to concrete generated functions.
-#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+#if SPACETIMEDB_WASM_AOT
     [UnmanagedCallersOnly(EntryPoint = "__describe_module__")]
 #endif
     public static void __describe_module__(SpacetimeDB.Internal.BytesSink d) =>
@@ -1004,7 +1017,7 @@ static class ModuleRegistration
         }
     }
 
-#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+#if SPACETIMEDB_WASM_AOT
     [UnmanagedCallersOnly(EntryPoint = "__call_reducer__")]
 #endif
     public static SpacetimeDB.Internal.Errno __call_reducer__(
@@ -1106,7 +1119,7 @@ static class ModuleRegistration
             ),
         };
 
-#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+#if SPACETIMEDB_WASM_AOT
     [UnmanagedCallersOnly(EntryPoint = "__call_procedure__")]
 #endif
     public static SpacetimeDB.Internal.Errno __call_procedure__(
@@ -1203,7 +1216,7 @@ static class ModuleRegistration
             ),
         };
 
-#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+#if SPACETIMEDB_WASM_AOT
     [UnmanagedCallersOnly(EntryPoint = "__call_http_handler__")]
 #endif
     public static SpacetimeDB.Internal.Errno __call_http_handler__(
@@ -1293,7 +1306,7 @@ static class ModuleRegistration
             ),
         };
 
-#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+#if SPACETIMEDB_WASM_AOT
     [UnmanagedCallersOnly(EntryPoint = "__call_view__")]
 #endif
     public static SpacetimeDB.Internal.Errno __call_view__(
@@ -1356,7 +1369,7 @@ static class ModuleRegistration
             _ => UnknownViewId(id),
         };
 
-#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+#if SPACETIMEDB_WASM_AOT
     [UnmanagedCallersOnly(EntryPoint = "__call_view_anon__")]
 #endif
     public static SpacetimeDB.Internal.Errno __call_view_anon__(

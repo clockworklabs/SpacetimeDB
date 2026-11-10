@@ -1,3 +1,0 @@
-feature: F261-04
-id: f261_04_01_01
-sql: SELECT COALESCE ( 1 , 1 )

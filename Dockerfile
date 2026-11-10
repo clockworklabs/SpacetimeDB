@@ -1,5 +1,9 @@
 # Use a base image that supports multi-arch
 FROM rust:bookworm AS builder
+# Refresh OS certificate roots to distrust the compromised eMudhra CAs.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+# rustup has its own CA bundle; 1.29.2+ distrusts the compromised eMudhra CAs.
+RUN rustup --version && rustup self update && rustup --version
 
 WORKDIR /usr/src/app
 COPY . .
@@ -16,6 +20,10 @@ RUN if [ -f .git ]; then \
 RUN cargo build -p spacetimedb-standalone -p spacetimedb-cli --release --locked
 
 FROM rust:bookworm
+# Refresh OS certificate roots to distrust the compromised eMudhra CAs.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+# rustup has its own CA bundle; 1.29.2+ distrusts the compromised eMudhra CAs.
+RUN rustup --version && rustup self update && rustup --version
 
 # Install dependencies
 RUN apt-get update && apt-get install -y \

@@ -13,6 +13,40 @@ metadata:
 
 # SpacetimeDB C# SDK Reference
 
+## Build Configuration (.NET 10)
+
+New .NET 10 modules build as managed libraries by default. Use the CLI for WASM
+builds, or select the runtime identifier explicitly when invoking dotnet:
+
+```sh
+spacetime init my-project --lang csharp --dotnet-version 10
+# From the generated module directory:
+dotnet build                              # managed DLL
+dotnet publish -c Release -r wasi-wasm     # NativeAOT-LLVM WASM
+spacetime build                           # CLI selects WASM automatically
+```
+
+- Do not set an unconditional `RuntimeIdentifier=wasi-wasm` in .NET 10 projects.
+  Keep WASM-only settings such as `PublishTrimmed`, `SelfContained`, and
+  `MSBuildEnableWorkloadResolver=false` conditional on that RID.
+- The module must reference both `Microsoft.DotNet.ILCompiler.LLVM` and
+  `runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM`
+  (version `10.0.0-*`) conditionally on `RuntimeIdentifier=wasi-wasm`.
+  The runtime package no longer supplies these dependencies transitively.
+  Keep the dotnet-experimental NuGet feed configured for WASM restores.
+- `spacetime build` and `spacetime publish` select WASM automatically. .NET 10
+  does not require `--native-aot` or an AOT environment variable.
+- Allow restore when switching between managed and WASM builds; do not reuse
+  `--no-restore` across modes. For multi-targeted projects, select `-f net10.0`
+  when publishing and restrict the LLVM 10 package references to .NET 10.
+- .NET 8 behavior is unchanged: WASM/JIT by default, with `--native-aot` selecting
+  NativeAOT where supported. The current flag is `SPACETIMEDB_WASM_AOT`; the CLI
+  also sets/clears `EXPERIMENTAL_WASM_AOT` for older projects. Do not manually
+  define the C# compiler symbol to choose a .NET 10 build mode.
+- Module dependencies use ordinary `ProjectReference` or packaged managed
+  assemblies. .NET 10 composition uses generated assembly descriptors, not the
+  dependency's standalone WASM exports; no special root/library build flag is needed.
+
 ## Module Structure
 
 Reducers are static methods in a `static partial class`; tables are `public partial struct`s. This reference keeps everything in one `public static partial class Module`, which needs only `using SpacetimeDB;`:
@@ -153,14 +187,16 @@ The pattern is `ctx.Db.{Accessor}.{ColumnName}.{Method}(value)` for all indexed 
 
 ```csharp
 [SpacetimeDB.Reducer(ReducerKind.Init)]
-public static void OnInit(ReducerContext ctx) { ... }
+public static void Init(ReducerContext ctx) { ... }
 
 [SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
-public static void OnConnect(ReducerContext ctx) { ... }
+public static void ClientConnected(ReducerContext ctx) { ... }
 
 [SpacetimeDB.Reducer(ReducerKind.ClientDisconnected)]
-public static void OnDisconnect(ReducerContext ctx) { ... }
+public static void ClientDisconnected(ReducerContext ctx) { ... }
 ```
+
+Reducer and procedure method names must not start with `On`, `on`, or `__`; the code generator rejects them (STDB0010), so name lifecycle reducers `ClientConnected`, not `OnConnect`.
 
 `ctx.ConnectionId` is `ConnectionId?`, including in connection lifecycle reducers. Check or unwrap it before storing it in a non-nullable column or passing it to an index accessor.
 
@@ -200,6 +236,16 @@ Procedural-view primary keys are explicit schema metadata. Add one only when the
 
 Inclusive btree ranges use tuples, for example `ctx.Db.Shipment.DeliverBy.Filter((new Timestamp(1_000), new Timestamp(2_000)))`.
 
+Views can also accept arguments (2.13+), after the context:
+
+```csharp
+[SpacetimeDB.View(Accessor = "EntityById", Public = true)]
+public static Entity? EntityById(AnonymousViewContext ctx, ulong id) =>
+    ctx.Db.Entity.Id.Find(id);
+```
+
+Floating-point arguments and primary keys are rejected on argument-bearing views. See client skills for SQL subscription syntax and restrictions.
+
 ## Client Visibility Filters
 
 ```csharp
@@ -232,6 +278,41 @@ double f = ctx.Rng.NextDouble();        // [0.0, 1.0)
 timestamp.MicrosecondsSinceUnixEpoch / 1000
 ```
 
+## Submodules
+
+C# assembly composition requires SpacetimeDB/Runtime 2.13+, .NET 10, and C# 14 in the root and dependencies. NativeAOT-LLVM module builds require Windows or Linux, not macOS. Reference module assemblies via `ProjectReference` or NuGet. If libraries live beneath the root project, exclude their source from the root compile glob (`<Compile Remove="libraries/**/*.cs" />`). Dependencies, including transitive ones, register once in `public` unless some module mounts them with a `Namespace` attribute:
+
+```csharp
+// Root Lib.cs, before namespace/type declarations:
+[assembly: SpacetimeDB.Namespace(typeof(AuthLib.Marker), Accessor = "MyAuth", Name = "auth_data")]
+```
+
+The marker is any accessible type in the dependency assembly. Root code uses `ctx.Db.MyAuth.User` and `ctx.From.MyAuth.User()`; library code keeps `ctx.Db.User` and `ctx.From.User()`. To call a library helper, pass `ctx.As.MyAuth` (`tx.As.MyAuth` inside `WithTx`; 2.14+). Passing `ctx` directly works only while the library has one unambiguous instance; otherwise it throws `InvalidOperationException`. Helpers share the caller's transaction; namespaces are not helper security boundaries.
+
+`Accessor` controls C# members; `Name` pins the canonical namespace used in SQL (`auth_data.<table>`). Without `Name`, the root's case policy derives it (`MyAuth` → `my_auth` by default). Changing the canonical namespace drops its tables and their data; keep `Name` fixed to rename only accessors. Named dependencies retain their naming policy; `public` dependencies inherit the root's and cannot explicitly conflict with it.
+
+In 2.14+, any module can mount its own dependencies, and the same assembly can be mounted more than once with independent tables at each path; 2.13 allows only root mounts, once per assembly. Cross-language composition is unsupported. Named dependencies cannot declare lifecycle reducers, nonempty environments, or RLS filters. Define RLS in the root with canonical qualified table names. Named-submodule routes are ignored; root handlers may delegate to library helpers. Dependencies in `public` can contribute lifecycle reducers (subject to uniqueness), environment declarations, and routes.
+
+## Environment Variables
+
+```csharp
+[SpacetimeDB.Env]
+public partial struct EnvironmentSchema
+{
+    public string API_KEY;
+    [SpacetimeDB.EnvValues("development", "production")]
+    public string MODE;
+    public string? LOG_LEVEL;
+}
+// In a root entry point:
+// ctx.Env.API_KEY: string; ctx.Env.LOG_LEVEL: string?
+// ctx.Env.Get("LOG_LEVEL"): string?
+```
+
+Enable nullable annotations for optional `string?` fields. One `[SpacetimeDB.Env]` struct declares the environment; `[EnvValues(...)]` restricts allowed strings. Colliding accessor names remain available through `Get("KEY")`.
+
+See the concepts skill for shared environment and secret-handling rules.
+
 ## Scheduled Tables
 
 Declare the scheduled table and its reducer in the same `Module` class so `nameof(...)` resolves:
@@ -254,7 +335,7 @@ public partial struct TickTimer
 [SpacetimeDB.Reducer]
 public static void Tick(ReducerContext ctx, TickTimer timer)
 {
-    // timer row is auto-deleted after this reducer runs
+    // a one-time row is deleted after this runs; an interval row stays
 }
 
 // One-time: fires once at a specific time
@@ -265,7 +346,7 @@ var at = new ScheduleAt.Interval(TimeSpan.FromSeconds(5));
 ctx.Db.TickTimer.Insert(new TickTimer { ScheduledId = 0, ScheduledAt = at });
 ```
 
-Scheduled reducer callbacks use the ordinary `[SpacetimeDB.Reducer]` attribute. There is no `ReducerKind.Scheduled`; the table's `Scheduled` option associates the callback.
+Scheduled reducer callbacks use the ordinary `[SpacetimeDB.Reducer]` attribute. There is no `ReducerKind.Scheduled`; the table's `Scheduled` option associates the callback. To let only the scheduler run a callback, reject calls where `ctx.Sender != ctx.DatabaseIdentity`.
 
 To construct a `ConnectionId` from a 128-bit numeric representation, encode it as exactly 16 little-endian bytes and call `ConnectionId.From(bytes)`. The result is nullable and must be checked before use.
 
@@ -285,6 +366,7 @@ public static ResultValue Inspect(ProcedureContext ctx, string input) =>
 Outbound HTTP is available through `ctx.Http`; handle its success/error result before using the response. Open short database transactions with `ctx.WithTx`. Perform network I/O before opening the transaction, and keep only database work inside its callback.
 
 ```csharp
+string uri = "https://example.com/data"; // the C# HTTP API takes the URI as a string
 var result = ctx.Http.Get(uri);
 var text = result.Match(
     response => response.Body.ToStringUtf8Lossy(),
@@ -298,7 +380,7 @@ ctx.WithTx(tx =>
 });
 ```
 
-`WithTx` is generic: its callback must return a value (use `return 0;` when no result is needed). The callback's generated `tx.Db` exposes module table accessors; `ProcedureContext` and `HandlerContext` do not expose tables directly.
+`WithTx` is generic: its callback must return a value (use `return 0;` when no result is needed). In procedures and handlers, access tables only via `tx.Db`, never `ctx.Db`.
 
 For non-GET requests, construct and send an `HttpRequest` directly:
 
@@ -356,3 +438,5 @@ public partial record Shape : SpacetimeDB.TaggedEnum<(Circle Circle, Rectangle R
 var a = new Shape.Circle(new Circle { Radius = 10 });
 var b = new Shape.Rectangle(new Rectangle { Width = 4, Height = 6 });
 ```
+
+Declare `TaggedEnum` records inside your `Module` class. At file scope, a variant named after its own type, such as `Circle Circle`, fails with CS8910.

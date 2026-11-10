@@ -6,6 +6,11 @@ partial class ViewPrimaryKeyPartialRow
     : System.IEquatable<ViewPrimaryKeyPartialRow>,
         SpacetimeDB.BSATN.IStructuralReadWrite
 {
+#if NET10_0_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
+#endif
     public void ReadFields(System.IO.BinaryReader reader)
     {
         DeclaredIdentity = BSATN.DeclaredIdentityRW.Read(reader);
