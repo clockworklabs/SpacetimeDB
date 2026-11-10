@@ -1249,7 +1249,14 @@ export function client() {
       lost = false;
       if (attempt > limit) giveUp(name, failures.stepLost);
       commit((tx, run) => {
-        recordAttempt(tx, run, name, 'Failed', failures.stepLost);
+        // The lost attempt is the one before this one.
+        recordAttempt(
+          tx,
+          { ...run, attempt: attempt - 1 },
+          name,
+          'Failed',
+          failures.stepLost
+        );
       });
     };
 

@@ -934,11 +934,16 @@ assert.ok(admins.has(admin.toHexString()));
   assert.deepEqual(appLog, ['call:1', 'call:2', 'after']);
   assert.equal(new Set(keys).size, 1);
   assert.deepEqual(
-    attemptsOf(id).map(row => [row.step, row.status.tag, row.error]),
+    attemptsOf(id).map(row => [
+      row.step,
+      row.attempt,
+      row.status.tag,
+      row.error,
+    ]),
     [
-      ['call', 'Failed', failures.stepLost],
-      ['call', 'Ok', undefined],
-      ['after', 'Ok', undefined],
+      ['call', 1, 'Failed', failures.stepLost],
+      ['call', 2, 'Ok', undefined],
+      ['after', 1, 'Ok', undefined],
     ]
   );
   assert.equal(statusOf(id), 'Completed');
