@@ -146,9 +146,9 @@
     },
     {
       "name": "esm (gzip)",
-      "path": "dist/index.mjs",
+      "path": ["dist/index.mjs", "dist/chunk-*.mjs"],
       "gzip": true,
-      "limit": "100 kB"
+      "limit": "60 kB"
     },
     {
       "name": "esm (uncompressed)",
