@@ -5,19 +5,19 @@
 #   (`^22.23.4 || ...` gives 22.23.4), which is the version CI installs.
 # - pnpm: the version in `packageManager`.
 #
-# Both are official prebuilt releases. Nix needs a hash for every download, so
-# the hashes live in the tables below, keyed by version. If package.json moves to
-# a version that has no entry, evaluation fails and says where to find the hashes,
-# so the shell never quietly keeps an old version.
+# Node is the official prebuilt release. pnpm is nixpkgs' pnpm_10 package,
+# overridden to that version and to run on this Node. Nix needs a hash for every
+# download, so the hashes live in the tables below, keyed by version. If
+# package.json moves to a version that has no entry, evaluation fails and says
+# where to find the hashes, so the shell never quietly keeps an old version.
 {
   lib,
   stdenv,
   fetchurl,
   autoPatchelfHook,
-  makeWrapper,
-  packageJson ? ./package.json,
+  pnpm_10,
 }: let
-  pkg = lib.importJSON packageJson;
+  pkg = lib.importJSON ./package.json;
   system = stdenv.hostPlatform.system;
 
   # sha256 of each `node-v<version>-<platform>.tar.xz`, copied from
@@ -99,34 +99,26 @@
     '';
 
     # Point the `#!/usr/bin/env node` shebangs of npm, npx and corepack at this node.
-    # patchShebangs resolves interpreters from HOST_PATH, not PATH.
-    preFixup = ''
-      export HOST_PATH=$out/bin''${HOST_PATH:+:$HOST_PATH}
+    # patchShebangs resolves interpreters from HOST_PATH, not PATH. This is how
+    # nixpkgs' own nodejs package does it.
+    postInstall = ''
+      HOST_PATH=$out/bin patchShebangs --host $out
     '';
+
+    meta = {
+      description = "Event-driven I/O framework for the V8 JavaScript engine (official prebuilt release)";
+      homepage = "https://nodejs.org";
+      license = lib.licenses.mit;
+      platforms = lib.attrNames nodePlatforms;
+      sourceProvenance = [lib.sourceTypes.binaryNativeCode];
+      mainProgram = "node";
+    };
   };
 
-  pnpm = stdenv.mkDerivation {
-    pname = "pnpm";
+  pnpm = pnpm_10.override {
     version = pnpmVersion;
-
-    src = fetchurl {
-      url = "https://registry.npmjs.org/pnpm/-/pnpm-${pnpmVersion}.tgz";
-      hash = pnpmHash;
-    };
-
-    nativeBuildInputs = [makeWrapper];
-
-    dontConfigure = true;
-    dontBuild = true;
-
-    installPhase = ''
-      runHook preInstall
-      mkdir -p $out/lib/pnpm $out/bin
-      cp -r . $out/lib/pnpm
-      makeWrapper ${nodejs}/bin/node $out/bin/pnpm --add-flags $out/lib/pnpm/bin/pnpm.cjs
-      makeWrapper ${nodejs}/bin/node $out/bin/pnpx --add-flags $out/lib/pnpm/bin/pnpx.cjs
-      runHook postInstall
-    '';
+    hash = pnpmHash;
+    inherit nodejs;
   };
 in {
   inherit nodejs pnpm;

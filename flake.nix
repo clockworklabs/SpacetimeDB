@@ -48,11 +48,11 @@
         # The Rust toolchain that we actually build with.
         rustStable = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
 
-        # Node.js and pnpm for the devShell, at the versions package.json asks for.
-        jsToolchain = pkgs.callPackage ./js-toolchain.nix {};
-
         # An additional Rust toolchain we put in our devShell for rust-analyzer.
         rustNightly = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.rust-analyzer);
+
+        # Node.js and pnpm for the devShell, at the versions package.json asks for.
+        jsToolchain = pkgs.callPackage ./js-toolchain.nix {};
 
         version = (craneLib.crateNameFromCargoToml { inherit src; }).version;
 
