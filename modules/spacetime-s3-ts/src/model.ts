@@ -1,4 +1,4 @@
-import { table, t } from 'spacetimedb/server';
+import { table, t, type SumBuilder } from 'spacetimedb/server';
 import type { Infer } from 'spacetimedb';
 
 const fileOptions = {
@@ -16,6 +16,21 @@ const fileOptions = {
     } as const,
   ],
 };
+// Named without UnitBuilder, which SDK 2.12 does not export to declarations.
+type FileStateBuilder = SumBuilder<
+  Record<
+    'Pending' | 'Copying' | 'Ready' | 'Deleting' | 'Deleted',
+    ReturnType<typeof t.unit>
+  >
+>;
+const fileState: FileStateBuilder = t.enum('FileState', {
+  Pending: t.unit(),
+  Copying: t.unit(),
+  Ready: t.unit(),
+  Deleting: t.unit(),
+  Deleted: t.unit(),
+});
+
 const fileColumns = {
   id: t.u64().primaryKey().autoInc(),
   owner: t.string(),
@@ -24,13 +39,7 @@ const fileColumns = {
   contentType: t.string(),
   size: t.u32(),
   checksum: t.string(),
-  state: t.enum('FileState', {
-    Pending: t.unit(),
-    Copying: t.unit(),
-    Ready: t.unit(),
-    Deleting: t.unit(),
-    Deleted: t.unit(),
-  }),
+  state: fileState,
   createdAt: t.timestamp(),
   uploadExpiresAt: t.timestamp(),
   nextAttemptAt: t.timestamp(),
