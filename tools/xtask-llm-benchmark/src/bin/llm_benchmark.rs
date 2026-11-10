@@ -972,7 +972,9 @@ fn initialize_runtime(skip_runtime: bool) -> Result<RuntimeInit> {
     }
 
     // Use locally built SpacetimeDB so server supports spacetime:sys@2.0 (required by local TypeScript SDK).
-    let spacetime = SpacetimeDbGuard::try_spawn_in_temp_data_dir().context("start local benchmark server")?;
+    // The guard panics when the server fails to start; catch it so one C# model's server cannot end the whole job.
+    let spacetime = std::panic::catch_unwind(SpacetimeDbGuard::spawn_in_temp_data_dir)
+        .map_err(|_| anyhow::anyhow!("start local benchmark server"))?;
 
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
 

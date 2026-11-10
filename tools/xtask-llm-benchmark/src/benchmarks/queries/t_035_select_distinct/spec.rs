@@ -13,7 +13,11 @@ pub fn spec() -> BenchmarkSpec {
                 json!([[1, "tools", 1], [2, "toys", 2], [3, "tools", 3], [4, "books", 4]]),
             )?;
             s.call("collect_distinct_categories", json!([]))?;
-            s.owner_rows("distinct_category", &["category"], json!([["books"], ["tools"], ["toys"]]))?;
+            s.owner_rows(
+                "distinct_category",
+                &["category"],
+                json!([["books"], ["tools"], ["toys"]]),
+            )?;
             Ok(())
         }));
         scorers

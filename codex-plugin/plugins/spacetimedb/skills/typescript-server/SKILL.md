@@ -248,7 +248,7 @@ const tickTimer = table({
 export const tick = spacetimedb.reducer(
   { onSchedule: tickTimer },
   { timer: tickTimer.rowType },
-  (ctx, { timer }) => { /* timer row auto-deleted after this runs */ }
+  (ctx, { timer }) => { /* a one-time row is deleted after this runs; an interval row stays */ }
 );
 
 // `onSchedule` also works for scheduled procedures whose return type is `t.unit()`.
@@ -260,6 +260,8 @@ export const tick = spacetimedb.reducer(
 // Read time back from a scheduleAt value (tagged union):
 //   const micros = at.tag === 'time' ? at.value : at.value.microsSinceUnixEpoch;  // bigint
 ```
+
+To let only the scheduler run a callback, reject calls where `!ctx.sender.isEqual(ctx.databaseIdentity)`.
 
 ## Submodules
 
@@ -275,7 +277,7 @@ const spacetimedb = schema({
 export default spacetimedb;
 ```
 
-`myAuth` is the accessor (`ctx.db.myAuth.<table>`); `auth_data` is the canonical namespace used in SQL and wire names. Without an explicit `name`, the root's case policy derives it (`myAuth` → `my_auth` by default). Pin `name` when renaming an accessor: changing the canonical namespace drops its tables and their data. The library keeps its own flat `ctx.db` accessors. To call a library function directly, pass `ctx.as.myAuth`; inside `withTx`, use `tx.as.myAuth`. Nested TypeScript submodules are supported. Lifecycle reducers and nonempty environment declarations belong in the root. Submodule routers are ignored; register delegated handlers on the root router. Composition is not cross-language.
+`myAuth` is the accessor (`ctx.db.myAuth.<table>`); `auth_data` is the canonical namespace used in SQL and wire names. Without an explicit `name`, the root's case policy derives it (`myAuth` → `my_auth` by default). Pin `name` when renaming an accessor: changing the canonical namespace drops its tables and their data. The library keeps its own flat `ctx.db` accessors. To call a library function directly, pass `ctx.as.myAuth`; inside `withTx`, use `tx.as.myAuth`. Mounting the same module under two keys gives independent instances. Nested mounts chain: `ctx.db.outer.inner.<table>` and `ctx.as.outer.as.inner`. Lifecycle reducers and nonempty environment declarations belong in the root. Submodule routers are ignored; register delegated handlers on the root router. Composition is not cross-language.
 
 Official reusable libraries include `@spacetimedb/cron`, `@spacetimedb/retry`, `@spacetimedb/rate-limit`, and `@spacetimedb/crypto`. Their registration shapes differ: `@spacetimedb/rate-limit/submodule` is mountable, cron/retry expose factories, and crypto exports helpers. Consult the chosen package's README/exports rather than assuming every package root is a mountable module.
 

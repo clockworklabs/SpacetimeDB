@@ -103,7 +103,6 @@ impl BatchRecord {
                     "provider_response": provider_error.as_ref().and_then(|error| error.downcast_ref::<crate::llm::clients::oa_compat::ProviderResponseError>()),
                     "http_response": provider_error.as_ref().and_then(|error| error.downcast_ref::<crate::llm::clients::http::HttpResponseError>())}),
             ),
-            Err(RunOneError::WithOutput { .. }) => bail!("normalize generated-code failures before recording"),
         };
         *self.tasks.get_mut(task).context("task not in planned batch")? = state;
         self.append(json!({"event": "attempt", "task": task, "attempt": attempt}), false)

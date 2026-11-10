@@ -13,10 +13,22 @@ pub fn spec() -> BenchmarkSpec {
                 json!([[1, "tools", 10, true], [2, "tools", 25, false], [3, "toys", 99, true]]),
             )?;
             s.call("compute_stats", json!(["tools"]))?;
-            s.owner_rows("category_stats", &["category", "total_amount", "order_count"], json!([["tools", 35, 2]]))?;
-            s.seed("order", &["id", "category", "amount", "fulfilled"], json!([[4, "tools", 5, true]]))?;
+            s.owner_rows(
+                "category_stats",
+                &["category", "total_amount", "order_count"],
+                json!([["tools", 35, 2]]),
+            )?;
+            s.seed(
+                "order",
+                &["id", "category", "amount", "fulfilled"],
+                json!([[4, "tools", 5, true]]),
+            )?;
             s.call("compute_stats", json!(["tools"]))?;
-            s.owner_rows("category_stats", &["category", "total_amount", "order_count"], json!([["tools", 40, 3]]))?;
+            s.owner_rows(
+                "category_stats",
+                &["category", "total_amount", "order_count"],
+                json!([["tools", 40, 3]]),
+            )?;
             Ok(())
         }));
         scorers

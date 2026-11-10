@@ -19,7 +19,10 @@ fn check_budget(accepted: u64, elapsed: Duration) -> anyhow::Result<()> {
     // Start before the first request: the bucket cannot be older than this.
     // Delayed requests may legitimately refill tokens; never assume a fixed success count.
     let maximum = 3 + elapsed.as_secs() / 5;
-    anyhow::ensure!(accepted <= maximum, "accepted {accepted} requests with at most {maximum} tokens");
+    anyhow::ensure!(
+        accepted <= maximum,
+        "accepted {accepted} requests with at most {maximum} tokens"
+    );
     Ok(())
 }
 

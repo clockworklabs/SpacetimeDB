@@ -16,7 +16,11 @@ pub fn spec() -> BenchmarkSpec {
                 json!([[7, "eu-west-3", "production", "(none)"]]),
             )?;
             s.reject("record_deployment", json!([7]), "note exists")?;
-            s.rows("current_deployment", &["region", "mode"], json!([["eu-west-3", "production"]]))?;
+            s.rows(
+                "current_deployment",
+                &["region", "mode"],
+                json!([["eu-west-3", "production"]]),
+            )?;
             // New values must take effect without a new publish, so nothing can be hard-coded.
             s.set_env(json!({"REGION": "us-east-1", "MODE": "development", "BANNER": "hello"}))?;
             s.call("require_development", json!([]))?;
@@ -29,7 +33,11 @@ pub fn spec() -> BenchmarkSpec {
                     [8, "us-east-1", "development", "hello"]
                 ]),
             )?;
-            s.rows("current_deployment", &["region", "mode"], json!([["us-east-1", "development"]]))?;
+            s.rows(
+                "current_deployment",
+                &["region", "mode"],
+                json!([["us-east-1", "development"]]),
+            )?;
             Ok(())
         }));
         scorers

@@ -8,7 +8,11 @@ pub fn spec() -> BenchmarkSpec {
         let mut scorers = default_schema_parity_scorers(host, file!(), route);
         scorers.push(scenario(file!(), route, host, lang, |s| {
             // C# uses RegisterUser because Register collides with a generated member.
-            let register = if s.lang == crate::eval::Lang::CSharp { "register_user" } else { "register" };
+            let register = if s.lang == crate::eval::Lang::CSharp {
+                "register_user"
+            } else {
+                "register"
+            };
             let (admin, admin_id) = s.new_user()?;
             let (member, member_id) = s.new_user()?;
             let (outsider, outsider_id) = s.new_user()?;

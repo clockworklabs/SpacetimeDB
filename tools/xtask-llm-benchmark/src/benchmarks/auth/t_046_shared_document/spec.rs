@@ -19,9 +19,17 @@ pub fn spec() -> BenchmarkSpec {
             s.expect_call_as(&owner, "share_document", json!([1, friend_id]), None)?;
             s.expect_call_as(&friend, "edit_document", json!([1, "shared edit"]), None)?;
             s.expect_rejected_as(&stranger, "edit_document", json!([1, "stolen"]), "unauthorized")?;
-            s.rows("document", &["id", "owner", "title"], json!([[1, owner_id, "shared edit"]]))?;
+            s.rows(
+                "document",
+                &["id", "owner", "title"],
+                json!([[1, owner_id, "shared edit"]]),
+            )?;
             s.expect_call_as(&owner, "edit_document", json!([1, "owner edit"]), None)?;
-            s.rows("document", &["id", "owner", "title"], json!([[1, owner_id, "owner edit"]]))?;
+            s.rows(
+                "document",
+                &["id", "owner", "title"],
+                json!([[1, owner_id, "owner edit"]]),
+            )?;
             Ok(())
         }));
         scorers

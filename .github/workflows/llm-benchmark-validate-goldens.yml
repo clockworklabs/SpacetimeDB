@@ -27,7 +27,7 @@ concurrency:
 jobs:
   validate-goldens:
     runs-on: spacetimedb-linux
-    timeout-minutes: ${{ matrix.lang == 'csharp' && 180 || 60 }}
+    timeout-minutes: 180
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       TARGET_TRIPLE: x86_64-unknown-linux-gnu

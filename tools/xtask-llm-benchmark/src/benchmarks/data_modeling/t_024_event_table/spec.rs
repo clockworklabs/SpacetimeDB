@@ -9,7 +9,10 @@ pub fn spec() -> BenchmarkSpec {
         scorers.push(scenario(file!(), route, host, lang, |s| {
             let query = format!("SELECT * FROM \"{}\"", s.relation("damage_event"));
             let update = s.watch_update(&query, || s.call("deal_damage", json!([7, 12, "fire"])))?;
-            anyhow::ensure!(update.contains("fire") && update.contains("12"), "missing event: {update}");
+            anyhow::ensure!(
+                update.contains("fire") && update.contains("12"),
+                "missing event: {update}"
+            );
             s.rows("damage_event", &["entity_id", "damage", "source"], json!([]))?;
             Ok(())
         }));
