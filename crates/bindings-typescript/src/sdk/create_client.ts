@@ -60,7 +60,7 @@ type ViewTable<K extends string, D> = TableToSchema<
   TableSchema<CoerceRow<ViewRow<D>>, readonly []>
 >;
 type Tables<M, P extends string = ''> = string extends keyof Entries<M>
-  ? Record<string, UntypedTableDef>
+  ? never
   : Intersection<
       {
         [K in keyof Entries<M> &
@@ -224,7 +224,7 @@ export function createClient<
   const M extends ModuleSchemaExports,
   const A extends Record<string, string> = {},
 >(
-  moduleSchema: M,
+  moduleSchema: M & ([Tables<M>] extends [never] ? never : unknown),
   options: { cliVersion?: string; tableAliases?: A } = {}
 ): Client<M, A> {
   const remote: UntypedRemoteModule = {

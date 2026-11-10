@@ -85,3 +85,10 @@ function invalidDeclarations() {
   );
 }
 void invalidDeclarations;
+
+// Erasing table names must not create a client accepting arbitrary tables.
+const erasedSchema: import('spacetimedb/schema').Schema<
+  import('spacetimedb/schema').SchemaEntries
+> = root;
+// @ts-expect-error A client requires concrete schema entry names.
+createClient({ default: erasedSchema });
