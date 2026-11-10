@@ -9,13 +9,13 @@ First, see the [user-facing docs](https://spacetimedb.com/docs/clients/c-sharp).
 ## Developing against a local clone of SpacetimeDB
 When developing against a local clone of SpacetimeDB, you'll need to ensure that the packages here can find an up-to-date version of the BSATN.Codegen and BSATN.Runtime packages from SpacetimeDB.
 
-To develop against a local clone of SpacetimeDB at `../SpacetimeDB`, run the following command:
+To develop against the C# bindings in this repository, run the following command from the repository root:
 
 ```sh
-dotnet pack ../SpacetimeDB/crates/bindings-csharp/BSATN.Runtime && ./tools~/write-nuget-config.sh ../SpacetimeDB
+dotnet pack crates/bindings-csharp/BSATN.Runtime && cargo regen csharp nuget-config
 ```
 
-This will create a (`.gitignore`d) `nuget.config` file that uses the local build of the package, instead of the package on NuGet.
+This will create (`.gitignore`d) `NuGet.Config` files that use the local build of the package, instead of the package on NuGet.
 
 You'll need to rerun this command whenever you update `BSATN.Codegen` or `BSATN.Runtime`.
 
@@ -56,7 +56,7 @@ Generated C# clients expose its tables through
 `conn.Procedures.MyAuth`, and query factories through `q.From.MyAuth`.
 Generated SQL and network messages use the database namespace `auth_data`.
 The C# accessor remains `MyAuth`. When `Name` is omitted, the host derives the
-database namespace from the accessor using the root module's case policy.
+database namespace from the accessor using the containing module's case policy.
 
 The `--namespace` option of `spacetime generate` controls where generated C#
 classes are declared; it does not name or rename database namespaces. With
@@ -64,6 +64,18 @@ classes are declared; it does not name or rename database namespaces. With
 while a `User` row in that dependency becomes
 `Game.Bindings.MyAuth.User`. Their table handles remain `conn.Db.User` and
 `conn.Db.MyAuth.User`, respectively.
+
+Nested submodules follow the same pattern at every level:
+`conn.Db.Auth.Audit.User`, `conn.Reducers.Auth.Audit.Login(...)`,
+`conn.Procedures.Auth.Audit.Count(...)`, and `q.From.Auth.Audit.User()`.
+All containers share one connection and table registry. Generated SQL quotes
+each canonical namespace segment separately; accessors are never substituted
+for canonical names. `SqlTableName(string[], string)` supports these paths while
+the existing string constructors continue to treat dots as literal identifier
+characters. Qualified names are cached on generated table handles.
+
+The `nested-namespaces` regression client exercises a real three-level C# module
+on .NET 8 and .NET 10.
 
 ### Runtime Structure
 

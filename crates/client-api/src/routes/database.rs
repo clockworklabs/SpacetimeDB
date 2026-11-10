@@ -469,7 +469,12 @@ async fn handle_http_route_impl<S: ControlStateDelegate + NodeDelegate>(
         version: http_version_to_st(parts.version),
     };
 
-    let response = match module.call_http_handler(handler_id, request, body).await {
+    // Each request gets a new identity, like a client that connects without a token.
+    let caller_auth = SpacetimeAuth::alloc(&worker_ctx).await?;
+    let response = match module
+        .call_http_handler(caller_auth.into(), handler_id, request, body)
+        .await
+    {
         Ok(response) => response,
         Err(spacetimedb::host::module_host::HttpHandlerCallError::NoSuchHandler) => {
             return Ok((StatusCode::NOT_FOUND, NO_SUCH_ROUTE).into_response());
@@ -1369,7 +1374,22 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         ));
     }
 
-    let (database_identity, db_name) = get_or_create_identity_and_name(&ctx, &auth, name_or_identity.as_ref()).await?;
+    // Resolve the target, allocating an identity if needed. Defer name registration
+    // until publication permissions have been checked.
+    let (database_identity, name_to_register) = match name_or_identity.as_ref() {
+        Some(target) => match target.try_resolve(&ctx).await.map_err(log_and_500)? {
+            Ok(identity) => (identity, None),
+            Err(name) => {
+                allow_creation(&auth)?;
+                let database_auth = SpacetimeAuth::alloc(&ctx).await?;
+                (database_auth.claims.identity, Some(name))
+            }
+        },
+        None => {
+            let database_auth = SpacetimeAuth::alloc(&ctx).await?;
+            (database_auth.claims.identity, None)
+        }
+    };
     let maybe_parent_database_identity = match parent.as_ref() {
         None => None,
         Some(parent) => parent.resolve(&ctx).await.map(Some)?,
@@ -1391,6 +1411,9 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         .map_err(log_and_500)?;
     match existing.as_ref() {
         None => {
+            if matches!(name_or_identity.as_ref(), Some(NameOrIdentity::Identity(_))) {
+                return Err(bad_request("Cannot create a database at a supplied identity".into()));
+            }
             allow_creation(&auth)?;
             ctx.authorize_action(
                 auth.claims.identity,
@@ -1406,6 +1429,11 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
             ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
                 .await?;
         }
+    }
+
+    // Reserve a new name only after checking publication permissions.
+    if let Some(name) = name_to_register {
+        create_name(&ctx, &auth, &database_identity, name).await?;
     }
 
     // Indicate in the response whether we created or updated the database.
@@ -1448,7 +1476,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
 
     let success = || {
         axum::Json(PublishResult::Success {
-            domain: db_name.cloned(),
+            domain: name_or_identity.as_ref().and_then(NameOrIdentity::name).cloned(),
             database_identity,
             op: publish_op,
         })
@@ -1519,40 +1547,6 @@ impl From<UpdateConfirmationError> for ErrorResponse {
             ),
         }
         .into()
-    }
-}
-
-/// Try to resolve `name_or_identity` to an [Identity] and [DatabaseName].
-///
-/// - If the database exists and has a name registered for it, return that.
-/// - If the database does not exist, but `name_or_identity` is a name,
-///   try to register the name and return alongside a newly allocated [Identity]
-/// - Otherwise, if the database does not exist and `name_or_identity` is `None`,
-///   allocate a fresh [Identity] and no name.
-///
-async fn get_or_create_identity_and_name<'a>(
-    ctx: &(impl ControlStateDelegate + NodeDelegate),
-    auth: &SpacetimeAuth,
-    name_or_identity: Option<&'a NameOrIdentity>,
-) -> axum::response::Result<(Identity, Option<&'a DatabaseName>)> {
-    match name_or_identity {
-        Some(noi) => match noi.try_resolve(ctx).await.map_err(log_and_500)? {
-            Ok(resolved) => Ok((resolved, noi.name())),
-            Err(name) => {
-                // `name_or_identity` was a `NameOrIdentity::Name`, but no record
-                // exists yet. Create it now with a fresh identity.
-                allow_creation(auth)?;
-                let database_auth = SpacetimeAuth::alloc(ctx).await?;
-                let database_identity = database_auth.claims.identity;
-                create_name(ctx, auth, &database_identity, name).await?;
-                Ok((database_identity, Some(name)))
-            }
-        },
-        None => {
-            let database_auth = SpacetimeAuth::alloc(ctx).await?;
-            let database_identity = database_auth.claims.identity;
-            Ok((database_identity, None))
-        }
     }
 }
 
@@ -2499,6 +2493,9 @@ mod tests {
         databases: std::sync::Arc<HashMap<Identity, Database>>,
         dns: std::sync::Arc<HashMap<String, Identity>>,
         dns_lookups: std::sync::Arc<AtomicUsize>,
+        reject_publication: bool,
+        name_registrations: std::sync::Arc<AtomicUsize>,
+        allow_publish_update: bool,
     }
 
     impl DummyState {
@@ -2513,6 +2510,9 @@ mod tests {
                 databases: std::sync::Arc::new(HashMap::new()),
                 dns: std::sync::Arc::new(HashMap::new()),
                 dns_lookups: std::sync::Arc::new(AtomicUsize::new(0)),
+                reject_publication: false,
+                name_registrations: std::sync::Arc::new(AtomicUsize::new(0)),
+                allow_publish_update: false,
             }
         }
 
@@ -2547,6 +2547,63 @@ mod tests {
             host_type: HostType::Wasm,
             initial_program: Hash::from_byte_array([0; 32]),
             bootstrap_generation: 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn rejected_publication_does_not_reserve_name() {
+        let mut state = DummyState::new();
+        state.reject_publication = true;
+        let registrations = state.name_registrations.clone();
+        let app = DatabaseRoutes::<DummyState>::default()
+            .into_router(state.clone())
+            .with_state(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(http::Method::PUT)
+                    .uri("/unreserved-name")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(registrations.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn supplied_identity_can_update_but_not_create_database() {
+        let identity = test_identity(42);
+        let mut existing = DummyState::new().with_database(identity);
+        existing.allow_publish_update = true;
+
+        for (state, expected_status) in [(DummyState::new(), StatusCode::BAD_REQUEST), (existing, StatusCode::OK)] {
+            let app = DatabaseRoutes::<DummyState>::default()
+                .into_router(state.clone())
+                .with_state(state);
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method(http::Method::PUT)
+                        .uri(format!("/{identity}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected_status);
+            if expected_status == StatusCode::OK {
+                let body = response.into_body().collect().await.unwrap().to_bytes();
+                assert!(matches!(
+                    serde_json::from_slice::<PublishResult>(&body).unwrap(),
+                    PublishResult::Success {
+                        database_identity,
+                        op: PublishOp::Updated,
+                        ..
+                    } if database_identity == identity
+                ));
+            }
         }
     }
 
@@ -2694,10 +2751,13 @@ mod tests {
         async fn publish_database(
             &self,
             _publisher: &Identity,
-            _spec: DatabaseDef,
+            spec: DatabaseDef,
             _policy: MigrationPolicy,
             _environment: EnvironmentUpdate,
         ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
+            if self.allow_publish_update && self.databases.contains_key(&spec.database_identity) {
+                return Ok(None);
+            }
             Err(anyhow::anyhow!("unused"))
         }
 
@@ -2744,6 +2804,7 @@ mod tests {
         }
 
         async fn register_tld(&self, _identity: &Identity, _tld: Tld) -> anyhow::Result<RegisterTldResult> {
+            self.name_registrations.fetch_add(1, Ordering::Relaxed);
             Err(anyhow::anyhow!("unused"))
         }
 
@@ -2779,10 +2840,24 @@ mod tests {
     impl Authorization for DummyState {
         async fn authorize_action(
             &self,
-            _subject: Identity,
-            _database: Identity,
-            _action: Action,
+            subject: Identity,
+            database: Identity,
+            action: Action,
         ) -> Result<(), Unauthorized> {
+            if self.reject_publication {
+                return Err(Unauthorized::Unauthorized {
+                    subject,
+                    action,
+                    database: Some(database),
+                    source: None,
+                });
+            }
+            if self.allow_publish_update
+                && matches!(action, Action::UpdateDatabase)
+                && self.databases.contains_key(&database)
+            {
+                return Ok(());
+            }
             Err(Unauthorized::InternalError(anyhow::anyhow!("unused")))
         }
 

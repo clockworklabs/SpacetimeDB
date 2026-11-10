@@ -8,7 +8,7 @@ import {
   encodeClientMessagesV3,
 } from '../src/sdk/websocket_v3_frames';
 
-function encodeClientMessage(message: ClientMessage): Uint8Array {
+function encodeClientMessage(message: ClientMessage): Uint8Array<ArrayBuffer> {
   const writer = new BinaryWriter(128);
   ClientMessage.serialize(writer, message);
   return writer.getBuffer().slice();

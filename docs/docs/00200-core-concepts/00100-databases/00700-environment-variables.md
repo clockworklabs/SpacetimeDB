@@ -256,7 +256,7 @@ Deleting a required value is rejected. Repeat `--unset-env` to delete multiple k
 
 The destructive `--delete-data` operation still clears all database data, including environment values. Supply required secrets again when resetting a database. `--env-only` cannot be combined with a reset.
 
-The same preservation rules apply to precompiled modules published with `--bin-path`. The CLI reads declarations from the artifact being published. HTTP clients and module procedures can use the [HTTP publish format](../../00300-resources/00200-reference/00200-http-api/00300-database.md#publishing-with-environment-values); project configuration and shell overrides are CLI conveniences.
+The same preservation rules apply to precompiled modules published with `--bin-path`. The CLI reads declarations from the artifact being published. HTTP clients and module procedures can use the [HTTP publish format](../../00300-resources/00200-http-api/00300-database.md#publishing-with-environment-values); project configuration and shell overrides are CLI conveniences.
 
 ## Inspect published values
 
@@ -282,7 +282,7 @@ SQL writes to `st_env`, module-side writes, and separate CLI setters are not sup
 
 Publishing environment values uses the same permission as publishing the module. This includes Developer-role collaborators where they can publish modules. Environment changes add no separate Admin requirement; a destructive reset or container configuration change still requires its normal permissions.
 
-Reducers, procedures, views, and HTTP handlers entered by the host in the root module can read its declared environment. Host-dispatched submodule entry points cannot read it, and submodules cannot declare a nonempty environment. There is no separate environment-variable namespace to configure for a submodule. A module with environment declarations can be published independently as a root module, but cannot be included as a submodule with those declarations. See [Submodules](./00600-submodules.md) for this restriction. Ordinary helper calls retain their calling entry point's access, including helpers defined in libraries or submodules. Root code can also pass a value to a helper explicitly.
+Reducers, procedures, views, and HTTP handlers entered by the host in the root module can read its declared environment. Host-dispatched submodule entry points cannot read it, and submodules cannot declare a nonempty environment. There is no separate environment-variable namespace to configure for a submodule. A module with environment declarations can be published independently as a root module, but cannot be included as a submodule with those declarations. See [Modules](./00600-modules.md) for this restriction. Ordinary helper calls retain their calling entry point's access, including helpers defined in libraries or submodules. Root code can also pass a value to a helper explicitly.
 
 A procedure suspended across a publish cannot read values belonging to a replacement program. Environment reads in views participate in dependency tracking, so publishing changed values refreshes affected views. Module code remains responsible for what it returns or logs: returning a secret from a public view exposes that value to clients.
 

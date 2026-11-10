@@ -454,7 +454,7 @@ pub(crate) mod tests {
                 target_column: ColId(1),
                 arg_columns: vec![],
                 on_result_reducer: None,
-                signature_hash: "test-signature".into(),
+                signature_hash: spacetimedb_lib::Hash::ZERO,
             });
             stdb.create_table(tx, schema)
         })?;
@@ -1278,6 +1278,23 @@ pub(crate) mod tests {
         let row = product![1u64];
 
         assert_eq!(result, vec![row], "Inventory");
+        Ok(())
+    }
+
+    #[test]
+    fn test_not_equal() -> ResultTest<()> {
+        let (db, _) = create_data(3)?;
+
+        for op in ["<>", "!="] {
+            let mut result = run_for_testing(
+                &db,
+                &format!("SELECT inventory_id FROM inventory WHERE inventory_id {op} 2"),
+            )?;
+
+            result.sort();
+
+            assert_eq!(result, vec![product![1u64], product![3u64]], "Inventory with {op}");
+        }
         Ok(())
     }
 
