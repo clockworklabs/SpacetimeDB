@@ -1,0 +1,107 @@
+namespace SpacetimeDB.Testing.Tests;
+
+using System.Text.Json;
+using Module = ChatModule.Module;
+
+public class AcceptanceTests
+{
+    [Theory]
+    [InlineData("https://auth.example.com", "my-app", null)]
+    [InlineData(
+        "https://auth.example.com",
+        "another-app",
+        "This token was issued for another application"
+    )]
+    [InlineData("https://evil.example.com", "my-app", "This token was issued by another provider")]
+    public void ChecksConnectionClaims(string issuer, string audience, string? expectedError)
+    {
+        using var test = ModuleTestContext.Create(typeof(Module).Assembly);
+        var auth = TestAuth.FromJwtPayload(
+            JsonSerializer.Serialize(
+                new
+                {
+                    iss = issuer,
+                    sub = "alice",
+                    aud = audience,
+                }
+            ),
+            ConnectionId.FromHexString("00000000000000000000000000000001")!.Value
+        );
+        if (expectedError is null)
+            test.WithReducerTx(auth, Module.ClientConnected);
+        else
+        {
+            var error = Assert.Throws<InvalidOperationException>(
+                () => test.WithReducerTx(auth, Module.ClientConnected)
+            );
+            Assert.Equal(expectedError, error.Message);
+        }
+    }
+
+    [Fact]
+    public void ScheduledReducersRunOnlyWhenExplicitlyCalled()
+    {
+        using var test = ModuleTestContext.Create(typeof(Module).Assembly);
+        var now = new Timestamp(2_000_000_000);
+        int[] ages = [16, 15, 1];
+        for (var i = 0; i < ages.Length; i++)
+            test.Db.Edit.Insert(
+                new Module.Edit
+                {
+                    Id = (ulong)i + 1,
+                    EditedAt = new Timestamp(
+                        now.MicrosecondsSinceUnixEpoch - ages[i] * 60L * 1_000_000
+                    ),
+                    Live = true,
+                }
+            );
+        var timer = test.Db.ExpireTimer.Insert(
+            new Module.ExpireTimer
+            {
+                ScheduledAt = new ScheduleAt.Interval(new TimeDuration(300_000_000)),
+            }
+        );
+        test.Clock.Set(now);
+        Assert.All(test.Db.Edit.Iter(), edit => Assert.True(edit.Live));
+        test.WithReducerTx(TestAuth.Internal(), ctx => Module.ExpireOldEdits(ctx, timer));
+        Assert.Equal(
+            [false, true, true],
+            test.Db.Edit.Iter().OrderBy(edit => edit.Id).Select(edit => edit.Live)
+        );
+        Assert.Equal(timer, Assert.Single(test.Db.ExpireTimer.Iter()));
+    }
+
+    [Fact]
+    public void DocumentedProcedureRecordsHttpAndTransportFailures()
+    {
+        using var test = ModuleTestContext.Create(typeof(Module).Assembly);
+        var now = new Timestamp(100);
+        test.Clock.Set(now);
+        Result<HttpResponse, HttpError>[] replies =
+        [
+            Result<HttpResponse, HttpError>.Ok(new(503, HttpVersion.Http11, [], HttpBody.Empty)),
+            Result<HttpResponse, HttpError>.Err(new HttpError("connection reset")),
+            Result<HttpResponse, HttpError>.Ok(new(200, HttpVersion.Http11, [], HttpBody.Empty)),
+        ];
+        var requests = 0;
+        var context = test.CreateProcedureContextBuilder(TestAuth.Internal())
+            .Http(
+                (_, request) =>
+                {
+                    Assert.Equal("https://example.invalid/status", request.Uri);
+                    return replies[requests++];
+                }
+            )
+            .Build();
+        foreach (var _ in replies)
+        {
+            Module.CheckStatus(context);
+            test.Clock.Advance(new TimeDuration(10));
+        }
+        Assert.Equal(replies.Length, requests);
+        Assert.Equal(
+            [now, new Timestamp(110)],
+            test.Db.FetchFailure.Iter().OrderBy(row => row.Id).Select(row => row.At)
+        );
+    }
+}

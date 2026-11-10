@@ -25,13 +25,13 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
 
     // Keep captured callbacks off the ordinary, unselected transaction path.
     private TResult WithSelectedTx<TResult>(Func<ProcedureTxContextBase, TResult> body) =>
-        SelectionSource!.WithTx(tx => body(SelectTxContext(tx)));
+        SelectionSource!.WithTxCore(tx => body(SelectTxContext(tx)));
 
     private TxOutcome<TResult> TryWithSelectedTx<TResult, TError>(
         Func<ProcedureTxContextBase, Result<TResult, TError>> body
     )
         where TError : Exception =>
-        SelectionSource!.TryWithTx<TResult, TError>(tx => body(SelectTxContext(tx)));
+        SelectionSource!.TryWithTxCore<TResult, TError>(tx => body(SelectTxContext(tx)));
 #endif
 
     private readonly TransactionalContextState<ProcedureTxContextBase> txState;
@@ -46,10 +46,10 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
         Sender = sender;
         ConnectionId = connectionId;
         SenderAuth = AuthCtx.BuildFromSystemTables(connectionId, sender);
-        txState = new(
-            random,
-            time,
-            timestamp => new Internal.TxContext(
+        txState = new(random, time, inner => CreateTxContext(inner))
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
+        {
+            CreateInitialTxContext = timestamp => new Internal.TxContext(
                 CreateLocal(),
                 Sender,
                 ConnectionId,
@@ -57,17 +57,69 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
                 SenderAuth,
                 random
             ),
-            inner => CreateTxContext(inner)
-        );
+        }
+#endif
+        ;
     }
 
     protected abstract ProcedureTxContextBase CreateTxContext(Internal.TxContext inner);
+
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    internal Internal.DatabaseAccess? Access { get; }
+
+    internal ProcedureContextBase(
+        Internal.IDatabaseBackend backend,
+        Func<Timestamp> clock,
+        Identity sender,
+        ConnectionId? connectionId,
+        Random random,
+        AuthCtx auth,
+        HttpClient http,
+        Action? afterCommit
+    )
+    {
+        Sender = sender;
+        ConnectionId = connectionId;
+        SenderAuth = auth;
+        Http = http;
+        Access = new Internal.DatabaseAccess(backend);
+        Env = new(Access);
+        txState = new(random, clock(), inner => CreateTxContext(inner))
+        {
+            Backend = backend,
+            Clock = clock,
+            AfterCommit = afterCommit,
+            CreateManagedTxContext = (transaction, timestamp) =>
+                new Internal.TxContext(
+                    new Local(new Internal.DatabaseAccess(transaction)),
+                    sender,
+                    connectionId,
+                    timestamp,
+                    auth,
+                    random
+                ),
+        };
+    }
+#endif
+
     protected internal abstract LocalBase CreateLocal();
 
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    public Internal.TxContext EnterTxContext(long timestampMicros) =>
+        throw new NotSupportedException(
+            "Host transactions are unavailable in managed module tests."
+        );
+
+    public void ExitTxContext() =>
+        throw new NotSupportedException(
+            "Host transactions are unavailable in managed module tests."
+        );
+#else
     public Internal.TxContext EnterTxContext(long timestampMicros) =>
         txState.EnterTxContext(timestampMicros);
 
     public void ExitTxContext() => txState.ExitTxContext();
+#endif
 
     public readonly struct TxOutcome<TResult>(bool isSuccess, TResult? value, Exception? error)
     {
@@ -93,6 +145,15 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
 
     public TResult WithTx<TResult>(Func<ProcedureTxContextBase, TResult> body)
     {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        Internal.TransactionCallback.Validate(body, typeof(TResult));
+#endif
+        return WithTxCore(body);
+    }
+
+    // Public entry points validate the caller's callback once; the core doesn't repeat it.
+    private protected TResult WithTxCore<TResult>(Func<ProcedureTxContextBase, TResult> body)
+    {
 #if NET10_0_OR_GREATER
         if (SelectionSource is not null)
         {
@@ -103,6 +164,17 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
     }
 
     public TxOutcome<TResult> TryWithTx<TResult, TError>(
+        Func<ProcedureTxContextBase, Result<TResult, TError>> body
+    )
+        where TError : Exception
+    {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        Internal.TransactionCallback.Validate(body, typeof(TResult));
+#endif
+        return TryWithTxCore(body);
+    }
+
+    private protected TxOutcome<TResult> TryWithTxCore<TResult, TError>(
         Func<ProcedureTxContextBase, Result<TResult, TError>> body
     )
         where TError : Exception
@@ -151,7 +223,11 @@ public abstract class ProcedureTxContextBase(Internal.TxContext inner) : IRefres
 #else
     public LocalBase Db => (LocalBase)Inner.Db;
 #endif
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    public DatabaseEnvironment Env => new(Inner.Db.Access);
+#else
     public DatabaseEnvironment Env { get; } = DatabaseEnvironment.Instance;
+#endif
     public Identity Sender => Inner.Sender;
     public ConnectionId? ConnectionId => Inner.ConnectionId;
     public Timestamp Timestamp => Inner.Timestamp;
@@ -159,7 +235,15 @@ public abstract class ProcedureTxContextBase(Internal.TxContext inner) : IRefres
     public Random Rng => Inner.Rng;
 }
 
-public abstract class LocalBase : Internal.Local { }
+public abstract class LocalBase : Internal.Local
+{
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    protected LocalBase() { }
+
+    internal LocalBase(Internal.DatabaseAccess access)
+        : base(access) { }
+#endif
+}
 
 internal sealed partial class RuntimeProcedureContext(
     Identity sender,

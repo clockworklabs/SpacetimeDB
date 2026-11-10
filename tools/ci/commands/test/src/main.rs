@@ -136,9 +136,33 @@ fn csharp_codegen() -> Result<()> {
 }
 
 fn csharp_tests() -> Result<()> {
-    cmd!("dotnet", "test", "-warnaserror")
-        .dir("crates/bindings-csharp")
-        .run()?;
+    let target_dir = std::env::var_os("CARGO_TARGET_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("target"));
+    let target_dir = std::env::current_dir()?.join(target_dir);
+    cmd!(
+        "cargo",
+        "build",
+        "--locked",
+        "-p",
+        "spacetimedb-test-datastore-ffi",
+        "--target-dir",
+        &target_dir,
+    )
+    .run()?;
+    let native_library = target_dir.join("debug").join(format!(
+        "{}spacetimedb_test_datastore_ffi{}",
+        std::env::consts::DLL_PREFIX,
+        std::env::consts::DLL_SUFFIX,
+    ));
+    cmd!(
+        "dotnet",
+        "test",
+        "-warnaserror",
+        format!("-p:NativeTestLibrary={}", native_library.display()),
+    )
+    .dir("crates/bindings-csharp")
+    .run()?;
     Ok(())
 }
 

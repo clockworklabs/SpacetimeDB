@@ -2,9 +2,7 @@ namespace SpacetimeDB.Internal;
 
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
-// The NuGet runtime DLL is shared by managed and WASM builds.
-// Keep the real import attributes: publishing a module to WASM
-// does not recompile this DLL.
+// .NET 8 has no WasmImportLinkageAttribute, so declare a stand-in there.
 #if NET10_0_OR_GREATER
 using WasmImportLinkageAttribute = System.Runtime.InteropServices.WasmImportLinkageAttribute;
 #else
@@ -65,7 +63,7 @@ internal static partial class FFI
     // In the future C# will allow to specify Wasm import namespace in
     // `LibraryImport` directly.
     const string StdbNamespace10_0 =
-#if SPACETIMEDB_WASM_AOT || NET10_0_OR_GREATER
+#if NET10_0_OR_GREATER
         "spacetime_10.0"
 #else
         "bindings"
@@ -73,7 +71,7 @@ internal static partial class FFI
     ;
 
     const string StdbNamespace10_1 =
-#if SPACETIMEDB_WASM_AOT || NET10_0_OR_GREATER
+#if NET10_0_OR_GREATER
         "spacetime_10.1"
 #else
         "bindings"
@@ -81,7 +79,7 @@ internal static partial class FFI
     ;
 
     const string StdbNamespace10_2 =
-#if SPACETIMEDB_WASM_AOT || NET10_0_OR_GREATER
+#if NET10_0_OR_GREATER
         "spacetime_10.2"
 #else
         "bindings"
@@ -89,7 +87,7 @@ internal static partial class FFI
     ;
 
     const string StdbNamespace10_3 =
-#if SPACETIMEDB_WASM_AOT || NET10_0_OR_GREATER
+#if NET10_0_OR_GREATER
         "spacetime_10.3"
 #else
         "bindings"
@@ -97,7 +95,7 @@ internal static partial class FFI
     ;
 
     const string StdbNamespace10_4 =
-#if SPACETIMEDB_WASM_AOT || NET10_0_OR_GREATER
+#if NET10_0_OR_GREATER
         "spacetime_10.4"
 #else
         "bindings"
@@ -105,7 +103,7 @@ internal static partial class FFI
     ;
 
     const string StdbNamespace10_5 =
-#if SPACETIMEDB_WASM_AOT || NET10_0_OR_GREATER
+#if NET10_0_OR_GREATER
         "spacetime_10.5"
 #else
         "bindings"
@@ -113,7 +111,7 @@ internal static partial class FFI
     ;
 
     const string StdbNamespace10_6 =
-#if SPACETIMEDB_WASM_AOT || NET10_0_OR_GREATER
+#if NET10_0_OR_GREATER
         "spacetime_10.6"
 #else
         "bindings"

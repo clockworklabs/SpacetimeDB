@@ -148,8 +148,16 @@ jobs:
         if: ${{ !inputs.dry_run }}
         run: cargo-release release crates ${{ github.event.inputs.release_tag }}
 
-  release-csharp:
+  validate-csharp-packages:
     needs: build-cargo-release
+    if: ${{ inputs.release_csharp }}
+    uses: ./.github/workflows/csharp-testing.yml
+    with:
+      use-release-tag: ${{ !inputs.dry_run }}
+      release-tag: ${{ inputs.release_tag }}
+
+  release-csharp:
+    needs: [build-cargo-release, validate-csharp-packages]
     runs-on: spacetimedb-linux
     if: ${{ inputs.release_csharp }}
     env:
@@ -158,10 +166,15 @@ jobs:
       NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
 
     steps:
+      # The runner context isn't available in job-level env, so set the feed path here.
+      - name: Set validated package feed path
+        run: echo "CSHARP_PACKAGE_FEED=$RUNNER_TEMP/validated-csharp-packages" >> "$GITHUB_ENV"
+
       - name: Checkout release source
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.dry_run && github.sha || github.event.inputs.release_tag }}
+          ref: ${{ needs.validate-csharp-packages.outputs.source-sha }}
+          persist-credentials: false
           submodules: recursive
 
       - name: Set up Rust
@@ -183,7 +196,7 @@ jobs:
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
-          global-json-path: global.json
+          global-json-file: global.json
 
       - name: Install NuGet
         shell: bash
@@ -218,6 +231,12 @@ jobs:
           # Verify configuration
           echo "Git URL rewrite config:"
           git config --global --get-regexp url
+
+      - name: Download validated C# packages
+        uses: actions/download-artifact@v4
+        with:
+          name: spacetimedb-testing-packages
+          path: ${{ env.CSHARP_PACKAGE_FEED }}
 
       - name: Run C# SDK release (dry-run)
         if: ${{ inputs.dry_run }}

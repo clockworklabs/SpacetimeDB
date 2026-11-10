@@ -4,16 +4,31 @@ using System;
 
 public sealed class AuthCtx
 {
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
     private static byte[] jwtBuffer = new byte[0x10_000];
+#endif
 
     // Computed on first use, since comparing the sender with the database's Identity needs a host call.
     private readonly Lazy<bool> _isInternal;
     private readonly Lazy<JwtClaims?> _jwtLazy;
 
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    internal static AuthCtx InternalForTesting() => new(true, static () => null);
+
+    internal static AuthCtx FromJwtPayload(string payload, Identity identity) =>
+        new(false, () => new JwtClaims(payload, identity));
+
+    private AuthCtx(bool isInternal, Func<JwtClaims?> jwtFactory)
+    {
+        _isInternal = new Lazy<bool>(() => isInternal);
+        _jwtLazy = new Lazy<JwtClaims?>(jwtFactory);
+    }
+#endif
+
     private AuthCtx(Identity sender, Func<JwtClaims?> jwtFactory)
     {
         _isInternal = new Lazy<bool>(
-            () => sender == SpacetimeDB.Internal.IReducerContext.GetDatabaseIdentity()
+            () => sender == Internal.IReducerContext.GetDatabaseIdentity()
         );
         _jwtLazy = new Lazy<JwtClaims?>(() => jwtFactory?.Invoke());
     }
@@ -24,20 +39,21 @@ public sealed class AuthCtx
     /// Ideally this would not be part of the public API.
     /// This should only be called inside of a reducer.
     /// </summary>
-    public static AuthCtx BuildFromSystemTables(ConnectionId? connectionId, Identity identity)
-    {
-        if (connectionId == null)
-        {
-            return new AuthCtx(identity, jwtFactory: static () => null);
-        }
-        return FromConnectionId(connectionId.Value, identity);
-    }
+    public static AuthCtx BuildFromSystemTables(ConnectionId? connectionId, Identity identity) =>
+        connectionId == null
+            ? new AuthCtx(identity, jwtFactory: static () => null)
+            : FromConnectionId(connectionId.Value, identity);
 
     /// <summary>
     /// Create an AuthCtx that reads JWT for a given connection ID.
     /// </summary>
     private static AuthCtx FromConnectionId(ConnectionId connectionId, Identity identity)
     {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        throw new NotSupportedException(
+            "AuthCtx.BuildFromSystemTables cannot look up client credentials in managed module tests. Use TestAuth.FromJwtPayload."
+        );
+#else
         return new AuthCtx(
             identity,
             jwtFactory: () =>
@@ -48,6 +64,7 @@ public sealed class AuthCtx
                 return jwt == null ? null : new JwtClaims(jwt, identity);
             }
         );
+#endif
     }
 
     /// <summary>
@@ -67,12 +84,18 @@ public sealed class AuthCtx
     /// </summary>
     internal static string? ReadJwt(SpacetimeDB.Internal.BytesSource source)
     {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        throw new NotSupportedException(
+            "Reading JWT credentials from the host is unavailable in managed module tests. Use TestAuth.FromJwtPayload."
+        );
+#else
         using var stream = SpacetimeDB.Internal.Module.Consume(source, ref jwtBuffer);
         if (stream.Length == 0)
         {
             return null;
         }
         return System.Text.Encoding.UTF8.GetString(jwtBuffer, 0, checked((int)stream.Length));
+#endif
     }
 
     /// <summary>

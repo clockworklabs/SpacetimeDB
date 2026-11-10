@@ -8780,6 +8780,8 @@ name = "spacetimedb-query"
 version = "2.15.0"
 dependencies = [
  "anyhow",
+ "spacetimedb-datastore",
+ "spacetimedb-engine",
  "spacetimedb-execution",
  "spacetimedb-expr",
  "spacetimedb-lib",
@@ -9085,14 +9087,24 @@ version = "2.15.0"
 dependencies = [
  "anyhow",
  "scopeguard",
- "spacetimedb-core",
  "spacetimedb-datastore",
+ "spacetimedb-engine",
+ "spacetimedb-execution",
  "spacetimedb-expr",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-query",
  "spacetimedb-schema",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "spacetimedb-test-datastore-ffi"
+version = "2.15.0"
+dependencies = [
+ "spacetimedb-lib",
+ "spacetimedb-primitives",
+ "spacetimedb-test-datastore",
 ]
 
 [[package]]
