@@ -16,22 +16,6 @@ export * from './lib/query.ts';
 export * from './sdk/index.ts';
 
 export {
-  schema as moduleSchema,
-  Schema as ModuleSchema,
-  FunctionSchema,
-} from './schema/module.ts';
-export type {
-  ModuleSchemaExports,
-  SchemaEntry,
-  SchemaEntries,
-  FunctionKind,
-  FunctionOptions,
-  ViewOptions,
-  SchemaOptions,
-} from './schema/module.ts';
-export { CaseConversionPolicy } from './lib/autogen/types.ts';
-
-export {
   createClient,
   type Client,
   type ClientConnection,
