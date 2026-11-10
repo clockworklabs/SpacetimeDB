@@ -160,13 +160,7 @@ impl Fragments {
     /// ```
     ///
     /// Each fragment looks up the bindings its rows match, through the binding indexes in `binding_indexes`.
-    /// `non_index_join` is set if a fragment joins without an index.
-    fn compile_from_plan(
-        plan: &ProjectPlan,
-        tables: &[Label],
-        binding_indexes: &mut Vec<ColList>,
-        non_index_join: &mut bool,
-    ) -> Result<Self> {
+    fn compile_from_plan(plan: &ProjectPlan, tables: &[Label], binding_indexes: &mut Vec<ColList>) -> Result<Self> {
         /// Mutate a query plan by turning a table scan into a delta scan
         fn mut_plan(plan: &mut ProjectPlan, relvar: Label, delta: Delta) {
             plan.visit_mut(&mut |plan| match plan {
@@ -191,7 +185,6 @@ impl Fragments {
                 mut_plan(&mut plan, *alias, *delta);
             }
             let plan = plan.insert_binding_lookup(binding_indexes).optimize()?;
-            *non_index_join |= has_non_index_join(&plan);
             Ok(BindingProject::new(plan))
         };
 
@@ -468,6 +461,11 @@ impl SubscriptionPlan {
     ) -> Result<(Vec<Self>, bool, Vec<ProjectPlan>)> {
         let (plans, return_id, return_name, has_param) = compile_subscription(sql, tx, auth)?;
 
+        /// Does this plan have any non-index joins?
+        fn has_non_index_join(plan: &PhysicalPlan) -> bool {
+            plan.any(&|op| matches!(op, PhysicalPlan::HashJoin(..) | PhysicalPlan::NLJoin(..)))
+        }
+
         let mut subscriptions = vec![];
         let mut physical_plans = vec![];
         let params = ExecutionParams::from_auth(auth);
@@ -511,11 +509,6 @@ impl SubscriptionPlan {
 
         Ok((subscriptions, has_param, physical_plans))
     }
-}
-
-/// Does this plan have any non-index joins?
-fn has_non_index_join(plan: &PhysicalPlan) -> bool {
-    plan.any(&|op| matches!(op, PhysicalPlan::HashJoin(..) | PhysicalPlan::NLJoin(..)))
 }
 
 /// What tables are involved in this plan?
@@ -565,8 +558,6 @@ pub struct Template {
     binding_indexes: Vec<ColList>,
     /// One per RLS fragment
     fragments: Vec<TemplateFragment>,
-    /// Does a delta plan join without an index?
-    non_index_join: bool,
 }
 
 /// One RLS fragment of a [`Template`]
@@ -584,7 +575,6 @@ impl Template {
     /// Builds the delta plans of `compiled`, which look up the bindings each row matches
     pub fn build(compiled: &SubscriptionTemplate) -> Result<Self> {
         let mut binding_indexes = vec![];
-        let mut non_index_join = false;
         let fragments = compiled
             .plans
             .iter()
@@ -593,12 +583,7 @@ impl Template {
                 Ok(TemplateFragment {
                     table_ids,
                     return_schema: plan.return_table(),
-                    fragments: Fragments::compile_from_plan(
-                        plan,
-                        &table_aliases,
-                        &mut binding_indexes,
-                        &mut non_index_join,
-                    )?,
+                    fragments: Fragments::compile_from_plan(plan, &table_aliases, &mut binding_indexes)?,
                 })
             })
             .collect::<Result<_>>()?;
@@ -610,7 +595,6 @@ impl Template {
             param_types: compiled.params.iter().map(|(_, ty)| ty.clone()).collect(),
             binding_indexes,
             fragments,
-            non_index_join,
         })
     }
 
@@ -657,12 +641,6 @@ impl Template {
     /// The plan fragments, one per RLS fragment
     pub fn fragments(&self) -> &[TemplateFragment] {
         &self.fragments
-    }
-
-    /// Does a delta plan join without an index?
-    /// Lifting a literal can cost a plan the index it would probe, such as an index on two columns that includes it.
-    pub fn has_non_index_join(&self) -> bool {
-        self.non_index_join
     }
 
     /// From which tables does this template read?

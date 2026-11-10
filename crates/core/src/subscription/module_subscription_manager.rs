@@ -2170,7 +2170,7 @@ mod tests {
             ("rank", AlgebraicType::U32),
         ];
         let team = [("id", AlgebraicType::U64), ("region", AlgebraicType::String)];
-        db.create_table_for_test_with_the_works(
+        let player_id = db.create_table_for_test_with_the_works(
             "player",
             &player,
             &[ColList::from_iter([2, 1])],
@@ -2186,17 +2186,24 @@ mod tests {
         };
         let rank_3 = compile_plan(&db, &sql(3))?;
         let rank_4 = compile_plan(&db, &sql(4))?;
-        assert!(!rank_3.template.has_non_index_join());
+        // A changed team reads `player` only through the join, so this is the join's index
+        assert!(rank_3.template.index_ids().any(|(table, _)| table == player_id));
         assert_eq!(rank_3.template.key(), rank_4.template.key());
         assert_ne!(rank_3.values, rank_4.values);
 
         // `ranked` has `player`'s columns, but its only index is on `rank`,
         // so a changed team probes it with the binding's rank, and compares team ids after
-        db.create_table_for_test_with_the_works("ranked", &player, &[ColList::new(2.into())], &[], StAccess::Public)?;
+        let ranked_id = db.create_table_for_test_with_the_works(
+            "ranked",
+            &player,
+            &[ColList::new(2.into())],
+            &[],
+            StAccess::Public,
+        )?;
         let sql = |rank: u32| format!("select t.* from ranked r join team t on r.team_id = t.id where r.rank = {rank}");
         let rank_3 = compile_plan(&db, &sql(3))?;
         let rank_4 = compile_plan(&db, &sql(4))?;
-        assert!(!rank_3.template.has_non_index_join());
+        assert!(rank_3.template.index_ids().any(|(table, _)| table == ranked_id));
         assert_eq!(rank_3.template.key(), rank_4.template.key());
         assert_ne!(rank_3.values, rank_4.values);
 
@@ -2206,12 +2213,13 @@ mod tests {
             ("team_id", AlgebraicType::U64),
             ("owner", AlgebraicType::identity()),
         ];
-        db.create_table_for_test_with_the_works("pet", &pet, &[ColList::from_iter([2, 1])], &[], StAccess::Public)?;
+        let pet_id =
+            db.create_table_for_test_with_the_works("pet", &pet, &[ColList::from_iter([2, 1])], &[], StAccess::Public)?;
         let sql = "select p.* from pet p join team t on p.team_id = t.id where t.region = 'west' and p.owner = :sender";
         let auth = |caller: u8| AuthCtx::new(Identity::ZERO, Identity::from_byte_array([caller; 32]));
         let caller_1 = compile_plan_with_auth(&db, sql, auth(1))?;
         let caller_2 = compile_plan_with_auth(&db, sql, auth(2))?;
-        assert!(!caller_1.template.has_non_index_join());
+        assert!(caller_1.template.index_ids().any(|(table, _)| table == pet_id));
         assert_eq!(caller_1.template.key(), caller_2.template.key());
         assert_ne!(caller_1.values, caller_2.values);
 

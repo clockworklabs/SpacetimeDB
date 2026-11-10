@@ -54,16 +54,6 @@ pub fn compile_subscription_template(sql: &str, tx: &impl SchemaView, auth: &Aut
     compile(sql, tx, auth, CompileTarget::Template)
 }
 
-/// Like [`compile_subscription_template`], but keeps each literal in the plan and makes each built-in a value,
-/// so only the same query from the same caller shares the template
-pub fn compile_subscription_template_with_literals(
-    sql: &str,
-    tx: &impl SchemaView,
-    auth: &AuthCtx,
-) -> Result<SubscriptionTemplate> {
-    compile(sql, tx, auth, CompileTarget::TemplateWithLiterals)
-}
-
 /// What `compile` builds
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CompileTarget {
@@ -71,8 +61,6 @@ enum CompileTarget {
     Query,
     /// A template shared by queries that differ only in their values: literals and built-ins become binding params
     Template,
-    /// A template that keeps its literals and makes each built-in, such as `:sender`, this caller's value
-    TemplateWithLiterals,
 }
 
 fn compile(sql: &str, tx: &impl SchemaView, auth: &AuthCtx, target: CompileTarget) -> Result<SubscriptionTemplate> {
@@ -113,7 +101,6 @@ fn compile(sql: &str, tx: &impl SchemaView, auth: &AuthCtx, target: CompileTarge
                 CompileTarget::Query => return plan,
                 // The fragments share the lifted literals, so they share the built-ins' slots too
                 CompileTarget::Template => plan.remap_builtin_params(&mut params),
-                CompileTarget::TemplateWithLiterals => plan.inline_params(&ExecutionParams::from_auth(auth)),
             }
             // Templates are compared in this form
             plan = plan.canonicalize();

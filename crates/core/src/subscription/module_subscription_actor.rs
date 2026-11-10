@@ -5212,7 +5212,7 @@ mod tests {
         )?;
         let u_id = db.create_table_for_test("u", &u_schema, &[1.into()])?;
         insert_rls_rules(&db, [u_id], ["select * from u where owner = :sender"])?;
-        // Its only index on `t_id` is on `(rank, t_id)`, so its join keeps its literals
+        // Its only index on `t_id` is on `(rank, t_id)`, which its join probes with the binding's rank
         let g_schema = [
             ("id", AlgebraicType::U64),
             ("t_id", AlgebraicType::U64),
@@ -5265,7 +5265,7 @@ mod tests {
                 })
                 .collect();
 
-            // The template a subscribe uses, which may keep its literals
+            // The template a subscribe uses
             let (template, values) = compile_template(&sql, &tx, &auth, &mut TemplateCache::default())?;
             let mut bindings = BindingRelation::new(template.param_types().to_vec(), vec![]);
             let binding = bindings.insert(values);

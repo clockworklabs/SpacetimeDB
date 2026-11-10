@@ -12,7 +12,7 @@ use spacetimedb_expr::check::SchemaView;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::ProductValue;
 use spacetimedb_physical_plan::plan::{ParamResolver, ParamSource, ProjectPlan};
-use spacetimedb_query::{compile_subscription_template, compile_subscription_template_with_literals};
+use spacetimedb_query::compile_subscription_template;
 use spacetimedb_subscription::{SubscriptionPlan, Template};
 use std::sync::Arc;
 
@@ -128,25 +128,11 @@ pub(crate) fn compile_template(
     auth: &AuthCtx,
     templates: &mut TemplateCache,
 ) -> Result<(Arc<Template>, ProductValue), DBError> {
-    let mut compiled = compile_subscription_template(input, tx, auth)?;
+    let compiled = compile_subscription_template(input, tx, auth)?;
     // Only a new template builds its delta plans
     let template = match templates.find(&compiled.plans) {
         Some(template) => template,
-        None => {
-            let template = Template::build(&compiled)?;
-            if !template.has_non_index_join() {
-                templates.insert(template)
-            } else {
-                // Lifting `rank = 3` or `owner = :sender` can lose an index such as `(rank, team_id)`,
-                // so such a query keeps its values, and shares only with the same query from the same caller.
-                // TODO: Probe such an index with the values of the bindings that match the changed row.
-                compiled = compile_subscription_template_with_literals(input, tx, auth)?;
-                match templates.find(&compiled.plans) {
-                    Some(template) => template,
-                    None => templates.insert(Template::build(&compiled)?),
-                }
-            }
-        }
+        None => templates.insert(Template::build(&compiled)?),
     };
     let builtins = ExecutionParams::from_auth(auth);
     let values = compiled
