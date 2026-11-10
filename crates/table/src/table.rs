@@ -291,6 +291,10 @@ impl TableInner {
     fn page_and_offset(&self, ptr: RowPointer) -> Result<(PageRef<'_>, PageOffset), PageError> {
         Ok(self.try_page_and_offset(ptr)?.unwrap())
     }
+
+    fn trim(&self) -> Result<u64, PageError> {
+        self.pages.trim()
+    }
 }
 
 static_assert_size!(Table, 336);
@@ -2468,6 +2472,10 @@ impl Table {
             extra_pages_to_pin,
         }
     }
+
+    pub fn trim(&self) -> Result<u64, PageError> {
+        self.inner.trim()
+    }
 }
 
 /// A reference to a single row within a table.
@@ -4196,7 +4204,7 @@ pub(crate) mod test {
         // map. Deleting this index will need to build one from the stored rows.
         unsafe { table.insert_index(&blobs, index_id, index) }.unwrap().unwrap();
         table.insert(&blobs, &product![0_u64]).unwrap();
-        table.inner.pages.evict().unwrap();
+        table.inner.pages.evict(0).unwrap();
 
         // Occupy and pin the entire resident-page budget with another table.
         // The target table's evicted page therefore cannot be faulted in.
@@ -4261,7 +4269,7 @@ pub(crate) mod test {
             .unwrap();
         unsafe { table.insert_index(&blobs, index_id, index) }.unwrap().unwrap();
         table.insert(&blobs, &product![0_u64]).unwrap();
-        table.inner.pages.evict().unwrap();
+        table.inner.pages.evict(0).unwrap();
 
         // Occupy and pin the entire resident-page budget with another table.
         // The target table's evicted page therefore cannot be faulted in.
@@ -4336,7 +4344,7 @@ pub(crate) mod test {
         }
         assert_eq!(table.inner.pages.num_pages(), 1);
         assert_eq!(table.num_rows(), value);
-        table.inner.pages.evict().unwrap();
+        table.inner.pages.evict(0).unwrap();
 
         let error = table.delete_equal_row(&blobs, &product![0_u64]).unwrap_err();
         assert!(matches!(error, Error::Table(TableError::Page(_))));
@@ -4382,7 +4390,7 @@ pub(crate) mod test {
         }
         assert_eq!(table.inner.pages.num_pages(), 1);
         let blob_bytes_before = blobs.bytes_used_by_blobs();
-        table.inner.pages.evict().unwrap();
+        table.inner.pages.evict(0).unwrap();
 
         // Without the temporary-row pin, trying to load the original page
         // evicts the temporary page. A failed read then leaves cleanup needing
@@ -4598,7 +4606,7 @@ pub(crate) mod test {
             // Drop the residency pin, but retain the logical reference created
             // by insert. Eviction can now move the bytes out of memory.
             drop(other_use);
-            blobs.evict().unwrap();
+            blobs.evict(0).unwrap();
 
             // Pages remain resident; only the blob would require a storage read.
             // Previously clear deleted the small row, then failed on the blob.
@@ -4658,7 +4666,7 @@ pub(crate) mod test {
             count += 1;
         }
         let blob_bytes_before = blobs.bytes_used_by_blobs();
-        table.inner.pages.evict().unwrap();
+        table.inner.pages.evict(0).unwrap();
         // Keep the first page resident so clear collects its blob references
         // before hitting the injected read failure on the second page.
         let first_page = table.inner.pages.get_page(PageIndex(0)).unwrap().unwrap();
@@ -4719,7 +4727,7 @@ pub(crate) mod test {
         // The target page is now evicted. Its empty tx-table clone
         // shares the same page budget, so writing the needle takes all the room
         // needed to fault the target page back in. Blob contents are shared too.
-        committed.inner.pages.evict().unwrap();
+        committed.inner.pages.trim().unwrap();
         let mut tx_table = committed.clone_structure(SquashedOffset::TX_STATE);
 
         // This is the lookup used by live delete_by_row_value: the temporary
@@ -4786,7 +4794,7 @@ pub(crate) mod test {
         assert_eq!(table.inner.pages.num_pages(), 2);
         assert_eq!(table.inner.pages.num_present_pages(), 1);
         let count_before = table.num_rows();
-        table.inner.pages.evict().unwrap();
+        table.inner.pages.evict(0).unwrap();
 
         // Physical serialization of the duplicate succeeds on a new page.
         // Confirmation then follows the pointer map to the original row;
@@ -4822,7 +4830,8 @@ pub(crate) mod test {
         assert_eq!(blobs.usage_counter().get(&hash), Some(&1));
         // The remaining owner allows eviction. A policy pin belonging to the
         // deleted row must not keep these bytes in the resident memory budget.
-        assert_eq!(blobs.evict().unwrap().accounted_bytes(), 0);
+        blobs.evict(0).unwrap();
+        assert_eq!(blobs.resident_usage().accounted_bytes(), 0);
     }
 
     #[test]
@@ -4842,7 +4851,8 @@ pub(crate) mod test {
         assert_eq!(blobs.usage_counter().get(&hash), Some(&1));
 
         // Cleanup must undo residency policy as well as the logical reference.
-        assert_eq!(blobs.evict().unwrap().accounted_bytes(), 0);
+        blobs.evict(0).unwrap();
+        assert_eq!(blobs.resident_usage().accounted_bytes(), 0);
     }
 
     #[test]
@@ -4867,9 +4877,9 @@ pub(crate) mod test {
                 } else {
                     drop(table.insert(blobs, &row).unwrap());
                 }
-                let usage = blobs.evict().unwrap().accounted_bytes();
+                blobs.evict(0).unwrap();
                 assert_eq!(
-                    usage,
+                    blobs.resident_usage().accounted_bytes(),
                     match policy {
                         EvictionPolicy::NeverEvict => large.len() as u64,
                         EvictionPolicy::Evictable => 0,
@@ -4911,7 +4921,8 @@ pub(crate) mod test {
                 }
                 .unwrap();
             }
-            assert_eq!(blobs.evict().unwrap().accounted_bytes(), 0);
+            blobs.evict(0).unwrap();
+            assert_eq!(blobs.resident_usage().accounted_bytes(), 0);
 
             // SAFETY: These pages were written using this exact table's layout.
             unsafe { table.set_pages(vec![Some(page)], &blobs) }.unwrap();
@@ -4923,8 +4934,9 @@ pub(crate) mod test {
 
             // No RowRef remains live here. Only recovery's permanent policy
             // pins may keep the shared bytes resident after this eviction.
+            blobs.evict(0).unwrap();
             assert_eq!(
-                blobs.evict().unwrap().accounted_bytes(),
+                blobs.resident_usage().accounted_bytes(),
                 match policy {
                     EvictionPolicy::NeverEvict => large.len() as u64,
                     EvictionPolicy::Evictable => 0,
@@ -4973,18 +4985,21 @@ pub(crate) mod test {
             }
             .unwrap();
         }
-        assert_eq!(blobs.evict().unwrap().accounted_bytes(), 0);
+        blobs.evict(0).unwrap();
+        assert_eq!(blobs.resident_usage().accounted_bytes(), 0);
         // SAFETY: This page was written with this exact table's layout.
         unsafe { table.set_pages(vec![Some(page)], &blobs) }.unwrap();
         assert_eq!(blobs.usage_counter().into_values().collect::<Vec<_>>(), [4]);
-        assert_eq!(blobs.evict().unwrap().accounted_bytes(), large.len() as u64);
+        blobs.evict(0).unwrap();
+        assert_eq!(blobs.resident_usage().accounted_bytes(), large.len() as u64);
 
         // Deleting either row releases two references, but the other row still
         // belongs to a never-evict table and must retain its residency pins.
         assert!(table.delete_equal_row(&blobs, &rows[0]).unwrap().is_some());
         assert_eq!(table.num_rows(), 1);
         assert_eq!(blobs.usage_counter().into_values().collect::<Vec<_>>(), [2]);
-        assert_eq!(blobs.evict().unwrap().accounted_bytes(), large.len() as u64);
+        blobs.evict(0).unwrap();
+        assert_eq!(blobs.resident_usage().accounted_bytes(), large.len() as u64);
     }
 
     #[test]
@@ -5017,7 +5032,8 @@ pub(crate) mod test {
         assert_eq!(evictable.clear(&blobs).unwrap(), 1);
         assert_eq!(required.num_rows(), 1);
         assert_eq!(blobs.usage_counter().into_values().collect::<Vec<_>>(), [1]);
-        assert_eq!(blobs.evict().unwrap().accounted_bytes(), large.len() as u64);
+        blobs.evict(0).unwrap();
+        assert_eq!(blobs.resident_usage().accounted_bytes(), large.len() as u64);
     }
 
     fn assert_prepared_commit_protects_pointer_map_candidates(fail_during_preparation: bool, fixed_rows: bool) {
@@ -5078,7 +5094,7 @@ pub(crate) mod test {
         if fail_during_preparation {
             // The deletion page stays pinned, isolating the fault to the
             // comparison candidate on the otherwise untouched first page.
-            table.inner.pages.evict().unwrap();
+            table.inner.pages.evict(0).unwrap();
             fail_reads.store(true, Ordering::Relaxed);
         }
         let result = table.prepare_commit(&blobs, [deleted_pin.pointer()], [Ok(insert)]);
@@ -5095,7 +5111,7 @@ pub(crate) mod test {
             drop(deleted_pin);
             // After preparation, eviction and failed storage reads must not
             // interrupt apply, even after its deletion has already happened.
-            table.inner.pages.evict().unwrap();
+            table.inner.pages.evict(0).unwrap();
             fail_reads.store(true, Ordering::Relaxed);
             let (deletes, inserts) = prepared.apply(&mut table, &blobs).into_parts();
             fail_reads.store(false, Ordering::Relaxed);

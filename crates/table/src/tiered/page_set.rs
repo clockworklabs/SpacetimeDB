@@ -11,7 +11,7 @@ use spacetimedb_memory_usage::MemoryUsage;
 use spacetimedb_sats::layout::Size;
 
 use crate::{
-    indexes::{PageIndex, RowPointer},
+    indexes::{PageIndex, RowPointer, PAGE_SIZE},
     page::{Page, PageCapacity},
     pages::Pages,
     table::{BlobNumBytes, PreparedInsert, Table, TableError},
@@ -209,29 +209,39 @@ impl TieredPages {
     ) -> Result<T, PageError> {
         match f() {
             Err(PageError::MemoryLimitExceeded(_)) => {
-                self.evict(manager)?;
+                self.trim(manager)?;
                 f()
             }
             res => res,
         }
     }
 
-    fn evict(&self, manager: &PageManager) -> Result<(), PageError> {
+    pub fn trim(&self, manager: &PageManager) -> Result<u64, PageError> {
+        self.evict(manager, manager.resident_budget().low_water_bytes)
+    }
+
+    pub fn evict(&self, manager: &PageManager, target_usage: u64) -> Result<u64, PageError> {
         let timer = manager.metrics().timer();
-        let result = self.evict_inner(manager);
+        let result = self.evict_inner(manager, target_usage);
         manager
             .metrics()
             .eviction(EvictionDirection::MemoryToDisk, timer.nanos());
         result
     }
 
-    fn evict_inner(&self, manager: &PageManager) -> Result<(), PageError> {
+    fn evict_inner(&self, manager: &PageManager, target_usage: u64) -> Result<u64, PageError> {
+        let mut bytes_freed = 0;
+
+        if manager.resident_usage().accounted_bytes() <= target_usage {
+            return Ok(bytes_freed);
+        }
+
         let mut guard = self.evictable.lock().unwrap();
         let (candidates, slots) = &mut *guard;
 
         manager.evictable(candidates);
         if candidates.is_empty() {
-            return Ok(());
+            return Ok(bytes_freed);
         }
 
         slots.clear();
@@ -271,14 +281,17 @@ impl TieredPages {
                 metadata: *metadata,
             };
             manager.evicted(candidate);
-            manager.metrics().evicted(
-                ObjectType::Page,
-                EvictionDirection::MemoryToDisk,
-                crate::indexes::PAGE_SIZE as u64,
-            );
+            manager
+                .metrics()
+                .evicted(ObjectType::Page, EvictionDirection::MemoryToDisk, PAGE_SIZE as u64);
+            bytes_freed += PAGE_SIZE as u64;
+
+            if manager.resident_usage().accounted_bytes() <= target_usage {
+                break;
+            }
         }
 
-        Ok(())
+        Ok(bytes_freed)
     }
 }
 
@@ -1011,10 +1024,32 @@ impl PageSet {
         })
     }
 
-    pub fn evict(&self) -> Result<(), PageError> {
+    /// Attempt to evict pages from this page set until the budget's low
+    /// watermark is met.
+    ///
+    /// Eviction will stop once the usage is at or below the low watermark.
+    /// The method may not free any pages, so the budget usage may be the same
+    /// as before when it returns.
+    ///
+    /// Returns the number of bytes freed, as a multiple of [PAGE_SIZE].
+    pub fn trim(&self) -> Result<u64, PageError> {
         match &self.storage {
-            PageStorage::Resident(_) => Ok(()),
-            PageStorage::Tiered(tiered) => tiered.evict(&self.manager),
+            PageStorage::Resident(_) => Ok(0),
+            PageStorage::Tiered(tiered) => tiered.trim(&self.manager),
+        }
+    }
+
+    /// Attempt to evict pages from this page set until `target_usage` is met.
+    ///
+    /// Eviction will stop once the usage is at or below the low watermark.
+    /// The method may not free any pages, so the budget usage may be the same
+    /// as before when it returns.
+    ///
+    /// Returns the number of bytes freed, as a multiple of [PAGE_SIZE].
+    pub fn evict(&self, target_usage: u64) -> Result<u64, PageError> {
+        match &self.storage {
+            PageStorage::Resident(_) => Ok(0),
+            PageStorage::Tiered(tiered) => tiered.evict(&self.manager, target_usage),
         }
     }
 

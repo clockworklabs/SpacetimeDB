@@ -130,3 +130,11 @@ impl ObjectStoreError {
         }
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum TrimError {
+    #[error(transparent)]
+    Blob(#[from] BlobError),
+    #[error(transparent)]
+    Store(#[from] ObjectStoreError),
+}

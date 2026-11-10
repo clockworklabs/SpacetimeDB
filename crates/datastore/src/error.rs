@@ -10,6 +10,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_schema::def::error::LibError;
 #[cfg(feature = "durability")]
 use spacetimedb_snapshot::SnapshotError;
+use spacetimedb_table::tiered;
 use spacetimedb_table::{
     bflatn_to, read_column,
     table::{self, ReadViaBsatnError, UniqueConstraintViolation},
@@ -40,6 +41,8 @@ pub enum DatastoreError {
     Page(#[from] PageError),
     #[error(transparent)]
     TableStorage(#[from] table::TableError),
+    #[error(transparent)]
+    Trim(#[from] TrimTableError),
     #[error(transparent)]
     Blob(#[from] BlobError),
     #[error(transparent)]
@@ -99,6 +102,14 @@ pub enum TableError {
         "Table with ID `{0}` attempted to reschema using `alter_event_table_row_type`, but it is not an event table"
     )]
     ReschemaNotAnEventTable(TableId),
+}
+
+#[derive(Error, Debug)]
+pub enum TrimTableError {
+    #[error(transparent)]
+    Pages(#[from] PageError),
+    #[error(transparent)]
+    Storage(#[from] tiered::TrimError),
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]

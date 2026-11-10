@@ -1,8 +1,8 @@
-use std::{io, iter, sync::Arc};
+use std::{io, sync::Arc};
 
 use spacetimedb_memory_usage::MemoryUsage;
 
-use crate::{indexes::PAGE_SIZE, page::Page, page_pool::PagePool, tiered::map::PageHash};
+use crate::page_pool::PagePool;
 
 mod blob_set;
 mod budget;
@@ -18,7 +18,7 @@ mod storage;
 pub use self::{
     blob_set::{BlobHandle, BlobMap, BlobReadSet, BlobSet},
     budget::{BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetConfig, ByteBudgetUsage},
-    error::{BlobError, ObjectStoreError, PageError},
+    error::{BlobError, ObjectStoreError, PageError, TrimError},
     map::ObjectKey,
     mem::ResidentObjects,
     page_manager::{PageHandle, PageManager, ReservedPage},
@@ -94,11 +94,20 @@ pub struct TieredDatabaseStorage {
 }
 
 impl TieredDatabaseStorage {
-    pub fn empty(config: TieredStorageConfig) -> io::Result<Self> {
-        Self::from_snapshot(config, <_>::default(), iter::empty())
+    /// Create a storage handle with empty cache, pages and blobs.
+    pub fn empty(config: TieredStorageConfig) -> Self {
+        Self::from_snapshot(config, <_>::default())
     }
 
-    pub fn from_snapshot<'a>(
+    /// Create a storage handle from the [BlobMap] obtained from a snapshot.
+    ///
+    /// Installs the blobs into a [BlobSet], but leaves the page manager empty.
+    /// Snapshot restore subsequently installs the pages from the snapshot
+    /// directly into tables, thereby populating the page manager and cache.
+    ///
+    /// [Self::trim] should be called after restore is complete, so that
+    /// resident objects are evicted until the memory budget is met.
+    pub fn from_snapshot(
         TieredStorageConfig {
             page_pool,
             local_store,
@@ -106,29 +115,26 @@ impl TieredDatabaseStorage {
             resident_budget,
         }: TieredStorageConfig,
         blobs: BlobMap,
-        pages: impl Iterator<Item = &'a Page>,
-    ) -> io::Result<Self> {
-        let store = Arc::new(TieredStorage::with_catalog(
-            local_store,
-            remote_store,
-            blobs
-                .iter()
-                .map(|(hash, entry)| (hash.into_object_key(), entry.blob.len() as u64))
-                .chain(pages.map(|page| {
-                    let key = PageHash::from(page).into();
-                    (key, PAGE_SIZE as u64)
-                })),
-        ));
+    ) -> Self {
+        let store = Arc::new(TieredStorage::empty(local_store, remote_store));
         let cache = Arc::new(ResidentObjects::new(resident_budget));
         let pages = Arc::new(PageManager::new(cache.clone(), page_pool, store.clone()));
         let blobs = Arc::new(BlobSet::from_blob_map(cache.clone(), store.clone(), blobs));
 
-        Ok(Self {
+        Self {
             pages,
             blobs,
             cache,
             store,
-        })
+        }
+    }
+
+    /// Attempt to evict from the shared blob set and local storage.
+    pub fn trim(&self) -> Result<(), TrimError> {
+        self.blobs.trim()?;
+        self.store.trim()?;
+
+        Ok(())
     }
 
     pub fn budgets(&self) -> [(metrics::CacheTier, &ByteBudget); 2] {
