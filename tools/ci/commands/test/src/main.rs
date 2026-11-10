@@ -100,6 +100,21 @@ fn rust_tests() -> Result<()> {
         "--test-threads=2",
     )
     .run()?;
+    // Procedure HTTP tests that talk to a loopback server only build with this feature,
+    // which `cargo test --all` above doesn't enable.
+    cmd!(
+        "cargo",
+        "test",
+        "-p",
+        "spacetimedb-core",
+        "--lib",
+        "--features",
+        "allow_loopback_http_for_tests",
+        "--",
+        "--test-threads=2",
+        "host::instance_env::test::http_request",
+    )
+    .run()?;
     // SDK tests have their own dedicated, sharded command: `cargo ci sdk-tests`.
     // TODO: This should check for a diff at the start. If there is one, we should alert the user
     // that we're disabling diff checks because they have a dirty git repo, and to re-run in a clean one
