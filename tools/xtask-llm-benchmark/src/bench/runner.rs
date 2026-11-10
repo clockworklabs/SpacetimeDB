@@ -64,23 +64,11 @@ where
 
 fn record_task_result(
     record: &mut BatchRecord,
-    cfg: &BenchRunContext<'_>,
     task: TaskPaths,
     result: Result<RunOutcome, RunOneError>,
     started: chrono::DateTime<Utc>,
 ) -> Result<(TaskPaths, Result<RunOutcome, RunOneError>)> {
-    let result = match result {
-        Err(RunOneError::WithOutput { msg, llm_output }) => Ok(build_fail_outcome(
-            &task,
-            cfg.lang.as_str(),
-            cfg.route,
-            cfg.hash,
-            anyhow!(msg),
-            llm_output,
-        )),
-        other => other,
-    }
-    .map(|mut outcome| {
+    let result = result.map(|mut outcome| {
         outcome.started_at.get_or_insert(started);
         outcome
     });
@@ -142,6 +130,12 @@ async fn publish_async(
         with_build_cleanup(&wdir, lang, || publisher.publish(&host_url, &wdir, &db, clear_database))
     })
     .await?
+}
+
+async fn seed_async(db: String, host: String) -> Result<(), String> {
+    task::spawn_blocking(move || call_reducer_json_out(&db, "seed", &[], Some(&host)).map(drop))
+        .await
+        .map_err(|error| format!("seed worker failed: {error}"))?
 }
 
 async fn delete_database_async(database: PublishedDatabase) -> Result<()> {
@@ -551,14 +545,14 @@ impl TaskRunner {
                 .await;
             match setup_result {
                 Ok(database) => {
-                    call_reducer_json_out(&llm_db, "seed", &[], Some(cfg.host.as_deref().unwrap_or("local"))).map_err(
-                        |error| RunOneError::Infrastructure {
+                    seed_async(llm_db.clone(), cfg.host.clone().unwrap_or_else(|| "local".into()))
+                        .await
+                        .map_err(|error| RunOneError::Infrastructure {
                             msg: format!("migration seed failed: {error}"),
                             llm_output: Some(llm_output.clone()),
                             provider_error: None,
                             completed_outcome: None,
-                        },
-                    )?;
+                        })?;
                     Ok(Some(database))
                 }
                 Err(error) => Err(error),
@@ -757,12 +751,6 @@ fn finish_reference_cleanup(
             provider_error,
             completed_outcome,
         }),
-        Err(RunOneError::WithOutput { msg, llm_output }) => Err(RunOneError::Infrastructure {
-            msg: format!("{msg}; {cleanup}"),
-            llm_output: Some(llm_output),
-            provider_error: None,
-            completed_outcome: None,
-        }),
         Ok(outcome) => Err(RunOneError::Infrastructure {
             msg: cleanup,
             llm_output: outcome.llm_output.clone(),
@@ -777,9 +765,6 @@ fn finish_reference_cleanup(
 /// Tasks where the LLM responded but the code failed to compile/score are kept as outcomes.
 fn partition_results(
     results: Vec<(TaskPaths, Result<RunOutcome, RunOneError>)>,
-    lang_name: &str,
-    route: &ModelRoute,
-    hash: &str,
 ) -> Result<(Vec<RunOutcome>, Vec<PendingRetry>)> {
     let mut good = Vec::new();
     let mut retry = Vec::new();
@@ -787,18 +772,6 @@ fn partition_results(
     for (task, r) in results {
         match r {
             Ok(v) => good.push(v),
-            Err(RunOneError::WithOutput { msg, llm_output }) => {
-                // LLM responded but something else failed — keep as a result
-                eprintln!("\u{26a0}\u{fe0f} task failed but has output: {msg}");
-                good.push(build_fail_outcome(
-                    &task,
-                    lang_name,
-                    route,
-                    hash,
-                    anyhow::anyhow!(msg),
-                    llm_output,
-                ));
-            }
             Err(RunOneError::Infrastructure { msg, llm_output, .. }) => {
                 let output_note = llm_output
                     .as_deref()
@@ -966,11 +939,11 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
             }
         }),
         buf,
-        |(task, result, started)| record_task_result(&mut record, cfg, task, result, started),
+        |(task, result, started)| record_task_result(&mut record, task, result, started),
     )
     .await?;
 
-    let (mut outcomes, mut retry_tasks) = partition_results(results, lang_name, cfg.route, cfg.hash)?;
+    let (mut outcomes, mut retry_tasks) = partition_results(results)?;
 
     // Retry provider-error tasks until all pass or none make progress
     const MAX_RETRY_ROUNDS: usize = 3;
@@ -1015,11 +988,11 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
                 }
             }),
             buf,
-            |(task, result, started)| record_task_result(&mut record, cfg, task, result, started),
+            |(task, result, started)| record_task_result(&mut record, task, result, started),
         )
         .await?;
 
-        let (new_outcomes, still_failing) = partition_results(retry_results, lang_name, cfg.route, cfg.hash)?;
+        let (new_outcomes, still_failing) = partition_results(retry_results)?;
 
         if new_outcomes.is_empty() && !still_failing.is_empty() {
             // No progress — provider is likely down. Keep the failures and stop retrying.
@@ -1151,11 +1124,11 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
             }
         }),
         buf,
-        |(task, result, started)| record_task_result(&mut record, cfg, task, result, started),
+        |(task, result, started)| record_task_result(&mut record, task, result, started),
     )
     .await?;
 
-    let (mut outcomes, retry_tasks) = partition_results(results, lang_name, cfg.route, cfg.hash)?;
+    let (mut outcomes, retry_tasks) = partition_results(results)?;
 
     // Retry provider-error tasks until all pass or none make progress
     let pending = {
@@ -1202,11 +1175,11 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
                     }
                 }),
                 buf,
-                |(task, result, started)| record_task_result(&mut record, cfg, task, result, started),
+                |(task, result, started)| record_task_result(&mut record, task, result, started),
             )
             .await?;
 
-            let (new_outcomes, still_failing) = partition_results(retry_results, lang_name, cfg.route, cfg.hash)?;
+            let (new_outcomes, still_failing) = partition_results(retry_results)?;
 
             if new_outcomes.is_empty() && !still_failing.is_empty() {
                 eprintln!(
@@ -1347,7 +1320,8 @@ pub async fn build_goldens_only_for_lang(
                         clear_database: true,
                     })
                     .await?;
-                call_reducer_json_out(&golden_db, "seed", &[], Some(host_clone.as_deref().unwrap_or("local")))
+                seed_async(golden_db.clone(), host_clone.clone().unwrap_or_else(|| "local".into()))
+                    .await
                     .map_err(anyhow::Error::msg)?;
                 let database = runner
                     .publish_golden_only(PublishParams {
@@ -1471,7 +1445,9 @@ pub async fn validate_goldens_for_lang(
                     "golden-validation-setup",
                 )
                 .await?;
-            call_reducer_json_out(&candidate_db, "seed", &[], Some(host_url)).map_err(anyhow::Error::msg)?;
+            seed_async(candidate_db.clone(), host_url.to_string())
+                .await
+                .map_err(anyhow::Error::msg)?;
             let database = runner
                 .publish(
                     PublishParams {
@@ -1559,59 +1535,6 @@ fn discover_tasks(benchmarks_root: &Path) -> Result<Vec<TaskPaths>> {
     Ok(out)
 }
 
-fn build_fail_outcome(
-    task: &TaskPaths,
-    lang_name: &str,
-    route: &ModelRoute,
-    hash: &str,
-    err: anyhow::Error,
-    llm_output: String,
-) -> RunOutcome {
-    let category = category_slug(&task.root);
-    let task_id = task_slug(&task.root);
-    let now = Utc::now();
-    let mut sd: HashMap<String, ScoreDetails> = HashMap::new();
-    sd.insert(
-        "publish_error".to_string(),
-        ScoreDetails {
-            pass: false,
-            partial: 0.0,
-            notes: json!({
-                "phase": "build_or_publish",
-                "error": format!("{:#}", err),
-            }),
-        },
-    );
-
-    RunOutcome {
-        hash: hash.to_string(),
-        task: task_id.clone(),
-        lang: lang_name.to_string(),
-        golden_published: false,
-        category: Some(category),
-
-        model_name: route.model_id(),
-        total_tests: 1,
-        passed_tests: 0,
-
-        llm_output: Some(llm_output),
-
-        route_api_model: Some(route.api_model.to_string()),
-        golden_db: None,
-        llm_db: None,
-        work_dir_golden: None,
-        work_dir_llm: None,
-        scorer_details: Some(sd),
-
-        vendor: route.vendor.slug().to_string(),
-        input_tokens: None,
-        output_tokens: None,
-        generation_duration_ms: None,
-        started_at: Some(now),
-        finished_at: Some(now),
-    }
-}
-
 fn build_rejected_outcome(
     task: &TaskPaths,
     cfg: &RunContext<'_>,
@@ -1625,18 +1548,27 @@ fn build_rejected_outcome(
         notes: json!({"phase": "generation", "error": format!("{error:#}")}),
     };
     RunOutcome {
+        hash: cfg.hash.to_string(),
+        task: task_slug(&task.root),
+        lang: cfg.lang_name.to_string(),
+        golden_published: false,
+        category: Some(category_slug(&task.root)),
+        model_name: cfg.route.model_id(),
         total_tests: total_tests as u32,
+        passed_tests: 0,
         llm_output: None,
+        route_api_model: Some(cfg.route.api_model.to_string()),
+        golden_db: None,
+        llm_db: None,
+        work_dir_golden: None,
+        work_dir_llm: None,
         scorer_details: Some([("content_rejection".to_string(), details)].into_iter().collect()),
+        vendor: cfg.route.vendor.slug().to_string(),
+        input_tokens: None,
+        output_tokens: None,
+        generation_duration_ms: None,
         started_at: Some(started),
-        ..build_fail_outcome(
-            task,
-            cfg.lang_name,
-            cfg.route,
-            cfg.hash,
-            anyhow!("unused"),
-            String::new(),
-        )
+        finished_at: Some(Utc::now()),
     }
 }
 
@@ -1746,7 +1678,7 @@ mod build_cleanup_tests {
                 })
             }
         }
-        let server = spacetimedb_guard::SpacetimeDbGuard::try_spawn_in_temp_data_dir().unwrap();
+        let server = spacetimedb_guard::SpacetimeDbGuard::spawn_in_temp_data_dir();
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -2014,7 +1946,7 @@ mod build_cleanup_tests {
             .scorers_for(Lang::Rust, "test", "local")
             .len() as u32;
         assert!(expected > 1, "the fixture must show the full denominator");
-        let (outcomes, pending) = partition_results(vec![(task, result)], "rust", &route, "test").unwrap();
+        let (outcomes, pending) = partition_results(vec![(task, result)]).unwrap();
         assert!(pending.is_empty(), "a rejection must not block the batch");
         assert_eq!(outcomes[0].passed_tests, 0);
         assert_eq!(outcomes[0].total_tests, expected);
@@ -2035,36 +1967,25 @@ mod build_cleanup_tests {
             answers_rust: PathBuf::new(),
             answers_typescript: PathBuf::new(),
         };
-        let route = ModelRoute::new("Test", crate::llm::types::Vendor::OpenAi, "test", None);
-        let (outcomes, pending) = partition_results(
-            vec![
-                (
-                    task(),
-                    Err(RunOneError::WithOutput {
-                        msg: "compile failed".into(),
-                        llm_output: "invalid code".into(),
-                    }),
-                ),
-                (task(), Err(RunOneError::Other(anyhow::anyhow!("402 Payment Required")))),
-                (
-                    task(),
-                    Err(RunOneError::Rejected {
-                        outcome: Box::new(build_fail_outcome(
-                            &task(),
-                            "rust",
-                            &route,
-                            "test",
-                            anyhow!("rejected"),
-                            String::new(),
-                        )),
-                        error: refusal_error(),
-                    }),
-                ),
-            ],
-            "rust",
-            &route,
-            "test",
-        )
+        // A model's compile failure arrives as a scored outcome.
+        let failed = || {
+            serde_json::from_value::<RunOutcome>(json!({
+                "hash": "test", "task": "t_001", "lang": "rust", "model_name": "test", "vendor": "test",
+                "golden_published": false, "passed_tests": 0, "total_tests": 2
+            }))
+            .unwrap()
+        };
+        let (outcomes, pending) = partition_results(vec![
+            (task(), Ok(failed())),
+            (task(), Err(RunOneError::Other(anyhow::anyhow!("402 Payment Required")))),
+            (
+                task(),
+                Err(RunOneError::Rejected {
+                    outcome: Box::new(failed()),
+                    error: refusal_error(),
+                }),
+            ),
+        ])
         .unwrap();
         assert_eq!(outcomes.len(), 2);
         assert_eq!(pending.len(), 1, "provider failures are not scored zeroes");
@@ -2120,17 +2041,6 @@ mod build_cleanup_tests {
                 assert_eq!(serde_json::to_value(completed_outcome.unwrap()).unwrap(), expected);
             }
             other => panic!("completed scoring lost after cleanup failure: {other:?}"),
-        }
-        let failed_code = Err(RunOneError::WithOutput {
-            msg: "compile failed".into(),
-            llm_output: "candidate code".into(),
-        });
-        match finish_reference_cleanup(failed_code, Err(anyhow!("delete failed"))) {
-            Err(RunOneError::Infrastructure { msg, llm_output, .. }) => {
-                assert!(msg.contains("compile failed") && msg.contains("delete failed"));
-                assert_eq!(llm_output.as_deref(), Some("candidate code"));
-            }
-            other => panic!("expected unscored cleanup failure: {other:?}"),
         }
         let refusal = serde_json::from_value::<crate::llm::clients::oa_compat::OACompatResp>(json!({
             "choices": [{"finish_reason":"content_filter", "message":{"content":null,"refusal":"private detail"}}]
