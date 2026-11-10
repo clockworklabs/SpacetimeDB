@@ -14,7 +14,10 @@ pub fn spec() -> BenchmarkSpec {
             let id = rows[0][0].clone();
             s.call("cancel_cleanup", json!([id]))?;
             let rows = s.owner_sql(&query)?;
-            anyhow::ensure!(rows.as_array().map(Vec::is_empty) == Some(true), "job not cancelled: {rows}");
+            anyhow::ensure!(
+                rows.as_array().map(Vec::is_empty) == Some(true),
+                "job not cancelled: {rows}"
+            );
             Ok(())
         }));
         scorers

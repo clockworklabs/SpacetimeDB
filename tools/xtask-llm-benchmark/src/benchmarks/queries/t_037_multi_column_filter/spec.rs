@@ -10,10 +10,19 @@ pub fn spec() -> BenchmarkSpec {
             s.seed(
                 "event_log",
                 &["id", "category", "severity", "message"],
-                json!([[1, "db", 2, "match"], [2, "db", 3, "wrong severity"], [3, "net", 2, "wrong category"], [4, "db", 2, "also match"]]),
+                json!([
+                    [1, "db", 2, "match"],
+                    [2, "db", 3, "wrong severity"],
+                    [3, "net", 2, "wrong category"],
+                    [4, "db", 2, "also match"]
+                ]),
             )?;
             s.call("filter_events", json!(["db", 2]))?;
-            s.owner_rows("filtered_event", &["event_id", "message"], json!([[1, "match"], [4, "also match"]]))?;
+            s.owner_rows(
+                "filtered_event",
+                &["event_id", "message"],
+                json!([[1, "match"], [4, "also match"]]),
+            )?;
             Ok(())
         }));
         scorers

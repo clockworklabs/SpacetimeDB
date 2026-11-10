@@ -10,7 +10,13 @@ pub fn spec() -> BenchmarkSpec {
             s.seed(
                 "product",
                 &["id", "name", "price"],
-                json!([[1, "low", 9], [2, "min", 10], [3, "mid", 15], [4, "max", 20], [5, "high", 21]]),
+                json!([
+                    [1, "low", 9],
+                    [2, "min", 10],
+                    [3, "mid", 15],
+                    [4, "max", 20],
+                    [5, "high", 21]
+                ]),
             )?;
             s.call("find_in_price_range", json!([10, 20]))?;
             s.owner_rows(

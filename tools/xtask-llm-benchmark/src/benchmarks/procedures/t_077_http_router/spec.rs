@@ -8,21 +8,27 @@ pub fn spec() -> BenchmarkSpec {
             host_url,
             file!(),
             route_tag,
-            vec![
-                ("GET", "/items", None),
-                ("POST", "/items", Some("book")),
-            ],
+            vec![("GET", "/items", None), ("POST", "/items", Some("book"))],
             false,
             "router_method_matrix",
         ));
         // The prompt says reject, not how: the server's own 404 and a module's 405 both qualify.
-        scorers.push(crate::eval::scenario::scenario(file!(), route_tag, host_url, lang, |s| {
-            for (method, path) in [(reqwest::Method::PUT, "/items"), (reqwest::Method::GET, "/missing")] {
-                let (status, body) = s.http_method(method.clone(), path, "no")?;
-                anyhow::ensure!((400..500).contains(&status), "{method} {path}: expected a rejection, got {status}: {body}");
-            }
-            Ok(())
-        }));
+        scorers.push(crate::eval::scenario::scenario(
+            file!(),
+            route_tag,
+            host_url,
+            lang,
+            |s| {
+                for (method, path) in [(reqwest::Method::PUT, "/items"), (reqwest::Method::GET, "/missing")] {
+                    let (status, body) = s.http_method(method.clone(), path, "no")?;
+                    anyhow::ensure!(
+                        (400..500).contains(&status),
+                        "{method} {path}: expected a rejection, got {status}: {body}"
+                    );
+                }
+                Ok(())
+            },
+        ));
         scorers
     })
 }

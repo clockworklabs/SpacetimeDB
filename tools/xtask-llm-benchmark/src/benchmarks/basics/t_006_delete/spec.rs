@@ -41,20 +41,30 @@ pub fn spec() -> BenchmarkSpec {
         ));
 
         // The count check alone passes when insert does nothing, so prove the row existed and others survive.
-        v.push(crate::eval::scenario::scenario(file!(), route_tag, host_url, lang, |s| {
-            s.call("insert_user", serde_json::json!(["Ada", 36, true]))?;
-            s.call("insert_user", serde_json::json!(["Bob", 25, false]))?;
-            let columns = ["name", "age", "active"];
-            s.rows("user", &columns, serde_json::json!([["Ada", 36, true], ["Bob", 25, false]]))?;
-            let ids = s.owner_sql(&s.query("user", &["id", "name"]))?;
-            let ada = ids
-                .as_array()
-                .and_then(|rows| rows.iter().find(|row| row[1] == "Ada"))
-                .map(|row| row[0].clone())
-                .ok_or_else(|| anyhow::anyhow!("no id for Ada in {ids}"))?;
-            s.call("delete_user", serde_json::json!([ada]))?;
-            s.rows("user", &columns, serde_json::json!([["Bob", 25, false]]))
-        }));
+        v.push(crate::eval::scenario::scenario(
+            file!(),
+            route_tag,
+            host_url,
+            lang,
+            |s| {
+                s.call("insert_user", serde_json::json!(["Ada", 36, true]))?;
+                s.call("insert_user", serde_json::json!(["Bob", 25, false]))?;
+                let columns = ["name", "age", "active"];
+                s.rows(
+                    "user",
+                    &columns,
+                    serde_json::json!([["Ada", 36, true], ["Bob", 25, false]]),
+                )?;
+                let ids = s.owner_sql(&s.query("user", &["id", "name"]))?;
+                let ada = ids
+                    .as_array()
+                    .and_then(|rows| rows.iter().find(|row| row[1] == "Ada"))
+                    .map(|row| row[0].clone())
+                    .ok_or_else(|| anyhow::anyhow!("no id for Ada in {ids}"))?;
+                s.call("delete_user", serde_json::json!([ada]))?;
+                s.rows("user", &columns, serde_json::json!([["Bob", 25, false]]))
+            },
+        ));
 
         v
     })

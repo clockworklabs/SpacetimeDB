@@ -15,8 +15,18 @@ pub fn spec() -> BenchmarkSpec {
                 &["id", "identity", "name", "bio"],
                 json!([[1, first_id, "Ann", "first"], [2, second_id, "Bo", "second"]]),
             )?;
-            s.rows_as(&first, "my_profile", &["id", "name", "bio"], json!([[1, "Ann", "first"]]))?;
-            s.rows_as(&second, "my_profile", &["id", "name", "bio"], json!([[2, "Bo", "second"]]))?;
+            s.rows_as(
+                &first,
+                "my_profile",
+                &["id", "name", "bio"],
+                json!([[1, "Ann", "first"]]),
+            )?;
+            s.rows_as(
+                &second,
+                "my_profile",
+                &["id", "name", "bio"],
+                json!([[2, "Bo", "second"]]),
+            )?;
             s.rows_as(&stranger, "my_profile", &["id", "name", "bio"], json!([]))?;
             Ok(())
         }));
