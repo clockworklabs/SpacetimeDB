@@ -16,7 +16,6 @@ const fileOptions = {
     } as const,
   ],
 };
-// Named without UnitBuilder, which SDK 2.12 does not export to declarations.
 type FileStateBuilder = SumBuilder<
   Record<
     'Pending' | 'Copying' | 'Ready' | 'Deleting' | 'Deleted',
