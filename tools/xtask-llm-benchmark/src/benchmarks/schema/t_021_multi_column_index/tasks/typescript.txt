@@ -3,7 +3,7 @@ Write a SpacetimeDB backend module in TypeScript that defines one table with a m
 TABLE
 - log (public)
   - Fields:
-    - id: number (u64, primary key, autoInc)
+    - id: bigint (u64, primary key, autoInc)
     - userId: number (i32)
     - day: number (i32)
     - message: string

@@ -3,7 +3,7 @@ Write a SpacetimeDB backend module in TypeScript that defines an order table and
 TABLES
 - order (private)
   - Fields:
-    - id: number (u64, primary key, autoInc)
+    - id: bigint (u64, primary key, autoInc)
     - category: string
     - amount: number (u32)
 
@@ -14,5 +14,5 @@ TABLES
 REDUCERS
 - collect_distinct_categories(ctx)
   - Iterate all orders
-  - Collect unique category values (use a Set)
+  - Collect unique category values
   - Insert each unique category into distinct_category

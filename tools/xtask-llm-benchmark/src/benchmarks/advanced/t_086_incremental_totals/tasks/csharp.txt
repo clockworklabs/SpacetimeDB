@@ -1,6 +1,6 @@
-Implement this SpacetimeDB module in csharp. Return only the module source.
+Write a SpacetimeDB backend module in C# that maintains category totals incrementally. Return only the module source.
 
-Maintain category totals after arbitrary sale inserts, updates, moves and deletes. A category row exists exactly when its sale_count is nonzero, even if total_amount is zero. Negative and zero sale amounts are valid. All source and aggregate changes must be atomic. This is a correctness test, not a scan-cost benchmark.
+Maintain category totals after arbitrary sale inserts, updates, moves and deletes. A category row exists exactly when its SaleCount is nonzero, even if TotalAmount is zero. Negative and zero sale amounts are valid. All source and aggregate changes must be atomic. This is a correctness test, not a scan-cost benchmark.
 
 Tables (the first field is the primary key):
 - public Sale: Id: ulong, Category: string, Amount: long
