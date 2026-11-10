@@ -55,6 +55,9 @@ impl DiskStorage {
     fn verify_hash(&self, key: ObjectKey, bytes: ObjectBytes) -> Result<ObjectBytes, ObjectStoreError> {
         let (computed, expected) = match key {
             ObjectKey::Page(expected) => {
+                // TODO: We're deserializing the page twice -- once here and
+                // again when installing it in memory. We may need a clever
+                // representation of what [ObjectStore::read] returns.
                 let computed = self.page_pool.take_deserialize_from(&bytes)?.content_hash();
                 (computed, expected.into())
             }
