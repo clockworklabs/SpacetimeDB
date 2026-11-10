@@ -7,7 +7,6 @@ use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_schema::schema::TableSchema;
-use spacetimedb_subscription::SubscriptionPlan;
 use std::sync::Arc;
 
 /// Queries all visible user tables right now and turns them into subscription plans.
@@ -31,18 +30,9 @@ where
         .map(|schema| {
             let sql = format!("SELECT * FROM {}", schema.table_name);
             let tx = SchemaViewer::new(tx, auth);
-            SubscriptionPlan::compile_plans(&sql, &tx, auth).and_then(|(plans, has_param, physical_plans)| {
-                let (template, values) = compile_template(&sql, &tx, auth, templates)?;
-                Ok(CompiledQuery {
-                    plan: super::module_subscription_manager::Plan::new(
-                        plans,
-                        template,
-                        values,
-                        QueryHash::from_string(&sql, auth.caller(), auth.bypass_rls() || has_param),
-                        sql,
-                    ),
-                    physical_plans,
-                })
+            compile_template(&sql, &tx, auth, templates).map(|compiled| {
+                let hash = QueryHash::from_string(&sql, auth.caller(), auth.bypass_rls() || compiled.has_param);
+                CompiledQuery::new(compiled.into_plan(hash, sql))
             })
         })
         .collect::<Result<_, _>>()?)

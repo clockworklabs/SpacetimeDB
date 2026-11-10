@@ -461,11 +461,6 @@ impl SubscriptionPlan {
     ) -> Result<(Vec<Self>, bool, Vec<ProjectPlan>)> {
         let (plans, return_id, return_name, has_param) = compile_subscription(sql, tx, auth)?;
 
-        /// Does this plan have any non-index joins?
-        fn has_non_index_join(plan: &PhysicalPlan) -> bool {
-            plan.any(&|op| matches!(op, PhysicalPlan::HashJoin(..) | PhysicalPlan::NLJoin(..)))
-        }
-
         let mut subscriptions = vec![];
         let mut physical_plans = vec![];
         let params = ExecutionParams::from_auth(auth);
@@ -509,6 +504,11 @@ impl SubscriptionPlan {
 
         Ok((subscriptions, has_param, physical_plans))
     }
+}
+
+/// Does this plan have any non-index joins?
+fn has_non_index_join(plan: &PhysicalPlan) -> bool {
+    plan.any(&|op| matches!(op, PhysicalPlan::HashJoin(..) | PhysicalPlan::NLJoin(..)))
 }
 
 /// What tables are involved in this plan?
@@ -567,6 +567,12 @@ pub struct TemplateFragment {
     table_ids: Vec<TableId>,
     /// The table or view returned by this fragment, if it returns whole rows
     return_schema: Option<Arc<TableSchema>>,
+    /// The optimized plan for the fragment's rows, which reads a binding's values as params
+    plan: ProjectPlan,
+    /// The executor for `plan`, for a query's initial rows and its rows on unsubscribe
+    base_plan: PipelinedProject,
+    /// Scan classification used for runtime metrics
+    scan_metrics: SubscriptionPlanMetrics,
     /// The plan fragments for updating the view
     fragments: Fragments,
 }
@@ -579,10 +585,20 @@ impl Template {
             .plans
             .iter()
             .map(|plan| {
+                let plan_opt = plan.clone().optimize()?;
+                if has_non_index_join(&plan_opt) {
+                    bail!("Subscriptions require indexes on join columns")
+                }
+                if plan_opt.reads_from_event_table() {
+                    bail!("Event tables cannot be used as the lookup table in subscription joins")
+                }
                 let (table_ids, table_aliases) = table_ids_for_plan(plan);
                 Ok(TemplateFragment {
                     table_ids,
-                    return_schema: plan.return_table(),
+                    return_schema: plan_opt.return_table(),
+                    scan_metrics: SubscriptionPlanMetrics::from_physical_plan(plan_opt.physical_plan()),
+                    base_plan: PipelinedProject::from(plan_opt.clone()),
+                    plan: plan_opt,
                     fragments: Fragments::compile_from_plan(plan, &table_aliases, &mut binding_indexes)?,
                 })
             })
@@ -666,6 +682,21 @@ impl TemplateFragment {
     /// From which tables does this fragment read?
     pub fn table_ids(&self) -> impl Iterator<Item = TableId> + '_ {
         self.table_ids.iter().copied()
+    }
+
+    /// The optimized plan for the fragment's rows, which reads a binding's values as params
+    pub fn plan(&self) -> &ProjectPlan {
+        &self.plan
+    }
+
+    /// The executor for [`Self::plan`], for a query's initial rows and its rows on unsubscribe
+    pub fn base_plan(&self) -> &PipelinedProject {
+        &self.base_plan
+    }
+
+    /// Scan classification used for runtime metrics
+    pub fn scan_metrics(&self) -> &SubscriptionPlanMetrics {
+        &self.scan_metrics
     }
 
     /// Does this fragment return rows from a view?

@@ -539,7 +539,13 @@ impl CollectViews for PhysicalPlan {
                     view_args.is_some() || info.params.elements.is_empty(),
                     "parameterized view calls must be collected before optimization",
                 );
-                let args = view_args.and_then(Option::as_ref).map(|v| v.args.clone());
+                let view_args = view_args.and_then(Option::as_ref);
+                // Nor may a call be lifted, since its args are then in its binding
+                assert!(
+                    !view_args.is_some_and(ViewArgs::is_lifted),
+                    "lifted view calls must be collected before lifting",
+                );
+                let args = view_args.map(|v| v.args.clone());
                 views.insert(ViewCall {
                     view_id: info.view_id,
                     args: args.unwrap_or_default(),
@@ -3481,6 +3487,41 @@ mod tests {
         SchemaViewer {
             schemas: vec![Arc::new(TableOrViewSchema::from(Arc::new(v)))],
         }
+    }
+
+    /// Collecting from the typed plan finds the view on each side of a join, as a subscribe materializes both
+    #[test]
+    fn typed_plan_collects_the_views_on_both_sides_of_a_join() {
+        let view = |table_id: u32, name: &str| {
+            let mut v = TableSchema::clone(
+                &schema(
+                    TableId(table_id),
+                    name,
+                    &[("arg_hash", AlgebraicType::U256), ("x", AlgebraicType::U8)],
+                    &[&[0]],
+                    &[],
+                    None,
+                )
+                .inner(),
+            );
+            v.view_info = Some(ViewDefInfo {
+                view_id: ViewId(table_id),
+                is_anonymous: true,
+                params: ProductType::unit(),
+            });
+            Arc::new(TableOrViewSchema::from(Arc::new(v)))
+        };
+        let db = SchemaViewer {
+            schemas: vec![view(1, "v"), view(2, "w")],
+        };
+        let plan = parse_and_type_sub("select v.* from v join w on v.x = w.x", &db).unwrap();
+        let mut calls = HashSet::default();
+        plan.collect_views(&mut calls);
+        let call = |view_id| ViewCall {
+            view_id: ViewId(view_id),
+            args: ProductValue::default(),
+        };
+        assert_eq!(calls, HashSet::from_iter([call(1), call(2)]));
     }
 
     #[test]

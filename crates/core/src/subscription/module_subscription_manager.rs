@@ -26,7 +26,7 @@ use spacetimedb_data_structures::map::{
     HashMap, HashSet, IntMap,
 };
 use spacetimedb_durability::TxOffset;
-use spacetimedb_execution::bindings::{BindingId, BindingRelation};
+use spacetimedb_execution::bindings::{BindingId, BindingParams, BindingRelation};
 use spacetimedb_expr::expr::{CollectViews, ViewCall};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{ConnectionId, Identity, ProductValue};
@@ -35,7 +35,7 @@ use spacetimedb_primitives::{IndexId, TableId};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::def::RawModuleDefVersion;
 use spacetimedb_schema::table_name::TableName;
-use spacetimedb_subscription::{SubscriptionPlan, Template, TemplateFragment};
+use spacetimedb_subscription::{Template, TemplateFragment};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -66,34 +66,38 @@ type SubscriptionIdV2 = (ClientId, ClientQuerySetId);
 pub struct Plan {
     hash: QueryHash,
     sql: String,
-    plans: Vec<SubscriptionPlan>,
     /// Shared by the queries that differ from this one only in their values
     template: Arc<Template>,
     /// This query's values for the template's params, in slot order
     values: ProductValue,
+    /// The views this query reads, with their args
+    view_calls: Vec<ViewCall>,
 }
 
 impl CollectViews for Plan {
     fn collect_views(&self, views: &mut HashSet<ViewCall>) {
-        for plan in &self.plans {
-            plan.collect_views(views);
-        }
+        views.extend(self.view_calls.iter().cloned());
     }
 }
 
 impl Plan {
     /// Create a new subscription plan to be cached
     pub fn new(
-        plans: Vec<SubscriptionPlan>,
         template: Arc<Template>,
         values: ProductValue,
+        view_calls: Vec<ViewCall>,
         hash: QueryHash,
         text: String,
     ) -> Self {
+        assert_eq!(
+            values.elements.len(),
+            template.param_types().len(),
+            "wrong number of values for `{text}`"
+        );
         Self {
-            plans,
             template,
             values,
+            view_calls,
             hash,
             sql: text,
         }
@@ -107,19 +111,24 @@ impl Plan {
     /// A subscription query return rows from a single table.
     /// This method returns the id of that table.
     pub fn subscribed_table_id(&self) -> TableId {
-        self.plans[0].subscribed_table_id()
+        self.template.subscribed_table_id()
     }
 
     /// A subscription query return rows from a single table.
     /// This method returns the name of that table.
     pub fn subscribed_table_name(&self) -> &TableName {
-        self.plans[0].subscribed_table_name()
+        self.template.subscribed_table_name()
     }
 
     /// Returns the plan fragments that comprise this subscription.
     /// Will only return one element unless there is a table with multiple RLS rules.
-    pub fn plans_fragments(&self) -> impl Iterator<Item = &SubscriptionPlan> + '_ {
-        self.plans.iter()
+    pub fn plans_fragments(&self) -> impl Iterator<Item = &TemplateFragment> + '_ {
+        self.template.fragments().iter()
+    }
+
+    /// The params of the fragments' base plans: this query's values
+    pub fn params(&self) -> BindingParams<'_> {
+        BindingParams::new(&self.values.elements)
     }
 
     /// The `SQL` text of this subscription.
@@ -129,7 +138,7 @@ impl Plan {
 
     /// Does this plan return rows from an event table?
     pub fn returns_event_table(&self) -> bool {
-        self.plans.iter().any(|p| p.returns_event_table())
+        self.plans_fragments().any(|fragment| fragment.returns_event_table())
     }
 }
 
@@ -1929,7 +1938,6 @@ mod tests {
     use spacetimedb_primitives::{ColList, TableId};
     use spacetimedb_schema::def::RawModuleDefVersion;
     use spacetimedb_schema::reducer_name::ReducerName;
-    use spacetimedb_subscription::SubscriptionPlan;
     use tokio::sync::oneshot;
 
     use super::{Plan, SubscriptionManager};
@@ -1985,10 +1993,9 @@ mod tests {
     ) -> ResultTest<Arc<Plan>> {
         with_read_only(db, |tx| {
             let tx = SchemaViewer::new(&*tx, &auth);
-            let (plans, has_param) = SubscriptionPlan::compile(sql, &tx, &auth).unwrap();
-            let (template, values) = compile_template(sql, &tx, &auth, templates).unwrap();
-            let hash = QueryHash::from_string(sql, auth.caller(), has_param);
-            Ok(Arc::new(Plan::new(plans, template, values, hash, sql.into())))
+            let compiled = compile_template(sql, &tx, &auth, templates).unwrap();
+            let hash = QueryHash::from_string(sql, auth.caller(), compiled.has_param);
+            Ok(Arc::new(compiled.into_plan(hash, sql.into())))
         })
     }
 

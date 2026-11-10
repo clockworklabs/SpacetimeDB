@@ -201,6 +201,18 @@ impl BindingRelation {
         row
     }
 
+    /// The values of a binding, without its id
+    pub fn values(&self, id: BindingId) -> &[AlgebraicValue] {
+        let row = self.get(id);
+        // `insert` checked the count on the way in
+        assert_eq!(
+            row.elements.len(),
+            self.value_types.len() + 1,
+            "wrong number of binding values: {row:?}"
+        );
+        &row.elements[1..]
+    }
+
     /// Every binding row, in id order
     pub fn iter(&self) -> impl Iterator<Item = &ProductValue> {
         assert_eq!(self.rows.len(), self.ids.len());
@@ -223,16 +235,14 @@ impl BindingRelation {
     }
 }
 
-/// Resolves the binding slots of a template's plan from one binding row
+/// Resolves the binding slots of a template's plan from one binding's values, in slot order
 pub struct BindingParams<'a> {
-    row: &'a ProductValue,
+    values: &'a [AlgebraicValue],
 }
 
 impl<'a> BindingParams<'a> {
-    pub fn new(row: &'a ProductValue) -> Self {
-        let id = row.elements.first();
-        assert!(matches!(id, Some(AlgebraicValue::U64(_))), "not a binding row: {row:?}");
-        Self { row }
+    pub fn new(values: &'a [AlgebraicValue]) -> Self {
+        Self { values }
     }
 }
 
@@ -242,9 +252,8 @@ impl ParamResolver for BindingParams<'_> {
         let Some(i) = param.binding_index() else {
             panic!("not a binding slot: {}", param.0);
         };
-        let col = i as u32 + 1;
-        let Some(value) = self.row.elements.get(col as usize) else {
-            panic!("binding slot {} has no value: {:?}", param.0, self.row);
+        let Some(value) = self.values.get(usize::from(i)) else {
+            panic!("binding slot {} has no value: {:?}", param.0, self.values);
         };
         assert_type(value, ty);
         value.clone()
@@ -364,7 +373,7 @@ mod tests {
     fn params_read_binding_values() {
         let mut bindings = region_rank();
         let id = bindings.insert(values("west", 3));
-        let params = BindingParams::new(bindings.get(id));
+        let params = BindingParams::new(bindings.values(id));
         let region = params.resolve_param(ParamSlot::binding(0), &AlgebraicType::String);
         let rank = params.resolve_param(ParamSlot::binding(1), &AlgebraicType::U32);
         assert_eq!(region, AlgebraicValue::String("west".into()));
@@ -372,11 +381,35 @@ mod tests {
     }
 
     #[test]
+    fn values_drop_the_id() {
+        let mut bindings = region_rank();
+        let id = bindings.insert(values("west", 3));
+        assert_eq!(bindings.values(id), &values("west", 3).elements[..]);
+    }
+
+    #[test]
+    fn params_read_a_querys_values() {
+        let values = values("west", 3);
+        let params = BindingParams::new(&values.elements);
+        let region = params.resolve_param(ParamSlot::binding(0), &AlgebraicType::String);
+        let rank = params.resolve_param(ParamSlot::binding(1), &AlgebraicType::U32);
+        assert_eq!(region, AlgebraicValue::String("west".into()));
+        assert_eq!(rank, AlgebraicValue::U32(3));
+    }
+
+    #[test]
+    #[should_panic(expected = "has no value")]
+    fn params_reject_a_slot_past_a_querys_values() {
+        let values = values("west", 3);
+        BindingParams::new(&values.elements).resolve_param(ParamSlot::binding(2), &AlgebraicType::U32);
+    }
+
+    #[test]
     #[should_panic(expected = "not a binding slot")]
     fn params_reject_built_in_slots() {
         let mut bindings = region_rank();
         let id = bindings.insert(values("west", 3));
-        BindingParams::new(bindings.get(id)).resolve_param(PARAM_SENDER, &AlgebraicType::String);
+        BindingParams::new(bindings.values(id)).resolve_param(PARAM_SENDER, &AlgebraicType::String);
     }
 
     #[test]
@@ -384,7 +417,7 @@ mod tests {
     fn params_reject_the_wrong_type() {
         let mut bindings = region_rank();
         let id = bindings.insert(values("west", 3));
-        let params = BindingParams::new(bindings.get(id));
+        let params = BindingParams::new(bindings.values(id));
         params.resolve_param(ParamSlot::binding(0), &AlgebraicType::U32);
     }
 
@@ -419,7 +452,7 @@ mod tests {
         let mut bindings = BindingRelation::new(vec![AlgebraicType::identity()], vec![]);
         let identity = ProductValue::from_iter([Identity::ZERO.into()]);
         let id = bindings.insert(identity);
-        let params = BindingParams::new(bindings.get(id));
+        let params = BindingParams::new(bindings.values(id));
         let value = params.resolve_param(ParamSlot::binding(0), &AlgebraicType::identity());
         assert_eq!(value, Identity::ZERO.into());
     }

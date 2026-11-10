@@ -6,7 +6,7 @@ use spacetimedb_execution::{
 };
 use spacetimedb_expr::{
     check::{parse_and_type_sub, SchemaView},
-    expr::ProjectList,
+    expr::{CollectViews, ProjectList, ViewCall},
     rls::{resolve_views_for_sql, resolve_views_for_sub},
     statement::{parse_and_type_sql, Statement, DML},
 };
@@ -44,6 +44,8 @@ pub struct SubscriptionTemplate {
     pub plans: Vec<ProjectPlan>,
     /// The source and type of each binding param, in slot order
     pub params: Vec<(ParamSource, AlgebraicType)>,
+    /// The views this query reads, with their args, which its plans no longer have once lifted
+    pub view_calls: Vec<ViewCall>,
     pub return_id: TableId,
     pub return_name: TableName,
     pub has_param: bool,
@@ -70,6 +72,10 @@ fn compile(sql: &str, tx: &impl SchemaView, auth: &AuthCtx, target: CompileTarge
 
     let (mut plan, mut has_param) = parse_and_type_sub(sql, tx, auth)?;
 
+    // Before lifting, which empties each call's args
+    let mut view_calls = Default::default();
+    plan.collect_views(&mut view_calls);
+
     // Before RLS, so the literals of its rules stay literal
     let literals = if target == CompileTarget::Template {
         // View calls' hashes are lifted too, so they're bound first
@@ -95,6 +101,8 @@ fn compile(sql: &str, tx: &impl SchemaView, auth: &AuthCtx, target: CompileTarge
     let plan_fragments = resolve_views_for_sub(tx, plan, auth, &mut has_param)?
         .into_iter()
         .map(|mut fragment| {
+            // The views that RLS rules read
+            fragment.collect_views(&mut view_calls);
             fragment.bind_view_arg_hashes(auth.caller());
             let mut plan = compile_select(fragment);
             match target {
@@ -116,6 +124,7 @@ fn compile(sql: &str, tx: &impl SchemaView, auth: &AuthCtx, target: CompileTarge
     Ok(SubscriptionTemplate {
         plans: plan_fragments,
         params,
+        view_calls: view_calls.into_iter().collect(),
         return_id,
         return_name,
         has_param: has_param || reads_view,

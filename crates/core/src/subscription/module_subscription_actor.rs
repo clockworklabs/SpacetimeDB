@@ -34,7 +34,6 @@ use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId, ViewCallInfo, ViewInstanceArgs};
 use spacetimedb_datastore::traits::{IsolationLevel, TxData};
 use spacetimedb_durability::TxOffset;
-use spacetimedb_execution::ExecutionParams;
 use spacetimedb_expr::expr::{CollectViews, ViewCall};
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -531,7 +530,7 @@ impl ModuleSubscriptions {
             .unwrap_or_default();
 
         let tx = DeltaTx::from(tx);
-        let params = ExecutionParams::from_sender(sender.id.identity);
+        let params = query.params();
 
         // TODO: See the comment on `collect_table_update_for_view`.
         // The following view and non-view branches should be merged together,
@@ -2340,7 +2339,7 @@ mod tests {
     use super::{AssertTxFn, ModuleSubscriptions};
     use crate::client::messages::{
         SerializableMessage, SubscriptionData, SubscriptionError, SubscriptionMessage, SubscriptionResult,
-        SubscriptionUpdateMessage, TransactionUpdateMessage,
+        SubscriptionRows, SubscriptionUpdateMessage, TransactionUpdateMessage,
     };
     use crate::client::{
         ClientActorId, ClientConfig, ClientConnectionReceiver, ClientConnectionSender, ClientName, OutboundMessage,
@@ -3547,6 +3546,80 @@ mod tests {
         // Both clients should only receive their identities and not the other's.
         assert_tx_update_for_table(rx_for_a.recv(), table_id, &schema, [product![id_for_a]], []).await;
         assert_tx_update_for_table(rx_for_b.recv(), table_id, &schema, [product![id_for_b]], []).await;
+        Ok(())
+    }
+
+    /// The rows of a client's initial subscription message, from either subscribe path
+    async fn initial_rows(
+        rx: impl Future<Output = Option<OutboundMessage>>,
+        schema: &ProductType,
+    ) -> HashMap<ProductValue, i32> {
+        let tables = match rx.await {
+            Some(OutboundMessage::V1(SerializableMessage::Subscription(SubscriptionMessage {
+                result:
+                    SubscriptionResult::Subscribe(SubscriptionRows {
+                        table_rows: ws_v1::FormatSwitch::Bsatn(table),
+                        ..
+                    }),
+                ..
+            }))) => vec![table],
+            Some(OutboundMessage::V1(SerializableMessage::Subscription(SubscriptionMessage {
+                result:
+                    SubscriptionResult::SubscribeMulti(SubscriptionData {
+                        data: ws_v1::FormatSwitch::Bsatn(ws_v1::DatabaseUpdate { tables }),
+                    }),
+                ..
+            }))) => tables,
+            msg => panic!("expected a subscription's initial rows, but got {msg:#?}"),
+        };
+        let mut rows = HashMap::new();
+        for update in tables.into_iter().flat_map(|table| table.updates) {
+            let ws_v1::CompressableQueryUpdate::Uncompressed(update) = update else {
+                panic!("expected an uncompressed table update")
+            };
+            update_row_counts(&mut rows, schema, &update.inserts, &update.deletes);
+        }
+        rows
+    }
+
+    /// Two callers of a query that reads its caller, directly or through RLS, each get only their own initial rows.
+    /// A query's plan keeps the values it compiled with, so callers mustn't share it.
+    #[tokio::test]
+    async fn test_parameterized_subscription_initial_rows() -> anyhow::Result<()> {
+        let schema = ProductType::from([AlgebraicType::identity()]);
+        for (sql, rls) in [
+            ("select * from t where identity = :sender", None),
+            ("select * from t", Some("select * from t where identity = :sender")),
+        ] {
+            for multi in [false, true] {
+                let db = relational_db()?;
+                let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
+                let table_id = db.create_table_for_test("t", &[("identity", AlgebraicType::identity())], &[])?;
+                if let Some(rule) = rls {
+                    insert_rls_rules(&db, [table_id], [rule])?;
+                }
+                let callers = [1, 2].map(client_id_from_u8);
+                commit_tx(
+                    &db,
+                    &subs,
+                    [],
+                    callers.map(|caller| (table_id, product![caller.identity])),
+                )?;
+
+                let mut query_ids = 0;
+                for caller in callers {
+                    let (tx, mut rx) = client_connection(caller, &db);
+                    let auth = AuthCtx::new(db.owner_identity(), caller.identity);
+                    match multi {
+                        true => drop(subscribe_multi(&subs, auth, &[sql], tx, &mut query_ids).await?),
+                        false => subscribe_single(&subs, auth, sql, tx, &mut query_ids).await?,
+                    }
+                    let rows = initial_rows(rx.recv(), &schema).await;
+                    let expected = HashMap::from_iter([(product![caller.identity], 1)]);
+                    assert_eq!(rows, expected, "`{sql}`, multi: {multi}");
+                }
+            }
+        }
         Ok(())
     }
 
@@ -5182,8 +5255,8 @@ mod tests {
         Ok(())
     }
 
-    /// A query's snapshot comes from its own plans and its deltas from its template,
-    /// so the template's plans with the query's values must be the query's own plans
+    /// A query's initial rows and its deltas come from its template,
+    /// so the template's plans with the query's values must be the plans the query compiles to on its own
     #[test]
     fn templates_with_their_values_are_the_queries_plans() -> anyhow::Result<()> {
         use crate::db::sql::ast::SchemaViewer;
@@ -5266,15 +5339,16 @@ mod tests {
                 .collect();
 
             // The template a subscribe uses
-            let (template, values) = compile_template(&sql, &tx, &auth, &mut TemplateCache::default())?;
+            let compiled = compile_template(&sql, &tx, &auth, &mut TemplateCache::default())?;
+            let template = compiled.template;
             let mut bindings = BindingRelation::new(template.param_types().to_vec(), vec![]);
-            let binding = bindings.insert(values);
+            let binding = bindings.insert(compiled.values);
             let with_values = template
                 .key()
                 .iter()
                 .cloned()
                 .map(|mut plan| {
-                    plan.inline_params(&BindingParams::new(bindings.get(binding)));
+                    plan.inline_params(&BindingParams::new(bindings.values(binding)));
                     plan.canonicalize()
                 })
                 .collect();

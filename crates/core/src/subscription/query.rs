@@ -9,11 +9,14 @@ use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_execution::{Datastore, ExecutionParams};
 use spacetimedb_expr::check::SchemaView;
+use spacetimedb_expr::expr::ViewCall;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::ProductValue;
-use spacetimedb_physical_plan::plan::{ParamResolver, ParamSource, ProjectPlan};
+use spacetimedb_physical_plan::plan::{
+    ParamResolver, ParamSource, ProjectPlan, PARAM_SENDER, PARAM_VIEW_ARG_HASH_SENDER,
+};
 use spacetimedb_query::compile_subscription_template;
-use spacetimedb_subscription::{SubscriptionPlan, Template};
+use spacetimedb_subscription::Template;
 use std::sync::Arc;
 
 static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*$").unwrap());
@@ -36,6 +39,13 @@ pub(crate) struct CompiledQuery {
     pub physical_plans: Vec<ProjectPlan>,
 }
 
+impl CompiledQuery {
+    pub fn new(plan: Plan) -> Self {
+        let physical_plans = plan.plans_fragments().map(|fragment| fragment.plan().clone()).collect();
+        Self { plan, physical_plans }
+    }
+}
+
 /// Compile a string into a single read-only query.
 pub fn compile_read_only_query(auth: &AuthCtx, tx: &Tx, input: &str) -> Result<Plan, DBError> {
     if is_whitespace_or_empty(input) {
@@ -43,10 +53,9 @@ pub fn compile_read_only_query(auth: &AuthCtx, tx: &Tx, input: &str) -> Result<P
     }
 
     let tx = SchemaViewer::new(tx, auth);
-    let (plans, has_param, _) = SubscriptionPlan::compile_plans(input, &tx, auth)?;
-    let (template, values) = compile_template(input, &tx, auth, &mut TemplateCache::default())?;
-    let hash = QueryHash::from_string(input, auth.caller(), has_param);
-    Ok(Plan::new(plans, template, values, hash, input.to_owned()))
+    let compiled = compile_template(input, &tx, auth, &mut TemplateCache::default())?;
+    let hash = QueryHash::from_string(input, auth.caller(), auth.bypass_rls() || compiled.has_param);
+    Ok(compiled.into_plan(hash, input.to_owned()))
 }
 
 /// Compile a string into a single read-only query with externally-computed hashes.
@@ -64,18 +73,14 @@ pub(crate) fn compile_query_with_hashes<Tx: Datastore + StateView>(
     }
 
     let tx = SchemaViewer::new(tx, auth);
-    let (plans, has_param, physical_plans) = SubscriptionPlan::compile_plans(input, &tx, auth)?;
-    let (template, values) = compile_template(input, &tx, auth, templates)?;
+    let compiled = compile_template(input, &tx, auth, templates)?;
 
-    let hash = if auth.bypass_rls() || has_param {
+    let hash = if auth.bypass_rls() || compiled.has_param {
         hash_with_param
     } else {
         hash
     };
-    Ok(CompiledQuery {
-        plan: Plan::new(plans, template, values, hash, input.to_owned()),
-        physical_plans,
-    })
+    Ok(CompiledQuery::new(compiled.into_plan(hash, input.to_owned())))
 }
 
 /// The templates a compiled query shares: those of subscribed queries, and those compiled since,
@@ -120,16 +125,41 @@ impl<'a> TemplateCache<'a> {
     }
 }
 
-/// Compiles a subscription as a template, which runs its deltas for every query that differs only in its values.
-/// Returns the template, shared with `templates` if a query there uses it, and this query's values for its params.
+/// A subscription compiled as a template, with this query's values for its params
+pub(crate) struct CompiledTemplate {
+    /// Shared with the queries that differ from this one only in their values
+    pub template: Arc<Template>,
+    /// This query's values for the template's params, in slot order
+    pub values: ProductValue,
+    /// Does the query depend on its caller, through `:sender`, an RLS rule or a view?
+    pub has_param: bool,
+    /// The views the query reads, with their args
+    pub view_calls: Vec<ViewCall>,
+}
+
+impl CompiledTemplate {
+    pub fn into_plan(self, hash: QueryHash, sql: String) -> Plan {
+        Plan::new(self.template, self.values, self.view_calls, hash, sql)
+    }
+}
+
+/// Compiles a subscription as a template, which runs its plans for every query that differs only in its values.
+/// The template is shared with `templates` if a query there uses it.
 pub(crate) fn compile_template(
     input: &str,
     tx: &impl SchemaView,
     auth: &AuthCtx,
     templates: &mut TemplateCache,
-) -> Result<(Arc<Template>, ProductValue), DBError> {
+) -> Result<CompiledTemplate, DBError> {
     let compiled = compile_subscription_template(input, tx, auth)?;
-    // Only a new template builds its delta plans
+    // A query whose values depend on its caller is hashed with the caller, so no other caller shares its `Plan`
+    let reads_caller = compiled.params.iter().any(|(source, _)| {
+        matches!(source, ParamSource::Builtin(slot) if [PARAM_SENDER, PARAM_VIEW_ARG_HASH_SENDER].contains(slot))
+    });
+    if reads_caller && !compiled.has_param {
+        return Err(anyhow::anyhow!("`{input}` reads its caller but isn't hashed with it").into());
+    }
+    // Only a new template builds its plans
     let template = match templates.find(&compiled.plans) {
         Some(template) => template,
         None => templates.insert(Template::build(&compiled)?),
@@ -143,5 +173,10 @@ pub(crate) fn compile_template(
             ParamSource::Builtin(slot) => builtins.resolve_param(*slot, ty),
         })
         .collect();
-    Ok((template, values))
+    Ok(CompiledTemplate {
+        template,
+        values,
+        has_param: compiled.has_param,
+        view_calls: compiled.view_calls,
+    })
 }
