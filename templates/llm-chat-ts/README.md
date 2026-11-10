@@ -2,7 +2,7 @@ Get a SpacetimeDB-backed LLM chat app running in under 5 minutes.
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) 18+ installed
+- A recent version of [Node.js](https://nodejs.org/) 22, 24, or 26 or later
 - [SpacetimeDB CLI](https://spacetimedb.com/install) installed
 - An OpenRouter or OpenAI API key
 

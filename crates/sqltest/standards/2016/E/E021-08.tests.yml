@@ -1,7 +1,0 @@
-feature: E021-08
-id: e021_08_01_01
-sql: SELECT LOWER ( 'foo' )
----
-feature: E021-08
-id: e021_08_01_02
-sql: SELECT UPPER ( 'foo' )

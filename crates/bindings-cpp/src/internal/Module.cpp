@@ -629,6 +629,8 @@ int16_t Module::__call_procedure__(
 
 int16_t Module::__call_http_handler__(
     uint32_t id,
+    uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
+    BytesSource sender_jwt,
     uint64_t timestamp_microseconds,
     BytesSource request_source,
     BytesSource request_body_source,
@@ -641,8 +643,17 @@ int16_t Module::__call_http_handler__(
         return -1;
     }
 
+    // Create sender identity from the 4 uint64_t parts
+    std::array<uint8_t, 32> sender_bytes{};
+    std::memcpy(sender_bytes.data(), &sender_0, 8);
+    std::memcpy(sender_bytes.data() + 8, &sender_1, 8);
+    std::memcpy(sender_bytes.data() + 16, &sender_2, 8);
+    std::memcpy(sender_bytes.data() + 24, &sender_3, 8);
+
+    Identity sender_identity(sender_bytes);
+
     Timestamp timestamp = Timestamp::from_micros_since_epoch(static_cast<int64_t>(timestamp_microseconds));
-    HandlerContext ctx(timestamp);
+    HandlerContext ctx(sender_identity, sender_jwt, timestamp);
 
     std::vector<uint8_t> request_bytes = ConsumeBytes(request_source);
     bsatn::Reader request_reader(request_bytes.data(), request_bytes.size());

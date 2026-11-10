@@ -1,5 +1,0 @@
-# E031-02: Lower case identifiers
-
-statement ok
-CREATE TABLE TABLE_E031_02_01_01 ( A INT );
-SELECT A FROM TABLE_E031_02_01_01

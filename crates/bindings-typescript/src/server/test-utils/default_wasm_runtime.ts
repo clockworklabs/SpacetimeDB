@@ -6,7 +6,7 @@ import {
   type WasmPortableDatastoreModule,
   type WasmPortableTransaction,
   type WasmValidatedAuth,
-} from './wasm';
+} from './wasm.ts';
 
 type GeneratedPortableTransaction = WasmPortableTransaction;
 interface GeneratedPortableDatastore

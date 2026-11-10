@@ -1,0 +1,13 @@
+Implement this SpacetimeDB module in csharp. Return only the module source.
+
+Reserve two distinct products atomically. A request ID identifies the entire payload. Exact replay is a no-op; reuse with different payload is an error. Validate quantities and products before accepting. No overselling, partial deductions, or failed-request receipts are allowed. Use the exact error text stated below.
+
+Tables (the first field is the primary key):
+- public Stock: Id: ulong, Available: long
+- public Reservation: RequestId: string, FirstId: ulong, FirstQty: long, SecondId: ulong, SecondQty: long
+
+Reducers (argument order is part of the contract):
+- add_stock(Id: ulong, Available: long): Insert a new product. Reject a negative quantity with 'invalid stock'.
+- reserve(RequestId: string, FirstId: ulong, FirstQty: long, SecondId: ulong, SecondQty: long): Exact replay returns success without changes. Changed replay: 'request conflict'. New request requires a nonempty ID, distinct products and positive quantities ('invalid reservation'); both products must exist ('missing product') and have enough stock ('insufficient stock'). Deduct both quantities and record the payload in one transaction.
+
+Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged.

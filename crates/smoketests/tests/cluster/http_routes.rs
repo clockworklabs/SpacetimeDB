@@ -932,11 +932,11 @@ fn route_base(server_url: &str, identity: &str) -> String {
     format!("{server_url}/v1/database/{identity}/route")
 }
 
-/// Handler transactions are external callers without a JWT, even though they have no connection ID.
+/// Handler transactions are external callers, with the JWT the host created for the request's sender.
 fn assert_handler_tx_is_external(server_url: &str, identity: &str) {
     let resp = reqwest::blocking::get(format!("{}/tx-auth", route_base(server_url, identity))).expect("tx-auth failed");
     assert!(resp.status().is_success());
-    assert_eq!(resp.text().expect("tx-auth body"), "internal=false jwt=false");
+    assert_eq!(resp.text().expect("tx-auth body"), "internal=false jwt=true");
 }
 
 fn assert_http_routes_end_to_end(server_url: &str, identity: &str) {

@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use serde_json::json;
 
-use crate::bench::normalize::{canonical_mode, normalize_model_names};
+use crate::bench::normalize::{canonical_mode, ensure_lang, ensure_mode, ensure_model};
 use crate::bench::types::{Results, RunOutcome};
 use crate::llm::types::Vendor;
 use crate::llm::ModelRoute;
@@ -126,7 +126,7 @@ impl ApiClient {
     }
 
     /// Upload a batch of run outcomes for a single (lang, mode) combination.
-    /// Normalizes model names and sanitizes volatile fields before upload.
+    /// Preserves model IDs and sanitizes volatile fields before upload.
     /// If `analysis` is provided, it is stored in the `llm_benchmark_analysis` table.
     pub fn upload_batch(&self, mode: &str, outcomes: &[RunOutcome], analysis: Option<&str>) -> Result<usize> {
         if outcomes.is_empty() {
@@ -135,24 +135,17 @@ impl ApiClient {
 
         let mode = canonical_mode(mode);
 
-        // Build in-memory Results so we can normalize model names
         let mut results = Results::default();
-        {
-            use crate::bench::normalize::{canonical_model_name, ensure_lang, ensure_mode, ensure_model};
+        for r in outcomes {
+            let lang_v = ensure_lang(&mut results, &r.lang);
+            let mode_v = ensure_mode(lang_v, mode, Some(r.hash.clone()));
+            let model_v = ensure_model(mode_v, &r.model_name);
+            model_v.route_api_model = r.route_api_model.clone();
 
-            for r in outcomes {
-                let lang_v = ensure_lang(&mut results, &r.lang);
-                let mode_v = ensure_mode(lang_v, mode, Some(r.hash.clone()));
-                let canonical_name = canonical_model_name(&r.model_name);
-                let model_v = ensure_model(mode_v, &canonical_name);
-                model_v.route_api_model = r.route_api_model.clone();
-
-                let mut sanitized = r.clone();
-                sanitized.sanitize_for_commit();
-                model_v.tasks.insert(r.task.clone(), sanitized);
-            }
+            let mut sanitized = r.clone();
+            sanitized.sanitize_for_commit();
+            model_v.tasks.insert(r.task.clone(), sanitized);
         }
-        normalize_model_names(&mut results);
 
         let url = format!("{}/api/llm-benchmark-upload", self.base_url);
         let client = self.client()?;
@@ -443,6 +436,78 @@ impl ApiClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn uploads_api_ids_without_converting_them_to_display_names() {
+        use std::io::{BufRead, BufReader, Read, Write};
+        use std::net::TcpListener;
+        use std::time::{Duration, Instant};
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        listener.set_nonblocking(true).unwrap();
+        let server = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock && Instant::now() < deadline => {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(e) => panic!("upload request was not received: {e}"),
+                }
+            };
+            stream.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+            stream.set_write_timeout(Some(Duration::from_secs(10))).unwrap();
+            let mut reader = BufReader::new(&stream);
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            assert_eq!(line, "POST /api/llm-benchmark-upload HTTP/1.1\r\n");
+            let mut length = 0;
+            loop {
+                line.clear();
+                assert_ne!(reader.read_line(&mut line).unwrap(), 0);
+                if line == "\r\n" {
+                    break;
+                }
+                if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    length = value.trim().parse().unwrap();
+                }
+            }
+            let mut body = vec![0; length];
+            reader.read_exact(&mut body).unwrap();
+            stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 14\r\nConnection: close\r\n\r\n{\"inserted\":2}").unwrap();
+            serde_json::from_slice::<serde_json::Value>(&body).unwrap()
+        });
+
+        let outcomes: Vec<RunOutcome> = ["t_001", "t_002"]
+            .into_iter()
+            .map(|task| {
+                serde_json::from_value(json!({
+                    "hash": "test", "task": task, "lang": "rust", "golden_published": true,
+                    "model_name": "openai/gpt-5.5", "route_api_model": "gpt-5.5",
+                    "total_tests": 1, "passed_tests": 1,
+                }))
+                .unwrap()
+            })
+            .collect();
+        assert_eq!(
+            ApiClient::new(&url, "test")
+                .unwrap()
+                .upload_batch("guidelines", &outcomes, Some("analysis"))
+                .unwrap(),
+            2
+        );
+        let payload = server.join().unwrap();
+        let models = payload["models"].as_array().unwrap();
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0]["name"], "openai/gpt-5.5");
+        assert_eq!(models[0]["route_api_model"], "gpt-5.5");
+        assert_eq!(models[0]["analysis"], "analysis");
+        for task in ["t_001", "t_002"] {
+            assert_eq!(models[0]["tasks"][task]["model_name"], "openai/gpt-5.5");
+        }
+    }
 
     #[test]
     fn parses_active_available_model_routes() {

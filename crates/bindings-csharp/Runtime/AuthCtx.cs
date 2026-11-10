@@ -6,24 +6,16 @@ public sealed class AuthCtx
 {
     private static byte[] jwtBuffer = new byte[0x10_000];
 
-    private readonly bool _isInternal;
+    // Computed on first use, since comparing the sender with the database's Identity needs a host call.
+    private readonly Lazy<bool> _isInternal;
     private readonly Lazy<JwtClaims?> _jwtLazy;
 
-    private AuthCtx(bool isInternal, Func<JwtClaims?> jwtFactory)
+    private AuthCtx(Identity sender, Func<JwtClaims?> jwtFactory)
     {
-        _isInternal = isInternal;
+        _isInternal = new Lazy<bool>(
+            () => sender == SpacetimeDB.Internal.IReducerContext.GetDatabaseIdentity()
+        );
         _jwtLazy = new Lazy<JwtClaims?>(() => jwtFactory?.Invoke());
-    }
-
-    internal static readonly AuthCtx Anonymous =
-        new(isInternal: false, jwtFactory: static () => null);
-
-    /// <summary>
-    /// Create an AuthCtx for an internal call, with no JWT.
-    /// </summary>
-    private static AuthCtx Internal()
-    {
-        return new AuthCtx(isInternal: true, jwtFactory: () => null);
     }
 
     /// <summary>
@@ -36,7 +28,7 @@ public sealed class AuthCtx
     {
         if (connectionId == null)
         {
-            return Internal();
+            return new AuthCtx(identity, jwtFactory: static () => null);
         }
         return FromConnectionId(connectionId.Value, identity);
     }
@@ -47,30 +39,47 @@ public sealed class AuthCtx
     private static AuthCtx FromConnectionId(ConnectionId connectionId, Identity identity)
     {
         return new AuthCtx(
-            isInternal: false,
+            identity,
             jwtFactory: () =>
             {
                 var result = SpacetimeDB.Internal.FFI.get_jwt(ref connectionId, out var source);
                 SpacetimeDB.Internal.FFI.CheckedStatus.Marshaller.ConvertToManaged(result);
-                using var stream = SpacetimeDB.Internal.Module.Consume(source, ref jwtBuffer);
-                if (stream.Length == 0)
-                {
-                    return null;
-                }
-                var jwt = System.Text.Encoding.UTF8.GetString(
-                    jwtBuffer,
-                    0,
-                    checked((int)stream.Length)
-                );
-                return new JwtClaims(jwt, identity);
+                var jwt = ReadJwt(source);
+                return jwt == null ? null : new JwtClaims(jwt, identity);
             }
         );
     }
 
     /// <summary>
-    /// True if this reducer was spawned from inside the database.
+    /// Create an AuthCtx with the given JWT payload,
+    /// as for the sender of an HTTP handler, which has no connection ID to look it up by.
     /// </summary>
-    public bool IsInternal => _isInternal;
+    internal static AuthCtx FromJwt(string? jwt, Identity identity)
+    {
+        return new AuthCtx(
+            identity,
+            jwtFactory: () => jwt == null ? null : new JwtClaims(jwt, identity)
+        );
+    }
+
+    /// <summary>
+    /// Read the JWT payload that the host wrote to a bytes source.
+    /// </summary>
+    internal static string? ReadJwt(SpacetimeDB.Internal.BytesSource source)
+    {
+        using var stream = SpacetimeDB.Internal.Module.Consume(source, ref jwtBuffer);
+        if (stream.Length == 0)
+        {
+            return null;
+        }
+        return System.Text.Encoding.UTF8.GetString(jwtBuffer, 0, checked((int)stream.Length));
+    }
+
+    /// <summary>
+    /// True if the sender of this invocation is this database, as for scheduled reducers.
+    /// False in init, whose sender is the owner.
+    /// </summary>
+    public bool IsInternal => _isInternal.Value;
 
     /// <summary>
     /// Check if there is a JWT present.
@@ -80,7 +89,7 @@ public sealed class AuthCtx
     {
         get
         {
-            if (_isInternal)
+            if (IsInternal)
             {
                 return false;
             }
@@ -92,6 +101,7 @@ public sealed class AuthCtx
 
     /// <summary>
     /// Load and get the JwtClaims.
+    /// If IsInternal is true, this will be null.
     /// </summary>
-    public JwtClaims? Jwt => _jwtLazy.Value;
+    public JwtClaims? Jwt => IsInternal ? null : _jwtLazy.Value;
 }

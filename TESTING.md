@@ -107,6 +107,9 @@ The namespace tests are integration tests, plus focused generator diagnostics:
 - `cargo test -p spacetimedb-testing --test standalone_integration_test namespace_csharp`:
   independent dependency publication, root export selection, and cross-namespace
   helper/HTTP calls, and runtime name conversion compared with host validation.
+  The nested fixture additionally checks repeated assembly instances, public
+  child promotion, deep writable/read-only access, per-instance dispatch and
+  transactions, and HTTP warnings at publication before any function calls.
 - `cargo test -p spacetimedb-testing --test environment namespace_csharp_environment_security`:
   root/public environment access, denial of namespaced host calls, and default
   namespace case conversion when `Name` is omitted.
@@ -119,11 +122,26 @@ The namespace tests are integration tests, plus focused generator diagnostics:
   `Accessor = "MyAuth", Name = "auth_data"`. The existing
   `sdks/csharp/tools~/run-regression-tests.sh 8 10` harness includes it in the
   .NET 10 module pass while retaining .NET 8 regressions.
+- The [nested client regression](sdks/csharp/examples~/regression-tests/nested-namespaces/README.md)
+  is included in the same harness. It runs C# 9 bindings on both .NET 8 and
+  .NET 10 against the .NET 10 nested module, including three-level canonical SQL,
+  independent caches, reducer/procedure results and errors, views, joins, and
+  unsubscribe cleanup.
 
 Use the local package setup in [DEVELOP.md](sdks/csharp/DEVELOP.md), not stale
 published NuGet packages, when exercising changed query/runtime code.
 Library-defined RLS inside named namespaces and cross-language module composition
 are unsupported, not integration cases awaiting a passing assertion.
+The nested host fixture also executes instance-aware module query views, including
+deep paths, filters, and both semijoin directions. Immediate reducer/procedure
+scheduling targets repeated instances through selected contexts and uses their
+canonical paths. Context-selection assertions in the same fixture cover all
+context families, shared state, and cross-scope transaction rollback. See the
+[module limitations](crates/bindings-csharp/README.md#nested-assemblies).
+
+For module performance comparisons, use the
+[prebuilt-artifact benchmark](crates/bench/README.md#comparing-c-artifacts).
+The circles integration test is a correctness smoke test, not a throughput result.
 
 ## Schema parity tests
 

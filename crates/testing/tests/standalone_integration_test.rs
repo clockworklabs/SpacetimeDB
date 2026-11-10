@@ -119,6 +119,160 @@ fn test_calling_a_reducer_csharp() {
 
 #[test]
 #[serial]
+fn namespace_csharp_nested_registration() {
+    init();
+    CompiledModule::compile("nested-namespace-test-cs", CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |module| async move {
+            let host = module.client.module();
+            let schema = &host.info.module_def;
+            let branch = &schema.submodules()["branch_data"];
+            assert!(branch.submodules().contains_key("nested_data"));
+            assert!(schema.submodules().contains_key("leaf_data"));
+            assert!(schema.submodules().contains_key("promoted_data"));
+            assert!(schema.submodules().contains_key("second_data"));
+            assert!(schema.match_http_route(&spacetimedb_lib::http::Method::Get, "/leaf").is_none());
+
+            let warnings: Vec<_> = ["Branch.Leaf", "Leaf", "Promoted", "SecondLeaf", "class", "class.Branch.Leaf"].into_iter()
+                .map(|path| format!("HTTP routes declared in submodule '{path}' are ignored. Define HTTP routes in the root module instead."))
+                .collect();
+            // Warnings must be emitted during description/publication, before any call.
+            let log = module.read_log(None).await;
+            for warning in &warnings {
+                assert!(log.contains(warning));
+            }
+
+            // Reuse the existing functions to exercise real immediate reducer/procedure calls.
+            // Run twice so each target also exercises the cached-name path.
+            for iteration in 0..2 {
+                for stage in ["ping", "pong", "next"] {
+                    assert_eq!(module.call_http_route_get(&format!("/schedule/{stage}")).await.unwrap().as_ref(), b"scheduled");
+                    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                        loop {
+                            let mut complete = true;
+                            for (path, id) in [("branch_data.nested_data", 2i32), ("outer_data.branch_data.nested_data", 8)] {
+                                let result = spacetimedb::sql::execute::run(
+                                    host.relational_db().clone(),
+                                    format!("SELECT * FROM {path}.user WHERE id = 1"),
+                                    spacetimedb_lib::identity::AuthCtx::for_current(spacetimedb_lib::Identity::ZERO),
+                                    Some(host.info.subscriptions.clone()),
+                                    Some(host.clone()),
+                                    &mut vec![],
+                                ).await.unwrap();
+                                let expected = match stage {
+                                    "ping" => vec![product![1i32, id + 100]],
+                                    "pong" => vec![],
+                                    _ => vec![product![1i32, id]],
+                                };
+                                complete &= result.rows == expected;
+                            }
+                            if stage == "next" {
+                                // The first procedure transaction makes rows visible before the
+                                // rollback check finishes. Wait for both procedure bodies to finish.
+                                let logs = read_logs_allowing_warnings(&module, &warnings.iter().map(String::as_str).collect::<Vec<_>>()).await;
+                                complete &= ["next:2", "next:8"].iter().all(|message| logs.iter().filter(|line| line.as_str() == *message).count() == iteration + 1);
+                            }
+                            if complete {
+                                break;
+                            }
+                            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                        }
+                    }).await.expect("immediate scheduling did not reach the selected instances");
+                }
+            }
+            assert_eq!(module.call_http_route_get("/schedule/reset").await.unwrap().as_ref(), b"reset");
+
+            module.call_reducer_binary("ping", &product![]).await.unwrap();
+            assert_eq!(module.call_http_route_get("/contexts").await.unwrap().as_ref(), b"selected");
+            assert_eq!(
+                module.call_procedure_with_args("instance", "[]").await.unwrap(),
+                AlgebraicValue::I32(0)
+            );
+            for (path, id) in [("branch_data.nested_data", 2i32), ("leaf_data", 3), ("promoted_data", 4), ("second_data", 5), ("outer_data", 6), ("outer_data.branch_data.nested_data", 8)] {
+                module
+                    .call_reducer_binary(&format!("{path}.ping"), &product![])
+                    .await
+                    .unwrap();
+                module
+                    .call_reducer_binary(&format!("{path}.pong"), &product![])
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    module
+                        .call_procedure_with_args(&format!("{path}.instance"), "[]")
+                        .await
+                        .unwrap(),
+                    AlgebraicValue::I32(id)
+                );
+                assert_eq!(
+                    module
+                        .call_procedure_with_args(&format!("{path}.next"), "[]")
+                        .await
+                        .unwrap(),
+                    AlgebraicValue::I32(id + 10)
+                );
+                for (view, expected) in [("current", id), ("anonymous", id + 10), ("query_current", id), ("query_anonymous", id + 10)] {
+                    let result = spacetimedb::sql::execute::run(
+                        host.relational_db().clone(),
+                        format!("SELECT * FROM {path}.{view}"),
+                        spacetimedb_lib::identity::AuthCtx::for_current(spacetimedb_lib::Identity::ZERO),
+                        Some(host.info.subscriptions.clone()),
+                        Some(host.clone()),
+                        &mut vec![],
+                    )
+                    .await
+                    .unwrap();
+                    assert_eq!(result.rows, [product![if expected == id { 1i32 } else { 2i32 }, expected]]);
+                }
+            }
+            module.call_reducer_binary("check_tables", &product![]).await.unwrap();
+            assert_eq!(
+                module
+                    .call_procedure_with_args("branch_data.instance", "[]")
+                    .await
+                    .unwrap(),
+                AlgebraicValue::I32(1)
+            );
+            assert_eq!(
+                module.call_procedure_with_args("outer_data.branch_data.instance", "[]").await.unwrap(),
+                AlgebraicValue::I32(7)
+            );
+            for (view, expected) in [("nested", 2i32), ("deep", 8)] {
+                let result = spacetimedb::sql::execute::run(
+                    host.relational_db().clone(),
+                    format!("SELECT * FROM {view}"),
+                    spacetimedb_lib::identity::AuthCtx::for_current(spacetimedb_lib::Identity::ZERO),
+                    Some(host.info.subscriptions.clone()),
+                    Some(host.clone()),
+                    &mut vec![],
+                ).await.unwrap();
+                assert_eq!(result.rows, [product![expected]]);
+            }
+            for (view, expected) in [("branch_data.query_child", 2i32), ("outer_data.branch_data.query_child", 8), ("query_deep", 8), ("query_public", 6)] {
+                let result = spacetimedb::sql::execute::run(
+                    host.relational_db().clone(),
+                    format!("SELECT * FROM {view}"),
+                    spacetimedb_lib::identity::AuthCtx::for_current(spacetimedb_lib::Identity::ZERO),
+                    Some(host.info.subscriptions.clone()),
+                    Some(host.clone()),
+                    &mut vec![],
+                ).await.unwrap();
+                assert_eq!(result.rows, [product![1i32, expected]]);
+            }
+            let messages = read_logs_allowing_warnings(&module, &warnings.iter().map(String::as_str).collect::<Vec<_>>()).await
+                .into_iter().filter(|message| !warnings.contains(message)).collect::<Vec<_>>();
+            let (scheduled, messages) = messages.split_at(12);
+            let mut scheduled = scheduled.to_vec();
+            scheduled.sort();
+            assert_eq!(scheduled, ["leaf:2", "leaf:2", "leaf:8", "leaf:8", "next:2", "next:2", "next:8", "next:8", "pong:2", "pong:2", "pong:8", "pong:8"]);
+            assert_eq!(messages,
+                ["root:0", "leaf:2", "pong:2", "next:2", "leaf:3", "pong:3", "next:3", "leaf:4", "pong:4", "next:4", "leaf:5", "pong:5", "next:5", "leaf:6", "pong:6", "next:6", "leaf:8", "pong:8", "next:8"]);
+        },
+    );
+}
+
+#[test]
+#[serial]
 fn namespace_csharp_root_selected_at_publish() {
     init();
 

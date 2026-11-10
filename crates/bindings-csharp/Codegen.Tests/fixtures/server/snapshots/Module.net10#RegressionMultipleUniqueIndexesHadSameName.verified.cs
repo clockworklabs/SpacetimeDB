@@ -6,6 +6,11 @@ partial struct RegressionMultipleUniqueIndexesHadSameName
     : System.IEquatable<RegressionMultipleUniqueIndexesHadSameName>,
         SpacetimeDB.BSATN.IStructuralReadWrite
 {
+#if NET10_0_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
+#endif
     public void ReadFields(System.IO.BinaryReader reader)
     {
         Unique1 = BSATN.Unique1RW.Read(reader);

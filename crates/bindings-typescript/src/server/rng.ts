@@ -2,7 +2,7 @@ import type { RandomGenerator } from 'pure-rand';
 import { unsafeUniformBigIntDistribution } from 'pure-rand/distribution/UnsafeUniformBigIntDistribution';
 import { unsafeUniformIntDistribution } from 'pure-rand/distribution/UnsafeUniformIntDistribution';
 import { xoroshiro128plus } from 'pure-rand/generator/XoroShiro';
-import type { Timestamp } from '../lib/timestamp';
+import type { Timestamp } from '../lib/timestamp.ts';
 
 type IntArray =
   | Int8Array

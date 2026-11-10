@@ -145,6 +145,13 @@ fn git_tree(repo: &str, sha: &str) -> Result<GitTree> {
     get(&format!("/repos/{repo}/git/trees/{sha}"))
 }
 
+/// `matching-refs` matches by prefix and returns an empty list rather than a 404.
+fn branch_exists(repo: &str, branch: &str) -> Result<bool> {
+    let refs: Vec<GitRef> = get(&format!("/repos/{repo}/git/matching-refs/heads/{branch}"))?;
+    let name = format!("refs/heads/{branch}");
+    Ok(refs.iter().any(|git_ref| git_ref.name == name))
+}
+
 /// Returns runs for an exact event and private SHA.
 fn workflow_runs(event: &str, head_sha: &str) -> Result<Vec<WorkflowRun>> {
     let path = format!(
@@ -250,6 +257,12 @@ struct GitTreeEntry {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct GitRef {
+    #[serde(rename = "ref")]
+    name: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 struct WorkflowRunsPage {
     workflow_runs: Vec<WorkflowRun>,
 }
@@ -268,6 +281,7 @@ struct WorkflowRun {
     run_attempt: u64,
     html_url: String,
     created_at: String,
+    head_branch: Option<String>,
     head_commit: Option<WorkflowRunCommit>,
     #[serde(default)]
     pull_requests: Vec<WorkflowRunPullRequest>,
@@ -519,8 +533,19 @@ fn coordinate_merge_queue_reuse() -> Result<()> {
         return Ok(());
     };
     println!("Found equivalent merge queue run: {}", run.html_url);
+    let head_branch = run.head_branch.clone();
     let mut selected = wait_for_completion(PUBLIC_REPO, run.into())?;
     if should_rerun_failed_jobs(&selected) {
+        // Rerun jobs check out the run's merge queue branch, which GitHub deletes once its entry leaves the queue.
+        let can_rerun = match head_branch.as_deref() {
+            Some(branch) => branch_exists(PUBLIC_REPO, branch)?,
+            None => false,
+        };
+        if !can_rerun {
+            println!("Its merge queue branch no longer exists, so its jobs can't be rerun. Running CI normally.");
+            write_github_output("reused", false)?;
+            return Ok(());
+        }
         selected = wait_for_completion(PUBLIC_REPO, rerun_failed_jobs(PUBLIC_REPO, &selected)?)?;
     }
     write_github_output("failed", selected.conclusion.as_deref() != Some("success"))?;
@@ -612,6 +637,7 @@ mod tests {
             run_attempt: 1,
             html_url: format!("https://example.test/{id}"),
             created_at: created_at.to_owned(),
+            head_branch: None,
             head_commit: Some(WorkflowRunCommit {
                 tree_id: "tree".to_owned(),
             }),

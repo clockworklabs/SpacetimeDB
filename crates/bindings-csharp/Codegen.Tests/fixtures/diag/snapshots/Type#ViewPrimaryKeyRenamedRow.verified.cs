@@ -6,6 +6,11 @@ partial struct ViewPrimaryKeyRenamedRow
     : System.IEquatable<ViewPrimaryKeyRenamedRow>,
         SpacetimeDB.BSATN.IStructuralReadWrite
 {
+#if NET10_0_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
+#endif
     public void ReadFields(System.IO.BinaryReader reader)
     {
         RenamedIdentity = BSATN.RenamedIdentityRW.Read(reader);

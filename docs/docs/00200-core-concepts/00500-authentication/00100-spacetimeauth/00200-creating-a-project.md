@@ -9,7 +9,7 @@ SpacetimeAuth is currently in beta, some features may not be available yet or ma
 :::
 
 SpacetimeAuth is a service that can be enabled for any module published on
-Maincloud. Check out our [Deploy to Maincloud](../../../00300-resources/00100-how-to/00100-deploy/00100-maincloud.md)
+Maincloud. Check out our [Deploy to Maincloud](../../../00250-how-to/00100-deploy/00100-maincloud.md)
 guide to learn how to publish a module.
 
 ## 1. Enabling SpacetimeAuth for a module

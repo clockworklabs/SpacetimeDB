@@ -29,7 +29,7 @@ describe('Random', () => {
 
     for (const array of arrays) {
       random.fill(array);
-      expect(Array.from(array).some(isNonZero)).toBe(true);
+      expect(array.some(isNonZero)).toBe(true);
     }
   });
 

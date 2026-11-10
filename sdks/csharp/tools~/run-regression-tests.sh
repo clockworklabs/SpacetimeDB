@@ -94,9 +94,9 @@ run_client() {
     local dotnet_version="$2"
     shift 2
     if [ "$dotnet_version" = "10" ]; then
-        (cd "$dir" && EXPERIMENTAL_WASM_AOT=1 dotnet run -c Debug "$@")
+        (cd "$dir" && SPACETIMEDB_WASM_AOT=1 dotnet run -c Debug "$@")
     else
-        (cd "$dir" && env -u EXPERIMENTAL_WASM_AOT dotnet run -c Debug "$@")
+        (cd "$dir" && env -u SPACETIMEDB_WASM_AOT dotnet run -c Debug "$@")
     fi
 }
 
@@ -138,6 +138,8 @@ for dotnet_version in "${DOTNET_VERSIONS[@]}"; do
             echo "Running namespace client with .NET $client_version against the .NET 10 module"
             cargo spacetime publish --dotnet-version 10 -c -y --server "$SPACETIMEDB_SERVER_URL" -p "$STDB_PATH/modules/namespace-test-cs" namespace-tests
             run_client "$SDK_PATH/examples~/regression-tests/namespaces" "$client_version" --framework "net$client_version.0"
+            cargo spacetime publish --dotnet-version 10 -c -y --server "$SPACETIMEDB_SERVER_URL" -p "$STDB_PATH/modules/nested-namespace-test-cs" nested-namespace-tests
+            run_client "$SDK_PATH/examples~/regression-tests/nested-namespaces" "$client_version" --framework "net$client_version.0"
         done
     fi
 done

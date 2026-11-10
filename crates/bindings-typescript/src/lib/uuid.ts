@@ -1,6 +1,6 @@
-import { Timestamp } from './timestamp';
+import { Timestamp } from './timestamp.ts';
 import { AlgebraicType } from './algebraic_type.ts';
-import { coerceToBigInt, u128ToHexString } from './util';
+import { coerceToBigInt, u128ToHexString } from './util.ts';
 
 export type UuidAlgebraicType = {
   tag: 'Product';

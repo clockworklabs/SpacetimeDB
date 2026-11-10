@@ -1,0 +1,14 @@
+Implement this SpacetimeDB module in csharp. Return only the module source.
+
+Implement one shared private document (ID 1). Its first writer becomes its permanent owner. Only that owner can change its text or reader permissions. Authorized users can query and subscribe to a safe projection. Revocation must remove the document from an existing reader subscription and block future content updates. Do not use row-level security. Keep both source tables private and never expose secret_body in the public view.
+
+Tables (the first field is the primary key):
+- private PrivateDocument: Id: ulong, Owner: Identity, Title: string, SecretBody: string
+- private ReadAccess: Reader: Identity, Enabled: bool
+
+Reducers (argument order is part of the contract):
+- set_document(Title: string, SecretBody: string): Create document ID 1 with sender as owner, or update it if sender is owner. Any other sender fails 'owner only'. Preserve ownership.
+- set_access(Reader: Identity, Enabled: bool): Require an existing document whose owner is sender ('owner only'). Insert or update the reader's permission. Disabling a reader does not remove the owner's own access.
+
+Define SafeDocument with id:u64 and title:string only. Public sender-aware view visible_document returns an array of SafeDocument: the single document when sender is owner or read_access[sender].enabled is true, otherwise empty. Use indexed lookups so permission changes are tracked as view dependencies. Do not add public source tables or diagnostic reducers.
+Do not add an exercise reducer or seed data automatically. All operations must work for arbitrary inputs, not just one example. Failed operations must leave every table unchanged.

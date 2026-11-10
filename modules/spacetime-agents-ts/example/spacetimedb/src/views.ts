@@ -1,0 +1,78 @@
+import { t, type InferSchema, type ViewCtx } from 'spacetimedb/server';
+import { message, thread, threadLock } from '@spacetimedb/agents/submodule';
+import { fileViewRow } from './model';
+
+export function registerAgentViews(
+  spacetimedb: typeof import('./index').default
+) {
+  type Schema = InferSchema<typeof spacetimedb>;
+  const callerUserId = (ctx: ViewCtx<Schema>) =>
+    ctx.db.auth.authConnectionBinding.stdbIdentity.find(ctx.sender)?.userId;
+
+  const myThreads = spacetimedb.view(
+    { name: 'my_threads', public: true },
+    t.array(thread.rowType),
+    ctx => {
+      const userId = callerUserId(ctx);
+      return userId ? [...ctx.db.agents.thread.owner.filter(userId)] : [];
+    }
+  );
+
+  const myMessages = spacetimedb.view(
+    { name: 'my_messages', public: true },
+    t.array(message.rowType),
+    ctx => {
+      const userId = callerUserId(ctx);
+      return userId ? [...ctx.db.agents.message.owner.filter(userId)] : [];
+    }
+  );
+
+  const myThreadLocks = spacetimedb.view(
+    { name: 'my_thread_locks', public: true },
+    t.array(threadLock.rowType),
+    ctx => {
+      const userId = callerUserId(ctx);
+      return userId ? [...ctx.db.agents.threadLock.owner.filter(userId)] : [];
+    }
+  );
+
+  const myFiles = spacetimedb.view(
+    { name: 'my_files', public: true },
+    t.array(fileViewRow),
+    ctx => {
+      const userId = callerUserId(ctx);
+      if (!userId) return [];
+      const rows = [];
+      for (const attachment of ctx.db.messageAttachment.ownerUserId.filter(
+        userId
+      )) {
+        const file = ctx.db.files.file.id.find(attachment.fileId);
+        if (!file) continue;
+        rows.push({
+          id: attachment.id,
+          fileId: attachment.fileId,
+          path: file.path,
+          ownerUserId: attachment.ownerUserId,
+          mimeType: file.mimeType,
+          size: file.size,
+          sha256Hex: file.sha256Hex,
+          visibility: file.visibility,
+          filename: attachment.filename,
+          messageId: attachment.messageId,
+          threadId: attachment.threadId,
+          ordinal: attachment.ordinal,
+          createdAt: attachment.createdAt,
+          updatedAt: file.updatedAt,
+        });
+      }
+      return rows;
+    }
+  );
+
+  return {
+    myThreads,
+    myMessages,
+    myThreadLocks,
+    myFiles,
+  };
+}

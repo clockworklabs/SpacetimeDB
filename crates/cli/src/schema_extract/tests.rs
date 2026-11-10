@@ -84,6 +84,22 @@ fn inspector(script: &str) -> (tempfile::TempDir, PathBuf) {
     (dir, path)
 }
 
+// Inspectors run with an empty environment, so their scripts must name tools by
+// absolute path. Resolve them from the test's own PATH rather than assuming a
+// filesystem layout: Nix build sandboxes have neither /bin/cat nor /usr/bin/head.
+#[cfg(unix)]
+fn tool(name: &str) -> String {
+    std::env::var_os("PATH")
+        .and_then(|paths| {
+            std::env::split_paths(&paths)
+                .map(|dir| dir.join(name))
+                .find(|path| path.is_file())
+        })
+        .unwrap_or_else(|| panic!("`{name}` not found on PATH"))
+        .display()
+        .to_string()
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn local_inspection_passes_exact_bytes_host_and_requires_success() {
@@ -95,7 +111,8 @@ async fn local_inspection_passes_exact_bytes_host_and_requires_success() {
     });
     let json = serde_json::to_string(&SerdeWrapper(raw)).unwrap();
     let (dir, extractor) = inspector(&format!(
-        "[ \"$1\" = extract-schema ] && [ \"$3\" = --host-type ] && [ \"$4\" = js ] || exit 2\n[ \"$(/bin/cat \"$2\")\" = exact-artifact ] || exit 3\nprintf '%s' '{}'", json.replace('\'', "'\\''")
+        "[ \"$1\" = extract-schema ] && [ \"$3\" = --host-type ] && [ \"$4\" = js ] || exit 2\n[ \"$({cat} \"$2\")\" = exact-artifact ] || exit 3\nprintf '%s' '{}'", json.replace('\'', "'\\''"),
+        cat = tool("cat"),
     ));
     let result = inspect_with(
         extractor,
@@ -126,7 +143,8 @@ async fn synchronous_generate_adapter_uses_same_exact_byte_protocol_inside_a_run
     });
     let json = serde_json::to_string(&SerdeWrapper(raw)).unwrap();
     let (_dir, extractor) = inspector(&format!(
-        "[ \"$1\" = extract-schema ] && [ \"$3\" = --host-type ] && [ \"$4\" = wasm ] || exit 2\n[ \"$(/bin/cat \"$2\")\" = generate-exact ] || exit 3\nprintf '%s' '{}'", json.replace('\'', "'\\''")
+        "[ \"$1\" = extract-schema ] && [ \"$3\" = --host-type ] && [ \"$4\" = wasm ] || exit 2\n[ \"$({cat} \"$2\")\" = generate-exact ] || exit 3\nprintf '%s' '{}'", json.replace('\'', "'\\''"),
+        cat = tool("cat"),
     ));
     let module = inspect_blocking(extractor, b"generate-exact".to_vec(), "Wasm".into()).unwrap();
     assert_eq!(module.environment(), &schema());
@@ -135,15 +153,23 @@ async fn synchronous_generate_adapter_uses_same_exact_byte_protocol_inside_a_run
 #[cfg(unix)]
 #[tokio::test]
 async fn invalid_and_oversize_inspector_output_never_becomes_diagnostics() {
-    for script in [
-        "printf 'generated-inspector-secret'",
-        "exec /usr/bin/head -c 16777217 /dev/zero",
+    for (script, expected) in [
+        (
+            "printf 'generated-inspector-secret'".to_owned(),
+            "returned invalid schema data",
+        ),
+        (
+            format!("exec {} -c 16777217 /dev/zero", tool("head")),
+            "exceeds output limit",
+        ),
     ] {
-        let (_dir, extractor) = inspector(script);
+        let (_dir, extractor) = inspector(&script);
         let error = inspect_with(extractor, b"input".to_vec(), "Wasm".into(), Duration::from_secs(5))
             .await
             .unwrap_err();
-        assert!(!format!("{error:#}").contains("generated-inspector-secret"));
+        let error = format!("{error:#}");
+        assert!(error.contains(expected), "{error}");
+        assert!(!error.contains("generated-inspector-secret"));
     }
 }
 

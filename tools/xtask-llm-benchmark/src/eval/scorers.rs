@@ -571,16 +571,17 @@ fn call_reducer_json_out_with_timeout(
     timeout: Duration,
 ) -> Result<String, String> {
     let mut cmd = spacetime_command();
-    cmd.arg("call").arg(db).arg(reducer);
+    cmd.arg("call");
+    if let Some(h) = host {
+        cmd.arg("--server").arg(h);
+    }
+    // Positional JSON numbers can start with '-'. Do not let clap parse them as flags.
+    cmd.arg("--").arg(db).arg(reducer);
 
     for v in args {
         let lit = serde_json::to_string(v).map_err(|e| format!("json encode arg failed: {e}"))?;
         cmd.arg(lit);
     }
-    if let Some(h) = host {
-        cmd.arg("--server").arg(h);
-    }
-
     if debug_llm_verbose() {
         eprintln!("[dbg] spacetime call: {:?}", cmd);
     }

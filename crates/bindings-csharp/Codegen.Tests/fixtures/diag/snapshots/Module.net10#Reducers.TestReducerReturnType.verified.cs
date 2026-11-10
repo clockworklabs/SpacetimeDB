@@ -4,18 +4,12 @@
 
 partial class Reducers
 {
-    private static class __ScheduleTestReducerReturnTypeName
-    {
-        internal static readonly string Name =
-            global::SpacetimeDB.Internal.Module.ResolveFunctionName(
-                "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                nameof(TestReducerReturnType),
-                null
-            );
-
-        // Prevent eager initialization before the root installs namespace placements.
-        static __ScheduleTestReducerReturnTypeName() { }
-    }
+    private static string __ScheduleTestReducerReturnTypeName =>
+        field ??= global::SpacetimeDB.Internal.Module.ResolveFunctionName(
+            "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+            nameof(TestReducerReturnType),
+            null
+        );
 
     [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
     public static void VolatileNonatomicScheduleImmediateTestReducerReturnType()
@@ -24,8 +18,43 @@ partial class Reducers
         using var writer = new BinaryWriter(stream);
 
         SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(
-            __ScheduleTestReducerReturnTypeName.Name,
+            __ScheduleTestReducerReturnTypeName,
             stream
         );
+    }
+
+    private static string?[] __ScheduleTestReducerReturnTypeNames =>
+        field ??= new string?[global::SpacetimeDB.Internal.Module.InstanceCount];
+
+    private static string __ResolveScheduleTestReducerReturnTypeName(int contextInstance)
+    {
+        var names = __ScheduleTestReducerReturnTypeNames;
+        if (names[contextInstance] is { } name)
+        {
+            return name;
+        }
+        var instance = global::SpacetimeDB.Internal.Module.ResolveInstance(
+            contextInstance,
+            "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+        );
+        return names[contextInstance] = names[instance] ??=
+            global::SpacetimeDB.Internal.Module.ResolveFunctionName(
+                instance,
+                nameof(TestReducerReturnType),
+                null
+            );
+    }
+
+    [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
+    public static void VolatileNonatomicScheduleImmediateTestReducerReturnType<__Context>(
+        __Context __context
+    )
+        where __Context : global::SpacetimeDB.Internal.IModuleContext
+    {
+        var __name = __ResolveScheduleTestReducerReturnTypeName(__context.InstanceId);
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+
+        SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(__name, stream);
     }
 } // Reducers

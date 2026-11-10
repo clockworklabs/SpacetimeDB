@@ -1,5 +1,7 @@
-import type { ProcedureExport, ReducerExport, t } from '../server';
-import type { errors } from '../server/errors';
+import type { RemoteReducer } from './remote_module.ts';
+import { makeOutbox } from './remote_module.ts';
+import type { ProcedureExport, ReducerExport, t } from '../server/index.ts';
+import type { errors } from '../server/errors.ts';
 import {
   ExplicitNameEntry,
   RawColumnDefaultValueV10,
@@ -8,9 +10,9 @@ import {
   RawIndexDefV10,
   RawSequenceDefV10,
   RawTableDefV10,
-} from './autogen/types';
-import BinaryWriter from './binary_writer';
-import type { AllUnique, ConstraintOpts } from './constraints';
+} from './autogen/types.ts';
+import BinaryWriter from './binary_writer.ts';
+import type { AllUnique, ConstraintOpts } from './constraints.ts';
 import type {
   ColumnIndex,
   IndexColumns,
@@ -18,9 +20,13 @@ import type {
   IndexOpts,
   ReadonlyIndexes,
   UntypedIndex,
-} from './indexes';
-import ScheduleAt from './schedule_at';
-import type { TableSchema, TableSchedule } from './table_schema';
+} from './indexes.ts';
+import ScheduleAt from './schedule_at.ts';
+import type {
+  OutboxMetadata,
+  TableSchema,
+  TableSchedule,
+} from './table_schema.ts';
 import {
   RowBuilder,
   type ColumnBuilder,
@@ -28,13 +34,13 @@ import {
   type InferTypeOfRow,
   type RowObj,
   type TypeBuilder,
-} from './type_builders';
+} from './type_builders.ts';
 import type {
   InvalidColumnMetadata,
   Prettify,
   ValidateColumnMetadata,
-} from './type_util';
-import { toPascalCase } from './util';
+} from './type_util.ts';
+import { toPascalCase } from './util.ts';
 
 export type AlgebraicTypeRef = number;
 type ColId = number;
@@ -139,6 +145,7 @@ export type UntypedTableDef = {
   constraints: readonly ConstraintOpts<any>[];
   tableDef: RawTableDefV10;
   isEvent?: boolean;
+  isOutbox?: boolean;
 };
 
 /**
@@ -207,25 +214,44 @@ export type TableOpts<Row extends RowObj> = {
         ReturnType<typeof t.unit>
       >;
   event?: boolean;
+  outbox?: undefined;
+};
+
+/** Options for an insert-only outbox using a generated receiver handle. */
+export type OutboxTableOpts<Row extends RowObj> = Omit<
+  TableOpts<Row>,
+  'outbox'
+> & {
+  outbox: { receiver: RemoteReducer };
 };
 
 /**
  * Extracts the indices from TableOpts, defaulting to an empty array if none are provided.
  */
-type OptsIndices<Opts extends TableOpts<any>> = Opts extends {
-  indexes: infer Ixs extends NonNullable<any[]>;
-}
-  ? Ixs
-  : CoerceArray<[]>;
+type OptsIndices<Opts extends TableOpts<any> | OutboxTableOpts<any>> =
+  Opts extends {
+    indexes: infer Ixs extends NonNullable<any[]>;
+  }
+    ? Ixs
+    : CoerceArray<[]>;
 
 /**
  * Extracts the constraints from TableOpts, defaulting to an empty array if none are provided.
  */
-type OptsConstraints<Opts extends TableOpts<any>> = Opts extends {
-  constraints: infer Constraints extends NonNullable<any[]>;
+type OptsConstraints<Opts extends TableOpts<any> | OutboxTableOpts<any>> =
+  Opts extends {
+    constraints: infer Constraints extends NonNullable<any[]>;
+  }
+    ? Constraints
+    : CoerceArray<[]>;
+
+// Ordinary TableOpts annotations must keep their existing mutable table API.
+// OutboxTableOpts requires the discriminator, even when options are widened.
+type OptsOutbox<Opts> = Opts extends {
+  outbox: object;
 }
-  ? Constraints
-  : CoerceArray<[]>;
+  ? OutboxMetadata
+  : undefined;
 
 /**
  * Table<Row, UniqueConstraintViolation = never, AutoIncOverflow = never>
@@ -236,6 +262,11 @@ type OptsConstraints<Opts extends TableOpts<any>> = Opts extends {
  */
 export type Table<TableDef extends UntypedTableDef> = Prettify<
   TableMethods<TableDef> & Indexes<TableDef, TableIndexes<TableDef>>
+>;
+
+/** Insert/read operations for outboxes, separate from the existing Table API. */
+export type OutboxTable<TableDef extends UntypedTableDef> = Prettify<
+  ReadonlyTable<TableDef> & Pick<TableMethods<TableDef>, 'insert'>
 >;
 
 export type ReadonlyTable<TableDef extends UntypedTableDef> = Prettify<
@@ -321,7 +352,10 @@ export interface TableMethods<TableDef extends UntypedTableDef>
  *
  * **How to fix:** Remove either `default()` or the constraint (`primaryKey`/`unique`/`autoInc`).
  */
-export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
+export function table<
+  Row extends RowObj,
+  const Opts extends TableOpts<Row> | OutboxTableOpts<Row>,
+>(
   opts: Opts,
   row: Row | RowBuilder<Row>,
   // ⚠️ INTERNAL: This parameter enforces compile-time validation of column metadata.
@@ -335,7 +369,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         >,
       ]
     : []
-): TableSchema<CoerceRow<Row>, OptsIndices<Opts>> {
+): TableSchema<CoerceRow<Row>, OptsIndices<Opts>, OptsOutbox<Opts>> {
   const {
     name,
     public: isPublic = false,
@@ -500,7 +534,13 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
       ? { scheduleAtCol, reducer: scheduled }
       : undefined;
 
+  const receiver = opts.outbox?.receiver;
+  const outbox = receiver
+    ? makeOutbox(receiver, row, pk, !!scheduled || isEvent)
+    : undefined;
+
   return {
+    outbox: outbox as OptsOutbox<Opts>,
     rowType: row as RowBuilder<CoerceRow<Row>>,
     tableName: name,
     rowSpacetimeType: productType,

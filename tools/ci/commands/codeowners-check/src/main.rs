@@ -68,11 +68,22 @@ fn changed_files(base_ref: &str) -> Result<Vec<PathBuf>> {
 }
 
 struct ReviewStatus {
+    pr_author: String,
     latest_by_author: HashMap<String, String>,
 }
 
 impl ReviewStatus {
     fn fetch(pr_number: u64) -> Result<Self> {
+        let pr_json = cmd!("gh", "api", &format!("repos/{REPO}/pulls/{pr_number}"))
+            .read()
+            .with_context(|| format!("failed to read PR #{pr_number}"))?;
+        let pr: Value = serde_json::from_str(&pr_json)?;
+        let pr_author = pr
+            .pointer("/user/login")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("GitHub PR response had no author login"))?
+            .to_string();
+
         let reviews_json = cmd!(
             "gh",
             "api",
@@ -96,10 +107,17 @@ impl ReviewStatus {
             latest_by_author.insert(login.to_string(), state.to_string());
         }
 
-        Ok(Self { latest_by_author })
+        Ok(Self {
+            pr_author,
+            latest_by_author,
+        })
     }
 
     fn require(&self, reviewer: &str) -> Result<()> {
+        if self.pr_author == reviewer {
+            return Ok(());
+        }
+
         if self
             .latest_by_author
             .get(reviewer)
@@ -109,6 +127,34 @@ impl ReviewStatus {
         }
 
         bail!("needs approval from {reviewer}");
+    }
+}
+
+#[cfg(test)]
+mod review_tests {
+    use super::*;
+
+    #[test]
+    fn required_approver_can_author_the_pr() {
+        let review = ReviewStatus {
+            pr_author: "cloutiertyler".into(),
+            latest_by_author: HashMap::new(),
+        };
+        assert!(review.require("cloutiertyler").is_ok());
+    }
+
+    #[test]
+    fn other_authors_still_need_the_required_approver() {
+        let mut review = ReviewStatus {
+            pr_author: "another-author".into(),
+            latest_by_author: HashMap::new(),
+        };
+        assert!(review.require("cloutiertyler").is_err());
+
+        review
+            .latest_by_author
+            .insert("cloutiertyler".into(), "APPROVED".into());
+        assert!(review.require("cloutiertyler").is_ok());
     }
 }
 

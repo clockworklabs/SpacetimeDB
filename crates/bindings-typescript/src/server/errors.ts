@@ -1,4 +1,4 @@
-import { SenderError } from '../lib/errors';
+import { SenderError } from '../lib/errors.ts';
 
 /**
  * Base class for all Spacetime host errors (i.e. errors that may be thrown

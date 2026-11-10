@@ -24,7 +24,7 @@ namespace SpacetimeDB.Internal
         [DataMember(Name = "on_result_reducer")]
         public string? OnResultReducer;
         [DataMember(Name = "signature_hash")]
-        public string SignatureHash;
+        public U256 SignatureHash;
 
         public RawOutboxDefV10(
             string TableName,
@@ -32,7 +32,7 @@ namespace SpacetimeDB.Internal
             ushort TargetColumn,
             System.Collections.Generic.List<ushort> ArgColumns,
             string? OnResultReducer,
-            string SignatureHash
+            U256 SignatureHash
         )
         {
             this.TableName = TableName;
@@ -48,7 +48,6 @@ namespace SpacetimeDB.Internal
             this.TableName = "";
             this.RemoteReducer = "";
             this.ArgColumns = new();
-            this.SignatureHash = "";
         }
     }
 }

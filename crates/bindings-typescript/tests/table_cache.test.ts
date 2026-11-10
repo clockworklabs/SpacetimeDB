@@ -755,6 +755,65 @@ describe('TableCache', () => {
     });
   });
 
+  test('Unique index find tracks inserts, updates and deletes', () => {
+    const tableCache = new TableCacheImpl(tables.user.tableDef);
+    const alice = Identity.fromString('aa'.repeat(32));
+    const bob = Identity.fromString('bb'.repeat(32));
+    const mkOperation = (
+      type: 'insert' | 'delete',
+      row: { identity: Identity; username: string }
+    ) => ({
+      type,
+      rowId: AlgebraicType.intoMapKey(
+        tables.user.rowType.elements[0].algebraicType,
+        row.identity
+      ),
+      row,
+    });
+    const steps: TestStep[] = [
+      {
+        ops: {
+          ops: [
+            mkOperation('insert', { identity: alice, username: 'alice' }),
+            mkOperation('insert', { identity: bob, username: 'bob' }),
+          ],
+          ctx: {},
+        },
+        assertions: [
+          ({ tableCache }) => {
+            const index = (tableCache as any).identity;
+            expect(index.find(alice)).toEqual({
+              identity: alice,
+              username: 'alice',
+            });
+            expect(index.find(Identity.zero())).toBeNull();
+          },
+        ],
+      },
+      {
+        ops: {
+          ops: [
+            mkOperation('delete', { identity: alice, username: 'alice' }),
+            mkOperation('insert', { identity: alice, username: 'alice2' }),
+            mkOperation('delete', { identity: bob, username: 'bob' }),
+          ],
+          ctx: {},
+        },
+        assertions: [
+          ({ tableCache }) => {
+            const index = (tableCache as any).identity;
+            expect(index.find(alice)).toEqual({
+              identity: alice,
+              username: 'alice2',
+            });
+            expect(index.find(bob)).toBeNull();
+          },
+        ],
+      },
+    ];
+    runTest(tableCache, steps);
+  });
+
   test('should be empty on creation', () => {
     const tableCache = new TableCacheImpl(tables.player.tableDef);
     expect(tableCache.count()).toEqual(0n);
