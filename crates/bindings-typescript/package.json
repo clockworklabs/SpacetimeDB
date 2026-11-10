@@ -134,25 +134,25 @@
   "size-limit": [
     {
       "name": "cjs (brotli)",
-      "path": "dist/index.cjs",
+      "path": ["dist/index.cjs", "dist/chunk-*.cjs"],
       "brotli": true,
       "limit": "54 kB"
     },
     {
       "name": "esm (brotli)",
-      "path": "dist/index.mjs",
+      "path": ["dist/index.mjs", "dist/chunk-*.mjs"],
       "brotli": true,
       "limit": "62 kB"
     },
     {
       "name": "esm (gzip)",
-      "path": "dist/index.mjs",
+      "path": ["dist/index.mjs", "dist/chunk-*.mjs"],
       "gzip": true,
       "limit": "60 kB"
     },
     {
       "name": "esm (uncompressed)",
-      "path": "dist/index.mjs",
+      "path": ["dist/index.mjs", "dist/chunk-*.mjs"],
       "brotli": false,
       "limit": "328 kB"
     },
