@@ -41,7 +41,7 @@ export type SchemaOptions = Readonly<
 export class FunctionSchema<
   Kind extends FunctionKind,
   Params extends ParamsObj,
-  Return extends TypeBuilder<any, any>,
+  Return extends TypeBuilder<any, any> | undefined,
   Options extends object = object,
 > {
   constructor(
@@ -77,22 +77,16 @@ export class Schema<Entries extends SchemaEntries> {
 
   reducer<const P extends ParamsObj>(
     params: P
-  ): FunctionSchema<'reducer', P, never, {}>;
+  ): FunctionSchema<'reducer', P, undefined, {}>;
   reducer<const P extends ParamsObj, const O extends FunctionOptions<P>>(
     options: O,
     params: P
-  ): FunctionSchema<'reducer', P, never, O>;
+  ): FunctionSchema<'reducer', P, undefined, O>;
   reducer(
-    first: ParamsObj | FunctionOptions,
-    params?: ParamsObj
+    ...args: [params: ParamsObj] | [options: FunctionOptions, params: ParamsObj]
   ): FunctionSchema<any, any, any, any> {
-    return new FunctionSchema(
-      'reducer',
-      this,
-      (params ?? first) as ParamsObj,
-      undefined as never,
-      params === undefined ? {} : first
-    );
+    const [options, params] = args.length === 1 ? [{}, args[0]] : args;
+    return new FunctionSchema('reducer', this, params, undefined, options);
   }
 
   procedure<const P extends ParamsObj, R extends TypeBuilder<any, any>>(
@@ -107,7 +101,12 @@ export class Schema<Entries extends SchemaEntries> {
     R extends TypeBuilder<any, any>,
     const O extends Readonly<ProcedureOptsWithOptionalName<P, R>>,
   >(options: O, params: P, returnType: R): FunctionSchema<'procedure', P, R, O>;
-  procedure(...args: any[]): FunctionSchema<any, any, any, any> {
+  procedure(
+    ...args:
+      | [returnType: TypeBuilder<any, any>]
+      | [params: ParamsObj, returnType: TypeBuilder<any, any>]
+      | [options: object, params: ParamsObj, returnType: TypeBuilder<any, any>]
+  ): FunctionSchema<any, any, any, any> {
     const [options, params, ret] =
       args.length === 3
         ? args
@@ -133,17 +132,17 @@ export class Schema<Entries extends SchemaEntries> {
     ..._: ValidateViewPrimaryKey<R>
   ): FunctionSchema<'view', P, R, O>;
   view(
-    options: ViewOptions,
-    paramsOrReturn: ParamsObj | TypeBuilder<any, any>,
-    ret?: TypeBuilder<any, any>
+    ...args:
+      | [options: ViewOptions, returnType: TypeBuilder<any, any>]
+      | [
+          options: ViewOptions,
+          params: ParamsObj,
+          returnType: TypeBuilder<any, any>,
+        ]
   ): FunctionSchema<any, any, any, any> {
-    return new FunctionSchema(
-      'view',
-      this,
-      (ret === undefined ? {} : paramsOrReturn) as ParamsObj,
-      (ret ?? paramsOrReturn) as TypeBuilder<any, any>,
-      options
-    );
+    if (args.length === 2)
+      return new FunctionSchema('view', this, {}, args[1], args[0]);
+    return new FunctionSchema('view', this, args[1], args[2], args[0]);
   }
 
   anonymousView<const O extends ViewOptions, R extends ViewReturnTypeBuilder>(
@@ -162,17 +161,17 @@ export class Schema<Entries extends SchemaEntries> {
     ..._: ValidateViewPrimaryKey<R>
   ): FunctionSchema<'anonymousView', P, R, O>;
   anonymousView(
-    options: ViewOptions,
-    paramsOrReturn: ParamsObj | TypeBuilder<any, any>,
-    ret?: TypeBuilder<any, any>
+    ...args:
+      | [options: ViewOptions, returnType: TypeBuilder<any, any>]
+      | [
+          options: ViewOptions,
+          params: ParamsObj,
+          returnType: TypeBuilder<any, any>,
+        ]
   ): FunctionSchema<any, any, any, any> {
-    return new FunctionSchema(
-      'anonymousView',
-      this,
-      (ret === undefined ? {} : paramsOrReturn) as ParamsObj,
-      (ret ?? paramsOrReturn) as TypeBuilder<any, any>,
-      options
-    );
+    if (args.length === 2)
+      return new FunctionSchema('anonymousView', this, {}, args[1], args[0]);
+    return new FunctionSchema('anonymousView', this, args[1], args[2], args[0]);
   }
 }
 

@@ -16,6 +16,7 @@ import {
   ArrayBuilder,
   OptionBuilder,
   RowBuilder,
+  type TypeBuilder,
 } from '../lib/type_builders.ts';
 import { makeQueryBuilder, type QueryBuilder } from '../lib/query.ts';
 import type { NestAccessors, SnakeCase } from '../lib/type_util.ts';
@@ -111,7 +112,7 @@ type Functions<
               } & (Kind extends 'procedure'
                 ? {
                     params: CoerceParams<Args>;
-                    returnType: Ret;
+                    returnType: Extract<Ret, TypeBuilder<any, any>>;
                   }
                 : {
                     params: Args;
@@ -205,18 +206,22 @@ function withAliases<T extends object>(
 
 /** Turn dotted accessor paths into the same nested API used by connections. */
 function nest<T extends Record<string, unknown>>(flat: T): NestAccessors<T> {
-  const result = Object.create(null);
+  const result: Record<string, unknown> = Object.create(null);
   for (const [path, value] of Object.entries(flat)) {
     const parts = path.split('.');
     let target = result;
-    for (const part of parts.slice(0, -1))
-      target = target[part] ??= Object.create(null);
+    for (const part of parts.slice(0, -1)) {
+      target = (target[part] ??= Object.create(null)) as Record<
+        string,
+        unknown
+      >;
+    }
     const key = parts.at(-1)!;
     if (key in target)
       throw new TypeError(`Duplicate client accessor: ${path}`);
     target[key] = value;
   }
-  return result;
+  return result as NestAccessors<T>;
 }
 
 /** Construct the client API from body-free module schemas. */
@@ -227,7 +232,11 @@ export function createClient<
   moduleSchema: M & ([Tables<M>] extends [never] ? never : unknown),
   options: { cliVersion?: string; tableAliases?: A } = {}
 ): Client<M, A> {
-  const remote: UntypedRemoteModule = {
+  const remote: UntypedRemoteModule & {
+    reducers: UntypedRemoteModule['reducers'][number][];
+    procedures: UntypedRemoteModule['procedures'][number][];
+    viewsWithArgs: string[];
+  } = {
     tables: Object.create(null),
     reducers: [],
     procedures: [],
@@ -282,18 +291,18 @@ export function createClient<
         );
       }
     }
-    const functionEntries = Object.entries(
-      module as unknown as Record<string, unknown>
-    ).flatMap(([name, value]): [string, unknown][] => {
-      if (value instanceof FunctionGroup) {
-        if (value.schema !== schema)
-          throw new TypeError(
-            `Function group ${name} belongs to another schema`
-          );
-        return Object.entries(value.exports);
+    const functionEntries = Object.entries(module).flatMap(
+      ([name, value]): [string, unknown][] => {
+        if (value instanceof FunctionGroup) {
+          if (value.schema !== schema)
+            throw new TypeError(
+              `Function group ${name} belongs to another schema`
+            );
+          return Object.entries(value.exports);
+        }
+        return [[name, value]];
       }
-      return [[name, value]];
-    });
+    );
     const names = new Set<string>();
     for (const [accessor, value] of functionEntries) {
       if (!(value instanceof FunctionSchema)) continue;
@@ -307,11 +316,9 @@ export function createClient<
       const accessorName = accessorPrefix + accessor;
       if (value.kind === 'reducer') {
         const descriptor = reducerSchema(wireName, value.params, accessorName);
-        (remote.reducers as any[]).push(
-          ...reducersToSchema([descriptor]).reducers
-        );
+        remote.reducers.push(...reducersToSchema([descriptor]).reducers);
       } else if (value.kind === 'procedure') {
-        (remote.procedures as any[]).push(
+        remote.procedures.push(
           procedureSchema(
             wireName,
             value.params,
@@ -339,13 +346,13 @@ export function createClient<
           )
         );
         if (Object.keys(value.params).length)
-          (remote.viewsWithArgs as string[]).push(wireName);
+          remote.viewsWithArgs.push(wireName);
       }
     }
     active.delete(schema);
   }
   collect(moduleSchema);
-  const module = remote;
+  const module: UntypedRemoteModule = remote;
   class SubscriptionBuilder extends SubscriptionBuilderImpl<typeof module> {}
   class DbConnection extends DbConnectionImpl<typeof module> {
     constructor(config: DbConnectionConfig<typeof module>) {
