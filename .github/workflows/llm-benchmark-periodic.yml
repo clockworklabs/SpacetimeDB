@@ -76,7 +76,6 @@ jobs:
     name: Run benchmarks (${{ matrix.lang }})
     needs: prepare_matrix
     runs-on: spacetimedb-linux
-    # One mode for twelve models took up to 5.6 hours in C#, and the default run does both modes in one job.
     timeout-minutes: 1440
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
