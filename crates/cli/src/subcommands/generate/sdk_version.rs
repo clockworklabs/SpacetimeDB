@@ -22,7 +22,7 @@ fn requirement(language: Language) -> Option<SdkRequirement> {
     match language {
         Language::TypeScript => Some(SdkRequirement {
             name: "TypeScript spacetimedb",
-            minimum: Version::new(2, 14, 0),
+            minimum: Version::new(2, 16, 0),
             detect: typescript_sdk,
         }),
         _ => None,
@@ -151,13 +151,13 @@ mod tests {
         let target = root.path().join("clients/web");
         write(
             &target.join("package.json"),
-            serde_json::json!({"dependencies":{"spacetimedb":"^2.13.0"}}),
+            serde_json::json!({"dependencies":{"spacetimedb":"^2.15.0"}}),
         );
         let installed = root.path().join("node_modules/spacetimedb/package.json");
         for (version, warns) in [
             ("2.13.9", true),
-            ("2.14.0-rc.1", true),
-            ("2.14.0", false),
+            ("2.16.0-rc.1", true),
+            ("2.16.0", false),
             ("3.0.0", false),
         ] {
             write(&installed, serde_json::json!({"name":"spacetimedb", "version":version}));
@@ -165,14 +165,14 @@ mod tests {
             assert_eq!(message.is_some(), warns, "{version}");
             if let Some(message) = message {
                 assert!(message.contains(version));
-                assert!(message.contains("2.14.0 or later"));
+                assert!(message.contains("2.16.0 or later"));
                 assert!(message.contains("Upgrade"));
             }
         }
         // Prefer the target's local dependency over a hoisted copy.
         write(
             &target.join("node_modules/spacetimedb/package.json"),
-            serde_json::json!({"version":"2.13.0"}),
+            serde_json::json!({"version":"2.15.0"}),
         );
         assert!(warning(Language::TypeScript, &target.join("src/bindings")).is_some());
     }
@@ -201,7 +201,7 @@ mod tests {
     #[test]
     fn handles_exact_manifest_versions_and_leaves_other_languages_alone() {
         let root = tempfile::tempdir().unwrap();
-        for (version, warns) in [("2.13.0", true), ("2.14.0", false), ("^2.14.0", true)] {
+        for (version, warns) in [("2.15.0", true), ("2.16.0", false), ("^2.16.0", true)] {
             write(
                 &root.path().join("package.json"),
                 serde_json::json!({"devDependencies":{"spacetimedb":version}}),
