@@ -25,6 +25,7 @@ const databaseIdentity = new Identity(99n);
 const admin = new Identity(1n);
 const stranger = new Identity(2n);
 let sender = admin;
+let external = false;
 let now = 10n * SECOND;
 
 const Args = t.object('TestArgs', { count: t.u32() });
@@ -384,6 +385,11 @@ const ctx = {
   },
   get databaseIdentity() {
     return databaseIdentity;
+  },
+  // As in the SDK's AuthCtxImpl.forSender, unless a test marks the caller
+  // external, like a container presenting the database's identity.
+  get senderAuth() {
+    return { isInternal: !external && sender.isEqual(databaseIdentity) };
   },
   get timestamp() {
     return new Timestamp(now);
@@ -1054,6 +1060,18 @@ assert.ok(admins.has(admin.toHexString()));
   assert.throws(() => workflowRunAttempt(ctx as never, { arg: fire }), {
     message: errors.notAuthorized,
   });
+  // The database's identity alone is not enough: the call must be internal.
+  sender = databaseIdentity;
+  external = true;
+  assert.throws(() => workflowRunAttempt(ctx as never, { arg: fire }), {
+    message: errors.notAuthorized,
+  });
+  assert.throws(
+    () => workflowRunAttempt(ctx as never, { arg: { ...fire, branch: 0 } }),
+    { message: errors.notAuthorized }
+  );
+  external = false;
+  sender = admin;
   assert.deepEqual(appLog, []);
   workflows.cancel(tx, id);
 }

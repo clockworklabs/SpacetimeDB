@@ -239,6 +239,7 @@ export interface WorkflowViewCtx {
 /** A host transaction context whose schema includes `workflows.tables`. */
 export interface WorkflowCtx {
   readonly sender: Identity;
+  readonly senderAuth: { readonly isInternal: boolean };
   readonly timestamp: Timestamp;
   readonly db: {
     readonly workflowRun: {
@@ -306,8 +307,6 @@ export interface WorkflowCtx {
 
 /** A host procedure context whose schema includes `workflows.tables`. */
 export interface WorkflowProcedureCtx<Tx extends WorkflowCtx = WorkflowCtx> {
-  readonly sender: Identity;
-  readonly databaseIdentity: Identity;
   withTx<T>(body: (tx: Tx) => T): T;
 }
 
@@ -678,6 +677,11 @@ export function client() {
     });
   }
 
+  /** Only the scheduler may run the workflow procedure. */
+  function requireInternal(ctx: WorkflowCtx): void {
+    if (!ctx.senderAuth.isInternal) throw new SenderError(errors.notAuthorized);
+  }
+
   /** Mark a finished run for pruning, oldest first. */
   function retire(ctx: WorkflowCtx, runId: bigint): void {
     const finished = ctx.db.workflowFinished;
@@ -738,6 +742,7 @@ export function client() {
     arg: WorkflowFireRow
   ): boolean {
     const claimed = ctx.withTx(tx => {
+      requireInternal(tx);
       const run = tx.db.workflowRun.id.find(arg.runId);
       if (run?.status.tag === 'Running' || run?.status.tag === 'Waiting') {
         return undefined;
@@ -879,6 +884,7 @@ export function client() {
 
   /** Start an attempt by loading the steps that already finished. */
   function claim(ctx: WorkflowCtx, arg: WorkflowFireRow) {
+    requireInternal(ctx);
     const run = ctx.db.workflowRun.id.find(arg.runId);
     if (run?.status.tag !== 'Running' || run.generation !== arg.generation) {
       return undefined;
@@ -980,6 +986,7 @@ export function client() {
     branch: number
   ): void {
     const claimed = ctx.withTx(tx => {
+      requireInternal(tx);
       const run = waitingOnBranches(tx, arg.runId, arg.generation);
       const row = run
         ? [...tx.db.workflowBranch.runId.filter(run.id)].find(
@@ -1157,9 +1164,6 @@ export function client() {
     ctx: WorkflowProcedureCtx<Tx>,
     arg: WorkflowFireRow
   ): void {
-    if (!ctx.sender.isEqual(ctx.databaseIdentity)) {
-      throw new SenderError(errors.notAuthorized);
-    }
     if (arg.branch !== undefined) {
       runBranch(ctx, arg, arg.branch);
       return;
