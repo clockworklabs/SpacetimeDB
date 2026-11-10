@@ -1,3 +1,4 @@
+use super::metrics::{with_fault, CacheTier, EvictionDirection, Fault, ObjectType};
 use std::{
     collections::{btree_map, BTreeMap, BTreeSet},
     convert::Infallible,
@@ -193,6 +194,14 @@ impl TieredPages {
         }
     }
 
+    fn with_page_retry<'a, T>(
+        &self,
+        manager: &'a PageManager,
+        mut f: impl FnMut(&mut Option<Fault<'a>>) -> Result<T, PageError>,
+    ) -> Result<T, PageError> {
+        with_fault(|fault| self.with_eviction_retry(manager, || f(fault)))
+    }
+
     fn with_eviction_retry<T>(
         &self,
         manager: &PageManager,
@@ -208,6 +217,15 @@ impl TieredPages {
     }
 
     fn evict(&self, manager: &PageManager) -> Result<(), PageError> {
+        let timer = manager.metrics().timer();
+        let result = self.evict_inner(manager);
+        manager
+            .metrics()
+            .eviction(EvictionDirection::MemoryToDisk, timer.nanos());
+        result
+    }
+
+    fn evict_inner(&self, manager: &PageManager) -> Result<(), PageError> {
         let mut guard = self.evictable.lock().unwrap();
         let (candidates, slots) = &mut *guard;
 
@@ -253,6 +271,11 @@ impl TieredPages {
                 metadata: *metadata,
             };
             manager.evicted(candidate);
+            manager.metrics().evicted(
+                ObjectType::Page,
+                EvictionDirection::MemoryToDisk,
+                crate::indexes::PAGE_SIZE as u64,
+            );
         }
 
         Ok(())
@@ -458,14 +481,20 @@ impl PageSet {
     #[inline]
     pub fn get_page(&self, index: PageIndex) -> Result<Option<PageRef<'_>>, PageError> {
         if let Some(resident) = self.storage.resident() {
-            return Ok(resident.pages.get(index).map(PageRef::Resident));
+            let page = resident.pages.get(index);
+            if page.is_some() {
+                self.manager.metrics().lookup(ObjectType::Page, CacheTier::Memory, true);
+            }
+            return Ok(page.map(PageRef::Resident));
         }
         let tiered = self.storage.tiered();
         let Some(slot) = tiered.slots.get(index.idx()) else {
             return Ok(None);
         };
         tiered
-            .with_eviction_retry(&self.manager, || self.manager.get(slot, self.eviction_policy))
+            .with_page_retry(&self.manager, |fault| {
+                self.manager.get_with_fault(slot, self.eviction_policy, fault)
+            })
             .map(|page| page.map(PageRef::Tiered))
     }
 
@@ -499,8 +528,9 @@ impl PageSet {
                 if slot.is_absent() {
                     Ok(None)
                 } else {
-                    let mut page = tiered.with_eviction_retry(&self.manager, || {
-                        self.manager.get_mut(slot, self.eviction_policy, self.fixed_row_size)
+                    let mut page = tiered.with_page_retry(&self.manager, |fault| {
+                        self.manager
+                            .get_mut_with_fault(slot, self.eviction_policy, self.fixed_row_size, fault)
                     })?;
                     let hash = page.save_or_get_content_hash();
                     Ok(Some((hash, PageRef::Tiered(page.into_page_handle()))))
@@ -535,8 +565,9 @@ impl PageSet {
             let Some(slot) = tiered.slots.get(index.idx()) else {
                 return Err(PageError::MissingPage(index));
             };
-            tiered.with_eviction_retry(&self.manager, || {
-                self.manager.get_mut(slot, self.eviction_policy, self.fixed_row_size)
+            tiered.with_page_retry(&self.manager, |fault| {
+                self.manager
+                    .get_mut_with_fault(slot, self.eviction_policy, self.fixed_row_size, fault)
             })?
         };
 
@@ -1385,11 +1416,12 @@ mod tests {
     use crate::{
         indexes::PAGE_SIZE,
         page_pool::PagePool,
-        tiered::{ByteBudget, ByteBudgetConfig, ResidentObjects, TieredStorage},
+        tiered::{metrics::CacheTier, ByteBudget, ByteBudgetConfig, ResidentObjects, TieredStorage},
     };
 
     fn bounded_page_set() -> PageSet {
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: PAGE_SIZE as u64,
             hard_limit_bytes: PAGE_SIZE as u64,

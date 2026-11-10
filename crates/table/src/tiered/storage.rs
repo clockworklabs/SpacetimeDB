@@ -1,3 +1,4 @@
+use super::metrics::{CacheTier, EvictionDirection, FaultSource, Metrics};
 use std::{
     fmt,
     ops::Deref,
@@ -95,6 +96,7 @@ pub trait ObjectStore: fmt::Debug + Send + Sync + 'static {
     /// Obtain metadata about the object at `key`, or `None` if no such key
     /// exists.
     fn stat(&self, key: ObjectKey) -> Result<Option<ObjectMetadata>, ObjectStoreError>;
+    fn set_metrics(&mut self, _metrics: Metrics) {}
     /// Read the raw bytes of the object at `key`, or `None` if no such key
     /// exists.
     ///
@@ -263,6 +265,14 @@ impl TieredStorage {
         )
     }
 
+    pub(super) fn local_budget(&self) -> &ByteBudget {
+        &self.local.budget
+    }
+
+    pub fn metrics(&self) -> &Metrics {
+        self.local.budget.metrics()
+    }
+
     pub fn stat(&self, key: ObjectKey) -> Result<ObjectMetadata, ObjectStoreError> {
         let slot = self.catalog.read().get(&key).cloned().ok_or_else(|| unknown(key))?;
         let entry = slot.lock();
@@ -294,12 +304,25 @@ impl TieredStorage {
     }
 
     pub fn read(&self, key: ObjectKey) -> Result<ObjectBytes, ObjectStoreError> {
+        let mut source = None;
+        self.read_with_source(key, &mut source)
+    }
+
+    pub(super) fn read_with_source(
+        &self,
+        key: ObjectKey,
+        source: &mut Option<FaultSource>,
+    ) -> Result<ObjectBytes, ObjectStoreError> {
         let slot = self.catalog.read().get(&key).cloned().ok_or_else(|| unknown(key))?;
         // Try to read from local storage first.
         {
             let mut entry = slot.lock();
             let entry = entry.as_mut().ok_or_else(|| unknown(key))?;
-            if let Some(object) = self.local.object_store.read(key)? {
+            let local = self.local.object_store.read(key)?;
+            self.metrics()
+                .lookup(key.metric_type(), CacheTier::Disk, local.is_some());
+            if let Some(object) = local {
+                *source = Some(FaultSource::Disk);
                 entry.last_access_epoch = self.access_epoch();
                 return Ok(object);
             }
@@ -317,7 +340,11 @@ impl TieredStorage {
             let entry = entry.as_mut().ok_or_else(|| unknown(key))?;
             // Another reader or writer may have restored the object while we
             // reserved space.
-            if let Some(object) = self.local.object_store.read(key)? {
+            let local = self.local.object_store.read(key)?;
+            self.metrics()
+                .lookup(key.metric_type(), CacheTier::Disk, local.is_some());
+            if let Some(object) = local {
+                *source = Some(FaultSource::Disk);
                 entry.last_access_epoch = self.access_epoch();
                 return Ok(object);
             }
@@ -325,6 +352,7 @@ impl TieredStorage {
             // Fetch the remote object and store it locally.
             // Hold the entry lock to prevent eviction.
             let bytes = remote.object_store.read(key)?.ok_or_else(|| not_found(key))?;
+            *source = Some(FaultSource::Remote);
             self.local.object_store.write(object_from_trusted_bytes(key, &bytes))?;
             entry.last_access_epoch = self.access_epoch();
             entry.permit = Some(permit);
@@ -355,6 +383,13 @@ impl TieredStorage {
     ///
     /// Returns the total number of bytes freed from local storage.
     pub fn evict(&self, target_usage: u64) -> Result<u64, ObjectStoreError> {
+        let timer = self.metrics().timer();
+        let result = self.evict_inner(target_usage);
+        self.metrics().eviction(EvictionDirection::DiskToRemote, timer.nanos());
+        result
+    }
+
+    fn evict_inner(&self, target_usage: u64) -> Result<u64, ObjectStoreError> {
         let Some(remote) = &self.remote else {
             return Ok(0);
         };
@@ -402,6 +437,8 @@ impl TieredStorage {
 
             entry.permit.take();
             bytes_freed += entry.size;
+            self.metrics()
+                .evicted(key.metric_type(), EvictionDirection::DiskToRemote, entry.size);
         }
 
         Ok(bytes_freed)
@@ -686,6 +723,7 @@ mod tests {
     fn remote_read_can_evict_without_holding_its_slot() {
         // Budget to fit exactly one object.
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Disk,
             low_water_bytes: 0,
             soft_limit_bytes: 4,
             hard_limit_bytes: 4,

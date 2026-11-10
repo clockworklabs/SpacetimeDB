@@ -1,3 +1,4 @@
+use super::metrics::{with_fault, CacheTier, Fault, Metrics, ObjectType};
 use std::{
     ops::{Deref, DerefMut},
     sync::Arc,
@@ -529,11 +530,24 @@ impl PageManager {
         )
     }
 
+    pub fn metrics(&self) -> &Metrics {
+        self.resident.metrics()
+    }
+
     /// Get the [PageHandle] at the given `slot`, or fault it in.
     ///
     /// Returns `Ok(None)` if the page is absent.
     pub fn get(&self, slot: &PageSlotHandle, eviction_policy: EvictionPolicy) -> Result<Option<PageHandle>, PageError> {
-        self.may_fault(&mut slot.lock_ref(), eviction_policy)
+        with_fault(|fault| self.get_with_fault(slot, eviction_policy, fault))
+    }
+
+    pub(super) fn get_with_fault<'a>(
+        &'a self,
+        slot: &PageSlotHandle,
+        eviction_policy: EvictionPolicy,
+        fault: &mut Option<Fault<'a>>,
+    ) -> Result<Option<PageHandle>, PageError> {
+        self.may_fault(&mut slot.lock_ref(), eviction_policy, fault)
     }
 
     /// Get a [PageFrameWriteGuard] for the page at the given `slot`.
@@ -550,19 +564,30 @@ impl PageManager {
         eviction_policy: EvictionPolicy,
         fixed_row_size: Size,
     ) -> Result<PageFrameWriteGuard, PageError> {
+        with_fault(|fault| self.get_mut_with_fault(slot, eviction_policy, fixed_row_size, fault))
+    }
+
+    pub(super) fn get_mut_with_fault<'a>(
+        &'a self,
+        slot: &PageSlotHandle,
+        eviction_policy: EvictionPolicy,
+        fixed_row_size: Size,
+        fault: &mut Option<Fault<'a>>,
+    ) -> Result<PageFrameWriteGuard, PageError> {
         let mut slot_guard = slot.lock_owned();
         let handle = self
-            .may_fault(&mut slot_guard, eviction_policy)?
+            .may_fault(&mut slot_guard, eviction_policy, fault)?
             .expect("page requested for mutation to be present");
         // SAFETY: We just faulted the page, so the handle contains the resident
         // frame we want to lock.
         Ok(unsafe { handle.write(slot_guard, fixed_row_size) })
     }
 
-    fn may_fault(
-        &self,
+    fn may_fault<'a>(
+        &'a self,
         slot_guard: &mut PageSlot,
         eviction_policy: EvictionPolicy,
+        fault: &mut Option<Fault<'a>>,
     ) -> Result<Option<PageHandle>, PageError> {
         match &*slot_guard {
             PageSlot::Absent => Ok(None),
@@ -571,6 +596,7 @@ impl PageManager {
                 eviction_policy: cached_eviction_policy,
                 ..
             } => {
+                self.metrics().lookup(ObjectType::Page, CacheTier::Memory, true);
                 assert_eq!(
                     cached_eviction_policy, &eviction_policy,
                     "eviction policy cannot be changed for resident pages"
@@ -582,8 +608,12 @@ impl PageManager {
                 Ok(Some(handle.clone()))
             }
             PageSlot::NonResident { hash, metadata, .. } => {
+                self.metrics().lookup(ObjectType::Page, CacheTier::Memory, false);
+                let fault = fault.get_or_insert_with(|| self.metrics().fault(ObjectType::Page));
                 let reservation = self.resident.reserve_page(|| {
-                    let bytes = self.storage.read(ObjectKey::from(*hash))?;
+                    let bytes = self
+                        .storage
+                        .read_with_source(ObjectKey::from(*hash), &mut fault.source)?;
                     let page = self
                         .pool
                         .take_deserialize_from(&bytes)

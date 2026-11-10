@@ -1,3 +1,4 @@
+use super::metrics::Metrics;
 use std::{
     cmp, fmt,
     mem::ManuallyDrop,
@@ -172,6 +173,14 @@ pub struct ResidentObjects {
 }
 
 impl ResidentObjects {
+    pub(super) fn budget(&self) -> &ByteBudget {
+        &self.budget
+    }
+
+    pub fn metrics(&self) -> &Metrics {
+        self.budget.metrics()
+    }
+
     pub(super) fn has_unlimited_budget(&self) -> bool {
         self.budget.is_unlimited()
     }

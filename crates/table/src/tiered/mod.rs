@@ -9,6 +9,7 @@ mod budget;
 mod error;
 mod map;
 mod mem;
+pub mod metrics;
 mod page_manager;
 mod page_ref;
 mod page_set;
@@ -43,6 +44,13 @@ pub struct TieredStorageConfig {
 }
 
 impl TieredStorageConfig {
+    pub fn with_metrics(mut self, metrics: metrics::Metrics) -> Self {
+        self.resident_budget.metrics = metrics.clone();
+        self.local_store.budget.metrics = metrics.clone();
+        self.local_store.object_store.set_metrics(metrics);
+        self
+    }
+
     pub fn new_for_test() -> Self {
         Self::memory_unlimited(PagePool::new_for_test())
     }
@@ -61,7 +69,11 @@ impl TieredStorageConfig {
             resident_budget: ByteBudget::unlimited(),
             local_store: BackingStore {
                 object_store: Box::new(MemoryObjectStore::default()),
-                budget: ByteBudget::unlimited(),
+                budget: ByteBudget::new(ByteBudgetConfig {
+                    tier: metrics::CacheTier::Disk,
+                    ..ByteBudgetConfig::unlimited()
+                })
+                .unwrap(),
             },
             remote_store: None,
         }
@@ -117,6 +129,17 @@ impl TieredDatabaseStorage {
             cache,
             store,
         })
+    }
+
+    pub fn budgets(&self) -> [(metrics::CacheTier, &ByteBudget); 2] {
+        [
+            (metrics::CacheTier::Memory, self.cache.budget()),
+            (metrics::CacheTier::Disk, self.store.local_budget()),
+        ]
+    }
+
+    pub fn metrics(&self) -> &metrics::Metrics {
+        self.cache.metrics()
     }
 
     pub fn pages(&self) -> &Arc<PageManager> {

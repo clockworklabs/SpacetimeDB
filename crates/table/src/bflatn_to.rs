@@ -591,7 +591,7 @@ pub mod test {
     use std::sync::Arc;
 
     use super::*;
-    use crate::tiered::{ByteBudget, ByteBudgetConfig, ResidentObjects, TieredStorage};
+    use crate::tiered::{metrics::CacheTier, ByteBudget, ByteBudgetConfig, ResidentObjects, TieredStorage};
     use crate::{
         bflatn_from::serialize_row_from_page, page::tests::hash_unmodified_save_get,
         row_type_visitor::row_type_visitor, tiered::BlobReadSet,
@@ -607,6 +607,7 @@ pub mod test {
         let first = "a".repeat(blob_size);
         let second = "b".repeat(blob_size);
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: blob_size as u64,
             hard_limit_bytes: blob_size as u64,
@@ -649,6 +650,7 @@ pub mod test {
         let first = "a".repeat(blob_size);
         let second = "b".repeat(blob_size);
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: blob_size as u64,
             hard_limit_bytes: blob_size as u64,

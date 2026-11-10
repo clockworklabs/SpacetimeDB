@@ -1288,12 +1288,24 @@ impl Host {
             database_identity: database.database_identity,
             owner_identity: database.owner_identity,
         };
+        let instrument_table_storage = |storage: spacetimedb_table::tiered::TieredStorageConfig| {
+            let epoch = std::time::Instant::now();
+            storage.with_metrics(spacetimedb_datastore::db_metrics::page_cache::new_metrics(
+                database_identity,
+                replica_id,
+                move || u64::try_from(epoch.elapsed().as_nanos()).unwrap_or(u64::MAX),
+            ))
+        };
         let (db, connected_clients) = match config.storage {
             db::Storage::Memory => RelationalDB::open(
                 database.database_identity,
                 database.owner_identity,
                 EmptyHistory::new(),
-                persistence.ephemeral(&persistence_db, replica_id).await?,
+                {
+                    let mut persistence = persistence.ephemeral(&persistence_db, replica_id).await?;
+                    persistence.table_storage = instrument_table_storage(persistence.table_storage);
+                    persistence
+                },
                 Some(tx_metrics_queue),
             )?,
             db::Storage::Disk => {
@@ -1304,7 +1316,8 @@ impl Host {
                     database_identity: database.database_identity,
                     owner_identity: database.owner_identity,
                 };
-                let persistence = persistence.persistent(&persistence_db, replica_id).await?;
+                let mut persistence = persistence.persistent(&persistence_db, replica_id).await?;
+                persistence.table_storage = instrument_table_storage(persistence.table_storage);
                 // Loading a database from persistent storage involves heavy
                 // blocking I/O. `asyncify` to avoid blocking the async worker.
                 let (db, clients) = asyncify({
