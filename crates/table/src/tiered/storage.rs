@@ -558,6 +558,7 @@ mod tests {
         inner: MemoryObjectStore,
         after_remove: Option<Arc<Pause>>,
         fail_writes: AtomicBool,
+        fail_remove: AtomicBool,
     }
 
     impl ObjectStore for Arc<TestStore> {
@@ -579,6 +580,9 @@ mod tests {
 
     unsafe impl RemoveObject for Arc<TestStore> {
         unsafe fn remove(&self, key: ObjectKey) -> Result<(), ObjectStoreError> {
+            if self.fail_remove.load(Ordering::Relaxed) {
+                return Err(io::Error::other("injected remove failure").into());
+            }
             // SAFETY: Forward caller requirements.
             unsafe { self.inner.remove(key)? };
             if let Some(pause) = &self.after_remove {
@@ -768,5 +772,20 @@ mod tests {
         assert_eq!(storage.evict(4).unwrap(), 0);
         assert!(local.stat(key).unwrap().is_some());
         assert_eq!(storage.local.budget.usage().accounted_bytes, 4);
+    }
+
+    #[test]
+    fn failed_local_remove_preserves_permit() {
+        let local = Arc::new(TestStore::default());
+        let remote = Arc::new(TestStore::default());
+        local.fail_remove.store(true, Ordering::Relaxed);
+
+        let storage = storage(local.clone(), remote, ByteBudget::unlimited());
+        let key = storage.write(object(b"aaaa")).unwrap();
+
+        assert!(storage.evict(0).is_err());
+        assert!(local.stat(key).unwrap().is_some());
+        assert_eq!(storage.local.budget.usage().accounted_bytes, 4);
+        assert_eq!(&*storage.read(key).unwrap(), b"aaaa");
     }
 }
