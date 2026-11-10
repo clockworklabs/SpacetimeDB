@@ -12,4 +12,3 @@ TABLES
 REDUCERS
 - CreatePlayer(ctx, string name, string? nickname, uint? highScore)
   - Insert a Player row, passing through the nullable fields as-is
-  - Use Id: 0 for AutoInc
