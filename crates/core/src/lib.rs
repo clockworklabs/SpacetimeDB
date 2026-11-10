@@ -15,7 +15,6 @@ pub mod callgrind_flag;
 pub mod client;
 pub mod config;
 pub mod database_logger;
-pub mod estimation;
 pub mod host;
 pub mod module_host_context;
 pub mod replica_context;

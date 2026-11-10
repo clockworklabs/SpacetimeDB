@@ -4,21 +4,24 @@
 compile_error!("spacetimedb-test-datastore is only supported for native module tests");
 
 use std::cell::RefCell;
+use std::ops::RangeBounds;
 use std::sync::Arc;
 
-use spacetimedb_core::db::relational_db::{MutTx, RelationalDB, Tx};
-use spacetimedb_core::db::sql::ast::SchemaViewer;
-use spacetimedb_core::error::{DBError, DatastoreError, IndexError, SequenceError};
-use spacetimedb_core::estimation::{check_row_limit, estimate_rows_scanned};
 use spacetimedb_datastore::locking_tx_datastore::IndexScanPointOrRange;
 use spacetimedb_datastore::{execution_context::Workload, traits::IsolationLevel};
+use spacetimedb_engine::error::{DBError, DatastoreError, IndexError, SequenceError};
+use spacetimedb_engine::relational_db::{tests_utils, MutTx, RelationalDB, Tx};
+use spacetimedb_engine::sql::ast::SchemaViewer;
+use spacetimedb_execution::{Datastore, DeltaStore, Row};
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::bsatn::EncodeError;
 use spacetimedb_lib::bsatn::ToBsatn;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::{Identity, ProductValue, RawModuleDef};
+use spacetimedb_lib::query::Delta;
+use spacetimedb_lib::{AlgebraicValue, Identity, ProductValue, RawModuleDef};
 use spacetimedb_primitives::{ColId, IndexId, TableId};
+use spacetimedb_query::estimation::{check_row_limit, estimate_rows_scanned};
 use spacetimedb_query::{compile_sql_stmt, execute_select_stmt};
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::error::ValidationErrors;
@@ -42,10 +45,10 @@ impl TestDatastore {
     /// Create an in-memory datastore initialized with the tables in `raw`.
     pub fn from_module_def(raw: RawModuleDef) -> Result<Self, TestDatastoreError> {
         let module_def = ModuleDef::try_from(raw)?;
-        let test_db = spacetimedb_core::db::relational_db::tests_utils::TestDB::in_memory()?;
+        let test_db = tests_utils::TestDB::in_memory()?;
         let db = test_db.db;
 
-        spacetimedb_core::db::relational_db::tests_utils::with_auto_commit(&db, |tx| {
+        tests_utils::with_auto_commit(&db, |tx| {
             for table in module_def.tables() {
                 let schema = TableSchema::from_module_def(&module_def, table, (), TableId::SENTINEL);
                 db.create_table(tx, schema)?;
@@ -68,9 +71,7 @@ impl TestDatastore {
 
     /// Resolve a table name to its datastore id.
     pub fn table_id(&self, table_name: &str) -> Result<TableId, TestDatastoreError> {
-        let id = spacetimedb_core::db::relational_db::tests_utils::with_read_only(&self.db, |tx| {
-            self.db.table_id_from_name(tx, table_name)
-        })?;
+        let id = tests_utils::with_read_only(&self.db, |tx| self.db.table_id_from_name(tx, table_name))?;
 
         id.ok_or_else(|| TestDatastoreError::MissingTable(table_name.into()))
     }
@@ -85,7 +86,7 @@ impl TestDatastore {
 
     /// Execute a read-only operation against the datastore.
     pub fn with_read_only<T>(&self, f: impl FnOnce(&mut Tx) -> T) -> T {
-        spacetimedb_core::db::relational_db::tests_utils::with_read_only(&self.db, f)
+        tests_utils::with_read_only(&self.db, f)
     }
 
     /// Execute a mutable operation and commit it if `f` succeeds.
@@ -93,7 +94,7 @@ impl TestDatastore {
         &self,
         f: impl FnOnce(&mut MutTx) -> Result<T, TestDatastoreError>,
     ) -> Result<T, TestDatastoreError> {
-        spacetimedb_core::db::relational_db::tests_utils::with_auto_commit(&self.db, f)
+        tests_utils::with_auto_commit(&self.db, f)
     }
 
     /// Begin an explicit mutable transaction.
@@ -103,9 +104,7 @@ impl TestDatastore {
     pub fn begin_mut_tx(&self) -> TestTransaction {
         TestTransaction {
             db: self.db.clone(),
-            tx: RefCell::new(Some(spacetimedb_core::db::relational_db::tests_utils::begin_mut_tx(
-                &self.db,
-            ))),
+            tx: RefCell::new(Some(tests_utils::begin_mut_tx(&self.db))),
         }
     }
 
@@ -133,7 +132,7 @@ impl TestDatastore {
 
     /// Collect every row in `table_id` as [`ProductValue`]s.
     pub fn table_rows(&self, table_id: TableId) -> Result<Vec<ProductValue>, TestDatastoreError> {
-        spacetimedb_core::db::relational_db::tests_utils::with_read_only(&self.db, |tx| {
+        tests_utils::with_read_only(&self.db, |tx| {
             let rows = self
                 .db
                 .iter(tx, table_id)?
@@ -145,7 +144,7 @@ impl TestDatastore {
 
     /// Collect every row in `table_id` as BSATN-encoded row bytes.
     pub fn table_rows_bsatn(&self, table_id: TableId) -> Result<Vec<Vec<u8>>, TestDatastoreError> {
-        spacetimedb_core::db::relational_db::tests_utils::with_read_only(&self.db, |tx| {
+        tests_utils::with_read_only(&self.db, |tx| {
             let rows = self
                 .db
                 .iter(tx, table_id)?
@@ -261,26 +260,108 @@ impl TestDatastore {
         });
 
         let mut metrics = ExecutionMetrics::default();
-        let rows = execute_select_stmt(
-            &auth,
-            stmt,
-            &spacetimedb_core::subscription::tx::DeltaTx::from(&*tx),
-            &mut metrics,
-            |plan| {
-                check_row_limit(
-                    &[&plan],
-                    &self.db,
-                    &tx,
-                    |plan, tx| plan.plan_iter().map(|plan| estimate_rows_scanned(tx, plan)).sum(),
-                    &auth,
-                )?;
-                Ok(plan)
-            },
-        )
+        let rows = execute_select_stmt(&auth, stmt, &NoDelta(&tx), &mut metrics, |plan| {
+            check_row_limit(
+                &[&plan],
+                &self.db,
+                &tx,
+                |plan, tx| plan.plan_iter().map(|plan| estimate_rows_scanned(tx, plan)).sum(),
+                &auth,
+            )?;
+            Ok(plan)
+        })
         .map_err(TestDatastoreError::Query)?;
 
         tx.metrics.merge(metrics);
         Ok(rows)
+    }
+}
+
+/// A read-only transaction with no subscription delta, for SELECT evaluation.
+///
+/// Query execution requires [`DeltaStore`], which only subscription evaluation provides
+/// with real data. Keeping this impl local, rather than on [`Tx`] itself, means passing a
+/// bare transaction to delta evaluation stays a compile error elsewhere.
+struct NoDelta<'a>(&'a Tx);
+
+impl Datastore for NoDelta<'_> {
+    type TableIter<'a>
+        = <Tx as Datastore>::TableIter<'a>
+    where
+        Self: 'a;
+
+    type RangeIndexIter<'a>
+        = <Tx as Datastore>::RangeIndexIter<'a>
+    where
+        Self: 'a;
+
+    type PointIndexIter<'a>
+        = <Tx as Datastore>::PointIndexIter<'a>
+    where
+        Self: 'a;
+
+    fn row_count(&self, table_id: TableId) -> u64 {
+        self.0.row_count(table_id)
+    }
+
+    fn table_scan<'a>(&'a self, table_id: TableId) -> anyhow::Result<Self::TableIter<'a>> {
+        self.0.table_scan(table_id)
+    }
+
+    fn index_scan_range<'a>(
+        &'a self,
+        table_id: TableId,
+        index_id: IndexId,
+        range: &impl RangeBounds<AlgebraicValue>,
+    ) -> anyhow::Result<Self::RangeIndexIter<'a>> {
+        self.0.index_scan_range(table_id, index_id, range)
+    }
+
+    fn index_scan_point<'a>(
+        &'a self,
+        table_id: TableId,
+        index_id: IndexId,
+        point: &AlgebraicValue,
+    ) -> anyhow::Result<Self::PointIndexIter<'a>> {
+        self.0.index_scan_point(table_id, index_id, point)
+    }
+}
+
+impl DeltaStore for NoDelta<'_> {
+    fn num_inserts(&self, _: TableId) -> usize {
+        0
+    }
+
+    fn num_deletes(&self, _: TableId) -> usize {
+        0
+    }
+
+    fn inserts_for_table(&self, _: TableId) -> Option<std::slice::Iter<'_, ProductValue>> {
+        None
+    }
+
+    fn deletes_for_table(&self, _: TableId) -> Option<std::slice::Iter<'_, ProductValue>> {
+        None
+    }
+
+    fn index_scan_range_for_delta(
+        &self,
+        _: TableId,
+        _: IndexId,
+        _: Delta,
+        _: impl RangeBounds<AlgebraicValue>,
+    ) -> impl Iterator<Item = Row<'_>> {
+        std::iter::empty()
+    }
+
+    fn index_scan_point_for_delta(
+        &self,
+        _: TableId,
+        _: IndexId,
+        _: Delta,
+        _: &AlgebraicValue,
+    ) -> impl Iterator<Item = Row<'_>> {
+        std::iter::empty()
     }
 }
 

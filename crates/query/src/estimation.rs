@@ -1,8 +1,8 @@
-use crate::{
-    db::relational_db::{RelationalDB, Tx},
-    error::DBError,
-};
 use spacetimedb_datastore::locking_tx_datastore::{state_view::StateView as _, NumDistinctValues};
+use spacetimedb_engine::{
+    error::DBError,
+    relational_db::{RelationalDB, Tx},
+};
 use spacetimedb_lib::{identity::AuthCtx, query::Delta};
 use spacetimedb_physical_plan::plan::{HashJoin, IndexProbe, IxJoin, IxScan, PhysicalPlan, TableScan};
 use spacetimedb_primitives::{ColList, TableId};
@@ -132,13 +132,13 @@ fn index_row_est(tx: &Tx, table_id: TableId, cols: &ColList) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{estimate_rows_scanned, row_estimate};
-    use crate::db::relational_db::tests_utils::{begin_tx, insert, with_auto_commit};
-    use crate::db::relational_db::{tests_utils::TestDB, RelationalDB};
-    use crate::db::sql::ast::SchemaViewer;
-    use crate::error::DBError;
+    use crate::compile_subscription;
+    use spacetimedb_engine::error::DBError;
+    use spacetimedb_engine::relational_db::tests_utils::{begin_tx, insert, with_auto_commit};
+    use spacetimedb_engine::relational_db::{tests_utils::TestDB, RelationalDB};
+    use spacetimedb_engine::sql::ast::SchemaViewer;
+    use spacetimedb_lib::sats::product;
     use spacetimedb_lib::{identity::AuthCtx, AlgebraicType};
-    use spacetimedb_query::compile_subscription;
-    use spacetimedb_sats::product;
 
     fn in_mem_db() -> TestDB {
         TestDB::in_memory().expect("failed to make test db")
