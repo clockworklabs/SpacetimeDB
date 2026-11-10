@@ -76,6 +76,7 @@ jobs:
     name: Run benchmarks (${{ matrix.lang }})
     needs: prepare_matrix
     runs-on: spacetimedb-linux
+    timeout-minutes: 1440
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       TARGET_TRIPLE: x86_64-unknown-linux-gnu
@@ -180,11 +181,13 @@ jobs:
           DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
           MSBUILDDISABLENODEREUSE: "1"
           DOTNET_CLI_USE_MSBUILD_SERVER: "0"
+          # Bound in-flight provider credit reservations across the three language jobs.
           LLM_BENCH_CONCURRENCY: "8"
           LLM_BENCH_RUST_CONCURRENCY: "4"
-          LLM_BENCH_CSHARP_CONCURRENCY: "2"
-          LLM_BENCH_ROUTE_CONCURRENCY: ${{ matrix.lang == 'typescript' && '4' || matrix.lang == 'csharp' && '1' || '2' }}
+          LLM_BENCH_CSHARP_CONCURRENCY: "4"
+          LLM_BENCH_ROUTE_CONCURRENCY: "1"
           LLM_BENCHMARK_REPORT_DIR: ${{ runner.temp }}/llm-benchmark-reports
+          LLM_BENCHMARK_DIAGNOSTICS_DIR: ${{ runner.temp }}/llm-benchmark-diagnostics
           INPUT_LANGUAGE: ${{ matrix.lang }}
           INPUT_MODEL_SET: ${{ inputs.model_set || 'website_active' }}
           INPUT_MODELS: ${{ inputs.models || '' }}
@@ -268,6 +271,15 @@ jobs:
         with:
           name: llm-benchmark-analysis-${{ matrix.lang }}
           path: ${{ runner.temp }}/llm-benchmark-reports
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload server diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-benchmark-diagnostics-${{ matrix.lang }}
+          path: ${{ runner.temp }}/llm-benchmark-diagnostics
           if-no-files-found: ignore
           retention-days: 14
 

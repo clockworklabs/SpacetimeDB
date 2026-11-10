@@ -1,21 +1,21 @@
 Write a SpacetimeDB backend module in TypeScript that defines three tables modeling a many-to-many relationship and seeds rows.
 
 TABLES
-- user
+- user (private)
   - Fields:
-    - userId: number (u64, primary key, autoInc)
+    - userId: bigint (u64, primary key, autoInc)
     - name: string
 
-- group
+- group (private)
   - Fields:
-    - groupId: number (u64, primary key, autoInc)
+    - groupId: bigint (u64, primary key, autoInc)
     - title: string
 
 - membership (public)
   - Fields:
-    - id: number (u64, primary key, autoInc)
-    - userId: number (u64)
-    - groupId: number (u64)
+    - id: bigint (u64, primary key, autoInc)
+    - userId: bigint (u64)
+    - groupId: bigint (u64)
   - Indexes:
     - byUser (btree on userId)
     - byGroup (btree on groupId)

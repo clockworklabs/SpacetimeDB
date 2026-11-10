@@ -1,8 +1,9 @@
-Write a SpacetimeDB backend module in C# that defines a table of messages owned by users, and reducers that enforce ownership using ctx.Sender.
+Write a SpacetimeDB backend module in C# that defines a table of messages owned by users, and reducers that enforce ownership using the caller's identity.
 
 TABLES
 - Message
   - Struct: Message
+  - public table
   - Fields:
     - Id: ulong (primary key, AutoInc)
     - Owner: Identity (index BTree)
@@ -10,11 +11,10 @@ TABLES
 
 REDUCERS
 - CreateMessage(ctx, string text)
-  - Insert a new Message with Owner set to ctx.Sender
-  - Use Id: 0 for AutoInc
+  - Insert a new Message with Owner set to the caller's identity
 
 - DeleteMessage(ctx, ulong id)
   - Find the message by Id
-  - If not found, throw exception with "not found"
-  - If the message's Owner does not equal ctx.Sender, throw exception with "unauthorized"
+  - If not found, fail with "not found"
+  - If the message's Owner does not equal the caller's identity, fail with "unauthorized"
   - Otherwise, delete the message
