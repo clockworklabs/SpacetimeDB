@@ -416,7 +416,7 @@ impl TieredStorage {
     /// Tries once to evict objects when permit acquisition fails.
     fn acquire_local_permit(&self, size: u64) -> Result<BudgetPermit, ObjectStoreError> {
         self.local.budget.acquire(size).or_else(|_| {
-            self.evict(self.local.budget.usage().accounted_bytes.saturating_sub(size))?;
+            self.evict(self.local.budget.config().low_water_bytes)?;
             self.local
                 .budget
                 .acquire(size)
