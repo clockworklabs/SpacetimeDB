@@ -32,13 +32,17 @@ fn test_build_csharp_module() {
         .expect("Failed to install wasi workload");
     // This may fail if already installed, so we don't assert success
 
-    // Pack the bindings in Release configuration
-    let status = Command::new("dotnet")
-        .args(["pack", "-c", "Release"])
-        .current_dir(&bindings)
-        .status()
-        .expect("Failed to pack bindings");
-    assert!(status.success(), "Failed to pack C# bindings");
+    // Pack only the bindings this test consumes, in Release configuration. Packing the
+    // whole solution would also pack SpacetimeDB.Testing, which needs prebuilt native assets.
+    let packed_projects = ["BSATN.Runtime", "Runtime"];
+    for project in &packed_projects {
+        let status = Command::new("dotnet")
+            .args(["pack", project, "-c", "Release"])
+            .current_dir(&bindings)
+            .status()
+            .expect("Failed to pack bindings");
+        assert!(status.success(), "Failed to pack C# bindings project {project}");
+    }
 
     // The non-AOT path is only supported on .NET 8. .NET 10 C# modules use NativeAOT-LLVM
     // and are covered by csharp_aot_module.rs.
@@ -72,7 +76,6 @@ fn test_build_csharp_module() {
 
     // Create nuget.config with local package sources
     // Use <clear /> to avoid inheriting sources from machine/user config
-    let packed_projects = ["BSATN.Runtime", "Runtime"];
     let mut sources =
         String::from("    <clear />\n    <add key=\"nuget.org\" value=\"https://api.nuget.org/v3/index.json\" />\n");
     // Add experimental NuGet feed for Microsoft.DotNet.ILCompiler.LLVM packages
