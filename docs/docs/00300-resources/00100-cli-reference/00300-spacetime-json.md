@@ -88,7 +88,7 @@ When `spacetime generate` runs, it deduplicates by module path. If multiple data
 `spacetime generate` produces two kinds of bindings:
 
 - **Client bindings** are used by clients to connect to a database, subscribe to data, and call its reducers.
-- **Module bindings**, also called **receiver bindings**, are used inside one database module to make [asynchronous inter-database communication (IDC)](../../00200-core-concepts/00100-databases/00650-inter-database-communication.md) calls to another database's reducers. Rust and TypeScript modules support these bindings; C# and C++ module bindings are not implemented yet.
+- **Module bindings**, also called **receiver bindings**, are used inside one database module to make [asynchronous inter-database communication (IDC)](../../00200-core-concepts/00100-databases/00650-inter-database-communication.md) calls to another database's reducers. Rust, TypeScript, and C# modules support these bindings; C++ module bindings are not implemented yet.
 
 With `spacetime.json`, put client bindings in `generate` and receiver bindings in `dependencies`. Running `spacetime generate` processes both arrays: regular `generate` entries default to client bindings, and dependencies automatically generate module bindings. No `--bindings` flag or second `generate` entry is needed for a dependency.
 
@@ -106,6 +106,7 @@ Each sending database with dependencies must define `module-path`. Dependencies 
 | `out-dir` | No | Output directory, relative to the config directory |
 | `build-options` | No | Receiver build options when using a direct `module-path` |
 | `dotnet-version` | No | Receiver .NET SDK version when using a direct `module-path` |
+| `namespace` | No | C# namespace for the generated bindings, for a C# sending module. Defaults to `RemoteBindings.<Name>`, where `<Name>` is `name` in Pascal case |
 
 ### Receiver source without a publish target
 
@@ -142,7 +143,7 @@ Declaring a dependency does not publish the receiver. To make it a publish targe
 
 A `database` reference uses the target's `module-path`, `bin-path`, or `js-path`, and its resolved receiver build options and .NET SDK version. It fails if no matching target or module source exists. A dependency does not inherit the sending module's build options or .NET SDK version.
 
-`spacetime generate lobby` selects the sending database's regular `generate` entries and dependencies; without a database filter, generation includes all targets' entries. For `dependencies` entries, the module binding language is inferred from the sending module, not the external client project. Rust and TypeScript dependency bindings default to `<sending module-path>/src/remote_bindings`.
+`spacetime generate lobby` selects the sending database's regular `generate` entries and dependencies; without a database filter, generation includes all targets' entries. For `dependencies` entries, the module binding language is inferred from the sending module, not the external client project. Rust and TypeScript dependency bindings default to `<sending module-path>/src/remote_bindings`. C# dependency bindings default to `<sending module-path>/remote_bindings`, in the `RemoteBindings.<Name>` namespace; for example, a dependency named `game_world` gets `RemoteBindings.GameWorld`. Each dependency gets its own namespace, so bindings from different receivers don't conflict.
 
 ### Explicit module-binding request
 
@@ -153,7 +154,7 @@ spacetime generate --no-config --bindings module --lang rust \
   --module-path ./game_world --out-dir ./lobby/src/remote_bindings
 ```
 
-This generates Rust module bindings for `game_world` in the `lobby` module's source tree. Use `--lang typescript` for a TypeScript sending module. `unrealcpp` is client-only; the CLI accepts `cpp` only with `--bindings module`, but C++ module binding generation is not implemented yet.
+This generates Rust module bindings for `game_world` in the `lobby` module's source tree. Use `--lang typescript` for a TypeScript sending module, or `--lang csharp` for a C# sending module. With `--lang csharp`, `--namespace` sets the namespace of the generated bindings. `unrealcpp` is client-only; the CLI accepts `cpp` only with `--bindings module`, but C++ module binding generation is not implemented yet.
 
 ## Children and inheritance
 
