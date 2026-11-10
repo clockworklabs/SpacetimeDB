@@ -133,6 +133,7 @@ type Functions<
         }[keyof Entries<M> & string];
 
 type TableAliases<T, A extends Record<string, string>> = {
+  /** @deprecated Use the canonical table accessor instead. This alias will be removed in the next major version. */
   readonly [K in Exclude<keyof A, keyof T>]: A[K] extends keyof T
     ? Omit<T[A[K]], 'accessorName'> & { readonly accessorName: K }
     : never;
@@ -152,6 +153,7 @@ type AccessorMap<T extends { accessorName: string }> = NestAccessors<{
 }>;
 
 type WithAliases<T, A extends Record<string, string>> = T & {
+  /** @deprecated Use the canonical table accessor instead. This alias will be removed in the next major version. */
   readonly [K in Exclude<keyof A, keyof T>]: A[K] extends keyof T
     ? T[A[K]]
     : never;
@@ -166,6 +168,7 @@ export interface Client<M, A extends Record<string, string> = {}> {
     new (
       config: DbConnectionConfig<RemoteModuleOfSchema<M, A>>
     ): ClientConnection<M, A>;
+    /** Creates a new connection builder to configure and connect to the remote SpacetimeDB instance. */
     builder(): Builder<ClientConnection<M, A>>;
     prototype: ClientConnection<M, A>;
   };
@@ -365,6 +368,7 @@ export function createClient<
         config => new DbConnection(config)
       );
     }
+    /** Creates a new subscription builder to configure a subscription to the remote SpacetimeDB instance. */
     override subscriptionBuilder = (): SubscriptionBuilder =>
       new SubscriptionBuilder(this);
   }

@@ -17,25 +17,35 @@ const client = createClient(moduleSchema, {
   cliVersion: '2.16.0',
   tableAliases: {},
 });
-export const {
-  DbConnection,
-  DbConnectionBuilder,
-  SubscriptionBuilder,
-  tables,
-  reducers,
-  procedures,
-} = client;
+/** The typed database connection to manage connections to the remote SpacetimeDB instance. This class has type information specific to the generated module. */
+export const DbConnection = client.DbConnection;
+/** Builder class to configure a new database connection to the remote SpacetimeDB instance. */
+export const DbConnectionBuilder = client.DbConnectionBuilder;
+/** Builder class to configure a new subscription to the remote SpacetimeDB instance. */
+export const SubscriptionBuilder = client.SubscriptionBuilder;
+/** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */
+export const tables = client.tables;
+/** The reducers available in this remote SpacetimeDB module. */
+export const reducers = client.reducers;
+/** The procedures available in this remote SpacetimeDB module. */
+export const procedures = client.procedures;
 export type DbConnection = InstanceType<typeof DbConnection>;
 export type DbConnectionBuilder = InstanceType<typeof DbConnectionBuilder>;
 export type SubscriptionBuilder = InstanceType<typeof SubscriptionBuilder>;
 type RemoteModule = RemoteModuleOf<DbConnection>;
 export type DbView = DbConnection['db'];
 export type Tables = typeof tables;
+/** The context type returned in callbacks for all possible events. */
 export type EventContext = EventContextInterface<RemoteModule>;
+/** The context type returned in callbacks for reducer events. */
 export type ReducerEventContext = ReducerEventContextInterface<RemoteModule>;
+/** The context type returned in callbacks for subscription events. */
 export type SubscriptionEventContext =
   SubscriptionEventContextInterface<RemoteModule>;
+/** The context type returned in callbacks for error events. */
 export type ErrorContext = ErrorContextInterface<RemoteModule>;
+/** The subscription handle type to manage active subscriptions created from a {@link SubscriptionBuilder}. */
 export type SubscriptionHandle = SubscriptionHandleImpl<RemoteModule>;
+/** Type-only namespace exports for generated type groups. */
 export type * as Reducers from './types/reducers';
 export type * as Procedures from './types/procedures';

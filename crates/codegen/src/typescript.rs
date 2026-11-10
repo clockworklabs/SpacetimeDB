@@ -1177,6 +1177,9 @@ fn generate_module(module: &ModuleDef, options: &CodegenOptions, dir: &str, file
         .collect();
     out.newline();
     emit_named_types(module, out, &named, &row_models, false);
+    if !named.is_empty() {
+        out.newline();
+    }
     for (i, table) in rows.iter().enumerate() {
         writeln!(out, "const {} = table(", table_names[i]);
         out.indent(1);
@@ -1740,7 +1743,16 @@ fn entry_point(module: &ModuleDef, options: &CodegenOptions, dir: &str, ext: &st
         }
     }
     writeln!(code, "}} }});").unwrap();
-    writeln!(code, "export const {{ DbConnection, DbConnectionBuilder, SubscriptionBuilder, tables, reducers, procedures }} = client;").unwrap();
+    for (name, doc) in [
+        ("DbConnection", "The typed database connection to manage connections to the remote SpacetimeDB instance. This class has type information specific to the generated module."),
+        ("DbConnectionBuilder", "Builder class to configure a new database connection to the remote SpacetimeDB instance."),
+        ("SubscriptionBuilder", "Builder class to configure a new subscription to the remote SpacetimeDB instance."),
+        ("tables", "The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder."),
+        ("reducers", "The reducers available in this remote SpacetimeDB module."),
+        ("procedures", "The procedures available in this remote SpacetimeDB module."),
+    ] {
+        writeln!(code, "/** {doc} */\nexport const {name} = client.{name};").unwrap();
+    }
     writeln!(code, "export type DbConnection = InstanceType<typeof DbConnection>;\nexport type DbConnectionBuilder = InstanceType<typeof DbConnectionBuilder>;\nexport type SubscriptionBuilder = InstanceType<typeof SubscriptionBuilder>;").unwrap();
     writeln!(code, "type RemoteModule = RemoteModuleOf<DbConnection>;\nexport type DbView = DbConnection['db'];\nexport type Tables = typeof tables;").unwrap();
     for (name, interface) in [
@@ -1749,17 +1761,23 @@ fn entry_point(module: &ModuleDef, options: &CodegenOptions, dir: &str, ext: &st
         ("SubscriptionEventContext", "SubscriptionEventContextInterface"),
         ("ErrorContext", "ErrorContextInterface"),
     ] {
-        writeln!(code, "export type {name} = {interface}<RemoteModule>;").unwrap();
+        let events = match name {
+            "EventContext" => "all possible events",
+            "ReducerEventContext" => "reducer events",
+            "SubscriptionEventContext" => "subscription events",
+            _ => "error events",
+        };
+        writeln!(code, "/** The context type returned in callbacks for {events}. */\nexport type {name} = {interface}<RemoteModule>;").unwrap();
     }
     writeln!(
         code,
-        "export type SubscriptionHandle = SubscriptionHandleImpl<RemoteModule>;"
+        "/** The subscription handle type to manage active subscriptions created from a {{@link SubscriptionBuilder}}. */\nexport type SubscriptionHandle = SubscriptionHandleImpl<RemoteModule>;"
     )
     .unwrap();
     // Preserve the existing reducer/procedure type namespaces.
     writeln!(
         code,
-        "export type * as Reducers from './types/reducers{ext}';\nexport type * as Procedures from './types/procedures{ext}';"
+        "/** Type-only namespace exports for generated type groups. */\nexport type * as Reducers from './types/reducers{ext}';\nexport type * as Procedures from './types/procedures{ext}';"
     )
     .unwrap();
     OutputFile {

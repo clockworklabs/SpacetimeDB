@@ -12,6 +12,7 @@ export const Player2Status = t.enum('Player2Status', {
   Active1: t.unit(),
   BannedUntil: t.u32(),
 });
+
 const player1 = table(
   {
     name: 'Player1Canonical',

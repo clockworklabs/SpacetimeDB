@@ -7,6 +7,7 @@ export const Point = t.object('Point', {
   x: t.u16(),
   y: t.u16(),
 });
+
 const player = table(
   {
     name: 'player',
