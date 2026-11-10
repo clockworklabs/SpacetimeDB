@@ -9,10 +9,10 @@ Required interface:
 - public void Stop()
 The test driver repeatedly calls Tick on one thread, including when disconnected. Pump SDK events there. No Main method is needed.
 A fixed server and generated client bindings are supplied.
-The server has the public Counter table (SQL name counter): Id: uint primary key, Value: int. Its initial row is (0, 0). The Add(delta: int) reducer increments Value and fails when delta is 0. This operation is NOT idempotent.
+The server has the public Counter table (SQL name counter): Id: uint primary key, Value: int. Its initial row is (0, 0). The Add(delta: int) reducer increments Value and fails when delta is 0.
 
-Use one actual SpacetimeDB SDK connection. Subscribe to Counter once. Enable automatic recovery after a connection loss. Keep the identity, subscriptions and cached rows across recovery. Data is ready only after the subscription applies, including after replay. Mark it not ready during an outage and after stop. Cached value must remain readable during an outage. Register row callbacks once, and count only on-update callbacks (not initial inserts).
+Use one actual SpacetimeDB SDK connection. Subscribe to Counter once. Enable automatic recovery after a connection loss. Keep the identity, subscriptions and cached rows across recovery. Data is ready only after the subscription applies, including after replay. Mark it not ready during an outage. Cached value must remain readable during an outage. Register row callbacks once, and count only on-update callbacks (not initial inserts).
 
 Expose the most recent call outcome as idle, pending, committed, failed, or unknown. Set pending before sending. If the connection is lost before the response arrives, report unknown: the server may already have committed. Never retry this non-idempotent call automatically. Reconnection must not overwrite unknown with committed. New explicit add calls must work after recovery. Stop permanently disconnects and clears readiness.
 
-Do not use HTTP, SQL requests outside the subscription, custom sockets, timers to fabricate results, or hard-coded counter values. Read value and identity from the real SDK cache and connection.
+Do not use HTTP, SQL requests outside the subscription, custom sockets, timers to fabricate results, or hard-coded counter values. Read the value from the real SDK cache.

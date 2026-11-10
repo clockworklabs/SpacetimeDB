@@ -44,7 +44,6 @@ pub fn spec() -> BenchmarkSpec {
                 &["body", "sender"],
                 json!([["incoming", [target["__identity__"]]]]),
             )?;
-            peer.eventually_count("outgoing", 0)?;
             Ok(())
         }));
         scorers

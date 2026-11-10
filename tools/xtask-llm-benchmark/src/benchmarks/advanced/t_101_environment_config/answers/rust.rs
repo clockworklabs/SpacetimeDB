@@ -1,27 +1,11 @@
 #![allow(non_snake_case)]
 use spacetimedb::{AnonymousViewContext, ReducerContext, SpacetimeType, Table};
 
-#[derive(spacetimedb::EnvironmentValue)]
-pub enum Mode {
-    #[env(value = "development")]
-    Development,
-    #[env(value = "production")]
-    Production,
-}
-
-impl Mode {
-    fn name(&self) -> String {
-        match self {
-            Mode::Development => "development".to_string(),
-            Mode::Production => "production".to_string(),
-        }
-    }
-}
-
 #[spacetimedb::env]
 pub struct Env {
     pub REGION: String,
-    pub MODE: Mode,
+    #[env(values("development", "production"))]
+    pub MODE: String,
     pub BANNER: Option<String>,
 }
 
@@ -48,7 +32,7 @@ pub fn record_deployment(ctx: &ReducerContext, id: u32) -> Result<(), String> {
     ctx.db.deployment_note().insert(DeploymentNote {
         id,
         region: ctx.env.REGION(),
-        mode: ctx.env.MODE().name(),
+        mode: ctx.env.MODE(),
         banner: ctx.env.BANNER().unwrap_or_else(|| "(none)".to_string()),
     });
     Ok(())
@@ -56,16 +40,16 @@ pub fn record_deployment(ctx: &ReducerContext, id: u32) -> Result<(), String> {
 
 #[spacetimedb::reducer]
 pub fn require_development(ctx: &ReducerContext) -> Result<(), String> {
-    match ctx.env.MODE() {
-        Mode::Production => Err("production locked".to_string()),
-        Mode::Development => Ok(()),
+    if ctx.env.MODE() == "production" {
+        return Err("production locked".to_string());
     }
+    Ok(())
 }
 
 #[spacetimedb::view(accessor = current_deployment, public)]
 pub fn current_deployment(ctx: &AnonymousViewContext) -> Vec<DeploymentInfo> {
     vec![DeploymentInfo {
         region: ctx.env.REGION(),
-        mode: ctx.env.MODE().name(),
+        mode: ctx.env.MODE(),
     }]
 }

@@ -13,10 +13,7 @@ pub fn materialize_project(
     route_tag: &str,
     llm_code: &str,
 ) -> Result<PathBuf> {
-    let task_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("src/benchmarks")
-        .join(category)
-        .join(task);
+    let task_root = task_dir(category, task);
     // Client evals supply a fixed server; model output is compiled by the client scorer.
     let fixed_server = task_root.join("server").join(format!("{lang}.txt"));
     let server_source = fixed_server
@@ -37,12 +34,7 @@ pub fn materialize_project(
     }
     fs::create_dir_all(&out)?;
     copy_tree_with_templates(&src, &out)?;
-    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("src/benchmarks")
-        .join(category)
-        .join(task)
-        .join("fixtures")
-        .join(lang);
+    let fixtures = task_root.join("fixtures").join(lang);
     if fixtures.is_dir() {
         copy_tree_with_templates(&fixtures, &out)?;
     }
@@ -62,12 +54,7 @@ pub(crate) fn materialize_client(lang: &str, category: &str, task: &str, route: 
     if out.exists() {
         fs::remove_dir_all(&out)?;
     }
-    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("src/benchmarks")
-        .join(category)
-        .join(task)
-        .join("client")
-        .join(lang);
+    let source = task_dir(category, task).join("client").join(lang);
     copy_tree_with_templates(&source, &out)?;
     match lang {
         "typescript" => {
@@ -89,6 +76,13 @@ pub(crate) fn materialize_client(lang: &str, category: &str, task: &str, route: 
 }
 
 /* helpers */
+
+fn task_dir(category: &str, task: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("src/benchmarks")
+        .join(category)
+        .join(task)
+}
 
 fn tmpl_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src").join("templates")
@@ -215,16 +209,6 @@ fn inject_csharp(root: &Path, llm_code: &str) -> anyhow::Result<()> {
         contents.push_str(&cleaned);
     }
     fs::write(&prog, contents).with_context(|| format!("write {}", prog.display()))?;
-
-    let runtime_csproj = workspace_root().join("crates/bindings-csharp/Runtime/Runtime.csproj");
-    if !runtime_csproj.is_file() {
-        bail!("local C# Runtime not found at {}", runtime_csproj.display());
-    }
-    let runtime_version = read_csharp_package_version(&runtime_csproj)?;
-    let csproj_path = root.join("StdbModule.csproj");
-    let mut csproj = fs::read_to_string(&csproj_path).with_context(|| format!("read {}", csproj_path.display()))?;
-    csproj = csproj.replace("{SPACETIME_CSHARP_RUNTIME_VERSION}", &runtime_version);
-    fs::write(&csproj_path, csproj).with_context(|| format!("write {}", csproj_path.display()))?;
 
     write_csharp_nuget_config(root)?;
     Ok(())

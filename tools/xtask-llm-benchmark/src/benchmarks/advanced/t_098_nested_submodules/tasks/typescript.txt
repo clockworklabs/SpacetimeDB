@@ -1,4 +1,4 @@
-Write a SpacetimeDB backend module in TypeScript that moves stock between mounted inventory modules. Write only the root source. The project already contains two fixed modules in the same folder, which you must not edit:
+Write a SpacetimeDB backend module in TypeScript that moves stock between mounted inventory modules. Write only the root source. The project already contains two fixed modules in the same folder:
 - ./inventory: public table item (id: u64 (bigint) primary key, quantity: u32). It exports the table as item, the reducer set(ctx, { id, quantity }), and the helpers take(ctx, id, quantity) and add(ctx, id, quantity). take rejects a missing item or insufficient stock. add uses checked arithmetic.
 - ./branch: mounts that same ./inventory module as stock.
 

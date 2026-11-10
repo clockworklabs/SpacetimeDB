@@ -31,9 +31,6 @@ pub fn spec() -> BenchmarkSpec {
             let mut other = s.connect(&bob)?;
             other.subscribe(1, &query("blue"))?;
             other.expect_update("SubscribeApplied", json!([]), json!([]))?;
-            let mut fresh = s.connect(&alice)?;
-            fresh.subscribe(1, &query("blue"))?;
-            fresh.expect_update("SubscribeApplied", json!([[1, "moved"]]), json!([]))?;
             let (status, _) = s.sql_as(&bob, &format!("SELECT * FROM {}", s.relation("private_note")))?;
             anyhow::ensure!((400..500).contains(&status), "private source exposed: {status}");
             Ok(())

@@ -22,12 +22,10 @@ writeFileSync(
       strict: true,
       skipLibCheck: true,
       types: [],
-      outDir: 'dist',
-      rootDir: '.',
-      noEmitOnError: true,
+      noEmit: true,
     },
     include: ['**/*.ts'],
-    exclude: ['node_modules', 'dist'],
+    exclude: ['node_modules'],
   })
 );
 const result = spawnSync(

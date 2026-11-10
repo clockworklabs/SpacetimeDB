@@ -1,4 +1,5 @@
-use spacetimedb::{ReducerContext, Table};
+// Interface fixture used to generate the supplied client bindings.
+use spacetimedb::ReducerContext;
 #[spacetimedb::table(accessor = counter, public)]
 pub struct Counter {
     #[primary_key]
@@ -6,16 +7,9 @@ pub struct Counter {
     value: i32,
 }
 #[spacetimedb::reducer(init)]
-pub fn init(ctx: &ReducerContext) {
-    ctx.db.counter().insert(Counter { id: 0, value: 0 });
-}
+pub fn init(_ctx: &ReducerContext) {}
 #[spacetimedb::reducer]
-pub fn add(ctx: &ReducerContext, delta: i32) -> Result<(), String> {
-    if delta == 0 {
-        return Err("invalid delta".into());
-    }
-    let mut row = ctx.db.counter().id().find(0).unwrap();
-    row.value += delta;
-    ctx.db.counter().id().update(row);
+pub fn add(_ctx: &ReducerContext, delta: i32) -> Result<(), String> {
+    let _ = delta;
     Ok(())
 }

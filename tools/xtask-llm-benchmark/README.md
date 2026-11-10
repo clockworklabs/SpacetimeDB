@@ -1,9 +1,8 @@
 # LLM benchmark validation
 
-The catalog contains 103 tasks. Default selection runs every task that has a prompt
-for the requested language: 101 Rust, 102 C#, and 103 TypeScript tasks. All supported
-tasks are included in both context modes and the normal website task catalog.
-`--categories advanced` is only a development filter, not an opt-in gate.
+Default selection runs every task that has a prompt for the requested language, in
+both context modes. All of them are in the normal website task catalog.
+`--categories advanced` is only a development filter.
 
 Provider errors or missing response content reject the whole model/language/mode
 batch after retries. No partial scores from that batch are uploaded. Other models
@@ -99,22 +98,12 @@ client SDK cache code. Cache calls use a local HTTP fixture, never a paid servic
 The existing transfer (055), aggregate (065), projection (068), presence (070),
 and webhook (078) graders also have stronger checks. Task 065 now requires public
 `set_sale` and `remove_sale` reducers, so a hard-coded `exercise` result cannot pass.
-Scores are not directly comparable with the older 83- or 95-task suites.
+Scores are not directly comparable with older versions of the suite.
 
-Task 100 asks for client code. Its server is fixed, and its supplied bindings use
-the local SDK. A local TCP proxy lets a non-idempotent reducer commit, hides its
-reply, then drops the connection. The grader checks an unknown outcome, retained
-cache, subscription replay, stable identity, a failed call, a clean outage, no
-duplicate callbacks and no retry.
-It does not replace these checks with a raw WebSocket simulation of an SDK.
-Generated clients run in read-only, non-root Docker containers with CPU, memory,
-process and time limits. Client output is limited to 1 MiB. Only compiled client files are mounted. The container
-receives no runner secrets, checkout or Docker socket. It shares only a network-disabled
-relay's loopback interface. The relay accepts only WebSocket upgrades to the current
-task's database, then forwards that connection over Docker stdio to the local test
-server. The SDK's bodyless token-exchange endpoint is also allowed. Database HTTP
-calls and other databases are blocked. No host port is opened, and the client cannot reach host services
-or the Internet. Both containers have forced-stop deadlines if the scorer is killed.
+Task 100 asks for client code against a fixed server, with supplied bindings and the
+local SDK. A relay lets a non-idempotent reducer commit, hides its reply, then drops
+the connection. Generated clients run in Docker and can reach only the task's database
+through that relay.
 
 ## Check reference implementations without model calls or uploads
 
@@ -131,11 +120,8 @@ docker pull mcr.microsoft.com/dotnet/runtime:10.0
 node --test tools/xtask-llm-benchmark/src/eval/client_transport.test.mjs
 ```
 
-Node.js 22 or newer is required for both TypeScript and C# client checks. C# uses
-the repository's .NET 10 SDK and local client SDK project. A Linux Docker daemon
-is required for client checks, including local reference validation. Task-local
-`bin`, `obj`, and `node_modules` directories are removed after grading. The shared
-SDK build output remains in its normal repository cache.
+Client checks, including local reference validation, need Node.js 22 or newer and a
+Linux Docker daemon.
 
 Run this command once per language (`rust`, `csharp`, `typescript`):
 
@@ -145,9 +131,7 @@ cargo run -p xtask-llm-benchmark --bin llm_benchmark --locked -- run --lang rust
 
 The command publishes disposable local databases and runs the real graders. It
 makes no model requests and uploads no scores or catalog. Omitting `--tasks`
-validates all supported reference tasks for that language. To check this addition,
-use `--tasks t_095,t_096,t_097,t_098,t_099,t_100,t_101`; unsupported language
-pairs are skipped. Keep the weekly action disabled until these
+validates all reference tasks for that language. Keep the weekly action disabled until these
 checks pass and the branch is reviewed.
 
 The scenario grader checks explicit expected rows, including intermediate state,

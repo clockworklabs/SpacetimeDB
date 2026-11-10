@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { startTransport } from './client_transport.mjs';
+import { SANDBOX, removeContainer, startTransport } from './client_transport.mjs';
 
 const [host, database, language, outputDirectory] = process.argv.slice(2);
 assert.ok(['typescript', 'csharp'].includes(language));
@@ -15,16 +15,10 @@ const child = spawn(
   'docker',
   [
     'run',
-    '--rm',
-    '--pull=never',
-    '--init',
+    ...SANDBOX,
     '-i',
     '--name',
     containerName,
-    '--read-only',
-    '--cap-drop=ALL',
-    '--security-opt=no-new-privileges',
-    '--user=65534:65534',
     '--pids-limit=128',
     '--memory=1g',
     '--cpus=2',
@@ -121,6 +115,15 @@ async function until(predicate) {
   } while (Date.now() < deadline);
   throw new Error(`client state timeout: ${JSON.stringify(state)}`);
 }
+// Connected, but the subscription has not applied, so data is not ready.
+async function assertNotReadyBeforeApply(connect) {
+  transport.holdAfterFirstFrame(true);
+  await connect();
+  await sleep(1500);
+  const applying = await rpc('snapshot');
+  assert.equal(applying.ready, false, 'ready before the subscription applied');
+  transport.holdAfterFirstFrame(false);
+}
 let token;
 async function serverValue() {
   const response = await fetch(`${host}/v1/database/${database}/sql`, {
@@ -151,16 +154,9 @@ try {
   });
   assert.ok(tokenResponse.ok);
   ({ token } = await tokenResponse.json());
-  // Connected, but the subscription has not applied, so data is not ready.
-  transport.holdAfterFirstFrame(true);
-  await rpc('start', {
-    uri: transport.uri,
-    database,
-  });
-  await sleep(1500);
-  const connecting = await rpc('snapshot');
-  assert.equal(connecting.ready, false, 'ready before the subscription applied');
-  transport.holdAfterFirstFrame(false);
+  await assertNotReadyBeforeApply(() =>
+    rpc('start', { uri: transport.uri, database })
+  );
   const initial = await until(s => s.ready && s.value === 0);
   assert.ok(initial.identity, 'client identity missing');
   assert.equal(initial.outcome, 'idle', 'no call has been made yet');
@@ -231,13 +227,7 @@ try {
   const down = await until(s => !s.ready);
   assert.equal(down.outcome, 'committed', 'no call was in flight during this outage');
 
-  // Connected, but the subscription has not applied, so data is not ready.
-  transport.holdAfterFirstFrame(true);
-  transport.setOnline(true);
-  await sleep(1500);
-  const applying = await rpc('snapshot');
-  assert.equal(applying.ready, false, 'ready before the subscription applied');
-  transport.holdAfterFirstFrame(false);
+  await assertNotReadyBeforeApply(() => transport.setOnline(true));
   const back = await until(s => s.ready && s.value === 18);
   assert.equal(back.changes, 4, 'an empty replay must not count as a change');
 
@@ -255,19 +245,10 @@ try {
   }
   console.log('CLIENT_RECOVERY_OK');
 } finally {
-  const cleanup = spawnSync('docker', ['rm', '-f', containerName], {
-    timeout: 10000,
-    encoding: 'utf8',
-  });
-  if (
-    cleanup.status !== 0 &&
-    !/No such container|removal of container .* is already in progress/.test(
-      cleanup.stderr ?? ''
-    )
-  ) {
-    console.error(
-      `Client container cleanup failed: ${cleanup.error ?? cleanup.stderr}`
-    );
+  try {
+    removeContainer(containerName);
+  } catch (error) {
+    console.error(error.message);
     process.exitCode = 1;
   }
   child.kill();

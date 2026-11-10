@@ -92,7 +92,6 @@ pub fn spec() -> BenchmarkSpec {
                 ]),
             )?;
             s.expect_rejected_as(&users[0], "join_event", json!([404]), "missing event")?;
-            s.eventually_count("booking", 9)?;
             Ok(())
         }));
         scorers

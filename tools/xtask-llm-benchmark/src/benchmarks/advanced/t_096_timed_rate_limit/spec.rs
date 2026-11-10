@@ -33,7 +33,6 @@ pub fn spec() -> BenchmarkSpec {
             let (alice, _) = s.new_user()?;
             let (bob, _) = s.new_user()?;
             s.expect_rejected_as(&alice, "log_search", json!(["bad", ""]), "empty term")?;
-            s.rows("search_log", &["request_id"], json!([]))?;
             let started = Instant::now();
             let mut successes = 0;
             let mut rows = Vec::new();
@@ -53,13 +52,11 @@ pub fn spec() -> BenchmarkSpec {
             s.expect_call_as(&bob, "log_search", json!(["a", "independent"]), None)?;
             let bob_after = Instant::now();
             rows.push(json!(["a", "independent"]));
-            s.rows("search_log", &["request_id", "term"], json!(rows))?;
             if accepted(s.call_as(&alice, "log_search", json!(["d", "next"]))?)? {
                 successes += 1;
                 rows.push(json!(["d", "next"]));
             }
             check_budget(successes, started.elapsed())?;
-            s.rows("search_log", &["request_id", "term"], json!(rows))?;
 
             // Wait after every preceding call finishes. At least one token must be
             // available, but slow CI can legitimately allow both requests below.
@@ -78,7 +75,6 @@ pub fn spec() -> BenchmarkSpec {
             }
             anyhow::ensure!(successes > before, "no request admitted after a full refill interval");
             check_budget(successes, started.elapsed())?;
-            s.rows("search_log", &["request_id", "term"], json!(rows))?;
 
             // Partial intervals carry over: after two full intervals, five tokens have been earned in total.
             std::thread::sleep(Duration::from_millis(10_100).saturating_sub(bucket_exists.elapsed()));

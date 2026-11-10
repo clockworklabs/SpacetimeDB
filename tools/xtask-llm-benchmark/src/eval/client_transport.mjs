@@ -13,6 +13,31 @@ function webSocketFrameLength(data) {
   return 2 + length;
 }
 
+export const SANDBOX = [
+  '--rm',
+  '--init',
+  '--pull=never',
+  '--read-only',
+  '--cap-drop=ALL',
+  '--security-opt=no-new-privileges',
+  '--user=65534:65534',
+];
+
+export function removeContainer(name) {
+  const result = spawnSync('docker', ['rm', '-f', name], {
+    timeout: 10000,
+    encoding: 'utf8',
+  });
+  if (
+    result.status !== 0 &&
+    !/No such container|removal of container .* is already in progress/.test(
+      result.stderr ?? ''
+    )
+  ) {
+    throw new Error(`Container cleanup failed: ${result.error ?? result.stderr}`);
+  }
+}
+
 export async function startTransport(host, database) {
   const target = new URL(host);
   assert.equal(target.protocol, 'http:');
@@ -27,17 +52,11 @@ export async function startTransport(host, database) {
     'docker',
     [
       'run',
-      '--rm',
-      '--init',
+      ...SANDBOX,
       '-i',
-      '--pull=never',
       '--name',
       name,
       '--network=none',
-      '--read-only',
-      '--cap-drop=ALL',
-      '--security-opt=no-new-privileges',
-      '--user=65534:65534',
       '--pids-limit=32',
       '--memory=128m',
       '--cpus=1',
@@ -231,18 +250,10 @@ export async function startTransport(host, database) {
   });
   function close() {
     for (const id of sockets.keys()) disconnect(id);
-    const result = spawnSync('docker', ['rm', '-f', name], {
-      timeout: 10000,
-      encoding: 'utf8',
-    });
-    child.kill();
-    if (
-      result.status !== 0 &&
-      !/No such container|removal of container .* is already in progress/.test(
-        result.stderr ?? ''
-      )
-    ) {
-      throw new Error(`Relay cleanup failed: ${result.error ?? result.stderr}`);
+    try {
+      removeContainer(name);
+    } finally {
+      child.kill();
     }
   }
   let timer;

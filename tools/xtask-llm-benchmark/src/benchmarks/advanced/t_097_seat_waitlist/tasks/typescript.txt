@@ -5,7 +5,7 @@ Tables (fields in this order; the first field is the primary key):
 - public booking: id: u64 (bigint, auto-increment), owner: Identity, eventId: u64 (bigint, btree index), status: string, with another btree index on (owner, eventId). The status is "seated", "waiting" or "cancelled".
 
 Reducers:
-- create_event(id: u64 (bigint), capacity: u32): Fail zero capacity with "invalid capacity" and an existing ID with "event exists". Never overwrite an event.
+- create_event(id: u64 (bigint), capacity: u32): Fail zero capacity with "invalid capacity" and an existing ID with "event exists".
 - join_event(eventId: u64 (bigint)): Fail an unknown event with "missing event". If the caller already has a non-cancelled booking for this event, succeed without adding or changing a booking. Otherwise insert a booking owned by the caller. Seat the caller if capacity permits; otherwise the booking waits. A cancelled user may rejoin at the back of the queue with a new booking ID.
 - cancel_booking(id: u64 (bigint)): A missing booking succeeds and changes nothing. Only the owner may cancel a booking; other callers fail with "owner only". Keep the row with status "cancelled". A repeated cancellation does nothing. When a seated booking is cancelled, seat the waiting booking with the smallest ID for the same event, if any. Cancelling a waiting booking must not seat anyone.
 

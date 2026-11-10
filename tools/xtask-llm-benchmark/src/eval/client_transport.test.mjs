@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { startTransport } from './client_transport.mjs';
+import { SANDBOX, startTransport } from './client_transport.mjs';
 
 test('isolated client can upgrade only its own database WebSocket', async () => {
   const requests = [];
@@ -90,14 +90,8 @@ test('isolated client can upgrade only its own database WebSocket', async () => 
       'docker',
       [
         'run',
-        '--rm',
-        '--init',
-        '--pull=never',
+        ...SANDBOX,
         `--network=container:${transport.name}`,
-        '--read-only',
-        '--cap-drop=ALL',
-        '--security-opt=no-new-privileges',
-        '--user=65534:65534',
         'node:22-bookworm-slim',
         'timeout',
         '--kill-after=1',
