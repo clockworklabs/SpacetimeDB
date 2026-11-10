@@ -66,7 +66,7 @@ export default tseslint.config(
           './tsconfig.json',
           './crates/bindings-typescript/tsconfig.json',
           './crates/bindings-typescript/test-app/tsconfig.json',
-          './spacetime-example-ui-ts/tsconfig.json',
+          './modules/spacetime-example-ui-ts/tsconfig.json',
           './templates/react-ts/tsconfig.json',
           './templates/chat-react-ts/tsconfig.json',
           './templates/money-exchange-react-ts/tsconfig.json',
@@ -124,16 +124,41 @@ export default tseslint.config(
     },
   },
   {
-    files: ['spacetime-*-ts/**/example/public/ui.js'],
+    files: ['modules/spacetime-*-ts/**/example/public/ui.js'],
     languageOptions: {
       sourceType: 'script',
       globals: globals.browser,
     },
   },
   {
-    files: ['spacetime-*-ts/**/*.{ts,tsx}'],
+    files: ['modules/spacetime-*-ts/**/*.{ts,tsx}'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
+    },
+  },
+  {
+    files: ['crates/bindings-typescript/src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'TSEnumDeclaration',
+          message: 'Do not use enums; stick to JS-compatible types.',
+        },
+        {
+          selector: 'TSEnumDeclaration[const=true]',
+          message: 'Do not use const enum; use unions or objects.',
+        },
+        { selector: 'Decorator', message: 'Do not use decorators.' },
+        {
+          // tsc copies specifiers into the published .d.ts files verbatim, and
+          // NodeNext consumers cannot resolve extensionless relative imports.
+          selector:
+            ':matches(ImportDeclaration, ExportAllDeclaration, ExportNamedDeclaration, ImportExpression)[source.value=/^\\.(?!.*\\.(ts|tsx|js)$)/]',
+          message:
+            "Relative imports need an explicit extension (e.g. './foo.ts') so the published types resolve under NodeNext.",
+        },
+      ],
     },
   },
   {

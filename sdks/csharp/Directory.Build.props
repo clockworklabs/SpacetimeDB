@@ -2,5 +2,7 @@
   <PropertyGroup>
     <BaseOutputPath>bin~</BaseOutputPath>
     <BaseIntermediateOutputPath>obj~</BaseIntermediateOutputPath>
+    <!-- Set this before MSBuild derives the NuGet restore path so the SDK projects do not share assets. -->
+    <BaseIntermediateOutputPath Condition="'$(MSBuildProjectName)' == 'SpacetimeDB.ClientSDK.Godot'">obj~/godot/</BaseIntermediateOutputPath>
   </PropertyGroup>
 </Project>

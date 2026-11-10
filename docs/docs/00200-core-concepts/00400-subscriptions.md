@@ -213,7 +213,7 @@ Type-safe query builders are available in TypeScript, C#, Rust, and Unreal and a
 
 The client maintains a local cache of subscribed data. Reading from the cache is instant since it's local memory.
 
-For advanced raw SQL subscription syntax, see the [SQL docs](../00300-resources/00200-reference/00400-sql-reference.md#subscriptions).
+For advanced raw SQL subscription syntax, see the [SQL docs](../00300-resources/00400-sql-reference.md#subscriptions).
 
 ## Common API Concepts
 
@@ -266,7 +266,7 @@ Subscribing returns a handle that manages an individual subscription lifecycle.
 
 ### 1. Writing Efficient Subscription Queries
 
-Use the typed query builder to express precise filters and keep subscriptions small. If you use raw SQL subscriptions, see [SQL Best Practices](../00300-resources/00200-reference/00400-sql-reference.md#best-practices-for-performance-and-scalability).
+Use the typed query builder to express precise filters and keep subscriptions small. If you use raw SQL subscriptions, see [SQL Best Practices](../00300-resources/00400-sql-reference.md#best-practices-for-performance-and-scalability).
 
 ### 2. Group Subscriptions with the Same Lifetime Together
 

@@ -1,18 +1,18 @@
-import type { DbConnectionImpl } from './db_connection_impl';
-import { INTERNAL_REMOTE_MODULE } from './internal';
+import type { DbConnectionImpl } from './db_connection_impl.ts';
+import { INTERNAL_REMOTE_MODULE } from './internal.ts';
 import type {
   ErrorContextInterface,
   SubscriptionEventContextInterface,
-} from './event_context';
-import { EventEmitter } from './event_emitter';
-import type { UntypedRemoteModule } from './spacetime_module';
+} from './event_context.ts';
+import { EventEmitter } from './event_emitter.ts';
+import type { UntypedRemoteModule } from './spacetime_module.ts';
 import {
   isRowTypedQuery,
   toSql,
   type NamespacedQueryBuilder,
   type RowTypedQuery,
-} from '../lib/query';
-import type { UntypedSchemaDef } from '../lib/schema';
+} from '../lib/query.ts';
+import type { UntypedSchemaDef } from '../lib/schema.ts';
 
 export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
   #onApplied?: (ctx: SubscriptionEventContextInterface<RemoteModule>) => void =
@@ -148,12 +148,15 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
    * on a `DbConnection` that has previously used `subscribeToAllTables`,
    * or vice versa, may misbehave in any number of ways,
    * including dropping subscriptions, corrupting the client cache, or throwing errors.
+   *
+   * Views that take arguments are left out, as there are no arguments to pass them.
    */
   subscribeToAllTables(): void {
     const remoteModule = this.db[INTERNAL_REMOTE_MODULE]();
-    const queries = Object.values(remoteModule.tables).map(
-      table => `SELECT * FROM ${table.sourceName}`
-    );
+    const viewsWithArgs = new Set(remoteModule.viewsWithArgs);
+    const queries = Object.values(remoteModule.tables)
+      .filter(table => !viewsWithArgs.has(table.sourceName))
+      .map(table => `SELECT * FROM ${table.sourceName}`);
     this.subscribe(queries);
   }
 }

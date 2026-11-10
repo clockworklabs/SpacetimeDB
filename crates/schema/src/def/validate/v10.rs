@@ -279,10 +279,21 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         schedules,
         lifecycle_validations,
         http_handlers_and_routes,
+        Ok(raw_outboxes),
     )
         .combine_errors()
         .and_then(
-            |(mut tables, types, reducers, procedures, views, schedules, lifecycles, http_handlers_and_routes)| {
+            |(
+                mut tables,
+                types,
+                reducers,
+                procedures,
+                views,
+                schedules,
+                lifecycles,
+                http_handlers_and_routes,
+                raw_outboxes,
+            )| {
                 let (mut reducers, mut procedures, mut views) =
                     check_function_names_are_unique(reducers, procedures, views)?;
                 // Attach lifecycles to their respective reducers
@@ -291,7 +302,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 // Attach schedules to their respective tables
                 attach_schedules_to_tables(&mut tables, schedules)?;
 
-                attach_outboxes_to_tables(&mut tables, raw_outboxes)?;
+                attach_outboxes_to_tables(&mut tables, &mut reducers, raw_outboxes, &mut validator.core)?;
 
                 check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
                 change_scheduled_functions_and_lifetimes_visibility(&tables, &mut reducers, &mut procedures)?;
@@ -1096,8 +1107,23 @@ impl<'a> ModuleValidatorV10<'a> {
             .map(|id| view_validator.validate_param_column_def(id.into()))
             .collect_all_errors();
 
-        let (return_type_for_generate, return_columns, param_columns) =
-            (return_type_for_generate, return_columns, param_columns).combine_errors()?;
+        // Float params are disallowed for now, see `ValidationError::ViewFloatParam`.
+        let float_params = params
+            .elements
+            .iter()
+            .enumerate()
+            .filter(|(_, param)| param.algebraic_type.is_float())
+            .map(|(pos, param)| {
+                Err(ValidationError::ViewFloatParam {
+                    view: accessor_name.clone(),
+                    param: param.name.clone().unwrap_or_else(|| pos.to_string().into()),
+                }
+                .into())
+            })
+            .collect_all_errors::<()>();
+
+        let (return_type_for_generate, return_columns, param_columns, ()) =
+            (return_type_for_generate, return_columns, param_columns, float_params).combine_errors()?;
 
         Ok(ViewDef {
             namespace: NamespacePath::root(),
@@ -1177,15 +1203,27 @@ fn attach_schedules_to_tables(
     Ok(())
 }
 
-fn attach_outboxes_to_tables(tables: &mut HashMap<Identifier, TableDef>, outboxes: Vec<RawOutboxDefV10>) -> Result<()> {
+fn attach_outboxes_to_tables(
+    tables: &mut HashMap<Identifier, TableDef>,
+    reducers: &mut IndexMap<Identifier, ReducerDef>,
+    outboxes: Vec<RawOutboxDefV10>,
+    core: &mut CoreValidator<'_>,
+) -> Result<()> {
     for outbox in outboxes {
-        let table_ident = identifier(outbox.table_name.clone())?;
-        let raw_table_name = outbox.table_name.clone();
+        let RawOutboxDefV10 {
+            table_name: table_source_name,
+            remote_reducer,
+            target_column,
+            arg_columns,
+            on_result_reducer,
+            signature_hash,
+        } = outbox;
+
         let table = tables
             .values_mut()
-            .find(|table| table.accessor_name == table_ident)
-            .ok_or_else(|| ValidationError::TableNotFound {
-                table: raw_table_name.clone(),
+            .find(|table| table.accessor_name.as_raw() == &table_source_name)
+            .ok_or_else(|| ValidationError::MissingOutboxTable {
+                table_name: table_source_name.clone(),
             })?;
 
         if table.outbox.is_some() {
@@ -1221,7 +1259,7 @@ fn attach_outboxes_to_tables(tables: &mut HashMap<Identifier, TableDef>, outboxe
             .into());
         }
 
-        let Some(target_col) = table.columns.get(outbox.target_column.idx()) else {
+        let Some(target_col) = table.columns.get(target_column.idx()) else {
             return Err(ValidationError::OutboxTargetColumnMissing {
                 table: table.name.clone(),
             }
@@ -1234,7 +1272,7 @@ fn attach_outboxes_to_tables(tables: &mut HashMap<Identifier, TableDef>, outboxe
             .into());
         }
 
-        for arg_column in &outbox.arg_columns {
+        for arg_column in &arg_columns {
             if table.columns.get(arg_column.idx()).is_none() {
                 return Err(ValidationError::OutboxArgumentColumnNotFound {
                     table: table.name.clone(),
@@ -1244,22 +1282,61 @@ fn attach_outboxes_to_tables(tables: &mut HashMap<Identifier, TableDef>, outboxe
             }
         }
 
+        let on_result_reducer = on_result_reducer
+            .map(|name| {
+                if name.contains('.') || name.contains("::") {
+                    return Err(ValidationError::OutboxOnResultMustBeLocal {
+                        table: table.name.clone(),
+                        reducer_name: name,
+                    }
+                    .into());
+                }
+                let raw_name = name.clone();
+                let name = core.resolve_function_ident(name)?;
+                if let Some(reducer) = reducers.get_mut(&name) {
+                    let result_type = AlgebraicType::result(AlgebraicType::unit(), AlgebraicType::String);
+                    let valid_params = match &*reducer.params.elements {
+                        [row, result] => {
+                            row.algebraic_type == AlgebraicType::Ref(table.product_type_ref)
+                                && core
+                                    .typespace
+                                    .with_type(&result.algebraic_type)
+                                    .resolve_refs()
+                                    .is_ok_and(|ty| ty == result_type)
+                        }
+                        _ => false,
+                    };
+                    if !valid_params {
+                        return Err(ValidationError::IncorrectOutboxOnResultParams {
+                            table: table.name.clone(),
+                            reducer_name: raw_name,
+                            expected: AlgebraicType::product([AlgebraicType::Ref(table.product_type_ref), result_type])
+                                .into(),
+                            actual: reducer.params.clone().into(),
+                        }
+                        .into());
+                    }
+                    reducer.visibility = crate::def::FunctionVisibility::Private;
+                    Ok::<_, ValidationErrors>(name)
+                } else {
+                    Err(ValidationError::MissingOutboxOnResult {
+                        table: table.name.clone(),
+                        reducer_name: raw_name,
+                    }
+                    .into())
+                }
+            })
+            .transpose()?;
+
         table.outbox = Some(OutboxDef {
             remote_reducer: ReducerName::new(
-                NamespacedIdentifier::new(&RawNamespacedIdentifier::new(outbox.remote_reducer.into_inner()))
+                NamespacedIdentifier::new(&RawNamespacedIdentifier::new(remote_reducer.into_inner()))
                     .map_err(|error| ValidationError::IdentifierError { error })?,
             ),
-            target_column: outbox.target_column,
-            arg_columns: outbox.arg_columns,
-            on_result_reducer: outbox
-                .on_result_reducer
-                .map(|name| {
-                    NamespacedIdentifier::new(&RawNamespacedIdentifier::new(name.into_inner()))
-                        .map(ReducerName::new)
-                        .map_err(|error| ErrorStream::from(ValidationError::IdentifierError { error }))
-                })
-                .transpose()?,
-            signature_hash: outbox.signature_hash,
+            target_column,
+            arg_columns,
+            on_result_reducer: on_result_reducer.map(ReducerName::new),
+            signature_hash,
         });
     }
 
@@ -1328,6 +1405,13 @@ fn attach_view_primary_keys(
             continue;
         };
 
+        // Rows from every instance of a parameterized view share one client
+        // cache, so the same key can arrive from more than one instance.
+        if !view.params.elements.is_empty() {
+            errors.push(ValidationError::ViewPrimaryKeyWithParams { view: view_source_name });
+            continue;
+        }
+
         // Match return columns by accessor/source name for the same reason. For
         // raw schemas produced from a validated `ModuleDef`, the accessor name
         // may already be canonical; in both cases it must agree with the return
@@ -1377,6 +1461,8 @@ fn assign_query_view_primary_keys(tables: &IdentifierMap<TableDef>, views: &mut 
     for view in views.values_mut() {
         view.primary_key = match extract_view_return_product_type_ref(&view.return_type) {
             Some((_, ViewKind::Procedural)) => view.primary_key,
+            // Parameterized views don't inherit one, see `attach_view_primary_keys`.
+            Some((_, ViewKind::Query)) if !view.params.elements.is_empty() => view.primary_key,
             Some((product_type_ref, ViewKind::Query)) => view
                 .primary_key
                 .or_else(|| primary_key_for_product_type_ref(product_type_ref)),
@@ -1398,6 +1484,7 @@ mod tests {
     use crate::error::*;
     use crate::identifier::Identifier;
     use crate::identifier::NamespacePath;
+    use crate::reducer_name::ReducerName;
     use crate::type_for_generate::ClientCodegenError;
 
     use itertools::Itertools;
@@ -1408,6 +1495,8 @@ mod tests {
     };
     use spacetimedb_lib::db::raw_def::v9::{btree, direct, hash};
     use spacetimedb_lib::db::raw_def::*;
+    use spacetimedb_lib::db::view::QUERY_VIEW_RETURN_TAG;
+    use spacetimedb_lib::hash_bytes;
     use spacetimedb_lib::http::Method as HttpMethod;
     use spacetimedb_lib::ScheduleAt;
     use spacetimedb_primitives::{ColId, ColList, ColSet};
@@ -1728,13 +1817,14 @@ mod tests {
             .with_index_no_accessor_name(direct(0), "outbound_pings_msg_id_idx_btree")
             .finish();
         builder.add_reducer("receive_ping", ProductType::from([("payload", AlgebraicType::String)]));
+        let signature_hash = hash_bytes(b"test-signature");
         builder.add_outbox(
             "outbound_pings",
             "receive_ping",
             ColId(1),
             [ColId(2)],
             Option::<&str>::None,
-            "test-signature",
+            signature_hash,
         );
 
         let module: ModuleDef = builder.finish().try_into().expect("valid outbox module");
@@ -1743,7 +1833,7 @@ mod tests {
         assert_eq!(&outbox.remote_reducer[..], "receive_ping");
         assert_eq!(outbox.target_column, ColId(1));
         assert_eq!(outbox.arg_columns, vec![ColId(2)]);
-        assert_eq!(outbox.signature_hash, "test-signature");
+        assert_eq!(outbox.signature_hash, signature_hash);
 
         let schema = TableSchema::from_module_def(&module, table, (), TableId::SENTINEL);
         let outbox = schema.outbox.expect("TableSchema carries outbox metadata");
@@ -1775,7 +1865,7 @@ mod tests {
             ColId(1),
             [ColId(2)],
             Option::<&str>::None,
-            "test-signature",
+            spacetimedb_lib::hash_bytes(b"test-signature"),
         );
 
         let result: Result<ModuleDef> = builder.finish().try_into();
@@ -2533,6 +2623,204 @@ mod tests {
         });
     }
 
+    fn outbox_with_on_result() -> RawModuleDefV10Builder {
+        let mut builder = RawModuleDefV10Builder::new();
+        let row_type = builder
+            .build_table_with_new_type(
+                "PingOutbox",
+                ProductType::from([
+                    ("msg_id", AlgebraicType::U64),
+                    ("target", AlgebraicType::U256),
+                    ("payload", AlgebraicType::String),
+                ]),
+                true,
+            )
+            .with_auto_inc_primary_key(0)
+            .with_index_no_accessor_name(direct(0), "ping_outbox_msg_id_idx_btree")
+            .finish();
+        builder.add_reducer(
+            "on_ping_result",
+            ProductType::from([
+                ("row", row_type.into()),
+                (
+                    "result",
+                    AlgebraicType::result(AlgebraicType::unit(), AlgebraicType::String),
+                ),
+            ]),
+        );
+        builder.add_outbox(
+            "PingOutbox",
+            "receive_ping",
+            ColId(1),
+            [ColId(2)],
+            Some("on_ping_result"),
+            hash_bytes(b"receive_ping"),
+        );
+        builder
+    }
+
+    #[test]
+    fn outbox_on_result_reducer_is_attached() {
+        let def: ModuleDef = outbox_with_on_result().finish().try_into().unwrap();
+        let table = &def.tables[&expect_identifier("ping_outbox")];
+        let outbox = table.outbox.as_ref().unwrap();
+
+        assert_eq!(outbox.remote_reducer, ReducerName::for_test("receive_ping"));
+        assert_eq!(outbox.target_column, ColId(1));
+        assert_eq!(outbox.on_result_reducer, Some(ReducerName::for_test("on_ping_result")));
+        assert_eq!(
+            def.reducers[&expect_identifier("on_ping_result")].visibility,
+            FunctionVisibility::Private
+        );
+    }
+
+    #[test]
+    fn outbox_on_result_accepts_referenced_result_and_arbitrary_parameter_names() {
+        let mut builder = outbox_with_on_result();
+        let result_type = builder.add_algebraic_type(
+            [],
+            "DeliveryResult",
+            AlgebraicType::result(AlgebraicType::unit(), AlgebraicType::String),
+            true,
+        );
+        let mut raw = builder.finish();
+        for section in &mut raw.sections {
+            if let RawModuleDefV10Section::Reducers(reducers) = section {
+                reducers[0].params.elements[0].name = Some("message".into());
+                reducers[0].params.elements[1].name = Some("outcome".into());
+                reducers[0].params.elements[1].algebraic_type = result_type.into();
+            }
+        }
+        let def: ModuleDef = raw.try_into().unwrap();
+        assert_eq!(
+            def.reducers[&expect_identifier("on_ping_result")].visibility,
+            FunctionVisibility::Private
+        );
+    }
+
+    #[test]
+    fn outbox_on_result_rejects_invalid_signatures() {
+        let raw = outbox_with_on_result().finish();
+        let row = AlgebraicType::Ref(raw.tables().unwrap()[0].product_type_ref);
+        let result = AlgebraicType::result(AlgebraicType::unit(), AlgebraicType::String);
+        for params in [
+            ProductType::unit(),
+            ProductType::from([("row", row.clone())]),
+            ProductType::from([("row", AlgebraicType::U64), ("result", result.clone())]),
+            ProductType::from([("result", result.clone()), ("row", row.clone())]),
+            ProductType::from([
+                ("row", row.clone()),
+                (
+                    "result",
+                    AlgebraicType::result(AlgebraicType::U64, AlgebraicType::String),
+                ),
+            ]),
+            ProductType::from([
+                ("row", row.clone()),
+                (
+                    "result",
+                    AlgebraicType::result(AlgebraicType::unit(), AlgebraicType::U64),
+                ),
+            ]),
+            ProductType::from([
+                ("row", row.clone()),
+                ("result", AlgebraicType::option(AlgebraicType::String)),
+            ]),
+            ProductType::from([("row", row), ("result", result), ("extra", AlgebraicType::U64)]),
+        ] {
+            let mut invalid = raw.clone();
+            for section in &mut invalid.sections {
+                if let RawModuleDefV10Section::Reducers(reducers) = section {
+                    reducers[0].params = params.clone();
+                }
+            }
+            let result: Result<ModuleDef> = invalid.try_into();
+            expect_error_matching!(result, ValidationError::IncorrectOutboxOnResultParams {
+                table,
+                reducer_name,
+                ..
+            } => {
+                assert_eq!(table, &expect_identifier("ping_outbox"));
+                assert_eq!(&**reducer_name, "on_ping_result");
+                true
+            });
+        }
+    }
+
+    #[test]
+    fn outbox_on_result_rejects_cross_module_callbacks() {
+        for policy in [CaseConversionPolicy::SnakeCase, CaseConversionPolicy::None] {
+            let table_name = if matches!(policy, CaseConversionPolicy::None) {
+                "PingOutbox"
+            } else {
+                "ping_outbox"
+            };
+            for callback in ["child.on_ping_result", "child::on_ping_result"] {
+                let mut child = RawModuleDefV10Builder::new();
+                child.add_reducer("on_ping_result", ProductType::unit());
+                let mut parent = outbox_with_on_result();
+                parent.set_case_conversion_policy(policy);
+                parent.add_reducer("child_on_ping_result", ProductType::unit());
+                let mut names = ExplicitNames::default();
+                names.insert_function(callback, "child_on_ping_result");
+                parent.add_explicit_names(names);
+                parent.add_submodule("child", child.finish());
+                let mut raw = parent.finish();
+                for section in &mut raw.sections {
+                    if let RawModuleDefV10Section::Outboxes(outboxes) = section {
+                        outboxes[0].on_result_reducer = Some(callback.into());
+                    }
+                }
+                let result: Result<ModuleDef> = raw.try_into();
+
+                expect_error_matching!(result, ValidationError::OutboxOnResultMustBeLocal {
+                    table,
+                    reducer_name,
+                } => {
+                    assert_eq!(table, &expect_identifier(table_name));
+                    assert_eq!(&**reducer_name, callback);
+                    true
+                });
+            }
+        }
+    }
+
+    #[test]
+    fn outbox_on_result_uses_canonical_submodule_namespace_and_round_trips() {
+        let mut child = outbox_with_on_result();
+        let mut names = ExplicitNames::default();
+        names.insert_table("PingOutbox", "WireOutbox");
+        names.insert_function("on_ping_result", "ResultDone");
+        child.add_explicit_names(names);
+
+        let mut middle = RawModuleDefV10Builder::new();
+        middle.add_submodule("innerMount", child.finish());
+        let mut names = ExplicitNames::default();
+        names.insert_namespace("innerMount", "InnerWire");
+        middle.add_explicit_names(names);
+
+        let mut root = RawModuleDefV10Builder::new();
+        root.add_submodule("outerLib", middle.finish());
+        let mut def: ModuleDef = root.finish().try_into().unwrap();
+
+        for _ in 0..3 {
+            let child = &def.submodules()["outer_lib"].submodules()["InnerWire"];
+            let table = &child.tables[&expect_identifier("WireOutbox")];
+            let outbox = table.outbox.as_ref().unwrap();
+            let callback = outbox.on_result_reducer.as_ref().unwrap();
+            assert_eq!(&**callback, "outer_lib.InnerWire.ResultDone");
+            assert_eq!(
+                def.reducer_by_name(callback).unwrap().1.visibility,
+                FunctionVisibility::Private
+            );
+            assert_eq!(outbox.remote_reducer, ReducerName::for_test("receive_ping"));
+            assert_eq!(&*table.accessor_name, "PingOutbox");
+
+            let raw: RawModuleDefV10 = def.into();
+            def = raw.try_into().expect("mounted outbox callback should round-trip");
+        }
+    }
+
     #[test]
     fn missing_scheduled_reducer() {
         let mut builder = RawModuleDefV10Builder::new();
@@ -2790,7 +3078,7 @@ mod tests {
         let color_sum = AlgebraicType::simple_enum(["RedApple", "GreenApple", "YellowApple"].into_iter());
         let color_ref = builder.add_algebraic_type([], "FruitColor", color_sum, true);
 
-        // Product type with scope: scope segments stay unchanged, unscoped name → PascalCase.
+        // Product type with scope: the scope segments and the unscoped name all become PascalCase.
         builder.add_algebraic_type(
             ["myLib".into(), "utils".into()],
             "metaInfo",
@@ -2857,7 +3145,7 @@ mod tests {
     /// | Table name      | any              | snake_case                | raw name preserved as accessor |
     /// | Column name     | any              | snake_case                | raw name preserved as accessor |
     /// | Reducer name    | any              | snake_case                | —                              |
-    /// | Type name       | any (unscoped)   | PascalCase                | scope segments unchanged       |
+    /// | Type name       | any              | PascalCase                | scope segments too             |
     /// | Enum variant    | any              | camelCase                 | —                              |
     /// | Index name      | autogenerated    | `{tbl}_{cols}_idx_{algo}` | uses canonical table+col names |
     /// | Index accessor  | raw source_name  | **unchanged**             | no conversion applied          |
@@ -2973,7 +3261,7 @@ mod tests {
         assert_eq!(def.reducers[&process_item].name.local(), &process_item);
 
         // ═══════════════════════════════════════════════════════════════════════════
-        // TYPE NAMES — PascalCase; scoped names keep their scope segments unchanged
+        // TYPE NAMES — PascalCase, including each scope segment
         // ═══════════════════════════════════════════════════════════════════════════
 
         // "FruitColor" (already Pascal) → "FruitColor"
@@ -2982,10 +3270,10 @@ mod tests {
             "type 'FruitColor' not found"
         );
 
-        // "metaInfo" (lower-camel unscoped) → "MetaInfo"; scope "myLib","utils" → unchanged
+        // "metaInfo" (lower-camel unscoped) → "MetaInfo"; scope "myLib","utils" → "MyLib","Utils"
         assert!(
             def.types.contains_key(&expect_type_name("MyLib::Utils::MetaInfo")),
-            "type 'myLib::utils::MetaInfo' not found"
+            "type 'MyLib::Utils::MetaInfo' not found"
         );
 
         // Anonymous table types keep the raw source name as-is.
@@ -3286,6 +3574,72 @@ mod tests {
         assert_eq!(view.accessor_name, id("PersonAtLevel2"));
         assert_eq!(view.return_columns[0].view_name, id("Level2Person"));
         assert_eq!(view.param_columns[0].view_name, id("Level2Person"));
+    }
+
+    #[test]
+    fn view_primary_key_with_params_is_rejected() {
+        let mut builder = RawModuleDefV10Builder::new();
+        let return_type_ref =
+            builder.add_algebraic_type([], "Person", AlgebraicType::product([("id", AlgebraicType::U64)]), true);
+        builder.add_view(
+            "person_by_id",
+            0,
+            true,
+            true,
+            ProductType::from([("id", AlgebraicType::U64)]),
+            AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+        );
+        builder.add_view_primary_key("person_by_id", ["id"]);
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+        expect_error_matching!(result, ValidationError::ViewPrimaryKeyWithParams { view } => {
+            view == &RawIdentifier::from("person_by_id")
+        });
+    }
+
+    #[test]
+    fn view_float_param_is_rejected() {
+        let mut builder = RawModuleDefV10Builder::new();
+        let return_type_ref =
+            builder.add_algebraic_type([], "Person", AlgebraicType::product([("id", AlgebraicType::U64)]), true);
+        builder.add_view(
+            "people_near",
+            0,
+            true,
+            true,
+            ProductType::from([("x", AlgebraicType::F64)]),
+            AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+        );
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+        expect_error_matching!(result, ValidationError::ViewFloatParam { view, param } => {
+            view == &RawIdentifier::from("people_near") && param == &RawIdentifier::from("x")
+        });
+    }
+
+    #[test]
+    fn query_view_with_params_has_no_primary_key() {
+        let mut builder = RawModuleDefV10Builder::new();
+        let person_ref = builder
+            .build_table_with_new_type("person", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .with_unique_constraint(ColId(0))
+            .with_primary_key(0)
+            .with_index_no_accessor_name(btree(0), "person_id")
+            .finish();
+        let query_type = AlgebraicType::product([(QUERY_VIEW_RETURN_TAG, AlgebraicType::Ref(person_ref))]);
+        builder.add_view("all_people", 0, true, true, ProductType::unit(), query_type.clone());
+        builder.add_view(
+            "person_by_id",
+            1,
+            true,
+            true,
+            ProductType::from([("id", AlgebraicType::U64)]),
+            query_type,
+        );
+
+        let def: ModuleDef = builder.finish().try_into().unwrap();
+        assert_eq!(def.view("all_people").unwrap().primary_key, Some(ColId(0)));
+        assert_eq!(def.view("person_by_id").unwrap().primary_key, None);
     }
 
     #[test]

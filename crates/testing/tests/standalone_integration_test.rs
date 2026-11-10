@@ -22,6 +22,10 @@ fn init() {
 }
 
 async fn read_logs(module: &ModuleHandle) -> Vec<String> {
+    read_logs_allowing_warnings(module, &[]).await
+}
+
+async fn read_logs_allowing_warnings(module: &ModuleHandle, expected_warnings: &[&str]) -> Vec<String> {
     module
         .read_log(None)
         .await
@@ -29,7 +33,9 @@ async fn read_logs(module: &ModuleHandle) -> Vec<String> {
         .split('\n')
         .map(|line| {
             let record: LoggerRecord = serde_json::from_str(line).unwrap();
-            if matches!(record.level, LogLevel::Panic | LogLevel::Error | LogLevel::Warn) {
+            if matches!(record.level, LogLevel::Panic | LogLevel::Error)
+                || (matches!(record.level, LogLevel::Warn) && !expected_warnings.contains(&record.message.as_str()))
+            {
                 panic!("Found an error-like log line: {line}");
             }
             record.message
@@ -109,6 +115,314 @@ fn test_calling_a_reducer() {
 )]
 fn test_calling_a_reducer_csharp() {
     test_calling_a_reducer_in_module("module-test-cs");
+}
+
+#[test]
+#[serial]
+fn namespace_csharp_nested_registration() {
+    init();
+    CompiledModule::compile("nested-namespace-test-cs", CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |module| async move {
+            let host = module.client.module();
+            let schema = &host.info.module_def;
+            let branch = &schema.submodules()["branch_data"];
+            assert!(branch.submodules().contains_key("nested_data"));
+            assert!(schema.submodules().contains_key("leaf_data"));
+            assert!(schema.submodules().contains_key("promoted_data"));
+            assert!(schema.submodules().contains_key("second_data"));
+            assert!(schema.match_http_route(&spacetimedb_lib::http::Method::Get, "/leaf").is_none());
+
+            let warnings: Vec<_> = ["Branch.Leaf", "Leaf", "Promoted", "SecondLeaf", "class", "class.Branch.Leaf"].into_iter()
+                .map(|path| format!("HTTP routes declared in submodule '{path}' are ignored. Define HTTP routes in the root module instead."))
+                .collect();
+            // Warnings must be emitted during description/publication, before any call.
+            let log = module.read_log(None).await;
+            for warning in &warnings {
+                assert!(log.contains(warning));
+            }
+
+            // Reuse the existing functions to exercise real immediate reducer/procedure calls.
+            // Run twice so each target also exercises the cached-name path.
+            for iteration in 0..2 {
+                for stage in ["ping", "pong", "next"] {
+                    assert_eq!(module.call_http_route_get(&format!("/schedule/{stage}")).await.unwrap().as_ref(), b"scheduled");
+                    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                        loop {
+                            let mut complete = true;
+                            for (path, id) in [("branch_data.nested_data", 2i32), ("outer_data.branch_data.nested_data", 8)] {
+                                let result = spacetimedb::sql::execute::run(
+                                    host.relational_db().clone(),
+                                    format!("SELECT * FROM {path}.user WHERE id = 1"),
+                                    spacetimedb_lib::identity::AuthCtx::for_current(spacetimedb_lib::Identity::ZERO),
+                                    Some(host.info.subscriptions.clone()),
+                                    Some(host.clone()),
+                                    &mut vec![],
+                                ).await.unwrap();
+                                let expected = match stage {
+                                    "ping" => vec![product![1i32, id + 100]],
+                                    "pong" => vec![],
+                                    _ => vec![product![1i32, id]],
+                                };
+                                complete &= result.rows == expected;
+                            }
+                            if stage == "next" {
+                                // The first procedure transaction makes rows visible before the
+                                // rollback check finishes. Wait for both procedure bodies to finish.
+                                let logs = read_logs_allowing_warnings(&module, &warnings.iter().map(String::as_str).collect::<Vec<_>>()).await;
+                                complete &= ["next:2", "next:8"].iter().all(|message| logs.iter().filter(|line| line.as_str() == *message).count() == iteration + 1);
+                            }
+                            if complete {
+                                break;
+                            }
+                            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                        }
+                    }).await.expect("immediate scheduling did not reach the selected instances");
+                }
+            }
+            assert_eq!(module.call_http_route_get("/schedule/reset").await.unwrap().as_ref(), b"reset");
+
+            module.call_reducer_binary("ping", &product![]).await.unwrap();
+            assert_eq!(module.call_http_route_get("/contexts").await.unwrap().as_ref(), b"selected");
+            assert_eq!(
+                module.call_procedure_with_args("instance", "[]").await.unwrap(),
+                AlgebraicValue::I32(0)
+            );
+            for (path, id) in [("branch_data.nested_data", 2i32), ("leaf_data", 3), ("promoted_data", 4), ("second_data", 5), ("outer_data", 6), ("outer_data.branch_data.nested_data", 8)] {
+                module
+                    .call_reducer_binary(&format!("{path}.ping"), &product![])
+                    .await
+                    .unwrap();
+                module
+                    .call_reducer_binary(&format!("{path}.pong"), &product![])
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    module
+                        .call_procedure_with_args(&format!("{path}.instance"), "[]")
+                        .await
+                        .unwrap(),
+                    AlgebraicValue::I32(id)
+                );
+                assert_eq!(
+                    module
+                        .call_procedure_with_args(&format!("{path}.next"), "[]")
+                        .await
+                        .unwrap(),
+                    AlgebraicValue::I32(id + 10)
+                );
+                for (view, expected) in [("current", id), ("anonymous", id + 10), ("query_current", id), ("query_anonymous", id + 10)] {
+                    let result = spacetimedb::sql::execute::run(
+                        host.relational_db().clone(),
+                        format!("SELECT * FROM {path}.{view}"),
+                        spacetimedb_lib::identity::AuthCtx::for_current(spacetimedb_lib::Identity::ZERO),
+                        Some(host.info.subscriptions.clone()),
+                        Some(host.clone()),
+                        &mut vec![],
+                    )
+                    .await
+                    .unwrap();
+                    assert_eq!(result.rows, [product![if expected == id { 1i32 } else { 2i32 }, expected]]);
+                }
+            }
+            module.call_reducer_binary("check_tables", &product![]).await.unwrap();
+            assert_eq!(
+                module
+                    .call_procedure_with_args("branch_data.instance", "[]")
+                    .await
+                    .unwrap(),
+                AlgebraicValue::I32(1)
+            );
+            assert_eq!(
+                module.call_procedure_with_args("outer_data.branch_data.instance", "[]").await.unwrap(),
+                AlgebraicValue::I32(7)
+            );
+            for (view, expected) in [("nested", 2i32), ("deep", 8)] {
+                let result = spacetimedb::sql::execute::run(
+                    host.relational_db().clone(),
+                    format!("SELECT * FROM {view}"),
+                    spacetimedb_lib::identity::AuthCtx::for_current(spacetimedb_lib::Identity::ZERO),
+                    Some(host.info.subscriptions.clone()),
+                    Some(host.clone()),
+                    &mut vec![],
+                ).await.unwrap();
+                assert_eq!(result.rows, [product![expected]]);
+            }
+            for (view, expected) in [("branch_data.query_child", 2i32), ("outer_data.branch_data.query_child", 8), ("query_deep", 8), ("query_public", 6)] {
+                let result = spacetimedb::sql::execute::run(
+                    host.relational_db().clone(),
+                    format!("SELECT * FROM {view}"),
+                    spacetimedb_lib::identity::AuthCtx::for_current(spacetimedb_lib::Identity::ZERO),
+                    Some(host.info.subscriptions.clone()),
+                    Some(host.clone()),
+                    &mut vec![],
+                ).await.unwrap();
+                assert_eq!(result.rows, [product![1i32, expected]]);
+            }
+            let messages = read_logs_allowing_warnings(&module, &warnings.iter().map(String::as_str).collect::<Vec<_>>()).await
+                .into_iter().filter(|message| !warnings.contains(message)).collect::<Vec<_>>();
+            let (scheduled, messages) = messages.split_at(12);
+            let mut scheduled = scheduled.to_vec();
+            scheduled.sort();
+            assert_eq!(scheduled, ["leaf:2", "leaf:2", "leaf:8", "leaf:8", "next:2", "next:2", "next:8", "next:8", "pong:2", "pong:2", "pong:8", "pong:8"]);
+            assert_eq!(messages,
+                ["root:0", "leaf:2", "pong:2", "next:2", "leaf:3", "pong:3", "next:3", "leaf:4", "pong:4", "next:4", "leaf:5", "pong:5", "next:5", "leaf:6", "pong:6", "next:6", "leaf:8", "pong:8", "next:8"]);
+        },
+    );
+}
+
+#[test]
+#[serial]
+fn namespace_csharp_root_selected_at_publish() {
+    init();
+
+    // Build the dependency first, then reuse its managed DLL without rebuilding or changing its project.
+    let dependency = CompiledModule::compile("root-selection-dependency-cs", CompilationMode::Debug);
+    dependency.with_module_async(DEFAULT_CONFIG, |module| async move {
+        module
+            .call_reducer_binary("dependency_entry", &product![])
+            .await
+            .unwrap();
+        assert!(module.read_log(None).await.contains("dependency published as root"));
+    });
+
+    // Both assemblies contain generated host entrypoint declarations. Only the published root's
+    // declarations must become native exports; otherwise publishing produces duplicate symbols.
+    CompiledModule::compile("root-selection-consumer-cs", CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |module| async move {
+            module.call_reducer_binary("consumer_entry", &product![]).await.unwrap();
+            assert!(module.read_log(None).await.contains("consumer published as root"));
+            module
+                .call_reducer_binary("dependency_entry", &product![])
+                .await
+                .unwrap();
+            assert!(module.read_log(None).await.contains("dependency published as root"));
+        },
+    );
+}
+
+#[test]
+#[serial]
+fn namespace_csharp_cross_namespace_calls() {
+    init();
+    CompiledModule::compile("namespace-test-cs", CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |mut module| async move {
+            // Mirror test_submodule_in_module: enter the root through the websocket API,
+            // then delegate to exported library callbacks using the same context object.
+            module
+                .send_reducer_and_recv_update(
+                    r#"{"CallReducer":{"reducer":"add_auth_user","args":"[12]","request_id":0,"flags":0}}"#.to_string(),
+                    0,
+                )
+                .await
+                .unwrap();
+            let warning = "HTTP routes declared in submodule 'MyAuth' are ignored. Define HTTP routes in the root module instead.";
+            assert!(module.read_log(None).await.contains(warning));
+            assert_eq!(read_logs_allowing_warnings(&module, &[warning]).await, ["Auth users: 1"]);
+            assert_eq!(
+                module.call_procedure_with_args("count_auth_users", "[]").await.unwrap(),
+                AlgebraicValue::U64(1)
+            );
+            assert_eq!(
+                module.call_http_route_get("/root-auth-count").await.unwrap().as_ref(),
+                b"1"
+            );
+
+            // Mounted routes must not leak into the root HTTP router.
+            assert!(module
+                .client
+                .module()
+                .info
+                .module_def
+                .match_http_route(&spacetimedb_lib::http::Method::Get, "/auth-count")
+                .is_none());
+            // Dependencies in public still contribute routes and use root dispatch.
+            assert_eq!(module.call_http_route_get("/extra-hello").await.unwrap().as_ref(), b"public");
+            assert_eq!(
+                module
+                    .call_procedure_with_args("class.count_users", "[]")
+                    .await
+                    .unwrap(),
+                AlgebraicValue::U64(0)
+            );
+            assert_eq!(
+                module.call_procedure_with_args("count_users", "[]").await.unwrap(),
+                AlgebraicValue::U64(1),
+                "delegation must not also insert into the root or Audit table"
+            );
+        },
+    );
+}
+
+#[test]
+#[serial]
+fn namespace_csharp_canonical_name_resolution() {
+    use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, ExplicitNames, RawModuleDefV10Builder};
+    use spacetimedb_schema::def::ModuleDef;
+    init();
+    CompiledModule::compile("namespace-test-cs", CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |module| async move {
+            // Derive expected names with the actual host validator, not a second test-side converter.
+            for accessor in ["MyHTTP2Auth", "public", ""] {
+                for root_none in [false, true] {
+                    for child_none in [false, true] {
+                        for (source, explicit) in [
+                            ("HTTP2ReducerTick", None),
+                            ("__my__XMLParser99", None),
+                            ("already_snake_case", None),
+                            ("SourceName", Some("ExplicitNAME")),
+                        ] {
+                            let mut root = RawModuleDefV10Builder::new();
+                            root.set_case_conversion_policy(if root_none {
+                                CaseConversionPolicy::None
+                            } else {
+                                CaseConversionPolicy::SnakeCase
+                            });
+                            let mut child = RawModuleDefV10Builder::new();
+                            child.set_case_conversion_policy(if child_none {
+                                CaseConversionPolicy::None
+                            } else {
+                                CaseConversionPolicy::SnakeCase
+                            });
+                            let named = !accessor.is_empty() && accessor != "public";
+                            let target = if named { &mut child } else { &mut root };
+                            target.add_reducer(source, spacetimedb_lib::ProductType::unit());
+                            if let Some(name) = explicit {
+                                let mut names = ExplicitNames::default();
+                                names.insert_function(source, name);
+                                target.add_explicit_names(names);
+                            }
+                            if named {
+                                root.add_submodule(accessor, child.finish());
+                            }
+                            let schema: ModuleDef = root.finish().try_into().unwrap();
+                            let expected = schema.all_reducers_with_prefix()[0].2.name.to_string();
+                            let args = serde_json::json!([
+                                accessor,
+                                null,
+                                source,
+                                explicit.map(|name| serde_json::json!({"some": name})),
+                                root_none,
+                                child_none
+                            ])
+                            .to_string();
+                            assert_eq!(
+                                module
+                                    .call_procedure_with_args("resolve_schedule_name", &args)
+                                    .await
+                                    .unwrap(),
+                                AlgebraicValue::String(expected.into()),
+                                "{args}"
+                            );
+                        }
+                    }
+                }
+            }
+        },
+    );
 }
 
 #[test]

@@ -24,6 +24,8 @@ where
 {
     Ok(get_all_tables(relational_db, tx)?
         .filter(|t| t.table_type == StTableType::User && auth.has_read_access(t.table_access) && !t.is_event)
+        // A view with args can't be queried without them.
+        .filter(|t| t.view_info.as_ref().is_none_or(|view| view.params.elements.is_empty()))
         .map(|schema| {
             let sql = format!("SELECT * FROM {}", schema.table_name);
             let tx = SchemaViewer::new(tx, auth);

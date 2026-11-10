@@ -8,6 +8,7 @@ import {
   ScheduleAt,
   Uuid,
 } from '../src';
+import { t, type Infer } from '../src/lib/type_builders';
 
 describe('it correctly serializes and deserializes algebraic values', () => {
   test('when it serializes and deserializes with a product type', () => {
@@ -53,6 +54,46 @@ describe('it correctly serializes and deserializes algebraic values', () => {
     );
 
     expect(deserializedValue).toEqual(value);
+  });
+
+  test('when it round-trips result values whose ok and err types match', () => {
+    const resultType = t.result(t.string(), t.string());
+    const values: Infer<typeof resultType>[] = [{ ok: 'a' }, { err: 'a' }];
+    for (const value of values) {
+      const writer = new BinaryWriter(1024);
+      AlgebraicType.serializeValue(writer, resultType.algebraicType, value);
+      const deserialized = AlgebraicType.deserializeValue(
+        new BinaryReader(writer.getBuffer()),
+        resultType.algebraicType
+      );
+      expect(deserialized).toEqual(value);
+    }
+  });
+
+  test('when it round-trips result values whose ok and err types differ', () => {
+    const resultType = t.result(t.object('Thing', { x: t.u32() }), t.string());
+    const values: Infer<typeof resultType>[] = [
+      { ok: { x: 7 } },
+      { err: 'nope' },
+    ];
+    for (const value of values) {
+      const writer = new BinaryWriter(1024);
+      AlgebraicType.serializeValue(writer, resultType.algebraicType, value);
+      const deserialized = AlgebraicType.deserializeValue(
+        new BinaryReader(writer.getBuffer()),
+        resultType.algebraicType
+      );
+      expect(deserialized).toEqual(value);
+    }
+  });
+
+  test('when it serializes a result err with the err type', () => {
+    const resultType = t.result(t.u32(), t.string());
+    const writer = new BinaryWriter(1024);
+    AlgebraicType.serializeValue(writer, resultType.algebraicType, {
+      err: 'ab',
+    });
+    expect(writer.getBuffer()).toEqual(new Uint8Array([1, 2, 0, 0, 0, 97, 98]));
   });
 
   test('when it serializes and deserializes an Identity type', () => {

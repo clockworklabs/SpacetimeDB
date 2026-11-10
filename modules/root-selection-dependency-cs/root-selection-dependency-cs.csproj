@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net10.0</TargetFrameworks>
+    <AssemblyName>RootSelectionDependency</AssemblyName>
+    <!-- Module test defaults force StdbModule.dll; distinct managed filenames are required for references. -->
+    <TargetName>$(AssemblyName)</TargetName>
+    <NativeBinary>$(MSBuildProjectDirectory)/bin/$(Configuration)/net10.0/wasi-wasm/native/StdbModule.wasm</NativeBinary>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../crates/bindings-csharp/Codegen/Codegen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" SetTargetFramework="TargetFramework=netstandard2.0;TargetFrameworks=netstandard2.0" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained;TargetFramework;TargetFrameworks" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="../../crates/bindings-csharp/Runtime/Runtime.csproj" SetTargetFramework="TargetFramework=$(TargetFramework);TargetFrameworks=$(TargetFramework)" SkipGetTargetFrameworkProperties="true" />
+  </ItemGroup>
+</Project>

@@ -1,6 +1,6 @@
-import { accessorSlot } from '../lib/accessor_path';
-import { ConnectionId, ProductBuilder, ProductType } from '../';
-import { AlgebraicType, type ComparablePrimitive } from '../';
+import { accessorSlot } from '../lib/accessor_path.ts';
+import { ConnectionId, ProductBuilder, ProductType } from '../index.ts';
+import { AlgebraicType, type ComparablePrimitive } from '../index.ts';
 import BinaryReader from '../lib/binary_reader.ts';
 import BinaryWriter from '../lib/binary_writer.ts';
 import {
@@ -13,7 +13,7 @@ import {
   UnsubscribeFlags,
   type SubscribeBatchApplied,
   type SubscribeBatch,
-} from './client_api/types';
+} from './client_api/types.ts';
 import { ClientCache } from './client_cache.ts';
 import { DbConnectionBuilder } from './db_connection_builder.ts';
 import { INTERNAL_REMOTE_MODULE } from './internal.ts';
@@ -31,14 +31,14 @@ import type {
   Identity,
   InferTypeOfParams,
   Serializer,
-} from '../';
+} from '../index.ts';
 import type {
   ProcedureResultMessage,
   ReducerResultMessage,
 } from './message_types.ts';
 import type { ReducerEvent } from './reducer_event.ts';
 import { type UntypedRemoteModule } from './spacetime_module.ts';
-import { makeFromBuilder, type NamespacedQueryBuilder } from '../lib/query';
+import { makeFromBuilder, type NamespacedQueryBuilder } from '../lib/query.ts';
 import {
   type TableCache,
   type Operation,
@@ -60,11 +60,11 @@ import type {
 } from './reducers.ts';
 import type { ClientDbView } from './db_view.ts';
 import type { RowType, UntypedTableDef } from '../lib/table.ts';
-import type { UntypedSchemaDef } from '../lib/schema';
+import type { UntypedSchemaDef } from '../lib/schema.ts';
 import type { ProceduresView } from './procedures.ts';
 import type { Values } from '../lib/type_util.ts';
 import type { TransactionUpdate } from './client_api/types.ts';
-import type { SubscriptionEntry } from './subscription_builder_impl';
+import type { SubscriptionEntry } from './subscription_builder_impl.ts';
 import {
   DisconnectedError,
   IdentityChangedError,
@@ -83,7 +83,7 @@ import {
   V2_WS_PROTOCOL,
   V3_WS_PROTOCOL,
   type NegotiatedWsProtocol,
-} from './websocket_protocols';
+} from './websocket_protocols.ts';
 import {
   countClientMessagesForV3Frame,
   encodeClientMessagesV3,
@@ -1873,8 +1873,14 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     }
   }
 
+  /**
+   * End the connection over a server message that could not be decoded or
+   * applied. A retry would not fix it, so this never reconnects. The error
+   * goes to `onConnectError` if the connection was not yet established, and
+   * to `onDisconnect` otherwise.
+   */
   #handleProtocolError(cause: unknown): void {
-    if (!this.#automaticReconnect) throw cause;
+    stdbLogger('error', 'Failed to process a server message', cause);
     const error = new WebSocketProtocolError('Invalid server message', {
       cause,
     });
@@ -1907,6 +1913,13 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           this.#processMessage(data);
         }
       }
+    } catch (e) {
+      // A message that could not be applied leaves the client cache
+      // inconsistent, and rethrowing from a WebSocket listener crashes Node
+      // hosts. Handle it like a message that could not be decoded: end the
+      // connection, which drops what is queued and settles calls in flight.
+      // (Callback errors never get here; `EventEmitter` logs them.)
+      this.#handleProtocolError(e);
     } finally {
       if (this.#inboundQueueOffset >= this.#inboundQueue.length) {
         this.#inboundQueue.length = 0;

@@ -2,6 +2,48 @@ namespace SpacetimeDB;
 
 using System;
 using System.Globalization;
+using System.Linq;
+
+/// <summary>A table identifier with separately quoted namespace segments and local name.</summary>
+public readonly struct SqlTableName
+{
+    private readonly string? quotedNamespace;
+
+    /// <summary>The namespace path, without SQL quoting.</summary>
+    public string? Namespace { get; }
+    public string LocalName { get; }
+
+    public SqlTableName(string localName)
+    {
+        LocalName = localName;
+        Namespace = null;
+        quotedNamespace = null;
+    }
+
+    public SqlTableName(string @namespace, string localName)
+    {
+        Namespace = @namespace ?? throw new ArgumentNullException(nameof(@namespace));
+        LocalName = localName;
+        quotedNamespace = SqlFormat.QuoteIdent(@namespace);
+    }
+
+    public SqlTableName(string[] namespaceSegments, string localName)
+    {
+        namespaceSegments =
+            namespaceSegments ?? throw new ArgumentNullException(nameof(namespaceSegments));
+        Namespace = namespaceSegments.Length == 0 ? null : string.Join(".", namespaceSegments);
+        LocalName = localName;
+        quotedNamespace =
+            namespaceSegments.Length == 0
+                ? null
+                : string.Join(".", namespaceSegments.Select(SqlFormat.QuoteIdent));
+    }
+
+    public override string ToString() =>
+        quotedNamespace is null
+            ? SqlFormat.QuoteIdent(LocalName)
+            : quotedNamespace + "." + SqlFormat.QuoteIdent(LocalName);
+}
 
 public readonly struct SqlLiteral<T>
 {
@@ -113,11 +155,13 @@ public readonly struct IxJoinEq<TLeftRow, TRightRow>
     }
 }
 
-public readonly struct Col<TRow, TValue>(string tableName, string columnName)
+public readonly struct Col<TRow, TValue>(SqlTableName tableName, string columnName)
     where TValue : notnull
 {
-    internal string RefSql =>
-        $"{SqlFormat.QuoteIdent(tableName)}.{SqlFormat.QuoteIdent(columnName)}";
+    public Col(string tableName, string columnName)
+        : this(new SqlTableName(tableName), columnName) { }
+
+    internal string RefSql => $"{tableName}.{SqlFormat.QuoteIdent(columnName)}";
 
     public BoolExpr<TRow> Eq(SqlLiteral<TValue> value) => new($"({RefSql} = {value.Sql})");
 
@@ -146,11 +190,13 @@ public readonly struct Col<TRow, TValue>(string tableName, string columnName)
     public override string ToString() => RefSql;
 }
 
-public readonly struct IxCol<TRow, TValue>(string tableName, string columnName)
+public readonly struct IxCol<TRow, TValue>(SqlTableName tableName, string columnName)
     where TValue : notnull
 {
-    internal string RefSql =>
-        $"{SqlFormat.QuoteIdent(tableName)}.{SqlFormat.QuoteIdent(columnName)}";
+    public IxCol(string tableName, string columnName)
+        : this(new SqlTableName(tableName), columnName) { }
+
+    internal string RefSql => $"{tableName}.{SqlFormat.QuoteIdent(columnName)}";
 
     public BoolExpr<TRow> Eq(SqlLiteral<TValue> value) => new($"({RefSql} = {value.Sql})");
 
@@ -162,16 +208,19 @@ public readonly struct IxCol<TRow, TValue>(string tableName, string columnName)
     public override string ToString() => RefSql;
 }
 
-public sealed class Table<TRow, TCols, TIxCols>(string tableName, TCols cols, TIxCols ixCols)
+public sealed class Table<TRow, TCols, TIxCols>(SqlTableName tableName, TCols cols, TIxCols ixCols)
     : IQuery<TRow>
 {
-    internal string TableRefSql => SqlFormat.QuoteIdent(tableName);
+    public Table(string tableName, TCols cols, TIxCols ixCols)
+        : this(new SqlTableName(tableName), cols, ixCols) { }
+
+    internal string TableRefSql => tableName.ToString();
 
     internal TCols Cols => cols;
 
     internal TIxCols IxCols => ixCols;
 
-    public string ToSql() => $"SELECT * FROM {SqlFormat.QuoteIdent(tableName)}";
+    public string ToSql() => $"SELECT * FROM {TableRefSql}";
 
     public FromWhere<TRow, TCols, TIxCols> Where<TPredicate>(Func<TCols, TPredicate> predicate) =>
         new(this, QueryPredicate.ToBoolExpr<TRow>(predicate(cols)!));

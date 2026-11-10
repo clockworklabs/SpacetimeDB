@@ -33,9 +33,16 @@ jobs:
     outputs:
       # A reused failure also skips fresh jobs; the final step reports that failure on this commit.
       skip: ${{ steps.compare.outputs.skip == 'true' || steps.reuse.outputs.reused == 'true' }}
+      # Also true when the change only touches docs. Jobs that check the docs themselves (lints, the
+      # docs build and the CLI docs check) use `skip` instead, so they still run for docs-only changes.
+      skip_tests: ${{ steps.compare.outputs.skip == 'true' || steps.reuse.outputs.reused == 'true' || steps.docs.outputs.docs-only == 'true' }}
     steps:
       - name: Checkout merge queue commit
         uses: actions/checkout@v4
+
+      - name: Detect docs-only changes
+        id: docs
+        uses: ./.github/actions/detect-docs-only
 
       - name: Compare merge queue commit to PR head
         id: compare
@@ -93,7 +100,7 @@ jobs:
 
   upload-build-artifacts-linux:
     needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: Upload build artifacts (Linux)
     runs-on: spacetimedb-linux
     timeout-minutes: 15
@@ -281,7 +288,7 @@ jobs:
 
   upload-build-artifacts-windows:
     needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: Upload build artifacts (Windows)
     runs-on: spacetimedb-windows-runner
     timeout-minutes: 15
@@ -411,7 +418,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - uses: ./.github/actions/setup-pnpm
 
@@ -419,7 +427,8 @@ jobs:
         if: runner.os == 'Windows'
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.3
+          # Rejects the compromised eMudhra certificate chains.
+          bun-version: 1.4.4
 
       - name: Install TypeScript SDK dependencies
         run: pnpm --filter spacetimedb install
@@ -469,8 +478,7 @@ jobs:
         run: |
           dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
           dotnet pack -c Release crates/bindings-csharp/Runtime
-          cd sdks/csharp
-          ./tools~/write-nuget-config.sh ../..
+          cargo regen csharp nuget-config
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
@@ -565,7 +573,7 @@ jobs:
   # and skipping this check means that the matrix isn't "populated" so the required checks wouldn't be met.
   smoketests_noop:
     needs: [merge_queue_noop]
-    if: ${{ needs.merge_queue_noop.outputs.skip == 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests == 'true' }}
     name: Smoketests (${{ matrix.name }})
     strategy:
       matrix:
@@ -575,15 +583,15 @@ jobs:
           - name: Windows 2/4
           - name: Windows 3/4
           - name: Windows 4/4
-    # These no-op jobs only preserve required smoketest check names after CI reuse.
+    # These no-op jobs only preserve required smoketest check names after CI reuse or for docs-only changes.
     runs-on: spacetimedb-linux-small
     steps:
-      - name: Skip duplicate merge queue smoketest
-        run: echo "Merge queue commit has the same tree as the PR head; smoketest already ran for the PR."
+      - name: Skip smoketest
+        run: echo "Smoketests already ran for an equivalent commit, or the change only touches docs."
 
   sdk_test_modules:
     needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: Build SDK test modules
     runs-on: spacetimedb-linux
     timeout-minutes: 15
@@ -606,7 +614,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - uses: ./.github/actions/setup-pnpm
         with:
@@ -626,8 +635,7 @@ jobs:
         run: |
           dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
           dotnet pack -c Release crates/bindings-csharp/Runtime
-          cd sdks/csharp
-          ./tools~/write-nuget-config.sh ../..
+          cargo regen csharp nuget-config
 
       - name: Build SDK test modules
         shell: bash
@@ -660,7 +668,7 @@ jobs:
 
   sdk_test_archives:
     needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: Build SDK test archives
     runs-on: spacetimedb-linux
     timeout-minutes: 15
@@ -745,7 +753,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - uses: ./.github/actions/setup-pnpm
         with:
@@ -867,7 +876,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
@@ -934,7 +944,7 @@ jobs:
 
   sdk_tests_noop:
     needs: [merge_queue_noop]
-    if: ${{ needs.merge_queue_noop.outputs.skip == 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests == 'true' }}
     name: SDK Tests (${{ matrix.mode }} ${{ matrix.partition }}/2)
     strategy:
       matrix:
@@ -942,12 +952,12 @@ jobs:
         partition: [1, 2]
     runs-on: ubuntu-latest
     steps:
-      - name: Skip duplicate merge queue SDK test
-        run: echo "Merge queue commit has the same tree as the PR head; SDK tests already ran for the PR."
+      - name: Skip SDK test
+        run: echo "SDK tests already ran for an equivalent commit, or the change only touches docs."
 
   rust_test_build:
     needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: Test Suite - Rust Build
     runs-on: spacetimedb-linux
     timeout-minutes: 15
@@ -1130,7 +1140,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - uses: ./.github/actions/setup-pnpm
         with:
@@ -1167,7 +1178,7 @@ jobs:
 
   csharp_tests:
     needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: Test Suite - C#
     runs-on: spacetimedb-linux
     timeout-minutes: 10
@@ -1205,7 +1216,7 @@ jobs:
 
   cpp_compile_tests:
     needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: Test Suite - C++ Compile (${{ matrix.suite }})
     runs-on: spacetimedb-linux
     timeout-minutes: 10
@@ -1260,7 +1271,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Check component results
-        if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+        if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
         env:
           RUST_RESULT: ${{ needs.rust_tests.result }}
           RUST_BUILD_RESULT: ${{ needs.rust_test_build.result }}
@@ -1279,16 +1290,16 @@ jobs:
           test "${SDK_BROWSER_RESULT}" = success
 
       - name: Reuse merge queue result
-        if: ${{ needs.merge_queue_noop.outputs.skip == 'true' }}
+        if: ${{ needs.merge_queue_noop.outputs.skip_tests == 'true' }}
         env:
           SDK_NOOP_RESULT: ${{ needs.sdk_tests_noop.result }}
         run: |
           test "${SDK_NOOP_RESULT}" = success
-          echo "Test Suite already ran for the equivalent PR head."
+          echo "Test Suite already ran for the equivalent PR head, or the change only touches docs."
 
   index_scan_bench:
     needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: Index Scan Bench
     runs-on: spacetimedb-benchmark-runner
     concurrency:
@@ -1353,7 +1364,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - uses: ./.github/actions/setup-pnpm
         with:
@@ -1444,7 +1456,7 @@ jobs:
 
   module_latest_deps:
     needs: [merge_queue_noop, upload-build-artifacts-linux]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: Build and test wasm bindings
     runs-on: spacetimedb-linux
     env:
@@ -1471,8 +1483,10 @@ jobs:
       - *show-sccache-stats
 
   portable_datastore:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: Check portable datastore
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
@@ -1489,7 +1503,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -1557,7 +1572,7 @@ jobs:
 
   update:
     needs: [merge_queue_noop]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: Test spacetimedb-update flow (${{ matrix.target }})
     permissions: read-all
     strategy:
@@ -1569,6 +1584,8 @@ jobs:
           - { target: x86_64-pc-windows-msvc, runner: windows-latest }
     runs-on: ${{ matrix.runner }}
     env:
+      # Make action Node runtimes use the filtered CA bundle created by the setup action.
+      NODE_OPTIONS: ${{ matrix.runner != 'spacetimedb-linux-small' && '--use-openssl-ca' || '' }}
       RUST_BACKTRACE: full
     steps:
       - *set-cargo-target-dir
@@ -1576,6 +1593,11 @@ jobs:
 
       - *find-git-ref
       - *checkout-sources
+
+      # Fleet VM images maintain certificate trust and rustup; only set them up here for GitHub-hosted runners.
+      - name: Set up certificate trust
+        if: runner.environment == 'github-hosted'
+        uses: ./.github/actions/setup-certificate-trust
 
       - name: Install Rust
         uses: dsherret/rust-toolchain-file@v1
@@ -1605,7 +1627,7 @@ jobs:
   # and skipping this check means that the matrix isn't "populated" so the required checks wouldn't be met.
   update_noop:
     needs: [merge_queue_noop]
-    if: ${{ needs.merge_queue_noop.outputs.skip == 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests == 'true' }}
     name: Test spacetimedb-update flow (${{ matrix.target }})
     permissions: read-all
     strategy:
@@ -1614,11 +1636,11 @@ jobs:
           - { target: x86_64-unknown-linux-gnu }
           - { target: aarch64-apple-darwin }
           - { target: x86_64-pc-windows-msvc }
-    # These no-op jobs only preserve required update-flow check names after CI reuse.
+    # These no-op jobs only preserve required update-flow check names after CI reuse or for docs-only changes.
     runs-on: spacetimedb-linux-small
     steps:
-      - name: Skip duplicate merge queue update test
-        run: echo "Merge queue commit has the same tree as the PR head; update-flow already ran for the PR."
+      - name: Skip update test
+        run: echo "The update flow already ran for an equivalent commit, or the change only touches docs."
 
   unreal_engine_tests:
     name: Unreal Engine Tests
@@ -1666,6 +1688,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.GIT_REF }}
+      # Rustup comes from the job container, so updating the fleet VM image does not update it.
+      - name: Set up certificate trust
+        uses: ./.github/actions/setup-certificate-trust
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
@@ -1749,7 +1774,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - uses: ./.github/actions/setup-pnpm
         with:
@@ -1777,7 +1803,7 @@ jobs:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
     # Skip if this is an external contribution.
     # The license secrets will be empty, so the step would fail anyway.
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
     permissions:
       contents: read
       checks: write
@@ -1811,6 +1837,11 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Install Rust toolchain
+        uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
       - name: Override NuGet packages
         run: |
           dotnet pack crates/bindings-csharp/BSATN.Runtime
@@ -1822,8 +1853,7 @@ jobs:
           # This means that (if version numbers match) we will test the local versions of the C# packages, even
           # if they're not pushed to NuGet.
           # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
-          cd sdks/csharp
-          ./tools~/write-nuget-config.sh ../..
+          cargo regen csharp nuget-config
 
       - name: Restore .NET solution
         working-directory: sdks/csharp
@@ -1835,11 +1865,6 @@ jobs:
         run: |
           sed -i "s|spacetimedb *=.*|spacetimedb = \{ path = \"../../../crates/bindings\" \}|" Cargo.toml
           cat Cargo.toml
-
-      - name: Install Rust toolchain
-        uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - *download-build-artifacts
       - *extract-build-artifacts
@@ -1853,20 +1878,21 @@ jobs:
 
       - name: Generate client bindings
         working-directory: demo/Blackholio/server-rust
-        run: bash ./generate.sh -y
+        run: spacetime generate -y
 
       - name: Check for changes
         run: |
           tools/check-diff.sh demo/Blackholio/client-unity/Assets/Scripts/autogen || {
-              echo 'Error: Bindings are dirty. Please run `demo/Blackholio/server-rust/generate.sh`.'
+              echo 'Error: Bindings are dirty. Please run `spacetime generate` in `demo/Blackholio/server-rust`.'
               exit 1
           }
 
       - name: Hydrate Unity SDK DLLs
         run: cargo regen csharp dlls
 
+      # v4.0.1's container removes trust in the compromised eMudhra/emSign roots.
       - name: Check Unity meta files
-        uses: DeNA/unity-meta-check@v3
+        uses: DeNA/unity-meta-check@v4.0.1
         with:
           enable_pr_comment: ${{ github.event_name == 'pull_request' }}
           target_path: sdks/csharp
@@ -1882,7 +1908,7 @@ jobs:
         working-directory: demo/Blackholio/server-rust
         run: |
           spacetime logout && spacetime login --server-issued-login local
-          bash ./publish.sh
+          spacetime publish --delete-data -y
 
       - name: Patch com.clockworklabs.spacetimedbsdk dependency in manifest.json
         working-directory: demo/Blackholio/client-unity/Packages
@@ -1890,9 +1916,18 @@ jobs:
           yq e -i '.dependencies["com.clockworklabs.spacetimedbsdk"] = "file:../../../../sdks/csharp"' manifest.json
           cat manifest.json
 
+      # Editor containers have their own trust stores, independent of the host.
+      - name: Build Unity image with corrected trust
+        run: |
+          docker build --pull \
+            --build-arg BASE_IMAGE=unityci/editor:ubuntu-${{ env.UNITY_VERSION }}-linux-il2cpp-3 \
+            --tag spacetimedb-unity-linux-il2cpp:${{ env.UNITY_VERSION }} \
+            --file .github/docker/unity.Dockerfile .
+
       - name: Run Unity tests
         uses: game-ci/unity-test-runner@v4
         with:
+          customImage: spacetimedb-unity-linux-il2cpp:${{ env.UNITY_VERSION }}
           unityVersion: ${{ env.UNITY_VERSION }}
           projectPath: demo/Blackholio/client-unity # Path to the Unity project subdirectory
           githubToken: ${{ secrets.GITHUB_TOKEN }}
@@ -1916,7 +1951,7 @@ jobs:
     needs: [merge_queue_noop, lints]
     # Skip if this is an external contribution.
     # The license secrets will be empty, so the step would fail anyway.
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
     permissions:
       contents: read
     runs-on: spacetimedb-unity-runner
@@ -1950,9 +1985,18 @@ jobs:
       - name: Hydrate Unity SDK DLLs
         run: cargo regen csharp dlls
 
+      # Editor containers have their own trust stores, independent of the host.
+      - name: Build Unity image with corrected trust
+        run: |
+          docker build --pull \
+            --build-arg BASE_IMAGE=unityci/editor:ubuntu-${{ env.UNITY_VERSION }}-webgl-3 \
+            --tag spacetimedb-unity-webgl:${{ env.UNITY_VERSION }} \
+            --file .github/docker/unity.Dockerfile .
+
       - name: Build Unity WebGL player
         uses: game-ci/unity-builder@v4
         with:
+          customImage: spacetimedb-unity-webgl:${{ env.UNITY_VERSION }}
           unityVersion: ${{ env.UNITY_VERSION }}
           projectPath: demo/Blackholio/client-unity
           targetPlatform: WebGL
@@ -1973,7 +2017,7 @@ jobs:
 
   godot-testsuite:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     permissions:
       contents: read
     # The .NET packaging, Godot project build, and integration test make this too heavy for a small runner.
@@ -1993,6 +2037,11 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Install Rust toolchain
+        uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
       - name: Override NuGet packages
         run: |
           dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
@@ -2004,8 +2053,7 @@ jobs:
           # This means that (if version numbers match) we will test the local versions of the C# packages, even
           # if they're not pushed to NuGet.
           # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
-          cd sdks/csharp
-          ./tools~/write-nuget-config.sh ../..
+          cargo regen csharp nuget-config
 
       - name: Restore .NET solution
         working-directory: sdks/csharp
@@ -2018,23 +2066,18 @@ jobs:
           sed -i "s|spacetimedb *=.*|spacetimedb = \{ path = \"../../../crates/bindings\" \}|" Cargo.toml
           cat Cargo.toml
 
-      - name: Install Rust toolchain
-        uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
-
       - *download-build-artifacts
       - *extract-build-artifacts
       - *expose-spacetime-cli
 
       - name: Generate client bindings
         working-directory: demo/Blackholio/server-rust
-        run: bash ./generate.sh -y
+        run: spacetime generate -y
 
       - name: Check for changes
         run: |
           tools/check-diff.sh demo/Blackholio/client-godot/module_bindings || {
-              echo 'Error: Godot bindings are dirty. Please run `demo/Blackholio/server-rust/generate.sh`.'
+              echo 'Error: Godot bindings are dirty. Please run `spacetime generate` in `demo/Blackholio/server-rust`.'
               exit 1
           }
 
@@ -2068,7 +2111,7 @@ jobs:
         working-directory: demo/Blackholio/server-rust
         run: |
           spacetime login --server-issued-login local
-          bash ./publish.sh
+          spacetime publish --delete-data -y
 
       - name: Run Godot tests
         working-directory: demo/Blackholio/client-godot
@@ -2078,7 +2121,7 @@ jobs:
 
   csharp-testsuite:
     needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     # The C# SDK build and tests saturated the small runner's CPU, so keep this on the main runner.
     runs-on: spacetimedb-linux
     timeout-minutes: 30
@@ -2097,6 +2140,8 @@ jobs:
         uses: actions/setup-dotnet@v3
         with:
           global-json-file: global.json
+          # Keep the .NET 8 SDK and workload set below in sync.
+          dotnet-version: '8.0.416'
 
       - name: Install .NET workloads
         run: |
@@ -2107,11 +2152,17 @@ jobs:
           # overwriting the repository's .NET 10 global.json, which later C# harness
           # tests rely on for SDK selection.
           workload_dir="$(mktemp -d)"
-          echo '{"sdk":{"version":"8.0.100","rollForward":"latestFeature"}}' > "$workload_dir/global.json"
+          echo '{"sdk":{"version":"8.0.416","rollForward":"disable"}}' > "$workload_dir/global.json"
           (
             cd "$workload_dir"
-            dotnet workload install wasi-experimental
+            # Pin a coordinated workload set instead of updating individual manifests.
+            dotnet workload install wasi-experimental --version 8.0.416
           )
+
+      - name: Install Rust toolchain
+        uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Override NuGet packages
         run: |
@@ -2124,25 +2175,19 @@ jobs:
           # This means that (if version numbers match) we will test the local versions of the C# packages, even
           # if they're not pushed to NuGet.
           # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
-          cd sdks/csharp
-          ./tools~/write-nuget-config.sh ../..
+          cargo regen csharp nuget-config
 
       - name: Restore .NET solution
         working-directory: sdks/csharp
         run: dotnet restore --configfile NuGet.Config SpacetimeDB.ClientSDK.sln
 
-      - name: Run .NET tests
+      - name: Run C# SDK tests
         working-directory: sdks/csharp
-        run: dotnet test -warnaserror --no-restore SpacetimeDB.ClientSDK.csproj
+        run: dotnet test -warnaserror --no-restore tests~/tests.csproj
 
       - name: Verify C# formatting
         working-directory: sdks/csharp
         run: dotnet format --no-restore --verify-no-changes SpacetimeDB.ClientSDK.sln
-
-      - name: Install Rust toolchain
-        uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - *download-build-artifacts
       - *extract-build-artifacts
@@ -2150,6 +2195,9 @@ jobs:
 
       - name: Run C# SDK harness tests
         run: cargo test -p sdk-csharp-test-harness --test sdk_csharp
+
+      - name: Check C# managed and WASM build pipeline
+        run: cargo ci test-csharp-build
 
       - name: Check quickstart-chat bindings are up to date
         run: |
@@ -2301,7 +2349,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '22'
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - uses: ./.github/actions/setup-pnpm
         with:
@@ -2326,7 +2375,7 @@ jobs:
 
   typescript-test:
     needs: [merge_queue_noop, upload-build-artifacts-linux]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: TypeScript - Tests
     runs-on: spacetimedb-linux
     env:
@@ -2343,7 +2392,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - uses: ./.github/actions/setup-pnpm
         with:
@@ -2405,9 +2455,9 @@ jobs:
 
   typescript-submodules:
     needs: [merge_queue_noop, upload-build-artifacts-linux]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     name: TypeScript - Submodules
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     env:
       ARTIFACT_SUFFIX: linux
     steps:
@@ -2417,7 +2467,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - uses: ./.github/actions/setup-pnpm
         with:

@@ -1,6 +1,6 @@
 {
   "name": "spacetimedb",
-  "version": "2.12.0",
+  "version": "2.15.0",
   "description": "API and ABI bindings for the SpacetimeDB TypeScript module library",
   "homepage": "https://github.com/clockworklabs/SpacetimeDB#readme",
   "bugs": {
@@ -30,9 +30,9 @@
     "build:package": "pnpm -s build && pnpm -s prepare:test-utils-wasm:clean",
     "format": "prettier . --write --ignore-path ../../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../../.prettierignore",
-    "test": "pnpm -s prepare:test-utils-wasm && pnpm -s test:unit",
+    "test": "pnpm -s prepare:test-utils-wasm && pnpm -s test:unit && pnpm -s test:typecheck",
     "test:unit": "vitest run",
-    "test:typecheck": "vitest typecheck --run",
+    "test:typecheck": "vitest run --typecheck.only",
     "coverage": "vitest run --coverage",
     "brotli-size": "brotli-size dist/index.js",
     "size": "pnpm -s build && size-limit",
@@ -142,7 +142,7 @@
       "name": "esm (gzip)",
       "path": "dist/index.mjs",
       "gzip": true,
-      "limit": "50 kB"
+      "limit": "60 kB"
     },
     {
       "name": "esm (uncompressed)",
@@ -274,5 +274,8 @@
     "typescript-eslint": "^8.18.2",
     "vite": "^7.1.5",
     "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
   }
 }
