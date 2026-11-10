@@ -16,7 +16,7 @@ docker compose -f tools/stack-bench/appliance/demo.compose.yaml run --build --rm
 
 ## What it covers
 
-- **Stacks:** PostgreSQL, MongoDB, Convex, Supabase, and SpacetimeDB.
+- **Stacks:** PostgreSQL, MongoDB, Convex, Supabase, and Spacetime.
 - **Agents:** Claude Code, Codex, Grok Build, Antigravity, and any model on
   OpenRouter.
 - **Workload:** the [ecommerce track](tracks/ecommerce/LEVELS.md), a store with

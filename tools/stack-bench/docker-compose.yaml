@@ -1,7 +1,7 @@
 # Databases for the Postgres and MongoDB backends.
 #
 # Development-only ports, container names and volumes keep this stack separate
-# from the appliance. The SpacetimeDB
+# from the appliance. The Spacetime
 # backend needs no service here; run `spacetime start` for it.
 #
 #   docker compose -f tools/stack-bench/docker-compose.yaml up -d

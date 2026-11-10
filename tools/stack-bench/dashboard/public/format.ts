@@ -10,7 +10,7 @@ export { statusWord };
 
 const SILENCE_MINUTES = 10;
 
-export const STACK_LABEL: Record<string, string> = { spacetime: 'SpacetimeDB',
+export const STACK_LABEL: Record<string, string> = { spacetime: 'Spacetime',
   postgres: 'PostgreSQL', mongodb: 'MongoDB', convex: 'Convex', supabase: 'Supabase' };
 export const DASH = '—';
 

@@ -148,7 +148,7 @@ export function runSetupPage(catalog: RunSetupCatalog | null, request: RunSetupR
     + '</fieldset><fieldset><legend>App requirement</legend>'
     + `<label><input type="checkbox" name="productionQuality"${request.productionQuality ? ' checked' : ''}>Production-quality app</label>`
     + '<p>Build a production-quality application suitable for real users, not a prototype or demo.</p>'
-    + '</fieldset><fieldset><legend>SpacetimeDB guidance</legend>'
+    + '</fieldset><fieldset><legend>Spacetime guidance</legend>'
     + (splitGuidance ? '<div class="setup-fields">' + guidanceChoice('sdkSkills', 'SDK skills')
       + guidanceChoice('devWorkflow', 'Dev workflow') : '<div class="setup-choices">' + w.conditions.map(c => `<label><input type="checkbox" name="condition" value="${esc(c.id)}"${request.conditions.includes(c.id) ? ' checked' : ''}>${esc(guidanceLabel(c.guidance))}</label>`).join(''))
     + '</div></fieldset><div class="setup-fields">'

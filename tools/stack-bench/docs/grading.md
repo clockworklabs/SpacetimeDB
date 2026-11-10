@@ -26,7 +26,7 @@ Rules that decide the outcome:
 
 - A refusal is the stack's defined error result: HTTP 400, 401, 403, 409, or
   422; HTTP 404 only after the same operation succeeded for an authorized
-  caller; a SpacetimeDB reducer failure (HTTP 530, which also covers a panic);
+  caller; a Spacetime reducer failure (HTTP 530, which also covers a panic);
   or a thrown `ConvexError`. HTTP 500 is never a refusal. A missing route or an
   incomplete response cannot prove authorization, so a refusal check without a
   proven route is inconclusive.
@@ -126,7 +126,7 @@ Notes on individual checks:
   A probe that cannot be built, such as mixed cookie and bearer credentials, is
   inconclusive.
 - **Checkout crash** kills the application and database processes separately
-  on PostgreSQL and MongoDB, and the single combined process on SpacetimeDB,
+  on PostgreSQL and MongoDB, and the single combined process on Spacetime,
   Convex, and Supabase. A missed fault window is inconclusive.
 
 ## What the checks do not prove

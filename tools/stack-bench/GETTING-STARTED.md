@@ -25,7 +25,7 @@ docker compose -f tools/stack-bench/appliance/demo.compose.yaml run --build --rm
 
 The command builds the images, prepares the state volume, starts the dashboard,
 and grades the supplied reference apps on three stacks. It makes no model calls
-and needs no credentials. The first build includes the SpacetimeDB server and
+and needs no credentials. The first build includes the Spacetime server and
 SDK and can take a long time; leave the command running until it reports
 completion or an error, then open [localhost:7331](http://localhost:7331).
 

@@ -44,8 +44,8 @@ or `node dist/commands/...` directly.
 | Reference registry | `npm run check:references` | `reference-apps/registry.json` and each fixture's hash |
 | Scenario, contract, reference, or SDK source behind a pinned hash | `npm run repin` | |
 | Feature graph | `npm run graph` | |
-| SpacetimeDB transport | `npm run build`, then `node --test dist/tests/spacetime-captured-replay.integration.js` | |
-| Container preparation and reset publish | `npm run test:container` | needs Docker, the build image, and the local SpacetimeDB CLI |
+| Spacetime transport | `npm run build`, then `node --test dist/tests/spacetime-captured-replay.integration.js` | |
+| Container preparation and reset publish | `npm run test:container` | needs Docker, the build image, and the local Spacetime CLI |
 | Teardown during a stack restart | `npm run test:faults` | same requirements |
 | Whole bench loop with the deterministic agent | `npm run test:loop` | stub backend, `loop` track |
 

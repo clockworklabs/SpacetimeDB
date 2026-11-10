@@ -87,10 +87,10 @@ packs and enter the prompt only as `requested`.
 Every stack's setup names the stack, its connection details, and the start
 contract. The agent chooses libraries, architecture, and project structure.
 Stacks that are newer and less represented in model training also get SDK
-skills; today that is SpacetimeDB. A condition's `guidanceProfile` picks one
+skills; today that is Spacetime. A condition's `guidanceProfile` picks one
 of these, from [`conditions/catalog.json`](../conditions/catalog.json):
 
-| Profile | SpacetimeDB skills |
+| Profile | Spacetime skills |
 | --- | --- |
 | `neutral` (default) | TypeScript server, TypeScript client, CLI |
 | `neutral-dev` | The same, plus the `spacetime dev` watch workflow |
@@ -99,7 +99,7 @@ of these, from [`conditions/catalog.json`](../conditions/catalog.json):
 | `neutral-dev-no-sdk` | Dev workflow only |
 | `prescribed` | SDK skills plus stack documents with design advice |
 
-Only the SpacetimeDB material differs between the neutral profiles. The skills
+Only the Spacetime material differs between the neutral profiles. The skills
 are study inputs: keep their text intact, and compare profiles in separate runs.
 
 ## Agent tools
