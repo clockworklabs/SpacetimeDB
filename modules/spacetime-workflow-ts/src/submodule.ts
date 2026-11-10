@@ -1524,9 +1524,10 @@ export function client() {
      * Register the scheduled procedure that runs workflows. Call after
      * `schema()` and export the result.
      */
-    register<Tx extends WorkflowCtx, Proc extends WorkflowProcedureCtx<Tx>>(
-      spacetimedb: WorkflowSchema<Tx, Proc>
-    ): WorkflowFunctionExport<Proc> {
+    workflowProcedure<
+      Tx extends WorkflowCtx,
+      Proc extends WorkflowProcedureCtx<Tx>,
+    >(spacetimedb: WorkflowSchema<Tx, Proc>): WorkflowFunctionExport<Proc> {
       return spacetimedb.procedure(
         { name: 'workflow_run_attempt', onSchedule: workflowFire },
         { arg: workflowFire.rowType },

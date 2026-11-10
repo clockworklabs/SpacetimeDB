@@ -30,7 +30,7 @@ function blockUntilHostStops(): never {
   }
 }
 
-export const workflowRunAttempt = workflows.register(spacetimedb);
+export const workflowRunAttempt = workflows.workflowProcedure(spacetimedb);
 
 // Covers retries, rollback, results, sleep, events, and onComplete.
 const demo = workflows.define(

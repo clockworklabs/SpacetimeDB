@@ -6,7 +6,7 @@ import {
   Timestamp,
   Uuid,
 } from 'spacetimedb';
-import { schema, SenderError, t } from 'spacetimedb/server';
+import { schema, SenderError, t, table } from 'spacetimedb/server';
 import {
   client,
   errors,
@@ -43,7 +43,7 @@ const logOf = (ctx: unknown) => (ctx as { appLog: string[] }).appLog;
 
 const workflows = client();
 const db = schema({ ...workflows.tables });
-const workflowRunAttempt = workflows.register(db);
+const workflowRunAttempt = workflows.workflowProcedure(db);
 
 const w = {
   chain: workflows.define(db, 'chain', { args: Args }, (step, args) => {
@@ -340,6 +340,9 @@ const w = {
 {
   const typed = client();
   const typedDb = schema({ ...typed.tables });
+  const other = table({ name: 'other' }, { id: t.u64().primaryKey() });
+  // @ts-expect-error Registration needs the workflow tables in the schema.
+  void (() => typed.workflowProcedure(schema({ other })));
   const only = typed.define(typedDb, 'only', { args: Args }, (step, args) => {
     const count: number = step.tx('value', () => args.count);
     // @ts-expect-error A step's result keeps its type.

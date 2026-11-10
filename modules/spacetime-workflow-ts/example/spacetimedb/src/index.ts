@@ -186,7 +186,7 @@ function writeReport(
   );
 }
 
-export const workflowRunAttempt = workflows.register(spacetimedb);
+export const workflowRunAttempt = workflows.workflowProcedure(spacetimedb);
 
 const research = workflows.define(
   spacetimedb,

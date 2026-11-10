@@ -20,9 +20,9 @@ This example runs an order checkout. Replace `reserveStock`, `chargeCard`,
 `releaseStock`, `queueReview`, `markOrder`, `requireOrderOwner`, and
 `requireWarehouse` with your application's functions.
 
-### 1. Set up the module
+### Setting up the module
 
-Add the workflow tables to your schema, make the publisher the first workflow
+Add Workflow's tables to your module, make the publisher the first Workflow
 admin, and register the procedure that runs workflows:
 
 ```ts
@@ -35,13 +35,20 @@ const db = schema({ order, ...workflows.tables });
 export default db;
 
 export const init = db.init(ctx => workflows.install(ctx));
-export const workflowRunAttempt = workflows.register(db);
+export const workflowRunAttempt = workflows.workflowProcedure(db);
+
+export const cancelWorkflowRun = db.reducer(
+  workflows.reducers.cancelWorkflowRun.params,
+  workflows.reducers.cancelWorkflowRun.handler
+);
 ```
 
-Export the result of `register`. It is the scheduled procedure that runs every
-workflow in the module.
+`workflowProcedure` registers the scheduled procedure that runs every workflow
+in the module. Export its result. Registration fails to compile if the schema
+does not include `workflows.tables`. Export the admin [reducers and views](#api)
+you want, like `cancelWorkflowRun` above.
 
-### 2. Define a workflow
+### Defining a workflow
 
 ```ts
 const checkout = workflows.define(
@@ -77,7 +84,7 @@ const checkout = workflows.define(
 
 `define` takes:
 
-- `db`, so steps receive your module's typed contexts.
+- `db`, so steps receive the host's typed contexts.
 - A name. It is saved on every run, and finds the function when the run resumes.
 - Options: the argument type, and optionally `retry` and `stepTimeoutSeconds`.
   They apply to every step, unless a step sets its own `retry`.
@@ -90,11 +97,11 @@ It returns a handle to pass to `start`. Define workflows when the module loads,
 in any file. Do not export a handle from the module's entry file, because
 SpacetimeDB rejects exports it does not recognize.
 
-### 3. Start runs from your reducers
+### Starting runs
 
-A run starts only when your code calls `start`. The package has no public
+A run starts only when a host reducer calls `start`. Workflow has no public
 reducer for it, because only your application knows who may start a workflow.
-Check that in your own reducer, then start the run:
+Check that in the host reducer, then start the run:
 
 ```ts
 export const placeOrder = db.reducer(
@@ -114,10 +121,10 @@ export const placeOrder = db.reducer(
 - Keep the returned id, for example on the row the run is about. You need it to
   send the run events, cancel it, or restart it.
 
-### 4. Send events and cancel runs
+### Sending events and cancelling runs
 
-`waitFor` pauses a run until your code delivers its event. Check who may do that,
-then call `sendEvent` with the event's value:
+`waitFor` pauses a run until a host reducer delivers its event. Check who may do
+that, then call `sendEvent` with the event's value:
 
 ```ts
 export const markShipped = db.reducer(
@@ -287,29 +294,30 @@ finished:
 
 ## API
 
-- `client()` returns `tables`, `register`, `define`, `install`, `start`,
-  `sendEvent`, `cancel`, `requireAdmin`, `views`, and `reducers`.
-- `register(schema)` registers the scheduled procedure that runs workflows.
-  Export its result.
+- `client()` returns `tables`, `workflowProcedure`, `define`, `install`,
+  `start`, `sendEvent`, `cancel`, `restart`, `requireAdmin`, `views`, and
+  `reducers`.
+- `workflowProcedure(schema)` registers the scheduled procedure that runs
+  workflows. Export its result.
 - `define(schema, name, { args, retry?, stepTimeoutSeconds? }, fn, onComplete?)`
   adds a workflow and returns its handle. It throws if the name is taken or an
   option is out of range.
-- `install(ctx)` seeds the publishing identity as the initial admin. Call it from
-  your module's `init` reducer.
-- `start(ctx, handle, args)` starts a run and returns its id, without an
-  authorization check.
-- `sendEvent(ctx, runId, event, value?)` delivers an event and its value, without an
-  authorization check. It returns `false` if the run is unknown or finished.
-- `restart(ctx, runId, from?)` runs a failed or cancelled run again from a step,
+- `install(ctx)` seeds the publishing identity as the initial admin. Call it
+  from the host's `init` reducer.
+- `start(ctx, handle, args)` starts a run and returns its id without an
+  authorization check. Call it from host reducers that authorize the caller.
+- `sendEvent(ctx, runId, event, value?)` delivers an event and its value without
+  an authorization check. It returns `false` if the run is unknown or finished.
+- `restart(ctx, runId, from?)` runs a failed or cancelled run again from a step
   without an authorization check. It returns `false` if the run cannot restart.
-- `cancel(ctx, runId)` stops an active run, without an authorization check. It
+- `cancel(ctx, runId)` stops an active run without an authorization check. It
   returns `false` if the run already finished. A `call` step already running
   finishes its work, and its result is ignored.
 - `reducers.cancelWorkflowRun`, `reducers.restartWorkflowRun`,
   `reducers.addWorkflowAdminIdentity`, and
-  `reducers.removeWorkflowAdminIdentity` require a workflow admin.
+  `reducers.removeWorkflowAdminIdentity` require a Workflow admin.
 - `views.workflowRunsAdmin` and `views.workflowHistoryAdmin` return up to 1,000
-  runs and attempts, newest first, to workflow admins.
+  runs and attempts, newest first, to Workflow admins.
 - `errors` holds the `workflow.*` codes these operations throw as `SenderError`s:
   `notAuthorized`, `invalidEvent`, `tooManyEvents`, `cannotRemoveLastAdmin`, and
   `unknownStep`.
