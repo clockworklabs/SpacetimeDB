@@ -148,6 +148,7 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>) -> TokenStream {
     let krate = &ty.krate;
 
     let mut add_impls_for_plain_enum = false;
+    let mut add_impls_for_payload_enum = false;
     let typ = match &ty.data {
         SatsTypeData::Product(fields) => {
             let fields = fields.iter().map(|field| {
@@ -174,6 +175,7 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>) -> TokenStream {
             // To allow an enum, with all-unit variants, as an index key type,
             // add derive `Filterable` for the enum.
             add_impls_for_plain_enum = variants.iter().all(|var| var.ty.is_none());
+            add_impls_for_payload_enum = !add_impls_for_plain_enum;
 
             let unit = syn::Type::Tuple(syn::TypeTuple {
                 paren_token: Default::default(),
@@ -251,8 +253,26 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>) -> TokenStream {
         None
     };
 
+    // Internal SATS types use `crate` as their trait path and do not expose FilterableValue.
+    let impl_payload_enum_extras = if add_impls_for_payload_enum && krate.to_string() != "crate" {
+        let mut generics = ty.generics.clone();
+        add_type_bounds(&mut generics, &quote!(#krate::ser::Serialize));
+        let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+        Some(quote! {
+            #[automatically_derived]
+            impl #impl_generics #krate::Private for &#name #ty_generics #where_clause {}
+            #[automatically_derived]
+            impl #impl_generics #krate::FilterableValue for &#name #ty_generics #where_clause {
+                type Column = #name #ty_generics;
+            }
+        })
+    } else {
+        None
+    };
+
     quote! {
         #impl_plain_enum_extras
+        #impl_payload_enum_extras
 
         #[automatically_derived]
         impl #impl_generics #krate::SpacetimeType for #name #ty_generics #where_clause {
