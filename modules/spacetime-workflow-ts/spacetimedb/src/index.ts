@@ -54,7 +54,7 @@ const demo = workflows.define(
       return { big: 7n, text: 'saved', at: ctx.timestamp, who: ctx.sender };
     });
     step.sleep(1);
-    const go = step.waitFor<string>('go');
+    const go = step.waitForEvent<string>('go');
     step.tx('finish', (ctx, run) => {
       ctx.db.stepLog.insert({
         id: 0n,

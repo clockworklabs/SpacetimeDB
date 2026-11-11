@@ -374,7 +374,7 @@ export interface WorkflowSteps<Tx, Proc> {
    * Pause until `sendEvent` delivers `event`, and return the value sent with it.
    * The value's type is not checked.
    */
-  waitFor<T = unknown>(event: string): T;
+  waitForEvent<T = unknown>(event: string): T;
   /**
    * Run `fn` once per item, each in its own procedure, at the same time. Waits
    * for all of them and returns their outcomes in item order. Each item retries
@@ -1094,7 +1094,7 @@ export function client() {
       tx: <T>(name: string) => replay(name) as T,
       run: <T>(name: string) => replay(name) as T,
       sleep: () => void replay('sleep'),
-      waitFor: <T>(event: string) => replay(`wait:${event}`) as T,
+      waitForEvent: <T>(event: string) => replay(`wait:${event}`) as T,
       parallel<I, T>(
         name: string,
         items: readonly I[],
@@ -1366,7 +1366,7 @@ export function client() {
         commit((tx, run) => advance(tx, run, 'sleep', {}, delay));
         suspend();
       },
-      waitFor<T>(event: string): T {
+      waitForEvent<T>(event: string): T {
         const name = `wait:${event}`;
         const saved = replay(name);
         if (saved) return saved.value as T;
@@ -1591,7 +1591,7 @@ export function client() {
       return run.id;
     },
     /**
-     * Deliver an event, with an optional value that `waitFor` returns. An active
+     * Deliver an event, with an optional value that `waitForEvent` returns. An active
      * run that is not waiting for it yet keeps it until it does. Returns false if
      * the run is unknown or finished. The caller authorizes.
      */

@@ -297,7 +297,7 @@ const research = workflows.define(
       });
     });
     // Approving sends the plan, which may have been edited.
-    researchAndReport(step.waitFor<string[]>('plan-approved'));
+    researchAndReport(step.waitForEvent<string[]>('plan-approved'));
   }
 );
 

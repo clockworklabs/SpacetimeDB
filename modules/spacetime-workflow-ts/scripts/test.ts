@@ -115,7 +115,7 @@ const w = {
     throw new Error('bug in the function');
   }),
   waits: workflows.define(db, 'waits', { args: Args }, step => {
-    step.waitFor('go');
+    step.waitForEvent('go');
     step.tx('resumed', ctx => {
       logOf(ctx).push('resumed');
     });
@@ -262,8 +262,8 @@ const w = {
   }),
   // The first answer arrives before the wait, the second during it.
   answers: workflows.define(db, 'answers', { args: Args }, step => {
-    const first = step.waitFor<{ at: Timestamp }>('answer');
-    const second = step.waitFor<number>('answer');
+    const first = step.waitForEvent<{ at: Timestamp }>('answer');
+    const second = step.waitForEvent<number>('answer');
     step.sleep(1);
     step.tx('log', ctx => {
       logOf(ctx).push(

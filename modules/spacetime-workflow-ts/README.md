@@ -70,7 +70,7 @@ const checkout = workflows.define(
       throw error;
     }
 
-    const tracking = step.waitFor<string>('shipped');
+    const tracking = step.waitForEvent<string>('shipped');
     step.sleep(7 * 24 * 60 * 60);
     step.tx('review', ctx => queueReview(ctx, orderId, tracking));
     return { receiptId };
@@ -122,7 +122,7 @@ export const placeOrder = db.reducer(
 
 ### Sending events and cancelling runs
 
-`waitFor` pauses a run until a host reducer delivers its event. Check who may do
+`waitForEvent` pauses a run until a host reducer delivers its event. Check who may do
 that, then call `sendEvent` with the event's value:
 
 ```ts
@@ -154,10 +154,10 @@ Loops, branches, local variables, and `try/catch` work as usual around these:
   attempts of a step. Writes made through `ctx.withTx` are committed even if the
   step later fails.
 - `step.sleep(seconds)` pauses the run. Nothing runs in the meantime.
-- `step.waitFor(event)` pauses until `sendEvent` delivers `event`, and returns the
+- `step.waitForEvent(event)` pauses until `sendEvent` delivers `event`, and returns the
   value sent with it. Events that arrive early are kept, oldest first, until the
   run waits for them. Each wait takes one. Pass the expected type, as in
-  `step.waitFor<string[]>('approved')`. It is not checked.
+  `step.waitForEvent<string[]>('approved')`. It is not checked.
 - `step.parallel(name, items, (ctx, item, run) => result)` runs the function once
   per item, each in its own procedure, at the same time. It waits for all of them
   and returns `{ ok: true, value }` or `{ ok: false, error }` for each item, in
