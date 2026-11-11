@@ -33,29 +33,14 @@ pub use self::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EvictionPolicy {
     /// Always keep resident in main memory.
+    ///
+    /// If a policy migration leaves redundant local disk copies, those can be
+    /// evicted.
     Never,
-    /// Allow to evict to local disk.
+    /// Allow to evict from main memory to local disk.
     Memory,
-    /// Allow to evict from disk to remote storage.
+    /// Allow to evict from local disk to remote storage.
     Disk,
-}
-
-impl EvictionPolicy {
-    /// If `self` is [Self::Never], run `if_never`, or else `or_else`.
-    pub fn never_or_else<T>(&self, if_never: impl FnOnce() -> T, or_else: impl FnOnce() -> T) -> T {
-        match self {
-            Self::Never => if_never(),
-            Self::Memory | Self::Disk => or_else(),
-        }
-    }
-
-    /// If `self` is [Self::Never], return `if_never`, or else `default`.
-    pub fn never_or<T>(&self, if_never: T, default: T) -> T {
-        match self {
-            Self::Never => if_never,
-            Self::Memory | Self::Disk => default,
-        }
-    }
 }
 
 pub struct TieredStorageConfig {
@@ -151,12 +136,24 @@ impl TieredDatabaseStorage {
         }
     }
 
-    /// Attempt to evict from the shared blob set and local storage.
-    pub fn trim(&self) -> Result<(), TrimError> {
-        self.blobs.trim()?;
-        self.store.trim()?;
+    /// Attempt to free space by reclaiming orphaned objects and evicting from
+    /// the shared blob set and local storage.
+    ///
+    /// Returns the total number of bytes freed.
+    pub fn trim(&self) -> Result<u64, TrimError> {
+        let mut bytes_freed = self.blobs.trim()?;
+        bytes_freed += self.store.trim()?;
 
-        Ok(())
+        Ok(bytes_freed)
+    }
+
+    /// Reclaim local disk storage occupied by orphaned objects.
+    ///
+    /// Does **not** evict live objects.
+    ///
+    /// Returns the total number of bytes freed.
+    pub fn reclaim_local(&self) -> Result<u64, ObjectStoreError> {
+        self.store.reclaim()
     }
 
     pub fn budgets(&self) -> [(metrics::CacheTier, &ByteBudget); 2] {

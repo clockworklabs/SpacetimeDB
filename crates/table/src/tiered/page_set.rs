@@ -259,7 +259,7 @@ impl TieredPages {
                 handle: page_handle,
                 metadata,
                 backing,
-                eviction_policy: _,
+                eviction_policy,
             } = &*slot
             else {
                 continue;
@@ -270,15 +270,15 @@ impl TieredPages {
                 continue;
             }
 
-            let hash = match backing {
-                Some(hash) => *hash,
+            let backing = match backing {
+                Some(disk_object) => disk_object.clone(),
                 // TODO: Consider releasing the slot lock when performing I/O.
                 // Elevates the chances of creating garbage.
-                None => manager.ensure_lower_tier_stored(page_handle)?,
+                None => manager.ensure_lower_tier_stored(page_handle, *eviction_policy)?,
             };
             *slot = PageSlot::NonResident {
-                hash,
                 metadata: *metadata,
+                backing,
             };
             manager.evicted(candidate);
             manager

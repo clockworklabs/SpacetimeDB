@@ -22,8 +22,8 @@ use crate::{
         error::{BlobError, ObjectStoreError},
         map::{BlobHashWrapper, ObjectKey},
         mem::{self, BlobEvictionCandidate, BlobFrame, ReservedBlob},
-        storage::Object,
-        ByteBudget, ByteBudgetUsage, EvictionPolicy, ResidentObjects, TieredStorage,
+        storage::{DiskObject, DiskRetention, Object},
+        ByteBudget, ByteBudgetUsage, EvictionPolicy, TieredStorage,
     },
     var_len::VarLenMembers,
 };
@@ -53,27 +53,6 @@ impl BlobSet {
         }
     }
 
-    /// Create a new [BlobSet] from a catalog of entries.
-    ///
-    /// The blobs in the catalog will be faulted in lazily as they are accessed.
-    pub fn from_catalog(
-        resident: Arc<ResidentObjects>,
-        storage: Arc<TieredStorage>,
-        catalog: impl IntoIterator<Item = CatalogEntry>,
-    ) -> Self {
-        let entries = catalog
-            .into_iter()
-            .map(|CatalogEntry { hash, uses, size }| (hash, BlobEntry::NonResident { uses, size }))
-            .collect();
-
-        Self {
-            resident,
-            storage,
-            entries: RwLock::new(entries),
-            evictable: <_>::default(),
-        }
-    }
-
     /// Create a new [BlobSet] from externally loaded blobs.
     ///
     /// This is used when restoring from a snapshot.
@@ -89,6 +68,8 @@ impl BlobSet {
                     uses: uses.get(),
                     pins: 0,
                     blob: BlobHandle { frame },
+                    backing: None,
+                    disk_pins: 0,
                 },
             );
         }
@@ -149,9 +130,9 @@ impl BlobSet {
             });
 
             if let Some(blob) = maybe_resident {
-                let key = self.storage.write(Object::from(&blob))?;
+                let mut backing = self.storage.write(Object::from(&blob), DiskRetention::Required)?;
                 assert_eq!(
-                    key.as_blob_hash().expect("storage key to be a blob hash"),
+                    backing.key().as_blob_hash().expect("storage key to be a blob hash"),
                     &candidate.key
                 );
 
@@ -163,6 +144,8 @@ impl BlobSet {
                     uses,
                     blob: current,
                     pins,
+                    disk_pins,
+                    ..
                 } = entry
                 else {
                     continue;
@@ -183,7 +166,12 @@ impl BlobSet {
                 };
 
                 let size = blob.size();
-                *entry = BlobEntry::NonResident { uses: *uses, size };
+                backing.set_pins(*disk_pins);
+                *entry = BlobEntry::NonResident {
+                    uses: *uses,
+                    size,
+                    backing,
+                };
                 self.resident
                     .metrics()
                     .evicted(ObjectType::Blob, EvictionDirection::MemoryToDisk, size);
@@ -231,17 +219,31 @@ impl BlobSet {
         bytes: &[u8],
     ) -> Result<BlobHandle, BlobError> {
         let hash = BlobHashWrapper::hash_from_bytes(bytes);
-        let pins = eviction_policy.never_or(1, 0);
+        // Memory pins -- disk pins are handled below.
+        let pins = match eviction_policy {
+            EvictionPolicy::Never => 1,
+            EvictionPolicy::Memory | EvictionPolicy::Disk => 0,
+        };
         {
             let mut entries = self.entries.write();
             if let Some(BlobEntry::Resident {
                 uses: current_uses,
                 pins: current_pins,
                 blob,
+                backing,
+                disk_pins,
             }) = entries.get_mut(&hash)
             {
                 *current_uses += uses.get();
                 *current_pins += pins;
+
+                if DiskRetention::is_required(eviction_policy) {
+                    *disk_pins = disk_pins.checked_add(1).expect("disk pin count overflow");
+                    if let Some(backing) = backing {
+                        backing.pin();
+                    }
+                }
+
                 return Ok(blob.clone());
             }
         }
@@ -258,6 +260,8 @@ impl BlobSet {
                     uses: uses.get(),
                     pins,
                     blob: handle.clone(),
+                    backing: None,
+                    disk_pins: DiskRetention::is_required(eviction_policy).into(),
                 });
                 Ok(handle)
             }
@@ -268,20 +272,45 @@ impl BlobSet {
                     uses: current_uses,
                     pins: current_pins,
                     blob,
+                    backing,
+                    disk_pins,
                 } => {
                     *current_uses += uses.get();
                     *current_pins += pins;
+
+                    if DiskRetention::is_required(eviction_policy) {
+                        *disk_pins = disk_pins.checked_add(1).expect("disk pin count overflow");
+                        if let Some(backing) = backing {
+                            backing.pin();
+                        }
+                    }
+
                     Ok(blob.clone())
                 }
-                BlobEntry::NonResident { uses: current_uses, .. } => {
+                BlobEntry::NonResident {
+                    uses: current_uses,
+                    backing,
+                    ..
+                } => {
                     let new_uses = *current_uses + uses.get();
                     let frame = self.resident.redeem_blob(reservation);
                     let handle = BlobHandle { frame };
+
+                    let mut backing = backing.clone();
+                    let mut disk_pins = backing.pins();
+                    if DiskRetention::is_required(eviction_policy) {
+                        disk_pins = disk_pins.checked_add(1).expect("disk pin count overflow");
+                        backing.pin();
+                    }
+
                     entry.insert(BlobEntry::Resident {
                         uses: new_uses,
                         blob: handle.clone(),
                         pins,
+                        backing: Some(backing),
+                        disk_pins,
                     });
+
                     Ok(handle)
                 }
             },
@@ -326,8 +355,10 @@ impl BlobSet {
                 {
                     let blob_entry = entry.get_mut();
                     blob_entry.dec_uses();
-                    if let EvictionPolicy::Never = eviction_policy {
-                        blob_entry.dec_pins();
+                    match eviction_policy {
+                        EvictionPolicy::Never => blob_entry.unpin_mem(),
+                        EvictionPolicy::Memory => blob_entry.unpin_disk(),
+                        EvictionPolicy::Disk => {}
                     }
                 }
                 let blob_entry = entry.get();
@@ -377,13 +408,15 @@ impl BlobSet {
                     .ok_or_else(|| BlobError::MissingBlob(Box::new(hash.into())))?;
                 match entry {
                     BlobEntry::Resident { blob, .. } => Ok(blob.clone()),
-                    BlobEntry::NonResident { uses, .. } => {
+                    BlobEntry::NonResident { uses, backing, .. } => {
                         let frame = self.resident.redeem_blob(reservation);
                         let handle = BlobHandle { frame };
                         *entry = BlobEntry::Resident {
                             uses: *uses,
                             pins: 0,
                             blob: handle.clone(),
+                            disk_pins: backing.pins(),
+                            backing: Some(backing.clone()),
                         };
                         Ok(handle)
                     }
@@ -415,9 +448,13 @@ impl BlobSet {
         hashes.into_iter().map(|hash| self.get(hash)).collect()
     }
 
-    /// Fault the blob with content address `hash`, and mark it as non-evictable.
+    /// Fault the blob at `hash` and install a [EvictionPolicy::Never]
+    /// requirement.
     ///
-    /// Call this for every reference to the blob, without deduplication.
+    /// This protects resident bytes; if the object is present in local backing
+    /// storage, it remains evictable there.
+    ///
+    /// Must be called for every reference to the blob, without deduplication.
     ///
     /// Faulting is subject to the resident memory budget.
     ///
@@ -427,9 +464,12 @@ impl BlobSet {
         self.get(hash).and_then(|handle| self.pin_handle(&handle))
     }
 
-    /// Mark the supplied blob as non-evictable.
+    /// Install a [EvictionPolicy::Never] for the supplied blob.
     ///
-    /// Call this for every reference to the blob, without deduplication.
+    /// This protects resident bytes; if the object is present in local backing
+    /// storage, it remains evictable there.
+    ///
+    /// Must be called for every reference to the blob, without deduplication.
     ///
     /// The blob must be in this blob set, otherwise a [BlobError::MissingBlob]
     /// is returned.
@@ -455,6 +495,27 @@ impl BlobSet {
         };
         assert!(*pins > 0, "each in-memory reference owns a policy pin");
         *pins -= 1;
+    }
+
+    /// Prevent the object at `hash` from being evicted from local backing
+    /// storage.
+    ///
+    /// Must be called for every reference to the blob, without deduplication.
+    pub(crate) fn pin_disk(&self, hash: BlobHashWrapper) {
+        self.entries
+            .write()
+            .get_mut(&hash)
+            .expect("blob to disk-pin must exist")
+            .pin_disk()
+    }
+
+    /// Release one object's local backing storage pin.
+    pub(crate) fn unpin_disk(&self, hash: BlobHashWrapper) {
+        self.entries
+            .write()
+            .get_mut(&hash)
+            .expect("blob to disk-pin must exist")
+            .unpin_disk();
     }
 
     /// Apply a fallible operation to each blob in this set.
@@ -548,27 +609,24 @@ impl MemoryUsage for BlobSet {
     }
 }
 
-/// A catalog entry is metadata about a blob, without the blob's content.
-///
-/// Can be used to instantiate a [BlobSet] without any resident blobs (see:
-/// [BlobSet::from_catalog]).
-pub struct CatalogEntry {
-    pub hash: BlobHashWrapper,
-    pub uses: usize,
-    pub size: u64,
-}
-
 #[derive(Debug)]
 enum BlobEntry {
     Resident {
         uses: usize,
         pins: usize,
         blob: BlobHandle,
+        /// `Some` if the entry has been written to local disk.
+        backing: Option<DiskObject>,
+        /// Disk retention requirements exist before any backing object has been
+        /// written. When `backing` is `Some`, its local pin contribution
+        /// matches this value.
+        disk_pins: u64,
     },
     #[allow(unused)]
     NonResident {
         uses: usize,
         size: u64,
+        backing: DiskObject,
     },
 }
 
@@ -600,13 +658,43 @@ impl BlobEntry {
         }
     }
 
-    fn dec_pins(&mut self) {
+    fn unpin_mem(&mut self) {
         match self {
-            Self::NonResident { .. } => unreachable!("attempt to decrement pin count on non-resident blob"),
-            Self::Resident { pins, .. } if *pins == 0 => panic!("attempt to decrement pin count already at zero"),
+            Self::NonResident { .. } => {
+                unreachable!("attempt to decrement pin count on non-resident blob")
+            }
+            Self::Resident { pins, .. } if *pins == 0 => {
+                panic!("attempt to decrement pin count already at zero")
+            }
             Self::Resident { pins, .. } => {
                 *pins -= 1;
             }
+        }
+    }
+
+    fn pin_disk(&mut self) {
+        match self {
+            Self::Resident { backing, disk_pins, .. } => {
+                *disk_pins = disk_pins.checked_add(1).expect("disk pin count overflow");
+                if let Some(backing) = backing {
+                    backing.pin();
+                }
+            }
+            Self::NonResident { backing, .. } => backing.pin(),
+        }
+    }
+
+    fn unpin_disk(&mut self) {
+        match self {
+            Self::Resident { backing, disk_pins, .. } => {
+                *disk_pins = disk_pins
+                    .checked_sub(1)
+                    .expect("attempt to decrement disk pin count already at zero");
+                if let Some(backing) = backing {
+                    backing.unpin();
+                }
+            }
+            Self::NonResident { backing, .. } => backing.unpin(),
         }
     }
 }

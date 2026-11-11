@@ -1832,7 +1832,15 @@ impl Table {
             pinned_pages: Vec::new(),
             pinned_blobs: Vec::new(),
         };
-        if policy == self.eviction_policy || policy == EvictionPolicy::Memory {
+        let is_noop =
+            // The policy is unchanged.
+            policy == self.eviction_policy
+            // `Disk` relaxes residency, we don't need to pin anything.
+            || policy == EvictionPolicy::Disk
+            // `Never` already protects every object needed to apply a new
+            // policy.
+            || self.eviction_policy == EvictionPolicy::Never;
+        if is_noop {
             return Ok(prepared);
         }
 
@@ -2300,8 +2308,10 @@ impl Table {
 
                     blob_store_bytes += blob.size() as usize;
 
-                    if let EvictionPolicy::Never = self.eviction_policy {
-                        blobs.pin_handle(&blob)?;
+                    match self.eviction_policy {
+                        EvictionPolicy::Never => blobs.pin_handle(&blob)?,
+                        EvictionPolicy::Memory => blobs.pin_disk(blob.hash()),
+                        EvictionPolicy::Disk => {}
                     }
                 }
 
@@ -3378,13 +3388,19 @@ impl PreparedEvictionPolicy {
         // The commit's insertion handles keep newly inserted blobs resident.
         table
             .for_each_blob_ref(|hash| {
-                self.policy.never_or_else(
-                    || blobs.pin(hash.into()),
-                    || {
-                        blobs.unpin(hash.into());
-                        Ok(())
-                    },
-                )
+                match self.policy {
+                    EvictionPolicy::Never => blobs.pin(hash.into())?,
+                    EvictionPolicy::Memory => blobs.pin_disk(hash.into()),
+                    EvictionPolicy::Disk => {}
+                }
+
+                match self.old_policy {
+                    EvictionPolicy::Never => blobs.unpin(hash.into()),
+                    EvictionPolicy::Memory => blobs.unpin_disk(hash.into()),
+                    EvictionPolicy::Disk => {}
+                }
+
+                Ok(())
             })
             .expect("preparation and insertion pins keep pages and blobs resident");
         // Exclusive table access prevents page eviction during conversion.
@@ -4867,7 +4883,10 @@ pub(crate) mod test {
                 blobs.evict(0).unwrap();
                 assert_eq!(
                     blobs.resident_usage().accounted_bytes(),
-                    policy.never_or_else(|| large.len() as u64, || 0)
+                    match policy {
+                        EvictionPolicy::Never => large.len() as u64,
+                        EvictionPolicy::Memory | EvictionPolicy::Disk => 0,
+                    }
                 );
                 // Reading after eviction must preserve the stored value too.
                 assert_eq!(table.scan_rows(blobs).next().unwrap().unwrap().to_product_value(), row);
@@ -4921,7 +4940,10 @@ pub(crate) mod test {
             blobs.evict(0).unwrap();
             assert_eq!(
                 blobs.resident_usage().accounted_bytes(),
-                policy.never_or_else(|| large.len() as u64, || 0)
+                match policy {
+                    EvictionPolicy::Never => large.len() as u64,
+                    EvictionPolicy::Memory | EvictionPolicy::Disk => 0,
+                }
             );
             let actual = table
                 .scan_rows(&blobs)

@@ -8,6 +8,7 @@ use super::{
 use crate::db_metrics::DB_METRICS;
 #[cfg(feature = "metrics")]
 use crate::system_tables::{ST_COLUMN_NAME, ST_CONSTRAINT_NAME, ST_INDEX_NAME, ST_SEQUENCE_NAME};
+use crate::system_tables::{ST_TABLE_CACHE_POLICY_ID, ST_TABLE_CACHE_POLICY_IDX};
 use crate::traits::TxOffset;
 use crate::{
     error::TableError,
@@ -26,10 +27,6 @@ use crate::{
         ST_VIEW_ARG_ID, ST_VIEW_ARG_IDX,
     },
     traits::{EphemeralTables, TxData},
-};
-use crate::{
-    error::TrimTableError,
-    system_tables::{ST_TABLE_CACHE_POLICY_ID, ST_TABLE_CACHE_POLICY_IDX},
 };
 use crate::{
     locking_tx_datastore::ViewCallInfo,
@@ -62,8 +59,8 @@ use spacetimedb_table::{
     table::{PreparedBlobRelease, PreparedEvictionPolicy, RowRef, Table, TableAndIndex},
     tiered::{BlobHandle, BlobSet, EvictionPolicy, PreparedCommit, TieredDatabaseStorage},
 };
-use std::sync::Arc;
 use std::{collections::BTreeMap, iter};
+use std::{mem, sync::Arc};
 
 /// Contains the live, in-memory snapshot of a database. This structure
 /// is exposed in order to support tools wanting to process the commit
@@ -814,6 +811,10 @@ impl CommittedState {
             self.next_tx_offset += 1;
         }
 
+        drop(tx_state);
+        // Reclaim space used by objects that got orphaned by this transaction.
+        self.reclaim_disk_storage();
+
         Ok(tx_data)
     }
 
@@ -822,14 +823,18 @@ impl CommittedState {
     }
 
     /// Rolls back the changes immediately made to the committed state during a transaction.
-    pub(super) fn rollback(&mut self, tx_state: TxState) -> TxOffset {
+    pub(super) fn rollback(&mut self, mut tx_state: TxState) -> TxOffset {
         // Roll back the changes in the reverse order in which they were made
-        // so that e.g., the last change is undone first.
-        // IndexAdd(Some)
-        // IndexAdd(None)
-        for change in tx_state.pending_schema_changes.into_iter().rev() {
+        // so that the last change is undone first.
+        for change in mem::take(&mut tx_state.pending_schema_changes).into_iter().rev() {
             self.rollback_pending_schema_change(change);
         }
+        drop(tx_state);
+        // Reclaim space used by objects that where spilled to disk during the
+        // transaction, but became orphaned due to the transaction being
+        // aborted.
+        self.reclaim_disk_storage();
+        // Reset the tx offset.
         self.next_tx_offset.saturating_sub(1)
     }
 
@@ -1028,8 +1033,10 @@ impl CommittedState {
         // Schema recovery needs system tables to stay in memory.
         if schema.table_type == StTableType::System || schema.cache_policy == TableCachePolicy::RequiredInMemory {
             EvictionPolicy::Never
-        } else {
+        } else if schema.cache_policy == TableCachePolicy::RequiredOnDisk {
             EvictionPolicy::Memory
+        } else {
+            EvictionPolicy::Disk
         }
     }
 
@@ -1107,13 +1114,23 @@ impl CommittedState {
             .set(self.storage.blobs().bytes_used_by_blobs() as _);
     }
 
-    pub(super) fn trim(&self) -> std::result::Result<(), TrimTableError> {
+    /// Evict live objects when under budget pressure, and reclaim space used by
+    /// orphaned objects.
+    #[cfg(feature = "durability")]
+    pub(super) fn trim(&self) -> std::result::Result<(), crate::error::TrimTableError> {
         for table in self.tables.values() {
             table.trim()?;
         }
         self.storage.trim()?;
 
         Ok(())
+    }
+
+    /// Reclaim space used by orphaned objects.
+    pub(super) fn reclaim_disk_storage(&self) {
+        if let Err(e) = self.storage.reclaim_local() {
+            log::warn!("failed to reclaim unreferenced object from disk storage: {e}")
+        };
     }
 }
 

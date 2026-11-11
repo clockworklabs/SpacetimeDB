@@ -1,9 +1,10 @@
 use super::metrics::{CacheTier, EvictionDirection, FaultSource, Metrics};
 use std::{
     fmt,
+    num::NonZeroU64,
     ops::Deref,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
 };
@@ -16,7 +17,7 @@ use crate::{
     tiered::{
         error::ObjectStoreError,
         map::{BlobHashWrapper, ObjectKey, ObjectMap, PageHash},
-        BlobHandle, BudgetPermit, ByteBudget, PageHandle,
+        BlobHandle, BudgetPermit, ByteBudget, EvictionPolicy, PageHandle,
     },
 };
 
@@ -229,15 +230,187 @@ pub struct BackingStore<T> {
 pub type LocalBackingStore = BackingStore<Box<dyn LocalStorage>>;
 pub type RemoteBackingStore = BackingStore<Box<dyn RemoteStorage>>;
 
-type SharedCatalogEntry = Arc<Mutex<Option<ObjectCatalogEntry>>>;
+type SharedCatalogEntry = Arc<ObjectSlot>;
+
+/// Whether an owner requires the object to survive eviction to the remote tier.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiskRetention {
+    Evictable,
+    Required,
+}
+
+impl DiskRetention {
+    pub fn is_required(policy: EvictionPolicy) -> bool {
+        Self::from(policy) == Self::Required
+    }
+}
+
+impl From<EvictionPolicy> for DiskRetention {
+    fn from(policy: EvictionPolicy) -> Self {
+        match policy {
+            // Objects may have been stored on disk before changing the cache
+            // policy of a table. It is ok to evict those to the remote tier.
+            EvictionPolicy::Never => Self::Evictable,
+            // If main memory eviction is allowed, the disk copy must stay.
+            EvictionPolicy::Memory => Self::Required,
+            // Object is explicitly evictable.
+            EvictionPolicy::Disk => Self::Evictable,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+enum ObjectOwnership {
+    #[default]
+    Unreferenced,
+    Referenced {
+        /// The number of owners of this object.
+        ///
+        /// Owners may not request pinning, so this number can be greater than
+        /// `total_pins`. The owner count is tracked so that we can detect the
+        /// last owner in [Self::release].
+        owners: NonZeroU64,
+        /// Sum of all live [DiskObject]s' pin counts.
+        total_pins: u64,
+    },
+}
+
+impl ObjectOwnership {
+    fn is_pinned(&self) -> bool {
+        matches!(self, Self::Referenced { total_pins: 1.., .. })
+    }
+
+    fn retain(&mut self, pins: u64) {
+        *self = match *self {
+            Self::Unreferenced => Self::Referenced {
+                owners: NonZeroU64::MIN,
+                total_pins: pins,
+            },
+            Self::Referenced { owners, total_pins } => Self::Referenced {
+                owners: owners.checked_add(1).expect("owner count overflow"),
+                total_pins: total_pins.checked_add(pins).expect("pin count overflow"),
+            },
+        };
+    }
+
+    fn release(&mut self, pins: u64) -> bool {
+        let Self::Referenced { owners, total_pins } = *self else {
+            unreachable!("only a registered handle can release pin counts")
+        };
+        assert!(total_pins >= pins);
+
+        match owners.get() {
+            1 => {
+                // The last owner has released its pins,
+                // so the object becomes unreferenced.
+                assert_eq!(total_pins, pins);
+                *self = Self::Unreferenced;
+
+                true
+            }
+            x => {
+                *self = Self::Referenced {
+                    owners: NonZeroU64::new(x - 1).unwrap(),
+                    total_pins: total_pins.checked_sub(pins).expect("pin count underflow"),
+                };
+
+                false
+            }
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct ObjectSlot {
+    registering: AtomicU64,
+    state: Mutex<ObjectState>,
+}
+
+#[derive(Debug, Default)]
+struct ObjectState {
+    object: Option<ObjectCatalogEntry>,
+    ownership: ObjectOwnership,
+}
+
+/// Ownership of an object stored in the [LocalBackingStore].
+///
+/// Tracks pins of multiple owners. When pins go to zero, the object can be
+/// evicted to the [RemoteBackingStore].
+#[derive(Debug)]
+pub struct DiskObject {
+    key: ObjectKey,
+    slot: SharedCatalogEntry,
+    pins: u64,
+    // Shared with [TieredStorage], so the object can signal pending
+    // reclamation.
+    should_reclaim: Arc<AtomicBool>,
+}
+
+impl DiskObject {
+    pub fn key(&self) -> ObjectKey {
+        self.key
+    }
+
+    pub fn pins(&self) -> u64 {
+        self.pins
+    }
+
+    /// Prevent eviction of this object's local copy.
+    ///
+    /// This only modifies the catalog entry, it is the caller's responsibility
+    /// to actually write the object.
+    pub(crate) fn pin(&mut self) {
+        let pins = self.pins.checked_add(1).expect("pin count overflow");
+        self.set_pins(pins);
+    }
+
+    /// Decrement the pin count for this object.
+    pub(crate) fn unpin(&mut self) {
+        let pins = self.pins.checked_sub(1).expect("pin count underflow");
+        self.set_pins(pins);
+    }
+
+    /// Replace the pin count contribution of this object.
+    ///
+    /// The caller must ensure that the object is live.
+    pub(crate) fn set_pins(&mut self, pins: u64) {
+        let mut state = self.slot.state.lock();
+        state.ownership.release(self.pins);
+        state.ownership.retain(pins);
+        self.pins = pins;
+    }
+}
+
+impl Clone for DiskObject {
+    fn clone(&self) -> Self {
+        let mut state = self.slot.state.lock();
+        state.ownership.retain(self.pins);
+
+        Self {
+            key: self.key,
+            slot: self.slot.clone(),
+            pins: self.pins,
+            should_reclaim: self.should_reclaim.clone(),
+        }
+    }
+}
+
+impl Drop for DiskObject {
+    fn drop(&mut self) {
+        let mut state = self.slot.state.lock();
+        if state.ownership.release(self.pins) {
+            self.should_reclaim.store(true, Ordering::Release);
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct TieredStorage {
     local: LocalBackingStore,
     remote: Option<RemoteBackingStore>,
     access_epoch: AtomicU64,
-
     catalog: RwLock<ObjectMap<SharedCatalogEntry>>,
+    should_reclaim: Arc<AtomicBool>,
 }
 
 impl TieredStorage {
@@ -245,8 +418,9 @@ impl TieredStorage {
         Self {
             local,
             remote,
-            access_epoch: AtomicU64::new(1),
+            access_epoch: 1.into(),
             catalog: <_>::default(),
+            should_reclaim: Arc::new(false.into()),
         }
     }
 
@@ -270,41 +444,98 @@ impl TieredStorage {
 
     pub fn stat(&self, key: ObjectKey) -> Result<ObjectMetadata, ObjectStoreError> {
         let slot = self.catalog.read().get(&key).cloned().ok_or_else(|| unknown(key))?;
-        let entry = slot.lock();
-        entry.as_ref().map(Into::into).ok_or_else(|| unknown(key))
+        let state = slot.state.lock();
+        state.object.as_ref().map(Into::into).ok_or_else(|| unknown(key))
     }
 
     pub fn contains(&self, key: ObjectKey) -> bool {
-        let slot = self.catalog.read().get(&key).cloned();
-        slot.is_some_and(|entry| entry.lock().is_some())
+        let maybe_slot = self.catalog.read().get(&key).cloned();
+        maybe_slot.is_some_and(|slot| slot.state.lock().object.is_some())
     }
 
-    pub fn write(&self, object: Object) -> Result<ObjectKey, ObjectStoreError> {
+    pub fn write(&self, object: Object, retention: impl Into<DiskRetention>) -> Result<DiskObject, ObjectStoreError> {
         let size = object.size();
         let (key, bytes) = object.into_kv();
         assert_eq!(size, bytes.len() as u64);
 
-        // Create or insert the catalog entry, then release the catalog lock.
-        let slot = self.catalog.write().entry(key).or_default().clone();
-        // Lock the entry, preventing concurrent eviction.
-        let mut entry = slot.lock();
+        let pins = match retention.into() {
+            DiskRetention::Evictable => 0,
+            DiskRetention::Required => 1,
+        };
 
-        // The object must have been written before by this tiered storage
-        // instance. Integrity checking is deferred until eviction.
-        if is_resident(&entry) {
-            return Ok(key);
+        // Establish a [DiskObject] owning the object.
+        //
+        // The following locking protocol applies:
+        //
+        // 1. Lock the catalog and:
+        //    - get or create the entry slot
+        //    - increment the slot's `registering` counter (lock-free)
+        //    - release the catalog lock
+        // 2. Lock the entry slot and:
+        //    - establish local pinning requirements
+        //    - decrement the `registering` counter
+        //    - release the entry slot
+        // 3. Move the slot into the `DiskObject` owner
+        //
+        // Concurrent reclamation can't proceed during (1), and will skip the
+        // slot before its lock can be acquired in (2).
+        // Waiting for the slot lock doesn't require holding the catalog lock.
+        // Concurrent eviction could remove the object if it gets the slot lock
+        // first, but will skip it if we installed local pins in (2).
+        let owner = {
+            let slot = {
+                let mut catalog = self.catalog.write();
+                let slot = catalog.entry(key).or_default().clone();
+                // Relaxed ordering is sufficient as we hold the catalog lock.
+                let prev = slot.registering.fetch_add(1, Ordering::Relaxed);
+                assert_ne!(prev, u64::MAX, "registration count overflow");
+                slot
+            };
+            {
+                let mut state = slot.state.lock();
+                state.ownership.retain(pins);
+
+                // Relaxed ordering is sufficient as we hold the slot lock.
+                let prev = slot.registering.fetch_sub(1, Ordering::Relaxed);
+                assert!(prev > 0);
+            }
+
+            DiskObject {
+                key,
+                slot,
+                pins,
+                should_reclaim: self.should_reclaim.clone(),
+            }
+        };
+
+        let slot = &owner.slot;
+        let mut state = slot.state.lock();
+        let exists = {
+            // If a permit exists, the object was written through this storage
+            // instance. Therefore it definitely exists. Storage faults are
+            // deferred to reads and evictions.
+            match state.object.as_mut().filter(|entry| entry.permit.is_some()) {
+                Some(entry) => {
+                    entry.last_access_epoch = self.access_epoch();
+                    true
+                }
+                None => false,
+            }
+        };
+        if !exists {
+            let permit = self.acquire_local_permit(size)?;
+            let written_key = self.local.object_store.write(object_from_trusted_bytes(key, &bytes))?;
+            assert_eq!(written_key, key);
+
+            state.object = Some(ObjectCatalogEntry {
+                size,
+                last_access_epoch: self.access_epoch(),
+                permit: Some(permit),
+            });
         }
         drop(state);
 
-        let permit = self.acquire_local_permit(size)?;
-        let key = self.local.object_store.write(object_from_trusted_bytes(key, &bytes))?;
-        *entry = Some(ObjectCatalogEntry {
-            size,
-            last_access_epoch: self.access_epoch(),
-            permit: Some(permit),
-        });
-
-        Ok(key)
+        Ok(owner)
     }
 
     pub fn read(&self, key: ObjectKey) -> Result<ObjectBytes, ObjectStoreError> {
@@ -320,14 +551,15 @@ impl TieredStorage {
         let slot = self.catalog.read().get(&key).cloned().ok_or_else(|| unknown(key))?;
         // Try to read from local storage first.
         {
-            let mut entry = slot.lock();
-            let entry = entry.as_mut().ok_or_else(|| unknown(key))?;
+            let mut state = slot.state.lock();
+            let entry = state.object.as_mut().ok_or_else(|| unknown(key))?;
             let local = self.local.object_store.read(key)?;
             self.metrics()
                 .lookup(key.metric_type(), CacheTier::Disk, local.is_some());
             if let Some(object) = local {
                 *source = Some(FaultSource::Disk);
                 entry.last_access_epoch = self.access_epoch();
+
                 return Ok(object);
             }
         }
@@ -340,8 +572,8 @@ impl TieredStorage {
             // it, too.
             let permit = self.acquire_local_permit(size)?;
 
-            let mut entry = slot.lock();
-            let entry = entry.as_mut().ok_or_else(|| unknown(key))?;
+            let mut state = slot.state.lock();
+            let entry = state.object.as_mut().ok_or_else(|| unknown(key))?;
             // Another reader or writer may have restored the object while we
             // reserved space.
             let local = self.local.object_store.read(key)?;
@@ -379,9 +611,10 @@ impl TieredStorage {
     /// Trim the local storage until the accounted byte usage is at or below
     /// `target_usage`.
     ///
-    /// If no remote storage is configured, this method does nothing.
+    /// Tries to reclaim orphaned objects, then the least recently used live
+    /// objects. If no remote storage is configured, no live objects are
+    /// evicted.
     ///
-    /// Selects the least recently read objects first.
     /// For each candidate, the object is:
     ///
     ///   - uploaded to the remote storage
@@ -401,8 +634,12 @@ impl TieredStorage {
     }
 
     fn evict_inner(&self, target_usage: u64) -> Result<u64, ObjectStoreError> {
+        // Reclaim orphaned objects.
+        let mut bytes_freed = self.reclaim()?;
+        // If we don't have remote storage, we can't evict under budget
+        // pressure.
         let Some(remote) = &self.remote else {
-            return Ok(0);
+            return Ok(bytes_freed);
         };
 
         // Collect cloned slots, so we can release the catalog lock.
@@ -417,10 +654,13 @@ impl TieredStorage {
             .filter_map(|(key, slot)| {
                 let last_access_epoch = {
                     // If the slot is locked, don't evict it.
-                    let entry = slot.try_lock()?;
-
+                    let state = slot.state.try_lock()?;
+                    // Nor if the object is pinned.
+                    if state.ownership.is_pinned() {
+                        return None;
+                    }
                     // Filter out empty or non-resident slots.
-                    let entry = entry.as_ref()?;
+                    let entry = state.object.as_ref()?;
                     entry.permit.as_ref()?;
 
                     entry.last_access_epoch
@@ -430,9 +670,9 @@ impl TieredStorage {
             .collect::<Vec<_>>();
         candidates.sort_unstable_by_key(|(last_access_epoch, ..)| *last_access_epoch);
 
-        let mut bytes_freed = 0;
         for (_, key, slot) in candidates {
-            let Some(mut entry) = slot.try_lock() else {
+            // Skip if the slot was locked meanwhile.
+            let Some(mut state) = slot.state.try_lock() else {
                 continue;
             };
             // Skip if the object got pinned meanwhile.
@@ -443,8 +683,8 @@ impl TieredStorage {
             if self.local.budget.usage().accounted_bytes <= target_usage {
                 break;
             }
-
-            let Some(entry) = entry.as_mut().filter(|entry| entry.permit.is_some()) else {
+            // Skip if the object is no longer present.
+            let Some(entry) = state.object.as_mut().filter(|entry| entry.permit.is_some()) else {
                 continue;
             };
             let bytes = self.local.object_store.read(key)?.ok_or_else(|| not_found(key))?;
@@ -461,6 +701,64 @@ impl TieredStorage {
         }
 
         Ok(bytes_freed)
+    }
+
+    /// Reclaim storage of orphaned objects.
+    ///
+    /// Cheap to call when there are no objects pending reclamation.
+    /// This does **not** [evict][Self::evict] live objects.
+    ///
+    /// Returns the total number of bytes reclaimed.
+    pub fn reclaim(&self) -> Result<u64, ObjectStoreError> {
+        if !self.should_reclaim.swap(false, Ordering::AcqRel) {
+            return Ok(0);
+        }
+
+        self.reclaim_inner()
+            .inspect_err(|_| self.should_reclaim.store(true, Ordering::Release))
+    }
+
+    fn reclaim_inner(&self) -> Result<u64, ObjectStoreError> {
+        let mut catalog = self.catalog.write();
+        let mut slots = catalog
+            .iter()
+            .filter_map(|(key, slot)| {
+                if slot.registering.load(Ordering::Acquire) == 0
+                    && let Some(state) = slot.state.try_lock()
+                {
+                    matches!(state.ownership, ObjectOwnership::Unreferenced).then_some((*key, slot.clone()))
+                } else {
+                    // If we skipped an object, register a retry.
+                    self.should_reclaim.store(true, Ordering::Release);
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        // Impose a stable removal order for fault injection.
+        slots.sort_unstable_by_key(|(key, _)| (matches!(key, ObjectKey::Blob(_)), *key.as_bytes()));
+
+        let mut freed = 0;
+        for (key, slot) in slots {
+            let mut entry = slot.state.lock();
+            assert_eq!(slot.registering.load(Ordering::Acquire), 0);
+            assert!(matches!(entry.ownership, ObjectOwnership::Unreferenced));
+
+            // SAFETY: No owner needs the bytes. The catalog lock prevents a new
+            // owner from registering until removal completes.
+            unsafe { self.local.object_store.remove(key)? };
+
+            // Release accounted capacity only after the file was removed successfully.
+            if let Some(object) = entry.object.take()
+                && object.permit.is_some()
+            {
+                freed += object.size;
+            }
+
+            drop(entry);
+            catalog.remove(&key);
+        }
+
+        Ok(freed)
     }
 
     fn access_epoch(&self) -> u64 {
@@ -559,10 +857,6 @@ struct ObjectCatalogEntry {
     ///
     /// `Some` if the object is resident, otherwise `None`.
     permit: Option<BudgetPermit>,
-}
-
-fn is_resident(maybe_entry: &Option<ObjectCatalogEntry>) -> bool {
-    maybe_entry.as_ref().is_some_and(|entry| entry.permit.is_some())
 }
 
 fn not_found(key: ObjectKey) -> ObjectStoreError {
@@ -680,33 +974,33 @@ mod tests {
             ..<_>::default()
         });
         let storage = storage(local.clone(), Arc::default(), ByteBudget::unlimited());
-        let key = storage.write(object(b"aaaa")).unwrap();
+        let key = storage.write(object(b"aaaa"), DiskRetention::Evictable).unwrap().key();
         let slot = storage.catalog.read().get(&key).unwrap().clone();
 
         let evicting = storage.clone();
         let eviction = thread::spawn(move || evicting.evict(0));
         reached.recv_timeout(TIMEOUT).unwrap();
 
-        let transition_is_locked = slot.try_lock().is_none();
+        let transition_is_locked = slot.state.try_lock().is_none();
         let reading = storage.clone();
         let reader = thread::spawn(move || {
             if overwrite {
-                reading.write(object(b"aaaa"))?;
+                reading.write(object(b"aaaa"), DiskRetention::Evictable)?;
             }
             reading.read(key)
         });
         // Unrelated keys can still be written while the eviction's I/O is paused.
-        let other_key = storage.write(object(b"bbbb")).unwrap();
+        let other_object_ref = storage.write(object(b"bbbb"), DiskRetention::Evictable).unwrap();
         resume.send(()).unwrap();
 
         assert!(transition_is_locked);
         assert_eq!(eviction.join().unwrap().unwrap(), 4);
         assert_eq!(&*reader.join().unwrap().unwrap(), b"aaaa");
         assert!(local.stat(key).unwrap().is_some());
-        assert!(local.stat(other_key).unwrap().is_some());
+        assert!(local.stat(other_object_ref.key()).unwrap().is_some());
         assert_eq!(storage.local.budget.usage().accounted_bytes, 8);
         assert!(Arc::ptr_eq(&slot, storage.catalog.read().get(&key).unwrap()));
-        assert!(slot.lock().as_ref().unwrap().permit.is_some());
+        assert!(slot.state.lock().object.as_ref().unwrap().permit.is_some());
     }
 
     #[test]
@@ -727,7 +1021,7 @@ mod tests {
             ..<_>::default()
         });
         let storage = storage(local, <_>::default(), ByteBudget::unlimited());
-        let key = storage.write(object(b"aaaa")).unwrap();
+        let object_ref = storage.write(object(b"aaaa"), DiskRetention::Evictable).unwrap();
 
         let first_storage = storage.clone();
         let first = thread::spawn(move || first_storage.evict(0));
@@ -739,7 +1033,7 @@ mod tests {
 
         assert_eq!(first.join().unwrap().unwrap() + second.join().unwrap().unwrap(), 4);
         assert_eq!(storage.local.budget.usage().accounted_bytes, 0);
-        assert!(storage.contains(key));
+        assert!(storage.contains(object_ref.key()));
     }
 
     #[test]
@@ -754,12 +1048,12 @@ mod tests {
         .unwrap();
         let storage = storage(Arc::default(), Arc::default(), budget);
 
-        let key = storage.write(object(b"aaaa")).unwrap();
-        storage.write(object(b"bbbb")).unwrap();
+        let object_ref = storage.write(object(b"aaaa"), DiskRetention::Evictable).unwrap();
+        storage.write(object(b"bbbb"), DiskRetention::Evictable).unwrap();
 
         let (sender, receiver) = mpsc::sync_channel(1);
         let reading = storage.clone();
-        let reader = thread::spawn(move || sender.send(reading.read(key)).unwrap());
+        let reader = thread::spawn(move || sender.send(reading.read(object_ref.key())).unwrap());
         assert_eq!(&*receiver.recv_timeout(TIMEOUT).unwrap().unwrap(), b"aaaa");
 
         reader.join().unwrap();
@@ -770,9 +1064,12 @@ mod tests {
     fn overwrites_preserve_the_slot_and_account_once() {
         let storage = storage(Arc::default(), Arc::default(), ByteBudget::unlimited());
 
-        let key = storage.write(object(b"aaaa")).unwrap();
+        let key = storage.write(object(b"aaaa"), DiskRetention::Evictable).unwrap().key();
         let slot = storage.catalog.read().get(&key).unwrap().clone();
-        assert_eq!(storage.write(object(b"aaaa")).unwrap(), key);
+        assert_eq!(
+            storage.write(object(b"aaaa"), DiskRetention::Evictable).unwrap().key(),
+            key
+        );
 
         assert!(Arc::ptr_eq(&slot, storage.catalog.read().get(&key).unwrap()));
         assert_eq!(storage.local.budget.usage().accounted_bytes, 4);
@@ -789,7 +1086,7 @@ mod tests {
         let storage = storage(local.clone(), Arc::default(), ByteBudget::unlimited());
 
         let key = BlobHashWrapper::hash_from_bytes(b"aaaa").into();
-        assert!(storage.write(object(b"aaaa")).is_err());
+        assert!(storage.write(object(b"aaaa"), DiskRetention::Evictable).is_err());
         let slot = storage.catalog.read().get(&key).unwrap().clone();
 
         assert!(!storage.contains(key));
@@ -801,7 +1098,10 @@ mod tests {
         // Retrying publishes the object through the existing mutex, so callers
         // that already obtained the slot cannot end up locking a different one.
         local.fail_writes.store(false, Ordering::Relaxed);
-        assert_eq!(storage.write(object(b"aaaa")).unwrap(), key);
+        assert_eq!(
+            storage.write(object(b"aaaa"), DiskRetention::Evictable).unwrap().key(),
+            key
+        );
         assert!(Arc::ptr_eq(&slot, storage.catalog.read().get(&key).unwrap()));
         assert_eq!(storage.stat(key).unwrap().size, 4);
         assert_eq!(storage.local.budget.usage().accounted_bytes, 4);
@@ -815,7 +1115,7 @@ mod tests {
 
         let storage = storage(local.clone(), remote, ByteBudget::unlimited());
 
-        let key = storage.write(object(b"aaaa")).unwrap();
+        let key = storage.write(object(b"aaaa"), DiskRetention::Evictable).unwrap().key();
 
         assert!(storage.evict(0).is_err());
         assert!(local.stat(key).unwrap().is_some());
@@ -828,7 +1128,7 @@ mod tests {
         let local = Arc::new(TestStore::default());
         let storage = storage(local.clone(), Arc::default(), ByteBudget::unlimited());
 
-        let key = storage.write(object(b"aaaa")).unwrap();
+        let key = storage.write(object(b"aaaa"), DiskRetention::Evictable).unwrap().key();
 
         assert_eq!(storage.evict(4).unwrap(), 0);
         assert!(local.stat(key).unwrap().is_some());
@@ -842,7 +1142,7 @@ mod tests {
         local.fail_remove.store(true, Ordering::Relaxed);
 
         let storage = storage(local.clone(), remote, ByteBudget::unlimited());
-        let key = storage.write(object(b"aaaa")).unwrap();
+        let key = storage.write(object(b"aaaa"), DiskRetention::Evictable).unwrap().key();
 
         assert!(storage.evict(0).is_err());
         assert!(local.stat(key).unwrap().is_some());
