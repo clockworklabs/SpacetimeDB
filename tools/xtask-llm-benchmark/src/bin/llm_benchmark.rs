@@ -536,12 +536,7 @@ fn cmd_analyze(args: AnalyzeArgs, reasoning: ReasoningEffort) -> Result<()> {
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     let provider = make_provider_from_env(reasoning)?;
 
-    let analysis_route = ModelRoute::new(
-        "gpt-5.4-mini",
-        xtask_llm_benchmark::llm::types::Vendor::OpenAi,
-        "gpt-5.4-mini",
-        Some("openai/gpt-5.4-mini"),
-    );
+    let analysis_route = xtask_llm_benchmark::bench::analysis::analysis_route()?;
 
     for ((lang, mode, model), group_failures) in &groups {
         println!(
