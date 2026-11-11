@@ -16,31 +16,23 @@ No section of the PR template may be removed. PRs that remove any template secti
 - **API and ABI breaking changes:** Identify breaking changes and apply the corresponding GitHub label when required. Explicitly state when there are none.
 - **Rollback safety impact:** Follow the template's rollback guidance, including prerequisite PRs and deployment ordering requirements.
 - **Expected complexity level and risk:** Give the requested 1–5 rating and explain complexity and interactions when the rating is above 2. Describe material risks accurately.
-- **Testing:** Explain what verification supports confidence that the change works as intended and identify important remaining uncertainty. Follow the guidance below.
+- **Testing:** Describe the testing and the behavior it covers. If no testing was performed, write “Not tested.” Follow the guidance below.
 
 ## Writing the testing section
 
-A PR's testing section should explain what verification gives the reviewer confidence that the change works as intended and avoids bugs. The goal is evidence for correctness, not a list of testing activities.
+Describe the automated or manual testing performed and what behavior it covers, including relevant existing test coverage. Include important gaps in that coverage.
 
-### Choose the evidence
-
-- Start from the change's intended outcome and the important ways it could fail. Identify what verification addresses those concerns, including existing coverage.
-- Usually, the strongest evidence is how automated tests were extended or adapted, or why existing tests cover the change. Manual tests, successful use, and other verification can also provide evidence.
-- State what the evidence establishes. A same-client compilation test supports source compatibility; a client/server test supports actual interaction. Neither proves the other.
-- For documentation and instructions, look for evidence that readers can accomplish the intended task. Consistency checks and working links are useful, but don't establish that the content is effective.
-- Include important remaining uncertainty and explain any barriers to testing it. Distinguish "not tested yet" from "cannot be tested"; don't invent a reason or imply impossibility.
-
-The connection between the evidence and the intended outcome should be clear from the wording. It doesn't need a separate justification after every bullet.
+If no testing was performed, write “Not tested.” Do not justify the absence of testing or pad the section with routine checks. Reviewing the diff or instructions, checking whitespace or links, and verifying commit signatures are not substitutes for testing the change.
 
 ### Content
 
 - Distinguish updated tests, added tests, and relevant existing coverage. Use short bullets; omit categories that don't apply.
-- Describe what each test or other check verifies. Name the inputs or API when needed to make the claim clear: incorrect reducer arguments, generated bindings, or the built package.
+- Describe what each test verifies. Name the inputs or API when needed to make the claim clear: incorrect reducer arguments, generated bindings, or the built package.
 - Explain what coverage the change adds. A new test may exercise previously tested behavior through a new path; don't imply the behavior was previously untested.
 - Make compatibility claims precise. The same client against old and new bindings is different from old bindings against a new SDK.
 - Include existing integration coverage when it helps explain why the change is covered. Inspect it before claiming coverage is missing or proposing more tests.
 - Write assuming CI passes. Don't include a running log of local test execution or say CI tests still need to be run for the PR. This does not justify claiming a known failure passes.
-- Label manual verification as manual and state what was checked and the result.
+- Label manual testing as manual and state the behavior exercised and the result.
 - Keep caveats focused on gaps that affect confidence in the change, not a routine list of what tests don't do.
 
 ### Wording and detail

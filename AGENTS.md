@@ -16,4 +16,4 @@ These markers are provisional, and CI does not check any of this yet.
 
 # Writing PRs
 
-When creating or updating a PR, read [Writing pull requests](.agents/writing-prs.md). Follow its requirements for verified commits, preserving and faithfully completing every template section, and explaining verification and remaining uncertainty.
+When creating or updating a PR, read [Writing pull requests](.agents/writing-prs.md). Follow its requirements for verified commits, preserving and faithfully completing every template section, and describing testing and important coverage gaps.
