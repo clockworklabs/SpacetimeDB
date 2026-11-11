@@ -461,7 +461,8 @@ const HANDLED_EVENT_TYPES: ReadonlySet<string> = new Set(
 
 export function applyStripeEvent(
   ctx: ReducerModuleCtx,
-  payloadJson: string
+  payloadJson: string,
+  refreshTies = false
 ): { status: WebhookEventStatusValue; error: string | undefined } {
   const parsedJson = safeJsonParse(payloadJson);
   if (parsedJson === undefined) {
@@ -486,7 +487,10 @@ export function applyStripeEvent(
     };
   }
 
-  return { status: dispatchEvent(ctx, result.output), error: undefined };
+  return {
+    status: dispatchEvent(ctx, result.output, refreshTies),
+    error: undefined,
+  };
 }
 
 type ParsedInvoiceObject = Extract<
@@ -572,7 +576,8 @@ function syncInvoiceEvent(
 
 function dispatchEvent(
   ctx: ReducerModuleCtx,
-  event: ParsedStripeEvent
+  event: ParsedStripeEvent,
+  refreshTies: boolean
 ): WebhookEventStatusValue {
   const eventCreatedUnix = BigInt(event.created);
   switch (event.type) {
@@ -644,6 +649,15 @@ function dispatchEvent(
         )
       )
         return WebhookEventStatus.Ignored;
+      // Stripe event times are whole seconds, so a tie cannot be ordered from
+      // the payloads. The HTTP route re-reads the subscription instead.
+      if (
+        refreshTies &&
+        existing?.eventCreatedUnix === eventCreatedUnix &&
+        subscriptionStatusRank(existing.status) ===
+          subscriptionStatusRank(status)
+      )
+        return WebhookEventStatus.Received;
       const customerId = extractExpandableId(obj.customer);
       const firstItem = obj.items?.data[0];
       const currentPeriodEnd =
@@ -801,7 +815,7 @@ function dispatchEvent(
 }
 
 export function callStripe(
-  ctx: ProcedureModuleCtx,
+  ctx: Pick<ProcedureModuleCtx, 'http'>,
   args: {
     method: string;
     path: string;
@@ -907,14 +921,17 @@ export type VerifiedStripeEvent = v.InferOutput<typeof verifiedEvent>;
 
 /**
  * Verifies a signed Stripe payload, stores it once by event ID, and applies it.
- * `onEvent` runs in the same transaction when the event is applied without
- * failing; repeated processed or ignored events skip it.
+ * `onEvent` runs in the same transaction when the event is processed or
+ * ignored; repeated processed or ignored events skip it. With `refreshTies`, a
+ * subscription event that ties the stored row is left `Received` for
+ * `applyRefreshedSubscription`.
  */
 export function ingestWebhookPayload(
   ctx: ReducerModuleCtx,
   payloadJson: string,
   signatureHeader: string | undefined,
-  onEvent?: (event: VerifiedStripeEvent) => void
+  onEvent?: (event: VerifiedStripeEvent) => void,
+  refreshTies = false
 ):
   | { code: string; httpStatus: number }
   | {
@@ -972,10 +989,99 @@ export function ingestWebhookPayload(
   const event = existing
     ? v.parse(verifiedEvent, JSON.parse(existing.payloadJson))
     : parsed.output;
-  const outcome = applyStripeEvent(ctx, existing?.payloadJson ?? payloadJson);
-  if (outcome.status.tag !== 'Failed') onEvent?.(event);
+  const outcome = applyStripeEvent(
+    ctx,
+    existing?.payloadJson ?? payloadJson,
+    refreshTies
+  );
+  if (outcome.status.tag === 'Processed' || outcome.status.tag === 'Ignored')
+    onEvent?.(event);
   updateWebhookStatus(ctx, event.id, outcome.status, outcome.error);
   return { event, ...outcome };
+}
+
+export function syncSubscriptionObject(
+  ctx: WriteCtx,
+  stripeSubscription: JsonRecord,
+  eventCreatedUnix?: bigint
+): boolean {
+  const subscriptionId = maybeString(stripeSubscription.id);
+  const customerId = maybeId(stripeSubscription.customer);
+  const status = maybeString(stripeSubscription.status);
+  if (!subscriptionId || !customerId || !status) {
+    throwSenderError(errors.subscriptionPayloadMissingFields);
+  }
+
+  const items = isRecord(stripeSubscription.items)
+    ? stripeSubscription.items
+    : undefined;
+  const firstItem = Array.isArray(items?.data) ? items.data[0] : undefined;
+  const first = isRecord(firstItem) ? firstItem : undefined;
+  const price = isRecord(first?.price) ? first.price : undefined;
+
+  const currentPeriodEnd =
+    maybeBigIntFromUnknown(first?.current_period_end) ??
+    maybeBigIntFromUnknown(stripeSubscription.current_period_end) ??
+    0n;
+  const cancelAtUnix = maybeBigIntFromUnknown(stripeSubscription.cancel_at);
+  const cancelAtPeriodEnd =
+    maybeBoolean(stripeSubscription.cancel_at_period_end) ??
+    deriveCancelAtPeriodEnd(cancelAtUnix, currentPeriodEnd);
+  const meta = metadataInfo(stripeSubscription.metadata);
+
+  const existing =
+    ctx.db.stripeSubscription.stripeSubscriptionId.find(subscriptionId);
+  if (
+    existing &&
+    isStale(
+      {
+        createdUnix: existing.eventCreatedUnix,
+        rank: subscriptionStatusRank(existing.status),
+      },
+      {
+        createdUnix: eventCreatedUnix ?? existing.eventCreatedUnix,
+        rank: subscriptionStatusRank(status),
+      }
+    )
+  )
+    return false;
+  upsertSubscriptionRow(ctx, ctx.timestamp, {
+    stripeSubscriptionId: subscriptionId,
+    stripeCustomerId: customerId,
+    status,
+    currentPeriodEndUnix: currentPeriodEnd,
+    cancelAtPeriodEnd,
+    cancelAtUnix,
+    quantity: maybeBigIntFromUnknown(first?.quantity),
+    priceId: maybeString(price?.id),
+    metadataJson: meta.metadataJson,
+    orgId: meta.orgId,
+    userId: meta.userId,
+    eventCreatedUnix,
+  });
+  return true;
+}
+
+/** Applies the subscription read from Stripe for an event left `Received`. */
+export function applyRefreshedSubscription(
+  ctx: ReducerModuleCtx,
+  event: VerifiedStripeEvent,
+  stripeSubscription: JsonRecord,
+  onEvent?: (event: VerifiedStripeEvent) => void
+): { status: WebhookEventStatusValue; error: string | undefined } {
+  const row = ctx.db.stripeWebhookEvent.eventId.find(event.id);
+  if (row && row.status.tag !== 'Received')
+    return { status: row.status, error: row.errorMessage };
+  const status = syncSubscriptionObject(
+    ctx,
+    stripeSubscription,
+    BigInt(event.created)
+  )
+    ? WebhookEventStatus.Processed
+    : WebhookEventStatus.Ignored;
+  onEvent?.(event);
+  updateWebhookStatus(ctx, event.id, status, undefined);
+  return { status, error: undefined };
 }
 
 const ingestStripeWebhookArgs = {

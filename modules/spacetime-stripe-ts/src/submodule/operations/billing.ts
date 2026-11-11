@@ -19,7 +19,6 @@ import {
   throwSenderError,
 } from '../validation.js';
 import { errors } from '../errors.js';
-import { isStale, subscriptionStatusRank } from '../event-order.js';
 
 import {
   requireProcedureAdmin,
@@ -30,13 +29,12 @@ import {
   maybeBigIntFromUnknown,
   maybeId,
   stripeErrorSuffix,
-  metadataInfo,
   coerceMetadataFromJson,
-  deriveCancelAtPeriodEnd,
   formPairsToBody,
   upsertSubscriptionRow,
   callStripe,
   createCustomerInStripeAndSync,
+  syncSubscriptionObject,
 } from '../operations.js';
 
 const validateStripePriceArgs = { priceId: t.string() };
@@ -480,62 +478,7 @@ function syncSubscriptionObjectFromStripe(
   ctx: ProcedureModuleCtx,
   stripeSubscription: JsonRecord
 ) {
-  const subscriptionId = maybeString(stripeSubscription.id);
-  const customerId = maybeId(stripeSubscription.customer);
-  const status = maybeString(stripeSubscription.status);
-  if (!subscriptionId || !customerId || !status) {
-    throwSenderError(errors.subscriptionPayloadMissingFields);
-  }
-
-  const items = isRecord(stripeSubscription.items)
-    ? stripeSubscription.items
-    : undefined;
-  const firstItem = Array.isArray(items?.data) ? items.data[0] : undefined;
-  const first = isRecord(firstItem) ? firstItem : undefined;
-  const price = isRecord(first?.price) ? first.price : undefined;
-
-  const currentPeriodEnd =
-    maybeBigIntFromUnknown(first?.current_period_end) ??
-    maybeBigIntFromUnknown(stripeSubscription.current_period_end) ??
-    0n;
-  const cancelAtUnix = maybeBigIntFromUnknown(stripeSubscription.cancel_at);
-  const cancelAtPeriodEnd =
-    maybeBoolean(stripeSubscription.cancel_at_period_end) ??
-    deriveCancelAtPeriodEnd(cancelAtUnix, currentPeriodEnd);
-  const quantity = maybeBigIntFromUnknown(first?.quantity);
-  const meta = metadataInfo(stripeSubscription.metadata);
-
-  ctx.withTx(tx => {
-    const existing =
-      tx.db.stripeSubscription.stripeSubscriptionId.find(subscriptionId);
-    if (
-      existing &&
-      isStale(
-        {
-          createdUnix: existing.eventCreatedUnix,
-          rank: subscriptionStatusRank(existing.status),
-        },
-        {
-          createdUnix: existing.eventCreatedUnix,
-          rank: subscriptionStatusRank(status),
-        }
-      )
-    )
-      return;
-    upsertSubscriptionRow(tx, ctx.timestamp, {
-      stripeSubscriptionId: subscriptionId,
-      stripeCustomerId: customerId,
-      status,
-      currentPeriodEndUnix: currentPeriodEnd,
-      cancelAtPeriodEnd,
-      cancelAtUnix,
-      quantity,
-      priceId: maybeString(price?.id),
-      metadataJson: meta.metadataJson,
-      orgId: meta.orgId,
-      userId: meta.userId,
-    });
-  });
+  ctx.withTx(tx => syncSubscriptionObject(tx, stripeSubscription));
 }
 
 const cancelSubscriptionArgs = {

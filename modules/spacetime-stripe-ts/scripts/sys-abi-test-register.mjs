@@ -4,7 +4,7 @@ import { register } from 'node:module';
 // `spacetimedb/server` reads while loading.
 const stubs = {
   'spacetime:sys@2.0':
-    'export const moduleHooks = Symbol(); export function row_iter_bsatn_close() {}',
+    'export const moduleHooks = Symbol(); export function row_iter_bsatn_close() {} export function console_log() {}',
   'spacetime:sys@2.1': 'export {};',
   'spacetime:sys@2.2': 'export function env_get() {}',
 };

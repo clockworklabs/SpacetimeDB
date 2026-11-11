@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import { Timestamp } from 'spacetimedb';
 import { ingestStripeWebhook } from '../src/submodule/operations';
+import { handleStripeWebhook } from '../src/submodule/operations/webhook';
 import {
   createUserCheckoutSession,
   createUserCustomerPortalSession,
@@ -226,3 +227,103 @@ const change = calls.find(call =>
 );
 assert.equal(new URLSearchParams(change?.body).get('quantity'), '3');
 process.stdout.write('stripe billing tests passed\n');
+
+// Two subscription events in the same second with the same status rank cannot
+// be ordered from their payloads, so the HTTP route reads the subscription.
+const tieRow = {
+  stripeSubscriptionId: 'sub_tie',
+  stripeCustomerId: 'cus_buyer',
+  status: 'active',
+  quantity: 1n,
+  eventCreatedUnix: BigInt(nowSeconds),
+};
+let tieStored = { ...tieRow };
+const tieEvents = new Map<string, EventRow>();
+const tieTx = {
+  timestamp: tx.timestamp,
+  db: {
+    stripeConfig: {
+      singleton: {
+        find: () => ({
+          secretKey: 'sk_test',
+          stripeVersion: undefined,
+          webhookSigningSecret: webhookSecret,
+        }),
+      },
+    },
+    stripeWebhookEvent: {
+      eventId: {
+        find: (id: string) => tieEvents.get(id),
+        update: (row: EventRow) => tieEvents.set(row.eventId, row),
+      },
+      insert: (row: EventRow) => tieEvents.set(row.eventId, row),
+    },
+    stripeSubscription: {
+      stripeSubscriptionId: {
+        find: () => tieStored,
+        update: (row: typeof tieRow) => (tieStored = row),
+      },
+    },
+  },
+};
+const lookups: string[] = [];
+let lookupStatus = 503;
+const tieEventJson = JSON.stringify({
+  id: 'evt_tie',
+  type: 'customer.subscription.updated',
+  created: nowSeconds,
+  data: {
+    object: {
+      id: 'sub_tie',
+      customer: 'cus_buyer',
+      status: 'active',
+      items: { data: [{ quantity: 2 }] },
+      metadata: {},
+    },
+  },
+});
+const deliverTie = () =>
+  handleStripeWebhook(
+    {
+      timestamp: tx.timestamp,
+      withTx: <R>(fn: (root: typeof tieTx) => R) => fn(tieTx),
+      http: {
+        fetch: (url: string) => {
+          lookups.push(url);
+          return {
+            status: lookupStatus,
+            text: () =>
+              JSON.stringify({
+                id: 'sub_tie',
+                customer: 'cus_buyer',
+                status: 'past_due',
+                items: { data: [{ quantity: 3 }] },
+              }),
+          };
+        },
+      },
+    } as never,
+    {
+      method: 'POST',
+      headers: new Headers({
+        'stripe-signature': `t=${nowSeconds},v1=${createHmac('sha256', webhookSecret).update(`${nowSeconds}.${tieEventJson}`).digest('hex')}`,
+      }),
+      text: () => tieEventJson,
+    } as never,
+    { stripe: root => root as never }
+  );
+// A failed lookup leaves the event Received so Stripe's retry reads again.
+assert.equal(deliverTie().status, 500);
+assert.equal(tieEvents.get('evt_tie')?.status.tag, 'Received');
+assert.equal(tieStored.status, 'active');
+lookupStatus = 200;
+assert.equal(deliverTie().status, 200);
+assert.deepEqual(lookups, [
+  'https://api.stripe.com/v1/subscriptions/sub_tie',
+  'https://api.stripe.com/v1/subscriptions/sub_tie',
+]);
+assert.equal(tieEvents.get('evt_tie')?.status.tag, 'Processed');
+assert.equal(tieStored.status, 'past_due');
+assert.equal(tieStored.quantity, 3n);
+assert.equal(tieStored.eventCreatedUnix, BigInt(nowSeconds));
+process.stdout.write('stripe webhook tie tests passed\n');

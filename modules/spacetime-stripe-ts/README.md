@@ -242,8 +242,14 @@ session, and invoice row stores the `created` time of the event it reflects in
 `eventCreatedUnix`. An event older than that, or one that would move the status
 backward (a canceled subscription to active, a paid invoice to open, a paid
 Checkout session to unpaid or failed), is stored as `Ignored` without changing
-the row. Events created in the same second apply in delivery order.
-`replay_webhook_event` follows the same rule. Rows updated from Stripe API
+the row. `replay_webhook_event` follows the same rule.
+
+Stripe event times are whole seconds. When a subscription event has the same
+second and status rank as the stored row, the HTTP route leaves it `Received`,
+reads the subscription from `GET /v1/subscriptions/:id`, and stores that. If the
+read fails, the route returns 500 and Stripe's retry reads again. The
+`ingest_stripe_webhook` reducer and `replay_webhook_event` cannot call Stripe,
+so on a tie they apply events in delivery order. Rows updated from Stripe API
 responses by the subscription helpers keep their stored event time, so the next
 webhook still applies.
 

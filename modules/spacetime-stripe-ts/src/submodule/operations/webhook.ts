@@ -4,10 +4,15 @@ import {
   type HandlerContext,
   type Request as StdbRequest,
 } from 'spacetimedb/server';
+import { loadConfigOrThrow } from '../config.js';
 import {
+  applyRefreshedSubscription,
+  callStripe,
   ingestWebhookPayload,
+  isRecord,
   type VerifiedStripeEvent,
 } from '../operations.js';
+import { safeJsonParse } from '../validation.js';
 import { validateWebhookRequestHeaders } from '../webhook-request.js';
 
 // POST $STDB_URI/v1/database/<db>/route/stripe/webhook
@@ -19,7 +24,7 @@ function jsonResponse(status: number, body: unknown): SyncResponse {
 }
 
 export function handleStripeWebhook<T>(
-  ctx: Pick<HandlerContext, 'timestamp'> & {
+  ctx: Pick<HandlerContext, 'timestamp' | 'http'> & {
     withTx<R>(body: (tx: T) => R): R;
   },
   req: StdbRequest,
@@ -38,6 +43,9 @@ export function handleStripeWebhook<T>(
     return jsonResponse(rejection.status, { error: rejection.error });
   }
   const payloadJson = req.text();
+  const onEvent = (root: T) =>
+    options.onEvent &&
+    ((event: VerifiedStripeEvent) => options.onEvent!(root, event));
 
   try {
     const result = ctx.withTx(root =>
@@ -45,17 +53,48 @@ export function handleStripeWebhook<T>(
         options.stripe(root),
         payloadJson,
         signatureHeader,
-        options.onEvent && (event => options.onEvent!(root, event))
+        onEvent(root),
+        true
       )
     );
     if ('code' in result)
       return jsonResponse(result.httpStatus, { error: result.code });
-    const ok = result.status.tag !== 'Failed';
+    const { event } = result;
+    let outcome: Pick<typeof result, 'status' | 'error'> = result;
+    if (outcome.status.tag === 'Received') {
+      const config = ctx.withTx(root =>
+        loadConfigOrThrow(options.stripe(root))
+      );
+      const response = callStripe(ctx, {
+        method: 'GET',
+        path: `/v1/subscriptions/${encodeURIComponent(String(event.data.object.id))}`,
+        secretKey: config.secretKey,
+        stripeVersion: config.stripeVersion,
+        formBody: undefined,
+        idempotencyKey: undefined,
+      });
+      const subscription = safeJsonParse(response.body);
+      if (
+        response.status < 200 ||
+        response.status >= 300 ||
+        !isRecord(subscription)
+      )
+        throw new Error(`subscription lookup failed: ${response.status}`);
+      outcome = ctx.withTx(root =>
+        applyRefreshedSubscription(
+          options.stripe(root),
+          event,
+          subscription,
+          onEvent(root)
+        )
+      );
+    }
+    const ok = outcome.status.tag !== 'Failed';
     return jsonResponse(ok ? 200 : 400, {
       ok,
-      eventId: result.event.id,
-      status: result.status,
-      error: result.error,
+      eventId: event.id,
+      status: outcome.status,
+      error: outcome.error,
     });
   } catch (error) {
     console.error('stripe webhook processing failed:', error);
