@@ -7,7 +7,7 @@ import {
   toCamelCase,
   type Infer,
 } from '../src/index';
-import * as ws from '../src/sdk/client_api';
+import * as ws from '../src/sdk/client_api/types';
 import type { ColumnBuilder } from '../src/server';
 import { t } from '../src/lib/type_builders';
 

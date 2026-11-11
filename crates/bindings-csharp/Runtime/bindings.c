@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <unistd.h>
 
-#ifndef EXPERIMENTAL_WASM_AOT
+#ifndef SPACETIMEDB_WASM_AOT
 #include "driver.h"
 #endif
 
@@ -30,7 +30,7 @@ OPAQUE_TYPEDEF(ConsoleTimerId, uint32_t);
 #define STDB_EXTERN(name) \
   __attribute__((import_module(SPACETIME_MODULE_VERSION), import_name(#name))) extern
 
-#ifndef EXPERIMENTAL_WASM_AOT
+#ifndef SPACETIMEDB_WASM_AOT
 #define IMPORT(ret, name, params, args)    \
   STDB_EXTERN(name) ret name##_imp params; \
   ret name params { return name##_imp args; }
@@ -139,7 +139,7 @@ IMPORT(Status, datastore_clear,
 IMPORT(Status, env_get, (const uint8_t* key, uint32_t key_len, BytesSource* source), (key, key_len, source));
 #undef SPACETIME_MODULE_VERSION
 
-#ifndef EXPERIMENTAL_WASM_AOT
+#ifndef SPACETIMEDB_WASM_AOT
 static MonoClass* ffi_class;
 
 #define CEXPORT(name) __attribute__((export_name(#name))) name
