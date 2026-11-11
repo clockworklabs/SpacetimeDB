@@ -43,9 +43,9 @@ export const cancelWorkflowRun = db.reducer(
 );
 ```
 
-`workflowProcedure` fails to compile if the schema does not include
-`workflows.tables`. Export the admin [reducers and views](#api) you want, like
-`cancelWorkflowRun` above.
+Registration fails to compile if the schema does not include `workflows.tables`.
+Export the admin [reducers and views](#api) you want, like `cancelWorkflowRun`
+above.
 
 ### Defining a workflow
 
@@ -84,7 +84,8 @@ const checkout = workflows.define(
 `define` takes:
 
 - `db`, so steps receive the host's typed contexts.
-- A name. It is saved on every run, and finds the function when the run resumes.
+- A name. It is saved on every run, and a resumed run uses it to find the
+  function.
 - Options: the argument type, and optionally `retry` and `stepTimeoutSeconds`.
   They apply to every step, unless a step sets its own `retry`.
 - The workflow function. It receives `step` and the run's arguments, and does all
@@ -122,8 +123,8 @@ export const placeOrder = db.reducer(
 
 ### Sending events and cancelling runs
 
-`waitForEvent` pauses a run until a host reducer delivers its event. Check who may do
-that, then call `sendEvent` with the event's value:
+`waitForEvent` pauses a run until a host reducer delivers its event. Check who
+may do that, then call `sendEvent` with the event's value:
 
 ```ts
 export const markShipped = db.reducer(
@@ -135,7 +136,8 @@ export const markShipped = db.reducer(
 );
 ```
 
-`workflows.cancel(ctx, runId)` stops a run the same way.
+Cancel a run from a host reducer the same way, with
+`workflows.cancel(ctx, runId)`.
 
 See the [Dossier example](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-workflow-ts/example)
 for a research agent that keeps its work across restarts.
@@ -154,15 +156,16 @@ Loops, branches, local variables, and `try/catch` work as usual around these:
   attempts of a step. Writes made through `ctx.withTx` are committed even if the
   step later fails.
 - `step.sleep(seconds)` pauses the run. Nothing runs in the meantime.
-- `step.waitForEvent(event)` pauses until `sendEvent` delivers `event`, and returns the
-  value sent with it. Events that arrive early are kept, oldest first, until the
-  run waits for them. Each wait takes one. Pass the expected type, as in
-  `step.waitForEvent<string[]>('approved')`. It is not checked.
-- `step.runParallel(name, items, (ctx, item, run) => result)` runs the function once
-  per item, each in its own procedure, at the same time. It waits for all of them
-  and returns `{ ok: true, value }` or `{ ok: false, error }` for each item, in
-  item order, so one failure does not stop the others. Each item retries and
-  recovers like a `run` step, with its own idempotency key. Up to 32 items.
+- `step.waitForEvent(event)` pauses until `sendEvent` delivers `event`, and
+  returns the value sent with it. Events that arrive early are kept, oldest
+  first, until the run waits for them. Each wait takes one. Pass the expected
+  type, as in `step.waitForEvent<string[]>('approved')`. It is not checked.
+- `step.runParallel(name, items, (ctx, item, run) => result)` runs the function
+  once per item, each in its own procedure, at the same time. It waits for all
+  of them and returns `{ ok: true, value }` or `{ ok: false, error }` for each
+  item, in item order, so one failure does not stop the others. Each item
+  retries and recovers like a `run` step, with its own idempotency key. Up to
+  32 items.
 
 ```ts
 const pages = step.runParallel('fetch', urls, (ctx, url) =>
@@ -174,8 +177,9 @@ const fetched = pages.flatMap(page => (page.ok ? [page.value] : []));
 Parallel items share the module's procedure pool, which has one instance per CPU
 core by default. Items beyond that wait for a free instance.
 
-`tx`, `run`, and `runParallel` take an optional last argument. Its `retry` replaces
-the workflow's for that step, so one flaky call can retry without the rest:
+`tx`, `run`, and `runParallel` take an optional last argument. Its `retry`
+replaces the workflow's for that step, so one flaky call can retry without the
+rest:
 
 ```ts
 const page = step.run('fetch', ctx => fetchPage(ctx, url), {
@@ -225,12 +229,12 @@ A run can have up to 10,000 steps. Each sleep and wait counts as one.
   Catch it to clean up or carry on. If nothing catches it, the run ends as
   `Failed`.
 - If the server stops during an attempt, another attempt starts after
-  `stepTimeoutSeconds` (default 300). A `tx` step never committed, so it repeats. A
-  `run` step counts this against `maxAttempts`, because its outside calls may have
-  happened.
+  `stepTimeoutSeconds` (default 300). A `tx` step never committed, so it
+  repeats. A `run` step counts this against `maxAttempts`, because its outside
+  calls may have happened.
 - A `run` step that runs longer than the timeout also gets another attempt. Its
-  late result is ignored, but its outside calls still happened, so set the timeout
-  above your slowest step.
+  late result is ignored, but its outside calls still happened, so set the
+  timeout above your slowest step.
 - A long-running procedure delays other scheduled work in the same module.
 
 ## Restarting a run

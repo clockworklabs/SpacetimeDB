@@ -14,7 +14,8 @@ Start SpacetimeDB in a separate terminal:
 spacetime start
 ```
 
-From `modules/spacetime-workflow-ts/example`, copy [.env.example](./.env.example) to `.env`.
+From `modules/spacetime-workflow-ts/example`, copy [.env.example](./.env.example)
+to `.env`.
 
 You also need an OpenRouter API key. Set `OPENROUTER_API_KEY` in `.env`. Each
 dossier makes several model requests, which use paid credits.
@@ -37,8 +38,8 @@ Open <http://127.0.0.1:8806>.
 3. While the notes are appearing, stop the `spacetime start` terminal with
    Ctrl+C, then start it again.
 4. The page reconnects, and the run picks up where it stopped, within about
-   30 seconds. A message shows how many finished steps were kept and how many tokens
-   were not spent again.
+   30 seconds. A message shows how many finished steps were kept and how many
+   tokens were not spent again.
 5. Click **Update daily** under the report. The run sleeps until the next day,
    using nothing while it waits, then researches the plan again and replaces the
    report.
@@ -53,8 +54,8 @@ same time, each in its own procedure. A topic that keeps failing is left out,
 and the report goes on without it.
 
 Each `step.run` and `step.tx` saves its result. After the restart, the function
-runs again from the top, gets those saved results back without repeating the work,
-and carries on from the first step that had not finished.
+runs again from the top, gets those saved results back without repeating the
+work, and carries on from the first step that had not finished.
 
 ## Change the example
 

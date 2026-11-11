@@ -751,7 +751,7 @@ export function client() {
     else retire(ctx, run.id);
   }
 
-  /** Run a finished run's `onComplete`. Returns false if the run has not finished. */
+  /** Run a finished run's `onComplete`. Returns false if it has not finished. */
   function complete<Tx extends WorkflowCtx>(
     ctx: WorkflowProcedureCtx<Tx>,
     arg: WorkflowFireRow
@@ -876,7 +876,7 @@ export function client() {
     replaceGuard(ctx, updated);
   }
 
-  /** Save a step that ends the attempt, and run the function again after `delayMicros`. */
+  /** Save a step that ends this attempt, and run the function again later. */
   function advance(
     ctx: WorkflowCtx,
     run: WorkflowRunRow,
@@ -893,7 +893,7 @@ export function client() {
     );
   }
 
-  /** Put the run to sleep until `waitingFor` is resolved. */
+  /** Make the run wait for `waitingFor`, with nothing scheduled. */
   function wait(
     ctx: WorkflowCtx,
     run: WorkflowRunRow,
@@ -1218,7 +1218,7 @@ export function client() {
         : undefined;
     };
 
-    // Remembered so a function that catches the signal still stops here.
+    // Remembered so a function that catches the pause still stops here.
     const suspend = (): never => {
       suspended = true;
       throw new WorkflowSuspended();
@@ -1594,9 +1594,9 @@ export function client() {
       return run.id;
     },
     /**
-     * Deliver an event, with an optional value that `waitForEvent` returns. An active
-     * run that is not waiting for it yet keeps it until it does. Returns false if
-     * the run is unknown or finished. The caller authorizes.
+     * Deliver an event, with an optional value that `waitForEvent` returns. An
+     * active run that is not waiting for it yet keeps it until it does. Returns
+     * false if the run is unknown or finished. The caller authorizes.
      */
     sendEvent(
       ctx: WorkflowCtx,
@@ -1629,7 +1629,10 @@ export function client() {
       });
       return true;
     },
-    /** Stop an active run. Returns false if it already finished. The caller authorizes. */
+    /**
+     * Stop an active run. Returns false if it already finished. The caller
+     * authorizes.
+     */
     cancel,
     /**
      * Run a failed or cancelled run again from a step, given by its position or

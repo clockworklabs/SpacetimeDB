@@ -34,7 +34,7 @@ const Args = t.object('TestArgs', { count: t.u32() });
 const appLog: string[] = [];
 const keys: string[] = [];
 let starts = 0;
-let onCall: () => void = () => {};
+let onRun: () => void = () => {};
 // onComplete throws while this is above zero.
 let completeFailures = 0;
 // The fixable workflow's charge step fails while this is true.
@@ -120,32 +120,32 @@ const w = {
       logOf(ctx).push('resumed');
     });
   }),
-  slowCall: workflows.define(
+  slowRun: workflows.define(
     db,
-    'slowCall',
+    'slowRun',
     {
       args: Args,
       retry: { maxAttempts: 2, backoffSeconds: 1 },
       stepTimeoutSeconds: 5,
     },
     step => {
-      step.run('call', (_ctx, run) => {
-        appLog.push(`call:${run.attempt}`);
+      step.run('fetch', (_ctx, run) => {
+        appLog.push(`fetch:${run.attempt}`);
         keys.push(run.idempotencyKey);
-        if (run.attempt === 1) onCall();
+        if (run.attempt === 1) onRun();
       });
       step.tx('after', ctx => {
         logOf(ctx).push('after');
       });
     }
   ),
-  slowCallOnce: workflows.define(
+  slowRunOnce: workflows.define(
     db,
-    'slowCallOnce',
+    'slowRunOnce',
     { args: Args, stepTimeoutSeconds: 5 },
     step => {
-      step.run('call', () => {
-        onCall();
+      step.run('fetch', () => {
+        onRun();
       });
     }
   ),
@@ -215,7 +215,7 @@ const w = {
   loops: workflows.define(db, 'loops', { args: Args }, step => {
     for (;;) step.tx('again', () => {});
   }),
-  // Item "flaky" fails once, item "bad" always fails, item "slow" calls onCall.
+  // Item "flaky" fails once, item "bad" always fails, item "slow" calls onRun.
   fanOut: workflows.define(
     db,
     'fanOut',
@@ -234,7 +234,7 @@ const w = {
           keys.push(run.idempotencyKey);
           if (item === 'flaky' && run.attempt === 1) throw new Error('flaky');
           if (item === 'bad') throw new SenderError('bad.item');
-          if (item === 'slow' && run.attempt === 1) onCall();
+          if (item === 'slow' && run.attempt === 1) onRun();
           return { item, big: BigInt(before) + 1n };
         }
       );
@@ -548,7 +548,7 @@ const reset = () => {
   appLog.length = 0;
   keys.length = 0;
   starts = 0;
-  onCall = () => {};
+  onRun = () => {};
 };
 
 workflows.install(tx);
@@ -913,11 +913,11 @@ assert.ok(admins.has(admin.toHexString()));
 // A result that arrives after cancelling is ignored, and later steps do not run.
 {
   reset();
-  const id = workflows.start(tx, w.slowCall, { count: 0 });
-  onCall = () => workflows.cancel(tx, id);
+  const id = workflows.start(tx, w.slowRun, { count: 0 });
+  onRun = () => workflows.cancel(tx, id);
   runDue();
   assert.equal(statusOf(id), 'Cancelled');
-  assert.deepEqual(appLog, ['call:1']);
+  assert.deepEqual(appLog, ['fetch:1']);
   assert.equal(firesOf(id).length, 0);
   assert.equal(attemptsOf(id).length, 0);
 }
@@ -925,13 +925,13 @@ assert.ok(admins.has(admin.toHexString()));
 // An attempt that outlives its timeout is retried. Its late result is ignored.
 {
   reset();
-  const id = workflows.start(tx, w.slowCall, { count: 0 });
-  onCall = () => {
-    onCall = () => {};
+  const id = workflows.start(tx, w.slowRun, { count: 0 });
+  onRun = () => {
+    onRun = () => {};
     advance(5n);
   };
   runDue();
-  assert.deepEqual(appLog, ['call:1', 'call:2', 'after']);
+  assert.deepEqual(appLog, ['fetch:1', 'fetch:2', 'after']);
   assert.equal(new Set(keys).size, 1);
   assert.deepEqual(
     attemptsOf(id).map(row => [
@@ -941,8 +941,8 @@ assert.ok(admins.has(admin.toHexString()));
       row.error,
     ]),
     [
-      ['call', 1, 'Failed', failures.stepLost],
-      ['call', 2, 'Ok', undefined],
+      ['fetch', 1, 'Failed', failures.stepLost],
+      ['fetch', 2, 'Ok', undefined],
       ['after', 1, 'Ok', undefined],
     ]
   );
@@ -952,9 +952,9 @@ assert.ok(admins.has(admin.toHexString()));
 // A lost `run` with no attempts left gives up, which fails an uncaught run.
 {
   reset();
-  const id = workflows.start(tx, w.slowCallOnce, { count: 0 });
-  onCall = () => {
-    onCall = () => {};
+  const id = workflows.start(tx, w.slowRunOnce, { count: 0 });
+  onRun = () => {
+    onRun = () => {};
     advance(5n);
   };
   runDue();
@@ -993,14 +993,14 @@ assert.ok(admins.has(admin.toHexString()));
 // attempt is counted as lost.
 {
   reset();
-  const id = workflows.start(tx, w.slowCall, { count: 0 });
+  const id = workflows.start(tx, w.slowRun, { count: 0 });
   const [first, second] = firesOf(id);
   fires.delete(first.scheduledId);
   assert.ok(second);
   runDue();
   assert.equal(statusOf(id), 'Running');
   advance(5n);
-  assert.deepEqual(appLog, ['call:1', 'after']);
+  assert.deepEqual(appLog, ['fetch:1', 'after']);
   assert.equal(statusOf(id), 'Completed');
   assert.ok(attemptsOf(id).every(row => row.error === undefined));
 }
@@ -1140,8 +1140,8 @@ assert.ok(admins.has(admin.toHexString()));
   );
 
   // The slow item outlives its timeout. Its retry wins, its late result is ignored.
-  onCall = () => {
-    onCall = () => {};
+  onRun = () => {
+    onRun = () => {};
     advance(5n);
   };
   runDue();
@@ -1177,7 +1177,7 @@ assert.ok(admins.has(admin.toHexString()));
 {
   reset();
   const id = workflows.start(tx, w.fanOut, { count: 0 });
-  onCall = () => workflows.cancel(tx, id);
+  onRun = () => workflows.cancel(tx, id);
   runDue();
   assert.equal(statusOf(id), 'Cancelled');
   assert.equal(branches.size, 0);

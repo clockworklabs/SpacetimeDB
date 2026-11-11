@@ -32,7 +32,7 @@ Copy from `spacetime-retry-ts`, then change the names:
 - `install(ctx)` seeds the publisher as admin. Admin tables, views and reducers follow retry's pattern.
 - Tables are private. Hosts expose data through views.
 - Everything that grows has a cap. Retry and workflow keep 1,000 rows and prune before inserting.
-- Scheduled functions check `ctx.sender.isEqual(ctx.databaseIdentity)`. Clients can otherwise call them directly.
+- Scheduled functions reject calls that are not internal (`senderAuth.isInternal`; in a procedure, check it on the first `withTx`). Clients can otherwise call them directly.
 - Outside calls go in procedures, and are at-least-once.
 
 ## Platform behavior to design around
@@ -83,4 +83,3 @@ Then:
 
 - `pnpm run lint`, `typecheck`, `test`, `build`, and `test:recovery` if it has one.
 - `pnpm pack`: the tarball holds only `dist/`, `LICENSE`, `README.md`, `package.json`, and `LICENSE` is Apache.
-- Publishing and listing on the site: use the `publish-submodules` skill.
