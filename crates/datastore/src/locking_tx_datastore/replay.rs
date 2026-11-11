@@ -1237,7 +1237,7 @@ mod tests {
     use spacetimedb_snapshot::ReconstructedSnapshot;
     use spacetimedb_table::{
         blob_store::BlobHash,
-        tiered::{BlobMap, ByteBudget, ByteBudgetConfig, ObjectStoreError, TieredStorageConfig},
+        tiered::{metrics::CacheTier, BlobMap, ByteBudget, ByteBudgetConfig, ObjectStoreError, TieredStorageConfig},
     };
 
     use super::*;
@@ -1507,6 +1507,7 @@ mod tests {
         // Replay the commitlog into a new datastore.
         const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: HARD_LIMIT_BYTES,
             hard_limit_bytes: HARD_LIMIT_BYTES,
@@ -1675,6 +1676,7 @@ mod tests {
             // or the system-table writes needed to create its schema.
             const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
             let budget = ByteBudget::new(ByteBudgetConfig {
+                tier: CacheTier::Memory,
                 low_water_bytes: 0,
                 soft_limit_bytes: HARD_LIMIT_BYTES,
                 hard_limit_bytes: HARD_LIMIT_BYTES,
@@ -1748,6 +1750,7 @@ mod tests {
             // could delete the first row before failing to load the second.
             const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
             let budget = ByteBudget::new(ByteBudgetConfig {
+                tier: CacheTier::Memory,
                 low_water_bytes: 0,
                 soft_limit_bytes: HARD_LIMIT_BYTES,
                 hard_limit_bytes: HARD_LIMIT_BYTES,

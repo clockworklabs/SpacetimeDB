@@ -799,9 +799,7 @@ impl RelationalDB {
 
     /// Update data size metrics.
     pub fn update_data_size_metrics(&self) {
-        let cs = self.inner.committed_state.read();
-
-        cs.report_data_size(self.database_identity)
+        self.inner.update_data_size_metrics();
     }
 
     pub fn encode_row(row: &ProductValue, bytes: &mut Vec<u8>) {

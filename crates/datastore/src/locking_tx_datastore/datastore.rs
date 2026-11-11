@@ -83,6 +83,13 @@ impl MemoryUsage for Locking {
 }
 
 impl Locking {
+    #[cfg(feature = "metrics")]
+    pub fn update_data_size_metrics(&self) {
+        let state = self.committed_state.read();
+        state.report_data_size(self.database_identity);
+        crate::db_metrics::page_cache::report(&state.storage);
+    }
+
     pub fn new(database_identity: Identity, storage: TieredDatabaseStorage) -> Self {
         Self {
             committed_state: Arc::new(RwLock::new(CommittedState::new(storage))),
@@ -1138,6 +1145,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::error::IndexError;
     use crate::locking_tx_datastore::tx_state::PendingSchemaChange;
+    use crate::locking_tx_datastore::ViewCallInfo;
     use crate::system_tables::{
         system_tables, IdentityViaU256, StColumnRow, StConnectionCredentialsFields, StConstraintData,
         StConstraintFields, StConstraintRow, StEventTableFields, StInboundMsgResultStatus, StInboundMsgRow,
@@ -1185,7 +1193,7 @@ pub(crate) mod tests {
     };
     use spacetimedb_schema::table_name::TableName;
     use spacetimedb_table::blob_store::BlobHash;
-    use spacetimedb_table::tiered::{BlobError, ByteBudget, ByteBudgetConfig};
+    use spacetimedb_table::tiered::{metrics::CacheTier, BlobError, ByteBudget, ByteBudgetConfig};
 
     /// For the first user-created table, sequences in the system tables start
     /// from this value.
@@ -3788,6 +3796,7 @@ pub(crate) mod tests {
     fn failed_commit_preserves_prepared_dropped_table_blob_references() -> ResultTest<()> {
         const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: HARD_LIMIT_BYTES,
             hard_limit_bytes: HARD_LIMIT_BYTES,
@@ -3867,6 +3876,7 @@ pub(crate) mod tests {
 
         const LIMIT_BYTES: u64 = 16 * 1024 * 1024;
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: LIMIT_BYTES,
             hard_limit_bytes: LIMIT_BYTES,
@@ -4740,6 +4750,7 @@ pub(crate) mod tests {
         // memory pressure later, so setup cannot accidentally trigger the error.
         const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: HARD_LIMIT_BYTES,
             hard_limit_bytes: HARD_LIMIT_BYTES,
@@ -4821,6 +4832,7 @@ pub(crate) mod tests {
         // memory pressure later, so setup cannot accidentally trigger the error.
         const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: HARD_LIMIT_BYTES,
             hard_limit_bytes: HARD_LIMIT_BYTES,
@@ -5129,6 +5141,7 @@ pub(crate) mod tests {
         // Bootstrap with ample memory and introduce pressure only after setup.
         const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: HARD_LIMIT_BYTES,
             hard_limit_bytes: HARD_LIMIT_BYTES,
@@ -5203,6 +5216,7 @@ pub(crate) mod tests {
         // replacement that could later be scanned and committed.
         const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: HARD_LIMIT_BYTES,
             hard_limit_bytes: HARD_LIMIT_BYTES,
@@ -5244,6 +5258,26 @@ pub(crate) mod tests {
         assert_eq!(table.scan_all_row_ptrs()?.len(), 1);
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![old]);
         let _ = datastore.rollback_mut_tx(tx);
+        Ok(())
+    }
+
+    #[test]
+    fn view_refresh_reads_new_blobs_from_transaction_storage() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = basic_table_schema_with_indices(basic_indices(), basic_constraints());
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let view = ViewCallInfo::anonymous(ViewId(10_000));
+        tx.read_sets.insert_full_table_scan(table_id, view.clone());
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        // The new string exists only in the transaction's blob set.
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, &"x".repeat(4096), 30))?;
+        assert!(tx.tx_state.blob_store.num_blobs() > 0);
+        let refreshed = tx.views_for_refresh()?.cloned().collect::<Vec<_>>();
+        assert_eq!(refreshed, vec![view]);
+
         Ok(())
     }
 }

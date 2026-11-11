@@ -1,3 +1,4 @@
+use super::metrics::ObjectType;
 use std::{
     fmt::{self, Write as _},
     hash::{Hash, Hasher},
@@ -35,6 +36,12 @@ impl From<&mut Page> for PageHash {
 impl From<&Page> for PageHash {
     fn from(page: &Page) -> Self {
         Self(page.content_hash())
+    }
+}
+
+impl From<PageHash> for blake3::Hash {
+    fn from(hash: PageHash) -> Self {
+        hash.0
     }
 }
 
@@ -82,6 +89,12 @@ impl Deref for BlobHashWrapper {
     }
 }
 
+impl From<BlobHashWrapper> for blake3::Hash {
+    fn from(hash: BlobHashWrapper) -> Self {
+        hash.0.into()
+    }
+}
+
 impl ValidAsIdentityHash for BlobHashWrapper {}
 
 fn hash_prefix<H: Hasher>(bytes: &[u8], state: &mut H) {
@@ -96,6 +109,13 @@ pub enum ObjectKey {
 }
 
 impl ObjectKey {
+    pub fn metric_type(&self) -> ObjectType {
+        match self {
+            Self::Page(_) => ObjectType::Page,
+            Self::Blob(_) => ObjectType::Blob,
+        }
+    }
+
     pub const SIZE: usize = 32;
 
     #[inline]

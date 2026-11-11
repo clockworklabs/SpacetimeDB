@@ -3418,7 +3418,7 @@ pub(crate) mod test {
     use crate::page::tests::hash_unmodified_save_get;
     use crate::page_pool::PagePool;
     use crate::table_index::KeySize;
-    use crate::tiered::{ByteBudget, ByteBudgetConfig, ResidentObjects, TieredStorage};
+    use crate::tiered::{metrics::CacheTier, ByteBudget, ByteBudgetConfig, ResidentObjects, TieredStorage};
     use crate::var_len::VarLenGranule;
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
@@ -4163,6 +4163,7 @@ pub(crate) mod test {
         // Allow only one resident page so we can force rebuilding the pointer
         // map to fail while faulting this table's page back in.
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: PAGE_SIZE as u64,
             hard_limit_bytes: PAGE_SIZE as u64,
@@ -4228,6 +4229,7 @@ pub(crate) mod test {
         // Allow only one resident page so we can force rebuilding the pointer
         // map to fail while faulting this table's page back in.
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: PAGE_SIZE as u64,
             hard_limit_bytes: PAGE_SIZE as u64,
@@ -4303,6 +4305,7 @@ pub(crate) mod test {
     #[test]
     fn delete_equal_row_failure_removes_temporary_row() {
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: PAGE_SIZE as u64,
             hard_limit_bytes: PAGE_SIZE as u64,
@@ -4349,6 +4352,7 @@ pub(crate) mod test {
         // the original full page and the temporary row's new page resident.
         let hard_limit_bytes = PAGE_SIZE as u64 + large.len() as u64;
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: hard_limit_bytes,
             hard_limit_bytes,
@@ -4404,6 +4408,7 @@ pub(crate) mod test {
         let second = "y".repeat(first.len());
         let hard_limit_bytes = PAGE_SIZE as u64 + first.len() as u64;
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: hard_limit_bytes,
             hard_limit_bytes,
@@ -4507,6 +4512,7 @@ pub(crate) mod test {
             let second = "y".repeat(first.len());
             let hard_limit_bytes = PAGE_SIZE as u64 + first.len() as u64;
             let budget = ByteBudget::new(ByteBudgetConfig {
+                tier: CacheTier::Memory,
                 low_water_bytes: 0,
                 soft_limit_bytes: hard_limit_bytes,
                 hard_limit_bytes,
@@ -4691,6 +4697,7 @@ pub(crate) mod test {
         let large = "x".repeat(VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
         let hard_limit_bytes = PAGE_SIZE as u64 + large.len() as u64;
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: hard_limit_bytes,
             hard_limit_bytes,

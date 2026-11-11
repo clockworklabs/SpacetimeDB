@@ -39,7 +39,7 @@ use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
 use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
 use spacetimedb_table::page_pool::PagePool;
-use spacetimedb_table::tiered::{BackingStore, ByteBudget, TieredStorageConfig};
+use spacetimedb_table::tiered::{metrics::CacheTier, BackingStore, ByteBudget, ByteBudgetConfig, TieredStorageConfig};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -47,12 +47,17 @@ fn open_table_storage(
     dir: spacetimedb_paths::server::ReplicaDir,
     page_pool: PagePool,
 ) -> std::io::Result<TieredStorageConfig> {
+    let object_store = spacetimedb_tiered_storage::DiskStorage::open(dir.tables(), page_pool.clone())?;
     // Standalone still uses an unlimited memory budget. Per-database limits
     // are not wired into `resident_budget` yet.
     let mut config = TieredStorageConfig::new_for_memory_database(page_pool);
     config.local_store = BackingStore {
-        object_store: Box::new(spacetimedb_tiered_storage::DiskStorage::open(dir.tables())?),
-        budget: ByteBudget::unlimited(),
+        object_store: Box::new(object_store),
+        budget: ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Disk,
+            ..ByteBudgetConfig::unlimited()
+        })
+        .unwrap(),
     };
     Ok(config)
 }
