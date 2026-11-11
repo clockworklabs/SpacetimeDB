@@ -621,15 +621,15 @@ pub mod test {
         // Pin the first blob so inserting the second cannot evict it. Writing
         // the row will therefore succeed for the first field and fail for the
         // second, exercising rollback after a partial blob-set mutation.
-        let first_pin = blobs.insert(EvictionPolicy::Evictable, first.as_bytes()).unwrap();
+        let first_pin = blobs.insert(EvictionPolicy::Memory, first.as_bytes()).unwrap();
         let first_hash = first_pin.hash();
         let ty: RowTypeLayout = ProductType::from([AlgebraicType::String, AlgebraicType::String]).into();
         let visitor = row_type_visitor(&ty);
         let row = spacetimedb_sats::product![first.clone(), second.clone()];
         let mut page = Page::new(ty.size());
 
-        let error = unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &row, EvictionPolicy::Evictable) }
-            .unwrap_err();
+        let error =
+            unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &row, EvictionPolicy::Memory) }.unwrap_err();
         assert!(matches!(error, Error::Blobs(BlobError::MemoryLimitExceeded(_))));
         assert_eq!(page.num_rows(), 0);
         assert_eq!(blobs.num_blobs(), 1);
@@ -638,8 +638,8 @@ pub mod test {
         // The failed row's page allocations must also be reusable.
         drop(first_pin);
         let (offset, _) =
-            unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &row, EvictionPolicy::Evictable) }.unwrap();
-        unsafe { page.delete_row(offset, ty.size(), &visitor, &blobs, EvictionPolicy::Evictable) };
+            unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &row, EvictionPolicy::Memory) }.unwrap();
+        unsafe { page.delete_row(offset, ty.size(), &visitor, &blobs, EvictionPolicy::Memory) };
         assert_eq!(page.num_rows(), 0);
         assert_eq!(blobs.usage_counter().get(&first_hash), Some(&1));
     }
@@ -662,7 +662,7 @@ pub mod test {
         );
         // This owner allows eviction. Keep its handle during the write so the
         // second field deterministically fails the one-blob memory limit.
-        let first_handle = blobs.insert(EvictionPolicy::Evictable, first.as_bytes()).unwrap();
+        let first_handle = blobs.insert(EvictionPolicy::Memory, first.as_bytes()).unwrap();
         let hash = first_handle.hash();
         let ty: RowTypeLayout = ProductType::from([AlgebraicType::String, AlgebraicType::String]).into();
         let visitor = row_type_visitor(&ty);
@@ -670,8 +670,8 @@ pub mod test {
         let mut page = Page::new(ty.size());
 
         // SAFETY: The page, visitor and row all use the same two-string layout.
-        let error = unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &row, EvictionPolicy::NeverEvict) }
-            .unwrap_err();
+        let error =
+            unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &row, EvictionPolicy::Never) }.unwrap_err();
         assert!(matches!(error, Error::Blobs(BlobError::MemoryLimitExceeded(_))));
         assert_eq!(page.num_rows(), 0);
         assert_eq!(blobs.num_blobs(), 1);
@@ -680,7 +680,7 @@ pub mod test {
         // The failed insertion never created a never-evict owner. After the
         // reader goes away, a different evictable blob must fit in its place.
         drop(first_handle);
-        let replacement = blobs.insert(EvictionPolicy::Evictable, second.as_bytes());
+        let replacement = blobs.insert(EvictionPolicy::Memory, second.as_bytes());
         assert!(
             replacement.is_ok(),
             "failed write retained a policy pin: {replacement:?}"
@@ -698,7 +698,7 @@ pub mod test {
 
             let hash_pre_ins = hash_unmodified_save_get(&mut page);
 
-            let (offset, _) = unsafe { write_row_to_page(&mut page, blobs, &visitor, &ty, &val, EvictionPolicy::Evictable).unwrap() };
+            let (offset, _) = unsafe { write_row_to_page(&mut page, blobs, &visitor, &ty, &val, EvictionPolicy::Memory).unwrap() };
 
             let hash_pre_ser = hash_unmodified_save_get(&mut page);
             assert_ne!(hash_pre_ins, hash_pre_ser);

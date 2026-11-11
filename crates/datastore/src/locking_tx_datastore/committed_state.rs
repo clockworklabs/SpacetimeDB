@@ -1027,9 +1027,9 @@ impl CommittedState {
     pub(super) fn page_eviction_policy(&self, schema: &TableSchema) -> EvictionPolicy {
         // Schema recovery needs system tables to stay in memory.
         if schema.table_type == StTableType::System || schema.cache_policy == TableCachePolicy::RequiredInMemory {
-            EvictionPolicy::NeverEvict
+            EvictionPolicy::Never
         } else {
-            EvictionPolicy::Evictable
+            EvictionPolicy::Memory
         }
     }
 

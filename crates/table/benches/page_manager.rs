@@ -268,7 +268,7 @@ fn make_table(c: &mut Criterion) {
                         schema.into(),
                         SquashedOffset::COMMITTED_STATE,
                         PageManager::new_for_test().into(),
-                        EvictionPolicy::NeverEvict,
+                        EvictionPolicy::Never,
                     ));
                 }
                 let elapsed = WallTime.end(start);
@@ -292,7 +292,7 @@ fn make_table_for_row_type<R: Row>(name: &str) -> Table {
         schema.into(),
         SquashedOffset::COMMITTED_STATE,
         PageManager::new_for_test().into(),
-        EvictionPolicy::NeverEvict,
+        EvictionPolicy::Never,
     )
 }
 
@@ -525,7 +525,7 @@ fn make_table_with_index<R: IndexedRow>(unique: bool) -> (Table, IndexId) {
         schema.into(),
         SquashedOffset::COMMITTED_STATE,
         PageManager::new_for_test().into(),
-        EvictionPolicy::NeverEvict,
+        EvictionPolicy::Never,
     );
 
     let cols = R::indexed_columns();

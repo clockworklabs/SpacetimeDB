@@ -368,11 +368,11 @@ impl PageSet {
         let old = std::mem::replace(&mut self.storage, PageStorage::Tiered(TieredPages::default()));
         self.storage = match old {
             PageStorage::Resident(resident) => {
-                assert_eq!(policy, EvictionPolicy::Evictable);
+                assert_eq!(policy, EvictionPolicy::Memory);
                 PageStorage::Tiered(resident.into_tiered(&self.manager, self.fixed_row_size))
             }
             PageStorage::Tiered(tiered) => {
-                assert_eq!(policy, EvictionPolicy::NeverEvict);
+                assert_eq!(policy, EvictionPolicy::Never);
                 PageStorage::Resident(tiered.into_resident(&self.manager, self.fixed_row_size))
             }
         };
@@ -420,11 +420,11 @@ impl PageSet {
     /// Create a fresh, empty page set.
     pub fn new(manager: Arc<PageManager>, eviction_policy: EvictionPolicy, fixed_row_size: Size) -> Self {
         let storage = match eviction_policy {
-            EvictionPolicy::NeverEvict => PageStorage::Resident(ResidentPages {
+            EvictionPolicy::Never => PageStorage::Resident(ResidentPages {
                 pages: Pages::default(),
                 permits: smallvec::SmallVec::new(),
             }),
-            EvictionPolicy::Evictable => PageStorage::Tiered(TieredPages::default()),
+            EvictionPolicy::Memory | EvictionPolicy::Disk => PageStorage::Tiered(TieredPages::default()),
         };
         Self {
             eviction_policy,
@@ -1467,7 +1467,7 @@ mod tests {
             PagePool::new_for_test(),
             Arc::new(TieredStorage::new_for_test()),
         );
-        PageSet::new(Arc::new(manager), EvictionPolicy::Evictable, Size(8))
+        PageSet::new(Arc::new(manager), EvictionPolicy::Memory, Size(8))
     }
 
     #[test]

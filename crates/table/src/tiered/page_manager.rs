@@ -458,7 +458,7 @@ impl PageManager {
         let inner = self
             .resident
             .reserve_page_with_permit(permit, PooledPage::new(page, self.pool.clone()));
-        self.redeem(ReservedPage { inner, metadata }, EvictionPolicy::Evictable)
+        self.redeem(ReservedPage { inner, metadata }, EvictionPolicy::Memory)
     }
 
     /// Take a loaded page out of its slot so a memory table can own it directly.
@@ -603,7 +603,7 @@ impl PageManager {
                     "eviction policy cannot be changed for resident pages"
                 );
                 // Avoid atomics contention if the page isn't evictable.
-                if matches!(eviction_policy, EvictionPolicy::Evictable) {
+                if matches!(eviction_policy, EvictionPolicy::Memory) {
                     self.resident.touch_page(&handle.frame);
                 }
                 Ok(Some(handle.clone()))

@@ -32,8 +32,30 @@ pub use self::{
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EvictionPolicy {
-    Evictable,
-    NeverEvict,
+    /// Always keep resident in main memory.
+    Never,
+    /// Allow to evict to local disk.
+    Memory,
+    /// Allow to evict from disk to remote storage.
+    Disk,
+}
+
+impl EvictionPolicy {
+    /// If `self` is [Self::Never], run `if_never`, or else `or_else`.
+    pub fn never_or_else<T>(&self, if_never: impl FnOnce() -> T, or_else: impl FnOnce() -> T) -> T {
+        match self {
+            Self::Never => if_never(),
+            Self::Memory | Self::Disk => or_else(),
+        }
+    }
+
+    /// If `self` is [Self::Never], return `if_never`, or else `default`.
+    pub fn never_or<T>(&self, if_never: T, default: T) -> T {
+        match self {
+            Self::Never => if_never,
+            Self::Memory | Self::Disk => default,
+        }
+    }
 }
 
 pub struct TieredStorageConfig {

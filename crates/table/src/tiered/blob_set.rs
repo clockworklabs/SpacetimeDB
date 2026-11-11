@@ -231,10 +231,7 @@ impl BlobSet {
         bytes: &[u8],
     ) -> Result<BlobHandle, BlobError> {
         let hash = BlobHashWrapper::hash_from_bytes(bytes);
-        let pins = match eviction_policy {
-            EvictionPolicy::Evictable => 0,
-            EvictionPolicy::NeverEvict => 1,
-        };
+        let pins = eviction_policy.never_or(1, 0);
         {
             let mut entries = self.entries.write();
             if let Some(BlobEntry::Resident {
@@ -329,7 +326,7 @@ impl BlobSet {
                 {
                     let blob_entry = entry.get_mut();
                     blob_entry.dec_uses();
-                    if let EvictionPolicy::NeverEvict = eviction_policy {
+                    if let EvictionPolicy::Never = eviction_policy {
                         blob_entry.dec_pins();
                     }
                 }
@@ -760,7 +757,7 @@ mod tests {
             let mut model = HashMap::<BlobHash, (Vec<u8>, usize)>::new();
 
             for bytes in &blobs {
-                let handle = set.insert(EvictionPolicy::Evictable, bytes).unwrap();
+                let handle = set.insert(EvictionPolicy::Memory, bytes).unwrap();
                 let hash = BlobHash::hash_from_bytes(bytes);
                 prop_assert_eq!(handle.hash(), hash.into());
                 prop_assert_eq!(&*handle, bytes.as_slice());
@@ -786,7 +783,7 @@ mod tests {
 
             for bytes in blobs {
                 let hash = BlobHash::hash_from_bytes(&bytes);
-                prop_assert_eq!(set.free_ref(hash.into(), EvictionPolicy::Evictable).unwrap(), bytes.len() as u64);
+                prop_assert_eq!(set.free_ref(hash.into(), EvictionPolicy::Memory).unwrap(), bytes.len() as u64);
             }
             prop_assert_eq!(set.num_blobs(), 0);
             prop_assert_eq!(set.bytes_used_by_blobs(), 0);
@@ -814,9 +811,9 @@ mod tests {
             let storage = Arc::new(TieredStorage::new_for_test());
             let set = BlobSet::new(resident.clone(), storage);
 
-            set.insert(EvictionPolicy::Evictable, &first).map(drop).unwrap();
+            set.insert(EvictionPolicy::Memory, &first).map(drop).unwrap();
             // This should evict `first`, as there is no external handle.
-            set.insert(EvictionPolicy::Evictable, &second).map(drop).unwrap();
+            set.insert(EvictionPolicy::Memory, &second).map(drop).unwrap();
 
             prop_assert_eq!(set.num_blobs(), 2);
             // The catalog knows both entries, but only the second is resident
@@ -853,8 +850,8 @@ mod tests {
             let storage = Arc::new(TieredStorage::new_for_test());
             let set = BlobSet::new(resident.clone(), storage);
 
-            let _first_handle = set.insert(EvictionPolicy::Evictable, &first).unwrap();
-            prop_assert!(matches!(set.insert(EvictionPolicy::Evictable, &second), Err(BlobError::MemoryLimitExceeded(_))));
+            let _first_handle = set.insert(EvictionPolicy::Memory, &first).unwrap();
+            prop_assert!(matches!(set.insert(EvictionPolicy::Memory, &second), Err(BlobError::MemoryLimitExceeded(_))));
         }
     }
 
@@ -875,14 +872,14 @@ mod tests {
         let committed = BlobSet::new(resident.clone(), storage);
 
         // Emulate transaction prepare.
-        transaction.insert(EvictionPolicy::Evictable, bytes).map(drop).unwrap();
+        transaction.insert(EvictionPolicy::Memory, bytes).map(drop).unwrap();
         let pins = transaction.fault_all().unwrap();
 
         // Emulate transaction commit.
         // The shared [ResidentObjects] notices that it's the same object, so
         // reuses the already-held budget permit.
         assert!(committed.usage_counter().is_empty());
-        committed.insert(EvictionPolicy::Evictable, bytes).map(drop).unwrap();
+        committed.insert(EvictionPolicy::Memory, bytes).map(drop).unwrap();
 
         assert_eq!(committed.usage_counter().get(&pins[0].hash()), Some(&1));
         assert_eq!(resident.usage().accounted_bytes(), bytes.len() as u64);
@@ -891,8 +888,8 @@ mod tests {
     #[test]
     fn never_evict_policy_survives_deduplication_in_either_order() {
         for policies in [
-            [EvictionPolicy::NeverEvict, EvictionPolicy::Evictable],
-            [EvictionPolicy::Evictable, EvictionPolicy::NeverEvict],
+            [EvictionPolicy::Never, EvictionPolicy::Memory],
+            [EvictionPolicy::Memory, EvictionPolicy::Never],
         ] {
             let bytes = b"shared blob";
             let budget = ByteBudget::new(ByteBudgetConfig {
@@ -919,7 +916,7 @@ mod tests {
             // All caller handles are gone. Only the table policy now prevents
             // another blob from reclaiming this one's entire memory allowance.
             assert!(matches!(
-                set.insert(EvictionPolicy::Evictable, b"replacement"),
+                set.insert(EvictionPolicy::Memory, b"replacement"),
                 Err(BlobError::MemoryLimitExceeded(_))
             ));
             assert_eq!(set.num_blobs(), 1);
@@ -930,7 +927,7 @@ mod tests {
                 set.free_ref(hash, policy).unwrap();
             }
             assert_eq!(resident.usage().accounted_bytes(), 0);
-            assert!(set.insert(EvictionPolicy::Evictable, b"replacement").is_ok());
+            assert!(set.insert(EvictionPolicy::Memory, b"replacement").is_ok());
         }
     }
 
@@ -939,13 +936,13 @@ mod tests {
         let set = BlobSet::new_for_test();
         let bytes = b"previously evicted";
         let hash = BlobHashWrapper::hash_from_bytes(bytes);
-        drop(set.insert(EvictionPolicy::Evictable, bytes).unwrap());
+        drop(set.insert(EvictionPolicy::Memory, bytes).unwrap());
         set.evict(0).unwrap();
         assert_eq!(set.resident.usage().accounted_bytes(), 0);
 
         // This uses the nonresident insertion path, rather than updating an
         // existing resident entry. Both paths must preserve the new policy.
-        drop(set.insert(EvictionPolicy::NeverEvict, bytes).unwrap());
+        drop(set.insert(EvictionPolicy::Never, bytes).unwrap());
         set.evict(0).unwrap();
         assert_eq!(set.resident.usage().accounted_bytes(), bytes.len() as u64);
         assert_eq!(set.usage_counter().get(&hash), Some(&2));
@@ -957,8 +954,8 @@ mod tests {
         let set = BlobSet::new_for_test();
         let bytes = b"restored blob";
         let hash = BlobHashWrapper::hash_from_bytes(bytes);
-        drop(set.insert(EvictionPolicy::Evictable, bytes).unwrap());
-        drop(set.insert(EvictionPolicy::Evictable, bytes).unwrap());
+        drop(set.insert(EvictionPolicy::Memory, bytes).unwrap());
+        drop(set.insert(EvictionPolicy::Memory, bytes).unwrap());
         set.evict(0).unwrap();
         assert_eq!(set.resident.usage().accounted_bytes(), 0);
 
@@ -972,11 +969,11 @@ mod tests {
         assert_eq!(&*set.get(hash).unwrap(), bytes);
 
         // Releasing one restored owner must retain the other owner's pin.
-        set.free_ref(hash, EvictionPolicy::NeverEvict).unwrap();
+        set.free_ref(hash, EvictionPolicy::Never).unwrap();
         assert_eq!(set.usage_counter().get(&hash), Some(&1));
         set.evict(0).unwrap();
         assert_eq!(set.resident.usage().accounted_bytes(), bytes.len() as u64);
-        set.free_ref(hash, EvictionPolicy::NeverEvict).unwrap();
+        set.free_ref(hash, EvictionPolicy::Never).unwrap();
         set.evict(0).unwrap();
         assert_eq!(set.resident.usage().accounted_bytes(), 0);
         assert!(matches!(set.pin(hash), Err(BlobError::MissingBlob(_))));
