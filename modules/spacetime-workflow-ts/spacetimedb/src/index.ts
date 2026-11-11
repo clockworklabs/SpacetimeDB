@@ -88,7 +88,7 @@ const crash = workflows.define(
     stepTimeoutSeconds: 3,
   },
   step => {
-    step.call('block', (ctx, run) => {
+    step.run('block', (ctx, run) => {
       ctx.withTx(tx => {
         tx.db.stepLog.insert({
           id: 0n,

@@ -249,7 +249,7 @@ const research = workflows.define(
         .flatMap(note => note.sources)
         .filter((s, i, all) => all.findIndex(o => o.url === s.url) === i);
 
-      const report = step.call('Write the report', ctx =>
+      const report = step.run('Write the report', ctx =>
         writeReport(ctx, question, notes, cited)
       );
       step.tx('Publish', ctx => {
@@ -285,7 +285,7 @@ const research = workflows.define(
       }
     }
 
-    const plan = step.call('Plan the research', ctx =>
+    const plan = step.run('Plan the research', ctx =>
       planTopics(ctx, question)
     );
     step.tx('Save the plan', ctx => {

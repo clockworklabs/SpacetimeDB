@@ -62,7 +62,7 @@ const checkout = workflows.define(
 
     let receiptId: string;
     try {
-      receiptId = step.call('charge', (ctx, run) =>
+      receiptId = step.run('charge', (ctx, run) =>
         chargeCard(ctx, orderId, run.idempotencyKey)
       );
     } catch (error) {
@@ -148,7 +148,7 @@ Loops, branches, local variables, and `try/catch` work as usual around these:
   writes and its saved result commit together, so they happen exactly once. If it
   throws, its writes roll back. Its function may run again if the commit is
   retried, so it must not call outside services.
-- `step.call(name, (ctx, run) => result)` runs in a procedure, so it can make HTTP
+- `step.run(name, (ctx, run) => result)` runs in a procedure, so it can make HTTP
   requests and call `ctx.withTx`. It can run more than once, so outside calls must
   be safe to repeat. Pass `run.idempotencyKey`, which stays the same across
   attempts of a step. Writes made through `ctx.withTx` are committed even if the
@@ -162,7 +162,7 @@ Loops, branches, local variables, and `try/catch` work as usual around these:
   per item, each in its own procedure, at the same time. It waits for all of them
   and returns `{ ok: true, value }` or `{ ok: false, error }` for each item, in
   item order, so one failure does not stop the others. Each item retries and
-  recovers like a `call` step, with its own idempotency key. Up to 32 items.
+  recovers like a `run` step, with its own idempotency key. Up to 32 items.
 
 ```ts
 const pages = step.parallel('fetch', urls, (ctx, url) => fetchPage(ctx, url));
@@ -172,11 +172,11 @@ const fetched = pages.flatMap(page => (page.ok ? [page.value] : []));
 Parallel items share the module's procedure pool, which has one instance per CPU
 core by default. Items beyond that wait for a free instance.
 
-`tx`, `call`, and `parallel` take an optional last argument. Its `retry` replaces
+`tx`, `run`, and `parallel` take an optional last argument. Its `retry` replaces
 the workflow's for that step, so one flaky call can retry without the rest:
 
 ```ts
-const page = step.call('fetch', ctx => fetchPage(ctx, url), {
+const page = step.run('fetch', ctx => fetchPage(ctx, url), {
   retry: { maxAttempts: 5, backoffSeconds: 2 },
 });
 ```
@@ -224,9 +224,9 @@ A run can have up to 10,000 steps. Each sleep and wait counts as one.
   `Failed`.
 - If the server stops during an attempt, another attempt starts after
   `stepTimeoutSeconds` (default 300). A `tx` step never committed, so it repeats. A
-  `call` step counts this against `maxAttempts`, because its outside calls may have
+  `run` step counts this against `maxAttempts`, because its outside calls may have
   happened.
-- A `call` step that runs longer than the timeout also gets another attempt. Its
+- A `run` step that runs longer than the timeout also gets another attempt. Its
   late result is ignored, but its outside calls still happened, so set the timeout
   above your slowest step.
 - A long-running procedure delays other scheduled work in the same module.
@@ -302,7 +302,7 @@ finished:
 - `restart(ctx, runId, from?)` runs a failed or cancelled run again from a step
   without an authorization check. It returns `false` if the run cannot restart.
 - `cancel(ctx, runId)` stops an active run without an authorization check. It
-  returns `false` if the run already finished. A `call` step already running
+  returns `false` if the run already finished. A `run` step already running
   finishes its work, and its result is ignored.
 - `reducers.cancelWorkflowRun`, `reducers.restartWorkflowRun`,
   `reducers.addWorkflowAdminIdentity`, and

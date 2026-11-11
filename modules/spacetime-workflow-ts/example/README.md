@@ -52,7 +52,7 @@ how many topics it researches, and `step.parallel` researches them all at the
 same time, each in its own procedure. A topic that keeps failing is left out,
 and the report goes on without it.
 
-Each `step.call` and `step.tx` saves its result. After the restart, the function
+Each `step.run` and `step.tx` saves its result. After the restart, the function
 runs again from the top, gets those saved results back without repeating the work,
 and carries on from the first step that had not finished.
 

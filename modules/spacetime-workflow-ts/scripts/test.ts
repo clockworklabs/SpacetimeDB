@@ -53,7 +53,7 @@ const w = {
       logOf(ctx).push('one');
       return args.count + 1;
     });
-    const two = step.call('two', () => {
+    const two = step.run('two', () => {
       appLog.push('two');
       return one + 1;
     });
@@ -129,7 +129,7 @@ const w = {
       stepTimeoutSeconds: 5,
     },
     step => {
-      step.call('call', (_ctx, run) => {
+      step.run('call', (_ctx, run) => {
         appLog.push(`call:${run.attempt}`);
         keys.push(run.idempotencyKey);
         if (run.attempt === 1) onCall();
@@ -144,7 +144,7 @@ const w = {
     'slowCallOnce',
     { args: Args, stepTimeoutSeconds: 5 },
     step => {
-      step.call('call', () => {
+      step.run('call', () => {
         onCall();
       });
     }
@@ -291,7 +291,7 @@ const w = {
   ),
   // The workflow does not retry, but some of its steps do.
   mixed: workflows.define(db, 'mixed', { args: Args }, step => {
-    step.call(
+    step.run(
       'flaky',
       (_ctx, run) => {
         appLog.push(`flaky:${run.attempt}`);
@@ -321,7 +321,7 @@ const w = {
     step.tx('reserve', ctx => {
       logOf(ctx).push('reserve');
     });
-    step.call('charge', () => {
+    step.run('charge', () => {
       appLog.push('charge');
       if (declined) throw new Error('card declined');
     });
@@ -949,7 +949,7 @@ assert.ok(admins.has(admin.toHexString()));
   assert.equal(statusOf(id), 'Completed');
 }
 
-// A lost `call` with no attempts left gives up, which fails an uncaught run.
+// A lost `run` with no attempts left gives up, which fails an uncaught run.
 {
   reset();
   const id = workflows.start(tx, w.slowCallOnce, { count: 0 });

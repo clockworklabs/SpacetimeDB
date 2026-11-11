@@ -328,7 +328,7 @@ export interface WorkflowOptions<Args extends VariantsObj[string]> {
   retry?: WorkflowRetry;
   /**
    * How long to wait for an attempt before treating it as lost and starting
-   * another. Set it above the slowest `call` step. Defaults to 300.
+   * another. Set it above the slowest `run` step. Defaults to 300.
    */
   stepTimeoutSeconds?: number;
 }
@@ -363,7 +363,7 @@ export interface WorkflowSteps<Tx, Proc> {
     options?: WorkflowStepOptions
   ): T;
   /** Run `fn` in a procedure and save its result. It can run more than once. */
-  call<T>(
+  run<T>(
     name: string,
     fn: (ctx: Proc, run: WorkflowStepInfo) => T,
     options?: WorkflowStepOptions
@@ -378,7 +378,7 @@ export interface WorkflowSteps<Tx, Proc> {
   /**
    * Run `fn` once per item, each in its own procedure, at the same time. Waits
    * for all of them and returns their outcomes in item order. Each item retries
-   * like a `call` step. Up to 32 items.
+   * like a `run` step. Up to 32 items.
    */
   parallel<I, T>(
     name: string,
@@ -1092,7 +1092,7 @@ export function client() {
     };
     const steps: WorkflowSteps<Tx, WorkflowProcedureCtx<Tx>> = {
       tx: <T>(name: string) => replay(name) as T,
-      call: <T>(name: string) => replay(name) as T,
+      run: <T>(name: string) => replay(name) as T,
       sleep: () => void replay('sleep'),
       waitFor: <T>(event: string) => replay(`wait:${event}`) as T,
       parallel<I, T>(
@@ -1342,7 +1342,7 @@ export function client() {
           return handleFailure(name, caught, retry);
         }
       },
-      call<T>(
+      run<T>(
         name: string,
         fn: (ctx: WorkflowProcedureCtx<Tx>, run: WorkflowStepInfo) => T,
         options?: WorkflowStepOptions
