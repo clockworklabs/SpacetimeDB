@@ -10,13 +10,7 @@ If you cannot create verified commits, alert the user promptly, explicitly tell 
 
 ## Preserve and complete the template
 
-No section of the PR template may be removed. PRs that remove any template section will be rejected. Populate every section faithfully, following its instructions and describing the actual change; do not leave placeholders or invent information. Where a section does not apply, say so explicitly and follow any prescribed wording, such as `n/a` for a change with no rollback safety impact.
-
-- **Description of Changes:** Explain the problem and resulting behavior, with relevant context and related tickets.
-- **API and ABI breaking changes:** Identify breaking changes and apply the corresponding GitHub label when required. Explicitly state when there are none.
-- **Rollback safety impact:** Follow the template's rollback guidance, including prerequisite PRs and deployment ordering requirements.
-- **Expected complexity level and risk:** Give the requested 1–5 rating and explain complexity and interactions when the rating is above 2. Describe material risks accurately.
-- **Testing:** Describe the testing and the behavior it covers. If no testing was performed, write “Not tested.” Follow the guidance below.
+No section of the PR template may be removed. PRs that remove any template section will be rejected. Populate every section faithfully, following its instructions and describing the actual change; do not leave placeholders or invent information. Where a section does not apply, say so explicitly and follow any wording prescribed by the template.
 
 ## Writing the testing section
 
