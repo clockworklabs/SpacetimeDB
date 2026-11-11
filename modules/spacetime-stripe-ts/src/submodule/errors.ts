@@ -5,6 +5,7 @@ export const errors = {
   notAuthorized: 'stripe.not_authorized',
   cannotRemoveLastAdmin: 'stripe.cannot_remove_last_admin',
   configNotSet: 'stripe.config_not_set',
+  invalidSecretKey: 'stripe.invalid_secret_key',
   invalidWebhookSigningSecret: 'stripe.invalid_webhook_signing_secret',
   requestInvalid: 'stripe.request_invalid',
   requestPathInvalid: 'stripe.request_path_invalid',

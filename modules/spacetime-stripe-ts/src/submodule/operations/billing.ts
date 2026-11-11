@@ -423,7 +423,11 @@ export function createUserCheckoutSession(
 ): CheckoutSessionResult {
   // Validate before creating a customer or making a provider request.
   checkoutForm(args, '');
-  const { customerId } = getOrCreateUserCustomer(ctx, args);
+  const { customerId } = getOrCreateUserCustomer(ctx, {
+    userId: args.userId,
+    email: args.email,
+    name: args.name,
+  });
   const result = requestCheckoutSession(
     ctx,
     checkoutForm(args, customerId),

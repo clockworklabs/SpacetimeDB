@@ -48,7 +48,6 @@ export type WebhookEventStatusValue =
 
 export const stripeCustomerRow = {
   stripeCustomerId: t.string().primaryKey(),
-  appUserId: t.option(t.string()),
   email: t.option(t.string()),
   name: t.option(t.string()),
   metadataJson: t.option(t.string()),

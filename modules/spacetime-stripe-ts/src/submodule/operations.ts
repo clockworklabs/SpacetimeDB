@@ -210,7 +210,6 @@ export function upsertCustomerRow(
   now: ModuleTimestamp,
   args: {
     stripeCustomerId: string;
-    appUserId: string | undefined;
     deleted?: boolean;
     email: string | undefined;
     name: string | undefined;
@@ -224,7 +223,6 @@ export function upsertCustomerRow(
   );
   const row = {
     stripeCustomerId: args.stripeCustomerId,
-    appUserId: args.appUserId ?? existing?.appUserId,
     email: args.email ?? existing?.email,
     name: args.name ?? existing?.name,
     metadataJson: args.metadataJson ?? existing?.metadataJson,
@@ -584,7 +582,6 @@ function dispatchEvent(
       const meta = metadataInfoFromRecord(obj.metadata);
       upsertCustomerRow(ctx, ctx.timestamp, {
         stripeCustomerId: obj.id,
-        appUserId: meta.userId,
         email: obj.email ?? undefined,
         name: obj.name ?? undefined,
         metadataJson: meta.metadataJson,
@@ -605,7 +602,6 @@ function dispatchEvent(
           ctx.db.stripeCustomer.stripeCustomerId.update({
             ...existing,
             userId: meta.userId,
-            appUserId: existing.appUserId ?? meta.userId,
             metadataJson: existing.metadataJson ?? meta.metadataJson,
             updatedAt: ctx.timestamp,
           });
@@ -616,7 +612,6 @@ function dispatchEvent(
         return WebhookEventStatus.Ignored;
       upsertCustomerRow(ctx, ctx.timestamp, {
         stripeCustomerId: obj.id,
-        appUserId: undefined,
         email: obj.email ?? undefined,
         name: obj.name ?? undefined,
         metadataJson: meta.metadataJson,
@@ -884,7 +879,6 @@ export function createCustomerInStripeAndSync(
   ctx.withTx(tx => {
     upsertCustomerRow(tx, ctx.timestamp, {
       stripeCustomerId: customerId,
-      appUserId: undefined,
       email: args.email,
       name: args.name,
       metadataJson: details.metadataJson,

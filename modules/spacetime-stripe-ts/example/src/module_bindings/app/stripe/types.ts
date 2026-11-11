@@ -88,7 +88,6 @@ export type StripeConfigStatus = __Infer<typeof StripeConfigStatus>;
 
 export const StripeCustomer = __t.object("StripeCustomer", {
   stripeCustomerId: __t.string(),
-  appUserId: __t.option(__t.string()),
   email: __t.option(__t.string()),
   name: __t.option(__t.string()),
   metadataJson: __t.option(__t.string()),

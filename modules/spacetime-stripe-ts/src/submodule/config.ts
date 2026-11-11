@@ -71,9 +71,11 @@ export const setStripeConfig: ProcedureExport<
 > = spacetimedb.procedure(setStripeConfigArgs, unitResult, (ctx, args) => {
   const verdict = ctx.withTx(tx => adminVerdict(tx, ctx.sender));
   denyIfNotAdmin(verdict);
+  const secretKey = args.secretKey.trim();
+  if (!secretKey) throwSenderError(errors.invalidSecretKey);
   ctx.withTx(tx => {
     upsertConfig(tx, {
-      secretKey: args.secretKey,
+      secretKey,
       stripeVersion: args.stripeVersion,
       webhookSigningSecret: args.webhookSigningSecret,
     });
