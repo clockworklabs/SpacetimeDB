@@ -21,11 +21,9 @@ export const Dossier = __t.object("Dossier", {
   get reportSources() {
     return __t.array(Source);
   },
-  reportTokens: __t.u32(),
   reportedAt: __t.option(__t.timestamp()),
   updateEverySeconds: __t.u32(),
   nextUpdateAt: __t.option(__t.timestamp()),
-  createdAt: __t.timestamp(),
 });
 export type Dossier = __Infer<typeof Dossier>;
 

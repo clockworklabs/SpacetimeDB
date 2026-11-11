@@ -25,9 +25,7 @@ export default __t.row({
   get reportSources() {
     return __t.array(Source).name("report_sources");
   },
-  reportTokens: __t.u32().name("report_tokens"),
   reportedAt: __t.option(__t.timestamp()).name("reported_at"),
   updateEverySeconds: __t.u32().name("update_every_seconds"),
   nextUpdateAt: __t.option(__t.timestamp()).name("next_update_at"),
-  createdAt: __t.timestamp().name("created_at"),
 });

@@ -36,7 +36,7 @@ function element<T extends keyof HTMLElementTagNameMap>(
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 function showError(error: unknown): void {
   const el = $('toast');
-  el.className = 'toast err show';
+  el.className = 'toast show';
   el.textContent = error instanceof Error ? error.message : String(error);
   if (toastTimer) clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
@@ -54,6 +54,14 @@ function button(className: string, label: string, onClick: () => void) {
   const node = element('button', className, label);
   node.type = 'button';
   node.addEventListener('click', onClick);
+  return node;
+}
+
+function link(text: string, url: string, className?: string) {
+  const node = element('a', className, text);
+  node.href = url;
+  node.target = '_blank';
+  node.rel = 'noopener noreferrer';
   return node;
 }
 
@@ -174,14 +182,12 @@ function planEditor(dossier: { id: bigint; topics: string[] }): Node[] {
     input.addEventListener('input', () => {
       draft[index] = input.value;
     });
-    row.append(
-      input,
-      button('btn icon', '×', () => {
-        draft.splice(index, 1);
-        render();
-      })
-    );
-    row.lastElementChild!.setAttribute('aria-label', 'Remove topic');
+    const remove = button('btn icon', '×', () => {
+      draft.splice(index, 1);
+      render();
+    });
+    remove.setAttribute('aria-label', 'Remove topic');
+    row.append(input, remove);
     return row;
   });
   const actions = element('div', 'plan-actions');
@@ -220,12 +226,9 @@ function citedText(
       report.append(part);
       continue;
     }
-    const link = element('a', 'cite', part);
-    link.href = source.url;
-    link.title = source.title;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    report.append(link);
+    const cite = link(part, source.url, 'cite');
+    cite.title = source.title;
+    report.append(cite);
   }
   return report;
 }
@@ -233,12 +236,8 @@ function citedText(
 function sourceList(sources: { title: string; url: string }[]): HTMLElement {
   const list = element('ol', 'report-sources');
   for (const source of sources) {
-    const link = element('a', undefined, source.title);
-    link.href = source.url;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
     const item = element('li');
-    item.append(link);
+    item.append(link(source.title, source.url));
     list.append(item);
   }
   return list;
@@ -311,7 +310,7 @@ function renderMessages(): void {
     row => row.id === activeId
   );
   $('chat-title').textContent = dossier?.question ?? 'New dossier';
-  $('msg-list').hidden = !dossier;
+  wrap.hidden = !dossier;
   $('empty-hero').hidden = Boolean(dossier);
   $('composer').hidden = Boolean(dossier);
   if (!dossier) {
@@ -368,26 +367,27 @@ function renderMessages(): void {
     );
   }
 
-  // Steps that finished before the first lost attempt, and what they cost.
   const lost = steps.find(row => row.error === STEP_LOST);
-  const lostAt = lost?.ranAt.microsSinceUnixEpoch;
-  const notice = () => {
+  if (lost) {
     const kept = steps.filter(
-      row => row.id < lost!.id && row.status.tag === 'Ok'
+      row => row.id < lost.id && row.status.tag === 'Ok'
     ).length;
     const tokens = notes
-      .filter(note => note.savedAt.microsSinceUnixEpoch < lostAt!)
+      .filter(
+        note =>
+          note.savedAt.microsSinceUnixEpoch < lost.ranAt.microsSinceUnixEpoch
+      )
       .reduce((sum, note) => sum + note.tokens, dossier.planTokens);
-    return message(
-      'tool',
-      'Restart',
-      document.createTextNode(
-        `Resumed after a restart  ·  ${kept} finished steps kept  ·  ${tokens.toLocaleString()} tokens not spent again`
+    nodes.push(
+      message(
+        'tool',
+        'Restart',
+        document.createTextNode(
+          `Resumed after a restart  ·  ${kept} finished steps kept  ·  ${tokens.toLocaleString()} tokens not spent again`
+        )
       )
     );
-  };
-
-  if (lost) nodes.push(notice());
+  }
   for (const note of notes) {
     const body: Node[] = [
       element('p', undefined, note.summary ?? 'No sources found.'),
@@ -396,11 +396,7 @@ function renderMessages(): void {
       const sources = element('p', 'sources');
       note.sources.forEach((source, index) => {
         if (index > 0) sources.append(' · ');
-        const link = element('a', undefined, source.title);
-        link.href = source.url;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        sources.append(link);
+        sources.append(link(source.title, source.url));
       });
       body.push(sources);
     }
@@ -414,7 +410,7 @@ function renderMessages(): void {
         'Report',
         citedText(dossier.report, dossier.reportSources),
         sourceList(dossier.reportSources),
-        reportActions(dossier, status === 'Completed' || !running)
+        reportActions(dossier, !running)
       )
     );
   }

@@ -13,7 +13,6 @@ import { client } from '@spacetimedb/workflow';
 
 const MODEL = 'openai/gpt-4o-mini';
 const MAX_QUESTION_LENGTH = 300;
-// The model proposes up to 4 topics. You can add more, up to 8.
 const PLANNED_TOPICS = 4;
 const MAX_TOPICS = 8;
 const MAX_TOPIC_LENGTH = 80;
@@ -37,12 +36,10 @@ const dossier = table(
     report: t.option(t.string()),
     /** The report cites these as [1], [2], and so on. */
     reportSources: t.array(source),
-    reportTokens: t.u32(),
     reportedAt: t.option(t.timestamp()),
     /** 0 when the dossier is not kept up to date. */
     updateEverySeconds: t.u32(),
     nextUpdateAt: t.option(t.timestamp()),
-    createdAt: t.timestamp(),
   }
 );
 
@@ -204,18 +201,18 @@ const research = workflows.define(
   },
   (step, { dossierId, question, everySeconds }) => {
     const researchAndReport = (topics: string[]) => {
-      // Every topic is researched at the same time, each in its own procedure.
       const researched = step.parallel('Research', topics, (ctx, topic) => {
-        const sources = searchWikipedia(ctx, topic);
+        const found = searchWikipedia(ctx, topic);
+        const sources = found.map(({ title, url }) => ({ title, url }));
         const note =
-          sources.length === 0
+          found.length === 0
             ? undefined
             : summarize(
                 ctx,
                 question,
                 topic,
                 topics.filter(other => other !== topic),
-                sources
+                found
               );
         // Saved now, so the page shows it while other topics are still
         // running. A retry or a later update replaces the topic's note.
@@ -229,7 +226,7 @@ const research = workflows.define(
             owner,
             topic,
             summary: note?.text,
-            sources: sources.map(({ title, url }) => ({ title, url })),
+            sources,
             tokens: note?.tokens ?? 0,
             savedAt: tx.timestamp,
           };
@@ -237,12 +234,7 @@ const research = workflows.define(
           if (saved) tx.db.topicNote.id.update({ ...row, id: saved.id });
           else tx.db.topicNote.insert(row);
         });
-        return note
-          ? {
-              summary: note.text,
-              sources: sources.map(({ title, url }) => ({ title, url })),
-            }
-          : undefined;
+        return note ? { summary: note.text, sources } : undefined;
       });
       // A topic that keeps failing is left out. The rest of the report goes on.
       const notes: Note[] = topics.flatMap((topic, i) => {
@@ -266,7 +258,6 @@ const research = workflows.define(
           ...row,
           report: report.text,
           reportSources: cited,
-          reportTokens: report.tokens,
           reportedAt: ctx.timestamp,
         });
       });
@@ -278,7 +269,6 @@ const research = workflows.define(
         'Read the plan',
         ctx => ctx.db.dossier.id.find(dossierId)!.topics
       );
-      // The run sleeps between updates and uses nothing while it waits.
       for (;;) {
         step.tx('Schedule the next update', ctx => {
           const row = ctx.db.dossier.id.find(dossierId)!;
@@ -333,11 +323,9 @@ export const startDossier = spacetimedb.reducer(
       planTokens: 0,
       report: undefined,
       reportSources: [],
-      reportTokens: 0,
       reportedAt: undefined,
       updateEverySeconds: 0,
       nextUpdateAt: undefined,
-      createdAt: ctx.timestamp,
     });
     const runId = workflows.start(ctx, research, {
       dossierId: row.id,
@@ -408,7 +396,6 @@ export const keepUpdated = spacetimedb.reducer(
         'Wait for the first report before scheduling updates'
       );
     }
-    // Replace any earlier schedule.
     if (active) workflows.cancel(ctx, row.runId);
     const runId = workflows.start(ctx, research, {
       dossierId,

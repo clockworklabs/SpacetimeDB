@@ -1,10 +1,8 @@
 # Building a new TypeScript submodule
 
-These are the rules for the `spacetime-<name>-ts` packages in this folder. The other modules here are test and benchmark fixtures.
+These are the rules for the `spacetime-<name>-ts` packages in this folder, except `spacetime-example-ui-ts`, which holds the shared example UI. The other modules here are test and benchmark fixtures.
 
 Copy what exists. Do not invent structure, UI or copy that the other modules don't have.
-
-The conventions live in the existing modules, so copy from them. The old `AUTHORING.md` in `SpacetimeDBSubmodules` is out of date (BUSL license, publishes source, SDK 2.8). Do not follow it.
 
 Read the current code on `origin/master` first. The closest models:
 
@@ -69,7 +67,7 @@ Then:
 - Copy `package.json`, `server.ts`, `.env.example`, `tsconfig.json` and the `spacetimedb/` setup from an existing example, and pick an unused port.
 - Procedures cannot call local or private addresses, so a fake endpoint in `server.ts` will not work.
 - Run it in a browser before calling it done, at desktop and phone width. Compile checks do not catch missing updates: listen for `onInsert`, `onUpdate` and `onDelete`.
-- Test on an isolated server with its own port and data directory, never the user's on port 3000. Do not run `git status --ignored` in a worktree: it follows `node_modules` links forever.
+- Test on an isolated server with its own port and data directory, never the user's on port 3000.
 
 ## Docs
 

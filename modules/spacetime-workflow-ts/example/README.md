@@ -32,8 +32,8 @@ Open <http://127.0.0.1:8806>.
 ## Try it
 
 1. Ask a question and press Enter.
-2. When the plan appears, the run stops and waits. It uses nothing while it
-   waits. Edit, add or remove topics if you like, then click **Approve plan**.
+2. When the plan appears, the run stops and waits. Edit, add or remove topics
+   if you like, then click **Approve plan**.
 3. While the notes are appearing, stop the `spacetime start` terminal with
    Ctrl+C, then start it again.
 4. The page reconnects, and the run picks up where it stopped, within about
@@ -55,9 +55,6 @@ and the report goes on without it.
 Each `step.call` and `step.tx` saves its result. After the restart, the function
 runs again from the top, gets those saved results back without repeating the work,
 and carries on from the first step that had not finished.
-
-The page reads progress from the run's history through a view, so it stays up to
-date without polling.
 
 ## Change the example
 

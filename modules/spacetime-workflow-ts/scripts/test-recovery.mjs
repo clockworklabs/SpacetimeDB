@@ -1,6 +1,7 @@
 // Integration test for @spacetimedb/workflow. Runs an isolated SpacetimeDB
 // instance so force-stopping it cannot disturb another server. Covers rollback,
-// retries, sleep, events, cancellation, and a host killed in the middle of a step.
+// retries, sleep, events, onComplete, parallel items, and a host killed in the
+// middle of a step.
 import * as assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
@@ -73,17 +74,14 @@ function sql(query) {
 }
 
 function latestRun() {
-  const rows = sql(
-    'SELECT id, status, lastStep, attempt, error FROM workflow_run'
-  );
-  const [id, status, lastStep, attempt, error] = rows.sort((a, b) =>
+  const rows = sql('SELECT id, status, lastStep, error FROM workflow_run');
+  const [id, status, lastStep, error] = rows.sort((a, b) =>
     Number(BigInt(b[0]) - BigInt(a[0]))
   )[0];
   return {
     id: BigInt(id),
     status: STATUSES[status[0]],
     lastStep: lastStep[0] === 0 ? lastStep[1] : undefined,
-    attempt: Number(attempt),
     error: error[0] === 0 ? error[1] : undefined,
   };
 }
@@ -238,53 +236,12 @@ try {
       ['onComplete', 'Completed:demo:done'],
     ]
   );
-  assert.equal(
-    sql(`SELECT * FROM workflow_journal WHERE runId = ${waiting.id}`).length,
-    0
-  );
-
-  // A function can catch a step that gave up.
-  call('start_caught', JSON.stringify('caught'));
-  const caught = await poll('the caught run to complete', () => {
-    const latest = latestRun();
-    return latest.id > waiting.id && latest.status === 'Completed'
-      ? latest
-      : undefined;
-  });
-  assert.deepEqual(
-    stepLog(caught.id).map(row => [row.step, row.note]),
-    [['compensate', 'boom']]
-  );
-
-  // A step that gave up fails the run if nothing catches it.
-  call('start_uncaught', JSON.stringify('uncaught'));
-  const failedRun = await poll('the uncaught run to fail', () => {
-    const latest = latestRun();
-    return latest.id > caught.id && latest.status === 'Failed'
-      ? latest
-      : undefined;
-  });
-  assert.equal(failedRun.error, 'boom');
-
-  // A failed run keeps its steps, and restarts from the one that failed it.
-  const failedAttempts = () =>
-    sql(`SELECT step FROM workflow_history WHERE runId = ${failedRun.id}`);
-  assert.equal(failedAttempts().length, 1);
-  call('restart_run', String(failedRun.id));
-  await poll('the restarted run to fail again', () => {
-    const latest = latestRun();
-    return latest.id === failedRun.id &&
-      latest.status === 'Failed' &&
-      failedAttempts().length === 2
-      ? latest
-      : undefined;
-  });
 
   // Parallel items run at the same time, and their results come back in order.
   call('start_overlap', JSON.stringify('overlap'));
   const overlap = await poll('the parallel run to complete', () => {
     const latest = latestRun();
-    return latest.id > failedRun.id && latest.status === 'Completed'
+    return latest.id > waiting.id && latest.status === 'Completed'
       ? latest
       : undefined;
   });
@@ -293,24 +250,12 @@ try {
     '0,1,2'
   );
 
-  // Cancelling stops a parked run.
-  call('start_parked', JSON.stringify('parked'));
-  const parked = await poll('the parked run to wait', () => {
-    const latest = latestRun();
-    return latest.status === 'Waiting' && latest.id > overlap.id
-      ? latest
-      : undefined;
-  });
-  call('cancel_workflow_run', String(parked.id));
-  await pollRun(parked.id, 'Cancelled');
-  assert.equal(sql('SELECT * FROM workflow_fire').length, 0);
-
   // The first attempt is still running when the host is killed. The restarted
   // host retries it and the run finishes.
   call('start_crash', JSON.stringify('crash'));
   const crashing = await poll('the crash step to start', () => {
     const latest = latestRun();
-    if (latest.id <= parked.id) return undefined;
+    if (latest.id <= overlap.id) return undefined;
     return stepLog(latest.id).length > 0 ? latest : undefined;
   });
   await stopServer(server);

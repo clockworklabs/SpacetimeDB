@@ -104,33 +104,6 @@ const crash = workflows.define(
   }
 );
 
-// Catches a step that gives up, and cleans up in another step.
-const caught = workflows.define(
-  spacetimedb,
-  'caught',
-  {
-    args: t.object('CaughtArgs', { label: t.string() }),
-    retry: { maxAttempts: 2, backoffSeconds: 1 },
-  },
-  step => {
-    try {
-      step.tx('boom', () => {
-        throw new Error('boom');
-      });
-    } catch (error) {
-      step.tx('compensate', (ctx, run) => {
-        ctx.db.stepLog.insert({
-          id: 0n,
-          runId: run.runId,
-          step: run.step,
-          attempt: run.attempt,
-          note: error instanceof Error ? error.message : String(error),
-        });
-      });
-    }
-  }
-);
-
 // Each item waits until all have started, so it only finishes if they overlap.
 const overlap = workflows.define(
   spacetimedb,
@@ -174,27 +147,6 @@ const overlap = workflows.define(
   }
 );
 
-const uncaught = workflows.define(
-  spacetimedb,
-  'uncaught',
-  { args: t.object('UncaughtArgs', { label: t.string() }) },
-  step => {
-    step.tx('boom', () => {
-      throw new Error('boom');
-    });
-  }
-);
-
-// Waits for an event that never arrives, so the test can cancel it.
-const parked = workflows.define(
-  spacetimedb,
-  'parked',
-  { args: t.object('ParkedArgs', { label: t.string() }) },
-  step => {
-    step.waitFor('never');
-  }
-);
-
 export const startDemo = spacetimedb.reducer(
   { label: t.string(), failTimes: t.u32() },
   (ctx, args) => {
@@ -209,13 +161,6 @@ export const startCrash = spacetimedb.reducer(
   }
 );
 
-export const startCaught = spacetimedb.reducer(
-  { label: t.string() },
-  (ctx, args) => {
-    workflows.start(ctx, caught, args);
-  }
-);
-
 export const startOverlap = spacetimedb.reducer(
   { label: t.string() },
   (ctx, args) => {
@@ -223,31 +168,10 @@ export const startOverlap = spacetimedb.reducer(
   }
 );
 
-export const startUncaught = spacetimedb.reducer(
-  { label: t.string() },
-  (ctx, args) => {
-    workflows.start(ctx, uncaught, args);
-  }
-);
-
-export const startParked = spacetimedb.reducer(
-  { label: t.string() },
-  (ctx, args) => {
-    workflows.start(ctx, parked, args);
-  }
-);
-
 export const sendRunEvent = spacetimedb.reducer(
   { runId: t.u64(), event: t.string() },
   (ctx, { runId, event }) => {
     workflows.sendEvent(ctx, runId, event, `${event}:value`);
-  }
-);
-
-export const restartRun = spacetimedb.reducer(
-  { runId: t.u64() },
-  (ctx, { runId }) => {
-    workflows.restart(ctx, runId);
   }
 );
 

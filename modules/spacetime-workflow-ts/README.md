@@ -43,10 +43,9 @@ export const cancelWorkflowRun = db.reducer(
 );
 ```
 
-`workflowProcedure` registers the scheduled procedure that runs every workflow
-in the module. Export its result. Registration fails to compile if the schema
-does not include `workflows.tables`. Export the admin [reducers and views](#api)
-you want, like `cancelWorkflowRun` above.
+`workflowProcedure` fails to compile if the schema does not include
+`workflows.tables`. Export the admin [reducers and views](#api) you want, like
+`cancelWorkflowRun` above.
 
 ### Defining a workflow
 
@@ -136,8 +135,7 @@ export const markShipped = db.reducer(
 );
 ```
 
-`workflows.cancel(ctx, runId)` stops a run the same way. Like `start`, `sendEvent`
-and `cancel` do not check permissions.
+`workflows.cancel(ctx, runId)` stops a run the same way.
 
 See the [Dossier example](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-workflow-ts/example)
 for a research agent that keeps its work across restarts.
@@ -185,8 +183,6 @@ const page = step.call('fetch', ctx => fetchPage(ctx, url), {
 
 ## When a run ends
 
-The workflow function can return a value. It is saved as the run's `result`.
-
 `onComplete` receives the run's `runId`, `args`, `status` (`Completed`,
 `Failed`, or `Cancelled`), `result`, and `error`. It runs in its own transaction,
 with your module's context.
@@ -201,7 +197,6 @@ workflow's `retry` settings. A run is only pruned from the history after its
 A workflow function can stop and run again from the top, after a sleep, an event,
 a retry, or a restart. Finished steps do not run again. They return their saved
 results, and the function carries on from the first step that has not finished.
-While nothing pauses, the function simply keeps running.
 
 That gives the function three rules:
 
@@ -210,12 +205,11 @@ That gives the function three rules:
 - Make the same step calls each time. Do not branch on `Date.now()` or
   `Math.random()` outside a step. Get those values from a step, so they are saved.
 - Keep step results, arguments, event values, and the returned value small, up
-  to 64 KiB. They can hold plain objects,
-  arrays, strings, finite numbers, booleans, `null`, `bigint`, `Uint8Array`,
-  and the SpacetimeDB types `Timestamp`, `TimeDuration`, `Identity`,
-  `ConnectionId`, and `Uuid`. Each comes back as the same type. Any other
-  value, such as a `Map` or a `Date`, fails the step with
-  `workflow.unsupported_value`.
+  to 64 KiB. They can hold plain objects, arrays, strings, finite numbers,
+  booleans, `null`, `bigint`, `Uint8Array`, and the SpacetimeDB types
+  `Timestamp`, `TimeDuration`, `Identity`, `ConnectionId`, and `Uuid`. Each
+  comes back as the same type. Any other value, such as a `Map` or a `Date`,
+  fails the step with `workflow.unsupported_value`.
 
 A run can have up to 10,000 steps. Each sleep and wait counts as one.
 
@@ -256,17 +250,14 @@ workflows.restart(ctx, runId, 0); // from the first step
   again. A sleep is named `sleep`, and a wait is `wait:<event>`.
 - `onComplete` runs again when the restarted run ends.
 
-Failed and cancelled runs keep their saved steps until they are pruned, so they
-can be restarted.
-
 ## Reading progress
 
-The `workflowRun` table holds each run's `workflow` name, `status`, `lastStep`, `stepCount`,
-`attempt`, `waitingFor`, `error`, `result`, and `startedBy`. `completing` is true
-until its `onComplete` has run. A run is `Waiting` while it
+The `workflowRun` table holds each run's `workflow` name, `status`, `lastStep`,
+`stepCount`, `attempt`, `waitingFor`, `error`, `result`, and `startedBy`.
+`completing` is true until its `onComplete` has run. A run is `Waiting` while it
 waits for an event, or for parallel items, when `waitingFor` is
-`parallel:<name>`. Its tables are private, so expose what your users need through
-a view:
+`parallel:<name>`. Its tables are private, so expose what your users need
+through a view:
 
 ```ts
 export const myRuns = db.view(

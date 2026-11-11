@@ -216,7 +216,7 @@ export type WorkflowRunRow = Infer<typeof workflowRun.rowType>;
 export type WorkflowJournalRow = Infer<typeof workflowJournal.rowType>;
 export type WorkflowFireRow = Infer<typeof workflowFire.rowType>;
 export type WorkflowBranchRow = Infer<typeof workflowBranch.rowType>;
-export type WorkflowFinishedRow = Infer<typeof workflowFinished.rowType>;
+type WorkflowFinishedRow = Infer<typeof workflowFinished.rowType>;
 export type WorkflowHistoryRow = Infer<typeof workflowHistory.rowType>;
 type AdminRow = Infer<typeof workflowAdminIdentity.rowType>;
 
@@ -459,10 +459,6 @@ const SPACETIME_TYPES = [
   ['$uuid', Uuid, '__uuid__'],
 ] as const;
 
-function typeName(value: unknown): string {
-  return (value as object).constructor?.name ?? typeof value;
-}
-
 /** Encodes a step result, rejecting values that would not come back the same. */
 function encodeResult(value: unknown): string | undefined {
   if (
@@ -501,7 +497,9 @@ function encodeResult(value: unknown): string | undefined {
           ),
         };
       }
-      throw new SenderError(`${failures.unsupportedValue}:${typeName(item)}`);
+      throw new SenderError(
+        `${failures.unsupportedValue}:${item.constructor?.name ?? 'object'}`
+      );
     }
   );
   if (json !== undefined && json.length > MAX_RESULT_LENGTH) {
@@ -588,7 +586,6 @@ function validate(
 /** Create the workflow tables and the functions that manage them. */
 export function client() {
   const defined = new Map<string, Defined>();
-  const optionsOf = (run: WorkflowRunRow) => defined.get(run.workflow)?.options;
   const tables: WorkflowTables = {
     workflowRun,
     workflowJournal,
@@ -600,8 +597,10 @@ export function client() {
   };
 
   const stepTimeoutMicros = (run: WorkflowRunRow): bigint =>
-    BigInt(optionsOf(run)?.stepTimeoutSeconds ?? DEFAULT_STEP_TIMEOUT_SECONDS) *
-    ONE_SECOND_MICROS;
+    BigInt(
+      defined.get(run.workflow)?.options.stepTimeoutSeconds ??
+        DEFAULT_STEP_TIMEOUT_SECONDS
+    ) * ONE_SECOND_MICROS;
 
   /** Remove a run's fires, or only one parallel item's. */
   function clearFires(ctx: WorkflowCtx, runId: bigint, branch?: number): void {
@@ -628,12 +627,17 @@ export function client() {
   }
 
   /** Keep one fire that recovers the current attempt if the host stops. */
-  function replaceGuard(ctx: WorkflowCtx, run: WorkflowRunRow): void {
-    clearFires(ctx, run.id);
+  function replaceGuard(
+    ctx: WorkflowCtx,
+    run: WorkflowRunRow,
+    branch?: number
+  ): void {
+    clearFires(ctx, run.id, branch);
     insertFire(
       ctx,
       run,
-      ctx.timestamp.microsSinceUnixEpoch + stepTimeoutMicros(run)
+      ctx.timestamp.microsSinceUnixEpoch + stepTimeoutMicros(run),
+      branch
     );
   }
 
@@ -698,6 +702,18 @@ export function client() {
     finished.insert({ runId, finishedAt: ctx.timestamp });
   }
 
+  function journalOf(ctx: WorkflowCtx, runId: bigint): WorkflowJournalRow[] {
+    return [...ctx.db.workflowJournal.runId.filter(runId)].sort(
+      (a, b) => a.index - b.index
+    );
+  }
+
+  function branchRow(ctx: WorkflowCtx, runId: bigint, branch: number) {
+    return [...ctx.db.workflowBranch.runId.filter(runId)].find(
+      b => b.branch === branch
+    );
+  }
+
   /** Delete a run's saved steps from `index` on. */
   function deleteJournal(ctx: WorkflowCtx, runId: bigint, index: number): void {
     for (const entry of [...ctx.db.workflowJournal.runId.filter(runId)]) {
@@ -731,7 +747,6 @@ export function client() {
       completing,
       updatedAt: ctx.timestamp,
     });
-    // A run is only pruned once its onComplete has run.
     if (completing) schedule(ctx, ended, 0n);
     else retire(ctx, run.id);
   }
@@ -763,7 +778,6 @@ export function client() {
     const { run } = claimed;
     const workflow = defined.get(run.workflow);
     const retry = workflow?.options.retry ?? NO_RETRY;
-    const maxAttempts = retry.maxAttempts;
     const current = (tx: WorkflowCtx) => {
       const row = tx.db.workflowRun.id.find(run.id);
       return row?.completing && row.generation === run.generation
@@ -801,7 +815,7 @@ export function client() {
         schedule(tx, moved, retryDelayMicros(retry, row.attempt));
       });
 
-    if (claimed.lost && run.attempt > maxAttempts) {
+    if (claimed.lost && run.attempt > retry.maxAttempts) {
       fail(failures.stepLost, false);
       return true;
     }
@@ -822,7 +836,7 @@ export function client() {
     } catch (caught) {
       fail(
         errorText(caught),
-        !(caught instanceof SenderError) && run.attempt < maxAttempts
+        !(caught instanceof SenderError) && run.attempt < retry.maxAttempts
       );
     }
     return true;
@@ -862,6 +876,41 @@ export function client() {
     replaceGuard(ctx, updated);
   }
 
+  /** Save a step that ends the attempt, and run the function again after `delayMicros`. */
+  function advance(
+    ctx: WorkflowCtx,
+    run: WorkflowRunRow,
+    name: string,
+    entry: { result?: string },
+    delayMicros: bigint
+  ): void {
+    appendJournal(ctx, run, name, entry);
+    pause(
+      ctx,
+      run,
+      { attempt: 0, stepCount: run.stepCount + 1, lastStep: name },
+      delayMicros
+    );
+  }
+
+  /** Put the run to sleep until `waitingFor` is resolved. */
+  function wait(
+    ctx: WorkflowCtx,
+    run: WorkflowRunRow,
+    waitingFor: string
+  ): WorkflowRunRow {
+    clearFires(ctx, run.id);
+    return ctx.db.workflowRun.id.update({
+      ...run,
+      status: { tag: 'Waiting' },
+      generation: run.generation + 1n,
+      attempt: 0,
+      inFlight: false,
+      waitingFor,
+      updatedAt: ctx.timestamp,
+    });
+  }
+
   /** Stop this attempt and run the function again after `delayMicros`. */
   function pause(
     ctx: WorkflowCtx,
@@ -889,6 +938,10 @@ export function client() {
     if (run?.status.tag !== 'Running' || run.generation !== arg.generation) {
       return undefined;
     }
+    if (!defined.has(run.workflow)) {
+      finish(ctx, run, 'Failed', `${failures.unknownWorkflow}:${run.workflow}`);
+      return undefined;
+    }
     const claimed = ctx.db.workflowRun.id.update({
       ...run,
       generation: run.generation + 1n,
@@ -900,9 +953,7 @@ export function client() {
     return {
       run: claimed,
       lost: run.inFlight,
-      journal: [...ctx.db.workflowJournal.runId.filter(run.id)].sort(
-        (a, b) => a.index - b.index
-      ),
+      journal: journalOf(ctx, run.id),
     };
   }
 
@@ -969,12 +1020,11 @@ export function client() {
             : `{"ok":true,"value":${b.result}}`
       );
     for (const b of all) ctx.db.workflowBranch.delete(b);
-    const name = run.waitingFor!;
-    appendJournal(ctx, run, name, { result: `[${results.join(',')}]` });
-    pause(
+    advance(
       ctx,
       run,
-      { attempt: 0, stepCount: run.stepCount + 1, lastStep: name },
+      run.waitingFor!,
+      { result: `[${results.join(',')}]` },
       0n
     );
   }
@@ -988,50 +1038,33 @@ export function client() {
     const claimed = ctx.withTx(tx => {
       requireInternal(tx);
       const run = waitingOnBranches(tx, arg.runId, arg.generation);
-      const row = run
-        ? [...tx.db.workflowBranch.runId.filter(run.id)].find(
-            b => b.branch === branch
-          )
-        : undefined;
+      const row = run ? branchRow(tx, run.id, branch) : undefined;
       if (!run || !row || row.done) return undefined;
-      clearFires(tx, run.id, branch);
+      if (!defined.has(run.workflow)) {
+        finish(
+          tx,
+          run,
+          'Failed',
+          `${failures.unknownWorkflow}:${run.workflow}`
+        );
+        return undefined;
+      }
       const updated = tx.db.workflowBranch.id.update({
         ...row,
         attempt: row.attempt + 1,
         inFlight: true,
       });
-      insertFire(
-        tx,
-        run,
-        tx.timestamp.microsSinceUnixEpoch + stepTimeoutMicros(run),
-        branch
-      );
+      replaceGuard(tx, run, branch);
       return {
         run,
         row: updated,
         lost: row.inFlight,
-        journal: [...tx.db.workflowJournal.runId.filter(run.id)].sort(
-          (a, b) => a.index - b.index
-        ),
+        journal: journalOf(tx, run.id),
       };
     });
     if (!claimed) return;
     const { run, row, journal } = claimed;
-    const workflow = defined.get(run.workflow);
-    if (!workflow) {
-      ctx.withTx(tx => {
-        const waiting = waitingOnBranches(tx, run.id, run.generation);
-        if (waiting) {
-          finish(
-            tx,
-            waiting,
-            'Failed',
-            `${failures.unknownWorkflow}:${run.workflow}`
-          );
-        }
-      });
-      return;
-    }
+    const workflow = defined.get(run.workflow)!;
     const settle = (outcome: { result?: string; error?: string }) =>
       ctx.withTx(tx =>
         settleBranch(tx, run.id, run.generation, branch, outcome)
@@ -1074,12 +1107,13 @@ export function client() {
       ): WorkflowSettled<T>[] {
         if (done) stop();
         const index = cursor;
+        const step = `${PARALLEL_PREFIX}${name}`;
         if (index < journal.length) {
-          return replay(`${PARALLEL_PREFIX}${name}`) as WorkflowSettled<T>[];
+          return replay(step) as WorkflowSettled<T>[];
         }
         if (
           index !== run.stepCount ||
-          `${PARALLEL_PREFIX}${name}` !== run.waitingFor ||
+          step !== run.waitingFor ||
           branch >= items.length
         ) {
           settle({ error: failures.replayMismatch });
@@ -1137,9 +1171,7 @@ export function client() {
                 'Failed',
                 error
               );
-              const current = [
-                ...tx.db.workflowBranch.runId.filter(run.id),
-              ].find(b => b.branch === branch);
+              const current = branchRow(tx, run.id, branch);
               if (current && !current.done) {
                 tx.db.workflowBranch.id.update({ ...current, inFlight: false });
               }
@@ -1173,21 +1205,7 @@ export function client() {
     if (!loaded) return;
     const { journal } = loaded;
     const { id: runId, generation, startedBy } = loaded.run;
-    const workflow = defined.get(loaded.run.workflow);
-    if (!workflow) {
-      ctx.withTx(tx => {
-        const run = tx.db.workflowRun.id.find(runId);
-        if (run?.status.tag === 'Running' && run.generation === generation) {
-          finish(
-            tx,
-            run,
-            'Failed',
-            `${failures.unknownWorkflow}:${run.workflow}`
-          );
-        }
-      });
-      return;
-    }
+    const workflow = defined.get(loaded.run.workflow)!;
     let attempt = loaded.run.attempt;
     let lost = loaded.lost;
     let cursor = 0;
@@ -1253,7 +1271,6 @@ export function client() {
       lost = false;
       if (attempt > limit) giveUp(name, failures.stepLost);
       commit((tx, run) => {
-        // The lost attempt is the one before this one.
         recordAttempt(
           tx,
           { ...run, attempt: attempt - 1 },
@@ -1346,15 +1363,7 @@ export function client() {
       sleep(seconds: number): void {
         if (replay('sleep')) return;
         const delay = BigInt(Math.ceil(seconds)) * ONE_SECOND_MICROS;
-        commit((tx, run) => {
-          appendJournal(tx, run, 'sleep', {});
-          pause(
-            tx,
-            run,
-            { attempt: 0, stepCount: run.stepCount + 1, lastStep: 'sleep' },
-            delay
-          );
-        });
+        commit((tx, run) => advance(tx, run, 'sleep', {}, delay));
         suspend();
       },
       waitFor<T>(event: string): T {
@@ -1371,16 +1380,7 @@ export function client() {
             commitStep(tx, { ...run, pendingEvents }, name, { result: value });
             return { value };
           }
-          clearFires(tx, run.id);
-          tx.db.workflowRun.id.update({
-            ...run,
-            status: { tag: 'Waiting' },
-            generation: run.generation + 1n,
-            attempt: 0,
-            inFlight: false,
-            waitingFor: event,
-            updatedAt: tx.timestamp,
-          });
+          wait(tx, run, event);
           return undefined;
         });
         if (!ready) return suspend();
@@ -1400,16 +1400,7 @@ export function client() {
           return [];
         }
         commit((tx, run) => {
-          clearFires(tx, run.id);
-          const waiting = tx.db.workflowRun.id.update({
-            ...run,
-            status: { tag: 'Waiting' },
-            generation: run.generation + 1n,
-            attempt: 0,
-            inFlight: false,
-            waitingFor: label,
-            updatedAt: tx.timestamp,
-          });
+          const waiting = wait(tx, run, label);
           items.forEach((_item, branch) => {
             tx.db.workflowBranch.insert({
               id: 0n,
@@ -1486,9 +1477,7 @@ export function client() {
     ) {
       return false;
     }
-    const journal = [...ctx.db.workflowJournal.runId.filter(runId)].sort(
-      (a, b) => a.index - b.index
-    );
+    const journal = journalOf(ctx, runId);
     const last = journal.at(-1);
     // By default, retry the step that gave up and failed the run.
     const index =
@@ -1625,14 +1614,7 @@ export function client() {
         return false;
       }
       if (run.waitingFor === event) {
-        const name = `wait:${event}`;
-        appendJournal(ctx, run, name, { result: encoded });
-        pause(
-          ctx,
-          run,
-          { attempt: 0, stepCount: run.stepCount + 1, lastStep: name },
-          0n
-        );
+        advance(ctx, run, `wait:${event}`, { result: encoded }, 0n);
         return true;
       }
       if (run.pendingEvents.length >= MAX_PENDING_EVENTS) {

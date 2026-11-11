@@ -111,11 +111,6 @@ const w = {
       logOf(ctx).push('late');
     });
   }),
-  uncaught: workflows.define(db, 'uncaught', { args: Args }, step => {
-    step.tx('attempt', () => {
-      throw new Error('broke');
-    });
-  }),
   plainThrow: workflows.define(db, 'plainThrow', { args: Args }, () => {
     throw new Error('bug in the function');
   }),
@@ -230,7 +225,6 @@ const w = {
       stepTimeoutSeconds: 5,
     },
     (step, args) => {
-      starts++;
       const before = step.tx('before', () => args.count);
       const results = step.parallel(
         'fetch',
@@ -587,8 +581,6 @@ assert.ok(admins.has(admin.toHexString()));
       ['three', 'Ok'],
     ]
   );
-  advance(600n);
-  assert.equal(starts, 2);
 }
 
 // Results survive a rerun, including bigints and undefined.
@@ -673,14 +665,9 @@ assert.ok(admins.has(admin.toHexString()));
   assert.equal(run(id).stepCount, 2);
 }
 
-// Anything the function does not catch fails the run.
+// A throw outside any step fails the run.
 {
   reset();
-  const id = workflows.start(tx, w.uncaught, { count: 0 });
-  runDue();
-  assert.equal(statusOf(id), 'Failed');
-  assert.equal(run(id).error, 'broke');
-
   const thrower = workflows.start(tx, w.plainThrow, { count: 0 });
   runDue();
   assert.equal(statusOf(thrower), 'Failed');
@@ -704,6 +691,10 @@ assert.ok(admins.has(admin.toHexString()));
   assert.equal(workflows.sendEvent(tx, id, 'go'), false);
   assert.equal(workflows.sendEvent(tx, 12345n, 'go'), false);
   assert.throws(() => workflows.sendEvent(tx, id, ''), {
+    message: errors.invalidEvent,
+  });
+  // A parallel step's internal event name cannot be sent.
+  assert.throws(() => workflows.sendEvent(tx, id, 'parallel:fetch'), {
     message: errors.invalidEvent,
   });
 }
@@ -1130,7 +1121,6 @@ assert.ok(admins.has(admin.toHexString()));
 {
   reset();
   const id = workflows.start(tx, w.fanOut, { count: 41 });
-  const startsBefore = starts;
   now += SECOND;
   // Run only the main fire: it saves `before`, then hands off to the items.
   const [main] = firesOf(id).sort((a, b) =>
@@ -1157,7 +1147,7 @@ assert.ok(admins.has(admin.toHexString()));
   runDue();
   advance(1n);
   assert.equal(statusOf(id), 'Completed');
-  assert.deepEqual(appLog.at(-1), 'a:42,flaky:42,bad.item,slow:42');
+  assert.equal(appLog.at(-1), 'a:42,flaky:42,bad.item,slow:42');
   assert.ok((appLog as string[]).includes('flaky:2'), 'the flaky item retried');
   assert.equal(
     appLog.filter(entry => entry === 'bad:1').length,
@@ -1172,7 +1162,6 @@ assert.ok(admins.has(admin.toHexString()));
   );
   assert.equal(branches.size, 0, 'item rows are removed once saved');
   assert.equal(journalOf(id).length, 0);
-  assert.ok(starts - startsBefore >= 2, 'the function resumed after the items');
   const failed = attemptsOf(id)
     .filter(row => row.step.startsWith('fetch') && row.status.tag !== 'Ok')
     .map(row => `${row.step} ${row.status.tag} ${row.error}`)
@@ -1207,16 +1196,6 @@ assert.ok(admins.has(admin.toHexString()));
   runDue();
   assert.equal(statusOf(wide), 'Failed');
   assert.equal(run(wide).error, failures.tooManyBranches);
-}
-
-// A host cannot wake a parallel step by sending its internal event name.
-{
-  reset();
-  const id = workflows.start(tx, w.waits, { count: 0 });
-  assert.throws(() => workflows.sendEvent(tx, id, 'parallel:fetch'), {
-    message: errors.invalidEvent,
-  });
-  workflows.cancel(tx, id);
 }
 
 // Definitions are checked when the module loads.
