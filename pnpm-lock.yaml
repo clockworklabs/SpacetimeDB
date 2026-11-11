@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 importers:
+
   .:
     devDependencies:
       '@eslint/js':
@@ -50,7 +51,6 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.12)(@types/node@22.18.0)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2)
 
-
   codex-plugin/scripts:
     devDependencies:
       '@types/node':
@@ -59,7 +59,6 @@ importers:
       typescript:
         specifier: ^5.8.0
         version: 5.9.3
-
 
   crates/bindings-typescript:
     dependencies:
@@ -185,7 +184,6 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.12)(@types/node@22.18.0)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2)
 
-
   crates/bindings-typescript/case-conversion-test-client:
     dependencies:
       spacetimedb:
@@ -201,7 +199,6 @@ importers:
       typescript:
         specifier: ^5.0.0
         version: 5.9.3
-
 
   crates/bindings-typescript/test-app:
     dependencies:
@@ -227,7 +224,6 @@ importers:
       vite:
         specifier: ^7.1.5
         version: 7.1.5(@types/node@24.3.0)(jiti@2.6.1)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2)
-
 
   docs:
     dependencies:
@@ -308,7 +304,6 @@ importers:
         specifier: ~5.6.2
         version: 5.6.3
 
-
   modules/benchmarks-ts:
     dependencies:
       spacetimedb:
@@ -318,7 +313,6 @@ importers:
       typescript:
         specifier: ~5.6.2
         version: 5.6.3
-
 
   modules/module-test-ts:
     dependencies:
@@ -330,7 +324,6 @@ importers:
         specifier: ~5.6.2
         version: 5.6.3
 
-
   modules/sdk-test-case-conversion-ts:
     dependencies:
       spacetimedb:
@@ -340,7 +333,6 @@ importers:
       typescript:
         specifier: ~5.6.2
         version: 5.6.3
-
 
   modules/sdk-test-connect-disconnect-ts:
     dependencies:
@@ -352,7 +344,6 @@ importers:
         specifier: ~5.6.2
         version: 5.6.3
 
-
   modules/sdk-test-procedural-view-pk-ts:
     dependencies:
       spacetimedb:
@@ -362,7 +353,6 @@ importers:
       typescript:
         specifier: ~5.6.2
         version: 5.6.3
-
 
   modules/sdk-test-procedure-ts:
     dependencies:
@@ -374,7 +364,6 @@ importers:
         specifier: ~5.6.2
         version: 5.6.3
 
-
   modules/sdk-test-ts:
     dependencies:
       spacetimedb:
@@ -385,7 +374,6 @@ importers:
         specifier: ~5.6.2
         version: 5.6.3
 
-
   modules/sdk-test-view-pk-ts:
     dependencies:
       spacetimedb:
@@ -395,7 +383,6 @@ importers:
       typescript:
         specifier: ~5.6.2
         version: 5.6.3
-
 
   modules/spacetime-agents-ts:
     devDependencies:
@@ -417,7 +404,6 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
-
 
   modules/spacetime-agents-ts/example:
     dependencies:
@@ -450,7 +436,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-
   modules/spacetime-agents-ts/example/spacetimedb:
     dependencies:
       '@spacetimedb/agents':
@@ -476,7 +461,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-
   modules/spacetime-agents-ts/spacetimedb:
     dependencies:
       '@spacetimedb/agents':
@@ -492,7 +476,6 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
-
 
   modules/spacetime-auth-ts:
     dependencies:
@@ -528,7 +511,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-
   modules/spacetime-auth-ts/example:
     dependencies:
       '@spacetimedb/example-ui':
@@ -560,7 +542,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-
   modules/spacetime-auth-ts/example/spacetimedb:
     dependencies:
       '@spacetimedb/auth':
@@ -576,7 +557,6 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
-
 
   modules/spacetime-auth-ts/spacetimedb:
     dependencies:
@@ -596,7 +576,6 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
-
 
   modules/spacetime-cron-ts:
     dependencies:
@@ -622,7 +601,6 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
-
 
   modules/spacetime-cron-ts/example:
     dependencies:
@@ -655,7 +633,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-
   modules/spacetime-cron-ts/example/spacetimedb:
     dependencies:
       '@spacetimedb/cron':
@@ -672,7 +649,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-
   modules/spacetime-cron-ts/spacetimedb:
     dependencies:
       '@spacetimedb/cron':
@@ -688,7 +664,6 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
-
 
   modules/spacetime-crypto-ts:
     dependencies:
@@ -712,7 +687,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-
   modules/spacetime-example-ui-ts:
     devDependencies:
       '@types/node':
@@ -733,7 +707,6 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.12)(@types/node@22.18.0)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2)
-
 
   modules/spacetime-files-ts:
     dependencies:
@@ -759,7 +732,6 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
-
 
   modules/spacetime-files-ts/example:
     dependencies:
@@ -795,7 +767,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-
   modules/spacetime-files-ts/example/spacetimedb:
     dependencies:
       '@spacetimedb/files':
@@ -811,7 +782,6 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
-
 
   modules/spacetime-posthog-ts:
     devDependencies:
@@ -833,7 +803,6 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
-
 
   modules/spacetime-posthog-ts/example:
     dependencies:
@@ -866,7 +835,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-
   modules/spacetime-posthog-ts/example/spacetimedb:
     dependencies:
       '@spacetimedb/posthog':
@@ -883,7 +851,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-
   modules/spacetime-posthog-ts/spacetimedb:
     dependencies:
       '@spacetimedb/posthog':
@@ -899,7 +866,6 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
-
 
   modules/spacetime-rate-limit-ts:
     devDependencies:
@@ -921,7 +887,6 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
-
 
   modules/spacetime-rate-limit-ts/example:
     dependencies:
@@ -954,7 +919,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-
   modules/spacetime-rate-limit-ts/example/spacetimedb:
     dependencies:
       '@spacetimedb/rate-limit':
@@ -971,7 +935,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-
   modules/spacetime-rate-limit-ts/spacetimedb:
     dependencies:
       '@spacetimedb/rate-limit':
@@ -987,7 +950,6 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
-
 
   modules/spacetime-resend-ts:
     dependencies:
@@ -1016,7 +978,6 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
-
 
   modules/spacetime-resend-ts/example:
     dependencies:
@@ -1052,7 +1013,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-
   modules/spacetime-resend-ts/example/spacetimedb:
     dependencies:
       '@spacetimedb/rate-limit':
@@ -1071,7 +1031,6 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
-
 
   modules/spacetime-retry-ts:
     devDependencies:
@@ -1094,7 +1053,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-
   modules/spacetime-retry-ts/spacetimedb:
     dependencies:
       '@spacetimedb/retry':
@@ -1110,7 +1068,6 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
-
 
   modules/spacetime-s3-ts:
     dependencies:
@@ -1149,7 +1106,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-
   modules/spacetime-s3-ts/example:
     dependencies:
       '@spacetimedb/example-ui':
@@ -1181,7 +1137,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-
   modules/spacetime-s3-ts/example/spacetimedb:
     dependencies:
       '@spacetimedb/s3':
@@ -1198,7 +1153,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-
   modules/spacetime-s3-ts/spacetimedb:
     dependencies:
       '@spacetimedb/s3':
@@ -1214,7 +1168,6 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
-
 
   modules/spacetime-workflow-ts:
     devDependencies:
@@ -1236,7 +1189,6 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
-
 
   modules/spacetime-workflow-ts/example:
     dependencies:
@@ -1269,7 +1221,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-
   modules/spacetime-workflow-ts/example/spacetimedb:
     dependencies:
       '@spacetimedb/agents':
@@ -1289,7 +1240,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-
   modules/spacetime-workflow-ts/spacetimedb:
     dependencies:
       '@spacetimedb/workflow':
@@ -1305,7 +1255,6 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
-
 
   templates/angular-ts:
     dependencies:
@@ -1344,7 +1293,6 @@ importers:
         specifier: ~5.9.2
         version: 5.9.3
 
-
   templates/basic-ts:
     dependencies:
       spacetimedb:
@@ -1361,7 +1309,6 @@ importers:
         specifier: ~5.6.2
         version: 5.6.3
 
-
   templates/browser-ts:
     dependencies:
       spacetimedb:
@@ -1374,7 +1321,6 @@ importers:
       vite:
         specifier: ^7.1.5
         version: 7.1.5(@types/node@24.3.0)(jiti@2.6.1)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2)
-
 
   templates/bun-ts:
     dependencies:
@@ -1391,7 +1337,6 @@ importers:
       typescript:
         specifier: ~5.6.2
         version: 5.6.3
-
 
   templates/chat-react-ts:
     dependencies:
@@ -1457,7 +1402,6 @@ importers:
         specifier: 3.2.4
         version: 3.2.4(@types/debug@4.1.12)(@types/node@24.3.0)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2)
 
-
   templates/chat-react-ts/spacetimedb:
     dependencies:
       spacetimedb:
@@ -1470,7 +1414,6 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.12)(@types/node@24.3.0)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2)
-
 
   templates/hangman-react-ts:
     dependencies:
@@ -1520,7 +1463,6 @@ importers:
       vite:
         specifier: ^7.1.5
         version: 7.1.5(@types/node@24.3.0)(jiti@2.6.1)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2)
-
 
   templates/keynote-2:
     dependencies:
@@ -1598,7 +1540,6 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
-
   templates/llm-chat-ts:
     dependencies:
       react:
@@ -1626,7 +1567,6 @@ importers:
       vite:
         specifier: ^7.1.5
         version: 7.1.5(@types/node@24.3.0)(jiti@2.6.1)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2)
-
 
   templates/money-exchange-react-ts:
     dependencies:
@@ -1692,7 +1632,6 @@ importers:
         specifier: 3.2.4
         version: 3.2.4(@types/debug@4.1.12)(@types/node@24.3.0)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2)
 
-
   templates/nuxt-ts:
     dependencies:
       nuxt:
@@ -1708,7 +1647,6 @@ importers:
       typescript:
         specifier: ~5.6.2
         version: 5.6.3
-
 
   templates/react-ts:
     dependencies:
@@ -1737,7 +1675,6 @@ importers:
       vite:
         specifier: ^7.1.5
         version: 7.1.5(@types/node@24.3.0)(jiti@2.6.1)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2)
-
 
   templates/remix-ts:
     dependencies:
@@ -1779,7 +1716,6 @@ importers:
         specifier: ^5.4.0
         version: 5.4.21(@types/node@24.3.0)(sass@1.97.3)(terser@5.43.1)
 
-
   templates/solid-ts:
     dependencies:
       solid-js:
@@ -1798,7 +1734,6 @@ importers:
       vite-plugin-solid:
         specifier: ^2.11.8
         version: 2.11.12(@testing-library/jest-dom@6.7.0)(solid-js@1.9.13)(vite@7.3.2(@types/node@24.3.0)(jiti@2.6.1)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2))
-
 
   templates/svelte-ts:
     dependencies:
@@ -1821,7 +1756,6 @@ importers:
       vite:
         specifier: ^6.4.1
         version: 6.4.1(@types/node@24.3.0)(jiti@2.6.1)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2)
-
 
   templates/tanstack-ts:
     dependencies:
@@ -1874,7 +1808,6 @@ importers:
       vite-tsconfig-paths:
         specifier: ^5.1.4
         version: 5.1.4(typescript@5.9.3)(vite@7.1.5(@types/node@22.18.0)(jiti@2.6.1)(sass@1.97.3)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2))
-
 
   templates/vue-ts:
     dependencies:
