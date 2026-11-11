@@ -1,4 +1,4 @@
-Implement this SpacetimeDB module in csharp. Return only the module source.
+Write a SpacetimeDB backend module in C# that reserves two products atomically. Return only the module source.
 
 Reserve two distinct products atomically. A request ID identifies the entire payload. Exact replay is a no-op; reuse with different payload is an error. Validate quantities and products before accepting. No overselling, partial deductions, or failed-request receipts are allowed. Use the exact error text stated below.
 

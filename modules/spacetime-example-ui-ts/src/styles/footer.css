@@ -1,0 +1,27 @@
+.example-footer {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  border-top: 1px solid var(--example-footer-border, #121e24);
+}
+
+.example-footer span {
+  color: var(--example-footer-label, #6f7987);
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.example-footer a {
+  display: inline-flex;
+}
+
+.example-footer img {
+  height: 26px;
+  width: auto;
+  opacity: 0.85;
+}

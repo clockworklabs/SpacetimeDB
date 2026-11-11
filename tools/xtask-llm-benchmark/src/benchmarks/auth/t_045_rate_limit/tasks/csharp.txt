@@ -18,8 +18,8 @@ TABLES
 
 REDUCERS
 - LimitedAction(ctx, string payload)
-  - Get the current time in microseconds: ctx.Timestamp.ToUnixTimeMilliseconds() * 1000
-  - Look up the RateLimit row for ctx.Sender
-  - If a row exists and (now - LastCallUs) < 1_000_000, throw exception with "rate limited"
+  - Get the current time in microseconds
+  - Look up the RateLimit row for the caller's identity
+  - If a row exists and (now - LastCallUs) < 1_000_000, fail with "rate limited"
   - Insert or update the RateLimit row with LastCallUs = now
-  - Insert an ActionLog row with Identity = ctx.Sender and the given Payload, Id = 0 for AutoInc
+  - Insert an ActionLog row with Identity = the caller's identity and the given Payload

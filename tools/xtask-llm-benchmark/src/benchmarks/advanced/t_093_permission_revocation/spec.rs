@@ -12,8 +12,8 @@ pub fn spec() -> BenchmarkSpec {
             let (outsider, outsider_id) = s.new_user()?;
             s.expect_call_as(&owner, "set_document", json!(["first", "secret-one"]), None)?;
             s.rows_as(&reader, "visible_document", &["id", "title"], json!([]))?;
-            s.expect_call_as(&reader, "set_document", json!(["stolen", "leak"]), Some("owner only"))?;
-            s.expect_call_as(&reader, "set_access", json!([outsider_id, true]), Some("owner only"))?;
+            s.expect_rejected_as(&reader, "set_document", json!(["stolen", "leak"]), "owner only")?;
+            s.expect_rejected_as(&reader, "set_access", json!([outsider_id, true]), "owner only")?;
             let (code, _) = s.sql_as(
                 &reader,
                 &format!(
@@ -22,10 +22,7 @@ pub fn spec() -> BenchmarkSpec {
                 ),
             )?;
             anyhow::ensure!((400..500).contains(&code), "private source exposed: HTTP {code}");
-            let query = format!(
-                "SELECT * FROM \"{}\"",
-                crate::eval::table_name("visible_document", s.lang)
-            );
+            let query = format!("SELECT * FROM \"{}\"", s.relation("visible_document"));
             let mut live = s.connect(&reader)?;
             live.subscribe(1, &query)?;
             live.expect_update("SubscribeApplied", json!([]), json!([]))?;
