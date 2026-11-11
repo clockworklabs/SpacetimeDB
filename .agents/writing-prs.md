@@ -10,7 +10,7 @@ If you cannot create verified commits, alert the user promptly, explicitly tell 
 
 ## Preserve and complete the template
 
-No section of the PR template may be removed. PRs that remove any template section will be rejected. Populate every section faithfully, following its instructions and describing the actual change; do not leave placeholders or invent information. Where a section does not apply, say so explicitly and follow any wording prescribed by the template.
+No section of the PR template may be removed. PRs that remove any template section will be rejected. Populate every section faithfully, following its instructions and describing the actual change; do not leave placeholders or invent information. Where a section does not apply, say so explicitly and follow any prescribed wording.
 
 ## Writing the testing section
 
@@ -18,23 +18,23 @@ Describe the automated or manual testing performed and what behavior it covers, 
 
 If no testing was performed, write “Not tested.” Do not justify the absence of testing or pad the section with routine checks. Reviewing the diff or instructions, checking whitespace or links, and verifying commit signatures are not substitutes for testing the change.
 
-### Connect testing to the change
+### Choose the evidence
 
-- Start from the change's intended outcome and the important ways it could fail. Explain how testing addresses those concerns, including relevant existing coverage.
-- Usually, the strongest evidence is how automated tests were extended or adapted, or why existing tests cover the change. Manual tests and successful use can also provide evidence.
-- State what the testing establishes. A same-client compilation test supports source compatibility; a client/server test supports actual interaction. Neither proves the other.
+- Start from the change's intended outcome and the important ways it could fail. Identify what verification addresses those concerns, including existing coverage.
+- Usually, the strongest evidence is how automated tests were extended or adapted, or why existing tests cover the change. Manual tests, successful use, and other verification can also provide evidence.
+- State what the evidence establishes. A same-client compilation test supports source compatibility; a client/server test supports actual interaction. Neither proves the other.
 
-The connection between the testing and the intended outcome should be clear from the wording. It doesn't need a separate justification after every bullet.
+The connection between the evidence and the intended outcome should be clear from the wording. It doesn't need a separate justification after every bullet.
 
 ### Content
 
 - Distinguish updated tests, added tests, and relevant existing coverage. Use short bullets; omit categories that don't apply.
-- Describe what each test verifies. Name the inputs or API when needed to make the claim clear: incorrect reducer arguments, generated bindings, or the built package.
+- Describe what each test or other check verifies. Name the inputs or API when needed to make the claim clear: incorrect reducer arguments, generated bindings, or the built package.
 - Explain what coverage the change adds. A new test may exercise previously tested behavior through a new path; don't imply the behavior was previously untested.
 - Make compatibility claims precise. The same client against old and new bindings is different from old bindings against a new SDK.
 - Include existing integration coverage when it helps explain why the change is covered. Inspect it before claiming coverage is missing or proposing more tests.
 - Write assuming CI passes. Don't include a running log of local test execution or say CI tests still need to be run for the PR. This does not justify claiming a known failure passes.
-- Label manual testing as manual and state the behavior exercised and the result.
+- Label manual verification as manual and state what was checked and the result.
 - Keep caveats focused on gaps that affect confidence in the change, not a routine list of what tests don't do.
 
 ### Wording and detail
