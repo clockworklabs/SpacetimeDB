@@ -11,7 +11,7 @@ TYPES
 TABLE
 - profile (public)
   - Fields:
-    - id: number (u64, primary key, autoInc)
+    - id: bigint (u64, primary key, autoInc)
     - home: Address
     - work: Address
     - pos: Position

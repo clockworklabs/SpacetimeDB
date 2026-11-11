@@ -8,5 +8,5 @@ TABLE
     - connected_at: Timestamp
 
 REDUCERS
-- client_connected: lifecycle reducer that inserts an OnlinePlayer row using ctx.sender() as the identity and ctx.timestamp as connected_at
-- client_disconnected: lifecycle reducer that deletes the OnlinePlayer row for ctx.sender()
+- client_connected: lifecycle reducer that inserts an OnlinePlayer row with the caller's identity and the current time as connected_at
+- client_disconnected: lifecycle reducer that deletes the OnlinePlayer row for the caller's identity
