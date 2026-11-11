@@ -26,13 +26,3 @@ export function validateWebhookRequestHeaders(
   }
   return undefined;
 }
-
-export function validateWebhookRequestBody(
-  payloadJson: string
-): WebhookRequestRejection | undefined {
-  if (payloadJson.length === 0) return { status: 400, error: 'empty body' };
-  if (new TextEncoder().encode(payloadJson).length > MAX_WEBHOOK_BODY_LENGTH) {
-    return { status: 413, error: 'payload too large' };
-  }
-  return undefined;
-}

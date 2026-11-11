@@ -162,9 +162,8 @@ outside `withTx`.
 - `cancelUserSubscription(ctx, { userId, stripeSubscriptionId, cancelAtPeriodEnd?, idempotencyKey? })`
 - `reactivateUserSubscription(ctx, { userId, stripeSubscriptionId, idempotencyKey? })`:
   removes scheduled cancellation; a fully canceled subscription cannot restart
-- `updateUserSubscriptionQuantity(ctx, { userId, stripeSubscriptionId, quantity, subscriptionItemId?, idempotencyKey? })`:
-  requires an item ID for a multi-item subscription. Only the first item is stored
-  in the subscription record, so this helper rejects updates to other items
+- `updateUserSubscriptionQuantity(ctx, { userId, stripeSubscriptionId, quantity, idempotencyKey? })`:
+  single-item subscriptions only
 - `stripeRequest(ctx, { method, path, formBody?, idempotencyKey? })`: request to
   a relative `/v1/` path on `api.stripe.com`; accepted methods are `GET`,
   `POST`, and `DELETE`
@@ -182,7 +181,6 @@ outside `withTx`.
 **Billing** (admin)
 
 - `get_or_create_customer({ userId, email, name })`
-- `create_checkout_session({ items, mode, successUrl, cancelUrl, customerId, ...metadata })`
 - `validate_stripe_price({ priceId })`: confirms a price exists and is active
 - `get_remote_checkout_session({ sessionId })`: fetch session state from Stripe
 - `create_customer_portal_session({ customerId, returnUrl })`
@@ -244,7 +242,10 @@ session, and invoice row stores the `created` time of the event it reflects in
 `eventCreatedUnix`. An event older than that, or one that would move the status
 backward (a canceled subscription to active, a paid invoice to open, a paid
 Checkout session to unpaid or failed), is stored as `Ignored` without changing
-the row. `replay_webhook_event` follows the same rule.
+the row. Events created in the same second apply in delivery order.
+`replay_webhook_event` follows the same rule. Rows updated from Stripe API
+responses by the subscription helpers keep their stored event time, so the next
+webhook still applies.
 
 ### Checkout fulfillment
 
@@ -331,27 +332,22 @@ shapes:
 
 ## Webhook signature verification
 
-Both entry points verify the Stripe signature in-module against the configured
-`webhookSigningSecret` (HMAC-SHA256 over `${timestamp}.${rawBody}` via
-`@spacetimedb/crypto`). Missing secrets produce a service-unavailable response:
+`handleStripeWebhook` and `ingest_stripe_webhook` share one ingest path. Both
+verify the Stripe signature against the configured `webhookSigningSecret`
+(HMAC-SHA256 via `@spacetimedb/crypto`) before writing anything, then store the
+event once by ID and apply it.
 
-- `handleStripeWebhook` (HTTP) - for direct Stripe-to-SpacetimeDB delivery,
-  mounted at `/stripe/webhook` by the standalone module and routed by the host
-  when used as a submodule.
-- `ingest_stripe_webhook` (reducer) - for a relay forwarding the raw body +
-  `stripe-signature` header over the SDK; it verifies before mutating state.
+- `handleStripeWebhook` (HTTP): direct delivery from Stripe. Returns `503`
+  without a signing secret, `401` for a bad signature, `400` when the event
+  fails to apply, and `500` without committing when the transaction throws.
+- `ingest_stripe_webhook` (reducer): for a relay forwarding the raw body and
+  `stripe-signature` header. It also checks that its event ID, type, and
+  livemode arguments match the signed payload. A rejected request writes
+  nothing. An event that fails to apply keeps its `Failed` record, readable
+  with `get_webhook_event`.
 
-`replay_webhook_event` re-applies an already-stored event and is admin-gated.
-The relay reducer also verifies that its separately supplied event metadata
-matches the signed payload before using the event ID as its idempotency key.
-The HTTP handler records rejected payloads as Failed and returns `400`. A
-redelivery retries the stored payload. Unexpected transaction errors return
-`500` from the HTTP handler without committing partial state.
-
-The relay reducer throws, writing nothing, when size, secret, signature, or
-metadata checks reject a request. Once a signed event is stored, the reducer
-commits: an invalid payload keeps its `Failed` event record with the error
-message. Callers read the outcome with `get_webhook_event`.
+A redelivery of a `Failed` event retries the stored payload.
+`replay_webhook_event` (admin) re-applies a stored event.
 
 ## Integration testing
 

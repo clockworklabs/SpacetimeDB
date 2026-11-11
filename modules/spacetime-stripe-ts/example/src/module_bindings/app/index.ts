@@ -67,7 +67,6 @@ import RateLimit_UpdateConfigReducer from "./rateLimit/update_config_reducer";
 // Import namespace procedure arg schemas
 import * as Stripe_AddAdminIdentityProcedure from "./stripe/add_admin_identity_procedure";
 import * as Stripe_CancelSubscriptionProcedure from "./stripe/cancel_subscription_procedure";
-import * as Stripe_CreateCheckoutSessionProcedure from "./stripe/create_checkout_session_procedure";
 import * as Stripe_CreateCustomerPortalSessionProcedure from "./stripe/create_customer_portal_session_procedure";
 import * as Stripe_GetCheckoutSessionProcedure from "./stripe/get_checkout_session_procedure";
 import * as Stripe_GetCustomerProcedure from "./stripe/get_customer_procedure";
@@ -173,7 +172,6 @@ const proceduresSchema = __procedures(
   __procedureSchema("sync_store_products_with_stripe", SyncStoreProductsWithStripeProcedure.params, SyncStoreProductsWithStripeProcedure.returnType),
   __procedureSchema("stripe.add_admin_identity", Stripe_AddAdminIdentityProcedure.params, Stripe_AddAdminIdentityProcedure.returnType, "stripe.addAdminIdentity"),
   __procedureSchema("stripe.cancel_subscription", Stripe_CancelSubscriptionProcedure.params, Stripe_CancelSubscriptionProcedure.returnType, "stripe.cancelSubscription"),
-  __procedureSchema("stripe.create_checkout_session", Stripe_CreateCheckoutSessionProcedure.params, Stripe_CreateCheckoutSessionProcedure.returnType, "stripe.createCheckoutSession"),
   __procedureSchema("stripe.create_customer_portal_session", Stripe_CreateCustomerPortalSessionProcedure.params, Stripe_CreateCustomerPortalSessionProcedure.returnType, "stripe.createCustomerPortalSession"),
   __procedureSchema("stripe.get_checkout_session", Stripe_GetCheckoutSessionProcedure.params, Stripe_GetCheckoutSessionProcedure.returnType, "stripe.getCheckoutSession"),
   __procedureSchema("stripe.get_customer", Stripe_GetCustomerProcedure.params, Stripe_GetCustomerProcedure.returnType, "stripe.getCustomer"),
@@ -266,7 +264,6 @@ export const procedures = {
   stripe: {
     addAdminIdentity: __procedureAccessors["stripe.addAdminIdentity"],
     cancelSubscription: __procedureAccessors["stripe.cancelSubscription"],
-    createCheckoutSession: __procedureAccessors["stripe.createCheckoutSession"],
     createCustomerPortalSession: __procedureAccessors["stripe.createCustomerPortalSession"],
     getCheckoutSession: __procedureAccessors["stripe.getCheckoutSession"],
     getCustomer: __procedureAccessors["stripe.getCustomer"],

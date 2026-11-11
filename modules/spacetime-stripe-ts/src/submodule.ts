@@ -13,7 +13,7 @@ export {
   stripeRequest,
 } from './submodule/operations/billing.js';
 export { handleStripeWebhook } from './submodule/operations/webhook.js';
-export type { VerifiedStripeEvent } from './submodule/operations/webhook.js';
+export type { VerifiedStripeEvent } from './submodule/operations.js';
 export type {
   CheckoutOptions,
   UserCheckoutArgs,

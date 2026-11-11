@@ -73,11 +73,14 @@ export const setStripeConfig: ProcedureExport<
   denyIfNotAdmin(verdict);
   const secretKey = args.secretKey.trim();
   if (!secretKey) throwSenderError(errors.invalidSecretKey);
+  const webhookSigningSecret = args.webhookSigningSecret?.trim();
+  if (webhookSigningSecret === '')
+    throwSenderError(errors.invalidWebhookSigningSecret);
   ctx.withTx(tx => {
     upsertConfig(tx, {
       secretKey,
-      stripeVersion: args.stripeVersion,
-      webhookSigningSecret: args.webhookSigningSecret,
+      stripeVersion: args.stripeVersion?.trim() || undefined,
+      webhookSigningSecret,
     });
   });
   return {};

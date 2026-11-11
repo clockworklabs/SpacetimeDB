@@ -73,6 +73,7 @@ const subscription = {
   status: 'active',
   eventCreatedUnix: 0n,
 };
+const synced: Array<typeof subscription> = [];
 const remoteItems = [
   { id: 'si_first', quantity: 1, price: { id: 'price_first' } },
 ];
@@ -97,7 +98,7 @@ const billingTx = {
       stripeSubscriptionId: {
         find: (id: string) =>
           id === subscription.stripeSubscriptionId ? subscription : undefined,
-        update: () => {},
+        update: (row: typeof subscription) => synced.push(row),
       },
       byUserId: { filter: () => [] },
     },
@@ -190,6 +191,16 @@ assert.equal(
   new URLSearchParams(calls.at(-1)?.body).get('cancel_at_period_end'),
   'false'
 );
+assert.equal(synced.at(-1)?.status, 'active');
+// A Stripe API response never moves a canceled row back to active.
+subscription.status = 'canceled';
+const syncedBefore = synced.length;
+reactivateUserSubscription(billing, {
+  userId: 'buyer',
+  stripeSubscriptionId: 'sub_buyer',
+});
+assert.equal(synced.length, syncedBefore);
+subscription.status = 'active';
 remoteItems.push({
   id: 'si_second',
   quantity: 1,
@@ -202,36 +213,12 @@ assert.throws(
       stripeSubscriptionId: 'sub_buyer',
       quantity: 3n,
     }),
-  /item_required/
+  /has_multiple_items/
 );
-assert.throws(
-  () =>
-    updateUserSubscriptionQuantity(billing, {
-      userId: 'buyer',
-      stripeSubscriptionId: 'sub_buyer',
-      subscriptionItemId: 'si_other',
-      quantity: 3n,
-    }),
-  /item_not_found/
-);
-assert.throws(
-  () =>
-    updateUserSubscriptionQuantity(billing, {
-      userId: 'buyer',
-      stripeSubscriptionId: 'sub_buyer',
-      subscriptionItemId: 'si_second',
-      quantity: 3n,
-    }),
-  /item_not_stored/
-);
-assert.equal(
-  calls.some(call => call.url.endsWith('/subscription_items/si_second')),
-  false
-);
+remoteItems.pop();
 updateUserSubscriptionQuantity(billing, {
   userId: 'buyer',
   stripeSubscriptionId: 'sub_buyer',
-  subscriptionItemId: 'si_first',
   quantity: 3n,
 });
 const change = calls.find(call =>

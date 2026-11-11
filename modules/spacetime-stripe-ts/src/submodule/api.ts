@@ -11,7 +11,6 @@ export {
   getWebhookEventCount,
   updateSubscriptionMetadata,
   getOrCreateCustomer,
-  createCheckoutSession,
   createCustomerPortalSession,
   cancelSubscription,
   reactivateSubscription,

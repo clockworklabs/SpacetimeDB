@@ -182,14 +182,13 @@ try {
   await assert.rejects(
     call(
       'change_subscription',
-      [sub.id, null, { cancel: [] }, `${database}:unauthorized`],
+      [sub.id, { cancel: [] }, `${database}:unauthorized`],
       false
     ),
     /not_authorized/
   );
   await call('change_subscription', [
     sub.id,
-    null,
     { cancel: [] },
     `${database}:cancel`,
   ]);
@@ -199,7 +198,6 @@ try {
   );
   await call('change_subscription', [
     sub.id,
-    null,
     { reactivate: [] },
     `${database}:reactivate`,
   ]);
@@ -212,7 +210,6 @@ try {
   });
   await call('change_subscription', [
     sub.id,
-    null,
     { reactivate: [] },
     `${database}:reactivate-explicit-date`,
   ]);
@@ -223,7 +220,6 @@ try {
   );
   await call('change_subscription', [
     sub.id,
-    { some: sub.items.data[0].id },
     { quantity: 3 },
     `${database}:quantity`,
   ]);

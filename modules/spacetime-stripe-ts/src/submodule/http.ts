@@ -29,7 +29,11 @@ function validatePath(path: string): string {
   if (
     normalized.startsWith('//') ||
     normalized.includes('\\') ||
-    normalized.includes('#')
+    normalized.includes('#') ||
+    normalized
+      .split('?')[0]
+      .split('/')
+      .some(segment => /^(\.|%2e){1,2}$/i.test(segment))
   ) {
     throw new Error(errors.requestPathInvalid);
   }

@@ -10,25 +10,7 @@ import {
 } from '../src/submodule/event-order';
 import { buildStripeHttpRequest } from '../src/submodule/http';
 import { checkoutForm, type UserCheckoutArgs } from '../src/submodule/checkout';
-import { parseStripeEventMetadata } from '../src/submodule/webhook-metadata';
-import {
-  validateWebhookRequestBody,
-  validateWebhookRequestHeaders,
-} from '../src/submodule/webhook-request';
-
-const customerEvent = {
-  id: 'evt_1',
-  type: 'customer.created',
-  livemode: false,
-  data: {
-    object: {
-      id: 'cus_1',
-      email: 'customer@example.com',
-      name: 'Customer',
-      metadata: { userId: 'user-1' },
-    },
-  },
-};
+import { validateWebhookRequestHeaders } from '../src/submodule/webhook-request';
 
 const checkout: UserCheckoutArgs = {
   userId: 'buyer',
@@ -99,14 +81,6 @@ assert.equal(
 );
 assert.equal(setupBody.get('setup_intent_data[metadata][userId]'), 'buyer');
 
-assert.deepEqual(parseStripeEventMetadata(JSON.stringify(customerEvent)), {
-  eventId: 'evt_1',
-  eventType: 'customer.created',
-  livemode: false,
-});
-assert.equal(parseStripeEventMetadata('{bad json'), undefined);
-assert.equal(parseStripeEventMetadata('{"id":"evt_1"}'), undefined);
-
 const request = buildStripeHttpRequest({
   method: 'post',
   path: '/v1/customers',
@@ -142,6 +116,20 @@ assert.throws(
     }),
   /stripe\.request_path_invalid/
 );
+for (const path of ['/v1/prices/..', '/v1/prices/%2E%2e/customers']) {
+  assert.throws(
+    () =>
+      buildStripeHttpRequest({
+        method: 'GET',
+        path,
+        secretKey: 'sk_test_secret',
+        stripeVersion: undefined,
+        formBody: undefined,
+        idempotencyKey: undefined,
+      }),
+    /stripe\.request_path_invalid/
+  );
+}
 assert.throws(
   () =>
     buildStripeHttpRequest({
@@ -169,12 +157,6 @@ assert.equal(
   431
 );
 assert.equal(validateWebhookRequestHeaders('POST', null, 'short'), undefined);
-assert.equal(validateWebhookRequestBody('')?.status, 400);
-assert.equal(
-  validateWebhookRequestBody('x'.repeat(1024 * 1024 + 1))?.status,
-  413
-);
-assert.equal(validateWebhookRequestBody('{}'), undefined);
 
 const subscriptions = Array.from({ length: 5001 }, (_, index) => ({
   stripeSubscriptionId: `sub_${index}`,

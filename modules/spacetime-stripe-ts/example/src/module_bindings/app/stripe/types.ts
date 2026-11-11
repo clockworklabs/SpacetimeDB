@@ -10,18 +10,6 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export const CheckoutLineItem = __t.object("CheckoutLineItem", {
-  priceId: __t.string(),
-  quantity: __t.i64(),
-});
-export type CheckoutLineItem = __Infer<typeof CheckoutLineItem>;
-
-export const CheckoutSessionResult = __t.object("CheckoutSessionResult", {
-  sessionId: __t.string(),
-  url: __t.option(__t.string()),
-});
-export type CheckoutSessionResult = __Infer<typeof CheckoutSessionResult>;
-
 export const GetOrCreateCustomerResult = __t.object("GetOrCreateCustomerResult", {
   customerId: __t.string(),
   isNew: __t.bool(),

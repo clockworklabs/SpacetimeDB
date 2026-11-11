@@ -66,7 +66,6 @@ export const checkout = db.procedure(
 export const changeSubscription = db.procedure(
   {
     subscriptionId: t.string(),
-    itemId: t.option(t.string()),
     operation: t.enum('SubscriptionOperation', {
       cancel: t.unit(),
       reactivate: t.unit(),
@@ -91,7 +90,6 @@ export const changeSubscription = db.procedure(
       case 'quantity':
         stripe.updateUserSubscriptionQuantity(ctx.as.stripe, {
           ...common,
-          subscriptionItemId: args.itemId,
           quantity: BigInt(args.operation.value),
         });
         break;

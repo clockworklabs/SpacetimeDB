@@ -328,11 +328,6 @@ export type WriteCtx = ReducerModuleCtx | TransactionModuleCtx;
 export type JsonRecord = Record<string, unknown>;
 export type ModuleTimestamp = ReducerModuleCtx['timestamp'];
 
-export const checkoutSessionResult = t.object('CheckoutSessionResult', {
-  sessionId: t.string(),
-  url: t.option(t.string()),
-});
-
 export const getOrCreateCustomerResult = t.object('GetOrCreateCustomerResult', {
   customerId: t.string(),
   isNew: t.bool(),
@@ -494,14 +489,4 @@ export const vStripeCheckoutSessionResponse = v.object({
 
 export const vStripeBillingPortalSessionResponse = v.object({
   url: v.string(),
-});
-
-// Stripe error response: `{ error: { type, code, message, request_log_url } }`.
-export const vStripeErrorBody = v.object({
-  error: v.object({
-    type: v.optional(v.string()),
-    code: v.optional(v.string()),
-    message: v.optional(v.string()),
-    request_log_url: v.optional(v.union([v.string(), v.null()])),
-  }),
 });

@@ -23,7 +23,6 @@ import {
 } from './schema.js';
 import { verifyStripeSignature } from '@spacetimedb/crypto';
 import { adminVerdict, denyIfNotAdmin, requireAdmin } from './auth.js';
-import { parseStripeEventMetadata } from './webhook-metadata.js';
 import {
   checkoutPaymentStatusRank,
   invoiceStatusRank,
@@ -215,7 +214,7 @@ export function upsertCustomerRow(
     name: string | undefined;
     metadataJson: string | undefined;
     userId: string | undefined;
-    eventCreatedUnix: bigint;
+    eventCreatedUnix?: bigint;
   }
 ) {
   const existing = ctx.db.stripeCustomer.stripeCustomerId.find(
@@ -227,7 +226,7 @@ export function upsertCustomerRow(
     name: args.name ?? existing?.name,
     metadataJson: args.metadataJson ?? existing?.metadataJson,
     userId: args.userId ?? existing?.userId,
-    eventCreatedUnix: args.eventCreatedUnix,
+    eventCreatedUnix: args.eventCreatedUnix ?? existing?.eventCreatedUnix ?? 0n,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
     deleted: args.deleted ?? existing?.deleted ?? false,
@@ -255,7 +254,7 @@ export function upsertSubscriptionRow(
     metadataJson: string | undefined;
     orgId: string | undefined;
     userId: string | undefined;
-    eventCreatedUnix: bigint;
+    eventCreatedUnix?: bigint;
   }
 ) {
   const existing = ctx.db.stripeSubscription.stripeSubscriptionId.find(
@@ -273,7 +272,7 @@ export function upsertSubscriptionRow(
     metadataJson: args.metadataJson ?? existing?.metadataJson,
     orgId: args.orgId ?? existing?.orgId,
     userId: args.userId ?? existing?.userId,
-    eventCreatedUnix: args.eventCreatedUnix,
+    eventCreatedUnix: args.eventCreatedUnix ?? existing?.eventCreatedUnix ?? 0n,
     insertedAt: existing?.insertedAt ?? now,
     updatedAt: now,
   };
@@ -883,10 +882,100 @@ export function createCustomerInStripeAndSync(
       name: args.name,
       metadataJson: details.metadataJson,
       userId: details.userId,
-      eventCreatedUnix: unixSeconds(ctx.timestamp),
     });
   });
   return customerId;
+}
+
+const verifiedEvent = v.object({
+  id: v.pipe(
+    v.string(),
+    v.minLength(1),
+    v.maxLength(MAX_WEBHOOK_METADATA_LENGTH)
+  ),
+  type: v.pipe(
+    v.string(),
+    v.minLength(1),
+    v.maxLength(MAX_WEBHOOK_METADATA_LENGTH)
+  ),
+  created: v.number(),
+  livemode: v.optional(v.boolean(), false),
+  data: v.object({ object: v.record(v.string(), v.unknown()) }),
+});
+
+export type VerifiedStripeEvent = v.InferOutput<typeof verifiedEvent>;
+
+/**
+ * Verifies a signed Stripe payload, stores it once by event ID, and applies it.
+ * `onEvent` runs in the same transaction when the event is applied without
+ * failing; repeated processed or ignored events skip it.
+ */
+export function ingestWebhookPayload(
+  ctx: ReducerModuleCtx,
+  payloadJson: string,
+  signatureHeader: string | undefined,
+  onEvent?: (event: VerifiedStripeEvent) => void
+):
+  | { code: string; httpStatus: number }
+  | {
+      event: VerifiedStripeEvent;
+      status: WebhookEventStatusValue;
+      error: string | undefined;
+    } {
+  if (new TextEncoder().encode(payloadJson).length > MAX_WEBHOOK_BODY_LENGTH)
+    return { code: errors.webhookPayloadTooLarge, httpStatus: 413 };
+  if ((signatureHeader?.length ?? 0) > MAX_WEBHOOK_HEADER_LENGTH)
+    return { code: errors.webhookSignatureTooLarge, httpStatus: 431 };
+  const secret = ctx.db.stripeConfig.singleton.find(true)?.webhookSigningSecret;
+  if (!secret)
+    return { code: errors.webhookSecretNotConfigured, httpStatus: 503 };
+  const signature = verifyStripeSignature({
+    rawBody: payloadJson,
+    signatureHeader: signatureHeader ?? '',
+    secret,
+    nowSeconds: Number(unixSeconds(ctx.timestamp)),
+  });
+  if (!signature.ok) {
+    return {
+      code: `${errors.webhookSignatureMismatch}:${signature.reason}`,
+      httpStatus: 401,
+    };
+  }
+  const parsed = v.safeParse(verifiedEvent, safeJsonParse(payloadJson));
+  if (!parsed.success)
+    return { code: errors.webhookMetadataInvalid, httpStatus: 400 };
+
+  const existing = ctx.db.stripeWebhookEvent.eventId.find(parsed.output.id);
+  if (
+    existing &&
+    (existing.status.tag === 'Processed' || existing.status.tag === 'Ignored')
+  ) {
+    return {
+      event: parsed.output,
+      status: existing.status,
+      error: existing.errorMessage,
+    };
+  }
+  if (!existing) {
+    ctx.db.stripeWebhookEvent.insert({
+      eventId: parsed.output.id,
+      eventType: parsed.output.type,
+      livemode: parsed.output.livemode,
+      payloadJson,
+      status: WebhookEventStatus.Received,
+      errorMessage: undefined,
+      receivedAt: ctx.timestamp,
+      processedAt: undefined,
+    });
+  }
+  // A redelivery retries the stored payload.
+  const event = existing
+    ? v.parse(verifiedEvent, JSON.parse(existing.payloadJson))
+    : parsed.output;
+  const outcome = applyStripeEvent(ctx, existing?.payloadJson ?? payloadJson);
+  if (outcome.status.tag !== 'Failed') onEvent?.(event);
+  updateWebhookStatus(ctx, event.id, outcome.status, outcome.error);
+  return { event, ...outcome };
 }
 
 const ingestStripeWebhookArgs = {
@@ -902,77 +991,16 @@ export const ingestStripeWebhook: ReducerExport<
 > = spacetimedb.reducer(
   ingestStripeWebhookArgs,
   (ctx, { eventId, eventType, livemode, payloadJson, signatureHeader }) => {
+    const result = ingestWebhookPayload(ctx, payloadJson, signatureHeader);
+    if ('code' in result) throwSenderError(result.code);
     if (
-      eventId.length === 0 ||
-      eventId.length > MAX_WEBHOOK_METADATA_LENGTH ||
-      eventType.length === 0 ||
-      eventType.length > MAX_WEBHOOK_METADATA_LENGTH
-    ) {
-      throwSenderError(errors.webhookMetadataInvalid);
-    }
-    if (payloadJson.length > MAX_WEBHOOK_BODY_LENGTH) {
-      throwSenderError(errors.webhookPayloadTooLarge);
-    }
-    if ((signatureHeader?.length ?? 0) > MAX_WEBHOOK_HEADER_LENGTH) {
-      throwSenderError(errors.webhookSignatureTooLarge);
-    }
-
-    const cfg = ctx.db.stripeConfig.singleton.find(true);
-    if (!cfg?.webhookSigningSecret) {
-      throwSenderError(errors.webhookSecretNotConfigured);
-    }
-    const nowSeconds = Number(ctx.timestamp.microsSinceUnixEpoch / 1_000_000n);
-    const signature = verifyStripeSignature({
-      rawBody: payloadJson,
-      signatureHeader: signatureHeader ?? '',
-      secret: cfg.webhookSigningSecret,
-      nowSeconds,
-    });
-    if (!signature.ok) {
-      throwSenderError(
-        `${errors.webhookSignatureMismatch}:${signature.reason}`
-      );
-    }
-
-    const signedMetadata = parseStripeEventMetadata(payloadJson);
-    if (!signedMetadata) throwSenderError(errors.webhookPayloadMissingMetadata);
-    if (
-      eventId !== signedMetadata.eventId ||
-      eventType !== signedMetadata.eventType ||
-      livemode !== signedMetadata.livemode
+      eventId !== result.event.id ||
+      eventType !== result.event.type ||
+      livemode !== result.event.livemode
     ) {
       throwSenderError(errors.webhookMetadataMismatch);
     }
-
-    const existing = ctx.db.stripeWebhookEvent.eventId.find(
-      signedMetadata.eventId
-    );
-    if (
-      existing &&
-      (existing.status.tag === 'Processed' || existing.status.tag === 'Ignored')
-    )
-      return;
-
-    if (!existing)
-      ctx.db.stripeWebhookEvent.insert({
-        eventId: signedMetadata.eventId,
-        eventType: signedMetadata.eventType,
-        livemode: signedMetadata.livemode,
-        payloadJson,
-        status: WebhookEventStatus.Received,
-        errorMessage: undefined,
-        receivedAt: ctx.timestamp,
-        processedAt: undefined,
-      });
-
     // A Failed event row commits so it can be read and replayed.
-    const outcome = applyStripeEvent(ctx, existing?.payloadJson ?? payloadJson);
-    updateWebhookStatus(
-      ctx,
-      signedMetadata.eventId,
-      outcome.status,
-      outcome.error
-    );
   }
 );
 
@@ -999,6 +1027,7 @@ export const pruneWebhookEvents: ReducerExport<
   { onSchedule: stripeWebhookPruneTickTable },
   pruneWebhookEventsArgs,
   ctx => {
+    if (!ctx.senderAuth.isInternal) throwSenderError(errors.notAuthorized);
     const cutoff = new Timestamp(
       ctx.timestamp.microsSinceUnixEpoch - WEBHOOK_EVENT_RETENTION_MICROS
     );

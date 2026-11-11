@@ -1,7 +1,6 @@
 // Stable error codes. Stripe API failures append `:<http status>` and Stripe's
 // error details after the code.
 export const errors = {
-  subscriptionItemNotStored: 'stripe.subscription_item_not_stored',
   notAuthorized: 'stripe.not_authorized',
   cannotRemoveLastAdmin: 'stripe.cannot_remove_last_admin',
   configNotSet: 'stripe.config_not_set',
@@ -36,8 +35,7 @@ export const errors = {
   subscriptionLookupFailed: 'stripe.subscription_lookup_failed',
   subscriptionLookupInvalidResponse:
     'stripe.subscription_lookup_invalid_response',
-  subscriptionMissingLineItems: 'stripe.subscription_missing_line_items',
-  subscriptionItemRequired: 'stripe.subscription_item_required',
+  subscriptionHasMultipleItems: 'stripe.subscription_has_multiple_items',
   subscriptionItemNotFound: 'stripe.subscription_item_not_found',
   subscriptionItemUpdateFailed: 'stripe.subscription_item_update_failed',
   subscriptionPayloadMissingFields:
@@ -47,7 +45,6 @@ export const errors = {
   webhookSignatureTooLarge: 'stripe.webhook_signature_too_large',
   webhookSecretNotConfigured: 'stripe.webhook_secret_not_configured',
   webhookSignatureMismatch: 'stripe.webhook_signature_mismatch',
-  webhookPayloadMissingMetadata: 'stripe.webhook_payload_missing_metadata',
   webhookMetadataMismatch: 'stripe.webhook_metadata_mismatch',
   webhookEventNotFound: 'stripe.webhook_event_not_found',
 } as const;
