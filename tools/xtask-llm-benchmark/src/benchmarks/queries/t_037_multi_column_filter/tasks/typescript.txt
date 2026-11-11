@@ -3,7 +3,7 @@ Write a SpacetimeDB backend module in TypeScript that defines an event log table
 TABLES
 - event_log (private)
   - Fields:
-    - id: number (u64, primary key, autoInc)
+    - id: bigint (u64, primary key, autoInc)
     - category: string
     - severity: number (u32)
     - message: string
@@ -11,7 +11,7 @@ TABLES
 
 - filtered_event (private)
   - Fields:
-    - eventId: number (u64, primary key)
+    - eventId: bigint (u64, primary key)
     - message: string
 
 REDUCERS

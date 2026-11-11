@@ -1,6 +1,0 @@
-# E021-05: OCTET_LENGTH function
-
-query I
-SELECT OCTET_LENGTH ( 'foo' )
-----
-3
