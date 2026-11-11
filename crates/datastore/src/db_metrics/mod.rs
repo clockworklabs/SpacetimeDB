@@ -1,11 +1,12 @@
 use crate::execution_context::WorkloadType;
 use once_cell::sync::Lazy;
-use prometheus::{HistogramVec, IntCounterVec, IntGaugeVec};
+use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_lib::Identity;
 use spacetimedb_metrics::metrics_group;
 use spacetimedb_primitives::TableId;
 
 pub mod data_size;
+pub mod page_cache;
 
 metrics_group!(
     #[non_exhaustive]
@@ -272,6 +273,64 @@ Each HTTP request performed by a database will be counted either here, in `space
 `spacetime_procedure_num_failed_http_requests`, or in `spacetime_procedure_num_timeout_http_requests`."]
         #[labels(db: Identity)]
         pub procedure_num_in_progress_http_requests: IntGaugeVec,
+
+        #[name = spacetime_page_cache_lookups_total]
+        #[help = "Page/blob cache lookups by tier and whether the object was found."]
+        #[labels(database_identity: Identity, replica_id: u64, object_type: str, tier: str, hit: bool)]
+        pub page_cache_lookups: IntCounterVec,
+
+        #[name = spacetime_page_fault_wait_seconds]
+        #[help = "Page/blob fault time; empty source means no backing read returned data."]
+        #[labels(database_identity: Identity, replica_id: u64, object_type: str, source: str, success: bool)]
+        #[buckets(0.00001, 0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 30.0)]
+        pub page_cache_faults: HistogramVec,
+
+        #[name = spacetime_page_faults_in_flight]
+        #[help = "Page or blob load attempts currently in progress."]
+        #[labels(database_identity: Identity, replica_id: u64)]
+        pub page_cache_in_flight: IntGaugeVec,
+
+        #[name = spacetime_page_cache_budget_usage_bytes]
+        #[help = "Bytes charged to the cache budget, including reservations."]
+        #[labels(database_identity: Identity, replica_id: u64, tier: str)]
+        pub page_cache_budget_usage: GaugeVec,
+
+        #[name = spacetime_page_cache_budget_limit_bytes]
+        #[help = "Page/blob cache budget in bytes"]
+        #[labels(database_identity: Identity, replica_id: u64, tier: str)]
+        pub page_cache_budget_limit: GaugeVec,
+
+        #[name = spacetime_page_cache_budget_rejections_total]
+        #[help = "Failed reservations against the page cache budget, including retries that fail."]
+        #[labels(database_identity: Identity, replica_id: u64, tier: str)]
+        pub page_cache_rejections: IntCounterVec,
+
+        #[name = spacetime_page_cache_eviction_duration_seconds]
+        #[help = "Time spent attempting to evict cached objects."]
+        #[labels(database_identity: Identity, replica_id: u64, direction: str)]
+        #[buckets(0.00001, 0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 30.0)]
+        pub page_cache_eviction_time: HistogramVec,
+
+        #[name = spacetime_page_cache_evicted_objects_total]
+        #[help = "Objects successfully evicted from the source tier."]
+        #[labels(database_identity: Identity, replica_id: u64, object_type: str, direction: str)]
+        pub page_cache_evicted_objects: IntCounterVec,
+
+        #[name = spacetime_page_cache_evicted_bytes_total]
+        #[help = "Bytes successfully freed from the source tier."]
+        #[labels(database_identity: Identity, replica_id: u64, object_type: str, direction: str)]
+        pub page_cache_evicted_bytes: IntCounterVec,
+
+        #[name = spacetime_page_cache_disk_io_duration_seconds]
+        #[help = "Local-cache read and write durations, including failed operations."]
+        #[labels(database_identity: Identity, replica_id: u64, operation: str)]
+        #[buckets(0.00001, 0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 30.0)]
+        pub page_cache_disk_time: HistogramVec,
+
+        #[name = spacetime_page_cache_disk_io_bytes_total]
+        #[help = "Payload bytes successfully read or written by the local disk adapter."]
+        #[labels(database_identity: Identity, replica_id: u64, operation: str)]
+        pub page_cache_disk_bytes: IntCounterVec,
     }
 );
 

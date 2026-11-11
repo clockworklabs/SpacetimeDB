@@ -83,6 +83,13 @@ impl MemoryUsage for Locking {
 }
 
 impl Locking {
+    #[cfg(feature = "metrics")]
+    pub fn update_data_size_metrics(&self) {
+        let state = self.committed_state.read();
+        state.report_data_size(self.database_identity);
+        crate::db_metrics::page_cache::report(&state.storage);
+    }
+
     pub fn new(database_identity: Identity, storage: TieredDatabaseStorage) -> Self {
         Self {
             committed_state: Arc::new(RwLock::new(CommittedState::new(storage))),
@@ -1186,7 +1193,7 @@ pub(crate) mod tests {
     };
     use spacetimedb_schema::table_name::TableName;
     use spacetimedb_table::blob_store::BlobHash;
-    use spacetimedb_table::tiered::{BlobError, ByteBudget, ByteBudgetConfig};
+    use spacetimedb_table::tiered::{metrics::CacheTier, BlobError, ByteBudget, ByteBudgetConfig};
 
     /// For the first user-created table, sequences in the system tables start
     /// from this value.
@@ -3789,6 +3796,7 @@ pub(crate) mod tests {
     fn failed_commit_preserves_prepared_dropped_table_blob_references() -> ResultTest<()> {
         const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: HARD_LIMIT_BYTES,
             hard_limit_bytes: HARD_LIMIT_BYTES,
@@ -3868,6 +3876,7 @@ pub(crate) mod tests {
 
         const LIMIT_BYTES: u64 = 16 * 1024 * 1024;
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: LIMIT_BYTES,
             hard_limit_bytes: LIMIT_BYTES,
@@ -4741,6 +4750,7 @@ pub(crate) mod tests {
         // memory pressure later, so setup cannot accidentally trigger the error.
         const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: HARD_LIMIT_BYTES,
             hard_limit_bytes: HARD_LIMIT_BYTES,
@@ -4822,6 +4832,7 @@ pub(crate) mod tests {
         // memory pressure later, so setup cannot accidentally trigger the error.
         const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: HARD_LIMIT_BYTES,
             hard_limit_bytes: HARD_LIMIT_BYTES,
@@ -5130,6 +5141,7 @@ pub(crate) mod tests {
         // Bootstrap with ample memory and introduce pressure only after setup.
         const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: HARD_LIMIT_BYTES,
             hard_limit_bytes: HARD_LIMIT_BYTES,
@@ -5204,6 +5216,7 @@ pub(crate) mod tests {
         // replacement that could later be scanned and committed.
         const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: HARD_LIMIT_BYTES,
             hard_limit_bytes: HARD_LIMIT_BYTES,

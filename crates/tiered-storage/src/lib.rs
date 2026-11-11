@@ -6,6 +6,7 @@ use std::{
 use spacetimedb_fs_utils::dir_trie::DirTrie;
 use spacetimedb_paths::server::TablesDir;
 use spacetimedb_snapshot::FileOrDirPath;
+use spacetimedb_table::tiered::metrics::{DiskOperation, Metrics};
 use spacetimedb_table::{
     blob_store::BlobHash,
     page_pool::PagePool,
@@ -16,6 +17,7 @@ use spacetimedb_table::{
 pub struct DiskStorage {
     dir_trie: DirTrie,
     page_pool: PagePool,
+    metrics: Metrics,
 }
 
 impl DiskStorage {
@@ -28,7 +30,23 @@ impl DiskStorage {
         fs::create_dir_all(&dir)?;
         let dir_trie = DirTrie::open(dir.0)?;
 
-        Ok(Self { dir_trie, page_pool })
+        Ok(Self {
+            dir_trie,
+            page_pool,
+            metrics: Default::default(),
+        })
+    }
+
+    fn io<T>(
+        &self,
+        operation: DiskOperation,
+        f: impl FnOnce() -> Result<(T, u64), ObjectStoreError>,
+    ) -> Result<T, ObjectStoreError> {
+        let timer = self.metrics.timer();
+        let result = f();
+        self.metrics
+            .disk_io(operation, timer.nanos(), result.as_ref().map_or(0, |(_, bytes)| *bytes));
+        result.map(|(value, _)| value)
     }
 
     fn write_trie_entry(&self, hash: &[u8; ObjectKey::SIZE], bytes: &[u8]) -> io::Result<()> {
@@ -76,6 +94,10 @@ impl DiskStorage {
 }
 
 impl ObjectStore for DiskStorage {
+    fn set_metrics(&mut self, metrics: Metrics) {
+        self.metrics = metrics;
+    }
+
     fn stat(&self, key: ObjectKey) -> Result<Option<ObjectMetadata>, ObjectStoreError> {
         let path = self.dir_trie.file_path(key.as_bytes());
         path.metadata()
@@ -84,18 +106,24 @@ impl ObjectStore for DiskStorage {
     }
 
     fn read(&self, key: ObjectKey) -> Result<Option<ObjectBytes>, ObjectStoreError> {
-        self.dir_trie
-            .read_entry(key.as_bytes())
-            .map(Into::into)
-            .map_or_else(none_if_not_found, |bytes| {
-                self.verify_hash(key, bytes).and_then(ok_some)
-            })
+        let bytes: Option<ObjectBytes> = self.io(DiskOperation::Read, || {
+            let bytes = self
+                .dir_trie
+                .read_entry(key.as_bytes())
+                .map(ObjectBytes::from)
+                .map_or_else(none_if_not_found, ok_some)?;
+            let len = bytes.as_ref().map_or(0, |bytes| bytes.len() as u64);
+            Ok((bytes, len))
+        })?;
+        bytes.map(|bytes| self.verify_hash(key, bytes)).transpose()
     }
 
     fn write(&self, object: Object) -> Result<ObjectKey, ObjectStoreError> {
         let (key, bytes) = object.into_kv();
-        self.write_trie_entry(key.as_bytes(), &bytes)?;
-        Ok(key)
+        self.io(DiskOperation::Write, || {
+            self.write_trie_entry(key.as_bytes(), &bytes)?;
+            Ok((key, bytes.len() as u64))
+        })
     }
 }
 

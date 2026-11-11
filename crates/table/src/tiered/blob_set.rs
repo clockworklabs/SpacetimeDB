@@ -1,3 +1,4 @@
+use super::metrics::{CacheTier, EvictionDirection, ObjectType};
 use std::{
     num::NonZeroUsize,
     ops::Deref,
@@ -109,6 +110,15 @@ impl BlobSet {
     /// Attempt to evict resident blobs in this set that have no external
     /// references.
     pub fn evict(&self) -> Result<ByteBudgetUsage, BlobError> {
+        let timer = self.resident.metrics().timer();
+        let result = self.evict_inner();
+        self.resident
+            .metrics()
+            .eviction(EvictionDirection::MemoryToDisk, timer.nanos());
+        result
+    }
+
+    fn evict_inner(&self) -> Result<ByteBudgetUsage, BlobError> {
         let mut candidates = self.evictable.lock().unwrap();
         self.resident.evictable_blobs(&mut candidates);
         for candidate in candidates.drain(..) {
@@ -155,6 +165,9 @@ impl BlobSet {
                     uses: *uses,
                     size: blob.size(),
                 };
+                self.resident
+                    .metrics()
+                    .evicted(ObjectType::Blob, EvictionDirection::MemoryToDisk, blob.size());
                 drop(blob);
                 self.resident.evict_blob(candidate);
                 drop(entries);
@@ -308,15 +321,22 @@ impl BlobSet {
     /// Subject to the memory budget. Note that the blob will remain resident as
     /// long as the returned [BlobHandle] is live.
     pub fn get(&self, hash: BlobHashWrapper) -> Result<BlobHandle, BlobError> {
+        let mut fault = None;
         let blob_or_bytes = {
             let entries = self.entries.read();
             let entry = entries
                 .get(&hash)
                 .ok_or_else(|| BlobError::MissingBlob(Box::new(hash.into())))?;
+            self.resident.metrics().lookup(
+                ObjectType::Blob,
+                CacheTier::Memory,
+                matches!(entry, BlobEntry::Resident { .. }),
+            );
             match entry {
                 BlobEntry::Resident { blob, .. } => Ok::<_, BlobError>(Ok(blob.clone())),
                 BlobEntry::NonResident { .. } => {
-                    let bytes = self.storage.read(hash.into())?;
+                    let fault_guard = fault.insert(self.resident.metrics().fault(ObjectType::Blob));
+                    let bytes = self.storage.read_with_source(hash.into(), &mut fault_guard.source)?;
                     Ok(Err(bytes))
                 }
             }
@@ -346,6 +366,9 @@ impl BlobSet {
         }?;
         assert_eq!(hash, handle.hash());
         self.resident.touch_blob(&handle.frame);
+        if let Some(fault) = &mut fault {
+            fault.success = true;
+        }
 
         Ok(handle)
     }
@@ -676,8 +699,8 @@ mod tests {
     use crate::{
         blob_store::BlobHash,
         tiered::{
-            map::BlobHashWrapper, BlobError, BlobSet, ByteBudget, ByteBudgetConfig, EvictionPolicy, ResidentObjects,
-            TieredStorage,
+            map::BlobHashWrapper, metrics::CacheTier, BlobError, BlobSet, ByteBudget, ByteBudgetConfig, EvictionPolicy,
+            ResidentObjects, TieredStorage,
         },
     };
 
@@ -735,6 +758,7 @@ mod tests {
             // Make the hardlimit fit only one blob.
             let hard_limit_bytes = first.len().max(second.len()) as u64;
             let budget = ByteBudget::new(ByteBudgetConfig {
+                tier: CacheTier::Memory,
                 low_water_bytes: 0,
                 soft_limit_bytes: hard_limit_bytes,
                 hard_limit_bytes,
@@ -773,6 +797,7 @@ mod tests {
             // Make the hardlimit fit only one blob.
             let hard_limit_bytes = first.len().max(second.len()) as u64;
             let budget = ByteBudget::new(ByteBudgetConfig {
+                tier: CacheTier::Memory,
                 low_water_bytes: 0,
                 soft_limit_bytes: hard_limit_bytes,
                 hard_limit_bytes,
@@ -790,6 +815,7 @@ mod tests {
     fn preparing_blobs_consumes_budget_once() {
         let bytes = b"prepared blob";
         let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
             low_water_bytes: 0,
             soft_limit_bytes: bytes.len() as u64,
             hard_limit_bytes: bytes.len() as u64,
@@ -823,6 +849,7 @@ mod tests {
         ] {
             let bytes = b"shared blob";
             let budget = ByteBudget::new(ByteBudgetConfig {
+                tier: CacheTier::Memory,
                 low_water_bytes: 0,
                 soft_limit_bytes: bytes.len() as u64,
                 hard_limit_bytes: bytes.len() as u64,

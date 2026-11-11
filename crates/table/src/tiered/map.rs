@@ -1,3 +1,4 @@
+use super::metrics::ObjectType;
 use std::{
     fmt::{self, Write as _},
     hash::{Hash, Hasher},
@@ -108,6 +109,13 @@ pub enum ObjectKey {
 }
 
 impl ObjectKey {
+    pub fn metric_type(&self) -> ObjectType {
+        match self {
+            Self::Page(_) => ObjectType::Page,
+            Self::Blob(_) => ObjectType::Blob,
+        }
+    }
+
     pub const SIZE: usize = 32;
 
     #[inline]
