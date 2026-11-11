@@ -18,6 +18,14 @@ Describe the automated or manual testing performed and what behavior it covers, 
 
 If no testing was performed, write “Not tested.” Do not justify the absence of testing or pad the section with routine checks. Reviewing the diff or instructions, checking whitespace or links, and verifying commit signatures are not substitutes for testing the change.
 
+### Connect testing to the change
+
+- Start from the change's intended outcome and the important ways it could fail. Explain how testing addresses those concerns, including relevant existing coverage.
+- Usually, the strongest evidence is how automated tests were extended or adapted, or why existing tests cover the change. Manual tests and successful use can also provide evidence.
+- State what the testing establishes. A same-client compilation test supports source compatibility; a client/server test supports actual interaction. Neither proves the other.
+
+The connection between the testing and the intended outcome should be clear from the wording. It doesn't need a separate justification after every bullet.
+
 ### Content
 
 - Distinguish updated tests, added tests, and relevant existing coverage. Use short bullets; omit categories that don't apply.
