@@ -1,6 +1,6 @@
 //! Provides [`Pages`], a page manager dealing with [`Page`]s as a collection.
 
-use crate::tiered::BlobSet;
+use crate::tiered::{BlobSet, EvictionPolicy};
 
 use super::indexes::{Bytes, PageIndex, PageOffset, RowPointer};
 use super::page::Page;
@@ -303,7 +303,15 @@ impl Pages {
                 // - Caller promised that `fixed_row.len()` is consistent
                 //   with what has been passed to the manager in all other ops.
                 //   This entails that `fixed_row.len()` is consistent with `page`.
-                unsafe { page.insert_row(fixed_len, var_len, var_len_visitor, blob_store) }
+                unsafe {
+                    page.insert_row(
+                        fixed_len,
+                        var_len,
+                        var_len_visitor,
+                        blob_store,
+                        EvictionPolicy::NeverEvict,
+                    )
+                }
             },
         )? {
             (page, Ok(offset)) => Ok((page, offset)),
@@ -343,7 +351,15 @@ impl Pages {
             //
             // - `fixed_row_size` is consistent with the size in bytes of the fixed part of the row.
             //   The size is also conistent with `var_len_visitor`.
-            unsafe { page.delete_row(row_ptr.page_offset(), fixed_row_size, var_len_visitor, blob_store) }
+            unsafe {
+                page.delete_row(
+                    row_ptr.page_offset(),
+                    fixed_row_size,
+                    var_len_visitor,
+                    blob_store,
+                    EvictionPolicy::NeverEvict,
+                )
+            }
         })
     }
 

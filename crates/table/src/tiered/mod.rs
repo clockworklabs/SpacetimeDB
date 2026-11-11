@@ -1,14 +1,15 @@
-use std::sync::Arc;
+use std::{io, iter, sync::Arc};
 
 use spacetimedb_memory_usage::MemoryUsage;
 
-use crate::page_pool::PagePool;
+use crate::{indexes::PAGE_SIZE, page::Page, page_pool::PagePool, tiered::map::PageHash};
 
 mod blob_set;
 mod budget;
 mod error;
 mod map;
 mod mem;
+pub mod metrics;
 mod page_manager;
 mod page_ref;
 mod page_set;
@@ -18,21 +19,38 @@ pub use self::{
     blob_set::{BlobHandle, BlobMap, BlobReadSet, BlobSet},
     budget::{BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetConfig, ByteBudgetUsage},
     error::{BlobError, ObjectStoreError, PageError},
+    map::ObjectKey,
     mem::ResidentObjects,
-    page_manager::{PageEvictionPolicy, PageHandle, PageManager, ReservedPage},
+    page_manager::{PageHandle, PageManager, ReservedPage},
     page_ref::{PageBorrow, PageRead, PageRef},
     page_set::{PageSet, PreparedCommit},
-    storage::{MemoryObjectStore, ObjectStore, TieredStorage},
+    storage::{
+        BackingStore, LocalBackingStore, LocalStorage, MemoryObjectStore, Object, ObjectBytes, ObjectMetadata,
+        ObjectStore, RemoteBackingStore, RemoteStorage, RemoveObject, TieredStorage,
+    },
 };
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EvictionPolicy {
+    Evictable,
+    NeverEvict,
+}
 
 pub struct TieredStorageConfig {
     pub page_pool: PagePool,
-    pub local_object_store: Box<dyn ObjectStore>,
-    pub remote_object_store: Option<Box<dyn ObjectStore>>,
     pub resident_budget: ByteBudget,
+    pub local_store: LocalBackingStore,
+    pub remote_store: Option<RemoteBackingStore>,
 }
 
 impl TieredStorageConfig {
+    pub fn with_metrics(mut self, metrics: metrics::Metrics) -> Self {
+        self.resident_budget.metrics = metrics.clone();
+        self.local_store.budget.metrics = metrics.clone();
+        self.local_store.object_store.set_metrics(metrics);
+        self
+    }
+
     pub fn new_for_test() -> Self {
         Self::memory_unlimited(PagePool::new_for_test())
     }
@@ -48,11 +66,22 @@ impl TieredStorageConfig {
     fn memory_unlimited(page_pool: PagePool) -> Self {
         Self {
             page_pool,
-            local_object_store: Box::new(MemoryObjectStore::default()),
-            remote_object_store: None,
             resident_budget: ByteBudget::unlimited(),
+            local_store: BackingStore {
+                object_store: Box::new(MemoryObjectStore::default()),
+                budget: ByteBudget::new(ByteBudgetConfig {
+                    tier: metrics::CacheTier::Disk,
+                    ..ByteBudgetConfig::unlimited()
+                })
+                .unwrap(),
+            },
+            remote_store: None,
         }
     }
+}
+
+pub trait TieredStorageProvider: Send + Sync {
+    fn tiered_storage(&self) -> impl Future<Output = io::Result<TieredStorageConfig>> + Send;
 }
 
 #[derive(Clone)]
@@ -65,31 +94,52 @@ pub struct TieredDatabaseStorage {
 }
 
 impl TieredDatabaseStorage {
-    pub fn new(
+    pub fn empty(config: TieredStorageConfig) -> io::Result<Self> {
+        Self::from_snapshot(config, <_>::default(), iter::empty())
+    }
+
+    pub fn from_snapshot<'a>(
         TieredStorageConfig {
             page_pool,
+            local_store,
+            remote_store,
             resident_budget,
-            local_object_store,
-            remote_object_store,
         }: TieredStorageConfig,
-    ) -> Self {
-        let store = Arc::new(TieredStorage::new(local_object_store, remote_object_store));
+        blobs: BlobMap,
+        pages: impl Iterator<Item = &'a Page>,
+    ) -> io::Result<Self> {
+        let store = Arc::new(TieredStorage::with_catalog(
+            local_store,
+            remote_store,
+            blobs
+                .iter()
+                .map(|(hash, entry)| (hash.into_object_key(), entry.blob.len() as u64))
+                .chain(pages.map(|page| {
+                    let key = PageHash::from(page).into();
+                    (key, PAGE_SIZE as u64)
+                })),
+        ));
         let cache = Arc::new(ResidentObjects::new(resident_budget));
         let pages = Arc::new(PageManager::new(cache.clone(), page_pool, store.clone()));
-        let blobs = Arc::new(BlobSet::new(cache.clone(), store.clone()));
+        let blobs = Arc::new(BlobSet::from_blob_map(cache.clone(), store.clone(), blobs));
 
-        Self {
+        Ok(Self {
             pages,
             blobs,
             cache,
             store,
-        }
+        })
     }
 
-    pub fn with_blobs(config: TieredStorageConfig, blobs: BlobMap) -> Self {
-        let mut this = Self::new(config);
-        this.blobs = BlobSet::from_blob_map(this.cache.clone(), this.store.clone(), blobs).into();
-        this
+    pub fn budgets(&self) -> [(metrics::CacheTier, &ByteBudget); 2] {
+        [
+            (metrics::CacheTier::Memory, self.cache.budget()),
+            (metrics::CacheTier::Disk, self.store.local_budget()),
+        ]
+    }
+
+    pub fn metrics(&self) -> &metrics::Metrics {
+        self.cache.metrics()
     }
 
     pub fn pages(&self) -> &Arc<PageManager> {

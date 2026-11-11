@@ -1,3 +1,4 @@
+use super::metrics::Metrics;
 use std::{
     cmp, fmt,
     mem::ManuallyDrop,
@@ -78,11 +79,7 @@ pub struct ReservedPage {
 impl ReservedPage {
     /// An unpublished reservation has no external pins or registry entry.
     pub(super) fn into_resident(self) -> (Box<Page>, BudgetPermit) {
-        let PageFrame { page, permit, .. } = self.frame;
-        let page = Arc::try_unwrap(page)
-            .expect("an unredeemed page reservation has unique ownership")
-            .into_inner();
-        (page.into_owned(), permit)
+        self.frame.into_owned()
     }
 }
 
@@ -96,6 +93,15 @@ pub struct PageFrame {
 }
 
 impl PageFrame {
+    /// Remove the frame's lock without copying the page or releasing its memory charge.
+    fn into_owned(self) -> (Box<Page>, BudgetPermit) {
+        let Self { page, permit, .. } = self;
+        let page = Arc::try_unwrap(page)
+            .expect("page ownership transfer requires all read and write guards to be dropped")
+            .into_inner();
+        (page.into_owned(), permit)
+    }
+
     pub fn read(&self) -> ArcRwLockReadGuard<RawRwLock, PooledPage> {
         RwLock::read_arc(&self.page)
     }
@@ -167,6 +173,14 @@ pub struct ResidentObjects {
 }
 
 impl ResidentObjects {
+    pub(super) fn budget(&self) -> &ByteBudget {
+        &self.budget
+    }
+
+    pub fn metrics(&self) -> &Metrics {
+        self.budget.metrics()
+    }
+
     pub(super) fn has_unlimited_budget(&self) -> bool {
         self.budget.is_unlimited()
     }
@@ -233,13 +247,17 @@ impl ResidentObjects {
 
     pub(super) fn evictable_blobs(&self, candidates: &mut Vec<BlobEvictionCandidate>) {
         {
+            // - one ref is from upgrading the weak reference below
+            // - one ref is held by a blob set
+            const EVICTABLE_REFCOUNT: usize = 2;
+
             let mut blobs = self.blobs.lock().unwrap();
             blobs.retain(|&key, weak| {
                 let Some(frame) = weak.upgrade() else {
                     return false;
                 };
 
-                if Arc::strong_count(&frame) <= 2 {
+                if Arc::strong_count(&frame) <= EVICTABLE_REFCOUNT {
                     candidates.push(BlobEvictionCandidate {
                         key,
                         access: frame.access(),
@@ -325,13 +343,22 @@ impl ResidentObjects {
         self.redeem_page(reservation)
     }
 
+    pub(super) fn detach_page(&self, frame: Arc<PageFrame>) -> (Box<Page>, BudgetPermit) {
+        // The memory table will own the page directly. Remove the frame from
+        // eviction tracking, but keep its allocation and memory charge alive.
+        assert!(self.pages.lock().unwrap().remove(&frame.id).is_some());
+        Arc::try_unwrap(frame)
+            .expect("page ownership transfer requires all eviction pins to be dropped")
+            .into_owned()
+    }
+
     pub(super) fn register_blob_unchecked(&self, blob: Box<[u8]>) -> Arc<BlobFrame> {
         let permit = self.budget.force_acquire(blob.len() as u64);
         let reservation = self.reserve_blob_with_permit(permit, blob);
         self.redeem_blob(reservation)
     }
 
-    fn reserve_page_with_permit(&self, permit: BudgetPermit, page: PooledPage) -> ReservedPage {
+    pub(super) fn reserve_page_with_permit(&self, permit: BudgetPermit, page: PooledPage) -> ReservedPage {
         let id = PageId(self.page_id.fetch_add(1, Ordering::Relaxed));
         let frame = PageFrame {
             id,

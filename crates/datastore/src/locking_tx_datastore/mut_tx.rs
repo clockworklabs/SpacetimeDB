@@ -8,6 +8,7 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
     SharedWriteGuard,
 };
+use crate::system_tables::{StTableCachePolicyFields, StTableCachePolicyRow, ST_TABLE_CACHE_POLICY_ID};
 use crate::traits::TxOffset;
 use crate::{
     error::ViewError,
@@ -65,6 +66,7 @@ use spacetimedb_sats::{
     ser::Serialize,
     AlgebraicValue, ProductType, ProductValue,
 };
+use spacetimedb_schema::schema::TableCachePolicy;
 use spacetimedb_schema::{
     def::{ModuleDef, ViewColumnDef, ViewDef, ViewParamDef},
     identifier::{Identifier, NamespacePath, NamespacedIdentifier},
@@ -83,7 +85,7 @@ use spacetimedb_table::{
         TableAndIndex, UniqueConstraintViolation,
     },
     table_index::{IndexCannotSeekRange, IndexKey, IndexSeekRangeResult, PointOrRange, TableIndex},
-    tiered::{BlobSet, PageEvictionPolicy},
+    tiered::BlobSet,
 };
 use std::{marker::PhantomData, sync::Arc, time::Duration};
 
@@ -747,7 +749,7 @@ impl MutTxId {
         }
 
         for (table_id, inserted_table) in &self.tx_state.insert_tables {
-            let (table, blob_store, _) = self
+            let (table, ..) = self
                 .committed_state_write_lock
                 .get_table_and_blob_store(*table_id)
                 .expect("table must exist in committed state for inserted table");
@@ -756,6 +758,7 @@ impl MutTxId {
                 continue;
             }
 
+            let blob_store = &self.tx_state.blob_store;
             for row_ref in inserted_table.scan_rows(blob_store) {
                 process_views(table_id, row_ref?);
             }
@@ -1035,12 +1038,18 @@ impl MutTxId {
     /// Requires:
     /// - All system IDs in the `table_schema` must be set to `SENTINEL`.
     /// - All names in the `table_schema` must be unique among named entities in the database.
+    /// - System tables must use `TableCachePolicy::RequiredInMemory`.
     ///
     /// Ensures:
     /// - An in-memory insert table is created for the transaction, allowing the transaction to insert rows into the table.
     /// - The table metadata is inserted into the system tables.
     /// - The returned ID is unique and not `TableId::SENTINEL`.
     pub fn create_table(&mut self, mut table_schema: TableSchema) -> Result<TableId> {
+        assert!(
+            table_schema.table_type != spacetimedb_lib::db::auth::StTableType::System
+                || table_schema.cache_policy == TableCachePolicy::RequiredInMemory,
+            "system tables must remain in memory"
+        );
         let matching_system_table_schema = system_tables().iter().find(|s| **s == table_schema).cloned();
         if table_schema.table_id != TableId::SENTINEL && matching_system_table_schema.is_none() {
             return Err(anyhow::anyhow!("`table_id` must be `TableId::SENTINEL` in `{table_schema:#?}`").into());
@@ -1067,6 +1076,17 @@ impl MutTxId {
             .read_col(StTableFields::TableId)?;
 
         table_schema.update_table_id(table_id);
+        // Save the policy so recovery knows whether the table's pages can be evicted.
+        // The default in-memory policy needs no row.
+        if table_schema.cache_policy != TableCachePolicy::RequiredInMemory {
+            self.insert_via_serialize_bsatn(
+                ST_TABLE_CACHE_POLICY_ID,
+                &StTableCachePolicyRow {
+                    table_id,
+                    policy: table_schema.cache_policy,
+                },
+            )?;
+        }
         self.insert_st_table_accessor(&table_name, table_schema.alias.as_ref())?;
 
         if let Some(info) = table_schema.view_info.as_mut() {
@@ -1290,11 +1310,12 @@ impl MutTxId {
     fn create_table_internal(&mut self, schema: Arc<TableSchema>) {
         // Construct the in memory tables.
         let table_id = schema.table_id;
+        let policy = self.committed_state_write_lock.page_eviction_policy(&schema);
         let commit_table = Table::new(
             schema,
             SquashedOffset::COMMITTED_STATE,
             self.committed_state_write_lock.storage.pages().clone(),
-            PageEvictionPolicy::NeverEvict,
+            policy,
         );
         let tx_table = commit_table.clone_structure(SquashedOffset::TX_STATE);
 
@@ -1415,6 +1436,11 @@ impl MutTxId {
         self.drop_st_column_accessor(&schema.table_name)?;
         self.drop_st_table(table_id)?;
         self.drop_st_column(table_id)?;
+        self.delete_col_eq(
+            ST_TABLE_CACHE_POLICY_ID,
+            StTableCachePolicyFields::TableId.col_id(),
+            &table_id.into(),
+        )?;
 
         if let Some(schedule) = &schema.schedule {
             self.delete_col_eq(
@@ -1570,6 +1596,43 @@ impl MutTxId {
         // Update system tables.
         self.update_st_table_row(table_id, |st| st.table_access = access)?;
 
+        Ok(())
+    }
+
+    /// Request a cache-policy change as part of a migration transaction.
+    /// Only metadata changes here. Commit loads the required pages and blobs,
+    /// applies row changes under the old policy, then converts pages and adjusts blob pins.
+    /// Deferring conversion avoids having to reverse it if a later migration step fails.
+    pub(crate) fn alter_table_cache_policy(&mut self, table_id: TableId, policy: TableCachePolicy) -> Result<()> {
+        let schema = self.schema_for_table(table_id)?;
+        let old_policy = schema.cache_policy;
+        if old_policy == policy {
+            return Ok(());
+        }
+        if schema.table_type == spacetimedb_lib::db::auth::StTableType::System {
+            return Err(anyhow!("system tables must remain in memory").into());
+        }
+        if old_policy == TableCachePolicy::NoRequirement || policy == TableCachePolicy::NoRequirement {
+            return Err(anyhow!("cache-policy migrations involving object storage are not supported").into());
+        }
+
+        // Update the requested policy in the cached schemas. Pages and blobs
+        // keep using the old policy until commit has applied all row changes.
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+        tx_table.with_mut_schema_and_clone(commit_table, |schema| schema.cache_policy = policy);
+        // Record the old value before updating system-table rows: those updates
+        // can fail, in which case rollback must restore the cached schema.
+        self.push_schema_change(PendingSchemaChange::TableAlterCachePolicy(table_id, old_policy));
+
+        self.delete_col_eq(
+            ST_TABLE_CACHE_POLICY_ID,
+            StTableCachePolicyFields::TableId.col_id(),
+            &table_id.into(),
+        )?;
+        // No policy row means RequiredInMemory, including after a disk-to-memory migration.
+        if policy != TableCachePolicy::RequiredInMemory {
+            self.insert_via_serialize_bsatn(ST_TABLE_CACHE_POLICY_ID, &StTableCachePolicyRow { table_id, policy })?;
+        }
         Ok(())
     }
 

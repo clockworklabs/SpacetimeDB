@@ -1,3 +1,4 @@
+use super::metrics::{with_fault, CacheTier, Fault, Metrics, ObjectType};
 use std::{
     ops::{Deref, DerefMut},
     sync::Arc,
@@ -20,7 +21,7 @@ use crate::{
         map::{ObjectKey, PageHash},
         mem::{self, PageEvictionCandidate, PageFrame, PageId, PooledPage},
         storage::TieredStorage,
-        BudgetExceeded, BudgetPermit, ByteBudget, ObjectStoreError, ResidentObjects,
+        BudgetExceeded, BudgetPermit, ByteBudget, EvictionPolicy, ObjectStoreError, ResidentObjects,
     },
 };
 
@@ -105,12 +106,6 @@ impl Drop for PageFrameWriteGuard {
         *metadata = new_metadata;
         backing.take();
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PageEvictionPolicy {
-    Evictable,
-    NeverEvict,
 }
 
 /// A handle to a [PageSlot], i.e. a page that can be absent, resident, or
@@ -213,7 +208,7 @@ pub enum PageSlot {
         metadata: PageMetadata,
         // `Some` if the page is clean and present in backing storage.
         backing: Option<PageHash>,
-        eviction_policy: PageEvictionPolicy,
+        eviction_policy: EvictionPolicy,
     },
     /// The page is not resident in memory.
     #[allow(unused)]
@@ -347,7 +342,7 @@ impl PageHandle {
         PAGE_SIZE as u64
     }
 
-    pub(super) fn serialize_for_storage(&self) -> (PageHash, Vec<u8>) {
+    pub fn serialize_for_storage(&self) -> (PageHash, Vec<u8>) {
         let mut guard = self.frame.write_ref();
         let hash = PageHash::from(&mut **guard);
         let guard = RwLockWriteGuard::downgrade(guard);
@@ -446,6 +441,39 @@ pub struct PageManager {
 }
 
 impl PageManager {
+    /// Wrap a memory table's page in a tiered slot, keeping its allocation and
+    /// memory charge. An empty slot must stay empty to preserve page indices.
+    pub(super) fn adopt_resident(
+        &self,
+        page: Option<(Box<Page>, BudgetPermit)>,
+        fixed_row_size: Size,
+    ) -> PageSlotHandle {
+        let Some((page, permit)) = page else {
+            return PageSlotHandle {
+                slot: Arc::new(Mutex::new(PageSlot::Absent)),
+            };
+        };
+        let metadata = page.metadata(fixed_row_size);
+        let inner = self
+            .resident
+            .reserve_page_with_permit(permit, PooledPage::new(page, self.pool.clone()));
+        self.redeem(ReservedPage { inner, metadata }, EvictionPolicy::Evictable)
+    }
+
+    /// Take a loaded page out of its slot so a memory table can own it directly.
+    /// The caller must release all other slot handles, page pins, and read/write
+    /// guards first; unwrapping the Arcs below checks that requirement.
+    pub(super) fn detach_resident(&self, slot: PageSlotHandle) -> Option<(Box<Page>, BudgetPermit)> {
+        let slot = Arc::try_unwrap(slot.slot)
+            .expect("page ownership transfer requires exclusive slot ownership")
+            .into_inner();
+        match slot {
+            PageSlot::Absent => None,
+            PageSlot::Resident { handle, .. } => Some(self.resident.detach_page(handle.frame)),
+            PageSlot::NonResident { .. } => unreachable!("conversion preparation loaded and pinned every page"),
+        }
+    }
+
     pub(super) fn has_unlimited_budget(&self) -> bool {
         self.resident.has_unlimited_budget()
     }
@@ -502,15 +530,24 @@ impl PageManager {
         )
     }
 
+    pub fn metrics(&self) -> &Metrics {
+        self.resident.metrics()
+    }
+
     /// Get the [PageHandle] at the given `slot`, or fault it in.
     ///
     /// Returns `Ok(None)` if the page is absent.
-    pub fn get(
-        &self,
+    pub fn get(&self, slot: &PageSlotHandle, eviction_policy: EvictionPolicy) -> Result<Option<PageHandle>, PageError> {
+        with_fault(|fault| self.get_with_fault(slot, eviction_policy, fault))
+    }
+
+    pub(super) fn get_with_fault<'a>(
+        &'a self,
         slot: &PageSlotHandle,
-        eviction_policy: PageEvictionPolicy,
+        eviction_policy: EvictionPolicy,
+        fault: &mut Option<Fault<'a>>,
     ) -> Result<Option<PageHandle>, PageError> {
-        self.may_fault(&mut slot.lock_ref(), eviction_policy)
+        self.may_fault(&mut slot.lock_ref(), eviction_policy, fault)
     }
 
     /// Get a [PageFrameWriteGuard] for the page at the given `slot`.
@@ -524,22 +561,33 @@ impl PageManager {
     pub fn get_mut(
         &self,
         slot: &PageSlotHandle,
-        eviction_policy: PageEvictionPolicy,
+        eviction_policy: EvictionPolicy,
         fixed_row_size: Size,
+    ) -> Result<PageFrameWriteGuard, PageError> {
+        with_fault(|fault| self.get_mut_with_fault(slot, eviction_policy, fixed_row_size, fault))
+    }
+
+    pub(super) fn get_mut_with_fault<'a>(
+        &'a self,
+        slot: &PageSlotHandle,
+        eviction_policy: EvictionPolicy,
+        fixed_row_size: Size,
+        fault: &mut Option<Fault<'a>>,
     ) -> Result<PageFrameWriteGuard, PageError> {
         let mut slot_guard = slot.lock_owned();
         let handle = self
-            .may_fault(&mut slot_guard, eviction_policy)?
+            .may_fault(&mut slot_guard, eviction_policy, fault)?
             .expect("page requested for mutation to be present");
         // SAFETY: We just faulted the page, so the handle contains the resident
         // frame we want to lock.
         Ok(unsafe { handle.write(slot_guard, fixed_row_size) })
     }
 
-    fn may_fault(
-        &self,
+    fn may_fault<'a>(
+        &'a self,
         slot_guard: &mut PageSlot,
-        eviction_policy: PageEvictionPolicy,
+        eviction_policy: EvictionPolicy,
+        fault: &mut Option<Fault<'a>>,
     ) -> Result<Option<PageHandle>, PageError> {
         match &*slot_guard {
             PageSlot::Absent => Ok(None),
@@ -548,19 +596,24 @@ impl PageManager {
                 eviction_policy: cached_eviction_policy,
                 ..
             } => {
+                self.metrics().lookup(ObjectType::Page, CacheTier::Memory, true);
                 assert_eq!(
                     cached_eviction_policy, &eviction_policy,
                     "eviction policy cannot be changed for resident pages"
                 );
                 // Avoid atomics contention if the page isn't evictable.
-                if matches!(eviction_policy, PageEvictionPolicy::Evictable) {
+                if matches!(eviction_policy, EvictionPolicy::Evictable) {
                     self.resident.touch_page(&handle.frame);
                 }
                 Ok(Some(handle.clone()))
             }
             PageSlot::NonResident { hash, metadata, .. } => {
+                self.metrics().lookup(ObjectType::Page, CacheTier::Memory, false);
+                let fault = fault.get_or_insert_with(|| self.metrics().fault(ObjectType::Page));
                 let reservation = self.resident.reserve_page(|| {
-                    let bytes = self.storage.read(ObjectKey::from(*hash))?;
+                    let bytes = self
+                        .storage
+                        .read_with_source(ObjectKey::from(*hash), &mut fault.source)?;
                     let page = self
                         .pool
                         .take_deserialize_from(&bytes)
@@ -585,11 +638,7 @@ impl PageManager {
     /// Allocate a new page with the proper layout for `fixed_row_size`.
     ///
     /// Subject to the [ByteBudget] of this page manager.
-    pub fn allocate(
-        &self,
-        fixed_row_size: Size,
-        eviction_policy: PageEvictionPolicy,
-    ) -> Result<PageSlotHandle, PageError> {
+    pub fn allocate(&self, fixed_row_size: Size, eviction_policy: EvictionPolicy) -> Result<PageSlotHandle, PageError> {
         let reservation = self.reserve(fixed_row_size)?;
         Ok(self.redeem(reservation, eviction_policy))
     }
@@ -622,7 +671,7 @@ impl PageManager {
     pub fn redeem(
         &self,
         ReservedPage { inner, metadata }: ReservedPage,
-        eviction_policy: PageEvictionPolicy,
+        eviction_policy: EvictionPolicy,
     ) -> PageSlotHandle {
         let slot = Arc::new(Mutex::new(PageSlot::Absent));
         {
@@ -646,7 +695,7 @@ impl PageManager {
     /// bytes than the high watermark of the budget may be resident.
     pub(super) fn register_unchecked(
         &self,
-        eviction_policy: PageEvictionPolicy,
+        eviction_policy: EvictionPolicy,
         fixed_row_size: Size,
         pages: impl IntoIterator<Item = Option<Box<Page>>>,
         slots: &mut Vec<PageSlotHandle>,

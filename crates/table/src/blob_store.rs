@@ -47,3 +47,9 @@ impl fmt::Display for BlobHash {
         Ok(())
     }
 }
+
+impl From<BlobHash> for blake3::Hash {
+    fn from(hash: BlobHash) -> Self {
+        blake3::Hash::from_bytes(hash.data)
+    }
+}
