@@ -23,6 +23,7 @@ If no testing was performed, write “Not tested.” Do not justify the absence 
 - Start from the change's intended outcome and the important ways it could fail. Identify what verification addresses those concerns, including existing coverage.
 - Usually, the strongest evidence is how automated tests were extended or adapted, or why existing tests cover the change. Manual tests, successful use, and other verification can also provide evidence.
 - State what the evidence establishes. A same-client compilation test supports source compatibility; a client/server test supports actual interaction. Neither proves the other.
+- Include important remaining uncertainty and explain any barriers to testing it. Distinguish "not tested yet" from "cannot be tested"; don't invent a reason or imply impossibility.
 
 The connection between the evidence and the intended outcome should be clear from the wording. It doesn't need a separate justification after every bullet.
 
