@@ -113,7 +113,7 @@ const overlap = workflows.define(
     stepTimeoutSeconds: 30,
   },
   step => {
-    const results = step.parallel('overlap', [0, 1, 2], (ctx, item, run) => {
+    const results = step.runParallel('overlap', [0, 1, 2], (ctx, item, run) => {
       const started = () =>
         ctx.withTx(
           tx =>

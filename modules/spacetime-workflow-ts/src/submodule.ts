@@ -380,7 +380,7 @@ export interface WorkflowSteps<Tx, Proc> {
    * for all of them and returns their outcomes in item order. Each item retries
    * like a `run` step. Up to 32 items.
    */
-  parallel<I, T>(
+  runParallel<I, T>(
     name: string,
     items: readonly I[],
     fn: (ctx: Proc, item: I, run: WorkflowStepInfo) => T,
@@ -1095,7 +1095,7 @@ export function client() {
       run: <T>(name: string) => replay(name) as T,
       sleep: () => void replay('sleep'),
       waitForEvent: <T>(event: string) => replay(`wait:${event}`) as T,
-      parallel<I, T>(
+      runParallel<I, T>(
         name: string,
         items: readonly I[],
         fn: (
@@ -1387,7 +1387,10 @@ export function client() {
         attempt = 1;
         return decodeResult(ready.value) as T;
       },
-      parallel<I, T>(name: string, items: readonly I[]): WorkflowSettled<T>[] {
+      runParallel<I, T>(
+        name: string,
+        items: readonly I[]
+      ): WorkflowSettled<T>[] {
         const label = `${PARALLEL_PREFIX}${name}`;
         const saved = replay(label);
         if (saved) return saved.value as WorkflowSettled<T>[];

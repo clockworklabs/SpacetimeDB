@@ -158,21 +158,23 @@ Loops, branches, local variables, and `try/catch` work as usual around these:
   value sent with it. Events that arrive early are kept, oldest first, until the
   run waits for them. Each wait takes one. Pass the expected type, as in
   `step.waitForEvent<string[]>('approved')`. It is not checked.
-- `step.parallel(name, items, (ctx, item, run) => result)` runs the function once
+- `step.runParallel(name, items, (ctx, item, run) => result)` runs the function once
   per item, each in its own procedure, at the same time. It waits for all of them
   and returns `{ ok: true, value }` or `{ ok: false, error }` for each item, in
   item order, so one failure does not stop the others. Each item retries and
   recovers like a `run` step, with its own idempotency key. Up to 32 items.
 
 ```ts
-const pages = step.parallel('fetch', urls, (ctx, url) => fetchPage(ctx, url));
+const pages = step.runParallel('fetch', urls, (ctx, url) =>
+  fetchPage(ctx, url)
+);
 const fetched = pages.flatMap(page => (page.ok ? [page.value] : []));
 ```
 
 Parallel items share the module's procedure pool, which has one instance per CPU
 core by default. Items beyond that wait for a free instance.
 
-`tx`, `run`, and `parallel` take an optional last argument. Its `retry` replaces
+`tx`, `run`, and `runParallel` take an optional last argument. Its `retry` replaces
 the workflow's for that step, so one flaky call can retry without the rest:
 
 ```ts

@@ -226,7 +226,7 @@ const w = {
     },
     (step, args) => {
       const before = step.tx('before', () => args.count);
-      const results = step.parallel(
+      const results = step.runParallel(
         'fetch',
         ['a', 'flaky', 'bad', 'slow'],
         (_ctx, item, run) => {
@@ -248,13 +248,13 @@ const w = {
     }
   ),
   emptyFanOut: workflows.define(db, 'emptyFanOut', { args: Args }, step => {
-    const results = step.parallel('none', [] as string[], () => 1);
+    const results = step.runParallel('none', [] as string[], () => 1);
     step.tx('after', ctx => {
       logOf(ctx).push(`empty:${results.length}`);
     });
   }),
   wideFanOut: workflows.define(db, 'wideFanOut', { args: Args }, step => {
-    step.parallel(
+    step.runParallel(
       'wide',
       Array.from({ length: 33 }, (_, i) => i),
       () => 1
@@ -299,7 +299,7 @@ const w = {
       },
       { retry: { maxAttempts: 3, backoffSeconds: 5 } }
     );
-    const items = step.parallel(
+    const items = step.runParallel(
       'items',
       ['a'],
       (_ctx, item, run) => {

@@ -201,7 +201,7 @@ const research = workflows.define(
   },
   (step, { dossierId, question, everySeconds }) => {
     const researchAndReport = (topics: string[]) => {
-      const researched = step.parallel('Research', topics, (ctx, topic) => {
+      const researched = step.runParallel('Research', topics, (ctx, topic) => {
         const found = searchWikipedia(ctx, topic);
         const sources = found.map(({ title, url }) => ({ title, url }));
         const note =

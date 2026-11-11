@@ -48,7 +48,7 @@ Open <http://127.0.0.1:8806>.
 
 The whole job is one function, in
 [spacetimedb/src/index.ts](./spacetimedb/src/index.ts). The model's plan decides
-how many topics it researches, and `step.parallel` researches them all at the
+how many topics it researches, and `step.runParallel` researches them all at the
 same time, each in its own procedure. A topic that keeps failing is left out,
 and the report goes on without it.
 
