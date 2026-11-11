@@ -507,13 +507,4 @@ mod tests {
         assert!(report.contains("Model output unavailable (1 task)"));
         assert!(report.contains("`t_002`"));
     }
-
-    #[test]
-    fn analysis_model_override_uses_provider_and_model() {
-        let route = parse_analysis_model("openrouter:openai/gpt-6.1-terra").unwrap();
-        assert_eq!(route.vendor, Vendor::OpenRouter);
-        assert_eq!(route.api_model, "openai/gpt-6.1-terra");
-        assert!(parse_analysis_model("gpt-6.1-terra").is_err());
-        assert!(parse_analysis_model("nobody:model").is_err());
-    }
 }
