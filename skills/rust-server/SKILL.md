@@ -273,7 +273,7 @@ pub struct TickTimer {
 
 #[spacetimedb::reducer]
 pub fn tick(ctx: &ReducerContext, timer: TickTimer) {
-    // timer row is auto-deleted after this reducer runs
+    // a one-time row is deleted after this runs; an interval row stays
 }
 
 // One-time: fires once at a specific time
@@ -283,6 +283,8 @@ let at = ScheduleAt::Interval(std::time::Duration::from_secs(5).into());
 
 ctx.db.tick_timer().insert(TickTimer { scheduled_id: 0, scheduled_at: at });
 ```
+
+To let only the scheduler run a callback, reject calls where `ctx.sender() != ctx.database_identity()`.
 
 Construct a connection ID from a numeric representation with `ConnectionId::from_u128(value)`.
 
@@ -376,7 +378,7 @@ let response = ctx.http.send(request).expect("request failed");
 
 Scheduled procedures use the ordinary scheduled-table shape, but the scheduled function is marked `#[procedure]` and receives `&mut ProcedureContext` plus the scheduled row.
 
-Inbound HTTP uses handler functions and one router:
+Inbound HTTP uses handler functions and one router. Handlers are unstable, so enable the `unstable` feature: `spacetimedb = { version = "2.*", features = ["unstable"] }`.
 
 ```rust
 use spacetimedb::http::{handler, router, Body, HandlerContext, Request, Response, Router};

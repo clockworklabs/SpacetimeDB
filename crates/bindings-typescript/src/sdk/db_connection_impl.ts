@@ -912,8 +912,17 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     if (!this.#automaticReconnect || this.#livenessCleanup) {
       return;
     }
-    const doc = typeof document !== 'undefined' ? document : undefined;
-    const win = typeof window !== 'undefined' ? window : undefined;
+    // React Native defines `window` without the DOM event API.
+    const hasEvents = (target: unknown): boolean =>
+      typeof (target as EventTarget | undefined)?.addEventListener ===
+        'function' &&
+      typeof (target as EventTarget).removeEventListener === 'function';
+    const doc =
+      typeof document !== 'undefined' && hasEvents(document)
+        ? document
+        : undefined;
+    const win =
+      typeof window !== 'undefined' && hasEvents(window) ? window : undefined;
     if (!doc && !win) {
       return;
     }
@@ -1266,14 +1275,32 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   ): Operation[] {
     const buffer = rowList.rowsData;
     const reader = this.#rowListReader;
-    reader.reset(buffer);
     const rows: Operation[] = [];
 
     const deserializeRow = this.#rowDeserializers[tableName];
     const { primaryKeyColName, primaryKeyColType } =
       this.#rowIdMetadata[tableName];
-    let previousOffset = 0;
-    while (reader.remaining > 0) {
+
+    // Decode each row from its own slice, using the boundaries the server
+    // sends. A module can add columns to the end of a table without breaking
+    // clients built against the old schema: their bindings read the columns
+    // they know, and the rest of the row is skipped.
+    const sizeHint = rowList.sizeHint;
+    if (sizeHint.tag === 'FixedSize' && sizeHint.value === 0) {
+      throw new Error('Fixed-size BSATN row list cannot have zero-sized rows');
+    }
+    const rowCount =
+      sizeHint.tag === 'RowOffsets'
+        ? sizeHint.value.length
+        : Math.floor(buffer.length / sizeHint.value);
+    const rowStart = (i: number) =>
+      sizeHint.tag === 'RowOffsets'
+        ? Number(sizeHint.value[i])
+        : i * sizeHint.value;
+    for (let i = 0; i < rowCount; i++) {
+      const end = i + 1 < rowCount ? rowStart(i + 1) : buffer.length;
+      const rowBytes = buffer.subarray(rowStart(i), end);
+      reader.reset(rowBytes);
       const row = deserializeRow(reader);
       let rowId: ComparablePrimitive | undefined = undefined;
       if (primaryKeyColName !== undefined && primaryKeyColType !== undefined) {
@@ -1282,19 +1309,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           row[primaryKeyColName]
         );
       } else {
-        // Get a view of the bytes for this row.
-        const rowBytes = buffer.subarray(previousOffset, reader.offset);
-        // Convert it to a base64 string, so we can use it as a map key.
-        const asBase64 = fromByteArray(rowBytes);
-        rowId = asBase64;
+        // Convert the row's bytes to a base64 string, so we can use it as a map key.
+        rowId = fromByteArray(rowBytes);
       }
-      previousOffset = reader.offset;
-
-      rows.push({
-        type,
-        rowId,
-        row,
-      });
+      rows.push({ type, rowId, row });
     }
     return rows;
   }
@@ -1873,8 +1891,14 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     }
   }
 
+  /**
+   * End the connection over a server message that could not be decoded or
+   * applied. A retry would not fix it, so this never reconnects. The error
+   * goes to `onConnectError` if the connection was not yet established, and
+   * to `onDisconnect` otherwise.
+   */
   #handleProtocolError(cause: unknown): void {
-    if (!this.#automaticReconnect) throw cause;
+    stdbLogger('error', 'Failed to process a server message', cause);
     const error = new WebSocketProtocolError('Invalid server message', {
       cause,
     });
@@ -1907,6 +1931,13 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           this.#processMessage(data);
         }
       }
+    } catch (e) {
+      // A message that could not be applied leaves the client cache
+      // inconsistent, and rethrowing from a WebSocket listener crashes Node
+      // hosts. Handle it like a message that could not be decoded: end the
+      // connection, which drops what is queued and settles calls in flight.
+      // (Callback errors never get here; `EventEmitter` logs them.)
+      this.#handleProtocolError(e);
     } finally {
       if (this.#inboundQueueOffset >= this.#inboundQueue.length) {
         this.#inboundQueue.length = 0;

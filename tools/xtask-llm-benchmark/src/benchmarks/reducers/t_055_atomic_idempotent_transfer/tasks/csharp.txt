@@ -16,7 +16,7 @@ REDUCERS
 - CreateAccount(id: ulong, balance: long)
   - Insert an Account with the supplied values
 - Transfer(requestId: string, fromId: ulong, toId: ulong, amount: long)
-  - Reject invalid or insufficient transfers
+  - Fail with an error if amount is not positive, fromId equals toId, either account does not exist, or the source balance is below amount
   - Update both Account balances atomically
   - Record RequestId in TransferRequest
   - If RequestId is already recorded, make no changes

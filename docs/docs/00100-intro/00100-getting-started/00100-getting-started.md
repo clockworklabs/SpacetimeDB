@@ -9,9 +9,23 @@ import { QuickstartLinks } from "@site/src/components/QuickstartLinks";
 
 :::tip Coming from Convex?
 
-Most Convex concepts have a direct SpacetimeDB counterpart: mutations are [reducers](/docs/functions/reducers), actions are [procedures](/docs/functions/procedures), queries are [views](/docs/functions/views) and [subscriptions](/docs/clients/subscriptions), HTTP actions are [HTTP handlers](/docs/functions/http-handlers), scheduled functions are [schedule tables](/docs/tables/schedule-tables), and components are [submodules](/docs/submodules). [Migrating from Convex](/docs/migrating-from-convex) maps the rest and walks through a migration.
+Most Convex concepts have a direct SpacetimeDB counterpart: mutations are [reducers](/docs/functions/reducers), actions are [procedures](/docs/functions/procedures), queries are [views](/docs/functions/views) and [subscriptions](/docs/clients/subscriptions), HTTP actions are [HTTP handlers](/docs/functions/http-handlers), scheduled functions are [schedule tables](/docs/tables/schedule-tables), and components are [modules](/docs/modules) that you mount in your own module as submodules. [Migrating from Convex](/docs/migrating-from-convex) maps the rest and walks through a migration.
 
 :::
+
+## Set up your coding agent
+
+To have a coding agent such as Claude Code, Codex, or Cursor set itself up to build with Spacetime, paste this prompt into it:
+
+```text
+Set yourself up to build with Spacetime (SpacetimeDB).
+
+1. Read https://spacetimedb.com/agent-setup.md carefully, in full rather than a summary, and follow it. Run the commands yourself, and ask me only for approvals, logins, or restarts.
+2. Read https://spacetimedb.com/docs/intro/misconceptions/ carefully, in full. Spacetime has changed a lot, so what you remember about it, and older articles online, may be out of date. When you describe Spacetime or compare it with other backends, go by the current docs.
+3. Tell me what you installed, what you verified, and anything I still need to do.
+```
+
+The agent installs the CLI if it's missing, adds the SpacetimeDB skills and MCP server, and reports what it verified.
 
 ## Installation
 

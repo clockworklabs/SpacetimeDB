@@ -121,7 +121,8 @@ describe('BinaryReader/Writer', () => {
       identity: sallyIdentity,
       username: 'sally',
     };
-    const binary = [...encodeUser(user1)].concat([...encodeUser(user2)]);
+    const encodedUser1 = encodeUser(user1);
+    const binary = [...encodedUser1].concat([...encodeUser(user2)]);
     const transactionUpdate = ServerMessage.TransactionUpdate({
       querySets: [
         {
@@ -132,11 +133,14 @@ describe('BinaryReader/Writer', () => {
               rows: [
                 TableUpdateRows.PersistentTable({
                   inserts: {
-                    sizeHint: RowSizeHint.FixedSize(0),
+                    sizeHint: RowSizeHint.RowOffsets([
+                      0n,
+                      BigInt(encodedUser1.length),
+                    ]),
                     rowsData: new Uint8Array(binary),
                   },
                   deletes: {
-                    sizeHint: RowSizeHint.FixedSize(0),
+                    sizeHint: RowSizeHint.RowOffsets([]),
                     rowsData: new Uint8Array([]),
                   },
                 }),

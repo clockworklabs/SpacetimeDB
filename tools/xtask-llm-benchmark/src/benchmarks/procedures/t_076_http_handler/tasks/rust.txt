@@ -1,5 +1,7 @@
 Write a SpacetimeDB backend module in Rust that defines and routes an inbound HTTP handler.
 
+The module defines no tables.
+
 HANDLER
 - POST /echo
   - Read the request body

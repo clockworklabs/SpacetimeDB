@@ -11,7 +11,7 @@ public static partial class Module
     }
 
     [Reducer]
-    public static void Register(ReducerContext ctx)
+    public static void RegisterUser(ReducerContext ctx)
     {
         if (ctx.Db.User.Identity.Find(ctx.Sender) is not null)
         {
