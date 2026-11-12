@@ -33,24 +33,19 @@ jobs:
       TARGET_OWNER: clockworklabs
       TARGET_REPO: SpacetimeDBPrivate
     steps:
-      # Required for the path filter check below on non-PR commits (e.g. `master`)
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Skip the private dispatch entirely when only `docs/` is touched. The job
+      # Skip the private dispatch entirely for docs-only changes. The job
       # itself still completes successfully so required-status-check gating is
       # satisfied without spending private-runner time on a docs-only change.
-      - name: Detect non-docs changes
-        id: filter
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            non_docs:
-              - '!docs/**'
+      - name: Detect docs-only changes
+        id: docs
+        uses: ./.github/actions/detect-docs-only
 
       - id: dispatch
         name: Select or trigger tests
-        if: steps.filter.outputs.non_docs == 'true'
+        if: steps.docs.outputs.docs-only != 'true'
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/internal-tests-cargo-target
           GH_TOKEN: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
@@ -67,7 +62,7 @@ jobs:
             -- other-workflows coordinate internal-tests "${args[@]}"
 
       - name: Wait for Internal Tests to complete
-        if: steps.filter.outputs.non_docs == 'true'
+        if: steps.docs.outputs.docs-only != 'true'
         env:
           GH_TOKEN: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
           RUN_ID: ${{ steps.dispatch.outputs.run_id }}

@@ -3,12 +3,12 @@ Write a SpacetimeDB backend module in TypeScript that defines one table and two 
 TABLE
 - user (public)
   - Fields:
-    - id: number (u64, primary key, autoInc)
+    - id: bigint (u64, primary key, autoInc)
     - name: string
     - age: number (i32)
     - active: boolean
 
 REDUCERS
 - insertUser: given name:string, age:number, active:boolean, insert a new row (id is auto-assigned)
-- updateUser: given id:number, name:string, age:number, active:boolean, update the row with matching id
+- updateUser: given id:bigint, name:string, age:number, active:boolean, update the row with matching id
   - (id=id, name=name, age=age, active=active)

@@ -11,4 +11,3 @@ TABLES
 REDUCERS
 - CreateAccount(ctx, string email, string displayName)
   - Insert an Account row with the given email and displayName
-  - Use Id: 0 for AutoInc
