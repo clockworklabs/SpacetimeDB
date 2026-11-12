@@ -2,13 +2,13 @@ use super::metrics::{CacheTier, EvictionDirection, FaultSource, Metrics};
 use std::{
     fmt,
     num::NonZeroU64,
-    ops::Deref,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
 };
 
+use bytes::Bytes;
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_lib::bsatn;
 
@@ -21,7 +21,7 @@ use crate::{
     },
 };
 
-pub type ObjectBytes = Arc<[u8]>; // TODO: Use `bytes::Bytes`?
+pub type ObjectBytes = bytes::Bytes;
 
 pub struct Object {
     inner: ObjectInner,
@@ -75,7 +75,7 @@ impl Object {
 impl From<&BlobHandle> for Object {
     fn from(handle: &BlobHandle) -> Self {
         let hash = handle.hash();
-        let bytes = handle.deref().into();
+        let bytes = Bytes::copy_from_slice(handle);
         Self {
             inner: ObjectInner::Blob { hash, bytes },
         }
@@ -524,7 +524,7 @@ impl TieredStorage {
         };
         if !exists {
             let permit = self.acquire_local_permit(size)?;
-            let written_key = self.local.object_store.write(object_from_trusted_bytes(key, &bytes))?;
+            let written_key = self.local.object_store.write(object_from_trusted_bytes(key, bytes))?;
             assert_eq!(written_key, key);
 
             state.object = Some(ObjectCatalogEntry {
@@ -589,7 +589,9 @@ impl TieredStorage {
             // Hold the entry lock to prevent eviction.
             let bytes = remote.object_store.read(key)?.ok_or_else(|| not_found(key))?;
             *source = Some(FaultSource::Remote);
-            self.local.object_store.write(object_from_trusted_bytes(key, &bytes))?;
+            self.local
+                .object_store
+                .write(object_from_trusted_bytes(key, bytes.clone()))?;
             entry.last_access_epoch = self.access_epoch();
             entry.permit = Some(permit);
 
@@ -688,7 +690,7 @@ impl TieredStorage {
                 continue;
             };
             let bytes = self.local.object_store.read(key)?.ok_or_else(|| not_found(key))?;
-            remote.object_store.write(object_from_trusted_bytes(key, &bytes))?;
+            remote.object_store.write(object_from_trusted_bytes(key, bytes))?;
             // SAFETY: The remote write succeeded. The slot lock excludes
             // concurrent local writes until removal and release of this
             // object's permit are complete.
@@ -780,16 +782,10 @@ impl TieredStorage {
     }
 }
 
-fn object_from_trusted_bytes(key: ObjectKey, bytes: &ObjectBytes) -> Object {
+fn object_from_trusted_bytes(key: ObjectKey, bytes: ObjectBytes) -> Object {
     let inner = match key {
-        ObjectKey::Page(hash) => ObjectInner::Page {
-            hash,
-            bytes: bytes.clone(),
-        },
-        ObjectKey::Blob(hash) => ObjectInner::Blob {
-            hash,
-            bytes: bytes.clone(),
-        },
+        ObjectKey::Page(hash) => ObjectInner::Page { hash, bytes },
+        ObjectKey::Blob(hash) => ObjectInner::Blob { hash, bytes },
     };
     Object { inner }
 }
