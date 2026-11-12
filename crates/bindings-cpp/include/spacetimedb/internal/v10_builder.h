@@ -59,6 +59,23 @@ public:
 
     template<typename T>
     void RegisterTable(const std::string& table_name, bool is_public, bool is_event = false) {
+        RegisterTableImpl<T>(table_name, is_public, is_event, false);
+    }
+
+    /**
+     * Register an outbox table. Unlike RegisterTable, the row type is the type that
+     * `bsatn_traits<T>` registers, rather than one looked up by T's C++ name. Generated
+     * outbox rows register under a dependency-scoped name, and the table and its
+     * on_result reducer's row parameter must refer to the same type.
+     */
+    template<typename T>
+    void RegisterOutboxTable(const std::string& table_name, bool is_public) {
+        RegisterTableImpl<T>(table_name, is_public, false, true);
+    }
+
+private:
+    template<typename T>
+    void RegisterTableImpl(const std::string& table_name, bool is_public, bool is_event, bool use_traits_type) {
         if (g_circular_ref_error) {
             std::fprintf(stderr, "ERROR: Skipping table registration '%s' because circular reference error is set\n", table_name.c_str());
             return;
@@ -97,7 +114,9 @@ public:
         bsatn::ProductType bsatn_product(std::move(elements));
         bsatn::AlgebraicType table_type = bsatn::AlgebraicType::make_product(
             std::make_unique<bsatn::ProductType>(std::move(bsatn_product)));
-        AlgebraicType registered_type = getModuleTypeRegistration().registerType(table_type, "", &typeid(T));
+        AlgebraicType registered_type = use_traits_type
+            ? getModuleTypeRegistration().registerType(bsatn::bsatn_traits<T>::algebraic_type())
+            : getModuleTypeRegistration().registerType(table_type, "", &typeid(T));
         if (registered_type.get_tag() != AlgebraicType::Tag::Ref) {
             SetConstraintRegistrationError(
                 "TABLE_TYPE_NOT_REF",
@@ -121,6 +140,7 @@ public:
         SetTableIsEventFlag(table_name, is_event);
     }
 
+public:
     template<typename T>
     void AddFieldConstraint(const std::string& table_name,
                             const std::string& field_name,

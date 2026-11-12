@@ -90,30 +90,116 @@ pub(super) fn generate_cpp_module_bindings(module: &ModuleDef, dependency_name: 
     writeln!(out);
     writeln!(out, "}} // namespace {namespace}");
 
-    if !types.is_empty() {
+    let mut sats_names = BTreeSet::new();
+    let type_sats_names = types
+        .iter()
+        .map(|typ| {
+            let name = dependency_name.map_or_else(
+                || type_ref_name(module, typ.ty),
+                |dependency| dependency_scoped_type_name(dependency, &typ.accessor_name),
+            );
+            sats_names.insert(name.clone());
+            (typ.ty, name)
+        })
+        .collect::<BTreeMap<_, _>>();
+    let rows = reducers
+        .iter()
+        .filter(|reducer| has_outbox_row(reducer))
+        .map(|reducer| {
+            let base = format!("{}Outbox", reducer.accessor_name.deref().to_case(Case::Pascal));
+            let base = dependency_name.map_or(base.clone(), |dependency| format!("{dependency}.{base}"));
+            OutboxRow {
+                reducer,
+                cpp_name: format!("::{namespace}::outbox::{}", names.reducers[&reducer.name.to_string()]),
+                sats_name: unique_name(&mut sats_names, base),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    if !rows.is_empty() {
+        writeln!(out);
+        writeln!(out, "namespace {namespace}::outbox {{");
+        for row in &rows {
+            writeln!(out);
+            writeln!(
+                out,
+                "/// The row type of SPACETIMEDB_OUTBOX_FOR({namespace}::reducers::{}, ...).",
+                names.reducers[&row.reducer.name.to_string()]
+            );
+            writeln!(out, "struct {} {{", names.reducers[&row.reducer.name.to_string()]);
+            out.with_indent(|out| {
+                for (field, ty, _) in row.fields(&names) {
+                    writeln!(out, "{ty} {field};");
+                }
+            });
+            writeln!(out, "}};");
+        }
+        writeln!(out);
+        writeln!(out, "}} // namespace {namespace}::outbox");
+    }
+
+    if !types.is_empty() || !rows.is_empty() {
         writeln!(out);
         writeln!(out, "namespace SpacetimeDB::bsatn {{");
         for typ in &types {
             writeln!(out);
-            declare_type_traits(&names, out, typ);
+            declare_type_traits(out, &names.qualified_type(&typ.ty));
+        }
+        for row in &rows {
+            writeln!(out);
+            declare_type_traits(out, &row.cpp_name);
         }
         for typ in &types {
             writeln!(out);
-            let sats_name = dependency_name.map_or_else(
-                || type_ref_name(module, typ.ty),
-                |dependency| dependency_scoped_type_name(dependency, &typ.accessor_name),
+            define_type_traits(
+                module,
+                &names,
+                out,
+                typ,
+                &type_sats_names[&typ.ty],
+                dependency_name.is_some(),
             );
-            define_type_traits(module, &names, out, typ, &sats_name, dependency_name.is_some());
+        }
+        for row in &rows {
+            writeln!(out);
+            define_product_traits(
+                out,
+                &row.cpp_name,
+                &row.fields(&names),
+                &row.sats_name,
+                dependency_name.is_some(),
+            );
         }
         writeln!(out);
         writeln!(out, "}} // namespace SpacetimeDB::bsatn");
+    }
+
+    for row in &rows {
+        let fields = row
+            .fields(&names)
+            .into_iter()
+            .map(|(field, _, _)| field)
+            .collect::<Vec<_>>()
+            .join(", ");
+        writeln!(out);
+        writeln!(
+            out,
+            "SPACETIMEDB_GENERATE_FIELD_REGISTRAR_WITH_FIELDS({}, {fields})",
+            row.cpp_name
+        );
+        writeln!(out, "template<>");
+        writeln!(
+            out,
+            "struct ::SpacetimeDB::is_outbox_row<{}> : std::true_type {{}};",
+            row.cpp_name
+        );
     }
 
     writeln!(out);
     writeln!(out, "namespace {namespace}::reducers {{");
     for reducer in &reducers {
         writeln!(out);
-        define_reducer_handle(module, &names, out, reducer);
+        define_reducer_handle(module, &names, out, reducer, has_outbox_row(reducer));
     }
     writeln!(out);
     writeln!(out, "}} // namespace {namespace}::reducers");
@@ -122,6 +208,41 @@ pub(super) fn generate_cpp_module_bindings(module: &ModuleDef, dependency_name: 
         filename: HEADER_FILE.to_owned(),
         code: output.into_inner(),
     }]
+}
+
+/// The row type that the bindings generate for SPACETIMEDB_OUTBOX_FOR.
+struct OutboxRow<'a> {
+    reducer: &'a ReducerDef,
+    cpp_name: String,
+    sats_name: String,
+}
+
+impl OutboxRow<'_> {
+    /// (C++ field name, C++ type, registered field name) for each column.
+    fn fields(&self, names: &CppNames) -> Vec<(String, String, String)> {
+        let mut fields = vec![
+            ("msg_id".to_owned(), "uint64_t".to_owned(), "msg_id".to_owned()),
+            (
+                "target".to_owned(),
+                format!("::{}::Identity", names.namespace),
+                "target".to_owned(),
+            ),
+        ];
+        for (param, ty) in self.reducer.params_for_generate.elements.iter() {
+            let name = param_name(param);
+            fields.push((name.clone(), cpp_type(names, ty), name));
+        }
+        fields
+    }
+}
+
+/// Whether the bindings can generate an outbox row for `reducer`: its parameters must be
+/// usable as column names next to the `msg_id` and `target` columns.
+fn has_outbox_row(reducer: &ReducerDef) -> bool {
+    reducer.params_for_generate.elements.iter().all(|(param, _)| {
+        let name = param_name(param);
+        name != "msg_id" && name != "target" && escape_identifier(&name) == name
+    })
 }
 
 /// C++ names chosen for generated items, unique within their namespaces.
@@ -133,8 +254,13 @@ struct CppNames {
 
 impl CppNames {
     fn new(module: &ModuleDef, namespace: &str, types: &[&TypeDef], reducers: &[&ReducerDef]) -> Self {
-        // `Identity` and `detail` are declared in the same namespace as the receiver's types.
-        let mut used = BTreeSet::from(["Identity".to_owned(), "detail".to_owned(), "reducers".to_owned()]);
+        // These are declared in the same namespace as the receiver's types.
+        let mut used = BTreeSet::from([
+            "Identity".to_owned(),
+            "detail".to_owned(),
+            "outbox".to_owned(),
+            "reducers".to_owned(),
+        ]);
         let mut type_names = BTreeMap::new();
         for typ in types {
             let name = unique_name(&mut used, escape_identifier(&type_ref_name(module, typ.ty)));
@@ -304,8 +430,7 @@ fn define_type(module: &ModuleDef, names: &CppNames, out: &mut Indenter, typ: &T
 
 /// Declare the BSATN traits of a receiver type. Every declaration precedes every
 /// definition, so types can refer to each other in any order.
-fn declare_type_traits(names: &CppNames, out: &mut Indenter, typ: &TypeDef) {
-    let ty = names.qualified_type(&typ.ty);
+fn declare_type_traits(out: &mut Indenter, ty: &str) {
     writeln!(out, "template<>");
     writeln!(out, "struct bsatn_traits<{ty}> {{");
     out.with_indent(|out| {
@@ -341,25 +466,28 @@ fn define_type_traits(
         "getOrRegister"
     };
     let def = &module.typespace_for_generate()[typ.ty];
+    if let AlgebraicTypeDef::Product(product) = def {
+        let fields = product
+            .elements
+            .iter()
+            .map(|(field, field_ty)| {
+                (
+                    field_name(field),
+                    cpp_type(names, field_ty),
+                    field.deref().to_case(Case::Snake),
+                )
+            })
+            .collect::<Vec<_>>();
+        define_product_traits(out, &ty, &fields, sats_name, exact_scope);
+        return;
+    }
 
     writeln!(
         out,
         "inline void bsatn_traits<{ty}>::serialize(Writer& writer, const {ty}& value) {{"
     );
     out.with_indent(|out| match def {
-        AlgebraicTypeDef::Product(product) => {
-            for (field, _) in product.elements.iter() {
-                writeln!(
-                    out,
-                    "::SpacetimeDB::bsatn::serialize(writer, value.{});",
-                    field_name(field)
-                );
-            }
-            if product.elements.is_empty() {
-                writeln!(out, "(void)writer;");
-                writeln!(out, "(void)value;");
-            }
-        }
+        AlgebraicTypeDef::Product(_) => unreachable!("product traits are defined above"),
         AlgebraicTypeDef::PlainEnum(_) => writeln!(out, "writer.write_u8(static_cast<uint8_t>(value));"),
         AlgebraicTypeDef::Sum(sum) => {
             writeln!(out, "writer.write_u8(static_cast<uint8_t>(value.value.index()));");
@@ -379,21 +507,7 @@ fn define_type_traits(
 
     writeln!(out, "inline {ty} bsatn_traits<{ty}>::deserialize(Reader& reader) {{");
     out.with_indent(|out| match def {
-        AlgebraicTypeDef::Product(product) => {
-            writeln!(out, "{ty} value;");
-            for (field, field_ty) in product.elements.iter() {
-                writeln!(
-                    out,
-                    "value.{} = ::SpacetimeDB::bsatn::deserialize<{}>(reader);",
-                    field_name(field),
-                    cpp_type(names, field_ty)
-                );
-            }
-            if product.elements.is_empty() {
-                writeln!(out, "(void)reader;");
-            }
-            writeln!(out, "return value;");
-        }
+        AlgebraicTypeDef::Product(_) => unreachable!("product traits are defined above"),
         AlgebraicTypeDef::PlainEnum(plain) => {
             writeln!(out, "uint8_t tag = reader.read_u8();");
             writeln!(out, "if (tag >= {}) {{", plain.variants.len());
@@ -426,18 +540,7 @@ fn define_type_traits(
             "return ::SpacetimeDB::Internal::LazyTypeRegistrar<{ty}>::{register}([]() -> AlgebraicType {{"
         );
         out.with_indent(|out| match def {
-            AlgebraicTypeDef::Product(product) => {
-                writeln!(out, "ProductTypeBuilder builder;");
-                for (field, field_ty) in product.elements.iter() {
-                    writeln!(
-                        out,
-                        "builder.with_field<{}>({});",
-                        cpp_type(names, field_ty),
-                        cpp_string_literal(&field.deref().to_case(Case::Snake))
-                    );
-                }
-                writeln!(out, "return AlgebraicType::make_product(builder.build());");
-            }
+            AlgebraicTypeDef::Product(_) => unreachable!("product traits are defined above"),
             AlgebraicTypeDef::PlainEnum(plain) => {
                 writeln!(out, "SumTypeBuilder builder;");
                 for variant in plain.variants.iter() {
@@ -470,7 +573,81 @@ fn define_type_traits(
     writeln!(out, "}}");
 }
 
-fn define_reducer_handle(module: &ModuleDef, names: &CppNames, out: &mut Indenter, reducer: &ReducerDef) {
+/// Define the BSATN traits of a product type from its (C++ field, C++ type, registered field) list.
+fn define_product_traits(
+    out: &mut Indenter,
+    ty: &str,
+    fields: &[(String, String, String)],
+    sats_name: &str,
+    exact_scope: bool,
+) {
+    let register = if exact_scope {
+        "getOrRegisterExactScope"
+    } else {
+        "getOrRegister"
+    };
+    writeln!(
+        out,
+        "inline void bsatn_traits<{ty}>::serialize(Writer& writer, const {ty}& value) {{"
+    );
+    out.with_indent(|out| {
+        for (field, _, _) in fields {
+            writeln!(out, "::SpacetimeDB::bsatn::serialize(writer, value.{field});");
+        }
+        if fields.is_empty() {
+            writeln!(out, "(void)writer;");
+            writeln!(out, "(void)value;");
+        }
+    });
+    writeln!(out, "}}");
+    writeln!(out);
+
+    writeln!(out, "inline {ty} bsatn_traits<{ty}>::deserialize(Reader& reader) {{");
+    out.with_indent(|out| {
+        writeln!(out, "{ty} value;");
+        for (field, field_ty, _) in fields {
+            writeln!(
+                out,
+                "value.{field} = ::SpacetimeDB::bsatn::deserialize<{field_ty}>(reader);"
+            );
+        }
+        if fields.is_empty() {
+            writeln!(out, "(void)reader;");
+        }
+        writeln!(out, "return value;");
+    });
+    writeln!(out, "}}");
+    writeln!(out);
+
+    writeln!(out, "inline AlgebraicType bsatn_traits<{ty}>::algebraic_type() {{");
+    out.with_indent(|out| {
+        writeln!(
+            out,
+            "return ::SpacetimeDB::Internal::LazyTypeRegistrar<{ty}>::{register}([]() -> AlgebraicType {{"
+        );
+        out.with_indent(|out| {
+            writeln!(out, "ProductTypeBuilder builder;");
+            for (_, field_ty, sats_field) in fields {
+                writeln!(
+                    out,
+                    "builder.with_field<{field_ty}>({});",
+                    cpp_string_literal(sats_field)
+                );
+            }
+            writeln!(out, "return AlgebraicType::make_product(builder.build());");
+        });
+        writeln!(out, "}}, {});", cpp_string_literal(sats_name));
+    });
+    writeln!(out, "}}");
+}
+
+fn define_reducer_handle(
+    module: &ModuleDef,
+    names: &CppNames,
+    out: &mut Indenter,
+    reducer: &ReducerDef,
+    has_outbox_row: bool,
+) {
     let handle = &names.reducers[&reducer.name.to_string()];
     let hash = spacetimedb_schema::def::reducer_signature_hash(
         &reducer.params(),
@@ -510,6 +687,9 @@ fn define_reducer_handle(module: &ModuleDef, names: &CppNames, out: &mut Indente
             "static constexpr std::array<std::string_view, {}> param_names{{{{{param_names}}}}};",
             params.len()
         );
+        if has_outbox_row {
+            writeln!(out, "using outbox_row = ::{}::outbox::{handle};", names.namespace);
+        }
     });
     writeln!(out, "}};");
 }

@@ -159,6 +159,8 @@ else
         "error_on_result_wrong_row"
         "error_on_result_wrong_result"
         "error_on_result_regular_table"
+        "ok_generated_outbox"
+        "error_generated_outbox_update"
     )
 
     CASE_EXPECTATION["ok_receiver_bindings"]="success"
@@ -214,6 +216,13 @@ else
     CASE_EXPECTATION["error_on_result_regular_table"]="failure"
     CASE_MARKER["error_on_result_regular_table"]="SPACETIMEDB_REDUCER_ON_RESULT requires an outbox table declared with SPACETIMEDB_OUTBOX_TABLE."
     CASE_SOURCE["error_on_result_regular_table"]="$SCRIPT_DIR/cases/idc/error_on_result_regular_table.cpp"
+
+    CASE_EXPECTATION["ok_generated_outbox"]="success"
+    CASE_SOURCE["ok_generated_outbox"]="$SCRIPT_DIR/cases/idc/ok_generated_outbox.cpp"
+
+    CASE_EXPECTATION["error_generated_outbox_update"]="failure"
+    CASE_MARKER["error_generated_outbox_update"]="attempt to use a deleted function"
+    CASE_SOURCE["error_generated_outbox_update"]="$SCRIPT_DIR/cases/idc/error_generated_outbox_update.cpp"
 fi
 
 FAILURES=0

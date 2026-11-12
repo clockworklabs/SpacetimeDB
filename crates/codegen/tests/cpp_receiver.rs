@@ -96,6 +96,15 @@ fn cpp_receiver_bindings() {
     assert!(code.contains("using param_types = std::tuple<std::string>;"));
     assert!(code.contains("param_names{{\"body\"}}"));
     assert!(code.contains("struct noop {"));
+    // Each handle names the row type generated for SPACETIMEDB_OUTBOX_FOR.
+    assert!(code.contains("using outbox_row = ::remote_module::outbox::receive_ping;"));
+    assert!(code.contains(
+        "struct receive_detailed_ping {\n    uint64_t msg_id;\n    ::remote_module::Identity target;\n    std::string body;\n    ::remote_module::PingDetails details;\n};"
+    ));
+    assert!(code.contains("}, \"ReceivePingOutbox\");"));
+    assert!(code
+        .contains("SPACETIMEDB_GENERATE_FIELD_REGISTRAR_WITH_FIELDS(::remote_module::outbox::noop, msg_id, target)"));
+    assert!(code.contains("struct ::SpacetimeDB::is_outbox_row<::remote_module::outbox::noop> : std::true_type {};"));
     assert!(code.contains("static constexpr std::array<std::string_view, 0> param_names{{}};"));
     for reducer in ["wire_ping", "receive_detailed_ping", "noop"] {
         assert!(code.contains(&format!(
@@ -134,6 +143,7 @@ fn cpp_receiver_types_are_scoped_by_dependency_name() {
         // Scoped types must not merge with a sender's own type of the same name.
         assert!(code.contains("getOrRegisterExactScope("));
         assert!(code.contains(&format!("using identity_type = ::{dependency}::Identity;")));
+        assert!(code.contains(&format!("}}, \"{dependency}.ReceivePingOutbox\");")));
     }
 }
 
@@ -180,6 +190,8 @@ fn cpp_receiver_names_avoid_keywords_and_collisions() {
     assert!(code.contains("static Tagged Value(uint8_t payload)"));
     // The registered type keeps the receiver's name.
     assert!(code.contains("}, \"namespace.Identity\");"));
+    // `namespace` can't be a C++ column name, so `delete` has no generated outbox row.
+    assert!(!code.contains("using outbox_row"));
 }
 
 #[test]
@@ -250,4 +262,28 @@ fn cpp_receiver_fixtures_are_up_to_date() {
             "{path} is out of date; rerun with SPACETIMEDB_UPDATE_FIXTURES=1"
         );
     }
+}
+
+#[test]
+fn cpp_receiver_outbox_rows_avoid_metadata_columns_and_type_names() {
+    let mut builder = RawModuleDefV10Builder::new();
+    // Same name as the outbox row generated for `receive`.
+    let collides = builder.add_algebraic_type(
+        [],
+        "ReceiveOutbox",
+        AlgebraicType::product([("value", AlgebraicType::U8)]),
+        true,
+    );
+    builder.add_reducer("receive", ProductType::from([("value", AlgebraicType::Ref(collides))]));
+    builder.add_reducer("with_target", ProductType::from([("target", AlgebraicType::String)]));
+    builder.add_reducer("with_msg_id", ProductType::from([("msg_id", AlgebraicType::U64)]));
+    let module: ModuleDef = builder.finish().try_into().unwrap();
+    let code = header(&module, Some("game_world"));
+
+    assert!(code.contains("}, \"game_world.ReceiveOutbox\");"));
+    assert!(code.contains("}, \"game_world.ReceiveOutbox_\");"));
+    assert!(code.contains("using outbox_row = ::game_world::outbox::receive;"));
+    // The shorthand's own `msg_id` and `target` columns would collide with these parameters.
+    assert!(!code.contains("outbox::with_target"));
+    assert!(!code.contains("outbox::with_msg_id"));
 }

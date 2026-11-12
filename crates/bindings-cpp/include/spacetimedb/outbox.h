@@ -123,13 +123,15 @@ struct on_result_signature<Tag, R (*)(Ctx, Row, Res)> {
 // Outbox table declaration
 // =============================================================================
 
-#define SPACETIMEDB_OUTBOX_TABLE_IMPL(type, table_name, access_enum, receiver, canonical_name) \
+// Declares the table and its tag. Symbol names use `table_name`, which is unique,
+// because `type` can be a qualified name for generated outbox rows.
+#define SPACETIMEDB_OUTBOX_TABLE_DECLARE(type, table_name, access_enum, receiver, canonical_name) \
     static_assert(::SpacetimeDB::RemoteReducerHandle<receiver>, \
         "The outbox receiver must be a reducer handle from generated receiver bindings, like game_world::reducers::admit_player."); \
-    extern "C" __attribute__((export_name("__preinit__20_register_table_" #type "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \
-    void SPACETIMEDB_PASTE(__preinit__20_register_table_, SPACETIMEDB_PASTE(type, SPACETIMEDB_PASTE(_line_, __LINE__)))() { \
+    extern "C" __attribute__((export_name("__preinit__20_register_outbox_table_" #table_name "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \
+    void SPACETIMEDB_PASTE(__preinit__20_register_outbox_table_, SPACETIMEDB_PASTE(table_name, SPACETIMEDB_PASTE(_line_, __LINE__)))() { \
         bool is_public = (access_enum == SpacetimeDB::Internal::TableAccess::Public); \
-        SpacetimeDB::Module::RegisterTable<type>(#table_name, is_public, false); \
+        SpacetimeDB::Internal::getV10Builder().RegisterOutboxTable<type>(#table_name, is_public); \
         const char* _spacetimedb_canonical_name = (canonical_name); \
         if (_spacetimedb_canonical_name != nullptr) { \
             SpacetimeDB::Module::RegisterExplicitTableName(#table_name, _spacetimedb_canonical_name); \
@@ -137,8 +139,6 @@ struct on_result_signature<Tag, R (*)(Ctx, Row, Res)> {
         SpacetimeDB::Internal::getV10Builder().RegisterOutbox<type, receiver>(#table_name); \
     } \
     inline std::bool_constant<true> lookup_table_allowed(::SpacetimeDB::query_builder::detail::row_tag<type>); \
-    template<> \
-    struct ::SpacetimeDB::is_outbox_row<type> : std::true_type {}; \
     struct SPACETIMEDB_PASTE(table_name, _tag_type) : SpacetimeDB::TableTag<type> { \
         static constexpr const char* __table_name_internal = #table_name; \
         static constexpr bool __is_event_internal = false; \
@@ -146,6 +146,11 @@ struct on_result_signature<Tag, R (*)(Ctx, Row, Res)> {
         using __outbox_receiver = receiver; \
     }; \
     constexpr SPACETIMEDB_PASTE(table_name, _tag_type) table_name{};
+
+#define SPACETIMEDB_OUTBOX_TABLE_IMPL(type, table_name, access_enum, receiver, canonical_name) \
+    template<> \
+    struct ::SpacetimeDB::is_outbox_row<type> : std::true_type {}; \
+    SPACETIMEDB_OUTBOX_TABLE_DECLARE(type, table_name, access_enum, receiver, canonical_name)
 
 #define SPACETIMEDB_OUTBOX_TABLE_4(type, table_name, access_enum, receiver) \
     SPACETIMEDB_OUTBOX_TABLE_IMPL(type, table_name, access_enum, receiver, nullptr)
@@ -248,3 +253,60 @@ struct on_result_signature<Tag, R (*)(Ctx, Row, Res)> {
         SpacetimeDB::Internal::getV10Builder().SetOutboxOnResult(#outbox_table, #name); \
     } \
     SpacetimeDB::ReducerResult name(ctx_param, __VA_ARGS__)
+
+// =============================================================================
+// Generated outbox declarations
+// =============================================================================
+
+namespace SpacetimeDB::detail {
+
+/// Whether the receiver bindings generated an outbox row type for `Handle`.
+template<typename Handle>
+inline constexpr bool has_outbox_row_v = requires { typename Handle::outbox_row; };
+
+template<typename Handle, typename = void>
+struct outbox_row_of {
+    using type = void;
+};
+
+template<typename Handle>
+struct outbox_row_of<Handle, std::void_t<typename Handle::outbox_row>> {
+    using type = typename Handle::outbox_row;
+};
+
+} // namespace SpacetimeDB::detail
+
+#define SPACETIMEDB_OUTBOX_FOR_IMPL(receiver, table_name, canonical_name) \
+    static_assert(::SpacetimeDB::detail::has_outbox_row_v<receiver>, \
+        "This receiver reducer has a parameter named msg_id or target, so its bindings have no generated outbox. " \
+        "Declare the outbox with SPACETIMEDB_OUTBOX_TABLE and name those columns differently."); \
+    SPACETIMEDB_OUTBOX_TABLE_DECLARE(typename ::SpacetimeDB::detail::outbox_row_of<receiver>::type, table_name, \
+        ::SpacetimeDB::Internal::TableAccess::Private, receiver, canonical_name) \
+    FIELD_PrimaryKeyAutoInc(table_name, msg_id) \
+    FIELD_Target(table_name, target)
+
+#define SPACETIMEDB_OUTBOX_FOR_2(receiver, table_name) SPACETIMEDB_OUTBOX_FOR_IMPL(receiver, table_name, nullptr)
+#define SPACETIMEDB_OUTBOX_FOR_3(receiver, table_name, canonical_name) SPACETIMEDB_OUTBOX_FOR_IMPL(receiver, table_name, canonical_name)
+#define SPACETIMEDB_OUTBOX_FOR_SELECT(_1, _2, _3, NAME, ...) NAME
+
+/**
+ * @brief Declare a private outbox table for `receiver` with a generated row type.
+ *
+ * The row type, `receiver::outbox_row`, has a `uint64_t msg_id` message ID column,
+ * a `target` column of the receiver's `Identity` type, and one column for each
+ * receiver parameter, in order. It is equivalent to declaring the same struct with
+ * SPACETIMEDB_OUTBOX_TABLE, FIELD_PrimaryKeyAutoInc(table_name, msg_id) and
+ * FIELD_Target(table_name, target).
+ *
+ * @code
+ * SPACETIMEDB_OUTBOX_FOR(game_world::reducers::admit_player, admit_player_outbox)
+ *
+ * using AdmitPlayerOutbox = game_world::reducers::admit_player::outbox_row;
+ * ctx.db[admit_player_outbox].insert(AdmitPlayerOutbox{0, world, name});
+ * @endcode
+ *
+ * A reducer with a parameter named `msg_id` or `target` has no generated row type;
+ * declare its outbox with SPACETIMEDB_OUTBOX_TABLE instead.
+ */
+#define SPACETIMEDB_OUTBOX_FOR(...) \
+    SPACETIMEDB_OUTBOX_FOR_SELECT(__VA_ARGS__, SPACETIMEDB_OUTBOX_FOR_3, SPACETIMEDB_OUTBOX_FOR_2, ~)(__VA_ARGS__)

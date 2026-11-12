@@ -123,6 +123,8 @@ $cases = switch ($Suite) {
             (New-CompileCase "error_on_result_wrong_row" "cases/idc/error_on_result_wrong_row.cpp" "failure" "The second parameter of an on_result reducer must be the outbox table's row type.")
             (New-CompileCase "error_on_result_wrong_result" "cases/idc/error_on_result_wrong_result.cpp" "failure" "The third parameter of an on_result reducer must be SpacetimeDB::OutboxResult.")
             (New-CompileCase "error_on_result_regular_table" "cases/idc/error_on_result_regular_table.cpp" "failure" "SPACETIMEDB_REDUCER_ON_RESULT requires an outbox table declared with SPACETIMEDB_OUTBOX_TABLE.")
+            (New-CompileCase "ok_generated_outbox" "cases/idc/ok_generated_outbox.cpp" "success")
+            (New-CompileCase "error_generated_outbox_update" "cases/idc/error_generated_outbox_update.cpp" "failure" "attempt to use a deleted function")
         )
     }
 }

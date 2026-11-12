@@ -72,6 +72,31 @@ struct PingDetails {
 
 } // namespace receiver
 
+namespace receiver::outbox {
+
+/// The row type of SPACETIMEDB_OUTBOX_FOR(receiver::reducers::noop, ...).
+struct noop {
+    uint64_t msg_id;
+    ::receiver::Identity target;
+};
+
+/// The row type of SPACETIMEDB_OUTBOX_FOR(receiver::reducers::receive_detailed_ping, ...).
+struct receive_detailed_ping {
+    uint64_t msg_id;
+    ::receiver::Identity target;
+    std::string body;
+    ::receiver::PingDetails details;
+};
+
+/// The row type of SPACETIMEDB_OUTBOX_FOR(receiver::reducers::receive_ping, ...).
+struct receive_ping {
+    uint64_t msg_id;
+    ::receiver::Identity target;
+    std::string body;
+};
+
+} // namespace receiver::outbox
+
 namespace SpacetimeDB::bsatn {
 
 template<>
@@ -120,6 +145,42 @@ struct bsatn_traits<::receiver::PingState> {
 template<>
 struct algebraic_type_of<::receiver::PingState> {
     static AlgebraicType get() { return bsatn_traits<::receiver::PingState>::algebraic_type(); }
+};
+
+template<>
+struct bsatn_traits<::receiver::outbox::noop> {
+    static void serialize(Writer& writer, const ::receiver::outbox::noop& value);
+    static ::receiver::outbox::noop deserialize(Reader& reader);
+    static AlgebraicType algebraic_type();
+};
+
+template<>
+struct algebraic_type_of<::receiver::outbox::noop> {
+    static AlgebraicType get() { return bsatn_traits<::receiver::outbox::noop>::algebraic_type(); }
+};
+
+template<>
+struct bsatn_traits<::receiver::outbox::receive_detailed_ping> {
+    static void serialize(Writer& writer, const ::receiver::outbox::receive_detailed_ping& value);
+    static ::receiver::outbox::receive_detailed_ping deserialize(Reader& reader);
+    static AlgebraicType algebraic_type();
+};
+
+template<>
+struct algebraic_type_of<::receiver::outbox::receive_detailed_ping> {
+    static AlgebraicType get() { return bsatn_traits<::receiver::outbox::receive_detailed_ping>::algebraic_type(); }
+};
+
+template<>
+struct bsatn_traits<::receiver::outbox::receive_ping> {
+    static void serialize(Writer& writer, const ::receiver::outbox::receive_ping& value);
+    static ::receiver::outbox::receive_ping deserialize(Reader& reader);
+    static AlgebraicType algebraic_type();
+};
+
+template<>
+struct algebraic_type_of<::receiver::outbox::receive_ping> {
+    static AlgebraicType get() { return bsatn_traits<::receiver::outbox::receive_ping>::algebraic_type(); }
 };
 
 inline void bsatn_traits<::receiver::Mood>::serialize(Writer& writer, const ::receiver::Mood& value) {
@@ -219,7 +280,91 @@ inline AlgebraicType bsatn_traits<::receiver::PingState>::algebraic_type() {
     }, "receiver.PingState");
 }
 
+inline void bsatn_traits<::receiver::outbox::noop>::serialize(Writer& writer, const ::receiver::outbox::noop& value) {
+    ::SpacetimeDB::bsatn::serialize(writer, value.msg_id);
+    ::SpacetimeDB::bsatn::serialize(writer, value.target);
+}
+
+inline ::receiver::outbox::noop bsatn_traits<::receiver::outbox::noop>::deserialize(Reader& reader) {
+    ::receiver::outbox::noop value;
+    value.msg_id = ::SpacetimeDB::bsatn::deserialize<uint64_t>(reader);
+    value.target = ::SpacetimeDB::bsatn::deserialize<::receiver::Identity>(reader);
+    return value;
+}
+
+inline AlgebraicType bsatn_traits<::receiver::outbox::noop>::algebraic_type() {
+    return ::SpacetimeDB::Internal::LazyTypeRegistrar<::receiver::outbox::noop>::getOrRegisterExactScope([]() -> AlgebraicType {
+        ProductTypeBuilder builder;
+        builder.with_field<uint64_t>("msg_id");
+        builder.with_field<::receiver::Identity>("target");
+        return AlgebraicType::make_product(builder.build());
+    }, "receiver.NoopOutbox");
+}
+
+inline void bsatn_traits<::receiver::outbox::receive_detailed_ping>::serialize(Writer& writer, const ::receiver::outbox::receive_detailed_ping& value) {
+    ::SpacetimeDB::bsatn::serialize(writer, value.msg_id);
+    ::SpacetimeDB::bsatn::serialize(writer, value.target);
+    ::SpacetimeDB::bsatn::serialize(writer, value.body);
+    ::SpacetimeDB::bsatn::serialize(writer, value.details);
+}
+
+inline ::receiver::outbox::receive_detailed_ping bsatn_traits<::receiver::outbox::receive_detailed_ping>::deserialize(Reader& reader) {
+    ::receiver::outbox::receive_detailed_ping value;
+    value.msg_id = ::SpacetimeDB::bsatn::deserialize<uint64_t>(reader);
+    value.target = ::SpacetimeDB::bsatn::deserialize<::receiver::Identity>(reader);
+    value.body = ::SpacetimeDB::bsatn::deserialize<std::string>(reader);
+    value.details = ::SpacetimeDB::bsatn::deserialize<::receiver::PingDetails>(reader);
+    return value;
+}
+
+inline AlgebraicType bsatn_traits<::receiver::outbox::receive_detailed_ping>::algebraic_type() {
+    return ::SpacetimeDB::Internal::LazyTypeRegistrar<::receiver::outbox::receive_detailed_ping>::getOrRegisterExactScope([]() -> AlgebraicType {
+        ProductTypeBuilder builder;
+        builder.with_field<uint64_t>("msg_id");
+        builder.with_field<::receiver::Identity>("target");
+        builder.with_field<std::string>("body");
+        builder.with_field<::receiver::PingDetails>("details");
+        return AlgebraicType::make_product(builder.build());
+    }, "receiver.ReceiveDetailedPingOutbox");
+}
+
+inline void bsatn_traits<::receiver::outbox::receive_ping>::serialize(Writer& writer, const ::receiver::outbox::receive_ping& value) {
+    ::SpacetimeDB::bsatn::serialize(writer, value.msg_id);
+    ::SpacetimeDB::bsatn::serialize(writer, value.target);
+    ::SpacetimeDB::bsatn::serialize(writer, value.body);
+}
+
+inline ::receiver::outbox::receive_ping bsatn_traits<::receiver::outbox::receive_ping>::deserialize(Reader& reader) {
+    ::receiver::outbox::receive_ping value;
+    value.msg_id = ::SpacetimeDB::bsatn::deserialize<uint64_t>(reader);
+    value.target = ::SpacetimeDB::bsatn::deserialize<::receiver::Identity>(reader);
+    value.body = ::SpacetimeDB::bsatn::deserialize<std::string>(reader);
+    return value;
+}
+
+inline AlgebraicType bsatn_traits<::receiver::outbox::receive_ping>::algebraic_type() {
+    return ::SpacetimeDB::Internal::LazyTypeRegistrar<::receiver::outbox::receive_ping>::getOrRegisterExactScope([]() -> AlgebraicType {
+        ProductTypeBuilder builder;
+        builder.with_field<uint64_t>("msg_id");
+        builder.with_field<::receiver::Identity>("target");
+        builder.with_field<std::string>("body");
+        return AlgebraicType::make_product(builder.build());
+    }, "receiver.ReceivePingOutbox");
+}
+
 } // namespace SpacetimeDB::bsatn
+
+SPACETIMEDB_GENERATE_FIELD_REGISTRAR_WITH_FIELDS(::receiver::outbox::noop, msg_id, target)
+template<>
+struct ::SpacetimeDB::is_outbox_row<::receiver::outbox::noop> : std::true_type {};
+
+SPACETIMEDB_GENERATE_FIELD_REGISTRAR_WITH_FIELDS(::receiver::outbox::receive_detailed_ping, msg_id, target, body, details)
+template<>
+struct ::SpacetimeDB::is_outbox_row<::receiver::outbox::receive_detailed_ping> : std::true_type {};
+
+SPACETIMEDB_GENERATE_FIELD_REGISTRAR_WITH_FIELDS(::receiver::outbox::receive_ping, msg_id, target, body)
+template<>
+struct ::SpacetimeDB::is_outbox_row<::receiver::outbox::receive_ping> : std::true_type {};
 
 namespace receiver::reducers {
 
@@ -230,6 +375,7 @@ struct noop {
     using identity_type = ::receiver::Identity;
     using param_types = std::tuple<>;
     static constexpr std::array<std::string_view, 0> param_names{{}};
+    using outbox_row = ::receiver::outbox::noop;
 };
 
 /// The receiver's `receive_detailed_ping` reducer.
@@ -239,6 +385,7 @@ struct receive_detailed_ping {
     using identity_type = ::receiver::Identity;
     using param_types = std::tuple<std::string, ::receiver::PingDetails>;
     static constexpr std::array<std::string_view, 2> param_names{{"body", "details"}};
+    using outbox_row = ::receiver::outbox::receive_detailed_ping;
 };
 
 /// The receiver's `wire_ping` reducer.
@@ -248,6 +395,7 @@ struct receive_ping {
     using identity_type = ::receiver::Identity;
     using param_types = std::tuple<std::string>;
     static constexpr std::array<std::string_view, 1> param_names{{"body"}};
+    using outbox_row = ::receiver::outbox::receive_ping;
 };
 
 } // namespace receiver::reducers
