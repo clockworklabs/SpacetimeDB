@@ -38,6 +38,7 @@ pub struct BlobSet {
     resident: Arc<mem::ResidentObjects>,
     storage: Arc<TieredStorage>,
     entries: RwLock<IntMap<BlobHashWrapper, BlobEntry>>,
+    /// Scratch allocation for collecting eviction candidates.
     evictable: Mutex<Vec<BlobEvictionCandidate>>,
 }
 
@@ -107,18 +108,38 @@ impl BlobSet {
         )
     }
 
+    /// Attempt to evict blobs from this set until the budget's low watermark is
+    /// met.
+    ///
+    /// See also: [Self::evict].
+    pub fn trim(&self) -> Result<u64, BlobError> {
+        self.evict(self.resident.budget().config().low_water_bytes)
+    }
+
     /// Attempt to evict resident blobs in this set that have no external
-    /// references.
-    pub fn evict(&self) -> Result<ByteBudgetUsage, BlobError> {
+    /// references, until `target_usage` is met.
+    ///
+    /// Eviction will stop once the usage is at or below `target_usage`. No
+    /// blobs may, however, be eligible for eviction. As the budget is shared,
+    /// resident pages may also prevent the usage to meet the target.
+    ///
+    /// Returns the number of bytes freed.
+    pub fn evict(&self, target_usage: u64) -> Result<u64, BlobError> {
         let timer = self.resident.metrics().timer();
-        let result = self.evict_inner();
+        let result = self.evict_inner(target_usage);
         self.resident
             .metrics()
             .eviction(EvictionDirection::MemoryToDisk, timer.nanos());
         result
     }
 
-    fn evict_inner(&self) -> Result<ByteBudgetUsage, BlobError> {
+    fn evict_inner(&self, target_usage: u64) -> Result<u64, BlobError> {
+        let mut bytes_freed = 0;
+
+        if self.resident.usage().accounted_bytes() <= target_usage {
+            return Ok(bytes_freed);
+        }
+
         let mut candidates = self.evictable.lock().unwrap();
         self.resident.evictable_blobs(&mut candidates);
         for candidate in candidates.drain(..) {
@@ -161,27 +182,35 @@ impl BlobSet {
                     continue;
                 };
 
-                *entry = BlobEntry::NonResident {
-                    uses: *uses,
-                    size: blob.size(),
-                };
+                let size = blob.size();
+                *entry = BlobEntry::NonResident { uses: *uses, size };
                 self.resident
                     .metrics()
-                    .evicted(ObjectType::Blob, EvictionDirection::MemoryToDisk, blob.size());
+                    .evicted(ObjectType::Blob, EvictionDirection::MemoryToDisk, size);
                 drop(blob);
                 self.resident.evict_blob(candidate);
                 drop(entries);
+                bytes_freed += size;
+
+                if self.resident.usage().accounted_bytes() <= target_usage {
+                    break;
+                }
             }
         }
 
-        Ok(self.resident.usage())
+        Ok(bytes_freed)
+    }
+
+    #[inline]
+    pub fn resident_usage(&self) -> ByteBudgetUsage {
+        self.resident.usage()
     }
 
     fn reserve(&self, hash: BlobHashWrapper, bytes: &[u8]) -> Result<ReservedBlob, BlobError> {
         debug_assert_eq!(hash, BlobHashWrapper::hash_from_bytes(bytes));
         let size = bytes.len() as u64;
         self.resident.reserve_blob(size, hash, || bytes.into()).or_else(|_| {
-            self.evict()?;
+            self.trim()?;
             self.resident
                 .reserve_blob(size, hash, || bytes.into())
                 .map_err(BlobError::from)
@@ -681,13 +710,31 @@ impl BlobMap {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&BlobHashWrapper, &BlobMapEntry)> {
-        self.inner.iter()
+        self.into_iter()
     }
 }
 
 pub struct BlobMapEntry {
     pub uses: NonZeroUsize,
     pub blob: Box<[u8]>,
+}
+
+impl<'a> IntoIterator for &'a BlobMap {
+    type Item = (&'a BlobHashWrapper, &'a BlobMapEntry);
+    type IntoIter = <&'a IntMap<BlobHashWrapper, BlobMapEntry> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        (&self.inner).into_iter()
+    }
+}
+
+impl IntoIterator for BlobMap {
+    type Item = (BlobHashWrapper, BlobMapEntry);
+    type IntoIter = <IntMap<BlobHashWrapper, BlobMapEntry> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.into_iter()
+    }
 }
 
 #[cfg(test)]
@@ -866,7 +913,8 @@ mod tests {
             }
             assert_eq!(set.num_blobs(), 1);
             assert_eq!(set.usage_counter().get(&hash), Some(&2));
-            assert_eq!(set.evict().unwrap().accounted_bytes(), bytes.len() as u64);
+            set.evict(0).unwrap();
+            assert_eq!(set.resident.usage().accounted_bytes(), bytes.len() as u64);
 
             // All caller handles are gone. Only the table policy now prevents
             // another blob from reclaiming this one's entire memory allowance.
@@ -892,12 +940,14 @@ mod tests {
         let bytes = b"previously evicted";
         let hash = BlobHashWrapper::hash_from_bytes(bytes);
         drop(set.insert(EvictionPolicy::Evictable, bytes).unwrap());
-        assert_eq!(set.evict().unwrap().accounted_bytes(), 0);
+        set.evict(0).unwrap();
+        assert_eq!(set.resident.usage().accounted_bytes(), 0);
 
         // This uses the nonresident insertion path, rather than updating an
         // existing resident entry. Both paths must preserve the new policy.
         drop(set.insert(EvictionPolicy::NeverEvict, bytes).unwrap());
-        assert_eq!(set.evict().unwrap().accounted_bytes(), bytes.len() as u64);
+        set.evict(0).unwrap();
+        assert_eq!(set.resident.usage().accounted_bytes(), bytes.len() as u64);
         assert_eq!(set.usage_counter().get(&hash), Some(&2));
         assert_eq!(&*set.get(hash).unwrap(), bytes);
     }
@@ -909,22 +959,26 @@ mod tests {
         let hash = BlobHashWrapper::hash_from_bytes(bytes);
         drop(set.insert(EvictionPolicy::Evictable, bytes).unwrap());
         drop(set.insert(EvictionPolicy::Evictable, bytes).unwrap());
-        assert_eq!(set.evict().unwrap().accounted_bytes(), 0);
+        set.evict(0).unwrap();
+        assert_eq!(set.resident.usage().accounted_bytes(), 0);
 
         // Snapshot recovery assigns a pin to each of the two existing logical
         // references. Neither pin() call may add another logical reference.
         set.pin(hash).unwrap();
         set.pin(hash).unwrap();
-        assert_eq!(set.evict().unwrap().accounted_bytes(), bytes.len() as u64);
+        set.evict(0).unwrap();
+        assert_eq!(set.resident.usage().accounted_bytes(), bytes.len() as u64);
         assert_eq!(set.usage_counter().get(&hash), Some(&2));
         assert_eq!(&*set.get(hash).unwrap(), bytes);
 
         // Releasing one restored owner must retain the other owner's pin.
         set.free_ref(hash, EvictionPolicy::NeverEvict).unwrap();
         assert_eq!(set.usage_counter().get(&hash), Some(&1));
-        assert_eq!(set.evict().unwrap().accounted_bytes(), bytes.len() as u64);
+        set.evict(0).unwrap();
+        assert_eq!(set.resident.usage().accounted_bytes(), bytes.len() as u64);
         set.free_ref(hash, EvictionPolicy::NeverEvict).unwrap();
-        assert_eq!(set.evict().unwrap().accounted_bytes(), 0);
+        set.evict(0).unwrap();
+        assert_eq!(set.resident.usage().accounted_bytes(), 0);
         assert!(matches!(set.pin(hash), Err(BlobError::MissingBlob(_))));
     }
 }

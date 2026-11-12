@@ -8,7 +8,6 @@ use super::{
 use crate::db_metrics::DB_METRICS;
 #[cfg(feature = "metrics")]
 use crate::system_tables::{ST_COLUMN_NAME, ST_CONSTRAINT_NAME, ST_INDEX_NAME, ST_SEQUENCE_NAME};
-use crate::system_tables::{ST_TABLE_CACHE_POLICY_ID, ST_TABLE_CACHE_POLICY_IDX};
 use crate::traits::TxOffset;
 use crate::{
     error::TableError,
@@ -27,6 +26,10 @@ use crate::{
         ST_VIEW_ARG_ID, ST_VIEW_ARG_IDX,
     },
     traits::{EphemeralTables, TxData},
+};
+use crate::{
+    error::TrimTableError,
+    system_tables::{ST_TABLE_CACHE_POLICY_ID, ST_TABLE_CACHE_POLICY_IDX},
 };
 use crate::{
     locking_tx_datastore::ViewCallInfo,
@@ -1102,6 +1105,15 @@ impl CommittedState {
             .data_size_blob_store_bytes_used_by_blobs
             .with_label_values(&database_identity)
             .set(self.storage.blobs().bytes_used_by_blobs() as _);
+    }
+
+    pub(super) fn trim(&self) -> std::result::Result<(), TrimTableError> {
+        for table in self.tables.values() {
+            table.trim()?;
+        }
+        self.storage.trim()?;
+
+        Ok(())
     }
 }
 

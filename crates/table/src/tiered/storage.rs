@@ -9,11 +9,15 @@ use std::{
 };
 
 use parking_lot::{Mutex, RwLock};
+use spacetimedb_lib::bsatn;
 
-use crate::tiered::{
-    error::ObjectStoreError,
-    map::{BlobHashWrapper, ObjectKey, ObjectMap, PageHash},
-    BlobHandle, BudgetPermit, ByteBudget, PageHandle,
+use crate::{
+    page::Page,
+    tiered::{
+        error::ObjectStoreError,
+        map::{BlobHashWrapper, ObjectKey, ObjectMap, PageHash},
+        BlobHandle, BudgetPermit, ByteBudget, PageHandle,
+    },
 };
 
 pub type ObjectBytes = Arc<[u8]>; // TODO: Use `bytes::Bytes`?
@@ -47,6 +51,14 @@ impl ObjectInner {
             Self::Blob { hash, bytes } => (hash.into(), bytes),
         }
     }
+
+    #[inline]
+    pub fn to_kv(&self) -> (ObjectKey, ObjectBytes) {
+        match self {
+            ObjectInner::Page { hash, bytes } => ((*hash).into(), bytes.clone()),
+            ObjectInner::Blob { hash, bytes } => ((*hash).into(), bytes.clone()),
+        }
+    }
 }
 
 impl Object {
@@ -77,6 +89,16 @@ impl From<&PageHandle> for Object {
                 hash,
                 bytes: bytes.into(),
             },
+        }
+    }
+}
+
+impl From<&Page> for Object {
+    fn from(page: &Page) -> Self {
+        let hash = PageHash::from(page);
+        let bytes = bsatn::to_vec(page).unwrap().into();
+        Self {
+            inner: ObjectInner::Page { hash, bytes },
         }
     }
 }
@@ -185,7 +207,7 @@ impl ObjectStore for MemoryObjectStore {
     }
 
     fn write(&self, object: Object) -> Result<ObjectKey, ObjectStoreError> {
-        let (key, bytes) = object.inner.into_kv();
+        let (key, bytes) = object.inner.to_kv();
         self.objects.write().insert(key, bytes);
         Ok(key)
     }
@@ -219,33 +241,6 @@ pub struct TieredStorage {
 }
 
 impl TieredStorage {
-    pub fn with_catalog(
-        local: LocalBackingStore,
-        remote: Option<RemoteBackingStore>,
-        catalog: impl Iterator<Item = (ObjectKey, u64)>,
-    ) -> Self {
-        let access_epoch = AtomicU64::new(1);
-        let catalog = RwLock::new(
-            catalog
-                .map(|(key, size)| {
-                    let entry = ObjectCatalogEntry {
-                        size,
-                        last_access_epoch: 1,
-                        permit: Some(local.budget.force_acquire(size)),
-                    };
-                    (key, Arc::new(Mutex::new(Some(entry))))
-                })
-                .collect::<ObjectMap<_>>(),
-        );
-
-        Self {
-            local,
-            remote,
-            access_epoch,
-            catalog,
-        }
-    }
-
     pub fn empty(local: LocalBackingStore, remote: Option<RemoteBackingStore>) -> Self {
         Self {
             local,
@@ -285,17 +280,26 @@ impl TieredStorage {
     }
 
     pub fn write(&self, object: Object) -> Result<ObjectKey, ObjectStoreError> {
-        // Acquiring a permit can evict this key, so it must precede locking the
-        // slot.
-        let permit = self.acquire_local_permit(object.size())?;
+        let size = object.size();
         let (key, bytes) = object.into_kv();
-        // Lock the slot while writing the object, preventing concurrent
-        // eviction.
+        assert_eq!(size, bytes.len() as u64);
+
+        // Create or insert the catalog entry, then release the catalog lock.
         let slot = self.catalog.write().entry(key).or_default().clone();
+        // Lock the entry, preventing concurrent eviction.
         let mut entry = slot.lock();
+
+        // The object must have been written before by this tiered storage
+        // instance. Integrity checking is deferred until eviction.
+        if is_resident(&entry) {
+            return Ok(key);
+        }
+        drop(state);
+
+        let permit = self.acquire_local_permit(size)?;
         let key = self.local.object_store.write(object_from_trusted_bytes(key, &bytes))?;
         *entry = Some(ObjectCatalogEntry {
-            size: bytes.len() as u64,
+            size,
             last_access_epoch: self.access_epoch(),
             permit: Some(permit),
         });
@@ -365,6 +369,13 @@ impl TieredStorage {
         Err(not_found(key))
     }
 
+    /// Trim the local storage to the configured low watermark.
+    ///
+    /// See also: [Self::evict].
+    pub fn trim(&self) -> Result<u64, ObjectStoreError> {
+        self.evict(self.local.budget.config().low_water_bytes)
+    }
+
     /// Trim the local storage until the accounted byte usage is at or below
     /// `target_usage`.
     ///
@@ -405,7 +416,8 @@ impl TieredStorage {
             .into_iter()
             .filter_map(|(key, slot)| {
                 let last_access_epoch = {
-                    let entry = slot.lock();
+                    // If the slot is locked, don't evict it.
+                    let entry = slot.try_lock()?;
 
                     // Filter out empty or non-resident slots.
                     let entry = entry.as_ref()?;
@@ -420,7 +432,14 @@ impl TieredStorage {
 
         let mut bytes_freed = 0;
         for (_, key, slot) in candidates {
-            let mut entry = slot.lock();
+            let Some(mut entry) = slot.try_lock() else {
+                continue;
+            };
+            // Skip if the object got pinned meanwhile.
+            if state.ownership.is_pinned() {
+                continue;
+            }
+            // Stop if we already reached our target.
             if self.local.budget.usage().accounted_bytes <= target_usage {
                 break;
             }
@@ -453,7 +472,7 @@ impl TieredStorage {
     /// Tries once to evict objects when permit acquisition fails.
     fn acquire_local_permit(&self, size: u64) -> Result<BudgetPermit, ObjectStoreError> {
         self.local.budget.acquire(size).or_else(|_| {
-            self.evict(self.local.budget.config().low_water_bytes)?;
+            self.trim()?;
             self.local
                 .budget
                 .acquire(size)
@@ -540,6 +559,10 @@ struct ObjectCatalogEntry {
     ///
     /// `Some` if the object is resident, otherwise `None`.
     permit: Option<BudgetPermit>,
+}
+
+fn is_resident(maybe_entry: &Option<ObjectCatalogEntry>) -> bool {
+    maybe_entry.as_ref().is_some_and(|entry| entry.permit.is_some())
 }
 
 fn not_found(key: ObjectKey) -> ObjectStoreError {

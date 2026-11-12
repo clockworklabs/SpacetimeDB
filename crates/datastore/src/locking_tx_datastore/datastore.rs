@@ -104,7 +104,7 @@ impl Locking {
 
         // NOTE! The bootstrapping process does not take plan in a transaction.
         // This is intentional.
-        let datastore = Self::new(database_identity, TieredDatabaseStorage::empty(storage_config)?);
+        let datastore = Self::new(database_identity, TieredDatabaseStorage::empty(storage_config));
         let mut commit_state = datastore.committed_state.write_arc();
         // TODO(cloutiertyler): One thing to consider in the future is, should
         // we persist the bootstrap transaction in the message log? My intuition
@@ -194,13 +194,7 @@ impl Locking {
 
         let datastore = Self::new(
             database_identity,
-            TieredDatabaseStorage::from_snapshot(
-                config,
-                blob_store,
-                tables
-                    .values()
-                    .flat_map(|pages| pages.iter().filter_map(|p| p.as_deref())),
-            )?,
+            TieredDatabaseStorage::from_snapshot(config, blob_store),
         );
         let mut committed_state = datastore.committed_state.write_arc();
 
@@ -248,6 +242,9 @@ impl Locking {
 
         // The next TX offset after restoring from a snapshot is one greater than the snapshotted offset.
         committed_state.next_tx_offset = tx_offset + 1;
+
+        // Free memory + disk storage to budget.
+        committed_state.trim()?;
 
         Ok(datastore)
     }
@@ -3771,7 +3768,7 @@ pub(crate) mod tests {
                 let blobs = tx.committed_state_write_lock.storage.blobs();
                 assert_eq!(blobs.uses(shared_hash.into()).unwrap_or_default(), 2);
                 assert_eq!(blobs.uses(unique_hash.into()), None);
-                blobs.evict()?;
+                blobs.evict(0)?;
                 let retained_bytes = match retained_policy {
                     TableCachePolicy::RequiredInMemory => shared.len() as u64 + BlobHash::SIZE as u64,
                     _ => 0,
@@ -3827,7 +3824,7 @@ pub(crate) mod tests {
         let mut tx = begin_mut_tx(&datastore);
         tx.drop_table(dropped)?;
         tx.clear_table(faulting)?;
-        tx.committed_state_write_lock.storage.blobs().evict()?;
+        tx.committed_state_write_lock.storage.blobs().evict(0)?;
         // The dropped table's small required blob stays resident, so its release
         // plan and deleted-row values can be prepared. The later deletion from
         // another table must fault a 1 MiB blob and fail before application.
@@ -3845,7 +3842,7 @@ pub(crate) mod tests {
         assert_eq!(all_rows(&datastore, &tx, faulting), [large_row]);
         let blobs = tx.committed_state_write_lock.storage.blobs();
         assert_eq!(blobs.uses(required_hash.into()).unwrap_or_default(), 1);
-        blobs.evict()?;
+        blobs.evict(0)?;
         assert_eq!(
             blobs.resident_bytes_used_by_blobs(),
             required.len() as u64 + BlobHash::SIZE as u64
@@ -3896,7 +3893,7 @@ pub(crate) mod tests {
         // Evict the blob, then leave too little memory to load it during migration.
         let mut tx = begin_mut_tx(&datastore);
         tx.alter_table_cache_policy(table_id, RequiredInMemory)?;
-        tx.committed_state_write_lock.storage.blobs().evict()?;
+        tx.committed_state_write_lock.storage.blobs().evict(0)?;
         let reservation = budget.acquire(LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024)?;
         let error = datastore.commit_mut_tx(tx).map(|_| ()).unwrap_err();
         assert_matches!(
@@ -3912,7 +3909,7 @@ pub(crate) mod tests {
         verify_schemas_consistent(&mut tx, table_id);
         assert_eq!(all_rows(&datastore, &tx, table_id), [row]);
         let blobs = tx.committed_state_write_lock.storage.blobs();
-        blobs.evict()?;
+        blobs.evict(0)?;
         assert_eq!(blobs.resident_bytes_used_by_blobs(), 0);
 
         // With the memory available again, retry and check that the blob stays resident.
@@ -3923,7 +3920,7 @@ pub(crate) mod tests {
         let blobs = tx.committed_state_write_lock.storage.blobs();
         let resident_bytes = blobs.resident_bytes_used_by_blobs();
         assert!(resident_bytes > 0);
-        blobs.evict()?;
+        blobs.evict(0)?;
         assert_eq!(blobs.resident_bytes_used_by_blobs(), resident_bytes);
         Ok(())
     }
@@ -4782,7 +4779,7 @@ pub(crate) mod tests {
 
         // Keep room for system-table pages, but not for the evicted 1 MiB blob.
         // The tx table can build its pointer map; the committed table cannot.
-        tx.committed_state_write_lock.storage.blobs().evict()?;
+        tx.committed_state_write_lock.storage.blobs().evict(0)?;
         assert_eq!(tx.committed_state_write_lock.storage.resident_bytes_used_by_blobs(), 0);
         let reservation = budget.acquire(HARD_LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024)?;
         // The first index becomes non-unique on both tables without a scan:
@@ -4855,7 +4852,7 @@ pub(crate) mod tests {
         insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Bob", 25))?;
         // Leave enough room to insert constraint metadata into system tables,
         // but too little to fault the committed row's 1MiB string back in.
-        tx.committed_state_write_lock.storage.blobs().evict()?;
+        tx.committed_state_write_lock.storage.blobs().evict(0)?;
         assert_eq!(tx.committed_state_write_lock.storage.resident_bytes_used_by_blobs(), 0);
         let reservation = budget.acquire(HARD_LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024)?;
 
@@ -5176,7 +5173,7 @@ pub(crate) mod tests {
         let schema_before = tx.committed_state_write_lock.tables[&table_id].get_schema().clone();
         // Removing the last unique index builds a pointer map. This succeeds
         // for the small tx row, but faults the committed row's evicted blob.
-        tx.committed_state_write_lock.storage.blobs().evict()?;
+        tx.committed_state_write_lock.storage.blobs().evict(0)?;
         assert_eq!(tx.committed_state_write_lock.storage.resident_bytes_used_by_blobs(), 0);
         // Leave 256 KiB for page work, but not enough for the evicted 1 MiB
         // blob. Match that specific error to rule out an earlier failure.
@@ -5239,7 +5236,7 @@ pub(crate) mod tests {
         // The replacement is entirely inline, so serialization and looking up
         // its integer key succeed. Confirming the update must read the old
         // row's blob to remove its index entry, which cannot fit in this budget.
-        tx.tx_state.blob_store.evict()?;
+        tx.tx_state.blob_store.evict(0)?;
         assert_eq!(tx.tx_state.blob_store.resident_bytes_used_by_blobs(), 0);
         let reservation = budget.acquire(HARD_LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024)?;
         let error = update(&datastore, &mut tx, table_id, index_id, &u32_str_u32(1, "new", 31)).unwrap_err();

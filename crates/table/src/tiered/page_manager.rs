@@ -21,7 +21,8 @@ use crate::{
         map::{ObjectKey, PageHash},
         mem::{self, PageEvictionCandidate, PageFrame, PageId, PooledPage},
         storage::TieredStorage,
-        BudgetExceeded, BudgetPermit, ByteBudget, EvictionPolicy, ObjectStoreError, ResidentObjects,
+        BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetConfig, ByteBudgetUsage, EvictionPolicy, ObjectStoreError,
+        ResidentObjects,
     },
 };
 
@@ -686,6 +687,14 @@ impl PageManager {
         }
 
         PageSlotHandle { slot }
+    }
+
+    pub fn resident_usage(&self) -> ByteBudgetUsage {
+        self.resident.usage()
+    }
+
+    pub fn resident_budget(&self) -> &ByteBudgetConfig {
+        self.resident.budget().config()
     }
 
     /// Register a number of pages with this manager.

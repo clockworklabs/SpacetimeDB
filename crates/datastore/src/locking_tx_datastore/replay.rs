@@ -1294,7 +1294,7 @@ mod tests {
             let blobs = state.storage.blobs();
             // No read handles are retained by these tests. Eviction reveals which
             // frames are held by policy pins, independently of logical use counts.
-            blobs.evict()?;
+            blobs.evict(0)?;
             let mut catalog = Vec::new();
             blobs.try_for_each::<ObjectStoreError>(|hash, uses, bytes| {
                 catalog.push((hash.into(), uses.get() as u64, bytes.len() as u64));
@@ -1520,7 +1520,7 @@ mod tests {
         assert_eq!(replay.next_tx_offset(), drop_offset);
         {
             let state = replay.committed_state();
-            state.storage.blobs().evict()?;
+            state.storage.blobs().evict(0)?;
             assert_eq!(state.storage.resident_bytes_used_by_blobs(), 0);
             assert_eq!(state.storage.blobs().num_blobs(), 1);
         }
@@ -1771,7 +1771,7 @@ mod tests {
             // Evict the 1 MiB blob, then reserve all but 256 KiB. Page operations
             // still fit, but unnecessarily reading the blob must fail. The clear
             // operation should succeed using only page data and catalog entries.
-            datastore.committed_state.read().storage.blobs().evict()?;
+            datastore.committed_state.read().storage.blobs().evict(0)?;
             let reservation = budget.acquire(HARD_LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024)?;
             if replay {
                 let state = datastore.committed_state.write();
