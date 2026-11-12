@@ -1066,4 +1066,39 @@ mod tests {
         assert_eq!(set.resident.usage().accounted_bytes(), 0);
         assert!(matches!(set.pin(hash), Err(BlobError::MissingBlob(_))));
     }
+
+    proptest! {
+        #[test]
+        fn removing_memory_row_allows_shared_blob_disk_eviction(
+            bytes in vec(any::<u8>(), 1..128),
+        ) {
+            use crate::tiered::{BackingStore, MemoryObjectStore};
+
+            let storage = Arc::new(TieredStorage::empty(
+                BackingStore {
+                    object_store: Box::new(MemoryObjectStore::default()),
+                    budget: ByteBudget::unlimited(),
+                },
+                Some(BackingStore {
+                    object_store: Box::new(MemoryObjectStore::default()),
+                    budget: ByteBudget::unlimited(),
+                }),
+            ));
+            let resident = Arc::new(ResidentObjects::new(ByteBudget::unlimited()));
+            let blobs = BlobSet::new(resident, storage.clone());
+            let hash = BlobHashWrapper::hash_from_bytes(&bytes);
+            drop(blobs.insert(EvictionPolicy::Memory, &bytes).unwrap());
+            drop(blobs.insert(EvictionPolicy::Disk, &bytes).unwrap());
+            blobs.evict(0).unwrap();
+
+            // Memory protects the shared disk copy until that row is released.
+            prop_assert_eq!(storage.evict(0).unwrap(), 0);
+            blobs.free_ref(hash, EvictionPolicy::Memory).unwrap();
+
+            // The remaining Disk row permits remote eviction and must remain readable.
+            prop_assert_eq!(storage.evict(0).unwrap(), bytes.len() as u64);
+            let recovered = blobs.get(hash).unwrap();
+            prop_assert_eq!(&*recovered, bytes.as_slice());
+        }
+    }
 }

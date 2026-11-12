@@ -1500,4 +1500,64 @@ mod tests {
         pages.allocate_new_page(Size(8)).unwrap();
         assert!(!pages.storage.tiered().slots[first.idx()].is_resident());
     }
+
+    #[test]
+    fn dirtying_or_freeing_a_page_releases_its_old_backing() {
+        let storage = Arc::new(TieredStorage::new_for_test());
+        let manager = Arc::new(PageManager::new(
+            Arc::new(ResidentObjects::new(ByteBudget::unlimited())),
+            PagePool::new_for_test(),
+            storage.clone(),
+        ));
+        let mut pages = PageSet::new(manager, EvictionPolicy::Memory, Size(8));
+
+        // Persist a clean version and remember its serialized disk footprint.
+        let index = pages.allocate_new_page(Size(8)).unwrap();
+        pages.evict(0).unwrap();
+        let key = match &*pages.storage.tiered().slots[index.idx()].lock_ref() {
+            PageSlot::NonResident { backing, .. } => backing.key(),
+            _ => panic!("page should be evicted"),
+        };
+        let stored_bytes = storage.stat(key).unwrap().size;
+
+        // A write guard dirties the page, releasing ownership of the previous version.
+        pages.with_page_mut(index, Size(8), |_| ()).unwrap();
+        assert_eq!(storage.reclaim().unwrap(), stored_bytes);
+        assert!(!storage.contains(key));
+
+        // Freeing a nonresident page must release the newly stored version too.
+        pages.evict(0).unwrap();
+        pages.storage.tiered().slots[index.idx()].free();
+        assert_eq!(storage.reclaim().unwrap(), stored_bytes);
+        assert!(!storage.contains(key));
+    }
+
+    #[test]
+    fn reads_refresh_page_recency() {
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
+            low_water_bytes: 0,
+            soft_limit_bytes: 2 * PAGE_SIZE as u64,
+            hard_limit_bytes: 2 * PAGE_SIZE as u64,
+        })
+        .unwrap();
+        let manager = Arc::new(PageManager::new(
+            Arc::new(ResidentObjects::new(budget)),
+            PagePool::new_for_test(),
+            Arc::new(TieredStorage::new_for_test()),
+        ));
+        let mut pages = PageSet::new(manager, EvictionPolicy::Disk, Size(8));
+        let hot = pages.allocate_new_page(Size(8)).unwrap();
+        let cold = pages.allocate_new_page(Size(8)).unwrap();
+        for _ in 0..2 {
+            drop(pages.get_page(hot).unwrap().unwrap());
+        }
+
+        pages.evict(PAGE_SIZE as u64).unwrap();
+        assert!(
+            pages.storage.tiered().slots[hot.idx()].is_resident(),
+            "a repeatedly read Disk-policy page should outlive the unread page"
+        );
+        assert!(!pages.storage.tiered().slots[cold.idx()].is_resident());
+    }
 }
