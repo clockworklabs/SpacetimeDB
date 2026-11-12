@@ -6,7 +6,7 @@ use spacetimedb_execution::{
 };
 use spacetimedb_expr::{
     check::{parse_and_type_sub, SchemaView},
-    expr::ProjectList,
+    expr::{CollectViews, ProjectList, ViewCall},
     rls::{resolve_views_for_sql, resolve_views_for_sub},
     statement::{parse_and_type_sql, Statement, DML},
 };
@@ -44,6 +44,8 @@ pub struct SubscriptionTemplate {
     pub plans: Vec<ProjectPlan>,
     /// The source and type of each binding param, in slot order
     pub params: Vec<(ParamSource, AlgebraicType)>,
+    /// The views this query reads, with their args, which its plans no longer have once lifted
+    pub view_calls: Vec<ViewCall>,
     pub return_id: TableId,
     pub return_name: TableName,
     pub has_param: bool,
@@ -54,16 +56,6 @@ pub fn compile_subscription_template(sql: &str, tx: &impl SchemaView, auth: &Aut
     compile(sql, tx, auth, CompileTarget::Template)
 }
 
-/// Like [`compile_subscription_template`], but keeps each literal in the plan and makes each built-in a value,
-/// so only the same query from the same caller shares the template
-pub fn compile_subscription_template_with_literals(
-    sql: &str,
-    tx: &impl SchemaView,
-    auth: &AuthCtx,
-) -> Result<SubscriptionTemplate> {
-    compile(sql, tx, auth, CompileTarget::TemplateWithLiterals)
-}
-
 /// What `compile` builds
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CompileTarget {
@@ -71,8 +63,6 @@ enum CompileTarget {
     Query,
     /// A template shared by queries that differ only in their values: literals and built-ins become binding params
     Template,
-    /// A template that keeps its literals and makes each built-in, such as `:sender`, this caller's value
-    TemplateWithLiterals,
 }
 
 fn compile(sql: &str, tx: &impl SchemaView, auth: &AuthCtx, target: CompileTarget) -> Result<SubscriptionTemplate> {
@@ -81,6 +71,10 @@ fn compile(sql: &str, tx: &impl SchemaView, auth: &AuthCtx, target: CompileTarge
     }
 
     let (mut plan, mut has_param) = parse_and_type_sub(sql, tx, auth)?;
+
+    // Before lifting, which empties each call's args
+    let mut view_calls = Default::default();
+    plan.collect_views(&mut view_calls);
 
     // Before RLS, so the literals of its rules stay literal
     let literals = if target == CompileTarget::Template {
@@ -107,13 +101,14 @@ fn compile(sql: &str, tx: &impl SchemaView, auth: &AuthCtx, target: CompileTarge
     let plan_fragments = resolve_views_for_sub(tx, plan, auth, &mut has_param)?
         .into_iter()
         .map(|mut fragment| {
+            // The views that RLS rules read
+            fragment.collect_views(&mut view_calls);
             fragment.bind_view_arg_hashes(auth.caller());
             let mut plan = compile_select(fragment);
             match target {
                 CompileTarget::Query => return plan,
                 // The fragments share the lifted literals, so they share the built-ins' slots too
                 CompileTarget::Template => plan.remap_builtin_params(&mut params),
-                CompileTarget::TemplateWithLiterals => plan.inline_params(&ExecutionParams::from_auth(auth)),
             }
             // Templates are compared in this form
             plan = plan.canonicalize();
@@ -129,6 +124,7 @@ fn compile(sql: &str, tx: &impl SchemaView, auth: &AuthCtx, target: CompileTarge
     Ok(SubscriptionTemplate {
         plans: plan_fragments,
         params,
+        view_calls: view_calls.into_iter().collect(),
         return_id,
         return_name,
         has_param: has_param || reads_view,

@@ -313,11 +313,26 @@ pub struct ViewArgs {
     pub arg_hash: Option<Expr>,
 }
 
+impl ViewArgs {
+    /// Has `lift_literals` moved this call's hash into a binding, emptying its args?
+    pub fn is_lifted(&self) -> bool {
+        matches!(self.arg_hash, Some(Expr::Param(Param::Binding(_), _)))
+    }
+}
+
 impl CollectViews for RelExpr {
+    /// Skips lifted calls, whose args are gone, so collect those before lifting
     fn collect_views(&self, views: &mut HashSet<ViewCall>) {
         self.visit(&mut |expr| {
-            if let Self::RelVar(Relvar { schema, view_args, .. }) = expr
-                && let Some(info) = &schema.view_info
+            // A join's rhs is a relvar of its own, which `visit` doesn't reach
+            let relvar = match expr {
+                Self::RelVar(relvar) => relvar,
+                Self::LeftDeepJoin(join) | Self::EqJoin(join, ..) => &join.rhs,
+                Self::Select(..) => return,
+            };
+            let Relvar { schema, view_args, .. } = relvar;
+            if let Some(info) = &schema.view_info
+                && !view_args.as_ref().is_some_and(ViewArgs::is_lifted)
             {
                 views.insert(ViewCall {
                     view_id: info.view_id,

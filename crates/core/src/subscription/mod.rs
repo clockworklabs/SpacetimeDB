@@ -184,16 +184,17 @@ pub fn execute_plans<F: BuildableWebsocketFormat>(
 ) -> Result<(ws_v1::DatabaseUpdate<F>, ExecutionMetrics, Vec<QueryMetrics>), DBError> {
     plans
         .par_iter()
-        .flat_map_iter(|plan| plan.plans_fragments().map(|fragment| (plan.sql(), fragment)))
+        .flat_map_iter(|query| query.plans_fragments().map(move |fragment| (query, fragment)))
         .filter(|(_, plan)| {
             // Since subscriptions only support selects and inner joins,
             // we filter out any plans that read from an empty table.
             plan.table_ids().all(|table_id| tx.row_count(table_id) > 0)
         })
-        .map(|(sql, plan)| (sql, plan, plan.subscribed_table_id(), plan.subscribed_table_name()))
-        .map(|(sql, plan, table_id, table_name)| {
+        .map(|(query, plan)| (query, plan, query.subscribed_table_id(), query.subscribed_table_name()))
+        .map(|(query, plan, table_id, table_name)| {
             {
                 let start_time = std::time::Instant::now();
+                let params = query.params();
 
                 let result = if plan.is_view() {
                     collect_table_update_for_view(
@@ -203,7 +204,7 @@ pub fn execute_plans<F: BuildableWebsocketFormat>(
                         table_id,
                         table_name.clone(),
                         tx,
-                        plan.params(),
+                        &params,
                         update_type,
                         rlb_pool,
                     )?
@@ -213,7 +214,7 @@ pub fn execute_plans<F: BuildableWebsocketFormat>(
                         table_id,
                         table_name.clone(),
                         tx,
-                        plan.params(),
+                        &params,
                         update_type,
                         rlb_pool,
                     )?
@@ -232,7 +233,7 @@ pub fn execute_plans<F: BuildableWebsocketFormat>(
                 Ok((result.0, result.1, Some(query_metrics)))
             }
             .map_err(|err| DBError::WithSql {
-                sql: sql.into(),
+                sql: query.sql().into(),
                 error: Box::new(DBError::Other(err)),
             })
         })

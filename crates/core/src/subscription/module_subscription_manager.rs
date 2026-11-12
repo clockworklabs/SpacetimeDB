@@ -26,7 +26,7 @@ use spacetimedb_data_structures::map::{
     HashMap, HashSet, IntMap,
 };
 use spacetimedb_durability::TxOffset;
-use spacetimedb_execution::bindings::{BindingId, BindingRelation};
+use spacetimedb_execution::bindings::{BindingId, BindingParams, BindingRelation};
 use spacetimedb_expr::expr::{CollectViews, ViewCall};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{ConnectionId, Identity, ProductValue};
@@ -35,7 +35,7 @@ use spacetimedb_primitives::{IndexId, TableId};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::def::RawModuleDefVersion;
 use spacetimedb_schema::table_name::TableName;
-use spacetimedb_subscription::{SubscriptionPlan, Template, TemplateFragment};
+use spacetimedb_subscription::{Template, TemplateFragment};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -66,34 +66,38 @@ type SubscriptionIdV2 = (ClientId, ClientQuerySetId);
 pub struct Plan {
     hash: QueryHash,
     sql: String,
-    plans: Vec<SubscriptionPlan>,
     /// Shared by the queries that differ from this one only in their values
     template: Arc<Template>,
     /// This query's values for the template's params, in slot order
     values: ProductValue,
+    /// The views this query reads, with their args
+    view_calls: Vec<ViewCall>,
 }
 
 impl CollectViews for Plan {
     fn collect_views(&self, views: &mut HashSet<ViewCall>) {
-        for plan in &self.plans {
-            plan.collect_views(views);
-        }
+        views.extend(self.view_calls.iter().cloned());
     }
 }
 
 impl Plan {
     /// Create a new subscription plan to be cached
     pub fn new(
-        plans: Vec<SubscriptionPlan>,
         template: Arc<Template>,
         values: ProductValue,
+        view_calls: Vec<ViewCall>,
         hash: QueryHash,
         text: String,
     ) -> Self {
+        assert_eq!(
+            values.elements.len(),
+            template.param_types().len(),
+            "wrong number of values for `{text}`"
+        );
         Self {
-            plans,
             template,
             values,
+            view_calls,
             hash,
             sql: text,
         }
@@ -107,19 +111,24 @@ impl Plan {
     /// A subscription query return rows from a single table.
     /// This method returns the id of that table.
     pub fn subscribed_table_id(&self) -> TableId {
-        self.plans[0].subscribed_table_id()
+        self.template.subscribed_table_id()
     }
 
     /// A subscription query return rows from a single table.
     /// This method returns the name of that table.
     pub fn subscribed_table_name(&self) -> &TableName {
-        self.plans[0].subscribed_table_name()
+        self.template.subscribed_table_name()
     }
 
     /// Returns the plan fragments that comprise this subscription.
     /// Will only return one element unless there is a table with multiple RLS rules.
-    pub fn plans_fragments(&self) -> impl Iterator<Item = &SubscriptionPlan> + '_ {
-        self.plans.iter()
+    pub fn plans_fragments(&self) -> impl Iterator<Item = &TemplateFragment> + '_ {
+        self.template.fragments().iter()
+    }
+
+    /// The params of the fragments' base plans: this query's values
+    pub fn params(&self) -> BindingParams<'_> {
+        BindingParams::new(&self.values.elements)
     }
 
     /// The `SQL` text of this subscription.
@@ -129,7 +138,7 @@ impl Plan {
 
     /// Does this plan return rows from an event table?
     pub fn returns_event_table(&self) -> bool {
-        self.plans.iter().any(|p| p.returns_event_table())
+        self.plans_fragments().any(|fragment| fragment.returns_event_table())
     }
 }
 
@@ -1929,7 +1938,6 @@ mod tests {
     use spacetimedb_primitives::{ColList, TableId};
     use spacetimedb_schema::def::RawModuleDefVersion;
     use spacetimedb_schema::reducer_name::ReducerName;
-    use spacetimedb_subscription::SubscriptionPlan;
     use tokio::sync::oneshot;
 
     use super::{Plan, SubscriptionManager};
@@ -1985,10 +1993,9 @@ mod tests {
     ) -> ResultTest<Arc<Plan>> {
         with_read_only(db, |tx| {
             let tx = SchemaViewer::new(&*tx, &auth);
-            let (plans, has_param) = SubscriptionPlan::compile(sql, &tx, &auth).unwrap();
-            let (template, values) = compile_template(sql, &tx, &auth, templates).unwrap();
-            let hash = QueryHash::from_string(sql, auth.caller(), has_param);
-            Ok(Arc::new(Plan::new(plans, template, values, hash, sql.into())))
+            let compiled = compile_template(sql, &tx, &auth, templates).unwrap();
+            let hash = QueryHash::from_string(sql, auth.caller(), compiled.has_param);
+            Ok(Arc::new(compiled.into_plan(hash, sql.into())))
         })
     }
 
@@ -2159,63 +2166,69 @@ mod tests {
         Ok(())
     }
 
-    /// A value that a delta plan needs to probe an index stays in the template, which then shares only that value
+    /// A value that a delta plan needs to probe an index comes from the binding row, so queries still share a template
     #[test]
-    fn queries_keep_values_their_delta_plans_probe_indexes_with() -> ResultTest<()> {
+    fn queries_share_templates_whose_delta_plans_probe_indexes_with_binding_values() -> ResultTest<()> {
         let db = TestDB::durable()?;
-        // The only index on `gamer.team_id` is on `(rank, team_id)`, so a changed team probes it with a rank
-        let gamer = [
-            ("id", AlgebraicType::U64),
-            ("team_id", AlgebraicType::U64),
-            ("rank", AlgebraicType::U32),
-        ];
-        let team = [("id", AlgebraicType::U64), ("region", AlgebraicType::String)];
-        db.create_table_for_test_with_the_works("gamer", &gamer, &[ColList::from_iter([2, 1])], &[], StAccess::Public)?;
-        db.create_table_for_test_with_the_works("team", &team, &[ColList::new(0.into())], &[], StAccess::Public)?;
-
-        let sql = |rank: u32| {
-            format!(
-                "select g.* from gamer g join team t on g.team_id = t.id where t.region = 'west' and g.rank = {rank}"
-            )
-        };
-        let rank_3 = compile_plan(&db, &sql(3))?;
-        let rank_4 = compile_plan(&db, &sql(4))?;
-        assert!(!rank_3.template.has_non_index_join());
-        assert_ne!(rank_3.template.key(), rank_4.template.key());
-        // Each keeps its literals, so its binding holds no values
-        assert!(rank_3.values.elements.is_empty());
-
-        // So does `:sender`, which is then each caller's own value
-        let pet = [
-            ("id", AlgebraicType::U64),
-            ("team_id", AlgebraicType::U64),
-            ("owner", AlgebraicType::identity()),
-        ];
-        db.create_table_for_test_with_the_works("pet", &pet, &[ColList::from_iter([2, 1])], &[], StAccess::Public)?;
-        let sql = "select p.* from pet p join team t on p.team_id = t.id where t.region = 'west' and p.owner = :sender";
-        let auth = |caller: u8| AuthCtx::new(Identity::ZERO, Identity::from_byte_array([caller; 32]));
-        let caller_1 = compile_plan_with_auth(&db, sql, auth(1))?;
-        let caller_2 = compile_plan_with_auth(&db, sql, auth(2))?;
-        assert!(!caller_1.template.has_non_index_join());
-        assert_ne!(caller_1.template.key(), caller_2.template.key());
-        assert!(caller_1.values.elements.is_empty());
-
-        // Without the composite index's help, the same query shares one template across ranks
+        // The only index on `player.team_id` is on `(rank, team_id)`, so a changed team probes it with a rank
         let player = [
             ("id", AlgebraicType::U64),
             ("team_id", AlgebraicType::U64),
             ("rank", AlgebraicType::U32),
         ];
-        db.create_table_for_test_with_the_works("player", &player, &[ColList::new(1.into())], &[], StAccess::Public)?;
+        let team = [("id", AlgebraicType::U64), ("region", AlgebraicType::String)];
+        let player_id = db.create_table_for_test_with_the_works(
+            "player",
+            &player,
+            &[ColList::from_iter([2, 1])],
+            &[],
+            StAccess::Public,
+        )?;
+        db.create_table_for_test_with_the_works("team", &team, &[ColList::new(0.into())], &[], StAccess::Public)?;
+
         let sql = |rank: u32| {
             format!(
                 "select p.* from player p join team t on p.team_id = t.id where t.region = 'west' and p.rank = {rank}"
             )
         };
-        assert_eq!(
-            compile_plan(&db, &sql(3))?.template.key(),
-            compile_plan(&db, &sql(4))?.template.key()
-        );
+        let rank_3 = compile_plan(&db, &sql(3))?;
+        let rank_4 = compile_plan(&db, &sql(4))?;
+        // A changed team reads `player` only through the join, so this is the join's index
+        assert!(rank_3.template.index_ids().any(|(table, _)| table == player_id));
+        assert_eq!(rank_3.template.key(), rank_4.template.key());
+        assert_ne!(rank_3.values, rank_4.values);
+
+        // `ranked` has `player`'s columns, but its only index is on `rank`,
+        // so a changed team probes it with the binding's rank, and compares team ids after
+        let ranked_id = db.create_table_for_test_with_the_works(
+            "ranked",
+            &player,
+            &[ColList::new(2.into())],
+            &[],
+            StAccess::Public,
+        )?;
+        let sql = |rank: u32| format!("select t.* from ranked r join team t on r.team_id = t.id where r.rank = {rank}");
+        let rank_3 = compile_plan(&db, &sql(3))?;
+        let rank_4 = compile_plan(&db, &sql(4))?;
+        assert!(rank_3.template.index_ids().any(|(table, _)| table == ranked_id));
+        assert_eq!(rank_3.template.key(), rank_4.template.key());
+        assert_ne!(rank_3.values, rank_4.values);
+
+        // So does `:sender`
+        let pet = [
+            ("id", AlgebraicType::U64),
+            ("team_id", AlgebraicType::U64),
+            ("owner", AlgebraicType::identity()),
+        ];
+        let pet_id =
+            db.create_table_for_test_with_the_works("pet", &pet, &[ColList::from_iter([2, 1])], &[], StAccess::Public)?;
+        let sql = "select p.* from pet p join team t on p.team_id = t.id where t.region = 'west' and p.owner = :sender";
+        let auth = |caller: u8| AuthCtx::new(Identity::ZERO, Identity::from_byte_array([caller; 32]));
+        let caller_1 = compile_plan_with_auth(&db, sql, auth(1))?;
+        let caller_2 = compile_plan_with_auth(&db, sql, auth(2))?;
+        assert!(caller_1.template.index_ids().any(|(table, _)| table == pet_id));
+        assert_eq!(caller_1.template.key(), caller_2.template.key());
+        assert_ne!(caller_1.values, caller_2.values);
 
         Ok(())
     }

@@ -20,8 +20,8 @@ use std::{
 };
 
 use crate::rules::{
-    ComputePositions, HashToIxJoin, IxScanFromPredicates, PushConstAnd, PushConstEq, PushLimit, ReorderDeltaJoinRhs,
-    ReorderHashJoin, RewriteRule, UniqueHashJoinRule, UniqueIxJoinRule,
+    joins_by_index, ComputePositions, HashToIxJoin, HashToIxJoinFromLhs, IxScanFromPredicates, PushConstAnd,
+    PushConstEq, PushLimit, ReorderDeltaJoinRhs, ReorderHashJoin, RewriteRule, UniqueHashJoinRule, UniqueIxJoinRule,
 };
 
 /// Table aliases are replaced with labels in the physical plan
@@ -216,6 +216,54 @@ impl ProjectPlan {
             }
         }
 
+        // In a join, when the changed table alone gives the key, look up right after its delta scan,
+        // so that changed rows no binding matches never reach the join
+        let mut early = match &deltas[..] {
+            [delta] if labels.len() > 1 && !key.is_empty() => {
+                key.iter().all(|field| field.label == *delta).then_some(*delta)
+            }
+            _ => None,
+        };
+        // When the other side can be joined by index only once the bindings give the rest of the key,
+        // look up right after the side that probes it, and probe it with the binding row
+        if early.is_none()
+            && !deltas.is_empty()
+            && let Some(join) = plan.hash_join()
+        {
+            // The optimizer puts a lone delta on the lhs, and keeps two in order
+            let (lhs, rhs, lhs_field, rhs_field) = match (join.lhs.is_delta_scan(), join.rhs.is_delta_scan()) {
+                (false, true) => (&join.rhs, &join.lhs, &join.rhs_field, &join.lhs_field),
+                _ => (&join.lhs, &join.rhs, &join.lhs_field, &join.rhs_field),
+            };
+            let binding = |col| {
+                PhysicalExpr::Field(TupleField {
+                    label,
+                    label_pos: None,
+                    field_pos: col,
+                })
+            };
+            let fixed: Vec<_> = key
+                .iter()
+                .zip(&cols)
+                .filter(|(field, _)| !lhs.has_label(&field.label))
+                .map(|(field, &col)| (ColId(field.field_pos as u16), binding(col)))
+                .collect();
+            if !fixed.is_empty()
+                && !joins_by_index(rhs, rhs_field, lhs_field, &[], label)
+                && joins_by_index(rhs, rhs_field, lhs_field, &fixed, label)
+            {
+                early = labels.iter().copied().find(|label| lhs.has_label(label));
+                let (lhs_key, rhs_key): (Vec<_>, Vec<_>) = mem::take(&mut key)
+                    .into_iter()
+                    .zip(mem::take(&mut cols))
+                    .partition(|(field, _)| lhs.has_label(&field.label));
+                (key, cols) = lhs_key.into_iter().unzip();
+                rest.extend(rhs_key.into_iter().map(|(field, col)| {
+                    PhysicalExpr::BinOp(BinOp::Eq, Box::new(PhysicalExpr::Field(field)), Box::new(binding(col)))
+                }));
+            }
+        }
+
         let candidates = match key.is_empty() {
             true => BindingCandidates::All,
             false => {
@@ -232,18 +280,22 @@ impl ProjectPlan {
                 BindingCandidates::Probe(BindingProbe { index, key })
             }
         };
-        // In a join, when the changed table alone gives the key, look up right after its delta scan,
-        // so that changed rows no binding matches never reach the join
-        let early = match (&candidates, &deltas[..]) {
-            (BindingCandidates::Probe(probe), [delta]) if labels.len() > 1 => {
-                probe.key.iter().all(|field| field.label == *delta).then_some(*delta)
-            }
-            _ => None,
-        };
         let lookup = BindingLookup { label, candidates };
         let plan = match early {
             Some(delta) => plan.look_up_after_scan(delta, &mut Some(lookup)),
             None => PhysicalPlan::BindingLookup(Box::new(plan), lookup),
+        };
+        // Below an early lookup, the join keeps one filter above it, where `HashToIxJoinFromLhs` looks
+        let plan = match (early, plan) {
+            (Some(_), PhysicalPlan::Filter(input, expr)) => {
+                let exprs = match expr {
+                    PhysicalExpr::LogOp(LogOp::And, exprs) => exprs,
+                    expr => vec![expr],
+                };
+                rest.splice(0..0, exprs);
+                *input
+            }
+            (_, plan) => plan,
         };
         let plan = match rest.len() {
             0 => plan,
@@ -487,7 +539,13 @@ impl CollectViews for PhysicalPlan {
                     view_args.is_some() || info.params.elements.is_empty(),
                     "parameterized view calls must be collected before optimization",
                 );
-                let args = view_args.and_then(Option::as_ref).map(|v| v.args.clone());
+                let view_args = view_args.and_then(Option::as_ref);
+                // Nor may a call be lifted, since its args are then in its binding
+                assert!(
+                    !view_args.is_some_and(ViewArgs::is_lifted),
+                    "lifted view calls must be collected before lifting",
+                );
+                let args = view_args.map(|v| v.args.clone());
                 views.insert(ViewCall {
                     view_id: info.view_id,
                     args: args.unwrap_or_default(),
@@ -687,6 +745,7 @@ impl PhysicalPlan {
             .apply_rec::<ReorderDeltaJoinRhs>()?
             .apply_rec::<ReorderHashJoin>()?
             .apply_rec::<HashToIxJoin>()?
+            .apply_rec::<HashToIxJoinFromLhs>()?
             .apply_rec::<IxScanFromPredicates>()?
             .apply_rec::<UniqueIxJoinRule>()?
             .apply_rec::<UniqueHashJoinRule>()?
@@ -1171,7 +1230,7 @@ impl PhysicalPlan {
     }
 
     /// Does this plan introduce this label?
-    fn has_label(&self, label: &Label) -> bool {
+    pub(crate) fn has_label(&self, label: &Label) -> bool {
         self.any(&|plan| match plan {
             Self::TableScan(_, var)
             | Self::IxScan(_, var)
@@ -1299,6 +1358,15 @@ impl PhysicalPlan {
         }
     }
 
+    /// The join below an unoptimized plan's filters
+    fn hash_join(&self) -> Option<&HashJoin> {
+        match self {
+            Self::Filter(input, _) => input.hash_join(),
+            Self::HashJoin(join, _) => Some(join),
+            _ => None,
+        }
+    }
+
     /// Puts `lookup` directly above the scan labeled `scan`, in an unoptimized plan
     fn look_up_after_scan(self, scan: Label, lookup: &mut Option<BindingLookup>) -> Self {
         match self {
@@ -1333,7 +1401,7 @@ impl PhysicalPlan {
     }
 
     /// The label of this plan's binding lookup, if it has one
-    fn binding_label(&self) -> Option<Label> {
+    pub(crate) fn binding_label(&self) -> Option<Label> {
         let mut labels = vec![];
         self.visit(&mut |plan| {
             if let PhysicalPlan::BindingLookup(_, lookup) = plan {
@@ -3421,6 +3489,41 @@ mod tests {
         }
     }
 
+    /// Collecting from the typed plan finds the view on each side of a join, as a subscribe materializes both
+    #[test]
+    fn typed_plan_collects_the_views_on_both_sides_of_a_join() {
+        let view = |table_id: u32, name: &str| {
+            let mut v = TableSchema::clone(
+                &schema(
+                    TableId(table_id),
+                    name,
+                    &[("arg_hash", AlgebraicType::U256), ("x", AlgebraicType::U8)],
+                    &[&[0]],
+                    &[],
+                    None,
+                )
+                .inner(),
+            );
+            v.view_info = Some(ViewDefInfo {
+                view_id: ViewId(table_id),
+                is_anonymous: true,
+                params: ProductType::unit(),
+            });
+            Arc::new(TableOrViewSchema::from(Arc::new(v)))
+        };
+        let db = SchemaViewer {
+            schemas: vec![view(1, "v"), view(2, "w")],
+        };
+        let plan = parse_and_type_sub("select v.* from v join w on v.x = w.x", &db).unwrap();
+        let mut calls = HashSet::default();
+        plan.collect_views(&mut calls);
+        let call = |view_id| ViewCall {
+            view_id: ViewId(view_id),
+            args: ProductValue::default(),
+        };
+        assert_eq!(calls, HashSet::from_iter([call(1), call(2)]));
+    }
+
     #[test]
     fn remap_moves_view_arg_hashes() {
         let (plans, params) = template_plans("select * from v", &sender_view_db(ProductType::unit()));
@@ -3658,9 +3761,9 @@ mod tests {
     /// Every delta fragment of a join with indexes on its join columns joins by index, wherever its lookup goes
     #[test]
     fn binding_lookup_keeps_delta_joins_on_indexes() {
-        let db = player_team_db();
+        let player_team = player_team_db();
         let join = "select p.* from player p join team t on p.team_id = t.id";
-        for filter in [
+        let cases = [
             "t.region = 'west'",
             // A fixed filter on the other side used to stop the delta from driving the join
             "t.region = 'west' and p.score >= 100",
@@ -3668,9 +3771,25 @@ mod tests {
             "p.rank = 2",
             "t.region = 'west' and p.rank = 2",
             "t.region = 'west' or p.rank = 2",
-        ] {
-            let sql = format!("{join} where {filter}");
-            let (plan, _) = template_plan(&sql, &db);
+        ]
+        .map(|filter| (&player_team, format!("{join} where {filter}")));
+        // The only index on `player.team_id` needs a rank, or there's only one on `rank`,
+        // which the bindings give, in either `FROM` order
+        let rank_team = player_rank_team_index_db();
+        let rank = player_rank_index_db();
+        let flipped = "select p.* from team t join player p on p.team_id = t.id";
+        let rank_cases = [&rank_team, &rank].into_iter().flat_map(|db| {
+            [join, flipped].into_iter().flat_map(move |join| {
+                [
+                    "p.rank = 2",
+                    "t.region = 'west' and p.rank = 2",
+                    "p.rank = 2 and p.score >= 100",
+                ]
+                .map(|filter| (db, format!("{join} where {filter}")))
+            })
+        });
+        for (db, sql) in cases.into_iter().chain(rank_cases) {
+            let (plan, _) = template_plan(&sql, db);
             let labels = [label_for(&plan, PLAYER_ID), label_for(&plan, TEAM_ID)];
             for deltas in [
                 vec![(labels[0], Delta::Inserts)],
@@ -3692,6 +3811,240 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// player(id, team_id, rank, score), whose only index on `team_id` is `(rank, team_id)`, and team(id, region)
+    fn player_rank_team_index_db() -> SchemaViewer {
+        player_index_db(&[2, 1])
+    }
+
+    /// player(id, team_id, rank, score), with no index on `team_id` but one on `rank`, and team(id, region)
+    fn player_rank_index_db() -> SchemaViewer {
+        player_index_db(&[2])
+    }
+
+    /// player(id, team_id, rank, score), indexed on `id` and on the columns `index`, and team(id, region)
+    fn player_index_db(index: &[usize]) -> SchemaViewer {
+        let player = schema(
+            PLAYER_ID,
+            "player",
+            &[
+                ("id", AlgebraicType::U64),
+                ("team_id", AlgebraicType::U64),
+                ("rank", AlgebraicType::U32),
+                ("score", AlgebraicType::U32),
+            ],
+            &[&[0], index],
+            &[&[0]],
+            Some(0),
+        );
+        let team = schema(
+            TEAM_ID,
+            "team",
+            &[("id", AlgebraicType::U64), ("region", AlgebraicType::String)],
+            &[&[0], &[1]],
+            &[&[0]],
+            Some(0),
+        );
+        SchemaViewer {
+            schemas: vec![Arc::new(player), Arc::new(team)],
+        }
+    }
+
+    /// When the other side's only index on the join column needs the rest of the key,
+    /// the lookup follows the changed side's scan, and probes only that side's part of the key
+    #[test]
+    fn binding_lookup_follows_a_delta_scan_whose_join_needs_the_rest_of_the_key() {
+        let db = player_rank_team_index_db();
+        let sql = "select p.* from player p join team t on p.team_id = t.id where t.region = 'west' and p.rank = 2";
+        let (plan, _) = template_plan(sql, &db);
+        let team = label_for(&plan, TEAM_ID);
+        let player = label_for(&plan, PLAYER_ID);
+        let changed = |label: Label, indexes: &mut Vec<ColList>| {
+            let mut plan = plan.clone();
+            plan.visit_mut(&mut |plan| {
+                if let PhysicalPlan::TableScan(scan, var) = plan
+                    && *var == label
+                {
+                    scan.delta = Some(Delta::Inserts);
+                }
+            });
+            plan.insert_binding_lookup(indexes)
+        };
+
+        // A team changed: look up its region, and the join takes the rank from the binding row
+        let mut indexes = vec![];
+        let team_changed = changed(team, &mut indexes);
+        let (PhysicalPlan::BindingLookup(input, lookup), _) = find_lookup(team_changed.physical_plan()) else {
+            unreachable!("`find_lookup` returns a lookup");
+        };
+        assert!(
+            matches!(*input, PhysicalPlan::TableScan(_, var) if var == team),
+            "{team_changed:#?}"
+        );
+        let BindingCandidates::Probe(probe) = lookup.candidates else {
+            panic!("expected a probe: {team_changed:#?}");
+        };
+        assert_eq!(probe.key.iter().map(|field| field.label).collect::<Vec<_>>(), [team]);
+        assert_eq!(indexes, [ColList::from_iter([2])]);
+
+        // A player changed: team's index on `id` needs no rank, so the lookup stays on top
+        let player_changed = changed(player, &mut indexes);
+        assert!(
+            matches!(player_changed.physical_plan(), PhysicalPlan::BindingLookup(..)),
+            "{player_changed:#?}"
+        );
+    }
+
+    /// An index join whose index needs a binding's value, as `(rank, team_id)` needs a rank,
+    /// probes it with the binding row of a lookup below the join, but not of one above it
+    #[test]
+    fn binding_lookup_below_a_join_probes_its_index_with_the_binding_row() {
+        let db = player_rank_team_index_db();
+        let (plan, _) = template_plan("select p.* from player p join team t on p.team_id = t.id", &db);
+        let player = label_for(&plan, PLAYER_ID);
+        let team = label_for(&plan, TEAM_ID);
+        let (ProjectPlan::None(mut plan) | ProjectPlan::Name(mut plan, ..)) = plan;
+        plan.visit_mut(&mut |plan| {
+            if let PhysicalPlan::TableScan(scan, var) = plan
+                && *var == team
+            {
+                scan.delta = Some(Delta::Inserts);
+            }
+        });
+        // The binding row is [id, region, rank, score]
+        let filter = PhysicalExpr::LogOp(
+            LogOp::And,
+            vec![
+                fields_eq(field(player, 2), field(BINDINGS, 2)),
+                fields_eq(field(BINDINGS, 3), field(player, 3)),
+            ],
+        );
+        let lookup = BindingLookup {
+            label: BINDINGS,
+            candidates: probe(vec![field(team, 1)]),
+        };
+
+        // Looked up right after the team scan
+        let early = plan.clone().look_up_after_scan(team, &mut Some(lookup.clone()));
+        let early = PhysicalPlan::Filter(Box::new(early), filter.clone());
+        let early = ProjectPlan::Name(early, player, None).optimize().unwrap();
+        let PhysicalPlan::Filter(input, residual) = early.physical_plan() else {
+            panic!("expected the score check above the join: {early:#?}");
+        };
+        let PhysicalPlan::IxJoin(join, Semi::All) = &**input else {
+            panic!("expected an index join: {early:#?}");
+        };
+        // The probe takes the rank from the binding row
+        assert_eq!(join.rhs_index, 1.into());
+        let PhysicalExpr::Product(key) = &join.probe else {
+            panic!("expected a composite probe: {join:#?}");
+        };
+        let key: Vec<_> = key
+            .iter()
+            .map(|expr| match expr {
+                PhysicalExpr::Field(field) => (field.label, field.field_pos),
+                expr => panic!("expected a field: {expr:?}"),
+            })
+            .collect();
+        assert_eq!(key, vec![(BINDINGS, 2), (team, 0)]);
+        // The score isn't in the index, so it's still compared
+        let mut compared = vec![];
+        residual.visit(&mut |expr| {
+            if let PhysicalExpr::Field(field) = expr {
+                compared.push((field.label.0, field.field_pos));
+            }
+        });
+        compared.sort();
+        let mut expected = vec![(player.0, 3), (BINDINGS.0, 3)];
+        expected.sort();
+        assert_eq!(compared, expected);
+
+        // Looked up above the join, the binding row comes too late for the probe
+        let late = with_binding_lookup(
+            ProjectPlan::Name(plan, player, None),
+            player,
+            lookup.candidates,
+            Some(filter),
+        );
+        let late = late.optimize().unwrap();
+        assert!(
+            late.any(&|plan| matches!(plan, PhysicalPlan::HashJoin(..))),
+            "{late:#?}"
+        );
+    }
+
+    /// Without an index on the join column, an index join probes one the bindings fix, as `rank` alone,
+    /// with the binding row, and compares the join columns after
+    #[test]
+    fn binding_lookup_below_a_join_probes_an_index_without_the_join_column() {
+        let db = player_rank_index_db();
+        let sql = "select p.* from player p join team t on p.team_id = t.id where p.rank = 2";
+        let (mut plan, _) = template_plan(sql, &db);
+        let player = label_for(&plan, PLAYER_ID);
+        let team = label_for(&plan, TEAM_ID);
+        plan.visit_mut(&mut |plan| {
+            if let PhysicalPlan::TableScan(scan, var) = plan
+                && *var == team
+            {
+                scan.delta = Some(Delta::Inserts);
+            }
+        });
+        let plan = plan.insert_binding_lookup(&mut vec![]);
+        let (_, lookup) = find_lookup(plan.physical_plan());
+        // No part of the key is on the team, so the changed team pairs with every binding
+        assert_eq!(lookup.candidates, BindingCandidates::All);
+        let bindings = lookup.label;
+
+        let plan = plan.optimize().unwrap();
+        let PhysicalPlan::Filter(input, residual) = plan.physical_plan() else {
+            panic!("expected the join columns compared above the join: {plan:#?}");
+        };
+        let PhysicalPlan::IxJoin(join, Semi::All) = &**input else {
+            panic!("expected an index join: {plan:#?}");
+        };
+        // The probe is the binding's rank
+        assert_eq!(join.rhs_index, 1.into());
+        assert!(
+            matches!(&join.probe, PhysicalExpr::Field(field) if (field.label, field.field_pos) == (bindings, 1)),
+            "{join:#?}"
+        );
+        let mut compared = vec![];
+        residual.visit(&mut |expr| {
+            if let PhysicalExpr::Field(field) = expr {
+                compared.push((field.label.0, field.field_pos));
+            }
+        });
+        compared.sort();
+        let mut expected = vec![(player.0, 1), (team.0, 0)];
+        expected.sort();
+        assert_eq!(compared, expected);
+    }
+
+    /// Without bindings, a join with no index on either join column stays a hash join,
+    /// even when an index of the rhs is fixed by a field of the lhs
+    #[test]
+    fn join_without_bindings_probes_no_index_without_the_join_column() {
+        let SchemaViewer { mut schemas } = player_rank_index_db();
+        // team(id, level), with no index on `id`
+        let team = schema(
+            TEAM_ID,
+            "team",
+            &[("id", AlgebraicType::U64), ("level", AlgebraicType::U32)],
+            &[],
+            &[],
+            None,
+        );
+        schemas[1] = Arc::new(team);
+        let db = SchemaViewer { schemas };
+        let sql = "select p.* from team t join player p on p.team_id = t.id where p.rank = t.level";
+        let plan = compile_select(parse_and_type_sub(sql, &db).unwrap())
+            .optimize()
+            .unwrap();
+        assert!(
+            plan.any(&|plan| matches!(plan, PhysicalPlan::HashJoin(..))),
+            "{plan:#?}"
+        );
     }
 
     /// Templates that compare equal hash equally, and ranges and shapes still tell templates apart

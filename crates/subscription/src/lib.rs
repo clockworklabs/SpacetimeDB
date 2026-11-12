@@ -160,13 +160,7 @@ impl Fragments {
     /// ```
     ///
     /// Each fragment looks up the bindings its rows match, through the binding indexes in `binding_indexes`.
-    /// `non_index_join` is set if a fragment joins without an index.
-    fn compile_from_plan(
-        plan: &ProjectPlan,
-        tables: &[Label],
-        binding_indexes: &mut Vec<ColList>,
-        non_index_join: &mut bool,
-    ) -> Result<Self> {
+    fn compile_from_plan(plan: &ProjectPlan, tables: &[Label], binding_indexes: &mut Vec<ColList>) -> Result<Self> {
         /// Mutate a query plan by turning a table scan into a delta scan
         fn mut_plan(plan: &mut ProjectPlan, relvar: Label, delta: Delta) {
             plan.visit_mut(&mut |plan| match plan {
@@ -191,7 +185,6 @@ impl Fragments {
                 mut_plan(&mut plan, *alias, *delta);
             }
             let plan = plan.insert_binding_lookup(binding_indexes).optimize()?;
-            *non_index_join |= has_non_index_join(&plan);
             Ok(BindingProject::new(plan))
         };
 
@@ -565,8 +558,6 @@ pub struct Template {
     binding_indexes: Vec<ColList>,
     /// One per RLS fragment
     fragments: Vec<TemplateFragment>,
-    /// Does a delta plan join without an index?
-    non_index_join: bool,
 }
 
 /// One RLS fragment of a [`Template`]
@@ -576,6 +567,12 @@ pub struct TemplateFragment {
     table_ids: Vec<TableId>,
     /// The table or view returned by this fragment, if it returns whole rows
     return_schema: Option<Arc<TableSchema>>,
+    /// The optimized plan for the fragment's rows, which reads a binding's values as params
+    plan: ProjectPlan,
+    /// The executor for `plan`, for a query's initial rows and its rows on unsubscribe
+    base_plan: PipelinedProject,
+    /// Scan classification used for runtime metrics
+    scan_metrics: SubscriptionPlanMetrics,
     /// The plan fragments for updating the view
     fragments: Fragments,
 }
@@ -584,21 +581,25 @@ impl Template {
     /// Builds the delta plans of `compiled`, which look up the bindings each row matches
     pub fn build(compiled: &SubscriptionTemplate) -> Result<Self> {
         let mut binding_indexes = vec![];
-        let mut non_index_join = false;
         let fragments = compiled
             .plans
             .iter()
             .map(|plan| {
+                let plan_opt = plan.clone().optimize()?;
+                if has_non_index_join(&plan_opt) {
+                    bail!("Subscriptions require indexes on join columns")
+                }
+                if plan_opt.reads_from_event_table() {
+                    bail!("Event tables cannot be used as the lookup table in subscription joins")
+                }
                 let (table_ids, table_aliases) = table_ids_for_plan(plan);
                 Ok(TemplateFragment {
                     table_ids,
-                    return_schema: plan.return_table(),
-                    fragments: Fragments::compile_from_plan(
-                        plan,
-                        &table_aliases,
-                        &mut binding_indexes,
-                        &mut non_index_join,
-                    )?,
+                    return_schema: plan_opt.return_table(),
+                    scan_metrics: SubscriptionPlanMetrics::from_physical_plan(plan_opt.physical_plan()),
+                    base_plan: PipelinedProject::from(plan_opt.clone()),
+                    plan: plan_opt,
+                    fragments: Fragments::compile_from_plan(plan, &table_aliases, &mut binding_indexes)?,
                 })
             })
             .collect::<Result<_>>()?;
@@ -610,7 +611,6 @@ impl Template {
             param_types: compiled.params.iter().map(|(_, ty)| ty.clone()).collect(),
             binding_indexes,
             fragments,
-            non_index_join,
         })
     }
 
@@ -659,12 +659,6 @@ impl Template {
         &self.fragments
     }
 
-    /// Does a delta plan join without an index?
-    /// Lifting a literal can cost a plan the index it would probe, such as an index on two columns that includes it.
-    pub fn has_non_index_join(&self) -> bool {
-        self.non_index_join
-    }
-
     /// From which tables does this template read?
     pub fn table_ids(&self) -> impl Iterator<Item = TableId> + use<> {
         self.fragments
@@ -688,6 +682,21 @@ impl TemplateFragment {
     /// From which tables does this fragment read?
     pub fn table_ids(&self) -> impl Iterator<Item = TableId> + '_ {
         self.table_ids.iter().copied()
+    }
+
+    /// The optimized plan for the fragment's rows, which reads a binding's values as params
+    pub fn plan(&self) -> &ProjectPlan {
+        &self.plan
+    }
+
+    /// The executor for [`Self::plan`], for a query's initial rows and its rows on unsubscribe
+    pub fn base_plan(&self) -> &PipelinedProject {
+        &self.base_plan
+    }
+
+    /// Scan classification used for runtime metrics
+    pub fn scan_metrics(&self) -> &SubscriptionPlanMetrics {
+        &self.scan_metrics
     }
 
     /// Does this fragment return rows from a view?
