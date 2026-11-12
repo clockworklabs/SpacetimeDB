@@ -1280,27 +1280,19 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     const deserializeRow = this.#rowDeserializers[tableName];
     const { primaryKeyColName, primaryKeyColType } =
       this.#rowIdMetadata[tableName];
-
-    // Decode each row from its own slice, using the boundaries the server
-    // sends. A module can add columns to the end of a table without breaking
-    // clients built against the old schema: their bindings read the columns
-    // they know, and the rest of the row is skipped.
-    const sizeHint = rowList.sizeHint;
-    if (sizeHint.tag === 'FixedSize' && sizeHint.value === 0) {
-      throw new Error('Fixed-size BSATN row list cannot have zero-sized rows');
-    }
+    let previousOffset = 0;
     const rowCount =
-      sizeHint.tag === 'RowOffsets'
-        ? sizeHint.value.length
-        : Math.floor(buffer.length / sizeHint.value);
-    const rowStart = (i: number) =>
-      sizeHint.tag === 'RowOffsets'
-        ? Number(sizeHint.value[i])
-        : i * sizeHint.value;
-    for (let i = 0; i < rowCount; i++) {
-      const end = i + 1 < rowCount ? rowStart(i + 1) : buffer.length;
-      const rowBytes = buffer.subarray(rowStart(i), end);
-      reader.reset(rowBytes);
+      rowList.sizeHint.tag === 'RowOffsets'
+        ? rowList.sizeHint.value.length
+        : rowList.sizeHint.value > 0
+          ? Math.floor(buffer.length / rowList.sizeHint.value)
+          : undefined;
+
+    for (
+      let i = 0;
+      rowCount === undefined ? reader.remaining > 0 : i < rowCount;
+      i++
+    ) {
       const row = deserializeRow(reader);
       let rowId: ComparablePrimitive | undefined = undefined;
       if (primaryKeyColName !== undefined && primaryKeyColType !== undefined) {
@@ -1309,11 +1301,14 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           row[primaryKeyColName]
         );
       } else {
-        // Convert the row's bytes to a base64 string, so we can use it as a map key.
-        rowId = fromByteArray(rowBytes);
+        const rowBytes = buffer.subarray(previousOffset, reader.offset);
+        const asBase64 = fromByteArray(rowBytes);
+        rowId = asBase64;
+
       }
       rows.push({ type, rowId, row });
     }
+
     return rows;
   }
 
@@ -2119,7 +2114,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       if (result.tag === 'Ok') {
         resolve(result.value);
       } else {
-        reject(result.value);
+        reject(new InternalError(result.value));
       }
     });
     return promise;
@@ -2149,7 +2144,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       if (result.tag === 'Ok') {
         resolve(result.value);
       } else {
-        reject(result.value);
+        reject(new InternalError(result.value));
       }
     });
     return promise;
