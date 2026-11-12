@@ -398,10 +398,6 @@ impl Lang for UnrealCpp<'_> {
         writeln!(output, "private:");
         writeln!(output, "    const FString TableName = TEXT(\"{table_name}\");");
         writeln!(output);
-        writeln!(
-            output,
-            "    friend class UDbConnectionBase; // Read-only replay snapshots through the registered table adapter."
-        );
         writeln!(output, "    TSharedPtr<UClientCache<{row_struct}>> Data;");
 
         writeln!(output, "}};"); // end UCLASS

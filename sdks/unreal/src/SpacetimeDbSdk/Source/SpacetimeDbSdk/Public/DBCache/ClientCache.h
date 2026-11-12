@@ -9,8 +9,16 @@
  *  Owns a collection of FTableCache instances—one per subscribed table name.
  *  Provides helper to apply (insert/delete) diffs arriving from the network.
  * ============================================================================ */
+
+/** Row-type-erased base, so SDK code can hold a table's cache without naming its row type. */
+class FClientCacheBase
+{
+public:
+    virtual ~FClientCacheBase() = default;
+};
+
 template<typename RowType>
-class UClientCache
+class UClientCache : public FClientCacheBase
 {
 public:
     /**

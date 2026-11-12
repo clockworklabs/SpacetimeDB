@@ -254,9 +254,10 @@ bool FReconnectCacheReplay::RunTest(const FString&)
 {
 	auto* Conn = NewObject<UReconnectTestConnection>();
 	Conn->Initialize();
-	FReconnectTestTable A(TEXT("a")), B(TEXT("b"));
-	Conn->AttachTable(&A);
-	Conn->AttachTable(&B);
+	TStrongObjectPtr<UReconnectTestTable> A(UReconnectTestTable::Create(TEXT("a")));
+	TStrongObjectPtr<UReconnectTestTable> B(UReconnectTestTable::Create(TEXT("b")));
+	Conn->AttachTable(A.Get());
+	Conn->AttachTable(B.Get());
 	Conn->ConnectIdentity();
 	auto* First = Conn->Subscribe({TEXT("SELECT * FROM a"), TEXT("SELECT * FROM b")});
 	auto* Second = Conn->Subscribe({TEXT("SELECT * FROM a")});
@@ -283,28 +284,28 @@ bool FReconnectCacheReplay::RunTest(const FString&)
 	auto CheckAtomic = [&]()
 	{
 		TestEqual(TEXT("other table already reconciled"),
-		          B.Data->GetTable(TEXT("b"))->FindByUniqueIndex<uint32>(TEXT("id"), 3)->Value, 31);
+		          B->Data->GetTable(TEXT("b"))->FindByUniqueIndex<uint32>(TEXT("id"), 3)->Value, 31);
 	};
-	A.OnInsert.AddLambda(
+	A->OnInsert.AddLambda(
 	    [&](const auto&, const auto&)
 	    {
 		    ++Inserts;
 		    CheckAtomic();
 	    });
-	A.OnDelete.AddLambda(
+	A->OnDelete.AddLambda(
 	    [&](const auto&, const auto&)
 	    {
 		    ++Deletes;
 		    CheckAtomic();
 	    });
-	A.OnUpdate.AddLambda(
+	A->OnUpdate.AddLambda(
 	    [&](const auto&, const auto&, const auto&)
 	    {
 		    ++Updates;
 		    CheckAtomic();
 	    });
 	Conn->Drop();
-	TestEqual(TEXT("stale cache retained"), A.Data->GetTable(TEXT("a"))->Entries.Num(), 2);
+	TestEqual(TEXT("stale cache retained"), A->Data->GetTable(TEXT("a"))->Entries.Num(), 2);
 	TestFalse(TEXT("handle pending during outage"), First->IsActive());
 	Conn->ConnectIdentity();
 	auto Batch = Conn->Sent.Last().GetAsSubscribeBatch();
@@ -337,7 +338,7 @@ bool FReconnectCacheReplay::RunTest(const FString&)
 	TestEqual(TEXT("one net update"), Updates, 1);
 	TestEqual(TEXT("both applied again"), Conn->Applied, 4);
 	const auto Key = UE::SpacetimeDB::Serialize(FReconnectTestRow{1, 10});
-	TestEqual(TEXT("overlap refcount restored"), A.Data->GetTable(TEXT("a"))->Entries.FindChecked(Key).RefCount, 2);
+	TestEqual(TEXT("overlap refcount restored"), A->Data->GetTable(TEXT("a"))->Entries.FindChecked(Key).RefCount, 2);
 	Conn->Drop();
 	Second->Unsubscribe();
 	auto* New = Conn->Subscribe({TEXT("SELECT * FROM missing")});
@@ -366,7 +367,7 @@ bool FReconnectCacheReplay::RunTest(const FString&)
 	TestTrue(TEXT("failed replay set ended"), New->IsEnded());
 	TestTrue(TEXT("successful replay survives partial error"), First->IsActive());
 	TestEqual(TEXT("cancelled set no longer contributes references"),
-	          A.Data->GetTable(TEXT("a"))->Entries.FindChecked(Key).RefCount, 1);
+	          A->Data->GetTable(TEXT("a"))->Entries.FindChecked(Key).RefCount, 1);
 	Conn->Disconnect();
 	return true;
 }

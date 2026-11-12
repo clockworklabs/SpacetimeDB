@@ -60,6 +60,5 @@ public:
 private:
     const FString TableName = TEXT("vec_bool");
 
-    friend class UDbConnectionBase; // Read-only replay snapshots through the registered table adapter.
     TSharedPtr<UClientCache<FVecBoolType>> Data;
 };

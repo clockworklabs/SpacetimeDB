@@ -100,6 +100,5 @@ public:
 private:
     const FString TableName = TEXT("unique_i_16");
 
-    friend class UDbConnectionBase; // Read-only replay snapshots through the registered table adapter.
     TSharedPtr<UClientCache<FUniqueI16Type>> Data;
 };

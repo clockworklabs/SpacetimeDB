@@ -41,6 +41,8 @@ protected:
             UE_LOG(LogTemp, Error, TEXT("RemoteTable::BaseUpdate called with invalid ClientCache for table %s"), *InTableName);
             return {};
         }
+        // Generated tables change their cache only through here, so a table that never got here has nothing cached.
+        ObservedCache = ClientCache;
 
         TArray<TPair<TArray<uint8>, T>> Inserts;
         for (const FWithBsatn<T>& Insert : InsertsRef)
@@ -57,4 +59,19 @@ protected:
         // Forward to the shared client cache implementation
         return ClientCache->ApplyDiff(InTableName, Inserts, Deletes);
     }
+
+private:
+    // Reconnect replay reads cached rows here instead of through the generated Data member, so existing
+    // generated bindings keep compiling.
+    friend class UDbConnectionBase;
+
+    // Only sees caches written through BaseUpdate. Any new write path must go through it too, or replay will miss
+    // those rows.
+    template<typename T>
+    TSharedPtr<UClientCache<T>> GetObservedCache() const
+    {
+        return StaticCastSharedPtr<UClientCache<T>>(ObservedCache.Pin());
+    }
+
+    TWeakPtr<FClientCacheBase> ObservedCache;
 };

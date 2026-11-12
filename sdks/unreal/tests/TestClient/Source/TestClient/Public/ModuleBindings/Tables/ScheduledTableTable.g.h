@@ -100,6 +100,5 @@ public:
 private:
     const FString TableName = TEXT("scheduled_table");
 
-    friend class UDbConnectionBase; // Read-only replay snapshots through the registered table adapter.
     TSharedPtr<UClientCache<FScheduledTableType>> Data;
 };

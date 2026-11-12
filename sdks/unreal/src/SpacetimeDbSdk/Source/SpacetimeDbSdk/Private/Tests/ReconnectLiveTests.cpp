@@ -31,14 +31,15 @@ class FReconnectLiveCommand : public IAutomationLatentCommand
 {
 public:
 	FReconnectLiveCommand(FAutomationTestBase* InTest, const FString& Uri, const FString& Database)
-	    : Test(InTest), A(TEXT("pk_u_32")), B(TEXT("pk_u_32_two"))
+	    : Test(InTest), A(UReconnectTestTable::Create(TEXT("pk_u_32"))),
+	      B(UReconnectTestTable::Create(TEXT("pk_u_32_two")))
 	{
 		Reader = NewObject<UReconnectTestConnection>();
 		Reader->AddToRoot();
 		Writer = NewObject<UReconnectTestConnection>();
 		Writer->AddToRoot();
-		Reader->AttachTable(&A);
-		Reader->AttachTable(&B);
+		Reader->AttachTable(A.Get());
+		Reader->AttachTable(B.Get());
 		Reader->StartLive(Uri, Database);
 		Writer->StartLive(Uri, Database);
 	}
@@ -70,19 +71,19 @@ public:
 		}
 		else if (Step == 2 && Reader->Applied == 2)
 		{
-			Test->TestEqual(TEXT("initial row"), Value(A, 1), 10);
-			A.OnUpdate.AddLambda(
+			Test->TestEqual(TEXT("initial row"), Value(*A, 1), 10);
+			A->OnUpdate.AddLambda(
 			    [this](const auto&, const auto&, const auto&)
 			    {
 				    ++Updates;
-				    Test->TestEqual(TEXT("all replay tables visible inside row callback"), Value(B, 2), 21);
+				    Test->TestEqual(TEXT("all replay tables visible inside row callback"), Value(*B, 2), 21);
 			    });
-			A.OnInsert.AddLambda(
+			A->OnInsert.AddLambda(
 			    [this](const auto&, const auto&)
 			    {
 				    ++UnexpectedRows;
 			    });
-			A.OnDelete.AddLambda(
+			A->OnDelete.AddLambda(
 			    [this](const auto&, const auto&)
 			    {
 				    ++UnexpectedRows;
@@ -97,7 +98,7 @@ public:
 		}
 		else if (Step == 3 && Writer->CallErrors.Num() == 4)
 		{
-			Test->TestEqual(TEXT("cache stays readable and stale"), Value(A, 1), 10);
+			Test->TestEqual(TEXT("cache stays readable and stale"), Value(*A, 1), 10);
 			Reader->RetryNow();
 			++Step;
 		}
@@ -133,7 +134,7 @@ public:
 			Test->TestTrue(TEXT("offline cancellation survives replay"), Second->IsEnded());
 			Test->TestTrue(TEXT("valid set survives partial batch error"), First->IsActive());
 			const auto Key = UE::SpacetimeDB::Serialize(FReconnectTestRow{1, 11});
-			const auto* Entry = A.Data->GetTable(A.Name)->Entries.Find(Key);
+			const auto* Entry = A->Data->GetTable(A->Name)->Entries.Find(Key);
 			if (!Test->TestNotNull(TEXT("reconciled row exists"), Entry))
 			{
 				return Finish();
@@ -158,7 +159,7 @@ public:
 	}
 
 private:
-	int32 Value(const FReconnectTestTable& Table, uint32 Id)
+	int32 Value(const UReconnectTestTable& Table, uint32 Id)
 	{
 		const auto Cache = Table.Data->GetTable(Table.Name);
 		const auto* Row = Cache.IsValid() ? Cache->FindByUniqueIndex<uint32>(TEXT("id"), Id) : nullptr;
@@ -174,7 +175,7 @@ private:
 	}
 	FAutomationTestBase* Test;
 	UReconnectTestConnection *Reader, *Writer;
-	FReconnectTestTable A, B;
+	TStrongObjectPtr<UReconnectTestTable> A, B;
 	USubscriptionHandleBase *First = nullptr, *Second = nullptr, *Rejected = nullptr;
 	FSpacetimeDBConnectionId OriginalId;
 	FSpacetimeDBIdentity OriginalIdentity;

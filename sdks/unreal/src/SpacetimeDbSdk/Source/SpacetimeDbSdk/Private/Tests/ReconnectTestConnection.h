@@ -1,6 +1,8 @@
 #pragma once
 #include "Connection/DbConnectionBase.h"
 #include "DBCache/ClientCache.h"
+#include "Tables/RemoteTable.h"
+#include "UObject/StrongObjectPtr.h"
 #include "ModuleBindings/Types/ClientMessageType.g.h"
 #include "ReconnectTestConnection.generated.h"
 
@@ -18,8 +20,26 @@ namespace UE::SpacetimeDB
 	UE_SPACETIMEDB_STRUCT(FReconnectTestRow, Id, Value);
 }
 
-struct FReconnectTestTable
+// Stands in for a generated table. Like generated code, its cache changes only through URemoteTable::BaseUpdate,
+// so replay reads it the same way it reads real bindings.
+UCLASS()
+class UReconnectTestTable : public URemoteTable
 {
+	GENERATED_BODY()
+
+public:
+	static UReconnectTestTable* Create(const FString& InName)
+	{
+		UReconnectTestTable* Table = NewObject<UReconnectTestTable>();
+		Table->Name = InName;
+		Table->Data = MakeShared<UClientCache<FReconnectTestRow>>();
+		Table->Data->GetOrAdd(InName)->AddUniqueConstraint<uint32>(TEXT("id"),
+		                                                           [](const auto& Row)
+		                                                           {
+			                                                           return Row.Id;
+		                                                           });
+		return Table;
+	}
 	FString Name;
 	TSharedPtr<UClientCache<FReconnectTestRow>> Data;
 	DECLARE_MULTICAST_DELEGATE_TwoParams(FInsert, const FEventContextBase&, const FReconnectTestRow&);
@@ -27,29 +47,10 @@ struct FReconnectTestTable
 	                                       const FReconnectTestRow&);
 	FInsert OnInsert, OnDelete;
 	FUpdate OnUpdate;
-	explicit FReconnectTestTable(const FString& InName)
-	    : Name(InName), Data(MakeShared<UClientCache<FReconnectTestRow>>())
-	{
-		Data->GetOrAdd(Name)->AddUniqueConstraint<uint32>(TEXT("id"),
-		                                                  [](const auto& Row)
-		                                                  {
-			                                                  return Row.Id;
-		                                                  });
-	}
 	FTableAppliedDiff<FReconnectTestRow> Update(TArray<FWithBsatn<FReconnectTestRow>> Inserts,
 	                                            TArray<FWithBsatn<FReconnectTestRow>> Deletes)
 	{
-		TArray<TPair<TArray<uint8>, FReconnectTestRow>> InsertRows;
-		TArray<TArray<uint8>> DeleteRows;
-		for (const auto& Row : Inserts)
-		{
-			InsertRows.Add({Row.Bsatn, Row.Row});
-		}
-		for (const auto& Row : Deletes)
-		{
-			DeleteRows.Add(Row.Bsatn);
-		}
-		auto Diff = Data->ApplyDiff(Name, InsertRows, DeleteRows);
+		auto Diff = BaseUpdate<FReconnectTestRow>(Inserts, Deletes, Data, Name);
 		Diff.DeriveUpdatesByPrimaryKey<uint32>(
 		    [](const auto& Row)
 		    {
@@ -160,9 +161,9 @@ public:
 	{
 		ProcedureCallbacks->RegisterCallback(Callback);
 	}
-	void AttachTable(FReconnectTestTable* Table)
+	void AttachTable(UReconnectTestTable* Table)
 	{
-		RegisterTable<FReconnectTestRow, FReconnectTestTable, FEventContextBase>(Table->Name, Table);
+		RegisterTable<FReconnectTestRow, UReconnectTestTable, FEventContextBase>(Table->Name, Table);
 	}
 	virtual bool IsActive() const override
 	{

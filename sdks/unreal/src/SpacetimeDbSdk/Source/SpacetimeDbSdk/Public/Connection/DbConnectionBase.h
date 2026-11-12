@@ -15,6 +15,7 @@
 #include "Connection/Callback.h"
 #include "LogCategory.h"
 #include "Connection/Reconnect.h"
+#include "Tables/RemoteTable.h"
 #include <type_traits>
 
 #include "DbConnectionBase.generated.h"
@@ -223,7 +224,13 @@ public:
 				Queue.Add(MakeShared<UE::SpacetimeDB::TPreprocessedTableData<RowType>>());
 			}
 			auto Data = StaticCastSharedPtr<UE::SpacetimeDB::TPreprocessedTableData<RowType>>(Queue[0]);
-			const auto Cache = Table->Data->GetTable(TableName);
+			const URemoteTable* Remote = Table;
+			const TSharedPtr<UClientCache<RowType>> Client = Remote->GetObservedCache<RowType>();
+			if (!Client.IsValid())
+			{
+				return; // Never updated, so nothing is cached.
+			}
+			const auto Cache = Client->GetTable(TableName);
 			if (!Cache.IsValid())
 			{
 				return;

@@ -60,6 +60,5 @@ public:
 private:
     const FString TableName = TEXT("large_table");
 
-    friend class UDbConnectionBase; // Read-only replay snapshots through the registered table adapter.
     TSharedPtr<UClientCache<FLargeTableType>> Data;
 };

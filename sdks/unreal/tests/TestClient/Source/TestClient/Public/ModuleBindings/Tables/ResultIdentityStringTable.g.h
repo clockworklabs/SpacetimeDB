@@ -60,6 +60,5 @@ public:
 private:
     const FString TableName = TEXT("result_identity_string");
 
-    friend class UDbConnectionBase; // Read-only replay snapshots through the registered table adapter.
     TSharedPtr<UClientCache<FResultIdentityStringType>> Data;
 };

@@ -100,6 +100,5 @@ public:
 private:
     const FString TableName = TEXT("pk_u_128");
 
-    friend class UDbConnectionBase; // Read-only replay snapshots through the registered table adapter.
     TSharedPtr<UClientCache<FPkU128Type>> Data;
 };

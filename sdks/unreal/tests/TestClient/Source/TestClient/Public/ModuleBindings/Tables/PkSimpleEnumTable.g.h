@@ -100,6 +100,5 @@ public:
 private:
     const FString TableName = TEXT("pk_simple_enum");
 
-    friend class UDbConnectionBase; // Read-only replay snapshots through the registered table adapter.
     TSharedPtr<UClientCache<FPkSimpleEnumType>> Data;
 };
