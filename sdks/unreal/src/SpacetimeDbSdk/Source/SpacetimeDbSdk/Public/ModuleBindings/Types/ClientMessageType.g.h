@@ -4,11 +4,12 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
+#include "Kismet/BlueprintFunctionLibrary.h"
 #include "ModuleBindings/Types/UnsubscribeType.g.h"
 #include "ModuleBindings/Types/CallReducerType.g.h"
 #include "ModuleBindings/Types/CallProcedureType.g.h"
 #include "ModuleBindings/Types/SubscribeType.g.h"
-#include "Kismet/BlueprintFunctionLibrary.h"
+#include "ModuleBindings/Types/SubscribeBatchType.g.h"
 #include "ModuleBindings/Types/OneOffQueryType.g.h"
 #include "ClientMessageType.g.generated.h"
 
@@ -19,7 +20,8 @@ enum class EClientMessageTag : uint8
     Unsubscribe,
     OneOffQuery,
     CallReducer,
-    CallProcedure
+    CallProcedure,
+    SubscribeBatch
 };
 
 USTRUCT(BlueprintType)
@@ -30,7 +32,7 @@ struct SPACETIMEDBSDK_API FClientMessageType
 public:
     FClientMessageType() = default;
 
-    TVariant<FCallProcedureType, FOneOffQueryType, FSubscribeType, FUnsubscribeType, FCallReducerType> MessageData;
+    TVariant<FCallProcedureType, FOneOffQueryType, FSubscribeType, FUnsubscribeType, FCallReducerType, FSubscribeBatchType> MessageData;
 
     UPROPERTY(BlueprintReadOnly)
     EClientMessageTag Tag = static_cast<EClientMessageTag>(0);
@@ -75,6 +77,14 @@ public:
         return Obj;
     }
 
+    static FClientMessageType SubscribeBatch(const FSubscribeBatchType& Value)
+    {
+        FClientMessageType Obj;
+        Obj.Tag = EClientMessageTag::SubscribeBatch;
+        Obj.MessageData.Set<FSubscribeBatchType>(Value);
+        return Obj;
+    }
+
     FORCEINLINE bool IsSubscribe() const { return Tag == EClientMessageTag::Subscribe; }
 
     FORCEINLINE FSubscribeType GetAsSubscribe() const
@@ -115,6 +125,14 @@ public:
         return MessageData.Get<FCallProcedureType>();
     }
 
+    FORCEINLINE bool IsSubscribeBatch() const { return Tag == EClientMessageTag::SubscribeBatch; }
+
+    FORCEINLINE FSubscribeBatchType GetAsSubscribeBatch() const
+    {
+        ensureMsgf(IsSubscribeBatch(), TEXT("MessageData does not hold SubscribeBatch!"));
+        return MessageData.Get<FSubscribeBatchType>();
+    }
+
     // Inline equality operators
     FORCEINLINE bool operator==(const FClientMessageType& Other) const
     {
@@ -132,6 +150,8 @@ public:
                 return GetAsCallReducer() == Other.GetAsCallReducer();
             case EClientMessageTag::CallProcedure:
                 return GetAsCallProcedure() == Other.GetAsCallProcedure();
+            case EClientMessageTag::SubscribeBatch:
+                return GetAsSubscribeBatch() == Other.GetAsSubscribeBatch();
             default:
                 return false;
         }
@@ -159,6 +179,7 @@ FORCEINLINE uint32 GetTypeHash(const FClientMessageType& ClientMessage)
         case EClientMessageTag::OneOffQuery: return HashCombine(TagHash, ::GetTypeHash(ClientMessage.GetAsOneOffQuery()));
         case EClientMessageTag::CallReducer: return HashCombine(TagHash, ::GetTypeHash(ClientMessage.GetAsCallReducer()));
         case EClientMessageTag::CallProcedure: return HashCombine(TagHash, ::GetTypeHash(ClientMessage.GetAsCallProcedure()));
+        case EClientMessageTag::SubscribeBatch: return HashCombine(TagHash, ::GetTypeHash(ClientMessage.GetAsSubscribeBatch()));
         default: return TagHash;
     }
 }
@@ -175,7 +196,8 @@ namespace UE::SpacetimeDB
         Unsubscribe, FUnsubscribeType,
         OneOffQuery, FOneOffQueryType,
         CallReducer, FCallReducerType,
-        CallProcedure, FCallProcedureType
+        CallProcedure, FCallProcedureType,
+        SubscribeBatch, FSubscribeBatchType
     );
 }
 
@@ -258,6 +280,21 @@ private:
     static FCallProcedureType GetAsCallProcedure(const FClientMessageType& InValue)
     {
         return InValue.GetAsCallProcedure();
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ClientMessage")
+    static FClientMessageType SubscribeBatch(const FSubscribeBatchType& InValue)
+    {
+        return FClientMessageType::SubscribeBatch(InValue);
+    }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ClientMessage")
+    static bool IsSubscribeBatch(const FClientMessageType& InValue) { return InValue.IsSubscribeBatch(); }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ClientMessage")
+    static FSubscribeBatchType GetAsSubscribeBatch(const FClientMessageType& InValue)
+    {
+        return InValue.GetAsSubscribeBatch();
     }
 
 };

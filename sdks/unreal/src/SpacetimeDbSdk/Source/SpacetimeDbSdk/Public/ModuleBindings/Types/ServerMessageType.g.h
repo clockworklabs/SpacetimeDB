@@ -4,6 +4,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
+#include "ModuleBindings/Types/SubscribeBatchAppliedType.g.h"
 #include "ModuleBindings/Types/SubscribeAppliedType.g.h"
 #include "ModuleBindings/Types/SubscriptionErrorType.g.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
@@ -25,7 +26,8 @@ enum class EServerMessageTag : uint8
     TransactionUpdate,
     OneOffQueryResult,
     ReducerResult,
-    ProcedureResult
+    ProcedureResult,
+    SubscribeBatchApplied
 };
 
 USTRUCT(BlueprintType)
@@ -36,7 +38,7 @@ struct SPACETIMEDBSDK_API FServerMessageType
 public:
     FServerMessageType() = default;
 
-    TVariant<FReducerResultType, FSubscribeAppliedType, FSubscriptionErrorType, FInitialConnectionType, FOneOffQueryResultType, FUnsubscribeAppliedType, FProcedureResultType, FTransactionUpdateType> MessageData;
+    TVariant<FReducerResultType, FSubscribeAppliedType, FSubscriptionErrorType, FSubscribeBatchAppliedType, FInitialConnectionType, FOneOffQueryResultType, FUnsubscribeAppliedType, FProcedureResultType, FTransactionUpdateType> MessageData;
 
     UPROPERTY(BlueprintReadOnly)
     EServerMessageTag Tag = static_cast<EServerMessageTag>(0);
@@ -105,6 +107,14 @@ public:
         return Obj;
     }
 
+    static FServerMessageType SubscribeBatchApplied(const FSubscribeBatchAppliedType& Value)
+    {
+        FServerMessageType Obj;
+        Obj.Tag = EServerMessageTag::SubscribeBatchApplied;
+        Obj.MessageData.Set<FSubscribeBatchAppliedType>(Value);
+        return Obj;
+    }
+
     FORCEINLINE bool IsInitialConnection() const { return Tag == EServerMessageTag::InitialConnection; }
 
     FORCEINLINE FInitialConnectionType GetAsInitialConnection() const
@@ -169,6 +179,14 @@ public:
         return MessageData.Get<FProcedureResultType>();
     }
 
+    FORCEINLINE bool IsSubscribeBatchApplied() const { return Tag == EServerMessageTag::SubscribeBatchApplied; }
+
+    FORCEINLINE FSubscribeBatchAppliedType GetAsSubscribeBatchApplied() const
+    {
+        ensureMsgf(IsSubscribeBatchApplied(), TEXT("MessageData does not hold SubscribeBatchApplied!"));
+        return MessageData.Get<FSubscribeBatchAppliedType>();
+    }
+
     // Inline equality operators
     FORCEINLINE bool operator==(const FServerMessageType& Other) const
     {
@@ -192,6 +210,8 @@ public:
                 return GetAsReducerResult() == Other.GetAsReducerResult();
             case EServerMessageTag::ProcedureResult:
                 return GetAsProcedureResult() == Other.GetAsProcedureResult();
+            case EServerMessageTag::SubscribeBatchApplied:
+                return GetAsSubscribeBatchApplied() == Other.GetAsSubscribeBatchApplied();
             default:
                 return false;
         }
@@ -222,6 +242,7 @@ FORCEINLINE uint32 GetTypeHash(const FServerMessageType& ServerMessage)
         case EServerMessageTag::OneOffQueryResult: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsOneOffQueryResult()));
         case EServerMessageTag::ReducerResult: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsReducerResult()));
         case EServerMessageTag::ProcedureResult: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsProcedureResult()));
+        case EServerMessageTag::SubscribeBatchApplied: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsSubscribeBatchApplied()));
         default: return TagHash;
     }
 }
@@ -241,7 +262,8 @@ namespace UE::SpacetimeDB
         TransactionUpdate, FTransactionUpdateType,
         OneOffQueryResult, FOneOffQueryResultType,
         ReducerResult, FReducerResultType,
-        ProcedureResult, FProcedureResultType
+        ProcedureResult, FProcedureResultType,
+        SubscribeBatchApplied, FSubscribeBatchAppliedType
     );
 }
 
@@ -369,6 +391,21 @@ private:
     static FProcedureResultType GetAsProcedureResult(const FServerMessageType& InValue)
     {
         return InValue.GetAsProcedureResult();
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ServerMessage")
+    static FServerMessageType SubscribeBatchApplied(const FSubscribeBatchAppliedType& InValue)
+    {
+        return FServerMessageType::SubscribeBatchApplied(InValue);
+    }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ServerMessage")
+    static bool IsSubscribeBatchApplied(const FServerMessageType& InValue) { return InValue.IsSubscribeBatchApplied(); }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ServerMessage")
+    static FSubscribeBatchAppliedType GetAsSubscribeBatchApplied(const FServerMessageType& InValue)
+    {
+        return InValue.GetAsSubscribeBatchApplied();
     }
 
 };

@@ -15,7 +15,7 @@
 void UInsertPrimitiveHandler::OnInsertOne##Suffix(const FEventContext& Context, const RowStructType& Value) \
 { \
 	static const FString Name(TEXT("InsertOne" #Suffix)); \
-	RowStructType ExpectedValue = RowStructType(Expected); \
+	RowStructType ExpectedValue = RowStructType{Expected}; \
 	(Value == ExpectedValue) ? Counter->MarkSuccess(Name) : Counter->MarkFailure(Name, TEXT("Unexpected value")); \
 }
 
@@ -106,7 +106,7 @@ void UIdentityActionsHandler::OnInsertOneIdentity(const FEventContext& Context, 
 {
 	static const FString Name(TEXT("InsertIdentity"));
 
-	FOneIdentityType Expectedstruct = FOneIdentityType(ExpectedValue);
+	FOneIdentityType Expectedstruct = FOneIdentityType{ExpectedValue};
 	if (Value == Expectedstruct)
 	{
 		Counter->MarkSuccess(Name);
@@ -121,7 +121,7 @@ void UIdentityActionsHandler::OnInsertUniqueIdentity(const FEventContext& Contex
 {
 	static const FString Name(TEXT("UniqueIdentity_Insert"));
 
-	FUniqueIdentityType Expectedstruct = FUniqueIdentityType(ExpectedValue);
+	FUniqueIdentityType Expectedstruct = FUniqueIdentityType{ExpectedValue};
 	if (Value == Expectedstruct)
 	{
 		Counter->MarkSuccess(Name);
@@ -158,7 +158,7 @@ void UIdentityActionsHandler::OnInsertPkIdentity(const FEventContext& Context, c
 {
 	static const FString Name(TEXT("PkIdentity_Insert"));
 
-	FPkIdentityType ExpectedStruct = FPkIdentityType(ExpectedValue, ExpectedInsertData);
+	FPkIdentityType ExpectedStruct = FPkIdentityType{ExpectedValue, ExpectedInsertData};
 	if (Value == ExpectedStruct)
 	{
 		Counter->MarkSuccess(Name);
@@ -176,8 +176,8 @@ void UIdentityActionsHandler::OnUpdatePkIdentity(const FEventContext& Context, c
 {
 	static const FString Name(TEXT("PkIdentity_Update"));
 
-	FPkIdentityType ExpectedNewStruct = FPkIdentityType(ExpectedValue, ExpectedUpdateData);
-	FPkIdentityType ExpectedOldStruct = FPkIdentityType(ExpectedValue, ExpectedInsertData);
+	FPkIdentityType ExpectedNewStruct = FPkIdentityType{ExpectedValue, ExpectedUpdateData};
+	FPkIdentityType ExpectedOldStruct = FPkIdentityType{ExpectedValue, ExpectedInsertData};
 	if (OldValue == ExpectedOldStruct &&
 		NewValue == ExpectedNewStruct)
 	{
@@ -194,7 +194,7 @@ void UIdentityActionsHandler::OnUpdatePkIdentity(const FEventContext& Context, c
 void UIdentityActionsHandler::OnDeletePkIdentity(const FEventContext& Context, const FPkIdentityType& Value)
 {
 	static const FString Name(TEXT("PkIdentity_Delete"));
-	FPkIdentityType ExpectedStruct = FPkIdentityType(ExpectedValue, ExpectedUpdateData);
+	FPkIdentityType ExpectedStruct = FPkIdentityType{ExpectedValue, ExpectedUpdateData};
 	if (Value == ExpectedStruct)
 	{
 		Counter->MarkSuccess(Name);
@@ -1193,7 +1193,7 @@ void UStructActionsHandler::OnInsertOneUnitStruct(const FEventContext& Context, 
 {
 	static const FString Name(TEXT("InsertOneUnitStruct"));
 
-	if (Value.S == FUnitStructType()) {
+	if (Value.S == FUnitStructType{}) {
 		Counter->MarkSuccess(Name);
 	}
 	else 
@@ -1365,7 +1365,7 @@ void UInsertPrimitiveHandler::OnInsertPrimitivesAsString(const FEventContext& Co
 	// Detailed side-by-side log
 	LogArraysSideBySide(Name, Value.S, ExpectedStrings);
 
-	FVecStringType ExpectedStruct = FVecStringType(ExpectedStrings);
+	FVecStringType ExpectedStruct = FVecStringType{ExpectedStrings};
 	if (Value == ExpectedStruct)
 	{
 		Counter->MarkSuccess(Name);
@@ -1447,7 +1447,7 @@ void URLSSubscriptionHandler::OnInsertUser(const FEventContext& Context, const F
 void UParameterizedSubscriptionHandler::OnInsertPkIdentity(const FEventContext& Context, const FPkIdentityType& Identity)
 {
 	const FString TestName = FString::Printf(TEXT("insert_%d"), ExpectedOldData);
-	FPkIdentityType ExpectedStruct = FPkIdentityType( ExpectedIdentity, ExpectedOldData );
+	FPkIdentityType ExpectedStruct = FPkIdentityType{ ExpectedIdentity, ExpectedOldData };
 	if (ExpectedStruct == Identity)
 	{
 		Counters->Counter->MarkSuccess(TestName);
@@ -1462,8 +1462,8 @@ void UParameterizedSubscriptionHandler::OnUpdatePkIdentity(const FEventContext& 
 {
 
 	const FString TestName = FString::Printf(TEXT("update_%d"), ExpectedNewData);
-	FPkIdentityType ExpectedOldStruct = FPkIdentityType(ExpectedIdentity, ExpectedOldData);
-	FPkIdentityType ExpectedNewStruct = FPkIdentityType(ExpectedIdentity, ExpectedNewData);
+	FPkIdentityType ExpectedOldStruct = FPkIdentityType{ExpectedIdentity, ExpectedOldData};
+	FPkIdentityType ExpectedNewStruct = FPkIdentityType{ExpectedIdentity, ExpectedNewData};
 	if (ExpectedOldStruct == OldIdentity
 		&& ExpectedNewStruct == NewIdentity)
 	{
