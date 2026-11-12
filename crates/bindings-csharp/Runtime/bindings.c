@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <unistd.h>
 
-#ifndef EXPERIMENTAL_WASM_AOT
+#ifndef SPACETIMEDB_WASM_AOT
 #include "driver.h"
 #endif
 
@@ -30,7 +30,7 @@ OPAQUE_TYPEDEF(ConsoleTimerId, uint32_t);
 #define STDB_EXTERN(name) \
   __attribute__((import_module(SPACETIME_MODULE_VERSION), import_name(#name))) extern
 
-#ifndef EXPERIMENTAL_WASM_AOT
+#ifndef SPACETIMEDB_WASM_AOT
 #define IMPORT(ret, name, params, args)    \
   STDB_EXTERN(name) ret name##_imp params; \
   ret name params { return name##_imp args; }
@@ -135,7 +135,11 @@ IMPORT(Status, datastore_clear,
        (table_id, count));
 #undef SPACETIME_MODULE_VERSION
 
-#ifndef EXPERIMENTAL_WASM_AOT
+#define SPACETIME_MODULE_VERSION "spacetime_10.6"
+IMPORT(Status, env_get, (const uint8_t* key, uint32_t key_len, BytesSource* source), (key, key_len, source));
+#undef SPACETIME_MODULE_VERSION
+
+#ifndef SPACETIMEDB_WASM_AOT
 static MonoClass* ffi_class;
 
 #define CEXPORT(name) __attribute__((export_name(#name))) name
@@ -150,10 +154,10 @@ PREINIT(10, startup) {
   _start();
 
   ffi_class = mono_wasm_assembly_find_class(
-      mono_wasm_assembly_load("SpacetimeDB.Runtime.dll"),
-      "SpacetimeDB.Internal", "Module");
+      mono_wasm_assembly_load("StdbModule.dll"),
+      "", "ModuleRegistration");
   assert(ffi_class &&
-         "FFI export class (SpacetimeDB.Internal.Module) not found");
+         "FFI export class (ModuleRegistration) not found");
 }
 
 #define EXPORT_WITH_MONO_RES(ret, res_code, name, params, args...)            \
@@ -198,9 +202,15 @@ EXPORT(int16_t, __call_procedure__,
        &timestamp, &args, &result_sink);
 
 EXPORT(int16_t, __call_http_handler__,
-       (uint32_t id, uint64_t timestamp, BytesSource request, BytesSource request_body,
+       (uint32_t id,
+        uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
+        BytesSource sender_jwt,
+        uint64_t timestamp, BytesSource request, BytesSource request_body,
         BytesSink response_sink, BytesSink response_body_sink),
-       &id, &timestamp, &request, &request_body, &response_sink, &response_body_sink);
+       &id,
+       &sender_0, &sender_1, &sender_2, &sender_3,
+       &sender_jwt,
+       &timestamp, &request, &request_body, &response_sink, &response_body_sink);
 
 EXPORT(int16_t, __call_view__,
        (uint32_t id,

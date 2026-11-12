@@ -105,7 +105,7 @@ const inventory = table(
     name: 'inventory',
     public: true,
     indexes: [
-      { accessor: 'by_user_item', algorithm: 'btree', columns: ['userId', 'itemId'] },
+      { accessor: 'byUserItem', algorithm: 'btree', columns: ['userId', 'itemId'] },
     ],
   },
   {
@@ -122,7 +122,7 @@ const inventory = table(
 
 ```csharp
 [SpacetimeDB.Table(Accessor = "Inventory", Public = true)]
-[SpacetimeDB.Index.BTree(Accessor = "by_user_item", Columns = new[] { nameof(UserId), nameof(ItemId) })]
+[SpacetimeDB.Index.BTree(Accessor = "ByUserItem", Columns = new[] { nameof(UserId), nameof(ItemId) })]
 public partial struct Inventory
 {
     [SpacetimeDB.PrimaryKey]
@@ -183,7 +183,7 @@ When you update a row, SpacetimeDB uses the primary key to determine whether it'
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-export const update_user_name = spacetimedb.reducer({ id: t.u64(), newName: t.string() }, (ctx, { id, newName }) => {
+export const updateUserName = spacetimedb.reducer({ id: t.u64(), newName: t.string() }, (ctx, { id, newName }) => {
   const user = ctx.db.user.id.find(id);
   if (user) {
     // This is an update — primary key (id) stays the same

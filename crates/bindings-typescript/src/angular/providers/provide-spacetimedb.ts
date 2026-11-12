@@ -9,12 +9,12 @@ import type {
   DbConnectionImpl,
   ErrorContextInterface,
   RemoteModuleOf,
-} from '../../sdk/db_connection_impl';
+} from '../../sdk/db_connection_impl.ts';
 import {
   SPACETIMEDB_CONNECTION,
   type ConnectionState,
-} from '../connection_state';
-import { ConnectionId } from '../../lib/connection_id';
+} from '../connection_state.ts';
+import { ConnectionId } from '../../lib/connection_id.ts';
 
 let connRef: DbConnectionImpl<any> | null = null;
 
@@ -51,6 +51,7 @@ export function provideSpacetimeDB<DbConnection extends DbConnectionImpl<any>>(
           identity: conn.identity,
           token: conn.token,
           connectionId: conn.connectionId,
+          connectionError: undefined,
           getConnection,
         });
       };
@@ -76,6 +77,7 @@ export function provideSpacetimeDB<DbConnection extends DbConnectionImpl<any>>(
       };
 
       connectionBuilder.onConnect(onConnect);
+      connectionBuilder.onAutomaticReconnect(onConnect);
       connectionBuilder.onDisconnect(onDisconnect);
       connectionBuilder.onConnectError(onConnectError);
 

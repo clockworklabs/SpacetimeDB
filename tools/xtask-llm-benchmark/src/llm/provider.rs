@@ -8,7 +8,7 @@ use crate::llm::clients::{
 };
 use crate::llm::model_routes::ModelRoute;
 use crate::llm::prompt::BuiltPrompt;
-use crate::llm::types::{LlmOutput, Vendor};
+use crate::llm::types::{LlmOutput, ReasoningEffort, Vendor};
 
 #[async_trait]
 pub trait LlmProvider: Send + Sync {
@@ -19,6 +19,7 @@ pub trait LlmProvider: Send + Sync {
 pub struct RouterProvider {
     clients: HashMap<Vendor, Box<dyn LlmClient>>,
     pub force: Option<Vendor>,
+    reasoning: ReasoningEffort,
 }
 
 impl RouterProvider {
@@ -32,6 +33,7 @@ impl RouterProvider {
         meta: Option<MetaLlamaClient>,
         openrouter: Option<OpenRouterClient>,
         force: Option<Vendor>,
+        reasoning: ReasoningEffort,
     ) -> Self {
         let mut clients: HashMap<Vendor, Box<dyn LlmClient>> = HashMap::new();
 
@@ -57,7 +59,11 @@ impl RouterProvider {
             clients.insert(Vendor::OpenRouter, Box::new(client));
         }
 
-        Self { clients, force }
+        Self {
+            clients,
+            force,
+            reasoning,
+        }
     }
 }
 
@@ -105,17 +111,14 @@ impl LlmProvider for RouterProvider {
             );
         }
 
-        resolved.client.generate(&resolved.model, prompt).await
+        resolved.client.generate(&resolved.model, prompt, self.reasoning).await
     }
 }
 
 impl RouterProvider {
     fn resolve_client<'a>(&'a self, route: &ModelRoute, search_enabled: bool) -> Result<ResolvedClient<'a>> {
         if search_enabled {
-            let base_model = route
-                .openrouter_model
-                .clone()
-                .unwrap_or_else(|| openrouter_model_id(route.vendor, &route.api_model));
+            let base_model = route.model_id();
             return self.resolve_openrouter(format!("{base_model}:online"), None, true);
         }
 
@@ -146,10 +149,7 @@ impl RouterProvider {
             });
         }
 
-        let model = route
-            .openrouter_model
-            .clone()
-            .unwrap_or_else(|| openrouter_model_id(route.vendor, &route.api_model));
+        let model = route.model_id();
         self.resolve_openrouter(model, Some(vendor.display_name()), false)
     }
 
@@ -173,22 +173,4 @@ impl RouterProvider {
             search_enabled,
         })
     }
-}
-
-/// Map a vendor + bare model id to the `vendor/model` namespace that OpenRouter requires.
-/// If the model id already contains `/` it is returned as-is (e.g. `google/gemini-3.1-pro-preview`).
-fn openrouter_model_id(vendor: Vendor, api_model: &str) -> String {
-    if api_model.contains('/') {
-        return api_model.to_string();
-    }
-    let prefix = match vendor {
-        Vendor::Anthropic => "anthropic",
-        Vendor::OpenAi => "openai",
-        Vendor::Xai => "x-ai",
-        Vendor::DeepSeek => "deepseek",
-        Vendor::Google => "google",
-        // Meta rows already carry a full `vendor/model` id (caught by the `/` check above).
-        Vendor::Meta | Vendor::OpenRouter => return api_model.to_string(),
-    };
-    format!("{}/{}", prefix, api_model)
 }

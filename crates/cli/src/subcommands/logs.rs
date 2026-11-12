@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::io::{self, Write};
 
 use crate::common_args;
+use crate::common_args::Format;
 use crate::config::Config;
 use crate::subcommands::db_arg_resolution::{load_config_db_targets, resolve_database_arg};
 use crate::util::{add_auth_header_opt, database_identity, get_auth_header};
@@ -40,14 +41,7 @@ pub fn cli() -> clap::Command {
                 .help("A flag indicating whether or not to follow the logs")
                 .long_help("A flag that causes logs to not stop when end of the log file is reached, but rather to wait for additional data to be appended to the input."),
         )
-        .arg(
-            Arg::new("format")
-                .long("format")
-                .default_value("text")
-                .required(false)
-                .value_parser(clap::value_parser!(Format))
-                .help("Output format for the logs")
-        )
+        .arg(common_args::format().help("Output format for the logs"))
         .arg(
             Arg::new("level")
                 .long("level")
@@ -164,24 +158,6 @@ pub struct BacktraceFrame<'a> {
 struct LogsParams {
     num_lines: Option<u32>,
     follow: bool,
-}
-
-#[derive(Clone, Copy, PartialEq)]
-pub enum Format {
-    Text,
-    Json,
-}
-
-impl clap::ValueEnum for Format {
-    fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Text, Self::Json]
-    }
-    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
-        match self {
-            Self::Text => Some(clap::builder::PossibleValue::new("text").aliases(["default", "txt"])),
-            Self::Json => Some(clap::builder::PossibleValue::new("json")),
-        }
-    }
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {

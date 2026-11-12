@@ -65,8 +65,8 @@ use self::syscall::{
 };
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{
-    CallHttpHandlerParams, CallProcedureParams, CallReducerParams, InstanceManagerMetrics, ModuleInfo,
-    ModuleWithInstance,
+    CallHttpHandlerParams, CallProcedureParams, CallReducerParams, IdcDeliveryFailure, IdcMessageParams,
+    IdcReducerCallOutcome, InstanceManagerMetrics, ModuleInfo, ModuleWithInstance, UpdateEnvironmentResult,
 };
 use super::UpdateDatabaseResult;
 use crate::client::{ClientActorId, MeteredUnboundedReceiver, MeteredUnboundedSender};
@@ -82,10 +82,12 @@ use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
     AnonymousViewOp, DescribeError, EnergyStats, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings,
     HttpHandlerExecuteResult, HttpHandlerOp, InstanceCommon, InstanceOp, ProcedureExecuteResult, ProcedureOp,
-    ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp, WasmInstance,
+    ReducerExecuteResult, ReducerOp, ReducerSuccessAction, ViewExecuteResult, ViewOp, WasmInstance,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
-use crate::host::{InitDatabaseResult, ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
+use crate::host::{
+    InitDatabaseResult, ModuleHost, ReducerCallError, ReducerCallResult, ReducerCallResultWithTxOffset, Scheduler,
+};
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
@@ -293,6 +295,10 @@ impl JsModule {
         self.common.scheduler()
     }
 
+    pub fn idc_sender(&self) -> super::idc_actor::IdcActorSender {
+        self.common.idc_sender()
+    }
+
     pub fn info(&self) -> Arc<ModuleInfo> {
         self.common.info().clone()
     }
@@ -400,6 +406,7 @@ impl JsInstanceEnv {
     /// This resets all of the state associated to a single function call,
     /// and returns instrumentation records.
     fn finish_funcall(&mut self) -> ExecutionTimings {
+        self.instance_env.finish_funcall();
         let total_duration = self.reducer_start().elapsed();
         let func_name = self.log_record_function().unwrap_or("<unknown>").to_owned();
 
@@ -424,7 +431,9 @@ impl JsInstanceEnv {
         }
     }
 
-    fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
+    fn set_module_def(&mut self, module_def: Arc<ModuleDef>, module_hash: spacetimedb_lib::Hash) {
+        self.instance_env
+            .bind_environment_module(module_hash, module_def.clone());
         self.module_def = Some(module_def);
     }
 
@@ -475,17 +484,45 @@ impl JsMainInstance {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         self.request(UpdateDatabaseRequest {
             program,
             old_module_info,
             policy,
+            environment,
         })
         .await
     }
 
+    pub async fn update_environment(
+        &self,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> anyhow::Result<UpdateEnvironmentResult> {
+        self.request(UpdateEnvironmentRequest { environment }).await
+    }
+
     pub async fn call_reducer(&self, params: CallReducerParams) -> ReducerCallResult {
+        self.request(CallReducerRequest { params }).await.result
+    }
+
+    /// Like [`Self::call_reducer`], but also returns the offset of the reducer's transaction.
+    pub async fn call_reducer_with_offset(&self, params: CallReducerParams) -> ReducerCallResultWithTxOffset {
         self.request(CallReducerRequest { params }).await
+    }
+
+    pub(in crate::host) async fn call_idc_reducer(
+        &self,
+        params: CallReducerParams,
+        delivery: IdcMessageParams,
+        on_success: ReducerSuccessAction,
+    ) -> Result<IdcReducerCallOutcome, IdcDeliveryFailure> {
+        self.request(CallIdcReducerRequest {
+            params,
+            delivery,
+            on_success,
+        })
+        .await
     }
 
     pub(in crate::host) async fn call_scheduled_reducer(
@@ -493,6 +530,13 @@ impl JsMainInstance {
         params: ScheduledFunctionParams,
     ) -> CallScheduledFunctionResult {
         self.request(ScheduledReducerRequest { params }).await
+    }
+
+    pub(in crate::host) async fn run_idc_callback_and_cleanup(
+        &self,
+        msg: crate::host::idc_actor::DeliveredMessage,
+    ) -> anyhow::Result<()> {
+        self.request(RunIdcCallbackAndCleanupRequest { msg }).await
     }
 
     pub(in crate::host) async fn enqueue_reducer(&self, params: CallReducerParams, on_panic: JsFatalHook) {
@@ -535,8 +579,12 @@ impl JsMainInstance {
         self.request(DisconnectClientRequest { client_id }).await
     }
 
-    pub async fn init_database(&self, program: Program) -> anyhow::Result<InitDatabaseResult> {
-        self.request(InitDatabaseRequest { program }).await
+    pub async fn init_database(
+        &self,
+        program: Program,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> anyhow::Result<InitDatabaseResult> {
+        self.request(InitDatabaseRequest { program, environment }).await
     }
 
     pub async fn call_view(&self, cmd: ViewCommand) -> ViewCommandResult {
@@ -620,19 +668,40 @@ js_main_request! {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
     } => "update_database", anyhow::Result<UpdateDatabaseResult>, UpdateDatabase
+}
+
+js_main_request! {
+    UpdateEnvironmentRequest {
+        environment: std::collections::BTreeMap<String, String>,
+    } => "update_environment", anyhow::Result<UpdateEnvironmentResult>, UpdateEnvironment
 }
 
 js_main_request! {
     CallReducerRequest {
         params: CallReducerParams,
-    } => "call_reducer", ReducerCallResult, CallReducer
+    } => "call_reducer", ReducerCallResultWithTxOffset, CallReducer
 }
 
 js_main_request! {
     ScheduledReducerRequest {
         params: ScheduledFunctionParams,
     } => "scheduled_reducer", CallScheduledFunctionResult, ScheduledReducer
+}
+
+js_main_request! {
+    CallIdcReducerRequest {
+        params: CallReducerParams,
+        delivery: IdcMessageParams,
+        on_success: ReducerSuccessAction,
+    } => "call_idc_reducer", Result<IdcReducerCallOutcome, IdcDeliveryFailure>, CallIdcReducer
+}
+
+js_main_request! {
+    RunIdcCallbackAndCleanupRequest {
+        msg: crate::host::idc_actor::DeliveredMessage,
+    } => "run_idc_callback_and_cleanup", anyhow::Result<()>, RunIdcCallbackAndCleanup
 }
 
 js_main_request! {
@@ -662,6 +731,7 @@ js_main_request! {
 js_main_request! {
     InitDatabaseRequest {
         program: Program,
+        environment: std::collections::BTreeMap<String, String>,
     } => "init_database", anyhow::Result<InitDatabaseResult>, InitDatabase
 }
 
@@ -804,11 +874,24 @@ enum JsMainWorkerRequest {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
+    },
+    /// See [`JsMainInstance::update_environment`].
+    UpdateEnvironment {
+        reply_tx: JsReplyTx<anyhow::Result<UpdateEnvironmentResult>>,
+        environment: std::collections::BTreeMap<String, String>,
     },
     /// See [`JsMainInstance::call_reducer`].
     CallReducer {
-        reply_tx: JsReplyTx<ReducerCallResult>,
+        reply_tx: JsReplyTx<ReducerCallResultWithTxOffset>,
         params: CallReducerParams,
+    },
+    /// See [`JsMainInstance::call_idc_reducer`].
+    CallIdcReducer {
+        reply_tx: JsReplyTx<Result<IdcReducerCallOutcome, IdcDeliveryFailure>>,
+        params: CallReducerParams,
+        delivery: IdcMessageParams,
+        on_success: ReducerSuccessAction,
     },
     /// See [`JsMainInstance::enqueue_reducer`].
     CallReducerDetached {
@@ -819,6 +902,10 @@ enum JsMainWorkerRequest {
     ScheduledReducer {
         reply_tx: JsReplyTx<CallScheduledFunctionResult>,
         params: ScheduledFunctionParams,
+    },
+    RunIdcCallbackAndCleanup {
+        reply_tx: JsReplyTx<anyhow::Result<()>>,
+        msg: crate::host::idc_actor::DeliveredMessage,
     },
     /// See [`JsMainInstance::call_view`].
     CallView {
@@ -864,6 +951,7 @@ enum JsMainWorkerRequest {
     InitDatabase {
         reply_tx: JsReplyTx<anyhow::Result<InitDatabaseResult>>,
         program: Program,
+        environment: std::collections::BTreeMap<String, String>,
     },
 }
 
@@ -1398,17 +1486,31 @@ fn handle_main_worker_request(
             program,
             old_module_info,
             policy,
+            environment,
         } => handle_worker_request("update_database", reply_tx, || {
-            let res = instance_common.update_database(program, old_module_info, policy, inst);
+            let res = instance_common.update_database(program, old_module_info, policy, environment, inst);
             (res, false)
         }),
+        JsMainWorkerRequest::UpdateEnvironment { reply_tx, environment } => {
+            handle_worker_request("update_environment", reply_tx, || {
+                let res = instance_common.update_environment(environment, inst);
+                (res, false)
+            })
+        }
         JsMainWorkerRequest::CallReducer { reply_tx, params } => {
             handle_worker_request("call_reducer", reply_tx, || {
                 let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
-                let (res, trapped) = call_reducer(None, params);
-                (res.result, trapped)
+                call_reducer(None, params)
             })
         }
+        JsMainWorkerRequest::CallIdcReducer {
+            reply_tx,
+            params,
+            delivery,
+            on_success,
+        } => handle_worker_request("call_idc_reducer", reply_tx, || {
+            instance_common.call_idc_reducer(params, delivery, inst, on_success)
+        }),
         JsMainWorkerRequest::CallReducerDetached { params, on_panic } => {
             handle_detached_worker_request("call_reducer", on_panic, || {
                 let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
@@ -1420,6 +1522,11 @@ fn handle_main_worker_request(
             handle_worker_request("scheduled_reducer", reply_tx, || {
                 let (res, trapped) = instance_common.call_scheduled_reducer(params, inst);
                 (res, trapped)
+            })
+        }
+        JsMainWorkerRequest::RunIdcCallbackAndCleanup { reply_tx, msg } => {
+            handle_worker_request("run_idc_callback_and_cleanup", reply_tx, || {
+                instance_common.run_idc_callback_and_cleanup(msg, inst)
             })
         }
         JsMainWorkerRequest::CallView { reply_tx, cmd } => handle_worker_request("call_view", reply_tx, || {
@@ -1496,14 +1603,16 @@ fn handle_main_worker_request(
                 (res, trapped)
             })
         }
-        JsMainWorkerRequest::InitDatabase { reply_tx, program } => {
-            handle_worker_request("init_database", reply_tx, || {
-                let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
-                let (res, trapped): (Result<InitDatabaseResult, anyhow::Error>, bool) =
-                    init_database(replica_ctx, &info.module_def, program, call_reducer);
-                (res, trapped)
-            })
-        }
+        JsMainWorkerRequest::InitDatabase {
+            reply_tx,
+            program,
+            environment,
+        } => handle_worker_request("init_database", reply_tx, || {
+            let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+            let (res, trapped): (Result<InitDatabaseResult, anyhow::Error>, bool) =
+                init_database(replica_ctx, &info.module_def, program, environment, call_reducer);
+            (res, trapped)
+        }),
     }
 }
 
@@ -1632,7 +1741,11 @@ where
                     Either::Left(module) => (module.replica_ctx(), module.scheduler()),
                     Either::Right(mcc) => (&mcc.replica_ctx, &mcc.scheduler),
                 };
-                let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler.clone());
+                let idc_sender = match &generation_module_or_mcc {
+                    Either::Left(module) => module.idc_sender(),
+                    Either::Right(mcc) => mcc.idc_sender.clone(),
+                };
+                let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler.clone(), idc_sender);
                 scope.set_slot(JsInstanceEnv::new(instance_env));
 
                 let startup_result = panic::catch_unwind(AssertUnwindSafe(|| {
@@ -1668,7 +1781,10 @@ where
                         return;
                     }
                     Ok(Ok((crf, module_common))) => {
-                        env_on_isolate_unwrap(scope).set_module_def(module_common.info().module_def.clone());
+                        env_on_isolate_unwrap(scope).set_module_def(
+                            module_common.info().module_def.clone(),
+                            module_common.info().module_hash,
+                        );
 
                         if let Some(result_tx) = startup_result_tx.take()
                             && result_tx.send(Ok(module_common.clone())).is_err()
@@ -1872,8 +1988,8 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
         self.scope.get_slot::<JsInstanceEnv>().unwrap().instance_env.tx.clone()
     }
 
-    fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
-        env_on_isolate_unwrap(self.scope).set_module_def(module_def);
+    fn set_module_def(&mut self, module_def: Arc<ModuleDef>, module_hash: spacetimedb_lib::Hash) {
+        env_on_isolate_unwrap(self.scope).set_module_def(module_def, module_hash);
     }
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {

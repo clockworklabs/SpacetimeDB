@@ -1,12 +1,12 @@
 ﻿## Quickstart Chat Module Version
-This quickstart chat Client is built on from the [C# Module Quickstart](https://spacetimedb.com/docs/modules/c-sharp/quickstart). \
-If you have started with the [Rust Module Quickstart](https://spacetimedb.com/docs/modules/rust/quickstart) the reducer names will differ, send_message instead of SendMessage and set_name instead of SetName. /
+This quickstart chat Client is built on from the [C# Module Quickstart](https://spacetimedb.com/docs/quickstarts/c-sharp). \
+If you have started with the [Rust Module Quickstart](https://spacetimedb.com/docs/quickstarts/rust) the reducer names will differ, send_message instead of SendMessage and set_name instead of SetName. /
 
 
 
 ## How to Use the Quickstart Chat Example
 
-1. Follow the instructions in `Develop.md` in in "sdk-unreal" directory to integrate the `SpacetimeDbSdk` plugin into your project.
+1. Follow the instructions in `DEVELOP.md` in the `sdks/unreal` directory to integrate the `SpacetimeDbSdk` plugin into your project.
 2. Launch the project in Unreal Engine.
 3. Create a new level. Press add in the Content Browser, then select "Level" to create a new level.
    - Alternatively, you can open an existing level if you already have one.

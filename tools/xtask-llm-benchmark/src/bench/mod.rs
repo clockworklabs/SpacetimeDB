@@ -1,6 +1,7 @@
 pub mod analysis;
 pub mod normalize;
 pub mod publishers;
+mod records;
 pub mod runner;
 mod templates;
 pub mod types;

@@ -1,3 +1,5 @@
+import type { UntypedClientTable } from '../sdk/client_table.ts';
+import { getByAccessorPath } from '../lib/accessor_path.ts';
 import type {
   QueryClient,
   QueryKey,
@@ -10,7 +12,7 @@ import {
   evaluateBooleanExpr,
   getQueryAccessorName,
   getQueryWhereClause,
-} from '../lib/query';
+} from '../lib/query.ts';
 
 type QueryInput = Query<any>;
 
@@ -183,7 +185,10 @@ export class SpacetimeDBQueryClient {
     const keyStr = JSON.stringify(queryKey);
     const db = this.connection.db;
 
-    const tableInstance = db[accessorName];
+    const tableInstance = getByAccessorPath<UntypedClientTable>(
+      db,
+      accessorName
+    );
 
     if (!tableInstance) {
       console.warn(`SpacetimeDBQueryClient: table "${accessorName}" not found`);

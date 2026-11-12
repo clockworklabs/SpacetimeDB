@@ -194,9 +194,9 @@ dependencies = [
 
 [[package]]
 name = "ethnum"
-version = "1.5.2"
+version = "1.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca81e6b4777c89fd810c25a4be2b1bd93ea034fbe58e6a75216a34c6b82c539b"
+checksum = "40404c3f5f511ec4da6fe866ddf6a717c309fdbb69fbbad7b0f3edab8f2e835f"
 dependencies = [
  "serde",
 ]
@@ -735,6 +735,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-connection-session"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-delete-database"
 version = "0.1.0"
 dependencies = [
@@ -751,6 +759,13 @@ dependencies = [
 
 [[package]]
 name = "smoketest-module-dml"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-environment-publish"
 version = "0.1.0"
 dependencies = [
  "spacetimedb",
@@ -836,6 +851,13 @@ dependencies = [
 
 [[package]]
 name = "smoketest-module-http-routes-strict-root"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-idc-receiver"
 version = "0.1.0"
 dependencies = [
  "spacetimedb",
@@ -1038,6 +1060,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-views-args"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-views-auto-migrate"
 version = "0.1.0"
 dependencies = [
@@ -1168,7 +1197,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb"
-version = "2.9.0"
+version = "2.16.0"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -1187,7 +1216,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "2.9.0"
+version = "2.16.0"
 dependencies = [
  "heck 0.4.1",
  "humantime",
@@ -1198,14 +1227,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-sys"
-version = "2.9.0"
+version = "2.16.0"
 dependencies = [
  "spacetimedb-primitives",
 ]
 
 [[package]]
 name = "spacetimedb-lib"
-version = "2.9.0"
+version = "2.16.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1218,7 +1247,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-primitives"
-version = "2.9.0"
+version = "2.16.0"
 dependencies = [
  "bitflags",
  "either",
@@ -1229,14 +1258,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-query-builder"
-version = "2.9.0"
+version = "2.16.0"
 dependencies = [
  "spacetimedb-lib",
 ]
 
 [[package]]
 name = "spacetimedb-sats"
-version = "2.9.0"
+version = "2.16.0"
 dependencies = [
  "anyhow",
  "arrayvec",

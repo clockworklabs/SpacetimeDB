@@ -68,7 +68,6 @@ if [[ "$SUITE" == "http-handlers" ]]; then
         "error_http_handler_wrong_request_arg_type"
         "error_http_handler_no_return_type"
         "error_http_handler_wrong_return_type"
-        "error_http_handler_no_sender"
         "error_http_handler_no_connection_id"
         "error_http_handler_no_db"
         "error_http_router_not_a_function"
@@ -107,10 +106,6 @@ if [[ "$SUITE" == "http-handlers" ]]; then
     CASE_MARKER["error_http_handler_wrong_return_type"]="no viable conversion from returned value of type 'unsigned int' to function return type 'SpacetimeDB::HttpResponse'"
     CASE_SOURCE["error_http_handler_wrong_return_type"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_wrong_return_type.cpp"
 
-    CASE_EXPECTATION["error_http_handler_no_sender"]="failure"
-    CASE_MARKER["error_http_handler_no_sender"]="no member named 'sender' in 'SpacetimeDB::HandlerContext'"
-    CASE_SOURCE["error_http_handler_no_sender"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_no_sender.cpp"
-
     CASE_EXPECTATION["error_http_handler_no_connection_id"]="failure"
     CASE_MARKER["error_http_handler_no_connection_id"]="no member named 'connection_id' in 'SpacetimeDB::HandlerContext'"
     CASE_SOURCE["error_http_handler_no_connection_id"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_no_connection_id.cpp"
@@ -133,11 +128,15 @@ if [[ "$SUITE" == "http-handlers" ]]; then
 else
     declare -a CASE_NAMES=(
         "ok_multi_column_range_prefixes"
+        "ok_autoinc_same_line"
         "error_multi_column_range_not_terminal"
     )
 
     CASE_EXPECTATION["ok_multi_column_range_prefixes"]="success"
     CASE_SOURCE["ok_multi_column_range_prefixes"]="$SCRIPT_DIR/cases/indexes/ok_multi_column_range_prefixes.cpp"
+
+    CASE_EXPECTATION["ok_autoinc_same_line"]="success"
+    CASE_SOURCE["ok_autoinc_same_line"]="$SCRIPT_DIR/cases/indexes/ok_autoinc_same_line.cpp"
 
     CASE_EXPECTATION["error_multi_column_range_not_terminal"]="failure"
     CASE_MARKER["error_multi_column_range_not_terminal"]="Range<T> in a multi-column index filter must be the final supplied element"

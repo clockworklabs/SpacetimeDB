@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use serde::Serialize;
 
 use super::http::HttpClient;
@@ -7,7 +7,7 @@ use crate::llm::prompt::BuiltPrompt;
 use crate::llm::segmentation::{
     deterministic_trim_prefix, meta_ctx_limit_tokens, non_context_reserve_tokens_env, output_token_limit_env, Segment,
 };
-use crate::llm::types::{LlmOutput, Vendor};
+use crate::llm::types::{LlmOutput, ReasoningEffort, Vendor};
 
 #[derive(Clone)]
 pub struct MetaLlamaClient {
@@ -22,7 +22,7 @@ impl MetaLlamaClient {
         Self { base, api_key, http }
     }
 
-    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<LlmOutput> {
+    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt, _reasoning: ReasoningEffort) -> Result<LlmOutput> {
         let url = format!("{}/chat/completions", self.base.trim_end_matches('/'));
 
         // Build input like other clients
@@ -101,7 +101,7 @@ impl MetaLlamaClient {
         let output_tokens = resp.usage.as_ref().and_then(|u| u.completion_tokens);
         let text = resp
             .first_text()
-            .ok_or_else(|| anyhow!("no content from Meta/OpenRouter"))?;
+            .with_context(|| format!("Meta/OpenRouter completion failed (model={model})"))?;
         Ok(LlmOutput {
             text,
             input_tokens,

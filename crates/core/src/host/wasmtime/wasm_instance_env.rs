@@ -31,6 +31,10 @@ use std::sync::Arc;
 use std::time::Instant;
 use wasmtime::{AsContext, Caller, StoreContextMut};
 
+/// Env reads may retain at most 2 MiB of value bytes outside the Wasm heap.
+/// Other outstanding byte sources count against this interface's handle limit.
+const MAX_OUTSTANDING_ENV_SOURCES: usize = 256;
+
 /// A stream of bytes which the WASM module can read from
 /// using [`WasmInstanceEnv::bytes_source_read`].
 ///
@@ -253,7 +257,14 @@ impl WasmInstanceEnv {
         // This allows the module to avoid allocating and make a system call in those cases.
         if bytes.is_empty() {
             Ok(BytesSourceId::INVALID)
-        } else if bytes.len() > u32::MAX as usize {
+        } else {
+            self.create_present_bytes_source(bytes)
+        }
+    }
+
+    /// Allocate a valid source even for an empty value when zero means absence.
+    fn create_present_bytes_source(&mut self, bytes: bytes::Bytes) -> RtResult<BytesSourceId> {
+        if bytes.len() > u32::MAX as usize {
             // There's no inherent reason we need to error here,
             // other than that it makes it impossible to report the length in `bytes_source_remaining_length`
             // and that all of our usage of `BytesSource`s as of writing (pgoldman 2025-09-26)
@@ -287,7 +298,9 @@ impl WasmInstanceEnv {
         self.mem = Some(mem);
     }
 
-    pub fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
+    pub fn set_module_def(&mut self, module_def: Arc<ModuleDef>, module_hash: spacetimedb_lib::Hash) {
+        self.instance_env
+            .bind_environment_module(module_hash, module_def.clone());
         self.module_def = Some(module_def)
     }
 
@@ -315,6 +328,10 @@ impl WasmInstanceEnv {
     /// which is responsible for DB instance and associated state.
     pub fn instance_env(&self) -> &InstanceEnv {
         &self.instance_env
+    }
+
+    pub fn set_procedure_confirmed_reads(&mut self, confirmed_reads: bool) {
+        self.instance_env.procedure_confirmed_reads = confirmed_reads;
     }
 
     pub fn create_bytes_sink(&mut self) -> u32 {
@@ -368,6 +385,7 @@ impl WasmInstanceEnv {
     ///
     /// This resets the call times and clears the arguments source and error sink.
     pub fn finish_funcall(&mut self, result_sink: u32) -> (ExecutionTimings, Vec<u8>) {
+        self.instance_env.finish_funcall();
         // For the moment,
         // we only explicitly clear the source/sink buffers and the "syscall" times.
         // TODO: should we be clearing `iters` and/or `timing_spans`?
@@ -1572,6 +1590,34 @@ impl WasmInstanceEnv {
         })
     }
 
+    /// Read an environment value as a nullable BytesSource. Zero means missing;
+    /// a present empty string always receives a nonzero, consumable source.
+    pub fn env_get(
+        caller: Caller<'_, Self>,
+        key: WasmPtr<u8>,
+        key_len: u32,
+        target_ptr: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::EnvGet, target_ptr, |caller| {
+            if key_len == 0 || key_len > spacetimedb_lib::environment::MAX_ENV_KEY_BYTES as u32 {
+                return Err(crate::error::NodesError::InvalidEnvironmentKey.into());
+            }
+            let (mem, env) = Self::mem_env(caller);
+            let key = mem.deref_str(key, key_len)?;
+            match env.instance_env.env_get(key)? {
+                None => Ok(0),
+                Some(value) => {
+                    // These buffers live on the host heap until consumed or the
+                    // invocation ends. Bound retained reads from hand-written Wasm.
+                    if env.bytes_sources.len() >= MAX_OUTSTANDING_ENV_SOURCES {
+                        return Err(crate::error::NodesError::EnvironmentSourceLimit.into());
+                    }
+                    Ok(env.create_present_bytes_source(bytes::Bytes::from(value))?.0)
+                }
+            }
+        })
+    }
+
     /// Finds the JWT payload associated with `connection_id`.
     /// A `[ByteSourceId]` for the payload will be written to `target_ptr`.
     /// If nothing is found for the connection, `[ByteSourceId::INVALID]` (zero) is written to `target_ptr`.
@@ -1652,27 +1698,36 @@ impl WasmInstanceEnv {
     ///
     /// - The calling WASM instance is holding open a transaction.
     /// - The calling WASM instance is not executing a procedure.
+    /// - The database shuts down while sleeping.
     // TODO(procedure-sleep-until): remove this
     pub fn procedure_sleep_until<'caller>(
         caller: Caller<'caller, Self>,
         (wake_at_micros_since_unix_epoch,): (i64,),
-    ) -> Fut<'caller, i64> {
+    ) -> Fut<'caller, RtResult<i64>> {
         Self::async_with_span(caller, AbiCall::ProcedureSleepUntil, move |caller| async move {
             use std::time::SystemTime;
-            let get_current_time = || (caller, Timestamp::now().to_micros_since_unix_epoch());
+            let get_current_time = |caller| (caller, Ok(Timestamp::now().to_micros_since_unix_epoch()));
 
             if wake_at_micros_since_unix_epoch < 0 {
-                return get_current_time();
+                return get_current_time(caller);
             }
 
             let wake_at = Timestamp::from_micros_since_unix_epoch(wake_at_micros_since_unix_epoch);
             let Ok(duration) = SystemTime::from(wake_at).duration_since(SystemTime::now()) else {
-                return get_current_time();
+                return get_current_time(caller);
             };
 
-            tokio::time::sleep(duration).await;
+            let procedures_running = caller.data().instance_env.replica_ctx.procedures_running.clone();
+            if procedures_running
+                .run_until_cancelled(tokio::time::sleep(duration))
+                .await
+                .is_none()
+            {
+                let err = WasmError::Db(NodesError::ShuttingDown);
+                return (caller, Self::convert_wasm_result(AbiCall::ProcedureSleepUntil, err));
+            }
 
-            get_current_time()
+            get_current_time(caller)
         })
     }
 
@@ -1707,13 +1762,16 @@ impl WasmInstanceEnv {
 
     /// Commits a mutable transaction,
     /// blocking until the transaction has been committed
-    /// and subscription queries have been run and broadcast.
+    /// and subscription queries have been run and broadcast. Confirmed callers
+    /// additionally wait for durability after releasing all transaction locks.
     ///
     /// Once complete, it returns `0` on success, or an error code otherwise.
     ///
     /// # Traps
     ///
-    /// This function does not trap.
+    /// Traps if a committed transaction's durability cannot be confirmed. This
+    /// bypasses the bindings' commit-error retry logic, since writes have already
+    /// taken effect.
     ///
     /// # Errors
     ///
@@ -1727,23 +1785,56 @@ impl WasmInstanceEnv {
     /// - `TRANSACTION_IS_READ_ONLY`, if the pending transaction is read-only.
     ///   This currently does not happen as anonymous read transactions
     ///   are not exposed to modules.
-    pub fn procedure_commit_mut_tx<'caller>(caller: Caller<'caller, Self>) -> RtResult<u32> {
-        Self::with_span(caller, AbiCall::ProcedureCommitMutTransaction, |caller| {
-            let res: Result<u32, WasmError> = (|| {
-                let tx = {
-                    let env = caller.data_mut();
-                    env.instance_env.take_mutable_tx_for_commit().map_err(WasmError::from)?
-                };
-                let tx = Self::refresh_views(caller, tx)?;
-                caller
-                    .data_mut()
-                    .instance_env
-                    .commit_procedure_tx(tx)
-                    .map_err(WasmError::from)?;
-                Ok(0u16.into())
-            })();
-            res.or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureCommitMutTransaction, err))
+    pub fn procedure_commit_mut_tx<'caller>(mut caller: Caller<'caller, Self>, (): ()) -> Fut<'caller, RtResult<u32>> {
+        let span_start = span::CallSpanStart::new(AbiCall::ProcedureCommitMutTransaction);
+        // Commit and refresh views BEFORE constructing the future. No lock-bearing
+        // transaction may survive the first Pending poll of this host import.
+        let result = Self::procedure_commit_mut_tx_inner(&mut caller);
+        let confirmation = match &result {
+            Ok(0) => Some(caller.data_mut().instance_env.procedure_confirmation()),
+            _ => None,
+        };
+        Box::new(async move {
+            let result = match confirmation {
+                Some(confirmation) => {
+                    let confirmed = confirmation.await;
+                    if confirmed.is_err() {
+                        // Send the error without waiting on the failed durability service.
+                        caller.data_mut().instance_env.take_procedure_tx_offset();
+                    }
+                    // Return a host error (trap), never a retryable ABI errno.
+                    confirmed.map(|()| 0)
+                }
+                None => result,
+            };
+            Self::end_span(caller, span_start);
+            result
         })
+    }
+
+    pub fn procedure_commit_mut_tx_sync(caller: Caller<'_, Self>) -> RtResult<u32> {
+        Self::with_span(
+            caller,
+            AbiCall::ProcedureCommitMutTransaction,
+            Self::procedure_commit_mut_tx_inner,
+        )
+    }
+
+    fn procedure_commit_mut_tx_inner(caller: &mut Caller<'_, Self>) -> RtResult<u32> {
+        let res: Result<u32, WasmError> = (|| {
+            let tx = {
+                let env = caller.data_mut();
+                env.instance_env.take_mutable_tx_for_commit().map_err(WasmError::from)?
+            };
+            let tx = Self::refresh_views(caller, tx)?;
+            caller
+                .data_mut()
+                .instance_env
+                .commit_procedure_tx(tx)
+                .map_err(WasmError::from)?;
+            Ok(0u16.into())
+        })();
+        res.or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureCommitMutTransaction, err))
     }
 
     /// Refresh all views made stale by a procedure `tx`.
@@ -1777,7 +1868,7 @@ impl WasmInstanceEnv {
                 let view_def = resolved.view_def;
                 let view_name = &resolved.view_name;
                 let fn_ptr = resolved.global_fn_ptr;
-                let sender = tx
+                let instance_args = tx
                     .as_ref()
                     .expect("procedure tx missing while looking up refreshed view args")
                     .view_instance_args(&view_call)
@@ -1786,12 +1877,14 @@ impl WasmInstanceEnv {
                             "failed to look up materialized view args for view {}",
                             view_call.view_id
                         )
-                    })?
-                    .sender();
+                    })?;
+                let sender = instance_args.sender();
+                let args = crate::host::FunctionArgs::from_view_args(instance_args.args())
+                    .into_tuple_for_def(resolved.owning_def, view_def)?;
 
                 let current_tx = tx.take().expect("procedure tx missing during view refresh");
                 let (next_tx, call_result) = tx_slot.set(current_tx, || {
-                    Self::call_view(caller, &view_call, view_name, fn_ptr, sender)
+                    Self::call_view(caller, &view_call, view_name, fn_ptr, sender, &args)
                 });
                 tx = Some(next_tx);
                 let return_data = call_result?;
@@ -1849,17 +1942,18 @@ impl WasmInstanceEnv {
         view_name: &NamespacedIdentifier,
         fn_ptr: ViewFnPtr,
         sender: Option<Identity>,
+        args: &crate::host::ArgsTuple,
     ) -> anyhow::Result<ViewReturnData> {
-        let prev_func_type = caller
+        let (prev_func_name, prev_func_type) = caller
             .data_mut()
             .instance_env
-            .swap_func_type(FuncCallType::View(view_call.clone()));
+            .swap_func_context(Some(view_name.clone()), FuncCallType::View(view_call.clone()));
 
         let mut nested_result_sink = None;
         let call_result = (|| -> anyhow::Result<i32> {
             let (args_source, result_sink) = {
                 let env = caller.data_mut();
-                let args_source = env.create_bytes_source(bytes::Bytes::new())?;
+                let args_source = env.create_bytes_source(args.get_bsatn().clone())?;
                 let result_sink = env.create_bytes_sink();
                 (args_source, result_sink)
             };
@@ -1885,7 +1979,10 @@ impl WasmInstanceEnv {
             Ok(code)
         })();
 
-        caller.data_mut().instance_env.swap_func_type(prev_func_type);
+        caller
+            .data_mut()
+            .instance_env
+            .swap_func_context(prev_func_name, prev_func_type);
 
         let result_bytes = {
             let env = caller.data_mut();

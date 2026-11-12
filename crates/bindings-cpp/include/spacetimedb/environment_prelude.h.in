@@ -1,0 +1,7 @@
+#pragma once
+
+// The ABI shim translation unit has no SDK contexts. All context-bearing SDK
+// and module translation units see the same declared Environment definition.
+#ifndef SPACETIMEDB_WASI_SHIMS
+#include "@SPACETIMEDB_ENV_HEADER@"
+#endif

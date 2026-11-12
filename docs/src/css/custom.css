@@ -336,6 +336,11 @@ p {
   margin-bottom: 1.25rem;
 }
 
+.markdown li > ul,
+.markdown li > ol {
+  margin-bottom: 0;
+}
+
 /* Code 3 - per the style guide */
 .tmp {
   font-family: var(--clockworklabs-font-source);
@@ -609,7 +614,7 @@ ul.theme-doc-sidebar-menu {
   padding: 0;
 }
 
-/* Static section headers (non-clickable labels like "Getting Started", "Core Concepts") */
+/* Static section headers (non-clickable labels like "Intro") */
 .spacetime-menu-header {
   overflow: hidden;
   color: var(--clockworklabs-color-n4);
@@ -635,6 +640,23 @@ ul.theme-doc-sidebar-menu
   > .menu__list-item:not(.sidebar-ask-ai)
   > .menu__link {
   padding-left: 8px !important;
+}
+
+/* Section headers that link to their section's index page ("Core Concepts", "Developer Resources").
+   Same look as .spacetime-menu-header, but rendered as a regular sidebar doc link. */
+ul.theme-doc-sidebar-menu
+  > .menu__list-item.spacetime-menu-header-link
+  > .menu__link {
+  font-family: var(--clockworklabs-font-source);
+  letter-spacing: calc(var(--11-7px) * 0.08);
+  text-transform: uppercase;
+  padding: 24px 8px 12px 0 !important;
+}
+
+ul.theme-doc-sidebar-menu
+  > .menu__list-item.spacetime-menu-header-link
+  > .menu__link:hover {
+  background: transparent;
 }
 
 ul.theme-doc-sidebar-menu
@@ -971,7 +993,7 @@ a.card {
 
 .step {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 32px;
   align-items: start;
   counter-increment: step-counter;
@@ -1029,9 +1051,9 @@ a.card {
 }
 
 /* Responsive: stack on smaller screens */
-@media screen and (max-width: 996px) {
+@media screen and (max-width: 1279px) {
   .step {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .step-code {

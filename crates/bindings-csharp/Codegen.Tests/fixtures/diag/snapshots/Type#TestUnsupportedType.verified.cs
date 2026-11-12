@@ -6,6 +6,11 @@ partial struct TestUnsupportedType
     : System.IEquatable<TestUnsupportedType>,
         SpacetimeDB.BSATN.IStructuralReadWrite
 {
+#if NET10_0_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
+#endif
     public void ReadFields(System.IO.BinaryReader reader)
     {
         UnsupportedSpecialType = BSATN.UnsupportedSpecialTypeRW.Read(reader);
@@ -67,7 +72,7 @@ partial struct TestUnsupportedType
                             UnsupportedSystemTypeRW.GetAlgebraicType(registrar)
                         ),
                         new("UnresolvedType", UnresolvedTypeRW.GetAlgebraicType(registrar)),
-                        new("UnsupportedEnum", UnsupportedEnumRW.GetAlgebraicType(registrar))
+                        new("UnsupportedEnum", UnsupportedEnumRW.GetAlgebraicType(registrar)),
                     }
                 )
             );
@@ -113,16 +118,7 @@ partial struct TestUnsupportedType
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as TestUnsupportedType?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is TestUnsupportedType t && Equals(t);
     }
 
     public static bool operator ==(TestUnsupportedType this_, TestUnsupportedType that)

@@ -26,6 +26,8 @@ pub enum ClientMessage {
     CallReducer(CallReducer),
     /// Invoke a procedure, a non-transactional side-effecting function which runs in the database.
     CallProcedure(CallProcedure),
+    /// Add multiple sets of subscribed queries in one atomic step.
+    SubscribeBatch(SubscribeBatch),
 }
 
 /// Sent by client to register a subscription to a new query set
@@ -90,6 +92,42 @@ pub enum UnsubscribeFlags {
     Default = 0,
     // If set, the server will send the full set of rows to be removed from the client cache.
     SendDroppedRows = 1,
+}
+
+/// Sent by client to register multiple subscriptions in one atomic step.
+///
+/// The server registers every subscription set under a single subscription-manager
+/// lock and evaluates all of them at a single transaction offset,
+/// then responds with one [`SubscribeBatchApplied`] message carrying a result per set.
+/// No [`TransactionUpdate`] is delivered between the registration of the first set
+/// and the [`SubscribeBatchApplied`] response,
+/// and updates for the new sets resume after it.
+///
+/// A set whose queries are invalid or fail to compute reports an error in its
+/// [`SubscribeSetResult`]. The remaining sets still apply.
+#[derive(SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct SubscribeBatch {
+    /// An identifier for a client request.
+    pub request_id: u32,
+
+    /// The subscription sets to register.
+    ///
+    /// Each [`QuerySetId`] must be distinct,
+    /// and must not be used by any other subscription on the same connection.
+    pub sets: Box<[SubscribeSet]>,
+}
+
+/// One subscription set within a [`SubscribeBatch`].
+#[derive(SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+pub struct SubscribeSet {
+    /// An identifier for this subscription,
+    /// which should not be used for any other subscriptions on the same connection.
+    pub query_set_id: QuerySetId,
+
+    /// A set of queries to subscribe to, each a single SQL `SELECT` statement.
+    pub query_strings: Box<[Box<str>]>,
 }
 
 /// Sent by the client to perform a query at a single point in time.
@@ -193,6 +231,8 @@ pub enum ServerMessage {
     ReducerResult(ReducerResult),
     /// Sent in response to a [`CallProcedure`] message, containing the procedure's exit status.
     ProcedureResult(ProcedureResult),
+    /// Sent in response to a [`SubscribeBatch`] message, containing a result per query set.
+    SubscribeBatchApplied(SubscribeBatchApplied),
 }
 
 #[derive(SpacetimeType, Debug)]
@@ -288,6 +328,44 @@ pub struct SubscriptionError {
     /// This is intended for diagnostic purposes.
     /// It need not have a predictable/parseable format.
     pub error: Box<str>,
+}
+
+/// Response to [`SubscribeBatch`], carrying one result per registered query set.
+///
+/// This message's `request_id` matches the one the client provided in the [`SubscribeBatch`] message,
+/// and `results` contains exactly one entry per received [`SubscribeSet`], in the same order.
+///
+/// Every applied set's rows are evaluated at the same transaction offset.
+#[derive(SpacetimeType, Debug)]
+#[sats(crate = spacetimedb_lib)]
+pub struct SubscribeBatchApplied {
+    /// The request_id of the corresponding [`SubscribeBatch`] message.
+    pub request_id: u32,
+    /// One result per query set, in the order the sets appeared in the request.
+    pub results: Box<[SubscribeSetResult]>,
+}
+
+/// The result for one query set within a [`SubscribeBatchApplied`].
+#[derive(SpacetimeType, Debug)]
+#[sats(crate = spacetimedb_lib)]
+pub struct SubscribeSetResult {
+    /// The [`QuerySetId`] the client provided for this set.
+    pub query_set_id: QuerySetId,
+    /// The outcome for this set.
+    pub outcome: SubscribeSetOutcome,
+}
+
+/// The outcome for one query set within a [`SubscribeBatchApplied`].
+#[derive(SpacetimeType, Debug)]
+#[sats(crate = spacetimedb_lib)]
+pub enum SubscribeSetOutcome {
+    /// The set was applied; contains its initial matching rows.
+    /// The set behaves like one registered with an individual [`Subscribe`] afterwards.
+    Applied(QueryRows),
+    /// The set failed to compile or compute.
+    /// The set is not registered; its [`QuerySetId`] may be re-used.
+    /// The error string follows the conventions of [`SubscriptionError`]'s `error` field.
+    Error(Box<str>),
 }
 
 /// Sent by the server to the client after a transaction runs and commits successfully in the database,

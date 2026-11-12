@@ -1,3 +1,7 @@
+import {
+  environmentDeclarations,
+  type EnvironmentSchema,
+} from './environment.ts';
 import { moduleHooks, type ModuleDefaultExport } from 'spacetime:sys@2.0';
 import {
   CaseConversionPolicy,
@@ -8,22 +12,22 @@ import {
   type RawReducerDefV10,
   type RawTableDefV10,
   type Typespace,
-} from '../lib/autogen/types';
+} from '../lib/autogen/types.ts';
 import {
   type ParamsAsObject,
   type ParamsObj,
   type Reducer,
   type ReducerCtx,
-} from '../lib/reducers';
+} from '../lib/reducers.ts';
 import {
   ModuleContext,
   tableToSchema,
   type TablesToSchema,
   type UntypedSchemaDef,
-} from '../lib/schema';
-import type { UntypedTableSchema } from '../lib/table_schema';
-import { TypeBuilder, type ColumnBuilder } from '../lib/type_builders';
-import { hasOwn } from '../lib/util';
+} from '../lib/schema.ts';
+import type { UntypedTableSchema } from '../lib/table_schema.ts';
+import { TypeBuilder, type ColumnBuilder } from '../lib/type_builders.ts';
+import { hasOwn } from '../lib/util.ts';
 import {
   Router,
   type HandlerFn,
@@ -31,7 +35,7 @@ import {
   type HttpHandlerOpts,
   makeHttpHandlerExport,
   makeHttpRouterExport,
-} from './http_handlers';
+} from './http_handlers.ts';
 import {
   makeProcedureExport,
   type ProcedureExport,
@@ -39,15 +43,15 @@ import {
   type ProcedureOpts,
   type ProcedureOptsWithOptionalName,
   type Procedures,
-} from './procedures';
+} from './procedures.ts';
 import {
   makeReducerExport,
   type ReducerExport,
   type ReducerOpts,
   type ReducerOptsWithOptionalName,
   type Reducers,
-} from './reducers';
-import { makeHooks } from './runtime';
+} from './reducers.ts';
+import { makeHooks } from './runtime.ts';
 
 import {
   makeAnonViewExport,
@@ -60,8 +64,8 @@ import {
   type ViewReturnTypeBuilder,
   type ValidateViewPrimaryKey,
   type Views,
-} from './views';
-import type { UntypedTableDef } from '../lib/table';
+} from './views.ts';
+import type { UntypedTableDef } from '../lib/table.ts';
 
 /**
  * Internal erased form of a scheduled reducer/procedure export.
@@ -111,6 +115,10 @@ export class SchemaInner<
   httpHandlerExports: Map<HttpHandlerExport<UntypedSchemaDef>, string> =
     new Map();
   pendingSchedules: PendingSchedule[] = [];
+  pendingOutboxCallbacks: {
+    table: UntypedTableSchema;
+    functionName: string;
+  }[] = [];
   pendingHttpRoutes: PendingHttpRoute[] = [];
   submoduleDispatchInfos: SubmoduleDispatchInfo[] = [];
 
@@ -172,6 +180,8 @@ export class SchemaInner<
         );
       }
 
+      if (table.outbox)
+        throw new TypeError('Outbox tables cannot be scheduled');
       const scheduleAtCol = knownScheduleAtCol ?? table.scheduleAtCol;
       if (scheduleAtCol === undefined) {
         throw new TypeError(
@@ -201,6 +211,28 @@ export class SchemaInner<
         scheduleAtCol,
         functionName,
       });
+    }
+  }
+
+  resolveOutboxCallbacks() {
+    for (const { table, functionName } of this.pendingOutboxCallbacks) {
+      const names = this.tableSourceNames.get(table);
+      if (names?.length !== 1) {
+        throw new TypeError(
+          'onResult must reference an outbox registered exactly once in this schema'
+        );
+      }
+      const outbox = this.moduleDef.outboxes.find(
+        o => o.tableName === names[0]
+      );
+      if (!outbox) throw new TypeError('onResult requires an outbox table');
+      if (
+        outbox.onResultReducer !== undefined &&
+        outbox.onResultReducer !== functionName
+      ) {
+        throw new TypeError('An outbox can only have one onResult reducer');
+      }
+      outbox.onResultReducer = functionName;
     }
   }
 
@@ -307,6 +339,7 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
       ignoreNonModuleExports: opts?.ignoreNonModuleExports ?? false,
     });
     this.#ctx.resolveSchedules();
+    this.#ctx.resolveOutboxCallbacks();
     return this.#ctx.rawModuleDefV10();
   }
 
@@ -322,6 +355,9 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     const rawDef = this.buildRawModuleDefV10(exports, {
       ignoreNonModuleExports: true,
     });
+    if (this.#ctx.moduleDef.environment.length !== 0) {
+      throw new TypeError('Submodules cannot declare environment variables');
+    }
     this.#ctx.resolveHttpRoutes();
     return {
       rawDef,
@@ -532,34 +568,37 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     // builders, but becomes a required error tuple when a returned row builder
     // marks more than one column with `.primaryKey()`.
     ..._: ValidateViewPrimaryKey<Ret>
-  ): ViewExport<F> {
-    return makeViewExport<S, {}, Ret, F>(this.#ctx, opts, {}, ret, fn);
+  ): ViewExport<F>;
+  view<
+    Params extends ParamsObj,
+    Ret extends ViewReturnTypeBuilder,
+    F extends ViewFn<S, Params, Ret>,
+  >(
+    opts: ViewOpts,
+    params: Params,
+    ret: Ret,
+    fn: F,
+    // The same primary-key guard as above.
+    ..._: ValidateViewPrimaryKey<Ret>
+  ): ViewExport<F>;
+  view<
+    Params extends ParamsObj,
+    Ret extends ViewReturnTypeBuilder,
+    F extends ViewFn<S, Params, Ret>,
+  >(opts: ViewOpts, ...args: [Ret, F] | [Params, Ret, F]): ViewExport<F> {
+    let params = {} as Params,
+      ret: Ret,
+      fn: F;
+    switch (args.length) {
+      case 2:
+        [ret, fn] = args;
+        break;
+      case 3:
+        [params, ret, fn] = args;
+        break;
+    }
+    return makeViewExport<S, Params, Ret, F>(this.#ctx, opts, params, ret, fn);
   }
-
-  // TODO: re-enable once parameterized views are supported in SQL
-  // view<Ret extends ViewReturnTypeBuilder>(
-  //   opts: ViewOpts,
-  //   ret: Ret,
-  //   fn: ViewFn<S, {}, Ret>
-  // ): void;
-  // view<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
-  //   opts: ViewOpts,
-  //   params: Params,
-  //   ret: Ret,
-  //   fn: ViewFn<S, {}, Ret>
-  // ): void;
-  // view<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
-  //   opts: ViewOpts,
-  //   paramsOrRet: Ret | Params,
-  //   retOrFn: ViewFn<S, {}, Ret> | Ret,
-  //   maybeFn?: ViewFn<S, Params, Ret>
-  // ): void {
-  //   if (typeof retOrFn === 'function') {
-  //     defineView(name, false, {}, paramsOrRet as Ret, retOrFn);
-  //   } else {
-  //     defineView(name, false, paramsOrRet as Params, retOrFn, maybeFn!);
-  //   }
-  // }
 
   anonymousView<
     Ret extends ViewReturnTypeBuilder,
@@ -572,34 +611,43 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     // builders, but becomes a required error tuple when a returned row builder
     // marks more than one column with `.primaryKey()`.
     ..._: ValidateViewPrimaryKey<Ret>
-  ): ViewExport<F> {
-    return makeAnonViewExport<S, {}, Ret, F>(this.#ctx, opts, {}, ret, fn);
+  ): ViewExport<F>;
+  anonymousView<
+    Params extends ParamsObj,
+    Ret extends ViewReturnTypeBuilder,
+    F extends AnonymousViewFn<S, Params, Ret>,
+  >(
+    opts: ViewOpts,
+    params: Params,
+    ret: Ret,
+    fn: F,
+    // The same primary-key guard as above.
+    ..._: ValidateViewPrimaryKey<Ret>
+  ): ViewExport<F>;
+  anonymousView<
+    Params extends ParamsObj,
+    Ret extends ViewReturnTypeBuilder,
+    F extends AnonymousViewFn<S, Params, Ret>,
+  >(opts: ViewOpts, ...args: [Ret, F] | [Params, Ret, F]): ViewExport<F> {
+    let params = {} as Params,
+      ret: Ret,
+      fn: F;
+    switch (args.length) {
+      case 2:
+        [ret, fn] = args;
+        break;
+      case 3:
+        [params, ret, fn] = args;
+        break;
+    }
+    return makeAnonViewExport<S, Params, Ret, F>(
+      this.#ctx,
+      opts,
+      params,
+      ret,
+      fn
+    );
   }
-
-  // TODO: re-enable once parameterized views are supported in SQL
-  // anonymousView<Ret extends ViewReturnTypeBuilder>(
-  //   opts: ViewOpts,
-  //   ret: Ret,
-  //   fn: AnonymousViewFn<S, {}, Ret>
-  // ): void;
-  // anonymousView<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
-  //   opts: ViewOpts,
-  //   params: Params,
-  //   ret: Ret,
-  //   fn: AnonymousViewFn<S, {}, Ret>
-  // ): void;
-  // anonymousView<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
-  //   opts: ViewOpts,
-  //   paramsOrRet: Ret | Params,
-  //   retOrFn: AnonymousViewFn<S, {}, Ret> | Ret,
-  //   maybeFn?: AnonymousViewFn<S, Params, Ret>
-  // ): void {
-  //   if (typeof retOrFn === 'function') {
-  //     defineView(name, true, {}, paramsOrRet as Ret, retOrFn);
-  //   } else {
-  //     defineView(name, true, paramsOrRet as Params, retOrFn, maybeFn!);
-  //   }
-  // }
 
   procedure<Params extends ParamsObj, Ret extends TypeBuilder<any, any>>(
     params: Params,
@@ -747,7 +795,11 @@ export type InferSchema<SchemaDef extends Schema<any>> =
 /**
  * Module-level settings that can be passed to `schema()`.
  */
-export interface ModuleSettings {
+export interface ModuleSettings<
+  E extends EnvironmentSchema = EnvironmentSchema,
+> {
+  /** Declared strings installed only through publishing; omitted means empty. */
+  env?: E;
   /**
    * The case conversion policy for this module.
    * Defaults to `SnakeCase` if not specified.
@@ -767,7 +819,25 @@ type SubmoduleNamespace = {
   [key: string]: unknown;
 };
 
-type SchemaEntry = UntypedTableSchema | SubmoduleNamespace;
+/**
+ * A submodule mount that picks the canonical namespace name explicitly.
+ *
+ *
+ * @example
+ * ```ts
+ * import * as authLib from 'auth_lib';
+ * const spacetimedb = schema({
+ *   myAuth: { name: 'myAuth', module: authLib }, // force canonical name to 'myAuth' instead of 'my_auth'
+ * });
+ * ```
+ */
+export type SubmoduleMount<M extends SubmoduleNamespace = SubmoduleNamespace> =
+  {
+    name?: string;
+    module: M;
+  };
+
+type SchemaEntry = UntypedTableSchema | SubmoduleNamespace | SubmoduleMount;
 
 type ExtractTableEntries<H extends Record<string, SchemaEntry>> = {
   [K in keyof H as H[K] extends UntypedTableSchema ? K : never]: Extract<
@@ -776,10 +846,19 @@ type ExtractTableEntries<H extends Record<string, SchemaEntry>> = {
   >;
 };
 
+/** The submodule namespace object behind a schema entry, or `never` for tables. */
+type SubmoduleOfEntry<E> = E extends { default: Schema<any> }
+  ? E
+  : E extends { module: infer M extends { default: Schema<any> } }
+    ? M
+    : never;
+
 type ExtractSubmoduleSchemas<H extends Record<string, SchemaEntry>> = {
-  [K in keyof H as H[K] extends { default: Schema<any> }
-    ? K
-    : never]: H[K] extends { default: Schema<infer S extends UntypedSchemaDef> }
+  [K in keyof H as [SubmoduleOfEntry<H[K]>] extends [never]
+    ? never
+    : K]: SubmoduleOfEntry<H[K]> extends {
+    default: Schema<infer S extends UntypedSchemaDef>;
+  }
     ? S
     : never;
 };
@@ -800,6 +879,61 @@ function isSubmoduleNamespace(x: unknown): x is SubmoduleNamespace {
     hasOwn(x, 'default') &&
     x.default instanceof Schema
   );
+}
+
+/**
+ * Whether `x` has the `{ name?, module }` shape.
+ */
+function isSubmoduleMount(x: unknown): x is SubmoduleMount {
+  return (
+    typeof x === 'object' &&
+    x !== null &&
+    hasOwn(x, 'module') &&
+    !hasOwn(x, 'default') &&
+    !hasOwn(x, 'tableDef')
+  );
+}
+
+function defaultImportError(accName: string): TypeError {
+  return new TypeError(
+    `schema entry '${accName}' looks like a default import; use \`import * as ${accName} from '...'\` so the submodule can see the library's named reducer exports.`
+  );
+}
+
+/**
+ * Resolves a schema entry to the submodule it mounts, or `undefined` for tables.
+ * Returns the module-namespace object and the explicit canonical name, if any.
+ */
+function resolveSubmoduleEntry(
+  accName: string,
+  entry: unknown
+): { submodule: SubmoduleNamespace; canonicalName?: string } | undefined {
+  if (entry instanceof Schema) {
+    throw defaultImportError(accName);
+  }
+  if (isSubmoduleNamespace(entry)) {
+    return { submodule: entry };
+  }
+  if (!isSubmoduleMount(entry)) {
+    return undefined;
+  }
+  if (entry.module instanceof Schema) {
+    throw defaultImportError(accName);
+  }
+  if (!isSubmoduleNamespace(entry.module)) {
+    throw new TypeError(
+      `schema entry '${accName}' has a \`module\` that is not a submodule namespace object; pass the result of \`import * as ${accName} from '...'\`.`
+    );
+  }
+  if (entry.name === undefined) {
+    return { submodule: entry.module };
+  }
+  if (typeof entry.name !== 'string' || entry.name.length === 0) {
+    throw new TypeError(
+      `schema entry '${accName}' has an invalid \`name\`; expected a non-empty string for the canonical namespace name.`
+    );
+  }
+  return { submodule: entry.module, canonicalName: entry.name };
 }
 
 function registerModuleExports(
@@ -825,11 +959,17 @@ function registerModuleExports(
   }
 }
 
-export function schema<const H extends Record<string, SchemaEntry>>(
+export function schema<
+  const H extends Record<string, SchemaEntry>,
+  const E extends EnvironmentSchema = {},
+>(
   entries: H,
-  moduleSettings?: ModuleSettings
-): Schema<SchemaDefForEntries<H>> {
-  const ctx = new SchemaInner<SchemaDefForEntries<H>>(ctx => {
+  moduleSettings?: ModuleSettings<E>
+): Schema<SchemaDefForEntries<H> & { env: E }> {
+  const ctx = new SchemaInner<SchemaDefForEntries<H> & { env: E }>(ctx => {
+    ctx.moduleDef.environment = environmentDeclarations(
+      moduleSettings?.env ?? {}
+    );
     // Apply module settings.
     if (moduleSettings?.CASE_CONVERSION_POLICY != null) {
       ctx.setCaseConversionPolicy(moduleSettings.CASE_CONVERSION_POLICY);
@@ -837,22 +977,25 @@ export function schema<const H extends Record<string, SchemaEntry>>(
 
     const tableSchemas: Record<string, UntypedTableDef> = {};
     for (const [accName, entry] of Object.entries(entries)) {
-      if (entry instanceof Schema) {
-        throw new TypeError(
-          `schema entry '${accName}' looks like a default import; use \`import * as ${accName} from '...'\` so the submodule can see the library's named reducer exports.`
-        );
-      }
-      if (isSubmoduleNamespace(entry)) {
+      const mount = resolveSubmoduleEntry(accName, entry);
+      if (mount !== undefined) {
+        const { submodule, canonicalName } = mount;
         const { rawDef, dispatch } =
-          entry.default.buildSubmoduleDispatch(entry);
+          submodule.default.buildSubmoduleDispatch(submodule);
         dispatch.namespace = accName;
         ctx.addSubmodule({ namespace: accName, module: rawDef });
+        if (canonicalName !== undefined) {
+          ctx.moduleDef.explicitNames.entries.push({
+            tag: 'Namespace',
+            value: { sourceName: accName, canonicalName },
+          });
+        }
         ctx.submoduleDispatchInfos.push(dispatch);
         continue;
       }
       if (!isUntypedTableSchema(entry)) {
         throw new TypeError(
-          `schema entry '${accName}' must be a table or a submodule namespace object`
+          `schema entry '${accName}' must be a table, a submodule namespace object, or a \`{ name, module }\` submodule mount`
         );
       }
 
@@ -866,6 +1009,13 @@ export function schema<const H extends Record<string, SchemaEntry>>(
         tableSourceNames.push(tableDef.sourceName);
       }
       ctx.moduleDef.tables.push(tableDef);
+      if (table.outbox) {
+        ctx.moduleDef.outboxes.push({
+          ...table.outbox,
+          tableName: tableDef.sourceName,
+          onResultReducer: undefined,
+        });
+      }
       if (table.schedule) {
         ctx.pendingSchedules.push({
           table,
@@ -884,7 +1034,10 @@ export function schema<const H extends Record<string, SchemaEntry>>(
         });
       }
     }
-    return { tables: tableSchemas } as SchemaDefForEntries<H>;
+    return {
+      tables: tableSchemas,
+      env: moduleSettings?.env ?? {},
+    } as SchemaDefForEntries<H> & { env: E };
   });
 
   return new Schema(ctx);

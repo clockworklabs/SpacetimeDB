@@ -424,7 +424,7 @@ pub fn resume_segment_writer<R: Repo>(
                 records: Vec::new(),
                 epoch: meta.max_epoch,
             },
-            inner: io::BufWriter::new(writer),
+            inner: io::BufWriter::with_capacity(opts.write_buffer_size, writer),
 
             min_tx_offset: meta.tx_range.start,
             bytes_written: meta.size_in_bytes,

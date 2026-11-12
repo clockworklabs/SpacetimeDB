@@ -11,14 +11,15 @@ use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::{
     call_identity_connected, init_database, CallHttpHandlerParams, CallProcedureParams, CallReducerParams,
-    CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, HttpHandlerCallError, InitDatabaseResult,
-    ModuleEvent, ModuleFunctionCall, ModuleInfo, RefInstance, SqlCommand, SqlCommandResult, ViewCallResult,
-    ViewCommand, ViewCommandResult, ViewOutcome,
+    CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, HttpHandlerCallError, IdcDeliveryFailure,
+    IdcMessageParams, IdcReducerCallOutcome, InitDatabaseResult, ModuleEvent, ModuleFunctionCall, ModuleInfo,
+    RefInstance, SqlCommand, SqlCommandResult, UpdateEnvironmentResult, ViewCallResult, ViewCommand, ViewCommandResult,
+    ViewOutcome,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::{
-    ArgsTuple, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult, ReducerId,
-    ReducerOutcome, Scheduler, UpdateDatabaseResult,
+    ArgsTuple, FunctionArgs, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult,
+    ReducerId, ReducerOutcome, Scheduler, UpdateDatabaseResult,
 };
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
@@ -37,7 +38,9 @@ use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, ViewError};
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo, ViewInstanceArgs};
+use spacetimedb_datastore::system_tables::StInboundMsgResultStatus;
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
 use spacetimedb_execution::ExecutionParams;
 use spacetimedb_lib::buffer::DecodeError;
@@ -57,8 +60,12 @@ use spacetimedb_schema::identifier::NamespacedIdentifier;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_subscription::SubscriptionPlan;
 use std::collections::HashMap;
+use std::ops::ControlFlow;
 use std::sync::Arc;
 use tracing::span::EnteredSpan;
+
+/// Runs after a successful reducer, before views refresh. Errors roll back the transaction.
+pub(crate) type ReducerSuccessAction = Box<dyn FnOnce(&mut MutTxId, &Option<Bytes>) -> anyhow::Result<()> + Send>;
 
 pub trait WasmModule: Send + 'static {
     type Instance: WasmInstance;
@@ -85,7 +92,7 @@ pub trait WasmInstance {
 
     fn tx_slot(&self) -> TxSlot;
 
-    fn set_module_def(&mut self, module_def: Arc<ModuleDef>);
+    fn set_module_def(&mut self, module_def: Arc<ModuleDef>, module_hash: Hash);
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult;
 
@@ -190,6 +197,15 @@ pub(crate) fn run_query_for_view(
 
     // Validate shape and disallow views-on-views.
     for plan in &plans {
+        // This SQL originates in module code, not an authenticated external
+        // query. Check every source, including non-returned join inputs, before
+        // any plan executes. The checked env accessor is the only module path.
+        ensure!(
+            !plan
+                .table_ids()
+                .any(spacetimedb_datastore::system_tables::is_module_restricted_table),
+            "module SQL views cannot read a module-restricted table"
+        );
         let Some(source_schema) = plan.return_table() else {
             bail!("query does not return plain table rows");
         };
@@ -399,7 +415,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             func_names
         };
         let uninit_instance = module.instantiate_pre()?;
-        let instance_env = InstanceEnv::new(mcc.replica_ctx.clone(), mcc.scheduler.clone());
+        let instance_env = InstanceEnv::new(mcc.replica_ctx.clone(), mcc.scheduler.clone(), mcc.idc_sender.clone());
         let mut instance = uninit_instance.instantiate(instance_env, &func_names)?;
 
         let desc = instance.extract_descriptions()?;
@@ -431,7 +447,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 impl<T: WasmModule> WasmModuleHostActor<T> {
     fn make_from_instance(&self, mut instance: T::Instance) -> WasmModuleInstance<T::Instance> {
         let common = InstanceCommon::new(&self.common);
-        instance.set_module_def(common.info().module_def.clone());
+        instance.set_module_def(common.info().module_def.clone(), common.info().module_hash);
         WasmModuleInstance {
             instance,
             common,
@@ -449,13 +465,21 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         self.common.scheduler()
     }
 
+    pub fn idc_sender(&self) -> crate::host::idc_actor::IdcActorSender {
+        self.common.idc_sender()
+    }
+
     pub fn info(&self) -> Arc<ModuleInfo> {
         self.common.info()
     }
 
     pub fn create_instance(&self) -> WasmModuleInstance<T::Instance> {
         let common = &self.common;
-        let env = InstanceEnv::new(common.replica_ctx().clone(), common.scheduler().clone());
+        let env = InstanceEnv::new(
+            common.replica_ctx().clone(),
+            common.scheduler().clone(),
+            common.idc_sender(),
+        );
         // this shouldn't fail, since we already called module.create_instance()
         // before and it didn't error, and ideally they should be deterministic
         let mut instance = self
@@ -489,15 +513,44 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         self.common
-            .update_database(program, old_module_info, policy, &mut self.instance)
+            .update_database(program, old_module_info, policy, environment, &mut self.instance)
+    }
+
+    pub fn update_environment(
+        &mut self,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> anyhow::Result<UpdateEnvironmentResult> {
+        self.common.update_environment(environment, &mut self.instance)
     }
 
     pub fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult {
         let (res, trapped) = self.call_reducer_with_tx(None, params);
         self.trapped = trapped;
         res
+    }
+
+    /// Like [`Self::call_reducer`], but also returns the offset of the reducer's transaction.
+    pub fn call_reducer_with_offset(&mut self, params: CallReducerParams) -> ReducerCallResultWithTxOffset {
+        let (res, trapped) = self.call_reducer_with_tx_offset(None, params);
+        self.trapped = trapped;
+        res
+    }
+
+    pub(in crate::host) fn call_idc_reducer(
+        &mut self,
+        params: CallReducerParams,
+        delivery: IdcMessageParams,
+        on_success: ReducerSuccessAction,
+    ) -> Result<IdcReducerCallOutcome, IdcDeliveryFailure> {
+        let (result, trapped) = crate::callgrind_flag::invoke_allowing_callgrind(|| {
+            self.common
+                .call_idc_reducer(params, delivery, &mut self.instance, on_success)
+        });
+        self.trapped = trapped;
+        result
     }
 
     pub fn clear_all_clients(&self) -> anyhow::Result<()> {
@@ -545,11 +598,15 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
-    pub fn init_database(&mut self, program: Program) -> anyhow::Result<InitDatabaseResult> {
+    pub fn init_database(
+        &mut self,
+        program: Program,
+        environment: std::collections::BTreeMap<String, String>,
+    ) -> anyhow::Result<InitDatabaseResult> {
         let module_def = &self.common.info.clone().module_def;
         let replica_ctx = &self.instance.replica_ctx().clone();
         let call_reducer = |tx, params| self.call_reducer_with_tx_offset(tx, params);
-        let (res, trapped) = init_database(replica_ctx, module_def, program, call_reducer);
+        let (res, trapped) = init_database(replica_ctx, module_def, program, environment, call_reducer);
         self.trapped = trapped;
         res
     }
@@ -586,14 +643,21 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         self.trapped = trapped;
         res
     }
+
+    pub(in crate::host) fn run_idc_callback_and_cleanup(
+        &mut self,
+        msg: crate::host::idc_actor::DeliveredMessage,
+    ) -> anyhow::Result<()> {
+        let (result, trapped) = self.common.run_idc_callback_and_cleanup(msg, &mut self.instance);
+        self.trapped = trapped;
+        result
+    }
 }
 
 impl<T: WasmInstance> WasmModuleInstance<T> {
     #[tracing::instrument(level = "trace", skip_all)]
     fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> (ReducerCallResult, bool) {
-        let (res, trapped) = crate::callgrind_flag::invoke_allowing_callgrind(|| {
-            self.common.call_reducer_with_tx(tx, params, &mut self.instance)
-        });
+        let (res, trapped) = self.call_reducer_with_tx_offset(tx, params);
         (res.result, trapped)
     }
 
@@ -618,6 +682,42 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let (res, trapped) = self.common.handle_sql_cmd(cmd, &mut self.instance);
         self.trapped = trapped;
         res
+    }
+}
+
+/// Client disconnection and materialized-view refresh are independent effects.
+/// A breaking migration does not remove surviving cached view instances.
+struct UpdateEffects {
+    refresh_views: bool,
+    disconnect_clients: bool,
+}
+
+impl UpdateEffects {
+    fn after_migration(result: crate::db::update::UpdateResult, tx: &MutTxId) -> Self {
+        use crate::db::update::UpdateResult;
+        Self {
+            refresh_views: matches!(result, UpdateResult::EvaluateSubscribedViews)
+                || tx.views_for_refresh().next().is_some(),
+            disconnect_clients: matches!(result, UpdateResult::RequiresClientDisconnect),
+        }
+    }
+
+    fn committed(
+        &self,
+        tx_offset: TransactionOffset,
+        durable_offset: Option<crate::host::module_host::DurableOffset>,
+    ) -> UpdateDatabaseResult {
+        if self.disconnect_clients {
+            UpdateDatabaseResult::UpdatePerformedWithClientDisconnect {
+                tx_offset,
+                durable_offset,
+            }
+        } else {
+            UpdateDatabaseResult::UpdatePerformed {
+                tx_offset,
+                durable_offset,
+            }
+        }
     }
 }
 
@@ -649,8 +749,12 @@ impl InstanceCommon {
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        environment: std::collections::BTreeMap<String, String>,
         inst: &mut I,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        if program.hash == old_module_info.module_hash {
+            return self.update_environment(environment, inst).map(Into::into);
+        }
         let replica_ctx = inst.replica_ctx().clone();
         let system_logger = replica_ctx.logger.system_logger();
         let stdb = &replica_ctx.relational_db();
@@ -674,7 +778,22 @@ impl InstanceCommon {
         let program_hash = program.hash;
         let host_type = HostType::from(program.kind);
         let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-        let (mut tx, _) = stdb.with_auto_rollback(tx, |tx| stdb.update_program(tx, program))?;
+        let (mut tx, _) = stdb.with_auto_rollback(tx, |tx| -> anyhow::Result<()> {
+            use spacetimedb_datastore::system_tables::{StModuleFields, ST_MODULE_ID};
+            let row = tx
+                .iter(ST_MODULE_ID)?
+                .next()
+                .context("database program is not initialized")?;
+            let current_hash =
+                spacetimedb_datastore::system_tables::read_hash_from_col(row, StModuleFields::ProgramHash)?;
+            anyhow::ensure!(
+                current_hash == old_module_info.module_hash,
+                "database program changed before publication"
+            );
+            crate::db::environment::replace(stdb, tx, self.info.module_def.environment(), &environment)?;
+            stdb.update_program(tx, program)?;
+            Ok(())
+        })?;
         system_logger.info(&format!("Updated program to {program_hash}"));
 
         let auth_ctx = AuthCtx::for_current(replica_ctx.database.owner_identity);
@@ -683,8 +802,8 @@ impl InstanceCommon {
         match res {
             Err(e) => {
                 // TODO: Review log level after migration/user errors can be distinguished from internal database failures.
-                log::warn!("Database update failed: {} @ {}", e, stdb.database_identity());
-                system_logger.warn(&format!("Database update failed: {e}"));
+                log::warn!("Database update failed: {:#} @ {}", e, stdb.database_identity());
+                system_logger.warn(&format!("Database update failed: {e:#}"));
                 let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
                 stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
                 Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
@@ -717,50 +836,88 @@ impl InstanceCommon {
                 };
                 let durable_offset = stdb.durable_tx_offset();
 
-                let res: UpdateDatabaseResult = match res {
-                    crate::db::update::UpdateResult::Success => {
-                        let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO, Duration::ZERO, tx);
-                        UpdateDatabaseResult::UpdatePerformed {
-                            tx_offset,
-                            durable_offset,
-                        }
-                    }
-                    crate::db::update::UpdateResult::EvaluateSubscribedViews => {
-                        let (out, _, trapped) = self.evaluate_subscribed_views(tx, inst)?;
-                        tx = out.tx;
-                        if trapped || out.outcome != ViewOutcome::Success {
-                            let msg = match trapped {
-                                true => "Trapped while evaluating views during database update".to_string(),
-                                false => format!(
-                                    "Views evaluation did not complete successfully during database update: {:?}",
-                                    out.outcome
-                                ),
-                            };
+                let effects = UpdateEffects::after_migration(res, &tx);
+                let res = if effects.refresh_views {
+                    // Resolve surviving materializations through the new module,
+                    // even when this migration also requires client disconnection.
+                    let (out, _, trapped) = self.evaluate_subscribed_views(tx, inst)?;
+                    tx = out.tx;
+                    if trapped || out.outcome != ViewOutcome::Success {
+                        let msg = match trapped {
+                            true => "Trapped while evaluating views during database update".to_string(),
+                            false => format!(
+                                "Views evaluation did not complete successfully during database update: {:?}",
+                                out.outcome
+                            ),
+                        };
 
-                            let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
-                            stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
-                            UpdateDatabaseResult::ErrorExecutingMigration(anyhow::anyhow!(msg))
-                        } else {
-                            let tx_offset =
-                                succeed(self.info.clone(), out.execution_budget_used, out.total_duration, tx);
-                            UpdateDatabaseResult::UpdatePerformed {
-                                tx_offset,
-                                durable_offset,
-                            }
-                        }
+                        let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
+                        stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
+                        UpdateDatabaseResult::ErrorExecutingMigration(anyhow::anyhow!(msg))
+                    } else {
+                        let tx_offset = succeed(self.info.clone(), out.execution_budget_used, out.total_duration, tx);
+                        effects.committed(tx_offset, durable_offset)
                     }
-                    crate::db::update::UpdateResult::RequiresClientDisconnect => {
-                        let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO, Duration::ZERO, tx);
-                        UpdateDatabaseResult::UpdatePerformedWithClientDisconnect {
-                            tx_offset,
-                            durable_offset,
-                        }
-                    }
+                } else {
+                    let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO, Duration::ZERO, tx);
+                    effects.committed(tx_offset, durable_offset)
                 };
 
                 Ok(res)
             }
         }
+    }
+
+    /// Apply an environment publication using the installed module instance. No
+    /// initialization, migration, program replacement, or scheduler restart occurs.
+    pub(crate) fn update_environment<I: WasmInstance>(
+        &mut self,
+        environment: std::collections::BTreeMap<String, String>,
+        inst: &mut I,
+    ) -> anyhow::Result<UpdateEnvironmentResult> {
+        let replica_ctx = inst.replica_ctx().clone();
+        let db = replica_ctx.relational_db();
+        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        let (tx, _) = db.with_auto_rollback(tx, |tx| -> anyhow::Result<()> {
+            use spacetimedb_datastore::system_tables::{read_hash_from_col, StModuleFields, ST_MODULE_ID};
+            let row = tx
+                .iter(ST_MODULE_ID)?
+                .next()
+                .context("database program is not initialized")?;
+            anyhow::ensure!(
+                read_hash_from_col(row, StModuleFields::ProgramHash)? == self.info.module_hash,
+                "database program changed before publication"
+            );
+            crate::db::environment::replace(db, tx, self.info.module_def.environment(), &environment)?;
+            Ok(())
+        })?;
+        let (out, _, trapped) = self.evaluate_subscribed_views(tx, inst)?;
+        if trapped || out.outcome != ViewOutcome::Success {
+            let (_, metrics, reducer) = db.rollback_mut_tx(out.tx);
+            db.report_mut_tx_metrics(reducer, metrics, None);
+            return Ok(UpdateEnvironmentResult::ErrorExecutingMigration(anyhow::anyhow!(
+                "view evaluation failed during environment publication"
+            )));
+        }
+        let event = ModuleEvent {
+            timestamp: Timestamp::now(),
+            caller_identity: self.info.owner_identity,
+            caller_connection_id: None,
+            function_call: ModuleFunctionCall::update(),
+            status: EventStatus::Committed(DatabaseUpdate::default()),
+            reducer_return_value: None,
+            execution_budget_used: out.execution_budget_used,
+            host_execution_duration: out.total_duration,
+            request_id: None,
+            timer: None,
+        };
+        let durable_offset = db.durable_tx_offset();
+        let CommitAndBroadcastEventSuccess { tx_offset, .. } =
+            commit_and_broadcast_event(&self.info.subscriptions, None, event, out.tx);
+        Ok(UpdateEnvironmentResult::UpdatePerformed {
+            tx_offset,
+            durable_offset,
+        })
     }
 
     /// Re-evaluates all materialized view instances tracked in view lifecycle state.
@@ -778,32 +935,22 @@ impl InstanceCommon {
         params: CallProcedureParams,
         inst: &mut I,
     ) -> (CallProcedureReturn, bool) {
+        // Resolve authority and type refs from the same canonical flattened ID.
+        // A ProcedureDef's local name alone does not identify its host scope.
+        let (op, procedure_def, owning_def) =
+            ProcedureOp::for_module(&self.info.module_def, &params).expect("validated procedure id should resolve");
+        let procedure_name = op.name.clone();
         let CallProcedureParams {
             timestamp,
             caller_identity,
-            caller_connection_id,
             timer,
-            procedure_id,
-            args,
+            ..
         } = params;
-
-        // We've already validated by this point that the procedure exists,
-        // so it's fine to use the panicking `procedure_by_id`.
-        let procedure_def = self.info.module_def.procedure_by_id(procedure_id);
-        let procedure_name = &procedure_def.name;
 
         // TODO(observability): Add tracing spans, energy, metrics?
         // These will require further thinking once we implement procedure suspend/resume,
         // and so are not worth doing yet.
 
-        let op = ProcedureOp {
-            id: procedure_id,
-            name: procedure_name.clone().into(),
-            caller_identity,
-            caller_connection_id,
-            timestamp,
-            arg_bytes: args.get_bsatn().clone(),
-        };
         let energy_fingerprint = FunctionFingerprint {
             module_hash: self.info.module_hash,
             module_identity: self.info.owner_identity,
@@ -833,7 +980,7 @@ impl InstanceCommon {
 
                 WORKER_METRICS
                     .wasm_instance_errors
-                    .with_label_values(&self.info.database_identity, &self.info.module_hash, procedure_name)
+                    .with_label_values(&self.info.database_identity, &self.info.module_hash, &procedure_name)
                     .inc();
 
                 // TODO(procedure-energy):
@@ -841,12 +988,12 @@ impl InstanceCommon {
                 //     return Err(ProcedureCallError::OutOfEnergy);
                 // } else
                 {
-                    Err(ProcedureCallError::InternalError(format!("{err}")))
+                    Err(ProcedureCallError::InternalError(format!("{err:#}")))
                 }
             }
             Ok(return_val) => {
                 let return_type = &procedure_def.return_type;
-                let seed = spacetimedb_sats::WithTypespace::new(self.info.module_def.typespace(), return_type);
+                let seed = spacetimedb_sats::WithTypespace::new(owning_def.typespace(), return_type);
                 seed.deserialize(bsatn::Deserializer::new(&mut &return_val[..]))
                     .map_err(|err| ProcedureCallError::InternalError(format!("{err}")))
                     .map(|return_val| ProcedureCallResult {
@@ -867,6 +1014,7 @@ impl InstanceCommon {
     ) -> (Result<(st_http::Response, Bytes), HttpHandlerCallError>, bool) {
         let CallHttpHandlerParams {
             timestamp,
+            caller_auth,
             handler_id,
             request,
             request_body,
@@ -892,6 +1040,8 @@ impl InstanceCommon {
         let op = HttpHandlerOp {
             id: handler_id,
             name: handler_name.clone().into(),
+            caller_identity: caller_auth.identity,
+            caller_jwt_payload: caller_auth.jwt_payload.unwrap_or_default(),
             timestamp,
             request_bytes,
             request_body_bytes: request_body,
@@ -961,6 +1111,80 @@ impl InstanceCommon {
         params: CallReducerParams,
         inst: &mut I,
     ) -> (ReducerCallResultWithTxOffset, bool) {
+        self.call_reducer_with_tx_inner(tx, params, inst, None::<ReducerSuccessAction>)
+    }
+
+    pub(crate) fn call_reducer_with_success_action<I: WasmInstance>(
+        &mut self,
+        tx: Option<MutTxId>,
+        params: CallReducerParams,
+        inst: &mut I,
+        on_success: impl FnOnce(&mut MutTxId, &Option<Bytes>) -> anyhow::Result<()>,
+    ) -> (ReducerCallResultWithTxOffset, bool) {
+        self.call_reducer_with_tx_inner(tx, params, inst, Some(on_success))
+    }
+
+    /// Execute the next IDC delivery or return its previously recorded outcome.
+    /// Failed execution is rolled back before recording its outcome in a new transaction.
+    /// The boolean reports an execution trap, even if recording the failure also fails.
+    pub(in crate::host) fn call_idc_reducer<I: WasmInstance>(
+        &mut self,
+        params: CallReducerParams,
+        delivery: IdcMessageParams,
+        inst: &mut I,
+        on_success: ReducerSuccessAction,
+    ) -> (Result<IdcReducerCallOutcome, IdcDeliveryFailure>, bool) {
+        let db = inst.replica_ctx().relational_db();
+        let workload = Workload::Reducer(ReducerContext {
+            name: self.info.module_def.reducer_by_id(params.reducer_id).name.clone(),
+            caller_identity: params.caller_identity,
+            caller_connection_id: params.caller_connection_id,
+            timestamp: params.timestamp,
+            arg_bsatn: params.args.get_bsatn().clone(),
+        });
+        let tx = db.begin_mut_tx(IsolationLevel::Serializable, workload);
+        let tx = match ModuleHost::check_idc_delivery(db, tx, delivery) {
+            Ok(ControlFlow::Continue(tx)) => tx,
+            Ok(ControlFlow::Break(outcome)) => return (Ok(outcome), false),
+            Err(error) => return (Err(error), false),
+        };
+
+        // Keep the sequence check, reducer writes, and success hook in one transaction.
+        let (attempt, trapped) = self.call_reducer_with_success_action(Some(tx), params, inst, on_success);
+        let (status, payload) = match &attempt.result.outcome {
+            ReducerOutcome::Committed => return (Ok(IdcReducerCallOutcome::Recorded(attempt)), trapped),
+            ReducerOutcome::Failed(error) => (StInboundMsgResultStatus::Err, Bytes::copy_from_slice(error.as_bytes())),
+            ReducerOutcome::BudgetExceeded => (
+                StInboundMsgResultStatus::BudgetExceeded,
+                Bytes::from_static(b"Module energy budget exhausted."),
+            ),
+        };
+
+        // Execution rolled back. Record the failure in a new transaction, checking
+        // for a competing outcome before writing. Recorded always means a persisted outcome.
+        let db = inst.replica_ctx().relational_db();
+        let recorded = ModuleHost::record_idc_terminal_error(db, delivery, status, payload);
+        let outcome = recorded.map(|outcome| match outcome {
+            IdcReducerCallOutcome::Recorded(recorded) => {
+                // Use this attempt's result and metrics with the failure commit's offset.
+                IdcReducerCallOutcome::Recorded(ReducerCallResultWithTxOffset {
+                    result: attempt.result,
+                    tx_offset: recorded.tx_offset,
+                })
+            }
+            // Another request won after rollback. Return its outcome unchanged.
+            other => other,
+        });
+        (outcome, trapped)
+    }
+
+    fn call_reducer_with_tx_inner<I: WasmInstance>(
+        &mut self,
+        tx: Option<MutTxId>,
+        params: CallReducerParams,
+        inst: &mut I,
+        on_success: Option<impl FnOnce(&mut MutTxId, &Option<Bytes>) -> anyhow::Result<()>>,
+    ) -> (ReducerCallResultWithTxOffset, bool) {
         let CallReducerParams {
             timestamp,
             caller_identity,
@@ -1014,7 +1238,7 @@ impl InstanceCommon {
         // However, that does not necessarily apply to e.g., V8.
         let trapped = matches!(result.call_result, Err(ExecutionError::Trap(_)));
 
-        let (status, mut reducer_return_value) = match result.call_result {
+        let (mut status, mut reducer_return_value) = match result.call_result {
             Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)) => {
                 inst.log_traceback("reducer", reducer_name, &err);
 
@@ -1058,7 +1282,16 @@ impl InstanceCommon {
             }
         };
 
-        // Only re-evaluate and update views if the reducer's execution was successful
+        // Views must see the hook's writes as well as the reducer's. A failure in
+        // either the hook or view execution rolls back all of these changes.
+        if matches!(status, EventStatus::Committed(_))
+            && let Some(on_success) = on_success
+            && let Err(err) = on_success(&mut tx, &reducer_return_value)
+        {
+            status = EventStatus::FailedInternal(err.to_string());
+        }
+
+        // Only re-evaluate and update views if the reducer and success hook succeeded.
         let (out, n_views_evaluated, trapped) = if !trapped && matches!(status, EventStatus::Committed(_)) {
             self.call_views_with_tx(tx, caller_identity, inst, timestamp)
         } else {
@@ -1205,6 +1438,18 @@ impl InstanceCommon {
                 Ok((metrics, trapped)) => (Ok(metrics), trapped),
                 Err(err) => (Err(err), false),
             },
+            ViewCommand::AddBatchSubscription {
+                sender,
+                auth,
+                request,
+                _timer: timer,
+            } => match info
+                .subscriptions
+                .add_batch_subscription_with_instance(&mut inst, sender, auth, request, timer, None)
+            {
+                Ok((metrics, trapped)) => (Ok(metrics), trapped),
+                Err(err) => (Err(err), false),
+            },
             ViewCommand::RemoveSingleSubscription {
                 sender,
                 auth,
@@ -1308,6 +1553,7 @@ impl InstanceCommon {
             caller,
             sender,
             args,
+            view_call,
             row_type,
             timestamp,
             view_typespace,
@@ -1326,6 +1572,7 @@ impl InstanceCommon {
                         fn_ptr,
                         sender: &sender,
                         args: &args,
+                        view_call: &view_call,
                         timestamp,
                     },
                     budget,
@@ -1337,6 +1584,7 @@ impl InstanceCommon {
                         table_id,
                         fn_ptr,
                         args: &args,
+                        view_call: &view_call,
                         timestamp,
                     },
                     budget,
@@ -1361,13 +1609,9 @@ impl InstanceCommon {
                 inst.log_traceback("view", &view_name, &anyhow::anyhow!(err));
                 self.handle_outer_error(&result.stats.energy, &view_name).into()
             }
-            (Ok(raw), sender) => {
+            (Ok(raw), _) => {
                 // This is wrapped in a closure to simplify error handling.
                 let outcome: Result<ViewOutcome, anyhow::Error> = (|| {
-                    let view_call = match sender {
-                        Some(sender) => ViewCallInfo::sender(view_id, sender),
-                        None => ViewCallInfo::anonymous(view_id),
-                    };
                     let result = ViewResult::from_return_data(raw).context("Error parsing view result")?;
                     let row_product_type = view_typespace
                         .resolve(row_type)
@@ -1453,6 +1697,55 @@ impl InstanceCommon {
         ModuleHost::call_views_with_tx_at(tx, &mut instance, caller, timestamp)
     }
 
+    /// Refresh views for an internal transaction, then commit and broadcast its changes.
+    /// A failed refresh rolls back the transaction. The boolean reports whether the instance trapped.
+    pub(crate) fn refresh_views_then_commit_and_broadcast(
+        &mut self,
+        tx: MutTxId,
+        inst: &mut impl WasmInstance,
+    ) -> (anyhow::Result<()>, bool) {
+        let timestamp = Timestamp::now();
+        let (view_result, _n_evaluated, trapped) =
+            self.call_views_with_tx(tx, self.info.database_identity, inst, timestamp);
+        let mut status = match view_result.outcome {
+            ViewOutcome::Success => EventStatus::Committed(DatabaseUpdate::default()),
+            ViewOutcome::Failed(err) => EventStatus::FailedInternal(err),
+            ViewOutcome::BudgetExceeded => EventStatus::OutOfEnergy,
+        };
+        if trapped && matches!(status, EventStatus::Committed(_)) {
+            status = EventStatus::FailedInternal("The instance encountered a fatal error.".into());
+        }
+
+        // The commit helper returns Ok after rolling back a failed event.
+        // Preserve the view failure so callers do not mistake rollback for a successful commit.
+        let outcome = match &status {
+            EventStatus::Committed(_) => Ok(()),
+            status => Err(anyhow!("view refresh failed: {status:?}")),
+        };
+        let event = ModuleEvent {
+            timestamp,
+            caller_identity: self.info.database_identity,
+            caller_connection_id: None,
+            function_call: ModuleFunctionCall::default(),
+            status,
+            reducer_return_value: None,
+            // No reducer ran for this internal transaction.
+            execution_budget_used: FunctionBudget::ZERO,
+            host_execution_duration: Duration::ZERO,
+            request_id: None,
+            timer: None,
+        };
+
+        let result = self
+            .info
+            .subscriptions
+            .commit_and_broadcast_event(None, event, view_result.tx)
+            .map(|_| ())
+            .map_err(anyhow::Error::from)
+            .and(outcome);
+        (result, trapped)
+    }
+
     /// Executes view calls and accumulate results.
     /// Returns early if any call traps or fails.
     fn execute_view_calls<I: WasmInstance>(
@@ -1506,6 +1799,14 @@ impl InstanceCommon {
     ) -> (CallScheduledFunctionResult, bool) {
         crate::host::scheduler::call_scheduled_reducer(&self.info.clone(), params, self, inst)
     }
+
+    pub(in crate::host) fn run_idc_callback_and_cleanup<I: WasmInstance>(
+        &mut self,
+        msg: crate::host::idc_actor::DeliveredMessage,
+        inst: &mut I,
+    ) -> (anyhow::Result<()>, bool) {
+        crate::host::idc_actor::run_callback_and_cleanup(&self.info.clone(), msg, self, inst)
+    }
 }
 
 fn collect_subscribed_view_calls(
@@ -1546,23 +1847,30 @@ fn collect_subscribed_view_calls(
             if subs.is_empty() {
                 continue;
             }
-            view_calls.push(CallViewParams {
-                view_name: view_name.clone(),
-                view_id,
-                table_id,
-                fn_ptr: global_fn_ptr,
-                caller: owner_identity,
-                sender: None,
-                args: ArgsTuple::nullary(),
-                row_type: *product_type_ref,
-                timestamp: Timestamp::now(),
-                view_typespace: view_typespace.clone(),
-            });
+            // Each anonymous instance is keyed by its args, so each needs its own call.
+            for (view_call, sub) in subs {
+                let ViewInstanceArgs::Anonymous { args } = sub else {
+                    continue;
+                };
+                view_calls.push(CallViewParams {
+                    view_name: view_name.clone(),
+                    view_id,
+                    table_id,
+                    fn_ptr: global_fn_ptr,
+                    caller: owner_identity,
+                    sender: None,
+                    args: FunctionArgs::from_view_args(&args).into_tuple_for_def(owning_def, view)?,
+                    view_call,
+                    row_type: *product_type_ref,
+                    timestamp: Timestamp::now(),
+                    view_typespace: view_typespace.clone(),
+                });
+            }
             continue;
         }
 
-        for sub in subs {
-            let ViewInstanceArgs::Sender(identity) = sub else {
+        for (view_call, sub) in subs {
+            let ViewInstanceArgs::Sender { sender: identity, args } = sub else {
                 continue;
             };
             view_calls.push(CallViewParams {
@@ -1572,7 +1880,8 @@ fn collect_subscribed_view_calls(
                 fn_ptr: global_fn_ptr,
                 caller: owner_identity,
                 sender: Some(identity),
-                args: ArgsTuple::nullary(),
+                args: FunctionArgs::from_view_args(&args).into_tuple_for_def(owning_def, view)?,
+                view_call,
                 row_type: *product_type_ref,
                 timestamp: Timestamp::now(),
                 view_typespace: view_typespace.clone(),
@@ -1864,6 +2173,7 @@ pub struct ViewOp<'a> {
     pub fn_ptr: ViewFnPtr,
     pub args: &'a ArgsTuple,
     pub sender: &'a Identity,
+    pub view_call: &'a ViewCallInfo,
     pub timestamp: Timestamp,
 }
 
@@ -1877,7 +2187,7 @@ impl InstanceOp for ViewOp<'_> {
     }
 
     fn call_type(&self) -> FuncCallType {
-        FuncCallType::View(ViewCallInfo::sender(self.view_id, *self.sender))
+        FuncCallType::View(self.view_call.clone())
     }
 }
 
@@ -1889,6 +2199,7 @@ pub struct AnonymousViewOp<'a> {
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
     pub args: &'a ArgsTuple,
+    pub view_call: &'a ViewCallInfo,
     pub timestamp: Timestamp,
 }
 
@@ -1902,7 +2213,7 @@ impl InstanceOp for AnonymousViewOp<'_> {
     }
 
     fn call_type(&self) -> FuncCallType {
-        FuncCallType::View(ViewCallInfo::anonymous(self.view_id))
+        FuncCallType::View(self.view_call.clone())
     }
 }
 
@@ -1960,6 +2271,29 @@ pub struct ProcedureOp {
     pub caller_connection_id: ConnectionId,
     pub timestamp: Timestamp,
     pub arg_bytes: Bytes,
+    pub confirmed_reads: bool,
+}
+
+impl ProcedureOp {
+    fn for_module<'a>(
+        module: &'a ModuleDef,
+        params: &CallProcedureParams,
+    ) -> Option<(Self, &'a spacetimedb_schema::def::ProcedureDef, &'a ModuleDef)> {
+        let (name, def, owning) = module.get_procedure_by_id_with_module(params.procedure_id)?;
+        Some((
+            Self {
+                id: params.procedure_id,
+                name,
+                caller_identity: params.caller_identity,
+                caller_connection_id: params.caller_connection_id,
+                timestamp: params.timestamp,
+                arg_bytes: params.args.get_bsatn().clone(),
+                confirmed_reads: params.confirmed_reads,
+            },
+            def,
+            owning,
+        ))
+    }
 }
 
 impl InstanceOp for ProcedureOp {
@@ -1979,6 +2313,8 @@ impl InstanceOp for ProcedureOp {
 pub struct HttpHandlerOp {
     pub id: HttpHandlerId,
     pub name: NamespacedIdentifier,
+    pub caller_identity: Identity,
+    pub caller_jwt_payload: Box<str>,
     pub timestamp: Timestamp,
     pub request_bytes: Bytes,
     pub request_body_bytes: Bytes,
@@ -2000,13 +2336,260 @@ impl InstanceOp for HttpHandlerOp {
 mod tests {
     use super::collect_subscribed_view_calls;
     use crate::db::relational_db::tests_utils::{begin_mut_tx, TestDB};
+    use crate::host::FunctionArgs;
     use spacetimedb_datastore::locking_tx_datastore::{ViewCallInfo, ViewInstanceArgs};
     use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
-    use spacetimedb_lib::{AlgebraicType, Identity, ProductType};
+    use spacetimedb_lib::{AlgebraicType, Identity, ProductType, ProductValue};
+    use spacetimedb_sats::product;
     use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_schema::def::ModuleDef;
 
+    #[test]
+    fn breaking_migration_preserves_disconnect_and_refreshes_surviving_environment_view() -> anyhow::Result<()> {
+        use super::UpdateEffects;
+        use crate::db::{environment, update};
+        use crate::host::UpdateDatabaseResult;
+        use spacetimedb_datastore::execution_context::Workload;
+        use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
+        use spacetimedb_datastore::system_tables::{ModuleKind, ST_ENV_ID};
+        use spacetimedb_datastore::traits::Program;
+        use spacetimedb_lib::db::raw_def::{
+            v10::{RawEnvVarTypeV10, RawEnvironmentDeclarationV10, RawModuleDefV10Builder, RawModuleDefV10Section},
+            v9::TableAccess,
+        };
+        use spacetimedb_lib::identity::AuthCtx;
+        use spacetimedb_schema::auto_migrate::ponder_migrate;
+        use std::collections::BTreeMap;
+
+        struct TestLogger;
+        impl update::UpdateLogger for TestLogger {
+            fn info(&self, _: &str) {}
+        }
+        fn module(include_obsolete_table: bool) -> ModuleDef {
+            let mut builder = RawModuleDefV10Builder::new();
+            let row = builder.add_algebraic_type(
+                [],
+                "EnvironmentViewRow",
+                AlgebraicType::Product(ProductType::from_iter([("value", AlgebraicType::String)])),
+                true,
+            );
+            builder.add_view(
+                "environment_view",
+                0,
+                true,
+                true,
+                ProductType::unit(),
+                AlgebraicType::array(AlgebraicType::Ref(row)),
+            );
+            if include_obsolete_table {
+                builder
+                    .build_table_with_new_type("obsolete", ProductType::from_iter([("id", AlgebraicType::U64)]), true)
+                    .with_access(TableAccess::Public)
+                    .finish();
+            }
+            let mut raw = builder.finish();
+            raw.sections.push(RawModuleDefV10Section::Environment(vec![
+                RawEnvironmentDeclarationV10 {
+                    name: "TOKEN".into(),
+                    ty: RawEnvVarTypeV10::String,
+                    optional: false,
+                },
+            ]));
+            raw.try_into().expect("valid ENV view module")
+        }
+
+        let db = TestDB::in_memory()?;
+        let old = module(true);
+        let new = module(false);
+        let before = BTreeMap::from([("TOKEN".into(), "before".into())]);
+        let after = BTreeMap::from([("TOKEN".into(), "after".into())]);
+        let mut tx = begin_mut_tx(&db);
+        db.update_program(
+            &mut tx,
+            Program::from_bytes(ModuleKind::WASM, b"old-program".as_slice()),
+        )?;
+        for table in old.tables() {
+            update::create_table_from_def(&db, &mut tx, &old, table)?;
+        }
+        let (view_id, _) = db.create_view(&mut tx, &old, old.view("environment_view").unwrap())?;
+        let call = ViewCallInfo::anonymous(view_id);
+        // Ordinary SQL materialization has no live subscriber to disconnect.
+        tx.update_view_timestamp(
+            call.clone(),
+            ViewInstanceArgs::Anonymous {
+                args: ProductValue::default(),
+            },
+        )?;
+        tx.record_table_scan(&FuncCallType::View(call.clone()), ST_ENV_ID);
+        environment::replace(&db, &mut tx, old.environment(), &before)?;
+        db.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&db);
+        environment::replace(&db, &mut tx, new.environment(), &after)?;
+        db.update_program(
+            &mut tx,
+            Program::from_bytes(ModuleKind::WASM, b"new-program".as_slice()),
+        )?;
+        let plan = ponder_migrate(&old, &new)?;
+        assert!(
+            plan.breaks_client(),
+            "removing the unrelated table must require disconnection"
+        );
+        let result = update::update_database(&db, &mut tx, AuthCtx::for_testing(), plan, &TestLogger)?;
+        assert!(matches!(result, update::UpdateResult::RequiresClientDisconnect));
+        assert!(tx.views_for_refresh().any(|dirty| *dirty == call));
+        let effects = UpdateEffects::after_migration(result, &tx);
+        assert!(effects.refresh_views);
+        assert!(effects.disconnect_clients);
+        let calls = collect_subscribed_view_calls(&tx, &new, Identity::ZERO)?;
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].view_id, view_id);
+        assert_eq!(&*calls[0].view_name, "environment_view");
+        assert!(tx.active_subscribers_for_view(view_id).is_empty());
+        let (_send, receive) = tokio::sync::oneshot::channel();
+        assert!(matches!(
+            effects.committed(receive, None),
+            UpdateDatabaseResult::UpdatePerformedWithClientDisconnect { .. }
+        ));
+
+        // The failed-view branch can roll back the same complete migration tx.
+        let _ = db.rollback_mut_tx(tx);
+        db.with_read_only(Workload::ForTests, |tx| {
+            assert_eq!(environment::snapshot(tx).unwrap(), before);
+        });
+        let tx = begin_mut_tx(&db);
+        assert!(db.table_id_from_name_mut(&tx, "obsolete")?.is_some());
+        let _ = db.rollback_mut_tx(tx);
+        Ok(())
+    }
+
+    #[test]
+    fn module_sql_views_cannot_read_environment_directly_or_through_a_join() -> anyhow::Result<()> {
+        use super::run_query_for_view;
+        use crate::db::environment;
+        use spacetimedb_lib::environment::{EnvVarType, EnvironmentDeclaration, EnvironmentSchema};
+        use spacetimedb_primitives::ViewId;
+        use spacetimedb_sats::product;
+        use std::collections::BTreeMap;
+
+        let db = TestDB::in_memory()?;
+        let visible = db.create_table_for_test(
+            "visible",
+            &[("key", AlgebraicType::String), ("value", AlgebraicType::String)],
+            &[0.into()],
+        )?;
+        let mut tx = begin_mut_tx(&db);
+        tx.insert_via_serialize_bsatn(visible, &product!("TOKEN", "ordinary-value"))?;
+        let schema = EnvironmentSchema::new(vec![EnvironmentDeclaration {
+            name: "TOKEN".into(),
+            ty: EnvVarType::String,
+            optional: false,
+        }])?;
+        environment::replace(
+            &db,
+            &mut tx,
+            &schema,
+            &BTreeMap::from([("TOKEN".into(), "private-value".into())]),
+        )?;
+        let row_type = ProductType::from_iter([("key", AlgebraicType::String), ("value", AlgebraicType::String)]);
+        let call = ViewCallInfo::anonymous(ViewId(99));
+        let run = |tx: &mut _, query| run_query_for_view(tx, query, &row_type, &call, db.database_identity());
+        assert_eq!(
+            run(&mut tx, "SELECT * FROM visible")?,
+            vec![product!("TOKEN", "ordinary-value")]
+        );
+        for query in [
+            "SELECT * FROM st_env",
+            "SELECT e.* FROM st_env AS e",
+            "SELECT v.* FROM visible AS v JOIN st_env AS e ON v.key = e.key",
+            "SELECT e.* FROM visible AS v JOIN st_env AS e ON v.key = e.key",
+        ] {
+            let error = run(&mut tx, query).expect_err("module SQL must use the checked environment accessor");
+            assert!(
+                error.to_string().contains("module-restricted table"),
+                "unexpected query failure for {query}: {error:#}"
+            );
+            assert!(!error.to_string().contains("private-value"));
+        }
+        let _ = db.rollback_mut_tx(tx);
+        Ok(())
+    }
+
+    #[test]
+    fn procedure_operations_resolve_root_and_nested_host_scope_and_typespace() {
+        use super::{CallProcedureParams, InstanceOp, ProcedureOp};
+        use crate::host::ArgsTuple;
+        use spacetimedb_lib::db::raw_def::v10::{
+            RawModuleDefV10, RawModuleDefV10Builder, RawModuleDefV10Section, RawSubmoduleV10,
+        };
+        use spacetimedb_lib::de::DeserializeSeed;
+        use spacetimedb_lib::Timestamp;
+        use spacetimedb_primitives::ProcedureId;
+        use spacetimedb_sats::{bsatn, AlgebraicValue, ProductValue, WithTypespace};
+
+        fn module(value_type: AlgebraicType) -> RawModuleDefV10 {
+            let mut builder = RawModuleDefV10Builder::new();
+            let result_type = builder.add_algebraic_type(
+                [],
+                "ResultRow",
+                AlgebraicType::Product(ProductType::from_iter([("value", value_type)])),
+                true,
+            );
+            builder.add_procedure("read_env", ProductType::unit(), AlgebraicType::Ref(result_type));
+            builder.finish()
+        }
+
+        let mut child = module(AlgebraicType::String);
+        child
+            .sections
+            .push(RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "nested".into(),
+                module: module(AlgebraicType::Bool),
+            }]));
+        let mut root = module(AlgebraicType::U64);
+        root.sections
+            .push(RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "lib".into(),
+                module: child,
+            }]));
+        let module: ModuleDef = root.try_into().expect("valid nested module");
+        for (index, expected_name) in ["read_env", "lib.read_env", "lib.nested.read_env"]
+            .into_iter()
+            .enumerate()
+        {
+            let params = CallProcedureParams::from_system(
+                Timestamp::UNIX_EPOCH,
+                Identity::ZERO,
+                ProcedureId::from(index),
+                ArgsTuple::nullary(),
+            );
+            let (op, def, owning) = ProcedureOp::for_module(&module, &params).unwrap();
+            assert_eq!(&**op.name(), expected_name);
+            assert_eq!(op.name().is_namespaced(), index != 0);
+            assert_eq!(op.id, params.procedure_id);
+            assert_eq!(&*def.name, "read_env", "declaration names remain local");
+            if index == 2 {
+                let expected = AlgebraicValue::Product(ProductValue::from_iter([AlgebraicValue::Bool(true)]));
+                let bytes = bsatn::to_vec(&expected).unwrap();
+                let decoded = WithTypespace::new(owning.typespace(), &def.return_type)
+                    .deserialize(bsatn::Deserializer::new(&mut &bytes[..]))
+                    .unwrap();
+                assert_eq!(
+                    decoded, expected,
+                    "nested type refs must not use the root U64 typespace"
+                );
+            }
+        }
+        assert!(module
+            .get_procedure_by_id_with_module(ProcedureId::from(3usize))
+            .is_none());
+    }
+
     fn module_def_for_view(name: &str, is_anonymous: bool) -> ModuleDef {
+        module_def_for_view_with_params(name, is_anonymous, ProductType::unit())
+    }
+
+    fn module_def_for_view_with_params(name: &str, is_anonymous: bool, params: ProductType) -> ModuleDef {
         let mut builder = RawModuleDefV9Builder::new();
         let name = RawIdentifier::new(name);
         let type_ref = builder.add_algebraic_type(
@@ -2021,7 +2604,7 @@ mod tests {
             0,
             true,
             is_anonymous,
-            ProductType::unit(),
+            params,
             AlgebraicType::array(AlgebraicType::Ref(type_ref)),
         );
 
@@ -2042,12 +2625,16 @@ mod tests {
         let (view_id, _table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
         tx.subscribe_view(
             ViewCallInfo::anonymous(view_id),
-            ViewInstanceArgs::Anonymous,
+            ViewInstanceArgs::Anonymous {
+                args: ProductValue::default(),
+            },
             Identity::ZERO,
         )?;
         tx.subscribe_view(
             ViewCallInfo::anonymous(view_id),
-            ViewInstanceArgs::Anonymous,
+            ViewInstanceArgs::Anonymous {
+                args: ProductValue::default(),
+            },
             Identity::ONE,
         )?;
 
@@ -2079,12 +2666,18 @@ mod tests {
         let (view_id, _table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
         tx.subscribe_view(
             ViewCallInfo::sender(view_id, Identity::ZERO),
-            ViewInstanceArgs::Sender(Identity::ZERO),
+            ViewInstanceArgs::Sender {
+                sender: Identity::ZERO,
+                args: ProductValue::default(),
+            },
             Identity::ZERO,
         )?;
         tx.subscribe_view(
             ViewCallInfo::sender(view_id, Identity::ONE),
-            ViewInstanceArgs::Sender(Identity::ONE),
+            ViewInstanceArgs::Sender {
+                sender: Identity::ONE,
+                args: ProductValue::default(),
+            },
             Identity::ONE,
         )?;
 
@@ -2096,6 +2689,112 @@ mod tests {
         assert_eq!(calls.len(), 2, "sender views should still reevaluate once per sender");
         assert!(senders.contains(&Identity::ZERO));
         assert!(senders.contains(&Identity::ONE));
+        Ok(())
+    }
+
+    /// Anonymous views with different args have separate materializations,
+    /// so reevaluation must emit one call per instance, each with its own args.
+    #[test]
+    fn test_distinct_anonymous_view_calls_by_args() -> anyhow::Result<()> {
+        let stdb = TestDB::in_memory()?;
+        let module_def = module_def_for_view_with_params(
+            "anonymous_view",
+            true,
+            ProductType::from_iter([("id", AlgebraicType::U32)]),
+        );
+        let view_def = module_def.view("anonymous_view").expect("view should exist");
+
+        let mut tx = begin_mut_tx(&stdb);
+        let (view_id, _table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
+        let mut keys = Vec::new();
+        for arg in [42u32, 43u32] {
+            let args = ViewInstanceArgs::Anonymous { args: product![arg] };
+            let key = ViewCallInfo::from_args(view_id, &args);
+            keys.push((product![arg], key.clone()));
+            tx.subscribe_view(key, args, Identity::ZERO)?;
+        }
+
+        let calls = collect_subscribed_view_calls(&tx, &module_def, Identity::ZERO)?;
+        let mut evaluated: Vec<_> = calls
+            .iter()
+            .map(|call| (call.args.tuple().clone(), call.view_call.clone()))
+            .collect();
+        evaluated.sort_by(|a, b| a.0.cmp(&b.0));
+
+        // Each instance is evaluated with its own args, under the key it is stored under.
+        assert_eq!(evaluated, keys);
+        assert!(calls.iter().all(|call| call.sender.is_none()));
+        Ok(())
+    }
+
+    /// Stored view args are passed as BSATN and decoded against the view's params,
+    /// reproducing the stored values for every type a SQL literal can express.
+    #[test]
+    fn test_view_args_bsatn_round_trip() -> anyhow::Result<()> {
+        use spacetimedb_lib::{ConnectionId, Timestamp, Uuid};
+        use spacetimedb_sats::{i256, u256, AlgebraicValue};
+
+        let params = ProductType::from_iter([
+            ("bool", AlgebraicType::Bool),
+            ("i8", AlgebraicType::I8),
+            ("u8", AlgebraicType::U8),
+            ("i16", AlgebraicType::I16),
+            ("u16", AlgebraicType::U16),
+            ("i32", AlgebraicType::I32),
+            ("u32", AlgebraicType::U32),
+            ("i64", AlgebraicType::I64),
+            ("u64", AlgebraicType::U64),
+            ("i128", AlgebraicType::I128),
+            ("u128", AlgebraicType::U128),
+            ("i256", AlgebraicType::I256),
+            ("u256", AlgebraicType::U256),
+            // Float params are disallowed for now, see `ValidationError::ViewFloatParam`.
+            // ("f32", AlgebraicType::F32),
+            // ("f64", AlgebraicType::F64),
+            ("string", AlgebraicType::String),
+            ("bytes", AlgebraicType::bytes()),
+            ("identity", AlgebraicType::identity()),
+            ("connection_id", AlgebraicType::connection_id()),
+            ("timestamp", AlgebraicType::timestamp()),
+            ("uuid", AlgebraicType::uuid()),
+        ]);
+        let stored = ProductValue::from_iter([
+            AlgebraicValue::Bool(true),
+            AlgebraicValue::I8(-8),
+            AlgebraicValue::U8(8),
+            AlgebraicValue::I16(-16),
+            AlgebraicValue::U16(16),
+            AlgebraicValue::I32(-32),
+            AlgebraicValue::U32(32),
+            AlgebraicValue::I64(-64),
+            AlgebraicValue::U64(64),
+            AlgebraicValue::I128((-128).into()),
+            AlgebraicValue::U128(128.into()),
+            AlgebraicValue::I256(Box::new(i256::new(-256))),
+            AlgebraicValue::U256(Box::new(u256::new(256))),
+            // Float params are disallowed for now, see `ValidationError::ViewFloatParam`.
+            // AlgebraicValue::F32(1.5f32.into()),
+            // AlgebraicValue::F64(2.5f64.into()),
+            AlgebraicValue::String("hello".into()),
+            AlgebraicValue::Bytes([1u8, 2, 3].into()),
+            Identity::ONE.into(),
+            ConnectionId::from_u128(7).into(),
+            Timestamp::UNIX_EPOCH.into(),
+            Uuid::from_u128(9).into(),
+        ]);
+
+        for is_anonymous in [true, false] {
+            let module_def = module_def_for_view_with_params("v", is_anonymous, params.clone());
+            let view_def = module_def.view("v").expect("view should exist");
+
+            let decoded = FunctionArgs::from_view_args(&stored).into_tuple_for_def(&module_def, view_def)?;
+            assert_eq!(decoded.tuple(), &stored);
+
+            // Args that don't match the params fail to decode instead of reaching the guest.
+            assert!(FunctionArgs::from_view_args(&product![1u32])
+                .into_tuple_for_def(&module_def, view_def)
+                .is_err());
+        }
         Ok(())
     }
 }

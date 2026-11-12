@@ -1,16 +1,16 @@
 import {
   DbConnectionBuilder,
   type DbConnectionImpl,
-} from '../sdk/db_connection_impl';
-import { onCleanup, createMemo, createComputed } from 'solid-js';
+} from '../sdk/db_connection_impl.ts';
+import { onCleanup, createMemo, createComputed, createSignal } from 'solid-js';
 import { createStore } from 'solid-js/store';
-import { SpacetimeDBContext } from './useSpacetimeDB';
-import type { ConnectionState } from './connection_state';
-import { ConnectionId } from '../lib/connection_id';
+import { SpacetimeDBContext } from './useSpacetimeDB.ts';
+import type { ConnectionState } from './connection_state.ts';
+import { ConnectionId } from '../lib/connection_id.ts';
 import {
   ConnectionManager,
   type ConnectionState as ManagerConnectionState,
-} from '../sdk/connection_manager';
+} from '../sdk/connection_manager.ts';
 
 export interface SpacetimeDBProviderProps<
   DbConnection extends DbConnectionImpl<any>,
@@ -37,6 +37,8 @@ export function SpacetimeDBProvider<DbConnection extends DbConnectionImpl<any>>(
 
   const [state, setState] = createStore<ManagerConnectionState>(fallbackState);
 
+  const [connection, setConnection] = createSignal<DbConnection | null>(null);
+
   // Subscribe to ConnectionManager state changes
   createComputed(() => {
     const currentKey = key();
@@ -44,11 +46,17 @@ export function SpacetimeDBProvider<DbConnection extends DbConnectionImpl<any>>(
     const unsubscribe = ConnectionManager.subscribe(currentKey, () => {
       const snapshot =
         ConnectionManager.getSnapshot(currentKey) ?? fallbackState;
+      setConnection(() =>
+        ConnectionManager.getConnection<DbConnection>(currentKey)
+      );
       setState(snapshot);
     });
 
     // Load initial snapshot
     const snapshot = ConnectionManager.getSnapshot(currentKey) ?? fallbackState;
+    setConnection(() =>
+      ConnectionManager.getConnection<DbConnection>(currentKey)
+    );
     setState(snapshot);
 
     onCleanup(() => {
@@ -56,8 +64,7 @@ export function SpacetimeDBProvider<DbConnection extends DbConnectionImpl<any>>(
     });
   });
 
-  const getConnection = () =>
-    ConnectionManager.getConnection<DbConnection>(key());
+  const getConnection = () => connection();
 
   const contextValue: ConnectionState = {
     get isActive() {

@@ -8,6 +8,80 @@ fn cli_cmd() -> Command {
     Command::new(ensure_binaries_built())
 }
 
+#[test]
+fn cli_dev_reuses_server_issued_login_for_log_streaming() {
+    use spacetimedb_smoketests::{require_server_issued_login, Smoketest};
+    use std::fs;
+    use std::io::Write;
+    use std::process::{Child, Stdio};
+    use std::time::{Duration, Instant};
+
+    require_server_issued_login!();
+    let test = Smoketest::builder()
+        .autopublish(false)
+        .module_code(
+            r#"
+#[spacetimedb::reducer(init)]
+pub fn init(_ctx: &spacetimedb::ReducerContext) {
+    log::info!("dev-login-log-stream-ready");
+}
+"#,
+        )
+        .build();
+    // Start dev without the login created by the smoketest harness.
+    fs::write(&test.config_path, "").unwrap();
+    let stdout = tempfile::NamedTempFile::new().unwrap();
+    let stderr = tempfile::NamedTempFile::new().unwrap();
+
+    struct DevProcess(Child);
+    impl Drop for DevProcess {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    let mut dev = DevProcess(
+        cli_cmd()
+            .current_dir(test.project_dir.path())
+            .arg("--config-path")
+            .arg(&test.config_path)
+            .args([
+                "dev",
+                "dev-server-issued-login",
+                "--server",
+                &test.server_url,
+                "--module-path",
+                ".",
+                "--server-only",
+                "--skip-generate",
+                "--no-config",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(stdout.reopen().unwrap())
+            .stderr(stderr.reopen().unwrap())
+            .spawn()
+            .unwrap(),
+    );
+    // Decline spacetimedb.com login and explicitly accept a server-issued identity.
+    dev.0.stdin.take().unwrap().write_all(b"n\ny\n").unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(180);
+    loop {
+        let out = fs::read_to_string(stdout.path()).unwrap();
+        let err = fs::read_to_string(stderr.path()).unwrap();
+        if out.contains("dev-login-log-stream-ready") {
+            break;
+        }
+        let status = dev.0.try_wait().unwrap();
+        assert!(
+            status.is_none() && Instant::now() < deadline,
+            "dev did not reach log streaming (status: {status:?}):\nstdout: {out}\nstderr: {err}"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
 /// Standalone-only: this checks local CLI help output, so a remote cluster adds no coverage.
 #[test]
 fn cli_dev_help_shows_template_option() {

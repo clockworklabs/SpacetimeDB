@@ -24,8 +24,8 @@ link with the current published npm package version.
 pnpm install
 pnpm run typecheck
 spacetime build
-./generate.sh
-./publish.sh
+spacetime generate
+spacetime publish --delete-data -y
 ```
 
 If `pnpm install` is interrupted while fetching packages, treat the generated

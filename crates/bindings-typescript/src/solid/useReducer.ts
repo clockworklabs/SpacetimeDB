@@ -1,7 +1,8 @@
+import { getByAccessorPath } from '../lib/accessor_path.ts';
 import { createEffect } from 'solid-js';
-import type { UntypedReducerDef } from '../sdk/reducers';
-import { useSpacetimeDB } from './useSpacetimeDB';
-import type { ParamsType } from '../sdk';
+import type { UntypedReducerDef } from '../sdk/reducers.ts';
+import { useSpacetimeDB } from './useSpacetimeDB.ts';
+import type { ParamsType } from '../sdk/index.ts';
 
 export function useReducer<ReducerDef extends UntypedReducerDef>(
   reducerDef: ReducerDef
@@ -23,7 +24,7 @@ export function useReducer<ReducerDef extends UntypedReducerDef>(
     const conn = getConnection();
     if (!conn) return;
 
-    const fn = (conn.reducers as any)[reducerName] as (
+    const fn = getByAccessorPath(conn.reducers, reducerName) as (
       ...p: ParamsType<ReducerDef>
     ) => Promise<void>;
 
@@ -42,7 +43,7 @@ export function useReducer<ReducerDef extends UntypedReducerDef>(
         queue.push({ params, resolve, reject });
       });
     }
-    const fn = (conn.reducers as any)[reducerName] as (
+    const fn = getByAccessorPath(conn.reducers, reducerName) as (
       ...p: ParamsType<ReducerDef>
     ) => Promise<void>;
     return fn(...params);

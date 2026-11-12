@@ -27,7 +27,7 @@ const post = table(
 const spacetimedb = schema({ post });
 export default spacetimedb;
 
-export const add_post = spacetimedb.reducer({ title: t.string() }, (ctx, { title }) => {
+export const addPost = spacetimedb.reducer({ title: t.string() }, (ctx, { title }) => {
   // Pass 0 for the auto-increment field
   const inserted = ctx.db.post.insert({ id: 0n, title });
   // inserted.id now contains the assigned value
@@ -182,13 +182,13 @@ If the database crashes or restarts, it resumes from the next allocation boundar
 const user = table(
   { name: 'user', public: true },
   {
-    user_id: t.u64().autoInc(),
+    userId: t.u64().autoInc(),
     name: t.string(),
   }
 );
 
-export const insert_user = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
-  ctx.db.user.insert({ user_id: 0n, name });
+export const insertUser = spacetimedb.reducer({ name: t.string() }, (ctx, { name }) => {
+  ctx.db.user.insert({ userId: 0n, name });
 });
 ```
 
@@ -196,7 +196,7 @@ export const insert_user = spacetimedb.reducer({ name: t.string() }, (ctx, { nam
 <TabItem value="csharp" label="C#">
 
 ```csharp
-public partial class Module
+public static partial class Module
 {
     [SpacetimeDB.Table(Accessor = "User", Public = true)]
     public partial struct User
@@ -211,6 +211,7 @@ public partial class Module
     {
         ctx.Db.User.Insert(new User { UserId = 0, Name = name });
     }
+}
 ```
 
 </TabItem>

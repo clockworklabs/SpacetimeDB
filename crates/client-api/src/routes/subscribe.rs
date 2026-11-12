@@ -20,7 +20,7 @@ use derive_more::From;
 use futures::{pin_mut, Sink, SinkExt, Stream, StreamExt};
 use http::{HeaderValue, StatusCode};
 use prometheus::{Histogram, IntGauge};
-use scopeguard::{defer, ScopeGuard};
+use scopeguard::defer;
 use serde::Deserialize;
 use spacetimedb::client::messages::{
     serialize, serialize_v3, IdentityTokenMessage, InUseSerializeBuffer, SerializeBuffer, SwitchedServerMessage,
@@ -28,7 +28,8 @@ use spacetimedb::client::messages::{
 };
 use spacetimedb::client::{
     ClientActorId, ClientConfig, ClientConnection, ClientConnectionReceiver, DataMessage, MessageExecutionError,
-    MessageHandleError, MeteredReceiver, MeteredSender, OutboundMessage, Protocol, WsVersion,
+    MessageHandleError, MeteredReceiver, MeteredSender, OutboundMessage, Protocol, SessionBusy, SessionId,
+    SessionReservation, WsVersion,
 };
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::NoSuchModule;
@@ -38,6 +39,7 @@ use spacetimedb::worker_metrics::{
     record_client_rejection, ClientDisconnectCause, ClientDisconnectRecorder, ClientRejectCause, WORKER_METRICS,
 };
 use spacetimedb::Identity;
+use spacetimedb_client_api_messages::websocket::common::SESSION_BUSY_CLOSE_CODE;
 use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_client_api_messages::websocket::v2 as ws_v2;
 use spacetimedb_client_api_messages::websocket::v3 as ws_v3;
@@ -56,7 +58,7 @@ use crate::util::serde::humantime_duration;
 use crate::util::websocket::{
     CloseCode, CloseFrame, Message as WsMessage, WebSocketConfig, WebSocketStream, WebSocketUpgrade, WsError,
 };
-use crate::util::{NameOrIdentity, XForwardedFor};
+use crate::util::{async_cleanup_guard, NameOrIdentity, XForwardedFor};
 use crate::{log_and_500, Authorization, ControlStateDelegate, NodeDelegate};
 
 #[allow(clippy::declare_interior_mutable_const)]
@@ -86,6 +88,18 @@ pub struct SubscribeParams {
 #[derive(Deserialize)]
 pub struct SubscribeQueryParams {
     pub connection_id: Option<ConnectionIdForUrl>,
+    /// A client-generated identifier for a logical client session,
+    /// stable across the reconnects of one client connection object.
+    ///
+    /// When a connection supplies a session id still held by a live
+    /// connection of the same identity, this connection is refused with
+    /// [`SESSION_BUSY_CLOSE_CODE`] and the old one is torn down. A retry
+    /// succeeds once the old connection's `client_disconnected` has run, so the
+    /// module never observes two live connections for one session.
+    /// See [`spacetimedb::client::ClientSessionIndex`].
+    ///
+    /// Connections which do not supply one behave exactly as before.
+    pub session_id: Option<SessionIdForUrl>,
     #[serde(default)]
     pub compression: ws_v1::Compression,
     /// Whether we want "light" responses, tailored to network bandwidth constrained clients.
@@ -98,6 +112,25 @@ pub struct SubscribeQueryParams {
     /// If `false`, send them immediately.
     #[serde(default)]
     pub confirmed: Option<bool>,
+}
+
+/// A [`SessionId`] as supplied in the `session_id` query parameter.
+/// Represented by a 32-character hex string.
+pub struct SessionIdForUrl(SessionId);
+
+impl<'de> Deserialize<'de> for SessionIdForUrl {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let hex = <std::borrow::Cow<'de, str>>::deserialize(deserializer)?;
+        let value = u128::from_str_radix(&hex, 16)
+            .map_err(|_| serde::de::Error::custom("session_id must be a hex-encoded 128-bit value"))?;
+        Ok(Self(SessionId::from_u128(value)))
+    }
+}
+
+impl From<SessionIdForUrl> for SessionId {
+    fn from(session_id: SessionIdForUrl) -> Self {
+        session_id.0
+    }
 }
 
 fn resolve_confirmed_reads_default(version: WsVersion, confirmed: Option<bool>) -> bool {
@@ -119,6 +152,7 @@ pub async fn handle_websocket<S>(
     Path(SubscribeParams { name_or_identity }): Path<SubscribeParams>,
     Query(SubscribeQueryParams {
         connection_id,
+        session_id,
         compression,
         light,
         confirmed,
@@ -228,6 +262,8 @@ where
         connection_id,
         name: ctx.client_actor_index().next_client_name(),
     };
+    let session_id: Option<SessionId> = session_id.map(Into::into);
+    let sessions = ctx.client_actor_index().sessions();
 
     let ws_config = WebSocketConfig::default()
         .max_message_size(Some(0x2000000))
@@ -236,7 +272,7 @@ where
     let ws_opts = ctx.websocket_options();
 
     tokio::spawn(async move {
-        let ws = match ws_upgrade.upgrade(ws_config).await {
+        let mut ws = match ws_upgrade.upgrade(ws_config).await {
             Ok(ws) => ws,
             Err(err) => {
                 record_client_rejection(db_identity, ClientRejectCause::WebsocketUpgradeError);
@@ -254,6 +290,31 @@ where
         };
 
         log::debug!("websocket: New client connected from {client_log_string}");
+
+        // Reserved before `client_connected` so that no two connections of one
+        // session run it. Released by the actor's teardown after the
+        // module-side disconnect, so a retry finds `client_disconnected` run.
+        let session = match session_id {
+            Some(session_id) => match sessions.try_reserve(db_identity, client_id, session_id) {
+                Ok(reservation) => Some(reservation),
+                Err(SessionBusy) => {
+                    WORKER_METRICS
+                        .ws_clients_session_busy
+                        .with_label_values(&db_identity)
+                        .inc();
+                    log::debug!("websocket: Refusing connection for {client_log_string}: session {session_id} is busy");
+                    let close = CloseFrame {
+                        code: CloseCode::from(SESSION_BUSY_CLOSE_CODE),
+                        reason: "session busy".into(),
+                    };
+                    if let Err(e) = ws.close(Some(close)).await {
+                        log::debug!("websocket: Error refusing connection for {client_log_string}: {e}");
+                    }
+                    return;
+                }
+            },
+            None => None,
+        };
 
         let connected = match ClientConnection::call_client_connected_maybe_reject(
             &mut module_rx,
@@ -292,7 +353,12 @@ where
             "websocket: Database accepted connection from {client_log_string}; spawning ws_client_actor and ClientConnection"
         );
 
-        let actor = |client, receiver| ws_client_actor(ws_opts, client, ws, receiver);
+        let actor = |client: ClientConnection, receiver| {
+            if let Some(session) = &session {
+                session.establish(&client.sender());
+            }
+            ws_client_actor(ws_opts, client, ws, receiver, session)
+        };
         let client = ClientConnection::spawn(
             client_id,
             auth.into(),
@@ -509,15 +575,27 @@ async fn ws_client_actor(
     client: ClientConnection,
     ws: WebSocketStream,
     sendrx: ClientConnectionReceiver,
+    session: Option<SessionReservation>,
 ) {
-    // ensure that even if this task gets cancelled, we always cleanup the connection
-    let mut client = scopeguard::guard(client, |client| {
-        tokio::spawn(client.disconnect());
+    // Runs the module-side disconnect even if this task gets cancelled.
+    let mut client = async_cleanup_guard((client, session), |(client, session)| {
+        ws_client_teardown(client, session)
     });
 
-    ws_client_actor_inner(&mut client, options, ws, sendrx).await;
+    ws_client_actor_inner(&mut client.0, options, ws, sendrx).await;
 
-    ScopeGuard::into_inner(client).disconnect().await;
+    if let Err(e) = client.cleanup().await {
+        log::error!("websocket client teardown task failed: {e}");
+    }
+}
+
+/// Run the module-side disconnect, then free the connection's session.
+///
+/// The session is released only after `client_disconnected` has run, so that
+/// a connection retrying for the same session observes it in order.
+async fn ws_client_teardown(client: ClientConnection, session: Option<SessionReservation>) {
+    client.disconnect().await;
+    drop(session);
 }
 
 async fn ws_client_actor_inner(

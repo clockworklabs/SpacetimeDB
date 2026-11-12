@@ -120,3 +120,47 @@ fn test_autoinc_unique() {
         );
     }
 }
+
+/// A rolled-back auto-inc insert must leave durable sequence metadata consistent with later
+/// committed auto-inc values.
+///
+/// This is a regression test for a bug which we fixed in [PR 5880](https://github.com/clockworklabs/SpacetimeDB/pull/5880).
+/// Prior to that PR, sequences kept a non-transactional and non-persistent in-memory side table
+/// as an optimization rather than updating `st_sequence` rows on each sequence read.
+/// A bug in the implementation of that optimization caused the in-memory state to remain updated
+/// even when the persistent `st_sequence` change rolled back.
+#[test]
+fn autoinc_sequence_allocation_remains_consistent_after_rollback() {
+    let test = Smoketest::builder().precompiled_module("autoinc-unique").build();
+
+    assert!(
+        test.call("add_and_fail_u_64", &[]).is_err(),
+        "Reducer that intentionally fails after an auto-inc insert should fail"
+    );
+    test.call("add_new_u_64", &[r#""committed""#]).unwrap();
+
+    let inserted_value = parse_single_u64(
+        &test
+            .sql("SELECT key_col FROM person_u_64 WHERE name = 'committed'")
+            .unwrap(),
+    );
+    let persisted_allocation = parse_single_u64(
+        &test
+            .sql("SELECT allocated FROM st_sequence WHERE sequence_name = 'person_u_64_key_col_seq'")
+            .unwrap(),
+    );
+
+    assert!(
+        inserted_value <= persisted_allocation,
+        "st_sequence allocation is inconsistent after a rolled-back auto-inc insert: \
+         committed value {inserted_value}, persisted allocation {persisted_allocation}"
+    );
+}
+
+fn parse_single_u64(output: &str) -> u64 {
+    output
+        .lines()
+        .map(str::trim)
+        .find_map(|line| line.parse().ok())
+        .unwrap_or_else(|| panic!("SQL query should return one unsigned integer, got:\n{output}"))
+}

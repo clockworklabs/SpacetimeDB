@@ -104,7 +104,32 @@ pub enum PublishResult {
     /// owned by an identity other than the identity that you provided, then you will receive
     /// this error.
     PermissionDenied { name: DatabaseName },
+
+    /// An invalid environment was supplied.
+    EnvironmentError(EnvironmentPublishError),
 }
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum EnvironmentPublishError {
+    /// A required environment variable was missing.
+    MissingRequiredEnvironment { keys: Vec<String> },
+
+    /// Expected module hash was different
+    VersionConflict(#[serde(skip)] EnvironmentVersionConflict),
+}
+
+impl EnvironmentPublishError {
+    pub fn status_code(&self) -> http::StatusCode {
+        match self {
+            Self::MissingRequiredEnvironment { .. } => http::StatusCode::BAD_REQUEST,
+            Self::VersionConflict(..) => http::StatusCode::CONFLICT,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, thiserror::Error, serde::Serialize, serde::Deserialize)]
+#[error("database program changed before publication; reload environment metadata and retry")]
+pub struct EnvironmentVersionConflict;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Default)]
 pub enum MigrationPolicy {

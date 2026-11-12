@@ -4,7 +4,7 @@ import {
   SumType,
   type AlgebraicTypeType,
   type AlgebraicTypeVariants,
-} from './algebraic_type';
+} from './algebraic_type.ts';
 import type {
   CaseConversionPolicy,
   RawSubmoduleV10,
@@ -12,10 +12,10 @@ import type {
   RawModuleDefV10Section,
   RawScopedTypeNameV10,
   RawTableDefV10,
-} from './autogen/types';
-import type { UntypedIndex } from './indexes';
-import type { UntypedTableDef } from './table';
-import type { UntypedTableSchema } from './table_schema';
+} from './autogen/types.ts';
+import type { UntypedIndex } from './indexes.ts';
+import type { UntypedTableDef } from './table.ts';
+import type { OutboxMetadata, UntypedTableSchema } from './table_schema.ts';
 import {
   ArrayBuilder,
   OptionBuilder,
@@ -31,8 +31,8 @@ import {
   type InferSpacetimeTypeOfTypeBuilder,
   type RowObj,
   type VariantsObj,
-} from './type_builders';
-import type { Values } from './type_util';
+} from './type_builders.ts';
+import type { Values } from './type_util.ts';
 
 export type TableNamesOf<S extends UntypedSchemaDef> = Values<
   S['tables']
@@ -61,6 +61,7 @@ export interface TableToSchema<
   T extends UntypedTableSchema,
 > extends UntypedTableDef {
   accessorName: AccName;
+  isOutbox: T['outbox'] extends OutboxMetadata ? true : false;
   columns: T['rowType']['row'];
   rowType: T['rowSpacetimeType'];
   // Declarative user-provided table-level indexes.
@@ -153,6 +154,10 @@ export function tableToSchema<
     // be used, it is stored as alias in database, hence works in query builder.
     sourceName: schema.tableName || accName,
     accessorName: accName,
+    isOutbox: (schema.outbox !== undefined) as TableToSchema<
+      AccName,
+      T
+    >['isOutbox'],
     columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
     rowType: schema.rowSpacetimeType,
     // Keep declarative indexes in their original shape for type-level consumers.
@@ -194,6 +199,7 @@ export class ModuleContext {
     types: [],
     rowLevelSecurity: [],
     schedules: [],
+    outboxes: [],
     procedures: [],
     views: [],
     viewPrimaryKeys: [],
@@ -205,6 +211,7 @@ export class ModuleContext {
       entries: [],
     },
     submodules: [],
+    environment: [],
   };
 
   get moduleDef(): ModuleDef {
@@ -233,6 +240,7 @@ export class ModuleContext {
       }
     );
     push(module.schedules && { tag: 'Schedules', value: module.schedules });
+    push(module.outboxes && { tag: 'Outboxes', value: module.outboxes });
     push(
       module.lifeCycleReducers && {
         tag: 'LifeCycleReducers',
@@ -275,6 +283,7 @@ export class ModuleContext {
         value: module.submodules,
       }
     );
+    push({ tag: 'Environment', value: module.environment });
     return { sections };
   }
 

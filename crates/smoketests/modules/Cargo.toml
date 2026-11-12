@@ -27,6 +27,7 @@ members = [
     "views-subscribe",
     "views-query",
     "views-callable",
+    "views-args",
     "views-count",
     "views-auto-migrate-stable",
     "views-auto-migrate-stable-updated",
@@ -104,6 +105,7 @@ members = [
 
     # Connection tests
     "connect-disconnect",
+    "connection-session",
     "confirmed-reads",
     "delete-database",
     "client-connection-reject",
@@ -115,10 +117,12 @@ members = [
     "logs-level-filter",
 
     # Misc tests
+    "idc-receiver",
     "namespaces",
     "new-user-flow",
     "module-nested-op",
     "noop",
+    "environment-publish",
     "fail-initial-publish-broken",
     "fail-initial-publish-fixed",
 

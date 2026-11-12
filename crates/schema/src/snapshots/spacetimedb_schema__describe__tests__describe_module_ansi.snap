@@ -1,0 +1,88 @@
+---
+source: crates/schema/src/describe.rs
+expression: "describe_module(&def, PrettyPrintStyle::AnsiColor)"
+---
+[0m[1m[34mTables[0m
+  [0m[1m[36mlib.session[0m ([0m[32mprivate[0m)
+    [0m[1m[34mColumns:[0m
+      id     [0m[35mU64[0m       primary key
+      owner  [0m[35mIdentity[0m
+    [0m[1m[34mIndexes:[0m
+      lib.session_id_idx_btree  btree (id)
+
+  [0m[1m[36mmatch_result[0m ([0m[32mprivate[0m)
+    [0m[1m[34mColumns:[0m
+      player_id  [0m[35mU64[0m
+      round      [0m[35mU32[0m
+      scores     [0m[35mArray<U32>[0m
+      shape      [0m[35mShape[0m
+    [0m[1m[34mUnique constraints:[0m
+      (player_id, round)
+    [0m[1m[34mIndexes:[0m
+      match_result_player_id_round_idx_btree  btree (player_id, round)
+
+  [0m[1m[36mplayer[0m ([0m[32mpublic[0m)
+    [0m[1m[34mColumns:[0m
+      id         [0m[35mU64[0m             primary key, auto-increment
+      name       [0m[35mString[0m
+      rank       [0m[35mU32[0m             unique
+      nickname   [0m[35mOption<String>[0m
+      joined_at  [0m[35mTimestamp[0m
+      avatar     [0m[35mThumbnail[0m
+      color      [0m[35mColor[0m           default: (red = ())
+      level      [0m[35mU32[0m             default: 1
+    [0m[1m[34mIndexes:[0m
+      player_id_idx_btree     btree (id)
+      player_name_idx_hash    hash (name)
+      player_rank_idx_direct  direct (rank)
+
+  [0m[1m[36mplayer_joined[0m ([0m[32mpublic, event[0m)
+    [0m[1m[34mColumns:[0m
+      player_id  [0m[35mU64[0m
+      name       [0m[35mString[0m
+
+  [0m[1m[36mreminder[0m ([0m[32mprivate[0m)
+    [0m[1m[34mColumns:[0m
+      scheduled_id  [0m[35mU64[0m         primary key, auto-increment
+      scheduled_at  [0m[35mScheduleAt[0m
+      message       [0m[35mString[0m
+    [0m[1m[34mIndexes:[0m
+      reminder_scheduled_id_idx_btree  btree (scheduled_id)
+    [0m[1m[34mSchedule:[0m calls procedure [0m[1m[36msend_reminder[0m
+
+[0m[1m[34mViews[0m
+  [0m[1m[36mplayers_above_rank[0m(min_rank: [0m[35mU32[0m) -> [0m[35mArray<Player>[0m  [0m[32m[public][0m
+  [0m[1m[36mtop_player[0m() -> [0m[35mOption<Player>[0m  [0m[32m[public][0m [0m[32m[anonymous][0m
+
+[0m[1m[34mReducers[0m
+  [0m[1m[36minit[0m()  [0m[32m[lifecycle: init][0m [0m[32m[private][0m
+  [0m[1m[36mlib.end_session[0m(id: [0m[35mU64[0m)
+  [0m[1m[36mmove_player[0m(player_id: [0m[35mU64[0m, direction: [0m[35mDirection[0m)
+  [0m[1m[36mreset_ranks[0m()  [0m[32m[private][0m
+
+[0m[1m[34mProcedures[0m
+  [0m[1m[36mlib.session_count[0m() -> [0m[35mU32[0m
+  [0m[1m[36mplayer_stats[0m(player_id: [0m[35mU64[0m) -> [0m[35mOption<Stats>[0m
+  [0m[1m[36msend_reminder[0m(job: [0m[35mReminder[0m)  [0m[32m[private][0m
+
+[0m[1m[34mHTTP routes[0m
+  POST /webhook → [0m[1m[36mwebhook[0m
+  ANY /health → [0m[1m[36mhealth[0m
+
+[0m[1m[34mEnvironment variables[0m
+  [0m[1m[36mAPI_KEY[0m    [0m[35mString[0m
+  [0m[1m[36mLOG_LEVEL[0m  [0m[35m"debug" | "info"[0m              [0m[32moptional[0m
+  [0m[1m[36mMODE[0m       [0m[35m"development" | "production"[0m
+  [0m[1m[36mREGION[0m     [0m[35m"eu west"[0m                     [0m[32moptional[0m
+
+[0m[1m[34mTypes[0m
+  [0m[1m[36mColor[0m = red | green | blue
+  [0m[1m[36mDirection[0m = north | south | east | west
+  [0m[1m[36mShape[0m = point | circle([0m[35mF32[0m) | rect([0m[35mSize[0m)
+  [0m[1m[36mSize[0m = { width: [0m[35mF32[0m, height: [0m[35mF32[0m }
+  [0m[1m[36mStats[0m = { wins: [0m[35mU32[0m, losses: [0m[35mU32[0m }
+  [0m[1m[36mThumbnail[0m = { image_url: [0m[35mString[0m, width: [0m[35mU32[0m, height: [0m[35mU32[0m }
+
+[0m[1m[34mRow-level security[0m
+  SELECT * FROM match_result WHERE round > 0
+  SELECT * FROM player WHERE rank > 0

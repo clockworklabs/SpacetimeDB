@@ -7,6 +7,8 @@
 #include <spacetimedb/readonly_database_context.h> // For ReadOnlyDatabaseContext
 #include <array>
 
+#include <spacetimedb/environment.h>
+
 namespace SpacetimeDB {
 
 /**
@@ -41,6 +43,7 @@ private:
 public:
     // Read-only database access - no mutations allowed
     ReadOnlyDatabaseContext db;
+    Environment env;
     QueryBuilder from;
     
     // Constructors
@@ -76,6 +79,7 @@ public:
 struct AnonymousViewContext {
     // Read-only database access - no mutations allowed
     ReadOnlyDatabaseContext db;
+    Environment env;
     QueryBuilder from;
     
     // Constructors

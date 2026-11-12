@@ -1,9 +1,17 @@
-import { createSignal, onCleanup, createMemo, createComputed } from 'solid-js';
-import { useSpacetimeDB } from './useSpacetimeDB';
-import { type EventContextInterface } from '../sdk/db_connection_impl';
-import type { UntypedRemoteModule } from '../sdk/spacetime_module';
-import type { RowType, UntypedTableDef } from '../lib/table';
-import type { Prettify } from '../lib/type_util';
+import type { UntypedClientTable } from '../sdk/client_table.ts';
+import { getByAccessorPath } from '../lib/accessor_path.ts';
+import {
+  createSignal,
+  onCleanup,
+  createMemo,
+  createComputed,
+  untrack,
+} from 'solid-js';
+import { useSpacetimeDB } from './useSpacetimeDB.ts';
+import { type EventContextInterface } from '../sdk/db_connection_impl.ts';
+import type { UntypedRemoteModule } from '../sdk/spacetime_module.ts';
+import type { RowType, UntypedTableDef } from '../lib/table.ts';
+import type { Prettify } from '../lib/type_util.ts';
 import {
   type Query,
   type BooleanExpr,
@@ -11,7 +19,7 @@ import {
   evaluateBooleanExpr,
   getQueryAccessorName,
   getQueryWhereClause,
-} from '../lib/query';
+} from '../lib/query.ts';
 import { createStore, reconcile } from 'solid-js/store';
 
 export interface UseTableCallbacks<RowType> {
@@ -69,7 +77,7 @@ export function useTable<TableDef extends UntypedTableDef>(
   const whereExpr = createMemo(() => getQueryWhereClause(q()));
   const querySql = createMemo(() => toSql(q()));
 
-  let connectionState: import('./connection_state').ConnectionState;
+  let connectionState: import('./connection_state.ts').ConnectionState;
   try {
     connectionState = useSpacetimeDB();
   } catch {
@@ -93,7 +101,10 @@ export function useTable<TableDef extends UntypedTableDef>(
     if (!connection) {
       return [];
     }
-    const table = connection.db[accessorName()];
+    const table = getByAccessorPath<UntypedClientTable>(
+      connection.db,
+      accessorName()
+    );
     const result: readonly Prettify<UseTableRowType>[] = whereExpr()
       ? (Array.from(table.iter()).filter(row =>
           evaluateBooleanExpr(whereExpr()!, row as Record<string, any>)
@@ -102,25 +113,32 @@ export function useTable<TableDef extends UntypedTableDef>(
     return result;
   };
 
-  const [isReady, setIsReady] = createSignal(false);
+  const [appliedConnectionId, setAppliedConnectionId] = createSignal<
+    string | null
+  >(null);
+  const isReady = () =>
+    connectionState.isActive &&
+    appliedConnectionId() === connectionState.connectionId.toHexString();
 
   createComputed(() => {
+    setAppliedConnectionId(null);
     if (!enabled()) {
-      setIsReady(false);
+      setRows(reconcile([]));
       return;
     }
 
     const connection = connectionState.getConnection();
-    if (!connectionState.isActive || !connection) {
-      setIsReady(false);
+    if (!connection) {
+      setRows(reconcile([]));
       return;
     }
 
     const cancel = connection
       .subscriptionBuilder()
       .onApplied(() => {
-        setIsReady(true);
+        setAppliedConnectionId(connection.connectionId.toHexString());
       })
+      .onError(() => setAppliedConnectionId(null))
       .subscribe(querySql());
 
     onCleanup(() => {
@@ -128,7 +146,10 @@ export function useTable<TableDef extends UntypedTableDef>(
     });
 
     // Bind to table events
-    const table = connection.db[accessorName()];
+    const table = getByAccessorPath<UntypedClientTable>(
+      connection.db,
+      accessorName()
+    );
 
     const onInsert = (
       ctx: EventContextInterface<UntypedRemoteModule>,
@@ -190,7 +211,7 @@ export function useTable<TableDef extends UntypedTableDef>(
     table.onUpdate?.(onUpdate);
 
     // Load initial snapshot
-    setRows(reconcile(computeSnapshot()));
+    untrack(() => setRows(reconcile(computeSnapshot())));
 
     onCleanup(() => {
       table.removeOnInsert(onInsert);

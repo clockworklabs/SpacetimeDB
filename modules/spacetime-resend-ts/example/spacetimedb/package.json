@@ -1,0 +1,23 @@
+{
+  "name": "spacetime-resend-example-module",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "spacetime build",
+    "publish:local": "spacetime publish --server local --yes spacetime-resend-example",
+    "publish:local:reset": "spacetime publish --server local --yes --delete-data=always spacetime-resend-example"
+  },
+  "dependencies": {
+    "@spacetimedb/rate-limit": "workspace:*",
+    "@spacetimedb/resend": "workspace:*",
+    "spacetimedb": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
+  }
+}

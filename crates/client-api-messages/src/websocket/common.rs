@@ -53,6 +53,14 @@ pub const SERVER_MSG_COMPRESSION_TAG_BROTLI: u8 = 1;
 /// The tag recognized by the host and SDKs to mean gzip compression of a `ServerMessage`.
 pub const SERVER_MSG_COMPRESSION_TAG_GZIP: u8 = 2;
 
+/// Websocket close code sent when a connection supplies a `session_id`
+/// which another live connection of the same identity still holds.
+///
+/// The server stops that connection and tears it down. The refused client
+/// should retry after a short delay, without counting this as a failed
+/// connection attempt for backoff purposes.
+pub const SESSION_BUSY_CLOSE_CODE: u16 = 4000;
+
 pub type RowSize = u16;
 pub type RowOffset = u64;
 
@@ -60,8 +68,17 @@ pub type RowOffset = u64;
 #[derive(SpacetimeType, Debug, Clone, Default)]
 #[sats(crate = spacetimedb_lib)]
 pub struct BsatnRowList {
-    /// A size hint about `rows_data`
-    /// intended to facilitate parallel decode purposes on large initial updates.
+    /// The exact boundaries of each row in `rows_data`.
+    ///
+    /// Despite its name, this is part of the API contract, not an optimization.
+    /// The server must always send it, and clients must use it to find each row
+    /// rather than decoding rows back to back. A module can add columns to the end
+    /// of a table, so a row can be longer than the client expects, and clients must
+    /// ignore any bytes left in a row after decoding the columns they know.
+    /// The Rust, Unreal, TypeScript and C# SDKs all rely on this.
+    // TODO: Have the client and server negotiate a schema, so that the server only
+    // sends the columns the client expects. Sending columns a client will skip
+    // wastes bandwidth.
     pub(crate) size_hint: RowSizeHint,
     /// The flattened byte array for a list of rows.
     pub(crate) rows_data: Bytes,
@@ -81,6 +98,8 @@ impl BsatnRowList {
 /// NOTE(centril, 1.0): We might want to add a `None` variant to this
 /// where the client has to decode in a loop until `rows_data` has been exhausted.
 /// The use-case for this is clients who are bandwidth limited and where every byte counts.
+/// This depends on the client and server negotiating a schema (see the TODO on `BsatnRowList::size_hint`).
+/// Until then, clients need row boundaries to skip columns they don't know about.
 #[derive(SpacetimeType, Debug, Clone)]
 #[sats(crate = spacetimedb_lib)]
 pub enum RowSizeHint {

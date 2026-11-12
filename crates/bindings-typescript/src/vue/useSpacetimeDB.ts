@@ -2,7 +2,7 @@ import { inject } from 'vue';
 import {
   SPACETIMEDB_INJECTION_KEY,
   type ConnectionState,
-} from './connection_state';
+} from './connection_state.ts';
 
 export function useSpacetimeDB(): ConnectionState {
   const context = inject(SPACETIMEDB_INJECTION_KEY);

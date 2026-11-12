@@ -9,6 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct ScheduledProcedureRow {
     pub scheduled_id: u64,
     pub scheduled_at: __sdk::ScheduleAt,
+    pub run: u8,
 }
 
 impl __sdk::InModule for ScheduledProcedureRow {
@@ -21,6 +22,7 @@ impl __sdk::InModule for ScheduledProcedureRow {
 pub struct ScheduledProcedureRowCols {
     pub scheduled_id: __sdk::__query_builder::Col<ScheduledProcedureRow, u64>,
     pub scheduled_at: __sdk::__query_builder::Col<ScheduledProcedureRow, __sdk::ScheduleAt>,
+    pub run: __sdk::__query_builder::Col<ScheduledProcedureRow, u8>,
 }
 
 impl __sdk::__query_builder::HasCols for ScheduledProcedureRow {
@@ -29,6 +31,7 @@ impl __sdk::__query_builder::HasCols for ScheduledProcedureRow {
         ScheduledProcedureRowCols {
             scheduled_id: __sdk::__query_builder::Col::new(table_name, "scheduled_id"),
             scheduled_at: __sdk::__query_builder::Col::new(table_name, "scheduled_at"),
+            run: __sdk::__query_builder::Col::new(table_name, "run"),
         }
     }
 }

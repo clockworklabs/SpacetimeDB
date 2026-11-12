@@ -1,9 +1,9 @@
-import { Headers, headersToList } from 'headers-polyfill';
+import { Headers } from 'headers-polyfill';
 import type {
   HttpHeaders,
   HttpMethod,
   HttpVersion,
-} from '../lib/autogen/types';
+} from '../lib/autogen/types.ts';
 
 export { Headers };
 
@@ -61,9 +61,10 @@ export function serializeMethod(method?: string): HttpMethod {
 
 export function serializeHeaders(headers: Headers): HttpHeaders {
   return {
-    entries: headersToList(headers as any)
-      .flatMap(([k, v]) => (Array.isArray(v) ? v.map(v => [k, v]) : [[k, v]]))
-      .map(([name, value]) => ({ name, value: textEncoder.encode(value) })),
+    entries: Array.from(headers.entries(), ([name, value]) => ({
+      name,
+      value: textEncoder.encode(value),
+    })),
   };
 }
 

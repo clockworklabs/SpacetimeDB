@@ -1,10 +1,14 @@
-import type { ProductType } from './algebraic_type';
-import type { RawScheduleDefV10, RawTableDefV10 } from './autogen/types';
-import type { IndexOpts } from './indexes';
-import type { ModuleContext } from './schema';
-import type { ColumnBuilder, RowBuilder } from './type_builders';
-import type { HasExactlyOneKnownKey } from './type_util';
-import type { ProcedureExport, ReducerExport } from '../server';
+import type { ProductType } from './algebraic_type.ts';
+import type {
+  RawOutboxDefV10,
+  RawScheduleDefV10,
+  RawTableDefV10,
+} from './autogen/types.ts';
+import type { IndexOpts } from './indexes.ts';
+import type { ModuleContext } from './schema.ts';
+import type { ColumnBuilder, RowBuilder } from './type_builders.ts';
+import type { HasExactlyOneKnownKey } from './type_util.ts';
+import type { ProcedureExport, ReducerExport } from '../server/index.ts';
 
 /**
  * Internal erased form of a scheduled reducer/procedure export.
@@ -22,6 +26,12 @@ export type TableSchedule = {
   reducer: () => UntypedScheduledFunctionExport;
 };
 
+/** Outbox metadata before table and callback names are resolved. */
+export type OutboxMetadata = Omit<
+  RawOutboxDefV10,
+  'tableName' | 'onResultReducer'
+>;
+
 export type ScheduleTableForParams<Params extends Record<string, any>> =
   HasExactlyOneKnownKey<Params> extends true
     ? Params[keyof Params] extends RowBuilder<
@@ -37,11 +47,20 @@ export type ScheduleTableForParams<Params extends Record<string, any>> =
 export type TableSchema<
   Row extends Record<string, ColumnBuilder<any, any, any>>,
   Idx extends readonly IndexOpts<keyof Row & string>[],
+  Outbox extends OutboxMetadata | undefined = OutboxMetadata | undefined,
 > = {
   /**
    * The name of the table.
    */
   readonly tableName?: string;
+
+  /**
+   * The outbox receiver and argument mapping, if this is an outbox table.
+   * Schema registration supplies the table name and resolves the result callback.
+   * Its presence marks an outbox, whose database handles expose only inserts
+   * and reads; the table builder types it as `undefined` for ordinary tables.
+   */
+  readonly outbox: Outbox;
 
   /**
    * The TypeBuilder representation of the type of the rows in the table.

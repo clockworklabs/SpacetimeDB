@@ -61,6 +61,20 @@ function escapeAngleBracketsOutsideBackticks(content) {
     .join('\n');
 }
 
+// clap-markdown renders subcommands flat so need to nest them
+function nestSubcommands(content) {
+  const depth = command => Math.max(0, command.split(' ').length - 2);
+  return content
+    .replace(
+      /^\* (\[`(spacetime[^`]*)`↴\])/gm,
+      (_, link, command) => `${'  '.repeat(depth(command))}* ${link}`
+    )
+    .replace(
+      /^## (`(spacetime[^`]*)`)$/gm,
+      (_, title, command) => `${'#'.repeat(2 + depth(command))} ${title}`
+    );
+}
+
 async function main() {
   const repoRoot = getRepoRoot();
 
@@ -69,19 +83,20 @@ async function main() {
     'docs',
     'docs',
     '00300-resources',
-    '00200-reference',
     '00100-cli-reference',
     '00100-cli-reference.md',
   );
 
-  const header = `---\ntitle: CLI Reference\nslug: /cli-reference\n---\n\n`;
+  const header = `---\ntitle: CLI Reference\nslug: /cli-reference\ntoc_max_heading_level: 4\n---\n\n`;
 
   await fs.writeFile(outFile, header, 'utf8');
   await runCargoAndAppend({ cwd: repoRoot, outFilePath: outFile });
 
   // Post-process: escape angle-bracket placeholders outside backtick spans for MDX
   const raw = await fs.readFile(outFile, 'utf8');
-  await fs.writeFile(outFile, escapeAngleBracketsOutsideBackticks(raw), 'utf8');
+  const escaped = escapeAngleBracketsOutsideBackticks(raw);
+  const nested = nestSubcommands(escaped);
+  await fs.writeFile(outFile, `${nested.trimEnd()}\n`, 'utf8');
 }
 
 main().catch(err => {

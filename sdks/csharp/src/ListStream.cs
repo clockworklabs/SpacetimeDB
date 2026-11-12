@@ -10,10 +10,10 @@ using SpacetimeDB;
 /// </summary>
 internal class ListStream : Stream
 {
-    private List<byte> list;
+    private IReadOnlyList<byte> list;
     private int pos;
 
-    public ListStream(List<byte> data)
+    public ListStream(IReadOnlyList<byte> data)
     {
         this.list = data;
         this.pos = 0;
@@ -36,16 +36,28 @@ internal class ListStream : Stream
 
     public override int Read(byte[] buffer, int offset, int count)
     {
+        var readable = Math.Min(count, Math.Min(buffer.Length - offset, list.Count - pos));
+        if (readable <= 0)
+        {
+            return 0;
+        }
+
+        if (list is List<byte> byteList)
+        {
+            byteList.CopyTo(pos, buffer, offset, readable);
+            pos += readable;
+            return readable;
+        }
+
         int listPos = pos;
-        int listEnd = Math.Min(list.Count, listPos + count);
         int bufPos = offset;
-        int bufLength = buffer.Length;
-        for (; listPos < listEnd && bufPos < bufLength; listPos++, bufPos++)
+        int listEnd = pos + readable;
+        for (; listPos < listEnd; listPos++, bufPos++)
         {
             buffer[bufPos] = list[listPos];
         }
-        pos = listPos;
-        return bufPos - offset;
+        pos += readable;
+        return readable;
     }
 
     public override int Read(Span<byte> buffer)

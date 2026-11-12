@@ -39,6 +39,16 @@ on:
         description: 'Run benchmarks without uploading results'
         required: false
         default: 'false'
+      skip_task_catalog_upload:
+        description: 'Skip uploading the benchmark task catalog'
+        required: false
+        type: boolean
+        default: false
+      post_discord:
+        description: 'Post the analysis summary to Discord'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -50,7 +60,8 @@ concurrency:
 jobs:
   prepare_matrix:
     name: Prepare benchmark matrix
-    runs-on: ubuntu-latest
+    # This only parses workflow inputs into a JSON matrix and performs no benchmark work.
+    runs-on: spacetimedb-linux-small
     outputs:
       languages: ${{ steps.matrix.outputs.languages }}
     steps:
@@ -64,7 +75,8 @@ jobs:
   run-benchmarks:
     name: Run benchmarks (${{ matrix.lang }})
     needs: prepare_matrix
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
+    timeout-minutes: 1440
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       TARGET_TRIPLE: x86_64-unknown-linux-gnu
@@ -127,7 +139,8 @@ jobs:
         if: matrix.lang == 'typescript'
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - name: Install pnpm
         if: matrix.lang == 'typescript'
@@ -150,6 +163,11 @@ jobs:
           ln -sf "$GITHUB_WORKSPACE/target/release/spacetimedb-cli" "$HOME/.local/bin/spacetime"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      - name: Check disk usage before benchmarks
+        run: |
+          df -h "$GITHUB_WORKSPACE" "$RUNNER_TEMP"
+          du -sh "$CARGO_TARGET_DIR"
+
       - name: Run benchmarks
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -163,10 +181,13 @@ jobs:
           DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
           MSBUILDDISABLENODEREUSE: "1"
           DOTNET_CLI_USE_MSBUILD_SERVER: "0"
+          # Bound in-flight provider credit reservations across the three language jobs.
           LLM_BENCH_CONCURRENCY: "8"
           LLM_BENCH_RUST_CONCURRENCY: "4"
-          LLM_BENCH_CSHARP_CONCURRENCY: "2"
-          LLM_BENCH_ROUTE_CONCURRENCY: ${{ matrix.lang == 'typescript' && '4' || '2' }}
+          LLM_BENCH_CSHARP_CONCURRENCY: "4"
+          LLM_BENCH_ROUTE_CONCURRENCY: "1"
+          LLM_BENCHMARK_REPORT_DIR: ${{ runner.temp }}/llm-benchmark-reports
+          LLM_BENCHMARK_DIAGNOSTICS_DIR: ${{ runner.temp }}/llm-benchmark-diagnostics
           INPUT_LANGUAGE: ${{ matrix.lang }}
           INPUT_MODEL_SET: ${{ inputs.model_set || 'website_active' }}
           INPUT_MODELS: ${{ inputs.models || '' }}
@@ -174,6 +195,7 @@ jobs:
           INPUT_CATEGORIES: ${{ inputs.categories || '' }}
           INPUT_TASKS: ${{ inputs.tasks || '' }}
           INPUT_DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          INPUT_SKIP_TASK_CATALOG_UPLOAD: ${{ inputs.skip_task_catalog_upload || 'false' }}
         run: |
           LANG="$INPUT_LANGUAGE"
           MODEL_SET="$INPUT_MODEL_SET"
@@ -182,6 +204,7 @@ jobs:
           CATEGORIES="$INPUT_CATEGORIES"
           TASKS="$INPUT_TASKS"
           DRY_RUN="$INPUT_DRY_RUN"
+          SKIP_TASK_CATALOG_UPLOAD="$INPUT_SKIP_TASK_CATALOG_UPLOAD"
 
           case "$MODEL_SET" in
             website_active)
@@ -219,6 +242,9 @@ jobs:
           if [ "$DRY_RUN" = "true" ]; then
             EXTRA_ARGS+=(--dry-run)
           fi
+          if [ "$SKIP_TASK_CATALOG_UPLOAD" = "true" ]; then
+            EXTRA_ARGS+=(--skip-task-catalog-upload)
+          fi
 
           if [ "$MODEL_SET" = "website_active" ]; then
             llm_benchmark run --lang "$LANG" --modes "$MODES" --model-source remote "${EXTRA_ARGS[@]}"
@@ -227,3 +253,108 @@ jobs:
           else
             llm_benchmark run --lang "$LANG" --modes "$MODES" --models "${MODEL_ARGS[@]}" "${EXTRA_ARGS[@]}"
           fi
+
+      - name: Check disk usage after benchmarks
+        if: always()
+        run: |
+          df -h "$GITHUB_WORKSPACE" "$RUNNER_TEMP"
+          if [ -d "$CARGO_TARGET_DIR" ]; then
+            du -sh "$CARGO_TARGET_DIR"
+          fi
+          if [ -d "$CARGO_TARGET_DIR/llm-runs" ]; then
+            du -sh "$CARGO_TARGET_DIR/llm-runs"
+          fi
+
+      - name: Upload analysis reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-benchmark-analysis-${{ matrix.lang }}
+          path: ${{ runner.temp }}/llm-benchmark-reports
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload server diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-benchmark-diagnostics-${{ matrix.lang }}
+          path: ${{ runner.temp }}/llm-benchmark-diagnostics
+          if-no-files-found: ignore
+          retention-days: 14
+
+  summarize:
+    name: Summarize benchmark analysis
+    if: always()
+    needs: run-benchmarks
+    runs-on: ubuntu-latest
+
+    env:
+      # Make action Node runtimes use the filtered CA bundle created by the setup action.
+      NODE_OPTIONS: --use-openssl-ca
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up certificate trust
+        if: runner.environment == 'github-hosted'
+        uses: ./.github/actions/setup-certificate-trust
+
+      - uses: dsherret/rust-toolchain-file@v1
+
+      - name: Download analysis reports
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: llm-benchmark-analysis-*
+          path: reports
+          merge-multiple: true
+
+      - name: Publish workflow summary
+        run: |
+          echo "# LLM benchmark analysis" >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+
+          if [ ! -d reports ] || ! find reports -type f -name '*.md' -print -quit | grep -q .; then
+            echo "No analysis reports were produced." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "Full per-model reports are available in the workflow artifacts." >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+
+          find reports -type f -name '*.md' -print | sort | while IFS= read -r report; do
+            awk '/^## Failure patterns/{exit} NR <= 80 {print}' "$report" >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+            echo "---" >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Prepare Discord summary
+        if: github.event_name == 'schedule' || inputs.post_discord
+        env:
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_LABEL: ${{ github.event_name == 'schedule' && 'Weekly scheduled run' || 'Manual run' }}
+        run: >
+          cargo ci other-workflows llm-benchmark-summary
+          --reports-dir reports
+          --run-url "$RUN_URL"
+          --run-label "$RUN_LABEL"
+          --output discord-payload.json
+
+      - name: Post Discord summary
+        if: github.event_name == 'schedule' || inputs.post_discord
+        continue-on-error: true
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.LLM_BENCHMARK_DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "::warning::LLM_BENCHMARK_DISCORD_WEBHOOK_URL is not configured"
+            exit 0
+          fi
+
+          curl --fail --silent --show-error \
+            --header 'Content-Type: application/json' \
+            --data-binary @discord-payload.json \
+            "$DISCORD_WEBHOOK_URL"

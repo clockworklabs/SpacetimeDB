@@ -11,6 +11,7 @@ namespace SpacetimeDB.Internal
     public partial record ExplicitNameEntry : SpacetimeDB.TaggedEnum<(
         NameMapping Table,
         NameMapping Function,
-        NameMapping Index
+        NameMapping Index,
+        NameMapping Namespace
     )>;
 }

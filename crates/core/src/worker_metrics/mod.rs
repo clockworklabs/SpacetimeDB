@@ -67,12 +67,14 @@ pub enum ClientDisconnectCause {
     WebsocketSendError,
     /// The websocket receive stream ended without a more specific cause.
     WebsocketStreamEnded,
+    /// A newer connection for the same client session superseded this one.
+    ConnectionSuperseded,
     /// The accepted websocket actor ended without a more specific recorded cause.
     Unknown,
 }
 
 impl ClientDisconnectCause {
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 23] = [
         Self::ClientClose,
         Self::IdleTimeout,
         Self::IncomingQueueFull,
@@ -94,6 +96,7 @@ impl ClientDisconnectCause {
         Self::WebsocketReceiveHttpFormat,
         Self::WebsocketSendError,
         Self::WebsocketStreamEnded,
+        Self::ConnectionSuperseded,
         Self::Unknown,
     ];
 
@@ -120,6 +123,7 @@ impl ClientDisconnectCause {
             Self::WebsocketReceiveHttpFormat => "websocket_receive_http_format",
             Self::WebsocketSendError => "websocket_send_error",
             Self::WebsocketStreamEnded => "websocket_stream_ended",
+            Self::ConnectionSuperseded => "connection_superseded",
             Self::Unknown => "unknown",
         }
     }
@@ -282,6 +286,11 @@ metrics_group!(
         #[help = "The cumulative number of ws client connections disconnected after becoming idle"]
         #[labels(database_identity: Identity)]
         pub ws_clients_idle_timed_out: IntCounterVec,
+
+        #[name = spacetime_worker_ws_clients_session_busy_total]
+        #[help = "The cumulative number of ws connections refused because their session was still held by a connection being torn down"]
+        #[labels(database_identity: Identity)]
+        pub ws_clients_session_busy: IntCounterVec,
 
         // Compatibility counters above continue to be emitted for existing dashboards.
         // Accepted-client disconnection `cause` label values are:
@@ -573,6 +582,56 @@ metrics_group!(
         #[labels(db: Identity, function: str)]
         #[buckets(0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60, 300)]
         pub scheduled_function_delay: HistogramVec,
+
+        #[name = spacetime_scheduler_active_scheduled_functions]
+        #[help = "The number of scheduled functions dispatched by the scheduler and not yet completed"]
+        #[labels(db: Identity)]
+        pub scheduler_active_scheduled_functions: IntGaugeVec,
+
+        #[name = spacetime_idc_in_flight_messages]
+        #[help = "Messages admitted by IDC actors that have not finished delivery, callback, and cleanup"]
+        #[labels(database_identity: Identity)]
+        pub idc_in_flight_messages: IntGaugeVec,
+
+        #[name = spacetime_idc_in_flight_bytes]
+        #[help = "Estimated retained IDC message bytes: outbox heap, encoded arguments, and completed response bodies; excludes transient HTTP and callback buffers"]
+        #[labels(database_identity: Identity)]
+        pub idc_in_flight_bytes: IntGaugeVec,
+
+        #[name = spacetime_idc_notification_queue_depth]
+        #[help = "Insert notifications waiting in IDC actor channels"]
+        #[labels(database_identity: Identity)]
+        pub idc_notification_queue_depth: IntGaugeVec,
+
+        #[name = spacetime_idc_delivery_attempts_total]
+        #[help = "IDC delivery attempts, including retries"]
+        #[labels(database_identity: Identity, table_name: str)]
+        pub idc_delivery_attempts: IntCounterVec,
+
+        #[name = spacetime_idc_delivery_failures_total]
+        #[help = "IDC attempts that failed to obtain and store a receiver result; excludes terminal reducer errors"]
+        #[labels(database_identity: Identity, table_name: str)]
+        pub idc_delivery_failures: IntCounterVec,
+
+        #[name = spacetime_idc_delivery_duration_seconds]
+        #[help = "Time spent obtaining and storing an IDC receiver result, in seconds"]
+        #[labels(database_identity: Identity, table_name: str)]
+        pub idc_delivery_duration_seconds: HistogramVec,
+
+        #[name = spacetime_idc_retries_total]
+        #[help = "IDC retries scheduled after an unsuccessful delivery, callback, or cleanup attempt"]
+        #[labels(database_identity: Identity, table_name: str)]
+        pub idc_retries: IntCounterVec,
+
+        #[name = spacetime_idc_callback_failures_total]
+        #[help = "IDC callbacks that failed preparation or execution"]
+        #[labels(database_identity: Identity, table_name: str)]
+        pub idc_callback_failures: IntCounterVec,
+
+        #[name = spacetime_idc_actor_errors_total]
+        #[help = "IDC actors that failed startup or exited with an error"]
+        #[labels(database_identity: Identity)]
+        pub idc_actor_errors: IntCounterVec,
 
         #[name = spacetime_worker_wasm_instance_errors_total]
         #[help = "The number of fatal WASM instance errors, such as reducer panics."]

@@ -408,6 +408,20 @@ impl ClientConnectionSender {
         self.cancelled.load(Ordering::Relaxed)
     }
 
+    /// Stop this connection's websocket actor.
+    ///
+    /// Used when a newer connection arrives for this connection's session
+    /// (see [`super::ClientSessionIndex`]), and when a client exceeds its
+    /// outgoing queue capacity. The actor's teardown runs the module-side
+    /// disconnect.
+    pub fn kick(&self, cause: ClientDisconnectCause) {
+        if let Some(metrics) = &self.metrics {
+            metrics.disconnect_recorder.record(cause);
+        }
+        self.abort_handle.abort();
+        self.cancelled.store(true, Ordering::Relaxed);
+    }
+
     /// Send a message to the client. For data-related messages, you should probably use
     /// `BroadcastQueue::send` to ensure that the client sees data messages in a consistent order.
     ///
@@ -455,12 +469,8 @@ impl ClientConnectionSender {
                 );
                 if let Some(metrics) = &self.metrics {
                     metrics.outgoing_queue_disconnects.inc();
-                    metrics
-                        .disconnect_recorder
-                        .record(ClientDisconnectCause::OutgoingQueueFull);
                 }
-                self.abort_handle.abort();
-                self.cancelled.store(true, Ordering::Relaxed);
+                self.kick(ClientDisconnectCause::OutgoingQueueFull);
                 return Err(ClientSendError::Cancelled);
             }
             Err(mpsc::error::TrySendError::Closed(_)) => return Err(ClientSendError::Disconnected),
@@ -708,6 +718,22 @@ pub struct MeteredUnboundedReceiver<T> {
 }
 
 impl<T> MeteredUnboundedReceiver<T> {
+    pub async fn recv_many(&mut self, buffer: &mut Vec<T>, limit: usize) -> usize {
+        let count = self.inner.recv_many(buffer, limit).await;
+        if let Some(gauge) = &self.gauge {
+            gauge.sub(count as i64);
+        }
+        count
+    }
+
+    pub fn try_recv(&mut self) -> Result<T, mpsc::error::TryRecvError> {
+        self.inner.try_recv().inspect(|_| {
+            if let Some(gauge) = &self.gauge {
+                gauge.dec();
+            }
+        })
+    }
+
     pub fn new(inner: mpsc::UnboundedReceiver<T>) -> Self {
         Self { inner, gauge: None }
     }
@@ -757,6 +783,7 @@ impl<T> MeteredUnboundedReceiver<T> {
 impl<T> Drop for MeteredUnboundedReceiver<T> {
     fn drop(&mut self) {
         // Record the number of elements still in the channel on drop
+        self.inner.close();
         if let Some(gauge) = &self.gauge {
             gauge.sub(self.inner.len() as _);
         }
@@ -1176,6 +1203,16 @@ impl ClientConnection {
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         self.module()
             .call_view_add_v2_subscription(self.sender(), self.auth.clone(), request, timer)
+            .await
+    }
+
+    pub async fn subscribe_batch(
+        &self,
+        request: ws_v2::SubscribeBatch,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
+        self.module()
+            .call_view_add_batch_subscription(self.sender(), self.auth.clone(), request, timer)
             .await
     }
     pub async fn subscribe_multi(

@@ -1,3 +1,6 @@
+// Shared decoder: `readString` is called once per string column per row.
+const textDecoder = new TextDecoder('utf-8');
+
 export default class BinaryReader {
   /**
    * The DataView used to read values from the binary data.
@@ -196,6 +199,6 @@ export default class BinaryReader {
     // A view is safe here: TextDecoder copies the bytes synchronously, so nothing
     // retains a reference to the reader's buffer. Avoids readUInt8Array's copy.
     const bytes = this.readBytes(length);
-    return new TextDecoder('utf-8').decode(bytes);
+    return textDecoder.decode(bytes);
   }
 }

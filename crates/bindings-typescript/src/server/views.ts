@@ -1,14 +1,15 @@
+import type { EnvironmentFor } from '../lib/environment.ts';
 import {
   AlgebraicType,
   ProductType,
   type AlgebraicTypeVariants,
   type Deserializer,
   type Serializer,
-} from '../lib/algebraic_type';
-import type { Identity } from '../lib/identity';
-import type { OptionAlgebraicType } from '../lib/option';
-import type { ParamsObj } from '../lib/reducers';
-import { type UntypedSchemaDef } from '../lib/schema';
+} from '../lib/algebraic_type.ts';
+import type { Identity } from '../lib/identity.ts';
+import type { OptionAlgebraicType } from '../lib/option.ts';
+import type { ParamsObj } from '../lib/reducers.ts';
+import { type UntypedSchemaDef } from '../lib/schema.ts';
 import {
   ArrayBuilder,
   OptionBuilder,
@@ -20,17 +21,17 @@ import {
   type InferTypeOfRow,
   type RowObj,
   type TypeBuilder,
-} from '../lib/type_builders';
-import type { IsUnion } from '../lib/type_util';
-import { bsatnBaseSize, toPascalCase } from '../lib/util';
-import type { ReadonlyDbView } from './db_view';
-import { type QueryBuilder, type RowTypedQuery } from './query';
+} from '../lib/type_builders.ts';
+import type { IsUnion } from '../lib/type_util.ts';
+import { bsatnBaseSize, toPascalCase } from '../lib/util.ts';
+import type { ReadonlyDbView } from './db_view.ts';
+import { type QueryBuilder, type RowTypedQuery } from './query.ts';
 import {
   exportContext,
   registerExport,
   type ModuleExport,
   type SchemaInner,
-} from './schema';
+} from './schema.ts';
 
 export type ViewExport<ViewFn> = ViewFn & ModuleExport;
 
@@ -81,11 +82,13 @@ export function makeAnonViewExport<
 export type ViewCtx<S extends UntypedSchemaDef> = Readonly<{
   sender: Identity;
   db: ReadonlyDbView<S>;
+  env: EnvironmentFor<S>;
   from: QueryBuilder<S>;
 }>;
 
 export type AnonymousViewCtx<S extends UntypedSchemaDef> = Readonly<{
   db: ReadonlyDbView<S>;
+  env: EnvironmentFor<S>;
   from: QueryBuilder<S>;
 }>;
 
@@ -274,7 +277,9 @@ function describeView<
       `View '${exportName}' can have at most one primaryKey() column on its returned row type; found ${primaryKeyColumns.join(', ')}`
     );
   }
-  if (primaryKeyColumns.length === 1) {
+  // A view with params doesn't get a primary key: the host rejects one, and a
+  // table's `rowType` carries its `.primaryKey()` into views that return it.
+  if (primaryKeyColumns.length === 1 && paramType.elements.length === 0) {
     ctx.moduleDef.viewPrimaryKeys.push({
       viewSourceName: exportName,
       columns: primaryKeyColumns,

@@ -4,12 +4,14 @@ use anyhow::{bail, Context, Result};
 use ci_common::{ensure_repo_root, pnpm};
 use clap::Parser;
 use duct::cmd;
+use regex::Regex;
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 /// Lints the codebase
 ///
@@ -102,6 +104,11 @@ fn npmrc_minimum_release_age(path: &Path, expected_minimum_release_age: u64) -> 
                 expected_minimum_release_age
             )
         })
+}
+
+fn workflow_installs_pnpm_with_npm(contents: &str) -> bool {
+    static NPM_INSTALL_PNPM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"npm install.*pnpm").unwrap());
+    NPM_INSTALL_PNPM.is_match(contents)
 }
 
 fn check_pnpm_release_age_policy() -> Result<()> {
@@ -208,6 +215,12 @@ fn check_pnpm_release_age_policy() -> Result<()> {
         if contents.contains("pnpm/action-setup@v4") {
             bail!(
                 "{} must use ./.github/actions/setup-pnpm instead of pnpm/action-setup@v4",
+                workflow_path.display()
+            );
+        }
+        if workflow_installs_pnpm_with_npm(&contents) {
+            bail!(
+                "{} must use ./.github/actions/setup-pnpm instead of installing pnpm with npm",
                 workflow_path.display()
             );
         }

@@ -1,7 +1,12 @@
 ARG CARGO_PROFILE=release
 
 
-FROM rust:1.93.0 AS chef
+# !rust-toolchain-sync
+FROM rust:1.97.1 AS chef
+# Refresh OS certificate roots to distrust the compromised eMudhra CAs.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+# rustup has its own CA bundle; 1.29.2+ distrusts the compromised eMudhra CAs.
+RUN rustup --version && rustup self update && rustup --version
 RUN rust_target=$(rustc -vV | awk '/^host:/{ print $2 }') && \
   curl https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-$rust_target.tgz -fL | tar xz -C $CARGO_HOME/bin
 RUN cargo binstall -y cargo-chef@0.1.70

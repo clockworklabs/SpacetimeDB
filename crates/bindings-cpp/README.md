@@ -275,3 +275,51 @@ See the `modules/*-cpp/src/` directory for example modules:
 
 This library is part of the SpacetimeDB project. Please see the main repository for contribution guidelines.
 
+
+### Declared environment
+
+Declare the complete environment schema in a dedicated header, before other SDK
+includes. Values are supplied at publish time and are never embedded in this
+header. For example, `environment.h`:
+
+```cpp
+#pragma once
+#include <spacetimedb/environment_declaration.h>
+SPACETIMEDB_ENV(
+    (API_URL, std::string),
+    (MODE, std::string, ("prod", "dev")),
+    (LOG_LEVEL, std::optional<std::string>, ("info", "debug"))
+)
+```
+
+Select it in your project's `CMakeLists.txt` **before** adding the SDK directory:
+
+```cmake
+set(SPACETIMEDB_ENV_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/environment.h")
+add_subdirectory(path/to/bindings-cpp sdk)
+add_executable(my_module src/lib.cpp)
+target_link_libraries(my_module PRIVATE spacetimedb_cpp_library)
+```
+
+The SDK's CMake target includes the declaration header before every SDK and module
+translation unit that uses contexts. The standalone WASI ABI shim is excluded
+because it has no SDK context types. This keeps the context type consistent;
+including the header in only one source file is insufficient. The normal module
+source can then use the usual umbrella include:
+
+```cpp
+#include <spacetimedb.h>
+void example(SpacetimeDB::ReducerContext ctx) {
+    std::string mode = ctx.env.MODE();
+    std::optional<std::string> level = ctx.env.LOG_LEVEL();
+}
+```
+
+An empty `SPACETIMEDB_ENV()` or an omitted declaration selects an empty schema.
+`get`, C++ keywords, and names colliding with the accessor type do not create named
+methods; use the checked `ctx.env.get("get")` form for such declared names. Unknown
+keys fail at runtime, including when the module declares no environment variables.
+Only the host's root module entry may read environment values. Ordinary C++ helper
+calls retain their caller's host scope. Values are private, durable database configuration for secrets and other settings.
+Database owners and authorized collaborators can read them; module code can expose
+them through its own outputs.

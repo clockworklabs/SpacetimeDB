@@ -58,10 +58,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  validate-release-invoker:
+    name: Validate release invoker
+    # This only validates workflow inputs and the invoking actor.
+    runs-on: spacetimedb-linux-small
+    steps:
+      - name: Reject direct public release invocations
+        env:
+          EXPECTED_RELEASE_ACTOR: spacetimedb-devops
+          ACTUAL_RELEASE_ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+
+          if [ "$ACTUAL_RELEASE_ACTOR" != "$EXPECTED_RELEASE_ACTOR" ]; then
+            echo "::error::Do not invoke the public release workflow directly. Invoke the private release workflow instead."
+            echo "Expected release actor: $EXPECTED_RELEASE_ACTOR"
+            echo "Actual release actor: $ACTUAL_RELEASE_ACTOR"
+            exit 1
+          fi
+
   # This job runs before all of our release jobs. If there is a release problem we should
   # try to fail during this step to prevent partial releases.
   build-cargo-release:
-    runs-on: spacetimedb-new-runner-2
+    needs: validate-release-invoker
+    runs-on: spacetimedb-linux
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -90,7 +110,7 @@ jobs:
 
   release-crates:
     needs: build-cargo-release
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     if: ${{ inputs.release_crates }}
     env:
       CARGO_TERM_COLOR: always
@@ -120,10 +140,8 @@ jobs:
           chmod +x ./shared-bin/cargo-release
           echo "$PWD/shared-bin" >> "$GITHUB_PATH"
 
-      # TODO: dry-run via publishing to a local registry: https://doc.rust-lang.org/cargo/reference/registries.html
       - name: Run release (dry-run)
         if: ${{ inputs.dry_run }}
-        # NOTE: This will print a warning that `cargo-release release crates` dry runs are not supported
         run: cargo-release release crates ${{ github.event.inputs.release_tag }} --dry-run
 
       - name: Run release
@@ -132,7 +150,7 @@ jobs:
 
   release-csharp:
     needs: build-cargo-release
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     if: ${{ inputs.release_csharp }}
     env:
       CARGO_TERM_COLOR: always
@@ -211,7 +229,8 @@ jobs:
 
   release-cpp:
     needs: build-cargo-release
-    runs-on: spacetimedb-new-runner-2
+    # This updates and publishes the generated C++ SDK repository without a core build.
+    runs-on: spacetimedb-linux-small
     if: ${{ inputs.release_cpp }}
     env:
       CARGO_TERM_COLOR: always
@@ -267,9 +286,12 @@ jobs:
 
   release-npm:
     needs: build-cargo-release
+    # This **MUST** be on a GitHub-provided runner! Otherwise the "trusted publishers" workflow does not work!
     runs-on: ubuntu-latest
     if: ${{ inputs.release_npm }}
     env:
+      # Make action Node runtimes use the filtered CA bundle created by the setup action.
+      NODE_OPTIONS: --use-openssl-ca
       CARGO_TERM_COLOR: always
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -285,6 +307,10 @@ jobs:
           ref: ${{ inputs.dry_run && github.sha || github.event.inputs.release_tag }}
           submodules: recursive
 
+      - name: Set up certificate trust
+        if: runner.environment == 'github-hosted'
+        uses: ./.github/actions/setup-certificate-trust
+
       - name: Download cargo-release
         uses: actions/download-artifact@v4
         with:
@@ -296,10 +322,38 @@ jobs:
           chmod +x ./shared-bin/cargo-release
           echo "$PWD/shared-bin" >> "$GITHUB_PATH"
 
+      # The TypeScript package's prepublish hook builds the portable datastore
+      # Wasm from source, so npm publishing needs Rust and wasm-bindgen.
+      - name: Install Rust toolchain
+        uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Install wasm-bindgen CLI
+        run: |
+          REQUIRED_WASM_BINDGEN_VERSION="$(
+            awk '
+              $1 == "name" && $3 == "\"wasm-bindgen\"" { in_pkg = 1; next }
+              in_pkg && $1 == "version" {
+                gsub(/"/, "", $3);
+                print $3;
+                exit;
+              }
+            ' Cargo.lock
+          )"
+          if [ -z "${REQUIRED_WASM_BINDGEN_VERSION}" ]; then
+            echo "Failed to determine wasm-bindgen version from Cargo.lock"
+            exit 1
+          fi
+
+          cargo install --locked wasm-bindgen-cli --version "${REQUIRED_WASM_BINDGEN_VERSION}"
+          wasm-bindgen --version
+
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '22.x'
+          # Minimum 22.x release with the eMudhra CA fix.
+          node-version: '22.23.4'
 
       - name: Install npm with trusted publishing support
         run: |
@@ -308,7 +362,7 @@ jobs:
           npm --version
 
       - name: Install pnpm
-        run: npm install -g pnpm
+        uses: ./.github/actions/setup-pnpm
 
       - name: Run NPM release (dry-run)
         if: ${{ inputs.dry_run }}
@@ -320,7 +374,7 @@ jobs:
 
   release-docker:
     needs: build-cargo-release
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-linux
     env:
       CARGO_TERM_COLOR: always
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -360,10 +414,23 @@ jobs:
         run: cargo-release release docker ${{ github.event.inputs.release_tag }} ${{ inputs.dry_run && '--dry-run' || '' }}
 
   update-mirror-latest-version:
+    needs: validate-release-invoker
+    # This could move to a custom runner, but it would need to have the AWS cli installed
     runs-on: ubuntu-latest
     if: ${{ !inputs.dry_run && inputs.update_mirror_latest_version }}
 
+    env:
+      # Make action Node runtimes use the filtered CA bundle created by the setup action.
+      NODE_OPTIONS: --use-openssl-ca
+
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up certificate trust
+        if: runner.environment == 'github-hosted'
+        uses: ./.github/actions/setup-certificate-trust
+
       - name: Verify mirror tag prefix exists
         env:
           RELEASE_TAG: ${{ github.event.inputs.release_tag }}
@@ -402,7 +469,8 @@ jobs:
       - release-npm
       - release-docker
       - update-mirror-latest-version
-    runs-on: ubuntu-latest
+    # This only publishes existing artifacts and dispatches the release announcement.
+    runs-on: spacetimedb-linux-small
     if: >-
       ${{
         always()
@@ -451,5 +519,6 @@ jobs:
             --arg tag "$RELEASE_TAG" \
             --arg url "$url" \
             --arg body "$body" \
-            '{release_tag: $tag, release_url: $url, release_body: $body, dry_run: "false"}' \
+            --arg dry_run "false" \
+            '{release_tag: $tag, release_url: $url, release_body: $body, dry_run: $dry_run}' \
           | gh workflow run tag-release.yml --repo clockworklabs/SpacetimeDB --ref master --json

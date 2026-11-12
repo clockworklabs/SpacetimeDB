@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using System.Threading.Tasks;
 #if UNITY_5_3_OR_NEWER
 using UnityEngine;
@@ -38,6 +37,7 @@ namespace SpacetimeDB
         /// </summary>
         /// <returns>An <see cref="IParsedTableUpdate"/> representing the parsed update.</returns>
         internal IParsedTableUpdate MakeParsedTableUpdate();
+        internal void AddSnapshotDeletes(ParsedDatabaseUpdate update);
 
         /// <summary>
         /// Parses an insert-only table update and applies the results to the specified parsed database update.
@@ -103,13 +103,15 @@ namespace SpacetimeDB
         // and therefore avoids using reflection when initializing the row object.
 
         public abstract class IndexBase<Column>
-            where Column : IEquatable<Column>
+            // where Column : IEquatable<Column> // TODO: Revisit. Enums don't satisfy the `IEquatable<Column>` constraint. It shouldn't be needed though.
+            where Column : notnull
         {
             protected abstract Column GetKey(Row row);
         }
 
         public abstract class UniqueIndexBase<Column> : IndexBase<Column>
-            where Column : IEquatable<Column>
+            // where Column : IEquatable<Column> // TODO: Revisit. Enums don't satisfy the `IEquatable<Column>` constraint. It shouldn't be needed though: `Dictionary<TKey, TValue>` does not require `TKey : IEquatable<TKey>`; it uses `EqualityComparer<TKey>.Default`.
+            where Column : notnull
         {
             private readonly Dictionary<Column, Row> cache = new();
 
@@ -123,7 +125,8 @@ namespace SpacetimeDB
         }
 
         public abstract class BTreeIndexBase<Column> : IndexBase<Column>
-            where Column : IEquatable<Column>, IComparable<Column>
+            // where Column : IEquatable<Column>, IComparable<Column> // TODO: Revisit. Enums don't satisfy the `IEquatable<Column>` constraint. It shouldn't be needed though: `Dictionary<TKey, TValue>` does not require `TKey : IEquatable<TKey>`; it uses `EqualityComparer<TKey>.Default`. And if we change it to `SortedDictionary<TKey, TValue>`, it uses `Comparer<SimpleEnum>.Default`.
+            where Column : notnull
         {
             // TODO: change to SortedDictionary when adding support for range queries.
             private readonly Dictionary<Column, HashSet<Row>> cache = new();
@@ -154,7 +157,7 @@ namespace SpacetimeDB
             }
 
             public IEnumerable<Row> Filter(Column value) =>
-                cache.TryGetValue(value, out var rows) ? rows : Enumerable.Empty<Row>();
+                cache.TryGetValue(value, out var rows) ? rows : Array.Empty<Row>();
         }
 
         /// <summary>
@@ -176,6 +179,9 @@ namespace SpacetimeDB
 
         public abstract string RemoteTableName { get; }
         string IRemoteTableHandle.RemoteTableName => RemoteTableName;
+
+        /// <summary>The SQL identifier, separate from the wire/cache key.</summary>
+        protected virtual SqlTableName RemoteSqlTableName => new(RemoteTableName);
 
         /// <summary>
         /// Whether this table is an event table.
@@ -295,6 +301,22 @@ namespace SpacetimeDB
             return new ParsedTableUpdate();
         }
 
+        void IRemoteTableHandle.AddSnapshotDeletes(ParsedDatabaseUpdate update)
+        {
+            if (IsEventTable)
+            {
+                return;
+            }
+            var delta = ((ParsedTableUpdate)update.UpdateForTable(this)).Delta;
+            foreach (var entry in Entries.Entries)
+            {
+                for (var i = 0u; i < Entries.Multiplicity(entry.Key); i++)
+                {
+                    delta.Remove(entry.Key, entry.Value);
+                }
+            }
+        }
+
         /// <summary>
         /// Parses an insert-only table update and applies the results to the specified parsed database update.
         /// </summary>
@@ -315,6 +337,7 @@ namespace SpacetimeDB
                     var (insertReader, insertRowCount) = CompressionHelpers.ParseRowList(persistent.Inserts);
                     for (var i = 0; i < insertRowCount; i++)
                     {
+                        CompressionHelpers.SeekRow(insertReader, persistent.Inserts, i);
                         var obj = Decode(insertReader, out var pk);
                         delta.Delta.Add(pk, obj);
                     }
@@ -325,6 +348,7 @@ namespace SpacetimeDB
                     delta.EventRows ??= new();
                     for (var i = 0; i < eventRowCount; i++)
                     {
+                        CompressionHelpers.SeekRow(eventReader, events.Events, i);
                         var obj = DecodeValue(eventReader);
                         delta.EventRows.Add(obj);
                     }
@@ -351,6 +375,7 @@ namespace SpacetimeDB
                     var (deleteReader, deleteRowCount) = CompressionHelpers.ParseRowList(persistent.Deletes);
                     for (var i = 0; i < deleteRowCount; i++)
                     {
+                        CompressionHelpers.SeekRow(deleteReader, persistent.Deletes, i);
                         var obj = Decode(deleteReader, out var pk);
                         delta.Delta.Remove(pk, obj);
                     }
@@ -379,6 +404,7 @@ namespace SpacetimeDB
                     var (insertReader, insertRowCount) = CompressionHelpers.ParseRowList(persistent.Inserts);
                     for (var i = 0; i < insertRowCount; i++)
                     {
+                        CompressionHelpers.SeekRow(insertReader, persistent.Inserts, i);
                         var obj = Decode(insertReader, out var pk);
                         delta.Delta.Add(pk, obj);
                     }
@@ -386,6 +412,7 @@ namespace SpacetimeDB
                     var (deleteReader, deleteRowCount) = CompressionHelpers.ParseRowList(persistent.Deletes);
                     for (var i = 0; i < deleteRowCount; i++)
                     {
+                        CompressionHelpers.SeekRow(deleteReader, persistent.Deletes, i);
                         var obj = Decode(deleteReader, out var pk);
                         delta.Delta.Remove(pk, obj);
                     }
@@ -396,6 +423,7 @@ namespace SpacetimeDB
                     delta.EventRows ??= new();
                     for (var i = 0; i < eventRowCount; i++)
                     {
+                        CompressionHelpers.SeekRow(eventReader, events.Events, i);
                         var obj = DecodeValue(eventReader);
                         delta.EventRows.Add(obj);
                     }
@@ -415,10 +443,10 @@ namespace SpacetimeDB
 
         public int Count => (int)Entries.CountDistinct;
 
-        public IEnumerable<Row> Iter() => Entries.Entries.Select(entry => (Row)entry.Value);
+        public IEnumerable<Row> Iter() => Entries.Values;
 
         public Task<Row[]> RemoteQuery(string query) =>
-            conn.RemoteQuery<Row>($"SELECT {RemoteTableName}.* FROM {RemoteTableName} {query}");
+            conn.RemoteQuery<Row>($"SELECT {RemoteSqlTableName}.* FROM {RemoteSqlTableName} {query}");
 
         void InvokeInsert(IEventContext context, IStructuralReadWrite row)
         {
@@ -452,7 +480,11 @@ namespace SpacetimeDB
         {
             // Fully qualified to avoid clash with UnityEngine.Debug
             System.Diagnostics.Debug.Assert(wasInserted.Count == 0 && wasUpdated.Count == 0 && wasRemoved.Count == 0, "Call Apply and PostApply before calling PreApply again");
-            if (IsEventTable) return; // Event tables have no deletes.
+            if (IsEventTable)
+            {
+                return; // Event tables have no deletes.
+            }
+
             var delta = (ParsedTableUpdate)parsedTableUpdate;
             foreach (var (_, value) in Entries.WillRemove(delta.Delta))
             {
@@ -504,42 +536,16 @@ namespace SpacetimeDB
             // in order to avoid keys an error with the same key already added.
             foreach (var (_, value) in wasRemoved)
             {
-                if (value is Row oldRow)
-                {
-                    OnInternalDeleteHandler.Invoke(oldRow);
-                }
+                OnInternalDeleteHandler.Invoke(value);
             }
             foreach (var (_, value) in wasInserted)
             {
-                if (value is Row newRow)
-                {
-                    OnInternalInsertHandler.Invoke(newRow);
-                }
-                else
-                {
-                    throw new Exception($"Invalid row type for table {RemoteTableName}: {value.GetType().Name}");
-                }
+                OnInternalInsertHandler.Invoke(value);
             }
             foreach (var (_, oldValue, newValue) in wasUpdated)
             {
-                if (oldValue is Row oldRow)
-                {
-                    OnInternalDeleteHandler.Invoke(oldRow);
-                }
-                else
-                {
-                    throw new Exception($"Invalid row type for table {RemoteTableName}: {oldValue.GetType().Name}");
-                }
-
-
-                if (newValue is Row newRow)
-                {
-                    OnInternalInsertHandler.Invoke(newRow);
-                }
-                else
-                {
-                    throw new Exception($"Invalid row type for table {RemoteTableName}: {newValue.GetType().Name}");
-                }
+                OnInternalDeleteHandler.Invoke(oldValue);
+                OnInternalInsertHandler.Invoke(newValue);
             }
         }
 

@@ -3,7 +3,7 @@ use anyhow::{anyhow, Context, Result};
 use replace_spacetimedb::{replace_in_tree, ReplaceOptions};
 use std::ffi::OsStr;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use tempfile::NamedTempFile;
 
@@ -25,6 +25,14 @@ fn run_inherit(cmd: impl AsRef<OsStr>, args: &[&str], cwd: Option<&Path>) -> Res
     Ok(())
 }
 
+fn cargo_target_dir(workspace_dir: &Path) -> PathBuf {
+    match std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from) {
+        Some(path) if path.is_absolute() => path,
+        Some(path) => workspace_dir.join(path),
+        None => workspace_dir.join("target"),
+    }
+}
+
 /// Run a command and return captured stdout as UTF-8 string.
 fn run_capture(cmd: &str, args: &[&str]) -> Result<String> {
     let out = Command::new(cmd)
@@ -40,8 +48,9 @@ fn run_capture(cmd: &str, args: &[&str]) -> Result<String> {
 
 fn main() -> Result<()> {
     let out_dir = "src/sdk/client_api";
-    let index_replacement = "../../index";
-    let other_replacement = "../../lib/type_builders";
+    // Explicit extensions keep the emitted .d.ts files resolvable under NodeNext.
+    let index_replacement = "../../index.ts";
+    let other_replacement = "../../lib/type_builders.ts";
 
     let workspace_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -75,8 +84,8 @@ fn main() -> Result<()> {
 
     // 4) Generate TS client
     run_inherit(
-        workspace_dir
-            .join("target/debug/spacetimedb-cli")
+        cargo_target_dir(workspace_dir)
+            .join("debug/spacetimedb-cli")
             .with_extension(std::env::consts::EXE_EXTENSION),
         &[
             "generate",

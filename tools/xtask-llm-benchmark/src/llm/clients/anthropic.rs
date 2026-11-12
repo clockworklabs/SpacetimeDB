@@ -1,11 +1,13 @@
+use super::http::HttpResponseError;
+use super::oa_compat::ProviderRefusal;
 use crate::bench::utils::debug_llm_verbose;
 use crate::llm::prompt::BuiltPrompt;
 use crate::llm::segmentation::{
-    anthropic_ctx_limit_tokens, build_anthropic_messages, desired_output_tokens, deterministic_trim_prefix,
-    estimate_tokens, headroom_tokens_env, non_context_reserve_tokens_env,
+    anthropic_ctx_limit_tokens, build_anthropic_messages, deterministic_trim_prefix, estimate_tokens,
+    headroom_tokens_env, non_context_reserve_tokens_env, output_token_limit_env,
 };
-use crate::llm::types::{LlmOutput, Vendor};
-use anyhow::{anyhow, bail, Context, Result};
+use crate::llm::types::{LlmOutput, ReasoningEffort, Vendor};
+use anyhow::{anyhow, Context, Result};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, CONTENT_TYPE};
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
@@ -30,7 +32,7 @@ impl AnthropicClient {
         format!("{}/v1/messages", self.base.trim_end_matches('/'))
     }
 
-    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<LlmOutput> {
+    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt, reasoning: ReasoningEffort) -> Result<LlmOutput> {
         let system = prompt.system.clone();
         let segs = prompt.segments.clone();
         let mut static_prefix = prompt.static_prefix.clone().unwrap_or_default();
@@ -73,13 +75,25 @@ impl AnthropicClient {
         struct Req {
             model: String,
             max_tokens: u32,
+            thinking: ThinkingConfig,
+            output_config: OutputConfig,
             #[serde(skip_serializing_if = "Option::is_none")]
             system: Option<serde_json::Value>,
             messages: Vec<serde_json::Value>,
         }
+        #[derive(Serialize)]
+        struct ThinkingConfig {
+            r#type: &'static str,
+        }
+        #[derive(Serialize)]
+        struct OutputConfig {
+            effort: ReasoningEffort,
+        }
         let req = Req {
             model: model_norm.to_string(),
             max_tokens,
+            thinking: ThinkingConfig { r#type: "adaptive" },
+            output_config: OutputConfig { effort: reasoning },
             system: system_json,
             messages,
         };
@@ -103,15 +117,7 @@ impl AnthropicClient {
         let url = self.url_messages();
         let (status, body) = self.post_with_retries(&url, hm, &req).await?;
         if debug_llm_verbose() {
-            let preview = if body.len() > 2000 {
-                format!("{}…", &body[..2000])
-            } else {
-                body.clone()
-            };
-            eprintln!("[anthropic] http_status={} body_preview={}", status, preview);
-        }
-        if !status.is_success() {
-            bail!("POST {} -> {}: {}", url, status, body);
+            eprintln!("[anthropic] http_status={}", status);
         }
 
         #[derive(Deserialize)]
@@ -136,7 +142,19 @@ impl AnthropicClient {
             text: Option<String>,
         }
 
-        let parsed: MsgResp = serde_json::from_str(&body).context("parse anthropic resp")?;
+        let value: serde_json::Value = serde_json::from_str(&body).context("parse anthropic resp")?;
+        if value["stop_reason"].as_str() == Some("refusal") {
+            return Err(ProviderRefusal {
+                generation_id: value["id"].as_str().map(str::to_owned),
+                provider: Some("Anthropic".into()),
+                finish_reason: Some("content_filter".into()),
+                native_finish_reason: Some("refusal".into()),
+                refusal: Some(body),
+                content: None,
+            }
+            .into());
+        }
+        let parsed: MsgResp = serde_json::from_value(value).context("parse anthropic resp")?;
         let input_tokens = parsed.usage.as_ref().and_then(|u| u.input_tokens);
         let output_tokens = parsed.usage.as_ref().and_then(|u| u.output_tokens);
         let text = parsed
@@ -182,7 +200,11 @@ impl AnthropicClient {
                 || status == StatusCode::GATEWAY_TIMEOUT;
 
             if !retryable || attempt >= 10 {
-                bail!("POST {} -> {}: {}", url, status, body);
+                return Err(HttpResponseError {
+                    status: status.as_u16(),
+                    body,
+                }
+                .into());
             }
 
             let wait = compute_backoff(status, &h, attempt);
@@ -230,8 +252,9 @@ fn compute_backoff(status: StatusCode, headers: &HeaderMap, attempt: u32) -> std
     std::time::Duration::from_millis(base_ms.min(cap_ms) + jitter)
 }
 
+// Thinking counts against max_tokens, so the shared 4096 default truncates long answers.
 fn anthropic_max_output_tokens() -> u32 {
-    desired_output_tokens().max(1) as u32
+    output_token_limit_env().unwrap_or(16_000).max(1) as u32
 }
 
 pub fn normalize_anthropic_model(id: &str) -> &str {
@@ -251,5 +274,61 @@ pub fn normalize_anthropic_model(id: &str) -> &str {
         "sonnet-4" | "claude-sonnet-4" => "claude-sonnet-4-20250514",
 
         _ => id, // return the original input; never the temporary
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn http_refusal_body_is_saved_but_not_logged() {
+        let (base, server) = super::super::http::mock_response(403, "private refusal details").await;
+        let client = AnthropicClient {
+            base,
+            api_key: "mock-key".into(),
+            client: Client::new(),
+        };
+        let error = client
+            .post_with_retries(&client.url_messages(), HeaderMap::new(), &serde_json::json!({}))
+            .await
+            .unwrap_err();
+        server.await.unwrap();
+        assert!(!format!("{error:?}").contains("private refusal details"));
+        assert_eq!(
+            error
+                .downcast_ref::<super::super::http::HttpResponseError>()
+                .unwrap()
+                .body,
+            "private refusal details"
+        );
+    }
+
+    #[tokio::test]
+    async fn successful_http_refusal_is_not_generated_code() {
+        let body = r#"{"id":"gen-block","stop_reason":"refusal","content":[{"type":"text","text":"private refusal details"}]}"#;
+        let (base, server) = super::super::http::mock_response(200, body).await;
+        let client = AnthropicClient {
+            base,
+            api_key: "mock-key".into(),
+            client: Client::new(),
+        };
+        let prompt = BuiltPrompt {
+            system: None,
+            static_prefix: None,
+            segments: vec![],
+            search_enabled: false,
+        };
+        let error = client
+            .generate("test-model", &prompt, ReasoningEffort::Medium)
+            .await
+            .unwrap_err();
+        server.await.unwrap();
+        let refusal = error
+            .downcast_ref::<super::super::oa_compat::ProviderRefusal>()
+            .unwrap();
+        assert_eq!(refusal.generation_id.as_deref(), Some("gen-block"));
+        assert_eq!(refusal.refusal.as_deref(), Some(body));
+        assert!(!format!("{error:?}").contains("private refusal details"));
     }
 }

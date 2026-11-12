@@ -217,7 +217,7 @@ pub struct PublishedDatabase {
     db: String,
     // Keep the publishing CLI session alive so deletion uses the database
     // owner's credentials without sharing mutable CLI state across routes.
-    cli_root: CliRootDir,
+    cli_root: Option<CliRootDir>,
     deleted: bool,
 }
 
@@ -227,13 +227,13 @@ impl PublishedDatabase {
         Self {
             host_url: host_url.to_owned(),
             db,
-            cli_root,
+            cli_root: Some(cli_root),
             deleted: false,
         }
     }
 
     fn delete_inner(&self) -> Result<()> {
-        let mut cmd = spacetime_cmd(&self.cli_root);
+        let mut cmd = spacetime_cmd(self.cli_root.as_ref().expect("database owns CLI session"));
         cmd.arg("delete")
             .arg("-y")
             .arg("--no-config")
@@ -251,8 +251,9 @@ impl PublishedDatabase {
     pub fn delete(mut self) -> Result<()> {
         self.delete_inner()?;
         self.deleted = true;
-        self.cli_root.remove()?;
-        self.cli_root.relinquish_cleanup();
+        let cli_root = self.cli_root.as_mut().expect("database owns CLI session");
+        cli_root.remove()?;
+        cli_root.relinquish_cleanup();
         Ok(())
     }
 
@@ -260,20 +261,92 @@ impl PublishedDatabase {
     /// has been created by a migration republish.
     pub fn relinquish(mut self) {
         self.deleted = true;
-        self.cli_root.relinquish_cleanup();
+        self.cli_root
+            .as_mut()
+            .expect("database owns CLI session")
+            .relinquish_cleanup();
     }
 }
 
 impl Drop for PublishedDatabase {
     fn drop(&mut self) {
-        if !self.deleted
-            && let Err(error) = self.delete_inner()
-        {
-            eprintln!(
-                "[cleanup] failed to delete benchmark database `{}` during fallback cleanup: {error:#}",
-                self.db
-            );
+        if !self.deleted {
+            let database = Self {
+                host_url: std::mem::take(&mut self.host_url),
+                db: std::mem::take(&mut self.db),
+                cli_root: self.cli_root.take(),
+                // Do not recursively retry if fallback deletion fails.
+                deleted: true,
+            };
+            run_fallback_cleanup(move || {
+                if let Err(error) = database.delete_inner() {
+                    eprintln!(
+                        "[cleanup] failed to delete benchmark database `{}` during fallback cleanup: {error:#}",
+                        database.db
+                    );
+                }
+                drop(database);
+            });
         }
+    }
+}
+
+fn run_fallback_cleanup(cleanup: impl FnOnce() + Send + 'static) {
+    // If shutdown rejects the blocking task, dropping its closure must still clean up.
+    struct Cleanup<F: FnOnce()>(Option<F>);
+    impl<F: FnOnce()> Drop for Cleanup<F> {
+        fn drop(&mut self) {
+            if let Some(cleanup) = self.0.take() {
+                cleanup();
+            }
+        }
+    }
+    let cleanup = Cleanup(Some(cleanup));
+    if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+        // Runtime shutdown waits for blocking work, including cancelled-task cleanup.
+        runtime.spawn_blocking(move || drop(cleanup));
+    } else {
+        drop(cleanup);
+    }
+}
+
+#[cfg(test)]
+mod fallback_cleanup_tests {
+    use super::*;
+
+    #[test]
+    fn cancellation_cleanup_does_not_block_and_shutdown_waits_for_it() {
+        let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
+        let (release, wait) = std::sync::mpsc::channel();
+        let (finished, completion) = std::sync::mpsc::channel();
+        runtime.block_on(async {
+            run_fallback_cleanup(move || {
+                finished
+                    .send(wait.recv_timeout(std::time::Duration::from_secs(5)).is_ok())
+                    .unwrap();
+            });
+            let _ = release.send(());
+        });
+        drop(runtime);
+        assert!(completion.try_recv().unwrap(), "cleanup blocked its async caller");
+    }
+
+    #[test]
+    fn cleanup_without_a_runtime_finishes_inline() {
+        let (finished, completion) = std::sync::mpsc::channel();
+        run_fallback_cleanup(move || finished.send(()).unwrap());
+        completion.try_recv().unwrap();
+    }
+
+    #[test]
+    fn cleanup_is_not_lost_when_runtime_has_shut_down() {
+        let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
+        let handle = runtime.handle().clone();
+        drop(runtime);
+        let _entered = handle.enter();
+        let (finished, completion) = std::sync::mpsc::channel();
+        run_fallback_cleanup(move || finished.send(()).unwrap());
+        completion.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
     }
 }
 
@@ -292,6 +365,21 @@ fn database_cli_root(module_name: &str, remove_on_drop: bool) -> Result<CliRootD
     let path = env::temp_dir().join(format!("stdb-llm-cli-{}-{db}", CLI_SESSION_TAG.as_str()));
     fs::create_dir_all(&path)?;
     Ok(CliRootDir { path, remove_on_drop })
+}
+
+/// The token of the identity that published this database, which owns its private tables.
+pub(crate) fn database_owner_token(module_name: &str) -> Result<String> {
+    let db = sanitize_db_name(module_name);
+    let path = env::temp_dir()
+        .join(format!("stdb-llm-cli-{}-{db}", CLI_SESSION_TAG.as_str()))
+        .join("config/cli.toml");
+    let config = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    config
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("spacetimedb_token"))
+        .and_then(|value| value.trim_start().strip_prefix('='))
+        .map(|value| value.trim().trim_matches('"').to_owned())
+        .with_context(|| format!("no token in {}", path.display()))
 }
 
 /// Check if the process was killed by a signal (e.g., SIGSEGV = 11)
@@ -651,6 +739,8 @@ impl DotnetPublisher {
             // when running multiple dotnet builds in parallel.
             .env("MSBUILDDISABLENODEREUSE", "1")
             .env("DOTNET_CLI_USE_MSBUILD_SERVER", "0")
+            // A slow model can idle the shared compiler long enough that later builds lose the SDK generators.
+            .env("UseSharedCompilation", "false")
     }
 }
 
@@ -744,6 +834,9 @@ impl Publisher for SpacetimeRustPublisher {
             .current_dir(source);
         if let Some(target_dir) = env::var_os("LLM_BENCH_RUST_TARGET_DIR") {
             pubcmd.env("CARGO_TARGET_DIR", target_dir);
+        } else {
+            // Generated modules share a crate name, so they cannot safely share the workspace target directory.
+            pubcmd.env_remove("CARGO_TARGET_DIR");
         }
         run(&mut pubcmd, "spacetime publish")?;
 

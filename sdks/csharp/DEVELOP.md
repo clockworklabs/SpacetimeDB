@@ -9,13 +9,13 @@ First, see the [user-facing docs](https://spacetimedb.com/docs/clients/c-sharp).
 ## Developing against a local clone of SpacetimeDB
 When developing against a local clone of SpacetimeDB, you'll need to ensure that the packages here can find an up-to-date version of the BSATN.Codegen and BSATN.Runtime packages from SpacetimeDB.
 
-To develop against a local clone of SpacetimeDB at `../SpacetimeDB`, run the following command:
+To develop against the C# bindings in this repository, run the following command from the repository root:
 
 ```sh
-dotnet pack ../SpacetimeDB/crates/bindings-csharp/BSATN.Runtime && ./tools~/write-nuget-config.sh ../SpacetimeDB
+dotnet pack crates/bindings-csharp/BSATN.Runtime && cargo regen csharp nuget-config
 ```
 
-This will create a (`.gitignore`d) `nuget.config` file that uses the local build of the package, instead of the package on NuGet.
+This will create (`.gitignore`d) `NuGet.Config` files that use the local build of the package, instead of the package on NuGet.
 
 You'll need to rerun this command whenever you update `BSATN.Codegen` or `BSATN.Runtime`.
 
@@ -47,6 +47,35 @@ When SDK code needs to refer to generated types, we have two options:
 - Or, just move the code entirely into the generated code. This was done for e.g. `ReducerEventContext`, which no longer lives in the SDK at all.
 
 The most important generated types are `RemoteTables` -- also known as the **client cache** -- and `RemoteReducers`. `RemoteTables` stores the local view of subscribed data from the database. For a `DbConnection conn`, `conn.Db` is an instance of `RemoteTables`. `RemoteReducers` allows calling reducers on the server, and is accessible at `conn.Reducers`. Types are also generated for all server-side types referred to by tables or modules.
+
+### Namespace bindings
+
+Suppose a dependency is mounted with `Accessor = "MyAuth", Name = "auth_data"`.
+Generated C# clients expose its tables through
+`conn.Db.MyAuth`, reducers through `conn.Reducers.MyAuth`, procedures through
+`conn.Procedures.MyAuth`, and query factories through `q.From.MyAuth`.
+Generated SQL and network messages use the database namespace `auth_data`.
+The C# accessor remains `MyAuth`. When `Name` is omitted, the host derives the
+database namespace from the accessor using the containing module's case policy.
+
+The `--namespace` option of `spacetime generate` controls where generated C#
+classes are declared; it does not name or rename database namespaces. With
+`--namespace Game.Bindings`, a root `User` row becomes `Game.Bindings.User`,
+while a `User` row in that dependency becomes
+`Game.Bindings.MyAuth.User`. Their table handles remain `conn.Db.User` and
+`conn.Db.MyAuth.User`, respectively.
+
+Nested submodules follow the same pattern at every level:
+`conn.Db.Auth.Audit.User`, `conn.Reducers.Auth.Audit.Login(...)`,
+`conn.Procedures.Auth.Audit.Count(...)`, and `q.From.Auth.Audit.User()`.
+All containers share one connection and table registry. Generated SQL quotes
+each canonical namespace segment separately; accessors are never substituted
+for canonical names. `SqlTableName(string[], string)` supports these paths while
+the existing string constructors continue to treat dots as literal identifier
+characters. Qualified names are cached on generated table handles.
+
+The `nested-namespaces` regression client exercises a real three-level C# module
+on .NET 8 and .NET 10.
 
 ### Runtime Structure
 
@@ -99,4 +128,3 @@ We could deduplicate multiply-subscribed rows server-side, but this represents a
 There is also a class `MultiDictionaryDelta`. This represents a pre-processed batch of changes to a `MultiDictionary`. We prepare `MultiDictionaryDelta`s on a background thread and `Apply` them on the main thread. This allows us to do at least some work without blocking the main thread.
 
 Note that if multiple subscriptions are subscribed to a row, when a server-side transaction updates that row, exactly the right number of updates will be sent over the network, in a single `ServerMessage`. `MultiDictionary` and `MultiDictionaryDelta` rely on this guarantee for correct operation, and will throw exceptions in debug mode if it is not met.
-

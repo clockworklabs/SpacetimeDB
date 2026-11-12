@@ -1,6 +1,7 @@
 #include "test_harness.h"
 
 #include "spacetimedb/http_convert.h"
+#include "spacetimedb/handler_context.h"
 
 #include <string>
 #include <utility>
@@ -53,4 +54,34 @@ TEST_CASE(response_into_wire_splits_metadata_and_body) {
     ASSERT_EQ(std::string("x-result"), response_meta.headers.entries[1].name);
     ASSERT_EQ(std::vector<uint8_t>({'o','k'}), response_meta.headers.entries[1].value);
     ASSERT_EQ(std::vector<uint8_t>({'c','r','e','a','t','e','d'}), response_body);
+}
+
+namespace {
+size_t commit_attempts;
+}
+
+extern "C" Status procedure_start_mut_tx(int64_t* out) { *out = 0; return Status{0}; }
+extern "C" Status procedure_commit_mut_tx() {
+    return Status{static_cast<uint16_t>(commit_attempts++ == 0 ? 1 : 0)};
+}
+extern "C" Status procedure_abort_mut_tx() { return Status{0}; }
+
+TEST_CASE(handler_transactions_are_external_without_jwt_even_on_retry) {
+    HandlerContext handler;
+    for (bool fallible : {false, true}) {
+        commit_attempts = 0;
+        size_t calls = 0;
+        auto check = [&](TxContext& tx) {
+            ++calls;
+            ASSERT_TRUE(!tx.sender_auth().is_internal());
+            ASSERT_TRUE(!tx.sender_auth().has_jwt());
+            ASSERT_TRUE(!tx.sender_auth().get_jwt().has_value());
+        };
+        if (fallible) {
+            ASSERT_TRUE(handler.try_with_tx([&](TxContext& tx) { check(tx); return true; }));
+        } else {
+            handler.with_tx(check);
+        }
+        ASSERT_EQ(size_t{2}, calls);
+    }
 }

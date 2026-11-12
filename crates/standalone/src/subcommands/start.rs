@@ -207,6 +207,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     db_routes.root_post = db_routes.root_post.layer(DefaultBodyLimit::disable());
     db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());
     db_routes.pre_publish = db_routes.pre_publish.layer(DefaultBodyLimit::disable());
+    db_routes.db_reset = db_routes.db_reset.layer(DefaultBodyLimit::disable());
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
     let task_dumps = TaskDumpRegistry::new([("main", main_rt)]);
     let service = router(&ctx, db_routes, IdentityRoutes::default(), extra)
@@ -262,7 +263,9 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
         "failed to bind the SpacetimeDB server to '{listen_addr}', please check that the address is valid and not already in use"
     ))?;
     socket2::SockRef::from(&tcp).set_nodelay(true)?;
-    log::info!("Starting SpacetimeDB listening on {}", tcp.local_addr()?);
+    let local_addr = tcp.local_addr()?;
+    ctx.configure_idc(local_addr.port())?;
+    log::info!("Starting SpacetimeDB listening on {local_addr}");
 
     if let Some(pg_port) = pg_port {
         let server_addr = listen_addr.split(':').next().unwrap();

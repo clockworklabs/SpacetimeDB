@@ -1,44 +1,46 @@
+import { environment, type EnvironmentFor } from './environment.ts';
 import {
   AlgebraicType,
   ProductType,
   type Deserializer,
   type Serializer,
-} from '../lib/algebraic_type';
-import { FunctionVisibility } from '../lib/autogen/types';
-import BinaryReader from '../lib/binary_reader';
-import BinaryWriter from '../lib/binary_writer';
-import type { ConnectionId } from '../lib/connection_id';
-import { Identity } from '../lib/identity';
-import type { ParamsObj, ReducerCtx } from '../lib/reducers';
-import { type UntypedSchemaDef } from '../lib/schema';
-import type { ScheduleTableForParams } from '../lib/table_schema';
-import { Timestamp } from '../lib/timestamp';
+} from '../lib/algebraic_type.ts';
+import { FunctionVisibility } from '../lib/autogen/types.ts';
+import BinaryReader from '../lib/binary_reader.ts';
+import BinaryWriter from '../lib/binary_writer.ts';
+import type { ConnectionId } from '../lib/connection_id.ts';
+import { Identity } from '../lib/identity.ts';
+import type { ParamsObj, ReducerCtx } from '../lib/reducers.ts';
+import { type UntypedSchemaDef } from '../lib/schema.ts';
+import type { TimeDuration } from '../lib/time_duration.ts';
+import type { ScheduleTableForParams } from '../lib/table_schema.ts';
+import { Timestamp } from '../lib/timestamp.ts';
 import {
   type Infer,
   type InferTypeOfRow,
   type t,
   type TypeBuilder,
-} from '../lib/type_builders';
-import { bsatnBaseSize } from '../lib/util';
-import { Uuid } from '../lib/uuid';
-import { httpClient, type HttpClient } from './http_internal';
-import type { DbView } from './db_view';
-import { makeRandom, type Random } from './rng';
+} from '../lib/type_builders.ts';
+import { bsatnBaseSize } from '../lib/util.ts';
+import { Uuid } from '../lib/uuid.ts';
+import { httpClient, type HttpClient } from './http_internal.ts';
+import type { DbView } from './db_view.ts';
+import { makeRandom, makeRandomFromSeed, type Random } from './rng.ts';
 import {
   assignTxAliasViews,
   buildProcedureAliasCtxMap,
   callUserFunction,
   ReducerCtxImpl,
   runWithTx,
-  sys,
-} from './runtime';
+} from './runtime.ts';
+import { hostBackend, type DatastoreBackend } from './backend.ts';
 import {
   exportContext,
   registerExport,
   type SubmoduleDispatchInfo,
   type ModuleExport,
   type SchemaInner,
-} from './schema';
+} from './schema.ts';
 
 export type ProcedureExport<
   S extends UntypedSchemaDef,
@@ -108,6 +110,7 @@ export type ProcedureAliasViews<SchemaDef extends UntypedSchemaDef> =
     : {};
 
 export interface ProcedureCtx<S extends UntypedSchemaDef> {
+  readonly env: EnvironmentFor<S>;
   readonly sender: Identity;
   readonly databaseIdentity: Identity;
   /** @deprecated Use `databaseIdentity` instead. */
@@ -118,6 +121,7 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
   readonly random: Random;
   readonly as: ProcedureAliasViews<S>;
   withTx<T>(body: (ctx: TransactionCtx<S>) => T): T;
+  sleep(duration: TimeDuration): void;
   newUuidV4(): Uuid;
   newUuidV7(): Uuid;
 }
@@ -125,12 +129,6 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface TransactionCtx<S extends UntypedSchemaDef>
   extends ReducerCtx<S> {}
-
-type ITransactionCtx<S extends UntypedSchemaDef> = TransactionCtx<S>;
-
-const TransactionCtxImpl = class TransactionCtx<S extends UntypedSchemaDef>
-  extends ReducerCtxImpl<S>
-  implements ITransactionCtx<S> {};
 
 function registerProcedure<
   S extends UntypedSchemaDef,
@@ -208,6 +206,11 @@ export function callProcedure(
     timestamp,
     connectionId,
     dbView,
+    hostBackend,
+    httpClient,
+    undefined,
+    undefined,
+    undefined,
     dispatches,
     parentPrefix
   );
@@ -219,13 +222,18 @@ export function callProcedure(
 }
 
 type IProcedureCtx<S extends UntypedSchemaDef> = ProcedureCtx<S>;
-const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
+export const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   implements IProcedureCtx<S>
 {
   #identity: Identity | undefined;
   #uuidCounter: { value: 0 } | undefined;
   #random: Random | undefined;
   #dbView: () => DbView<any>;
+  #backend: DatastoreBackend;
+  #http: HttpClient;
+  #sleep: (duration: TimeDuration) => void;
+  #childSeedRandom: Random | undefined;
+  readonly env = environment as EnvironmentFor<S>;
   #dispatches: SubmoduleDispatchInfo[];
   #parentPrefix: string;
   #asViews: object | undefined;
@@ -235,16 +243,28 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
     readonly timestamp: Timestamp,
     readonly connectionId: ConnectionId | null,
     dbView: () => DbView<any>,
+    backend: DatastoreBackend = hostBackend,
+    http: HttpClient = httpClient,
+    sleep: (duration: TimeDuration) => void = () => {
+      throw new Error('procedure sleep is not available in this runtime');
+    },
+    random?: Random,
+    childSeedRandom?: Random,
     dispatches: SubmoduleDispatchInfo[] = [],
     parentPrefix = ''
   ) {
     this.#dbView = dbView;
+    this.#backend = backend;
+    this.#http = http;
+    this.#sleep = sleep;
+    this.#random = random;
+    this.#childSeedRandom = childSeedRandom;
     this.#dispatches = dispatches;
     this.#parentPrefix = parentPrefix;
   }
 
   get databaseIdentity() {
-    return (this.#identity ??= new Identity(sys.identity()));
+    return (this.#identity ??= new Identity(this.#backend.identity()));
   }
 
   get identity() {
@@ -256,7 +276,11 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   }
 
   get http() {
-    return httpClient;
+    return this.#http;
+  }
+
+  sleep(duration: TimeDuration): void {
+    this.#sleep(duration);
   }
 
   get as() {
@@ -268,18 +292,26 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   }
 
   withTx<T>(body: (ctx: TransactionCtx<S>) => T): T {
+    const txSeed = this.#childSeedRandom?.bigintInRange(0n, (1n << 64n) - 1n);
     const dispatches = this.#dispatches;
     const parentPrefix = this.#parentPrefix;
-    return runWithTx(timestamp => {
-      const tx = new TransactionCtxImpl(
-        this.sender,
-        timestamp,
-        this.connectionId,
-        this.#dbView()
-      );
-      assignTxAliasViews(tx, dispatches, parentPrefix);
-      return tx as unknown as TransactionCtx<S>;
-    }, body);
+    return runWithTx(
+      timestamp => {
+        const tx = new ReducerCtxImpl(
+          this.sender,
+          timestamp,
+          this.connectionId,
+          this.#dbView(),
+          this.#backend,
+          undefined,
+          txSeed == null ? undefined : makeRandomFromSeed(txSeed)
+        );
+        assignTxAliasViews(tx, dispatches, parentPrefix);
+        return tx as unknown as TransactionCtx<S>;
+      },
+      body,
+      this.#backend
+    );
   }
 
   newUuidV4(): Uuid {

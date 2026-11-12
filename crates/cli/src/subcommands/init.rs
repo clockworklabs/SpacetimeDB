@@ -203,7 +203,7 @@ pub fn cli() -> clap::Command {
             Arg::new("native-aot")
                 .long("native-aot")
                 .action(clap::ArgAction::SetTrue)
-                .help("Configure C# project for NativeAOT-LLVM compilation (experimental, Windows only)"),
+                .help("Configure C# project for NativeAOT-LLVM compilation (experimental; supported on Windows, and on Linux with .NET 10)"),
         )
         .arg(
             common_args::dotnet_version().help("Target .NET SDK major version for C# projects (e.g. 8 or 10). Defaults to 10 except on macOS or when only .NET 8 is installed."),
@@ -586,6 +586,7 @@ pub async fn exec_with_options(config: &mut Config, options: &InitOptions) -> an
         &template_config,
         &template_config.project_path,
         is_server_only,
+        &local_database_name,
         dotnet_major,
     )
     .await?;
@@ -646,7 +647,7 @@ pub async fn exec_with_options(config: &mut Config, options: &InitOptions) -> an
     }
 
     if !options.skip_next_steps {
-        print_next_steps(&template_config, &project_path)?;
+        print_next_steps(&template_config, &local_database_name, &project_path)?;
     }
 
     Ok(project_path)
@@ -1131,9 +1132,28 @@ fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> 
         }
     }
 
-    if let Some(deps_item) = doc.get_mut("dependencies")
-        && let Some(deps_table) = deps_item.as_table_mut()
-    {
+    update_cargo_dependency_tables(doc.as_table_mut(), &patch_wildcard);
+    if let Some(targets) = doc.get_mut("target").and_then(Item::as_table_mut) {
+        for (_, target) in targets.iter_mut() {
+            if let Some(table) = target.as_table_mut() {
+                update_cargo_dependency_tables(table, &patch_wildcard);
+            }
+        }
+    }
+
+    let updated = doc.to_string();
+    if updated != original {
+        fs::write(cargo_path, updated)?;
+    }
+    Ok(())
+}
+
+/// Resolve repository dependencies in each Cargo dependency kind.
+fn update_cargo_dependency_tables(table: &mut toml_edit::Table, patch_wildcard: &str) {
+    for kind in ["dependencies", "dev-dependencies", "build-dependencies"] {
+        let Some(deps_table) = table.get_mut(kind).and_then(Item::as_table_mut) else {
+            continue;
+        };
         let keys: Vec<String> = deps_table.iter().map(|(k, _)| k.to_string()).collect();
         for key in keys {
             if let Some(dep_item) = deps_table.get_mut(&key)
@@ -1146,7 +1166,7 @@ fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> 
                             set_dependency_version(dep_item, patch_wildcard.as_str(), true);
                         }
                     } else if key == "spacetimedb-sdk" {
-                        set_dependency_version(dep_item, patch_wildcard.as_str(), true);
+                        set_dependency_version(dep_item, patch_wildcard, true);
                     }
                     continue;
                 }
@@ -1164,12 +1184,6 @@ fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> 
             }
         }
     }
-
-    let updated = doc.to_string();
-    if updated != original {
-        fs::write(cargo_path, updated)?;
-    }
-    Ok(())
 }
 
 pub fn update_csproj_server_to_nuget(dir: &Path) -> anyhow::Result<()> {
@@ -1303,10 +1317,9 @@ fn get_spacetimedb_csharp_clientsdk_version() -> String {
 
 /// Writes a `.env.local` file that includes all common
 /// frontend environment variable variants for SpacetimeDB.
-fn write_typescript_client_env_file(client_dir: &Path, module_name: &str, use_local: bool) -> anyhow::Result<()> {
+fn write_typescript_client_env_file(client_dir: &Path, db_name: &str, use_local: bool) -> anyhow::Result<()> {
     let env_path = client_dir.join(".env.local");
 
-    let db_name = module_name;
     let host = if use_local {
         "ws://localhost:3000"
     } else {
@@ -1352,12 +1365,13 @@ pub async fn init_from_template(
     config: &TemplateConfig,
     project_path: &Path,
     is_server_only: bool,
+    database_name: &str,
     dotnet_major: Option<u8>,
 ) -> anyhow::Result<()> {
     println!("{}", "Initializing project from template...".cyan());
 
     match config.template_type {
-        TemplateType::Builtin => init_builtin(config, project_path, is_server_only, dotnet_major)?,
+        TemplateType::Builtin => init_builtin(config, project_path, is_server_only, database_name, dotnet_major)?,
         TemplateType::GitHub => init_github_template(config, project_path, is_server_only)?,
         TemplateType::Empty => init_empty(config, project_path, dotnet_major)?,
     }
@@ -1374,6 +1388,7 @@ fn init_builtin(
     config: &TemplateConfig,
     project_path: &Path,
     is_server_only: bool,
+    database_name: &str,
     dotnet_major: Option<u8>,
 ) -> anyhow::Result<()> {
     let template_def = config
@@ -1399,7 +1414,7 @@ fn init_builtin(
         match config.client_lang {
             Some(ClientLanguage::TypeScript) => {
                 update_package_json(project_path, &config.project_name)?;
-                write_typescript_client_env_file(project_path, &config.project_name, config.use_local)?;
+                write_typescript_client_env_file(project_path, database_name, config.use_local)?;
                 println!(
                     "{}",
                     "Note: Run 'npm install' in the project directory to install dependencies".yellow()
@@ -1533,7 +1548,7 @@ fn init_empty_cpp_server(server_dir: &Path, _project_name: &str) -> anyhow::Resu
     init_cpp_project(server_dir)
 }
 
-fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Result<()> {
+fn print_next_steps(config: &TemplateConfig, database_name: &str, _project_path: &Path) -> anyhow::Result<()> {
     println!();
     println!("{}", "Next steps:".bold());
 
@@ -1551,7 +1566,7 @@ fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Re
             println!(
                 "  spacetime publish --module-path spacetimedb {}{}",
                 if config.use_local { "--server local " } else { "" },
-                config.project_name
+                database_name
             );
             println!("  spacetime generate --lang rust --out-dir src/module_bindings --module-path spacetimedb");
             println!("  cargo run");
@@ -1561,7 +1576,7 @@ fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Re
             println!(
                 "  spacetime publish --module-path spacetimedb {}{}",
                 if config.use_local { "--server local " } else { "" },
-                config.project_name
+                database_name
             );
             println!("  spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb");
             println!("  npm run dev");
@@ -1570,7 +1585,7 @@ fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Re
             println!(
                 "  spacetime publish --module-path spacetimedb {}{}",
                 if config.use_local { "--server local " } else { "" },
-                config.project_name
+                database_name
             );
             println!("  spacetime generate --lang csharp --out-dir module_bindings --module-path spacetimedb");
         }
@@ -1580,7 +1595,7 @@ fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Re
                 println!(
                     "  spacetime publish --module-path spacetimedb {}{}",
                     if config.use_local { "--server local " } else { "" },
-                    config.project_name
+                    database_name
                 );
                 println!(
                     "  spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb"
@@ -1593,7 +1608,7 @@ fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Re
                 println!(
                     "  spacetime publish --module-path spacetimedb {}{}",
                     if config.use_local { "--server local " } else { "" },
-                    config.project_name
+                    database_name
                 );
                 println!("  spacetime generate --lang rust --out-dir src/module_bindings --module-path spacetimedb");
             }
@@ -1929,11 +1944,10 @@ fn csproj_has_package_reference(content: &str, include: &str, version: &str) -> 
 /// The configuration differs depending on the target .NET version:
 ///
 /// **.NET 8 AOT** (`--native-aot`): Keeps `net8.0` TFM and adds explicit ILCompiler.LLVM 8.0.0-*
-/// package references, gated on `EXPERIMENTAL_WASM_AOT=1`.
+/// package references, gated on `SPACETIMEDB_WASM_AOT=1`.
 ///
-/// **.NET 10 AOT**: Replaces the TFM with `net10.0` directly (no conditional needed since the
-/// project is definitively targeting .NET 10). ILCompiler.LLVM refs are provided transitively
-/// by the SpacetimeDB.Runtime NuGet package.
+/// **.NET 10 AOT**: The templates already reference ILCompiler.LLVM conditionally on
+/// `RuntimeIdentifier=wasi-wasm`, so the project needs no further changes.
 ///
 /// Both paths need a NuGet.Config with the dotnet-experimental feed for ILCompiler.LLVM resolution.
 fn add_native_aot_packages_to_csproj(project_path: &Path, dotnet_major: Option<u8>) -> anyhow::Result<()> {
@@ -1958,7 +1972,7 @@ fn add_native_aot_packages_to_csproj(project_path: &Path, dotnet_major: Option<u
         } else {
             // .NET 8 AOT: keep net8.0 TFM, add explicit ILCompiler.LLVM package references.
             let native_aot_config = r#"
-  <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
+  <ItemGroup Condition="'$(SPACETIMEDB_WASM_AOT)' == '1'">
     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
     <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
   </ItemGroup>
@@ -1971,12 +1985,7 @@ fn add_native_aot_packages_to_csproj(project_path: &Path, dotnet_major: Option<u
             }
         }
     } else {
-        // .NET 10 AOT: directly set TFM to net10.0 (no conditional needed).
-        // ILCompiler.LLVM comes transitively via the SpacetimeDB.Runtime NuGet package.
-        content.replace(
-            "<TargetFramework>net8.0</TargetFramework>",
-            "<TargetFramework>net10.0</TargetFramework>",
-        )
+        content
     };
 
     std::fs::write(&csproj_path, new_content)?;
@@ -2473,7 +2482,7 @@ bytes.workspace = true
         std::fs::write(
             &csproj,
             r#"<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup Condition="$(TargetFramework.StartsWith('net10.')) Or '$(EXPERIMENTAL_WASM_AOT)' == '1'">
+  <PropertyGroup Condition="$(TargetFramework.StartsWith('net10.')) Or '$(SPACETIMEDB_WASM_AOT)' == '1'">
     <PublishTrimmed>true</PublishTrimmed>
   </PropertyGroup>
   <ItemGroup>
@@ -2489,7 +2498,7 @@ bytes.workspace = true
 
         let content = std::fs::read_to_string(csproj).unwrap();
         assert!(content
-            .contains("Condition=\"$(TargetFramework.StartsWith('net10.')) Or '$(EXPERIMENTAL_WASM_AOT)' == '1'\""));
+            .contains("Condition=\"$(TargetFramework.StartsWith('net10.')) Or '$(SPACETIMEDB_WASM_AOT)' == '1'\""));
         assert!(!content.contains("&apos;"));
         let root = xmltree::Element::parse(content.as_bytes()).unwrap();
         let runtime_version = root.children.iter().find_map(|node| {
@@ -2573,29 +2582,21 @@ bytes.workspace = true
 
     #[test]
     fn test_add_native_aot_packages_does_not_duplicate_template_refs() {
-        let temp = tempfile::TempDir::new().unwrap();
-        let csproj = temp.path().join("StdbModule.csproj");
-        let template = include_str!("../../../../templates/basic-cs/spacetimedb/StdbModule.csproj");
-        let net8 = csharp_csproj_for_target(template, 8).unwrap();
-        std::fs::write(&csproj, net8).unwrap();
+        for template in [
+            include_str!("../../../../templates/basic-cs/spacetimedb/StdbModule.csproj"),
+            include_str!("../../../../templates/chat-console-cs/spacetimedb/StdbModule.csproj"),
+        ] {
+            for dotnet_major in [8, 10] {
+                let temp = tempfile::TempDir::new().unwrap();
+                let csproj = temp.path().join("StdbModule.csproj");
+                let expected = csharp_csproj_for_target(template, dotnet_major).unwrap();
+                std::fs::write(&csproj, &expected).unwrap();
 
-        add_native_aot_packages_to_csproj(temp.path(), Some(8)).unwrap();
+                add_native_aot_packages_to_csproj(temp.path(), Some(dotnet_major)).unwrap();
 
-        let content = std::fs::read_to_string(csproj).unwrap();
-        assert_eq!(
-            content
-                .matches(r#"PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*""#)
-                .count(),
-            1
-        );
-        assert_eq!(
-            content
-                .matches(
-                    r#"PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*""#
-                )
-                .count(),
-            1
-        );
+                assert_eq!(std::fs::read_to_string(csproj).unwrap(), expected);
+            }
+        }
     }
 
     #[test]
@@ -2670,5 +2671,39 @@ bytes.workspace = true
 
         let db = get_local_database_name(&options, "my-project", false).unwrap();
         assert_eq!(db, "my-explicit-db");
+    }
+
+    #[test]
+    fn test_init_builtin_typescript_client_env_uses_database_name() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let project_path = temp.path();
+
+        let templates: TemplatesList = serde_json::from_str(embedded::get_templates_json()).unwrap();
+        let config = create_template_config_from_template_str(
+            "my-app".to_string(),
+            project_path.to_path_buf(),
+            "react-ts",
+            &templates.templates,
+        )
+        .unwrap();
+
+        init_builtin(&config, project_path, false, "my-app-abc12", None).unwrap();
+
+        let env = std::fs::read_to_string(project_path.join(".env.local")).unwrap();
+        let db_names: Vec<&str> = env
+            .lines()
+            .filter_map(|line| line.split_once('='))
+            .filter(|(key, _)| key.ends_with("SPACETIMEDB_DB_NAME"))
+            .map(|(_, value)| value)
+            .collect();
+
+        assert!(
+            !db_names.is_empty(),
+            ".env.local should contain DB_NAME entries:\n{env}"
+        );
+        assert!(
+            db_names.iter().all(|name| *name == "my-app-abc12"),
+            "every DB_NAME should be the database name, not the project name:\n{env}"
+        );
     }
 }

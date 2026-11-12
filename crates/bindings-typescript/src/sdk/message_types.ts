@@ -1,6 +1,6 @@
 import type { TableUpdate } from './table_cache.ts';
 import type { UntypedTableDef } from '../lib/table.ts';
-import type { ReducerOutcome } from './client_api/types';
+import type { ReducerOutcome } from './client_api/types.ts';
 
 export type TransactionUpdateMessage = {
   tag: 'TransactionUpdate';

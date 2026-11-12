@@ -1,13 +1,20 @@
+mod environment;
+#[cfg(test)]
+mod wire_tests;
+
 use anyhow::{ensure, Context};
 use clap::Arg;
 use clap::ArgAction::{self, Set, SetTrue};
 use clap::{value_parser, ArgMatches, ValueEnum};
+use headers::HeaderMapExt;
 use reqwest::{StatusCode, Url};
-use spacetimedb_client_api_messages::name::{is_identity, parse_database_name, PublishResult};
+use spacetimedb_client_api_messages::name::{is_identity, parse_database_name, EnvironmentPublishError, PublishResult};
 use spacetimedb_client_api_messages::name::{DatabaseNameError, PrePublishResult, PrettyPrintStyle, PublishOp};
+use spacetimedb_client_api_messages::publish::{SpacetimeEnvironment, SpacetimeEnvironmentRemove};
+use spacetimedb_lib::environment::EnvironmentRemove;
 use std::collections::HashMap;
+use std::env;
 use std::path::PathBuf;
-use std::{env, fs};
 
 use crate::common_args::parse_optional_dotnet_version;
 use crate::common_args::ClearMode;
@@ -17,7 +24,7 @@ use crate::spacetime_config::{
     FlatTarget, Key, LoadedConfig, SpacetimeConfig,
 };
 use crate::util::{add_auth_header_opt, get_auth_header, strip_verbatim_prefix, AuthHeader, ResponseExt};
-use crate::util::{decode_identity, y_or_n};
+use crate::util::{decode_identity, YesOrNo};
 use crate::{build, common_args};
 
 /// Individual prompts that `--yes` can suppress. `All` is a shorthand for every category below.
@@ -87,6 +94,8 @@ pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, an
     CommandSchemaBuilder::new()
         .key(Key::new("database").from_clap("name|identity").required())
         .key(Key::new("server"))
+        .key(Key::new("env").config_only())
+        .key(Key::new("dependencies").config_only())
         .key(Key::new("module_path").module_specific())
         .key(Key::new("build_options").module_specific())
         .key(Key::new("wasm_file").module_specific())
@@ -102,6 +111,9 @@ pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, an
         .exclude("yes")
         .exclude("no_config")
         .exclude("env")
+        .exclude("env_only")
+        .exclude("unset_env")
+        .exclude("replace_env")
         .build(command)
         .map_err(Into::into)
 }
@@ -316,10 +328,74 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
             Arg::new("native_aot")
                 .long("native-aot")
                 .action(SetTrue)
-                .help("Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)")
+                .help("Use NativeAOT-LLVM compilation for C# modules (experimental; supported on Windows, and on Linux with .NET 10)")
         )
         .arg(common_args::dotnet_version())
+        .arg(
+            Arg::new("env_only")
+                .long("env-only")
+                .action(SetTrue)
+                .conflicts_with_all(["wasm_file", "js_file", "module_path", "build_options", "parent", "organization", "num_replicas", "clear-database"])
+                .help("Update environment values without building or uploading a module."),
+        )
+        .arg(
+            Arg::new("unset_env")
+                .long("unset-env")
+                .value_name("KEY")
+                .action(ArgAction::Append)
+                .conflicts_with("replace_env")
+                .help("Delete an environment value. Repeat for multiple keys."),
+        )
+        .arg(
+            Arg::new("replace_env")
+                .long("replace-env")
+                .action(SetTrue)
+                .help("Replace all environment values, deleting every unspecified key."),
+        )
         .after_help("Run `spacetime help publish` for more detailed information.")
+        .after_long_help("Publishing preserves unspecified environment values. Put an env map in spacetime.json in order to specify variables in config. Explicit keys which are not declared in the module are allowed. Declared shell variables override config values (including empty strings). The CLI displays supplied keys and sources. --env-only updates an existing database's environment without publishing the module. --unset-env explicitly removes a previously published environment variable, unless the variable is declared required by the currently published module. --replace-env replaces all stored values with the supplied set, including deleting unspecified undeclared keys, and cannot be combined with --unset-env. The host validates the resulting environment atomically against the declared module. --env selects which config file to use.")
+}
+
+#[derive(Default)]
+struct EnvironmentOptions {
+    only: bool,
+    remove: EnvironmentRemove,
+}
+
+impl EnvironmentOptions {
+    fn from_args(args: &ArgMatches) -> anyhow::Result<Self> {
+        let remove = if args.get_flag("replace_env") {
+            EnvironmentRemove::All
+        } else if let Some(remove) = args.get_many::<String>("unset_env") {
+            let remove = remove.cloned().collect::<Vec<_>>();
+            ensure!(
+                remove.len() <= spacetimedb_lib::environment::MAX_ENV_VARS,
+                "Too many environment removals"
+            );
+            for key in &remove {
+                spacetimedb_lib::environment::validate_key(key)?;
+            }
+            EnvironmentRemove::Keys(remove)
+        } else {
+            EnvironmentRemove::No
+        };
+        Ok(Self {
+            only: args.get_flag("env_only"),
+            remove,
+        })
+    }
+
+    fn validate_values(&self, values: &std::collections::BTreeMap<String, String>) -> anyhow::Result<()> {
+        if let EnvironmentRemove::Keys(remove) = &self.remove {
+            for key in remove {
+                ensure!(
+                    !values.contains_key(key),
+                    "Environment key {key:?} is both supplied and removed"
+                );
+            }
+        }
+        Ok(())
+    }
 }
 
 fn confirm_and_clear(
@@ -331,10 +407,14 @@ fn confirm_and_clear(
         "This will DESTROY the current {} module, and ALL corresponding data.",
         name_or_identity
     );
-    if !y_or_n(
-        skip_prompt,
-        format!("Are you sure you want to proceed? [deleting {}]", name_or_identity).as_str(),
-    )? {
+    if !YesOrNo::new(format!(
+        "Are you sure you want to proceed? [deleting {}]",
+        name_or_identity
+    ))
+    .force(skip_prompt)
+    .default(false)
+    .prompt()?
+    {
         anyhow::bail!("Aborted.");
     }
 
@@ -436,6 +516,7 @@ pub async fn exec_with_options(
         .copied()
         .unwrap_or(ClearMode::Never);
     let yes = yes_flags_from_args(args);
+    let environment_options = EnvironmentOptions::from_args(args)?;
     let config_dir = loaded_config_ref.map(|lc| lc.config_dir.as_path());
 
     execute_publish_configs(
@@ -445,12 +526,13 @@ pub async fn exec_with_options(
         config_dir,
         clear_database,
         yes,
+        &environment_options,
     )
     .await
 }
 
 pub async fn exec_from_entry(
-    mut config: Config,
+    config: &mut Config,
     entry: HashMap<String, serde_json::Value>,
     config_dir: Option<&std::path::Path>,
     clear_database: ClearMode,
@@ -465,7 +547,16 @@ pub async fn exec_from_entry(
 
     let yes = if force { YesFlags::all() } else { YesFlags::default() };
 
-    execute_publish_configs(&mut config, vec![command_config], true, config_dir, clear_database, yes).await
+    execute_publish_configs(
+        config,
+        vec![command_config],
+        true,
+        config_dir,
+        clear_database,
+        yes,
+        &EnvironmentOptions::default(),
+    )
+    .await
 }
 
 async fn execute_publish_configs<'a>(
@@ -475,6 +566,7 @@ async fn execute_publish_configs<'a>(
     config_dir: Option<&std::path::Path>,
     clear_database: ClearMode,
     yes: YesFlags,
+    environment_options: &EnvironmentOptions,
 ) -> Result<(), anyhow::Error> {
     // Execute publish for each config
     for command_config in publish_configs {
@@ -484,6 +576,20 @@ async fn execute_publish_configs<'a>(
         let name_or_identity_opt = command_config.get_one::<String>("database")?;
         let name_or_identity = name_or_identity_opt.as_deref();
         let anon_identity = command_config.get_one::<bool>("anon_identity")?.unwrap_or(false);
+        if environment_options.only {
+            ensure!(clear_database == ClearMode::Never, "--env-only cannot reset a database");
+            environment::publish_only(
+                config,
+                server,
+                name_or_identity.context("--env-only requires an existing database name or identity")?,
+                anon_identity,
+                yes,
+                command_config.get_config_value("env"),
+                environment_options,
+            )
+            .await?;
+            continue;
+        }
         let wasm_file = command_config.get_one::<PathBuf>("wasm_file")?;
         let js_file = command_config.get_one::<PathBuf>("js_file")?;
         let resolved_module_path = command_config.get_resolved_path("module_path", config_dir)?;
@@ -564,7 +670,14 @@ async fn execute_publish_configs<'a>(
             )
             .await?
         };
-        let program_bytes = fs::read(path_to_program)?;
+        let program_bytes = environment::read_program(&path_to_program)?;
+        let module_schema = environment::inspect(&program_bytes, host_type).await?;
+        let environment = environment::resolve(
+            module_schema.environment(),
+            command_config.get_config_value("env"),
+            |key| std::env::var_os(key),
+        )?;
+        print!("{}", environment);
 
         let server_address = {
             let url = Url::parse(&database_host)?;
@@ -572,7 +685,11 @@ async fn execute_publish_configs<'a>(
         };
         if server_address != "localhost" && server_address != "127.0.0.1" {
             println!("You are about to publish to a non-local server: {server_address}");
-            if !y_or_n(yes.publish_to_remote, "Are you sure you want to proceed?")? {
+            if !YesOrNo::new("Are you sure you want to proceed?")
+                .force(yes.publish_to_remote)
+                .default(false)
+                .prompt()?
+            {
                 anyhow::bail!("Publish aborted by user.");
             }
         }
@@ -583,7 +700,10 @@ async fn execute_publish_configs<'a>(
             database_host
         );
 
-        let client = reqwest::Client::new();
+        // The body contains secrets. Never replay it to a redirect destination.
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()?;
         // If a name was given, ensure to percent-encode it.
         // We also use PUT with a name or identity, and POST otherwise.
         let mut builder = if let Some(name_or_identity) = name_or_identity {
@@ -634,7 +754,15 @@ async fn execute_publish_configs<'a>(
         // Set the host type.
         builder = builder.query(&[("host_type", host_type)]);
 
-        let res = builder.body(program_bytes).send().await?;
+        let mut request = builder.body(program_bytes).build()?;
+        request
+            .headers_mut()
+            .typed_insert(SpacetimeEnvironment(environment.values));
+        request
+            .headers_mut()
+            .typed_insert(SpacetimeEnvironmentRemove(environment_options.remove.clone()));
+
+        let res = client.execute(request).await?;
         let response: PublishResult = res.json_or_error().await?;
         match response {
             PublishResult::Success {
@@ -674,6 +802,10 @@ async fn execute_publish_configs<'a>(
                     \tspacetime publish {suggested_tld}\n",
                 ));
             }
+            PublishResult::EnvironmentError(EnvironmentPublishError::MissingRequiredEnvironment { keys }) => {
+                anyhow::bail!("Missing required environment variable(s) {keys:?}")
+            }
+            PublishResult::EnvironmentError(EnvironmentPublishError::VersionConflict(e)) => anyhow::bail!(e),
         }
     }
 
@@ -742,7 +874,7 @@ fn validate_name_and_parent<'a>(
 
 /// Determine the pretty print style based on the NO_COLOR environment variable.
 ///
-/// See: https://no-color.org
+/// See: <https://no-color.org>
 pub fn pretty_print_style_from_env() -> PrettyPrintStyle {
     match env::var("NO_COLOR") {
         Ok(_) => PrettyPrintStyle::NoColor,
@@ -804,10 +936,10 @@ async fn apply_pre_publish_if_needed(
                 // We only arrive here if you have not specified ClearMode::Always AND there was no
                 // conflict that required manual migration.
                 if auto.break_clients
-                    && !y_or_n(
-                        force_break_clients || yes.break_clients,
-                        "The above changes will BREAK existing clients. Do you want to proceed?",
-                    )?
+                    && !YesOrNo::new("The above changes will BREAK existing clients. Do you want to proceed?")
+                        .force(force_break_clients || yes.break_clients)
+                        .default(false)
+                        .prompt()?
                 {
                     println!("Aborting");
                     // Early exit: return an error or a special signal. Here we bail out by returning Err.

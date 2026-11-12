@@ -2,7 +2,7 @@ Get a SpacetimeDB Vue app running in under 5 minutes.
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) 18+ installed
+- A recent version of [Node.js](https://nodejs.org/) 22, 24, or 26 or later
 - [SpacetimeDB CLI](https://spacetimedb.com/install) installed
 
 Install the [SpacetimeDB CLI](https://spacetimedb.com/install) before continuing.
@@ -111,4 +111,4 @@ spacetime logs
 
 ## Next steps
 
-- Read the [TypeScript SDK Reference](https://spacetimedb.com/docs/intro/core-concepts/clients/typescript-reference) for detailed API docs
+- Read the [TypeScript SDK Reference](https://spacetimedb.com/docs/clients/typescript) for detailed API docs

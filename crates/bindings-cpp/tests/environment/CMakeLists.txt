@@ -1,0 +1,15 @@
+cmake_minimum_required(VERSION 3.16)
+project(environment_declaration_tests LANGUAGES CXX)
+set(SPACETIMEDB_ENV_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/declarations.h")
+add_subdirectory(../.. sdk)
+add_executable(environment_declaration_tests main.cpp other.cpp)
+target_link_libraries(environment_declaration_tests PRIVATE spacetimedb_cpp_library)
+enable_testing()
+add_test(NAME environment_declaration_tests COMMAND environment_declaration_tests)
+# This separate target deliberately has no forced prelude, modeling an existing
+# module with no declarations and the generic checked accessor only.
+add_executable(environment_fallback_tests fallback.cpp)
+target_include_directories(environment_fallback_tests PRIVATE ../../include)
+target_compile_features(environment_fallback_tests PRIVATE cxx_std_20)
+add_test(NAME environment_fallback_tests COMMAND environment_fallback_tests)
+set_tests_properties(environment_declaration_tests environment_fallback_tests PROPERTIES TIMEOUT 10)

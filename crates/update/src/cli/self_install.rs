@@ -11,6 +11,8 @@ use crate::cli::ForceYes;
 #[command(bin_name = "spacetime-install[EXE]")]
 pub struct SelfInstall {
     /// The directory to locally install SpacetimeDB into. If unspecified, uses platform defaults.
+    /// To use this installation, pass the same --root-dir before each spacetime
+    /// subcommand (for example, spacetime --root-dir /stdb start).
     #[arg(long)]
     root_dir: Option<RootDir>,
 
@@ -20,6 +22,7 @@ pub struct SelfInstall {
 
 impl SelfInstall {
     pub fn exec(self) -> anyhow::Result<ExitCode> {
+        let custom_root_dir = self.root_dir.is_some();
         let paths = match &self.root_dir {
             Some(root_dir) => SpacetimePaths::from_root_dir(root_dir),
             None => SpacetimePaths::platform_defaults()?,
@@ -76,6 +79,16 @@ impl SelfInstall {
             cli_bin_file.display()
         );
         eprintln!();
+
+        if custom_root_dir {
+            eprintln!(
+                "Warning: You installed SpacetimeDB with --root-dir. When running `spacetime`, \
+                 pass --root-dir <ROOT_DIR> before the subcommand to use this installation \
+                 instead of the default directories. For example: `spacetime --root-dir {} start`.",
+                root_dir.as_ref().unwrap().display()
+            );
+            eprintln!();
+        }
 
         if cfg!(unix) {
             let path_var = std::env::var_os("PATH").unwrap_or_default();

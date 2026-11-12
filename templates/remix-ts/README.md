@@ -2,7 +2,7 @@ Get a SpacetimeDB Remix app running in under 5 minutes.
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) 18+ installed
+- A recent version of [Node.js](https://nodejs.org/) 22, 24, or 26 or later
 - [SpacetimeDB CLI](https://spacetimedb.com/install) installed
 
 Install the [SpacetimeDB CLI](https://spacetimedb.com/install) before continuing.
@@ -186,5 +186,5 @@ export default function Index() {
 
 ## Next steps
 
-- See the [Chat App Tutorial](https://spacetimedb.com/docs/intro/tutorials/chat-app) for a complete example
-- Read the [TypeScript SDK Reference](https://spacetimedb.com/docs/intro/core-concepts/clients/typescript-reference) for detailed API docs
+- See the [Chat App Tutorial](https://spacetimedb.com/docs/tutorials/chat-app) for a complete example
+- Read the [TypeScript SDK Reference](https://spacetimedb.com/docs/clients/typescript) for detailed API docs

@@ -72,6 +72,10 @@ database, so there is no `database` argument and no `list_databases`:
 { "name": "sql", "arguments": { "sql": "SELECT * FROM message" } }
 ```
 
+When `spacetime mcp` runs inside a project with a `spacetime.json` that has a single unambiguous
+`server`, it uses that server unless `--server` or `--no-config` is passed. It does not infer a
+database from the config; omitting the database argument still means host-wide mode.
+
 ## Rules that do not change
 
 The tools run with your identity, exactly as the HTTP API does. The model is the same as everywhere
@@ -108,7 +112,7 @@ Pass `"confirmed": true` to `sql` to wait for a durably confirmed read.
 | `no such table: x` | The table is private, or you are querying the wrong database |
 | No `spacetimedb` tools at all | No MCP server is connected. Use the CLI instead (`cli` skill) |
 
-`spacetime mcp` is UNSTABLE and may not be in a released CLI yet, so a client that cannot start it
-falls back to the CLI commands in the `cli` skill.
+`spacetime mcp` is UNSTABLE and subject to breaking changes. If a client cannot start it, fall back
+to the CLI commands in the `cli` skill.
 
 Reference: https://spacetimedb.com/docs

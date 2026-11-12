@@ -1,16 +1,17 @@
 use anyhow::{anyhow, Context, Result};
-use reqwest::header::HeaderMap;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 
-use super::http::HttpClient;
+use super::http::{HttpClient, HttpResponseError};
+use super::oa_compat::ProviderRefusal;
 use crate::llm::prompt::BuiltPrompt;
 use crate::llm::segmentation::{
     deterministic_trim_prefix, gemini_ctx_limit_tokens, non_context_reserve_tokens_env, Segment,
 };
-use crate::llm::types::{LlmOutput, Vendor};
+use crate::llm::types::{LlmOutput, ReasoningEffort, Vendor};
 
-/// Google uses API key in the query string rather than Authorization header.
+/// Keep the API key in a header, out of URLs and transport-error diagnostics.
 #[derive(Clone)]
 pub struct GoogleGeminiClient {
     base: String, // e.g. https://generativelanguage.googleapis.com
@@ -23,7 +24,7 @@ impl GoogleGeminiClient {
         Self { base, api_key, http }
     }
 
-    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<LlmOutput> {
+    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt, reasoning: ReasoningEffort) -> Result<LlmOutput> {
         // ---- Never trim system or dynamic segments ----
         let system = prompt.system.clone();
         let segs: Vec<Segment<'_>> = prompt.segments.clone();
@@ -37,11 +38,13 @@ impl GoogleGeminiClient {
         static_prefix = deterministic_trim_prefix(&static_prefix, allowance);
 
         let url = format!(
-            "{}/v1beta/models/{}:generateContent?key={}",
+            "{}/v1beta/models/{}:generateContent",
             self.base.trim_end_matches('/'),
             urlencoding::encode(model),
-            urlencoding::encode(&self.api_key)
         );
+        let mut api_key = HeaderValue::from_str(&self.api_key)?;
+        api_key.set_sensitive(true);
+        let headers = [(HeaderName::from_static("x-goog-api-key"), api_key)];
 
         // ----- Request payload -----
         #[derive(Serialize)]
@@ -49,8 +52,22 @@ impl GoogleGeminiClient {
             #[serde(skip_serializing_if = "Option::is_none")]
             system_instruction: Option<SystemInstruction<'a>>,
             contents: Vec<Content<'a>>,
+            #[serde(rename = "generationConfig")]
+            generation_config: GenerationConfig,
             #[serde(skip_serializing_if = "Option::is_none")]
             safety_settings: Option<Vec<SafetySetting>>,
+        }
+
+        #[derive(Serialize)]
+        struct GenerationConfig {
+            #[serde(rename = "thinkingConfig")]
+            thinking_config: ThinkingConfig,
+        }
+
+        #[derive(Serialize)]
+        struct ThinkingConfig {
+            #[serde(rename = "thinkingLevel")]
+            thinking_level: ReasoningEffort,
         }
 
         #[derive(Serialize)]
@@ -100,6 +117,11 @@ impl GoogleGeminiClient {
         let req = Req {
             system_instruction,
             contents,
+            generation_config: GenerationConfig {
+                thinking_config: ThinkingConfig {
+                    thinking_level: reasoning,
+                },
+            },
             safety_settings: None,
         };
 
@@ -114,7 +136,7 @@ impl GoogleGeminiClient {
                 // Use raw so we can inspect status/headers before consuming the body
                 let resp = self
                     .http
-                    .post_json_raw(&url, &[], &req)
+                    .post_json_raw(&url, &headers, &req)
                     .await
                     .with_context(|| format!("POST {} send failed", url))?;
 
@@ -133,7 +155,11 @@ impl GoogleGeminiClient {
                     || status == StatusCode::GATEWAY_TIMEOUT;
 
                 if !retryable || attempt >= 10 {
-                    return Err(anyhow!("POST {} -> {}: {}", url, status, text));
+                    return Err(HttpResponseError {
+                        status: status.as_u16(),
+                        body: text,
+                    }
+                    .into());
                 }
 
                 let wait = compute_backoff_google(status, &headers, attempt);
@@ -183,7 +209,39 @@ impl GoogleGeminiClient {
             }
         }
 
-        let resp: GeminiResp = serde_json::from_str(&body).context("parse gemini response")?;
+        let value: serde_json::Value = serde_json::from_str(&body).context("parse gemini response")?;
+        let blocked = value["promptFeedback"]["blockReason"]
+            .as_str()
+            .filter(|reason| !reason.is_empty() && *reason != "BLOCK_REASON_UNSPECIFIED")
+            .or_else(|| {
+                value["candidates"][0]["finishReason"].as_str().filter(|reason| {
+                    matches!(
+                        *reason,
+                        "SAFETY"
+                            | "RECITATION"
+                            | "BLOCKLIST"
+                            | "PROHIBITED_CONTENT"
+                            | "SPII"
+                            | "IMAGE_SAFETY"
+                            | "IMAGE_PROHIBITED_CONTENT"
+                            | "IMAGE_RECITATION"
+                            | "ESCALATION"
+                            | "PUP_LIMITED_DISABLED"
+                    )
+                })
+            });
+        if let Some(reason) = blocked {
+            return Err(ProviderRefusal {
+                generation_id: value["responseId"].as_str().map(str::to_owned),
+                provider: Some("Google".into()),
+                finish_reason: Some("content_filter".into()),
+                native_finish_reason: Some(reason.into()),
+                refusal: Some(body),
+                content: None,
+            }
+            .into());
+        }
+        let resp: GeminiResp = serde_json::from_value(value).context("parse gemini response")?;
         let input_tokens = resp.usage_metadata.as_ref().and_then(|u| u.prompt_token_count);
         let output_tokens = resp.usage_metadata.as_ref().and_then(|u| u.candidates_token_count);
         let text = resp.first_text().ok_or_else(|| anyhow!("no text in Gemini response"))?;
@@ -224,4 +282,68 @@ fn compute_backoff_google(status: StatusCode, headers: &HeaderMap, attempt: u32)
 
 fn header_f64(h: &HeaderMap, k: &str) -> Option<f64> {
     h.get(k).and_then(|v| v.to_str().ok())?.trim().parse::<f64>().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn request_errors_keep_bodies_private_and_keys_out_of_urls() {
+        let (base, server) = super::super::http::mock_response(403, "private refusal details").await;
+        let client = GoogleGeminiClient::new(HttpClient::new().unwrap(), base, "test-secret-key".into());
+        let prompt = BuiltPrompt {
+            system: None,
+            static_prefix: None,
+            segments: vec![Segment::new("user", "test")],
+            search_enabled: false,
+        };
+        let error = client
+            .generate("test-model", &prompt, ReasoningEffort::Medium)
+            .await
+            .unwrap_err();
+        let request = server.await.unwrap();
+        assert!(!request.lines().next().unwrap().contains("test-secret-key"));
+        assert!(request.to_ascii_lowercase().contains("x-goog-api-key: test-secret-key"));
+        let diagnostic = format!("{error:?}");
+        assert!(!diagnostic.contains("test-secret-key"));
+        assert!(!diagnostic.contains("private refusal details"));
+        assert_eq!(
+            error
+                .downcast_ref::<super::super::http::HttpResponseError>()
+                .unwrap()
+                .body,
+            "private refusal details"
+        );
+    }
+
+    #[tokio::test]
+    async fn successful_http_refusals_remain_unscored_with_full_evidence() {
+        for body in [
+            r#"{"responseId":"gen-block","promptFeedback":{"blockReason":"SAFETY","blockReasonMessage":"private detail"}}"#,
+            r#"{"responseId":"gen-block","candidates":[{"finishReason":"SAFETY","content":{"parts":[{"text":"partial code"}]}}]}"#,
+        ] {
+            let (base, server) = super::super::http::mock_response(200, body).await;
+            let client = GoogleGeminiClient::new(HttpClient::new().unwrap(), base, "mock-key".into());
+            let prompt = BuiltPrompt {
+                system: None,
+                static_prefix: None,
+                segments: vec![Segment::new("user", "test")],
+                search_enabled: false,
+            };
+            let error = client
+                .generate("test-model", &prompt, ReasoningEffort::Medium)
+                .await
+                .unwrap_err();
+            server.await.unwrap();
+            let refusal = error
+                .downcast_ref::<super::super::oa_compat::ProviderRefusal>()
+                .unwrap();
+            assert_eq!(refusal.generation_id.as_deref(), Some("gen-block"));
+            assert_eq!(refusal.native_finish_reason.as_deref(), Some("SAFETY"));
+            assert_eq!(refusal.refusal.as_deref(), Some(body));
+            assert!(!format!("{error:?}").contains("private detail"));
+            assert!(!format!("{error:?}").contains("partial code"));
+        }
+    }
 }

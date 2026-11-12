@@ -10,4 +10,4 @@ pub use config::make_provider_from_env;
 pub use model_routes::{default_model_routes, ModelRoute};
 pub use prompt::PromptBuilder;
 pub use provider::{LlmProvider, RouterProvider};
-pub use types::LlmOutput;
+pub use types::{LlmOutput, ReasoningEffort};

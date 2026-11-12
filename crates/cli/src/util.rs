@@ -52,6 +52,10 @@ pub(crate) trait ResponseExt: Sized {
     /// Like [`reqwest::Response::json()`], but handles non-JSON error messages gracefully.
     async fn json_or_error<T: serde::de::DeserializeOwned>(self) -> anyhow::Result<T>;
 
+    /// Like [`reqwest::Response::error_for_status()`], but the returned error contains
+    /// the error message returned in the response body if present.
+    async fn error_msg_for_status(self) -> anyhow::Result<Self>;
+
     /// Transforms a status of `NOT_FOUND` into `None`.
     fn found(self) -> Option<Self>;
 }
@@ -70,7 +74,6 @@ fn err_status_desc(status: http::StatusCode) -> Option<&'static str> {
 
 impl ResponseExt for reqwest::Response {
     async fn ensure_content_type(self, content_type: &str) -> anyhow::Result<Self> {
-        let status = self.status();
         if self
             .headers()
             .get(http::header::CONTENT_TYPE)
@@ -78,9 +81,22 @@ impl ResponseExt for reqwest::Response {
         {
             return Ok(self);
         }
+        Err(match self.error_msg_for_status().await {
+            Ok(res) => {
+                anyhow::anyhow!(
+                    "HTTP response from url ({}) was success but did not have content-type: {content_type}",
+                    res.url()
+                )
+            }
+            Err(e) => e,
+        })
+    }
+
+    async fn error_msg_for_status(self) -> anyhow::Result<Self> {
+        let status = self.status();
         let url = self.url();
         let Some(status_desc) = err_status_desc(status) else {
-            anyhow::bail!("HTTP response from url ({url}) was success but did not have content-type: {content_type}");
+            return Ok(self);
         };
         let url = url.to_string();
         let status_err = match self.error_for_status_ref() {
@@ -313,20 +329,63 @@ pub fn host_or_url_to_host_and_protocol(host_or_url: &str) -> (&str, Option<&str
     }
 }
 
-/// Prompt the user for `y` or `n` from stdin.
-///
-/// Return `false` unless the input is `y`.
-pub fn y_or_n(force: bool, prompt: &str) -> anyhow::Result<bool> {
-    if force {
-        println!("Skipping confirmation due to --yes");
-        return Ok(true);
+/// Prompt the user for `n` or `n` from stdin
+pub struct YesOrNo {
+    message: String,
+    force: Option<bool>,
+    default: Option<bool>,
+    on_eof: Option<bool>,
+}
+
+impl YesOrNo {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            force: None,
+            default: None,
+            on_eof: None,
+        }
     }
-    let mut input = String::new();
-    print!("{prompt} [y/N]");
-    std::io::stdout().flush()?;
-    std::io::stdin().read_line(&mut input)?;
-    let input = input.trim().to_lowercase();
-    Ok(input == "y" || input == "yes")
+
+    pub fn force(mut self, force: bool) -> Self {
+        self.force = Some(force);
+        self
+    }
+
+    /// Set the response for empty input, including EOF unless overridden by `on_eof`.
+    pub fn default(mut self, default: bool) -> Self {
+        self.default = Some(default);
+        self
+    }
+
+    /// Set the response for EOF independently of pressing Enter.
+    pub fn on_eof(mut self, response: bool) -> Self {
+        self.on_eof = Some(response);
+        self
+    }
+
+    pub fn prompt(self) -> anyhow::Result<bool> {
+        assert!(!self.message.trim().is_empty(), "YesOrNo requires a message");
+        let force = self.force.expect("YesOrNo requires an explicit force setting");
+        let default = self.default.expect("YesOrNo requires an explicit default");
+        if force {
+            println!("Skipping confirmation due to --yes");
+            return Ok(true);
+        }
+        let choices = if default { "Y/n" } else { "y/N" };
+        print!("{} [{choices}]", self.message);
+        std::io::stdout().flush()?;
+        let mut input = String::new();
+        let num_read = std::io::stdin().read_line(&mut input)?;
+        if num_read == 0 {
+            return Ok(self.on_eof.unwrap_or(default));
+        }
+        let input = input.trim().to_lowercase();
+        if input.is_empty() {
+            return Ok(default);
+        }
+        Ok(input == "y" || input == "yes")
+    }
 }
 
 pub fn decode_identity(token: &String) -> anyhow::Result<String> {
@@ -355,19 +414,42 @@ pub async fn get_login_token_or_log_in(
         return Ok(token.clone());
     }
 
-    // Note: We pass `force: false` to `y_or_n` because if we're running non-interactively we want to default to "no", not yes!
     let full_login = interactive
-        && y_or_n(
-            false,
+        && YesOrNo::new(
             // It would be "ideal" if we could print the `spacetimedb.com` by deriving it from the `default_auth_host` constant,
             // but this will change _so_ infrequently that it's not even worth the time to write that code and test it.
             "You are not logged in. Would you like to log in with spacetimedb.com?",
-        )?;
+        )
+        .force(false)
+        .default(true)
+        // This is for historical compatibility, not optimal UX.
+        .on_eof(false)
+        .prompt()?;
 
     if full_login {
         let host = Url::parse(DEFAULT_AUTH_HOST)?;
         spacetimedb_login_and_save(config, &host, false, true).await
     } else {
+        let message = "WARNING: Continuing without spacetimedb.com will create a server-issued identity that only works on this server.\n\
+                 Databases you publish will be owned by this identity. Running `spacetime login` later will discard its token, \
+                 and you will lose access to those databases. \
+                 A lost server-issued token cannot be recovered.\n\
+                 We recommend logging in with spacetimedb.com, which also works with local servers.\n\
+                 If you are an agent, please alert your user to these risks.\n\n\
+                 Are you sure you want to continue?";
+        if !interactive {
+            // YesOrNo will not print the prompt in this case, but we still want to show the warning.
+            println!("{message}");
+        }
+        anyhow::ensure!(
+            YesOrNo::new(message)
+                .force(!interactive)
+                .default(false)
+                // This is for historical compatibility, not optimal UX.
+                .on_eof(true)
+                .prompt()?,
+            "Login cancelled. Run `spacetime login` to log in with spacetimedb.com."
+        );
         let host = Url::parse(&config.get_host_url(target_server)?)?;
         spacetimedb_login_and_save(config, &host, true, true).await
     }

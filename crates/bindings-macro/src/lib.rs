@@ -8,6 +8,18 @@
 //
 // (private documentation for the macro authors is totally fine here and you SHOULD write that!)
 
+mod environment;
+
+#[proc_macro_attribute]
+pub fn env(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| environment::expand(args.into(), syn::parse(item)?))
+}
+
+#[proc_macro_derive(EnvironmentValue, attributes(env))]
+pub fn derive_environment_value(item: StdTokenStream) -> StdTokenStream {
+    ok_or_compile_error(|| environment::value::derive(syn::parse(item)?))
+}
+
 mod http;
 mod procedure;
 
@@ -50,6 +62,18 @@ mod table;
 
 #[proc_macro_attribute]
 pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    expand_table(args, item, false)
+}
+
+/// Expands an outbox table emitted by generated receiver bindings. A custom
+/// accessor comes from a `macro_rules!` metavariable, so its span must be reset
+/// before table codegen to keep generated method bindings hygienic.
+#[proc_macro_attribute]
+pub fn generated_outbox_table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    expand_table(args, item, true)
+}
+
+fn expand_table(args: StdTokenStream, item: StdTokenStream, reset_accessor_span: bool) -> StdTokenStream {
     // put this on the struct so we don't get unknown attribute errors
     let derive_table_helper: syn::Attribute = derive_table_helper_attr();
 
@@ -78,7 +102,10 @@ pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
             derive_input.attrs.push(derive_table_helper);
         }
 
-        let args = table::TableArgs::parse(args.into(), &derive_input.ident)?;
+        let mut args = table::TableArgs::parse(args.into(), &derive_input.ident)?;
+        if reset_accessor_span {
+            args.use_call_site_accessor_span();
+        }
         let generated = table::table_impl(args, &derive_input)?;
         Ok(TokenStream::from_iter([quote!(#derive_input), generated]))
     })
@@ -109,7 +136,7 @@ use quote::quote;
 use std::time::Duration;
 use syn::{parse::ParseStream, Attribute};
 use syn::{ItemConst, ItemFn};
-use util::{cvt_attr, ok_or_compile_error};
+use util::{cvt_attr, native_test_utils_registration, ok_or_compile_error};
 
 mod sym {
     /// A symbol known at compile-time against
@@ -147,6 +174,10 @@ mod sym {
     symbol!(repr);
     symbol!(sats);
     symbol!(scheduled);
+    symbol!(outbox);
+    symbol!(on_result);
+    symbol!(param);
+    symbol!(target);
     symbol!(unique);
     symbol!(update);
     symbol!(default);
@@ -217,7 +248,10 @@ fn derive_table_helper_attr() -> Attribute {
 ///
 /// Provides helper attributes for `#[spacetimedb::table]`, so that we don't get unknown attribute errors.
 #[doc(hidden)]
-#[proc_macro_derive(__TableHelper, attributes(sats, unique, auto_inc, primary_key, index, default))]
+#[proc_macro_derive(
+    __TableHelper,
+    attributes(sats, unique, auto_inc, primary_key, target, index, default, param)
+)]
 pub fn table_helper(input: StdTokenStream) -> StdTokenStream {
     schema_type(input)
 }
@@ -305,6 +339,9 @@ pub fn client_visibility_filter(args: StdTokenStream, item: StdTokenStream) -> S
         let item: ItemConst = syn::parse(item)?;
         let rls_ident = item.ident.clone();
         let register_rls_symbol = format!("__preinit__20_register_row_level_security_{rls_ident}");
+        let test_utils_registration = native_test_utils_registration(quote! {
+            spacetimedb::rt::register_row_level_security(#rls_ident.sql_text())
+        });
 
         Ok(quote! {
             #item
@@ -314,6 +351,8 @@ pub fn client_visibility_filter(args: StdTokenStream, item: StdTokenStream) -> S
                 extern "C" fn __register_client_visibility_filter() {
                     spacetimedb::rt::register_row_level_security(#rls_ident.sql_text())
                 }
+
+                #test_utils_registration
             };
         })
     })
@@ -357,6 +396,7 @@ pub fn settings(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
             },
             _ => unreachable!("validated above"),
         };
+        let test_utils_registration = native_test_utils_registration(register_call.clone());
 
         Ok(quote! {
             #item
@@ -366,6 +406,8 @@ pub fn settings(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
                 extern "C" fn __register_setting() {
                     #register_call
                 }
+
+                #test_utils_registration
             };
         })
     })

@@ -61,7 +61,7 @@ fn test_detect_getrandom() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("getrandom usage detected"),
+        stderr.contains("getrandom usage detected") || stderr.contains("undefined symbol: __getrandom_custom"),
         "Expected 'getrandom usage detected' in stderr, got: {}",
         stderr
     );

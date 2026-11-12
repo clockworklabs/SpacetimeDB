@@ -101,7 +101,6 @@ url.workspace = true
 v8.workspace = true
 wasmtime.workspace = true
 wasmtime-internal-fiber.workspace = true
-jwks.workspace = true
 async_cache = "0.3.1"
 faststr = "0.2.23"
 core_affinity = "0.8"
@@ -133,13 +132,14 @@ spacetimedb-lib = { path = "../lib", features = ["proptest", "test"] }
 spacetimedb-sats = { path = "../sats", features = ["proptest"] }
 spacetimedb-commitlog = { path = "../commitlog", features = ["test"] }
 spacetimedb-datastore = { path = "../datastore/", features = ["test"] }
-spacetimedb-engine = { workspace = true, features = ["test"] }
+spacetimedb-engine = { path = "../engine", features = ["test"] }
 
 # Also as dev-dependencies for use in _this_ crate's tests.
 proptest.workspace = true
 pretty_assertions.workspace = true
 jsonwebtoken.workspace = true
 axum.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

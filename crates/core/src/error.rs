@@ -30,6 +30,10 @@ impl From<ViewCallError> for DBError {
 
 #[derive(Error, Debug)]
 pub enum NodesError {
+    #[error("invalid environment variable name")]
+    InvalidEnvironmentKey,
+    #[error("too many outstanding byte sources for environment read")]
+    EnvironmentSourceLimit,
     #[error("Failed to decode row: {0}")]
     DecodeRow(#[source] DecodeError),
     #[error("Failed to decode value: {0}")]
@@ -70,6 +74,8 @@ pub enum NodesError {
     ScheduleError(#[source] ScheduleError),
     #[error("HTTP request failed: {0}")]
     HttpError(String),
+    #[error("database is shutting down")]
+    ShuttingDown,
 }
 
 impl From<DBError> for NodesError {

@@ -14,12 +14,6 @@ use spacetimedb_sats::raw_identifier::RawIdentifier;
 pub use crate::ModuleDefBuilder as RawModuleDefV8Builder;
 pub use crate::RawModuleDefV8;
 
-/// The amount sequences allocate each time they over-run their allocation.
-///
-/// Note that we do not perform an initial allocation during `create_sequence` or at startup.
-/// Newly-created sequences will allocate the first time they are advanced.
-pub const SEQUENCE_ALLOCATION_STEP: i128 = 4096;
-
 /// Represents a sequence definition for a database table column.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, SpacetimeType)]
 #[sats(crate = crate)]
@@ -28,13 +22,13 @@ pub struct RawSequenceDefV8 {
     pub sequence_name: RawIdentifier,
     /// The position of the column associated with this sequence.
     pub col_pos: ColId,
-    /// The increment value for the sequence.
+    /// Deprecated; should be `1i128`.
     pub increment: i128,
-    /// The starting value for the sequence.
+    /// Deprecated; should be `None`.
     pub start: Option<i128>,
-    /// The minimum value for the sequence.
+    /// Deprecated; should be `None`.
     pub min_value: Option<i128>,
-    /// The maximum value for the sequence.
+    /// Deprecated; should be `None`.
     pub max_value: Option<i128>,
     /// The number of values to preallocate for the sequence.
     /// Deprecated, in the future this concept will no longer exist.
@@ -69,8 +63,9 @@ impl RawSequenceDefV8 {
             start: None,
             min_value: None,
             max_value: None,
-            // Start with no values allocated. The first time we advance the sequence,
-            // we will allocate [`SEQUENCE_ALLOCATION_STEP`] values.
+            // Start with no values allocated.
+            // The first time we advance the sequence,
+            // we will allocate a block of multiple values.
             allocated: 0,
         }
     }

@@ -1,0 +1,68 @@
+name: Detect docs-only changes
+description: >-
+  Report whether every file this event changes is documentation or agent
+  guidance that no build or test reads: docs/, skills/, the agent plugins,
+  .agents/, and Markdown files at the repository root. Crate READMEs are not
+  included, because some are compiled as doc tests, and neither are docs pages
+  whose code a test builds and runs. Requires a prior checkout.
+outputs:
+  docs-only:
+    description: "'true' if every changed file is documentation, otherwise 'false'."
+    value: ${{ steps.detect.outputs.docs-only }}
+runs:
+  using: composite
+  steps:
+    - name: Detect docs-only changes
+      id: detect
+      shell: bash
+      env:
+        MERGE_GROUP_BASE: ${{ github.event.merge_group.base_sha }}
+        PUSH_BEFORE: ${{ github.event.before }}
+      run: |
+        set -euo pipefail
+
+        # Any doubt about what changed means running every check.
+        run_everything() {
+          echo "$1; running all checks."
+          echo "docs-only=false" >>"$GITHUB_OUTPUT"
+          exit 0
+        }
+
+        case "${GITHUB_EVENT_NAME}" in
+          pull_request)
+            # The checkout is GitHub's merge of the PR into its base, so its first parent is the base.
+            git fetch --no-tags --quiet --depth=2 origin "${GITHUB_SHA}" || run_everything "Could not fetch the PR merge commit"
+            base="$(git rev-parse "${GITHUB_SHA}^1")" || run_everything "Could not find the PR's base commit"
+            ;;
+          merge_group) base="${MERGE_GROUP_BASE}" ;;
+          push) base="${PUSH_BEFORE}" ;;
+          *) base="" ;;
+        esac
+
+        if [[ -z "${base}" || "${base}" =~ ^0+$ ]]; then
+          run_everything "No base commit to compare against"
+        fi
+
+        git fetch --no-tags --quiet --depth=1 origin "${base}" || run_everything "Could not fetch base commit ${base}"
+        changed="$(git diff --no-renames --name-only "${base}" "${GITHUB_SHA}")" || run_everything "Could not diff against ${base}"
+
+        # Some tests build and run the code in a docs page, such as the quickstart smoketest with the
+        # chat app tutorial, so a change to one of those pages is a code change. This finds them by
+        # their full path, so tests should name such pages that way.
+        tested_pages="$(git grep -h -o -E 'docs/docs/[A-Za-z0-9_./-]+[.]md' -- crates sdks tools || true)"
+
+        while IFS= read -r path; do
+          if [[ -n "${path}" ]] && grep -qxF -- "${path}" <<<"${tested_pages}"; then
+            run_everything "Tests run the code in ${path}"
+          fi
+          case "${path}" in
+            "" | docs/* | skills/* | codex-plugin/* | .claude-plugin/* | .agents/*) ;;
+            # Markdown only at the root: crate READMEs can be compiled as doc tests.
+            */*) run_everything "Changes outside the docs, such as ${path}" ;;
+            *.md) ;;
+            *) run_everything "Changes outside the docs, such as ${path}" ;;
+          esac
+        done <<<"${changed}"
+
+        echo "Every changed file is documentation; skipping builds and tests."
+        echo "docs-only=true" >>"$GITHUB_OUTPUT"

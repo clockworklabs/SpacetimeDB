@@ -217,7 +217,7 @@ const user = table(
     name: 'user',
     public: true,
     indexes: [
-      { accessor: 'idx_age', algorithm: 'btree', columns: ['age'] },
+      { accessor: 'idxAge', algorithm: 'btree', columns: ['age'] },
     ],
   },
   {
@@ -233,7 +233,7 @@ const user = table(
 
 ```csharp
 [SpacetimeDB.Table(Accessor = "User", Public = true)]
-[SpacetimeDB.Index.BTree(Accessor = "idx_age", Columns = new[] { "Age" })]
+[SpacetimeDB.Index.BTree(Accessor = "IdxAge", Columns = new[] { "Age" })]
 public partial struct User
 {
     [SpacetimeDB.PrimaryKey]
@@ -270,6 +270,10 @@ Multi-column indexes support:
 - **Prefix match**: Queries that specify the leftmost columns in order
 - **Range on trailing column**: A prefix of equality conditions followed by a range on the next column
 
+For indexes with three or more columns, the same rule applies: provide any leftmost prefix of exact
+values, optionally followed by a range on the next column. You cannot put a range in the middle and
+then continue with more exact values.
+
 A multi-column index on `(player_id, level)` accelerates these queries:
 - `player_id = 123` (prefix match on first column)
 - `player_id = 123 AND level = 5` (full match)
@@ -286,11 +290,11 @@ const score = table(
     name: 'score',
     public: true,
     indexes: [
-      { accessor: 'by_player_and_level', algorithm: 'btree', columns: ['player_id', 'level'] },
+      { accessor: 'byPlayerAndLevel', algorithm: 'btree', columns: ['playerId', 'level'] },
     ],
   },
   {
-    player_id: t.u32(),
+    playerId: t.u32(),
     level: t.u32(),
     points: t.i64(),
   }
@@ -302,7 +306,7 @@ const score = table(
 
 ```csharp
 [SpacetimeDB.Table(Accessor = "Score", Public = true)]
-[SpacetimeDB.Index.BTree(Accessor = "by_player_and_level", Columns = new[] { "PlayerId", "Level" })]
+[SpacetimeDB.Index.BTree(Accessor = "ByPlayerAndLevel", Columns = new[] { "PlayerId", "Level" })]
 public partial struct Score
 {
     public uint PlayerId;
@@ -493,7 +497,7 @@ for (auto user : ctx.db[user_age].filter(range_to(uint8_t(18)))) {
 }
 ```
 
-Use range query functions: `range_inclusive()`, `range_from()`, `range_to()`, and `range_to_inclusive()`. Include `<spacetimedb/range_queries.h>` for full range query support.
+Use range query functions: `range_inclusive()`, `range_from()`, `range_to()`, `range_to_inclusive()`, and `range_full<T>()`. These helpers are included by `spacetimedb.h`; include `<spacetimedb/range_queries.h>` directly only when you are not using the umbrella header.
 
 </TabItem>
 </Tabs>
@@ -509,12 +513,12 @@ For multi-column indexes, pass a tuple of values. You can specify exact values f
 import { Range } from 'spacetimedb/server';
 
 // Find all scores for player 123 (prefix match on first column)
-for (const score of ctx.db.score.by_player_and_level.filter(123)) {
+for (const score of ctx.db.score.byPlayerAndLevel.filter(123)) {
   console.log(`Level ${score.level}: ${score.points} points`);
 }
 
 // Find scores for player 123 at levels 1-10 (inclusive)
-for (const score of ctx.db.score.by_player_and_level.filter([
+for (const score of ctx.db.score.byPlayerAndLevel.filter([
   123,
   new Range({ tag: 'included', value: 1 }, { tag: 'included', value: 10 })
 ])) {
@@ -522,7 +526,7 @@ for (const score of ctx.db.score.by_player_and_level.filter([
 }
 
 // Find the exact score for player 123 at level 5
-for (const score of ctx.db.score.by_player_and_level.filter([123, 5])) {
+for (const score of ctx.db.score.byPlayerAndLevel.filter([123, 5])) {
   console.log(`Points: ${score.points}`);
 }
 ```
@@ -532,7 +536,7 @@ for (const score of ctx.db.score.by_player_and_level.filter([123, 5])) {
 
 ```csharp
 // Find all scores for player 123
-foreach (var score in ctx.Db.Score.by_player_and_level.Filter(123u))
+foreach (var score in ctx.Db.Score.ByPlayerAndLevel.Filter(123u))
 {
     Log.Info($"Level {score.Level}: {score.Points} points");
 }

@@ -1,3 +1,5 @@
+mod environment;
+
 use anyhow::Context;
 use sled::transaction::{
     self, ConflictableTransactionError, ConflictableTransactionResult, TransactionError, TransactionResult,
@@ -365,6 +367,7 @@ impl ControlDb {
         Ok(None)
     }
 
+    #[cfg(test)]
     pub fn insert_database(&self, mut database: Database) -> Result<u64> {
         let id = self.db.generate_id()?;
         let tree = self.db.open_tree("database_by_identity")?;
@@ -388,23 +391,6 @@ impl ControlDb {
         Ok(id)
     }
 
-    pub(crate) fn update_database(&self, database: Database) -> Result<()> {
-        let Some(stored_database) = self.get_database_by_identity(&database.database_identity)? else {
-            return Err(Error::DatabaseNotFound(database.database_identity));
-        };
-
-        let tree = self.db.open_tree("database_by_identity")?;
-        let buf = sled::IVec::from(compat::Database::from(database).to_vec()?);
-        tree.insert(stored_database.database_identity.to_be_byte_array(), buf.clone())?;
-        tree.flush()?;
-
-        let tree = self.db.open_tree("database")?;
-        tree.insert(stored_database.id.to_be_bytes(), buf)?;
-        tree.flush()?;
-
-        Ok(())
-    }
-
     pub fn is_database_locked(&self, database_identity: &Identity) -> Result<bool> {
         let tree = self.db.open_tree("database_locks")?;
         let key = database_identity.to_be_byte_array();
@@ -419,20 +405,7 @@ impl ControlDb {
     }
 
     pub fn delete_database(&self, id: u64) -> Result<Option<u64>> {
-        let tree = self.db.open_tree("database")?;
-        let tree_by_identity = self.db.open_tree("database_by_identity")?;
-
-        if let Some(old_value) = tree.get(id.to_be_bytes())? {
-            let database = compat::Database::from_slice(&old_value[..])?;
-            let key = database.database_identity().to_be_byte_array();
-
-            tree_by_identity.remove(&key[..])?;
-            tree.remove(id.to_be_bytes())?;
-            tree.flush()?;
-            return Ok(Some(id));
-        }
-
-        Ok(None)
+        self.delete_database_and_environment(id)
     }
 
     pub fn get_replicas(&self) -> Result<Vec<Replica>> {

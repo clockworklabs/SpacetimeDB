@@ -23,6 +23,8 @@ namespace SpacetimeDB.Internal
         System.Collections.Generic.List<RawHttpHandlerDefV10> HttpHandlers,
         System.Collections.Generic.List<RawHttpRouteDefV10> HttpRoutes,
         System.Collections.Generic.List<RawViewPrimaryKeyDefV10> ViewPrimaryKeys,
-        System.Collections.Generic.List<RawSubmoduleV10> Submodules
+        System.Collections.Generic.List<RawSubmoduleV10> Submodules,
+        System.Collections.Generic.List<RawEnvironmentDeclarationV10> Environment,
+        System.Collections.Generic.List<RawOutboxDefV10> Outboxes
     )>;
 }

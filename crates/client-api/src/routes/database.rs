@@ -1,3 +1,6 @@
+use spacetimedb_client_api_messages::publish::{SpacetimeEnvironment, SpacetimeEnvironmentRemove};
+use spacetimedb_lib::environment::{EnvironmentMap, EnvironmentRemove, EnvironmentUpdate};
+
 use std::borrow::Cow;
 use std::future::Future;
 use std::num::NonZeroU8;
@@ -6,8 +9,8 @@ use std::time::Duration;
 use std::{env, io};
 
 use crate::auth::{
-    anon_auth_middleware, SpacetimeAuth, SpacetimeEnergyUsed, SpacetimeExecutionDurationMicros, SpacetimeIdentity,
-    SpacetimeIdentityToken,
+    anon_auth_middleware, IdcCallerIdentity, SpacetimeAuth, SpacetimeEnergyUsed, SpacetimeExecutionDurationMicros,
+    SpacetimeIdentity, SpacetimeIdentityToken,
 };
 use crate::routes::subscribe::generate_random_connection_id;
 use crate::util::serde::humantime_duration;
@@ -27,22 +30,28 @@ use futures::TryStreamExt;
 use http::StatusCode;
 use http_body_util::BodyExt;
 use log::{debug, info, warn};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use spacetimedb::auth::identity::ConnectionAuthCtx;
 use spacetimedb::database_logger::DatabaseLogger;
-use spacetimedb::host::module_host::{ClientConnectedError, DurabilityExited};
+use spacetimedb::host::module_host::{
+    ClientConnectedError, DurabilityExited, DurableOffset, TransactionOffset, UpdateEnvironmentResult,
+    TRANSACTION_CONFIRMATION_TIMEOUT,
+};
 use spacetimedb::host::{CallResult, UpdateDatabaseResult};
 use spacetimedb::host::{FunctionArgs, MigratePlanResult};
-use spacetimedb::host::{ModuleHost, ReducerOutcome};
-use spacetimedb::host::{ProcedureCallError, ReducerCallError};
+use spacetimedb::host::{IdcDeliveryFailure, IdcReducerCallOutcome, ProcedureCallError, ReducerCallError};
+use spacetimedb::host::{ModuleHost, ReducerCallResult, ReducerCallResultWithTxOffset, ReducerOutcome};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
 use spacetimedb_client_api_messages::http::SqlStmtResult;
+use spacetimedb_client_api_messages::idc::{IdcDeliveryError, IdcResponse};
 use spacetimedb_client_api_messages::name::{
-    self, DatabaseName, DomainName, MigrationPolicy, PrePublishAutoMigrateResult, PrePublishManualMigrateResult,
-    PrePublishResult, PrettyPrintStyle, PublishOp, PublishResult,
+    self, DatabaseName, DomainName, EnvironmentPublishError, EnvironmentVersionConflict, MigrationPolicy,
+    PrePublishAutoMigrateResult, PrePublishManualMigrateResult, PrePublishResult, PrettyPrintStyle, PublishOp,
+    PublishResult,
 };
 use spacetimedb_datastore::db_metrics::DB_METRICS;
+use spacetimedb_datastore::system_tables::StInboundMsgResultStatus;
 use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::{http as st_http, ConnectionId};
@@ -91,6 +100,28 @@ fn allow_creation(auth: &SpacetimeAuth) -> Result<(), ErrorResponse> {
 #[derive(Deserialize)]
 pub struct CallParams {
     reducer: String,
+}
+
+/// Query parameters for an async IDC request to another database.
+#[derive(Deserialize)]
+pub struct CallFromDatabaseQuery {
+    /// Sender-assigned identifier for the (sender, receiver, outbox table) stream.
+    /// Reused for every delivery on that stream.
+    stream_id: u64,
+    /// One-based sequence number within this stream.
+    seq: u64,
+    /// Signature hash computed by [`spacetimedb_schema::def::reducer_signature_hash`],
+    /// encoded as [`Hash::to_hex()`] by the sender.
+    #[serde(deserialize_with = "deserialize_signature_hash")]
+    signature_hash: Hash,
+    /// Highest contiguous sequence whose result the sender has already acknowledged.
+    #[serde(default)]
+    ack_prefix: u64,
+}
+
+fn deserialize_signature_hash<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Hash, D::Error> {
+    // Hash's default serde representation is a U256, not digest-byte-order hex.
+    Hash::from_hex(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
 }
 
 pub const NO_SUCH_DATABASE: (StatusCode, &str) = (StatusCode::NOT_FOUND, "No such database.");
@@ -154,6 +185,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     Extension(auth): Extension<SpacetimeAuth>,
     Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
     Path(CallParams { reducer }): Path<CallParams>,
+    Query(params): Query<SqlQueryParams>,
     TypedHeader(content_type): TypedHeader<headers::ContentType>,
     ByteStringBody(body): ByteStringBody,
 ) -> axum::response::Result<impl IntoResponse> {
@@ -162,6 +194,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     let caller_identity = auth.claims.identity;
 
     let args = FunctionArgs::Json(body);
+    let confirmed = params.confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS);
 
     let caller_auth: ConnectionAuthCtx = auth.into();
 
@@ -170,7 +203,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 
     let fut = async move |module: ModuleHost, caller_identity: Identity, connection_id: ConnectionId| {
         let result = match module
-            .call_reducer(
+            .call_reducer_with_offset(
                 caller_identity,
                 Some(connection_id),
                 None,
@@ -181,15 +214,21 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
             )
             .await
         {
-            Ok(rcr) => Ok(CallResult::Reducer(rcr)),
+            Ok(res) => Ok(CallResult::Reducer(
+                confirm_reducer_call(res, confirmed, module.durable_tx_offset()).await?,
+            )),
             Err(ReducerCallError::NoSuchReducer | ReducerCallError::ScheduleReducerNotFound) => {
                 // Not a reducer — try procedure instead
-                match module
-                    .call_procedure(caller_identity, Some(connection_id), None, &reducer, args)
-                    .await
-                    .result
-                {
-                    Ok(res) => Ok(CallResult::Procedure(res)),
+                let ret = module
+                    .call_procedure(caller_identity, Some(connection_id), None, &reducer, args, confirmed)
+                    .await;
+                match ret.result {
+                    Ok(res) => {
+                        if confirmed {
+                            confirm_call_offset(ret.tx_offset, module.durable_tx_offset()).await?;
+                        }
+                        Ok(CallResult::Procedure(res))
+                    }
                     Err(e) => Err(map_procedure_error(e, &reducer)),
                 }
             }
@@ -225,6 +264,146 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 
     with_connection(module, caller_auth, caller_identity, fut).await
 }
+
+/// If `confirmed`, waits for a committed reducer's transaction to be durable.
+async fn confirm_reducer_call(
+    res: ReducerCallResultWithTxOffset,
+    confirmed: bool,
+    durable: Option<DurableOffset>,
+) -> axum::response::Result<ReducerCallResult> {
+    if confirmed && matches!(res.result.outcome, ReducerOutcome::Committed) {
+        confirm_call_offset(Some(res.tx_offset), durable).await?;
+    }
+    Ok(res.result)
+}
+
+async fn confirm_call_offset(
+    offset: Option<spacetimedb::subscription::module_subscription_manager::TransactionOffset>,
+    durable: Option<spacetimedb::host::module_host::DurableOffset>,
+) -> axum::response::Result<()> {
+    if let (Some(offset), Some(mut durable)) = (offset, durable) {
+        timeout(TRANSACTION_CONFIRMATION_TIMEOUT, async {
+            let offset = offset
+                .await
+                .map_err(|_| log_and_500("transaction offset unavailable; outcome unknown"))?;
+            durable.wait_for(offset).await.map_err(|_| log_and_500(
+                "transaction completed, but durability could not be confirmed; outcome unknown, do not retry without deduplication",
+            ))?;
+            Ok::<_, ErrorResponse>(())
+        })
+        .await
+        .map_err(|_| {
+            ErrorResponse::from((
+                StatusCode::GATEWAY_TIMEOUT,
+                "durability confirmation timed out; outcome unknown, do not retry without deduplication",
+            ))
+        })??;
+    }
+    Ok(())
+}
+
+/// Call a reducer on behalf of another database.
+///
+/// This is the host-side receiver transport for async IDC. It accepts delivery
+/// metadata and waits for reducer durability before acknowledging the sender.
+pub async fn call_from_database<S: ControlStateDelegate + NodeDelegate>(
+    State(worker_ctx): State<S>,
+    Extension(IdcCallerIdentity(caller_identity)): Extension<IdcCallerIdentity>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
+    Path(CallParams { reducer }): Path<CallParams>,
+    Query(query): Query<CallFromDatabaseQuery>,
+    TypedHeader(content_type): TypedHeader<headers::ContentType>,
+    body: Bytes,
+) -> axum::response::Result<impl IntoResponse> {
+    if content_type != headers::ContentType::octet_stream() {
+        return Err((StatusCode::UNSUPPORTED_MEDIA_TYPE, "Expected application/octet-stream").into());
+    }
+    if query.seq == 0 {
+        return Err((StatusCode::BAD_REQUEST, "IDC seq must start at 1").into());
+    }
+
+    let owner_identity = database.owner_identity;
+    let module = find_database_module(&worker_ctx, &database).await?;
+
+    // Run the normal connection lifecycle with the authenticated database identity,
+    // but do not expose the host's transport credentials as a module JWT.
+    let caller_auth = ConnectionAuthCtx {
+        identity: caller_identity,
+        jwt_payload: None,
+    };
+    let fut = async move |module: ModuleHost, caller_identity: Identity, connection_id: ConnectionId| {
+        let durable_offset = module.durable_tx_offset();
+        let result = module
+            .call_idc_reducer(
+                caller_identity,
+                connection_id,
+                &reducer,
+                FunctionArgs::Bsatn(body),
+                query.stream_id,
+                query.seq,
+                query.ack_prefix,
+                query.signature_hash,
+            )
+            .await
+            .map_err(|e| map_idc_call_error(e, &reducer).into_http_parts())?;
+
+        debug!(
+            "IDC delivery accepted: sender={}, receiver={}, stream_id={}, seq={}, ack_prefix={}, signature_hash={:?}",
+            caller_identity, owner_identity, query.stream_id, query.seq, query.ack_prefix, query.signature_hash,
+        );
+
+        idc_call_response(&owner_identity, &reducer, result, durable_offset).await
+    };
+
+    with_connection(module, caller_auth, caller_identity, fut).await
+}
+
+// Return new and replayed results only after their transactions are durable.
+async fn idc_call_response(
+    owner_identity: &Identity,
+    reducer: &str,
+    result: IdcReducerCallOutcome,
+    durable_offset: Option<DurableOffset>,
+) -> axum::response::Result<axum::response::Response> {
+    let (tx_offset, response) = match result {
+        IdcReducerCallOutcome::Recorded(result) => {
+            let tx_offset = if durable_offset.is_some() {
+                Some(result.tx_offset.await.map_err(|_| log_and_500("transaction aborted"))?)
+            } else {
+                None
+            };
+            let (status, body) =
+                idc_reducer_outcome_response(owner_identity, reducer, result.result.outcome).into_http_parts();
+            let response = (
+                status,
+                TypedHeader(SpacetimeEnergyUsed(result.result.execution_budget_used)),
+                TypedHeader(SpacetimeExecutionDurationMicros(result.result.execution_duration)),
+                body,
+            )
+                .into_response();
+            (tx_offset, response)
+        }
+        IdcReducerCallOutcome::Replayed(outcome) => {
+            let (status, body) =
+                idc_stored_outcome_response(outcome.result_status, outcome.result_payload).into_http_parts();
+            (Some(outcome.tx_offset), (status, body).into_response())
+        }
+        IdcReducerCallOutcome::AlreadyAcked => {
+            // A delayed delivery or retry can arrive after the sender has acknowledged
+            // the outcome and we have removed it. The sender must ignore this response,
+            // not treat it as a new reducer result or invoke on_result again.
+            (None, IdcResponse::AlreadyAcked.into_http_parts().into_response())
+        }
+    };
+
+    // A retry can observe a committed outcome before the original request's
+    // durability wait finishes. New and replayed outcomes need the same barrier.
+    if let (Some(mut durable_offset), Some(tx_offset)) = (durable_offset, tx_offset) {
+        durable_offset.wait_for(tx_offset).await.map_err(log_and_500)?;
+    }
+    Ok(response)
+}
+
 #[derive(Deserialize)]
 pub struct HttpRouteParams {
     path: String,
@@ -290,7 +469,12 @@ async fn handle_http_route_impl<S: ControlStateDelegate + NodeDelegate>(
         version: http_version_to_st(parts.version),
     };
 
-    let response = match module.call_http_handler(handler_id, request, body).await {
+    // Each request gets a new identity, like a client that connects without a token.
+    let caller_auth = SpacetimeAuth::alloc(&worker_ctx).await?;
+    let response = match module
+        .call_http_handler(caller_auth.into(), handler_id, request, body)
+        .await
+    {
         Ok(response) => response,
         Err(spacetimedb::host::module_host::HttpHandlerCallError::NoSuchHandler) => {
             return Ok((StatusCode::NOT_FOUND, NO_SUCH_ROUTE).into_response());
@@ -434,6 +618,49 @@ fn reducer_outcome_response(
     }
 }
 
+// call_idc_reducer has already recorded these results. The route waits for
+// durability before sending them back to the sender.
+fn idc_reducer_outcome_response(owner_identity: &Identity, reducer: &str, outcome: ReducerOutcome) -> IdcResponse {
+    match outcome {
+        ReducerOutcome::Committed => IdcResponse::Success(Bytes::new()),
+        ReducerOutcome::Failed(errmsg) => IdcResponse::TerminalError(Bytes::from((*errmsg).into_string())),
+        ReducerOutcome::BudgetExceeded => {
+            log::info!("Node's energy budget exceeded for identity: {owner_identity} while executing {reducer}");
+            IdcResponse::BudgetExceeded(Bytes::from_static(b"Module energy budget exhausted."))
+        }
+    }
+}
+
+fn idc_stored_outcome_response(result_status: StInboundMsgResultStatus, result_payload: Bytes) -> IdcResponse {
+    match result_status {
+        StInboundMsgResultStatus::Ok => IdcResponse::Success(result_payload),
+        StInboundMsgResultStatus::Err => IdcResponse::TerminalError(result_payload),
+        StInboundMsgResultStatus::BudgetExceeded => IdcResponse::BudgetExceeded(result_payload),
+    }
+}
+
+/// Builds a retryable HTTP response. Recorded terminal failures arrive as reducer outcomes.
+fn map_idc_call_error(e: IdcDeliveryFailure, reducer: &str) -> IdcDeliveryError {
+    let status = match &e {
+        IdcDeliveryFailure::OutOfOrder { .. } => {
+            // The receiver needs an earlier sequence before it can process this one.
+            // TODO(idc): Lower the log level when pipelining makes this expected.
+            log::error!("Retryable IDC delivery error for {reducer}: {e:#}");
+            StatusCode::TOO_EARLY
+        }
+        IdcDeliveryFailure::NoSuchModule(_) | IdcDeliveryFailure::Datastore(_) | IdcDeliveryFailure::Internal(_) => {
+            // No confirmed outcome is available. Leave the message pending for retry.
+            log::debug!("Retryable IDC delivery error for {reducer}: {e:#}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    };
+
+    IdcDeliveryError {
+        status,
+        body: Bytes::from(format!("{:#}", anyhow::anyhow!(e))),
+    }
+}
+
 pub(crate) fn client_connected_error_to_response(err: ClientConnectedError) -> ErrorResponse {
     match err {
         // If `call_identity_connected` returns `Err(Rejected)`, then the `client_connected` reducer errored,
@@ -574,6 +801,171 @@ impl From<Database> for DatabaseResponse {
             initial_program: db.initial_program,
         }
     }
+}
+
+fn extract_environment_error(mut error: &anyhow::Error) -> Option<axum::response::Result<EnvironmentPublishError>> {
+    // TODO(noa): clean up these errors my g-d this is bad
+    use spacetimedb::host::module_host::InitDatabaseError;
+    use spacetimedb_lib::environment::EnvironmentSchemaError;
+    while let Some(InitDatabaseError::Other(e)) = error.downcast_ref::<InitDatabaseError>() {
+        error = e;
+    }
+    let res = if let Some(error) = error.chain().find_map(|x| x.downcast_ref::<EnvironmentSchemaError>()) {
+        // Only typed host validation can ask the caller for a secret. Never infer
+        // missing keys from module failures or arbitrary diagnostic text.
+        if let EnvironmentSchemaError::MissingRequired { key } = error {
+            // TODO(noa): in the future, return multiple missing keys at once
+            Ok(EnvironmentPublishError::MissingRequiredEnvironment { keys: vec![key.into()] })
+        } else {
+            Err((StatusCode::BAD_REQUEST, error.to_string()).into())
+        }
+    } else {
+        let error = error.downcast_ref::<EnvironmentVersionConflict>()?;
+        Ok(EnvironmentPublishError::VersionConflict(error.clone()))
+    };
+    Some(res)
+}
+
+/// Converts `error` into a response, using `wrap` to put an [`EnvironmentPublishError`]
+/// into the body type that the endpoint's clients decode.
+fn environment_error_response<T: Serialize>(
+    error: anyhow::Error,
+    wrap: impl FnOnce(EnvironmentPublishError) -> T,
+    fallback: impl FnOnce(anyhow::Error) -> axum::response::ErrorResponse,
+) -> axum::response::ErrorResponse {
+    match extract_environment_error(&error) {
+        Some(Ok(err)) => (err.status_code(), axum::Json(wrap(err))).into(),
+        Some(Err(e)) => e,
+        None => fallback(error),
+    }
+}
+
+fn migration_error_fallback(error: anyhow::Error) -> axum::response::ErrorResponse {
+    bad_request(format!("Failed to create or update the database: {error}").into())
+}
+
+fn publish_error(error: anyhow::Error) -> axum::response::ErrorResponse {
+    environment_error_response(error, PublishResult::EnvironmentError, log_and_500)
+}
+
+fn publish_migration_error(error: anyhow::Error) -> axum::response::ErrorResponse {
+    environment_error_response(error, PublishResult::EnvironmentError, migration_error_fallback)
+}
+
+pub async fn environment_metadata<S>(
+    State(ctx): State<S>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
+    Extension(auth): Extension<SpacetimeAuth>,
+) -> axum::response::Result<impl IntoResponse>
+where
+    S: ControlStateDelegate + NodeDelegate + Authorization,
+{
+    ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
+        .await?;
+    let leader = find_database_leader(&ctx, &database).await?;
+    let metadata = leader.environment_metadata().await.map_err(log_and_500)?;
+    Ok(([(http::header::CACHE_CONTROL, "no-store")], axum::Json(metadata)))
+}
+
+#[derive(Deserialize)]
+pub struct EnvironmentUpdateQueryParams {
+    expected_module_hash: Hash,
+}
+
+pub async fn environment_set<S>(
+    State(ctx): State<S>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    Query(EnvironmentUpdateQueryParams { expected_module_hash }): Query<EnvironmentUpdateQueryParams>,
+    axum::Json(values): axum::Json<EnvironmentMap>,
+) -> EnvironmentPublishResult
+where
+    S: ControlStateDelegate + NodeDelegate + Authorization,
+{
+    ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
+        .await?;
+    let remove = EnvironmentRemove::All;
+    let update = EnvironmentUpdate { values, remove };
+    update
+        .validate()
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    let result = ctx
+        .update_environment(
+            &auth.claims.identity,
+            &database.database_identity,
+            update,
+            expected_module_hash,
+        )
+        .await;
+
+    environment_publish_result(result).await
+}
+
+pub async fn environment_patch<S>(
+    State(ctx): State<S>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    Query(EnvironmentUpdateQueryParams { expected_module_hash }): Query<EnvironmentUpdateQueryParams>,
+    TypedHeader(SpacetimeEnvironmentRemove(remove)): TypedHeader<SpacetimeEnvironmentRemove>,
+    axum::Json(values): axum::Json<EnvironmentMap>,
+) -> EnvironmentPublishResult
+where
+    S: ControlStateDelegate + NodeDelegate + Authorization,
+{
+    if remove == EnvironmentRemove::All {
+        return Err(bad_request(
+            format!(
+                "`{}: *` is not supported by PATCH. To replace the whole environment, use PUT instead.",
+                <SpacetimeEnvironmentRemove as headers::Header>::name()
+            )
+            .into(),
+        ));
+    }
+    ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
+        .await?;
+    let update = EnvironmentUpdate { values, remove };
+    update
+        .validate()
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    let result = ctx
+        .update_environment(
+            &auth.claims.identity,
+            &database.database_identity,
+            update,
+            expected_module_hash,
+        )
+        .await;
+
+    environment_publish_result(result).await
+}
+
+type EnvironmentPublishResult = axum::response::Result<(StatusCode, axum::Json<Result<(), EnvironmentPublishError>>)>;
+
+async fn environment_publish_result(result: anyhow::Result<UpdateEnvironmentResult>) -> EnvironmentPublishResult {
+    let result = match result {
+        Ok(UpdateEnvironmentResult::ErrorExecutingMigration(e)) => {
+            return Err(environment_error_response(
+                e,
+                Err::<(), EnvironmentPublishError>,
+                migration_error_fallback,
+            ))
+        }
+        Ok(UpdateEnvironmentResult::NoUpdateNeeded) => Ok(()),
+        Ok(UpdateEnvironmentResult::UpdatePerformed {
+            tx_offset,
+            durable_offset,
+        }) => {
+            confirm_update(tx_offset, durable_offset, default_update_confirmation_timeout()).await?;
+            Ok(())
+        }
+        Err(e) => match extract_environment_error(&e) {
+            Some(Ok(e)) => Err(e),
+            Some(Err(e)) => return Err(e),
+            None => return Err(log_and_500(e)),
+        },
+    };
+    let status = result.as_ref().err().map_or(StatusCode::OK, |e| e.status_code());
+    Ok((status, axum::Json(result)))
 }
 
 pub async fn db_info<S: ControlStateDelegate>(
@@ -835,7 +1227,8 @@ pub async fn reset<S: NodeDelegate + ControlStateDelegate + Authorization>(
         host_type,
     }): Query<ResetDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
-    program_bytes: Option<Bytes>,
+    TypedHeader(SpacetimeEnvironment(environment)): TypedHeader<SpacetimeEnvironment>,
+    program_bytes: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
     let database_identity = database.database_identity;
 
@@ -855,13 +1248,15 @@ pub async fn reset<S: NodeDelegate + ControlStateDelegate + Authorization>(
         &auth.claims.identity,
         DatabaseResetDef {
             database_identity,
-            program_bytes,
+            // An empty body resets the database but keeps the installed module.
+            program_bytes: (!program_bytes.is_empty()).then_some(program_bytes),
             num_replicas,
             host_type: Some(host_type),
         },
+        environment,
     )
     .await
-    .map_err(log_and_500)?;
+    .map_err(publish_error)?;
 
     Ok(axum::Json(PublishResult::Success {
         domain: name_or_identity.name().cloned(),
@@ -932,6 +1327,8 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         organization,
         update_confirmation_timeout: confirmation_timeout,
     }): Query<PublishDatabaseQueryParams>,
+    TypedHeader(SpacetimeEnvironment(environment)): TypedHeader<SpacetimeEnvironment>,
+    TypedHeader(SpacetimeEnvironmentRemove(environment_remove)): TypedHeader<SpacetimeEnvironmentRemove>,
     Extension(auth): Extension<SpacetimeAuth>,
     program_bytes: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
@@ -963,14 +1360,36 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
                         host_type,
                     }),
                     Extension(auth),
-                    Some(program_bytes),
+                    TypedHeader(SpacetimeEnvironment(environment)),
+                    program_bytes,
                 )
                 .await;
             }
         }
     }
 
-    let (database_identity, db_name) = get_or_create_identity_and_name(&ctx, &auth, name_or_identity.as_ref()).await?;
+    if name_or_identity.is_none() && environment_remove != EnvironmentRemove::No {
+        return Err(bad_request(
+            "cannot specify spacetime-environment-remove without an existing database".into(),
+        ));
+    }
+
+    // Resolve the target, allocating an identity if needed. Defer name registration
+    // until publication permissions have been checked.
+    let (database_identity, name_to_register) = match name_or_identity.as_ref() {
+        Some(target) => match target.try_resolve(&ctx).await.map_err(log_and_500)? {
+            Ok(identity) => (identity, None),
+            Err(name) => {
+                allow_creation(&auth)?;
+                let database_auth = SpacetimeAuth::alloc(&ctx).await?;
+                (database_auth.claims.identity, Some(name))
+            }
+        },
+        None => {
+            let database_auth = SpacetimeAuth::alloc(&ctx).await?;
+            (database_auth.claims.identity, None)
+        }
+    };
     let maybe_parent_database_identity = match parent.as_ref() {
         None => None,
         Some(parent) => parent.resolve(&ctx).await.map(Some)?,
@@ -992,6 +1411,21 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         .map_err(log_and_500)?;
     match existing.as_ref() {
         None => {
+            match name_or_identity.as_ref() {
+                Some(NameOrIdentity::Identity(_)) => {
+                    return Err(bad_request("Cannot create a database at a supplied identity".into()));
+                }
+                Some(NameOrIdentity::Name(name)) if name_to_register.is_none() => {
+                    // Deleted databases retain their name and namespace owner.
+                    // Reusing the identity requires that owner, not merely
+                    // permission to create a new database.
+                    let owner = ctx.lookup_namespace_owner(name.as_ref()).await.map_err(log_and_500)?;
+                    if owner != Some(auth.claims.identity) {
+                        return Err((StatusCode::FORBIDDEN, "Only the name owner can recreate this database").into());
+                    }
+                }
+                Some(NameOrIdentity::Name(_)) | None => {}
+            }
             allow_creation(&auth)?;
             ctx.authorize_action(
                 auth.claims.identity,
@@ -1007,6 +1441,11 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
             ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
                 .await?;
         }
+    }
+
+    // Reserve a new name only after checking publication permissions.
+    if let Some(name) = name_to_register {
+        create_name(&ctx, &auth, &database_identity, name).await?;
     }
 
     // Indicate in the response whether we created or updated the database.
@@ -1039,13 +1478,17 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
                 organization: maybe_org_identity,
             },
             schema_migration_policy,
+            EnvironmentUpdate {
+                values: environment,
+                remove: environment_remove,
+            },
         )
         .await
-        .map_err(log_and_500)?;
+        .map_err(publish_error)?;
 
     let success = || {
         axum::Json(PublishResult::Success {
-            domain: db_name.cloned(),
+            domain: name_or_identity.as_ref().and_then(NameOrIdentity::name).cloned(),
             database_identity,
             op: publish_op,
         })
@@ -1054,9 +1497,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         Some(UpdateDatabaseResult::AutoMigrateError(errs)) => {
             Err(bad_request(format!("Database update rejected: {errs}").into()))
         }
-        Some(UpdateDatabaseResult::ErrorExecutingMigration(err)) => Err(bad_request(
-            format!("Failed to create or update the database: {err}").into(),
-        )),
+        Some(UpdateDatabaseResult::ErrorExecutingMigration(err)) => Err(publish_migration_error(err)),
         None | Some(UpdateDatabaseResult::NoUpdateNeeded) => Ok(success()),
         Some(
             UpdateDatabaseResult::UpdatePerformed {
@@ -1068,21 +1509,30 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
                 durable_offset,
             },
         ) => {
-            timeout(confirmation_timeout.min(MAX_UPDATE_CONFIRMATION_TIMEOUT), async {
-                let tx_offset = tx_offset.await?;
-                if let Some(mut durable_offset) = durable_offset {
-                    durable_offset.wait_for(tx_offset).await?;
-                }
-
-                Ok::<_, UpdateConfirmationError>(())
-            })
-            .await
-            .map_err(Into::into)
-            .flatten()?;
-
+            confirm_update(tx_offset, durable_offset, confirmation_timeout).await?;
             Ok(success())
         }
     }
+}
+
+/// Waits until the update committed at `tx_offset` is durable, so that a crash
+/// after we respond cannot lose an update we reported as successful.
+async fn confirm_update(
+    tx_offset: TransactionOffset,
+    durable_offset: Option<DurableOffset>,
+    confirmation_timeout: Duration,
+) -> Result<(), UpdateConfirmationError> {
+    timeout(confirmation_timeout.min(MAX_UPDATE_CONFIRMATION_TIMEOUT), async {
+        let tx_offset = tx_offset.await?;
+        if let Some(mut durable_offset) = durable_offset {
+            durable_offset.wait_for(tx_offset).await?;
+        }
+
+        Ok::<_, UpdateConfirmationError>(())
+    })
+    .await
+    .map_err(Into::into)
+    .flatten()
 }
 
 #[derive(From)]
@@ -1109,40 +1559,6 @@ impl From<UpdateConfirmationError> for ErrorResponse {
             ),
         }
         .into()
-    }
-}
-
-/// Try to resolve `name_or_identity` to an [Identity] and [DatabaseName].
-///
-/// - If the database exists and has a name registered for it, return that.
-/// - If the database does not exist, but `name_or_identity` is a name,
-///   try to register the name and return alongside a newly allocated [Identity]
-/// - Otherwise, if the database does not exist and `name_or_identity` is `None`,
-///   allocate a fresh [Identity] and no name.
-///
-async fn get_or_create_identity_and_name<'a>(
-    ctx: &(impl ControlStateDelegate + NodeDelegate),
-    auth: &SpacetimeAuth,
-    name_or_identity: Option<&'a NameOrIdentity>,
-) -> axum::response::Result<(Identity, Option<&'a DatabaseName>)> {
-    match name_or_identity {
-        Some(noi) => match noi.try_resolve(ctx).await.map_err(log_and_500)? {
-            Ok(resolved) => Ok((resolved, noi.name())),
-            Err(name) => {
-                // `name_or_identity` was a `NameOrIdentity::Name`, but no record
-                // exists yet. Create it now with a fresh identity.
-                allow_creation(auth)?;
-                let database_auth = SpacetimeAuth::alloc(ctx).await?;
-                let database_identity = database_auth.claims.identity;
-                create_name(ctx, auth, &database_identity, name).await?;
-                Ok((database_identity, Some(name)))
-            }
-        },
-        None => {
-            let database_auth = SpacetimeAuth::alloc(ctx).await?;
-            let database_identity = database_auth.claims.identity;
-            Ok((database_identity, None))
-        }
     }
 }
 
@@ -1473,8 +1889,16 @@ pub struct DatabaseRoutes<S> {
     pub subscribe_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/call/:reducer
     pub call_reducer_procedure_post: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/call-from-database/:reducer
+    pub call_from_database_post: MethodRouter<S>,
     /// GET: /database/:name_or_identity/schema
     pub schema_get: MethodRouter<S>,
+    /// GET: /database/:name_or_identity/environment
+    pub environment_get: MethodRouter<S>,
+    /// PUT: /database/:name_or_identity/environment
+    pub environment_put: MethodRouter<S>,
+    /// PATCH: /database/:name_or_identity/environment
+    pub environment_patch: MethodRouter<S>,
     /// GET: /database/:name_or_identity/logs
     pub logs_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/sql
@@ -1504,7 +1928,7 @@ where
     S: NodeDelegate + ControlStateDelegate + HasWebSocketOptions + Authorization + Clone + 'static,
 {
     fn default() -> Self {
-        use axum::routing::{any, delete, get, post, put};
+        use axum::routing::{any, delete, get, patch, post, put};
         Self {
             root_post: post(publish::<S>),
             db_put: put(publish::<S>),
@@ -1516,7 +1940,11 @@ where
             identity_get: get(get_identity::<S>),
             subscribe_get: get(handle_websocket::<S>),
             call_reducer_procedure_post: post(call::<S>),
+            call_from_database_post: post(call_from_database::<S>),
             schema_get: get(schema::<S>),
+            environment_get: get(environment_metadata::<S>),
+            environment_put: put(environment_set::<S>),
+            environment_patch: patch(environment_patch::<S>),
             logs_get: get(logs::<S>),
             sql_post: post(sql::<S>),
             mcp_post: post(crate::routes::mcp::mcp::<S>),
@@ -1549,6 +1977,9 @@ where
             .route("/names", self.names_put)
             .route("/call/:reducer", self.call_reducer_procedure_post)
             .route("/schema", self.schema_get)
+            .route("/environment", self.environment_get)
+            .route("/environment", self.environment_put)
+            .route("/environment", self.environment_patch)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)
             .route("/mcp", self.mcp_post)
@@ -1584,6 +2015,18 @@ where
             )),
         );
 
+        // Authenticate IDC separately: there is no anonymous fallback and no module-visible JWT.
+        let idc_router = axum::Router::<S>::new()
+            .route(
+                "/:name_or_identity/call-from-database/:reducer",
+                self.call_from_database_post,
+            )
+            .route_layer(axum::middleware::from_fn_with_state(
+                ctx.clone(),
+                crate::auth::idc_auth_middleware::<S>,
+            ))
+            .route_layer(resolving_egress_metrics_middleware.clone());
+
         let authed_named_router = axum::Router::new()
             .nest("/:name_or_identity", db_router)
             .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>));
@@ -1602,8 +2045,45 @@ where
         axum::Router::new()
             .merge(authed_root_router)
             .merge(authed_named_router)
+            .merge(idc_router)
             .merge(http_route_router)
     }
+}
+
+/// Counts a response's headers and body into `spacetime_http_response_size_bytes_total`,
+/// attributed to `database_identity`
+pub(crate) fn count_response_egress(
+    database_identity: Identity,
+    response: axum::response::Response,
+) -> axum::response::Response {
+    let (parts, body) = response.into_parts();
+
+    // Count the number of bytes used by the headers.
+    // For guest-defined routes bound to HTTP handlers, these may be arbitrarily large and are worth billing for;
+    // for built-in routes they will be small and it doesn't really matter one way or another whether we do or don't bill.
+    // N.b. headers installed by other middleware may or may not be counted here,
+    // depending on the order in which the middleware applies.
+    let header_bytes: usize = parts
+        .headers
+        .iter()
+        .map(|(name, value)| name.as_str().len() + value.as_bytes().len())
+        .sum();
+
+    let counter = DB_METRICS
+        .http_response_size_bytes
+        .with_label_values(&database_identity);
+    counter.inc_by(header_bytes as u64);
+
+    // `/logs?follow=true` can stream indefinitely.
+    // Counting frames as they are emitted preserves streaming behavior and avoids buffering the response.
+    let body = body.map_frame(move |frame| {
+        if let Some(data) = frame.data_ref() {
+            counter.inc_by(data.len() as u64);
+        }
+        frame
+    });
+
+    axum::response::Response::from_parts(parts, Body::new(body))
 }
 
 /// Resolves an existing database, attaches it as [`ResolvedDatabase`],
@@ -1634,34 +2114,8 @@ where
     request.extensions_mut().insert(ResolvedDatabase(database.clone()));
 
     let response = next.run(request).await;
-    let (parts, body) = response.into_parts();
 
-    // Count the number of bytes used by the headers.
-    // For guest-defined routes bound to HTTP handlers, these may be arbitrarily large and are worth billing for;
-    // for built-in routes they will be small and it doesn't really matter one way or another whether we do or don't bill.
-    // N.b. headers installed by other middleware may or may not be counted here,
-    // depending on the order in which the middleware applies.
-    let header_bytes: usize = parts
-        .headers
-        .iter()
-        .map(|(name, value)| name.as_str().len() + value.as_bytes().len())
-        .sum();
-
-    let counter = DB_METRICS
-        .http_response_size_bytes
-        .with_label_values(&database.database_identity);
-    counter.inc_by(header_bytes as u64);
-
-    // `/logs?follow=true` can stream indefinitely.
-    // Counting frames as they are emitted preserves streaming behavior and avoids buffering the response.
-    let body = body.map_frame(move |frame| {
-        if let Some(data) = frame.data_ref() {
-            counter.inc_by(data.len() as u64);
-        }
-        frame
-    });
-
-    Ok(axum::response::Response::from_parts(parts, Body::new(body)))
+    Ok(count_response_egress(database.database_identity, response))
 }
 
 #[cfg(test)]
@@ -1669,6 +2123,7 @@ mod tests {
     use super::*;
     use crate::auth::JwtAuthProvider;
     use crate::routes::subscribe::{HasWebSocketOptions, WebSocketOptions};
+    use crate::routes::{identity::IdentityRoutes, router_with_root_routes, RootRoutes};
     use crate::{
         Action, Authorization, ControlStateReadAccess, ControlStateWriteAccess, MaybeMisdirected, Unauthorized,
     };
@@ -1679,11 +2134,13 @@ mod tests {
     use spacetimedb::auth::token_validation::{TokenSigner, TokenValidationError, TokenValidator};
     use spacetimedb::client::ClientActorIndex;
     use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
+    use spacetimedb::host::module_host::UpdateEnvironmentResult;
     use spacetimedb::identity::AuthCtx;
     use spacetimedb::messages::control_db::{Database, Node, Replica};
     use spacetimedb_client_api_messages::name::{
         DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld,
     };
+    use spacetimedb_lib::environment::EnvironmentMap;
     use spacetimedb_lib::Hash;
     use spacetimedb_paths::server::ModuleLogsDir;
     use spacetimedb_paths::FromPathUnchecked;
@@ -1692,6 +2149,309 @@ mod tests {
     use std::convert::Infallible;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use tower::util::ServiceExt;
+
+    #[test]
+    fn idc_signature_hash_query_uses_digest_hex() {
+        let hash = spacetimedb_lib::hash_bytes(b"signature query test");
+        let uri = format!("/call_from_database?stream_id=1&seq=1&signature_hash={hash}")
+            .parse()
+            .unwrap();
+        let Query(query) = Query::<CallFromDatabaseQuery>::try_from_uri(&uri).unwrap();
+        assert_eq!(query.signature_hash, hash);
+        assert_eq!(query.ack_prefix, 0);
+
+        for suffix in [
+            String::new(),
+            "&signature_hash=invalid".into(),
+            "&signature_hash=00".into(),
+            format!("&signature_hash={hash}00"),
+        ] {
+            let uri = format!("/call_from_database?stream_id=1&seq=1{suffix}")
+                .parse()
+                .unwrap();
+            assert!(Query::<CallFromDatabaseQuery>::try_from_uri(&uri).is_err());
+        }
+    }
+
+    #[test]
+    fn idc_outcome_response_uses_terminal_status_codes() {
+        let receiver = Identity::ZERO;
+        for (outcome, stored_status, expected) in [
+            (
+                ReducerOutcome::Committed,
+                StInboundMsgResultStatus::Ok,
+                IdcResponse::Success(Bytes::new()),
+            ),
+            (
+                ReducerOutcome::Failed(Box::new("rejected".into())),
+                StInboundMsgResultStatus::Err,
+                IdcResponse::TerminalError(Bytes::from_static(b"rejected")),
+            ),
+            (
+                ReducerOutcome::BudgetExceeded,
+                StInboundMsgResultStatus::BudgetExceeded,
+                IdcResponse::BudgetExceeded(Bytes::from_static(b"Module energy budget exhausted.")),
+            ),
+        ] {
+            // Decode this the same way the sender does.
+            let response = idc_reducer_outcome_response(&receiver, "receive", outcome);
+            let (status, body) = response.into_http_parts();
+            assert_eq!(IdcResponse::from_http_parts(status, body.clone()), expected);
+            let replay = idc_stored_outcome_response(stored_status, body);
+            assert_eq!(replay, expected);
+        }
+    }
+
+    #[test]
+    fn idc_call_errors_leave_delivery_pending() {
+        use spacetimedb::host::module_host::NoSuchModule;
+
+        for (error, expected_status) in [
+            (
+                IdcDeliveryFailure::NoSuchModule(NoSuchModule),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            (
+                IdcDeliveryFailure::Datastore(spacetimedb::error::DBError::Other(anyhow::anyhow!("write failed"))),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            (
+                IdcDeliveryFailure::OutOfOrder { expected: 1, actual: 2 },
+                StatusCode::TOO_EARLY,
+            ),
+            (
+                IdcDeliveryFailure::Internal("commit failed".into()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+        ] {
+            let expected_body = error.to_string();
+            let response = map_idc_call_error(error, "receive");
+            let (status, body) = response.clone().into_http_parts();
+            assert_eq!(status, expected_status);
+            assert_eq!(body.as_ref(), expected_body.as_bytes());
+            assert_eq!(
+                IdcResponse::from_http_parts(status, body),
+                IdcResponse::DeliveryError(response)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn idc_responses_wait_until_the_result_is_durable() {
+        use spacetimedb::energy::FunctionBudget;
+        use spacetimedb::host::module_host::IdcStoredReducerOutcome;
+        use std::pin::pin;
+        use std::task::Poll;
+        use tokio::sync::watch;
+
+        for (outcome, stored_status, expected) in [
+            (
+                ReducerOutcome::Committed,
+                StInboundMsgResultStatus::Ok,
+                IdcResponse::Success(Bytes::new()),
+            ),
+            (
+                ReducerOutcome::Failed(Box::new("rejected".into())),
+                StInboundMsgResultStatus::Err,
+                IdcResponse::TerminalError(Bytes::from_static(b"rejected")),
+            ),
+            (
+                ReducerOutcome::BudgetExceeded,
+                StInboundMsgResultStatus::BudgetExceeded,
+                IdcResponse::BudgetExceeded(Bytes::from_static(b"Module energy budget exhausted.")),
+            ),
+        ] {
+            let (durable, rx) = watch::channel(None);
+            let (committed, tx_offset) = oneshot::channel();
+            let receiver = Identity::ZERO;
+            let mut recorded = pin!(idc_call_response(
+                &receiver,
+                "receive",
+                IdcReducerCallOutcome::Recorded(ReducerCallResultWithTxOffset {
+                    result: ReducerCallResult {
+                        outcome,
+                        execution_budget_used: FunctionBudget::ZERO,
+                        execution_duration: Duration::ZERO,
+                    },
+                    tx_offset,
+                }),
+                Some(rx.clone().into()),
+            ));
+            assert!(futures::poll!(&mut recorded).is_pending());
+
+            // Commit makes the result readable by a retry, but neither request may reply yet.
+            committed.send(7).unwrap();
+            let (_, payload) = expected.clone().into_http_parts();
+            let mut replayed = pin!(idc_call_response(
+                &receiver,
+                "receive",
+                IdcReducerCallOutcome::Replayed(IdcStoredReducerOutcome {
+                    result_status: stored_status,
+                    result_payload: payload,
+                    tx_offset: 7,
+                }),
+                Some(rx.into()),
+            ));
+            assert!(futures::poll!(&mut recorded).is_pending());
+            assert!(futures::poll!(&mut replayed).is_pending());
+
+            durable.send_replace(Some(6));
+            assert!(futures::poll!(&mut recorded).is_pending());
+            assert!(futures::poll!(&mut replayed).is_pending());
+
+            durable.send_replace(Some(7));
+            for response in [futures::poll!(recorded), futures::poll!(replayed)] {
+                let Poll::Ready(Ok(response)) = response else {
+                    panic!("IDC response must be ready once its transaction is durable");
+                };
+                let status = response.status();
+                let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+                assert_eq!(IdcResponse::from_http_parts(status, body), expected);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn environment_update_reports_success_only_after_confirmation() {
+        let performed = |tx_offset| {
+            Ok(UpdateEnvironmentResult::UpdatePerformed {
+                tx_offset,
+                durable_offset: None,
+            })
+        };
+
+        let (tx, rx) = oneshot::channel();
+        tx.send(7).unwrap();
+        let response = environment_publish_result(performed(rx)).await.into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // The transaction never reports its offset, so it cannot be confirmed.
+        let (tx, rx) = oneshot::channel();
+        drop(tx);
+        let response = environment_publish_result(performed(rx)).await.into_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn reducer_call_reports_success_only_once_durable() {
+        use spacetimedb::energy::FunctionBudget;
+        use spacetimedb::subscription::module_subscription_manager::from_tx_offset;
+        use std::pin::pin;
+        use tokio::sync::watch;
+
+        let call = |outcome, tx_offset| ReducerCallResultWithTxOffset {
+            result: ReducerCallResult {
+                outcome,
+                execution_budget_used: FunctionBudget::ZERO,
+                execution_duration: Duration::ZERO,
+            },
+            tx_offset: from_tx_offset(tx_offset),
+        };
+        let (durable, rx) = watch::channel(None);
+
+        // A committed call doesn't return until its transaction is durable.
+        let mut res = pin!(confirm_reducer_call(
+            call(ReducerOutcome::Committed, 7),
+            true,
+            Some(rx.clone().into())
+        ));
+        assert!(futures::poll!(&mut res).is_pending());
+        durable.send_replace(Some(7));
+        assert!(res.await.is_ok());
+
+        // Unconfirmed and failed calls return without waiting.
+        for (outcome, confirmed) in [
+            (ReducerOutcome::Committed, false),
+            (ReducerOutcome::BudgetExceeded, true),
+        ] {
+            let res = pin!(confirm_reducer_call(
+                call(outcome, 8),
+                confirmed,
+                Some(rx.clone().into())
+            ));
+            assert!(matches!(futures::poll!(res), std::task::Poll::Ready(Ok(_))));
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn call_confirmation_times_out_with_live_senders() {
+        use spacetimedb::subscription::module_subscription_manager::from_tx_offset;
+        use std::pin::pin;
+
+        let (_sender, pending_offset) = oneshot::channel();
+        let (_durable, rx) = tokio::sync::watch::channel(None);
+        for offset in [from_tx_offset(7), pending_offset] {
+            let mut confirmation = pin!(confirm_call_offset(Some(offset), Some(rx.clone().into())));
+            assert!(futures::poll!(&mut confirmation).is_pending());
+            tokio::time::advance(TRANSACTION_CONFIRMATION_TIMEOUT + Duration::from_millis(1)).await;
+            let std::task::Poll::Ready(Err(error)) = futures::poll!(confirmation) else {
+                panic!("confirmation must time out even while its senders are alive");
+            };
+            let response = Err::<(), _>(error).into_response();
+            assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+            let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+            assert!(std::str::from_utf8(&body).unwrap().contains("outcome unknown"));
+        }
+    }
+
+    #[tokio::test]
+    async fn publish_environment_error_identifies_only_typed_missing_required_keys() {
+        use spacetimedb_lib::environment::EnvironmentSchemaError;
+        let missing = || EnvironmentSchemaError::MissingRequired { key: "API_KEY".into() };
+        for response in [
+            publish_error(anyhow::Error::new(missing()).context("publication failed")),
+            publish_migration_error(spacetimedb::db::environment::EnvironmentError::Schema(missing()).into()),
+            publish_error(
+                spacetimedb::host::module_host::InitDatabaseError::Other(
+                    spacetimedb::db::environment::EnvironmentError::Schema(missing()).into(),
+                )
+                .into(),
+            ),
+            publish_migration_error(
+                spacetimedb::host::module_host::InitDatabaseError::Other(
+                    spacetimedb::db::environment::EnvironmentError::Schema(missing()).into(),
+                )
+                .into(),
+            ),
+        ] {
+            let response = Err::<(), _>(response).into_response();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            assert_eq!(response.headers()[http::header::CONTENT_TYPE], "application/json");
+            let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+            // The CLI decodes publish and reset responses as `PublishResult`.
+            let decoded = serde_json::from_slice::<PublishResult>(&body).unwrap();
+            assert!(matches!(
+                decoded,
+                PublishResult::EnvironmentError(EnvironmentPublishError::MissingRequiredEnvironment { keys })
+                    if keys == ["API_KEY"]
+            ));
+        }
+        // The CLI decodes environment update responses as `Result<(), EnvironmentPublishError>`,
+        // including when the module fails while applying the new environment.
+        for result in [
+            Ok(UpdateEnvironmentResult::ErrorExecutingMigration(
+                spacetimedb::db::environment::EnvironmentError::Schema(missing()).into(),
+            )),
+            Err(spacetimedb::db::environment::EnvironmentError::Schema(missing()).into()),
+        ] {
+            let response = environment_publish_result(result).await.into_response();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+            let decoded = serde_json::from_slice::<Result<(), EnvironmentPublishError>>(&body).unwrap();
+            assert!(matches!(
+                decoded,
+                Err(EnvironmentPublishError::MissingRequiredEnvironment { keys }) if keys == ["API_KEY"]
+            ));
+        }
+        for error in [
+            anyhow::anyhow!("environment key API_KEY: required value is missing"),
+            EnvironmentSchemaError::ConstraintMismatch { key: "API_KEY".into() }.into(),
+        ] {
+            let response = Err::<(), _>(publish_migration_error(error)).into_response();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            assert_ne!(response.headers()[http::header::CONTENT_TYPE], "application/json");
+        }
+    }
 
     #[derive(Clone, Default)]
     struct DummyValidator;
@@ -1706,6 +2466,7 @@ mod tests {
     #[derive(Clone)]
     struct DummyJwtProvider {
         validator: DummyValidator,
+        keys: Option<std::sync::Arc<spacetimedb::auth::JwtKeys>>,
     }
 
     impl TokenSigner for DummyJwtProvider {
@@ -1732,7 +2493,7 @@ mod tests {
         }
 
         fn public_key_bytes(&self) -> &[u8] {
-            b""
+            self.keys.as_ref().map_or(b"", |keys| keys.public_pem.as_ref())
         }
     }
 
@@ -1744,6 +2505,9 @@ mod tests {
         databases: std::sync::Arc<HashMap<Identity, Database>>,
         dns: std::sync::Arc<HashMap<String, Identity>>,
         dns_lookups: std::sync::Arc<AtomicUsize>,
+        reject_publication: bool,
+        name_registrations: std::sync::Arc<AtomicUsize>,
+        allow_publish_update: bool,
     }
 
     impl DummyState {
@@ -1751,12 +2515,16 @@ mod tests {
             Self {
                 jwt: DummyJwtProvider {
                     validator: DummyValidator,
+                    keys: None,
                 },
                 client_actor_index: std::sync::Arc::new(ClientActorIndex::new()),
                 module_logs_dir: ModuleLogsDir::from_path_unchecked(std::env::temp_dir()),
                 databases: std::sync::Arc::new(HashMap::new()),
                 dns: std::sync::Arc::new(HashMap::new()),
                 dns_lookups: std::sync::Arc::new(AtomicUsize::new(0)),
+                reject_publication: false,
+                name_registrations: std::sync::Arc::new(AtomicUsize::new(0)),
+                allow_publish_update: false,
             }
         }
 
@@ -1791,6 +2559,63 @@ mod tests {
             host_type: HostType::Wasm,
             initial_program: Hash::from_byte_array([0; 32]),
             bootstrap_generation: 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn rejected_publication_does_not_reserve_name() {
+        let mut state = DummyState::new();
+        state.reject_publication = true;
+        let registrations = state.name_registrations.clone();
+        let app = DatabaseRoutes::<DummyState>::default()
+            .into_router(state.clone())
+            .with_state(state);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(http::Method::PUT)
+                    .uri("/unreserved-name")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(registrations.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn supplied_identity_can_update_but_not_create_database() {
+        let identity = test_identity(42);
+        let mut existing = DummyState::new().with_database(identity);
+        existing.allow_publish_update = true;
+
+        for (state, expected_status) in [(DummyState::new(), StatusCode::BAD_REQUEST), (existing, StatusCode::OK)] {
+            let app = DatabaseRoutes::<DummyState>::default()
+                .into_router(state.clone())
+                .with_state(state);
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method(http::Method::PUT)
+                        .uri(format!("/{identity}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected_status);
+            if expected_status == StatusCode::OK {
+                let body = response.into_body().collect().await.unwrap().to_bytes();
+                assert!(matches!(
+                    serde_json::from_slice::<PublishResult>(&body).unwrap(),
+                    PublishResult::Success {
+                        database_identity,
+                        op: PublishOp::Updated,
+                        ..
+                    } if database_identity == identity
+                ));
+            }
         }
     }
 
@@ -1938,9 +2763,13 @@ mod tests {
         async fn publish_database(
             &self,
             _publisher: &Identity,
-            _spec: DatabaseDef,
+            spec: DatabaseDef,
             _policy: MigrationPolicy,
+            _environment: EnvironmentUpdate,
         ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
+            if self.allow_publish_update && self.databases.contains_key(&spec.database_identity) {
+                return Ok(None);
+            }
             Err(anyhow::anyhow!("unused"))
         }
 
@@ -1969,7 +2798,12 @@ mod tests {
             Err(anyhow::anyhow!("unused"))
         }
 
-        async fn reset_database(&self, _caller_identity: &Identity, _spec: DatabaseResetDef) -> anyhow::Result<()> {
+        async fn reset_database(
+            &self,
+            _caller_identity: &Identity,
+            _spec: DatabaseResetDef,
+            _environment: EnvironmentMap,
+        ) -> anyhow::Result<()> {
             Err(anyhow::anyhow!("unused"))
         }
 
@@ -1982,6 +2816,7 @@ mod tests {
         }
 
         async fn register_tld(&self, _identity: &Identity, _tld: Tld) -> anyhow::Result<RegisterTldResult> {
+            self.name_registrations.fetch_add(1, Ordering::Relaxed);
             Err(anyhow::anyhow!("unused"))
         }
 
@@ -2002,21 +2837,106 @@ mod tests {
         ) -> anyhow::Result<SetDomainsResult> {
             Err(anyhow::anyhow!("unused"))
         }
+
+        async fn update_environment(
+            &self,
+            _publisher: &Identity,
+            _database_identity: &Identity,
+            _environment: EnvironmentUpdate,
+            _expected_module_hash: Hash,
+        ) -> anyhow::Result<UpdateEnvironmentResult> {
+            Err(anyhow::anyhow!("unused"))
+        }
     }
 
     impl Authorization for DummyState {
         async fn authorize_action(
             &self,
-            _subject: Identity,
-            _database: Identity,
-            _action: Action,
+            subject: Identity,
+            database: Identity,
+            action: Action,
         ) -> Result<(), Unauthorized> {
+            if self.reject_publication {
+                return Err(Unauthorized::Unauthorized {
+                    subject,
+                    action,
+                    database: Some(database),
+                    source: None,
+                });
+            }
+            if self.allow_publish_update
+                && matches!(action, Action::UpdateDatabase)
+                && self.databases.contains_key(&database)
+            {
+                return Ok(());
+            }
             Err(Unauthorized::InternalError(anyhow::anyhow!("unused")))
         }
 
         async fn authorize_sql(&self, _subject: Identity, _database: Identity) -> Result<AuthCtx, Unauthorized> {
             Err(Unauthorized::InternalError(anyhow::anyhow!("unused")))
         }
+    }
+
+    #[tokio::test]
+    async fn idc_route_requires_host_credentials_and_exposes_no_jwt() -> anyhow::Result<()> {
+        let receiver = test_identity(201);
+        let sender = test_identity(202);
+        let keys = std::sync::Arc::new(spacetimedb::auth::JwtKeys::generate()?);
+        let mut state = DummyState::new().with_database(receiver);
+        state.jwt.keys = Some(keys.clone());
+        let app = DatabaseRoutes {
+            call_from_database_post: axum::routing::post(
+                |Extension(IdcCallerIdentity(sender)): Extension<IdcCallerIdentity>,
+                 auth: Option<Extension<ConnectionAuthCtx>>| async move {
+                    assert!(auth.is_none());
+                    sender.to_hex().to_string()
+                },
+            ),
+            ..DatabaseRoutes::<DummyState>::default()
+        }
+        .into_router(state.clone())
+        .with_state(state);
+        let valid = spacetimedb::auth::idc::sign(&keys.private, sender, receiver)?;
+        let wrong_receiver = spacetimedb::auth::idc::sign(&keys.private, sender, sender)?;
+        let wrong_key =
+            spacetimedb::auth::idc::sign(&spacetimedb::auth::JwtKeys::generate()?.private, sender, receiver)?;
+        let (_, client_token) =
+            crate::auth::TokenClaims::new("localhost".into(), "client".into()).encode_and_sign(&keys.private)?;
+        let call_idc_route = async |token: Option<&str>| {
+            let app = app.clone();
+            let mut request = Request::builder()
+                .method("POST")
+                .uri(format!("/{}/call-from-database/receive", receiver.to_hex()));
+            if let Some(token) = token {
+                request = request.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+            }
+            Ok::<_, anyhow::Error>(app.oneshot(request.body(Body::empty())?).await?)
+        };
+        let assert_unauthorized = async |token: Option<&str>| {
+            let response = call_idc_route(token).await?;
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+            Ok::<_, anyhow::Error>(())
+        };
+
+        assert_unauthorized(None).await?;
+        assert_unauthorized(Some("malformed")).await?;
+        assert_unauthorized(Some(wrong_receiver.as_str())).await?;
+        assert_unauthorized(Some(wrong_key.as_str())).await?;
+        assert_unauthorized(Some(client_token.as_str())).await?;
+
+        {
+            let token = valid.as_str();
+            let mut request = Request::builder()
+                .method("POST")
+                .uri(format!("/{}/call-from-database/receive", receiver.to_hex()));
+            request = request.header(http::header::AUTHORIZATION, format!("Bearer {token}"));
+            let response = app.clone().oneshot(request.body(Body::empty())?).await?;
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = response.into_body().collect().await?.to_bytes();
+            assert_eq!(body.as_ref(), sender.to_hex().as_bytes());
+        }
+        Ok(())
     }
 
     /// Tests that requests to user-defined routes under `/database/:name-or-identity/routes`
@@ -2360,6 +3280,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn count_response_egress_counts_headers_and_body() {
+        let database_identity = test_identity(21);
+        remove_http_response_size_metric(database_identity);
+
+        let response = ([(http::header::CONTENT_TYPE, "application/json")], r#"{"ok":true}"#).into_response();
+        let counted = count_response_egress(database_identity, response);
+
+        assert_eq!(
+            http_response_size_metric(database_identity),
+            "content-type".len() as u64 + "application/json".len() as u64
+        );
+
+        let body = counted.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(body, r#"{"ok":true}"#);
+        assert_eq!(
+            http_response_size_metric(database_identity),
+            "content-type".len() as u64 + "application/json".len() as u64 + r#"{"ok":true}"#.len() as u64
+        );
+
+        remove_http_response_size_metric(database_identity);
+    }
+
+    #[tokio::test]
     async fn mcp_handshake_returns_not_found_for_an_unknown_database() {
         let state = DummyState::new();
         let app = DatabaseRoutes::<DummyState> {
@@ -2418,5 +3361,80 @@ mod tests {
         );
 
         remove_http_response_size_metric(database_identity);
+    }
+
+    fn root_router(root_routes: RootRoutes<DummyState>) -> axum::Router {
+        let state = DummyState::new();
+        router_with_root_routes(
+            &state,
+            DatabaseRoutes::default(),
+            IdentityRoutes::default(),
+            root_routes,
+            axum::Router::new(),
+        )
+        .with_state(state)
+    }
+
+    fn post_mcp_root(body: &'static str) -> Request<Body> {
+        Request::builder()
+            .method(http::Method::POST)
+            .uri("/v1/mcp")
+            .header(http::header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn default_root_routes_serve_the_real_handlers() {
+        let app = root_router(RootRoutes::default());
+
+        let response = app
+            .clone()
+            .oneshot(post_mcp_root(
+                r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping"}}"#,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        assert!(std::str::from_utf8(&body).unwrap().contains("pong"));
+
+        let response = app
+            .oneshot(Request::builder().uri("/v1/ping").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn a_substituted_root_mcp_route_replaces_the_default_handler() {
+        let app = root_router(RootRoutes {
+            mcp_post: axum::routing::post(|| async { "substituted" }),
+            ..Default::default()
+        });
+
+        let response = app.oneshot(post_mcp_root("")).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.into_body().collect().await.unwrap().to_bytes(), "substituted");
+    }
+
+    #[tokio::test]
+    async fn the_auth_middleware_runs_before_substituted_root_layers() {
+        let app = root_router(RootRoutes {
+            mcp_post: axum::routing::post(|| async { "substituted" }).layer(axum::middleware::from_fn(
+                |request: axum::extract::Request, next: axum::middleware::Next| async move {
+                    if request.extensions().get::<crate::auth::SpacetimeAuth>().is_none() {
+                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
+                    next.run(request).await
+                },
+            )),
+            ..Default::default()
+        });
+
+        let response = app.oneshot(post_mcp_root("")).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }
