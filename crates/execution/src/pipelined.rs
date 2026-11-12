@@ -8,12 +8,13 @@ use itertools::Either;
 use spacetimedb_expr::expr::AggType;
 use spacetimedb_lib::{metrics::ExecutionMetrics, query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
 use spacetimedb_physical_plan::plan::{
-    HashJoin, IndexProbe, IxJoin, IxScan, ParamResolver, PhysicalExpr, PhysicalPlan, ProjectField, ProjectListPlan,
-    ProjectPlan, Semi, TableScan, TupleField,
+    BindingCandidates, BindingLookup, HashJoin, IndexProbe, IxJoin, IxScan, ParamResolver, PhysicalExpr, PhysicalPlan,
+    ProjectField, ProjectListPlan, ProjectPlan, Semi, TableScan, TupleField,
 };
 use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::product;
 
+use crate::bindings::{BindingId, BindingRelation};
 use crate::{Datastore, DeltaStore, Row, Tuple};
 
 /// An executor for explicit column projections.
@@ -280,6 +281,79 @@ impl PipelinedProject {
     }
 }
 
+/// Emits each returned row with the id of the binding it matched
+#[derive(Debug)]
+pub struct BindingProject {
+    input: PipelinedExecutor,
+    /// The returned row's position in each tuple
+    row_position: u32,
+    /// The binding row's position in each tuple
+    binding_position: u32,
+}
+
+impl BindingProject {
+    /// The root of a template's plan, which must have a binding lookup
+    pub fn new(plan: ProjectPlan) -> Self {
+        let Some(binding_position) = plan.binding_position() else {
+            panic!("a template plan has no binding lookup: {plan:#?}");
+        };
+        // The lookup appends the binding row, so the plan always returns tuples
+        let ProjectPlan::Name(plan, _, Some(row_position)) = plan else {
+            panic!("a binding lookup without a named projection: {plan:#?}");
+        };
+        assert_ne!(row_position, binding_position);
+        // A position counts the tables in a join
+        let narrow = |position: usize| u32::try_from(position).expect("tuple positions are small");
+        Self {
+            input: plan.into(),
+            row_position: narrow(row_position),
+            binding_position: narrow(binding_position),
+        }
+    }
+
+    /// Walks and visits each executor in the tree
+    pub fn visit(&self, f: &mut impl FnMut(&PipelinedExecutor)) {
+        self.input.visit(f);
+    }
+
+    /// Does this operation contain an empty delta scan, or have no bindings?
+    pub fn is_empty(&self, tx: &impl DeltaStore) -> bool {
+        self.input.is_empty(tx)
+    }
+
+    pub fn execute<'a, Tx: Datastore + DeltaStore>(
+        &self,
+        tx: &'a Tx,
+        params: &impl ParamResolver,
+        metrics: &mut ExecutionMetrics,
+        f: &mut dyn FnMut(BindingId, Row<'a>) -> Result<()>,
+    ) -> Result<()> {
+        let bindings = bindings(tx);
+        let mut rows_scanned: u64 = 0;
+        self.input.execute(tx, params, metrics, &mut |t| {
+            rows_scanned += 1;
+            let Tuple::Join(rows) = &t else {
+                panic!("a binding lookup returns tuples");
+            };
+            let in_range = (self.row_position as u64) < rows.len() as u64;
+            assert!(in_range, "no returned row at {}", self.row_position);
+            let Some(Row::Ref(binding)) = rows.get(self.binding_position as usize) else {
+                panic!("no binding row at {}", self.binding_position);
+            };
+            let id = BindingId::of_row(binding);
+            // A delta row can also start with a `u64`, so check that this is the relation's own row
+            let stored = std::ptr::eq(bindings.get(id), *binding);
+            assert!(stored, "row at {} is not a stored binding", self.binding_position);
+            let row = t
+                .select(self.row_position as usize)
+                .expect("positions are checked above");
+            f(id, row)
+        })?;
+        metrics.rows_scanned += rows_scanned as usize;
+        Ok(())
+    }
+}
+
 /// Executes a query plan in a streaming fashion.
 /// Avoids materializing intermediate results when possible.
 /// Note that unlike a tuple at a time iterator,
@@ -293,6 +367,7 @@ pub enum PipelinedExecutor {
     NLJoin(BlockingNLJoin),
     Filter(PipelinedFilter),
     Limit(PipelinedLimit),
+    BindingLookup(PipelinedBindingLookup),
 }
 
 impl From<PhysicalPlan> for PipelinedExecutor {
@@ -358,6 +433,12 @@ impl From<PhysicalPlan> for PipelinedExecutor {
                 input: Box::new(PipelinedExecutor::from(*input)),
                 expr,
             }),
+            PhysicalPlan::BindingLookup(input, BindingLookup { candidates, .. }) => {
+                Self::BindingLookup(PipelinedBindingLookup {
+                    input: Box::new(PipelinedExecutor::from(*input)),
+                    candidates,
+                })
+            }
         }
     }
 }
@@ -369,7 +450,8 @@ impl PipelinedExecutor {
         match self {
             Self::IxJoin(PipelinedIxJoin { lhs: input, .. })
             | Self::Filter(PipelinedFilter { input, .. })
-            | Self::Limit(PipelinedLimit { input, .. }) => {
+            | Self::Limit(PipelinedLimit { input, .. })
+            | Self::BindingLookup(PipelinedBindingLookup { input, .. }) => {
                 input.visit(f);
             }
             Self::NLJoin(BlockingNLJoin { lhs, rhs }) | Self::HashJoin(BlockingHashJoin { lhs, rhs, .. }) => {
@@ -390,6 +472,7 @@ impl PipelinedExecutor {
             Self::NLJoin(join) => join.is_empty(tx),
             Self::Filter(filter) => filter.is_empty(tx),
             Self::Limit(limit) => limit.is_empty(tx),
+            Self::BindingLookup(lookup) => lookup.is_empty(tx),
         }
     }
 
@@ -408,6 +491,7 @@ impl PipelinedExecutor {
             Self::NLJoin(join) => join.execute(tx, params, metrics, f),
             Self::Filter(filter) => filter.execute(tx, params, metrics, f),
             Self::Limit(limit) => limit.execute(tx, params, metrics, f),
+            Self::BindingLookup(lookup) => lookup.execute(tx, params, metrics, f),
         }
     }
 }
@@ -818,7 +902,7 @@ impl PipelinedIxJoin {
                 self.lhs.execute(tx, params, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
-                    iter_rhs(&u, &mut bytes_scanned, &mut |v| f(u.clone().join(v)))?;
+                    iter_rhs(&u, &mut bytes_scanned, &mut |v| f(u.clone_join(v)))?;
                     Ok(())
                 })?;
             }
@@ -929,7 +1013,7 @@ impl BlockingHashJoin {
                 lhs.execute(tx, params, metrics, &mut |u| {
                     n += 1;
                     if let Some(v) = rhs_table.get(&project(&u, lhs_field, &mut bytes_scanned)) {
-                        f(u.clone().join(v.clone()))?;
+                        f(u.clone_join(v.clone()))?;
                     }
                     Ok(())
                 })?;
@@ -1013,7 +1097,7 @@ impl BlockingHashJoin {
                     n += 1;
                     if let Some(rhs_tuples) = rhs_table.get(&project(&u, lhs_field, &mut bytes_scanned)) {
                         for v in rhs_tuples {
-                            f(u.clone().join(v.clone()))?;
+                            f(u.clone_join(v.clone()))?;
                         }
                     }
                     Ok(())
@@ -1060,7 +1144,7 @@ impl BlockingNLJoin {
         self.lhs.execute(tx, params, metrics, &mut |u| {
             n += 1;
             for v in rhs.iter() {
-                f(u.clone().join(v.clone()))?;
+                f(u.clone_join(v.clone()))?;
             }
             Ok(())
         })?;
@@ -1137,6 +1221,66 @@ impl PipelinedLimit {
         metrics.rows_scanned += n;
         Ok(())
     }
+}
+
+/// Pairs each input tuple with each binding it matches
+#[derive(Debug)]
+pub struct PipelinedBindingLookup {
+    pub input: Box<PipelinedExecutor>,
+    pub candidates: BindingCandidates,
+}
+
+impl PipelinedBindingLookup {
+    /// Does this operation contain an empty delta scan, or have no bindings?
+    pub fn is_empty(&self, tx: &impl DeltaStore) -> bool {
+        self.input.is_empty(tx) || bindings(tx).is_empty()
+    }
+
+    pub fn execute<'a, Tx: Datastore + DeltaStore>(
+        &self,
+        tx: &'a Tx,
+        params: &impl ParamResolver,
+        metrics: &mut ExecutionMetrics,
+        f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
+    ) -> Result<()> {
+        let bindings = bindings(tx);
+        let mut rows_scanned: u64 = 0;
+        let mut index_seeks: u64 = 0;
+        // `project` counts into a `usize`
+        let mut bytes_scanned = 0;
+        self.input.execute(tx, params, metrics, &mut |t| {
+            rows_scanned += 1;
+            match &self.candidates {
+                BindingCandidates::All => {
+                    // Every binding is read for each input tuple
+                    for row in bindings.iter() {
+                        f(t.clone_join(Tuple::Row(Row::Ref(row))))?;
+                    }
+                    rows_scanned += bindings.len();
+                }
+                BindingCandidates::Probe(probe) => {
+                    index_seeks += 1;
+                    let fields = probe.key.iter();
+                    let key = fields.map(|field| project(&t, field, &mut bytes_scanned));
+                    let ids = bindings.probe(probe.index, key);
+                    assert!(ids.len() as u64 <= bindings.len());
+                    for id in ids {
+                        f(t.clone_join(Tuple::Row(Row::Ref(bindings.get(*id)))))?;
+                    }
+                }
+            }
+            Ok(())
+        })?;
+        metrics.index_seeks += index_seeks as usize;
+        metrics.rows_scanned += rows_scanned as usize;
+        metrics.bytes_scanned += bytes_scanned;
+        Ok(())
+    }
+}
+
+/// The bindings of the template being evaluated, which every binding lookup needs
+fn bindings(tx: &impl DeltaStore) -> &BindingRelation {
+    tx.bindings().expect("a binding lookup outside of a template")
 }
 
 /// A wrapper around [ProjectField] that increments a counter by the size of the projected value

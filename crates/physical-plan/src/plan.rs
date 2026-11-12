@@ -39,9 +39,29 @@ pub trait ParamResolver {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ParamSlot(pub u16);
 
+impl ParamSlot {
+    /// The slot of the `i`-th binding value
+    pub fn binding(i: u16) -> Self {
+        Self(PARAM_BINDING_FIRST.0.checked_add(i).expect("binding slot out of range"))
+    }
+
+    /// Is this the slot of a binding value?
+    pub fn is_binding(self) -> bool {
+        self.binding_index().is_some()
+    }
+
+    /// The index of the binding value in this slot, if it holds one
+    pub fn binding_index(self) -> Option<u16> {
+        self.0.checked_sub(PARAM_BINDING_FIRST.0)
+    }
+}
+
 pub const PARAM_SENDER: ParamSlot = ParamSlot(0);
 pub const PARAM_VIEW_ARG_HASH_EMPTY: ParamSlot = ParamSlot(1);
 pub const PARAM_VIEW_ARG_HASH_SENDER: ParamSlot = ParamSlot(2);
+
+/// The first slot after the built-ins, so `ExecutionParams` rejects binding slots
+pub const PARAM_BINDING_FIRST: ParamSlot = ParamSlot(3);
 
 /// Physical plans always terminate with a projection.
 /// This type of projection returns row ids.
@@ -98,9 +118,19 @@ impl CollectViews for ProjectPlan {
 impl ProjectPlan {
     pub fn optimize(self) -> Result<Self> {
         match self {
-            Self::None(plan) => Ok(Self::None(plan.optimize(vec![])?)),
+            Self::None(plan) => {
+                let plan = plan.optimize(vec![])?;
+                // Only single row tuples can be returned as whole rows
+                if plan.nfields() != 1 {
+                    bail!("Cannot return whole rows from a plan that returns tuples")
+                }
+                Ok(Self::None(plan))
+            }
             Self::Name(plan, label, _) => {
-                let plan = plan.optimize(vec![label])?;
+                // Binding rows hold the binding ids, so the root needs them too
+                let mut reqs = vec![label];
+                reqs.extend(plan.binding_label());
+                let plan = plan.optimize(reqs)?;
                 let n = plan.nfields();
                 let pos = plan.position(&label);
                 Ok(match n {
@@ -116,6 +146,12 @@ impl ProjectPlan {
         match self {
             Self::None(plan) | Self::Name(plan, ..) => plan,
         }
+    }
+
+    /// The position of the binding row in each tuple, if this plan has a binding lookup
+    pub fn binding_position(&self) -> Option<usize> {
+        let position = |label| self.position(&label).expect("the binding row reaches the root");
+        self.binding_label().map(position)
     }
 
     /// Does this plan select or return whole (unprojected) rows from a single table?
@@ -295,6 +331,8 @@ pub enum PhysicalPlan {
     NLJoin(Box<PhysicalPlan>, Box<PhysicalPlan>),
     /// A tuple-at-a-time filter
     Filter(Box<PhysicalPlan>, PhysicalExpr),
+    /// A join with the matching subscription bindings
+    BindingLookup(Box<PhysicalPlan>, BindingLookup),
 }
 
 impl CollectViews for PhysicalPlan {
@@ -327,7 +365,7 @@ impl PhysicalPlan {
     pub fn visit(&self, f: &mut impl FnMut(&Self)) {
         f(self);
         match self {
-            Self::IxJoin(IxJoin { lhs: input, .. }, _) | Self::Filter(input, _) => {
+            Self::IxJoin(IxJoin { lhs: input, .. }, _) | Self::Filter(input, _) | Self::BindingLookup(input, _) => {
                 input.visit(f);
             }
             Self::NLJoin(lhs, rhs) | Self::HashJoin(HashJoin { lhs, rhs, .. }, _) => {
@@ -342,7 +380,7 @@ impl PhysicalPlan {
     pub fn visit_mut(&mut self, f: &mut impl FnMut(&mut Self)) {
         f(self);
         match self {
-            Self::IxJoin(IxJoin { lhs: input, .. }, _) | Self::Filter(input, _) => {
+            Self::IxJoin(IxJoin { lhs: input, .. }, _) | Self::Filter(input, _) | Self::BindingLookup(input, _) => {
                 input.visit_mut(f);
             }
             Self::NLJoin(lhs, rhs) | Self::HashJoin(HashJoin { lhs, rhs, .. }, _) => {
@@ -366,6 +404,7 @@ impl PhysicalPlan {
     pub fn map(self, f: &impl Fn(Self) -> Self) -> Self {
         match f(self) {
             Self::Filter(input, expr) => Self::Filter(Box::new(input.map(f)), expr),
+            Self::BindingLookup(input, lookup) => Self::BindingLookup(Box::new(input.map(f)), lookup),
             Self::NLJoin(lhs, rhs) => Self::NLJoin(Box::new(lhs.map(f)), Box::new(rhs.map(f))),
             Self::HashJoin(join, semi) => Self::HashJoin(
                 HashJoin {
@@ -450,6 +489,12 @@ impl PhysicalPlan {
                 }
                 Self::Filter(input, expr)
             }
+            Self::BindingLookup(input, lookup) => {
+                if matches(&input) {
+                    return Ok(Self::BindingLookup(Box::new(input.map_if(f, ok)?), lookup));
+                }
+                Self::BindingLookup(input, lookup)
+            }
         })
     }
 
@@ -530,6 +575,11 @@ impl PhysicalPlan {
                             unresolved_name = true;
                         }
                     });
+                }
+                Self::BindingLookup(_, lookup) => {
+                    if lookup.key_fields().any(|field| field.label_pos.is_none()) {
+                        unresolved_name = true;
+                    }
                 }
                 Self::HashJoin(
                     HashJoin {
@@ -651,6 +701,7 @@ impl PhysicalPlan {
                 semi,
             ),
             Self::Filter(input, expr) => Self::Filter(Box::new(input.expand_views()), expr),
+            Self::BindingLookup(input, lookup) => Self::BindingLookup(Box::new(input.expand_views()), lookup),
             Self::NLJoin(lhs, rhs) => Self::NLJoin(Box::new(lhs.expand_views()), Box::new(rhs.expand_views())),
             Self::TableScan(..) | Self::IxScan(..) => self,
         }
@@ -821,6 +872,14 @@ impl PhysicalPlan {
                     }
                 });
                 Self::Filter(Box::new(input.introduce_semijoins(reqs)), expr)
+            }
+            // Like an index join that keeps both sides, since the binding row holds the binding id
+            Self::BindingLookup(input, lookup) => {
+                let mut reqs: Vec<_> = reqs.into_iter().filter(|label| label != &lookup.label).collect();
+                for field in lookup.key_fields() {
+                    append_required_label(&input, &mut reqs, field.label);
+                }
+                Self::BindingLookup(Box::new(input.introduce_semijoins(reqs)), lookup)
             }
             Self::NLJoin(lhs, rhs) => {
                 let mut lhs_reqs = vec![];
@@ -1015,9 +1074,10 @@ impl PhysicalPlan {
     /// Does this plan introduce this label?
     fn has_label(&self, label: &Label) -> bool {
         self.any(&|plan| match plan {
-            Self::TableScan(_, var) | Self::IxScan(_, var) | Self::IxJoin(IxJoin { rhs_label: var, .. }, _) => {
-                var == label
-            }
+            Self::TableScan(_, var)
+            | Self::IxScan(_, var)
+            | Self::IxJoin(IxJoin { rhs_label: var, .. }, _)
+            | Self::BindingLookup(_, BindingLookup { label: var, .. }) => var == label,
             _ => false,
         })
     }
@@ -1027,6 +1087,7 @@ impl PhysicalPlan {
         match self {
             Self::TableScan(..) | Self::IxScan(..) | Self::IxJoin(_, Semi::Rhs) => 1,
             Self::Filter(input, _) => input.nfields(),
+            Self::BindingLookup(input, _) => input.nfields() + 1,
             Self::IxJoin(join, Semi::Lhs) => join.lhs.nfields(),
             Self::IxJoin(join, Semi::All) => join.lhs.nfields() + 1,
             Self::HashJoin(join, Semi::Rhs) => join.rhs.nfields(),
@@ -1034,6 +1095,19 @@ impl PhysicalPlan {
             Self::HashJoin(join, Semi::All) => join.lhs.nfields() + join.rhs.nfields(),
             Self::NLJoin(lhs, rhs) => lhs.nfields() + rhs.nfields(),
         }
+    }
+
+    /// The label of this plan's binding lookup, if it has one
+    fn binding_label(&self) -> Option<Label> {
+        let mut labels = vec![];
+        self.visit(&mut |plan| {
+            if let PhysicalPlan::BindingLookup(_, lookup) = plan {
+                labels.push(lookup.label);
+            }
+        });
+        // A template has one binding relation
+        assert!(labels.len() <= 1, "more than one binding lookup: {self:#?}");
+        labels.first().copied()
     }
 
     /// What is the position of this label in the return tuple?
@@ -1063,6 +1137,10 @@ impl PhysicalPlan {
                 PhysicalPlan::IxJoin(IxJoin { lhs, rhs_label, .. }, Semi::All) => {
                     find(lhs, labels);
                     labels.push(*rhs_label);
+                }
+                PhysicalPlan::BindingLookup(input, BindingLookup { label, .. }) => {
+                    find(input, labels);
+                    labels.push(*label);
                 }
                 PhysicalPlan::NLJoin(lhs, rhs) | PhysicalPlan::HashJoin(HashJoin { lhs, rhs, .. }, Semi::All) => {
                     find(lhs, labels);
@@ -1149,7 +1227,9 @@ impl PhysicalPlan {
             Self::IxJoin(join, Semi::Rhs) => Some(join.rhs.clone()),
             Self::HashJoin(join, Semi::Lhs) => join.lhs.return_table(),
             Self::HashJoin(join, Semi::Rhs) => join.rhs.return_table(),
-            Self::IxJoin(_, Semi::All) | Self::HashJoin(_, Semi::All) | Self::NLJoin(..) => None,
+            Self::IxJoin(_, Semi::All) | Self::HashJoin(_, Semi::All) | Self::NLJoin(..) | Self::BindingLookup(..) => {
+                None
+            }
         }
     }
 
@@ -1159,7 +1239,7 @@ impl PhysicalPlan {
         match self {
             Self::TableScan(scan, label) if name == label => Some(scan.schema.clone()),
             Self::IxScan(scan, label) if name == label => Some(scan.schema.clone()),
-            Self::Filter(input, _) => input.find_table_schema(name),
+            Self::Filter(input, _) | Self::BindingLookup(input, _) => input.find_table_schema(name),
             Self::IxJoin(join, Semi::Rhs | Semi::All) if name == &join.rhs_label => Some(join.rhs.clone()),
             Self::IxJoin(join, Semi::Lhs | Semi::All) => join.lhs.find_table_schema(name),
             Self::HashJoin(join, Semi::Lhs) => join.lhs.find_table_schema(name),
@@ -1279,6 +1359,65 @@ pub struct IxJoin {
     pub probe: PhysicalExpr,
     // Is the rhs a delta table?
     pub rhs_delta: Option<Delta>,
+}
+
+/// An index on a subscription template's binding relation
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BindingIndexId(pub u32);
+
+/// Appends each matching binding row to the input tuple
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BindingLookup {
+    /// The label of the binding relation in the output tuple
+    pub label: Label,
+    /// How candidate bindings are found
+    pub candidates: BindingCandidates,
+}
+
+/// Which bindings a [`BindingLookup`] pairs with each input tuple
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BindingCandidates {
+    /// Every binding
+    All,
+    /// The bindings found by probing one index
+    Probe(BindingProbe),
+    // TODO: Probe each branch of an `OR` instead of using `All`
+}
+
+/// Like the probe of an [`IxJoin`], but into a binding index
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BindingProbe {
+    /// The binding index to probe
+    pub index: BindingIndexId,
+    /// The probe key, in the order of the index's columns
+    pub key: Vec<TupleField>,
+}
+
+impl BindingLookup {
+    /// The probes this lookup makes for each input tuple
+    pub fn probes(&self) -> &[BindingProbe] {
+        match &self.candidates {
+            BindingCandidates::All => &[],
+            BindingCandidates::Probe(probe) => std::slice::from_ref(probe),
+        }
+    }
+
+    fn probes_mut(&mut self) -> &mut [BindingProbe] {
+        match &mut self.candidates {
+            BindingCandidates::All => &mut [],
+            BindingCandidates::Probe(probe) => std::slice::from_mut(probe),
+        }
+    }
+
+    /// The input fields this lookup reads
+    pub fn key_fields(&self) -> impl Iterator<Item = &TupleField> {
+        self.probes().iter().flat_map(|probe| probe.key.iter())
+    }
+
+    /// The input fields this lookup reads, mutably
+    pub fn key_fields_mut(&mut self) -> impl Iterator<Item = &mut TupleField> {
+        self.probes_mut().iter_mut().flat_map(|probe| probe.key.iter_mut())
+    }
 }
 
 /// Build a single physical key expression for an index probe.
@@ -1629,6 +1768,7 @@ mod tests {
     use spacetimedb_lib::{
         db::auth::{StAccess, StTableType},
         identity::AuthCtx,
+        query::Delta,
         view_instance_arg_hash_value, AlgebraicType, AlgebraicValue, Identity, ProductType, ProductValue,
     };
     use spacetimedb_primitives::{ColId, ColList, ColSet, TableId, ViewId};
@@ -1638,11 +1778,14 @@ mod tests {
         schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableOrViewSchema, TableSchema, ViewDefInfo},
         table_name::TableName,
     };
-    use spacetimedb_sql_parser::ast::BinOp;
+    use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 
     use crate::{
         compile::{compile_select, compile_select_list},
-        plan::{IndexProbe, IxScan, PhysicalPlan, ProjectListPlan, Semi, TupleField},
+        plan::{
+            BindingCandidates, BindingIndexId, BindingLookup, BindingProbe, IndexProbe, IxScan, Label, PhysicalPlan,
+            ProjectListPlan, Semi, TupleField,
+        },
     };
 
     use super::{PhysicalExpr, ProjectPlan, TableScan};
@@ -2465,6 +2608,386 @@ mod tests {
                 }
                 plan => panic!("unexpected plan: {plan:#?}"),
             }
+        }
+    }
+
+    const PLAYER_ID: TableId = TableId(1);
+    const TEAM_ID: TableId = TableId(2);
+
+    /// The binding relation's label, distinct from the query's labels
+    const BINDINGS: Label = Label(100);
+
+    /// player(id, team_id, rank, score) and team(id, region)
+    fn player_team_db() -> SchemaViewer {
+        let player = schema(
+            PLAYER_ID,
+            "player",
+            &[
+                ("id", AlgebraicType::U64),
+                ("team_id", AlgebraicType::U64),
+                ("rank", AlgebraicType::U32),
+                ("score", AlgebraicType::U32),
+            ],
+            &[&[0], &[1]],
+            &[&[0]],
+            Some(0),
+        );
+        let team = schema(
+            TEAM_ID,
+            "team",
+            &[("id", AlgebraicType::U64), ("region", AlgebraicType::String)],
+            &[&[0], &[1]],
+            &[&[0]],
+            Some(0),
+        );
+        SchemaViewer {
+            schemas: vec![Arc::new(player), Arc::new(team)],
+        }
+    }
+
+    /// The label of the scan over `table_id`
+    fn label_for(plan: &ProjectPlan, table_id: TableId) -> Label {
+        let mut label = None;
+        plan.visit(&mut |plan| {
+            if let PhysicalPlan::TableScan(scan, var) = plan
+                && scan.schema.table_id == table_id
+            {
+                label = Some(*var);
+            }
+        });
+        label.expect("the plan does not scan this table")
+    }
+
+    /// Column `field_pos` of `label`, positioned later by `optimize`
+    fn field(label: Label, field_pos: usize) -> TupleField {
+        TupleField {
+            label,
+            label_pos: None,
+            field_pos,
+        }
+    }
+
+    /// `lhs = rhs` for two fields
+    fn fields_eq(lhs: TupleField, rhs: TupleField) -> PhysicalExpr {
+        PhysicalExpr::BinOp(
+            BinOp::Eq,
+            Box::new(PhysicalExpr::Field(lhs)),
+            Box::new(PhysicalExpr::Field(rhs)),
+        )
+    }
+
+    /// A probe of binding index 0 with these input fields
+    fn probe(key: Vec<TupleField>) -> BindingCandidates {
+        BindingCandidates::Probe(BindingProbe {
+            index: BindingIndexId(0),
+            key,
+        })
+    }
+
+    /// Put a binding lookup, and optionally a filter, on top of an unoptimized plan
+    fn with_binding_lookup(
+        plan: ProjectPlan,
+        returns: Label,
+        candidates: BindingCandidates,
+        filter: Option<PhysicalExpr>,
+    ) -> ProjectPlan {
+        let (ProjectPlan::None(plan) | ProjectPlan::Name(plan, ..)) = plan;
+        let lookup = BindingLookup {
+            label: BINDINGS,
+            candidates,
+        };
+        let plan = PhysicalPlan::BindingLookup(Box::new(plan), lookup);
+        let plan = match filter {
+            Some(expr) => PhysicalPlan::Filter(Box::new(plan), expr),
+            None => plan,
+        };
+        ProjectPlan::Name(plan, returns, None)
+    }
+
+    /// Optimize the base plan and every delta fragment, as `Fragments::compile_from_plan` builds them
+    fn optimize_base_and_fragments(plan: &ProjectPlan, labels: &[Label]) -> Vec<ProjectPlan> {
+        let mut combos: Vec<Vec<(Label, Delta)>> = vec![vec![]];
+        for label in labels {
+            combos = combos
+                .into_iter()
+                .flat_map(|combo| {
+                    [None, Some(Delta::Inserts), Some(Delta::Deletes)].map(|delta| {
+                        let mut combo = combo.clone();
+                        combo.extend(delta.map(|delta| (*label, delta)));
+                        combo
+                    })
+                })
+                .collect();
+        }
+        combos
+            .into_iter()
+            .map(|combo| {
+                let mut plan = plan.clone();
+                for (label, delta) in combo {
+                    plan.visit_mut(&mut |plan| {
+                        if let PhysicalPlan::TableScan(scan @ TableScan { delta: None, .. }, var) = plan
+                            && *var == label
+                        {
+                            scan.delta = Some(delta);
+                        }
+                    });
+                }
+                plan.optimize().unwrap()
+            })
+            .collect()
+    }
+
+    /// The only binding lookup in an optimized plan
+    fn find_lookup(plan: &PhysicalPlan) -> (PhysicalPlan, BindingLookup) {
+        let mut found = vec![];
+        plan.visit(&mut |plan| {
+            if let PhysicalPlan::BindingLookup(_, lookup) = plan {
+                found.push((plan.clone(), lookup.clone()));
+            }
+        });
+        assert_eq!(found.len(), 1, "expected exactly one binding lookup: {plan:#?}");
+        found.swap_remove(0)
+    }
+
+    /// Checks shared by every optimized lookup plan
+    fn assert_lookup(plan: &ProjectPlan, return_table_id: TableId) {
+        let ProjectPlan::Name(root, _, Some(_)) = plan else {
+            panic!("expected a projection of one row from each tuple: {plan:#?}");
+        };
+        let (node, lookup) = find_lookup(root);
+        assert!(!node.any(&|plan| matches!(plan, PhysicalPlan::IxScan(..))));
+        for field in lookup.key_fields() {
+            assert!(field.label_pos.is_some(), "unresolved key field: {field:?}");
+        }
+        assert!(node.has_label(&BINDINGS));
+        assert!(
+            root.position(&BINDINGS).is_some(),
+            "the binding row must reach the root: {plan:#?}"
+        );
+        assert_eq!(node.position(&BINDINGS), Some(node.nfields() - 1));
+        assert_eq!(plan.return_table().map(|schema| schema.table_id), Some(return_table_id));
+    }
+
+    /// The filter on binding fields must stay directly above the lookup
+    fn assert_filter_above_lookup(plan: &ProjectPlan) {
+        let PhysicalPlan::Filter(input, expr) = plan.physical_plan() else {
+            panic!("expected a filter at the root: {plan:#?}");
+        };
+        assert!(matches!(**input, PhysicalPlan::BindingLookup(..)));
+        let binding_pos = input.position(&BINDINGS);
+        assert!(binding_pos.is_some());
+        let mut binding_fields = 0;
+        expr.visit(&mut |expr| {
+            if let PhysicalExpr::Field(field) = expr
+                && field.label == BINDINGS
+            {
+                assert_eq!(field.label_pos, binding_pos);
+                binding_fields += 1;
+            }
+        });
+        assert!(binding_fields > 0);
+    }
+
+    /// A key on an indexed column must not become an index scan:
+    /// `where id = ?`
+    #[test]
+    fn binding_lookup_single_table() {
+        let db = player_team_db();
+        let plan = compile_select(parse_and_type_sub("select * from player", &db).unwrap());
+        let player = label_for(&plan, PLAYER_ID);
+        let plan = with_binding_lookup(plan, player, probe(vec![field(player, 0)]), None);
+        let plans = optimize_base_and_fragments(&plan, &[player]);
+        assert_eq!(plans.len(), 3);
+        for plan in &plans {
+            assert_lookup(plan, PLAYER_ID);
+            assert_eq!(plan.binding_position(), Some(1));
+            match plan.physical_plan() {
+                PhysicalPlan::BindingLookup(input, _) => {
+                    assert!(matches!(**input, PhysicalPlan::TableScan(..)));
+                }
+                plan => panic!("unexpected plan: {plan:#?}"),
+            }
+        }
+    }
+
+    /// The key reads the team table, so a semijoin must not drop it:
+    /// `where t.region = ? and p.rank = ?`
+    #[test]
+    fn binding_lookup_join_keys_on_both_sides() {
+        let db = player_team_db();
+        let sql = "select p.* from player p join team t on p.team_id = t.id";
+        let plan = compile_select(parse_and_type_sub(sql, &db).unwrap());
+        let player = label_for(&plan, PLAYER_ID);
+        let team = label_for(&plan, TEAM_ID);
+        let key = vec![field(team, 1), field(player, 2)];
+        let plan = with_binding_lookup(plan, player, probe(key), None);
+        let plans = optimize_base_and_fragments(&plan, &[player, team]);
+        assert_eq!(plans.len(), 9);
+        for plan in &plans {
+            assert_lookup(plan, PLAYER_ID);
+            assert!(plan.physical_plan().position(&team).is_some());
+        }
+    }
+
+    /// A fixed predicate is still pushed below the lookup:
+    /// `where p.score >= 100 and t.region = ? and p.rank = ?`
+    #[test]
+    fn binding_lookup_join_with_fixed_filter() {
+        let db = player_team_db();
+        let sql = "select p.* from player p join team t on p.team_id = t.id where p.score >= 100";
+        let plan = compile_select(parse_and_type_sub(sql, &db).unwrap());
+        let player = label_for(&plan, PLAYER_ID);
+        let team = label_for(&plan, TEAM_ID);
+        let key = vec![field(team, 1), field(player, 2)];
+        let plan = with_binding_lookup(plan, player, probe(key), None);
+        let plans = optimize_base_and_fragments(&plan, &[player, team]);
+        assert_eq!(plans.len(), 9);
+        for plan in &plans {
+            assert_lookup(plan, PLAYER_ID);
+            assert!(plan.physical_plan().position(&team).is_some());
+            match plan.physical_plan() {
+                PhysicalPlan::BindingLookup(input, _) => {
+                    assert!(input.has_filter());
+                }
+                plan => panic!("unexpected plan: {plan:#?}"),
+            }
+        }
+    }
+
+    /// Without a probe, every binding is checked by a filter above the lookup:
+    /// `where t.region = ? or p.rank = ?`
+    #[test]
+    fn binding_lookup_join_or_filter() {
+        let db = player_team_db();
+        let sql = "select p.* from player p join team t on p.team_id = t.id";
+        let plan = compile_select(parse_and_type_sub(sql, &db).unwrap());
+        let player = label_for(&plan, PLAYER_ID);
+        let team = label_for(&plan, TEAM_ID);
+        let filter = PhysicalExpr::LogOp(
+            LogOp::Or,
+            vec![
+                fields_eq(field(team, 1), field(BINDINGS, 0)),
+                fields_eq(field(player, 2), field(BINDINGS, 1)),
+            ],
+        );
+        let plan = with_binding_lookup(plan, player, BindingCandidates::All, Some(filter));
+        let plans = optimize_base_and_fragments(&plan, &[player, team]);
+        assert_eq!(plans.len(), 9);
+        for plan in &plans {
+            assert_lookup(plan, PLAYER_ID);
+            assert_filter_above_lookup(plan);
+            assert!(plan.physical_plan().position(&team).is_some());
+        }
+    }
+
+    /// A key narrows the candidates, and a filter above checks the rest:
+    /// `where t.region = ? and (p.rank = ? or p.rank = ?)`
+    #[test]
+    fn binding_lookup_join_key_and_filter() {
+        let db = player_team_db();
+        let sql = "select p.* from player p join team t on p.team_id = t.id";
+        let plan = compile_select(parse_and_type_sub(sql, &db).unwrap());
+        let player = label_for(&plan, PLAYER_ID);
+        let team = label_for(&plan, TEAM_ID);
+        let filter = PhysicalExpr::LogOp(
+            LogOp::Or,
+            vec![
+                fields_eq(field(player, 2), field(BINDINGS, 1)),
+                fields_eq(field(player, 2), field(BINDINGS, 2)),
+            ],
+        );
+        let plan = with_binding_lookup(plan, player, probe(vec![field(team, 1)]), Some(filter));
+        let plans = optimize_base_and_fragments(&plan, &[player, team]);
+        assert_eq!(plans.len(), 9);
+        for plan in &plans {
+            assert_lookup(plan, PLAYER_ID);
+            assert_filter_above_lookup(plan);
+            assert!(plan.physical_plan().position(&team).is_some());
+        }
+    }
+
+    /// A key on the returned table still lets a semijoin drop the other table:
+    /// `where p.rank = ?`
+    #[test]
+    fn binding_lookup_join_key_on_returned_table() {
+        let db = player_team_db();
+        let sql = "select p.* from player p join team t on p.team_id = t.id";
+        let plan = compile_select(parse_and_type_sub(sql, &db).unwrap());
+        let player = label_for(&plan, PLAYER_ID);
+        let team = label_for(&plan, TEAM_ID);
+        let plan = with_binding_lookup(plan, player, probe(vec![field(player, 2)]), None);
+        let plans = optimize_base_and_fragments(&plan, &[player, team]);
+        assert_eq!(plans.len(), 9);
+        for plan in &plans {
+            assert_lookup(plan, PLAYER_ID);
+            assert_eq!(plan.physical_plan().position(&team), None);
+        }
+    }
+
+    /// A whole row projection of a lookup plan is rejected
+    #[test]
+    fn binding_lookup_needs_a_named_projection() {
+        let db = player_team_db();
+        let plan = compile_select(parse_and_type_sub("select * from player", &db).unwrap());
+        let player = label_for(&plan, PLAYER_ID);
+        let ProjectPlan::None(scan) = plan else {
+            panic!("unexpected plan: {plan:#?}");
+        };
+        let lookup = BindingLookup {
+            label: BINDINGS,
+            candidates: probe(vec![field(player, 0)]),
+        };
+        let plan = ProjectPlan::None(PhysicalPlan::BindingLookup(Box::new(scan), lookup));
+        let err = plan.optimize().unwrap_err();
+        assert!(
+            err.to_string().contains("Cannot return whole rows"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// An unresolvable key field is rejected
+    #[test]
+    fn binding_lookup_unresolvable_key_is_rejected() {
+        let db = player_team_db();
+        let plan = compile_select(parse_and_type_sub("select * from player", &db).unwrap());
+        let player = label_for(&plan, PLAYER_ID);
+        let missing = Label(99);
+        let plan = with_binding_lookup(plan, player, probe(vec![field(missing, 0)]), None);
+        let err = plan.optimize().unwrap_err();
+        assert!(
+            err.to_string().contains("Could not compute positional arguments"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// A lookup below a join keeps its binding row:
+    /// `where t.region = ?`
+    #[test]
+    fn binding_lookup_below_join_keeps_binding_row() {
+        let db = player_team_db();
+        let sql = "select p.* from player p join team t on p.team_id = t.id";
+        let plan = compile_select(parse_and_type_sub(sql, &db).unwrap());
+        let player = label_for(&plan, PLAYER_ID);
+        let team = label_for(&plan, TEAM_ID);
+        let ProjectPlan::Name(PhysicalPlan::HashJoin(mut join, semi), returns, pos) = plan else {
+            panic!("unexpected plan: {plan:#?}");
+        };
+        let PhysicalPlan::TableScan(_, label) = &*join.rhs else {
+            panic!("expected the team scan on the rhs: {join:#?}");
+        };
+        assert_eq!(*label, team);
+        let lookup = BindingLookup {
+            label: BINDINGS,
+            candidates: probe(vec![field(team, 1)]),
+        };
+        join.rhs = Box::new(PhysicalPlan::BindingLookup(join.rhs, lookup));
+        let plan = ProjectPlan::Name(PhysicalPlan::HashJoin(join, semi), returns, pos);
+        let plans = optimize_base_and_fragments(&plan, &[player, team]);
+        assert_eq!(plans.len(), 9);
+        for plan in &plans {
+            assert_lookup(plan, PLAYER_ID);
+            assert!(!matches!(plan.physical_plan(), PhysicalPlan::BindingLookup(..)));
+            assert_eq!(plan.binding_position(), plan.physical_plan().position(&BINDINGS));
         }
     }
 }
