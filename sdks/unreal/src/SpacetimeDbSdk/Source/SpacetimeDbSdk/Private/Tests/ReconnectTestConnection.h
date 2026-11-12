@@ -100,6 +100,28 @@ public:
 		QueueFailure(TEXT("test socket dropped"), bTerminal, bAuth);
 		FrameTick();
 	}
+	/** Close or error through the real socket handlers, without calling FrameTick. */
+	void SocketClosed()
+	{
+		HandleWSClosed(1006, TEXT("test socket closed"), false);
+	}
+	void SocketError()
+	{
+		HandleWSError(TEXT("test socket error"));
+	}
+	/** Reserve the next message slot, as if that message were still being parsed on a worker. */
+	uint64 BeginParse()
+	{
+		return NextIncomingId++;
+	}
+	/** Deliver a reserved message the way the worker does, without calling FrameTick. */
+	void FinishParse(uint64 Id, const FServerMessageType& Message)
+	{
+		FIncomingEvent Event;
+		Event.Message = Message;
+		PreProcessServerMessage(Message, *TableDeserializers, Event.TableData);
+		AcceptIncomingEvent(ConnectionGeneration, Id, MoveTemp(Event));
+	}
 	void RetryNow()
 	{
 		ReconnectAt = 0;
@@ -160,6 +182,10 @@ public:
 	void TrackProcedure(const FOnProcedureCompleteDelegate& Callback)
 	{
 		ProcedureCallbacks->RegisterCallback(Callback);
+	}
+	void CallProcedure(const FOnProcedureCompleteDelegate& Callback)
+	{
+		InternalCallProcedure(TEXT("test"), TArray<uint8>(), Callback);
 	}
 	void AttachTable(UReconnectTestTable* Table)
 	{

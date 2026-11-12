@@ -154,6 +154,8 @@ void UDbConnectionBase::Disconnect()
 	{
 		return;
 	}
+	// The original close fired whenever the socket was open, even before InitialConnection arrived.
+	const bool bWasOpen = bEstablished || (WebSocket && WebSocket->IsConnected());
 	bEnded = true;
 	bEstablished = false;
 	bReconnecting = false;
@@ -161,7 +163,24 @@ void UDbConnectionBase::Disconnect()
 	ResetTransport();
 	SuspendSubscriptions(true);
 	ClearPendingOperations(TEXT("Connection closed before the result was received"));
-	BroadcastDisconnect(FString(), false, 0, 0.0f);
+	if (bAutomaticReconnect)
+	{
+		// Matches C# and the TS SDK with reconnect: report now, so apps get a final
+		// bWillReconnect=false even when Disconnect lands mid-outage.
+		BroadcastDisconnect(FString(), false, 0, 0.0f);
+		return;
+	}
+	// Without reconnect, keep the original timing (and the TS SDK's): the socket close reported
+	// the disconnect on a later engine tick, and only if the socket had opened.
+	if (bWasOpen)
+	{
+		FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateWeakLambda(this,
+		                                                                       [this](float)
+		                                                                       {
+			                                                                       BroadcastDisconnect(FString(), false, 0, 0.0f);
+			                                                                       return false;
+		                                                                       }));
+	}
 }
 
 bool UDbConnectionBase::IsActive() const
@@ -208,7 +227,8 @@ USubscriptionBuilderBase* UDbConnectionBase::SubscriptionBuilderBase()
 	return NewObject<USubscriptionBuilderBase>();
 }
 
-void UDbConnectionBase::QueueFailure(const FString& Error, bool bTerminal, bool bAuth, bool bSessionBusy)
+void UDbConnectionBase::QueueFailure(const FString& Error, bool bTerminal, bool bAuth, bool bSessionBusy,
+                                     ESocketEvent Socket)
 {
 	if (bEnded)
 	{
@@ -220,21 +240,47 @@ void UDbConnectionBase::QueueFailure(const FString& Error, bool bTerminal, bool 
 	Event.bTerminal = bTerminal;
 	Event.bAuth = bAuth;
 	Event.bSessionBusy = bSessionBusy;
+	Event.Socket = Socket;
 	IncomingEvents.Add(NextIncomingId++, MoveTemp(Event));
+}
+
+void UDbConnectionBase::HandleSocketFailure(const FString& Error, bool bTerminal, bool bSessionBusy,
+                                            ESocketEvent Socket)
+{
+	// The failure always waits its turn behind messages received before it, so none are lost or reordered.
+	QueueFailure(Error, bTerminal, false, bSessionBusy, Socket);
+	if (!bAutomaticReconnect)
+	{
+		// With automatic reconnect, FrameTick handles it and drives the retries. Without it, keep the
+		// original contract (and the TS SDK's): apps may stop calling FrameTick once IsActive is false,
+		// so release it now, or as each earlier message finishes parsing.
+		bReleaseWithoutTick = true;
+		ReleaseWithoutTick();
+	}
+}
+
+void UDbConnectionBase::ReleaseWithoutTick()
+{
+	if (bTicking || bEnded)
+	{
+		return; // A running FrameTick releases them itself.
+	}
+	TGuardValue<bool> TickGuard(bTicking, true);
+	ReleaseIncomingEvents();
 }
 
 void UDbConnectionBase::HandleWSError(const FString& Error)
 {
 	// IWebSocket reports upgrade failures as backend-specific text, so credential
 	// rejection is detected by the token check in StartSocket instead.
-	QueueFailure(Error, false);
+	HandleSocketFailure(Error, false, false, ESocketEvent::Error);
 }
 
 void UDbConnectionBase::HandleWSClosed(int32 StatusCode, const FString& Reason, bool /*bWasClean*/)
 {
 	const bool bTerminal = StatusCode == 1002 || StatusCode == 1003 || StatusCode == 1007 || StatusCode == 1008;
-	QueueFailure(Reason.IsEmpty() ? TEXT("Connection closed") : Reason, bTerminal, false,
-	             StatusCode == SessionBusyCloseCode);
+	HandleSocketFailure(Reason.IsEmpty() ? TEXT("Connection closed") : Reason, bTerminal,
+	                    StatusCode == SessionBusyCloseCode, ESocketEvent::Closed);
 }
 
 void UDbConnectionBase::HandleProtocolViolation(const FString& ErrorMessage)
@@ -304,6 +350,12 @@ void UDbConnectionBase::FrameTick()
 		return;
 	}
 	TGuardValue<bool> TickGuard(bTicking, true);
+	ReleaseIncomingEvents();
+	AdvanceReconnect();
+}
+
+void UDbConnectionBase::ReleaseIncomingEvents()
+{
 	const uint64 Generation = ConnectionGeneration;
 	FIncomingEvent Event;
 	while (IncomingEvents.RemoveAndCopyValue(NextReleaseId, Event))
@@ -311,7 +363,7 @@ void UDbConnectionBase::FrameTick()
 		++NextReleaseId;
 		if (Event.bFailure)
 		{
-			ConnectionLost(Event.Error, Event.bTerminal, Event.bAuth, Event.bSessionBusy);
+			ConnectionLost(Event.Error, Event.bTerminal, Event.bAuth, Event.bSessionBusy, Event.Socket);
 		}
 		else
 		{
@@ -330,7 +382,6 @@ void UDbConnectionBase::FrameTick()
 			break;
 		}
 	}
-	AdvanceReconnect();
 }
 
 bool UDbConnectionBase::OnTickerTick(float DeltaTime)
@@ -903,10 +954,14 @@ void UDbConnectionBase::InternalCallProcedure(const FString& ProcedureName, TArr
 {
 	if (!CanSendCalls())
 	{
-		FProcedureEvent Event;
-		Event.Status = FProcedureStatusType::InternalError(TEXT("Disconnected"));
-		Event.CallError = ESpacetimeDBCallError::Disconnected;
-		Callback.ExecuteIfBound(FSpacetimeDBEvent::Procedure(Event), TArray<uint8>(), false);
+		UE_LOG(LogSpacetimeDb_Connection, Error, TEXT("Cannot call procedure, not connected to server!"));
+		if (bAutomaticReconnect) // Like the reducer path: without reconnect, dropped as on master.
+		{
+			FProcedureEvent Event;
+			Event.Status = FProcedureStatusType::InternalError(TEXT("Disconnected"));
+			Event.CallError = ESpacetimeDBCallError::Disconnected;
+			Callback.ExecuteIfBound(FSpacetimeDBEvent::Procedure(Event), TArray<uint8>(), false);
+		}
 		return;
 	}
 	FCallProcedureType MsgData;
@@ -982,6 +1037,7 @@ void UDbConnectionBase::ResetTransport()
 	ReplayQueryIds.Empty();
 	bPreparingReplay = false;
 	QueuedSubscriptions.Empty();
+	bReleaseWithoutTick = false;
 }
 
 void UDbConnectionBase::StartSocket()
@@ -1048,13 +1104,19 @@ void UDbConnectionBase::OpenSocket()
 	WebSocket->Connect(WebSocketUrl);
 }
 
-void UDbConnectionBase::ConnectionLost(const FString& Error, bool bTerminal, bool bAuth, bool bSessionBusy)
+void UDbConnectionBase::ConnectionLost(const FString& Error, bool bTerminal, bool bAuth, bool bSessionBusy,
+                                       ESocketEvent Socket)
 {
 	if (bEnded)
 	{
 		return;
 	}
 	const bool bWasEstablished = bEstablished;
+	// Without reconnect, a socket close is OnDisconnect and a socket error is OnConnectError whatever
+	// the connection state, as on master.
+	const bool bReportDisconnect = !bAutomaticReconnect && Socket != ESocketEvent::None
+	                                   ? Socket == ESocketEvent::Closed
+	                                   : bWasEstablished;
 	const bool bRetry = bAutomaticReconnect && bIsIdentitySet && !bTerminal &&
 	                    !(bAuth && (!TokenProvider.IsBound() || bUsedFreshToken));
 	bEstablished = false;
@@ -1083,7 +1145,7 @@ void UDbConnectionBase::ConnectionLost(const FString& Error, bool bTerminal, boo
 	{
 		return;
 	} // A callback cancelled recovery.
-	if (bWasEstablished)
+	if (bReportDisconnect)
 	{
 		BroadcastDisconnect(Error, bRetry, bRetry ? ReconnectAttempt : 0, float(Delay));
 	}
@@ -1204,7 +1266,9 @@ void UDbConnectionBase::SuspendSubscriptions(bool bTerminal)
 			continue;
 		}
 		Handle->bActive = false;
-		if (bTerminal || Handle->bUnsubscribeCalled)
+		// A set unsubscribed during an outage ends locally, as in C#. A final disconnect ends no handles,
+		// as on master and in C# and TS: OnEnd means an unsubscribe completed.
+		if (!bTerminal && Handle->bUnsubscribeCalled)
 		{
 			EndSubscription(Handle);
 		}
@@ -1317,5 +1381,9 @@ void UDbConnectionBase::AcceptIncomingEvent(uint64 Generation, uint64 Id, FIncom
 	if (!bEnded && Generation == ConnectionGeneration)
 	{
 		IncomingEvents.Add(Id, MoveTemp(Event));
+		if (bReleaseWithoutTick)
+		{
+			ReleaseWithoutTick(); // This parse may have been the gap a socket failure was waiting on.
+		}
 	}
 }

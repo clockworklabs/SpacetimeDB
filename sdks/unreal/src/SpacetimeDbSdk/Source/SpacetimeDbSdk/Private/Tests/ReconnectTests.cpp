@@ -168,6 +168,136 @@ bool FReconnectLifecycle::RunTest(const FString&)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FReconnectSocketFailureDelivery, "SpacetimeDB.TestClient.ReconnectSocketFailureDelivery",
+                                 EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+bool FReconnectSocketFailureDelivery::RunTest(const FString&)
+{
+	// Without reconnect, apps that stop calling FrameTick once IsActive is false must still be told.
+	auto* Closed = NewObject<UReconnectTestConnection>();
+	Closed->Initialize(false);
+	Closed->ConnectIdentity();
+	Closed->SocketClosed();
+	TestEqual(TEXT("disconnect fires without FrameTick"), Closed->LegacyDisconnects, 1);
+	TestEqual(TEXT("reconnect-aware disconnect fires too"), Closed->Disconnects, 1);
+	TestFalse(TEXT("no retry without reconnect"), Closed->bLastRetry);
+
+	auto* Refused = NewObject<UReconnectTestConnection>();
+	Refused->Initialize(false);
+	Refused->SocketError();
+	TestEqual(TEXT("connect error fires without FrameTick"), Refused->LegacyErrors, 1);
+
+	// A message still being parsed when the socket closes is applied first, not dropped.
+	auto* InFlight = NewObject<UReconnectTestConnection>();
+	InFlight->Initialize(false);
+	const uint64 Pending = InFlight->BeginParse();
+	InFlight->SocketClosed();
+	TestEqual(TEXT("close waits for the earlier message"), InFlight->LegacyDisconnects + InFlight->LegacyErrors, 0);
+	FInitialConnectionType Initial;
+	Initial.Identity = FSpacetimeDBIdentity::FromHex(TEXT("1111111111111111111111111111111111111111111111111111111111111111"));
+	Initial.Token = TEXT("retained");
+	Initial.ConnectionId = FSpacetimeDBConnectionId::FromHex(FGuid::NewGuid().ToString(EGuidFormats::Digits));
+	InFlight->FinishParse(Pending, FServerMessageType::InitialConnection(Initial));
+	TestEqual(TEXT("earlier message applied"), InFlight->Connects, 1);
+	TestEqual(TEXT("then the disconnect, without FrameTick"), InFlight->LegacyDisconnects, 1);
+	TestEqual(TEXT("not reported as a connect error"), InFlight->LegacyErrors, 0);
+
+	// Without reconnect, a close is OnDisconnect and an error OnConnectError, whatever the state, as on master.
+	auto* EarlyClose = NewObject<UReconnectTestConnection>();
+	EarlyClose->Initialize(false);
+	EarlyClose->SocketClosed();
+	TestEqual(TEXT("close before InitialConnection is a disconnect"), EarlyClose->LegacyDisconnects, 1);
+	TestEqual(TEXT("and not a connect error"), EarlyClose->LegacyErrors, 0);
+	auto* LateError = NewObject<UReconnectTestConnection>();
+	LateError->Initialize(false);
+	LateError->ConnectIdentity();
+	LateError->SocketError();
+	TestEqual(TEXT("error after InitialConnection is a connect error"), LateError->LegacyErrors, 1);
+	TestEqual(TEXT("and not a disconnect"), LateError->LegacyDisconnects, 0);
+
+	// With reconnect, the failure waits for FrameTick, behind any earlier messages.
+	auto* Queued = NewObject<UReconnectTestConnection>();
+	Queued->Initialize();
+	Queued->ConnectIdentity();
+	Queued->SocketClosed();
+	TestEqual(TEXT("reconnect defers the disconnect"), Queued->Disconnects, 0);
+	Queued->FrameTick();
+	TestEqual(TEXT("FrameTick delivers it"), Queued->Disconnects, 1);
+	TestTrue(TEXT("and schedules a retry"), Queued->IsReconnecting());
+	Queued->Disconnect();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FReconnectExplicitDisconnect, "SpacetimeDB.TestClient.ReconnectExplicitDisconnect",
+                                 EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+bool FReconnectExplicitDisconnect::RunTest(const FString&)
+{
+	// Without reconnect, report on the next engine tick, as the socket close did before reconnect existed.
+	auto* Legacy = NewObject<UReconnectTestConnection>();
+	Legacy->Initialize(false);
+	Legacy->ConnectIdentity();
+	Legacy->Disconnect();
+	TestEqual(TEXT("not reported inside Disconnect"), Legacy->LegacyDisconnects, 0);
+	FTSTicker::GetCoreTicker().Tick(0.0f);
+	TestEqual(TEXT("reported on the next engine tick"), Legacy->LegacyDisconnects, 1);
+	FTSTicker::GetCoreTicker().Tick(0.0f);
+	TestEqual(TEXT("reported once"), Legacy->LegacyDisconnects, 1);
+
+	auto* NeverConnected = NewObject<UReconnectTestConnection>();
+	NeverConnected->Initialize(false);
+	NeverConnected->Disconnect();
+	FTSTicker::GetCoreTicker().Tick(0.0f);
+	TestEqual(TEXT("never-connected disconnect is silent"), NeverConnected->LegacyDisconnects, 0);
+
+	// With reconnect, report now, matching C# and the TS SDK.
+	auto* Reconnecting = NewObject<UReconnectTestConnection>();
+	Reconnecting->Initialize();
+	Reconnecting->ConnectIdentity();
+	Reconnecting->Disconnect();
+	TestEqual(TEXT("reported inside Disconnect"), Reconnecting->Disconnects, 1);
+	TestFalse(TEXT("final, with no retry"), Reconnecting->bLastRetry);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FReconnectFinalDisconnectState, "SpacetimeDB.TestClient.ReconnectFinalDisconnectState",
+                                 EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+bool FReconnectFinalDisconnectState::RunTest(const FString&)
+{
+	// A final disconnect leaves subscription handles inactive but not ended (no OnEnd), as on master, C# and TS.
+	auto* Closed = NewObject<UReconnectTestConnection>();
+	Closed->Initialize(false);
+	Closed->ConnectIdentity();
+	auto* ClosedHandle = Closed->Subscribe({TEXT("SELECT * FROM a")});
+	Closed->SocketClosed();
+	TestFalse(TEXT("server close does not end the handle"), ClosedHandle->IsEnded());
+	TestFalse(TEXT("but it is inactive"), ClosedHandle->IsActive());
+
+	auto* Explicit = NewObject<UReconnectTestConnection>();
+	Explicit->Initialize();
+	Explicit->ConnectIdentity();
+	auto* ExplicitHandle = Explicit->Subscribe({TEXT("SELECT * FROM a")});
+	Explicit->Disconnect();
+	TestFalse(TEXT("explicit Disconnect does not end the handle"), ExplicitHandle->IsEnded());
+
+	// A procedure called while disconnected is dropped without reconnect, as on master, and reported with it.
+	AddExpectedError(TEXT("Cannot call procedure, not connected to server!"), EAutomationExpectedErrorFlags::Contains, 2);
+	int32 Completions = 0;
+	FOnProcedureCompleteDelegate Callback;
+	Callback.BindLambda(
+	    [&](const FSpacetimeDBEvent&, const TArray<uint8>&, bool)
+	    {
+		    ++Completions;
+	    });
+	auto* Offline = NewObject<UReconnectTestConnection>();
+	Offline->Initialize(false);
+	Offline->CallProcedure(Callback);
+	TestEqual(TEXT("dropped without reconnect"), Completions, 0);
+	auto* Waiting = NewObject<UReconnectTestConnection>();
+	Waiting->Initialize();
+	Waiting->CallProcedure(Callback);
+	TestEqual(TEXT("reported with reconnect"), Completions, 1);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FReconnectCredentials, "SpacetimeDB.TestClient.ReconnectCredentials",
                                  EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 bool FReconnectCredentials::RunTest(const FString&)

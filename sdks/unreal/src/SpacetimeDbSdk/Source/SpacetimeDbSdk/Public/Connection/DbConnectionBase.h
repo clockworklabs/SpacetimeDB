@@ -360,6 +360,13 @@ protected:
 	void ClearPendingOperations(const FString& Reason);
 	void HandleProtocolViolation(const FString& ErrorMessage);
 
+	/** Which socket event reported a failure. Without reconnect, it picks OnDisconnect or OnConnectError. */
+	enum class ESocketEvent : uint8
+	{
+		None,
+		Closed,
+		Error
+	};
 	// Every transport event has an arrival order and belongs to one socket attempt.
 	// Parsing can finish out of order; FrameTick releases events in arrival order.
 	struct FIncomingEvent
@@ -371,15 +378,26 @@ protected:
 		bool bTerminal = false;
 		bool bAuth = false;
 		bool bSessionBusy = false;
+		ESocketEvent Socket = ESocketEvent::None;
 	};
 	TMap<uint64, FIncomingEvent> IncomingEvents;
 	uint64 NextIncomingId = 0;
 	uint64 NextReleaseId = 0;
 	uint64 ConnectionGeneration = 0;
 	void AcceptIncomingEvent(uint64 Generation, uint64 Id, FIncomingEvent Event);
-	void QueueFailure(const FString& Error, bool bTerminal, bool bAuth = false, bool bSessionBusy = false);
+	void QueueFailure(const FString& Error, bool bTerminal, bool bAuth = false, bool bSessionBusy = false,
+	                  ESocketEvent Socket = ESocketEvent::None);
+	/** A socket close or error. Queued behind earlier messages; without automatic reconnect, released without FrameTick. */
+	void HandleSocketFailure(const FString& Error, bool bTerminal, bool bSessionBusy, ESocketEvent Socket);
+	/** Release queued events outside FrameTick, after a socket failure without automatic reconnect. */
+	void ReleaseWithoutTick();
+	/** Set by a socket failure without automatic reconnect: each finished parse releases events without FrameTick. */
+	bool bReleaseWithoutTick = false;
+	/** Apply queued messages and failures in arrival order, stopping at the first one still being parsed. */
+	void ReleaseIncomingEvents();
 	void ResetTransport();
-	void ConnectionLost(const FString& Error, bool bTerminal, bool bAuth = false, bool bSessionBusy = false);
+	void ConnectionLost(const FString& Error, bool bTerminal, bool bAuth = false, bool bSessionBusy = false,
+	                    ESocketEvent Socket = ESocketEvent::None);
 	void BroadcastConnectError(const FString& Error, bool bWillReconnect, int32 Attempt, float Delay);
 	void BroadcastDisconnect(const FString& Error, bool bWillReconnect, int32 Attempt, float Delay);
 	/** Send a Subscribe for a handle whose query set id is already registered. */
