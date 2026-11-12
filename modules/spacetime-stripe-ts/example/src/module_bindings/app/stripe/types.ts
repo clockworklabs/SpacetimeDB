@@ -108,6 +108,7 @@ export const StripePayment = __t.object("StripePayment", {
   stripeCustomerId: __t.option(__t.string()),
   stripeInvoiceId: __t.option(__t.string()),
   amount: __t.i64(),
+  amountRefunded: __t.i64(),
   currency: __t.string(),
   status: __t.string(),
   createdUnix: __t.i64(),
@@ -118,6 +119,18 @@ export const StripePayment = __t.object("StripePayment", {
   updatedAt: __t.timestamp(),
 });
 export type StripePayment = __Infer<typeof StripePayment>;
+
+export const StripeRefund = __t.object("StripeRefund", {
+  stripeRefundId: __t.string(),
+  stripePaymentIntentId: __t.string(),
+  amount: __t.i64(),
+  currency: __t.string(),
+  status: __t.string(),
+  eventCreatedUnix: __t.i64(),
+  insertedAt: __t.timestamp(),
+  updatedAt: __t.timestamp(),
+});
+export type StripeRefund = __Infer<typeof StripeRefund>;
 
 export const StripeSubscription = __t.object("StripeSubscription", {
   stripeSubscriptionId: __t.string(),

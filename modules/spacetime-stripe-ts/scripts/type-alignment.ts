@@ -25,7 +25,11 @@ type _StripeEvents = Assert<
     | Stripe.InvoicePaymentSucceededEvent
     | Stripe.InvoicePaymentFailedEvent
     | Stripe.InvoicePaymentPaidEvent
-    | Stripe.PaymentIntentSucceededEvent,
+    | Stripe.PaymentIntentSucceededEvent
+    | Stripe.RefundCreatedEvent
+    | Stripe.RefundUpdatedEvent
+    | Stripe.RefundFailedEvent
+    | Stripe.ChargeRefundUpdatedEvent,
     ParsedStripeEvent
   >
 >;

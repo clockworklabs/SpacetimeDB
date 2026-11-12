@@ -27,6 +27,7 @@ import {
   checkoutPaymentStatusRank,
   invoiceStatusRank,
   isStale,
+  refundStatusRank,
   subscriptionStatusRank,
 } from './event-order.js';
 import { buildStripeHttpRequest } from './http.js';
@@ -319,6 +320,16 @@ export function upsertCheckoutSession(
   ctx.db.stripeCheckoutSession.stripeCheckoutSessionId.update(row);
 }
 
+function refundedAmount(ctx: WriteCtx, stripePaymentIntentId: string): bigint {
+  let total = 0n;
+  for (const refund of ctx.db.stripeRefund.byPaymentIntent.filter(
+    stripePaymentIntentId
+  ))
+    if (refund.status !== 'failed' && refund.status !== 'canceled')
+      total += refund.amount;
+  return total;
+}
+
 export function upsertPayment(
   ctx: WriteCtx,
   now: ModuleTimestamp,
@@ -343,6 +354,7 @@ export function upsertPayment(
     stripeCustomerId: args.stripeCustomerId ?? existing?.stripeCustomerId,
     stripeInvoiceId: args.stripeInvoiceId ?? existing?.stripeInvoiceId,
     amount: args.amount,
+    amountRefunded: refundedAmount(ctx, args.stripePaymentIntentId),
     currency: args.currency,
     status: args.status,
     createdUnix: args.createdUnix,
@@ -807,6 +819,52 @@ function dispatchEvent(
         orgId: meta.orgId,
         userId: meta.userId,
       });
+      return WebhookEventStatus.Processed;
+    }
+    case 'refund.created':
+    case 'refund.updated':
+    case 'refund.failed':
+    case 'charge.refund.updated': {
+      const obj = event.data.object;
+      const paymentIntentId =
+        obj.payment_intent === undefined
+          ? null
+          : extractExpandableIdOrNull(obj.payment_intent);
+      if (paymentIntentId === null) return WebhookEventStatus.Ignored;
+      const status =
+        event.type === 'refund.failed' ? 'failed' : (obj.status ?? 'pending');
+      const existing = ctx.db.stripeRefund.stripeRefundId.find(obj.id);
+      if (
+        existing &&
+        isStale(
+          {
+            createdUnix: existing.eventCreatedUnix,
+            rank: refundStatusRank(existing.status),
+          },
+          { createdUnix: eventCreatedUnix, rank: refundStatusRank(status) }
+        )
+      )
+        return WebhookEventStatus.Ignored;
+      const row = {
+        stripeRefundId: obj.id,
+        stripePaymentIntentId: paymentIntentId,
+        amount: BigInt(obj.amount),
+        currency: obj.currency,
+        status,
+        eventCreatedUnix,
+        insertedAt: existing?.insertedAt ?? ctx.timestamp,
+        updatedAt: ctx.timestamp,
+      };
+      if (existing) ctx.db.stripeRefund.stripeRefundId.update(row);
+      else ctx.db.stripeRefund.insert(row);
+      const payment =
+        ctx.db.stripePayment.stripePaymentIntentId.find(paymentIntentId);
+      if (payment)
+        ctx.db.stripePayment.stripePaymentIntentId.update({
+          ...payment,
+          amountRefunded: refundedAmount(ctx, paymentIntentId),
+          updatedAt: ctx.timestamp,
+        });
       return WebhookEventStatus.Processed;
     }
     default:

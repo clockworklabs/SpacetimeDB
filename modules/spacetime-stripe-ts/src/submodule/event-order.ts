@@ -35,6 +35,14 @@ export function invoiceStatusRank(status: string): number {
   }
 }
 
+// Refunds move from `pending` or `requires_action` to `succeeded`, and can
+// still fail or be canceled after that.
+export function refundStatusRank(status: string): number {
+  if (status === 'pending' || status === 'requires_action') return 0;
+  if (status === 'succeeded') return 1;
+  return 2;
+}
+
 // Checkout `payment_status` moves from `unpaid` to `paid`,
 // `no_payment_required`, or `failed` (recorded for
 // `checkout.session.async_payment_failed`). A paid session never moves to

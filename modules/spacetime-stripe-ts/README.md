@@ -128,6 +128,7 @@ spacetime call --server http://127.0.0.1:3000 stripe-ts get_stripe_config_status
 | `stripe_checkout_session` | `stripe_checkout_session_id` | customer                          |
 | `stripe_invoice`          | `stripe_invoice_id`          | customer, subscription, org, user |
 | `stripe_payment`          | `stripe_payment_intent_id`   | customer, org, user               |
+| `stripe_refund`           | `stripe_refund_id`           | PaymentIntent                     |
 
 - `stripe_webhook_event`: idempotency log holding each event's payload (not its
   signature header). The scheduled `prune_webhook_events` reducer deletes events
@@ -232,6 +233,8 @@ invoice.paid                               invoice.payment_succeeded
 invoice.payment_failed                     invoice_payment.paid
 payment_intent.succeeded
 payment_intent.payment_failed
+refund.created                             refund.updated
+refund.failed                              charge.refund.updated
 ```
 
 Other event types are accepted and stored with status `Ignored`.
@@ -329,6 +332,10 @@ shapes:
   Endpoints on `2025-03-31.basil` or later must subscribe to
   `invoice_payment.paid`. Exclude rows with `stripeInvoiceId` when totaling
   payments alongside `stripe_invoice`.
+- `stripe_refund` mirrors refunds by PaymentIntent. `stripe_payment.amountRefunded`
+  is the sum of its refunds that are not `failed` or `canceled`, so a payment
+  is fully refunded when `amountRefunded` equals `amount`. Refunds without a
+  PaymentIntent are stored as `Ignored`.
 - An invoice row takes `userId` and `orgId` from its subscription row, or from
   `invoice.parent.subscription_details.metadata` when the invoice arrives
   before the subscription.

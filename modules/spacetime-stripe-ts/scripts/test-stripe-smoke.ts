@@ -769,6 +769,64 @@ async function main() {
   if (!recoveredPayment.includes('"succeeded"'))
     throw new Error(`payment regressed: ${recoveredPayment}`);
 
+  step('refunds sum onto the payment; late and failed refunds do not count');
+  const refunded = async () => {
+    const result = await run('spacetime', [
+      'sql',
+      '--server',
+      opts.server,
+      opts.database,
+      "select amount_refunded from stripe_payment where stripe_payment_intent_id = 'pi_failure_test'",
+    ]);
+    return result.stdout.trim().split('\n').at(-1)?.trim();
+  };
+  for (const [
+    eventId,
+    eventType,
+    refundId,
+    status,
+    amount,
+    offset,
+    expected,
+  ] of [
+    ['evt_refund_ok', 'refund.updated', 're_smoke_1', 'succeeded', 30, 5, '30'],
+    ['evt_refund_late', 'refund.created', 're_smoke_1', 'pending', 30, 4, '30'],
+    ['evt_refund_2', 'refund.created', 're_smoke_2', 'pending', 20, 6, '50'],
+    [
+      'evt_refund_2_failed',
+      'refund.failed',
+      're_smoke_2',
+      'failed',
+      20,
+      7,
+      '30',
+    ],
+  ] as const) {
+    await ingest(opts, {
+      eventId,
+      eventType,
+      payload: {
+        id: eventId,
+        type: eventType,
+        created: EVENT_CREATED + offset,
+        data: {
+          object: {
+            id: refundId,
+            amount,
+            currency: 'usd',
+            status,
+            payment_intent: 'pi_failure_test',
+          },
+        },
+      },
+    });
+    const actual = await refunded();
+    if (actual !== expected)
+      throw new Error(
+        `${eventId}: amount_refunded ${actual}, expected ${expected}`
+      );
+  }
+
   step('setup checkout stores setup state without a payment');
   await ingest(opts, {
     eventId: 'evt_setup',

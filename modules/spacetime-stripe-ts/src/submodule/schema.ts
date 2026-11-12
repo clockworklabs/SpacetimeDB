@@ -92,12 +92,24 @@ export const stripePaymentRow = {
   stripeCustomerId: t.option(t.string()),
   stripeInvoiceId: t.option(t.string()),
   amount: t.i64(),
+  amountRefunded: t.i64(),
   currency: t.string(),
   status: t.string(),
   createdUnix: t.i64(),
   metadataJson: t.option(t.string()),
   orgId: t.option(t.string()),
   userId: t.option(t.string()),
+  insertedAt: t.timestamp(),
+  updatedAt: t.timestamp(),
+};
+
+export const stripeRefundRow = {
+  stripeRefundId: t.string().primaryKey(),
+  stripePaymentIntentId: t.string(),
+  amount: t.i64(),
+  currency: t.string(),
+  status: t.string(),
+  eventCreatedUnix: t.i64(),
   insertedAt: t.timestamp(),
   updatedAt: t.timestamp(),
 };
@@ -202,6 +214,20 @@ const stripePaymentOptions = {
 export const stripePaymentTable: ReturnType<
   typeof table<typeof stripePaymentRow, typeof stripePaymentOptions>
 > = table(stripePaymentOptions, stripePaymentRow);
+const stripeRefundOptions = {
+  name: 'stripe_refund',
+  public: false,
+  indexes: [
+    {
+      accessor: 'byPaymentIntent',
+      algorithm: 'btree',
+      columns: ['stripePaymentIntentId'],
+    } as const,
+  ],
+};
+export const stripeRefundTable: ReturnType<
+  typeof table<typeof stripeRefundRow, typeof stripeRefundOptions>
+> = table(stripeRefundOptions, stripeRefundRow);
 const stripeInvoiceOptions = {
   name: 'stripe_invoice',
   public: false,
@@ -292,6 +318,7 @@ const tables: {
   stripeSubscription: typeof stripeSubscriptionTable;
   stripeCheckoutSession: typeof stripeCheckoutSessionTable;
   stripePayment: typeof stripePaymentTable;
+  stripeRefund: typeof stripeRefundTable;
   stripeInvoice: typeof stripeInvoiceTable;
   stripeWebhookEvent: typeof stripeWebhookEventTable;
   stripeWebhookPruneTick: typeof stripeWebhookPruneTickTable;
@@ -302,6 +329,7 @@ const tables: {
   stripeSubscription: stripeSubscriptionTable,
   stripeCheckoutSession: stripeCheckoutSessionTable,
   stripePayment: stripePaymentTable,
+  stripeRefund: stripeRefundTable,
   stripeInvoice: stripeInvoiceTable,
   stripeWebhookEvent: stripeWebhookEventTable,
   stripeWebhookPruneTick: stripeWebhookPruneTickTable,
@@ -444,6 +472,14 @@ const vInvoicePaymentObject = v.object({
   payment: v.object({ payment_intent: v.optional(vExpandableId) }),
 });
 
+const vRefundObject = v.object({
+  id: v.string(),
+  amount: v.number(),
+  currency: v.string(),
+  status: v.union([v.string(), v.null()]),
+  payment_intent: v.optional(vExpandableIdOrNull),
+});
+
 function vEvent<const T extends string, const O extends v.GenericSchema>(
   type: T,
   object: O
@@ -475,6 +511,10 @@ export const vStripeEvent = v.variant('type', [
   vEvent('invoice_payment.paid', vInvoicePaymentObject),
   vEvent('payment_intent.succeeded', vPaymentIntentObject),
   vEvent('payment_intent.payment_failed', vPaymentIntentObject),
+  vEvent('refund.created', vRefundObject),
+  vEvent('refund.updated', vRefundObject),
+  vEvent('refund.failed', vRefundObject),
+  vEvent('charge.refund.updated', vRefundObject),
 ]);
 
 export type ParsedStripeEvent = v.InferOutput<typeof vStripeEvent>;
