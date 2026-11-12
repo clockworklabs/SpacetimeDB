@@ -156,3 +156,45 @@ fn pk_join_lhs_sender_view(ctx: &ViewContext) -> impl Query<LeftPkJoinSource> {
 fn pk_join_rhs_sender_view(ctx: &ViewContext) -> impl Query<RightPkJoinSource> {
     ctx.from.pk_join_rhs().filter(|row| row.identity.eq(ctx.sender()))
 }
+
+#[spacetimedb::table(accessor = membership, public)]
+pub struct Membership {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    #[index(btree)]
+    owner: Identity,
+    #[index(btree)]
+    grp: u8,
+}
+
+#[spacetimedb::table(accessor = group_item, public)]
+pub struct GroupItem {
+    #[primary_key]
+    id: u8,
+    #[index(btree)]
+    grp: u8,
+}
+
+#[spacetimedb::reducer]
+fn join_group(ctx: &ReducerContext, grp: u8) {
+    ctx.db.membership().insert(Membership {
+        id: 0,
+        owner: ctx.sender(),
+        grp,
+    });
+}
+
+#[spacetimedb::reducer]
+fn put_group_item(ctx: &ReducerContext, id: u8, grp: u8) {
+    ctx.db.group_item().id().delete(&id);
+    ctx.db.group_item().insert(GroupItem { id, grp });
+}
+
+#[spacetimedb::view(accessor = my_group_items, public)]
+fn my_group_items(ctx: &ViewContext) -> impl Query<GroupItem> {
+    ctx.from
+        .membership()
+        .filter(|m| m.owner.eq(ctx.sender()))
+        .right_semijoin(ctx.from.group_item(), |m, i| m.grp.eq(i.grp))
+}
