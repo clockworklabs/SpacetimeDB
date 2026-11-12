@@ -2110,7 +2110,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       if (result.tag === 'Ok') {
         resolve(result.value);
       } else {
-        reject(result.value);
+        reject(new InternalError(result.value));
       }
     });
     return promise;
@@ -2140,7 +2140,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       if (result.tag === 'Ok') {
         resolve(result.value);
       } else {
-        reject(result.value);
+        reject(new InternalError(result.value));
       }
     });
     return promise;
