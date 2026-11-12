@@ -6,7 +6,7 @@ use spacetimedb_datastore::{
     locking_tx_datastore::{state_view::StateView, TxId},
     traits::TxData,
 };
-use spacetimedb_execution::{Datastore, DeltaStore, Row};
+use spacetimedb_execution::{bindings::BindingRelation, Datastore, DeltaStore, Row};
 use spacetimedb_lib::{query::Delta, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{IndexId, TableId};
 use spacetimedb_table::table::{IndexScanPointIter, IndexScanRangeIter, TableScanIter};
@@ -84,7 +84,10 @@ impl DeltaTableIndexes {
 pub struct DeltaTx<'a> {
     tx: &'a TxId,
     data: Option<&'a TxData>,
-    indexes: DeltaTableIndexes,
+    /// Shared with the copies made by [`Self::with_bindings`]
+    indexes: Arc<DeltaTableIndexes>,
+    /// The bindings of the template being evaluated
+    bindings: Option<&'a BindingRelation>,
 }
 
 impl<'a> DeltaTx<'a> {
@@ -92,7 +95,18 @@ impl<'a> DeltaTx<'a> {
         Self {
             tx,
             data: Some(data),
-            indexes: DeltaTableIndexes::from_tx_data(tx, data, indexes),
+            indexes: Arc::new(DeltaTableIndexes::from_tx_data(tx, data, indexes)),
+            bindings: None,
+        }
+    }
+
+    /// This tx, for evaluating a template with these bindings
+    pub fn with_bindings<'b>(&'b self, bindings: &'b BindingRelation) -> DeltaTx<'b> {
+        DeltaTx {
+            tx: self.tx,
+            data: self.data,
+            indexes: self.indexes.clone(),
+            bindings: Some(bindings),
         }
     }
 }
@@ -110,7 +124,8 @@ impl<'a> From<&'a TxId> for DeltaTx<'a> {
         Self {
             tx,
             data: None,
-            indexes: DeltaTableIndexes::default(),
+            indexes: Arc::default(),
+            bindings: None,
         }
     }
 }
@@ -159,6 +174,10 @@ impl Datastore for DeltaTx<'_> {
 }
 
 impl DeltaStore for DeltaTx<'_> {
+    fn bindings(&self) -> Option<&BindingRelation> {
+        self.bindings
+    }
+
     fn num_inserts(&self, table_id: TableId) -> usize {
         self.data
             .and_then(|data| data.inserts_for_table(table_id).map(|rows| rows.len()))

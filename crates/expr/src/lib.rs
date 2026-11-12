@@ -9,7 +9,7 @@ use errors::{DuplicateName, InvalidLiteral, InvalidOp, InvalidWildcard, Unexpect
 use ethnum::i256;
 use ethnum::u256;
 use expr::AggType;
-use expr::{Expr, FieldProject, ProjectList, ProjectName, RelExpr};
+use expr::{Expr, FieldProject, Param, ProjectList, ProjectName, RelExpr};
 use spacetimedb_data_structures::map::HashCollectionExt as _;
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::ser::Serialize;
@@ -113,7 +113,7 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
                 Some(ty) => return Err(UnexpectedType::new(&AlgebraicType::identity(), ty).into()),
                 None => AlgebraicType::identity(),
             };
-            Ok(Expr::Param(Parameter::Sender, ty))
+            Ok(Expr::Param(Param::Sender, ty))
         }
         (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), expected) => {
             let table_type = vars.deref().get(&*table).ok_or_else(|| Unresolved::var(&table))?;
