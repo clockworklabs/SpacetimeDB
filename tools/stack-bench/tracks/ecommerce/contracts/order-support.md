@@ -1,0 +1,24 @@
+# Order-linked support application interface
+
+## Order-linked support controls
+
+Within a `support-ticket`, use `support-order-option` for each order that the customer can attach,
+`support-link-order` to attach the selected order, and `support-order` for the attached order. The
+link action must expose its input in `data-action-input` for the named
+`linkSupportOrder` application action.
+
+<!-- interface:http -->
+`linkSupportOrder` is `POST /api/support/cases/{caseId}/order`.
+<!-- /interface -->
+
+<!-- interface:reducer -->
+`linkSupportOrder` is the `link_support_order(caseId, orderId)` reducer.
+<!-- /interface -->
+
+<!-- interface:convex -->
+`linkSupportOrder` is the `api:link_support_order` mutation with `{ caseId, orderId }`.
+<!-- /interface -->
+
+<!-- interface:supabase -->
+`linkSupportOrder` is the `link_support_order` PostgreSQL function with `{ caseId, orderId }`.
+<!-- /interface -->

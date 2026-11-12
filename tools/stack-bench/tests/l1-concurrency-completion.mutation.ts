@@ -1,0 +1,170 @@
+import assert from 'node:assert/strict';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test from 'node:test';
+import ts from 'typescript';
+
+import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { mutationFileEdits, mutationScenario, mutationTargetKeys,
+  readMutationManifest, type LoadedMutationDefinition }
+  from '../src/evidence/mutation-analysis.js';
+import { loadReferenceRegistry, prepareReferenceFixtureSource,
+  selectReferenceFixture } from '../src/references/reference-fixtures.js';
+import { buildRecipeRelease } from '../src/composition/recipe-release.js';
+import { selectScenarioChecks } from '../src/composition/recipe-selection.js';
+import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
+
+const ROOT = STACK_BENCH_ROOT;
+const TRACK = join(ROOT, 'tracks', 'ecommerce');
+const RECIPES = join(TRACK, 'composition', 'recipes');
+const release = buildRecipeRelease(join(RECIPES, 'sequential-l1.json'));
+// Shared manifests describe every recipe; each qualification keeps only its own targets.
+const recipeCheckKeys = new Set(readdirSync(RECIPES).flatMap(name =>
+  buildRecipeRelease(join(RECIPES, name)).checkCatalog.map(check => check.stableKey)));
+
+interface CandidateCase {
+  backend: string;
+  manifest: string;
+  lastUnitMutation: string;
+}
+const cases: CandidateCase[] = [
+  {
+    backend: 'mongodb',
+    manifest: 'mongodb-ecommerce.json',
+    lastUnitMutation: 'last-unit-allows-negative-stock',
+  },
+  {
+    backend: 'postgres',
+    manifest: 'postgres-ecommerce.json',
+    lastUnitMutation: 'oversell-no-row-lock',
+  },
+  {
+    backend: 'spacetime',
+    manifest: 'spacetime-ecommerce.json',
+    lastUnitMutation: 'purchase-does-not-reserve-stock-last-unit',
+  },
+];
+
+test('each last-unit score retains the shared purchase race when selected alone', () => {
+  const scenarioPath = join(TRACK, 'scenarios', '01-last-unit.json');
+  const scenario = compileScenarioDefinition(readJson(scenarioPath), { source: scenarioPath });
+  for (const criterionId of ['201a', '201b', '201c']) {
+    const key = `ecommerce.spec.concurrency-safety.last-unit.${criterionId}`;
+    const selected = selectScenarioChecks(scenario, { checks: release.checkCatalog }, [key]);
+    const [feature] = selected.features;
+    assert(feature, 'the selected scenario must have a feature');
+    assert.deepEqual(feature.criteria.map(criterion => criterion.id), [criterionId]);
+    const races = feature.setup.filter(step => step.do === 'callConcurrently');
+    assert.equal(races.length, 1);
+    const [race] = races;
+    assert(race, 'the selected scenario must have a race');
+    assert.deepEqual(race.actors, ['a', 'b', 'c', 'd', 'e', 'f']);
+    assert.equal(race.action, 'buy');
+    assert(feature.setup.some(step => step.do === 'expectCallOutcomes'));
+    assert.equal(recordValue(race.input, 'race input').contains, 'Air Purifier');
+    const selectedCriterion = feature.criteria.find(criterion => criterion.id === criterionId);
+    assert(selectedCriterion, 'the selected feature must retain its criterion');
+    assert.equal(selectedCriterion.steps.some(step => step.do === 'clickConcurrently'
+      && step.testid === 'buy-now'), false);
+    const baseline = feature.setup.findIndex(step => step.as === 'revenue-before-last-unit');
+    assert(baseline >= 0 && baseline < feature.setup.indexOf(race),
+      'the revenue baseline must be recorded before the shared purchase race');
+  }
+});
+
+test('the restock race retains its admin page prerequisite when selected alone', () => {
+  const scenarioPath = join(TRACK, 'scenarios', '01-restock-race.json');
+  const scenario = compileScenarioDefinition(readJson(scenarioPath), { source: scenarioPath });
+  const key = 'ecommerce.spec.concurrency-safety.restock-race.202a';
+  const selected = selectScenarioChecks(scenario, { checks: release.checkCatalog }, [key]);
+  const [feature] = selected.features;
+  assert(feature, 'the selected scenario must have a feature');
+  assert.deepEqual(feature.criteria.map(criterion => criterion.id), ['202a']);
+  assert(feature.setup.some(step => step.do === 'click' && step.actor === 'admin'
+    && step.testid === 'admin-link'));
+  assert(feature.setup.some(step => step.do === 'click' && step.testid === 'restock-submit'),
+    'the uncontended restock must run even when the zero-point control is not selected');
+  assert(feature.setup.some(step => step.do === 'dbExpectStock' && step.plus === 5),
+    'ordinary restocking must have a verified stored effect before the race');
+  assert(feature.setup.some(step => step.do === 'click' && step.actor === 'a'
+    && step.testid === 'buy-now'), 'ordinary purchasing must precede the race');
+  assert(feature.setup.some(step => step.do === 'expect' && step.actor === 'a'
+    && step.testid === 'order-item' && step.count === 1));
+  assert(feature.setup.some(step => step.do === 'dbExpectStock' && step.plus === -1),
+    'a missing serial decrement must be invalid setup, not a caught concurrency defect');
+  const [criterion] = feature.criteria;
+  assert(criterion, 'the selected feature must have a criterion');
+  assert(criterion.steps.some(step => step.do === 'race'));
+  assert(criterion.steps.some(step => step.do === 'dbExpectStock' && step.plus === 2));
+  for (const actor of ['a', 'b', 'c']) assert(criterion.steps.some(step => step.do === 'expect'
+    && step.actor === actor && step.testid === 'order-item' && step.count === (actor === 'a' ? 2 : 1)));
+});
+
+for (const entry of cases) {
+test(`${entry.backend} binds the current L1 mutation inventory to its effective source`, () => {
+    const work = mkdtempSync(join(tmpdir(), `stack-bench-l1-concurrency-${entry.backend}-`));
+    try {
+      const app = join(work, 'app');
+      prepareReferenceFixtureSource(selectReferenceFixture(loadReferenceRegistry(), {
+        backend: entry.backend, track: 'ecommerce', level: 1, recipe: 'ecommerce.sequential-l1',
+      }), app);
+
+      const manifest = readMutationManifest(join(ROOT, 'grader', 'mutations', entry.manifest));
+
+      assert.equal(manifest.mutations.some(mutation => mutationTargetKeys(mutation)
+        .includes('ecommerce.spec.external-data-sync.external-stock.901b')), false, '901b has no deterministic candidate mutation');
+      const mutations = new Map(manifest.mutations.map(mutation => [mutation.id, mutation]));
+      const lastUnit = requiredMutation(mutations, entry.lastUnitMutation);
+      assert.equal(mutationScenario(manifest, lastUnit),
+        'tracks/ecommerce/scenarios/01-last-unit.json');
+      assert.deepEqual(mutationTargetKeys(lastUnit), ['ecommerce.spec.concurrency-safety.last-unit.201a', 'ecommerce.spec.concurrency-safety.last-unit.201b', 'ecommerce.spec.concurrency-safety.last-unit.201c']);
+
+      assert.equal(mutations.has('purchase-does-not-reserve-stock-restock-race'), false,
+        'a defect that breaks serial purchasing cannot qualify this race');
+      const purchase = requiredMutation(mutations, entry.backend === 'spacetime'
+        ? 'restock-client-snapshot-overwrites-concurrent-purchases'
+        : 'purchase-read-write-loses-concurrent-stock');
+      assert.equal(mutationScenario(manifest, purchase),
+        'tracks/ecommerce/scenarios/01-restock-race.json');
+      assert.deepEqual(mutationTargetKeys(purchase), ['ecommerce.spec.concurrency-safety.restock-race.202a']);
+      const releaseKeys = new Set(release.checkCatalog.map(check => check.stableKey));
+      for (const mutation of manifest.mutations.filter(candidate =>
+        mutationTargetKeys(candidate).some(key => releaseKeys.has(key)))) {
+        for (const key of mutationTargetKeys(mutation)) {
+          assert(recipeCheckKeys.has(key), `${mutation.id} target ${key} is not a check in any recipe`);
+        }
+        for (const edit of mutationFileEdits(mutation)) {
+          const file = edit.file;
+          assert(file, `${mutation.id} must declare a source file for each edit`);
+          const source = readFileSync(join(app, file), 'utf8');
+          const mutated = source.replace(edit.find, edit.replace);
+          const transpiled = ts.transpileModule(mutated, {
+            compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+            fileName: file,
+            reportDiagnostics: true,
+          });
+          assert.deepEqual((transpiled.diagnostics ?? [])
+            .filter(diagnostic => diagnostic.category === ts.DiagnosticCategory.Error)
+            .map(diagnostic => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')), []);
+        }
+      }
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+}
+
+function readJson(path: string): unknown { return JSON.parse(readFileSync(path, 'utf8')); }
+function recordValue(value: unknown, label: string): Record<string, unknown> {
+  if (!isRecord(value)) throw new Error(`${label} must be an object`);
+  return value;
+}
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+function requiredMutation(mutations: Map<string, LoadedMutationDefinition>, id: string): LoadedMutationDefinition {
+  const mutation = mutations.get(id);
+  if (!mutation) throw new Error(`mutation ${id} is required`);
+  return mutation;
+}

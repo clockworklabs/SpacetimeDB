@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.feature.bundle-checkout",
+  "moduleType": "feature",
+  "title": "Bundle checkout",
+  "description": "Bundle checkout using existing products and orders.",
+  "requiresPacks": [
+    "ecommerce.feature.product-bundles",
+    "ecommerce.l3.reservations-features"
+  ],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser",
+    "database-observation",
+    "direct-database-write"
+  ],
+  "evidence": [
+    "browser-observation",
+    "database-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 120000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.feature.bundle-checkout",
+        "path": "prompts/modular/bundle-checkout.md",
+        "order": 8005,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ],
+    "contracts": [
+      {
+        "id": "ecommerce.interface.bundle-checkout",
+        "path": "contracts/bundle-checkout.md",
+        "order": 8105,
+        "modes": [
+          "upgrade"
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "bundle-checkout",
+      "stableId": "bundle-checkout",
+      "source": "scenarios/progression-bundle-checkout.json",
+      "feature": 741,
+      "criteria": [
+        "741a"
+      ],
+      "role": "feature"
+    }
+  ]
+}

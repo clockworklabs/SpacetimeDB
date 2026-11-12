@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "kind": "convex",
+  "installDirectories": [".", "client"],
+  "client": { "directory": "client" },
+  "requiredEnvironment": ["CONVEX_SELF_HOSTED_URL", "CONVEX_SELF_HOSTED_ADMIN_KEY", "CONVEX_SITE_URL", "VITE_PORT"]
+}

@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.spec.subscriptions",
+  "moduleType": "specification",
+  "title": "Scheduled purchases integrity",
+  "description": "Bounded production checks for scheduled purchases.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": [
+    "browser",
+    "database-observation",
+    "direct-server-call",
+    "backend-lifecycle"
+  ],
+  "evidence": [
+    "browser-observation",
+    "fresh-client-observation",
+    "database-observation"
+  ],
+  "budget": {
+    "status": "bounded",
+    "maxRuntimeMs": 480000
+  },
+  "task": {
+    "requirements": [
+      {
+        "id": "ecommerce.spec.subscriptions.subscriptions",
+        "path": "prompts/modular/later-specifications.md",
+        "order": 6505,
+        "from": "## Scheduled purchases",
+        "modes": [
+          "fresh",
+          "upgrade"
+        ],
+        "requiresFeatures": [
+          "ecommerce.feature.subscriptions"
+        ]
+      }
+    ],
+    "contracts": []
+  },
+  "checks": [
+    {
+      "id": "production-761",
+      "source": "scenarios/progression-subscriptions.json",
+      "feature": 761,
+      "criteria": [
+        "761a"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.subscriptions"
+      ]
+    },
+    {
+      "id": "production-762",
+      "source": "scenarios/progression-subscriptions.json",
+      "feature": 762,
+      "criteria": [
+        "762a"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.subscriptions"
+      ]
+    },
+    {
+      "id": "production-763",
+      "source": "scenarios/progression-subscriptions.json",
+      "feature": 763,
+      "criteria": [
+        "763a"
+      ],
+      "role": "guarantee",
+      "observations": [
+        "requested",
+        "unmentioned"
+      ],
+      "requiresFeatures": [
+        "ecommerce.feature.subscriptions"
+      ]
+    }
+  ]
+}
