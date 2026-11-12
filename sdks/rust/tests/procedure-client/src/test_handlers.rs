@@ -72,7 +72,7 @@ async fn connect_with_then(
             callback(ctx);
             connected_result(Ok(()));
         })
-        .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
+        .on_connect_error(|_ctx, error, _next| panic!("Connect errored: {error:?}"));
     build_and_run(with_builder(builder)).await
 }
 
@@ -101,7 +101,7 @@ fn subscribe_these_then(
     callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static,
 ) {
     ctx.subscription_builder()
-        .on_applied(callback)
+        .on_applied(test_counter::once::<SubscriptionEventContext, _>(callback))
         .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
         .subscribe(queries);
 }

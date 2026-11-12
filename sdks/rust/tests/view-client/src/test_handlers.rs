@@ -45,7 +45,7 @@ async fn build_connection(
         .on_connect(|ctx, _, _| {
             callback(ctx);
         })
-        .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
+        .on_connect_error(|_ctx, error, _next| panic!("Connect errored: {error:?}"));
     build_and_run(with_builder(builder)).await
 }
 
@@ -78,7 +78,7 @@ fn subscribe_these_then(
     callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static,
 ) {
     ctx.subscription_builder()
-        .on_applied(callback)
+        .on_applied(test_counter::once::<SubscriptionEventContext, _>(callback))
         .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
         .subscribe(queries);
 }
@@ -95,20 +95,22 @@ async fn connect_my_player_client(
     build_connection(
         db_name,
         |builder| {
-            builder.on_disconnect(move |ctx, error| {
-                assert!(
-                    !ctx.is_active(),
-                    "on_disconnect callback, but `ctx.is_active()` is true"
-                );
-                if let Some(disconnected_result) = disconnected_result {
-                    match error {
-                        Some(error) => disconnected_result(Err(anyhow::anyhow!("{error:?}"))),
-                        None => disconnected_result(Ok(())),
+            builder.on_disconnect(test_counter::once3::<ErrorContext, _, _, _>(
+                move |ctx, error, _next| {
+                    assert!(
+                        !ctx.is_active(),
+                        "on_disconnect callback, but `ctx.is_active()` is true"
+                    );
+                    if let Some(disconnected_result) = disconnected_result {
+                        match error {
+                            Some(error) => disconnected_result(Err(anyhow::anyhow!("{error:?}"))),
+                            None => disconnected_result(Ok(())),
+                        }
+                    } else if let Some(error) = error {
+                        panic!("Disconnect errored: {error:?}");
                     }
-                } else if let Some(error) = error {
-                    panic!("Disconnect errored: {error:?}");
-                }
-            })
+                },
+            ))
         },
         move |ctx| {
             subscribe_these_then(ctx, &["SELECT * FROM my_player"], {
@@ -221,7 +223,7 @@ async fn exec_anonymous_subscribe_with_query_builder(db_name: &str) {
     connect_then(db_name, &test_counter, move |ctx| {
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
-            .on_applied(move |ctx| {
+            .on_applied(test_counter::once::<SubscriptionEventContext, _>(move |ctx| {
                 ctx.db.player().on_insert(move |_, player| {
                     if player.identity == Identity::from_byte_array([2; 32]) {
                         return put_result(&mut insert_0, Ok(()));
@@ -271,7 +273,7 @@ async fn exec_anonymous_subscribe_with_query_builder(db_name: &str) {
                         reducer_callback_assert_committed("delete_player"),
                     )
                     .unwrap();
-            })
+            }))
             .add_query(|ctx| {
                 ctx.from
                     .player_level()
@@ -374,7 +376,7 @@ async fn exec_non_table_query_builder_return(db_name: &str) {
     connect_then(db_name, &test_counter, move |ctx| {
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
-            .on_applied(move |ctx| {
+            .on_applied(test_counter::once::<SubscriptionEventContext, _>(move |ctx| {
                 let my_identity = ctx.identity();
                 ctx.db.my_player_and_level().on_insert(move |_, player| {
                     assert_eq!(player.identity, my_identity);
@@ -406,7 +408,7 @@ async fn exec_non_table_query_builder_return(db_name: &str) {
                 ctx.reducers()
                     .delete_player_then(my_identity, reducer_callback_assert_committed("delete_player"))
                     .unwrap();
-            })
+            }))
             .add_query(|q_ctx| q_ctx.from.my_player_and_level().filter(|p| p.level.eq(1)).build())
             .subscribe();
     })

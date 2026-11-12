@@ -15,14 +15,14 @@ pub async fn dispatch(db_name: &str) {
     let connection = DbConnection::builder()
         .with_database_name(db_name)
         .with_uri(server_url())
-        .on_connect_error(|_ctx, error| panic!("on_connect_error: {error:?}"))
+        .on_connect_error(|_ctx, error, _next| panic!("on_connect_error: {error:?}"))
         .on_connect(move |ctx, _, _| {
             connected_result(Ok(()));
             ctx.subscription_builder()
                 .on_error(|_ctx, error| {
                     panic!("Subscription failed: {error:?}");
                 })
-                .on_applied(move |ctx| {
+                .on_applied(test_counter::once::<SubscriptionEventContext, _>(move |ctx| {
                     let check = || {
                         anyhow::ensure!(ctx.db.connected().count() == 1);
                         match ctx.db.connected().iter().next() {
@@ -36,19 +36,21 @@ pub async fn dispatch(db_name: &str) {
                         Ok(())
                     };
                     sub_applied_one_row_result(check());
-                })
+                }))
                 .subscribe("SELECT * FROM connected");
         })
-        .on_disconnect(move |ctx, error| {
-            assert!(
-                !ctx.is_active(),
-                "on_disconnect callback, but `ctx.is_active()` is true"
-            );
-            match error {
-                Some(err) => disconnect_result(Err(anyhow::anyhow!("{err:?}"))),
-                None => disconnect_result(Ok(())),
-            }
-        });
+        .on_disconnect(test_counter::once3::<ErrorContext, _, _, _>(
+            move |ctx, error, _next| {
+                assert!(
+                    !ctx.is_active(),
+                    "on_disconnect callback, but `ctx.is_active()` is true"
+                );
+                match error {
+                    Some(err) => disconnect_result(Err(anyhow::anyhow!("{err:?}"))),
+                    None => disconnect_result(Ok(())),
+                }
+            },
+        ));
     let connection = build_connection(connection).await;
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -73,7 +75,7 @@ pub async fn dispatch(db_name: &str) {
     let sub_applied_one_row_result = reconnect_test_counter.add_test("disconnected_row");
 
     let new_connection = DbConnection::builder()
-        .on_connect_error(|_ctx, error| panic!("on_connect_error: {error:?}"))
+        .on_connect_error(|_ctx, error, _next| panic!("on_connect_error: {error:?}"))
         .on_connect(move |_ctx, _, _| {
             reconnected_result(Ok(()));
         })
@@ -83,7 +85,7 @@ pub async fn dispatch(db_name: &str) {
 
     new_connection
         .subscription_builder()
-        .on_applied(move |ctx| {
+        .on_applied(test_counter::once::<SubscriptionEventContext, _>(move |ctx| {
             let check = || {
                 anyhow::ensure!(ctx.db.disconnected().count() == 1);
                 match ctx.db.disconnected().iter().next() {
@@ -97,7 +99,7 @@ pub async fn dispatch(db_name: &str) {
                 Ok(())
             };
             sub_applied_one_row_result(check());
-        })
+        }))
         .on_error(|_ctx, error| panic!("subscription on_error: {error:?}"))
         .subscribe("SELECT * FROM disconnected");
 

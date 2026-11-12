@@ -58,7 +58,7 @@ async fn connect_then_named(
             callback(ctx);
             connected_result(Ok(()));
         })
-        .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"));
+        .on_connect_error(|_ctx, error, _next| panic!("Connect errored: {error:?}"));
     build_and_run(conn).await
 }
 
@@ -68,7 +68,7 @@ fn subscribe_these_then(
     callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static,
 ) {
     ctx.subscription_builder()
-        .on_applied(callback)
+        .on_applied(test_counter::once::<SubscriptionEventContext, _>(callback))
         .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
         .subscribe(queries);
 }
@@ -150,7 +150,7 @@ async fn exec_view_pk_join_query_builder(db_name: &str) {
     connect_then(db_name, &test_counter, move |ctx| {
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
-            .on_applied(move |ctx| {
+            .on_applied(test_counter::once::<SubscriptionEventContext, _>(move |ctx| {
                 ctx.db.all_view_pk_players().on_update(move |_, old_row, new_row| {
                     assert_eq!(old_row.id, 1);
                     assert_eq!(old_row.name, "before");
@@ -185,7 +185,7 @@ async fn exec_view_pk_join_query_builder(db_name: &str) {
                         reducer_callback_assert_committed("update_view_pk_player"),
                     )
                     .unwrap();
-            })
+            }))
             .add_query(|q| {
                 q.from
                     .view_pk_membership()
@@ -229,7 +229,7 @@ async fn exec_view_pk_semijoin_two_sender_views_query_builder(db_name: &str) {
     connect_then(db_name, &test_counter, move |ctx| {
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
-            .on_applied(move |ctx| {
+            .on_applied(test_counter::once::<SubscriptionEventContext, _>(move |ctx| {
                 ctx.db.sender_view_pk_players_b().on_update(move |_, old_row, new_row| {
                     assert_eq!(old_row.id, 1);
                     assert_eq!(old_row.name, "before");
@@ -273,7 +273,7 @@ async fn exec_view_pk_semijoin_two_sender_views_query_builder(db_name: &str) {
                         reducer_callback_assert_committed("update_view_pk_player"),
                     )
                     .unwrap();
-            })
+            }))
             .add_query(|q| {
                 q.from
                     .sender_view_pk_players_a()
