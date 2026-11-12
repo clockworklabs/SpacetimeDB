@@ -2,8 +2,9 @@ use crate::bench::types::RunOutcome;
 use crate::eval::ScoreDetails;
 use crate::llm::prompt::BuiltPrompt;
 use crate::llm::segmentation::Segment;
+use crate::llm::types::Vendor;
 use crate::llm::{LlmProvider, ModelRoute};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use spacetimedb_data_structures::map::HashMap;
 use std::path::Path;
 
@@ -29,12 +30,7 @@ pub async fn run_analysis(
 
     let prompt = build_prompt(lang, mode, model_name, context, bench_root, &failures);
 
-    let route = ModelRoute::new(
-        "gpt-5.4-mini",
-        crate::llm::types::Vendor::OpenAi,
-        "gpt-5.4-mini",
-        Some("openai/gpt-5.4-mini"),
-    );
+    let route = analysis_route()?;
 
     let built = BuiltPrompt {
         system: Some(system_prompt()),
@@ -45,6 +41,34 @@ pub async fn run_analysis(
 
     let response = llm.generate(&route, &built).await?;
     Ok(Some(response.text))
+}
+
+/// The model that writes failure analyses. Override it with
+/// `LLM_BENCHMARK_ANALYSIS_MODEL=provider:model`, the same form as `--models`.
+pub fn analysis_route() -> Result<ModelRoute> {
+    match std::env::var("LLM_BENCHMARK_ANALYSIS_MODEL") {
+        Ok(value) if !value.trim().is_empty() => parse_analysis_model(&value),
+        _ => Ok(ModelRoute::new(
+            "Claude Opus 5.5",
+            Vendor::Anthropic,
+            "claude-opus-5-5",
+            Some("anthropic/claude-opus-5.5"),
+        )),
+    }
+}
+
+fn parse_analysis_model(value: &str) -> Result<ModelRoute> {
+    let (vendor, model) = value
+        .trim()
+        .split_once(':')
+        .with_context(|| format!("LLM_BENCHMARK_ANALYSIS_MODEL must be provider:model, got '{value}'"))?;
+    let vendor = Vendor::parse(vendor).with_context(|| format!("unknown analysis provider '{vendor}'"))?;
+    let model = model.trim();
+    anyhow::ensure!(
+        !model.is_empty(),
+        "LLM_BENCHMARK_ANALYSIS_MODEL has no model: '{value}'"
+    );
+    Ok(ModelRoute::new(model, vendor, model, None))
 }
 
 pub fn system_prompt() -> String {
