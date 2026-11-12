@@ -14,9 +14,16 @@ const outExtension = (ctx: { format: string }) => ({
 });
 
 export default defineConfig([
-  // Root wrapper (SSR-friendly): dist/index.{mjs,cjs}
+  // Share class definitions across client entry points.
   {
-    entry: { index: 'src/index.ts' },
+    entry: {
+      index: 'src/index.ts',
+      'index.browser': 'src/index.ts',
+      'schema/index': 'src/schema/index.ts',
+      'sdk/index': 'src/sdk/index.ts',
+      'sdk/index.browser': 'src/sdk/index.ts',
+    },
+    splitting: true,
     format: ['esm', 'cjs'],
     target: 'es2022',
     outDir: 'dist',
@@ -24,22 +31,6 @@ export default defineConfig([
     sourcemap: true,
     clean: true,
     platform: 'neutral',
-    treeshake: 'smallest',
-    external: ['undici'],
-    outExtension,
-    esbuildOptions: commonEsbuildTweaks(),
-  },
-
-  // Browser-flavored root wrapper: dist/index.browser.mjs
-  {
-    entry: { 'index.browser': 'src/index.ts' },
-    format: ['esm'],
-    target: 'es2022',
-    outDir: 'dist',
-    dts: false,
-    sourcemap: true,
-    clean: true,
-    platform: 'browser',
     treeshake: 'smallest',
     external: ['undici'],
     outExtension,
@@ -200,38 +191,6 @@ export default defineConfig([
     platform: 'browser',
     treeshake: 'smallest',
     external: ['solid-js'],
-    outExtension,
-    esbuildOptions: commonEsbuildTweaks(),
-  },
-
-  // SDK subpath (SSR-friendly): dist/sdk/index.{mjs,cjs}
-  {
-    entry: { index: 'src/sdk/index.ts' },
-    format: ['esm', 'cjs'],
-    target: 'es2022',
-    outDir: 'dist/sdk',
-    dts: false,
-    sourcemap: true,
-    clean: true,
-    platform: 'neutral',
-    treeshake: 'smallest',
-    external: ['undici'],
-    outExtension,
-    esbuildOptions: commonEsbuildTweaks(),
-  },
-
-  // SDK browser ESM: dist/sdk/index.browser.mjs
-  {
-    entry: { 'index.browser': 'src/sdk/index.ts' },
-    format: ['esm'],
-    target: 'es2022',
-    outDir: 'dist/sdk',
-    dts: false,
-    sourcemap: true,
-    clean: true,
-    platform: 'browser',
-    treeshake: 'smallest',
-    external: ['undici'],
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
   },

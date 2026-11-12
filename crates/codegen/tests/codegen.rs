@@ -260,84 +260,53 @@ fn test_codegen_rust_outbox_fixture() {
 
 #[test]
 fn test_typescript_table_handles_are_camel_case() {
-    let module = compiled_module();
-    let index = generate(module, &TypeScript::default(), &CodegenOptions::default())
-        .into_iter()
-        .find(|file| file.filename == "index.ts")
-        .expect("typescript codegen should emit index.ts")
-        .code;
-
-    assert!(index.contains("loggedOutPlayer: __table({"));
-    assert!(!index.contains("logged_out_player: __table({"));
-    assert!(index.contains("myPlayer: __table({"));
-    assert!(!index.contains("my_player: __table({"));
-    assert!(index.contains(r#""logged_out_player": "loggedOutPlayer""#));
-    assert!(index.contains(r#"readonly "logged_out_player": __TablesBase["loggedOutPlayer"];"#));
-    assert!(index.contains(
-        r#"/** @deprecated Use `loggedOutPlayer` instead. This alias will be removed in the next major version. */"#
-    ));
+    compile_typescript_client(
+        generate(compiled_module(), &TypeScript::default(), &CodegenOptions::default()),
+        r#"
+import assert from 'node:assert/strict';
+import { DbConnection, tables, type EventContext } from './index';
+assert.equal(tables.loggedOutPlayer.sourceName, 'logged_out_player');
+assert.equal(tables.myPlayer.sourceName, 'my_player');
+assert.equal(tables.logged_out_player, tables.loggedOutPlayer);
+function consume(conn: DbConnection, ctx: EventContext) {
+  const same: typeof conn.db.loggedOutPlayer = ctx.db.loggedOutPlayer;
+  const player: typeof conn.db.myPlayer = conn.db.myPlayer;
+  const alias: typeof conn.db.loggedOutPlayer = ctx.db.logged_out_player;
+  void alias;
+  void same; void player;
+}
+void consume;
+"#,
+    );
 }
 
-/// A submodule reducer's wire name must be qualified exactly once, with the canonical
-/// namespace, while everything client code touches uses the accessor namespace.
-///
-/// `module-test-ts` mounts its library as `myLib`, which canonicalizes to `my_lib`.
-/// `ReducerDef::name` is fully qualified, so any code that also prepends the namespace
-/// path would emit `my_lib.my_lib.lib_insert`. Nothing in the snapshot fixtures mounts a
-/// submodule, so this checks the TypeScript output of one that does.
 #[test]
 fn submodule_names_use_canonical_wire_names_and_accessor_paths() {
-    let module = compiled_typescript_module();
-    let files = generate(module, &TypeScript::default(), &CodegenOptions::default());
-    let filenames: Vec<_> = files.iter().map(|f| f.filename.clone()).collect();
-    let code = files.into_iter().map(|f| f.code).collect::<Vec<_>>().join("\n");
-
-    // Wire names are canonical: snake_case namespace, singly qualified.
-    let reducer_lines: Vec<_> = code.lines().filter(|l| l.contains("__reducerSchema(")).collect();
-    assert!(
-        code.contains(r#"__reducerSchema("my_lib.lib_insert""#),
-        "expected a singly-qualified canonical wire name for the submodule reducer; got:\n{}",
-        reducer_lines.join("\n")
+    let files = generate(
+        compiled_typescript_module(),
+        &TypeScript::default(),
+        &CodegenOptions::default(),
     );
-    assert!(
-        !code.contains("my_lib.my_lib.") && !code.contains("myLib.my_lib") && !code.contains("my_lib.myLib"),
-        "namespace was applied twice or mixed forms somewhere in the generated bindings"
-    );
-    assert!(
-        code.contains(r#""myLib.libData": __table({"#) && code.contains("name: 'my_lib.libData',"),
-        "submodule tables must be keyed by their accessor path and carry the canonical wire name"
-    );
-    assert!(
-        !code.contains(r#"__reducerSchema("myLib."#) && !code.contains("name: 'myLib."),
-        "the accessor namespace must not leak into wire names"
-    );
-
-    // Client-facing names follow the accessor namespace.
-    assert!(
-        code.contains("myLib: {"),
-        "generated `tables`/`reducers` trees must be keyed by the accessor namespace"
-    );
-    assert!(
-        !code.contains("my_lib: {"),
-        "the canonical namespace must not be used as an accessor key"
-    );
-    // The schema entry registers the reducer under an explicit accessor key, the accessor
-    // path plus the camelCase accessor name, and the tree entry looks it up by that same key.
-    assert!(
-        code.contains(r#", "myLib.libInsert"),"#),
-        "submodule reducer schema should pass its accessor key explicitly"
-    );
-    assert!(
-        code.contains(r#"libInsert: __reducerAccessors["myLib.libInsert"]"#),
-        "namespace tree entries must use the SDK's accessor-map key for the canonical wire name"
-    );
-    assert!(
-        code.contains("MyLib_LibData"),
-        "generated row type names must use the accessor namespace"
-    );
-    assert!(
-        filenames.iter().any(|f| f.starts_with("myLib/")) && !filenames.iter().any(|f| f.starts_with("my_lib/")),
-        "generated files must live under the accessor namespace directory; got {filenames:?}"
+    assert!(files.iter().any(|f| f.filename == "my_lib/module.ts"));
+    compile_typescript_client(
+        files,
+        r#"
+import assert from 'node:assert/strict';
+import { DbConnection, tables, reducers, procedures } from './index';
+import child from './my_lib/module';
+import type { Infer } from 'spacetimedb';
+type LibData = Infer<typeof child.entries.libData.rowType>;
+assert.equal(tables.myLib.libData.sourceName, 'my_lib.libData');
+assert.equal(reducers.myLib.libInsert.name, 'my_lib.lib_insert');
+assert.equal(procedures.myLib.libCount.name, 'my_lib.lib_count');
+function consume(conn: DbConnection) {
+  const rows: LibData[] = [...conn.db.myLib.libData.iter()];
+  // @ts-expect-error canonical namespace is not a client accessor
+  void conn.db.my_lib;
+  void rows;
+}
+void consume;
+"#,
     );
 }
 
@@ -452,36 +421,455 @@ fn compile_csharp_client(files: Vec<spacetimedb_codegen::OutputFile>, program: &
     );
 }
 
+#[test]
+fn typescript_clients_compile_and_run() {
+    for options in [
+        CodegenOptions::default(),
+        CodegenOptions {
+            visibility: spacetimedb_codegen::CodegenVisibility::IncludePrivate,
+        },
+    ] {
+        compile_typescript_client(
+            generate(compiled_module(), &TypeScript::default(), &options),
+            r#"
+import assert from 'node:assert/strict';
+import { DbConnection, DbConnectionBuilder, tables, reducers, procedures, type EventContext } from './index';
+import { add, returnValue } from './module';
+import type { Infer } from 'spacetimedb/schema';
+type AddParams = Infer<typeof add.params>;
+type ReturnValueResult = Infer<typeof returnValue.returnType>;
+const builder: DbConnectionBuilder = DbConnection.builder().withUri('ws://localhost:3000').withDatabaseName('example');
+assert.equal(typeof builder.build, 'function');
+assert.equal(tables.person.toSql(), 'SELECT * FROM "person"');
+assert.equal(tables.loggedOutPlayer.sourceName, 'logged_out_player');
+assert.equal(reducers.add.name, 'add');
+assert.equal(procedures.returnValue.name, 'return_value');
+function consume(conn: DbConnection, ctx: EventContext) {
+  const args: AddParams = { name: 'Alice', age: 30 };
+  conn.reducers.add(args);
+  const result: Promise<ReturnValueResult> = conn.procedures.returnValue({ foo: 1n });
+  void result;
+  const age: number | undefined = conn.db.person.id.find(1)?.age;
+  const same: typeof conn.db.loggedOutPlayer = ctx.db.loggedOutPlayer;
+  // @ts-expect-error invalid argument
+  conn.reducers.add({ name: 123, age: 30 });
+  // @ts-expect-error unknown table
+  conn.db.unknown;
+  void age; void same;
+}
+void consume;
+"#,
+        );
+        compile_typescript_client(
+            generate(compiled_typescript_module(), &TypeScript::default(), &options),
+            r#"
+import assert from 'node:assert/strict';
+import { DbConnection, tables, reducers } from './index';
+assert.equal(tables.myLib.libData.sourceName, 'my_lib.libData');
+assert.equal(reducers.myLib.libInsert.name, 'my_lib.lib_insert');
+function consume(conn: DbConnection) {
+  void conn.db.myLib.libData;
+  // @ts-expect-error canonical namespace is not the client accessor
+  void conn.db.my_lib;
+}
+void consume;
+"#,
+        );
+    }
+}
+
+#[test]
+fn typescript_generation_preserves_existing_client_code() {
+    for module in [compiled_module(), compiled_typescript_module()] {
+        let options = CodegenOptions::default();
+        let legacy = existing_typescript_bindings();
+        let current = generate(module, &TypeScript::default(), &options);
+        let program = if std::ptr::eq(module, compiled_module()) {
+            r#"
+import assert from 'node:assert/strict';
+import { DbConnection, DbConnectionBuilder, SubscriptionBuilder, tables, reducers, procedures,
+  type EventContext, type ReducerEventContext, type SubscriptionEventContext, type ErrorContext,
+  type SubscriptionHandle } from './index';
+import PersonRow from './person_table';
+import AddArgs from './add_reducer';
+import * as ReturnValue from './return_value_procedure';
+import { Baz, Foobar, type Person } from './types';
+import type { AddParams } from './types/reducers';
+import type { ReturnValueArgs, ReturnValueResult } from './types/procedures';
+import type { Infer } from 'spacetimedb';
+const args: AddParams = { name: 'Alice', age: 30 };
+const person: Person = { id: 1, ...args };
+const row: Infer<typeof PersonRow> = person;
+const reducerArgs: Infer<typeof AddArgs> = args;
+const procedureArgs: ReturnValueArgs = { foo: 1n };
+const value: ReturnValueResult = { field: 'hello' };
+const baz: Baz = value;
+assert.equal(PersonRow.algebraicType.tag, 'Product');
+assert.equal(AddArgs.age.algebraicType.tag, 'U8');
+assert.equal(ReturnValue.params.foo.algebraicType.tag, 'U64');
+assert.equal(ReturnValue.returnType.algebraicType.tag, 'Product');
+assert.equal(Foobar.Bar.tag, 'Bar');
+assert.equal(tables.logged_out_player, tables.loggedOutPlayer);
+assert.equal(reducers.add.name, 'add');
+assert.equal(procedures.returnValue.name, 'return_value');
+const builder: DbConnectionBuilder = DbConnection.builder().withUri('ws://localhost:3000').withDatabaseName('example');
+assert.ok(builder instanceof DbConnectionBuilder);
+function consume(conn: DbConnection, event: EventContext, reducer: ReducerEventContext,
+ subscription: SubscriptionEventContext, error: ErrorContext, handle: SubscriptionHandle) {
+  conn.reducers.add(reducerArgs);
+  const result: Promise<ReturnValueResult> = conn.procedures.returnValue(procedureArgs);
+  const sub: SubscriptionBuilder = conn.subscriptionBuilder()
+    .onApplied((ctx: SubscriptionEventContext) => { void ctx.db.logged_out_player; })
+    .onError((ctx: ErrorContext) => { void ctx.db.logged_out_player; });
+  conn.db.person.onInsert((ctx: EventContext, row: Person) => { void ctx.db.logged_out_player; void row; });
+  const same: typeof conn.db.loggedOutPlayer = event.db.logged_out_player;
+  const rows: Person[] = [...conn.db.person.iter()];
+  // @ts-expect-error reducer arguments remain checked
+  conn.reducers.add({ name: 123, age: 30 });
+  void result; void sub; void same; void rows; void reducer; void subscription; void error; void handle;
+}
+void consume; void row; void baz;
+"#
+        } else {
+            r#"
+import assert from 'node:assert/strict';
+import { DbConnection, tables, reducers, procedures } from './index';
+import Row from './myLib/lib_data_table';
+import Args from './myLib/lib_insert_reducer';
+import * as Count from './myLib/lib_count_procedure';
+import type { LibData } from './myLib/types';
+assert.equal(tables.myLib.libData.sourceName, 'my_lib.libData');
+assert.equal(reducers.myLib.libInsert.name, 'my_lib.lib_insert');
+assert.equal(procedures.myLib.libCount.name, 'my_lib.lib_count');
+function consume(conn: DbConnection) {
+  const rows: LibData[] = [...conn.db.myLib.libData.iter()];
+  conn.reducers.myLib.libInsert({ value: 'hello' });
+  void rows;
+}
+void consume; void Row; void Args; void Count;
+"#
+        };
+        if std::ptr::eq(module, compiled_module()) {
+            compile_typescript_client(legacy, program);
+        }
+        compile_typescript_client(current, program);
+    }
+}
+
+fn compile_typescript_client(files: Vec<spacetimedb_codegen::OutputFile>, program: &str) {
+    let sdk = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../bindings-typescript")
+        .canonicalize()
+        .unwrap();
+    let project = tempfile::Builder::new()
+        .prefix(".generated-client-")
+        .tempdir_in(&sdk)
+        .unwrap();
+    for file in files {
+        let path = project.path().join(file.filename);
+        fs_err::create_dir_all(path.parent().unwrap()).unwrap();
+        fs_err::write(path, file.code).unwrap();
+    }
+    fs_err::write(project.path().join("consumer.ts"), program).unwrap();
+    fs_err::write(
+        project.path().join("tsconfig.json"),
+        r#"{
+      "compilerOptions": {
+        "target": "ES2022", "module": "ESNext", "moduleResolution": "Bundler",
+        "strict": true, "exactOptionalPropertyTypes": true, "skipLibCheck": true,
+        "noEmit": true, "allowImportingTsExtensions": true
+      },
+      "include": ["**/*.ts"]
+    }"#,
+    )
+    .unwrap();
+    let mut command = std::process::Command::new("node");
+    command
+        .current_dir(&sdk)
+        .arg("--input-type=module")
+        .arg("--eval")
+        .arg(
+            r#"import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { join } from 'node:path';
+import { build } from 'tsup';
+
+const project = process.argv[1];
+const require = createRequire(import.meta.url);
+execFileSync(
+  process.execPath,
+  [require.resolve('typescript/bin/tsc'), '-p', join(project, 'tsconfig.json')],
+  { stdio: 'inherit' }
+);
+await build({
+  entry: [join(project, 'consumer.ts')],
+  outDir: join(project, 'out'),
+  format: 'cjs',
+  platform: 'node',
+  config: false,
+  silent: true,
+  noExternal: [/^spacetimedb(?:\/|$)/],
+  tsconfig: join(project, 'tsconfig.json'),
+  outExtension: () => ({ js: '.cjs' }),
+});
+execFileSync(process.execPath, [join(project, 'out/consumer.cjs')], {
+  stdio: 'inherit',
+});
+"#,
+        )
+        .arg(project.path());
+    let result = command
+        .output()
+        .expect("Node.js and the built TypeScript SDK are required");
+    assert!(
+        result.status.success(),
+        "generated TypeScript client failed:\n{}\n{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[test]
+fn typescript_declaration_snapshots_cover_submodules_and_private_items() {
+    for (name, module, options) in [
+        (
+            "typescript_module_schema_submodules",
+            compiled_typescript_module(),
+            CodegenOptions::default(),
+        ),
+        (
+            "typescript_module_schema_private",
+            compiled_module(),
+            CodegenOptions {
+                visibility: spacetimedb_codegen::CodegenVisibility::IncludePrivate,
+            },
+        ),
+    ] {
+        let files = generate(module, &TypeScript::default(), &options)
+            .into_iter()
+            .map(|f| (f.filename, f.code))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let mut settings = insta::Settings::clone_current();
+        settings.add_filter(r#"cliVersion: "\d+\.\d+\.\d+""#, r#"cliVersion: "X.Y.Z""#);
+        settings.add_filter(
+            r"// This was generated using spacetimedb cli version \d+\.\d+\.\d+ .*",
+            "VERSION_COMMENT",
+        );
+        settings.bind(|| insta::assert_toml_snapshot!(name, files));
+    }
+}
+
+#[test]
+fn typescript_function_exports_preserve_reserved_names() {
+    use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+    let mut builder = RawModuleDefV10Builder::new();
+    for name in [
+        "default",
+        "return",
+        "spacetimedb",
+        "schema",
+        "table",
+        "t",
+        "types",
+        "binary_reader",
+        "banPlayer1",
+    ] {
+        builder.add_reducer(name, spacetimedb_lib::ProductType::unit());
+    }
+    let mut names = spacetimedb_lib::db::raw_def::v10::ExplicitNames::default();
+    names.insert_function("banPlayer1", "banPlayer1");
+    builder.add_explicit_names(names);
+    let infer = builder
+        .build_table_with_new_type("infer", spacetimedb_lib::ProductType::unit(), true)
+        .finish();
+    builder.add_reducer(
+        "use_infer",
+        spacetimedb_lib::ProductType::from([("value", spacetimedb_lib::AlgebraicType::Ref(infer))]),
+    );
+    let module: ModuleDef = builder.finish().try_into().unwrap();
+    compile_typescript_client(
+        generate(&module, &TypeScript::default(), &CodegenOptions::default()),
+        r#"
+import assert from 'node:assert/strict';
+import { reducers } from './index';
+assert.equal(reducers.default.name, 'default');
+assert.equal(reducers.return.name, 'return');
+assert.equal(reducers.spacetimedb.name, 'spacetimedb');
+assert.equal(reducers.schema.name, 'schema');
+assert.equal(reducers.table.name, 'table');
+assert.equal(reducers.t.name, 't');
+assert.equal(reducers.types.name, 'types');
+assert.equal(reducers.binaryReader.name, 'binary_reader');
+assert.equal(reducers.banPlayer1.name, 'banPlayer1');
+"#,
+    );
+}
+
+fn existing_typescript_bindings() -> Vec<spacetimedb_codegen::OutputFile> {
+    let files: std::collections::BTreeMap<String, String> =
+        toml::from_str(include_str!("fixtures/typescript_2_12.toml")).unwrap();
+    files
+        .into_iter()
+        .map(|(filename, code)| spacetimedb_codegen::OutputFile { filename, code })
+        .collect()
+}
+
+#[test]
+fn existing_typescript_bindings_work_with_current_sdk() {
+    compile_typescript_client(
+        existing_typescript_bindings(),
+        r#"
+import assert from 'node:assert/strict';
+import { DbConnection, tables, reducers } from './index';
+assert.equal(typeof DbConnection.builder().build, 'function');
+assert.equal(tables.person.toSql(), 'SELECT * FROM "person"');
+assert.equal(reducers.add.name, 'add');
+function consume(conn: DbConnection) {
+  conn.reducers.add({ name: 'Alice', age: 30 });
+  // @ts-expect-error invalid argument
+  conn.reducers.add({ name: 123, age: 30 });
+}
+void consume;
+"#,
+    );
+}
+
+#[test]
+fn typescript_module_schema_preserve_table_metadata() {
+    use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+    use spacetimedb_lib::db::raw_def::v9::RawIndexAlgorithm;
+    use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ProductType};
+    let mut builder = RawModuleDefV10Builder::new();
+    let address = builder.add_algebraic_type(
+        [],
+        "ZAddress",
+        AlgebraicType::from(ProductType::from([("city", AlgebraicType::String)])),
+        true,
+    );
+    let person = builder
+        .build_table_with_new_type(
+            "person",
+            ProductType::from([
+                ("id", AlgebraicType::U32),
+                ("displayName", AlgebraicType::String),
+                ("score", AlgebraicType::U32),
+                ("address", AlgebraicType::Ref(address)),
+            ]),
+            true,
+        )
+        .with_auto_inc_primary_key(0)
+        .with_index(
+            RawIndexAlgorithm::Direct { column: 0.into() },
+            "person_id_direct",
+            "byId",
+        )
+        .with_index(
+            RawIndexAlgorithm::Hash { columns: [1].into() },
+            "person_name_hash",
+            "byName",
+        )
+        .with_default_column_value(2, AlgebraicValue::U32(7))
+        .finish();
+    builder.add_reducer(
+        "submit_person",
+        ProductType::from([("person", AlgebraicType::Ref(person))]),
+    );
+    builder
+        .build_table_with_new_type("audit", ProductType::from([("message", AlgebraicType::String)]), true)
+        .with_event(true)
+        .finish();
+    let mut child = RawModuleDefV10Builder::new();
+    child.add_algebraic_type(
+        [],
+        "Label",
+        AlgebraicType::from(ProductType::from([("text", AlgebraicType::String)])),
+        true,
+    );
+    builder.add_submodule("myLib", child.finish());
+    let module: ModuleDef = builder.finish().try_into().unwrap();
+    let files = generate(&module, &TypeScript::default(), &CodegenOptions::default());
+    let snapshots = files
+        .iter()
+        .map(|f| (&f.filename, &f.code))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut settings = insta::Settings::clone_current();
+    settings.add_filter(r#"cliVersion: "\d+\.\d+\.\d+""#, r#"cliVersion: "X.Y.Z""#);
+    settings.add_filter(
+        r"// This was generated using spacetimedb cli version \d+\.\d+\.\d+ .*",
+        "VERSION_COMMENT",
+    );
+    settings.bind(|| insta::assert_toml_snapshot!("typescript_module_schema_metadata", snapshots));
+    compile_typescript_client(
+        files,
+        r#"
+import assert from 'node:assert/strict';
+import { tables, type DbConnection } from './index';
+import spacetimedb from './module';
+import { Person, ZAddress } from './module';
+import { ZAddress as CompatibleAddress } from './types';
+assert.equal(CompatibleAddress, ZAddress);
+import { Label } from './my_lib/module';
+import { Label as CompatibleLabel } from './myLib/types';
+assert.equal(CompatibleLabel, Label);
+import type { Infer } from 'spacetimedb/schema';
+type Person = Infer<typeof Person>;
+assert.equal(spacetimedb.entries.person.rowType, Person);
+assert.equal(Person.row.id.columnMetadata.isAutoIncrement, true);
+assert.equal(Person.row.score.columnMetadata.defaultValue, 7);
+assert.equal(Person.row.displayName.columnMetadata.name, 'display_name');
+assert.equal(tables.audit.tableDef.isEvent, true);
+assert.ok(tables.person.tableDef.resolvedIndexes.some(i => i.algorithm === 'direct'));
+assert.ok(tables.person.tableDef.resolvedIndexes.some(i => i.algorithm === 'hash'));
+function consume(conn: DbConnection) {
+  const person: Person = { id: 1, displayName: 'Alice', score: 7, address: { city: 'Paris' } };
+  conn.reducers.submitPerson({ person });
+  // @ts-expect-error shared row schema still enforces column types
+  conn.reducers.submitPerson({ person: { id: 'bad', displayName: 'Alice', score: 7, address: { city: 'Paris' } } });
+}
+void consume;
+"#,
+    );
+}
+
 /// The relative module specifiers in `import … from "./…"` and `"../…"` lines.
 fn relative_imports(code: &str) -> Vec<&str> {
     code.lines()
-        .filter_map(|line| line.split("from \"").nth(1)?.split('"').next())
+        .filter_map(|line| {
+            let spec = line.split("from ").nth(1)?;
+            let quote = spec.chars().next()?;
+            spec.strip_prefix(quote)?.split(quote).next()
+        })
         .filter(|spec| spec.starts_with('.'))
         .collect()
 }
 
 #[test]
 fn typescript_import_extension_applies_to_every_relative_import() {
-    let module = compiled_module();
-    for (import_extension, suffix) in [
-        (ImportExtension::None, ""),
-        (ImportExtension::Js, ".js"),
-        (ImportExtension::Ts, ".ts"),
-    ] {
-        let files = generate(module, &TypeScript { import_extension }, &CodegenOptions::default());
-        let specs: Vec<String> = files
-            .iter()
-            .flat_map(|file| relative_imports(&file.code))
-            .map(String::from)
-            .collect();
-        assert!(!specs.is_empty(), "the module's bindings import each other");
-        for spec in specs {
-            let stem = spec
-                .strip_suffix(suffix)
-                .unwrap_or_else(|| panic!("{spec:?} should end with {suffix:?}"));
-            assert!(
-                !stem.ends_with(".js") && !stem.ends_with(".ts"),
-                "{spec:?} has more than one extension"
+    for module in [compiled_module(), compiled_typescript_module()] {
+        for (import_extension, suffix) in [
+            (ImportExtension::None, ""),
+            (ImportExtension::Js, ".js"),
+            (ImportExtension::Ts, ".ts"),
+        ] {
+            let files = generate(module, &TypeScript { import_extension }, &CodegenOptions::default());
+            let specs: Vec<String> = files
+                .iter()
+                .flat_map(|file| relative_imports(&file.code))
+                .map(String::from)
+                .collect();
+            assert!(!specs.is_empty(), "the module's bindings import each other");
+            for spec in specs {
+                let stem = spec
+                    .strip_suffix(suffix)
+                    .unwrap_or_else(|| panic!("{spec:?} should end with {suffix:?}"));
+                assert!(
+                    !stem.ends_with(".js") && !stem.ends_with(".ts"),
+                    "{spec:?} has more than one extension"
+                );
+            }
+            compile_typescript_client(
+                files,
+                &format!("import {{ DbConnection }} from './index{suffix}';\nDbConnection.builder();"),
             );
         }
     }

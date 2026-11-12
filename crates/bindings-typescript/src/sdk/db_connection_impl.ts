@@ -1,6 +1,11 @@
 import { accessorSlot } from '../lib/accessor_path.ts';
-import { ConnectionId, ProductBuilder, ProductType } from '../index.ts';
-import { AlgebraicType, type ComparablePrimitive } from '../index.ts';
+import { ConnectionId } from '../lib/connection_id.ts';
+import { ProductBuilder } from '../lib/type_builders.ts';
+import {
+  AlgebraicType,
+  ProductType,
+  type ComparablePrimitive,
+} from '../lib/algebraic_type.ts';
 import BinaryReader from '../lib/binary_reader.ts';
 import BinaryWriter from '../lib/binary_writer.ts';
 import {
