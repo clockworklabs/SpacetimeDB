@@ -171,6 +171,8 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         http_handlers: IndexMap::new(),
         http_routes: Vec::new(),
         raw_module_def_version: RawModuleDefVersion::V9OrEarlier,
+        // V9 applies no case conversion, so its names are verbatim, which V10 expresses as `None`.
+        case_conversion_policy: CaseConversionPolicy::None,
         submodules: IndexMap::new(),
         environment: None,
     };
@@ -2499,5 +2501,32 @@ mod tests {
         expect_error_matching!(result, ValidationError::DuplicateFunctionName { name } => {
             &name[..] == "foo"
         });
+    }
+
+    #[test]
+    fn names_round_trip_through_raw_v10_def() {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type(
+                "playerStats",
+                ProductType::from([("statsId", AlgebraicType::U32), ("TeamName", AlgebraicType::String)]),
+                true,
+            )
+            .with_index(btree(1), "byTeamName")
+            .finish();
+        let def: ModuleDef = builder.finish().try_into().expect("valid module");
+
+        let names = |def: &ModuleDef| {
+            let table = def.table("playerStats").expect("table keeps its name");
+            let columns = table.columns.iter().map(|c| c.name.to_string()).collect_vec();
+            let indexes = table.indexes.keys().map(|name| name.to_string()).sorted().collect_vec();
+            (def.case_conversion_policy(), columns, indexes)
+        };
+        let before = names(&def);
+        assert_eq!(before.0, v10::CaseConversionPolicy::None);
+        assert_eq!(before.1, ["statsId", "TeamName"]);
+        let raw: v10::RawModuleDefV10 = def.into();
+        let after = names(&raw.try_into().expect("round-tripped def should validate"));
+        assert_eq!(after, before);
     }
 }
