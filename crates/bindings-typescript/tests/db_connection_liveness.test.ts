@@ -162,6 +162,16 @@ describe('liveness listeners', () => {
     expect(listeners).toEqual({});
   });
 
+  test('are skipped when window lacks the event API (React Native)', async () => {
+    vi.stubGlobal('document', undefined);
+    vi.stubGlobal('window', {});
+    const harness = build();
+    await establish(harness);
+
+    expect(harness.connects).toHaveLength(1);
+    expect(harness.connection.isActive).toBe(true);
+  });
+
   test('are removed when the connection ends', async () => {
     const harness = build();
     await establish(harness);
