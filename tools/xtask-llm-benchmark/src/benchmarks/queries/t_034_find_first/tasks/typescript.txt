@@ -3,13 +3,13 @@ Write a SpacetimeDB backend module in TypeScript that defines a task table and a
 TABLES
 - task (private)
   - Fields:
-    - id: number (u64, primary key, autoInc)
+    - id: bigint (u64, primary key, autoInc)
     - title: string
     - completed: boolean
 
 - first_incomplete (private)
   - Fields:
-    - taskId: number (u64, primary key)
+    - taskId: bigint (u64, primary key)
     - title: string
 
 REDUCERS

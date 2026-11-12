@@ -3,12 +3,11 @@ Write a SpacetimeDB backend module in TypeScript that defines a table with optio
 TABLES
 - player (private)
   - Fields:
-    - id: number (u64, primary key, autoInc)
+    - id: bigint (u64, primary key, autoInc)
     - name: string
-    - nickname: optional string (use t.option(t.string()))
-    - highScore: optional number (use t.option(t.u32()))
+    - nickname: optional string
+    - highScore: optional number (u32)
 
 REDUCERS
 - create_player(ctx, { name: string, nickname: optional string, highScore: optional number (u32) })
   - Insert a player row, passing through the optional fields as-is
-  - Use id: 0n for autoInc
