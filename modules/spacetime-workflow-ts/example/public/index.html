@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A SpacetimeDB research agent built with @spacetimedb/workflow. Its work survives server restarts."
+    />
+    <title>SpacetimeDB Dossier</title>
+    <link rel="stylesheet" href="./app.css" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="shell" id="shell" role="main">
+      <aside class="sidebar" id="sidebar">
+        <header class="sidebar-head">
+          <div class="brand">
+            <a
+              href="https://spacetimedb.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              style="display: inline-flex"
+              ><img
+                class="brand-logo"
+                src="/assets/brand.svg"
+                alt="SpacetimeDB"
+            /></a>
+            <span class="brand-sub">Dossier</span>
+          </div>
+          <button
+            class="btn toggle"
+            id="btn-toggle-sidebar"
+            title="Toggle sidebar"
+            aria-label="Toggle sidebar"
+          >
+            «
+          </button>
+        </header>
+        <div class="sidebar-new">
+          <button class="btn primary" id="btn-new">+ New dossier</button>
+        </div>
+        <div class="threads" id="dossier-list">
+          <div class="empty">no dossiers yet</div>
+        </div>
+      </aside>
+
+      <section class="chat">
+        <div class="head">
+          <button class="btn small back" id="btn-back" type="button">
+            ‹ Dossiers
+          </button>
+          <span class="title" id="chat-title">New dossier</span>
+          <span class="conn" id="conn-status" hidden>Reconnecting…</span>
+          <div class="actions" id="chat-actions"></div>
+        </div>
+
+        <div class="messages" id="msg-list" hidden></div>
+        <div class="empty-hero" id="empty-hero">
+          <a
+            href="https://spacetimedb.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            style="display: inline-flex"
+            ><img class="hero-logo" src="/assets/logo.svg" alt="SpacetimeDB"
+          /></a>
+          <h1>SpacetimeDB Dossier</h1>
+          <p>
+            A research agent running inside an STDB module. Ask a question,
+            approve its plan, and restart the server whenever you like.
+          </p>
+        </div>
+
+        <form class="composer-wrap" id="composer">
+          <div class="composer">
+            <textarea
+              id="composer-input"
+              aria-label="Question"
+              placeholder="Ask a question…"
+              maxlength="300"
+              rows="1"
+            ></textarea>
+            <button class="btn primary" id="btn-send" type="submit" disabled>
+              Start
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
