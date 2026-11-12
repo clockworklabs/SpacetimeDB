@@ -243,9 +243,11 @@ namespace SpacetimeDB
     /// Requires .NET 10 and C# 14.
     /// </summary>
     /// <remarks>
-    /// An assembly may be mounted only once. Dependencies cannot declare mounts.
-    /// Named namespaces cannot contain lifecycle reducers, RLS filters, or nonempty
-    /// environment declarations. Dependencies without a mount register automatically in public.
+    /// Any module can mount its own dependencies, and an assembly can be mounted more than
+    /// once, with independent tables at each path. Mounts in the same parent need distinct
+    /// accessors and names. Named namespaces cannot contain lifecycle reducers, RLS filters,
+    /// or nonempty environment declarations. Dependencies that no module mounts register
+    /// automatically in public.
     /// </remarks>
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
     public sealed class NamespaceAttribute(System.Type marker) : Attribute
