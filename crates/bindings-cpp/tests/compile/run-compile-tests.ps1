@@ -112,6 +112,17 @@ $cases = switch ($Suite) {
             (New-CompileCase "ok_receiver_bindings" "cases/idc/ok_receiver_bindings.cpp" "success")
             (New-CompileCase "error_identity_from_other_dependency" "cases/idc/error_identity_from_other_dependency.cpp" "failure" "no viable conversion from 'RemoteIdentity<other::detail::module_tag>' to 'RemoteIdentity<receiver::detail::module_tag>'")
             (New-CompileCase "error_identity_implicit_conversion" "cases/idc/error_identity_implicit_conversion.cpp" "failure" "no viable conversion from 'Identity' to 'receiver::Identity'")
+            (New-CompileCase "ok_manual_outbox" "cases/idc/ok_manual_outbox.cpp" "success")
+            (New-CompileCase "error_outbox_delete" "cases/idc/error_outbox_delete.cpp" "failure" "attempt to use a deleted function")
+            (New-CompileCase "error_outbox_update_by_key" "cases/idc/error_outbox_update_by_key.cpp" "failure" "attempt to use a deleted function")
+            (New-CompileCase "error_outbox_target_wrong_type" "cases/idc/error_outbox_target_wrong_type.cpp" "failure" "The outbox target column 'target' must have the receiver bindings' Identity type.")
+            (New-CompileCase "error_outbox_target_on_regular_table" "cases/idc/error_outbox_target_on_regular_table.cpp" "failure" "FIELD_Target applies only to outbox tables declared with SPACETIMEDB_OUTBOX_TABLE.")
+            (New-CompileCase "error_outbox_param_unknown" "cases/idc/error_outbox_param_unknown.cpp" "failure" "the receiver reducer has no parameter named 'text'.")
+            (New-CompileCase "error_outbox_param_wrong_type" "cases/idc/error_outbox_param_wrong_type.cpp" "failure" "the column's type doesn't match the receiver parameter's type.")
+            (New-CompileCase "error_outbox_receiver_not_handle" "cases/idc/error_outbox_receiver_not_handle.cpp" "failure" "The outbox receiver must be a reducer handle from generated receiver bindings")
+            (New-CompileCase "error_on_result_wrong_row" "cases/idc/error_on_result_wrong_row.cpp" "failure" "The second parameter of an on_result reducer must be the outbox table's row type.")
+            (New-CompileCase "error_on_result_wrong_result" "cases/idc/error_on_result_wrong_result.cpp" "failure" "The third parameter of an on_result reducer must be SpacetimeDB::OutboxResult.")
+            (New-CompileCase "error_on_result_regular_table" "cases/idc/error_on_result_regular_table.cpp" "failure" "SPACETIMEDB_REDUCER_ON_RESULT requires an outbox table declared with SPACETIMEDB_OUTBOX_TABLE.")
         )
     }
 }

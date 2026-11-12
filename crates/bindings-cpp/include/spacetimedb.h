@@ -139,6 +139,7 @@
 
 // View context and macros
 #include "spacetimedb/view_macros.h"
+#include "spacetimedb/outbox.h"
 #include "spacetimedb/query_builder.h"
 
 // =============================================================================

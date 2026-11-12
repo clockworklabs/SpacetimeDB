@@ -67,6 +67,33 @@ class TypedIndexedAccessor;
 template<typename TableType, typename FieldType>
 class TypedRegularAccessor;
 
+// Forward declarations for outbox tables (see outbox.h)
+template<typename TableType>
+class OutboxTableAccessor;
+
+template<typename TableType, typename FieldType>
+class ReadOnlyPrimaryKeyAccessor;
+
+template<typename TableType, typename FieldType>
+class ReadOnlyUniqueAccessor;
+
+template<typename TableType, typename FieldType>
+class ReadOnlyIndexedAccessor;
+
+template<typename TableType, typename FieldType>
+class ReadOnlyRegularAccessor;
+
+/// Whether `T` is the row type of an outbox table. Specialized by SPACETIMEDB_OUTBOX_TABLE.
+template<typename T>
+struct is_outbox_row : std::false_type {};
+
+template<typename T>
+inline constexpr bool is_outbox_row_v = is_outbox_row<T>::value;
+
+/// Whether `Tag` is the tag of an outbox table declared with SPACETIMEDB_OUTBOX_TABLE.
+template<typename Tag>
+inline constexpr bool is_outbox_tag_v = requires { requires Tag::__is_outbox_internal; };
+
 // Forward declaration for multi-column index support
 template<typename TableType>
 struct MultiColumnIndexTag;
@@ -261,6 +288,38 @@ public:
         return TypedRegularAccessor<TableType, FieldType>(field_tag.table_name, field_tag.field_name, field_tag.member_ptr);
     }
     
+    // Outbox tables are insert-only: these more constrained overloads win for them,
+    // and return accessors without update or delete.
+    template<typename Tag>
+        requires is_outbox_tag_v<Tag>
+    OutboxTableAccessor<typename Tag::type> operator[](const Tag&) const {
+        return OutboxTableAccessor<typename Tag::type>(std::string(Tag::__table_name_internal));
+    }
+
+    template<typename TableType, typename FieldType, bool IsEventTable>
+        requires is_outbox_row_v<TableType>
+    ReadOnlyPrimaryKeyAccessor<TableType, FieldType> operator[](const FieldTag<TableType, FieldType, FieldConstraint::PrimaryKey, IsEventTable>& field_tag) const {
+        return ReadOnlyPrimaryKeyAccessor<TableType, FieldType>(field_tag.table_name, field_tag.field_name, field_tag.member_ptr);
+    }
+
+    template<typename TableType, typename FieldType, bool IsEventTable>
+        requires is_outbox_row_v<TableType>
+    ReadOnlyUniqueAccessor<TableType, FieldType> operator[](const FieldTag<TableType, FieldType, FieldConstraint::Unique, IsEventTable>& field_tag) const {
+        return ReadOnlyUniqueAccessor<TableType, FieldType>(field_tag.table_name, field_tag.field_name, field_tag.member_ptr);
+    }
+
+    template<typename TableType, typename FieldType, bool IsEventTable>
+        requires is_outbox_row_v<TableType>
+    ReadOnlyIndexedAccessor<TableType, FieldType> operator[](const FieldTag<TableType, FieldType, FieldConstraint::Indexed, IsEventTable>& field_tag) const {
+        return ReadOnlyIndexedAccessor<TableType, FieldType>(field_tag.table_name, field_tag.field_name, field_tag.member_ptr);
+    }
+
+    template<typename TableType, typename FieldType, bool IsEventTable>
+        requires is_outbox_row_v<TableType>
+    ReadOnlyRegularAccessor<TableType, FieldType> operator[](const FieldTag<TableType, FieldType, FieldConstraint::None, IsEventTable>& field_tag) const {
+        return ReadOnlyRegularAccessor<TableType, FieldType>(field_tag.table_name, field_tag.field_name, field_tag.member_ptr);
+    }
+
     // Multi-column index accessor - NEW: ctx.db[score.by_player_and_level] syntax
     template<typename TableType>
     TypedMultiColumnIndexAccessor<TableType> operator[](const MultiColumnIndexTag<TableType>& index_tag) const {

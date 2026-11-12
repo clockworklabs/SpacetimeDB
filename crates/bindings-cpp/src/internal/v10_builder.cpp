@@ -45,6 +45,188 @@ void V10Builder::Clear() {
     schedules_.clear();
     lifecycle_reducers_.clear();
     row_level_security_.clear();
+    outbox_registrations_.clear();
+    outboxes_.clear();
+}
+
+V10Builder::OutboxRegistration* V10Builder::FindOutbox(const std::string& table_name) {
+    for (auto& outbox : outbox_registrations_) {
+        if (outbox.table_name == table_name) {
+            return &outbox;
+        }
+    }
+    return nullptr;
+}
+
+void V10Builder::SetOutboxTarget(const std::string& table_name, const std::string& field_name) {
+    if (auto* outbox = FindOutbox(table_name)) {
+        outbox->target_fields.push_back(field_name);
+    }
+}
+
+void V10Builder::AddOutboxParamAlias(const std::string& table_name,
+                                     const std::string& field_name,
+                                     const std::string& param_name) {
+    if (auto* outbox = FindOutbox(table_name)) {
+        outbox->param_aliases.emplace_back(field_name, param_name);
+    }
+}
+
+void V10Builder::SetOutboxOnResult(const std::string& table_name, const std::string& reducer_name) {
+    if (auto* outbox = FindOutbox(table_name)) {
+        outbox->on_result_reducers.push_back(reducer_name);
+    }
+}
+
+namespace {
+
+std::optional<U256> DecodeSignatureHash(const std::string& hex) {
+    if (hex.size() != 64) {
+        return std::nullopt;
+    }
+    auto nibble = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    // The hex string lists the hash's bytes in order, which is the U256's little-endian encoding.
+    uint8_t bytes[32];
+    for (size_t i = 0; i < 32; ++i) {
+        int high = nibble(hex[2 * i]);
+        int low = nibble(hex[2 * i + 1]);
+        if (high < 0 || low < 0) {
+            return std::nullopt;
+        }
+        bytes[i] = static_cast<uint8_t>((high << 4) | low);
+    }
+    return U256(bytes);
+}
+
+} // namespace
+
+void V10Builder::ResolveOutboxes() {
+    outboxes_.clear();
+    const auto u64_type = bsatn::to_bytes(AlgebraicType(AlgebraicType::Tag::U64));
+    for (const auto& outbox : outbox_registrations_) {
+        const std::string& table = outbox.table_name;
+        auto fail = [&](const std::string& code, const std::string& details) {
+            SetConstraintRegistrationError(code + "_" + table, "outbox table='" + table + "': " + details);
+        };
+        auto column_index = [&](const std::string& name) -> std::optional<uint16_t> {
+            for (uint16_t i = 0; i < outbox.column_names.size(); ++i) {
+                if (outbox.column_names[i] == name) {
+                    return i;
+                }
+            }
+            return std::nullopt;
+        };
+
+        auto table_it = FindTable(table);
+        if (table_it == tables_.end()) {
+            fail("OUTBOX_TABLE_NOT_FOUND", "the table was not registered");
+            return;
+        }
+
+        // The message ID: a single auto-incrementing u64 primary key.
+        bool has_message_id = table_it->primary_key.size() == 1 &&
+                              outbox.column_types[table_it->primary_key[0]] == u64_type &&
+                              std::any_of(table_it->sequences.begin(), table_it->sequences.end(), [&](const auto& seq) {
+                                  return seq.column == table_it->primary_key[0];
+                              });
+        if (!has_message_id) {
+            fail("OUTBOX_PRIMARY_KEY_MUST_BE_AUTOINC_U64",
+                 "an outbox needs a uint64_t primary key declared with FIELD_PrimaryKeyAutoInc");
+            return;
+        }
+
+        if (outbox.target_fields.empty()) {
+            fail("OUTBOX_MISSING_TARGET", "declare the target column with FIELD_Target");
+            return;
+        }
+        if (outbox.target_fields.size() > 1) {
+            fail("OUTBOX_MULTIPLE_TARGETS", "an outbox has exactly one FIELD_Target column");
+            return;
+        }
+        auto target = column_index(outbox.target_fields[0]);
+        if (!target) {
+            fail("OUTBOX_TARGET_NOT_FOUND", "target column '" + outbox.target_fields[0] + "' was not found");
+            return;
+        }
+        if (*target == table_it->primary_key[0]) {
+            fail("OUTBOX_TARGET_IS_PRIMARY_KEY", "the target column can't be the message ID");
+            return;
+        }
+
+        // The parameter each column supplies: its alias if it has one, otherwise its own name.
+        std::vector<std::string> supplies = outbox.column_names;
+        for (size_t i = 0; i < outbox.param_aliases.size(); ++i) {
+            const auto& [field, param] = outbox.param_aliases[i];
+            for (size_t j = 0; j < i; ++j) {
+                if (outbox.param_aliases[j].first == field) {
+                    fail("OUTBOX_DUPLICATE_PARAM_ALIAS_" + field, "column '" + field + "' has more than one FIELD_Param");
+                    return;
+                }
+            }
+            auto column = column_index(field);
+            if (!column) {
+                fail("OUTBOX_PARAM_COLUMN_NOT_FOUND_" + field, "FIELD_Param column '" + field + "' was not found");
+                return;
+            }
+            supplies[*column] = param;
+        }
+
+        std::vector<uint16_t> arg_columns;
+        for (size_t p = 0; p < outbox.param_names.size(); ++p) {
+            const std::string& param = outbox.param_names[p];
+            std::vector<uint16_t> matches;
+            for (uint16_t c = 0; c < supplies.size(); ++c) {
+                if (supplies[c] == param) {
+                    matches.push_back(c);
+                }
+            }
+            if (matches.empty()) {
+                fail("OUTBOX_NO_COLUMN_FOR_PARAM_" + param,
+                     "no column matches receiver parameter '" + param +
+                         "'; add a column with that name or map one to it with FIELD_Param");
+                return;
+            }
+            if (matches.size() > 1) {
+                fail("OUTBOX_MULTIPLE_COLUMNS_FOR_PARAM_" + param,
+                     "more than one column matches receiver parameter '" + param + "'");
+                return;
+            }
+            if (outbox.column_types[matches[0]] != outbox.param_types[p]) {
+                fail("OUTBOX_PARAM_TYPE_MISMATCH_" + param,
+                     "column '" + outbox.column_names[matches[0]] + "' doesn't have the type of receiver parameter '" +
+                         param + "'");
+                return;
+            }
+            arg_columns.push_back(matches[0]);
+        }
+
+        if (outbox.on_result_reducers.size() > 1) {
+            fail("OUTBOX_MULTIPLE_ON_RESULT", "an outbox has at most one on_result reducer");
+            return;
+        }
+
+        auto signature_hash = DecodeSignatureHash(outbox.signature_hash);
+        if (!signature_hash) {
+            fail("OUTBOX_INVALID_SIGNATURE_HASH", "the receiver bindings' signature hash is not valid hex");
+            return;
+        }
+
+        RawOutboxDefV10 def;
+        def.table_name = table;
+        def.remote_reducer = outbox.remote_reducer;
+        def.target_column = *target;
+        def.arg_columns = std::move(arg_columns);
+        if (!outbox.on_result_reducers.empty()) {
+            def.on_result_reducer = outbox.on_result_reducers[0];
+        }
+        def.signature_hash = *signature_hash;
+        outboxes_.push_back(std::move(def));
+    }
 }
 
 void V10Builder::SetTableIsEventFlag(const std::string& table_name, bool is_event) {
@@ -235,6 +417,11 @@ RawModuleDefV10 V10Builder::BuildModuleDef() const {
     for (const auto& schedule : schedules_) {
         internal_functions.insert(schedule.function_name);
     }
+    for (const auto& outbox : outboxes_) {
+        if (outbox.on_result_reducer) {
+            internal_functions.insert(*outbox.on_result_reducer);
+        }
+    }
     for (auto& reducer : reducers) {
         if (internal_functions.find(reducer.source_name) != internal_functions.end()) {
             reducer.visibility = FunctionVisibility::Private;
@@ -320,6 +507,14 @@ RawModuleDefV10 V10Builder::BuildModuleDef() const {
     RawModuleDefV10Section section_environment;
     section_environment.set<15>(environment_declarations());
     v10_module.sections.push_back(std::move(section_environment));
+
+    // Only modules that declare outboxes get this section, so other modules describe
+    // themselves exactly as before.
+    if (!outboxes_.empty()) {
+        RawModuleDefV10Section section_outboxes;
+        section_outboxes.set<16>(outboxes_);
+        v10_module.sections.push_back(std::move(section_outboxes));
+    }
     return v10_module;
 }
 

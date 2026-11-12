@@ -148,6 +148,17 @@ else
         "ok_receiver_bindings"
         "error_identity_from_other_dependency"
         "error_identity_implicit_conversion"
+        "ok_manual_outbox"
+        "error_outbox_delete"
+        "error_outbox_update_by_key"
+        "error_outbox_target_wrong_type"
+        "error_outbox_target_on_regular_table"
+        "error_outbox_param_unknown"
+        "error_outbox_param_wrong_type"
+        "error_outbox_receiver_not_handle"
+        "error_on_result_wrong_row"
+        "error_on_result_wrong_result"
+        "error_on_result_regular_table"
     )
 
     CASE_EXPECTATION["ok_receiver_bindings"]="success"
@@ -160,6 +171,49 @@ else
     CASE_EXPECTATION["error_identity_implicit_conversion"]="failure"
     CASE_MARKER["error_identity_implicit_conversion"]="no viable conversion from 'Identity' to 'receiver::Identity'"
     CASE_SOURCE["error_identity_implicit_conversion"]="$SCRIPT_DIR/cases/idc/error_identity_implicit_conversion.cpp"
+
+    CASE_EXPECTATION["ok_manual_outbox"]="success"
+    CASE_SOURCE["ok_manual_outbox"]="$SCRIPT_DIR/cases/idc/ok_manual_outbox.cpp"
+
+    CASE_EXPECTATION["error_outbox_delete"]="failure"
+    CASE_MARKER["error_outbox_delete"]="attempt to use a deleted function"
+    CASE_SOURCE["error_outbox_delete"]="$SCRIPT_DIR/cases/idc/error_outbox_delete.cpp"
+
+    CASE_EXPECTATION["error_outbox_update_by_key"]="failure"
+    CASE_MARKER["error_outbox_update_by_key"]="attempt to use a deleted function"
+    CASE_SOURCE["error_outbox_update_by_key"]="$SCRIPT_DIR/cases/idc/error_outbox_update_by_key.cpp"
+
+    CASE_EXPECTATION["error_outbox_target_wrong_type"]="failure"
+    CASE_MARKER["error_outbox_target_wrong_type"]="The outbox target column 'target' must have the receiver bindings' Identity type."
+    CASE_SOURCE["error_outbox_target_wrong_type"]="$SCRIPT_DIR/cases/idc/error_outbox_target_wrong_type.cpp"
+
+    CASE_EXPECTATION["error_outbox_target_on_regular_table"]="failure"
+    CASE_MARKER["error_outbox_target_on_regular_table"]="FIELD_Target applies only to outbox tables declared with SPACETIMEDB_OUTBOX_TABLE."
+    CASE_SOURCE["error_outbox_target_on_regular_table"]="$SCRIPT_DIR/cases/idc/error_outbox_target_on_regular_table.cpp"
+
+    CASE_EXPECTATION["error_outbox_param_unknown"]="failure"
+    CASE_MARKER["error_outbox_param_unknown"]="the receiver reducer has no parameter named 'text'."
+    CASE_SOURCE["error_outbox_param_unknown"]="$SCRIPT_DIR/cases/idc/error_outbox_param_unknown.cpp"
+
+    CASE_EXPECTATION["error_outbox_param_wrong_type"]="failure"
+    CASE_MARKER["error_outbox_param_wrong_type"]="the column's type doesn't match the receiver parameter's type."
+    CASE_SOURCE["error_outbox_param_wrong_type"]="$SCRIPT_DIR/cases/idc/error_outbox_param_wrong_type.cpp"
+
+    CASE_EXPECTATION["error_outbox_receiver_not_handle"]="failure"
+    CASE_MARKER["error_outbox_receiver_not_handle"]="The outbox receiver must be a reducer handle from generated receiver bindings"
+    CASE_SOURCE["error_outbox_receiver_not_handle"]="$SCRIPT_DIR/cases/idc/error_outbox_receiver_not_handle.cpp"
+
+    CASE_EXPECTATION["error_on_result_wrong_row"]="failure"
+    CASE_MARKER["error_on_result_wrong_row"]="The second parameter of an on_result reducer must be the outbox table's row type."
+    CASE_SOURCE["error_on_result_wrong_row"]="$SCRIPT_DIR/cases/idc/error_on_result_wrong_row.cpp"
+
+    CASE_EXPECTATION["error_on_result_wrong_result"]="failure"
+    CASE_MARKER["error_on_result_wrong_result"]="The third parameter of an on_result reducer must be SpacetimeDB::OutboxResult."
+    CASE_SOURCE["error_on_result_wrong_result"]="$SCRIPT_DIR/cases/idc/error_on_result_wrong_result.cpp"
+
+    CASE_EXPECTATION["error_on_result_regular_table"]="failure"
+    CASE_MARKER["error_on_result_regular_table"]="SPACETIMEDB_REDUCER_ON_RESULT requires an outbox table declared with SPACETIMEDB_OUTBOX_TABLE."
+    CASE_SOURCE["error_on_result_regular_table"]="$SCRIPT_DIR/cases/idc/error_on_result_regular_table.cpp"
 fi
 
 FAILURES=0
