@@ -6,6 +6,8 @@ import cockroach_rpc from './rpc/cockroach_rpc.ts';
 import sqlite_rpc from './rpc/sqlite_rpc.ts';
 import supabase_rpc from './rpc/supabase_rpc.ts';
 import planetscale_pg_rpc from './rpc/planetscale_pg_rpc.ts';
+import postgres_storedproc_rpc from './rpc/postgres_storedproc_rpc.ts';
+import postgres_direct from './postgres_direct.ts';
 import type { ReducerConnector, RpcConnector } from '../core/connectors.ts';
 import type {
   ConnectorKey,
@@ -38,4 +40,10 @@ export const CONNECTORS = {
   sqlite_rpc: () => sqlite_rpc(),
   supabase_rpc: () => supabase_rpc(),
   planetscale_pg_rpc: () => planetscale_pg_rpc(),
+  postgres_storedproc_rpc: () => postgres_storedproc_rpc(),
+  postgres_direct: (config) => postgres_direct({
+    url: process.env.PG_URL ?? 'postgres://postgres:postgres@127.0.0.1:5432/postgres',
+    poolMax: config.poolMax,
+    initialBalance: BigInt(config.initialBalance),
+  }),
 } satisfies Record<ConnectorKey, ConnectorFactory>;
