@@ -1,3 +1,4 @@
+use super::idc_actor::{self, IdcActor, IdcActorStarter, IdcConfig};
 use super::module_host::{
     DurableOffset, EventStatus, InitDatabaseResult, ModuleHost, ModuleInfo, NoSuchModule, UpdateEnvironmentResult,
 };
@@ -31,6 +32,7 @@ use anyhow::{bail, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
+use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use scopeguard::{defer, guard};
 use spacetimedb_client_api_messages::name::EnvironmentVersionConflict;
@@ -41,7 +43,7 @@ use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::system_tables::ModuleKind;
-use spacetimedb_datastore::traits::Program;
+use spacetimedb_datastore::traits::{IsolationLevel, Program};
 use spacetimedb_durability::{self as durability};
 use spacetimedb_lib::{identity::AuthCtx, AlgebraicValue, Identity, Timestamp};
 use spacetimedb_paths::server::{ModuleLogsDir, ServerDataDir};
@@ -219,6 +221,10 @@ pub struct HostController {
     db_cores: JobCores,
     /// The pool of buffers used to build `BsatnRowList`s in subscriptions.
     pub bsatn_rlb_pool: BsatnRowListBuilderPool,
+    /// Transport settings configured before starting database actors.
+    idc_config: OnceCell<IdcConfig>,
+    /// HTTP connection pool shared by all IDC actors managed by this controller.
+    idc_client: reqwest::Client,
 }
 
 pub(crate) struct HostRuntimes {
@@ -384,6 +390,8 @@ impl HostController {
             page_pool: PagePool::new(default_config.page_pool_max_size),
             bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
             db_cores,
+            idc_config: OnceCell::new(),
+            idc_client: idc_actor::http_client(),
         }
     }
 
@@ -396,6 +404,13 @@ impl HostController {
     /// Replace the [`ProgramStorage`] used by this controller.
     pub fn set_program_storage(&mut self, ps: ProgramStorage) {
         self.program_storage = ps;
+    }
+
+    /// Configure IDC transport before starting database actors.
+    pub fn set_idc_config(&self, config: IdcConfig) -> anyhow::Result<()> {
+        self.idc_config
+            .set(config)
+            .map_err(|_| anyhow::anyhow!("IDC transport already configured"))
     }
 
     /// Get a [`ModuleHost`] managed by this controller, or launch it from
@@ -569,9 +584,10 @@ impl HostController {
             .init_database_with_environment(program, environment)
             .await;
         let info = launched.module_host.info.clone();
-        // Validation never starts scheduled work. Release its receiver before
-        // waiting for scheduler closure, including when initialization failed.
+        // Validation never starts background work. Release its receivers before
+        // waiting for closure, including when initialization failed.
         drop(launched.scheduler_starter);
+        drop(launched.idc_starter);
         launched.module_host.exit().await;
         let InitDatabaseResult { reducer, .. } = result?;
         if let Some(call_result) = reducer {
@@ -807,8 +823,16 @@ impl HostController {
             defer!(remove_database_gauges(&database_identity, table_names));
 
             info!("replica={replica_id} database={database_identity} exiting module");
+            module.replica_ctx().procedures_running.cancel();
             module.exit().await;
             info!("replica={replica_id} database={database_identity} exiting database");
+            // Procedures can't start a transaction once `procedures_running` is cancelled,
+            // so acquiring the lock waits for the ones still running to commit.
+            let db = module.relational_db().clone();
+            asyncify(move || {
+                let _ = db.rollback_mut_tx(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal));
+            })
+            .await;
             module.relational_db().shutdown().await;
             info!("replica={replica_id} database={database_identity} module host exited");
         })
@@ -1004,6 +1028,7 @@ async fn make_replica_ctx(
         subscriptions,
         module_instance_memory_tracker,
         module_http,
+        procedures_running: Default::default(),
     })
 }
 
@@ -1014,6 +1039,7 @@ async fn make_module_host(
     runtimes: Arc<HostRuntimes>,
     replica_ctx: Arc<ReplicaContext>,
     scheduler: Scheduler,
+    idc_sender: crate::host::idc_actor::IdcActorSender,
     program: Program,
     energy_monitor: Arc<dyn EnergyMonitor>,
     unregister: impl Fn() + Send + Sync + 'static,
@@ -1029,6 +1055,7 @@ async fn make_module_host(
     let mcc = ModuleCreationContext {
         replica_ctx,
         scheduler,
+        idc_sender,
         program_hash: program.hash,
         energy_monitor,
     };
@@ -1066,6 +1093,7 @@ struct LaunchedModule {
     module_host: ModuleHost,
     scheduler: Scheduler,
     scheduler_starter: SchedulerStarter,
+    idc_starter: IdcActorStarter,
 }
 
 struct HostInit {
@@ -1110,10 +1138,12 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
         .await
         .map(Arc::new)?;
         let (scheduler, scheduler_starter) = Scheduler::open(replica_ctx.relational_db().clone());
+        let (idc_starter, idc_sender) = idc_actor::channel(&replica_ctx.database_identity);
         let (program, module_host) = make_module_host(
             self.runtimes.clone(),
             replica_ctx.clone(),
             scheduler.clone(),
+            idc_sender.clone(),
             self.program,
             self.energy_monitor,
             self.on_panic,
@@ -1130,6 +1160,7 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
                 module_host,
                 scheduler,
                 scheduler_starter,
+                idc_starter,
             },
         ))
     }
@@ -1213,6 +1244,13 @@ struct Host {
     /// Handle to the task responsible for cleaning up old views.
     /// The task is aborted when [`Host`] is dropped.
     view_cleanup_task: AbortHandle,
+    /// Transport settings reused when starting a replacement IDC actor after a module update.
+    idc_config: IdcConfig,
+    /// Shared client retained across IDC actor replacements.
+    idc_client: reqwest::Client,
+    /// IDC actor for the current module. [`ModuleHost::exit`] drains it;
+    /// dropping this handle aborts the task if shutdown cannot finish.
+    idc_actor: IdcActor,
 }
 
 impl Host {
@@ -1442,6 +1480,7 @@ impl Host {
             module_host,
             scheduler,
             scheduler_starter,
+            idc_starter,
         } = launched;
 
         // Disconnect dangling clients.
@@ -1465,6 +1504,18 @@ impl Host {
         module_host.clear_all_clients().await?;
 
         scheduler_starter.start(&module_host)?;
+        let idc_config = host_controller
+            .idc_config
+            .get()
+            .ok_or_else(|| anyhow::anyhow!("IDC transport is not configured"))?
+            .clone();
+        let idc_actor = idc_starter.start(
+            replica_ctx.relational_db().clone(),
+            replica_ctx.database_identity,
+            host_controller.idc_client.clone(),
+            idc_config.clone(),
+            module_host.downgrade(),
+        )?;
         let disk_metrics_recorder_task: spacetimedb_runtime::AbortHandle =
             tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle().into();
         let view_cleanup_task = spawn_view_cleanup_loop(replica_ctx.relational_db().clone(), &runtime);
@@ -1480,6 +1531,9 @@ impl Host {
                 disk_metrics_recorder_task,
                 tx_metrics_recorder_task,
                 view_cleanup_task,
+                idc_config,
+                idc_client: host_controller.idc_client.clone(),
+                idc_actor,
             },
             bootstrap_completion,
         })
@@ -1557,11 +1611,13 @@ impl Host {
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.replica_ctx;
         let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db().clone());
+        let (idc_starter, idc_sender) = idc_actor::channel(&replica_ctx.database_identity);
 
         let (program, module) = make_module_host(
-            runtimes,
+            runtimes.clone(),
             replica_ctx.clone(),
             scheduler.clone(),
+            idc_sender,
             program,
             energy_monitor,
             on_panic,
@@ -1588,8 +1644,15 @@ impl Host {
             UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed { .. } => {
                 self.scheduler = scheduler;
                 scheduler_starter.start(&module)?;
-                let old_module = self.module.send_replace(module);
+                let old_module = self.module.send_replace(module.clone());
                 old_module.exit().await;
+                self.idc_actor = idc_starter.start(
+                    replica_ctx.relational_db().clone(),
+                    replica_ctx.database_identity,
+                    self.idc_client.clone(),
+                    self.idc_config.clone(),
+                    module.downgrade(),
+                )?;
             }
 
             // In this case, we need to disconnect all clients connected to the old module
@@ -1612,10 +1675,17 @@ impl Host {
 
                 self.scheduler = scheduler;
                 scheduler_starter.start(&module)?;
-                // exit the old module, drop the `old_watcher` afterwards,
-                // which will signal websocket clients that the module is gone.
+                // Drain the old module and actor before starting replacement deliveries.
+                // Dropping old_watcher afterwards disconnects its remaining watchers.
                 let old_module = old_watcher.borrow().clone();
                 old_module.exit().await;
+                self.idc_actor = idc_starter.start(
+                    replica_ctx.relational_db().clone(),
+                    replica_ctx.database_identity,
+                    self.idc_client.clone(),
+                    self.idc_config.clone(),
+                    module.downgrade(),
+                )?;
             }
             _ => {}
         }

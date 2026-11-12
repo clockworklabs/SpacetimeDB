@@ -47,19 +47,33 @@ export function encodeCreatePlayerArgs(
   return writer.getBuffer();
 }
 
-export function makeRowList(rowsData: Uint8Array) {
+// A single `Uint8Array` is one encoded row, or no rows if it's empty.
+type EncodedRows = Uint8Array | Uint8Array[];
+
+export function makeRowList(encodedRows: EncodedRows) {
+  const rows = Array.isArray(encodedRows)
+    ? encodedRows
+    : encodedRows.length > 0
+      ? [encodedRows]
+      : [];
+  let nextOffset = 0n;
+  const offsets = rows.map(row => {
+    const offset = nextOffset;
+    nextOffset += BigInt(row.length);
+    return offset;
+  });
   return {
-    sizeHint: RowSizeHint.FixedSize(0),
-    rowsData,
+    sizeHint: RowSizeHint.RowOffsets(offsets),
+    rowsData: new Uint8Array(rows.flatMap(row => [...row])),
   };
 }
 
-export function makeQueryRows(table: string, rowsData: Uint8Array) {
+export function makeQueryRows(table: string, rows: EncodedRows) {
   return {
     tables: [
       {
         table,
-        rows: makeRowList(rowsData),
+        rows: makeRowList(rows),
       },
     ],
   };
@@ -68,8 +82,8 @@ export function makeQueryRows(table: string, rowsData: Uint8Array) {
 export function makeQuerySetUpdate(
   querySetId: number,
   tableName: string,
-  inserts: Uint8Array,
-  deletes: Uint8Array = new Uint8Array()
+  inserts: EncodedRows,
+  deletes: EncodedRows = new Uint8Array()
 ) {
   return {
     querySetId: { id: querySetId },

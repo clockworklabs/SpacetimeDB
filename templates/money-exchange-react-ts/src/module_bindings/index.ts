@@ -167,13 +167,7 @@ function __withTableAccessorAliases<T extends object>(
   return freeze ? Object.freeze(out) : out;
 }
 
-type __DbViewBase = __DbConnectionImpl<typeof REMOTE_MODULE>['db'];
-export type DbView = __DbViewBase & {
-  /** @deprecated Use `myAccount` instead. This alias will be removed in the next major version. */
-  readonly my_account: __DbViewBase['myAccount'];
-  /** @deprecated Use `myAccountChanges` instead. This alias will be removed in the next major version. */
-  readonly my_account_changes: __DbViewBase['myAccountChanges'];
-};
+export type DbView = __DbConnectionImpl<typeof REMOTE_MODULE>['db'];
 
 type __TablesBase = __QueryBuilder<typeof tablesSchema.schemaType>;
 export type Tables = __TablesBase & {
@@ -199,25 +193,17 @@ export const reducers = __convertToAccessorMap(
 export const procedures = __convertToAccessorMap(proceduresSchema.procedures);
 
 /** The context type returned in callbacks for all possible events. */
-export type EventContext = Omit<
-  __EventContextInterface<typeof REMOTE_MODULE>,
-  'db'
-> & { db: DbView };
+export type EventContext = __EventContextInterface<typeof REMOTE_MODULE>;
 /** The context type returned in callbacks for reducer events. */
-export type ReducerEventContext = Omit<
-  __ReducerEventContextInterface<typeof REMOTE_MODULE>,
-  'db'
-> & { db: DbView };
+export type ReducerEventContext = __ReducerEventContextInterface<
+  typeof REMOTE_MODULE
+>;
 /** The context type returned in callbacks for subscription events. */
-export type SubscriptionEventContext = Omit<
-  __SubscriptionEventContextInterface<typeof REMOTE_MODULE>,
-  'db'
-> & { db: DbView };
+export type SubscriptionEventContext = __SubscriptionEventContextInterface<
+  typeof REMOTE_MODULE
+>;
 /** The context type returned in callbacks for error events. */
-export type ErrorContext = Omit<
-  __ErrorContextInterface<typeof REMOTE_MODULE>,
-  'db'
-> & { db: DbView };
+export type ErrorContext = __ErrorContextInterface<typeof REMOTE_MODULE>;
 /** The subscription handle type to manage active subscriptions created from a {@link SubscriptionBuilder}. */
 export type SubscriptionHandle = __SubscriptionHandleImpl<typeof REMOTE_MODULE>;
 
@@ -231,11 +217,9 @@ export class DbConnectionBuilder extends __DbConnectionBuilder<DbConnection> {}
 
 /** The typed database connection to manage connections to the remote SpacetimeDB instance. This class has type information specific to the generated module. */
 export class DbConnection extends __DbConnectionImpl<typeof REMOTE_MODULE> {
-  declare db: DbView;
-
   constructor(config: __DbConnectionConfig<typeof REMOTE_MODULE>) {
     super(config);
-    this.db = __withTableAccessorAliases(this.db) as DbView;
+    this.db = __withTableAccessorAliases(this.db);
   }
 
   /** Creates a new {@link DbConnectionBuilder} to configure and connect to the remote SpacetimeDB instance. */

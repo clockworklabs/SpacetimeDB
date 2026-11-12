@@ -1,4 +1,4 @@
-Implement this SpacetimeDB module in typescript. Return only the module source.
+Write a SpacetimeDB backend module in TypeScript that runs a resumable online backfill. Return only the module source.
 
 Implement a resumable online backfill while writes and deletes continue. The legacy table is authoritative. Capture and apply are separate transactions, so a captured snapshot can become stale. Keep tombstones in legacy_item; never resurrect a deleted item. This task tests the data migration algorithm inside one module, not deployment schema conversion.
 

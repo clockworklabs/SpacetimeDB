@@ -16,7 +16,7 @@ TABLES
 
 REDUCERS
 - ComputeUserCounts(ctx)
-  - Count total users by iterating (do not collect into a List first)
-  - Count active users by iterating and checking Active == true
+  - Count total users without collecting them into a List first
+  - Count active users the same way
   - Insert a UserStats row with Key="total" and the total count
   - Insert a UserStats row with Key="active" and the active count
