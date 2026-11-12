@@ -33,6 +33,7 @@ export function SpacetimeDBProvider<
 
   const fallbackStateRef = React.useRef<ManagerConnectionState>({
     isActive: false,
+    isReconnecting: false,
     identity: undefined,
     token: undefined,
     connectionId: ConnectionId.random(),
