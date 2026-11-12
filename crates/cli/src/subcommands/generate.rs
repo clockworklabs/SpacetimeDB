@@ -506,7 +506,11 @@ fn prepare_generate_run_configs<'a>(
         }
 
         // Validate module source path for source-based generation.
-        if wasm_file.is_none() && js_file.is_none() && !project_path.is_dir() {
+        if wasm_file.is_none()
+            && js_file.is_none()
+            && !command_config.is_from_cli("json_module")
+            && !project_path.is_dir()
+        {
             anyhow::bail!(
                 "Could not find module source at '{}'. \
                  If this is not correct, pass --module-path or add module-path in spacetime.json. \
@@ -1084,6 +1088,26 @@ pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<ModuleDef> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn module_def_generation_does_not_require_module_source() {
+        let command = cli();
+        let args = command
+            .clone()
+            .try_get_matches_from([
+                "generate",
+                "--lang",
+                "typescript",
+                "--out-dir",
+                "bindings",
+                "--module-def",
+                "module.json",
+            ])
+            .unwrap();
+        let schema = build_generate_config_schema(&command).unwrap();
+        let config = CommandConfig::new(&schema, HashMap::new(), &args).unwrap();
+        assert!(prepare_generate_run_configs(vec![config], false, None).is_ok());
+    }
+
     use super::*;
     use crate::spacetime_config::*;
     use std::collections::HashMap;
