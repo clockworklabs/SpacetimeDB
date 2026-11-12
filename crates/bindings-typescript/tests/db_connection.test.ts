@@ -1280,9 +1280,10 @@ describe('DbConnection', () => {
       identity: sallyIdentity,
       username: 'sally',
     };
-    const binary = [...encodeUser(user1)].concat([...encodeUser(user2)]);
     const transactionUpdate = ServerMessage.TransactionUpdate({
-      querySets: [makeQuerySetUpdate(0, 'user', new Uint8Array(binary))],
+      querySets: [
+        makeQuerySetUpdate(0, 'user', [encodeUser(user1), encodeUser(user2)]),
+      ],
     });
     const gotAllInserts = new Deferred<void>();
     let inserts = 0;
