@@ -162,6 +162,9 @@ AlgebraicType ModuleTypeRegistration::registerType(const bsatn::AlgebraicType& b
     
     // Check module's types array
     for (const auto& type_def : getV10Builder().GetTypeDefs()) {
+        if (exact_scope_indices_.count(type_def.ty) != 0) {
+            continue;
+        }
         if (type_def.source_name.source_name == type_name) {
             uint32_t typespace_index = type_def.ty;
             type_name_cache_[type_name] = typespace_index;
@@ -210,6 +213,9 @@ void ModuleTypeRegistration::registerTypeByName(const std::string& type_name,
     
     // Check if already registered in module's types array
     for (const auto& type_def : getV10Builder().GetTypeDefs()) {
+        if (exact_scope_indices_.count(type_def.ty) != 0) {
+            continue;
+        }
         if (type_def.source_name.source_name == type_name) {
             uint32_t typespace_index = type_def.ty;
             type_name_cache_[type_name] = typespace_index;

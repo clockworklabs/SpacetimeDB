@@ -8,6 +8,7 @@
 #include "error_handling.h" // For DatabaseResult, DatabaseError, UpsertResult
 #include "index_iterator.h" // For IndexIterator
 #include "range_queries.h"  // For Range types and is_range_v
+#include "idc.h"            // For is_remote_identity_v
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -224,6 +225,7 @@ concept FilterableValue =
     std::same_as<T, SpacetimeDB::U256> ||
     std::same_as<T, SpacetimeDB::i256> ||
     std::same_as<T, SpacetimeDB::u256> ||
+    SpacetimeDB::is_remote_identity_v<T> ||
     std::is_enum_v<T>;
 
 template<typename T>

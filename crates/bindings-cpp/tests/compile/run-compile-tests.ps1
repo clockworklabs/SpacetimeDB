@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("http-handlers", "indexes")]
+    [ValidateSet("http-handlers", "indexes", "idc")]
     [string]$Suite = "http-handlers"
 )
 
@@ -75,6 +75,7 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $bindingsRoot = Split-Path -Parent (Split-Path -Parent $scriptDir)
 $repoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $bindingsRoot))
 $includeDir = Join-Path $bindingsRoot "include"
+$fixturesDir = Join-Path $bindingsRoot "tests/fixtures/idc_receiver"
 $buildRoot = Join-Path $scriptDir "build"
 $libraryBuildDir = Join-Path $buildRoot "library"
 $libraryLogDir = Join-Path $buildRoot "logs"
@@ -104,6 +105,13 @@ $cases = switch ($Suite) {
             (New-CompileCase "ok_multi_column_range_prefixes" "cases/indexes/ok_multi_column_range_prefixes.cpp" "success")
             (New-CompileCase "ok_autoinc_same_line" "cases/indexes/ok_autoinc_same_line.cpp" "success")
             (New-CompileCase "error_multi_column_range_not_terminal" "cases/indexes/error_multi_column_range_not_terminal.cpp" "failure" "Range<T> in a multi-column index filter must be the final supplied element")
+        )
+    }
+    "idc" {
+        @(
+            (New-CompileCase "ok_receiver_bindings" "cases/idc/ok_receiver_bindings.cpp" "success")
+            (New-CompileCase "error_identity_from_other_dependency" "cases/idc/error_identity_from_other_dependency.cpp" "failure" "no viable conversion from 'RemoteIdentity<other::detail::module_tag>' to 'RemoteIdentity<receiver::detail::module_tag>'")
+            (New-CompileCase "error_identity_implicit_conversion" "cases/idc/error_identity_implicit_conversion.cpp" "failure" "no viable conversion from 'Identity' to 'receiver::Identity'")
         )
     }
 }
@@ -145,6 +153,7 @@ foreach ($case in $cases) {
     $caseSourceCMake = Convert-ToCMakePath $caseSource
     $libraryBuildDirCMake = Convert-ToCMakePath $libraryBuildDir
     $includeDirCMake = Convert-ToCMakePath $includeDir
+    $fixturesDirCMake = Convert-ToCMakePath $fixturesDir
 
     if (Test-Path $caseBuildDir) {
         Remove-Item $caseBuildDir -Recurse -Force
@@ -161,6 +170,7 @@ foreach ($case in $cases) {
         "-DMODULE_SOURCE=$caseSourceCMake",
         "-DOUTPUT_NAME=$($case.Name)",
         "-DSPACETIMEDB_LIBRARY_DIR=$libraryBuildDirCMake",
+        "-DEXTRA_INCLUDE_DIR=$fixturesDirCMake",
         "-DSPACETIMEDB_INCLUDE_DIR=$includeDirCMake"
     ) -LogPath $configureLog -WorkingDirectory $scriptDir
 

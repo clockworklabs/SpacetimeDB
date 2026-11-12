@@ -72,6 +72,11 @@ private:
     
     // Track types currently being registered to detect cycles
     std::unordered_set<std::string> types_being_registered_;
+
+    // Typespace indices of types whose scope must match exactly on lookup.
+    // Receiver bindings register their types under a dependency scope, and an
+    // unscoped lookup of the same name must not resolve to them.
+    std::unordered_set<uint32_t> exact_scope_indices_;
     
     // Error state - set when we detect validation errors
     bool has_error_ = false;
@@ -122,6 +127,13 @@ public:
      * Get the error type description if an error occurred
      */
     const std::string& getErrorTypeDescription() const { return error_type_description_; }
+
+    /**
+     * Require an exact scope match when looking up the type at `type_index` by name.
+     *
+     * Used by generated receiver bindings, whose types are scoped by their dependency.
+     */
+    void markExactScope(uint32_t type_index) { exact_scope_indices_.insert(type_index); }
     
     /**
      * Add namespace qualification to an existing registered type
@@ -158,6 +170,7 @@ public:
     void clear() {
         type_name_cache_.clear();
         types_being_registered_.clear();
+        exact_scope_indices_.clear();
         has_error_ = false;
         error_message_.clear();
         error_type_description_.clear();
@@ -390,6 +403,22 @@ public:
         return bsatn::AlgebraicType::make_ref(type_index_);
     }
     
+    /**
+     * Like getOrRegister, but the registered type only matches lookups by its
+     * fully scoped name. Generated receiver bindings use this so that their
+     * dependency-scoped types never merge with same-named local types.
+     */
+    template<typename BuilderFunc>
+    static bsatn::AlgebraicType getOrRegisterExactScope(BuilderFunc&& build_func,
+                                                        const std::string& qualified_name) {
+        bool was_registered = isRegistered();
+        bsatn::AlgebraicType result = getOrRegister(std::forward<BuilderFunc>(build_func), qualified_name);
+        if (!was_registered && isRegistered()) {
+            getModuleTypeRegistration().markExactScope(type_index_);
+        }
+        return result;
+    }
+
     /**
      * Check if this type has been registered yet
      * @return true if the type has been registered and cached

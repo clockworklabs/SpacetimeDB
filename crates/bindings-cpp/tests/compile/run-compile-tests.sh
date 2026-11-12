@@ -24,7 +24,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ "$SUITE" != "http-handlers" && "$SUITE" != "indexes" ]]; then
+if [[ "$SUITE" != "http-handlers" && "$SUITE" != "indexes" && "$SUITE" != "idc" ]]; then
     echo "Unsupported suite: $SUITE" >&2
     exit 1
 fi
@@ -125,7 +125,7 @@ if [[ "$SUITE" == "http-handlers" ]]; then
     CASE_EXPECTATION["error_http_router_wrong_return_type"]="failure"
     CASE_MARKER["error_http_router_wrong_return_type"]="no viable conversion from returned value of type 'unsigned int' to function return type 'SpacetimeDB::Router'"
     CASE_SOURCE["error_http_router_wrong_return_type"]="$SCRIPT_DIR/cases/http-handlers/error_http_router_wrong_return_type.cpp"
-else
+elif [[ "$SUITE" == "indexes" ]]; then
     declare -a CASE_NAMES=(
         "ok_multi_column_range_prefixes"
         "ok_autoinc_same_line"
@@ -141,6 +141,25 @@ else
     CASE_EXPECTATION["error_multi_column_range_not_terminal"]="failure"
     CASE_MARKER["error_multi_column_range_not_terminal"]="Range<T> in a multi-column index filter must be the final supplied element"
     CASE_SOURCE["error_multi_column_range_not_terminal"]="$SCRIPT_DIR/cases/indexes/error_multi_column_range_not_terminal.cpp"
+else
+    # Receiver bindings come from crates/bindings-cpp/tests/fixtures/idc_receiver,
+    # which the codegen tests keep in sync with the generator.
+    declare -a CASE_NAMES=(
+        "ok_receiver_bindings"
+        "error_identity_from_other_dependency"
+        "error_identity_implicit_conversion"
+    )
+
+    CASE_EXPECTATION["ok_receiver_bindings"]="success"
+    CASE_SOURCE["ok_receiver_bindings"]="$SCRIPT_DIR/cases/idc/ok_receiver_bindings.cpp"
+
+    CASE_EXPECTATION["error_identity_from_other_dependency"]="failure"
+    CASE_MARKER["error_identity_from_other_dependency"]="no viable conversion from 'RemoteIdentity<other::detail::module_tag>' to 'RemoteIdentity<receiver::detail::module_tag>'"
+    CASE_SOURCE["error_identity_from_other_dependency"]="$SCRIPT_DIR/cases/idc/error_identity_from_other_dependency.cpp"
+
+    CASE_EXPECTATION["error_identity_implicit_conversion"]="failure"
+    CASE_MARKER["error_identity_implicit_conversion"]="no viable conversion from 'Identity' to 'receiver::Identity'"
+    CASE_SOURCE["error_identity_implicit_conversion"]="$SCRIPT_DIR/cases/idc/error_identity_implicit_conversion.cpp"
 fi
 
 FAILURES=0
@@ -163,6 +182,7 @@ for CASE_NAME in "${CASE_NAMES[@]}"; do
         -DMODULE_SOURCE="${CASE_SOURCE[$CASE_NAME]}" \
         -DOUTPUT_NAME="$CASE_NAME" \
         -DSPACETIMEDB_LIBRARY_DIR="$LIBRARY_BUILD_DIR" \
+        -DEXTRA_INCLUDE_DIR="$BINDINGS_ROOT/tests/fixtures/idc_receiver" \
         -DSPACETIMEDB_INCLUDE_DIR="$INCLUDE_DIR" >"$CONFIGURE_LOG" 2>&1; then
         CONFIGURE_EXIT=0
     else

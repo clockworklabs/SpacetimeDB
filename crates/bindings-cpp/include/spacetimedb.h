@@ -99,6 +99,7 @@
 
 // Type extensions for special types
 #include "spacetimedb/bsatn/type_extensions.h"
+#include "spacetimedb/idc.h"
 
 // Table operations and constraint support
 #include "spacetimedb/table.h"
