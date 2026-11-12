@@ -1,15 +1,17 @@
 //! Stateful checks against explicit expected results, independent of the golden implementation.
 use super::scorers::call_reducer_json_out;
 use super::{casing_for_lang, derive_cat_task_from_file, ident, table_name, Lang, ScoreDetails, Scorer};
-use crate::bench::utils::sanitize_db_name;
+use crate::bench::utils::{golden_db_name, sanitize_db_name};
 use anyhow::{anyhow, bail, ensure, Result};
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
 
+#[derive(Clone)]
 pub struct Scenario {
     pub server: String,
     pub db: String,
     pub lang: Lang,
+    golden_db: String,
     check: fn(&Scenario) -> Result<()>,
 }
 
@@ -25,6 +27,7 @@ pub fn scenario(
         server: server.into(),
         db: sanitize_db_name(&format!("{category}-{task}-{route}-llm")),
         lang,
+        golden_db: golden_db_name(&category, &task, route),
         check,
     })
 }
@@ -50,6 +53,25 @@ impl Scorer for Scenario {
 }
 
 impl Scenario {
+    /// The runner already owns and cleans up this independent reference database.
+    pub fn golden_peer(&self) -> Self {
+        Self {
+            db: self.golden_db.clone(),
+            ..self.clone()
+        }
+    }
+
+    pub fn database_identity(&self) -> Result<Value> {
+        let hex = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(15))
+            .build()?
+            .get(format!("{}/v1/database/{}/identity", self.server, self.db))
+            .send()?
+            .error_for_status()?
+            .text()?;
+        identity_json(&hex)
+    }
+
     pub fn connect(&self, token: &str) -> Result<Connection> {
         use tokio_tungstenite::tungstenite::client::IntoClientRequest;
         let address = self
@@ -90,15 +112,10 @@ impl Scenario {
             .ok_or_else(|| anyhow!("missing identity token"))?
             .to_owned();
         ensure!(!value["identity"].is_null(), "missing identity");
-        let identity = spacetimedb_lib::Identity::from_hex(
-            value["identity"]
-                .as_str()
-                .ok_or_else(|| anyhow!("identity is not hex"))?,
-        )?;
-        Ok((
-            token,
-            serde_json::to_value(spacetimedb_lib::ser::serde::SerializeWrapper::from_ref(&identity))?,
-        ))
+        let hex = value["identity"]
+            .as_str()
+            .ok_or_else(|| anyhow!("identity is not hex"))?;
+        Ok((token, identity_json(hex)?))
     }
 
     pub fn call_as(&self, token: &str, reducer: &str, args: Value) -> Result<(u16, String)> {
@@ -217,6 +234,34 @@ impl Scenario {
 
     pub fn owner_rows(&self, table: &str, columns: &[&str], expected: Value) -> Result<()> {
         self.rows_as(&self.owner_token()?, table, columns, expected)
+    }
+
+    /// Replaces the published environment values, as `spacetime publish --env-only` does.
+    pub fn set_env(&self, values: Value) -> Result<()> {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(15))
+            .build()?;
+        let url = format!("{}/v1/database/{}/environment", self.server, self.db);
+        let token = self.owner_token()?;
+        let metadata: Value = client
+            .get(&url)
+            .bearer_auth(&token)
+            .send()?
+            .error_for_status()?
+            .json()?;
+        let hash = metadata["module_hash"]
+            .as_str()
+            .ok_or_else(|| anyhow!("environment metadata has no module_hash: {metadata}"))?;
+        let response = client
+            .put(&url)
+            .query(&[("expected_module_hash", hash)])
+            .bearer_auth(&token)
+            .json(&values)
+            .send()?;
+        let status = response.status();
+        let body = response.text()?;
+        ensure!(status.is_success(), "set environment: HTTP {status}: {body}");
+        Ok(())
     }
 
     pub fn owner_sql(&self, query: &str) -> Result<Value> {
@@ -466,6 +511,13 @@ impl Drop for Connection {
         let _ = self.socket.close(None);
         let _ = self.socket.get_mut().shutdown(std::net::Shutdown::Both);
     }
+}
+
+fn identity_json(hex: &str) -> Result<Value> {
+    let identity = spacetimedb_lib::Identity::from_hex(hex.trim())?;
+    Ok(serde_json::to_value(
+        spacetimedb_lib::ser::serde::SerializeWrapper::from_ref(&identity),
+    )?)
 }
 
 fn update_rows(value: &Value, key: &str) -> Result<Vec<Value>> {

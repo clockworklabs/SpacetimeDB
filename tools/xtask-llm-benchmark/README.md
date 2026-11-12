@@ -1,8 +1,8 @@
 # LLM benchmark validation
 
-The normal suite contains 96 tasks. The 12 `advanced` tasks are included by default,
-in all three languages and in both context modes. They are also included in the
-normal website task catalog. `--categories advanced` is only a development filter.
+Default selection runs every task that has a prompt for the requested language, in
+both context modes. All of them are in the normal website task catalog.
+`--categories advanced` is only a development filter.
 
 Provider errors or missing response content reject the whole model/language/mode
 batch after retries. No partial scores from that batch are uploaded. Other models
@@ -81,6 +81,13 @@ write failure blocks upload. This does not resume or upload partial runs.
 | 092 | Procedure cache, exact composite key, TTL, upstream failure and zero-TTL bypass |
 | 093 | Private source tables, owner checks, live permission revocation and reconnect |
 | 094 | Real multi-connection presence, partial disconnect and reconnect |
+| 095 | Parameterized per-user views, separate argument sets, live moves and access isolation |
+| 096 | Server-clock token bucket, refill, request replay and concurrent admission |
+| 097 | Seat allocation, FIFO waitlist, cancellation, rejoin and concurrent promotion |
+| 098 | Nested independent submodules and cross-instance transaction rollback (C# on .NET 10 and TypeScript) |
+| 099 | Two-database outbox delivery, sender rollback, receiver failure and result callbacks (Rust/TypeScript) |
+| 100 | Actual SDK client cache recovery, lost call results and no unsafe retry (C#/TypeScript) |
+| 101 | Typed environment declarations read from reducers and views, with hidden published values |
 
 Pagination checks
 correctness, not index scan cost. Backfill checks an online data migration
@@ -91,7 +98,12 @@ client SDK cache code. Cache calls use a local HTTP fixture, never a paid servic
 The existing transfer (055), aggregate (065), projection (068), presence (070),
 and webhook (078) graders also have stronger checks. Task 065 now requires public
 `set_sale` and `remove_sale` reducers, so a hard-coded `exercise` result cannot pass.
-Scores from this suite are not directly comparable with the older 83-task suite.
+Scores are not directly comparable with older versions of the suite.
+
+Task 100 asks for client code against a fixed server, with supplied bindings and the
+local SDK. A relay lets a non-idempotent reducer commit, hides its reply, then drops
+the connection. Generated clients run in Docker and can reach only the task's database
+through that relay.
 
 ## Check reference implementations without model calls or uploads
 
@@ -103,7 +115,13 @@ cargo build --release -p spacetimedb-cli -p spacetimedb-standalone --features sp
 dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
 dotnet pack -c Release crates/bindings-csharp/Runtime
 pnpm --dir crates/bindings-typescript build
+docker pull node:22-bookworm-slim
+docker pull mcr.microsoft.com/dotnet/runtime:10.0
+node --test tools/xtask-llm-benchmark/src/eval/client_transport.test.mjs
 ```
+
+Client checks, including local reference validation, need Node.js 22 or newer and a
+Linux Docker daemon.
 
 Run this command once per language (`rust`, `csharp`, `typescript`):
 
@@ -113,7 +131,7 @@ cargo run -p xtask-llm-benchmark --bin llm_benchmark --locked -- run --lang rust
 
 The command publishes disposable local databases and runs the real graders. It
 makes no model requests and uploads no scores or catalog. Omitting `--tasks`
-validates all 96 reference tasks. Keep the weekly action disabled until these
+validates all reference tasks for that language. Keep the weekly action disabled until these
 checks pass and the branch is reviewed.
 
 The scenario grader checks explicit expected rows, including intermediate state,
@@ -124,3 +142,12 @@ Scheduled-callback checks accept native private-function rejection as well as an
 explicit scheduler-identity error, then verify actual scheduled effects.
 All network calls have timeouts, and local fixture/socket resources are closed on
 failure as well as success.
+
+## Supplied bindings
+
+The small interface projects in tasks 099 and 100 are inputs to the CLI generator.
+They are not model answers. Regenerate 099 with `spacetime generate --bindings module`
+for Rust and TypeScript. Regenerate 100 with client bindings for C# and TypeScript
+(use `--import-extension js` for TypeScript). Keep their generated output in the
+task's `fixtures/<language>/src/receiver` or `client/<language>/module_bindings`
+directory. Do not hand-edit generated bindings.

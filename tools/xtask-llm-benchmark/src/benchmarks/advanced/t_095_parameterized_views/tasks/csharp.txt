@@ -1,0 +1,10 @@
+Write a SpacetimeDB backend module in C# that stores private notes and shows each user their notes for a given tag.
+
+Tables (fields in this order; the first field is the primary key):
+- private PrivateNote: Id: ulong, Owner: Identity (btree index), Tag: string, Text: string
+
+Reducers:
+- PutNote(id: ulong, tag: string, text: string): The caller owns a new note. Only its owner may replace it; otherwise fail with "owner only".
+- RemoveNote(id: ulong): Only the note's owner may remove it; otherwise fail with "owner only". Removing a missing note succeeds and changes nothing.
+
+Expose a public, per-user view NotesForTag(tag: string). It takes the tag as an argument and returns only the caller's notes with that exact tag, as Id and Text in that order. The view has no primary key. Users may subscribe to several tags at once. Moving a note to another tag, editing it or deleting it must update the matching subscriptions. Other users must not see the caller's notes or read the private table.

@@ -28,8 +28,8 @@ pub fn resolve_mode_paths(mode: &str) -> Result<Vec<PathBuf>> {
 
 /// Gather SKILL.md files from the skills/ directory.
 /// Always includes `concepts/SKILL.md`. When a language is specified,
-/// also includes the matching `{lang}-server/SKILL.md`.
-/// Without a language filter, includes all server skills.
+/// also includes matching server and client skills (the catalog includes SDK client evals).
+/// Without a language filter, includes all supported server and client skills.
 pub fn gather_skills_files(lang: Option<Lang>) -> Result<Vec<PathBuf>> {
     let root = skills_dir();
     if !root.is_dir() {
@@ -44,15 +44,20 @@ pub fn gather_skills_files(lang: Option<Lang>) -> Result<Vec<PathBuf>> {
         out.push(concepts);
     }
 
-    // Language-specific server skills
-    let server_dirs: Vec<&str> = match lang {
+    let skill_dirs: Vec<&str> = match lang {
         Some(Lang::Rust) => vec!["rust-server"],
-        Some(Lang::CSharp) => vec!["csharp-server"],
-        Some(Lang::TypeScript) => vec!["typescript-server"],
-        None => vec!["rust-server", "csharp-server", "typescript-server"],
+        Some(Lang::CSharp) => vec!["csharp-server", "csharp-client"],
+        Some(Lang::TypeScript) => vec!["typescript-server", "typescript-client"],
+        None => vec![
+            "rust-server",
+            "csharp-server",
+            "typescript-server",
+            "csharp-client",
+            "typescript-client",
+        ],
     };
 
-    for dir in server_dirs {
+    for dir in skill_dirs {
         let skill = root.join(dir).join("SKILL.md");
         if skill.is_file() {
             out.push(skill);

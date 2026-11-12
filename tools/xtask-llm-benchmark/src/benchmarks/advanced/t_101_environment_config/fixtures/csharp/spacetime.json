@@ -1,0 +1,7 @@
+{
+  "database": "environment-config",
+  "env": {
+    "REGION": "eu-west-3",
+    "MODE": "production"
+  }
+}

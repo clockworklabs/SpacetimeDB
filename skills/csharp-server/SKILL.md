@@ -287,7 +287,7 @@ C# assembly composition requires SpacetimeDB/Runtime 2.13+, .NET 10, and C# 14 i
 [assembly: SpacetimeDB.Namespace(typeof(AuthLib.Marker), Accessor = "MyAuth", Name = "auth_data")]
 ```
 
-The marker is any accessible type in the dependency assembly. Root code uses `ctx.Db.MyAuth.User` and `ctx.From.MyAuth.User()`; library code keeps `ctx.Db.User` and `ctx.From.User()`. To call a library helper, pass `ctx.As.MyAuth` (`tx.As.MyAuth` inside `WithTx`; 2.14+). Passing `ctx` directly works only while the library has one unambiguous instance; otherwise it throws `InvalidOperationException`. Helpers share the caller's transaction; namespaces are not helper security boundaries.
+The marker is any accessible type in the dependency assembly. Root code uses `ctx.Db.MyAuth.User` and `ctx.From.MyAuth.User()`; library code keeps `ctx.Db.User` and `ctx.From.User()`. To call a library helper, pass `ctx.As.MyAuth` (`tx.As.MyAuth` inside `WithTx`; 2.14+). Nested mounts chain, for example `ctx.As.East.Stock`. Passing `ctx` directly works only while the library has one unambiguous instance; otherwise it throws `InvalidOperationException`. Helpers share the caller's transaction; namespaces are not helper security boundaries.
 
 `Accessor` controls C# members; `Name` pins the canonical namespace used in SQL (`auth_data.<table>`). Without `Name`, the root's case policy derives it (`MyAuth` → `my_auth` by default). Changing the canonical namespace drops its tables and their data; keep `Name` fixed to rename only accessors. Named dependencies retain their naming policy; `public` dependencies inherit the root's and cannot explicitly conflict with it.
 

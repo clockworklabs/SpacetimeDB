@@ -728,7 +728,7 @@ impl DotnetPublisher {
         Ok(())
     }
 
-    fn configure_dotnet_env(cmd: &mut Command) -> &mut Command {
+    pub(crate) fn configure_dotnet_env(cmd: &mut Command) -> &mut Command {
         cmd.env("DOTNET_CLI_TELEMETRY_OPTOUT", "1")
             .env("DOTNET_NOLOGO", "1")
             // The CI runner's .NET install can crash while formatting localized

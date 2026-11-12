@@ -321,6 +321,7 @@ fn extract_schema(v: &Value) -> SchemaSnapshot {
             .exports
             .insert(format!("schedule:{}", canonical_value(Some(&schedule))));
     }
+    insert_environment(&mut schema.exports, v);
     insert_http_routes(&mut schema.exports, v);
     for key in schema_array(v, "view_primary_keys", "ViewPrimaryKeys")
         .into_iter()
@@ -412,6 +413,17 @@ fn view_export(view: &Value, types: &[Value], names: &SchemaNames) -> String {
     append_field(&mut signature, "public", view.get("is_public"));
     append_field(&mut signature, "anonymous", view.get("is_anonymous"));
     signature
+}
+
+fn insert_environment(exports: &mut BTreeSet<String>, schema: &Value) {
+    for declaration in schema_array(schema, "environment", "Environment").into_iter().flatten() {
+        let mut declaration = declaration.clone();
+        // The allowed values are a set, so declaration order must not fail parity.
+        if let Some(values) = declaration.pointer_mut("/ty/Union").and_then(Value::as_array_mut) {
+            values.sort_by_key(Value::to_string);
+        }
+        exports.insert(format!("environment:{}", canonical_value(Some(&declaration))));
+    }
 }
 
 fn insert_http_routes(exports: &mut BTreeSet<String>, schema: &Value) {
@@ -1796,6 +1808,23 @@ mod tests {
         let candidate = extract_schema(&current_schema(true));
 
         assert!(!diff_maps(&golden.tables, &candidate.tables).is_null());
+    }
+
+    #[test]
+    fn environment_declaration_produces_a_schema_diff() {
+        let declaration = |ty: Value, optional: bool| {
+            let mut schema = current_schema(true);
+            schema["environment"] = json!([{ "name": "MODE", "ty": ty, "optional": optional }]);
+            extract_schema(&schema)
+        };
+        let golden = declaration(json!({ "Union": ["development", "production"] }), false);
+        let reordered = declaration(json!({ "Union": ["production", "development"] }), false);
+        let unrestricted = declaration(json!({ "String": [] }), false);
+        let optional = declaration(json!({ "Union": ["development", "production"] }), true);
+
+        assert!(diff_sets(&golden.exports, &reordered.exports).is_null());
+        assert!(!diff_sets(&golden.exports, &unrestricted.exports).is_null());
+        assert!(!diff_sets(&golden.exports, &optional.exports).is_null());
     }
 
     #[test]

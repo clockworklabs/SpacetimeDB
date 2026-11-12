@@ -1,0 +1,15 @@
+Write a SpacetimeDB backend module in TypeScript that sends and receives messages between databases through outboxes, not HTTP. Write only the main module source.
+
+The supplied receiver bindings are at src/receiver/index.ts. Import them with import receiver from './receiver'; and do not edit them. They describe the root reducer receive(body: string, reject: boolean).
+
+Public tables (the first field is the auto-increment primary key):
+- receipt: id: u64 (bigint), body: string, sender: Identity
+- outgoing: id: u64 (bigint), target: the receiver's Identity (the target column), body: string, reject: boolean. This is an outbox targeting receive.
+- delivery_result: id: u64 (bigint), body: string, succeeded: boolean
+
+Reducers:
+- receive(body, reject): Insert a receipt with the calling identity. When reject is true, fail with "receiver rejected" and leave no receipt.
+- send_message(target, body, reject, abort): Enqueue one outgoing row. When abort is true, fail with "sender rejected". The entire send must roll back: no remote call, result or outbox row.
+- on_delivery: An outbox result callback. Insert exactly one delivery_result with the delivered row's body. succeeded is true only for a successful receiver result. Let the host remove the outbox row.
+
+Successful remote calls must commit once. A receiver failure must produce a failed callback result, not a receipt. The sending database must stay usable after either failure.
