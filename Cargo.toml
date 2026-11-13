@@ -268,7 +268,6 @@ indicatif = "0.17"
 insta = { version = "1.21.0", features = ["toml", "filters"] }
 is-terminal = "0.4"
 itertools = "0.12"
-itoa = "1"
 json5 = "0.4"
 jsonwebtoken = { version = "11.0.0", features = ["rust_crypto"] }
 junction = "1"

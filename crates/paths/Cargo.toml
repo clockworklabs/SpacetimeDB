@@ -10,7 +10,6 @@ description = "The spacetimedb directory structure, represented as a type hierar
 anyhow.workspace = true
 chrono = { workspace = true, features = ["now"] }
 fs2.workspace = true
-itoa.workspace = true
 serde.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
