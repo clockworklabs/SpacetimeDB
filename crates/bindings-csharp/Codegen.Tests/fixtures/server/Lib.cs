@@ -104,6 +104,16 @@ public partial record CustomTaggedEnum
         string? NullableStringVariant
     )>;
 
+[SpacetimeDB.Type(Name = "game_world.NamedStruct")]
+public partial struct NamedStruct
+{
+    public int IntField;
+}
+
+[SpacetimeDB.Type(Name = "game_world.NamedTaggedEnum")]
+public partial record NamedTaggedEnum
+    : SpacetimeDB.TaggedEnum<(int IntVariant, string StringVariant)>;
+
 [SpacetimeDB.Table(Event = true)]
 public partial class PrivateTable { }
 
