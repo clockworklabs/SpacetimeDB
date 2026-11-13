@@ -62,8 +62,8 @@ use spacetimedb_table::{
     table::{PreparedBlobRelease, PreparedEvictionPolicy, RowRef, Table, TableAndIndex},
     tiered::{BlobHandle, BlobSet, EvictionPolicy, PreparedCommit, TieredDatabaseStorage},
 };
-use std::sync::Arc;
 use std::{collections::BTreeMap, iter};
+use std::{mem, sync::Arc};
 
 /// Contains the live, in-memory snapshot of a database. This structure
 /// is exposed in order to support tools wanting to process the commit
@@ -814,6 +814,10 @@ impl CommittedState {
             self.next_tx_offset += 1;
         }
 
+        drop(tx_state);
+        // Reclaim space used by objects that got orphaned by this transaction.
+        self.reclaim_disk_storage();
+
         Ok(tx_data)
     }
 
@@ -822,14 +826,18 @@ impl CommittedState {
     }
 
     /// Rolls back the changes immediately made to the committed state during a transaction.
-    pub(super) fn rollback(&mut self, tx_state: TxState) -> TxOffset {
+    pub(super) fn rollback(&mut self, mut tx_state: TxState) -> TxOffset {
         // Roll back the changes in the reverse order in which they were made
-        // so that e.g., the last change is undone first.
-        // IndexAdd(Some)
-        // IndexAdd(None)
-        for change in tx_state.pending_schema_changes.into_iter().rev() {
+        // so that the last change is undone first.
+        for change in mem::take(&mut tx_state.pending_schema_changes).into_iter().rev() {
             self.rollback_pending_schema_change(change);
         }
+        drop(tx_state);
+        // Reclaim space used by objects that where spilled to disk during the
+        // transaction, but became orphaned due to the transaction being
+        // aborted.
+        self.reclaim_disk_storage();
+        // Reset the tx offset.
         self.next_tx_offset.saturating_sub(1)
     }
 
@@ -1114,6 +1122,13 @@ impl CommittedState {
         self.storage.trim()?;
 
         Ok(())
+    }
+
+    /// Reclaim space used by orphaned objects.
+    pub(super) fn reclaim_disk_storage(&self) {
+        if let Err(e) = self.storage.reclaim_local() {
+            log::warn!("failed to reclaim unreferenced object from disk storage: {e}")
+        };
     }
 }
 
