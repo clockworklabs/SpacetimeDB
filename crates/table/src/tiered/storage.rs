@@ -17,7 +17,7 @@ use crate::{
     tiered::{
         error::ObjectStoreError,
         map::{BlobHashWrapper, ObjectKey, ObjectMap, PageHash},
-        BlobHandle, BudgetPermit, ByteBudget, PageHandle,
+        BlobHandle, BudgetPermit, ByteBudget, EvictionPolicy, PageHandle,
     },
 };
 
@@ -232,36 +232,78 @@ pub type RemoteBackingStore = BackingStore<Box<dyn RemoteStorage>>;
 
 type SharedCatalogEntry = Arc<ObjectSlot>;
 
+/// Whether an owner requires the object to survive eviction to the remote tier.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiskRetention {
+    Evictable,
+    Required,
+}
+
+impl DiskRetention {
+    pub fn is_required(policy: EvictionPolicy) -> bool {
+        Self::from(policy) == Self::Required
+    }
+}
+
+impl From<EvictionPolicy> for DiskRetention {
+    fn from(policy: EvictionPolicy) -> Self {
+        match policy {
+            // Objects may have been stored on disk before changing the cache
+            // policy of a table. It is ok to evict those to the remote tier.
+            EvictionPolicy::Never => Self::Evictable,
+            // If main memory eviction is allowed, the disk copy must stay.
+            EvictionPolicy::Memory => Self::Required,
+            // Object is explicitly evictable.
+            EvictionPolicy::Disk => Self::Evictable,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 enum ObjectOwnership {
     #[default]
     Unreferenced,
     Referenced {
         /// The number of owners of this object.
+        ///
+        /// Owners may not request pinning, so this number can be greater than
+        /// `total_pins`. The owner count is tracked so that we can detect the
+        /// last owner in [Self::release].
         owners: NonZeroU64,
+        /// Sum of all live [DiskObject]s' pin counts.
+        total_pins: u64,
     },
 }
 
 impl ObjectOwnership {
-    fn retain(&mut self) {
+    fn is_pinned(&self) -> bool {
+        matches!(self, Self::Referenced { total_pins: 1.., .. })
+    }
+
+    fn retain(&mut self, pins: u64) {
         *self = match *self {
             Self::Unreferenced => Self::Referenced {
                 owners: NonZeroU64::MIN,
+                total_pins: pins,
             },
-            Self::Referenced { owners } => Self::Referenced {
+            Self::Referenced { owners, total_pins } => Self::Referenced {
                 owners: owners.checked_add(1).expect("owner count overflow"),
+                total_pins: total_pins.checked_add(pins).expect("pin count overflow"),
             },
         };
     }
 
-    fn release(&mut self) -> bool {
-        let Self::Referenced { owners } = *self else {
-            unreachable!("only a registered handle can release ownership")
+    fn release(&mut self, pins: u64) -> bool {
+        let Self::Referenced { owners, total_pins } = *self else {
+            unreachable!("only a registered handle can release pin counts")
         };
+        assert!(total_pins >= pins);
 
         match owners.get() {
             1 => {
-                // The last owner makes the object collectible.
+                // The last owner has released its pins,
+                // so the object becomes unreferenced.
+                assert_eq!(total_pins, pins);
                 *self = Self::Unreferenced;
 
                 true
@@ -269,6 +311,7 @@ impl ObjectOwnership {
             x => {
                 *self = Self::Referenced {
                     owners: NonZeroU64::new(x - 1).unwrap(),
+                    total_pins: total_pins.checked_sub(pins).expect("pin count underflow"),
                 };
 
                 false
@@ -291,12 +334,13 @@ struct ObjectState {
 
 /// Ownership of an object stored in the [LocalBackingStore].
 ///
-/// Tracks the backing lifetime across multiple owners. The final owner release
-/// makes the object eligible for reclamation.
+/// Tracks pins of multiple owners. When pins go to zero, the object can be
+/// evicted to the [RemoteBackingStore].
 #[derive(Debug)]
 pub struct DiskObject {
     key: ObjectKey,
     slot: SharedCatalogEntry,
+    pins: u64,
     // Shared with [TieredStorage], so the object can signal pending
     // reclamation.
     should_reclaim: Arc<AtomicBool>,
@@ -306,16 +350,46 @@ impl DiskObject {
     pub fn key(&self) -> ObjectKey {
         self.key
     }
+
+    pub fn pins(&self) -> u64 {
+        self.pins
+    }
+
+    /// Prevent eviction of this object's local copy.
+    ///
+    /// This only modifies the catalog entry, it is the caller's responsibility
+    /// to actually write the object.
+    pub(crate) fn pin(&mut self) {
+        let pins = self.pins.checked_add(1).expect("pin count overflow");
+        self.set_pins(pins);
+    }
+
+    /// Decrement the pin count for this object.
+    pub(crate) fn unpin(&mut self) {
+        let pins = self.pins.checked_sub(1).expect("pin count underflow");
+        self.set_pins(pins);
+    }
+
+    /// Replace the pin count contribution of this object.
+    ///
+    /// The caller must ensure that the object is live.
+    pub(crate) fn set_pins(&mut self, pins: u64) {
+        let mut state = self.slot.state.lock();
+        state.ownership.release(self.pins);
+        state.ownership.retain(pins);
+        self.pins = pins;
+    }
 }
 
 impl Clone for DiskObject {
     fn clone(&self) -> Self {
         let mut state = self.slot.state.lock();
-        state.ownership.retain();
+        state.ownership.retain(self.pins);
 
         Self {
             key: self.key,
             slot: self.slot.clone(),
+            pins: self.pins,
             should_reclaim: self.should_reclaim.clone(),
         }
     }
@@ -324,7 +398,7 @@ impl Clone for DiskObject {
 impl Drop for DiskObject {
     fn drop(&mut self) {
         let mut state = self.slot.state.lock();
-        if state.ownership.release() {
+        if state.ownership.release(self.pins) {
             self.should_reclaim.store(true, Ordering::Release);
         }
     }
@@ -379,10 +453,15 @@ impl TieredStorage {
         maybe_slot.is_some_and(|slot| slot.state.lock().object.is_some())
     }
 
-    pub fn write(&self, object: Object) -> Result<DiskObject, ObjectStoreError> {
+    pub fn write(&self, object: Object, retention: impl Into<DiskRetention>) -> Result<DiskObject, ObjectStoreError> {
         let size = object.size();
         let (key, bytes) = object.into_kv();
         assert_eq!(size, bytes.len() as u64);
+
+        let pins = match retention.into() {
+            DiskRetention::Evictable => 0,
+            DiskRetention::Required => 1,
+        };
 
         // Establish a [DiskObject] owning the object.
         //
@@ -393,7 +472,7 @@ impl TieredStorage {
         //    - increment the slot's `registering` counter (lock-free)
         //    - release the catalog lock
         // 2. Lock the entry slot and:
-        //    - establish ownership
+        //    - establish local pinning requirements
         //    - decrement the `registering` counter
         //    - release the entry slot
         // 3. Move the slot into the `DiskObject` owner
@@ -401,6 +480,8 @@ impl TieredStorage {
         // Concurrent reclamation can't proceed during (1), and will skip the
         // slot before its lock can be acquired in (2).
         // Waiting for the slot lock doesn't require holding the catalog lock.
+        // Concurrent eviction could remove the object if it gets the slot lock
+        // first, but will skip it if we installed local pins in (2).
         let owner = {
             let slot = {
                 let mut catalog = self.catalog.write();
@@ -412,7 +493,7 @@ impl TieredStorage {
             };
             {
                 let mut state = slot.state.lock();
-                state.ownership.retain();
+                state.ownership.retain(pins);
 
                 // Relaxed ordering is sufficient as we hold the slot lock.
                 let prev = slot.registering.fetch_sub(1, Ordering::Relaxed);
@@ -422,6 +503,7 @@ impl TieredStorage {
             DiskObject {
                 key,
                 slot,
+                pins,
                 should_reclaim: self.should_reclaim.clone(),
             }
         };
@@ -573,6 +655,10 @@ impl TieredStorage {
                 let last_access_epoch = {
                     // If the slot is locked, don't evict it.
                     let state = slot.state.try_lock()?;
+                    // Nor if the object is pinned.
+                    if state.ownership.is_pinned() {
+                        return None;
+                    }
                     // Filter out empty or non-resident slots.
                     let entry = state.object.as_ref()?;
                     entry.permit.as_ref()?;
@@ -589,6 +675,10 @@ impl TieredStorage {
             let Some(mut state) = slot.state.try_lock() else {
                 continue;
             };
+            // Skip if the object got pinned meanwhile.
+            if state.ownership.is_pinned() {
+                continue;
+            }
             // Stop if we already reached our target.
             if self.local.budget.usage().accounted_bytes <= target_usage {
                 break;

@@ -162,7 +162,7 @@ fn fill_with_fixed_len<Row: FixedLenRow>(page: &mut Page, val: Row, visitor: &im
                 &[] as &[&[u8]],
                 visitor,
                 &mut BlobSet::new_for_test(),
-                EvictionPolicy::NeverEvict,
+                EvictionPolicy::Never,
             )
         });
     }
@@ -223,7 +223,7 @@ fn delete_all_shuffled<R: Row>(page: &mut Page, rng: &mut impl Rng) {
                 row_size_for_type::<R>(),
                 &visitor,
                 &BlobSet::new_for_test(),
-                EvictionPolicy::NeverEvict,
+                EvictionPolicy::Never,
             )
         };
     }
@@ -238,7 +238,7 @@ fn fill_with_var_len(page: &mut Page, var_len: &[u8], visitor: &impl VarLenMembe
                 &[var_len],
                 visitor,
                 &mut BlobSet::new_for_test(),
-                EvictionPolicy::NeverEvict,
+                EvictionPolicy::Never,
             )
         });
     }
@@ -366,7 +366,7 @@ fn insert_opt_str(c: &mut Criterion) {
                                     &[] as &[&[u8]],
                                     &visitor,
                                     &mut BlobSet::new_for_test(),
-                                    EvictionPolicy::NeverEvict,
+                                    EvictionPolicy::Never,
                                 )
                             };
                         } else {
@@ -379,7 +379,7 @@ fn insert_opt_str(c: &mut Criterion) {
                                     &[&var_len_data],
                                     &visitor,
                                     &mut BlobSet::new_for_test(),
-                                    EvictionPolicy::NeverEvict,
+                                    EvictionPolicy::Never,
                                 )
                             };
                         }
@@ -414,7 +414,7 @@ fn delete_to_approx_fullness_ratio<Row: FixedLenRow>(page: &mut Page, fullness: 
                     row_size_for_type::<Row>(),
                     &visitor,
                     &BlobSet::new_for_test(),
-                    EvictionPolicy::NeverEvict,
+                    EvictionPolicy::Never,
                 )
             };
         }
@@ -740,7 +740,7 @@ fn time_insert_one(
             visitor,
             ty,
             &val,
-            EvictionPolicy::NeverEvict,
+            EvictionPolicy::Never,
         ));
     });
 }
@@ -795,7 +795,7 @@ fn extract_product_value_from_page(c: &mut Criterion) {
                 &visitor,
                 &ty,
                 &value,
-                EvictionPolicy::NeverEvict,
+                EvictionPolicy::Never,
             )
         }
         .unwrap();
@@ -815,9 +815,9 @@ fn eq_in_page_same(c: &mut Criterion) {
 
         let blobs = BlobSet::new_for_test();
         let (offset_0, _) =
-            unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &value, EvictionPolicy::NeverEvict) }.unwrap();
+            unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &value, EvictionPolicy::Never) }.unwrap();
         let (offset_1, _) =
-            unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &value, EvictionPolicy::NeverEvict) }.unwrap();
+            unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &value, EvictionPolicy::Never) }.unwrap();
 
         group.bench_function(name, |b| {
             b.iter(|| {
@@ -852,7 +852,7 @@ fn hash_in_page(c: &mut Criterion) {
                 &visitor,
                 &ty,
                 &value,
-                EvictionPolicy::NeverEvict,
+                EvictionPolicy::Never,
             )
         }
         .unwrap();

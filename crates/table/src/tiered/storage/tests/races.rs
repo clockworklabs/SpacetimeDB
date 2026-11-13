@@ -9,7 +9,7 @@ fn pending_writer_prevents_slot_reclamation() {
 
     // Pause registration before it can acquire ownership of an otherwise unowned slot.
     let writing = storage.clone();
-    let writer = thread::spawn(move || writing.write(object(b"aaaa")));
+    let writer = thread::spawn(move || writing.write(object(b"aaaa"), DiskRetention::Required));
     wait_for_pending_writer(&slot);
 
     // Collection must skip the reservation without waiting for its object lock.
@@ -30,6 +30,58 @@ fn pending_writer_prevents_slot_reclamation() {
 }
 
 #[test]
+fn policy_change_during_write_controls_eviction() {
+    use crate::tiered::{BlobSet, ResidentObjects};
+
+    for require_memory in [false, true] {
+        let (pause, reached, resume) = pause();
+        let local = Arc::new(TestStore {
+            after_write: Some(pause),
+            ..<_>::default()
+        });
+        let storage = storage(local.clone(), Arc::default(), ByteBudget::unlimited());
+        let resident = Arc::new(ResidentObjects::new(ByteBudget::unlimited()));
+        let blobs = Arc::new(BlobSet::new(resident, storage.clone()));
+        let hash = BlobHashWrapper::hash_from_bytes(b"shared");
+        drop(blobs.insert(EvictionPolicy::Disk, b"shared").unwrap());
+
+        // Stop the first write while the blob's entry still owns only resident bytes.
+        let evicting = blobs.clone();
+        let eviction = thread::spawn(move || evicting.evict(0));
+        reached.recv_timeout(TIMEOUT).unwrap();
+
+        // Install the new requirement while I/O holds no blob catalog lock.
+        if require_memory {
+            // Never must cancel eviction even though writing has already started.
+            blobs.pin(hash).unwrap();
+        } else {
+            // Memory must protect the completed disk copy before memory is released.
+            blobs.pin_disk(hash);
+        }
+        resume.send(()).unwrap();
+        let freed = eviction.join().unwrap().unwrap();
+
+        if require_memory {
+            assert_eq!(freed, 0);
+            assert!(blobs.resident_bytes_used_by_blobs() >= 6);
+            // The unused write reference was released; its redundant copy is collectible.
+            assert_eq!(storage.reclaim().unwrap(), 6);
+        } else {
+            assert_eq!(freed, 6);
+            assert_eq!(blobs.resident_bytes_used_by_blobs(), 0);
+            assert_eq!(storage.evict(0).unwrap(), 0);
+            assert!(local.stat(hash.into()).unwrap().is_some());
+        }
+        assert_eq!(&*blobs.get(hash).unwrap(), b"shared");
+
+        drop(blobs);
+        storage.reclaim().unwrap();
+        assert!(storage.catalog.read().is_empty());
+        assert_eq!(storage.local.budget.usage().accounted_bytes, 0);
+    }
+}
+
+#[test]
 fn write_during_reclamation_uses_replacement_slot() {
     let (pause, reached, resume) = pause();
     let local = Arc::new(TestStore {
@@ -38,7 +90,7 @@ fn write_during_reclamation_uses_replacement_slot() {
     });
     let storage = storage(local.clone(), Arc::default(), ByteBudget::unlimited());
     let object_to_write = object(b"aaaa");
-    let owner = storage.write(object_to_write).unwrap();
+    let owner = storage.write(object_to_write, DiskRetention::Evictable).unwrap();
     let key = owner.key();
 
     // Pause after the file disappears while collection still excludes new owners.
@@ -52,7 +104,7 @@ fn write_during_reclamation_uses_replacement_slot() {
     let writing = storage.clone();
     let writer = thread::spawn(move || {
         let object_to_write = object(b"aaaa");
-        let owner = writing.write(object_to_write)?;
+        let owner = writing.write(object_to_write, DiskRetention::Required)?;
 
         Ok::<_, ObjectStoreError>(owner)
     });
@@ -71,7 +123,7 @@ fn write_during_reclamation_uses_replacement_slot() {
 #[test]
 fn pending_registration_protects_an_unlocked_slot() {
     let storage = TieredStorage::new_for_test();
-    let garbage = storage.write(object(b"garbage")).unwrap();
+    let garbage = storage.write(object(b"garbage"), DiskRetention::Evictable).unwrap();
     drop(garbage);
 
     // Pause a writer immediately after catalog lookup, before it takes the slot lock.
