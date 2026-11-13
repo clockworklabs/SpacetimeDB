@@ -43,6 +43,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Runtime.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <UpToDateCheckInput Include="bindings.c" />
     <UpToDateCheckInput Include="driver.h" />
   </ItemGroup>

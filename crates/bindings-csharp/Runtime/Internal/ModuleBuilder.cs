@@ -69,8 +69,18 @@ public sealed class ModuleBuilder
             ? $"{type.Name[..type.Name.IndexOf('`')]}_{string.Join("_", type.GetGenericArguments().Select(GetFriendlyName))}"
             : type.Name;
 
-    private static RawScopedTypeNameV10 MakeScopedTypeName(Type type) =>
-        new([], GetFriendlyName(type));
+    // Like Rust's `sats_name_to_scoped_name_v10`: split on "::" and "."; the last segment is the name.
+    internal static RawScopedTypeNameV10 MakeScopedTypeName(Type type, string? sourceName)
+    {
+        if (sourceName is null)
+        {
+            return new([], GetFriendlyName(type));
+        }
+        var scope = sourceName.Replace("::", ".").Split('.').ToList();
+        var name = scope[^1];
+        scope.RemoveAt(scope.Count - 1);
+        return new(scope, name);
+    }
 
     internal void RegisterSubmodule(RawSubmoduleV10 submodule) => submoduleDefs.Add(submodule);
 
@@ -86,7 +96,8 @@ public sealed class ModuleBuilder
     // Receives types to store the reference in the dictionary so that we can resolve it later and to avoid infinite recursion inside `makeType`.
     internal AlgebraicType.Ref RegisterType<T>(
         Dictionary<Type, AlgebraicType.Ref> types,
-        Func<AlgebraicType.Ref, AlgebraicType> makeType
+        Func<AlgebraicType.Ref, AlgebraicType> makeType,
+        string? sourceName
     )
     {
         var typeList = typespace.Types;
@@ -97,7 +108,7 @@ public sealed class ModuleBuilder
         typeList[typeRef.Ref_] = makeType(typeRef);
         typeDefs.Add(
             new RawTypeDefV10(
-                SourceName: MakeScopedTypeName(typeof(T)),
+                SourceName: MakeScopedTypeName(typeof(T), sourceName),
                 Ty: (uint)typeRef.Ref_,
                 CustomOrdering: true
             )

@@ -1,4 +1,4 @@
-﻿namespace SpacetimeDB;
+namespace SpacetimeDB;
 
 using System.Runtime.CompilerServices;
 
@@ -7,7 +7,10 @@ using System.Runtime.CompilerServices;
     Inherited = false,
     AllowMultiple = false
 )]
-public sealed class TypeAttribute : Attribute { }
+public sealed class TypeAttribute : Attribute
+{
+    public string? Name { get; init; }
+}
 
 // This could be an interface, but using `record` forces C# to check that it can
 // only be applied on types that are records themselves.

@@ -155,7 +155,10 @@ public static class Module
         //
         // The factory callback will be called with the allocated type reference that can be used for
         // e.g. self-recursion even before the algebraic type itself is constructed.
-        public AlgebraicType.Ref RegisterType<T>(Func<AlgebraicType.Ref, AlgebraicType> makeType)
+        public AlgebraicType.Ref RegisterType<T>(
+            Func<AlgebraicType.Ref, AlgebraicType> makeType,
+            string? sourceName = null
+        )
         {
             if (types.TryGetValue(typeof(T), out var existingTypeRef))
             {
@@ -163,7 +166,7 @@ public static class Module
             }
 
             // Passes types down to register the type reference in the dictionary so that we can resolve it later and to avoid infinite recursion inside `makeType`.
-            return target.RegisterType<T>(types, makeType);
+            return target.RegisterType<T>(types, makeType, sourceName);
         }
     }
 

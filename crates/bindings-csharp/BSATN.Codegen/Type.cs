@@ -514,6 +514,9 @@ public abstract record BaseTypeDeclaration<M>
     public readonly TypeKind Kind;
     public readonly EquatableArray<M> Members;
 
+    /// <summary>The <c>Name</c> from <c>[SpacetimeDB.Type(Name = ...)]</c>, if set.</summary>
+    public readonly string? SourceName;
+
     /// <summary>
     /// Returns the escaped version of ShortName for use in generated C# code where the type name
     /// appears as an identifier (e.g., in IEquatable&lt;T&gt; or as a base type reference).
@@ -592,6 +595,13 @@ public abstract record BaseTypeDeclaration<M>
         Scope = new(typeSyntax);
         ShortName = type.Name;
         FullName = SymbolToName(type);
+        SourceName =
+            type.GetAttributes()
+                .FirstOrDefault(attr =>
+                    attr.AttributeClass?.ToString() == "SpacetimeDB.TypeAttribute"
+                )
+                ?.NamedArguments.FirstOrDefault(arg => arg.Key == "Name")
+                .Value.Value as string;
         Members = new(
             fields.Select((field, index) => ConvertMember(index, field, diag)).ToImmutableArray()
         );
@@ -755,6 +765,11 @@ public abstract record BaseTypeDeclaration<M>
                 """;
         }
 
+        // Only pass the name when set, so unnamed types generate the same code as before.
+        var sourceNameArg = SourceName is null
+            ? ""
+            : ", " + SymbolDisplay.FormatLiteral(SourceName, true);
+
         extensions.Contents.Append(
             $$"""
 
@@ -773,7 +788,7 @@ public abstract record BaseTypeDeclaration<M>
                     public SpacetimeDB.BSATN.AlgebraicType.Ref GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
                         registrar.RegisterType<{{FullName}}>(_ => new SpacetimeDB.BSATN.AlgebraicType.{{Kind}}(new SpacetimeDB.BSATN.AggregateElement[] {
                             {{MemberDeclaration.GenerateDefs(Members)}}
-                        }));
+                        }){{sourceNameArg}});
 
                     SpacetimeDB.BSATN.AlgebraicType SpacetimeDB.BSATN.IReadWrite<{{FullName}}>.GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
                         GetAlgebraicType(registrar);
