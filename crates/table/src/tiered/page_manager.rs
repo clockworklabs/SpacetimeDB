@@ -18,9 +18,9 @@ use crate::{
     page_pool::PagePool,
     tiered::{
         error::PageError,
-        map::{ObjectKey, PageHash},
+        map::PageHash,
         mem::{self, PageEvictionCandidate, PageFrame, PageId, PooledPage},
-        storage::TieredStorage,
+        storage::{DiskObject, TieredStorage},
         BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetConfig, ByteBudgetUsage, EvictionPolicy, ObjectStoreError,
         ResidentObjects,
     },
@@ -208,12 +208,15 @@ pub enum PageSlot {
         handle: PageHandle,
         metadata: PageMetadata,
         // `Some` if the page is clean and present in backing storage.
-        backing: Option<PageHash>,
+        backing: Option<DiskObject>,
         eviction_policy: EvictionPolicy,
     },
     /// The page is not resident in memory.
     #[allow(unused)]
-    NonResident { hash: PageHash, metadata: PageMetadata },
+    NonResident {
+        metadata: PageMetadata,
+        backing: DiskObject,
+    },
 }
 
 impl PageSlot {
@@ -471,7 +474,9 @@ impl PageManager {
         match slot {
             PageSlot::Absent => None,
             PageSlot::Resident { handle, .. } => Some(self.resident.detach_page(handle.frame)),
-            PageSlot::NonResident { .. } => unreachable!("conversion preparation loaded and pinned every page"),
+            PageSlot::NonResident { .. } => {
+                unreachable!("conversion preparation loaded and pinned every page")
+            }
         }
     }
 
@@ -602,19 +607,18 @@ impl PageManager {
                     cached_eviction_policy, &eviction_policy,
                     "eviction policy cannot be changed for resident pages"
                 );
-                // Avoid atomics contention if the page isn't evictable.
+                // Avoid atomics contention if the page is not evictable.
                 if matches!(eviction_policy, EvictionPolicy::Evictable) {
                     self.resident.touch_page(&handle.frame);
                 }
+
                 Ok(Some(handle.clone()))
             }
-            PageSlot::NonResident { hash, metadata, .. } => {
+            PageSlot::NonResident { metadata, backing } => {
                 self.metrics().lookup(ObjectType::Page, CacheTier::Memory, false);
                 let fault = fault.get_or_insert_with(|| self.metrics().fault(ObjectType::Page));
                 let reservation = self.resident.reserve_page(|| {
-                    let bytes = self
-                        .storage
-                        .read_with_source(ObjectKey::from(*hash), &mut fault.source)?;
+                    let bytes = self.storage.read_with_source(backing.key(), &mut fault.source)?;
                     let page = self
                         .pool
                         .take_deserialize_from(&bytes)
@@ -627,7 +631,7 @@ impl PageManager {
                 *slot_guard = PageSlot::Resident {
                     handle: handle.clone(),
                     metadata: *metadata,
-                    backing: Some(*hash),
+                    backing: Some(backing.clone()),
                     eviction_policy,
                 };
 
@@ -738,9 +742,7 @@ impl PageManager {
         self.resident.evict_page(victim);
     }
 
-    pub(super) fn ensure_lower_tier_stored(&self, page: &PageHandle) -> Result<PageHash, ObjectStoreError> {
-        self.storage
-            .write(page.into())
-            .map(|key| key.as_page_hash().cloned().expect("object key to be a page hash"))
+    pub(super) fn ensure_lower_tier_stored(&self, page: &PageHandle) -> Result<DiskObject, ObjectStoreError> {
+        self.storage.write(page.into())
     }
 }

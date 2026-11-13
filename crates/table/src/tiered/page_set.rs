@@ -270,15 +270,15 @@ impl TieredPages {
                 continue;
             }
 
-            let hash = match backing {
-                Some(hash) => *hash,
+            let backing = match backing {
+                Some(disk_object) => disk_object.clone(),
                 // TODO: Consider releasing the slot lock when performing I/O.
                 // Elevates the chances of creating garbage.
                 None => manager.ensure_lower_tier_stored(page_handle)?,
             };
             *slot = PageSlot::NonResident {
-                hash,
                 metadata: *metadata,
+                backing,
             };
             manager.evicted(candidate);
             manager
@@ -1499,5 +1499,36 @@ mod tests {
         drop(pin);
         pages.allocate_new_page(Size(8)).unwrap();
         assert!(!pages.storage.tiered().slots[first.idx()].is_resident());
+    }
+
+    #[test]
+    fn dirtying_or_freeing_a_page_releases_its_old_backing() {
+        let storage = Arc::new(TieredStorage::new_for_test());
+        let manager = Arc::new(PageManager::new(
+            Arc::new(ResidentObjects::new(ByteBudget::unlimited())),
+            PagePool::new_for_test(),
+            storage.clone(),
+        ));
+        let mut pages = PageSet::new(manager, EvictionPolicy::Evictable, Size(8));
+
+        // Persist a clean version and remember its serialized disk footprint.
+        let index = pages.allocate_new_page(Size(8)).unwrap();
+        pages.evict(0).unwrap();
+        let key = match &*pages.storage.tiered().slots[index.idx()].lock_ref() {
+            PageSlot::NonResident { backing, .. } => backing.key(),
+            _ => panic!("page should be evicted"),
+        };
+        let stored_bytes = storage.stat(key).unwrap().size;
+
+        // A write guard dirties the page, releasing ownership of the previous version.
+        pages.with_page_mut(index, Size(8), |_| ()).unwrap();
+        assert_eq!(storage.reclaim().unwrap(), stored_bytes);
+        assert!(!storage.contains(key));
+
+        // Freeing a nonresident page must release the newly stored version too.
+        pages.evict(0).unwrap();
+        pages.storage.tiered().slots[index.idx()].free();
+        assert_eq!(storage.reclaim().unwrap(), stored_bytes);
+        assert!(!storage.contains(key));
     }
 }

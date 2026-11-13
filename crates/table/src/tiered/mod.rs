@@ -137,6 +137,15 @@ impl TieredDatabaseStorage {
         Ok(())
     }
 
+    /// Reclaim local disk storage occupied by orphaned objects.
+    ///
+    /// Does **not** evict live objects.
+    ///
+    /// Returns the total number of bytes freed.
+    pub fn reclaim_local(&self) -> Result<u64, ObjectStoreError> {
+        self.store.reclaim()
+    }
+
     pub fn budgets(&self) -> [(metrics::CacheTier, &ByteBudget); 2] {
         [
             (metrics::CacheTier::Memory, self.cache.budget()),
