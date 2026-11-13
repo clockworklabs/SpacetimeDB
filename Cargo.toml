@@ -383,7 +383,7 @@ zstd-framed = { version = "0.1.1", features = ["tokio"] }
 
 # Vendor the openssl we rely on, rather than depend on a
 # potentially very old system version.
-openssl = { version = "0.10", features = ["vendored"] }
+openssl = { version = "0.10.78", features = ["vendored"] }
 
 [workspace.dependencies.wasmtime]
 version = "39"
