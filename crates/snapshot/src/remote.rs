@@ -986,7 +986,7 @@ mod tests {
                 &[] as &[&[u8]],
                 u64_var_len_visitor(),
                 &mut BlobSet::new_for_test(),
-                EvictionPolicy::NeverEvict,
+                EvictionPolicy::Never,
             )
         }
         .expect("Failed to insert first row")

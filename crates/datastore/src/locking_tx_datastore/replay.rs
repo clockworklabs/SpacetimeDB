@@ -1476,8 +1476,16 @@ mod tests {
             Ok(())
         }
 
-        for dropped_policy in [TableCachePolicy::RequiredInMemory, TableCachePolicy::NoRequirement] {
-            for retained_policy in [TableCachePolicy::RequiredInMemory, TableCachePolicy::NoRequirement] {
+        for dropped_policy in [
+            TableCachePolicy::RequiredInMemory,
+            TableCachePolicy::RequiredOnDisk,
+            TableCachePolicy::NoRequirement,
+        ] {
+            for retained_policy in [
+                TableCachePolicy::RequiredInMemory,
+                TableCachePolicy::RequiredOnDisk,
+                TableCachePolicy::NoRequirement,
+            ] {
                 go(dropped_policy, retained_policy)?;
             }
         }

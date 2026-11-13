@@ -22,7 +22,7 @@ use crate::{
         error::{BlobError, ObjectStoreError},
         map::{BlobHashWrapper, ObjectKey},
         mem::{self, BlobEvictionCandidate, BlobFrame, ReservedBlob},
-        storage::{DiskObject, Object},
+        storage::{DiskObject, DiskRetention, Object},
         ByteBudget, ByteBudgetUsage, EvictionPolicy, TieredStorage,
     },
     var_len::VarLenMembers,
@@ -68,7 +68,8 @@ impl BlobSet {
                     uses: uses.get(),
                     pins: 0,
                     blob: BlobHandle { frame },
-                    _backing: None,
+                    backing: None,
+                    disk_pins: 0,
                 },
             );
         }
@@ -129,7 +130,7 @@ impl BlobSet {
             });
 
             if let Some(blob) = maybe_resident {
-                let backing = self.storage.write(Object::from(&blob))?;
+                let mut backing = self.storage.write(Object::from(&blob), DiskRetention::Required)?;
                 assert_eq!(
                     backing.key().as_blob_hash().expect("storage key to be a blob hash"),
                     &candidate.key
@@ -143,6 +144,7 @@ impl BlobSet {
                     uses,
                     blob: current,
                     pins,
+                    disk_pins,
                     ..
                 } = entry
                 else {
@@ -164,6 +166,7 @@ impl BlobSet {
                 };
 
                 let size = blob.size();
+                backing.set_pins(*disk_pins);
                 *entry = BlobEntry::NonResident {
                     uses: *uses,
                     size,
@@ -216,9 +219,10 @@ impl BlobSet {
         bytes: &[u8],
     ) -> Result<BlobHandle, BlobError> {
         let hash = BlobHashWrapper::hash_from_bytes(bytes);
+        // Memory pins -- disk pins are handled below.
         let pins = match eviction_policy {
-            EvictionPolicy::Evictable => 0,
-            EvictionPolicy::NeverEvict => 1,
+            EvictionPolicy::Never => 1,
+            EvictionPolicy::Memory | EvictionPolicy::Disk => 0,
         };
         {
             let mut entries = self.entries.write();
@@ -226,11 +230,20 @@ impl BlobSet {
                 uses: current_uses,
                 pins: current_pins,
                 blob,
-                ..
+                backing,
+                disk_pins,
             }) = entries.get_mut(&hash)
             {
                 *current_uses += uses.get();
                 *current_pins += pins;
+
+                if DiskRetention::is_required(eviction_policy) {
+                    *disk_pins = disk_pins.checked_add(1).expect("disk pin count overflow");
+                    if let Some(backing) = backing {
+                        backing.pin();
+                    }
+                }
+
                 return Ok(blob.clone());
             }
         }
@@ -247,7 +260,8 @@ impl BlobSet {
                     uses: uses.get(),
                     pins,
                     blob: handle.clone(),
-                    _backing: None,
+                    backing: None,
+                    disk_pins: DiskRetention::is_required(eviction_policy).into(),
                 });
                 Ok(handle)
             }
@@ -258,10 +272,19 @@ impl BlobSet {
                     uses: current_uses,
                     pins: current_pins,
                     blob,
-                    ..
+                    backing,
+                    disk_pins,
                 } => {
                     *current_uses += uses.get();
                     *current_pins += pins;
+
+                    if DiskRetention::is_required(eviction_policy) {
+                        *disk_pins = disk_pins.checked_add(1).expect("disk pin count overflow");
+                        if let Some(backing) = backing {
+                            backing.pin();
+                        }
+                    }
+
                     Ok(blob.clone())
                 }
                 BlobEntry::NonResident {
@@ -270,15 +293,24 @@ impl BlobSet {
                     ..
                 } => {
                     let new_uses = *current_uses + uses.get();
-                    let backing = backing.clone();
                     let frame = self.resident.redeem_blob(reservation);
                     let handle = BlobHandle { frame };
+
+                    let mut backing = backing.clone();
+                    let mut disk_pins = backing.pins();
+                    if DiskRetention::is_required(eviction_policy) {
+                        disk_pins = disk_pins.checked_add(1).expect("disk pin count overflow");
+                        backing.pin();
+                    }
+
                     entry.insert(BlobEntry::Resident {
                         uses: new_uses,
                         blob: handle.clone(),
-                        _backing: Some(backing),
                         pins,
+                        backing: Some(backing),
+                        disk_pins,
                     });
+
                     Ok(handle)
                 }
             },
@@ -323,8 +355,10 @@ impl BlobSet {
                 {
                     let blob_entry = entry.get_mut();
                     blob_entry.dec_uses();
-                    if let EvictionPolicy::NeverEvict = eviction_policy {
-                        blob_entry.dec_pins();
+                    match eviction_policy {
+                        EvictionPolicy::Never => blob_entry.unpin_mem(),
+                        EvictionPolicy::Memory => blob_entry.unpin_disk(),
+                        EvictionPolicy::Disk => {}
                     }
                 }
                 let blob_entry = entry.get();
@@ -381,7 +415,8 @@ impl BlobSet {
                             uses: *uses,
                             pins: 0,
                             blob: handle.clone(),
-                            _backing: Some(backing.clone()),
+                            disk_pins: backing.pins(),
+                            backing: Some(backing.clone()),
                         };
                         Ok(handle)
                     }
@@ -413,9 +448,13 @@ impl BlobSet {
         hashes.into_iter().map(|hash| self.get(hash)).collect()
     }
 
-    /// Fault the blob with content address `hash`, and mark it as non-evictable.
+    /// Fault the blob at `hash` and install a [EvictionPolicy::Never]
+    /// requirement.
     ///
-    /// Call this for every reference to the blob, without deduplication.
+    /// This protects resident bytes; if the object is present in local backing
+    /// storage, it remains evictable there.
+    ///
+    /// Must be called for every reference to the blob, without deduplication.
     ///
     /// Faulting is subject to the resident memory budget.
     ///
@@ -425,9 +464,12 @@ impl BlobSet {
         self.get(hash).and_then(|handle| self.pin_handle(&handle))
     }
 
-    /// Mark the supplied blob as non-evictable.
+    /// Install a [EvictionPolicy::Never] for the supplied blob.
     ///
-    /// Call this for every reference to the blob, without deduplication.
+    /// This protects resident bytes; if the object is present in local backing
+    /// storage, it remains evictable there.
+    ///
+    /// Must be called for every reference to the blob, without deduplication.
     ///
     /// The blob must be in this blob set, otherwise a [BlobError::MissingBlob]
     /// is returned.
@@ -453,6 +495,27 @@ impl BlobSet {
         };
         assert!(*pins > 0, "each in-memory reference owns a policy pin");
         *pins -= 1;
+    }
+
+    /// Prevent the object at `hash` from being evicted from local backing
+    /// storage.
+    ///
+    /// Must be called for every reference to the blob, without deduplication.
+    pub(crate) fn pin_disk(&self, hash: BlobHashWrapper) {
+        self.entries
+            .write()
+            .get_mut(&hash)
+            .expect("blob to disk-pin must exist")
+            .pin_disk()
+    }
+
+    /// Release one object's local backing storage pin.
+    pub(crate) fn unpin_disk(&self, hash: BlobHashWrapper) {
+        self.entries
+            .write()
+            .get_mut(&hash)
+            .expect("blob to disk-pin must exist")
+            .unpin_disk();
     }
 
     /// Apply a fallible operation to each blob in this set.
@@ -552,8 +615,12 @@ enum BlobEntry {
         uses: usize,
         pins: usize,
         blob: BlobHandle,
-        /// Ownership of the immutable version, if written to backing storage.
-        _backing: Option<DiskObject>,
+        /// `Some` if the entry has been written to local disk.
+        backing: Option<DiskObject>,
+        /// Disk retention requirements exist before any backing object has been
+        /// written. When `backing` is `Some`, its local pin contribution
+        /// matches this value.
+        disk_pins: u64,
     },
     #[allow(unused)]
     NonResident {
@@ -591,13 +658,43 @@ impl BlobEntry {
         }
     }
 
-    fn dec_pins(&mut self) {
+    fn unpin_mem(&mut self) {
         match self {
-            Self::NonResident { .. } => unreachable!("attempt to decrement pin count on non-resident blob"),
-            Self::Resident { pins, .. } if *pins == 0 => panic!("attempt to decrement pin count already at zero"),
+            Self::NonResident { .. } => {
+                unreachable!("attempt to decrement pin count on non-resident blob")
+            }
+            Self::Resident { pins, .. } if *pins == 0 => {
+                panic!("attempt to decrement pin count already at zero")
+            }
             Self::Resident { pins, .. } => {
                 *pins -= 1;
             }
+        }
+    }
+
+    fn pin_disk(&mut self) {
+        match self {
+            Self::Resident { backing, disk_pins, .. } => {
+                *disk_pins = disk_pins.checked_add(1).expect("disk pin count overflow");
+                if let Some(backing) = backing {
+                    backing.pin();
+                }
+            }
+            Self::NonResident { backing, .. } => backing.pin(),
+        }
+    }
+
+    fn unpin_disk(&mut self) {
+        match self {
+            Self::Resident { backing, disk_pins, .. } => {
+                *disk_pins = disk_pins
+                    .checked_sub(1)
+                    .expect("attempt to decrement disk pin count already at zero");
+                if let Some(backing) = backing {
+                    backing.unpin();
+                }
+            }
+            Self::NonResident { backing, .. } => backing.unpin(),
         }
     }
 }
@@ -748,7 +845,7 @@ mod tests {
             let mut model = HashMap::<BlobHash, (Vec<u8>, usize)>::new();
 
             for bytes in &blobs {
-                let handle = set.insert(EvictionPolicy::Evictable, bytes).unwrap();
+                let handle = set.insert(EvictionPolicy::Memory, bytes).unwrap();
                 let hash = BlobHash::hash_from_bytes(bytes);
                 prop_assert_eq!(handle.hash(), hash.into());
                 prop_assert_eq!(&*handle, bytes.as_slice());
@@ -774,7 +871,7 @@ mod tests {
 
             for bytes in blobs {
                 let hash = BlobHash::hash_from_bytes(&bytes);
-                prop_assert_eq!(set.free_ref(hash.into(), EvictionPolicy::Evictable).unwrap(), bytes.len() as u64);
+                prop_assert_eq!(set.free_ref(hash.into(), EvictionPolicy::Memory).unwrap(), bytes.len() as u64);
             }
             prop_assert_eq!(set.num_blobs(), 0);
             prop_assert_eq!(set.bytes_used_by_blobs(), 0);
@@ -802,9 +899,9 @@ mod tests {
             let storage = Arc::new(TieredStorage::new_for_test());
             let set = BlobSet::new(resident.clone(), storage);
 
-            set.insert(EvictionPolicy::Evictable, &first).map(drop).unwrap();
+            set.insert(EvictionPolicy::Memory, &first).map(drop).unwrap();
             // This should evict `first`, as there is no external handle.
-            set.insert(EvictionPolicy::Evictable, &second).map(drop).unwrap();
+            set.insert(EvictionPolicy::Memory, &second).map(drop).unwrap();
 
             prop_assert_eq!(set.num_blobs(), 2);
             // The catalog knows both entries, but only the second is resident
@@ -841,8 +938,8 @@ mod tests {
             let storage = Arc::new(TieredStorage::new_for_test());
             let set = BlobSet::new(resident.clone(), storage);
 
-            let _first_handle = set.insert(EvictionPolicy::Evictable, &first).unwrap();
-            prop_assert!(matches!(set.insert(EvictionPolicy::Evictable, &second), Err(BlobError::MemoryLimitExceeded(_))));
+            let _first_handle = set.insert(EvictionPolicy::Memory, &first).unwrap();
+            prop_assert!(matches!(set.insert(EvictionPolicy::Memory, &second), Err(BlobError::MemoryLimitExceeded(_))));
         }
     }
 
@@ -863,14 +960,14 @@ mod tests {
         let committed = BlobSet::new(resident.clone(), storage);
 
         // Emulate transaction prepare.
-        transaction.insert(EvictionPolicy::Evictable, bytes).map(drop).unwrap();
+        transaction.insert(EvictionPolicy::Memory, bytes).map(drop).unwrap();
         let pins = transaction.fault_all().unwrap();
 
         // Emulate transaction commit.
         // The shared [ResidentObjects] notices that it's the same object, so
         // reuses the already-held budget permit.
         assert!(committed.usage_counter().is_empty());
-        committed.insert(EvictionPolicy::Evictable, bytes).map(drop).unwrap();
+        committed.insert(EvictionPolicy::Memory, bytes).map(drop).unwrap();
 
         assert_eq!(committed.usage_counter().get(&pins[0].hash()), Some(&1));
         assert_eq!(resident.usage().accounted_bytes(), bytes.len() as u64);
@@ -879,8 +976,8 @@ mod tests {
     #[test]
     fn never_evict_policy_survives_deduplication_in_either_order() {
         for policies in [
-            [EvictionPolicy::NeverEvict, EvictionPolicy::Evictable],
-            [EvictionPolicy::Evictable, EvictionPolicy::NeverEvict],
+            [EvictionPolicy::Never, EvictionPolicy::Memory],
+            [EvictionPolicy::Memory, EvictionPolicy::Never],
         ] {
             let bytes = b"shared blob";
             let budget = ByteBudget::new(ByteBudgetConfig {
@@ -907,7 +1004,7 @@ mod tests {
             // All caller handles are gone. Only the table policy now prevents
             // another blob from reclaiming this one's entire memory allowance.
             assert!(matches!(
-                set.insert(EvictionPolicy::Evictable, b"replacement"),
+                set.insert(EvictionPolicy::Memory, b"replacement"),
                 Err(BlobError::MemoryLimitExceeded(_))
             ));
             assert_eq!(set.num_blobs(), 1);
@@ -918,7 +1015,7 @@ mod tests {
                 set.free_ref(hash, policy).unwrap();
             }
             assert_eq!(resident.usage().accounted_bytes(), 0);
-            assert!(set.insert(EvictionPolicy::Evictable, b"replacement").is_ok());
+            assert!(set.insert(EvictionPolicy::Memory, b"replacement").is_ok());
         }
     }
 
@@ -927,13 +1024,13 @@ mod tests {
         let set = BlobSet::new_for_test();
         let bytes = b"previously evicted";
         let hash = BlobHashWrapper::hash_from_bytes(bytes);
-        drop(set.insert(EvictionPolicy::Evictable, bytes).unwrap());
+        drop(set.insert(EvictionPolicy::Memory, bytes).unwrap());
         set.evict(0).unwrap();
         assert_eq!(set.resident.usage().accounted_bytes(), 0);
 
         // This uses the nonresident insertion path, rather than updating an
         // existing resident entry. Both paths must preserve the new policy.
-        drop(set.insert(EvictionPolicy::NeverEvict, bytes).unwrap());
+        drop(set.insert(EvictionPolicy::Never, bytes).unwrap());
         set.evict(0).unwrap();
         assert_eq!(set.resident.usage().accounted_bytes(), bytes.len() as u64);
         assert_eq!(set.usage_counter().get(&hash), Some(&2));
@@ -945,8 +1042,8 @@ mod tests {
         let set = BlobSet::new_for_test();
         let bytes = b"restored blob";
         let hash = BlobHashWrapper::hash_from_bytes(bytes);
-        drop(set.insert(EvictionPolicy::Evictable, bytes).unwrap());
-        drop(set.insert(EvictionPolicy::Evictable, bytes).unwrap());
+        drop(set.insert(EvictionPolicy::Memory, bytes).unwrap());
+        drop(set.insert(EvictionPolicy::Memory, bytes).unwrap());
         set.evict(0).unwrap();
         assert_eq!(set.resident.usage().accounted_bytes(), 0);
 
@@ -960,13 +1057,48 @@ mod tests {
         assert_eq!(&*set.get(hash).unwrap(), bytes);
 
         // Releasing one restored owner must retain the other owner's pin.
-        set.free_ref(hash, EvictionPolicy::NeverEvict).unwrap();
+        set.free_ref(hash, EvictionPolicy::Never).unwrap();
         assert_eq!(set.usage_counter().get(&hash), Some(&1));
         set.evict(0).unwrap();
         assert_eq!(set.resident.usage().accounted_bytes(), bytes.len() as u64);
-        set.free_ref(hash, EvictionPolicy::NeverEvict).unwrap();
+        set.free_ref(hash, EvictionPolicy::Never).unwrap();
         set.evict(0).unwrap();
         assert_eq!(set.resident.usage().accounted_bytes(), 0);
         assert!(matches!(set.pin(hash), Err(BlobError::MissingBlob(_))));
+    }
+
+    proptest! {
+        #[test]
+        fn removing_memory_row_allows_shared_blob_disk_eviction(
+            bytes in vec(any::<u8>(), 1..128),
+        ) {
+            use crate::tiered::{BackingStore, MemoryObjectStore};
+
+            let storage = Arc::new(TieredStorage::empty(
+                BackingStore {
+                    object_store: Box::new(MemoryObjectStore::default()),
+                    budget: ByteBudget::unlimited(),
+                },
+                Some(BackingStore {
+                    object_store: Box::new(MemoryObjectStore::default()),
+                    budget: ByteBudget::unlimited(),
+                }),
+            ));
+            let resident = Arc::new(ResidentObjects::new(ByteBudget::unlimited()));
+            let blobs = BlobSet::new(resident, storage.clone());
+            let hash = BlobHashWrapper::hash_from_bytes(&bytes);
+            drop(blobs.insert(EvictionPolicy::Memory, &bytes).unwrap());
+            drop(blobs.insert(EvictionPolicy::Disk, &bytes).unwrap());
+            blobs.evict(0).unwrap();
+
+            // Memory protects the shared disk copy until that row is released.
+            prop_assert_eq!(storage.evict(0).unwrap(), 0);
+            blobs.free_ref(hash, EvictionPolicy::Memory).unwrap();
+
+            // The remaining Disk row permits remote eviction and must remain readable.
+            prop_assert_eq!(storage.evict(0).unwrap(), bytes.len() as u64);
+            let recovered = blobs.get(hash).unwrap();
+            prop_assert_eq!(&*recovered, bytes.as_slice());
+        }
     }
 }

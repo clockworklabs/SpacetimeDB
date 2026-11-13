@@ -411,7 +411,7 @@ pub mod test {
                     &visitor,
                     &ty,
                     &val,
-                    EvictionPolicy::NeverEvict
+                    EvictionPolicy::Never
                 )
             };
 
