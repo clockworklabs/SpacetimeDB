@@ -882,28 +882,69 @@ fn test_parameterized_sender_view_per_caller() {
     );
 }
 
-/// A parameterized view can only be queried as `SELECT * FROM v(...)`, in SQL and in subscriptions.
+/// A parameterized view call can be filtered, and in SQL also given a column list, counted and limited.
 #[test]
-fn test_parameterized_view_select_all_only() {
+fn test_parameterized_view_filters_and_column_lists() {
+    let test = Smoketest::builder().precompiled_module("views-args").build();
+
+    test.call("add_item", &["1", "10"]).unwrap();
+    test.call("add_item", &["1", "11"]).unwrap();
+    test.call("add_item", &["2", "10"]).unwrap();
+
+    for view in ["by_id", "by_id_query", "mine_by_id"] {
+        for (query, expected) in [
+            (format!("SELECT * FROM {view}(1) WHERE value = 11"), vec![11]),
+            (format!("SELECT * FROM {view}(2) WHERE value = 10"), vec![10]),
+            (
+                format!("SELECT v.value FROM {view}(1) AS v WHERE v.value > 10"),
+                vec![11],
+            ),
+            (format!("SELECT count(*) AS n FROM {view}(1)"), vec![2]),
+        ] {
+            assert_eq!(sql_values(&test, &query), expected, "{query}");
+        }
+
+        // A column list returns only its columns, in its order
+        test.assert_sql(
+            &format!("SELECT value, id FROM {view}(2)"),
+            " value | id\n-------+----\n 10    | 2",
+        );
+
+        // A limit cuts the call's two rows to one, in no particular order
+        let limited = sql_values(&test, &format!("SELECT value FROM {view}(1) LIMIT 1"));
+        assert!(matches!(limited[..], [10] | [11]), "{view}(1) LIMIT 1: {limited:?}");
+    }
+
+    // A filtered subscription's first update is its own call's matching row,
+    // not one from another call or one its filter rejects
+    let sub = test
+        .subscribe(&["select * from by_id(1) where value = 12"])
+        .expect_rows(1)
+        .background()
+        .unwrap();
+    test.call("add_item", &["2", "12"]).unwrap();
+    test.call("add_item", &["1", "13"]).unwrap();
+    test.call("add_item", &["1", "12"]).unwrap();
+    let events = project_fields(sub.collect().unwrap(), "by_id", &["id", "value"]);
+    assert_eq!(
+        json!(events),
+        json!([{ "by_id": { "deletes": [], "inserts": [{ "id": 1, "value": 12 }] } }])
+    );
+}
+
+/// A parameterized view call can't be joined yet, in SQL or in subscriptions.
+#[test]
+fn test_parameterized_view_joins_are_rejected() {
     let test = Smoketest::builder().precompiled_module("views-args").build();
 
     test.call("add_item", &["1", "10"]).unwrap();
 
-    for (query, error) in [
-        (
-            "SELECT * FROM by_id(1) WHERE value = 10",
-            "can only be queried as `SELECT * FROM by_id(...)`",
-        ),
-        (
-            "SELECT v.* FROM by_id(1) AS v JOIN item ON v.id = item.id",
-            "Unsupported view call in a JOIN",
-        ),
-    ] {
-        let sql = test.sql(query).unwrap_err();
-        assert!(format!("{sql:#}").contains(error), "SQL `{query}`: {sql:#}");
-        let sub = test.subscribe(&[query]).expect_rows(0).run().unwrap_err();
-        assert!(format!("{sub:#}").contains(error), "Subscription `{query}`: {sub:#}");
-    }
+    let query = "SELECT v.* FROM by_id(1) AS v JOIN item ON v.id = item.id";
+    let error = "Unsupported view call in a JOIN";
+    let sql = test.sql(query).unwrap_err();
+    assert!(format!("{sql:#}").contains(error), "SQL `{query}`: {sql:#}");
+    let sub = test.subscribe(&[query]).expect_rows(0).run().unwrap_err();
+    assert!(format!("{sub:#}").contains(error), "Subscription `{query}`: {sub:#}");
 }
 
 #[test]

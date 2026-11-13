@@ -7,7 +7,6 @@ use spacetimedb_primitives::TableId;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
 use spacetimedb_schema::schema::TableOrViewSchema;
-use spacetimedb_schema::table_name::TableName;
 use spacetimedb_sql_parser::ast::BinOp;
 use spacetimedb_sql_parser::{
     ast::{sub::SqlSelect, SqlExpr, SqlFrom, SqlIdent, SqlJoin, SqlLiteral},
@@ -195,7 +194,7 @@ impl TypeChecker for SubChecker {
     type Set = SqlSelect;
 
     fn type_ast(ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<ProjectList> {
-        expect_select_all_view_calls(Self::type_set(ast, &mut Relvars::default(), tx)?)
+        Self::type_set(ast, &mut Relvars::default(), tx)
     }
 
     fn type_set(ast: Self::Set, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<ProjectList> {
@@ -225,48 +224,6 @@ pub fn parse_and_type_sub(sql: &str, tx: &impl SchemaView, _auth: &AuthCtx) -> T
     let ast = parse_subscription(sql)?;
     let has_param = ast.has_parameter();
     expect_table_type(SubChecker::type_ast(ast, tx)?).map(|plan| (plan, has_param))
-}
-
-/// Returns an error if a view is called with args in anything but `SELECT * FROM v(...)`.
-///
-/// Such a query reads one view instance with a point lookup on its `arg_hash`,
-/// which also lets subscriptions be pruned by that hash.
-pub(crate) fn expect_select_all_view_calls(expr: ProjectList) -> TypingResult<ProjectList> {
-    // `SELECT * FROM v(...)` types as a lone relvar
-    if let ProjectList::Name(exprs) = &expr
-        && let [ProjectName::None(RelExpr::RelVar(_)) | ProjectName::Some(RelExpr::RelVar(_), _)] = exprs.as_slice()
-    {
-        return Ok(expr);
-    }
-    match view_call_name(&expr) {
-        Some(name) => Err(InvalidViewArgs::UnsupportedQuery { name }.into()),
-        None => Ok(expr),
-    }
-}
-
-/// Returns the name of a view called with args in `expr`, if any
-fn view_call_name(expr: &ProjectList) -> Option<TableName> {
-    let mut name = None;
-    let mut visit = |expr: &RelExpr| {
-        expr.visit(&mut |expr| {
-            if let RelExpr::RelVar(Relvar {
-                schema,
-                view_args: Some(_),
-                ..
-            }) = expr
-            {
-                name = Some(schema.table_name.clone());
-            }
-        })
-    };
-    match expr {
-        ProjectList::Name(exprs) => exprs
-            .iter()
-            .for_each(|(ProjectName::None(expr) | ProjectName::Some(expr, _))| visit(expr)),
-        ProjectList::List(exprs, _) | ProjectList::Agg(exprs, ..) => exprs.iter().for_each(visit),
-        ProjectList::Limit(input, _) => return view_call_name(input),
-    }
-    name
 }
 
 /// Returns an error if the input type is not a table type or relvar
@@ -754,6 +711,18 @@ mod tests {
                 sql: "select * from p where x = 1",
                 msg: "View without params with a filter",
             },
+            TestCase {
+                sql: "select * from v(42) where x = 1",
+                msg: "View call with a filter",
+            },
+            TestCase {
+                sql: "select * from v(42) where x > 1 and x < 5",
+                msg: "View call with a range filter",
+            },
+            TestCase {
+                sql: "select a.* from v(42) as a where a.x = 1",
+                msg: "Aliased view call with a filter",
+            },
         ] {
             let result = parse_and_type_sub(sql, &tx);
             assert!(result.is_ok(), "{msg}: {result:?}");
@@ -860,7 +829,18 @@ mod tests {
 
         let mut v42 = parse("select * from v(42)");
         let mut v43 = parse("select * from v(43)");
-        assert_eq!(v42.lift_literals(), vec![(hash, ty)]);
+        assert_eq!(v42.lift_literals(), vec![(hash.clone(), ty.clone())]);
+        v43.lift_literals();
+        assert_eq!(v42, v43);
+
+        // With a filter, the hash takes the first slot, as `arg_hash` is the first column,
+        // and calls with other args and other filter values still lift to the same expression
+        let mut v42 = parse("select * from v(42) where x = 1");
+        let mut v43 = parse("select * from v(43) where x = 2");
+        assert_eq!(
+            v42.lift_literals(),
+            vec![(hash, ty), (AlgebraicValue::U32(1), AlgebraicType::U32)]
+        );
         v43.lift_literals();
         assert_eq!(v42, v43);
     }
@@ -916,8 +896,12 @@ mod tests {
                 msg: "View with params in a join, without args",
             },
             TestCase {
-                sql: "select * from v(42) where x = 1",
-                msg: "View call with a filter",
+                sql: "select v.* from v(42) join t on v.x = t.u32",
+                msg: "View call with args on the lhs of a join",
+            },
+            TestCase {
+                sql: "select x from v(42)",
+                msg: "Column list in a subscription",
             },
         ] {
             let result = parse_and_type_sub(sql, &tx);
