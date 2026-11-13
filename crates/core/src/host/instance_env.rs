@@ -1088,7 +1088,7 @@ impl InstanceEnv {
 
         // If the user requested a timeout using our extension, slot it in to reqwest's timeout.
         // Clamp to the range `0..HTTP_MAX_TIMEOUT`.
-        let timeout = timeout.unwrap_or(HTTP_DEFAULT_TIMEOUT).min(HTTP_MAX_TIMEOUT);
+        let timeout = clamp_http_timeout(timeout);
 
         // reqwest's timeout covers from the start of the request to the end of reading the body,
         // so there's no need to do our own timeout operation.
@@ -1190,9 +1190,13 @@ const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 /// Maximum timeout for HTTP requests performed by [`InstanceEnv::http_request`].
 ///
 /// If the user requests a timeout longer than this, we will clamp to this value.
-/// 180 seconds accommodates long-running LLM and AI API calls,
-/// which routinely take 30-120 seconds for complex requests.
-const HTTP_MAX_TIMEOUT: Duration = Duration::from_secs(180);
+/// Ten minutes accommodates longer-running requests, including agent workflows.
+const HTTP_MAX_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
+fn clamp_http_timeout(timeout: Option<Duration>) -> Duration {
+    timeout.unwrap_or(HTTP_DEFAULT_TIMEOUT).min(HTTP_MAX_TIMEOUT)
+}
+
 const MODULE_HTTP_DISABLED_ERROR: &str = "module outbound HTTP requests are disabled";
 const BLOCKED_HTTP_ADDRESS_ERROR: &str = "refusing to connect to private or special-purpose addresses";
 
@@ -1530,6 +1534,19 @@ pub(super) mod test {
     use spacetimedb_lib::{bsatn::to_vec, AlgebraicType, AlgebraicValue, Hash, Identity, ProductValue};
     use spacetimedb_primitives::{IndexId, TableId};
     use spacetimedb_sats::product;
+
+    #[test]
+    fn http_request_timeout_uses_default_and_clamps_to_maximum() {
+        assert_eq!(clamp_http_timeout(None), Duration::from_secs(30));
+        assert_eq!(
+            clamp_http_timeout(Some(Duration::from_secs(60))),
+            Duration::from_secs(60)
+        );
+        assert_eq!(
+            clamp_http_timeout(Some(Duration::from_secs(11 * 60))),
+            Duration::from_secs(10 * 60)
+        );
+    }
 
     /// An `InstanceEnv` requires a `DatabaseLogger`
     fn temp_logger() -> DatabaseLogger {
