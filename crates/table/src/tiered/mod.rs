@@ -32,8 +32,15 @@ pub use self::{
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EvictionPolicy {
-    Evictable,
-    NeverEvict,
+    /// Always keep resident in main memory.
+    ///
+    /// If a policy migration leaves redundant local disk copies, those can be
+    /// evicted.
+    Never,
+    /// Allow to evict from main memory to local disk.
+    Memory,
+    /// Allow to evict from local disk to remote storage.
+    Disk,
 }
 
 pub struct TieredStorageConfig {
@@ -129,12 +136,15 @@ impl TieredDatabaseStorage {
         }
     }
 
-    /// Attempt to evict from the shared blob set and local storage.
-    pub fn trim(&self) -> Result<(), TrimError> {
-        self.blobs.trim()?;
-        self.store.trim()?;
+    /// Attempt to free space by reclaiming orphaned objects and evicting from
+    /// the shared blob set and local storage.
+    ///
+    /// Returns the total number of bytes freed.
+    pub fn trim(&self) -> Result<u64, TrimError> {
+        let mut bytes_freed = self.blobs.trim()?;
+        bytes_freed += self.store.trim()?;
 
-        Ok(())
+        Ok(bytes_freed)
     }
 
     /// Reclaim local disk storage occupied by orphaned objects.

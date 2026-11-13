@@ -142,7 +142,7 @@ fn serialize_benchmarks<
         Arc::new(table_schema),
         spacetimedb_table::indexes::SquashedOffset::COMMITTED_STATE,
         PageManager::new_for_test().into(),
-        EvictionPolicy::NeverEvict,
+        EvictionPolicy::Never,
     );
     let blob_store = spacetimedb_table::tiered::BlobSet::new_for_test();
 

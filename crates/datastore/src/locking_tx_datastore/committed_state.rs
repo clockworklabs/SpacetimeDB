@@ -1065,9 +1065,11 @@ impl CommittedState {
     pub(super) fn page_eviction_policy(&self, schema: &TableSchema) -> EvictionPolicy {
         // Schema recovery needs system tables to stay in memory.
         if schema.table_type == StTableType::System || schema.cache_policy == TableCachePolicy::RequiredInMemory {
-            EvictionPolicy::NeverEvict
+            EvictionPolicy::Never
+        } else if schema.cache_policy == TableCachePolicy::RequiredOnDisk {
+            EvictionPolicy::Memory
         } else {
-            EvictionPolicy::Evictable
+            EvictionPolicy::Disk
         }
     }
 
@@ -1191,6 +1193,8 @@ impl CommittedState {
         Ok(())
     }
 
+    /// Evict live objects when under budget pressure, and reclaim space used by
+    /// orphaned objects.
     #[cfg(feature = "durability")]
     pub(super) fn trim(&self) -> std::result::Result<(), crate::error::TrimTableError> {
         for table in self.tables.values() {
