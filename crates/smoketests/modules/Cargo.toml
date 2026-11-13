@@ -116,6 +116,9 @@ members = [
     # Log filtering tests
     "logs-level-filter",
 
+    # Tiered storage tests
+    "tiered-storage",
+
     # Misc tests
     "idc-receiver",
     "namespaces",
