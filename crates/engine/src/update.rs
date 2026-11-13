@@ -224,13 +224,10 @@ fn auto_migrate_database<'def>(
                 let table_full_name = joined(namespace, &table_def.name);
                 let table_id = stdb.table_id_from_name_mut(tx, &table_full_name)?.unwrap();
 
-                let ty = table_def
-                    .get_column(sequence_def.column)
-                    .ok_or_else(|| {
-                        anyhow::anyhow!("Precheck failed: added sequence {sequence_name} refers to unknown column")
-                    })?
-                    .ty
-                    .clone();
+                let column = table_def.get_column(sequence_def.column).ok_or_else(|| {
+                    anyhow::anyhow!("Precheck failed: added sequence {sequence_name} refers to unknown column")
+                })?;
+                let ty = column.ty.clone();
 
                 // Convert `SequenceSchema` min/max to `AlgebraicValue`s of the correct type.
                 let min = ty
@@ -244,11 +241,23 @@ fn auto_migrate_database<'def>(
                 })?;
 
                 let range = min..=max;
-                if stdb
-                    .iter_by_col_range_mut(tx, table_id, sequence_def.column, range)?
-                    .next()
-                    .is_some()
-                {
+                // Prechecks run before the steps, so the column may not exist yet,
+                // if an `AddColumns` step is adding it. In that case, every row will hold its default.
+                let column_exists =
+                    sequence_def.column.idx() < stdb.schema_for_table_mut(tx, table_id)?.columns().len();
+                let has_values_in_range = if column_exists {
+                    stdb.iter_by_col_range_mut(tx, table_id, sequence_def.column, range)?
+                        .next()
+                        .is_some()
+                } else {
+                    let default = column.default_value.as_ref().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Precheck failed: added sequence {sequence_name} is on a new column without a default"
+                        )
+                    })?;
+                    range.contains(default) && stdb.table_row_count_mut(tx, table_id).unwrap_or(0) > 0
+                };
+                if has_values_in_range {
                     anyhow::bail!("Precheck failed: added sequence {sequence_name} already has values in range",);
                 }
             }
@@ -1777,6 +1786,179 @@ mod test {
             );
         }
 
+        Ok(())
+    }
+
+    /// `t(id: u64)`, plus `extra: u32` with an `auto_inc` sequence if `extra` is `Some`,
+    /// with the given default value if that is `Some` too.
+    fn add_auto_inc_column_module(extra: Option<Option<AlgebraicValue>>) -> RawModuleDefV10Builder {
+        let mut b = RawModuleDefV10Builder::new();
+        let columns = match extra {
+            None => ProductType::from([("id", AlgebraicType::U64)]),
+            Some(_) => ProductType::from([("id", AlgebraicType::U64), ("extra", AlgebraicType::U32)]),
+        };
+        let mut table = b
+            .build_table_with_new_type("t", columns, true)
+            .with_access(TableAccess::Public);
+        if let Some(default) = extra {
+            table = table.with_column_sequence(1);
+            if let Some(default) = default {
+                table = table.with_default_column_value(1, default);
+            }
+        }
+        table.finish();
+        b
+    }
+
+    /// Creates `module`'s tables in `stdb` and inserts `t` rows with ids 1 and 2.
+    fn setup_add_auto_inc_column(stdb: &TestDB, module: &ModuleDef) -> anyhow::Result<()> {
+        let mut tx = begin_mut_tx(stdb);
+        for def in module.tables() {
+            create_table_from_def(stdb, &mut tx, module, def)?;
+        }
+        let table_id = stdb.table_id_from_name_mut(&tx, "t")?.expect("t should exist");
+        insert(stdb, &mut tx, table_id, &product![1u64])?;
+        insert(stdb, &mut tx, table_id, &product![2u64])?;
+        stdb.commit_tx(tx)?;
+        Ok(())
+    }
+
+    /// Adding an `auto_inc` column without a default needs a manual migration,
+    /// which fills it in on the recreated table.
+    #[test]
+    fn manual_migration_adds_auto_inc_column() -> anyhow::Result<()> {
+        let stdb = TestDB::durable()?;
+        let module_v1: ModuleDef = add_auto_inc_column_module(None).finish().try_into()?;
+        let module_v2: ModuleDef = {
+            let mut b = add_auto_inc_column_module(Some(None));
+            b.add_migration(RawMigrationDefV10 {
+                schema_hash: hash_value(&module_v1),
+                name: "migrate".into(),
+                dropped: add_auto_inc_column_module(None).finish(),
+            });
+            b.finish().try_into()?
+        };
+        setup_add_auto_inc_column(&stdb, &module_v1)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&module_v1, &module_v2)?;
+        let UpdateStep::RunManual(migration) =
+            update_database(&stdb, &mut tx, AuthCtx::for_testing(), plan, &TestLogger)?
+        else {
+            panic!("expected a manual migration");
+        };
+        let new_id = stdb.table_id_from_name_mut(&tx, "t")?.expect("t should exist");
+        for id in [1u64, 2] {
+            insert(&stdb, &mut tx, new_id, &product![id, 0u32])?;
+        }
+        assert_matches!(
+            migration.finish(&stdb, &mut tx, &TestLogger)?,
+            UpdateResult::Success | UpdateResult::RequiresClientDisconnect
+        );
+
+        let mut extras = stdb
+            .iter_mut(&tx, new_id)?
+            .map(|r| r.read_col::<u32>(1))
+            .collect::<Result<Vec<_>, _>>()?;
+        extras.sort();
+        assert_eq!(extras, [1, 2]);
+        Ok(())
+    }
+
+    /// `t(id: u64)`, or `t(id: u64, extra: u32)` with `extra` indexed (uniquely if `unique`).
+    fn add_indexed_column_module(extra: Option<bool>) -> RawModuleDefV10Builder {
+        let mut b = RawModuleDefV10Builder::new();
+        match extra {
+            None => {
+                b.build_table_with_new_type("t", ProductType::from([("id", AlgebraicType::U64)]), true)
+                    .with_access(TableAccess::Public)
+                    .finish();
+            }
+            Some(unique) => {
+                let columns = ProductType::from([("id", AlgebraicType::U64), ("extra", AlgebraicType::U32)]);
+                let mut table = b
+                    .build_table_with_new_type("t", columns, true)
+                    .with_access(TableAccess::Public)
+                    .with_index_no_accessor_name(btree(1), "t_extra_idx_btree");
+                if unique {
+                    table = table.with_unique_constraint(1);
+                }
+                table.finish();
+            }
+        }
+        b
+    }
+
+    /// Adding an indexed column without a default needs a manual migration,
+    /// whose new table must come with the index.
+    #[test]
+    fn manual_migration_adds_indexed_column() -> anyhow::Result<()> {
+        for unique in [false, true] {
+            let stdb = TestDB::durable()?;
+            let module_v1: ModuleDef = add_indexed_column_module(None).finish().try_into()?;
+            let module_v2: ModuleDef = {
+                let mut b = add_indexed_column_module(Some(unique));
+                b.add_migration(RawMigrationDefV10 {
+                    schema_hash: hash_value(&module_v1),
+                    name: "migrate".into(),
+                    dropped: add_indexed_column_module(None).finish(),
+                });
+                b.finish().try_into()?
+            };
+            setup_add_auto_inc_column(&stdb, &module_v1)?;
+
+            let mut tx = begin_mut_tx(&stdb);
+            let plan = ponder_migrate(&module_v1, &module_v2)?;
+            let UpdateStep::RunManual(migration) =
+                update_database(&stdb, &mut tx, AuthCtx::for_testing(), plan, &TestLogger)?
+            else {
+                panic!("expected a manual migration");
+            };
+            let new_id = stdb.table_id_from_name_mut(&tx, "t")?.expect("t should exist");
+            for id in [1u64, 2] {
+                insert(&stdb, &mut tx, new_id, &product![id, id as u32 * 10])?;
+            }
+            assert_matches!(
+                migration.finish(&stdb, &mut tx, &TestLogger)?,
+                UpdateResult::Success | UpdateResult::RequiresClientDisconnect
+            );
+
+            let schema = stdb.schema_for_table_mut(&tx, new_id)?;
+            assert_eq!(schema.indexes.len(), 1, "{unique}: {:?}", schema.indexes);
+            assert_eq!(schema.constraints.len(), unique as usize, "{:?}", schema.constraints);
+            let found = stdb
+                .iter_by_col_eq_mut(&tx, new_id, 1, &20u32.into())?
+                .map(|r| r.read_col::<u64>(0))
+                .collect::<Result<Vec<_>, _>>()?;
+            assert_eq!(found, [2]);
+        }
+        Ok(())
+    }
+
+    /// Adding an `auto_inc` column with a default is an automatic migration.
+    /// The precheck has to look at the column's values once it exists, i.e. the default.
+    #[test]
+    fn auto_migration_adds_auto_inc_column_with_default() -> anyhow::Result<()> {
+        let module_v1: ModuleDef = add_auto_inc_column_module(None).finish().try_into()?;
+        for (default, ok) in [(0u32, true), (5u32, false)] {
+            let stdb = TestDB::durable()?;
+            let module_v2: ModuleDef = add_auto_inc_column_module(Some(Some(default.into())))
+                .finish()
+                .try_into()?;
+            setup_add_auto_inc_column(&stdb, &module_v1)?;
+
+            let mut tx = begin_mut_tx(&stdb);
+            let plan = ponder_migrate(&module_v1, &module_v2)?;
+            let res = update_database(&stdb, &mut tx, AuthCtx::for_testing(), plan, &TestLogger);
+            if ok {
+                assert_matches!(res?, UpdateStep::Done(_));
+                let table_id = stdb.table_id_from_name_mut(&tx, "t")?.expect("t should exist");
+                insert(&stdb, &mut tx, table_id, &product![3u64, 0u32])?;
+            } else {
+                let err = res.err().expect("a default in the sequence's range should be rejected");
+                assert!(err.to_string().contains("already has values in range"), "{err}");
+            }
+        }
         Ok(())
     }
 

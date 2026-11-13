@@ -225,139 +225,80 @@ impl MigratePlan<'_> {
 impl<'def> MigratePlan<'def> {
     /// The tables a manual migration sees under `dropped`, as they are when it runs.
     ///
-    /// The manual migration runs after the plan's automatic steps,
-    /// so each changed table is its old definition with those steps applied to it.
-    /// Removed tables get no steps of their own, so they keep their old definitions.
+    /// These are the old definitions of the removed and changed tables:
+    /// the plan has no automatic steps for either, see [`Self::drop_steps_of_recreated_tables`].
     /// Empty if this isn't a manual migration.
     pub fn dropped_tables(&self) -> Vec<(TableKey<'def>, TableDef)> {
         let Some(manual) = &self.manual else {
             return vec![];
         };
-        let (old, new) = (self.old, self.new);
-        let old_table = |key: TableKey<'def>| old.find_table(key).map(|(_, table)| table);
-        let new_table = |key: TableKey<'def>| new.find_table(key).map(|(_, table)| table);
+        std::iter::chain(&manual.removed_tables, &manual.changed_tables)
+            .filter_map(|&key| Some((key, self.old.find_table(key)?.1.clone())))
+            .collect()
+    }
 
-        let mut changed: HashMap<TableKey<'def>, TableDef> = manual
-            .changed_tables
-            .iter()
-            .filter_map(|&key| Some((key, old_table(key)?.clone())))
-            .collect();
-
-        // The table in `module` that stores the index, constraint, or sequence named `name`.
-        let storing_table = |module: &'def ModuleDef, namespace: &'def NamespacePath, name| {
+    /// The existing table that `step` alters piecemeal, if any.
+    ///
+    /// Steps that add, remove, or rewrite a whole table, and steps that aren't about a table, give `None`.
+    fn step_table(&self, step: &AutoMigrateStep<'def>) -> Option<TableKey<'def>> {
+        // The table in `module` that stores the index, constraint, sequence, or schedule named `name`.
+        let storing_table = |module: &'def ModuleDef, namespace: &'def NamespacePath, name: &RawIdentifier| {
             let (_, table) = module.find_storing_table(namespace, name)?;
             Some((namespace, &table.name))
         };
-
-        for step in &self.steps {
-            match *step {
-                AutoMigrateStep::RemoveIndex((namespace, name)) => {
-                    if let Some(table) = storing_table(old, namespace, name).and_then(|k| changed.get_mut(&k)) {
-                        table.indexes.remove(name);
-                    }
-                }
-                AutoMigrateStep::RemoveConstraint((namespace, name)) => {
-                    if let Some(table) = storing_table(old, namespace, name).and_then(|k| changed.get_mut(&k)) {
-                        table.constraints.remove(name);
-                    }
-                }
-                AutoMigrateStep::RemoveSequence((namespace, name)) => {
-                    if let Some(table) = storing_table(old, namespace, name).and_then(|k| changed.get_mut(&k)) {
-                        table.sequences.remove(name);
-                    }
-                }
-                AutoMigrateStep::AddIndex(key @ (namespace, name)) => {
-                    if let Some(table) = storing_table(new, namespace, name).and_then(|k| changed.get_mut(&k))
-                        && let Some(index) = new.lookup::<IndexDef>(key)
-                    {
-                        table.indexes.insert(name.clone(), index.clone());
-                    }
-                }
-                AutoMigrateStep::AddConstraint(key @ (namespace, name)) => {
-                    if let Some(table) = storing_table(new, namespace, name).and_then(|k| changed.get_mut(&k))
-                        && let Some(constraint) = new.lookup::<ConstraintDef>(key)
-                    {
-                        table.constraints.insert(name.clone(), constraint.clone());
-                    }
-                }
-                AutoMigrateStep::AddSequence(key @ (namespace, name)) => {
-                    if let Some(table) = storing_table(new, namespace, name).and_then(|k| changed.get_mut(&k))
-                        && let Some(sequence) = new.lookup::<SequenceDef>(key)
-                    {
-                        table.sequences.insert(name.clone(), sequence.clone());
-                    }
-                }
-                AutoMigrateStep::ChangeIndexSourceName(key @ (namespace, name)) => {
-                    if let Some(table) = storing_table(new, namespace, name).and_then(|k| changed.get_mut(&k))
-                        && let Some(new_index) = new.lookup::<IndexDef>(key)
-                        && let Some(index) = table.indexes.get_mut(name)
-                    {
-                        index.source_name = new_index.source_name.clone();
-                    }
-                }
-                AutoMigrateStep::ChangeTableAccessorName(key) => {
-                    if let (Some(table), Some(new_table)) = (changed.get_mut(&key), new_table(key)) {
-                        table.accessor_name = new_table.accessor_name.clone();
-                    }
-                }
-                AutoMigrateStep::ChangeColumnAccessorName(key, column) => {
-                    if let (Some(table), Some(new_table)) = (changed.get_mut(&key), new_table(key))
-                        && let Some(new_column) = new_table.get_column_by_name(column)
-                        && let Some(column) = table.columns.iter_mut().find(|c| &c.name == column)
-                    {
-                        column.accessor_name = new_column.accessor_name.clone();
-                    }
-                }
-                AutoMigrateStep::ChangeAccess(key) => {
-                    if let (Some(table), Some(new_table)) = (changed.get_mut(&key), new_table(key)) {
-                        table.table_access = new_table.table_access;
-                    }
-                }
-                AutoMigrateStep::ChangePrimaryKey(key) => {
-                    if let (Some(table), Some(new_table)) = (changed.get_mut(&key), new_table(key)) {
-                        table.primary_key = new_table.primary_key;
-                    }
-                }
-                AutoMigrateStep::RemoveSchedule((namespace, name)) => {
-                    if let Some(table) = storing_table(old, namespace, name.as_raw()).and_then(|k| changed.get_mut(&k))
-                    {
-                        table.schedule = None;
-                    }
-                }
-                AutoMigrateStep::AddSchedule(key @ (namespace, name)) => {
-                    if let Some(table) = storing_table(new, namespace, name.as_raw()).and_then(|k| changed.get_mut(&k))
-                    {
-                        table.schedule = new.lookup::<ScheduleDef>(key).cloned();
-                    }
-                }
-                // Removed tables are moved under `dropped` as they are,
-                // and changed tables never get column steps; see `auto_migrate_table`.
-                AutoMigrateStep::RemoveTable(_)
-                | AutoMigrateStep::ChangeColumns(_)
-                | AutoMigrateStep::ReschemaEventTable(_)
-                | AutoMigrateStep::AddColumns(_)
-                // These don't touch existing tables.
-                | AutoMigrateStep::AddTable(_)
-                | AutoMigrateStep::RemoveView(_)
-                | AutoMigrateStep::AddView(_)
-                | AutoMigrateStep::UpdateView(_)
-                | AutoMigrateStep::RemoveRowLevelSecurity(_)
-                | AutoMigrateStep::AddRowLevelSecurity(_)
-                | AutoMigrateStep::DisconnectAllUsers => {}
-            }
+        let (old, new) = (self.old, self.new);
+        match *step {
+            AutoMigrateStep::RemoveIndex((namespace, name))
+            | AutoMigrateStep::RemoveConstraint((namespace, name))
+            | AutoMigrateStep::RemoveSequence((namespace, name)) => storing_table(old, namespace, name),
+            AutoMigrateStep::RemoveSchedule((namespace, name)) => storing_table(old, namespace, name.as_raw()),
+            AutoMigrateStep::AddIndex((namespace, name))
+            | AutoMigrateStep::AddConstraint((namespace, name))
+            | AutoMigrateStep::AddSequence((namespace, name))
+            | AutoMigrateStep::ChangeIndexSourceName((namespace, name)) => storing_table(new, namespace, name),
+            AutoMigrateStep::AddSchedule((namespace, name)) => storing_table(new, namespace, name.as_raw()),
+            AutoMigrateStep::ChangeTableAccessorName(key)
+            | AutoMigrateStep::ChangeColumnAccessorName(key, _)
+            | AutoMigrateStep::ChangeAccess(key)
+            | AutoMigrateStep::ChangePrimaryKey(key) => Some(key),
+            AutoMigrateStep::RemoveTable(_)
+            | AutoMigrateStep::AddTable(_)
+            | AutoMigrateStep::ChangeColumns(_)
+            | AutoMigrateStep::ReschemaEventTable(_)
+            | AutoMigrateStep::AddColumns(_)
+            | AutoMigrateStep::RemoveView(_)
+            | AutoMigrateStep::AddView(_)
+            | AutoMigrateStep::UpdateView(_)
+            | AutoMigrateStep::RemoveRowLevelSecurity(_)
+            | AutoMigrateStep::AddRowLevelSecurity(_)
+            | AutoMigrateStep::DisconnectAllUsers => None,
         }
+    }
 
-        manual
-            .removed_tables
-            .iter()
-            .filter_map(|&key| Some((key, old_table(key)?.clone())))
-            .chain(
-                manual
-                    .changed_tables
-                    .iter()
-                    .filter_map(|key| Some((*key, changed.remove(key)?))),
-            )
-            .collect()
+    /// Drops the steps and prechecks for the tables that a manual migration recreates.
+    ///
+    /// The engine moves such a table under `dropped` and creates it afresh from its new definition,
+    /// with all its indexes, constraints, and sequences, so there is nothing to do to the old table.
+    /// Worse, the steps would apply the new definition's column positions to the old table,
+    /// where they may be out of bounds, or name different columns entirely.
+    fn drop_steps_of_recreated_tables(&mut self) {
+        let Some(manual) = &self.manual else {
+            return;
+        };
+        let recreated: HashSet<TableKey<'def>> = manual.changed_tables.iter().copied().collect();
+        let is_recreated = |table: Option<TableKey<'def>>| table.is_some_and(|table| recreated.contains(&table));
+
+        let mut steps = std::mem::take(&mut self.steps);
+        steps.retain(|step| !is_recreated(self.step_table(step)));
+        self.steps = steps;
+
+        let new = self.new;
+        self.prechecks.retain(|precheck| match *precheck {
+            AutoMigratePrecheck::CheckAddSequenceRangeValid((namespace, name)) => !is_recreated(
+                new.find_storing_table(namespace, name)
+                    .map(|(_, table)| (namespace, &table.name)),
+            ),
+        });
     }
 }
 
@@ -674,6 +615,7 @@ fn ponder_migrate_with<'def>(
     // since they assume that any schema changes, like adding or dropping tables,
     // have already been reflected in the database state.
     auto_migrate_row_level_security(&mut plan);
+    plan.drop_steps_of_recreated_tables();
 
     let ((), (), ()) = (tables_ok, indexes_ok, constraints_ok).combine_errors()?;
 
@@ -2194,7 +2136,36 @@ mod tests {
     }
 
     #[test]
-    fn dropped_tables_have_automatic_steps_applied() {
+    fn manual_migration_leaves_sequences_of_changed_tables_alone() {
+        // Renaming an `auto_inc` column renames its sequence too.
+        let person = |column: &'static str| {
+            create_module_def(|builder| {
+                builder
+                    .build_table_with_new_type("Person", ProductType::from([(column, AlgebraicType::U16)]), true)
+                    .with_column_sequence(0)
+                    .finish();
+            })
+        };
+        let (old_def, new_def) = (person("id"), person("new_id"));
+
+        let plan = ponder_manual_migrate(&old_def, &new_def).expect("manual migration plan");
+        assert_eq!(plan.manual.as_ref().unwrap().changed_tables, [key("", "Person")]);
+
+        // The table is recreated with the new sequence, so there's nothing to check
+        // against or apply to the old table, whose column holds the old ids.
+        assert_eq!(plan.prechecks, []);
+        assert!(
+            !plan.steps.iter().any(|step| matches!(
+                step,
+                AutoMigrateStep::AddSequence(_) | AutoMigrateStep::RemoveSequence(_)
+            )),
+            "{:?}",
+            plan.steps
+        );
+    }
+
+    #[test]
+    fn dropped_tables_are_old_definitions() {
         let old_def = create_module_def(|builder| {
             builder
                 .build_table_with_new_type(
@@ -2231,27 +2202,19 @@ mod tests {
         assert_eq!(manual.changed_tables, [key("", "Apples")]);
         assert_eq!(manual.removed_tables, [key("", "Pears")]);
 
-        let dropped: HashMap<_, _> = plan.dropped_tables().into_iter().collect();
-        let accessors = |table: &TableDef| -> HashSet<String> {
-            table
-                .indexes
-                .values()
-                .filter_map(|index| index.accessor_name.as_ref().map(|a| a.to_string()))
-                .collect()
-        };
-
-        // The changed table runs through the automatic steps before the manual migration sees it.
-        let apples = &dropped[&key("", "Apples")];
+        // The changed table gets no automatic steps, since the engine recreates it from scratch.
         assert_eq!(
-            accessors(apples),
-            HashSet::from_iter(["id_index".to_owned(), "both_index".to_owned()])
+            plan.steps,
+            [
+                AutoMigrateStep::RemoveTable(key("", "Pears")),
+                AutoMigrateStep::DisconnectAllUsers
+            ]
         );
-        assert_eq!(apples.table_access, TableAccess::Public);
-        assert_eq!(apples.sequences.len(), 1);
-        // Its columns are still the old ones.
-        assert_eq!(apples.columns[1].ty, AlgebraicType::U8);
+        assert_eq!(plan.prechecks, []);
 
-        // The removed table is moved under `dropped` as it was.
+        // So both tables are moved under `dropped` as they were.
+        let dropped: HashMap<_, _> = plan.dropped_tables().into_iter().collect();
+        assert_eq!(&dropped[&key("", "Apples")], old_def.table("Apples").unwrap());
         assert_eq!(&dropped[&key("", "Pears")], old_def.table("Pears").unwrap());
     }
 
