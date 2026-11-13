@@ -1705,6 +1705,63 @@ public static class GeneratorSnapshotTests
     }
 
     [Fact]
+    public static async Task OutboxAttributesParseTypeArguments()
+    {
+        var fixture = await Fixture.Compile("server");
+        var compilation = CSharpCompilation.Create(
+            "OutboxAttributes",
+            [
+                CSharpSyntaxTree.ParseText(
+                    """
+                    public class Receiver { }
+
+                    [SpacetimeDB.Table(Accessor = "Outbox", Outbox = typeof(Receiver))]
+                    public partial struct OutboxRow { }
+
+                    public static class Callbacks
+                    {
+                        [SpacetimeDB.OnResult(typeof(OutboxRow), Table = "Outbox")]
+                        public static void OnResult() { }
+                    }
+                    """,
+                    fixture.ParseOptions
+                ),
+            ],
+            fixture.SampleCompilation.References,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+        );
+        Assert.Empty(
+            compilation.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error)
+        );
+        var receiver = compilation.GetTypeByMetadataName("Receiver");
+        var row = compilation.GetTypeByMetadataName("OutboxRow")!;
+
+        // `ParseAs` used to crash on `typeof(...)`; it now leaves those null.
+        var tableData = Assert.Single(row.GetAttributes());
+        var table = tableData.ParseAs<TableAttribute>();
+        Assert.Equal("Outbox", table.Accessor);
+        Assert.Null(table.Outbox);
+        Assert.True(
+            SymbolEqualityComparer.Default.Equals(receiver, tableData.GetTypeArgument("Outbox"))
+        );
+
+        var onResultData = Assert.Single(
+            compilation
+                .GetTypeByMetadataName("Callbacks")!
+                .GetMembers("OnResult")
+                .Single()
+                .GetAttributes()
+        );
+        var onResult = onResultData.ParseAs<OnResultAttribute>();
+        Assert.Equal("Outbox", onResult.Table);
+        Assert.Null(onResult.Row);
+        Assert.True(
+            SymbolEqualityComparer.Default.Equals(row, onResultData.GetTypeArgument("row"))
+        );
+        Assert.Null(onResultData.GetTypeArgument("Table"));
+    }
+
+    [Fact]
     public static async Task ViewInvalidReturnHighlightsReturnType()
     {
         var fixture = await Fixture.Compile("diag");
