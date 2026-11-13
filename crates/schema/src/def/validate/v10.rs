@@ -3900,7 +3900,7 @@ mod cache_policy_tests {
     }
 
     #[test]
-    fn existing_table_cache_policy_changes_are_rejected() {
+    fn existing_table_cache_policy_changes_are_planned() {
         let policies = [
             TableCachePolicy::RequiredInMemory,
             TableCachePolicy::RequiredOnDisk,
@@ -3910,16 +3910,13 @@ mod cache_policy_tests {
             let old: ModuleDef = table(old_policy).try_into().unwrap();
             for new_policy in policies {
                 let new: ModuleDef = table(new_policy).try_into().unwrap();
-                let result = crate::auto_migrate::ponder_auto_migrate(&old, &new);
-                if old_policy == new_policy {
-                    assert!(result.is_ok());
-                } else if old_policy == TableCachePolicy::NoRequirement || new_policy == TableCachePolicy::NoRequirement
-                {
-                    expect_error_matching!(
-                        result,
-                        crate::auto_migrate::AutoMigrateError::ChangeTableCachePolicy { .. }
-                    );
-                }
+                let plan = crate::auto_migrate::ponder_auto_migrate(&old, &new).unwrap();
+                assert_eq!(
+                    plan.steps
+                        .iter()
+                        .any(|step| matches!(step, crate::auto_migrate::AutoMigrateStep::ChangeCachePolicy(_))),
+                    old_policy != new_policy
+                );
             }
         }
     }
