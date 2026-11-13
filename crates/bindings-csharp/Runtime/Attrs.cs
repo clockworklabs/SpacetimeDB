@@ -99,6 +99,12 @@ namespace SpacetimeDB
         /// <para>Defaults to <c>ScheduledAt</c>.</para>
         /// </summary>
         public string ScheduledAt { get; init; } = "ScheduledAt";
+
+        /// <summary>
+        /// Makes this an outbox table: each row is a call to this reducer in another database.
+        /// Set it to a reducer from the receiver bindings.
+        /// </summary>
+        public System.Type? Outbox { get; init; }
     }
 
     /// <summary>
@@ -202,6 +208,27 @@ namespace SpacetimeDB
         internal override Internal.ColumnAttrs Mask => Internal.ColumnAttrs.Default;
     }
 
+    /// <summary>
+    /// Marks the column of an outbox table that holds the identity of the database to call.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Field, AllowMultiple = true)]
+    public sealed class TargetAttribute : Attribute
+    {
+        public string? Table { get; init; }
+    }
+
+    /// <summary>
+    /// Maps a column of an outbox table to a parameter of the remote reducer.
+    /// </summary>
+    /// <param name="name">The parameter's canonical name in the receiving module, such as <c>player_name</c>.</param>
+    [AttributeUsage(AttributeTargets.Field, AllowMultiple = true)]
+    public sealed class ParamAttribute(string name) : Attribute
+    {
+        public string Name => name;
+
+        public string? Table { get; init; }
+    }
+
     public enum ReducerKind
     {
         /// <summary>
@@ -219,6 +246,19 @@ namespace SpacetimeDB
         public ReducerKind Kind => kind;
 
         public string? Name { get; init; }
+    }
+
+    /// <summary>
+    /// Runs this reducer with the result of each call sent from an outbox table.
+    /// </summary>
+    /// <param name="row">The outbox table's row type.</param>
+    [AttributeUsage(AttributeTargets.Method, Inherited = false)]
+    public sealed class OnResultAttribute(System.Type row) : Attribute
+    {
+        public System.Type Row => row;
+
+        /// <summary>The outbox table's accessor, needed when the row type has more than one outbox table.</summary>
+        public string? Table { get; init; }
     }
 
     [AttributeUsage(AttributeTargets.Method, Inherited = false)]

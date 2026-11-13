@@ -215,6 +215,12 @@ public static class Utils
 
     private static object? ResolveConstant(TypedConstant constant, System.Type targetType)
     {
+        // A `typeof(...)` argument is a Roslyn symbol, which can't become a `System.Type`.
+        // Leave it null; read it with `GetTypeArgument`.
+        if (constant.Kind == TypedConstantKind.Type)
+        {
+            return null;
+        }
         if (constant.Kind == TypedConstantKind.Array)
         {
             // We can't use LINQ ToArray() here because it doesn't support dynamic Type
@@ -257,6 +263,31 @@ public static class Utils
             prop.SetValue(attr, ResolveConstant(arg.Value, prop.PropertyType));
         }
         return attr;
+    }
+
+    /// <summary>
+    /// Reads a <c>typeof(...)</c> argument of an attribute, by constructor parameter or property name.
+    /// </summary>
+    public static INamedTypeSymbol? GetTypeArgument(this AttributeData attrData, string name)
+    {
+        foreach (var arg in attrData.NamedArguments)
+        {
+            if (arg.Key == name)
+            {
+                return arg.Value.Value as INamedTypeSymbol;
+            }
+        }
+        if (attrData.AttributeConstructor is { } ctor)
+        {
+            for (var i = 0; i < ctor.Parameters.Length; i++)
+            {
+                if (ctor.Parameters[i].Name == name && i < attrData.ConstructorArguments.Length)
+                {
+                    return attrData.ConstructorArguments[i].Value as INamedTypeSymbol;
+                }
+            }
+        }
+        return null;
     }
 
     // Borrowed & modified code for generating in-place extensions for partial structs/classes/etc. Source:
