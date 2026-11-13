@@ -7,7 +7,7 @@ use crate::spacetime_config::find_and_load_with_env;
 use crate::subcommands::db_arg_resolution::{load_config_db_targets, resolve_database_arg};
 use crate::subcommands::publish::default_publish_module_path;
 use crate::subcommands::{build, generate};
-use crate::util::{database_identity, get_auth_header, y_or_n};
+use crate::util::{database_identity, get_auth_header, YesOrNo};
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches};
 use dialoguer::{theme::ColorfulTheme, Input};
@@ -235,7 +235,11 @@ fn choose_out_path(args: &ArgMatches, default_path: &Path, force: bool) -> anyho
                 path.display()
             );
         }
-        if !y_or_n(false, &format!("{} already exists. Overwrite it?", path.display()))? {
+        if !YesOrNo::new(format!("{} already exists. Overwrite it?", path.display()))
+            .force(false)
+            .default(false)
+            .prompt()?
+        {
             return Ok(None);
         }
     }
