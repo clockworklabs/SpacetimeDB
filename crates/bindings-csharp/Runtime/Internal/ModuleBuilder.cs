@@ -51,6 +51,7 @@ public sealed class ModuleBuilder
     private readonly List<RawTableDefV10> tableDefs = [];
     private readonly List<RawTableCachePolicyV10> tableCachePolicyDefs = [];
     private readonly List<RawScheduleDefV10> scheduleDefs = [];
+    private readonly List<RawOutboxDefV10> outboxDefs = [];
     private readonly List<RawReducerDefV10> reducerDefs = [];
     private readonly List<RawLifeCycleReducerDefV10> lifecycleReducerDefs = [];
     private readonly List<RawProcedureDefV10> procedureDefs = [];
@@ -206,6 +207,8 @@ public sealed class ModuleBuilder
         }
     }
 
+    public void RegisterOutbox(RawOutboxDefV10 outbox) => outboxDefs.Add(outbox);
+
     public void RegisterView<TDispatcher>()
         where TDispatcher : IView, new()
     {
@@ -305,6 +308,7 @@ public sealed class ModuleBuilder
         var internalFunctions = lifecycleReducerDefs
             .Select(l => l.FunctionName)
             .Concat(scheduleDefs.Select(s => s.FunctionName))
+            .Concat(outboxDefs.Select(o => o.OnResultReducer).OfType<string>())
             .ToHashSet(StringComparer.Ordinal);
 
         foreach (var reducer in reducerDefs)
@@ -376,6 +380,10 @@ public sealed class ModuleBuilder
         if (lifecycleReducerDefs.Count > 0)
         {
             sections.Add(new RawModuleDefV10Section.LifeCycleReducers(lifecycleReducerDefs));
+        }
+        if (outboxDefs.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.Outboxes(outboxDefs));
         }
         // TODO: Add sections for Event tables and Case conversion policy (mirrors Rust `raw_def/v10.rs` TODO).
         if (caseConversionPolicy is { } policy)
