@@ -8,12 +8,15 @@ use std::ops::Deref;
 use super::code_indenter::CodeIndenter;
 use super::Lang;
 use crate::util::{
-    collect_case, is_parameterized_view, is_reducer_invokable, iter_indexes, iter_reducers, iter_table_names_and_types,
-    iter_unique_cols, print_auto_generated_file_comment, print_auto_generated_version_comment, type_ref_name,
+    collect_case, dependency_scoped_type_name, is_parameterized_view, is_reducer_invokable, iter_indexes,
+    iter_reducers, iter_table_names_and_types, iter_types, iter_unique_cols, module_binding_reducer_type_refs,
+    print_auto_generated_file_comment, print_auto_generated_version_comment, reducer_signature_hash, type_ref_name,
 };
+use crate::CodegenVisibility;
 use crate::{indent_scope, CodegenOptions, OutputFile};
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
+use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_primitives::ColId;
 use spacetimedb_schema::def::{
     BTreeAlgorithm, IndexAlgorithm, ModuleDef, ProcedureDef, ReducerDef, TableDef, TypeDef, ViewDef,
@@ -583,6 +586,147 @@ impl Csharp<'_> {
             files.push(scoped_file(path, scope.child_globals(child)));
             self.child_files(child, files);
         }
+    }
+}
+
+/// Generate the bindings a C# module uses to call `module`'s reducers through outbox tables.
+pub(super) fn generate_csharp_module_bindings(
+    module: &ModuleDef,
+    namespace: &str,
+    dependency_name: Option<&str>,
+) -> Vec<OutputFile> {
+    // TODO: Generate IDC bindings for submodules. Only root types and reducers are emitted for now.
+    let ctx = TypeContext::Receiver { namespace };
+    let type_refs = module_binding_reducer_type_refs(module);
+    let mut files = vec![receiver_identity_file(namespace)];
+    for typ in iter_types(module).filter(|typ| type_refs.contains(&typ.ty)) {
+        let name = receiver_type_name(module, typ.ty, namespace);
+        let mut output = CsharpAutogen::new_receiver(namespace);
+        match dependency_name {
+            Some(dependency) => writeln!(
+                output,
+                "[global::SpacetimeDB.Type(Name = \"{}\")]",
+                dependency_scoped_type_name(dependency, &typ.accessor_name)
+            ),
+            None => writeln!(output, "[global::SpacetimeDB.Type]"),
+        }
+        match &module.typespace_for_generate()[typ.ty] {
+            AlgebraicTypeDef::Sum(sum) => write_sum(module, &mut output, &name, sum, ctx),
+            AlgebraicTypeDef::Product(product) => {
+                autogen_csharp_product_common(module, &mut output, name.clone(), product, "", ctx, |_| {})
+            }
+            AlgebraicTypeDef::PlainEnum(plain_enum) => write_plain_enum(&mut output, &name, plain_enum),
+        }
+        files.push(OutputFile {
+            filename: format!("Types/{name}.g.cs"),
+            code: output.into_inner(),
+        });
+    }
+    files.extend(
+        iter_reducers(module, CodegenVisibility::OnlyPublic)
+            .map(|reducer| receiver_reducer_file(module, reducer, namespace)),
+    );
+    files
+}
+
+/// The C# name of a receiver type. Names the bindings need for themselves get a `_` suffix:
+/// the `Identity` wrapper, the `Reducers` class, and the root namespaces that source
+/// generators write without `global::` (`System` and the bindings' own; Pascal case never
+/// produces `SpacetimeDB`). Only the C# name changes, not the type's name in the schema.
+fn receiver_type_name(module: &ModuleDef, r: AlgebraicTypeRef, namespace: &str) -> String {
+    let name = type_ref_name(module, r);
+    let root = namespace.split('.').next().unwrap_or_default();
+    if ["Identity", "Reducers", "System", root].contains(&name.as_str()) {
+        name + "_"
+    } else {
+        name
+    }
+}
+
+/// A per-dependency identity, so a sender can't pass one database's identity where another's
+/// is expected. On the wire and in the schema it's a plain `Identity`.
+fn receiver_identity_file(namespace: &str) -> OutputFile {
+    let mut output = CsharpAutogen::new_receiver(namespace);
+    writeln!(
+        output,
+        "public readonly record struct Identity(global::SpacetimeDB.Identity Value)"
+    );
+    indented_block(&mut output, |output| {
+        writeln!(
+            output,
+            "public static explicit operator Identity(global::SpacetimeDB.Identity value) => new(value);"
+        );
+        writeln!(output);
+        writeln!(
+            output,
+            "public static implicit operator global::SpacetimeDB.Identity(Identity value) => value.Value;"
+        );
+        writeln!(output);
+        writeln!(output, "public override string ToString() => Value.ToString();");
+        writeln!(output);
+        writeln!(
+            output,
+            "public readonly struct BSATN : global::SpacetimeDB.BSATN.IReadWrite<Identity>"
+        );
+        indented_block(output, |output| {
+            writeln!(
+                output,
+                "public Identity Read(global::System.IO.BinaryReader reader) => new(new global::SpacetimeDB.Identity.BSATN().Read(reader));"
+            );
+            writeln!(output);
+            writeln!(
+                output,
+                "public void Write(global::System.IO.BinaryWriter writer, Identity value) => new global::SpacetimeDB.Identity.BSATN().Write(writer, value.Value);"
+            );
+            writeln!(output);
+            writeln!(
+                output,
+                "public global::SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(global::SpacetimeDB.BSATN.ITypeRegistrar registrar) => new global::SpacetimeDB.Identity.BSATN().GetAlgebraicType(registrar);"
+            );
+        });
+    });
+    OutputFile {
+        filename: "Identity.g.cs".to_owned(),
+        code: output.into_inner(),
+    }
+}
+
+/// A marker class describing one receiver reducer, read by the module source generator
+/// when an outbox table names it. It's never instantiated.
+fn receiver_reducer_file(module: &ModuleDef, reducer: &ReducerDef, namespace: &str) -> OutputFile {
+    let ctx = TypeContext::Receiver { namespace };
+    let mut class_name = reducer.accessor_name.deref().to_case(Case::Pascal);
+    // A nested class can't have its enclosing class's name.
+    if class_name == "Reducers" {
+        class_name.push('_');
+    }
+    let mut output = CsharpAutogen::new_receiver(namespace);
+    writeln!(output, "public static partial class Reducers");
+    indented_block(&mut output, |output| {
+        writeln!(
+            output,
+            "public abstract class {class_name} : global::SpacetimeDB.Internal.IOutboxReceiver"
+        );
+        indented_block(output, |output| {
+            writeln!(output, "public const string ReducerName = \"{}\";", reducer.name);
+            writeln!(
+                output,
+                "public const string SignatureHash = \"{}\";",
+                reducer_signature_hash(module, reducer)
+            );
+            if !reducer.params_for_generate.elements.is_empty() {
+                writeln!(output);
+            }
+            // Outbox columns match these by name, like Rust's outbox macros.
+            for (param, ty) in &reducer.params_for_generate.elements {
+                let field = param.deref().to_case(Case::Snake);
+                writeln!(output, "public {} @{field} = default!;", ty_fmt_in(module, ty, ctx));
+            }
+        });
+    });
+    OutputFile {
+        filename: format!("Reducers/{class_name}.g.cs"),
+        code: output.into_inner(),
     }
 }
 
@@ -1184,6 +1328,7 @@ impl Lang for CsharpScope<'_> {
                 reducer.accessor_name.deref().to_case(Case::Pascal),
                 &reducer.params_for_generate,
                 &base_type,
+                TypeContext::Client,
                 |output| {
                     if !reducer.params_for_generate.elements.is_empty() {
                         writeln!(output);
@@ -1287,6 +1432,7 @@ impl Lang for CsharpScope<'_> {
                 format!("{}Args", procedure.accessor_name.deref().to_case(Case::Pascal)),
                 &procedure.params_for_generate,
                 "Procedure, IProcedureArgs",
+                TypeContext::Client,
                 |output| {
                     if !procedure.params_for_generate.elements.is_empty() {
                         writeln!(output);
@@ -1571,43 +1717,75 @@ impl Lang for CsharpScope<'_> {
     }
 }
 
+/// Where a generated type is used, which decides how `ty_fmt_in` names types.
+#[derive(Clone, Copy)]
+enum TypeContext<'a> {
+    /// Client bindings, which import `SpacetimeDB`.
+    Client,
+    /// Receiver bindings in `namespace`, where `Identity` is the dependency's own wrapper.
+    Receiver { namespace: &'a str },
+}
+
 fn ty_fmt<'a>(module: &'a ModuleDef, ty: &'a AlgebraicTypeUse) -> impl fmt::Display + 'a {
-    fmt_fn(move |f| match ty {
-        AlgebraicTypeUse::Identity => f.write_str("SpacetimeDB.Identity"),
-        AlgebraicTypeUse::ConnectionId => f.write_str("SpacetimeDB.ConnectionId"),
-        AlgebraicTypeUse::ScheduleAt => f.write_str("SpacetimeDB.ScheduleAt"),
-        AlgebraicTypeUse::Timestamp => f.write_str("SpacetimeDB.Timestamp"),
-        AlgebraicTypeUse::TimeDuration => f.write_str("SpacetimeDB.TimeDuration"),
-        AlgebraicTypeUse::Uuid => f.write_str("SpacetimeDB.Uuid"),
-        AlgebraicTypeUse::Unit => f.write_str("SpacetimeDB.Unit"),
-        AlgebraicTypeUse::Option(inner_ty) => write!(f, "{}?", ty_fmt(module, inner_ty)),
-        AlgebraicTypeUse::Result { ok_ty, err_ty } => write!(
-            f,
-            "SpacetimeDB.Result<{}, {}>",
-            ty_fmt(module, ok_ty),
-            ty_fmt(module, err_ty)
-        ),
-        AlgebraicTypeUse::Array(elem_ty) => write!(f, "System.Collections.Generic.List<{}>", ty_fmt(module, elem_ty)),
-        AlgebraicTypeUse::String => f.write_str("string"),
-        AlgebraicTypeUse::Ref(r) => f.write_str(&type_ref_name(module, *r)),
-        AlgebraicTypeUse::Primitive(prim) => f.write_str(match prim {
-            PrimitiveType::Bool => "bool",
-            PrimitiveType::I8 => "sbyte",
-            PrimitiveType::U8 => "byte",
-            PrimitiveType::I16 => "short",
-            PrimitiveType::U16 => "ushort",
-            PrimitiveType::I32 => "int",
-            PrimitiveType::U32 => "uint",
-            PrimitiveType::I64 => "long",
-            PrimitiveType::U64 => "ulong",
-            PrimitiveType::I128 => "I128",
-            PrimitiveType::U128 => "U128",
-            PrimitiveType::I256 => "I256",
-            PrimitiveType::U256 => "U256",
-            PrimitiveType::F32 => "float",
-            PrimitiveType::F64 => "double",
-        }),
-        AlgebraicTypeUse::Never => unimplemented!(),
+    ty_fmt_in(module, ty, TypeContext::Client)
+}
+
+fn ty_fmt_in<'a>(module: &'a ModuleDef, ty: &'a AlgebraicTypeUse, ctx: TypeContext<'a>) -> impl fmt::Display + 'a {
+    fmt_fn(move |f| {
+        // `stdb` prefixes `SpacetimeDB.*` builtins; `big` prefixes the 128- and 256-bit integers.
+        let (stdb, system, big) = match ctx {
+            TypeContext::Client => ("SpacetimeDB.", "System.", ""),
+            TypeContext::Receiver { .. } => ("global::SpacetimeDB.", "global::System.", "global::SpacetimeDB."),
+        };
+        match ty {
+            AlgebraicTypeUse::Identity => match ctx {
+                TypeContext::Client => write!(f, "{stdb}Identity"),
+                TypeContext::Receiver { namespace } => write!(f, "global::{namespace}.Identity"),
+            },
+            AlgebraicTypeUse::ConnectionId => write!(f, "{stdb}ConnectionId"),
+            AlgebraicTypeUse::ScheduleAt => write!(f, "{stdb}ScheduleAt"),
+            AlgebraicTypeUse::Timestamp => write!(f, "{stdb}Timestamp"),
+            AlgebraicTypeUse::TimeDuration => write!(f, "{stdb}TimeDuration"),
+            AlgebraicTypeUse::Uuid => write!(f, "{stdb}Uuid"),
+            AlgebraicTypeUse::Unit => write!(f, "{stdb}Unit"),
+            AlgebraicTypeUse::Option(inner_ty) => write!(f, "{}?", ty_fmt_in(module, inner_ty, ctx)),
+            AlgebraicTypeUse::Result { ok_ty, err_ty } => write!(
+                f,
+                "{stdb}Result<{}, {}>",
+                ty_fmt_in(module, ok_ty, ctx),
+                ty_fmt_in(module, err_ty, ctx)
+            ),
+            AlgebraicTypeUse::Array(elem_ty) => write!(
+                f,
+                "{system}Collections.Generic.List<{}>",
+                ty_fmt_in(module, elem_ty, ctx)
+            ),
+            AlgebraicTypeUse::String => f.write_str("string"),
+            AlgebraicTypeUse::Ref(r) => match ctx {
+                TypeContext::Client => f.write_str(&type_ref_name(module, *r)),
+                TypeContext::Receiver { namespace } => {
+                    write!(f, "global::{namespace}.{}", receiver_type_name(module, *r, namespace))
+                }
+            },
+            AlgebraicTypeUse::Primitive(prim) => match prim {
+                PrimitiveType::Bool => f.write_str("bool"),
+                PrimitiveType::I8 => f.write_str("sbyte"),
+                PrimitiveType::U8 => f.write_str("byte"),
+                PrimitiveType::I16 => f.write_str("short"),
+                PrimitiveType::U16 => f.write_str("ushort"),
+                PrimitiveType::I32 => f.write_str("int"),
+                PrimitiveType::U32 => f.write_str("uint"),
+                PrimitiveType::I64 => f.write_str("long"),
+                PrimitiveType::U64 => f.write_str("ulong"),
+                PrimitiveType::I128 => write!(f, "{big}I128"),
+                PrimitiveType::U128 => write!(f, "{big}U128"),
+                PrimitiveType::I256 => write!(f, "{big}I256"),
+                PrimitiveType::U256 => write!(f, "{big}U256"),
+                PrimitiveType::F32 => f.write_str("float"),
+                PrimitiveType::F64 => f.write_str("double"),
+            },
+            AlgebraicTypeUse::Never => unimplemented!(),
+        }
     })
 }
 
@@ -1739,6 +1917,19 @@ impl CsharpAutogen {
         Self { output }
     }
 
+    pub fn new_receiver(namespace: &str) -> Self {
+        let mut output = CodeIndenter::new(String::new(), INDENT);
+
+        print_auto_generated_file_comment(&mut output);
+        writeln!(output, "#nullable enable");
+        writeln!(output);
+        writeln!(output, "namespace {namespace}");
+        writeln!(output, "{{");
+        output.indent(1);
+
+        Self { output }
+    }
+
     pub fn into_inner(mut self) -> String {
         self.dedent(1);
         writeln!(self, "}}");
@@ -1751,10 +1942,24 @@ fn autogen_csharp_sum(module: &ModuleDef, sum_type_name: String, sum_type: &SumT
     let mut output = CsharpAutogen::new(namespace, &[], false);
 
     writeln!(output, "[SpacetimeDB.Type]");
-    write!(
-        output,
-        "public partial record {sum_type_name} : SpacetimeDB.TaggedEnum<("
-    );
+    write_sum(module, &mut output, &sum_type_name, sum_type, TypeContext::Client);
+
+    output.into_inner()
+}
+
+/// Writes a sum type's declaration, without its `[Type]` attribute.
+fn write_sum(
+    module: &ModuleDef,
+    output: &mut CodeIndenter<String>,
+    sum_type_name: &str,
+    sum_type: &SumTypeDef,
+    ctx: TypeContext,
+) {
+    let stdb = match ctx {
+        TypeContext::Client => "SpacetimeDB.",
+        TypeContext::Receiver { .. } => "global::SpacetimeDB.",
+    };
+    write!(output, "public partial record {sum_type_name} : {stdb}TaggedEnum<(");
     {
         indent_scope!(output);
         for (i, (variant_name, variant_ty)) in sum_type.variants.iter().enumerate() {
@@ -1763,41 +1968,44 @@ fn autogen_csharp_sum(module: &ModuleDef, sum_type_name: String, sum_type: &SumT
             }
             writeln!(output);
             let variant_name = variant_name.deref().to_case(Case::Pascal);
-            write!(output, "{} {variant_name}", ty_fmt(module, variant_ty));
+            write!(output, "{} {variant_name}", ty_fmt_in(module, variant_ty, ctx));
         }
         // If we have fewer than 2 variants, we need to add some dummy variants to make the tuple work.
         match sum_type.variants.len() {
             0 => {
                 writeln!(output);
-                writeln!(output, "SpacetimeDB.Unit _Reserved1,");
-                write!(output, "SpacetimeDB.Unit _Reserved2");
+                writeln!(output, "{stdb}Unit _Reserved1,");
+                write!(output, "{stdb}Unit _Reserved2");
             }
             1 => {
                 writeln!(output, ",");
-                write!(output, "SpacetimeDB.Unit _Reserved");
+                write!(output, "{stdb}Unit _Reserved");
             }
             _ => {}
         }
     }
     writeln!(output);
     writeln!(output, ")>;");
-
-    output.into_inner()
 }
 
 fn autogen_csharp_plain_enum(enum_type_name: String, enum_type: &PlainEnumTypeDef, namespace: &str) -> String {
     let mut output = CsharpAutogen::new(namespace, &[], false);
 
     writeln!(output, "[SpacetimeDB.Type]");
+    write_plain_enum(&mut output, &enum_type_name, enum_type);
+
+    output.into_inner()
+}
+
+/// Writes a plain enum's declaration, without its `[Type]` attribute.
+fn write_plain_enum(output: &mut CodeIndenter<String>, enum_type_name: &str, enum_type: &PlainEnumTypeDef) {
     writeln!(output, "public enum {enum_type_name}");
-    indented_block(&mut output, |output| {
+    indented_block(output, |output| {
         for variant in &*enum_type.variants {
             let variant = variant.deref().to_case(Case::Pascal);
             writeln!(output, "{variant},");
         }
     });
-
-    output.into_inner()
 }
 
 fn autogen_csharp_tuple(module: &ModuleDef, name: String, tuple: &ProductTypeDef, namespace: &str) -> String {
@@ -1807,21 +2015,27 @@ fn autogen_csharp_tuple(module: &ModuleDef, name: String, tuple: &ProductTypeDef
         false,
     );
 
-    autogen_csharp_product_common(module, &mut output, name, tuple, "", |_| {});
+    autogen_csharp_product_common(module, &mut output, name, tuple, "", TypeContext::Client, |_| {});
 
     output.into_inner()
 }
 
+/// Writes a product type's declaration. In client bindings it includes the `[Type]` attribute
+/// and data contract; in receiver bindings the caller writes the `[Type]` attribute.
 fn autogen_csharp_product_common(
     module: &ModuleDef,
     output: &mut CodeIndenter<String>,
     name: String,
     product_type: &ProductTypeDef,
     base: &str,
+    ctx: TypeContext,
     extra_body: impl FnOnce(&mut CodeIndenter<String>),
 ) {
-    writeln!(output, "[SpacetimeDB.Type]");
-    writeln!(output, "[DataContract]");
+    let client = matches!(ctx, TypeContext::Client);
+    if client {
+        writeln!(output, "[SpacetimeDB.Type]");
+        writeln!(output, "[DataContract]");
+    }
     write!(output, "public sealed partial class {name}");
     if !base.is_empty() {
         write!(output, " : {base}");
@@ -1831,10 +2045,12 @@ fn autogen_csharp_product_common(
         let fields = product_type
             .into_iter()
             .map(|(orig_name, ty)| {
-                writeln!(output, "[DataMember(Name = \"{orig_name}\")]");
+                if client {
+                    writeln!(output, "[DataMember(Name = \"{orig_name}\")]");
+                }
 
                 let field_name = orig_name.deref().to_case(Case::Pascal);
-                let ty = ty_fmt(module, ty).to_string();
+                let ty = ty_fmt_in(module, ty, ctx).to_string();
 
                 writeln!(output, "public {ty} {field_name};");
 
