@@ -303,15 +303,7 @@ impl Pages {
                 // - Caller promised that `fixed_row.len()` is consistent
                 //   with what has been passed to the manager in all other ops.
                 //   This entails that `fixed_row.len()` is consistent with `page`.
-                unsafe {
-                    page.insert_row(
-                        fixed_len,
-                        var_len,
-                        var_len_visitor,
-                        blob_store,
-                        EvictionPolicy::NeverEvict,
-                    )
-                }
+                unsafe { page.insert_row(fixed_len, var_len, var_len_visitor, blob_store, EvictionPolicy::Never) }
             },
         )? {
             (page, Ok(offset)) => Ok((page, offset)),
@@ -357,7 +349,7 @@ impl Pages {
                     fixed_row_size,
                     var_len_visitor,
                     blob_store,
-                    EvictionPolicy::NeverEvict,
+                    EvictionPolicy::Never,
                 )
             }
         })

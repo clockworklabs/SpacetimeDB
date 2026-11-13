@@ -8,6 +8,7 @@ use super::{
 use crate::db_metrics::DB_METRICS;
 #[cfg(feature = "metrics")]
 use crate::system_tables::{ST_COLUMN_NAME, ST_CONSTRAINT_NAME, ST_INDEX_NAME, ST_SEQUENCE_NAME};
+use crate::system_tables::{ST_TABLE_CACHE_POLICY_ID, ST_TABLE_CACHE_POLICY_IDX};
 use crate::traits::TxOffset;
 use crate::{
     error::TableError,
@@ -26,10 +27,6 @@ use crate::{
         ST_VIEW_ARG_ID, ST_VIEW_ARG_IDX,
     },
     traits::{EphemeralTables, TxData},
-};
-use crate::{
-    error::TrimTableError,
-    system_tables::{ST_TABLE_CACHE_POLICY_ID, ST_TABLE_CACHE_POLICY_IDX},
 };
 use crate::{
     locking_tx_datastore::ViewCallInfo,
@@ -1035,9 +1032,11 @@ impl CommittedState {
     pub(super) fn page_eviction_policy(&self, schema: &TableSchema) -> EvictionPolicy {
         // Schema recovery needs system tables to stay in memory.
         if schema.table_type == StTableType::System || schema.cache_policy == TableCachePolicy::RequiredInMemory {
-            EvictionPolicy::NeverEvict
+            EvictionPolicy::Never
+        } else if schema.cache_policy == TableCachePolicy::RequiredOnDisk {
+            EvictionPolicy::Memory
         } else {
-            EvictionPolicy::Evictable
+            EvictionPolicy::Disk
         }
     }
 
@@ -1115,7 +1114,10 @@ impl CommittedState {
             .set(self.storage.blobs().bytes_used_by_blobs() as _);
     }
 
-    pub(super) fn trim(&self) -> std::result::Result<(), TrimTableError> {
+    /// Evict live objects when under budget pressure, and reclaim space used by
+    /// orphaned objects.
+    #[cfg(feature = "durability")]
+    pub(super) fn trim(&self) -> std::result::Result<(), crate::error::TrimTableError> {
         for table in self.tables.values() {
             table.trim()?;
         }

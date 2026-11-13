@@ -122,7 +122,7 @@ fn assert_restoration_after_removal_keeps_its_permit(overwrite: bool) {
     });
     let storage = storage(local.clone(), Arc::default(), ByteBudget::unlimited());
     let object_to_write = object(b"aaaa");
-    let owner = storage.write(object_to_write).unwrap();
+    let owner = storage.write(object_to_write, DiskRetention::Evictable).unwrap();
     let key = owner.key();
     let slot = storage.catalog.read().get(&key).unwrap().clone();
     let reader_owner = owner.clone();
@@ -135,7 +135,7 @@ fn assert_restoration_after_removal_keeps_its_permit(overwrite: bool) {
     let reading = storage.clone();
     let reader = thread::spawn(move || {
         if overwrite {
-            let _rewritten = reading.write(object(b"aaaa"))?;
+            let _rewritten = reading.write(object(b"aaaa"), DiskRetention::Evictable)?;
         }
         let bytes = reading.read(key);
         drop(reader_owner);
@@ -148,7 +148,7 @@ fn assert_restoration_after_removal_keeps_its_permit(overwrite: bool) {
 
     // Unrelated keys can still be written while the eviction's I/O is paused.
     let object_to_write = object(b"bbbb");
-    let other_owner = storage.write(object_to_write).unwrap();
+    let other_owner = storage.write(object_to_write, DiskRetention::Evictable).unwrap();
     let other_key = other_owner.key();
     resume.send(()).unwrap();
 
@@ -181,7 +181,7 @@ fn concurrent_evictions_only_release_one_permit() {
     });
     let storage = storage(local, <_>::default(), ByteBudget::unlimited());
     let object_to_write = object(b"aaaa");
-    let owner = storage.write(object_to_write).unwrap();
+    let owner = storage.write(object_to_write, DiskRetention::Evictable).unwrap();
     let key = owner.key();
 
     let first_storage = storage.clone();
@@ -210,10 +210,10 @@ fn remote_read_can_evict_without_holding_its_slot() {
     let storage = storage(Arc::default(), Arc::default(), budget);
 
     let object_to_write = object(b"aaaa");
-    let owner = storage.write(object_to_write).unwrap();
+    let owner = storage.write(object_to_write, DiskRetention::Evictable).unwrap();
     let key = owner.key();
     let object_to_write = object(b"bbbb");
-    let _other_owner = storage.write(object_to_write).unwrap();
+    let _other_owner = storage.write(object_to_write, DiskRetention::Evictable).unwrap();
 
     let (sender, receiver) = mpsc::sync_channel(1);
     let reading = storage.clone();
@@ -229,10 +229,10 @@ fn overwrites_preserve_the_slot_and_account_once() {
     let storage = storage(Arc::default(), Arc::default(), ByteBudget::unlimited());
 
     let object_to_write = object(b"aaaa");
-    let owner = storage.write(object_to_write).unwrap();
+    let owner = storage.write(object_to_write, DiskRetention::Evictable).unwrap();
     let key = owner.key();
     let slot = storage.catalog.read().get(&key).unwrap().clone();
-    let _rewritten = storage.write(object(b"aaaa")).unwrap();
+    let _rewritten = storage.write(object(b"aaaa"), DiskRetention::Evictable).unwrap();
 
     assert!(Arc::ptr_eq(&slot, storage.catalog.read().get(&key).unwrap()));
     assert_eq!(storage.local.budget.usage().accounted_bytes, 4);
@@ -248,7 +248,7 @@ fn failed_initial_write_does_not_publish_the_object() {
     let storage = storage(local.clone(), Arc::default(), ByteBudget::unlimited());
 
     let key = BlobHashWrapper::hash_from_bytes(b"aaaa").into();
-    assert!(storage.write(object(b"aaaa")).is_err());
+    assert!(storage.write(object(b"aaaa"), DiskRetention::Evictable).is_err());
 
     assert!(!storage.contains(key));
     assert!(matches!(storage.stat(key), Err(ObjectStoreError::UnknownObject(_))));
@@ -260,7 +260,7 @@ fn failed_initial_write_does_not_publish_the_object() {
     storage.reclaim().unwrap();
     assert!(storage.catalog.read().is_empty());
     local.fail_writes.store(false, Ordering::Relaxed);
-    let _rewritten = storage.write(object(b"aaaa")).unwrap();
+    let _rewritten = storage.write(object(b"aaaa"), DiskRetention::Evictable).unwrap();
     assert_eq!(storage.stat(key).unwrap().size, 4);
     assert_eq!(storage.local.budget.usage().accounted_bytes, 4);
 }
@@ -274,7 +274,7 @@ fn failed_remote_write_preserves_local_bytes_and_permit() {
     let storage = storage(local.clone(), remote, ByteBudget::unlimited());
 
     let object_to_write = object(b"aaaa");
-    let owner = storage.write(object_to_write).unwrap();
+    let owner = storage.write(object_to_write, DiskRetention::Evictable).unwrap();
     let key = owner.key();
 
     assert!(storage.evict(0).is_err());
@@ -289,7 +289,7 @@ fn eviction_does_nothing_when_target_is_met() {
     let storage = storage(local.clone(), Arc::default(), ByteBudget::unlimited());
 
     let object_to_write = object(b"aaaa");
-    let owner = storage.write(object_to_write).unwrap();
+    let owner = storage.write(object_to_write, DiskRetention::Evictable).unwrap();
     let key = owner.key();
 
     assert_eq!(storage.evict(4).unwrap(), 0);
@@ -305,7 +305,7 @@ fn failed_local_remove_preserves_permit() {
 
     let storage = storage(local.clone(), remote, ByteBudget::unlimited());
     let object_to_write = object(b"aaaa");
-    let owner = storage.write(object_to_write).unwrap();
+    let owner = storage.write(object_to_write, DiskRetention::Evictable).unwrap();
     let key = owner.key();
 
     assert!(storage.evict(0).is_err());
@@ -315,5 +315,7 @@ fn failed_local_remove_preserves_permit() {
 }
 
 mod blobs;
+mod model;
+mod ownership;
 mod races;
 mod reclamation;

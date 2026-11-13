@@ -259,7 +259,7 @@ impl TieredPages {
                 handle: page_handle,
                 metadata,
                 backing,
-                eviction_policy: _,
+                eviction_policy,
             } = &*slot
             else {
                 continue;
@@ -274,7 +274,7 @@ impl TieredPages {
                 Some(disk_object) => disk_object.clone(),
                 // TODO: Consider releasing the slot lock when performing I/O.
                 // Elevates the chances of creating garbage.
-                None => manager.ensure_lower_tier_stored(page_handle)?,
+                None => manager.ensure_lower_tier_stored(page_handle, *eviction_policy)?,
             };
             *slot = PageSlot::NonResident {
                 metadata: *metadata,
@@ -368,11 +368,11 @@ impl PageSet {
         let old = std::mem::replace(&mut self.storage, PageStorage::Tiered(TieredPages::default()));
         self.storage = match old {
             PageStorage::Resident(resident) => {
-                assert_eq!(policy, EvictionPolicy::Evictable);
+                assert_eq!(policy, EvictionPolicy::Memory);
                 PageStorage::Tiered(resident.into_tiered(&self.manager, self.fixed_row_size))
             }
             PageStorage::Tiered(tiered) => {
-                assert_eq!(policy, EvictionPolicy::NeverEvict);
+                assert_eq!(policy, EvictionPolicy::Never);
                 PageStorage::Resident(tiered.into_resident(&self.manager, self.fixed_row_size))
             }
         };
@@ -420,11 +420,11 @@ impl PageSet {
     /// Create a fresh, empty page set.
     pub fn new(manager: Arc<PageManager>, eviction_policy: EvictionPolicy, fixed_row_size: Size) -> Self {
         let storage = match eviction_policy {
-            EvictionPolicy::NeverEvict => PageStorage::Resident(ResidentPages {
+            EvictionPolicy::Never => PageStorage::Resident(ResidentPages {
                 pages: Pages::default(),
                 permits: smallvec::SmallVec::new(),
             }),
-            EvictionPolicy::Evictable => PageStorage::Tiered(TieredPages::default()),
+            EvictionPolicy::Memory | EvictionPolicy::Disk => PageStorage::Tiered(TieredPages::default()),
         };
         Self {
             eviction_policy,
@@ -1467,7 +1467,7 @@ mod tests {
             PagePool::new_for_test(),
             Arc::new(TieredStorage::new_for_test()),
         );
-        PageSet::new(Arc::new(manager), EvictionPolicy::Evictable, Size(8))
+        PageSet::new(Arc::new(manager), EvictionPolicy::Memory, Size(8))
     }
 
     #[test]
@@ -1509,7 +1509,7 @@ mod tests {
             PagePool::new_for_test(),
             storage.clone(),
         ));
-        let mut pages = PageSet::new(manager, EvictionPolicy::Evictable, Size(8));
+        let mut pages = PageSet::new(manager, EvictionPolicy::Memory, Size(8));
 
         // Persist a clean version and remember its serialized disk footprint.
         let index = pages.allocate_new_page(Size(8)).unwrap();
@@ -1530,5 +1530,34 @@ mod tests {
         pages.storage.tiered().slots[index.idx()].free();
         assert_eq!(storage.reclaim().unwrap(), stored_bytes);
         assert!(!storage.contains(key));
+    }
+
+    #[test]
+    fn reads_refresh_page_recency() {
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
+            low_water_bytes: 0,
+            soft_limit_bytes: 2 * PAGE_SIZE as u64,
+            hard_limit_bytes: 2 * PAGE_SIZE as u64,
+        })
+        .unwrap();
+        let manager = Arc::new(PageManager::new(
+            Arc::new(ResidentObjects::new(budget)),
+            PagePool::new_for_test(),
+            Arc::new(TieredStorage::new_for_test()),
+        ));
+        let mut pages = PageSet::new(manager, EvictionPolicy::Disk, Size(8));
+        let hot = pages.allocate_new_page(Size(8)).unwrap();
+        let cold = pages.allocate_new_page(Size(8)).unwrap();
+        for _ in 0..2 {
+            drop(pages.get_page(hot).unwrap().unwrap());
+        }
+
+        pages.evict(PAGE_SIZE as u64).unwrap();
+        assert!(
+            pages.storage.tiered().slots[hot.idx()].is_resident(),
+            "a repeatedly read Disk-policy page should outlive the unread page"
+        );
+        assert!(!pages.storage.tiered().slots[cold.idx()].is_resident());
     }
 }
