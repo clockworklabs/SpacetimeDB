@@ -10,8 +10,8 @@ pub(crate) trait PathBufExt: BorrowMut<PathBuf> + Sized {
         self.borrow_mut().set_extension(std::env::consts::EXE_EXTENSION);
         self
     }
-    fn joined_int<I: itoa::Integer>(self, path_seg: I) -> Self {
-        self.joined(itoa::Buffer::new().format(path_seg))
+    fn joined_int(self, path_seg: u64) -> Self {
+        self.joined(path_seg.format_into(&mut core::fmt::NumBuffer::new()))
     }
 }
 

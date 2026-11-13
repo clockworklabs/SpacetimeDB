@@ -8697,7 +8697,6 @@ dependencies = [
  "chrono",
  "dirs",
  "fs2",
- "itoa",
  "junction",
  "serde",
  "tempfile",
