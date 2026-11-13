@@ -1,4 +1,3 @@
-use crate::schema::TableCachePolicy;
 use core::{cmp::Ordering, ops::BitOr};
 
 use crate::{
@@ -362,13 +361,6 @@ pub enum AutoMigrateError {
 
     #[error("Reordering table {table} requires a manual migration")]
     ReorderTable { table: Identifier },
-    #[error("Changing cache_policy on existing table {table} from {old:?} to {new:?} is not supported")]
-    ChangeTableCachePolicy {
-        table: Identifier,
-        old: TableCachePolicy,
-        new: TableCachePolicy,
-    },
-
     #[error(
         "Changing the type of column {} in table {} from {:?} to {:?} requires a manual migration",
         .0.column, .0.table, .0.type1, .0.type2
@@ -785,20 +777,9 @@ fn auto_migrate_table<'def>(
         }
         .into())
     };
-    let cache_policy_ok: Result<()> = if old.cache_policy == new.cache_policy {
-        Ok(())
-    } else if old.cache_policy == TableCachePolicy::NoRequirement || new.cache_policy == TableCachePolicy::NoRequirement
-    {
-        Err(AutoMigrateError::ChangeTableCachePolicy {
-            table: old.name.clone(),
-            old: old.cache_policy,
-            new: new.cache_policy,
-        }
-        .into())
-    } else {
+    if old.cache_policy != new.cache_policy {
         plan.steps.push(AutoMigrateStep::ChangeCachePolicy(key));
-        Ok(())
-    };
+    }
     let event_ok: Result<()> = if old.is_event == new.is_event {
         Ok(())
     } else {
@@ -954,8 +935,8 @@ fn auto_migrate_table<'def>(
         }))
         .collect_all_errors::<ArrayMonoid<Any, 3>>();
 
-    let ((), (), (), (), ArrayMonoid([Any(row_type_changed), Any(columns_added), Any(event_schema_changed)])) =
-        (type_ok, event_ok, cache_policy_ok, outbox_ok, columns_ok).combine_errors()?;
+    let ((), (), (), ArrayMonoid([Any(row_type_changed), Any(columns_added), Any(event_schema_changed)])) =
+        (type_ok, event_ok, outbox_ok, columns_ok).combine_errors()?;
 
     if event_schema_changed {
         // If we're rewriting an event table, there's no data migration to do.
