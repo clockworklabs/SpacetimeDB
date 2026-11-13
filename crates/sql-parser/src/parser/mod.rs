@@ -36,12 +36,11 @@ trait RelParser {
             return Err(SqlUnsupported::ImplicitJoins.into());
         }
         let TableWithJoins { relation, joins } = tables.swap_remove(0);
+        let (name, alias, args) = Self::parse_relvar(relation)?;
         if joins.is_empty() {
-            let (name, alias, args) = Self::parse_relvar(relation)?;
             return Ok(SqlFrom::Expr(name, alias, args));
         }
-        let (name, alias) = Self::parse_join_relvar(relation)?;
-        Ok(SqlFrom::Join(name, alias, Self::parse_joins(joins)?))
+        Ok(SqlFrom::Join(name, alias, args, Self::parse_joins(joins)?))
     }
 
     /// Parse a sequence of JOIN clauses
@@ -51,10 +50,9 @@ trait RelParser {
 
     /// Parse a single JOIN clause
     fn parse_join(join: Join) -> SqlParseResult<SqlJoin> {
-        let (var, alias) = Self::parse_join_relvar(join.relation)?;
-        match join.join_operator {
-            JoinOperator::CrossJoin => Ok(SqlJoin { var, alias, on: None }),
-            JoinOperator::Inner(JoinConstraint::None) => Ok(SqlJoin { var, alias, on: None }),
+        let (var, alias, args) = Self::parse_relvar(join.relation)?;
+        let on = match join.join_operator {
+            JoinOperator::CrossJoin | JoinOperator::Inner(JoinConstraint::None) => None,
             JoinOperator::Inner(JoinConstraint::On(Expr::BinaryOp {
                 left,
                 op: BinaryOperator::Eq,
@@ -62,21 +60,18 @@ trait RelParser {
             })) if matches!(*left, Expr::Identifier(..) | Expr::CompoundIdentifier(..))
                 && matches!(*right, Expr::Identifier(..) | Expr::CompoundIdentifier(..)) =>
             {
-                Ok(SqlJoin {
-                    var,
-                    alias,
-                    on: Some(parse_expr(
-                        Expr::BinaryOp {
-                            left,
-                            op: BinaryOperator::Eq,
-                            right,
-                        },
-                        0,
-                    )?),
-                })
+                Some(parse_expr(
+                    Expr::BinaryOp {
+                        left,
+                        op: BinaryOperator::Eq,
+                        right,
+                    },
+                    0,
+                )?)
             }
-            _ => Err(SqlUnsupported::JoinType.into()),
-        }
+            _ => return Err(SqlUnsupported::JoinType.into()),
+        };
+        Ok(SqlJoin { var, alias, args, on })
     }
 
     /// Parse a table reference in a FROM clause,
@@ -109,15 +104,6 @@ trait RelParser {
             }
             _ => Err(SqlUnsupported::From(expr).into()),
         }
-    }
-
-    /// Parse a table reference in a JOIN, which can't take view call arguments
-    fn parse_join_relvar(expr: TableFactor) -> SqlParseResult<(SqlIdent, SqlIdent)> {
-        let (name, alias, args) = Self::parse_relvar(expr)?;
-        if !args.is_empty() {
-            return Err(SqlUnsupported::JoinViewArgs(name).into());
-        }
-        Ok((name, alias))
     }
 }
 

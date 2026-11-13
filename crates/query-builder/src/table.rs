@@ -205,8 +205,8 @@ impl<T: HasCols> FromWhere<T> {
 
 /// A call to a view that takes arguments.
 ///
-/// The server accepts a filter on such a call but not a join.
-/// This builder only renders `SELECT * FROM v(...)`, so unlike a [`Table`] it can't be filtered yet.
+/// The server accepts filters and joins on such a call.
+/// This builder only renders `SELECT * FROM v(...)`, so unlike a [`Table`] it can't be filtered or joined yet.
 pub struct ViewCall<T> {
     view_name: TableNameStr,
     /// The arguments, rendered as `a, b`

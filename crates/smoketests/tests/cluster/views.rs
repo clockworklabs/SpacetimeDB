@@ -932,18 +932,89 @@ fn test_parameterized_view_filters_and_column_lists() {
     );
 }
 
-/// A parameterized view call can't be joined yet, in SQL or in subscriptions.
+/// A parameterized view call can be joined, on either side and with another call, in SQL.
+/// A subscription can join one to an indexed table.
 #[test]
-fn test_parameterized_view_joins_are_rejected() {
+fn test_parameterized_view_joins() {
     let test = Smoketest::builder().precompiled_module("views-args").build();
 
-    test.call("add_item", &["1", "10"]).unwrap();
+    for (id, value) in [("1", "10"), ("1", "11"), ("2", "10"), ("2", "20")] {
+        test.call("add_item", &[id, value]).unwrap();
+    }
+    for (value, label) in [("10", "a"), ("20", "b"), ("30", "c")] {
+        test.call("add_tag", &[value, label]).unwrap();
+    }
 
-    let query = "SELECT v.* FROM by_id(1) AS v JOIN item ON v.id = item.id";
-    let error = "Unsupported view call in a JOIN";
-    let sql = test.sql(query).unwrap_err();
-    assert!(format!("{sql:#}").contains(error), "SQL `{query}`: {sql:#}");
+    for view in ["by_id", "by_id_query", "mine_by_id"] {
+        for (query, expected) in [
+            // The view call on either side
+            (
+                format!("SELECT tag.value FROM {view}(1) AS v JOIN tag ON v.value = tag.value"),
+                vec![10],
+            ),
+            (
+                format!("SELECT v.value FROM tag JOIN {view}(2) AS v ON tag.value = v.value"),
+                vec![10, 20],
+            ),
+            // Two calls of one view, each scoped to its own rows
+            (
+                format!("SELECT a.value FROM {view}(1) AS a JOIN {view}(2) AS b ON a.value = b.value"),
+                vec![10],
+            ),
+            (
+                format!("SELECT b.value FROM {view}(1) AS a JOIN {view}(2) AS b ON a.value = b.value WHERE b.id = 1"),
+                vec![],
+            ),
+        ] {
+            assert_eq!(sql_values(&test, &query), expected, "{query}");
+        }
+    }
+
+    // A subscription gets the tags of call 1's values, and follows changes to the call and to the tags
+    let views = ["by_id", "by_id_query", "mine_by_id"];
+    let query = |view: &str| format!("SELECT tag.* FROM {view}(1) AS v JOIN tag ON v.value = tag.value");
+    let inserts =
+        |value: u32, label: &str| json!({ "tag": { "deletes": [], "inserts": [{ "value": value, "label": label }] } });
+    for view in views {
+        let initial = test.subscribe(&[&query(view)]).expect_rows(0).run().unwrap();
+        let initial = project_fields(initial, "tag", &["value", "label"]);
+        assert_eq!(json!(initial), json!([inserts(10, "a")]), "{view}'s initial rows");
+    }
+    // With the call on the right, its rows that have a tag
+    let rhs = "SELECT v.* FROM tag JOIN by_id(2) AS v ON tag.value = v.value";
+    let initial = test.subscribe(&[rhs]).expect_rows(0).run().unwrap();
+    let initial = project_fields(initial, "by_id", &["id", "value"]);
+    let mut values: Vec<_> = initial[0]["by_id"]["inserts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| (row["id"].as_u64().unwrap(), row["value"].as_u64().unwrap()))
+        .collect();
+    values.sort();
+    assert_eq!(values, [(2, 10), (2, 20)], "{rhs}");
+
+    // Each subscription's first two updates must be these, so the tag that only matches call 2 never arrives
+    let subs = views.map(|view| {
+        let query = query(view);
+        let sub = test.subscribe(&[&query]).expect_rows(2).background().unwrap();
+        (view, sub)
+    });
+    test.call("add_tag", &["20", "d"]).unwrap(); // matches call 2 only
+    test.call("add_tag", &["11", "e"]).unwrap(); // matches call 1
+    test.call("add_item", &["1", "30"]).unwrap(); // brings (30, c) into call 1
+    for (view, sub) in subs {
+        let events = project_fields(sub.collect().unwrap(), "tag", &["value", "label"]);
+        assert_eq!(
+            json!(events),
+            json!([inserts(11, "e"), inserts(30, "c")]),
+            "{view}'s updates"
+        );
+    }
+
+    // Without an index on either side, a subscription can't join two calls
+    let query = "SELECT a.* FROM by_id(1) AS a JOIN by_id(2) AS b ON a.value = b.value";
     let sub = test.subscribe(&[query]).expect_rows(0).run().unwrap_err();
+    let error = "Subscriptions require indexes on join columns";
     assert!(format!("{sub:#}").contains(error), "Subscription `{query}`: {sub:#}");
 }
 

@@ -252,7 +252,7 @@ fn resolve_views_for_expr(
             // Parse and type check the RLS filter
             let (expr, is_parameterized) = parse_and_type_sub(&sql, tx, auth)?;
 
-            // Publishing rejects a rule that is only a view call with args, but not one with a filter
+            // Publishing rejects these rules too, so this only catches one stored before it did
             let (ProjectName::None(rule) | ProjectName::Some(rule, _)) = &expr;
             anyhow::ensure!(
                 !rule.calls_view_with_args(),

@@ -3524,6 +3524,45 @@ mod tests {
         assert_eq!(calls, HashSet::from_iter([call(1), call(2)]));
     }
 
+    /// Each call in a join keeps its args through compilation,
+    /// so a subscribe computes both calls and each scan reads only the caller's rows of its own call
+    #[test]
+    fn compiled_join_keeps_each_calls_args() {
+        let db = sender_view_db(ProductType::from_iter([("id", AlgebraicType::U32)]));
+        let caller = Identity::ONE;
+
+        let mut lp = parse_and_type_sub("select a.* from v(1) as a join v(2) as b on a.x = b.x", &db).unwrap();
+        lp.bind_view_arg_hashes(caller);
+        let pp = compile_select(lp);
+
+        let args = |id: u32| ProductValue::from_iter([AlgebraicValue::U32(id)]);
+        let mut calls = HashSet::default();
+        pp.collect_views(&mut calls);
+        let call = |id| ViewCall {
+            view_id: ViewId(1),
+            args: args(id),
+        };
+        assert_eq!(calls, HashSet::from_iter([call(1), call(2)]));
+
+        let mut hashes = vec![];
+        pp.visit(&mut |plan| {
+            if let PhysicalPlan::Filter(_, PhysicalExpr::BinOp(BinOp::Eq, hash, field)) = plan
+                && let PhysicalExpr::Value(hash) = &**hash
+                && let PhysicalExpr::Field(field) = &**field
+                && field.field_pos == VIEW_ARG_HASH_COL.idx()
+            {
+                hashes.push(hash.clone());
+            }
+        });
+        hashes.sort();
+        let mut expected = vec![
+            view_instance_arg_hash_value(Some(caller), &args(1)),
+            view_instance_arg_hash_value(Some(caller), &args(2)),
+        ];
+        expected.sort();
+        assert_eq!(hashes, expected);
+    }
+
     #[test]
     fn remap_moves_view_arg_hashes() {
         let (plans, params) = template_plans("select * from v", &sender_view_db(ProductType::unit()));

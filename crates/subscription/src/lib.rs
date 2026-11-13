@@ -55,6 +55,17 @@ impl Fragments {
         index_ids.into_iter()
     }
 
+    /// Does any delta plan join without an index?
+    fn has_non_index_join(&self) -> bool {
+        let mut found = false;
+        for plan in self.insert_plans.iter().chain(self.delete_plans.iter()) {
+            plan.visit(&mut |plan| {
+                found |= matches!(plan, PipelinedExecutor::HashJoin(..) | PipelinedExecutor::NLJoin(..));
+            });
+        }
+        found
+    }
+
     /// A subscription is just a view of a particular table.
     /// Here we compute the rows that are to be inserted into that view,
     /// and evaluate a closure over each one and the binding it matched.
@@ -675,6 +686,14 @@ impl Template {
             .flat_map(|fragment| fragment.fragments.index_ids())
             .collect::<HashSet<_>>()
             .into_iter()
+    }
+
+    /// Does any delta plan join without an index?
+    /// Compiling only rejects this in the base plan, so it's here for tests to check.
+    pub fn has_non_index_join(&self) -> bool {
+        self.fragments
+            .iter()
+            .any(|fragment| fragment.fragments.has_non_index_join())
     }
 }
 

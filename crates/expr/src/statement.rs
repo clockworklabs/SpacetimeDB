@@ -601,23 +601,15 @@ mod tests {
             "select * from p limit 5",
             "select count(*) as n from p",
             "select t.* from t join p on t.u32 = p.x",
+            "select t.* from t join v(42) on t.u32 = v.x",
+            "select v.* from v(42) join t on v.x = t.u32",
+            "select a.y from v(1) as a join v(2) as b on a.x = b.x where b.y = 3",
+            "select count(*) as n from t join v(42) on t.u32 = v.x",
         ] {
             let result = parse_and_type_sql(sql, &tx);
             assert!(result.is_ok(), "{sql}: {:?}", result.err());
         }
 
-        // Joins with a view call are not supported yet
-        for sql in [
-            "select t.* from t join v(42) on t.u32 = v.x",
-            "select v.* from v(42) join t on v.x = t.u32",
-        ] {
-            let result = parse_and_type_sql(sql, &tx);
-            assert!(
-                matches!(result, Err(TypingError::ParseError(_))),
-                "{sql}: {:?}",
-                result.err()
-            );
-        }
         let result = parse_and_type_sql("select t.* from t join v on t.u32 = v.x", &tx);
         assert!(
             matches!(result, Err(TypingError::ViewArgs(InvalidViewArgs::Arity { .. }))),

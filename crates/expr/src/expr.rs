@@ -358,12 +358,8 @@ impl RelExpr {
     /// Sets the `arg_hash` of every parameterized view call in this expression that has none.
     /// Sender-scoped views hash the `caller` with their args, and anonymous views hash only their args.
     pub fn bind_view_arg_hashes(&mut self, caller: Identity) {
-        self.visit_mut(&mut |expr| {
-            if let Self::RelVar(Relvar {
-                schema,
-                view_args: Some(view_args),
-                ..
-            }) = expr
+        for Relvar { schema, view_args, .. } in self.relvars_mut() {
+            if let Some(view_args) = view_args
                 // A template lifted its hashes already
                 && view_args.arg_hash.is_none()
             {
@@ -371,7 +367,7 @@ impl RelExpr {
                 let hash = view_instance_arg_hash_value(sender, &view_args.args);
                 view_args.arg_hash = Some(Expr::Value(hash, AlgebraicType::U256));
             }
-        });
+        }
     }
 
     /// Replaces the literal of each `field = literal`, and the arg hash of each view call, with a binding param.
