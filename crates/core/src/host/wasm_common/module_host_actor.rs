@@ -693,13 +693,13 @@ struct UpdateEffects {
 }
 
 impl UpdateEffects {
-    fn after_migration(result: crate::db::update::UpdateResult, tx: &MutTxId) -> Self {
+    fn after_migration(result: crate::db::update::UpdateResult, tx: &MutTxId) -> Result<Self, DatastoreError> {
         use crate::db::update::UpdateResult;
-        Self {
+        Ok(Self {
             refresh_views: matches!(result, UpdateResult::EvaluateSubscribedViews)
-                || tx.views_for_refresh().next().is_some(),
+                || tx.views_for_refresh()?.next().is_some(),
             disconnect_clients: matches!(result, UpdateResult::RequiresClientDisconnect),
-        }
+        })
     }
 
     fn committed(
@@ -783,9 +783,10 @@ impl InstanceCommon {
             let row = tx
                 .iter(ST_MODULE_ID)?
                 .next()
-                .context("database program is not initialized")?;
+                .context("database program is not initialized")?
+                .context("failed to load database program")?;
             let current_hash =
-                spacetimedb_datastore::system_tables::read_hash_from_col(row, StModuleFields::ProgramHash)?;
+                spacetimedb_datastore::system_tables::read_hash_from_col(&row, StModuleFields::ProgramHash)?;
             anyhow::ensure!(
                 current_hash == old_module_info.module_hash,
                 "database program changed before publication"
@@ -836,11 +837,26 @@ impl InstanceCommon {
                 };
                 let durable_offset = stdb.durable_tx_offset();
 
-                let effects = UpdateEffects::after_migration(res, &tx);
+                let effects = match UpdateEffects::after_migration(res, &tx) {
+                    Ok(effects) => effects,
+                    Err(e) => {
+                        let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
+                        stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
+                        return Ok(UpdateDatabaseResult::ErrorExecutingMigration(e.into()));
+                    }
+                };
                 let res = if effects.refresh_views {
                     // Resolve surviving materializations through the new module,
                     // even when this migration also requires client disconnection.
-                    let (out, _, trapped) = self.evaluate_subscribed_views(tx, inst)?;
+                    let view_calls = match self.subscribed_view_calls(&tx) {
+                        Ok(view_calls) => view_calls,
+                        Err(e) => {
+                            let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
+                            stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
+                            return Ok(UpdateDatabaseResult::ErrorExecutingMigration(e));
+                        }
+                    };
+                    let (out, _, trapped) = self.execute_view_calls(tx, view_calls, inst);
                     tx = out.tx;
                     if trapped || out.outcome != ViewOutcome::Success {
                         let msg = match trapped {
@@ -883,15 +899,24 @@ impl InstanceCommon {
             let row = tx
                 .iter(ST_MODULE_ID)?
                 .next()
-                .context("database program is not initialized")?;
+                .context("database program is not initialized")?
+                .context("failed to load database program")?;
             anyhow::ensure!(
-                read_hash_from_col(row, StModuleFields::ProgramHash)? == self.info.module_hash,
+                read_hash_from_col(&row, StModuleFields::ProgramHash)? == self.info.module_hash,
                 "database program changed before publication"
             );
             crate::db::environment::replace(db, tx, self.info.module_def.environment(), &environment)?;
             Ok(())
         })?;
-        let (out, _, trapped) = self.evaluate_subscribed_views(tx, inst)?;
+        let view_calls = match self.subscribed_view_calls(&tx) {
+            Ok(view_calls) => view_calls,
+            Err(e) => {
+                let (_, tx_metrics, reducer) = db.rollback_mut_tx(tx);
+                db.report_mut_tx_metrics(reducer, tx_metrics, None);
+                return Ok(UpdateEnvironmentResult::ErrorExecutingMigration(e));
+            }
+        };
+        let (out, _, trapped) = self.execute_view_calls(tx, view_calls, inst);
         if trapped || out.outcome != ViewOutcome::Success {
             let (_, metrics, reducer) = db.rollback_mut_tx(out.tx);
             db.report_mut_tx_metrics(reducer, metrics, None);
@@ -920,14 +945,9 @@ impl InstanceCommon {
         })
     }
 
-    /// Re-evaluates all materialized view instances tracked in view lifecycle state.
-    fn evaluate_subscribed_views<I: WasmInstance>(
-        &mut self,
-        tx: MutTxId,
-        inst: &mut I,
-    ) -> Result<(ViewCallResult, u32, bool), anyhow::Error> {
-        let view_calls = collect_subscribed_view_calls(&tx, &self.info.module_def, self.info.owner_identity)?;
-        Ok(self.execute_view_calls(tx, view_calls, inst))
+    /// Collect the materialized view instance tracked in view lifecycle state.
+    fn subscribed_view_calls(&self, tx: &MutTxId) -> anyhow::Result<Vec<CallViewParams>> {
+        collect_subscribed_view_calls(tx, &self.info.module_def, self.info.owner_identity)
     }
 
     pub(crate) async fn call_procedure<I: WasmInstance>(
@@ -2437,8 +2457,8 @@ mod tests {
         );
         let result = update::update_database(&db, &mut tx, AuthCtx::for_testing(), plan, &TestLogger)?;
         assert!(matches!(result, update::UpdateResult::RequiresClientDisconnect));
-        assert!(tx.views_for_refresh().any(|dirty| *dirty == call));
-        let effects = UpdateEffects::after_migration(result, &tx);
+        assert!(tx.views_for_refresh()?.any(|dirty| *dirty == call));
+        let effects = UpdateEffects::after_migration(result, &tx)?;
         assert!(effects.refresh_views);
         assert!(effects.disconnect_clients);
         let calls = collect_subscribed_view_calls(&tx, &new, Identity::ZERO)?;

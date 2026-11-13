@@ -137,8 +137,8 @@ impl TestDatastore {
             let rows = self
                 .db
                 .iter(tx, table_id)?
-                .map(|row_ref| row_ref.to_product_value())
-                .collect();
+                .map(|row_ref| Ok(row_ref?.to_product_value()))
+                .collect::<Result<_, TestDatastoreError>>()?;
             Ok(rows)
         })
     }
@@ -149,8 +149,8 @@ impl TestDatastore {
             let rows = self
                 .db
                 .iter(tx, table_id)?
-                .map(|row_ref| row_ref.to_bsatn_vec())
-                .collect::<Result<Vec<_>, _>>()?;
+                .map(|row_ref| Ok(row_ref?.to_bsatn_vec()?))
+                .collect::<Result<Vec<_>, TestDatastoreError>>()?;
             Ok(rows)
         })
     }
@@ -159,9 +159,8 @@ impl TestDatastore {
     pub fn index_scan_point_bsatn(&self, index_id: IndexId, point: &[u8]) -> Result<Vec<Vec<u8>>, TestDatastoreError> {
         self.with_auto_commit(|tx| {
             let (_, _, iter) = self.db.index_scan_point(tx, index_id, point)?;
-            iter.map(|row_ref| row_ref.to_bsatn_vec())
+            iter.map(|row_ref| Ok(row_ref?.to_bsatn_vec()?))
                 .collect::<Result<Vec<_>, _>>()
-                .map_err(TestDatastoreError::from)
         })
     }
 
@@ -180,13 +179,11 @@ impl TestDatastore {
                 .index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
             match iter {
                 IndexScanPointOrRange::Point(_, iter) => iter
-                    .map(|row_ref| row_ref.to_bsatn_vec())
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(TestDatastoreError::from),
+                    .map(|row_ref| Ok(row_ref?.to_bsatn_vec()?))
+                    .collect::<Result<Vec<_>, _>>(),
                 IndexScanPointOrRange::Range(iter) => iter
-                    .map(|row_ref| row_ref.to_bsatn_vec())
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(TestDatastoreError::from),
+                    .map(|row_ref| Ok(row_ref?.to_bsatn_vec()?))
+                    .collect::<Result<Vec<_>, _>>(),
             }
         })
     }
@@ -195,7 +192,9 @@ impl TestDatastore {
     pub fn delete_by_index_scan_point_bsatn(&self, index_id: IndexId, point: &[u8]) -> Result<u32, TestDatastoreError> {
         self.with_auto_commit(|tx| {
             let (table_id, _, iter) = self.db.index_scan_point(tx, index_id, point)?;
-            let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>();
+            let rows_to_delete = iter
+                .map(|row| row.map(|row_ref| row_ref.pointer()))
+                .collect::<Result<Vec<_>, _>>()?;
             Ok(self.db.delete(tx, table_id, rows_to_delete))
         })
     }
@@ -214,8 +213,12 @@ impl TestDatastore {
                 .db
                 .index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
             let rows_to_delete = match iter {
-                IndexScanPointOrRange::Point(_, iter) => iter.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>(),
-                IndexScanPointOrRange::Range(iter) => iter.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>(),
+                IndexScanPointOrRange::Point(_, iter) => iter
+                    .map(|row| row.map(|row_ref| row_ref.pointer()))
+                    .collect::<Result<Vec<_>, _>>()?,
+                IndexScanPointOrRange::Range(iter) => iter
+                    .map(|row| row.map(|row_ref| row_ref.pointer()))
+                    .collect::<Result<Vec<_>, _>>()?,
             };
             Ok(self.db.delete(tx, table_id, rows_to_delete))
         })
@@ -251,7 +254,7 @@ impl TestDatastore {
             return Err(TestDatastoreError::NonSelectQuery);
         };
 
-        let (tx_data, tx_metrics_mut, tx) = self.db.commit_tx_downgrade(tx, Workload::Sql);
+        let (tx_data, tx_metrics_mut, tx) = self.db.commit_tx_downgrade(tx, Workload::Sql)?;
         self.db.report_mut_tx_metrics(None, tx_metrics_mut, Some(tx_data));
 
         let db = self.db.clone();
@@ -350,12 +353,10 @@ impl TestTransaction {
     /// Collect every row in `table_id` as BSATN-encoded row bytes.
     pub fn table_rows_bsatn(&self, table_id: TableId) -> Result<Vec<Vec<u8>>, TestDatastoreError> {
         self.with_mut_tx(|tx| {
-            let rows = self
-                .db
+            self.db
                 .iter_mut(tx, table_id)?
-                .map(|row_ref| row_ref.to_bsatn_vec())
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(rows)
+                .map(|row_ref| Ok(row_ref?.to_bsatn_vec()?))
+                .collect::<Result<Vec<_>, _>>()
         })
     }
 
@@ -363,9 +364,8 @@ impl TestTransaction {
     pub fn index_scan_point_bsatn(&self, index_id: IndexId, point: &[u8]) -> Result<Vec<Vec<u8>>, TestDatastoreError> {
         self.with_mut_tx(|tx| {
             let (_, _, iter) = self.db.index_scan_point(tx, index_id, point)?;
-            iter.map(|row_ref| row_ref.to_bsatn_vec())
+            iter.map(|row_ref| Ok(row_ref?.to_bsatn_vec()?))
                 .collect::<Result<Vec<_>, _>>()
-                .map_err(TestDatastoreError::from)
         })
     }
 
@@ -384,13 +384,11 @@ impl TestTransaction {
                 .index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
             match iter {
                 IndexScanPointOrRange::Point(_, iter) => iter
-                    .map(|row_ref| row_ref.to_bsatn_vec())
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(TestDatastoreError::from),
+                    .map(|row_ref| Ok(row_ref?.to_bsatn_vec()?))
+                    .collect::<Result<Vec<_>, _>>(),
                 IndexScanPointOrRange::Range(iter) => iter
-                    .map(|row_ref| row_ref.to_bsatn_vec())
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(TestDatastoreError::from),
+                    .map(|row_ref| Ok(row_ref?.to_bsatn_vec()?))
+                    .collect::<Result<Vec<_>, _>>(),
             }
         })
     }
@@ -399,7 +397,9 @@ impl TestTransaction {
     pub fn delete_by_index_scan_point_bsatn(&self, index_id: IndexId, point: &[u8]) -> Result<u32, TestDatastoreError> {
         self.with_mut_tx(|tx| {
             let (table_id, _, iter) = self.db.index_scan_point(tx, index_id, point)?;
-            let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>();
+            let rows_to_delete = iter
+                .map(|row_ref| Ok(row_ref?.pointer()))
+                .collect::<Result<Vec<_>, TestDatastoreError>>()?;
             Ok(self.db.delete(tx, table_id, rows_to_delete))
         })
     }
@@ -418,8 +418,13 @@ impl TestTransaction {
                 .db
                 .index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
             let rows_to_delete = match iter {
-                IndexScanPointOrRange::Point(_, iter) => iter.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>(),
-                IndexScanPointOrRange::Range(iter) => iter.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>(),
+                IndexScanPointOrRange::Point(_, iter) => {
+                    iter.map(|row_ref| Ok(row_ref?.pointer()))
+                        .collect::<Result<Vec<_>, TestDatastoreError>>()?
+                }
+                IndexScanPointOrRange::Range(iter) => iter
+                    .map(|row_ref| Ok(row_ref?.pointer()))
+                    .collect::<Result<Vec<_>, TestDatastoreError>>()?,
             };
             Ok(self.db.delete(tx, table_id, rows_to_delete))
         })
@@ -470,6 +475,8 @@ pub enum TestDatastoreError {
     NonSelectQuery,
     #[error("transaction already finished")]
     TransactionAlreadyFinished,
+    #[error(transparent)]
+    Datastore(#[from] DatastoreError),
 }
 
 impl TestDatastoreError {

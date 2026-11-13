@@ -12,7 +12,7 @@ use crate::traits::TxOffset;
 use crate::{
     error::{DatastoreError, TableError},
     locking_tx_datastore::{
-        state_view::{IterByColEqMutTx, IterByColRangeMutTx, IterMutTx},
+        state_view::{IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, TableScanIter},
         IterByColEqTx, IterByColRangeTx,
     },
     traits::{InsertFlags, UpdateFlags},
@@ -39,15 +39,14 @@ use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_schema::{
     reducer_name::ReducerName,
-    schema::{ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, SequenceSchema, TableSchema},
+    schema::{
+        ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, SequenceSchema, TableCachePolicy, TableSchema,
+    },
 };
 #[cfg(feature = "durability")]
 use spacetimedb_snapshot::{BoxedPendingSnapshot, DynSnapshotRepo, ReconstructedSnapshot};
-use spacetimedb_table::{
-    indexes::RowPointer,
-    page_pool::PagePool,
-    table::{RowRef, TableScanIter},
-};
+use spacetimedb_table::tiered::{TieredDatabaseStorage, TieredStorageConfig};
+use spacetimedb_table::{indexes::RowPointer, table::RowRef};
 use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::Duration;
@@ -84,21 +83,28 @@ impl MemoryUsage for Locking {
 }
 
 impl Locking {
-    pub fn new(database_identity: Identity, page_pool: PagePool) -> Self {
+    #[cfg(feature = "metrics")]
+    pub fn update_data_size_metrics(&self) {
+        let state = self.committed_state.read();
+        state.report_data_size(self.database_identity);
+        crate::db_metrics::page_cache::report(&state.storage);
+    }
+
+    pub fn new(database_identity: Identity, storage: TieredDatabaseStorage) -> Self {
         Self {
-            committed_state: Arc::new(RwLock::new(CommittedState::new(page_pool))),
+            committed_state: Arc::new(RwLock::new(CommittedState::new(storage))),
             database_identity,
         }
     }
 
     /// IMPORTANT! This the most delicate function in the entire codebase.
     /// DO NOT CHANGE UNLESS YOU KNOW WHAT YOU'RE DOING!!!
-    pub fn bootstrap(database_identity: Identity, page_pool: PagePool) -> Result<Self> {
+    pub fn bootstrap(database_identity: Identity, storage_config: TieredStorageConfig) -> Result<Self> {
         log::trace!("DATABASE: BOOTSTRAPPING SYSTEM TABLES...");
 
         // NOTE! The bootstrapping process does not take plan in a transaction.
         // This is intentional.
-        let datastore = Self::new(database_identity, page_pool);
+        let datastore = Self::new(database_identity, TieredDatabaseStorage::empty(storage_config));
         let mut commit_state = datastore.committed_state.write_arc();
         // TODO(cloutiertyler): One thing to consider in the future is, should
         // we persist the bootstrap transaction in the message log? My intuition
@@ -159,7 +165,7 @@ impl Locking {
 
         for table_id in [ST_TABLE_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SEQUENCE_ID] {
             for row in committed_state.iter(table_id)? {
-                rows.push((table_id, row.to_product_value()));
+                rows.push((table_id, row?.to_product_value()));
             }
         }
 
@@ -171,13 +177,13 @@ impl Locking {
     /// - Construct all the tables referenced by `snapshot`, computing their schemas
     ///   either from known system table schemas or from `st_table` and friends.
     /// - Populate those tables with all rows in `snapshot`.
-    /// - Construct a [`HashMapBlobStore`] containing all the large blobs referenced by `snapshot`,
+    /// - Construct a [`spacetimedb_table::tiered::BlobSet`] containing all the large blobs referenced by `snapshot`,
     ///   with reference counts specified in `snapshot`.
     /// - Notably, **do not** construct indexes or sequences.
     ///   This should be done by [`Self::rebuild_state_after_replay`],
     ///   after replaying the suffix of the commitlog.
     #[cfg(feature = "durability")]
-    pub fn restore_from_snapshot(snapshot: ReconstructedSnapshot, page_pool: PagePool) -> Result<Self> {
+    pub fn restore_from_snapshot(snapshot: ReconstructedSnapshot, config: TieredStorageConfig) -> Result<Self> {
         let ReconstructedSnapshot {
             database_identity,
             tx_offset,
@@ -186,9 +192,11 @@ impl Locking {
             ..
         } = snapshot;
 
-        let datastore = Self::new(database_identity, page_pool);
+        let datastore = Self::new(
+            database_identity,
+            TieredDatabaseStorage::from_snapshot(config, blob_store),
+        );
         let mut committed_state = datastore.committed_state.write_arc();
-        committed_state.blob_store = blob_store;
 
         // Note that `tables` is a `BTreeMap`, and so iterates in increasing order.
         // This means that we will instantiate and populate the system tables before any user tables.
@@ -200,7 +208,7 @@ impl Locking {
                 // As such, this call will compute and save the schema from `st_table` and friends.
                 None => committed_state.schema_for_table(table_id)?,
             };
-            let (table, blob_store, _) = committed_state.get_table_and_blob_store_or_create(table_id, &schema);
+            let (table, blob_store) = committed_state.get_table_and_blob_store_or_create(table_id, &schema);
             unsafe {
                 // Safety:
                 // - The snapshot is uncorrupted because reconstructing it verified its hashes.
@@ -209,7 +217,7 @@ impl Locking {
                 //   or it is a known schema for a system table.
                 // - We trust that the snapshot was consistent when created,
                 //   so the layout used in the `pages` must be consistent with the schema.
-                table.set_pages(pages, blob_store);
+                table.set_pages(pages, blob_store)?;
             }
 
             // Set the `rdb_num_table_rows` metric for the table.
@@ -234,6 +242,9 @@ impl Locking {
 
         // The next TX offset after restoring from a snapshot is one greater than the snapshotted offset.
         committed_state.next_tx_offset = tx_offset + 1;
+
+        // Free memory + disk storage to budget.
+        committed_state.trim()?;
 
         Ok(datastore)
     }
@@ -306,7 +317,7 @@ impl Locking {
         tx: &'a TxId,
     ) -> Result<impl Iterator<Item = Result<(Identity, ConnectionId)>> + 'a> {
         let iter = self.iter_tx(tx, ST_CLIENT_ID)?.map(|row_ref| {
-            let row = StClientRow::try_from(row_ref)?;
+            let row = StClientRow::try_from(row_ref?)?;
             Ok((row.identity.0, row.connection_id.0))
         });
 
@@ -319,6 +330,15 @@ impl Locking {
             .ok_or_else(|| TableError::NotFound(name.into()))?;
 
         tx.alter_table_access(table_id, access)
+    }
+
+    pub fn alter_table_cache_policy_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        policy: TableCachePolicy,
+    ) -> Result<()> {
+        tx.alter_table_cache_policy(table_id, policy)
     }
 
     pub fn alter_table_primary_key_mut_tx(
@@ -505,6 +525,7 @@ impl TxDatastore for Locking {
     fn get_all_tables_tx(&self, tx: &Self::Tx) -> Result<Vec<Arc<TableSchema>>> {
         self.iter_tx(tx, ST_TABLE_ID)?
             .map(|row_ref| {
+                let row_ref = row_ref?;
                 let table_id = row_ref.read_col(StTableFields::TableId)?;
                 self.schema_for_table_tx(tx, table_id)
             })
@@ -514,6 +535,7 @@ impl TxDatastore for Locking {
     fn metadata(&self, tx: &Self::Tx) -> Result<Option<Metadata>> {
         self.iter_tx(tx, ST_MODULE_ID)?
             .next()
+            .transpose()?
             .map(metadata_from_row)
             .transpose()
     }
@@ -521,6 +543,7 @@ impl TxDatastore for Locking {
     fn program(&self, tx: &Self::Tx) -> Result<Option<Program>> {
         self.iter_tx(tx, ST_MODULE_ID)?
             .next()
+            .transpose()?
             .map(|row_ref| {
                 let StModuleRow {
                     program_kind,
@@ -761,13 +784,18 @@ impl MutTxDatastore for Locking {
     }
 
     fn metadata_mut_tx(&self, tx: &Self::MutTx) -> Result<Option<Metadata>> {
-        tx.iter(ST_MODULE_ID)?.next().map(metadata_from_row).transpose()
+        tx.iter(ST_MODULE_ID)?
+            .next()
+            .transpose()?
+            .map(metadata_from_row)
+            .transpose()
     }
 
     fn update_program(&self, tx: &mut Self::MutTx, program: Program) -> Result<()> {
         let old = tx
             .iter(ST_MODULE_ID)?
             .next()
+            .transpose()?
             .map(|row| {
                 let ptr = row.pointer();
                 let row = StModuleRow::try_from(row)?;
@@ -1017,10 +1045,11 @@ impl MutTx for Locking {
         let timer = Instant::now();
         let committed_state_write_lock = self.committed_state.write_arc();
         let lock_wait_time = timer.elapsed();
+        let tx_state = TxState::new(&committed_state_write_lock.storage);
 
         MutTxId {
             committed_state_write_lock,
-            tx_state: TxState::default(),
+            tx_state,
             lock_wait_time,
             read_sets: <_>::default(),
             view_instances: <_>::default(),
@@ -1038,7 +1067,7 @@ impl MutTx for Locking {
     /// This method only updates the in-memory `committed_state`.
     /// For durability, see `RelationalDB::commit_tx`.
     fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, Option<ReducerName>)>> {
-        Ok(Some(tx.commit()))
+        tx.commit().map(Some)
     }
 }
 
@@ -1051,10 +1080,11 @@ impl Locking {
         let timer = Instant::now();
         let committed_state_write_lock = self.committed_state.try_write_arc()?;
         let lock_wait_time = timer.elapsed();
+        let tx_state = TxState::new(&committed_state_write_lock.storage);
 
         Some(MutTxId {
             committed_state_write_lock,
-            tx_state: TxState::default(),
+            tx_state,
             lock_wait_time,
             read_sets: <_>::default(),
             view_instances: <_>::default(),
@@ -1071,7 +1101,7 @@ impl Locking {
 
     /// This method only updates the in-memory `committed_state`.
     /// For durability, see `RelationalDB::commit_tx_downgrade`.
-    pub fn commit_mut_tx_downgrade(&self, tx: MutTxId, workload: Workload) -> (TxData, TxMetrics, TxId) {
+    pub fn commit_mut_tx_downgrade(&self, tx: MutTxId, workload: Workload) -> Result<(TxData, TxMetrics, TxId)> {
         tx.commit_downgrade(workload)
     }
 
@@ -1082,7 +1112,7 @@ impl Locking {
         tx: MutTxId,
         before_release: impl FnOnce(&Arc<TxData>),
     ) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>, u64)>> {
-        Ok(Some(tx.commit_and_then(before_release)))
+        tx.commit_and_then(before_release).map(Some)
     }
 
     /// Commit `tx`, invoke `before_downgrade` while the write lock is still held,
@@ -1092,7 +1122,7 @@ impl Locking {
         tx: MutTxId,
         workload: Workload,
         before_downgrade: impl FnOnce(&Arc<TxData>),
-    ) -> (Arc<TxData>, TxMetrics, TxId, u64) {
+    ) -> Result<(Arc<TxData>, TxMetrics, TxId, u64)> {
         tx.commit_downgrade_and_then(workload, before_downgrade)
     }
 }
@@ -1101,9 +1131,9 @@ impl Locking {
 /// reading only the columns necessary to construct the value.
 fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
     Ok(Metadata {
-        database_identity: read_identity_from_col(row, StModuleFields::DatabaseIdentity)?,
-        owner_identity: read_identity_from_col(row, StModuleFields::OwnerIdentity)?,
-        program_hash: read_hash_from_col(row, StModuleFields::ProgramHash)?,
+        database_identity: read_identity_from_col(&row, StModuleFields::DatabaseIdentity)?,
+        owner_identity: read_identity_from_col(&row, StModuleFields::OwnerIdentity)?,
+        program_hash: read_hash_from_col(&row, StModuleFields::ProgramHash)?,
     })
 }
 
@@ -1112,6 +1142,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::error::IndexError;
     use crate::locking_tx_datastore::tx_state::PendingSchemaChange;
+    use crate::locking_tx_datastore::ViewCallInfo;
     use crate::system_tables::{
         system_tables, IdentityViaU256, StColumnRow, StConnectionCredentialsFields, StConstraintData,
         StConstraintFields, StConstraintRow, StEventTableFields, StInboundMsgResultStatus, StInboundMsgRow,
@@ -1122,9 +1153,10 @@ pub(crate) mod tests {
         ST_CONSTRAINT_NAME, ST_EVENT_TABLE_ID, ST_EVENT_TABLE_NAME, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_NAME,
         ST_INDEX_ID, ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID,
         ST_ROW_LEVEL_SECURITY_NAME, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME,
-        ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_NAME, ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME, ST_VIEW_ARG_ID,
-        ST_VIEW_ARG_NAME, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME, ST_VIEW_PARAM_ID,
-        ST_VIEW_PARAM_NAME, ST_VIEW_SUB_ID, ST_VIEW_SUB_NAME,
+        ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_NAME, ST_TABLE_CACHE_POLICY_ID, ST_TABLE_CACHE_POLICY_NAME,
+        ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME, ST_VIEW_ARG_ID, ST_VIEW_ARG_NAME, ST_VIEW_COLUMN_ID,
+        ST_VIEW_COLUMN_NAME, ST_VIEW_ID, ST_VIEW_NAME, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_NAME, ST_VIEW_SUB_ID,
+        ST_VIEW_SUB_NAME,
     };
     use crate::system_tables::{
         ST_ENV_ID, ST_ENV_NAME, ST_INBOUND_MSG_ID, ST_INBOUND_MSG_NAME, ST_INBOUND_STREAM_ID, ST_INBOUND_STREAM_NAME,
@@ -1154,9 +1186,11 @@ pub(crate) mod tests {
     use spacetimedb_schema::reducer_name::ReducerName;
     use spacetimedb_schema::schema::{
         columns_to_row_type, ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, RowLevelSecuritySchema,
-        ScheduleSchema, SequenceSchema,
+        ScheduleSchema, SequenceSchema, TableCachePolicy,
     };
     use spacetimedb_schema::table_name::TableName;
+    use spacetimedb_table::blob_store::BlobHash;
+    use spacetimedb_table::tiered::{metrics::CacheTier, BlobError, ByteBudget, ByteBudgetConfig};
 
     /// For the first user-created table, sequences in the system tables start
     /// from this value.
@@ -1177,7 +1211,7 @@ pub(crate) mod tests {
             Ok(self
                 .db
                 .iter(ST_TABLE_ID)?
-                .map(|row| StTableRow::try_from(row).unwrap())
+                .map(|row| StTableRow::try_from(row.unwrap()).unwrap())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
         }
@@ -1190,7 +1224,7 @@ pub(crate) mod tests {
             Ok(self
                 .db
                 .iter_by_col_eq(ST_TABLE_ID, cols.into(), value)?
-                .map(|row| StTableRow::try_from(row).unwrap())
+                .map(|row| StTableRow::try_from(row.unwrap()).unwrap())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
         }
@@ -1199,7 +1233,7 @@ pub(crate) mod tests {
             Ok(self
                 .db
                 .iter(ST_COLUMN_ID)?
-                .map(|row| StColumnRow::try_from(row).unwrap())
+                .map(|row| StColumnRow::try_from(row.unwrap()).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
         }
@@ -1212,7 +1246,7 @@ pub(crate) mod tests {
             Ok(self
                 .db
                 .iter_by_col_eq(ST_COLUMN_ID, cols.into(), value)?
-                .map(|row| StColumnRow::try_from(row).unwrap())
+                .map(|row| StColumnRow::try_from(row.unwrap()).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
         }
@@ -1221,7 +1255,7 @@ pub(crate) mod tests {
             Ok(self
                 .db
                 .iter(ST_CONSTRAINT_ID)?
-                .map(|row| StConstraintRow::try_from(row).unwrap())
+                .map(|row| StConstraintRow::try_from(row.unwrap()).unwrap())
                 .sorted_by_key(|x| x.constraint_id)
                 .collect::<Vec<_>>())
         }
@@ -1230,7 +1264,7 @@ pub(crate) mod tests {
             Ok(self
                 .db
                 .iter(ST_SEQUENCE_ID)?
-                .map(|row| StSequenceRow::try_from(row).unwrap())
+                .map(|row| StSequenceRow::try_from(row.unwrap()).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.sequence_id))
                 .collect::<Vec<_>>())
         }
@@ -1239,7 +1273,7 @@ pub(crate) mod tests {
             Ok(self
                 .db
                 .iter(ST_INDEX_ID)?
-                .map(|row| StIndexRow::try_from(row).unwrap())
+                .map(|row| StIndexRow::try_from(row.unwrap()).unwrap())
                 .sorted_by_key(|x| x.index_id)
                 .collect::<Vec<_>>())
         }
@@ -1250,7 +1284,7 @@ pub(crate) mod tests {
     }
 
     fn get_datastore() -> Result<Locking> {
-        Locking::bootstrap(Identity::ZERO, PagePool::new_for_test())
+        Locking::bootstrap(Identity::ZERO, TieredStorageConfig::new_for_test())
     }
 
     fn col(col: u16) -> ColList {
@@ -1446,7 +1480,7 @@ pub(crate) mod tests {
         schedule: Option<ScheduleSchema>,
         pk: Option<ColId>,
     ) -> TableSchema {
-        TableSchema::new(
+        let mut schema = TableSchema::new(
             TableId::SENTINEL,
             TableName::for_test("Foo"),
             None,
@@ -1461,7 +1495,10 @@ pub(crate) mod tests {
             false,
             None,
             None,
-        )
+        );
+        schema.cache_policy = TableCachePolicy::NoRequirement;
+
+        schema
     }
 
     fn basic_table_schema_with_indices(
@@ -1531,14 +1568,14 @@ pub(crate) mod tests {
         datastore
             .iter_mut_tx(tx, table_id)
             .unwrap()
-            .map(|r| r.to_product_value().clone())
+            .map(|r| r.unwrap().to_product_value().clone())
             .collect()
     }
 
     fn all_rows_tx(tx: &TxId, table_id: TableId) -> Vec<ProductValue> {
         tx.iter(table_id)
             .unwrap()
-            .map(|r| r.to_product_value().clone())
+            .map(|r| r.unwrap().to_product_value().clone())
             .collect()
     }
 
@@ -1600,7 +1637,7 @@ pub(crate) mod tests {
             TableRow { id: ST_INBOUND_STREAM_ID.into(), name: ST_INBOUND_STREAM_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
             TableRow { id: ST_INBOUND_MSG_ID.into(), name: ST_INBOUND_MSG_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: None },
             TableRow { id: ST_OUTBOX_ID.into(), name: ST_OUTBOX_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
-
+            TableRow { id: ST_TABLE_CACHE_POLICY_ID.into(), name: ST_TABLE_CACHE_POLICY_NAME, ty: StTableType::System, access: StAccess::Private, primary_key: Some(ColId(0)) },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_columns()?, map_array([
@@ -1730,6 +1767,9 @@ pub(crate) mod tests {
             ColRow { table: ST_OUTBOX_ID.into(), pos: 3, name: "arg_columns", ty: resolved_type_via_v9::<Vec<ColId>>() },
             ColRow { table: ST_OUTBOX_ID.into(), pos: 4, name: "on_result_reducer", ty: AlgebraicType::option(resolved_type_via_v9::<NamespacedIdentifier>()) },
             ColRow { table: ST_OUTBOX_ID.into(), pos: 5, name: "signature_hash", ty: AlgebraicType::String },
+
+            ColRow { table: ST_TABLE_CACHE_POLICY_ID.into(), pos: 0, name: "table_id", ty: TableId::get_type() },
+            ColRow { table: ST_TABLE_CACHE_POLICY_ID.into(), pos: 1, name: "policy", ty: resolved_type_via_v9::<TableCachePolicy>() },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
@@ -1770,6 +1810,7 @@ pub(crate) mod tests {
             IndexRow { id: 35, table: ST_INBOUND_MSG_ID.into(), col: col_list![0, 1, 2], name: "st_inbound_msg_sender_identity_stream_id_seq_idx_btree", },
             IndexRow { id: 36, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 1], name: "st_outbound_msg_stream_id_msg_id_idx_btree", },
             IndexRow { id: 37, table: ST_OUTBOX_ID.into(), col: col(0), name: "st_outbox_table_id_idx_btree", },
+            IndexRow { id: 38, table: ST_TABLE_CACHE_POLICY_ID.into(), col: col(0), name: "st_table_cache_policy_table_id_idx_btree", },
         ]));
         let start = ST_RESERVED_SEQUENCE_RANGE as i128 + 1;
         #[rustfmt::skip]
@@ -1824,6 +1865,7 @@ pub(crate) mod tests {
             ConstraintRow { constraint_id: 31, table_id: ST_INBOUND_MSG_ID.into(), unique_columns: col_list![0, 1, 2], constraint_name: "st_inbound_msg_sender_identity_stream_id_seq_key", },
             ConstraintRow { constraint_id: 32, table_id: ST_OUTBOUND_MSG_ID.into(), unique_columns: col_list![0, 1], constraint_name: "st_outbound_msg_stream_id_msg_id_key", },
             ConstraintRow { constraint_id: 33, table_id: ST_OUTBOX_ID.into(), unique_columns: col(0), constraint_name: "st_outbox_table_id_key", },
+            ConstraintRow { constraint_id: 34, table_id: ST_TABLE_CACHE_POLICY_ID.into(), unique_columns: col(0), constraint_name: "st_table_cache_policy_table_id_key", },
             ]));
 
         // Verify we get back the tables correctly with the proper ids...
@@ -2031,7 +2073,7 @@ pub(crate) mod tests {
         let mut tx = begin_mut_tx(&datastore);
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?;
 
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         let mut dropped_indexes = 0;
         for (pos, index) in schema.indexes.iter().enumerate() {
             datastore.drop_index_mut_tx(&mut tx, index.index_id)?;
@@ -2052,7 +2094,7 @@ pub(crate) mod tests {
         datastore.commit_mut_tx(tx)?;
 
         let mut tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         assert!(
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes.is_empty(),
             "no indexes should be left in the schema post-commit"
@@ -2095,7 +2137,7 @@ pub(crate) mod tests {
         datastore.commit_mut_tx(tx)?;
 
         let tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         assert_eq!(
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes,
             expected_indexes,
@@ -2113,7 +2155,7 @@ pub(crate) mod tests {
         assert_eq!(tx.pending_schema_changes().len(), 6);
         let _ = datastore.rollback_mut_tx(tx);
         let tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id);
         assert!(schema.is_err());
         Ok(())
@@ -2148,6 +2190,53 @@ pub(crate) mod tests {
         let tx = begin_mut_tx(&datastore);
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_large_blob_insert_post_commit() -> ResultTest<()> {
+        let (datastore, mut tx, table_id) = setup_table()?;
+        let large = "x".repeat(2048);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(0, &large, 18))?;
+        datastore.commit_mut_tx(tx)?;
+
+        let tx = begin_mut_tx(&datastore);
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, &large, 18)]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_large_blob_changes_post_rollback() -> ResultTest<()> {
+        let (datastore, tx, table_id) = setup_table()?;
+        datastore.commit_mut_tx(tx)?;
+
+        let original_blob = "x".repeat(2048);
+        let replacement_blob = "y".repeat(2048);
+
+        // A rolled-back insertion must release its transaction-local page and
+        // blob references, including the sequence value it generated.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(0, &original_blob, 18))?;
+        let _ = datastore.rollback_mut_tx(tx);
+
+        let mut tx = begin_mut_tx(&datastore);
+        assert!(all_rows(&datastore, &tx, table_id).is_empty());
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(0, &original_blob, 18))?;
+        datastore.commit_mut_tx(tx)?;
+
+        // Roll back a transaction which removes a committed blob reference and
+        // creates a different transaction-local one.
+        let original_row = u32_str_u32(1, &original_blob, 18);
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(
+            datastore.delete_by_rel_mut_tx(&mut tx, table_id, [original_row.clone()]),
+            1
+        );
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(0, &replacement_blob, 19))?;
+        let _ = datastore.rollback_mut_tx(tx);
+
+        let tx = begin_mut_tx(&datastore);
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![original_row]);
         Ok(())
     }
 
@@ -2349,6 +2438,7 @@ pub(crate) mod tests {
             IndexRow { id: 35, table: ST_INBOUND_MSG_ID.into(), col: col_list![0, 1, 2], name: "st_inbound_msg_sender_identity_stream_id_seq_idx_btree", },
             IndexRow { id: 36, table: ST_OUTBOUND_MSG_ID.into(), col: col_list![0, 1], name: "st_outbound_msg_stream_id_msg_id_idx_btree", },
             IndexRow { id: 37, table: ST_OUTBOX_ID.into(), col: col(0), name: "st_outbox_table_id_idx_btree", },
+            IndexRow { id: 38, table: ST_TABLE_CACHE_POLICY_ID.into(), col: col(0), name: "st_table_cache_policy_table_id_idx_btree" },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "Foo_id_idx_btree",  },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "Foo_name_idx_btree",  },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "Foo_age_idx_btree",  },
@@ -2413,7 +2503,7 @@ pub(crate) mod tests {
         commit(&datastore, tx)?;
 
         let mut tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         create_foo_age_idx_btree(&datastore, &mut tx, table_id)?;
         assert_matches!(tx.pending_schema_changes(), [PendingSchemaChange::IndexAdded(.., None)]);
         assert_st_indices(&tx, true)?;
@@ -2440,7 +2530,7 @@ pub(crate) mod tests {
         commit(&datastore, tx)?;
 
         let mut tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         assert_st_indices(&tx, true)?;
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = insert(&datastore, &mut tx, table_id, &row);
@@ -2476,11 +2566,42 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn test_undo_preserves_pointer_map_after_index_addition() -> ResultTest<()> {
+        for unique in [false, true] {
+            let (datastore, mut tx, table_id) = setup_table_with_indices(vec![], vec![])?;
+            let original = u32_str_u32(1, "original", 30);
+            insert(&datastore, &mut tx, table_id, &original)?;
+            commit(&datastore, tx)?;
+
+            let mut tx = begin_mut_tx(&datastore);
+            let mut index = IndexSchema::for_test("temporary_index", BTreeAlgorithm::from(0));
+            index.table_id = table_id;
+            let index_id = datastore.create_index_mut_tx(&mut tx, index, unique)?;
+            assert_eq!(
+                tx.committed_state_write_lock.tables[&table_id].has_pointer_map(),
+                !unique
+            );
+            let _ = datastore.rollback_mut_tx(tx);
+
+            // Inspect committed state after full rollback, then exercise its
+            // duplicate detection rather than only checking catalog metadata.
+            let mut tx = begin_mut_tx(&datastore);
+            let table = &tx.committed_state_write_lock.tables[&table_id];
+            assert!(table.has_pointer_map(), "rollback lost the committed pointer map");
+            assert!(table.get_index_by_id(index_id).is_none());
+            insert(&datastore, &mut tx, table_id, &original)?;
+            assert_eq!(all_rows(&datastore, &tx, table_id), vec![original]);
+            let _ = datastore.rollback_mut_tx(tx);
+        }
+        Ok(())
+    }
+
+    #[test]
     fn test_create_drop_sequence_transactionality() -> ResultTest<()> {
         // Start a transaction. Schema changes empty so far.
         let datastore = get_datastore()?;
         let mut tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
 
         // Make the table and witness `TableAdded`. Commit.
         let column = ColumnSchema::for_test(0, "id", AlgebraicType::I32);
@@ -2543,11 +2664,11 @@ pub(crate) mod tests {
         );
         let _ = datastore.rollback_mut_tx(tx);
         let mut tx: MutTxId = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         insert_assert_and_remove(&mut tx, &zero, &zero)?;
 
         // Add the sequence and this time actually commit. Check that it exists in next tx.
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         let seq_id = datastore.create_sequence_mut_tx(&mut tx, sequence.clone())?;
         assert_matches!(
             tx.pending_schema_changes(),
@@ -2556,7 +2677,7 @@ pub(crate) mod tests {
         );
         commit(&datastore, tx)?;
         let mut tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         insert_assert_and_remove(&mut tx, &zero, &one)?;
 
         // We have the sequence in committed state.
@@ -2566,7 +2687,7 @@ pub(crate) mod tests {
         insert_assert_and_remove(&mut tx, &zero, &zero)?;
         let _ = datastore.rollback_mut_tx(tx);
         let mut tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         // The auto-inc value generated before the rollback remains available.
         insert_assert_and_remove(&mut tx, &zero, &one)?;
 
@@ -2576,7 +2697,7 @@ pub(crate) mod tests {
         insert_assert_and_remove(&mut tx, &zero, &zero)?;
         commit(&datastore, tx)?;
         let mut tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         insert_assert_and_remove(&mut tx, &zero, &zero)?;
 
         Ok(())
@@ -2597,7 +2718,7 @@ pub(crate) mod tests {
             datastore
                 .iter_by_col_eq_mut_tx(tx, table_id, ColId(0), &AlgebraicValue::U32(1))
                 .unwrap()
-                .map(|row_ref| row_ref.to_product_value())
+                .map(|row_ref| row_ref.unwrap().to_product_value())
                 .collect::<Vec<_>>()
         };
 
@@ -2751,7 +2872,7 @@ pub(crate) mod tests {
             let key: AlgebraicValue = key.into();
             Datastore::index_scan_range(tx, table_id, index_id, &key)
                 .unwrap()
-                .map(|row| row.pointer())
+                .map(|row| row.unwrap().pointer())
                 .collect::<Vec<_>>()
         };
 
@@ -2809,7 +2930,7 @@ pub(crate) mod tests {
 
         // Remove index in tx state.
         let mut tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         let index_id = extract_index_id(&datastore, &tx, &basic_indices()[0])?;
         tx.drop_index(index_id)?;
         assert_matches!(
@@ -2902,7 +3023,7 @@ pub(crate) mod tests {
 
         // Now add the indices and then delete the row.
         let mut tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         let mut indices = basic_indices();
         for (pos, index) in indices.iter_mut().enumerate() {
             index.table_id = table_id;
@@ -3170,7 +3291,7 @@ pub(crate) mod tests {
 
         let stream_rows = tx
             .iter(ST_OUTBOUND_STREAM_ID)?
-            .map(StOutboundStreamRow::try_from)
+            .map(|row| row.and_then(StOutboundStreamRow::try_from))
             .collect::<Result<Vec<_>>>()?;
         assert_eq!(stream_rows.len(), 1);
         assert_eq!(stream_rows[0].outbox_table_id, table_id);
@@ -3181,7 +3302,7 @@ pub(crate) mod tests {
         let stream_id = stream_rows[0].stream_id;
         let mut outbound_rows = tx
             .iter(ST_OUTBOUND_MSG_ID)?
-            .map(StOutboundMsgRow::try_from)
+            .map(|row| row.and_then(StOutboundMsgRow::try_from))
             .collect::<Result<Vec<_>>>()?;
         outbound_rows.sort_by_key(|row| row.seq);
         assert_eq!(outbound_rows.iter().map(|row| row.seq).collect::<Vec<_>>(), vec![1, 2]);
@@ -3295,7 +3416,7 @@ pub(crate) mod tests {
 
         let stream_rows = tx
             .iter(ST_INBOUND_STREAM_ID)?
-            .map(StInboundStreamRow::try_from)
+            .map(|row| StInboundStreamRow::try_from(row?))
             .collect::<Result<Vec<_>>>()?;
         assert_eq!(stream_rows.len(), 1);
         assert_eq!(stream_rows[0].sender_identity, IdentityViaU256(sender));
@@ -3304,7 +3425,7 @@ pub(crate) mod tests {
 
         let msg_rows = tx
             .iter(ST_INBOUND_MSG_ID)?
-            .map(StInboundMsgRow::try_from)
+            .map(|row| StInboundMsgRow::try_from(row?))
             .collect::<Result<Vec<_>>>()?;
         assert!(msg_rows.is_empty());
 
@@ -3474,7 +3595,7 @@ pub(crate) mod tests {
         fn assert_rows(datastore: &Locking, table_id: TableId, rows: Vec<ProductValue>) -> ResultTest<()> {
             let tx = begin_tx(datastore);
             for (actual, expected) in datastore.iter_tx(&tx, table_id)?.zip_eq(rows) {
-                assert_eq!(actual.to_bsatn_vec()?, expected.to_bsatn_vec()?);
+                assert_eq!(actual?.to_bsatn_vec()?, expected.to_bsatn_vec()?);
             }
             Ok(())
         }
@@ -3584,11 +3705,223 @@ pub(crate) mod tests {
             datastore
                 .iter_by_col_eq_mut_tx(&tx, table_id, 0, &42i32.into())
                 .unwrap()
-                .map(|r| r.pointer())
+                .map(|r| r.unwrap().pointer())
                 .collect::<Vec<_>>(),
             [first],
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn dropped_tables_release_repeated_blob_references_with_their_own_policy() -> ResultTest<()> {
+        for dropped_policy in [TableCachePolicy::RequiredInMemory, TableCachePolicy::NoRequirement] {
+            for retained_policy in [TableCachePolicy::RequiredInMemory, TableCachePolicy::NoRequirement] {
+                let datastore = get_datastore()?;
+                let mut tx = begin_mut_tx(&datastore);
+                let baseline_bytes = tx.committed_state_write_lock.storage.resident_bytes_used_by_blobs();
+                let mut schema = TableSchema::from_product_type(
+                    [AlgebraicType::U64, AlgebraicType::String, AlgebraicType::String].into(),
+                );
+                schema.table_name = TableName::for_test("dropped");
+                schema.cache_policy = dropped_policy;
+                let dropped = datastore.create_table_mut_tx(&mut tx, schema.clone())?;
+                schema.table_name = TableName::for_test("retained");
+                schema.cache_policy = retained_policy;
+                let retained = datastore.create_table_mut_tx(&mut tx, schema)?;
+
+                let shared = "s".repeat(2048);
+                let unique = "u".repeat(2048);
+                let shared_hash = BlobHash::hash_from_bytes(shared.as_bytes());
+                let unique_hash = BlobHash::hash_from_bytes(unique.as_bytes());
+                let dropped_rows = [
+                    product![1_u64, shared.clone(), shared.clone()],
+                    product![2_u64, shared.clone(), unique],
+                ];
+                for row in &dropped_rows {
+                    tx.insert_via_serialize_bsatn(dropped, row)?;
+                }
+                tx.insert_via_serialize_bsatn(retained, &product![3_u64, shared.clone(), shared.clone()])?;
+                commit(&datastore, tx)?;
+
+                // Schema removal is reversible until commit. Rolling it back
+                // must restore the rows without changing any blob reference.
+                let mut tx = begin_mut_tx(&datastore);
+                tx.drop_table(dropped)?;
+                let _ = datastore.rollback_mut_tx(tx);
+                let mut tx = begin_mut_tx(&datastore);
+                assert_eq!(all_rows(&datastore, &tx, dropped), dropped_rows);
+                let blobs = tx.committed_state_write_lock.storage.blobs();
+                assert_eq!(blobs.uses(shared_hash.into()).unwrap_or_default(), 5);
+                assert_eq!(blobs.uses(unique_hash.into()).unwrap_or_default(), 1);
+
+                tx.drop_table(dropped)?;
+                let changes = commit(&datastore, tx)?;
+                let (_, entry) = changes.iter_table_entries().find(|(id, _)| *id == dropped).unwrap();
+                assert!(entry.truncated);
+                assert_eq!(&*entry.deletes, dropped_rows.as_slice());
+
+                // The shared hash occurred three times in the dropped table,
+                // so now there must be two references remaining.
+                // The unique hash must be gone from the set.
+                let mut tx = begin_mut_tx(&datastore);
+                let blobs = tx.committed_state_write_lock.storage.blobs();
+                assert_eq!(blobs.uses(shared_hash.into()).unwrap_or_default(), 2);
+                assert_eq!(blobs.uses(unique_hash.into()), None);
+                blobs.evict(0)?;
+                let retained_bytes = match retained_policy {
+                    TableCachePolicy::RequiredInMemory => shared.len() as u64 + BlobHash::SIZE as u64,
+                    _ => 0,
+                };
+                assert_eq!(blobs.resident_bytes_used_by_blobs(), baseline_bytes + retained_bytes);
+
+                // Releasing the remaining owners must remove the entry entirely.
+                tx.clear_table(retained)?;
+                commit(&datastore, tx)?;
+
+                let tx = begin_mut_tx(&datastore);
+                let blobs = tx.committed_state_write_lock.storage.blobs();
+                assert_eq!(blobs.uses(shared_hash.into()), None);
+                assert_eq!(blobs.resident_bytes_used_by_blobs(), baseline_bytes);
+                commit(&datastore, tx)?;
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn failed_commit_preserves_prepared_dropped_table_blob_references() -> ResultTest<()> {
+        const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
+            low_water_bytes: 0,
+            soft_limit_bytes: HARD_LIMIT_BYTES,
+            hard_limit_bytes: HARD_LIMIT_BYTES,
+        })?;
+        let mut config = TieredStorageConfig::new_for_test();
+        config.resident_budget = budget.clone();
+        let datastore = Locking::bootstrap(Identity::ZERO, config)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+
+        let mut schema = TableSchema::from_product_type([AlgebraicType::String].into());
+        schema.table_name = TableName::for_test("dropped");
+        let dropped = datastore.create_table_mut_tx(&mut tx, schema.clone())?;
+        schema.table_name = TableName::for_test("faulting");
+        schema.cache_policy = TableCachePolicy::NoRequirement;
+
+        let faulting = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let required = "r".repeat(2048);
+        let required_hash = BlobHash::hash_from_bytes(required.as_bytes());
+        let required_row = product![required.clone()];
+        tx.insert_via_serialize_bsatn(dropped, &required_row)?;
+
+        let large_row = product!["x".repeat(1024 * 1024)];
+        tx.insert_via_serialize_bsatn(faulting, &large_row)?;
+
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        tx.drop_table(dropped)?;
+        tx.clear_table(faulting)?;
+        tx.committed_state_write_lock.storage.blobs().evict(0)?;
+        // The dropped table's small required blob stays resident, so its release
+        // plan and deleted-row values can be prepared. The later deletion from
+        // another table must fault a 1 MiB blob and fail before application.
+        let reservation = budget.acquire(HARD_LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024)?;
+        let result = datastore.commit_mut_tx(tx);
+        assert!(matches!(
+            result,
+            Err(DatastoreError::TableStorage(spacetimedb_table::table::TableError::Blob(error)))
+                if matches!(*error, BlobError::MemoryLimitExceeded(_))
+        ));
+        drop(reservation);
+
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(all_rows(&datastore, &tx, dropped), [required_row]);
+        assert_eq!(all_rows(&datastore, &tx, faulting), [large_row]);
+        let blobs = tx.committed_state_write_lock.storage.blobs();
+        assert_eq!(blobs.uses(required_hash.into()).unwrap_or_default(), 1);
+        blobs.evict(0)?;
+        assert_eq!(
+            blobs.resident_bytes_used_by_blobs(),
+            required.len() as u64 + BlobHash::SIZE as u64
+        );
+
+        // A retry after releasing memory pressure must still have valid rows
+        // and references to release, including the restored required policy pin.
+        tx.drop_table(dropped)?;
+        commit(&datastore, tx)?;
+
+        let tx = begin_mut_tx(&datastore);
+        assert_eq!(
+            tx.committed_state_write_lock
+                .storage
+                .blobs()
+                .uses(required_hash.into())
+                .unwrap_or_default(),
+            0
+        );
+        commit(&datastore, tx)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn disk_to_memory_migration_rolls_back_when_over_budget() -> ResultTest<()> {
+        use TableCachePolicy::{RequiredInMemory, RequiredOnDisk};
+
+        const LIMIT_BYTES: u64 = 16 * 1024 * 1024;
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
+            low_water_bytes: 0,
+            soft_limit_bytes: LIMIT_BYTES,
+            hard_limit_bytes: LIMIT_BYTES,
+        })?;
+        let mut config = TieredStorageConfig::new_for_test();
+        config.resident_budget = budget.clone();
+        let datastore = Locking::bootstrap(Identity::ZERO, config)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        let mut schema = TableSchema::from_product_type([AlgebraicType::String].into());
+        schema.cache_policy = RequiredOnDisk;
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let row = product!["x".repeat(1024 * 1024)];
+        insert(&datastore, &mut tx, table_id, &row)?;
+        commit(&datastore, tx)?;
+
+        // Evict the blob, then leave too little memory to load it during migration.
+        let mut tx = begin_mut_tx(&datastore);
+        tx.alter_table_cache_policy(table_id, RequiredInMemory)?;
+        tx.committed_state_write_lock.storage.blobs().evict(0)?;
+        let reservation = budget.acquire(LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024)?;
+        let error = datastore.commit_mut_tx(tx).map(|_| ()).unwrap_err();
+        assert_matches!(
+            error,
+            DatastoreError::TableStorage(spacetimedb_table::table::TableError::Blob(error))
+                if matches!(*error, BlobError::MemoryLimitExceeded(_))
+        );
+        drop(reservation);
+
+        // Failure must restore both the cached schema and the system-table metadata.
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(tx.schema_for_table(table_id)?.cache_policy, RequiredOnDisk);
+        verify_schemas_consistent(&mut tx, table_id);
+        assert_eq!(all_rows(&datastore, &tx, table_id), [row]);
+        let blobs = tx.committed_state_write_lock.storage.blobs();
+        blobs.evict(0)?;
+        assert_eq!(blobs.resident_bytes_used_by_blobs(), 0);
+
+        // With the memory available again, retry and check that the blob stays resident.
+        tx.alter_table_cache_policy(table_id, RequiredInMemory)?;
+        commit(&datastore, tx)?;
+        let tx = begin_mut_tx(&datastore);
+        assert_eq!(tx.schema_for_table(table_id)?.cache_policy, RequiredInMemory);
+        let blobs = tx.committed_state_write_lock.storage.blobs();
+        let resident_bytes = blobs.resident_bytes_used_by_blobs();
+        assert!(resident_bytes > 0);
+        blobs.evict(0)?;
+        assert_eq!(blobs.resident_bytes_used_by_blobs(), resident_bytes);
         Ok(())
     }
 
@@ -3603,7 +3936,7 @@ pub(crate) mod tests {
 
         // Create a transaction and drop the table and roll back.
         let mut tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         assert!(datastore.drop_table_mut_tx(&mut tx, table_id).is_ok());
         assert_matches!(
             tx.pending_schema_changes(),
@@ -3621,7 +3954,7 @@ pub(crate) mod tests {
 
         // Ensure the table still exists in the next transaction.
         let mut tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         assert!(
             datastore.table_id_exists_mut_tx(&tx, &table_id),
             "Table should still exist",
@@ -3671,7 +4004,7 @@ pub(crate) mod tests {
 
         // Nothing should have happened.
         let tx = begin_mut_tx(&datastore);
-        assert_eq!(tx.pending_schema_changes(), []);
+        assert!(tx.pending_schema_changes().is_empty());
         assert!(
             !datastore.table_id_exists_mut_tx(&tx, &table_id),
             "Table should not exist"
@@ -3691,9 +4024,9 @@ pub(crate) mod tests {
             |tx: &MutTxId, access| assert_eq!(tx.get_schema(table_id).map(|s| s.table_access), Some(access));
         assert_access(&tx, StAccess::Public);
         tx.alter_table_access(table_id, StAccess::Private)?;
-        assert_eq!(
+        assert_matches!(
             tx.pending_schema_changes(),
-            [PendingSchemaChange::TableAlterAccess(table_id, StAccess::Public)]
+            [PendingSchemaChange::TableAlterAccess(tid, StAccess::Public)] if *tid == table_id
         );
         let _ = datastore.rollback_mut_tx(tx);
 
@@ -3795,12 +4128,10 @@ pub(crate) mod tests {
         // Change the columns in datastore and roll back.
         let mut tx = begin_mut_tx(&datastore);
         datastore.alter_table_row_type_mut_tx(&mut tx, table_id, columns.clone())?;
-        assert_eq!(
+        assert_matches!(
             tx.pending_schema_changes(),
-            [PendingSchemaChange::TableAlterRowType(
-                table_id,
-                columns_original.clone()
-            )]
+            [PendingSchemaChange::TableAlterRowType(tid, old_columns)]
+                if *tid == table_id && old_columns == &columns_original
         );
         assert_eq!(tx.get_schema(table_id).unwrap().columns, columns.clone());
         let _ = datastore.rollback_mut_tx(tx);
@@ -3849,6 +4180,7 @@ pub(crate) mod tests {
         let row_ref = datastore
             .iter_by_col_eq_tx(&tx, table_id, 1, &sum_val.into())?
             .next()
+            .unwrap()
             .unwrap();
         assert_eq!(row_ref.read_col::<u64>(0).unwrap(), id);
 
@@ -3932,7 +4264,7 @@ pub(crate) mod tests {
         let rows = tx
             .table_scan(table_id)
             .unwrap()
-            .map(|row| row.to_product_value())
+            .map(|row| row.unwrap().to_product_value())
             .collect::<Vec<_>>();
         assert_eq!(rows, old_rows, "Rows shouldn't be changed if rolledback");
         let table = tx.table_name(rollback_table_id);
@@ -3985,7 +4317,10 @@ pub(crate) mod tests {
 
         // test for auto_inc feields
         let tx = begin_mut_tx(&datastore);
-        let rows = tx.table_scan(new_table_id).unwrap().map(|row| row.to_product_value());
+        let rows = tx
+            .table_scan(new_table_id)
+            .unwrap()
+            .map(|row| row.unwrap().to_product_value());
 
         let mut last_row_auto_inc = 0;
         for row in rows {
@@ -4004,7 +4339,7 @@ pub(crate) mod tests {
         let datastore = get_datastore()?;
 
         let tx = begin_mut_tx(&datastore);
-        let (_, _, metrics, _) = tx.commit();
+        let (_, _, metrics, _) = tx.commit()?;
         assert!(metrics.committed);
 
         let tx = begin_mut_tx(&datastore);
@@ -4288,6 +4623,40 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn test_undo_preserves_existing_index_uniqueness() -> ResultTest<()> {
+        let (datastore, mut tx, table_id) = setup_table_with_indices(
+            vec![IndexSchema::for_test("unique_index", BTreeAlgorithm::from(0))],
+            vec![ConstraintSchema::unique_for_test("original_constraint", 0u16)],
+        )?;
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "original", 30))?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        let index_id = tx.index_id_from_name("unique_index")?.unwrap();
+        let constraints_before = tx.committed_state_write_lock.tables[&table_id]
+            .get_schema()
+            .constraints
+            .clone();
+        let mut constraint = ConstraintSchema::unique_for_test("additional_constraint", 0u16);
+        constraint.table_id = table_id;
+        datastore.create_constraint_mut_tx(&mut tx, constraint)?;
+        let _ = datastore.rollback_mut_tx(tx);
+
+        // The original committed constraint and its enforcement must survive
+        // rolling back another constraint on the same columns.
+        let mut tx = begin_mut_tx(&datastore);
+        let table = &tx.committed_state_write_lock.tables[&table_id];
+        assert_eq!(table.get_schema().constraints, constraints_before);
+        assert!(table.get_index_by_id(index_id).unwrap().is_unique());
+        assert!(matches!(
+            insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "conflicting", 31)),
+            Err(DatastoreError::Index(IndexError::UniqueConstraintViolation(_)))
+        ));
+        let _ = datastore.rollback_mut_tx(tx);
+        Ok(())
+    }
+
+    #[test]
     fn test_create_constraint_fails_with_duplicates() -> ResultTest<()> {
         let datastore = get_datastore()?;
 
@@ -4369,6 +4738,154 @@ pub(crate) mod tests {
         );
         commit(&datastore, tx)?;
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_drop_constraint_blob_fault_restores_indices_and_schema() -> ResultTest<()> {
+        // Bootstrap and commit with enough memory for all data. We only apply
+        // memory pressure later, so setup cannot accidentally trigger the error.
+        const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
+            low_water_bytes: 0,
+            soft_limit_bytes: HARD_LIMIT_BYTES,
+            hard_limit_bytes: HARD_LIMIT_BYTES,
+        })?;
+        let mut config = TieredStorageConfig::new_for_test();
+        config.resident_budget = budget.clone();
+        let datastore = Locking::bootstrap(Identity::ZERO, config)?;
+
+        // Two backing indices exercise undo of an earlier successful pair as
+        // well as the pair whose committed-table pointer-map rebuild fails.
+        let mut tx = begin_mut_tx(&datastore);
+
+        let indices = vec![
+            IndexSchema::for_test("Foo_id_first", BTreeAlgorithm::from(0)),
+            IndexSchema::for_test("Foo_id_second", BTreeAlgorithm::from(0)),
+        ];
+        let constraints = vec![ConstraintSchema::unique_for_test("Foo_id_key", 0u16)];
+        let schema = basic_table_schema_with_indices(indices, constraints);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+
+        let large = "x".repeat(1024 * 1024);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, &large, 30))?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(2, "Bob", 25))?;
+        let constraint_id = tx.constraint_id_from_name("Foo_id_key")?.unwrap();
+        let schema_before = tx.committed_state_write_lock.tables[&table_id].get_schema().clone();
+
+        // Keep room for system-table pages, but not for the evicted 1 MiB blob.
+        // The tx table can build its pointer map; the committed table cannot.
+        tx.committed_state_write_lock.storage.blobs().evict(0)?;
+        assert_eq!(tx.committed_state_write_lock.storage.resident_bytes_used_by_blobs(), 0);
+        let reservation = budget.acquire(HARD_LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024)?;
+        // The first index becomes non-unique on both tables without a scan:
+        // another unique index remains. For the second index, the tx rebuild
+        // succeeds, then the committed rebuild tries to fault the large blob.
+        let error = datastore.drop_constraint_mut_tx(&mut tx, constraint_id).unwrap_err();
+        assert!(matches!(
+            error,
+            crate::error::DatastoreError::TableStorage(spacetimedb_table::table::TableError::Blob(error))
+                if matches!(*error, BlobError::MemoryLimitExceeded(_))
+        ));
+
+        // Even before transaction rollback, every changed index and the shared
+        // schema must be restored. No ConstraintRemoved was recorded on failure.
+        for table in [
+            &tx.committed_state_write_lock.tables[&table_id],
+            &tx.tx_state.insert_tables[&table_id],
+        ] {
+            assert_eq!(table.get_indexes_by_cols(&col(0)).len(), 2);
+            assert!(table
+                .get_indexes_by_cols(&col(0))
+                .iter()
+                .all(|(_, index)| index.is_unique()));
+            assert!(!table.has_pointer_map());
+            assert_eq!(table.get_schema(), &schema_before);
+        }
+        drop(reservation);
+        let _ = datastore.rollback_mut_tx(tx);
+
+        // Rollback must also restore the system-table constraint row deleted
+        // before the failed index changes. Check both metadata and enforcement
+        // from a fresh transaction, after the memory pressure has been removed.
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(
+            tx.committed_state_write_lock.tables[&table_id].get_schema(),
+            &schema_before
+        );
+        assert_eq!(tx.constraint_id_from_name("Foo_id_key")?, Some(constraint_id));
+        assert!(insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Duplicate", 20)).is_err());
+        let _ = datastore.rollback_mut_tx(tx);
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_constraint_blob_fault_reverts_uniqueness_before_reporting_conflict() -> ResultTest<()> {
+        // Bootstrap and commit with enough memory for all data. We only apply
+        // memory pressure later, so setup cannot accidentally trigger the error.
+        const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
+            low_water_bytes: 0,
+            soft_limit_bytes: HARD_LIMIT_BYTES,
+            hard_limit_bytes: HARD_LIMIT_BYTES,
+        })?;
+        let mut config = TieredStorageConfig::new_for_test();
+        config.resident_budget = budget.clone();
+        let datastore = Locking::bootstrap(Identity::ZERO, config)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = table_with_non_unique_index(0u16);
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let large = "x".repeat(1024 * 1024);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, &large, 30))?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        // Insert a conflicting row, so making the index unique on each of the
+        // tx and committed state tables succeeds individually without reading
+        // the blob. The conflict is found only by `Index::can_merge`.
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Bob", 25))?;
+        // Leave enough room to insert constraint metadata into system tables,
+        // but too little to fault the committed row's 1MiB string back in.
+        tx.committed_state_write_lock.storage.blobs().evict(0)?;
+        assert_eq!(tx.committed_state_write_lock.storage.resident_bytes_used_by_blobs(), 0);
+        let reservation = budget.acquire(HARD_LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024)?;
+
+        let mut constraint = ConstraintSchema::unique_for_test("Foo_id_unique", 0u16);
+        constraint.table_id = table_id;
+        let error = datastore.create_constraint_mut_tx(&mut tx, constraint).unwrap_err();
+        // Formatting the merge-conflict error obtains a `RowRef`, which faults
+        // all of the row's blobs. Assert that we hit exactly this case.
+        // TODO(disk-tables): Don't display the entire column list?
+        assert!(matches!(
+            error,
+            DatastoreError::TableStorage(spacetimedb_table::table::TableError::Blob(error))
+                if matches!(*error, BlobError::MemoryLimitExceeded(_))
+        ));
+
+        // The fallible diagnostic must not bypass undo on either table.
+        // This must happen before transaction rollback!
+        for table in [
+            &tx.committed_state_write_lock.tables[&table_id],
+            &tx.tx_state.insert_tables[&table_id],
+        ] {
+            assert!(!table.has_unique_index());
+            assert!(table.has_pointer_map());
+        }
+        drop(reservation);
+        let _ = datastore.rollback_mut_tx(tx);
+
+        // Rollback must discard the newly inserted constraint metadata too.
+        // A fresh transaction must still permit different rows with the same key.
+        let mut tx = begin_mut_tx(&datastore);
+        assert!(tx.constraint_id_from_name("Foo_id_unique")?.is_none());
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Duplicate", 20))?;
+        let _ = datastore.rollback_mut_tx(tx);
         Ok(())
     }
 
@@ -4568,9 +5085,9 @@ pub(crate) mod tests {
             expected_len,
             "Existed path must not push a new pending schema change",
         );
-        assert_eq!(
+        assert_matches!(
             tx.tx_state.pending_schema_changes.last(),
-            Some(&PendingSchemaChange::TableAdded(TableId::SENTINEL)),
+            Some(PendingSchemaChange::TableAdded(id)) if *id == TableId::SENTINEL,
             "Existed path must not overwrite an unrelated trailing pending schema change",
         );
         Ok(())
@@ -4608,6 +5125,156 @@ pub(crate) mod tests {
             orphan.is_none(),
             "pre-validation must run before create_st_constraint; no st_constraint row may be written on failure",
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_drop_index_blob_fault_restores_transaction_index() -> ResultTest<()> {
+        use spacetimedb_table::tiered::{BlobError, ByteBudget, ByteBudgetConfig};
+
+        // drop_index updates two Table instances for the same logical table.
+        // Force the first removal (tx state) to succeed and the second removal
+        // (committed state) to fail; the first removal must then be undone.
+        // Bootstrap with ample memory and introduce pressure only after setup.
+        const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
+            low_water_bytes: 0,
+            soft_limit_bytes: HARD_LIMIT_BYTES,
+            hard_limit_bytes: HARD_LIMIT_BYTES,
+        })?;
+        let mut config = TieredStorageConfig::new_for_test();
+        config.resident_budget = budget.clone();
+        let datastore = Locking::bootstrap(Identity::ZERO, config)?;
+        let mut tx = begin_mut_tx(&datastore);
+
+        let schema = basic_table_schema_with_indices(
+            vec![IndexSchema::for_test("Foo_id_idx", BTreeAlgorithm::from(0))],
+            vec![ConstraintSchema::unique_for_test("Foo_id_key", 0u16)],
+        );
+
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        // This is the only unique index. Removing it requires a pointer map,
+        // which hashes whole rows and therefore reads this large string even
+        // though the index itself only covers the integer ID column.
+        insert(
+            &datastore,
+            &mut tx,
+            table_id,
+            &u32_str_u32(1, &"x".repeat(1024 * 1024), 30),
+        )?;
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        // The tx table's row has no external blob, so its pointer-map rebuild
+        // can finish under the budget that will block the committed rebuild.
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(2, "Bob", 25))?;
+        let index_id = tx.index_id_from_name("Foo_id_idx")?.unwrap();
+        let schema_before = tx.committed_state_write_lock.tables[&table_id].get_schema().clone();
+        // Removing the last unique index builds a pointer map. This succeeds
+        // for the small tx row, but faults the committed row's evicted blob.
+        tx.committed_state_write_lock.storage.blobs().evict(0)?;
+        assert_eq!(tx.committed_state_write_lock.storage.resident_bytes_used_by_blobs(), 0);
+        // Leave 256 KiB for page work, but not enough for the evicted 1 MiB
+        // blob. Match that specific error to rule out an earlier failure.
+        let reservation = budget.acquire(HARD_LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024)?;
+        let error = tx.drop_index(index_id).unwrap_err();
+        assert!(matches!(error,
+            crate::error::DatastoreError::TableStorage(spacetimedb_table::table::TableError::Blob(error))
+            if matches!(*error, BlobError::MemoryLimitExceeded(_))));
+
+        // Check before rollback: it discards the tx table and would conceal an
+        // index left missing there after committed-table removal failed.
+        // Both schemas still describe the index, so both physical indices must
+        // exist too, with no replacement pointer map alongside a unique index.
+        for table in [
+            &tx.committed_state_write_lock.tables[&table_id],
+            &tx.tx_state.insert_tables[&table_id],
+        ] {
+            assert!(table.get_index_by_id(index_id).unwrap().is_unique());
+            assert!(!table.has_pointer_map());
+            assert_eq!(table.get_schema(), &schema_before);
+        }
+        drop(reservation);
+        // The failed drop must not disable uniqueness for subsequent tx inserts.
+        assert!(insert(&datastore, &mut tx, table_id, &u32_str_u32(2, "Duplicate", 20)).is_err());
+        let _ = datastore.rollback_mut_tx(tx);
+        // Rollback must also undo the earlier st_index metadata deletion.
+        let tx = begin_mut_tx(&datastore);
+        assert_eq!(tx.index_id_from_name("Foo_id_idx")?, Some(index_id));
+        let _ = datastore.rollback_mut_tx(tx);
+        Ok(())
+    }
+
+    #[test]
+    fn test_update_blob_fault_removes_unconfirmed_row() -> ResultTest<()> {
+        // Create an empty committed table, then keep the old row tx-local.
+        // A failed update must preserve that row without leaving an uncounted
+        // replacement that could later be scanned and committed.
+        const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
+            low_water_bytes: 0,
+            soft_limit_bytes: HARD_LIMIT_BYTES,
+            hard_limit_bytes: HARD_LIMIT_BYTES,
+        })?;
+        let mut config = TieredStorageConfig::new_for_test();
+        config.resident_budget = budget.clone();
+        let datastore = Locking::bootstrap(Identity::ZERO, config)?;
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = basic_table_schema_with_indices(
+            vec![IndexSchema::for_test("Foo_id_idx", BTreeAlgorithm::from(0))],
+            vec![ConstraintSchema::unique_for_test("Foo_id_key", 0u16)],
+        );
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+        let mut tx = begin_mut_tx(&datastore);
+        let old = u32_str_u32(1, &"x".repeat(1024 * 1024), 30);
+        let old_pointer = insert(&datastore, &mut tx, table_id, &old)?.1.pointer();
+        let index_id = tx.index_id_from_name("Foo_id_idx")?.unwrap();
+
+        // The replacement is entirely inline, so serialization and looking up
+        // its integer key succeed. Confirming the update must read the old
+        // row's blob to remove its index entry, which cannot fit in this budget.
+        tx.tx_state.blob_store.evict(0)?;
+        assert_eq!(tx.tx_state.blob_store.resident_bytes_used_by_blobs(), 0);
+        let reservation = budget.acquire(HARD_LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024)?;
+        let error = update(&datastore, &mut tx, table_id, index_id, &u32_str_u32(1, "new", 31)).unwrap_err();
+        assert!(matches!(error,
+            crate::error::DatastoreError::TableStorage(spacetimedb_table::table::TableError::Blob(error))
+            if matches!(*error, BlobError::MemoryLimitExceeded(_))));
+        drop(reservation);
+
+        // Do not roll back the tx before checking: that would discard the
+        // table and hide an unindexed replacement left by the failed update.
+        let table = &tx.tx_state.insert_tables[&table_id];
+        assert_eq!(table.num_rows(), 1);
+        let index = table.get_index_by_id(index_id).unwrap();
+        let key = index.key_from_algebraic_value(&AlgebraicValue::U32(1));
+        assert_eq!(index.seek_point(&key).collect::<Vec<_>>(), vec![old_pointer]);
+        assert_eq!(table.scan_all_row_ptrs()?.len(), 1);
+        assert_eq!(all_rows(&datastore, &tx, table_id), vec![old]);
+        let _ = datastore.rollback_mut_tx(tx);
+        Ok(())
+    }
+
+    #[test]
+    fn view_refresh_reads_new_blobs_from_transaction_storage() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = basic_table_schema_with_indices(basic_indices(), basic_constraints());
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let view = ViewCallInfo::anonymous(ViewId(10_000));
+        tx.read_sets.insert_full_table_scan(table_id, view.clone());
+        commit(&datastore, tx)?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        // The new string exists only in the transaction's blob set.
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, &"x".repeat(4096), 30))?;
+        assert!(tx.tx_state.blob_store.num_blobs() > 0);
+        let refreshed = tx.views_for_refresh()?.cloned().collect::<Vec<_>>();
+        assert_eq!(refreshed, vec![view]);
+
         Ok(())
     }
 }

@@ -890,23 +890,22 @@ mod tests {
     use spacetimedb_schema::reducer_name::ReducerName;
     use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, TableSchema};
     use spacetimedb_schema::table_name::TableName;
-    use spacetimedb_table::page_pool::PagePool;
+    use spacetimedb_table::tiered::TieredStorageConfig;
     use std::collections::HashMap;
     use std::sync::atomic::Ordering;
     use tokio::net::TcpListener;
 
     fn open_test_db() -> Arc<RelationalDB> {
-        open_test_db_with_persistence(None)
+        open_test_db_with_persistence(Persistence::ephemeral(TieredStorageConfig::new_for_test()))
     }
 
-    fn open_test_db_with_persistence(persistence: Option<Persistence>) -> Arc<RelationalDB> {
+    fn open_test_db_with_persistence(persistence: Persistence) -> Arc<RelationalDB> {
         let (db, _) = RelationalDB::open(
             Identity::ZERO,
             Identity::ZERO,
             spacetimedb_durability::EmptyHistory::new(),
             persistence,
             None,
-            PagePool::new_for_test(),
         )
         .expect("failed to open test database");
         Arc::new(db)
@@ -930,13 +929,14 @@ mod tests {
 
     fn open_pending_db() -> (Arc<RelationalDB>, tokio::sync::watch::Sender<Option<TxOffset>>) {
         let (durable, rx) = tokio::sync::watch::channel(None);
-        let persistence = Persistence::new(
-            PendingDurability(rx),
-            || Ok(Default::default()),
+        let persistence = Persistence::persistent(
+            Arc::new(PendingDurability(rx)),
+            Arc::new(|| Ok(Default::default())),
             None,
+            TieredStorageConfig::new_for_test(),
             spacetimedb_runtime::Handle::tokio(tokio::runtime::Handle::current()),
         );
-        (open_test_db_with_persistence(Some(persistence)), durable)
+        (open_test_db_with_persistence(persistence), durable)
     }
 
     fn outbox_schema() -> TableSchema {
@@ -1299,7 +1299,10 @@ mod tests {
         cleanup_message(&db, &mut tx, &msg)?;
         cleanup_message(&db, &mut tx, &msg)?;
         assert!(!message_exists(&db, &tx, &msg.message)?);
-        assert_eq!(db.iter_mut(&tx, table)?.next().unwrap().to_product_value(), replacement);
+        assert_eq!(
+            db.iter_mut(&tx, table)?.next().unwrap().unwrap().to_product_value(),
+            replacement
+        );
         db.commit_tx(tx)?;
 
         // Neither a missing user row nor a missing pending row permits skipping a sequence.
@@ -1440,7 +1443,7 @@ mod tests {
                 .err()
                 .expect("response must leave the message pending");
             let tx = db.begin_tx(Workload::Internal);
-            let row = StOutboundMsgRow::try_from(db.iter(&tx, ST_OUTBOUND_MSG_ID)?.next().unwrap())?;
+            let row = StOutboundMsgRow::try_from(db.iter(&tx, ST_OUTBOUND_MSG_ID)?.next().unwrap().unwrap())?;
             assert!(row.result_status.is_none(), "HTTP {status}");
             assert_eq!(row.retry_count, 1);
             let diagnostic = row.last_transport_error.unwrap();
@@ -1451,7 +1454,7 @@ mod tests {
                 assert!(diagnostic.contains(&format!("HTTP {status}")), "{diagnostic}");
                 assert!(diagnostic.contains("receiver detail"), "{diagnostic}");
             }
-            let stream = StOutboundStreamRow::try_from(db.iter(&tx, ST_OUTBOUND_STREAM_ID)?.next().unwrap())?;
+            let stream = StOutboundStreamRow::try_from(db.iter(&tx, ST_OUTBOUND_STREAM_ID)?.next().unwrap().unwrap())?;
             assert_eq!(stream.ack_prefix, 0);
             let _ = db.release_tx(tx);
         }
@@ -1471,7 +1474,7 @@ mod tests {
         {
             let tx = db.begin_tx(Workload::Internal);
             assert_eq!(db.iter(&tx, table)?.count(), 1);
-            let row = StOutboundMsgRow::try_from(db.iter(&tx, ST_OUTBOUND_MSG_ID)?.next().unwrap())?;
+            let row = StOutboundMsgRow::try_from(db.iter(&tx, ST_OUTBOUND_MSG_ID)?.next().unwrap().unwrap())?;
             assert_eq!(row.retry_count, 0);
             assert!(row.result_status.is_none());
         }
@@ -1506,10 +1509,10 @@ mod tests {
                     .is_err()
             );
             let tx = db.begin_tx(Workload::Internal);
-            let row = StOutboundMsgRow::try_from(db.iter(&tx, ST_OUTBOUND_MSG_ID)?.next().unwrap())?;
+            let row = StOutboundMsgRow::try_from(db.iter(&tx, ST_OUTBOUND_MSG_ID)?.next().unwrap().unwrap())?;
             assert!(row.result_status.is_none());
             assert!(row.last_transport_error.unwrap().contains("failed to read response"));
-            let stream = StOutboundStreamRow::try_from(db.iter(&tx, ST_OUTBOUND_STREAM_ID)?.next().unwrap())?;
+            let stream = StOutboundStreamRow::try_from(db.iter(&tx, ST_OUTBOUND_STREAM_ID)?.next().unwrap().unwrap())?;
             assert_eq!(stream.ack_prefix, 0);
             let _ = db.release_tx(tx);
             server.await??;

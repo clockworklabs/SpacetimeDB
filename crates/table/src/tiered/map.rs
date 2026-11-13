@@ -1,3 +1,4 @@
+use super::metrics::ObjectType;
 use std::{
     fmt::{self, Write as _},
     hash::{Hash, Hasher},
@@ -13,7 +14,9 @@ use crate::{blob_store::BlobHash, page::Page};
 pub struct PageHash(blake3::Hash);
 
 impl PageHash {
-    pub fn as_bytes(&self) -> &[u8] {
+    pub const SIZE: usize = blake3::OUT_LEN;
+
+    pub fn as_bytes(&self) -> &[u8; Self::SIZE] {
         self.0.as_bytes()
     }
 }
@@ -30,6 +33,18 @@ impl From<&mut Page> for PageHash {
     }
 }
 
+impl From<&Page> for PageHash {
+    fn from(page: &Page) -> Self {
+        Self(page.content_hash())
+    }
+}
+
+impl From<PageHash> for blake3::Hash {
+    fn from(hash: PageHash) -> Self {
+        hash.0
+    }
+}
+
 impl ValidAsIdentityHash for PageHash {}
 
 /// Wrapper around a [crate::blob_store::BlobHash] that allows it to be used as
@@ -41,12 +56,16 @@ impl ValidAsIdentityHash for PageHash {}
 pub struct BlobHashWrapper(BlobHash);
 
 impl BlobHashWrapper {
-    pub fn as_bytes(&self) -> &[u8] {
+    pub fn as_bytes(&self) -> &[u8; BlobHash::SIZE] {
         &self.0.data
     }
 
     pub fn hash_from_bytes(bytes: &[u8]) -> Self {
         Self(BlobHash::hash_from_bytes(bytes))
+    }
+
+    pub fn into_object_key(self) -> ObjectKey {
+        ObjectKey::Blob(self)
     }
 }
 
@@ -70,6 +89,12 @@ impl Deref for BlobHashWrapper {
     }
 }
 
+impl From<BlobHashWrapper> for blake3::Hash {
+    fn from(hash: BlobHashWrapper) -> Self {
+        hash.0.into()
+    }
+}
+
 impl ValidAsIdentityHash for BlobHashWrapper {}
 
 fn hash_prefix<H: Hasher>(bytes: &[u8], state: &mut H) {
@@ -84,8 +109,17 @@ pub enum ObjectKey {
 }
 
 impl ObjectKey {
+    pub fn metric_type(&self) -> ObjectType {
+        match self {
+            Self::Page(_) => ObjectType::Page,
+            Self::Blob(_) => ObjectType::Blob,
+        }
+    }
+
+    pub const SIZE: usize = 32;
+
     #[inline]
-    pub fn as_bytes(&self) -> &[u8] {
+    pub fn as_bytes(&self) -> &[u8; Self::SIZE] {
         match self {
             Self::Page(hash) => hash.as_bytes(),
             Self::Blob(hash) => hash.as_bytes(),
@@ -106,6 +140,11 @@ impl ObjectKey {
         }
     }
 }
+
+const _: () = {
+    assert!(BlobHash::SIZE == PageHash::SIZE);
+    assert!(ObjectKey::SIZE == BlobHash::SIZE);
+};
 
 impl Hash for ObjectKey {
     #[inline]

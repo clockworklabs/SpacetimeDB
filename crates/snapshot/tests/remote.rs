@@ -32,7 +32,7 @@ use spacetimedb_snapshot::{
     remote::{synchronize_snapshot, verify_snapshot},
     Snapshot, SnapshotError, SnapshotRepository,
 };
-use spacetimedb_table::page_pool::PagePool;
+use spacetimedb_table::{page_pool::PagePool, tiered::TieredStorageConfig};
 use tempfile::{tempdir, TempDir};
 use tokio::{sync::OnceCell, task::spawn_blocking};
 
@@ -65,7 +65,7 @@ async fn can_sync_a_snapshot() -> anyhow::Result<()> {
     assert!(read_metrics.metadata.disk_bytes > 0);
     assert_eq!(read_metrics.page.files + read_metrics.blob.files, total_objects);
     assert!(read_metrics.page.disk_bytes + read_metrics.blob.disk_bytes > 0);
-    Locking::restore_from_snapshot(dst_snapshot_full, pool)?;
+    Locking::restore_from_snapshot(dst_snapshot_full, TieredStorageConfig::new_for_module_check(pool))?;
 
     // Let's also check that running `synchronize_snapshot` again does nothing.
     let stats = synchronize_snapshot(blob_provider.clone(), dst_path.clone(), src_snapshot.clone()).await?;
@@ -236,13 +236,14 @@ async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffs
     // NOTE: `_db` needs to stay alive until the snapshot is taken,
     // because the snapshot worker holds only a weak reference.
     let (mut watch, _db) = spawn_blocking(|| {
-        let persistence = Persistence {
-            durability: Arc::new(NoDurability::default()),
-            disk_size: Arc::new(|| Ok(<_>::default())),
-            snapshots: Some(SnapshotWorker::new(repo, snapshot::Compression::Disabled, rt.clone())),
-            runtime: rt,
-        };
-        let db = TestDB::open_db(EmptyHistory::new(), Some(persistence), None, 0)?;
+        let persistence = Persistence::persistent(
+            Arc::new(NoDurability::default()),
+            Arc::new(|| Ok(<_>::default())),
+            Some(SnapshotWorker::new(repo, snapshot::Compression::Disabled, rt.clone())),
+            TieredStorageConfig::new_for_test(),
+            rt,
+        );
+        let db = TestDB::open_db(EmptyHistory::new(), persistence, None, 0)?;
         let watch = db.subscribe_to_snapshots().unwrap();
 
         let table_id = db.with_auto_commit(Workload::Internal, |tx| {

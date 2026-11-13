@@ -5,8 +5,9 @@ use crate::error::{DatastoreError, IndexError, TableError, ViewError};
 use crate::locking_tx_datastore::state_view::{iter_st_column_for_table, StateView};
 use crate::system_tables::{
     is_built_in_meta_row, table_id_is_reserved, StColumnRow, StConstraintData, StConstraintRow, StEventTableFields,
-    StFields as _, StIndexRow, StSequenceFields, StTableFields, StTableRow, StViewRow, ST_COLUMN_ID, ST_CONSTRAINT_ID,
-    ST_EVENT_TABLE_ID, ST_INDEX_ID, ST_SEQUENCE_ID, ST_TABLE_ID, ST_VIEW_ARG_ID, ST_VIEW_ID, ST_VIEW_SUB_ID,
+    StFields as _, StIndexRow, StSequenceFields, StTableCachePolicyFields, StTableFields, StTableRow, StViewRow,
+    ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ID, ST_SEQUENCE_ID, ST_TABLE_CACHE_POLICY_ID,
+    ST_TABLE_ID, ST_VIEW_ARG_ID, ST_VIEW_ID, ST_VIEW_SUB_ID,
 };
 use anyhow::{anyhow, Context};
 use core::cell::RefMut;
@@ -29,6 +30,7 @@ use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::{InsertError, RowRef};
 use std::cell::RefCell;
+use std::collections::BTreeSet;
 use std::io;
 use std::sync::Arc;
 use thiserror::Error;
@@ -417,8 +419,9 @@ pub struct ReplayCommittedState<'cs> {
     /// Whether the table was dropped within the current transaction during replay.
     ///
     /// While processing a transaction which drops a table, we'll first see the `st_table` delete,
-    /// then a series of deletes from the table itself.
-    /// We track the table's ID here so we know to ignore the deletes.
+    /// then a truncate or deletes from the table itself.
+    /// We release the table's blob references when removing its in-memory
+    /// structure and track its ID so later operations do not release them again.
     ///
     /// Cleared after the end of processing each transaction,
     /// as it should be impossible to ever see another reference to the table after that point.
@@ -458,6 +461,12 @@ pub struct ReplayCommittedState<'cs> {
     /// [`RowPointer`]s from this set are passed to the `unsafe` [`Table::get_row_ref_unchecked`],
     /// so it's important to properly maintain only [`RowPointer`]s to valid, extant, non-deleted rows.
     replay_table_updated: IntMap<TableId, RowPointer>,
+
+    /// Tables whose st_table_cache_policy changed while replaying this transaction.
+    /// After replaying the transaction that changed the cache policy, read each
+    /// table's final policy, convert its page storage, and adjust blob pins for the
+    /// rows that remain.
+    replay_cache_policy_changed: BTreeSet<TableId>,
 }
 
 impl Deref for ReplayCommittedState<'_> {
@@ -481,6 +490,7 @@ impl<'cs> ReplayCommittedState<'cs> {
             replay_table_dropped: <_>::default(),
             replay_columns_to_ignore: <_>::default(),
             replay_table_updated: <_>::default(),
+            replay_cache_policy_changed: BTreeSet::new(),
         }
     }
 
@@ -499,12 +509,12 @@ impl<'cs> ReplayCommittedState<'cs> {
         // we will end up with two rows in `st_sequence` for each of these sequences,
         // resulting in a unique constraint violation in `Self::build_indexes`.
         // We fix this by, for each system sequence, deleting all but the row with the highest allocation.
-        self.fixup_delete_duplicate_system_sequence_rows();
+        self.fixup_delete_duplicate_system_sequence_rows()?;
 
         // Prior versions of `MutTxId::drop_table` did not delete a dropped event table's
         // `st_event_table` row, leaving it orphaned.
         // Delete any such rows referring to tables which no longer exist.
-        self.fixup_delete_orphaned_st_event_table_rows();
+        self.fixup_delete_orphaned_st_event_table_rows()?;
 
         // `build_missing_tables` must be called before indexes.
         // Honestly this should maybe just be one big procedure.
@@ -530,7 +540,7 @@ impl<'cs> ReplayCommittedState<'cs> {
     /// resulting in a unique constraint violation in `CommittedState::build_indexes`.
     /// We call this method in [`ReplayCommittedState::rebuild_state_after_replay`]
     /// to avoid that unique constraint violation.
-    pub(super) fn fixup_delete_duplicate_system_sequence_rows(&mut self) {
+    pub(super) fn fixup_delete_duplicate_system_sequence_rows(&mut self) -> Result<()> {
         struct StSequenceRowInfo {
             sequence_id: SequenceId,
             allocated: i128,
@@ -539,33 +549,31 @@ impl<'cs> ReplayCommittedState<'cs> {
 
         // Get all the `st_sequence` rows which refer to sequences on system tables,
         // including any duplicates caused by the bug described above.
-        let sequence_rows = self
-            .table_scan(ST_SEQUENCE_ID)
-            .expect("`st_sequence` should exist")
-            .filter_map(|row_ref| {
-                // Read the table ID to which the sequence refers,
-                // in order to determine if this is a system sequence or not.
-                let table_id = row_ref
-                    .read_col::<TableId>(StSequenceFields::TableId)
-                    .expect("`st_sequence` row should conform to `st_sequence` schema");
+        let mut sequence_rows = Vec::new();
+        for row_ref in self.table_scan(ST_SEQUENCE_ID).expect("`st_sequence` should exist") {
+            let row_ref = row_ref?;
+            // Read the table ID to which the sequence refers,
+            // in order to determine if this is a system sequence or not.
+            let table_id = row_ref
+                .read_col::<TableId>(StSequenceFields::TableId)
+                .expect("`st_sequence` row should conform to `st_sequence` schema");
 
-                // If this sequence refers to a system table, it may need a fixup.
-                // User tables' sequences will never need fixups.
-                table_id_is_reserved(table_id).then(|| {
-                    let allocated = row_ref
-                        .read_col::<i128>(StSequenceFields::Allocated)
-                        .expect("`st_sequence` row should conform to `st_sequence` schema");
-                    let sequence_id = row_ref
-                        .read_col::<SequenceId>(StSequenceFields::SequenceId)
-                        .expect("`st_sequence` row should conform to `st_sequence` schema");
-                    StSequenceRowInfo {
-                        allocated,
-                        sequence_id,
-                        row_pointer: row_ref.pointer(),
-                    }
+            // If this sequence refers to a system table, it may need a fixup.
+            // User tables' sequences will never need fixups.
+            if table_id_is_reserved(table_id) {
+                let allocated = row_ref
+                    .read_col::<i128>(StSequenceFields::Allocated)
+                    .expect("`st_sequence` row should conform to `st_sequence` schema");
+                let sequence_id = row_ref
+                    .read_col::<SequenceId>(StSequenceFields::SequenceId)
+                    .expect("`st_sequence` row should conform to `st_sequence` schema");
+                sequence_rows.push(StSequenceRowInfo {
+                    allocated,
+                    sequence_id,
+                    row_pointer: row_ref.pointer(),
                 })
-            })
-            .collect::<Vec<_>>();
+            }
+        }
 
         let (st_sequence, blob_store, ..) = self
             .get_table_and_blob_store_mut(ST_SEQUENCE_ID)
@@ -603,6 +611,8 @@ impl<'cs> ReplayCommittedState<'cs> {
                     .expect("Duplicated `st_sequence` row at `row_pointer_to_delete` should be present in `st_sequence` during fixup");
             }
         }
+
+        Ok(())
     }
 
     /// Delete any `st_event_table` rows which refer to tables that do not exist in `st_table`.
@@ -612,36 +622,38 @@ impl<'cs> ReplayCommittedState<'cs> {
     /// may contain orphaned `st_event_table` rows.
     /// We call this method in [`ReplayCommittedState::rebuild_state_after_replay`]
     /// to delete such rows.
-    pub(super) fn fixup_delete_orphaned_st_event_table_rows(&mut self) {
+    pub(super) fn fixup_delete_orphaned_st_event_table_rows(&mut self) -> Result<()> {
         // `st_event_table` will not have been built when replaying a history
         // from before it was introduced; `migrate_system_tables` creates it later on.
         if self.get_table(ST_EVENT_TABLE_ID).is_none() {
-            return;
+            return Ok(());
         }
 
         // Collect the ids of all extant tables.
-        let extant_tables: IntSet<TableId> = self
-            .table_scan(ST_TABLE_ID)
-            .expect("`st_table` should exist")
-            .map(|row_ref| {
+        let mut extant_tables: IntSet<TableId> = IntSet::default();
+        for row_ref in self.table_scan(ST_TABLE_ID).expect("`st_table` should exist") {
+            let row_ref = row_ref?;
+            extant_tables.insert(
                 row_ref
                     .read_col::<TableId>(StTableFields::TableId)
-                    .expect("`st_table` row should conform to `st_table` schema")
-            })
-            .collect();
+                    .expect("`st_table` row should conform to `st_table` schema"),
+            );
+        }
 
         // Find all `st_event_table` rows which refer to tables that don't exist.
-        let orphaned_rows: Vec<RowPointer> = self
+        let mut orphaned_rows: Vec<RowPointer> = Vec::new();
+        for row_ref in self
             .table_scan(ST_EVENT_TABLE_ID)
             .expect("`st_event_table` was found above")
-            .filter(|row_ref| {
-                let table_id = row_ref
-                    .read_col::<TableId>(StEventTableFields::TableId)
-                    .expect("`st_event_table` row should conform to `st_event_table` schema");
-                !extant_tables.contains(&table_id)
-            })
-            .map(|row_ref| row_ref.pointer())
-            .collect();
+        {
+            let row_ref = row_ref?;
+            let table_id = row_ref
+                .read_col::<TableId>(StEventTableFields::TableId)
+                .expect("`st_event_table` row should conform to `st_event_table` schema");
+            if !extant_tables.contains(&table_id) {
+                orphaned_rows.push(row_ref.pointer());
+            }
+        }
 
         let (st_event_table, blob_store, ..) = self
             .get_table_and_blob_store_mut(ST_EVENT_TABLE_ID)
@@ -649,22 +661,24 @@ impl<'cs> ReplayCommittedState<'cs> {
 
         for ptr in orphaned_rows {
             st_event_table
-                .delete(blob_store, ptr, |_| ())
+                .delete(blob_store, ptr, |_| ())?
                 .expect("Orphaned `st_event_table` row at `ptr` should be present in `st_event_table` during fixup");
         }
+
+        Ok(())
     }
 
     pub(super) fn build_indexes(&mut self) -> Result<()> {
         let st_indexes = self.tables.get(&ST_INDEX_ID).unwrap();
         let rows = st_indexes
-            .scan_rows(&self.blob_store)
-            .map(StIndexRow::try_from)
+            .scan_rows(self.storage.blobs())
+            .map(|row_ref| row_ref.map_err(Into::into).and_then(StIndexRow::try_from))
             .collect::<Result<Vec<_>>>()?;
 
         let st_constraints = self.tables.get(&ST_CONSTRAINT_ID).unwrap();
         let unique_constraints: HashSet<(TableId, ColSet)> = st_constraints
-            .scan_rows(&self.blob_store)
-            .map(StConstraintRow::try_from)
+            .scan_rows(self.storage.blobs())
+            .map(|row_ref| row_ref.map_err(Into::into).and_then(StConstraintRow::try_from))
             .filter_map(Result::ok)
             .filter_map(|constraint| match constraint.constraint_data {
                 StConstraintData::Unique { columns } => Some((constraint.table_id, columns)),
@@ -675,7 +689,7 @@ impl<'cs> ReplayCommittedState<'cs> {
         for index_row in rows {
             let index_id = index_row.index_id;
             let table_id = index_row.table_id;
-            let (table, blob_store, index_id_map, _) = self
+            let (table, blob_store, index_id_map) = self
                 .get_table_and_blob_store_mut(table_id)
                 .expect("index should exist in committed state; cannot create it");
             let algo: IndexAlgorithm = index_row.index_algorithm.into();
@@ -684,7 +698,7 @@ impl<'cs> ReplayCommittedState<'cs> {
 
             let index = table.new_index(&algo, is_unique)?;
             // SAFETY: `index` was derived from `table`.
-            unsafe { table.insert_index(blob_store, index_id, index) }
+            unsafe { table.insert_index(blob_store, index_id, index) }?
                 .expect("rebuilding should not cause constraint violations");
             index_id_map.insert(index_id, table_id);
         }
@@ -703,9 +717,9 @@ impl<'cs> ReplayCommittedState<'cs> {
             return Ok(tables);
         };
         let backing_tables = st_view
-            .scan_rows(&self.blob_store)
+            .scan_rows(self.storage.blobs())
             .map(|row_ref| {
-                let StViewRow { table_id, view_id, .. } = StViewRow::try_from(row_ref)?;
+                let StViewRow { table_id, view_id, .. } = StViewRow::try_from(row_ref?)?;
                 table_id.ok_or_else(|| DatastoreError::View(ViewError::TableNotFound(view_id)))
             })
             .collect::<Result<Vec<_>>>()?;
@@ -736,13 +750,14 @@ impl<'cs> ReplayCommittedState<'cs> {
     /// been created. This function ensures that they are created.
     pub(super) fn build_missing_tables(&mut self) -> Result<()> {
         // Find all ids of tables that are in `st_tables` but haven't been built.
-        let table_ids = self
-            .get_table(ST_TABLE_ID)
-            .unwrap()
-            .scan_rows(&self.blob_store)
-            .map(|r| r.read_col(StTableFields::TableId).unwrap())
-            .filter(|table_id| self.get_table(*table_id).is_none())
-            .collect::<Vec<_>>();
+        let mut table_ids = Vec::new();
+        for row in self.get_table(ST_TABLE_ID).unwrap().scan_rows(self.storage.blobs()) {
+            let row_ref = row?;
+            let table_id = row_ref.read_col(StTableFields::TableId).unwrap();
+            if self.get_table(table_id).is_none() {
+                table_ids.push(table_id);
+            }
+        }
 
         // Construct their schemas and insert tables for them.
         for table_id in table_ids {
@@ -759,9 +774,9 @@ impl<'cs> ReplayCommittedState<'cs> {
             return Ok(());
         }
 
-        let (table, blob_store, pool) = self.get_table_and_blob_store_or_create(table_id, schema);
+        let (table, blob_store) = self.get_table_and_blob_store_or_create(table_id, schema);
 
-        let (_, row_ref) = match table.insert(pool, blob_store, row) {
+        let (_, row_ref) = match table.insert(blob_store, row) {
             Ok(stuff) => stuff,
             Err(InsertError::Duplicate(e)) => {
                 if is_built_in_meta_row(table_id, row)? {
@@ -777,12 +792,15 @@ impl<'cs> ReplayCommittedState<'cs> {
             }
             Err(InsertError::Bflatn(e)) => return Err(TableError::Bflatn(e).into()),
             Err(InsertError::IndexError(e)) => return Err(IndexError::UniqueConstraintViolation(e).into()),
+            Err(InsertError::Table(e)) => return Err(e.into()),
         };
 
-        // `row_ref` is treated as having a mutable borrow on `self`
-        // because it derives from `self.get_table_and_blob_store_or_create`,
-        // so we have to downgrade it to a pointer and then re-upgrade it again as an immutable row pointer later.
-        let row_ptr = row_ref.pointer();
+        // `row_ref` is treated as having a mutable borrow on `self` because it
+        // derives from `self.get_table_and_blob_store_or_create`, so we have to
+        // downgrade it to a pinned row and then re-upgrade it again as an
+        // immutable row pointer later.
+        let row_pin = row_ref.into_pinned_row();
+        let row_ptr = row_pin.pointer();
 
         if table_id == ST_TABLE_ID {
             // For `st_table` inserts, we need to check if this is a new table or an update to an existing table.
@@ -791,13 +809,13 @@ impl<'cs> ReplayCommittedState<'cs> {
             // but for updates to existing tables we need additional bookkeeping.
 
             // Upgrade `row_ptr` back again, to break the mutable borrow.
-            let (table, blob_store, _) = self.get_table_and_blob_store(ST_TABLE_ID)?;
+            let (table, ..) = self.get_table_and_blob_store(ST_TABLE_ID)?;
 
-            // Safety: We got `row_ptr` from a valid `RowRef` just above, and haven't done any mutations since,
+            // Safety: We got `row_pin` from a valid `RowRef` just above, and haven't done any mutations since,
             // so it must still be valid.
-            let row_ref = unsafe { table.get_row_ref_unchecked(blob_store, row_ptr) };
+            let row_ref = unsafe { table.get_row_ref_from_pinned_unchecked(row_pin) };
 
-            if self.replay_does_table_already_exist(row_ref) {
+            if self.replay_does_table_already_exist(&row_ref)? {
                 // We've inserted a new `st_table` row for an existing table.
                 // We'll expect to see the previous row deleted later in this transaction.
                 // For now, mark the table as updated so that we don't confuse it for a deleted table in `replay_delete_by_rel`.
@@ -817,6 +835,10 @@ impl<'cs> ReplayCommittedState<'cs> {
             self.st_column_changed(referenced_table_id)?;
         }
 
+        if table_id == ST_TABLE_CACHE_POLICY_ID {
+            self.replay_cache_policy_changed.insert(Self::read_table_id(row));
+        }
+
         Ok(())
     }
 
@@ -824,17 +846,24 @@ impl<'cs> ReplayCommittedState<'cs> {
     /// which refers to the same [`TableId`] as `new_st_table_entry`?
     ///
     /// Used during [`Self::replay_insert`] of `st_table` rows to maintain [`Self::replay_table_updated`].
-    fn replay_does_table_already_exist(&self, new_st_table_entry: RowRef<'_>) -> bool {
-        fn get_table_id(row_ref: RowRef<'_>) -> TableId {
+    fn replay_does_table_already_exist(&self, new_st_table_entry: &RowRef<'_>) -> Result<bool> {
+        fn get_table_id(row_ref: &RowRef<'_>) -> TableId {
             row_ref
                 .read_col(StTableFields::TableId)
                 .expect("`st_table` row should conform to `st_table` schema")
         }
 
         let referenced_table_id = get_table_id(new_st_table_entry);
-        self.iter_by_col_eq(ST_TABLE_ID, StTableFields::TableId, &referenced_table_id.into())
-            .expect("`st_table` should exist")
-            .any(|row_ref| row_ref.pointer() != new_st_table_entry.pointer())
+        {
+            let referenced_table_id_value = referenced_table_id.into();
+            let rows = self.iter_by_col_eq(ST_TABLE_ID, StTableFields::TableId, &referenced_table_id_value)?;
+            for row_ref in rows {
+                if row_ref?.pointer() != new_st_table_entry.pointer() {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        }
     }
 
     /// Update the in-memory table structure for the table described by `row`,
@@ -877,12 +906,15 @@ impl<'cs> ReplayCommittedState<'cs> {
             .expect("second field in `st_column` should decode to a `ColId`");
 
         let outdated_st_column_rows = iter_st_column_for_table(self, &target_table_id.into())?
-            .filter_map(|row_ref| {
-                StColumnRow::try_from(row_ref)
-                    .map(|c| (c.col_pos == target_col_id && row_ref.pointer() != row_ptr).then(|| row_ref.pointer()))
-                    .transpose()
+            .map(|row_ref| {
+                let row_ref = row_ref?;
+                let pointer = row_ref.pointer();
+                let c = StColumnRow::try_from(row_ref)?;
+                Ok((c.col_pos == target_col_id && pointer != row_ptr).then_some(pointer))
             })
-            .collect::<Result<Vec<RowPointer>>>()?;
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten();
 
         for row in outdated_st_column_rows {
             self.replay_columns_to_ignore.insert(row);
@@ -907,15 +939,18 @@ impl<'cs> ReplayCommittedState<'cs> {
         // `Self::ignore_previous_version_of_column` has marked the old version as ignored,
         // so filter only the non-ignored columns.
         let mut columns = iter_st_column_for_table(self, &table_id.into())?
-            .filter(|row_ref| !self.replay_columns_to_ignore.contains(&row_ref.pointer()))
-            .map(|row_ref| {
-                let row = StColumnRow::try_from(row_ref)?;
-                let mut column_schema = ColumnSchema::from(row);
-                let alias = self
-                    .find_st_column_accessor_row(table_name.as_ref(), &column_schema.col_name)?
-                    .map(|row| row.accessor_name);
-                column_schema.alias = alias;
-                Ok(column_schema)
+            .filter_map(|row_ref| match row_ref {
+                Err(err) => Some(Err(err)),
+                Ok(row_ref) if self.replay_columns_to_ignore.contains(&row_ref.pointer()) => None,
+                Ok(row_ref) => Some((|| {
+                    let row = StColumnRow::try_from(row_ref)?;
+                    let mut column_schema = ColumnSchema::from(row);
+                    let alias = self
+                        .find_st_column_accessor_row(table_name.as_ref(), &column_schema.col_name)?
+                        .map(|row| row.accessor_name);
+                    column_schema.alias = alias;
+                    Ok(column_schema)
+                })()),
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -946,13 +981,17 @@ impl<'cs> ReplayCommittedState<'cs> {
         }
 
         // Get the table for mutation.
-        let (table, blob_store, _, page_pool) = self.get_table_and_blob_store_mut(table_id)?;
+        let (table, blob_store, _) = self.get_table_and_blob_store_mut(table_id)?;
 
         // Delete the row.
         let row_ptr = table
-            .delete_equal_row(page_pool, blob_store, row)
+            .delete_equal_row(blob_store, row)
             .map_err(TableError::Bflatn)?
             .ok_or_else(|| anyhow!("Delete for non-existent row when replaying transaction"))?;
+
+        if table_id == ST_TABLE_CACHE_POLICY_ID {
+            self.replay_cache_policy_changed.insert(Self::read_table_id(row));
+        }
 
         if table_id == ST_TABLE_ID {
             let referenced_table_id = row
@@ -976,6 +1015,12 @@ impl<'cs> ReplayCommittedState<'cs> {
                 // It's safe to ignore the case where we don't have an in-memory structure for the deleted table.
                 // This can happen if a table is initially empty at the snapshot or its creation,
                 // and never has any rows inserted into or deleted from it.
+                if let Some(table) = self.tables.get(&dropped_table_id) {
+                    // Later deletes and truncates for a dropped table are
+                    // ignored, so release every blob reference before forgetting
+                    // its pages.
+                    table.prepare_blob_release()?.apply(self.storage.blobs());
+                }
                 self.tables.remove(&dropped_table_id);
 
                 // Mark the table as dropped so that when
@@ -1035,18 +1080,57 @@ impl<'cs> ReplayCommittedState<'cs> {
             return Ok(());
         }
 
+        // Deleting all policy rows is logged as a truncate instead of row deletes.
+        // Save their table IDs so policy conversion still runs at the end of the transaction.
+        if table_id == ST_TABLE_CACHE_POLICY_ID {
+            let (table, blobs, _) = self.state.get_table_and_blob_store(table_id)?;
+            for row in table.scan_rows(blobs) {
+                self.replay_cache_policy_changed
+                    .insert(row?.read_col(StTableCachePolicyFields::TableId)?);
+            }
+        }
+
         // Get the table for mutation.
         let (table, blob_store, ..) = self.get_table_and_blob_store_mut(table_id)?;
 
         // We do not need to consider a truncation of `st_table` itself,
         // as if that happens, the database is bricked.
 
-        table.clear(blob_store);
+        table.clear(blob_store)?;
 
         Ok(())
     }
 
+    fn apply_replayed_cache_policy_changes(&mut self) -> Result<()> {
+        // Read policies only after the whole transaction has been replayed: a
+        // replacement can contain both an insert and a delete of policy metadata.
+        // Read the system tables rather than the table's old cached schema.
+        let mut prepared_changes = Vec::new();
+        for &table_id in &self.replay_cache_policy_changed {
+            let Some(table) = self.get_table(table_id) else {
+                // Dropped tables need no conversion. New empty tables may not
+                // have been materialized yet; creation will read their policy.
+                continue;
+            };
+            let schema = self.schema_for_table_raw(table_id)?;
+            let eviction_policy = self.page_eviction_policy(&schema);
+            let change = table.prepare_eviction_policy(self.storage.blobs(), eviction_policy)?;
+            prepared_changes.push((table_id, schema.cache_policy, change));
+        }
+
+        // Load every affected table before converting any of them, using the
+        // same preparation and application rules as a live commit.
+        for (table_id, cache_policy, change) in prepared_changes {
+            let (table, blobs, _) = self.get_table_and_blob_store_mut(table_id)?;
+            change.apply(table, blobs);
+            table.with_mut_schema(|schema| schema.cache_policy = cache_policy);
+        }
+        self.replay_cache_policy_changed.clear();
+        Ok(())
+    }
+
     fn replay_end_tx(&mut self) -> Result<()> {
+        self.apply_replayed_cache_policy_changes()?;
         self.next_tx_offset += 1;
 
         if !self.replay_columns_to_ignore.is_empty() {
@@ -1082,7 +1166,7 @@ impl StateView for ReplayCommittedState<'_> {
             // SAFETY: `row_ptr` is stored in `self.replay_table_updated`,
             // meaning it was inserted into `st_table` by `replay_insert`
             // and has not yet been deleted by `replay_delete_by_rel`.
-            let row_ref = unsafe { table.get_row_ref_unchecked(blob_store, *row_ptr) };
+            let row_ref = unsafe { table.get_row_ref_unchecked(blob_store, *row_ptr) }?;
             StTableRow::try_from(row_ref)
         } else {
             self.state.find_st_table_row(table_id)
@@ -1137,17 +1221,325 @@ impl StateView for ReplayCommittedState<'_> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use crate::{
         locking_tx_datastore::datastore::tests::{all_rows, begin_mut_tx, commit, setup_event_table, u32_str_u32},
-        traits::{MutTx as _, MutTxDatastore as _},
+        traits::{MutTx as _, MutTxDatastore as _, TxData},
     };
+    use spacetimedb_commitlog::{commitlog, repo, tests::helpers::mem_log};
     use spacetimedb_execution::dml::MutDatastore as _;
+    use spacetimedb_fs_utils::compression::CompressType;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::{product, AlgebraicType};
-    use spacetimedb_table::page_pool::PagePool;
+    use spacetimedb_schema::schema::TableCachePolicy;
+    use spacetimedb_snapshot::ReconstructedSnapshot;
+    use spacetimedb_table::{
+        blob_store::BlobHash,
+        tiered::{metrics::CacheTier, BlobMap, ByteBudget, ByteBudgetConfig, ObjectStoreError, TieredStorageConfig},
+    };
 
     use super::*;
+
+    type MemoryCommitlog = commitlog::Generic<repo::Memory, Txdata<ProductValue>>;
+
+    fn append_committed_transaction(log: &mut MemoryCommitlog, data: &TxData) -> ResultTest<()> {
+        use spacetimedb_commitlog::payload::txdata::{Mutations, Ops};
+
+        // Match the durability writer: order table operations by ID and encode
+        // a truncate instead of individual deletes when a table becomes empty.
+        //
+        // TODO: It is unfortunate to duplicate the code here, but we'd
+        // otherwise have a circular dependency between the `engine` and
+        // `datastore` crates.
+        let mut inserts: Box<[_]> = data
+            .persistent_inserts()
+            .map(|(table_id, rowdata)| Ops { table_id, rowdata })
+            .collect();
+        inserts.sort_unstable_by_key(|ops| ops.table_id);
+        let mut deletes: Box<[_]> = data
+            .persistent_deletes()
+            .map(|(table_id, rowdata)| Ops { table_id, rowdata })
+            .collect();
+        deletes.sort_unstable_by_key(|ops| ops.table_id);
+        let mut truncates: Box<[_]> = data.persistent_truncates().collect();
+        truncates.sort_unstable();
+
+        let record = Txdata {
+            inputs: None,
+            outputs: None,
+            mutations: Some(Mutations {
+                inserts,
+                deletes,
+                truncates,
+            }),
+        };
+
+        log.commit([(data.tx_offset().expect("test transaction cannot be empty"), record)])?;
+        log.flush()?;
+
+        Ok(())
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct BlobAccounting {
+        catalog: Vec<(BlobHash, u64, u64)>,
+        logical_bytes: u64,
+        resident_bytes: u64,
+    }
+
+    impl BlobAccounting {
+        fn collect(state: &CommittedState) -> ResultTest<Self> {
+            let blobs = state.storage.blobs();
+            // No read handles are retained by these tests. Eviction reveals which
+            // frames are held by policy pins, independently of logical use counts.
+            blobs.evict(0)?;
+            let mut catalog = Vec::new();
+            blobs.try_for_each::<ObjectStoreError>(|hash, uses, bytes| {
+                catalog.push((hash.into(), uses.get() as u64, bytes.len() as u64));
+                Ok(())
+            })?;
+            catalog.sort_unstable_by_key(|entry| entry.0);
+            let resident_bytes = blobs.resident_bytes_used_by_blobs();
+            let page_bytes: u64 = state.tables.values().map(|table| table.page_bytes()).sum();
+            assert_eq!(state.datastore_page_bytes(), page_bytes);
+            assert_eq!(state.datastore_memory_bytes(), page_bytes + resident_bytes);
+
+            Ok(Self {
+                catalog,
+                logical_bytes: blobs.bytes_used_by_blobs(),
+                resident_bytes,
+            })
+        }
+    }
+
+    fn assert_commitlog_blob_accounting(live: &Locking, log: &MemoryCommitlog) -> ResultTest<()> {
+        let recovered = Locking::bootstrap(Identity::ZERO, TieredStorageConfig::new_for_test())?;
+        {
+            let mut replay = recovered.replay(|_| {}, ErrorBehavior::FailFast);
+            log.fold_transactions_from(0, &mut replay)?;
+            replay.committed_state().rebuild_state_after_replay()?;
+        }
+        let live = live.committed_state.read();
+        let recovered = recovered.committed_state.read();
+        assert_eq!(BlobAccounting::collect(&live)?, BlobAccounting::collect(&recovered)?);
+        // Blob accounting must agree without retaining a dropped table merely
+        // to keep its references alive. Empty, surviving tables must remain.
+        let table_rows = |state: &CommittedState| {
+            state
+                .tables
+                .iter()
+                .map(|(id, table)| (*id, table.num_rows()))
+                .collect::<std::collections::BTreeMap<_, _>>()
+        };
+        assert_eq!(table_rows(&live), table_rows(&recovered));
+        Ok(())
+    }
+
+    /// Create a [ReconstructedSnapshot] from `datastore`, as if taking a
+    /// snapshot and then reading it from disk.
+    fn reconstructed_snapshot(datastore: &Locking) -> ResultTest<ReconstructedSnapshot> {
+        let mut state = datastore.committed_state.write();
+        let mut blob_store = BlobMap::default();
+        state
+            .storage
+            .blobs()
+            .try_for_each::<ObjectStoreError>(|hash, uses, bytes| {
+                blob_store.insert_with_uses(&hash.into(), uses, bytes.into());
+                Ok(())
+            })?;
+        let mut tables = BTreeMap::new();
+        for (id, table) in &mut state.tables {
+            let mut pages = Vec::new();
+            for page in table.iter_pages_with_hashes() {
+                let page = match page? {
+                    Some((_, page)) => {
+                        // Round-trip page bytes as snapshot reconstruction does;
+                        // retain page slots while copying no table-local caches.
+                        let bytes = page.with_page(bsatn::to_vec)?;
+                        Some(bsatn::from_slice(&bytes)?)
+                    }
+                    None => None,
+                };
+                pages.push(page);
+            }
+            tables.insert(*id, pages);
+        }
+        Ok(ReconstructedSnapshot {
+            database_identity: Identity::ZERO,
+            replica_id: 0,
+            tx_offset: state
+                .next_tx_offset
+                .checked_sub(1)
+                .expect("snapshot follows a committed transaction"),
+            module_abi_version: [0, 0],
+            blob_store,
+            tables,
+            compress_type: CompressType::None,
+            read_metrics: <_>::default(),
+        })
+    }
+
+    #[test]
+    fn commitlog_replay_preserves_blob_accounting_when_dropping_tables() -> ResultTest<()> {
+        fn go(dropped_policy: TableCachePolicy, retained_policy: TableCachePolicy) -> ResultTest<()> {
+            let live = Locking::bootstrap(Identity::ZERO, TieredStorageConfig::new_for_test())?;
+            let mut log = mem_log::<Txdata<ProductValue>>(1024 * 1024);
+            let mut tx = begin_mut_tx(&live);
+            let mut schema = TableSchema::from_product_type(
+                [AlgebraicType::U64, AlgebraicType::String, AlgebraicType::String].into(),
+            );
+            schema.table_name = TableName::for_test("dropped");
+            schema.cache_policy = dropped_policy;
+            let dropped = tx.create_table(schema.clone())?;
+            schema.table_name = TableName::for_test("retained");
+            schema.cache_policy = retained_policy;
+            let retained = tx.create_table(schema.clone())?;
+            schema.table_name = TableName::for_test("empty");
+            let empty = tx.create_table(schema)?;
+            append_committed_transaction(&mut log, &commit(&live, tx)?)?;
+            assert_commitlog_blob_accounting(&live, &log)?;
+
+            let shared = "s".repeat(2048);
+            let unique = "u".repeat(2048);
+            let mut tx = begin_mut_tx(&live);
+            // Seven field references share one blob, while a separate
+            // blob belongs only to the table that will be dropped.
+            tx.insert_via_serialize_bsatn(dropped, &product![1_u64, shared.clone(), shared.clone()])?;
+            tx.insert_via_serialize_bsatn(dropped, &product![2_u64, shared.clone(), unique])?;
+            let first_retained = product![3_u64, shared.clone(), shared.clone()];
+            tx.insert_via_serialize_bsatn(retained, &first_retained)?;
+            tx.insert_via_serialize_bsatn(retained, &product![4_u64, shared.clone(), shared.clone()])?;
+            append_committed_transaction(&mut log, &commit(&live, tx)?)?;
+            assert_commitlog_blob_accounting(&live, &log)?;
+
+            // Snapshot reference counts include repeated field uses;
+            // restoration rebuilds pins before replaying the later drop.
+            let snapshot = reconstructed_snapshot(&live)?;
+            let mut tx = begin_mut_tx(&live);
+            tx.drop_table(dropped)?;
+            // This table has never had rows, so log-only replay has no
+            // in-memory table to clean up when its metadata is deleted.
+            tx.drop_table(empty)?;
+            let dropped_tx = commit(&live, tx)?;
+            assert!(dropped_tx.persistent_truncates().any(|id| id == dropped));
+            assert!(!dropped_tx.persistent_deletes().any(|(id, _)| id == dropped));
+            append_committed_transaction(&mut log, &dropped_tx)?;
+            assert_commitlog_blob_accounting(&live, &log)?;
+            let restored = Locking::restore_from_snapshot(snapshot, TieredStorageConfig::new_for_test())?;
+            {
+                let mut replay = restored.replay(|_| {}, ErrorBehavior::FailFast);
+                log.fold_transactions_from(replay.next_tx_offset(), &mut replay)?;
+                replay.committed_state().rebuild_state_after_replay()?;
+            }
+            assert_eq!(
+                BlobAccounting::collect(&live.committed_state.read())?,
+                BlobAccounting::collect(&restored.committed_state.read())?
+            );
+            let expected_resident = match retained_policy {
+                TableCachePolicy::RequiredInMemory => {
+                    shared.len() as u64 + spacetimedb_table::blob_store::BlobHash::SIZE as u64
+                }
+                _ => 0,
+            };
+            let accounting = BlobAccounting::collect(&live.committed_state.read())?;
+            assert_eq!(accounting.catalog.len(), 1);
+            assert_eq!(accounting.catalog[0].1, 4);
+            assert_eq!(accounting.logical_bytes, 4 * shared.len() as u64);
+            assert_eq!(accounting.resident_bytes, expected_resident);
+
+            // Also cover an ordinary delete, then a truncate, so replay
+            // cannot fix drops by double-releasing normal deletions.
+            let mut tx = begin_mut_tx(&live);
+            let pointer = tx.iter(retained)?.next().unwrap()?.pointer();
+            assert!(tx.delete(retained, pointer)?);
+            append_committed_transaction(&mut log, &commit(&live, tx)?)?;
+            assert_commitlog_blob_accounting(&live, &log)?;
+            let mut tx = begin_mut_tx(&live);
+            tx.clear_table(retained)?;
+            append_committed_transaction(&mut log, &commit(&live, tx)?)?;
+            assert_commitlog_blob_accounting(&live, &log)?;
+
+            // A previously truncated table has already released its
+            // references; dropping it must not release them again.
+            let mut tx = begin_mut_tx(&live);
+            tx.drop_table(retained)?;
+            append_committed_transaction(&mut log, &commit(&live, tx)?)?;
+            assert_commitlog_blob_accounting(&live, &log)?;
+
+            Ok(())
+        }
+
+        for dropped_policy in [TableCachePolicy::RequiredInMemory, TableCachePolicy::NoRequirement] {
+            for retained_policy in [TableCachePolicy::RequiredInMemory, TableCachePolicy::NoRequirement] {
+                go(dropped_policy, retained_policy)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn replaying_table_drop_releases_evicted_blobs_without_faulting_them() -> ResultTest<()> {
+        let live = Locking::bootstrap(Identity::ZERO, TieredStorageConfig::new_for_test())?;
+        let mut log = mem_log::<Txdata<ProductValue>>(4 * 1024 * 1024);
+
+        // Record three transactions in the commitlog:
+        //
+        // 1. Create a table
+        // 2. Insert some data
+        // 3. Drop the table
+        let mut tx = begin_mut_tx(&live);
+        let mut schema = TableSchema::from_product_type([AlgebraicType::String].into());
+        schema.cache_policy = TableCachePolicy::NoRequirement;
+        let table_id = tx.create_table(schema)?;
+        append_committed_transaction(&mut log, &commit(&live, tx)?)?;
+        let mut tx = begin_mut_tx(&live);
+        tx.insert_via_serialize_bsatn(table_id, &product!["x".repeat(1024 * 1024)])?;
+        append_committed_transaction(&mut log, &commit(&live, tx)?)?;
+        let mut tx = begin_mut_tx(&live);
+        tx.drop_table(table_id)?;
+        let dropped = commit(&live, tx)?;
+        let drop_offset = dropped.tx_offset().unwrap();
+        append_committed_transaction(&mut log, &dropped)?;
+
+        // Replay the commitlog into a new datastore.
+        const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
+            low_water_bytes: 0,
+            soft_limit_bytes: HARD_LIMIT_BYTES,
+            hard_limit_bytes: HARD_LIMIT_BYTES,
+        })?;
+        let mut config = TieredStorageConfig::new_for_test();
+        config.resident_budget = budget.clone();
+        let recovered = Locking::bootstrap(Identity::ZERO, config)?;
+        let mut replay = recovered.replay(|_| {}, ErrorBehavior::FailFast);
+        log.fold_transaction_range(..drop_offset, &mut replay)?;
+        assert_eq!(replay.next_tx_offset(), drop_offset);
+        {
+            let state = replay.committed_state();
+            state.storage.blobs().evict(0)?;
+            assert_eq!(state.storage.resident_bytes_used_by_blobs(), 0);
+            assert_eq!(state.storage.blobs().num_blobs(), 1);
+        }
+
+        // Page reads still fit, but the blob cannot be faulted under this
+        // budget. Dropping the table only needs its hashes and catalog entries.
+        let reservation = budget.acquire(HARD_LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024)?;
+        log.fold_transactions_from(drop_offset, &mut replay)?;
+        let mut state = replay.committed_state();
+        state.rebuild_state_after_replay()?;
+        assert!(!state.tables.contains_key(&table_id));
+        let accounting = BlobAccounting::collect(&state)?;
+        assert!(accounting.catalog.is_empty());
+        assert_eq!(accounting.logical_bytes, 0);
+        assert_eq!(accounting.resident_bytes, 0);
+        drop(reservation);
+
+        Ok(())
+    }
 
     #[test]
     fn test_event_table_replay_ignores_inserts() -> ResultTest<()> {
@@ -1180,7 +1572,7 @@ mod tests {
 
     #[test]
     fn test_replay_updated_st_table_lookup_reads_st_table() -> ResultTest<()> {
-        let datastore = Locking::bootstrap(Identity::ZERO, PagePool::new_for_test())?;
+        let datastore = Locking::bootstrap(Identity::ZERO, TieredStorageConfig::new_for_test())?;
 
         let mut tx = begin_mut_tx(&datastore);
         let schema = TableSchema::new(
@@ -1217,7 +1609,9 @@ mod tests {
         let row_ptr = {
             let table_id_value = table_id.into();
             let mut rows = committed_state.iter_by_col_eq(ST_TABLE_ID, StTableFields::TableId, &table_id_value)?;
-            rows.next().expect("user table should have an `st_table` row").pointer()
+            rows.next()
+                .expect("user table should have an `st_table` row")?
+                .pointer()
         };
         committed_state.replay_table_updated.insert(table_id, row_ptr);
 
@@ -1259,7 +1653,7 @@ mod tests {
             committed_state.replay_insert(ST_EVENT_TABLE_ID, &st_event_table_schema, &orphan_row)?;
 
             // The fixup should delete the orphan and keep the extant event table's row.
-            committed_state.fixup_delete_orphaned_st_event_table_rows();
+            committed_state.fixup_delete_orphaned_st_event_table_rows()?;
         }
 
         let tx = begin_mut_tx(&datastore);
@@ -1269,6 +1663,149 @@ mod tests {
             [spacetimedb_sats::product![table_id]],
             "the orphaned `st_event_table` row should be deleted and the extant one kept"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_failed_insert_blob_pinning_leaves_no_rows_in_transactions_or_replay() -> ResultTest<()> {
+        // Check the same post-serialization failure through the two callers,
+        // rather than only calling the lower-level table helpers directly.
+        for replay in [false, true] {
+            // Create and commit an empty table with ample memory. Reserving the
+            // remaining budget afterward targets the user insert, not bootstrap
+            // or the system-table writes needed to create its schema.
+            const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
+            let budget = ByteBudget::new(ByteBudgetConfig {
+                tier: CacheTier::Memory,
+                low_water_bytes: 0,
+                soft_limit_bytes: HARD_LIMIT_BYTES,
+                hard_limit_bytes: HARD_LIMIT_BYTES,
+            })?;
+            let mut config = TieredStorageConfig::new_for_test();
+            config.resident_budget = budget.clone();
+            let datastore = Locking::bootstrap(Identity::ZERO, config)?;
+            let mut tx = begin_mut_tx(&datastore);
+            let schema = TableSchema::from_product_type([AlgebraicType::String, AlgebraicType::String].into());
+            let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+            commit(&datastore, tx)?;
+
+            let blob_size = 1024 * 1024;
+            // Different contents require two resident frames; identical strings
+            // would share a frame and would not trigger the pinning failure.
+            let row = product!["x".repeat(blob_size), "y".repeat(blob_size)];
+            // Leave room for page allocations and one blob. Writing the two blobs
+            // individually succeeds, but the returned RowRef cannot pin both.
+            let reservation =
+                budget.acquire(HARD_LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024 - blob_size as u64)?;
+            if replay {
+                // Replay mutates committed state directly. It has no transaction
+                // rollback to discard a half-written row or its blob references.
+                let state = datastore.committed_state.write();
+                let mut state = ReplayCommittedState::new(state);
+                let schema = state.schema_for_table(table_id)?;
+                assert!(state.replay_insert(table_id, &schema, &row).is_err());
+                // Remove memory pressure before inspecting state, so subsequent
+                // reads can reveal leaked rows instead of failing to load them.
+                drop(reservation);
+                let table = &state.tables[&table_id];
+                assert_eq!(table.num_rows(), 0);
+                assert!(table.scan_all_row_ptrs()?.is_empty());
+                assert_eq!(state.storage.blobs().num_blobs(), 0);
+                // A subsequent replay operation must not see a ghost row from
+                // the failed operation, or inherit its blob references.
+                state.replay_insert(table_id, &schema, &product!["small", "row"])?;
+                assert_eq!(state.tables[&table_id].num_rows(), 1);
+            } else {
+                // An insertion error must undo its own physical writes while
+                // the transaction remains open. Rolling back here would hide
+                // the leak by discarding the entire transaction-local table.
+                let mut tx = begin_mut_tx(&datastore);
+                assert!(tx.insert_via_serialize_bsatn(table_id, &row).is_err());
+                drop(reservation);
+                let table = &tx.tx_state.insert_tables[&table_id];
+                // num_rows is unchanged even on the buggy path: the failure
+                // precedes confirmation. Check actual slots and blob refs too.
+                assert_eq!(table.num_rows(), 0);
+                assert!(table.scan_all_row_ptrs()?.is_empty());
+                assert_eq!(tx.tx_state.blob_store.num_blobs(), 0);
+                // Callers can handle an insertion error and keep the tx open.
+                // Committing must publish only the later successful insertion.
+                tx.insert_via_serialize_bsatn(table_id, &product!["small", "row"])?;
+                commit(&datastore, tx)?;
+                let tx = begin_mut_tx(&datastore);
+                assert_eq!(all_rows(&datastore, &tx, table_id), [product!["small", "row"]]);
+                let _ = datastore.rollback_mut_tx(tx);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_clear_with_evicted_blob_in_transactions_and_replay() -> ResultTest<()> {
+        // Exercise both meanings of clear: replay removes committed rows
+        // immediately, while a live transaction marks them deleted until commit.
+        for replay in [false, true] {
+            // Set up with ample memory. The two committed rows deliberately mix
+            // inline and external storage, in that order, so a row-by-row clear
+            // could delete the first row before failing to load the second.
+            const HARD_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
+            let budget = ByteBudget::new(ByteBudgetConfig {
+                tier: CacheTier::Memory,
+                low_water_bytes: 0,
+                soft_limit_bytes: HARD_LIMIT_BYTES,
+                hard_limit_bytes: HARD_LIMIT_BYTES,
+            })?;
+            let mut config = TieredStorageConfig::new_for_test();
+            config.resident_budget = budget.clone();
+            let datastore = Locking::bootstrap(Identity::ZERO, config)?;
+            let mut tx = begin_mut_tx(&datastore);
+
+            let mut schema = TableSchema::from_product_type([AlgebraicType::String].into());
+            schema.cache_policy = TableCachePolicy::NoRequirement;
+
+            let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+            tx.insert_via_serialize_bsatn(table_id, &product!["small"])?;
+            tx.insert_via_serialize_bsatn(table_id, &product!["x".repeat(1024 * 1024)])?;
+            commit(&datastore, tx)?;
+
+            // Evict the 1 MiB blob, then reserve all but 256 KiB. Page operations
+            // still fit, but unnecessarily reading the blob must fail. The clear
+            // operation should succeed using only page data and catalog entries.
+            datastore.committed_state.read().storage.blobs().evict(0)?;
+            let reservation = budget.acquire(HARD_LIMIT_BYTES - budget.usage().accounted_bytes - 256 * 1024)?;
+            if replay {
+                let state = datastore.committed_state.write();
+                let mut state = ReplayCommittedState::new(state);
+                // A truncate needs the blob's catalog reference, not its bytes.
+                // Previously it deleted "small" and then faulted the large blob.
+                state.replay_truncate(table_id)?;
+                assert_eq!(state.tables[&table_id].num_rows(), 0);
+                assert!(state.tables[&table_id].scan_all_row_ptrs()?.is_empty());
+                assert_eq!(state.storage.blobs().num_blobs(), 0);
+                drop(reservation);
+            } else {
+                let mut tx = begin_mut_tx(&datastore);
+                tx.insert_via_serialize_bsatn(table_id, &product!["tx row"])?;
+                // Clearing tx rows and marking committed rows deleted must not
+                // read the evicted blob merely to obtain committed row pointers.
+                assert_eq!(tx.clear_table(table_id)?, 3);
+                assert_eq!(tx.committed_state_write_lock.storage.resident_bytes_used_by_blobs(), 0);
+                assert_eq!(tx.table_row_count(table_id), Some(0));
+                drop(reservation);
+                let _ = datastore.rollback_mut_tx(tx);
+
+                // Rollback discards the transaction's own row and delete marks,
+                // leaving the original two committed rows intact. A fresh clear
+                // followed by commit must then remove those rows permanently.
+                let mut tx = begin_mut_tx(&datastore);
+                assert_eq!(all_rows(&datastore, &tx, table_id).len(), 2);
+                assert_eq!(tx.clear_table(table_id)?, 2);
+                commit(&datastore, tx)?;
+                let tx = begin_mut_tx(&datastore);
+                assert!(all_rows(&datastore, &tx, table_id).is_empty());
+                let _ = datastore.rollback_mut_tx(tx);
+            }
+        }
         Ok(())
     }
 }

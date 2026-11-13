@@ -8482,6 +8482,7 @@ dependencies = [
  "spacetimedb-data-structures",
  "spacetimedb-durability",
  "spacetimedb-execution",
+ "spacetimedb-fs-utils",
  "spacetimedb-lib",
  "spacetimedb-metrics",
  "spacetimedb-paths",
@@ -9030,6 +9031,7 @@ dependencies = [
  "spacetimedb-pg",
  "spacetimedb-schema",
  "spacetimedb-table",
+ "spacetimedb-tiered-storage",
  "tempfile",
  "thiserror 1.0.69",
  "tikv-jemallocator",
@@ -9066,6 +9068,7 @@ dependencies = [
  "foldhash 0.2.0",
  "hashbrown 0.16.1",
  "itertools 0.12.1",
+ "parking_lot 0.12.5",
  "proptest",
  "proptest-derive",
  "rand 0.9.2",
@@ -9129,6 +9132,17 @@ dependencies = [
  "tempfile",
  "tokio",
  "tower",
+]
+
+[[package]]
+name = "spacetimedb-tiered-storage"
+version = "2.16.0"
+dependencies = [
+ "spacetimedb-fs-utils",
+ "spacetimedb-paths",
+ "spacetimedb-snapshot",
+ "spacetimedb-table",
+ "tempfile",
 ]
 
 [[package]]
