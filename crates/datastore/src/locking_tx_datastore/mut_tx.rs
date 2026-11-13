@@ -1612,9 +1612,6 @@ impl MutTxId {
         if schema.table_type == spacetimedb_lib::db::auth::StTableType::System {
             return Err(anyhow!("system tables must remain in memory").into());
         }
-        if old_policy == TableCachePolicy::NoRequirement || policy == TableCachePolicy::NoRequirement {
-            return Err(anyhow!("cache-policy migrations involving object storage are not supported").into());
-        }
 
         // Update the requested policy in the cached schemas. Pages and blobs
         // keep using the old policy until commit has applied all row changes.
