@@ -220,7 +220,7 @@ namespace SpacetimeDB
     /// <summary>
     /// Maps a column of an outbox table to a parameter of the remote reducer.
     /// </summary>
-    /// <param name="name">The parameter's canonical name in the receiving module, such as <c>player_name</c>.</param>
+    /// <param name="name">The remote reducer's parameter name in snake_case, such as <c>player_name</c>.</param>
     [AttributeUsage(AttributeTargets.Field, AllowMultiple = true)]
     public sealed class ParamAttribute(string name) : Attribute
     {
