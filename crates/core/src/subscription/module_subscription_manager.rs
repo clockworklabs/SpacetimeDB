@@ -1941,7 +1941,7 @@ mod tests {
     use tokio::sync::oneshot;
 
     use super::{Plan, SubscriptionManager};
-    use crate::db::relational_db::tests_utils::with_read_only;
+    use crate::db::relational_db::tests_utils::{create_view_with_params_for_test, with_read_only};
     use crate::db::sql::ast::SchemaViewer;
     use crate::subscription::module_subscription_manager::ClientQueryId;
     use crate::subscription::query::{compile_template, TemplateCache};
@@ -2162,6 +2162,38 @@ mod tests {
         assert_eq!(template, dropped.0);
         assert_ne!(binding, dropped.1);
         assert_eq!(members(&subscriptions, &a1), Some(HashSet::from_iter([a1.hash()])));
+
+        Ok(())
+    }
+
+    /// Filtered calls of a view share a template whatever their args and filter values,
+    /// and so do the callers of a sender-scoped view, whose hashes differ
+    #[test]
+    fn filtered_view_calls_share_a_template() -> ResultTest<()> {
+        use spacetimedb_lib::ProductType;
+
+        let db = TestDB::durable()?;
+        let params = || ProductType::from([("id", AlgebraicType::U8)]);
+        let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
+        create_view_with_params_for_test(&db, "by_id", params(), &schema, true).expect("create `by_id`");
+        create_view_with_params_for_test(&db, "my_by_id", params(), &schema, false).expect("create `my_by_id`");
+
+        let v1 = compile_plan(&db, "select * from by_id(1) where b = 10")?;
+        let v2 = compile_plan(&db, "select * from by_id(2) where b = 20")?;
+        assert_eq!(v1.template.key(), v2.template.key());
+        assert_ne!(v1.values, v2.values);
+
+        // Filters on other columns are another template
+        let other = compile_plan(&db, "select * from by_id(1) where a = 10")?;
+        assert_ne!(v1.template.key(), other.template.key());
+
+        let sql = "select * from my_by_id(1) where b = 10";
+        let auth = |n: u8| AuthCtx::new(Identity::ZERO, Identity::from_byte_array([n; 32]));
+        let alice = compile_plan_with_auth(&db, sql, auth(1))?;
+        let bob = compile_plan_with_auth(&db, sql, auth(2))?;
+        assert_eq!(alice.template.key(), bob.template.key());
+        assert_ne!(alice.values, bob.values);
+        assert_ne!(alice.hash(), bob.hash());
 
         Ok(())
     }

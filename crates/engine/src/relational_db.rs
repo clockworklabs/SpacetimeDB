@@ -2432,6 +2432,17 @@ pub mod tests_utils {
         schema: &[(&'static str, AlgebraicType)],
         is_anonymous: bool,
     ) -> Result<(ViewId, TableId), DBError> {
+        create_view_with_params_for_test(db, name, ProductType::unit(), schema, is_anonymous)
+    }
+
+    /// Allocate a backing table in the datastore for a view that takes `params`
+    pub fn create_view_with_params_for_test(
+        db: &RelationalDB,
+        name: &str,
+        params: ProductType,
+        schema: &[(&'static str, AlgebraicType)],
+        is_anonymous: bool,
+    ) -> Result<(ViewId, TableId), DBError> {
         let mut builder = RawModuleDefV9Builder::new();
 
         // Add the view's product type to the typespace
@@ -2448,7 +2459,7 @@ pub mod tests_utils {
             0,
             true,
             is_anonymous,
-            ProductType::unit(),
+            params,
             AlgebraicType::array(AlgebraicType::Ref(type_ref)),
         );
 
