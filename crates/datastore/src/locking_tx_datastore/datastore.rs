@@ -5277,4 +5277,40 @@ pub(crate) mod tests {
 
         Ok(())
     }
+    #[test]
+    fn committed_deletion_reclaims_local_blob_capacity() -> ResultTest<()> {
+        for drop_table in [false, true] {
+            // Keep the baseline so reclamation cannot silently leak disk capacity.
+            let config = TieredStorageConfig::new_for_test();
+            let local_budget = config.local_store.budget.clone();
+            let datastore = Locking::bootstrap(Identity::ZERO, config)?;
+            let baseline_bytes = local_budget.usage().accounted_bytes;
+
+            // Persist a large blob under the local-disk policy.
+            let mut tx = begin_mut_tx(&datastore);
+            let mut schema = TableSchema::from_product_type([AlgebraicType::String].into());
+            schema.cache_policy = TableCachePolicy::RequiredOnDisk;
+            let id = datastore.create_table_mut_tx(&mut tx, schema)?;
+            let row = product!["x".repeat(2048)];
+            insert(&datastore, &mut tx, id, &row)?;
+            commit(&datastore, tx)?;
+
+            // Force a backing copy before removing its final logical reference.
+            let mut tx = begin_mut_tx(&datastore);
+            tx.committed_state_write_lock.storage.blobs().evict(0)?;
+            assert!(local_budget.usage().accounted_bytes >= baseline_bytes + 2048);
+
+            // Both table removal and truncation reclaim capacity at commit.
+            if drop_table {
+                tx.drop_table(id)?;
+            } else {
+                tx.clear_table(id)?;
+            }
+
+            commit(&datastore, tx)?;
+            assert_eq!(local_budget.usage().accounted_bytes, baseline_bytes);
+        }
+
+        Ok(())
+    }
 }
