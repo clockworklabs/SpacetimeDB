@@ -41,6 +41,7 @@ This document contains the help content for the `spacetime` command-line program
   * [`spacetime server clear`↴](#spacetime-server-clear)
 * [`spacetime subscribe`↴](#spacetime-subscribe)
 * [`spacetime start`↴](#spacetime-start)
+* [`spacetime inc`↴](#spacetime-inc)
 * [`spacetime lock`↴](#spacetime-lock)
 * [`spacetime unlock`↴](#spacetime-unlock)
 * [`spacetime auth`↴](#spacetime-auth)
@@ -83,6 +84,7 @@ This document contains the help content for the `spacetime` command-line program
 * `server` — Manage the connection to the SpacetimeDB server. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `subscribe` — Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `start` — Start a local SpacetimeDB instance
+* `inc` — Run SpacetimeInc commands (installs `spacetimedb-inc` on first use)
 * `lock` — Lock a database to prevent accidental deletion
 * `unlock` — Unlock a database to allow deletion
 * `auth` — Manage SpacetimeAuth for a database
@@ -774,6 +776,18 @@ Run `spacetime start --help` to see all options.
 
   Possible values: `standalone`, `cloud`
 
+
+
+
+## `spacetime inc`
+
+Run SpacetimeInc commands (installs `spacetimedb-inc` on first use)
+
+**Usage:** `spacetime inc [args]...`
+
+###### **Arguments:**
+
+* `<ARGS>` — The args to pass to `spacetimedb-inc`
 
 
 

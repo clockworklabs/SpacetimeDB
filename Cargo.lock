@@ -8190,6 +8190,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
+ "sha2 0.10.9",
  "spacetimedb-auth",
  "spacetimedb-client-api-messages",
  "spacetimedb-codegen",
