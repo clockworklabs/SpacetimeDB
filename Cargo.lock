@@ -9061,6 +9061,7 @@ dependencies = [
  "ahash 0.8.12",
  "blake3",
  "bytemuck",
+ "bytes",
  "criterion",
  "decorum",
  "derive_more 0.99.20",
