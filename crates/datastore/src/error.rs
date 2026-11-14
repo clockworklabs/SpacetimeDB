@@ -51,6 +51,24 @@ pub enum DatastoreError {
     Other(#[from] anyhow::Error),
 }
 
+impl DatastoreError {
+    pub(crate) fn is_resident_memory_limit(&self) -> bool {
+        match self {
+            Self::Page(PageError::MemoryLimitExceeded(_))
+            | Self::Blob(BlobError::MemoryLimitExceeded(_))
+            | Self::Table(TableError::Bflatn(bflatn_to::Error::Pages(PageError::MemoryLimitExceeded(_))))
+            | Self::Table(TableError::Bflatn(bflatn_to::Error::Blobs(BlobError::MemoryLimitExceeded(_)))) => true,
+            Self::TableStorage(error) | Self::Table(TableError::Bflatn(bflatn_to::Error::Table(error))) => {
+                match error {
+                    table::TableError::Page(error) => matches!(error.as_ref(), PageError::MemoryLimitExceeded(_)),
+                    table::TableError::Blob(error) => matches!(error.as_ref(), BlobError::MemoryLimitExceeded(_)),
+                }
+            }
+            _ => false,
+        }
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum ViewError {
     #[error("view '{0}' not found")]
