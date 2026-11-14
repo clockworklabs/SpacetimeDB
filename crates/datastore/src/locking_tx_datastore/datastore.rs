@@ -4221,6 +4221,73 @@ pub(crate) mod tests {
         basic_table_schema_with_indices(indices, Vec::<ConstraintSchema>::new())
     }
 
+    /// Regression test for #6567: a btree range scan inside a mutable transaction
+    /// must yield rows in ascending index-key order even after the transaction has
+    /// written into the range. The tx-state run used to be concatenated in front of
+    /// the committed run, so keys interleaved across the two runs came out out of
+    /// order (e.g. `[20, 35, 40, 10, 30]`), and "the first row of the range" was wrong.
+    #[test]
+    fn test_range_scan_key_order_after_tx_writes() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        // A table with a non-unique btree index on `age` (column 2).
+        let mut tx = begin_mut_tx(&datastore);
+        let table_id = datastore.create_table_mut_tx(&mut tx, table_with_non_unique_index(2u16))?;
+        let index_id = datastore.index_id_from_name_mut_tx(&tx, "Foo_idx_btree")?.unwrap();
+        commit(&datastore, tx)?;
+
+        let age_col = col_list![2];
+        // Scan the whole age range, returning the keys in the order the scan yields them.
+        let scan_ages = |tx: &MutTxId| -> Vec<u32> {
+            let range = AlgebraicValue::from(0u32)..AlgebraicValue::from(1000u32);
+            Datastore::index_scan_range(tx, table_id, index_id, &range)
+                .unwrap()
+                .map(|row| *row.project(&age_col).unwrap().as_u32().unwrap())
+                .collect()
+        };
+
+        // Commit ages 10, 30, 50.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "a", 10))?;
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(2, "b", 30))?;
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(3, "c", 50))?;
+        commit(&datastore, tx)?;
+
+        // A fresh tx with no writes of its own already scans in key order.
+        let mut tx = begin_mut_tx(&datastore);
+        assert_eq!(scan_ages(&tx), vec![10, 30, 50]);
+
+        // Insert ages 20 and 40, which interleave with the committed 10, 30, 50.
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(4, "d", 20))?;
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(5, "e", 40))?;
+        assert_eq!(scan_ages(&tx), vec![10, 20, 30, 40, 50]);
+        assert_eq!(scan_ages(&tx).first(), Some(&10));
+
+        // Move the committed row at age 50 to age 35 (delete + insert), so the write
+        // set also removes a committed key and adds one in the middle of the range.
+        let to_delete = Datastore::index_scan_range(&tx, table_id, index_id, &AlgebraicValue::from(50u32))
+            .unwrap()
+            .map(|row| row.pointer())
+            .collect::<Vec<_>>();
+        assert_eq!(datastore.delete_mut_tx(&mut tx, table_id, to_delete.iter().copied()), 1);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(6, "f", 35))?;
+        assert_eq!(scan_ages(&tx), vec![10, 20, 30, 35, 40]);
+        assert_eq!(scan_ages(&tx).first(), Some(&10));
+
+        // After commit, a fresh tx sees the same order.
+        commit(&datastore, tx)?;
+        let tx = begin_mut_tx(&datastore);
+        assert_eq!(scan_ages(&tx), vec![10, 20, 30, 35, 40]);
+
+        // Duplicate keys: a non-unique index holds several rows per key. A second row
+        // at age 20 and a new lowest age 5 must stay grouped and lead the scan.
+        let mut tx = begin_mut_tx(&datastore);
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(7, "g", 20))?;
+        insert(&datastore, &mut tx, table_id, &u32_str_u32(8, "h", 5))?;
+        assert_eq!(scan_ages(&tx), vec![5, 10, 20, 20, 30, 35, 40]);
+        Ok(())
+    }
+
     #[test]
     fn test_create_constraint_makes_index_unique() -> ResultTest<()> {
         let datastore = get_datastore()?;

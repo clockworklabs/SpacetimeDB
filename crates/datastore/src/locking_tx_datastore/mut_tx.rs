@@ -2207,9 +2207,11 @@ impl MutTxId {
             (Err(e), _) | (_, Err(e)) => return Err(e),
         };
 
-        // Combine it all.
+        // Merge the tx and committed runs in ascending key order.
+        // Both runs are sorted by the index key, so a two-way merge keeps the
+        // scan lazy while restoring the global key order a range scan promises.
         let dt = tx_state.get_delete_table(table_id);
-        Ok(ScanMutTx::combine(dt, tx_iter, commit_iter))
+        Ok(ScanMutTx::combine_range(dt, tx_iter, commit_iter, commit_index.index()))
     }
 
     /// Translate `index_id` to the table id, and commit/tx indices.
@@ -3082,6 +3084,8 @@ enum ScanMutTxInner<'a, I> {
     CommitOnlyWithDeletes(FilterDeleted<'a, I>),
     Both(iter::Chain<I, I>),
     BothWithDeletes(iter::Chain<I, FilterDeleted<'a, I>>),
+    BothMerged(MergeRangeByKey<'a, I, I>),
+    BothMergedWithDeletes(MergeRangeByKey<'a, I, FilterDeleted<'a, I>>),
 }
 
 pub(super) struct FilterDeleted<'a, I> {
@@ -3114,6 +3118,39 @@ impl<'a, I: Iterator<Item = RowRef<'a>>> ScanMutTx<'a, I> {
         };
         ScanMutTx { inner: iter }
     }
+
+    /// Like [`ScanMutTx::combine`], but for range scans: the tx and committed
+    /// runs are each sorted by the index key, so they are merged in ascending
+    /// key order rather than concatenated. `index` projects the key of a row
+    /// from either run (both index the same columns of the same row type).
+    ///
+    /// Point scans keep using [`ScanMutTx::combine`]: every row shares one key,
+    /// so concatenation is already in key order and no merge is needed.
+    fn combine_range(
+        delete_table: Option<&'a DeleteTable>,
+        tx_iter: Option<I>,
+        commit_iter: I,
+        index: &'a TableIndex,
+    ) -> Self {
+        use itertools::Either::*;
+        use ScanMutTxInner::*;
+        let commit_iter = match delete_table {
+            None => Left(commit_iter),
+            Some(deletes) => Right(FilterDeleted {
+                iter: commit_iter,
+                deletes,
+            }),
+        };
+        let iter = match (tx_iter, commit_iter) {
+            (None, Left(commit_iter)) => CommitOnly(commit_iter),
+            (None, Right(commit_iter)) => CommitOnlyWithDeletes(commit_iter),
+            (Some(tx_iter), Left(commit_iter)) => BothMerged(MergeRangeByKey::new(index, tx_iter, commit_iter)),
+            (Some(tx_iter), Right(commit_iter)) => {
+                BothMergedWithDeletes(MergeRangeByKey::new(index, tx_iter, commit_iter))
+            }
+        };
+        ScanMutTx { inner: iter }
+    }
 }
 
 impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for ScanMutTx<'a, I> {
@@ -3126,6 +3163,8 @@ impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for ScanMutTx<'a, I> {
             CommitOnlyWithDeletes(it) => it.next(),
             Both(it) => it.next(),
             BothWithDeletes(it) => it.next(),
+            BothMerged(it) => it.next(),
+            BothMergedWithDeletes(it) => it.next(),
         }
     }
 }
@@ -3134,6 +3173,64 @@ impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for FilterDeleted<'a, I> {
     type Item = RowRef<'a>;
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.find(|row| !self.deletes.contains(row.pointer()))
+    }
+}
+
+/// A lazy two-way merge of the two key-sorted runs of a range scan: the
+/// transaction-state run (`tx`) and the committed-state run (`commit`, with
+/// deletes already filtered out). Rows are yielded in ascending index-key
+/// order.
+///
+/// Both runs are already sorted by the index key, so the merge only compares
+/// the two current heads; it buffers no rows and stays lazy. Each head's key is
+/// projected once, when the head is first read, and cached alongside the row so
+/// a stationary head is not re-projected on every comparison.
+struct MergeRangeByKey<'a, A, B> {
+    /// Projects the index key from a row of either run. Both runs index the
+    /// same columns of the same row type, so one index serves both.
+    index: &'a TableIndex,
+    tx_iter: A,
+    commit_iter: B,
+    /// The current head of each run, paired with its projected index key.
+    tx_head: Option<(RowRef<'a>, AlgebraicValue)>,
+    commit_head: Option<(RowRef<'a>, AlgebraicValue)>,
+}
+
+impl<'a, A: Iterator<Item = RowRef<'a>>, B: Iterator<Item = RowRef<'a>>> MergeRangeByKey<'a, A, B> {
+    fn new(index: &'a TableIndex, mut tx_iter: A, mut commit_iter: B) -> Self {
+        let tx_head = tx_iter.next().map(|row| (row, index.project_row(row)));
+        let commit_head = commit_iter.next().map(|row| (row, index.project_row(row)));
+        Self {
+            index,
+            tx_iter,
+            commit_iter,
+            tx_head,
+            commit_head,
+        }
+    }
+}
+
+impl<'a, A: Iterator<Item = RowRef<'a>>, B: Iterator<Item = RowRef<'a>>> Iterator for MergeRangeByKey<'a, A, B> {
+    type Item = RowRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Yield the head with the smaller key. On a tie, prefer the tx run so a
+        // transaction's own rows keep precedence over committed rows, matching
+        // the concatenation order this merge replaces.
+        let take_tx = match (&self.tx_head, &self.commit_head) {
+            (Some((_, tx_key)), Some((_, commit_key))) => tx_key <= commit_key,
+            (Some(_), None) => true,
+            (None, _) => false,
+        };
+        if take_tx {
+            let (row, _) = self.tx_head.take()?;
+            self.tx_head = self.tx_iter.next().map(|row| (row, self.index.project_row(row)));
+            Some(row)
+        } else {
+            let (row, _) = self.commit_head.take()?;
+            self.commit_head = self.commit_iter.next().map(|row| (row, self.index.project_row(row)));
+            Some(row)
+        }
     }
 }
 
