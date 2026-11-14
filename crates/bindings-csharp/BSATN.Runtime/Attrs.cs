@@ -1,4 +1,4 @@
-namespace SpacetimeDB;
+﻿namespace SpacetimeDB;
 
 using System.Runtime.CompilerServices;
 

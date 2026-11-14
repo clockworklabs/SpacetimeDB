@@ -647,44 +647,28 @@ fn receiver_type_name(module: &ModuleDef, r: AlgebraicTypeRef, namespace: &str) 
 /// is expected. On the wire and in the schema it's a plain `Identity`.
 fn receiver_identity_file(namespace: &str) -> OutputFile {
     let mut output = CsharpAutogen::new_receiver(namespace);
-    writeln!(
+    write!(
         output,
-        "public readonly record struct Identity(global::SpacetimeDB.Identity Value)"
+        "\
+public readonly record struct Identity(global::SpacetimeDB.Identity Value)
+{{
+    public static explicit operator Identity(global::SpacetimeDB.Identity value) => new(value);
+
+    public static implicit operator global::SpacetimeDB.Identity(Identity value) => value.Value;
+
+    public override string ToString() => Value.ToString();
+
+    public readonly struct BSATN : global::SpacetimeDB.BSATN.IReadWrite<Identity>
+    {{
+        public Identity Read(global::System.IO.BinaryReader reader) => new(new global::SpacetimeDB.Identity.BSATN().Read(reader));
+
+        public void Write(global::System.IO.BinaryWriter writer, Identity value) => new global::SpacetimeDB.Identity.BSATN().Write(writer, value.Value);
+
+        public global::SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(global::SpacetimeDB.BSATN.ITypeRegistrar registrar) => new global::SpacetimeDB.Identity.BSATN().GetAlgebraicType(registrar);
+    }}
+}}
+"
     );
-    indented_block(&mut output, |output| {
-        writeln!(
-            output,
-            "public static explicit operator Identity(global::SpacetimeDB.Identity value) => new(value);"
-        );
-        writeln!(output);
-        writeln!(
-            output,
-            "public static implicit operator global::SpacetimeDB.Identity(Identity value) => value.Value;"
-        );
-        writeln!(output);
-        writeln!(output, "public override string ToString() => Value.ToString();");
-        writeln!(output);
-        writeln!(
-            output,
-            "public readonly struct BSATN : global::SpacetimeDB.BSATN.IReadWrite<Identity>"
-        );
-        indented_block(output, |output| {
-            writeln!(
-                output,
-                "public Identity Read(global::System.IO.BinaryReader reader) => new(new global::SpacetimeDB.Identity.BSATN().Read(reader));"
-            );
-            writeln!(output);
-            writeln!(
-                output,
-                "public void Write(global::System.IO.BinaryWriter writer, Identity value) => new global::SpacetimeDB.Identity.BSATN().Write(writer, value.Value);"
-            );
-            writeln!(output);
-            writeln!(
-                output,
-                "public global::SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(global::SpacetimeDB.BSATN.ITypeRegistrar registrar) => new global::SpacetimeDB.Identity.BSATN().GetAlgebraicType(registrar);"
-            );
-        });
-    });
     OutputFile {
         filename: "Identity.g.cs".to_owned(),
         code: output.into_inner(),

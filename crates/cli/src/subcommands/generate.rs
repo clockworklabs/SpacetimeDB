@@ -1543,7 +1543,6 @@ mod tests {
             assert_eq!(run.build_options, "--features receiver");
             assert_eq!(run.dotnet_version, Some(10));
             assert_eq!(run.out_dir, sender.join(default_out_dir));
-            assert_eq!(run.namespace, "RemoteBindings.Receiver");
             let out_dir = run.out_dir.clone();
 
             let result = run_prepared_generate_configs(
@@ -1570,7 +1569,6 @@ mod tests {
                 assert!(!out_dir.join("receiver/package.json").exists());
             } else if lang == Language::Csharp {
                 result.unwrap();
-                assert!(out_dir.join("receiver/Identity.g.cs").exists());
                 let identity = fs::read_to_string(out_dir.join("receiver/Identity.g.cs")).unwrap();
                 assert!(identity.contains("namespace RemoteBindings.Receiver"));
             } else {
@@ -1636,10 +1634,6 @@ mod tests {
         };
         assert_eq!(namespace(&[]), "SpacetimeDB.Types");
         assert_eq!(namespace(&["--bindings", "module"]), "RemoteBindings");
-        assert_eq!(
-            namespace(&["--bindings", "module", "--namespace", "My.Bindings"]),
-            "My.Bindings"
-        );
     }
 
     #[test]

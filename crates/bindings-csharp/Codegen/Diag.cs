@@ -424,4 +424,22 @@ internal static class ErrorDescriptor
                 $"Assembly '{ctx.owner}' uses case conversion policy '{ctx.policy}' in scope '{ctx.scope}', but dependency '{ctx.dependency}' declares '{ctx.dependencyPolicy}' in the same scope. Use the same policy, remove the dependency's setting to inherit the containing scope's policy, or mount the dependency in a distinct namespace.",
             _ => Location.None
         );
+
+    public static readonly ErrorDescriptor<(
+        AttributeData attr,
+        string message
+    )> InvalidOutboxDeclaration =
+        new(group, "Invalid outbox table declaration", ctx => $"{ctx.message}", ctx => ctx.attr);
+
+    public static readonly ErrorDescriptor<(
+        IFieldSymbol field,
+        string attribute
+    )> OutboxAttributeWithoutOutbox =
+        new(
+            group,
+            "Outbox column attribute on a table that isn't an outbox",
+            ctx =>
+                $"Field {ctx.field.Name} is marked [{ctx.attribute}], but none of the tables it applies to is an outbox table.",
+            ctx => ctx.field
+        );
 }

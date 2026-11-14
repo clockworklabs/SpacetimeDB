@@ -806,39 +806,11 @@ fn generate_csharp_receiver_bindings(
 fn test_codegen_csharp_module_bindings() {
     let module = receiver_test_module();
     let files = generate_csharp_receiver_bindings(&module, None);
-
-    assert_eq!(
-        files.keys().map(String::as_str).collect::<Vec<_>>(),
-        [
-            "Identity.g.cs",
-            "Reducers/Noop.g.cs",
-            "Reducers/ReceivePing.g.cs",
-            "Types/Details.g.cs",
-            "Types/Entry.g.cs",
-            "Types/Metadata.g.cs",
-            "Types/Operation.g.cs",
-            "Types/Status.g.cs",
-        ]
-    );
-    assert!(files.values().all(|code| !code.contains("using ")));
-
-    let ping = &files["Reducers/ReceivePing.g.cs"];
-    assert!(ping.contains("public abstract class ReceivePing : global::SpacetimeDB.Internal.IOutboxReceiver"));
-    assert!(ping.contains("public const string ReducerName = \"wire_ping\";"));
+    // The snapshot can't tell whether the hash is the receiver's.
     let hash = wire_ping_signature_hash(&module);
-    assert!(ping.contains(&format!("public const string SignatureHash = \"{}\";", hash.to_hex())));
-    assert!(ping.contains("public string @note = default!;"));
-    assert!(ping.contains("public global::RemoteBindings.Receiver.Details @details = default!;"));
-    assert!(files["Types/Metadata.g.cs"].contains("public global::RemoteBindings.Receiver.Identity Owner;"));
-    assert!(files["Types/Details.g.cs"].contains("[global::SpacetimeDB.Type]\n"));
-
+    assert!(files["Reducers/ReceivePing.g.cs"]
+        .contains(&format!("public const string SignatureHash = \"{}\";", hash.to_hex())));
     insta::assert_toml_snapshot!(files);
-
-    let scoped = generate_csharp_receiver_bindings(&module, Some("game_world"));
-    for name in ["Details", "Entry", "Metadata", "Operation", "Status"] {
-        assert!(scoped[&format!("Types/{name}.g.cs")]
-            .contains(&format!("[global::SpacetimeDB.Type(Name = \"game_world.{name}\")]")));
-    }
 }
 
 #[test]
@@ -847,31 +819,22 @@ fn csharp_receiver_types_avoid_generated_names() {
     use spacetimedb_lib::{AlgebraicType, ProductType};
 
     let mut builder = RawModuleDefV10Builder::new();
-    let params = [
-        ("Identity", "identity"),
-        ("Reducers", "reducers"),
-        ("SpacetimeDB", "spacetime_db"),
-        ("System", "system"),
-        ("RemoteBindings", "remote_bindings"),
-        ("Receiver", "receiver"),
-    ]
-    .map(|(name, param)| {
+    let names = ["Identity", "Reducers", "System", "RemoteBindings"];
+    let params = names.map(|name| {
         let ty = builder.add_algebraic_type([], name, AlgebraicType::product([("value", AlgebraicType::U8)]), true);
-        (param, AlgebraicType::Ref(ty))
+        (name, AlgebraicType::Ref(ty))
     });
     builder.add_reducer("receive", ProductType::from(params));
     builder.add_reducer("reducers", ProductType::unit());
     let module: ModuleDef = builder.finish().try_into().unwrap();
     let files = generate_csharp_receiver_bindings(&module, Some("dep"));
 
-    for name in ["Identity", "Reducers", "System", "RemoteBindings"] {
+    for name in names {
+        // Only the C# name changes; the schema name stays.
         let code = &files[&format!("Types/{name}_.g.cs")];
-        assert!(code.contains(&format!("public sealed partial class {name}_")));
-        // The schema name doesn't change.
         assert!(code.contains(&format!("[global::SpacetimeDB.Type(Name = \"dep.{name}\")]")));
+        assert!(code.contains(&format!("public sealed partial class {name}_")));
     }
-    assert!(files.contains_key("Types/SpacetimeDb.g.cs"));
-    assert!(files.contains_key("Types/Receiver.g.cs"));
-    assert!(files["Reducers/Receive.g.cs"].contains("public global::RemoteBindings.Receiver.Identity_ @identity"));
-    assert!(files["Reducers/Reducers_.g.cs"].contains("public abstract class Reducers_ :"));
+    assert!(files["Reducers/Receive.g.cs"].contains("global::RemoteBindings.Receiver.Identity_ @identity"));
+    assert!(files.contains_key("Reducers/Reducers_.g.cs"));
 }

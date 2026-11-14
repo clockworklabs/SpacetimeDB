@@ -71,7 +71,7 @@ public sealed class ModuleBuilder
             : type.Name;
 
     // Like Rust's `sats_name_to_scoped_name_v10`: split on "::" and "."; the last segment is the name.
-    internal static RawScopedTypeNameV10 MakeScopedTypeName(Type type, string? sourceName)
+    private static RawScopedTypeNameV10 MakeScopedTypeName(Type type, string? sourceName)
     {
         if (sourceName is null)
         {

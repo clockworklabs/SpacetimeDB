@@ -53,6 +53,14 @@ public static class Utils
         return kind != SyntaxKind.None || contextualKind != SyntaxKind.None ? $"@{name}" : name;
     }
 
+    /// <summary>
+    /// Converts a name to snake_case like Rust's <c>convert_case</c> 0.6 <c>Case::Snake</c>,
+    /// which names the parameters in receiver bindings. Same code as the runtime's
+    /// <c>CanonicalName</c>.
+    /// </summary>
+    public static string SnakeCase(string name) =>
+        SpacetimeDB.Internal.CanonicalName.ToSnakeCase(name);
+
     public static void RegisterSourceOutputs(
         this IncrementalValuesProvider<Scope.Extensions> methods,
         IncrementalGeneratorInitializationContext context

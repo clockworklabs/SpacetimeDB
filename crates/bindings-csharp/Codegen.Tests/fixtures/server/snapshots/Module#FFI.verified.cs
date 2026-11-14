@@ -23,6 +23,72 @@ using TxContext = SpacetimeDB.Internal.TxContext;
 namespace SpacetimeDB
 {
 #if !NET10_0_OR_GREATER
+    public readonly struct AdmitOutboxCols
+    {
+        public readonly global::SpacetimeDB.Col<global::AdmitOutboxRow, ulong> MsgId;
+        public readonly global::SpacetimeDB.Col<
+            global::AdmitOutboxRow,
+            RemoteBindings.Receiver.Identity
+        > Target;
+        public readonly global::SpacetimeDB.Col<global::AdmitOutboxRow, string> Name;
+        public readonly global::SpacetimeDB.Col<
+            global::AdmitOutboxRow,
+            RemoteBindings.Receiver.Details
+        > Info;
+        public readonly global::SpacetimeDB.Col<global::AdmitOutboxRow, string> Nickname;
+        public readonly global::SpacetimeDB.Col<global::AdmitOutboxRow, uint> Extra;
+
+        internal AdmitOutboxCols(string tableName)
+        {
+            MsgId = new global::SpacetimeDB.Col<global::AdmitOutboxRow, ulong>(tableName, "MsgId");
+            Target = new global::SpacetimeDB.Col<
+                global::AdmitOutboxRow,
+                RemoteBindings.Receiver.Identity
+            >(tableName, "Target");
+            Name = new global::SpacetimeDB.Col<global::AdmitOutboxRow, string>(tableName, "Name");
+            Info = new global::SpacetimeDB.Col<
+                global::AdmitOutboxRow,
+                RemoteBindings.Receiver.Details
+            >(tableName, "Info");
+            Nickname = new global::SpacetimeDB.Col<global::AdmitOutboxRow, string>(
+                tableName,
+                "Nickname"
+            );
+            Extra = new global::SpacetimeDB.Col<global::AdmitOutboxRow, uint>(tableName, "Extra");
+        }
+    }
+
+    public readonly struct AdmitOutboxIxCols
+    {
+        public readonly global::SpacetimeDB.IxCol<global::AdmitOutboxRow, ulong> MsgId;
+        public readonly global::SpacetimeDB.IxCol<global::AdmitOutboxRow, string> Name;
+        public readonly global::SpacetimeDB.IxCol<global::AdmitOutboxRow, uint> Extra;
+
+        internal AdmitOutboxIxCols(string tableName)
+        {
+            MsgId = new global::SpacetimeDB.IxCol<global::AdmitOutboxRow, ulong>(
+                tableName,
+                "MsgId"
+            );
+            Name = new global::SpacetimeDB.IxCol<global::AdmitOutboxRow, string>(tableName, "Name");
+            Extra = new global::SpacetimeDB.IxCol<global::AdmitOutboxRow, uint>(tableName, "Extra");
+        }
+    }
+
+    public readonly partial struct QueryBuilder
+    {
+        public global::SpacetimeDB.Table<
+            global::AdmitOutboxRow,
+            AdmitOutboxCols,
+            AdmitOutboxIxCols
+        > AdmitOutbox() =>
+            new(
+                "AdmitOutbox",
+                new AdmitOutboxCols("AdmitOutbox"),
+                new AdmitOutboxIxCols("AdmitOutbox")
+            );
+    }
+
     internal readonly struct BTreeMultiColumnCols
     {
         public readonly global::SpacetimeDB.Col<global::BTreeMultiColumn, uint> X;
@@ -187,6 +253,82 @@ namespace SpacetimeDB
                 new MultiTable2Cols("MultiTable2"),
                 new MultiTable2IxCols("MultiTable2")
             );
+    }
+
+    public readonly struct PingOutboxCols
+    {
+        public readonly global::SpacetimeDB.Col<global::PingRow, ulong> Id;
+        public readonly global::SpacetimeDB.Col<
+            global::PingRow,
+            RemoteBindings.Receiver.Identity
+        > Destination;
+        public readonly global::SpacetimeDB.Col<global::PingRow, string> Tag;
+
+        internal PingOutboxCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.Col<global::PingRow, ulong>(tableName, "Id");
+            Destination = new global::SpacetimeDB.Col<
+                global::PingRow,
+                RemoteBindings.Receiver.Identity
+            >(tableName, "Destination");
+            Tag = new global::SpacetimeDB.Col<global::PingRow, string>(tableName, "Tag");
+        }
+    }
+
+    public readonly struct PingOutboxIxCols
+    {
+        public readonly global::SpacetimeDB.IxCol<global::PingRow, ulong> Id;
+
+        internal PingOutboxIxCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.IxCol<global::PingRow, ulong>(tableName, "Id");
+        }
+    }
+
+    public readonly partial struct QueryBuilder
+    {
+        public global::SpacetimeDB.Table<
+            global::PingRow,
+            PingOutboxCols,
+            PingOutboxIxCols
+        > PingOutbox() =>
+            new("PingOutbox", new PingOutboxCols("PingOutbox"), new PingOutboxIxCols("PingOutbox"));
+    }
+
+    public readonly struct PingLogCols
+    {
+        public readonly global::SpacetimeDB.Col<global::PingRow, ulong> Id;
+        public readonly global::SpacetimeDB.Col<
+            global::PingRow,
+            RemoteBindings.Receiver.Identity
+        > Destination;
+        public readonly global::SpacetimeDB.Col<global::PingRow, string> Tag;
+
+        internal PingLogCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.Col<global::PingRow, ulong>(tableName, "Id");
+            Destination = new global::SpacetimeDB.Col<
+                global::PingRow,
+                RemoteBindings.Receiver.Identity
+            >(tableName, "Destination");
+            Tag = new global::SpacetimeDB.Col<global::PingRow, string>(tableName, "Tag");
+        }
+    }
+
+    public readonly struct PingLogIxCols
+    {
+        public readonly global::SpacetimeDB.IxCol<global::PingRow, ulong> Id;
+
+        internal PingLogIxCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.IxCol<global::PingRow, ulong>(tableName, "Id");
+        }
+    }
+
+    public readonly partial struct QueryBuilder
+    {
+        public global::SpacetimeDB.Table<global::PingRow, PingLogCols, PingLogIxCols> PingLog() =>
+            new("PingLog", new PingLogCols("PingLog"), new PingLogIxCols("PingLog"));
     }
 
     public readonly struct PrivateTableCols
@@ -727,11 +869,14 @@ namespace SpacetimeDB
 
     public sealed class Local : global::SpacetimeDB.LocalBase
     {
+        public global::SpacetimeDB.Internal.TableHandles.AdmitOutbox AdmitOutbox => new();
         internal global::SpacetimeDB.Internal.TableHandles.BTreeMultiColumn BTreeMultiColumn =>
             new();
         internal global::SpacetimeDB.Internal.TableHandles.BTreeViews BTreeViews => new();
         public global::SpacetimeDB.Internal.TableHandles.MultiTable1 MultiTable1 => new();
         public global::SpacetimeDB.Internal.TableHandles.MultiTable2 MultiTable2 => new();
+        public global::SpacetimeDB.Internal.TableHandles.PingLog PingLog => new();
+        public global::SpacetimeDB.Internal.TableHandles.PingOutbox PingOutbox => new();
         public global::SpacetimeDB.Internal.TableHandles.PrivateTable PrivateTable => new();
         public global::SpacetimeDB.Internal.TableHandles.PublicTable PublicTable => new();
         internal global::SpacetimeDB.Internal.TableHandles.RegressionMultipleUniqueIndexesHadSameName RegressionMultipleUniqueIndexesHadSameName =>
@@ -774,7 +919,7 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
         public const string? CaseConversionPolicy = null;
         public const string RootOnlyDeclarations =
             "row-level security filters, environment variables, lifecycle reducer Timers.Init (Init)";
-        public const int ReducerCount = 6;
+        public const int ReducerCount = 7;
         public const int ProcedureCount = 0;
         public const int HttpHandlerCount = 0;
         public const int ViewCount = 2;
@@ -887,11 +1032,14 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 
         public readonly struct Tables
         {
+            public global::SpacetimeDB.Internal.TableHandles.AdmitOutbox AdmitOutbox => new();
             internal global::SpacetimeDB.Internal.TableHandles.BTreeMultiColumn BTreeMultiColumn =>
                 new();
             internal global::SpacetimeDB.Internal.TableHandles.BTreeViews BTreeViews => new();
             public global::SpacetimeDB.Internal.TableHandles.MultiTable1 MultiTable1 => new();
             public global::SpacetimeDB.Internal.TableHandles.MultiTable2 MultiTable2 => new();
+            public global::SpacetimeDB.Internal.TableHandles.PingLog PingLog => new();
+            public global::SpacetimeDB.Internal.TableHandles.PingOutbox PingOutbox => new();
             public global::SpacetimeDB.Internal.TableHandles.PrivateTable PrivateTable => new();
             public global::SpacetimeDB.Internal.TableHandles.PublicTable PublicTable => new();
             internal global::SpacetimeDB.Internal.TableHandles.RegressionMultipleUniqueIndexesHadSameName RegressionMultipleUniqueIndexesHadSameName =>
@@ -902,6 +1050,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 
         public readonly struct ReadOnlyTables
         {
+            public global::SpacetimeDB.Internal.ViewHandles.AdmitOutboxReadOnly AdmitOutbox =>
+                new();
             internal global::SpacetimeDB.Internal.ViewHandles.BTreeMultiColumnReadOnly BTreeMultiColumn =>
                 new();
             internal global::SpacetimeDB.Internal.ViewHandles.BTreeViewsReadOnly BTreeViews =>
@@ -910,6 +1060,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 new();
             public global::SpacetimeDB.Internal.ViewHandles.MultiTable2ReadOnly MultiTable2 =>
                 new();
+            public global::SpacetimeDB.Internal.ViewHandles.PingLogReadOnly PingLog => new();
+            public global::SpacetimeDB.Internal.ViewHandles.PingOutboxReadOnly PingOutbox => new();
             public global::SpacetimeDB.Internal.ViewHandles.PrivateTableReadOnly PrivateTable =>
                 new();
             public global::SpacetimeDB.Internal.ViewHandles.PublicTableReadOnly PublicTable =>
@@ -927,11 +1079,14 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
     {
         extension(global::SpacetimeDB.Local db)
         {
+            public global::SpacetimeDB.Internal.TableHandles.AdmitOutbox AdmitOutbox => new();
             internal global::SpacetimeDB.Internal.TableHandles.BTreeMultiColumn BTreeMultiColumn =>
                 new();
             internal global::SpacetimeDB.Internal.TableHandles.BTreeViews BTreeViews => new();
             public global::SpacetimeDB.Internal.TableHandles.MultiTable1 MultiTable1 => new();
             public global::SpacetimeDB.Internal.TableHandles.MultiTable2 MultiTable2 => new();
+            public global::SpacetimeDB.Internal.TableHandles.PingLog PingLog => new();
+            public global::SpacetimeDB.Internal.TableHandles.PingOutbox PingOutbox => new();
             public global::SpacetimeDB.Internal.TableHandles.PrivateTable PrivateTable => new();
             public global::SpacetimeDB.Internal.TableHandles.PublicTable PublicTable => new();
             internal global::SpacetimeDB.Internal.TableHandles.RegressionMultipleUniqueIndexesHadSameName RegressionMultipleUniqueIndexesHadSameName =>
@@ -945,6 +1100,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
     {
         extension(global::SpacetimeDB.Internal.LocalReadOnly db)
         {
+            public global::SpacetimeDB.Internal.ViewHandles.AdmitOutboxReadOnly AdmitOutbox =>
+                new();
             internal global::SpacetimeDB.Internal.ViewHandles.BTreeMultiColumnReadOnly BTreeMultiColumn =>
                 new();
             internal global::SpacetimeDB.Internal.ViewHandles.BTreeViewsReadOnly BTreeViews =>
@@ -953,6 +1110,8 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 new();
             public global::SpacetimeDB.Internal.ViewHandles.MultiTable2ReadOnly MultiTable2 =>
                 new();
+            public global::SpacetimeDB.Internal.ViewHandles.PingLogReadOnly PingLog => new();
+            public global::SpacetimeDB.Internal.ViewHandles.PingOutboxReadOnly PingOutbox => new();
             public global::SpacetimeDB.Internal.ViewHandles.PrivateTableReadOnly PrivateTable =>
                 new();
             public global::SpacetimeDB.Internal.ViewHandles.PublicTableReadOnly PublicTable =>
@@ -967,6 +1126,115 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
     public static partial class QueryTableExtensions
     {
         extension(global::SpacetimeDB.QueryBuilder from) { }
+    }
+
+    public readonly struct AdmitOutboxCols
+    {
+        public readonly global::SpacetimeDB.Col<global::AdmitOutboxRow, ulong> MsgId;
+        public readonly global::SpacetimeDB.Col<
+            global::AdmitOutboxRow,
+            RemoteBindings.Receiver.Identity
+        > Target;
+        public readonly global::SpacetimeDB.Col<global::AdmitOutboxRow, string> Name;
+        public readonly global::SpacetimeDB.Col<
+            global::AdmitOutboxRow,
+            RemoteBindings.Receiver.Details
+        > Info;
+        public readonly global::SpacetimeDB.Col<global::AdmitOutboxRow, string> Nickname;
+        public readonly global::SpacetimeDB.Col<global::AdmitOutboxRow, uint> Extra;
+
+        internal AdmitOutboxCols(global::SpacetimeDB.SqlTableName tableName)
+        {
+            MsgId = new global::SpacetimeDB.Col<global::AdmitOutboxRow, ulong>(tableName, "MsgId");
+            Target = new global::SpacetimeDB.Col<
+                global::AdmitOutboxRow,
+                RemoteBindings.Receiver.Identity
+            >(tableName, "Target");
+            Name = new global::SpacetimeDB.Col<global::AdmitOutboxRow, string>(tableName, "Name");
+            Info = new global::SpacetimeDB.Col<
+                global::AdmitOutboxRow,
+                RemoteBindings.Receiver.Details
+            >(tableName, "Info");
+            Nickname = new global::SpacetimeDB.Col<global::AdmitOutboxRow, string>(
+                tableName,
+                "Nickname"
+            );
+            Extra = new global::SpacetimeDB.Col<global::AdmitOutboxRow, uint>(tableName, "Extra");
+        }
+    }
+
+    public readonly struct AdmitOutboxIxCols
+    {
+        public readonly global::SpacetimeDB.IxCol<global::AdmitOutboxRow, ulong> MsgId;
+        public readonly global::SpacetimeDB.IxCol<global::AdmitOutboxRow, string> Name;
+        public readonly global::SpacetimeDB.IxCol<global::AdmitOutboxRow, uint> Extra;
+
+        internal AdmitOutboxIxCols(global::SpacetimeDB.SqlTableName tableName)
+        {
+            MsgId = new global::SpacetimeDB.IxCol<global::AdmitOutboxRow, ulong>(
+                tableName,
+                "MsgId"
+            );
+            Name = new global::SpacetimeDB.IxCol<global::AdmitOutboxRow, string>(tableName, "Name");
+            Extra = new global::SpacetimeDB.IxCol<global::AdmitOutboxRow, uint>(tableName, "Extra");
+        }
+    }
+
+    public static partial class AssemblyDescriptor
+    {
+        private static global::SpacetimeDB.SqlTableName?[] AdmitOutboxSqlNames =>
+            field ??= new global::SpacetimeDB.SqlTableName?[
+                global::SpacetimeDB.Internal.Module.InstanceCount
+            ];
+
+        private static global::SpacetimeDB.SqlTableName AdmitOutboxSqlName(int contextInstance)
+        {
+            var names = AdmitOutboxSqlNames;
+            if (names[contextInstance] is { } name)
+            {
+                return name;
+            }
+            var instanceId = global::SpacetimeDB.Internal.Module.ResolveInstance(
+                contextInstance,
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+            );
+            var resolvedName = names[instanceId] ??=
+                global::SpacetimeDB.Internal.Module.ResolveSqlName(instanceId, "AdmitOutbox");
+            names[contextInstance] = resolvedName;
+            return resolvedName;
+        }
+
+        public readonly partial struct Queries
+        {
+            public global::SpacetimeDB.Table<
+                global::AdmitOutboxRow,
+                AdmitOutboxCols,
+                AdmitOutboxIxCols
+            > AdmitOutbox()
+            {
+                var tableName = AdmitOutboxSqlName(__instanceId);
+                return new(
+                    tableName,
+                    new AdmitOutboxCols(tableName),
+                    new AdmitOutboxIxCols(tableName)
+                );
+            }
+        }
+    }
+
+    public static partial class QueryTableExtensions
+    {
+        extension(global::SpacetimeDB.QueryBuilder from)
+        {
+            public global::SpacetimeDB.Table<
+                global::AdmitOutboxRow,
+                AdmitOutboxCols,
+                AdmitOutboxIxCols
+            > AdmitOutbox() =>
+                new AssemblyDescriptor.Queries(
+                    global::SpacetimeDB.Internal.Module.GetInstanceId(from)
+                ).AdmitOutbox();
+        }
     }
 
     internal readonly struct BTreeMultiColumnCols
@@ -1308,6 +1576,172 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 new AssemblyDescriptor.Queries(
                     global::SpacetimeDB.Internal.Module.GetInstanceId(from)
                 ).MultiTable2();
+        }
+    }
+
+    public readonly struct PingOutboxCols
+    {
+        public readonly global::SpacetimeDB.Col<global::PingRow, ulong> Id;
+        public readonly global::SpacetimeDB.Col<
+            global::PingRow,
+            RemoteBindings.Receiver.Identity
+        > Destination;
+        public readonly global::SpacetimeDB.Col<global::PingRow, string> Tag;
+
+        internal PingOutboxCols(global::SpacetimeDB.SqlTableName tableName)
+        {
+            Id = new global::SpacetimeDB.Col<global::PingRow, ulong>(tableName, "Id");
+            Destination = new global::SpacetimeDB.Col<
+                global::PingRow,
+                RemoteBindings.Receiver.Identity
+            >(tableName, "Destination");
+            Tag = new global::SpacetimeDB.Col<global::PingRow, string>(tableName, "Tag");
+        }
+    }
+
+    public readonly struct PingOutboxIxCols
+    {
+        public readonly global::SpacetimeDB.IxCol<global::PingRow, ulong> Id;
+
+        internal PingOutboxIxCols(global::SpacetimeDB.SqlTableName tableName)
+        {
+            Id = new global::SpacetimeDB.IxCol<global::PingRow, ulong>(tableName, "Id");
+        }
+    }
+
+    public static partial class AssemblyDescriptor
+    {
+        private static global::SpacetimeDB.SqlTableName?[] PingOutboxSqlNames =>
+            field ??= new global::SpacetimeDB.SqlTableName?[
+                global::SpacetimeDB.Internal.Module.InstanceCount
+            ];
+
+        private static global::SpacetimeDB.SqlTableName PingOutboxSqlName(int contextInstance)
+        {
+            var names = PingOutboxSqlNames;
+            if (names[contextInstance] is { } name)
+            {
+                return name;
+            }
+            var instanceId = global::SpacetimeDB.Internal.Module.ResolveInstance(
+                contextInstance,
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+            );
+            var resolvedName = names[instanceId] ??=
+                global::SpacetimeDB.Internal.Module.ResolveSqlName(instanceId, "PingOutbox");
+            names[contextInstance] = resolvedName;
+            return resolvedName;
+        }
+
+        public readonly partial struct Queries
+        {
+            public global::SpacetimeDB.Table<
+                global::PingRow,
+                PingOutboxCols,
+                PingOutboxIxCols
+            > PingOutbox()
+            {
+                var tableName = PingOutboxSqlName(__instanceId);
+                return new(
+                    tableName,
+                    new PingOutboxCols(tableName),
+                    new PingOutboxIxCols(tableName)
+                );
+            }
+        }
+    }
+
+    public static partial class QueryTableExtensions
+    {
+        extension(global::SpacetimeDB.QueryBuilder from)
+        {
+            public global::SpacetimeDB.Table<
+                global::PingRow,
+                PingOutboxCols,
+                PingOutboxIxCols
+            > PingOutbox() =>
+                new AssemblyDescriptor.Queries(
+                    global::SpacetimeDB.Internal.Module.GetInstanceId(from)
+                ).PingOutbox();
+        }
+    }
+
+    public readonly struct PingLogCols
+    {
+        public readonly global::SpacetimeDB.Col<global::PingRow, ulong> Id;
+        public readonly global::SpacetimeDB.Col<
+            global::PingRow,
+            RemoteBindings.Receiver.Identity
+        > Destination;
+        public readonly global::SpacetimeDB.Col<global::PingRow, string> Tag;
+
+        internal PingLogCols(global::SpacetimeDB.SqlTableName tableName)
+        {
+            Id = new global::SpacetimeDB.Col<global::PingRow, ulong>(tableName, "Id");
+            Destination = new global::SpacetimeDB.Col<
+                global::PingRow,
+                RemoteBindings.Receiver.Identity
+            >(tableName, "Destination");
+            Tag = new global::SpacetimeDB.Col<global::PingRow, string>(tableName, "Tag");
+        }
+    }
+
+    public readonly struct PingLogIxCols
+    {
+        public readonly global::SpacetimeDB.IxCol<global::PingRow, ulong> Id;
+
+        internal PingLogIxCols(global::SpacetimeDB.SqlTableName tableName)
+        {
+            Id = new global::SpacetimeDB.IxCol<global::PingRow, ulong>(tableName, "Id");
+        }
+    }
+
+    public static partial class AssemblyDescriptor
+    {
+        private static global::SpacetimeDB.SqlTableName?[] PingLogSqlNames =>
+            field ??= new global::SpacetimeDB.SqlTableName?[
+                global::SpacetimeDB.Internal.Module.InstanceCount
+            ];
+
+        private static global::SpacetimeDB.SqlTableName PingLogSqlName(int contextInstance)
+        {
+            var names = PingLogSqlNames;
+            if (names[contextInstance] is { } name)
+            {
+                return name;
+            }
+            var instanceId = global::SpacetimeDB.Internal.Module.ResolveInstance(
+                contextInstance,
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+            );
+            var resolvedName = names[instanceId] ??=
+                global::SpacetimeDB.Internal.Module.ResolveSqlName(instanceId, "PingLog");
+            names[contextInstance] = resolvedName;
+            return resolvedName;
+        }
+
+        public readonly partial struct Queries
+        {
+            public global::SpacetimeDB.Table<global::PingRow, PingLogCols, PingLogIxCols> PingLog()
+            {
+                var tableName = PingLogSqlName(__instanceId);
+                return new(tableName, new PingLogCols(tableName), new PingLogIxCols(tableName));
+            }
+        }
+    }
+
+    public static partial class QueryTableExtensions
+    {
+        extension(global::SpacetimeDB.QueryBuilder from)
+        {
+            public global::SpacetimeDB.Table<
+                global::PingRow,
+                PingLogCols,
+                PingLogIxCols
+            > PingLog() =>
+                new AssemblyDescriptor.Queries(
+                    global::SpacetimeDB.Internal.Module.GetInstanceId(from)
+                ).PingLog();
         }
     }
 
@@ -1800,6 +2234,105 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 
 namespace SpacetimeDB.Internal.TableHandles
 {
+    public readonly struct AdmitOutbox
+        : global::SpacetimeDB.Internal.ITableView<AdmitOutbox, global::AdmitOutboxRow>
+    {
+        public static global::AdmitOutboxRow ReadGenFields(
+            System.IO.BinaryReader reader,
+            global::AdmitOutboxRow row
+        )
+        {
+            if (row.MsgId == default)
+            {
+                row.MsgId = global::AdmitOutboxRow.BSATN.MsgIdRW.Read(reader);
+            }
+            return row;
+        }
+
+        public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) =>
+            new(
+                SourceName: nameof(AdmitOutbox),
+                ProductTypeRef: (uint)
+                    new global::AdmitOutboxRow.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [0],
+                Indexes:
+                [
+                    new(
+                        SourceName: "AdmitOutbox_MsgId_idx_btree",
+                        AccessorName: "MsgId",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                    ),
+                    new(
+                        SourceName: "AdmitOutbox_Name_Extra_idx_btree",
+                        AccessorName: "ByNameAndExtra",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([2, 5])
+                    ),
+                ],
+                Constraints:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        AdmitOutbox,
+                        global::AdmitOutboxRow
+                    >.MakeUniqueConstraint(0),
+                ],
+                Sequences:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        AdmitOutbox,
+                        global::AdmitOutboxRow
+                    >.MakeSequence(0),
+                ],
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private,
+                DefaultValues: [],
+                IsEvent: false
+            );
+
+        public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<AdmitOutbox, global::AdmitOutboxRow>.DoCount();
+
+        public IEnumerable<global::AdmitOutboxRow> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<AdmitOutbox, global::AdmitOutboxRow>.DoIter();
+
+        public global::AdmitOutboxRow Insert(global::AdmitOutboxRow row) =>
+            global::SpacetimeDB.Internal.ITableView<AdmitOutbox, global::AdmitOutboxRow>.DoInsert(
+                row
+            );
+
+        bool global::SpacetimeDB.Internal.ITableView<AdmitOutbox, global::AdmitOutboxRow>.Delete(
+            global::AdmitOutboxRow row
+        ) =>
+            throw new global::System.NotSupportedException(
+                "Rows can't be deleted from outbox table AdmitOutbox."
+            );
+
+        ulong global::SpacetimeDB.Internal.ITableView<
+            AdmitOutbox,
+            global::AdmitOutboxRow
+        >.Clear() =>
+            throw new global::System.NotSupportedException(
+                "Outbox table AdmitOutbox can't be cleared."
+            );
+
+        private static global::SpacetimeDB.Internal.ViewHandles.AdmitOutboxReadOnly? __readOnly;
+        private global::SpacetimeDB.Internal.ViewHandles.AdmitOutboxReadOnly __ReadOnly =>
+            __readOnly ??= new();
+        public global::SpacetimeDB.Internal.ViewHandles.AdmitOutboxReadOnly.MsgIdIndex MsgId =>
+            __ReadOnly.MsgId;
+        public global::SpacetimeDB.Internal.ViewHandles.AdmitOutboxReadOnly.ByNameAndExtraIndex ByNameAndExtra =>
+            __ReadOnly.ByNameAndExtra;
+    }
+
     internal readonly struct BTreeMultiColumn
         : global::SpacetimeDB.Internal.ITableView<BTreeMultiColumn, global::BTreeMultiColumn>
     {
@@ -2425,6 +2958,225 @@ namespace SpacetimeDB.Internal.TableHandles
         public BarUniqueIndex Bar => new();
     }
 
+    public readonly struct PingLog
+        : global::SpacetimeDB.Internal.ITableView<PingLog, global::PingRow>
+    {
+        public static global::PingRow ReadGenFields(
+            System.IO.BinaryReader reader,
+            global::PingRow row
+        )
+        {
+            if (row.Id == default)
+            {
+                row.Id = global::PingRow.BSATN.IdRW.Read(reader);
+            }
+            return row;
+        }
+
+        public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) =>
+            new(
+                SourceName: nameof(PingLog),
+                ProductTypeRef: (uint)new global::PingRow.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [0],
+                Indexes:
+                [
+                    new(
+                        SourceName: "PingLog_Id_idx_btree",
+                        AccessorName: "Id",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                    ),
+                    new(
+                        SourceName: "PingLog_Tag_idx_btree",
+                        AccessorName: "Tag",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([2])
+                    ),
+                ],
+                Constraints:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        PingLog,
+                        global::PingRow
+                    >.MakeUniqueConstraint(0),
+                    global::SpacetimeDB.Internal.ITableView<
+                        PingLog,
+                        global::PingRow
+                    >.MakeUniqueConstraint(2),
+                ],
+                Sequences:
+                [
+                    global::SpacetimeDB.Internal.ITableView<PingLog, global::PingRow>.MakeSequence(
+                        0
+                    ),
+                ],
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private,
+                DefaultValues: [],
+                IsEvent: false
+            );
+
+        public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<PingLog, global::PingRow>.DoCount();
+
+        public IEnumerable<global::PingRow> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<PingLog, global::PingRow>.DoIter();
+
+        public global::PingRow Insert(global::PingRow row) =>
+            global::SpacetimeDB.Internal.ITableView<PingLog, global::PingRow>.DoInsert(row);
+
+        public bool Delete(global::PingRow row) =>
+            global::SpacetimeDB.Internal.ITableView<PingLog, global::PingRow>.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<PingLog, global::PingRow>.DoClear();
+
+        public sealed class IdUniqueIndex
+            : global::SpacetimeDB.Internal.UniqueIndex<
+                PingLog,
+                global::PingRow,
+                ulong,
+                SpacetimeDB.BSATN.U64
+            >
+        {
+            internal IdUniqueIndex()
+                : base("PingLog_Id_idx_btree") { }
+
+            // Important: don't move this to the base class.
+            // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+            // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+            public global::PingRow? Find(ulong key) => FindSingle(key);
+
+            public global::PingRow Update(global::PingRow row) => DoUpdate(row);
+        }
+
+        public IdUniqueIndex Id => new();
+
+        public sealed class TagUniqueIndex
+            : global::SpacetimeDB.Internal.UniqueIndex<
+                PingLog,
+                global::PingRow,
+                string,
+                SpacetimeDB.BSATN.String
+            >
+        {
+            internal TagUniqueIndex()
+                : base("PingLog_Tag_idx_btree") { }
+
+            // Important: don't move this to the base class.
+            // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+            // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+            public global::PingRow? Find(string key) => FindSingle(key);
+        }
+
+        public TagUniqueIndex Tag => new();
+    }
+
+    public readonly struct PingOutbox
+        : global::SpacetimeDB.Internal.ITableView<PingOutbox, global::PingRow>
+    {
+        public static global::PingRow ReadGenFields(
+            System.IO.BinaryReader reader,
+            global::PingRow row
+        )
+        {
+            if (row.Id == default)
+            {
+                row.Id = global::PingRow.BSATN.IdRW.Read(reader);
+            }
+            return row;
+        }
+
+        public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) =>
+            new(
+                SourceName: nameof(PingOutbox),
+                ProductTypeRef: (uint)new global::PingRow.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [0],
+                Indexes:
+                [
+                    new(
+                        SourceName: "PingOutbox_Id_idx_btree",
+                        AccessorName: "Id",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                    ),
+                    new(
+                        SourceName: "PingOutbox_Tag_idx_btree",
+                        AccessorName: "Tag",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([2])
+                    ),
+                ],
+                Constraints:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        PingOutbox,
+                        global::PingRow
+                    >.MakeUniqueConstraint(0),
+                    global::SpacetimeDB.Internal.ITableView<
+                        PingOutbox,
+                        global::PingRow
+                    >.MakeUniqueConstraint(2),
+                ],
+                Sequences:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        PingOutbox,
+                        global::PingRow
+                    >.MakeSequence(0),
+                ],
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private,
+                DefaultValues: [],
+                IsEvent: false
+            );
+
+        public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<PingOutbox, global::PingRow>.DoCount();
+
+        public IEnumerable<global::PingRow> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<PingOutbox, global::PingRow>.DoIter();
+
+        public global::PingRow Insert(global::PingRow row) =>
+            global::SpacetimeDB.Internal.ITableView<PingOutbox, global::PingRow>.DoInsert(row);
+
+        bool global::SpacetimeDB.Internal.ITableView<PingOutbox, global::PingRow>.Delete(
+            global::PingRow row
+        ) =>
+            throw new global::System.NotSupportedException(
+                "Rows can't be deleted from outbox table PingOutbox."
+            );
+
+        ulong global::SpacetimeDB.Internal.ITableView<PingOutbox, global::PingRow>.Clear() =>
+            throw new global::System.NotSupportedException(
+                "Outbox table PingOutbox can't be cleared."
+            );
+
+        private static global::SpacetimeDB.Internal.ViewHandles.PingOutboxReadOnly? __readOnly;
+        private global::SpacetimeDB.Internal.ViewHandles.PingOutboxReadOnly __ReadOnly =>
+            __readOnly ??= new();
+        public global::SpacetimeDB.Internal.ViewHandles.PingOutboxReadOnly.IdIndex Id =>
+            __ReadOnly.Id;
+        public global::SpacetimeDB.Internal.ViewHandles.PingOutboxReadOnly.TagIndex Tag =>
+            __ReadOnly.Tag;
+    }
+
     public readonly struct PrivateTable
         : global::SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>
     {
@@ -2968,6 +3720,86 @@ sealed class find_public_table__by_identityViewDispatcher
 
 namespace SpacetimeDB.Internal.ViewHandles
 {
+    public sealed class AdmitOutboxReadOnly
+        : global::SpacetimeDB.Internal.ReadOnlyTableView<global::AdmitOutboxRow>
+    {
+        internal AdmitOutboxReadOnly()
+            : base("AdmitOutbox") { }
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
+        public ulong Count => DoCount();
+
+        public sealed class MsgIdIndex
+            : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
+                global::SpacetimeDB.Internal.ViewHandles.AdmitOutboxReadOnly,
+                global::AdmitOutboxRow,
+                ulong,
+                SpacetimeDB.BSATN.U64
+            >
+        {
+            internal MsgIdIndex()
+                : base("AdmitOutbox_MsgId_idx_btree") { }
+
+            public global::AdmitOutboxRow? Find(ulong key) => FindSingle(key);
+        }
+
+        public MsgIdIndex MsgId => new();
+
+        public sealed class ByNameAndExtraIndex
+            : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::AdmitOutboxRow>
+        {
+            internal ByNameAndExtraIndex()
+                : base("AdmitOutbox_Name_Extra_idx_btree") { }
+
+            public IEnumerable<global::AdmitOutboxRow> Filter(string Name) =>
+                DoFilter(
+                    new global::SpacetimeDB.Internal.BTreeIndexBounds<
+                        string,
+                        SpacetimeDB.BSATN.String
+                    >(Name)
+                );
+
+            public IEnumerable<global::AdmitOutboxRow> Filter(
+                global::SpacetimeDB.Bound<string> Name
+            ) =>
+                DoFilter(
+                    new global::SpacetimeDB.Internal.BTreeIndexBounds<
+                        string,
+                        SpacetimeDB.BSATN.String
+                    >(Name)
+                );
+
+            public IEnumerable<global::AdmitOutboxRow> Filter((string Name, uint Extra) f) =>
+                DoFilter(
+                    new global::SpacetimeDB.Internal.BTreeIndexBounds<
+                        string,
+                        SpacetimeDB.BSATN.String,
+                        uint,
+                        SpacetimeDB.BSATN.U32
+                    >(f)
+                );
+
+            public IEnumerable<global::AdmitOutboxRow> Filter(
+                (string Name, global::SpacetimeDB.Bound<uint> Extra) f
+            ) =>
+                DoFilter(
+                    new global::SpacetimeDB.Internal.BTreeIndexBounds<
+                        string,
+                        SpacetimeDB.BSATN.String,
+                        uint,
+                        SpacetimeDB.BSATN.U32
+                    >(f)
+                );
+        }
+
+        public ByNameAndExtraIndex ByNameAndExtra => new();
+    }
+
     internal sealed class BTreeMultiColumnReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::BTreeMultiColumn>
     {
@@ -3248,6 +4080,100 @@ namespace SpacetimeDB.Internal.ViewHandles
         public BarIndex Bar => new();
     }
 
+    public sealed class PingLogReadOnly
+        : global::SpacetimeDB.Internal.ReadOnlyTableView<global::PingRow>
+    {
+        internal PingLogReadOnly()
+            : base("PingLog") { }
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
+        public ulong Count => DoCount();
+
+        public sealed class IdIndex
+            : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
+                global::SpacetimeDB.Internal.ViewHandles.PingLogReadOnly,
+                global::PingRow,
+                ulong,
+                SpacetimeDB.BSATN.U64
+            >
+        {
+            internal IdIndex()
+                : base("PingLog_Id_idx_btree") { }
+
+            public global::PingRow? Find(ulong key) => FindSingle(key);
+        }
+
+        public IdIndex Id => new();
+
+        public sealed class TagIndex
+            : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
+                global::SpacetimeDB.Internal.ViewHandles.PingLogReadOnly,
+                global::PingRow,
+                string,
+                SpacetimeDB.BSATN.String
+            >
+        {
+            internal TagIndex()
+                : base("PingLog_Tag_idx_btree") { }
+
+            public global::PingRow? Find(string key) => FindSingle(key);
+        }
+
+        public TagIndex Tag => new();
+    }
+
+    public sealed class PingOutboxReadOnly
+        : global::SpacetimeDB.Internal.ReadOnlyTableView<global::PingRow>
+    {
+        internal PingOutboxReadOnly()
+            : base("PingOutbox") { }
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
+        public ulong Count => DoCount();
+
+        public sealed class IdIndex
+            : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
+                global::SpacetimeDB.Internal.ViewHandles.PingOutboxReadOnly,
+                global::PingRow,
+                ulong,
+                SpacetimeDB.BSATN.U64
+            >
+        {
+            internal IdIndex()
+                : base("PingOutbox_Id_idx_btree") { }
+
+            public global::PingRow? Find(ulong key) => FindSingle(key);
+        }
+
+        public IdIndex Id => new();
+
+        public sealed class TagIndex
+            : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
+                global::SpacetimeDB.Internal.ViewHandles.PingOutboxReadOnly,
+                global::PingRow,
+                string,
+                SpacetimeDB.BSATN.String
+            >
+        {
+            internal TagIndex()
+                : base("PingOutbox_Tag_idx_btree") { }
+
+            public global::PingRow? Find(string key) => FindSingle(key);
+        }
+
+        public TagIndex Tag => new();
+    }
+
     public sealed class PrivateTableReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::PrivateTable>
     {
@@ -3380,11 +4306,14 @@ namespace SpacetimeDB.Internal
 {
     public sealed partial class LocalReadOnly
     {
+        public global::SpacetimeDB.Internal.ViewHandles.AdmitOutboxReadOnly AdmitOutbox => new();
         internal global::SpacetimeDB.Internal.ViewHandles.BTreeMultiColumnReadOnly BTreeMultiColumn =>
             new();
         internal global::SpacetimeDB.Internal.ViewHandles.BTreeViewsReadOnly BTreeViews => new();
         public global::SpacetimeDB.Internal.ViewHandles.MultiTable1ReadOnly MultiTable1 => new();
         public global::SpacetimeDB.Internal.ViewHandles.MultiTable2ReadOnly MultiTable2 => new();
+        public global::SpacetimeDB.Internal.ViewHandles.PingLogReadOnly PingLog => new();
+        public global::SpacetimeDB.Internal.ViewHandles.PingOutboxReadOnly PingOutbox => new();
         public global::SpacetimeDB.Internal.ViewHandles.PrivateTableReadOnly PrivateTable => new();
         public global::SpacetimeDB.Internal.ViewHandles.PublicTableReadOnly PublicTable => new();
         internal global::SpacetimeDB.Internal.ViewHandles.RegressionMultipleUniqueIndexesHadSameNameReadOnly RegressionMultipleUniqueIndexesHadSameName =>
@@ -3522,6 +4451,27 @@ static class ModuleRegistration
         }
     }
 
+    sealed class SendOutboxes : SpacetimeDB.Internal.IReducer
+    {
+        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) =>
+            new(
+                SourceName: nameof(SendOutboxes),
+                Params: [],
+                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
+                ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
+            );
+
+        public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
+
+        public static void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            OutboxReducers.SendOutboxes((SpacetimeDB.ReducerContext)ctx);
+        }
+    }
+
     sealed class SendScheduledMessage : SpacetimeDB.Internal.IReducer
     {
         private static readonly Timers.SendMessageTimer.BSATN argRW = new();
@@ -3613,6 +4563,7 @@ static class ModuleRegistration
         builder.RegisterReducer<InsertData2>();
         builder.RegisterReducer<InsertMultiData>();
         builder.RegisterReducer<ScheduleImmediate>();
+        builder.RegisterReducer<SendOutboxes>();
         builder.RegisterReducer<SendScheduledMessage>();
 
         // IMPORTANT: The order in which we register views matters.
@@ -3622,6 +4573,10 @@ static class ModuleRegistration
         builder.RegisterView<public_table_viewViewDispatcher>();
         builder.RegisterAnonymousView<find_public_table__by_identityViewDispatcher>();
 
+        builder.RegisterTable<
+            global::AdmitOutboxRow,
+            global::SpacetimeDB.Internal.TableHandles.AdmitOutbox
+        >();
         builder.RegisterTable<
             global::BTreeMultiColumn,
             global::SpacetimeDB.Internal.TableHandles.BTreeMultiColumn
@@ -3637,6 +4592,11 @@ static class ModuleRegistration
         builder.RegisterTable<
             global::MultiTableRow,
             global::SpacetimeDB.Internal.TableHandles.MultiTable2
+        >();
+        builder.RegisterTable<global::PingRow, global::SpacetimeDB.Internal.TableHandles.PingLog>();
+        builder.RegisterTable<
+            global::PingRow,
+            global::SpacetimeDB.Internal.TableHandles.PingOutbox
         >();
         builder.RegisterTable<
             global::PrivateTable,
@@ -3654,6 +4614,32 @@ static class ModuleRegistration
             global::Timers.SendMessageTimer,
             global::SpacetimeDB.Internal.TableHandles.SendMessageTimer
         >();
+        builder.RegisterOutbox(
+            new global::SpacetimeDB.Internal.RawOutboxDefV10(
+                "AdmitOutbox",
+                "admit_player",
+                1,
+                [2, 3, 4],
+                null,
+                new global::SpacetimeDB.U256(
+                    new global::SpacetimeDB.U128(0x1f1e1d1c1b1a1918UL, 0x1716151413121110UL),
+                    new global::SpacetimeDB.U128(0x0f0e0d0c0b0a0908UL, 0x0706050403020100UL)
+                )
+            )
+        );
+        builder.RegisterOutbox(
+            new global::SpacetimeDB.Internal.RawOutboxDefV10(
+                "PingOutbox",
+                "ping",
+                1,
+                [0],
+                null,
+                new global::SpacetimeDB.U256(
+                    new global::SpacetimeDB.U128(0x0011223344556677UL, 0x8899aabbccddeeffUL),
+                    new global::SpacetimeDB.U128(0x0011223344556677UL, 0x8899aabbccddeeffUL)
+                )
+            )
+        );
 
         builder.RegisterClientVisibilityFilter(global::Module.ALL_PUBLIC_TABLES);
     }
@@ -3857,6 +4843,44 @@ static class ModuleRegistration
     }
 
     private static SpacetimeDB.Internal.Errno __call_reducer_5(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink error
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateReducerContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(
+                args,
+                ref reducerArgsBuffer
+            );
+            using var reader = new System.IO.BinaryReader(stream);
+            SendOutboxes.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
+            return SpacetimeDB.Internal.Errno.OK;
+        }
+        catch (System.Exception e)
+        {
+            return SpacetimeDB.Internal.Module.WriteReducerError(error, e);
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_reducer_6(
         ulong sender_0,
         ulong sender_1,
         ulong sender_2,
@@ -4119,6 +5143,17 @@ static class ModuleRegistration
                 error
             ),
             5 => __call_reducer_5(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp,
+                args,
+                error
+            ),
+            6 => __call_reducer_6(
                 sender_0,
                 sender_1,
                 sender_2,

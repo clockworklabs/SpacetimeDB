@@ -1343,62 +1343,22 @@ public static class GeneratorSnapshotTests
         AssertGeneratedCodeDoesNotUseInternalBound(compilationAfterGen);
     }
 
-    [Fact]
-    public static async Task OutboxAttributesParseTypeArguments()
-    {
-        var fixture = await Fixture.Compile("server");
-        var compilation = CSharpCompilation.Create(
-            "OutboxAttributes",
-            [
-                CSharpSyntaxTree.ParseText(
-                    """
-                    public class Receiver { }
-
-                    [SpacetimeDB.Table(Accessor = "Outbox", Outbox = typeof(Receiver))]
-                    public partial struct OutboxRow { }
-
-                    public static class Callbacks
-                    {
-                        [SpacetimeDB.OnResult(typeof(OutboxRow), Table = "Outbox")]
-                        public static void OnResult() { }
-                    }
-                    """,
-                    fixture.ParseOptions
-                ),
-            ],
-            fixture.SampleCompilation.References,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
-        );
-        Assert.Empty(
-            compilation.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error)
-        );
-        var receiver = compilation.GetTypeByMetadataName("Receiver");
-        var row = compilation.GetTypeByMetadataName("OutboxRow")!;
-
-        // `ParseAs` used to crash on `typeof(...)`; it now leaves those null.
-        var tableData = Assert.Single(row.GetAttributes());
-        var table = tableData.ParseAs<TableAttribute>();
-        Assert.Equal("Outbox", table.Accessor);
-        Assert.Null(table.Outbox);
-        Assert.True(
-            SymbolEqualityComparer.Default.Equals(receiver, tableData.GetTypeArgument("Outbox"))
-        );
-
-        var onResultData = Assert.Single(
-            compilation
-                .GetTypeByMetadataName("Callbacks")!
-                .GetMembers("OnResult")
-                .Single()
-                .GetAttributes()
-        );
-        var onResult = onResultData.ParseAs<OnResultAttribute>();
-        Assert.Equal("Outbox", onResult.Table);
-        Assert.Null(onResult.Row);
-        Assert.True(
-            SymbolEqualityComparer.Default.Equals(row, onResultData.GetTypeArgument("row"))
-        );
-        Assert.Null(onResultData.GetTypeArgument("Table"));
-    }
+    // The generator matches outbox columns to receiver parameters with the runtime's
+    // snake_case conversion. Expected values come from Rust's `convert_case` 0.6, which names
+    // those parameters; one case per word-boundary rule, plus the Unicode cases that need the
+    // generator's `Rune` polyfill.
+    [Theory]
+    [InlineData("PlayerName", "player_name")]
+    [InlineData("player_name", "player_name")]
+    [InlineData("HTTPServer", "http_server")]
+    [InlineData("Field1Value", "field_1_value")]
+    [InlineData("__double__under", "double_under")]
+    [InlineData("kebab-case name", "kebab_case_name")]
+    [InlineData("İstanbulCity", "i̇stanbul_city")]
+    [InlineData("ODYSSEUSΣ", "odysseusς")]
+    [InlineData("\U00010400\U00010428Deseret", "\U00010428\U00010428_deseret")]
+    public static void SnakeCaseMatchesConvertCase(string name, string expected) =>
+        Assert.Equal(expected, Utils.SnakeCase(name));
 
     [Fact]
     public static async Task ViewInvalidReturnHighlightsReturnType()
