@@ -114,6 +114,7 @@ $cases = switch ($Suite) {
             (New-CompileCase "error_identity_implicit_conversion" "cases/idc/error_identity_implicit_conversion.cpp" "failure" "no viable conversion from 'Identity' to 'receiver::Identity'")
             (New-CompileCase "ok_manual_outbox" "cases/idc/ok_manual_outbox.cpp" "success")
             (New-CompileCase "error_outbox_delete" "cases/idc/error_outbox_delete.cpp" "failure" "attempt to use a deleted function")
+            (New-CompileCase "error_outbox_delete_by_name" "cases/idc/error_outbox_delete_by_name.cpp" "failure" "attempt to use a deleted function")
             (New-CompileCase "error_outbox_update_by_key" "cases/idc/error_outbox_update_by_key.cpp" "failure" "attempt to use a deleted function")
             (New-CompileCase "error_outbox_target_wrong_type" "cases/idc/error_outbox_target_wrong_type.cpp" "failure" "The outbox target column 'target' must have the receiver bindings' Identity type.")
             (New-CompileCase "error_outbox_target_on_regular_table" "cases/idc/error_outbox_target_on_regular_table.cpp" "failure" "FIELD_Target applies only to outbox tables declared with SPACETIMEDB_OUTBOX_TABLE.")

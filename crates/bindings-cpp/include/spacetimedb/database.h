@@ -245,19 +245,33 @@ public:
     // Generic table accessor method (type-only, requires explicit table name later)
     template<typename T>
     TableAccessor<T> table() const {
+        static_assert(!is_outbox_row_v<T>, "Access an outbox table with ctx.db[table_name].");
         return TableAccessor<T>{};
     }
-    
+
     // Name-based accessor that returns a configured table accessor
     template<typename T>
     TableAccessor<T> table(const char* name) const {
         return TableAccessor<T>(std::string(name));
     }
-    
+
     // String overload
     template<typename T>
     TableAccessor<T> table(const std::string& name) const {
         return table<T>(name.c_str());
+    }
+
+    // Outbox tables are insert-only, as with operator[] below.
+    template<typename T>
+        requires is_outbox_row_v<T>
+    OutboxTableAccessor<T> table(const char* name) const {
+        return OutboxTableAccessor<T>(std::string(name));
+    }
+
+    template<typename T>
+        requires is_outbox_row_v<T>
+    OutboxTableAccessor<T> table(const std::string& name) const {
+        return OutboxTableAccessor<T>(name);
     }
     
     // Tag-based accessor using operator[] (SpacetimeDB standard)

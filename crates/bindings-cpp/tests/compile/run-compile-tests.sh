@@ -150,6 +150,7 @@ else
         "error_identity_implicit_conversion"
         "ok_manual_outbox"
         "error_outbox_delete"
+        "error_outbox_delete_by_name"
         "error_outbox_update_by_key"
         "error_outbox_target_wrong_type"
         "error_outbox_target_on_regular_table"
@@ -180,6 +181,10 @@ else
     CASE_EXPECTATION["error_outbox_delete"]="failure"
     CASE_MARKER["error_outbox_delete"]="attempt to use a deleted function"
     CASE_SOURCE["error_outbox_delete"]="$SCRIPT_DIR/cases/idc/error_outbox_delete.cpp"
+
+    CASE_EXPECTATION["error_outbox_delete_by_name"]="failure"
+    CASE_MARKER["error_outbox_delete_by_name"]="attempt to use a deleted function"
+    CASE_SOURCE["error_outbox_delete_by_name"]="$SCRIPT_DIR/cases/idc/error_outbox_delete_by_name.cpp"
 
     CASE_EXPECTATION["error_outbox_update_by_key"]="failure"
     CASE_MARKER["error_outbox_update_by_key"]="attempt to use a deleted function"
