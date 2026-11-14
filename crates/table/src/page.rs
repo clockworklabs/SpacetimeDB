@@ -730,12 +730,15 @@ impl<'page> VarView<'page> {
     /// Allocates a granule for a large blob object
     /// and returns a [`VarLenRef`] pointing to that granule.
     ///
-    /// The granule is not initialized by this method, and contains valid-unconstrained bytes.
-    /// It is the caller's responsibility to initialize it with a [`BlobHash`](super::blob_hash::BlobHash).
+    /// Initialize an empty header so cleanup can free the granule if writing the blob fails.
+    /// The caller must still write the blob hash before reading the granule's data.
     #[cold]
     fn alloc_blob_hash(&mut self) -> Result<VarLenRef, Error> {
         // Var-len hashes are 32 bytes, which fits within a single granule.
-        self.alloc_granule().map(VarLenRef::large_blob)
+        let granule = self.alloc_granule()?;
+        // SAFETY: The allocation is unused and aligned, and NULL terminates the list.
+        unsafe { self.write_chunk_to_granule(&[], 0, granule, PageOffset::VAR_LEN_NULL) };
+        Ok(VarLenRef::large_blob(granule))
     }
 
     /// Inserts `var_len_obj` into `blob_store`
