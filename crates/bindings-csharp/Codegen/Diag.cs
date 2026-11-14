@@ -433,4 +433,22 @@ internal static class ErrorDescriptor
                 $"The test project references multiple independent SpacetimeDB module roots: {roots}. Use a separate test project for each root module.",
             _ => Location.None
         );
+
+    public static readonly ErrorDescriptor<(
+        AttributeData attr,
+        string message
+    )> InvalidOutboxDeclaration =
+        new(group, "Invalid outbox table declaration", ctx => $"{ctx.message}", ctx => ctx.attr);
+
+    public static readonly ErrorDescriptor<(
+        IFieldSymbol field,
+        string attribute
+    )> OutboxAttributeWithoutOutbox =
+        new(
+            group,
+            "Outbox column attribute on a table that isn't an outbox",
+            ctx =>
+                $"Field {ctx.field.Name} is marked [{ctx.attribute}], but none of the tables it applies to is an outbox table.",
+            ctx => ctx.field
+        );
 }

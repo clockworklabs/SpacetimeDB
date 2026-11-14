@@ -319,3 +319,123 @@ public class Module
         return (PublicTable?)ctx.Db.PublicTable.Id.Find(0);
     }
 }
+
+/// <summary>
+/// Receiver bindings as `spacetime generate --bindings module --lang csharp` writes them.
+/// </summary>
+namespace RemoteBindings.Receiver
+{
+    public readonly record struct Identity(global::SpacetimeDB.Identity Value)
+    {
+        public static explicit operator Identity(global::SpacetimeDB.Identity value) => new(value);
+
+        public static implicit operator global::SpacetimeDB.Identity(Identity value) => value.Value;
+
+        public readonly struct BSATN : global::SpacetimeDB.BSATN.IReadWrite<Identity>
+        {
+            public Identity Read(global::System.IO.BinaryReader reader) =>
+                new(new global::SpacetimeDB.Identity.BSATN().Read(reader));
+
+            public void Write(global::System.IO.BinaryWriter writer, Identity value) =>
+                new global::SpacetimeDB.Identity.BSATN().Write(writer, value.Value);
+
+            public global::SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(
+                global::SpacetimeDB.BSATN.ITypeRegistrar registrar
+            ) => new global::SpacetimeDB.Identity.BSATN().GetAlgebraicType(registrar);
+        }
+    }
+
+    [global::SpacetimeDB.Type(Name = "receiver.Details")]
+    public sealed partial class Details
+    {
+        public string Label = "";
+    }
+
+    public static partial class Reducers
+    {
+        public abstract class AdmitPlayer : global::SpacetimeDB.Internal.IOutboxReceiver
+        {
+            public const string ReducerName = "admit_player";
+            public const string SignatureHash =
+                "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+
+            public string @name = default!;
+            public global::RemoteBindings.Receiver.Details @player_details = default!;
+            public string? @nickname = default!;
+        }
+
+        public abstract class Ping : global::SpacetimeDB.Internal.IOutboxReceiver
+        {
+            public const string ReducerName = "ping";
+            public const string SignatureHash =
+                "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100";
+
+            public ulong @seq = default!;
+        }
+    }
+}
+
+[SpacetimeDB.Table(
+    Accessor = "AdmitOutbox",
+    Outbox = typeof(RemoteBindings.Receiver.Reducers.AdmitPlayer)
+)]
+[SpacetimeDB.Index.BTree(Accessor = "ByNameAndExtra", Columns = ["Name", "Extra"])]
+public partial struct AdmitOutboxRow
+{
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc]
+    public ulong MsgId;
+
+    [SpacetimeDB.Target]
+    public RemoteBindings.Receiver.Identity Target;
+
+    // Matches `name` by its snake_case name.
+    public string Name;
+
+    [SpacetimeDB.Param("player_details")]
+    public RemoteBindings.Receiver.Details Info;
+
+    public string? Nickname;
+
+    // Columns the reducer doesn't take are allowed.
+    public uint Extra;
+}
+
+// One row type with an outbox accessor and a normal one.
+[SpacetimeDB.Table(Accessor = "PingOutbox", Outbox = typeof(RemoteBindings.Receiver.Reducers.Ping))]
+[SpacetimeDB.Table(Accessor = "PingLog")]
+public partial struct PingRow
+{
+    // The message ID can also be a parameter.
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc]
+    [SpacetimeDB.Param("seq", Table = "PingOutbox")]
+    public ulong Id;
+
+    [SpacetimeDB.Target(Table = "PingOutbox")]
+    public RemoteBindings.Receiver.Identity Destination;
+
+    [SpacetimeDB.Unique]
+    public string Tag;
+}
+
+public static partial class OutboxReducers
+{
+    [SpacetimeDB.Reducer]
+    public static void SendOutboxes(ReducerContext ctx)
+    {
+        var target = (RemoteBindings.Receiver.Identity)ctx.Sender;
+        ctx.Db.AdmitOutbox.Insert(
+            new AdmitOutboxRow
+            {
+                Target = target,
+                Name = "player",
+                Info = new RemoteBindings.Receiver.Details(),
+            }
+        );
+        foreach (var row in ctx.Db.AdmitOutbox.ByNameAndExtra.Filter(("player", 0u))) { }
+        ctx.Db.PingOutbox.Insert(new PingRow { Destination = target, Tag = "ping" });
+        _ = ctx.Db.PingOutbox.Tag.Find("ping");
+        ctx.Db.PingLog.Delete(new PingRow { Tag = "log" });
+    }
+}
