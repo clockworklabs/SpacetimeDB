@@ -34,6 +34,8 @@
 #include "autogen/RawColumnDefaultValueV10.g.h"
 #include "autogen/RawRowLevelSecurityDefV9.g.h"
 #include "autogen/RawTypeDefV10.g.h"
+#include "autogen/RawOutboxDefV10.g.h"
+#include "../idc.h"
 #include "field_registration.h"
 #include "../query_builder.h"
 #include "buffer_pool.h"
@@ -57,6 +59,23 @@ public:
 
     template<typename T>
     void RegisterTable(const std::string& table_name, bool is_public, bool is_event = false) {
+        RegisterTableImpl<T>(table_name, is_public, is_event, false);
+    }
+
+    /**
+     * Register an outbox table. Unlike RegisterTable, the row type is the type that
+     * `bsatn_traits<T>` registers, rather than one looked up by T's C++ name. Generated
+     * outbox rows register under a dependency-scoped name, and the table and its
+     * on_result reducer's row parameter must refer to the same type.
+     */
+    template<typename T>
+    void RegisterOutboxTable(const std::string& table_name, bool is_public) {
+        RegisterTableImpl<T>(table_name, is_public, false, true);
+    }
+
+private:
+    template<typename T>
+    void RegisterTableImpl(const std::string& table_name, bool is_public, bool is_event, bool use_traits_type) {
         if (g_circular_ref_error) {
             std::fprintf(stderr, "ERROR: Skipping table registration '%s' because circular reference error is set\n", table_name.c_str());
             return;
@@ -95,7 +114,9 @@ public:
         bsatn::ProductType bsatn_product(std::move(elements));
         bsatn::AlgebraicType table_type = bsatn::AlgebraicType::make_product(
             std::make_unique<bsatn::ProductType>(std::move(bsatn_product)));
-        AlgebraicType registered_type = getModuleTypeRegistration().registerType(table_type, "", &typeid(T));
+        AlgebraicType registered_type = use_traits_type
+            ? getModuleTypeRegistration().registerType(bsatn::bsatn_traits<T>::algebraic_type())
+            : getModuleTypeRegistration().registerType(table_type, "", &typeid(T));
         if (registered_type.get_tag() != AlgebraicType::Tag::Ref) {
             SetConstraintRegistrationError(
                 "TABLE_TYPE_NOT_REF",
@@ -119,6 +140,7 @@ public:
         SetTableIsEventFlag(table_name, is_event);
     }
 
+public:
     template<typename T>
     void AddFieldConstraint(const std::string& table_name,
                             const std::string& field_name,
@@ -629,6 +651,58 @@ public:
         }
     }
 
+    /**
+     * Declare `table_name` as an outbox whose rows call `Handle`'s reducer.
+     *
+     * Columns are matched to the receiver's parameters in ResolveOutboxes, after
+     * every FIELD_Target and FIELD_Param registration has run.
+     */
+    template<typename T, typename Handle>
+    void RegisterOutbox(const std::string& table_name) {
+        static_assert(::SpacetimeDB::RemoteReducerHandle<Handle>);
+        if (g_circular_ref_error) {
+            return;
+        }
+        SpacetimeDB::field_registrar<T>::register_fields();
+        auto& descriptor_map = SpacetimeDB::get_table_descriptors();
+        auto it = descriptor_map.find(&typeid(T));
+        if (it == descriptor_map.end()) {
+            SetConstraintRegistrationError(
+                "OUTBOX_NO_FIELD_DESCRIPTORS_" + table_name,
+                "outbox table='" + table_name + "' has no registered field descriptors");
+            return;
+        }
+
+        OutboxRegistration outbox;
+        outbox.table_name = table_name;
+        outbox.remote_reducer = std::string(Handle::name);
+        outbox.signature_hash = std::string(Handle::signature_hash);
+        auto& type_reg = getModuleTypeRegistration();
+        for (const auto& field : it->second.fields) {
+            outbox.column_names.push_back(field.name);
+            outbox.column_types.push_back(bsatn::to_bytes(type_reg.registerType(field.get_algebraic_type())));
+        }
+        using Params = typename Handle::param_types;
+        [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+            ((outbox.param_names.emplace_back(Handle::param_names[Is]),
+              outbox.param_types.push_back(bsatn::to_bytes(type_reg.registerType(
+                  bsatn::bsatn_traits<std::tuple_element_t<Is, Params>>::algebraic_type())))),
+             ...);
+        }(std::make_index_sequence<std::tuple_size_v<Params>>{});
+        outbox_registrations_.push_back(std::move(outbox));
+    }
+
+    void SetOutboxTarget(const std::string& table_name, const std::string& field_name);
+    void AddOutboxParamAlias(const std::string& table_name, const std::string& field_name, const std::string& param_name);
+    void SetOutboxOnResult(const std::string& table_name, const std::string& reducer_name);
+
+    /**
+     * Match each outbox's columns to its receiver's parameters and record the
+     * outbox metadata. Reports problems as constraint registration errors.
+     * Runs once, after all other registration.
+     */
+    void ResolveOutboxes();
+
     void RegisterRowLevelSecurity(const std::string& sql_query) {
         row_level_security_.push_back(RawRowLevelSecurityDefV9{sql_query});
     }
@@ -682,6 +756,24 @@ private:
     static AlgebraicType MakeUnitAlgebraicType();
     static AlgebraicType MakeStringAlgebraicType();
     static AlgebraicType MakeQueryReturnAlgebraicType(AlgebraicType row_type);
+
+    struct OutboxRegistration {
+        std::string table_name;
+        std::string remote_reducer;
+        std::string signature_hash;
+        std::vector<std::string> column_names;
+        // BSATN-encoded column and parameter types, compared byte for byte.
+        std::vector<std::vector<uint8_t>> column_types;
+        std::vector<std::string> param_names;
+        std::vector<std::vector<uint8_t>> param_types;
+        std::vector<std::string> target_fields;
+        // Pairs of (column name, receiver parameter name).
+        std::vector<std::pair<std::string, std::string>> param_aliases;
+        std::vector<std::string> on_result_reducers;
+    };
+    OutboxRegistration* FindOutbox(const std::string& table_name);
+    std::vector<OutboxRegistration> outbox_registrations_;
+    std::vector<RawOutboxDefV10> outboxes_;
 
     std::vector<std::pair<std::string, bool>> table_is_event_;
     std::optional<CaseConversionPolicy> case_conversion_policy_;

@@ -208,6 +208,35 @@ pub fn copy_module_fixture(name: &str, dest: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Writes a C++ module project at `dest` that builds `module_source` against the local C++ bindings.
+pub fn write_cpp_module(dest: &Path, module_source: &str) -> Result<()> {
+    let src_dir = dest.join("src");
+    fs::create_dir_all(&src_dir).context("Failed to create C++ source directory")?;
+
+    let bindings_cpp_path = workspace_root()
+        .join("crates/bindings-cpp")
+        .display()
+        .to_string()
+        .replace('\\', "/");
+    let cmakelists = CPP_SMOKETEST_CMAKELISTS.replace("@SPACETIMEDB_CPP_LIBRARY_PATH@", &bindings_cpp_path);
+
+    fs::write(dest.join("CMakeLists.txt"), cmakelists).context("Failed to write C++ CMakeLists.txt")?;
+    fs::write(src_dir.join("lib.cpp"), module_source).context("Failed to write C++ module code")?;
+    Ok(())
+}
+
+/// Copies the C++ module fixture `crates/smoketests/modules/<name>/src/lib.cpp` into a
+/// module project at `dest` that builds against the local C++ bindings.
+pub fn copy_cpp_module_fixture(name: &str, dest: &Path) -> Result<()> {
+    let source = workspace_root()
+        .join("crates/smoketests/modules")
+        .join(name)
+        .join("src/lib.cpp");
+    let module_source =
+        fs::read_to_string(&source).with_context(|| format!("Failed to read C++ fixture {}", source.display()))?;
+    write_cpp_module(dest, &module_source)
+}
+
 /// Rewrites `spacetimedb` dependency in `<module_dir>/Cargo.toml` to use local workspace bindings.
 pub fn patch_module_cargo_to_local_bindings(module_dir: &Path) -> Result<()> {
     let cargo_toml_path = module_dir.join("Cargo.toml");
@@ -437,6 +466,8 @@ add_executable(lib src/lib.cpp)
 
 target_include_directories(lib PRIVATE
     ${SPACETIMEDB_CPP_LIBRARY_PATH}/include
+    # Receiver bindings from `spacetime generate`, included as <dependency_name/bindings.h>.
+    ${CMAKE_CURRENT_SOURCE_DIR}/remote_bindings
 )
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
@@ -1334,19 +1365,7 @@ impl Smoketest {
 
     fn prepare_cpp_module_source_internal(&mut self, project_dir_name: &str, module_source: &str) -> Result<PathBuf> {
         let module_path = self.project_dir.path().join(project_dir_name);
-        let src_dir = module_path.join("src");
-        fs::create_dir_all(&src_dir).context("Failed to create C++ source directory")?;
-
-        let bindings_cpp_path = workspace_root()
-            .join("crates/bindings-cpp")
-            .display()
-            .to_string()
-            .replace('\\', "/");
-        let cmakelists = CPP_SMOKETEST_CMAKELISTS.replace("@SPACETIMEDB_CPP_LIBRARY_PATH@", &bindings_cpp_path);
-
-        fs::write(module_path.join("CMakeLists.txt"), cmakelists).context("Failed to write C++ CMakeLists.txt")?;
-        fs::write(src_dir.join("lib.cpp"), module_source).context("Failed to write C++ module code")?;
-
+        write_cpp_module(&module_path, module_source)?;
         Ok(module_path)
     }
 

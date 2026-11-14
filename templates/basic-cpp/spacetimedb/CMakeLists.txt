@@ -71,6 +71,9 @@ add_executable(lib ${MODULE_SOURCE})
 # Link against the bindings target (preferred alias)
 target_link_libraries(lib PRIVATE spacetimedb_cpp_library)
 
+# Receiver bindings from `spacetime generate`, included as <dependency_name/bindings.h>.
+target_include_directories(lib PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/remote_bindings")
+
 # Configure Emscripten-specific settings for WASM output
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   set(EXPORTED_FUNCS "['_malloc','_free','___describe_module__','___call_reducer__','___call_view__','___call_view_anon__','___call_procedure__']")

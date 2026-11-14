@@ -1552,6 +1552,10 @@ mod tests {
                 result.unwrap();
                 assert!(out_dir.join("receiver/index.ts").exists());
                 assert!(!out_dir.join("receiver/package.json").exists());
+            } else if lang == Language::Cpp {
+                result.unwrap();
+                let header = fs::read_to_string(out_dir.join("receiver/bindings.h")).unwrap();
+                assert!(header.contains("namespace receiver {"));
             } else {
                 assert_eq!(
                     result.unwrap_err().to_string(),

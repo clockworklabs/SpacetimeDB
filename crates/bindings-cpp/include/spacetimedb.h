@@ -99,6 +99,7 @@
 
 // Type extensions for special types
 #include "spacetimedb/bsatn/type_extensions.h"
+#include "spacetimedb/idc.h"
 
 // Table operations and constraint support
 #include "spacetimedb/table.h"
@@ -138,6 +139,7 @@
 
 // View context and macros
 #include "spacetimedb/view_macros.h"
+#include "spacetimedb/outbox.h"
 #include "spacetimedb/query_builder.h"
 
 // =============================================================================

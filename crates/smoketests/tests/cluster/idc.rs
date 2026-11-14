@@ -219,6 +219,8 @@ impl IdcTest {
         let dir = self.test.project_dir.path().join(module).join("src");
         let path = if dir.join("lib.rs").exists() {
             dir.join("lib.rs")
+        } else if dir.join("lib.cpp").exists() {
+            dir.join("lib.cpp")
         } else {
             dir.join("index.ts")
         };
@@ -538,16 +540,24 @@ fn idc_generated_receiver_types_are_scoped_by_dependency() {
     }
 }
 impl IdcTest {
-    fn new_with_typescript(receiver_fixture: &str, sender_fixture: &str) -> Self {
-        use spacetimedb_smoketests::{build_typescript_sdk, pnpm, workspace_root};
+    /// Publishes a receiver and a sender from fixtures. Fixture names ending in `-ts` are TypeScript,
+    /// `-cpp` are C++, and others are Rust.
+    fn new_with_fixtures(receiver_fixture: &str, sender_fixture: &str) -> Self {
+        use spacetimedb_smoketests::{build_typescript_sdk, copy_cpp_module_fixture, pnpm, workspace_root};
 
-        build_typescript_sdk().expect("failed to build TypeScript SDK");
+        if receiver_fixture.ends_with("-ts") || sender_fixture.ends_with("-ts") {
+            build_typescript_sdk().expect("failed to build TypeScript SDK");
+        }
         let mut test = Smoketest::builder().autopublish(false).build();
         let receiver_db = format!("idc-ts-receiver-{}", random_string());
         let sender_db = format!("idc-ts-sender-{}", random_string());
         let project = test.project_dir.path();
         for (name, fixture_name) in [("receiver", receiver_fixture), ("sender", sender_fixture)] {
             let dir = project.join(name);
+            if fixture_name.ends_with("-cpp") {
+                copy_cpp_module_fixture(fixture_name, &dir).unwrap();
+                continue;
+            }
             if !fixture_name.ends_with("-ts") {
                 copy_module_fixture(fixture_name, &dir).unwrap();
                 patch_module_cargo_to_local_bindings(&dir).unwrap();
@@ -575,7 +585,7 @@ impl IdcTest {
                 "children": [{
                     "database": sender_db,
                     "module-path": "./sender",
-                    "dependencies": if sender_fixture.ends_with("-ts") {
+                    "dependencies": if sender_fixture.ends_with("-ts") || sender_fixture.ends_with("-cpp") {
                         serde_json::json!([
                             { "name": "game_world", "database": receiver_db },
                             { "name": "auth", "database": receiver_db }
@@ -616,7 +626,7 @@ impl IdcTest {
 fn idc_outbox_delivers_between_typescript_modules() {
     spacetimedb_smoketests::require_pnpm!();
     // The sender's ping outbox uses generated sugar; detailed pings use a manual declaration.
-    let suite = IdcTest::new_with_typescript("idc-receiver-ts", "idc-sender-ts");
+    let suite = IdcTest::new_with_fixtures("idc-receiver-ts", "idc-sender-ts");
     let bodies: Vec<_> = (0..20).map(|i| format!("typescript-{i}")).collect();
     suite.enqueue(&bodies);
     suite.wait_for_messages(&bodies.into_iter().map(|body| (body, 1)).collect::<Vec<_>>());
@@ -653,50 +663,59 @@ fn idc_outbox_delivers_between_typescript_modules() {
 #[test]
 fn idc_typescript_generated_types_are_scoped_by_dependency() {
     spacetimedb_smoketests::require_pnpm!();
-    let suite = IdcTest::new_with_typescript("idc-receiver-ts", "idc-sender-ts");
-    suite
-        .test
-        .call(
-            "enqueue_two_dependencies",
-            &[
-                &serde_json::to_string(&suite.receiver).unwrap(),
-                &serde_json::to_string(&suite.receiver).unwrap(),
-            ],
-        )
-        .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(20);
-    loop {
-        let world = suite.rows(
-            &suite.receiver,
-            "SELECT body FROM detailed_ping_log WHERE body = 'world-dependency'",
-        );
-        let auth = suite.rows(
-            &suite.receiver,
-            "SELECT body FROM detailed_ping_log WHERE body = 'auth-dependency'",
-        );
-        let world_pending = suite.rows(&suite.sender, "SELECT msg_id FROM outbound_detailed_ping");
-        let auth_pending = suite.rows(&suite.sender, "SELECT msg_id FROM outbound_auth_details");
-        if !world.is_empty() && !auth.is_empty() && world_pending.is_empty() && auth_pending.is_empty() {
-            assert_eq!(world, vec![serde_json::json!(["world-dependency"])]);
-            assert_eq!(auth, vec![serde_json::json!(["auth-dependency"])]);
-            assert_eq!(
-                suite.rows(&suite.sender, "SELECT details FROM sender_details"),
-                vec![serde_json::json!([["sender"]])]
+    let suite = IdcTest::new_with_fixtures("idc-receiver-ts", "idc-sender-ts");
+    suite.send_to_two_dependencies();
+}
+
+impl IdcTest {
+    /// Sends through outboxes for two dependencies on the same receiver module, whose
+    /// generated types must not collide with each other or the sender's own `PingDetails`.
+    fn send_to_two_dependencies(&self) {
+        let suite = self;
+        suite
+            .test
+            .call(
+                "enqueue_two_dependencies",
+                &[
+                    &serde_json::to_string(&suite.receiver).unwrap(),
+                    &serde_json::to_string(&suite.receiver).unwrap(),
+                ],
+            )
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            let world = suite.rows(
+                &suite.receiver,
+                "SELECT body FROM detailed_ping_log WHERE body = 'world-dependency'",
             );
-            break;
+            let auth = suite.rows(
+                &suite.receiver,
+                "SELECT body FROM detailed_ping_log WHERE body = 'auth-dependency'",
+            );
+            let world_pending = suite.rows(&suite.sender, "SELECT msg_id FROM outbound_detailed_ping");
+            let auth_pending = suite.rows(&suite.sender, "SELECT msg_id FROM outbound_auth_details");
+            if !world.is_empty() && !auth.is_empty() && world_pending.is_empty() && auth_pending.is_empty() {
+                assert_eq!(world, vec![serde_json::json!(["world-dependency"])]);
+                assert_eq!(auth, vec![serde_json::json!(["auth-dependency"])]);
+                assert_eq!(
+                    suite.rows(&suite.sender, "SELECT details FROM sender_details"),
+                    vec![serde_json::json!([["sender"]])]
+                );
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "two-dependency delivery did not complete: world={world:?}, auth={auth:?}"
+            );
+            std::thread::sleep(Duration::from_millis(100));
         }
-        assert!(
-            Instant::now() < deadline,
-            "two-dependency delivery did not complete: world={world:?}, auth={auth:?}"
-        );
-        std::thread::sleep(Duration::from_millis(100));
     }
 }
 
 #[test]
 fn idc_typescript_uses_regenerated_bindings_after_argument_reordering() {
     spacetimedb_smoketests::require_pnpm!();
-    let suite = IdcTest::new_with_typescript("idc-receiver-ts", "idc-sender-ts");
+    let suite = IdcTest::new_with_fixtures("idc-receiver-ts", "idc-sender-ts");
     suite.send_detailed_ping("before-reorder");
     suite.edit_module(
         "receiver",
@@ -715,7 +734,7 @@ fn idc_typescript_uses_regenerated_bindings_after_argument_reordering() {
 #[test]
 fn idc_typescript_sender_calls_rust_receiver() {
     spacetimedb_smoketests::require_pnpm!();
-    let suite = IdcTest::new_with_typescript("idc-receiver", "idc-sender-ts");
+    let suite = IdcTest::new_with_fixtures("idc-receiver", "idc-sender-ts");
     suite.send_ping_to(&suite.receiver, "typescript-to-rust");
     suite.send_detailed_ping("nested-rust");
 }
@@ -723,7 +742,7 @@ fn idc_typescript_sender_calls_rust_receiver() {
 #[test]
 fn idc_typescript_preserves_canonical_name_case_after_accessor_rename() {
     spacetimedb_smoketests::require_pnpm!();
-    let suite = IdcTest::new_with_typescript("idc-receiver-ts", "idc-sender-ts");
+    let suite = IdcTest::new_with_fixtures("idc-receiver-ts", "idc-sender-ts");
     // Receive_Ping and receive_ping have identical signatures but different behavior.
     // The generated receivePing accessor must retain the exact canonical name.
     suite.send_ping_to(&suite.receiver, "before-rename");
@@ -739,9 +758,268 @@ fn idc_typescript_preserves_canonical_name_case_after_accessor_rename() {
 #[test]
 fn idc_rust_sender_calls_typescript_receiver() {
     spacetimedb_smoketests::require_pnpm!();
-    let suite = IdcTest::new_with_typescript("idc-receiver-ts", "idc-sender");
+    let suite = IdcTest::new_with_fixtures("idc-receiver-ts", "idc-sender");
     // Rust's receive_ping / receive_detailed_ping handles must dispatch to
     // Receive_Ping / Receive_DetailedPing, preserving canonical-name casing.
     suite.send_ping_to(&suite.receiver, "rust-to-typescript");
     suite.send_detailed_ping("nested-typescript-from-rust");
+}
+
+impl IdcTest {
+    /// Waits until the sender has no pending pings, then returns the `[succeeded, error]`
+    /// rows its on_result reducer recorded for `body`.
+    fn ping_result_after_delivery(&self, body: &str) -> Vec<serde_json::Value> {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            if self.rows(&self.sender, "SELECT * FROM outbound_ping").is_empty() {
+                return self.rows(
+                    &self.sender,
+                    &format!("SELECT succeeded, error FROM ping_result WHERE body = '{body}'"),
+                );
+            }
+            assert!(Instant::now() < deadline, "ping {body} was not delivered");
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+
+    fn received_pings(&self, body: &str) -> Vec<serde_json::Value> {
+        self.rows(
+            &self.receiver,
+            &format!("SELECT body FROM ping_log WHERE body = '{body}'"),
+        )
+    }
+}
+
+#[test]
+fn idc_outbox_delivers_between_cpp_modules() {
+    spacetimedb_smoketests::require_emscripten!();
+    // The sender's ping outbox is a manual declaration; detailed pings use SPACETIMEDB_OUTBOX_FOR.
+    let suite = IdcTest::new_with_fixtures("idc-receiver-cpp", "idc-sender-cpp");
+    let bodies: Vec<_> = (0..20).map(|i| format!("cpp-{i}")).collect();
+    suite.enqueue(&bodies);
+    suite.wait_for_messages(&bodies.into_iter().map(|body| (body, 1)).collect::<Vec<_>>());
+    suite.send_detailed_ping("nested-cpp");
+
+    // A receiver error reaches on_result, and the receiver's changes roll back.
+    suite
+        .test
+        .call(
+            "enqueue_ping",
+            &[&serde_json::to_string(&suite.receiver).unwrap(), "\"reject\""],
+        )
+        .unwrap();
+    assert_eq!(
+        suite.ping_result_after_delivery("reject"),
+        vec![serde_json::json!([false, [0, "rejected"]])]
+    );
+    assert!(suite.received_pings("reject").is_empty());
+}
+
+#[test]
+fn idc_cpp_generated_types_are_scoped_by_dependency() {
+    spacetimedb_smoketests::require_emscripten!();
+    let suite = IdcTest::new_with_fixtures("idc-receiver-cpp", "idc-sender-cpp");
+    suite.send_to_two_dependencies();
+}
+
+#[test]
+fn idc_cpp_sender_calls_rust_receiver() {
+    spacetimedb_smoketests::require_emscripten!();
+    let suite = IdcTest::new_with_fixtures("idc-receiver", "idc-sender-cpp");
+    suite.send_ping_to(&suite.receiver, "cpp-to-rust");
+    suite.send_detailed_ping("nested-rust-from-cpp");
+}
+
+#[test]
+fn idc_rust_sender_calls_cpp_receiver() {
+    spacetimedb_smoketests::require_emscripten!();
+    let suite = IdcTest::new_with_fixtures("idc-receiver-cpp", "idc-sender");
+    suite.send_ping_to(&suite.receiver, "rust-to-cpp");
+    suite.send_detailed_ping("nested-cpp-from-rust");
+}
+
+#[test]
+fn idc_cpp_sender_calls_typescript_receiver() {
+    spacetimedb_smoketests::require_emscripten!();
+    spacetimedb_smoketests::require_pnpm!();
+    let suite = IdcTest::new_with_fixtures("idc-receiver-ts", "idc-sender-cpp");
+    // The generated receive_ping handle must dispatch to the canonical name Receive_Ping.
+    suite.send_ping_to(&suite.receiver, "cpp-to-typescript");
+    suite.send_detailed_ping("nested-typescript-from-cpp");
+}
+
+#[test]
+fn idc_typescript_sender_calls_cpp_receiver() {
+    spacetimedb_smoketests::require_emscripten!();
+    spacetimedb_smoketests::require_pnpm!();
+    let suite = IdcTest::new_with_fixtures("idc-receiver-cpp", "idc-sender-ts");
+    suite.send_ping_to(&suite.receiver, "typescript-to-cpp");
+    suite.send_detailed_ping("nested-cpp-from-typescript");
+}
+
+#[test]
+fn idc_cpp_sender_rollback_sends_nothing() {
+    spacetimedb_smoketests::require_emscripten!();
+    let suite = IdcTest::new_with_fixtures("idc-receiver-cpp", "idc-sender-cpp");
+    let error = suite
+        .test
+        .call(
+            "enqueue_ping_then_fail",
+            &[&serde_json::to_string(&suite.receiver).unwrap(), "\"rolled-back\""],
+        )
+        .expect_err("the sending reducer should fail");
+    assert!(
+        error.to_string().contains("rolled back after enqueueing rolled-back"),
+        "{error}"
+    );
+    assert!(suite.rows(&suite.sender, "SELECT * FROM outbound_ping").is_empty());
+
+    // A later call goes through, so the rolled-back row was never queued ahead of it.
+    suite.send_ping_to(&suite.receiver, "after-rollback");
+    assert!(suite.received_pings("rolled-back").is_empty());
+    assert!(suite
+        .rows(&suite.sender, "SELECT id FROM ping_result WHERE body = 'rolled-back'")
+        .is_empty());
+}
+
+#[test]
+fn idc_cpp_failed_on_result_still_finishes_the_call() {
+    spacetimedb_smoketests::require_emscripten!();
+    let suite = IdcTest::new_with_fixtures("idc-receiver-cpp", "idc-sender-cpp");
+    suite.send_ping_to(&suite.receiver, "before-failed-callback");
+    suite
+        .test
+        .call(
+            "enqueue_ping",
+            &[&serde_json::to_string(&suite.receiver).unwrap(), "\"fail-callback\""],
+        )
+        .unwrap();
+    // The call ran, the failed on_result rolled back its insert, and the row was still deleted.
+    assert!(suite.ping_result_after_delivery("fail-callback").is_empty());
+    assert_eq!(
+        suite.received_pings("fail-callback"),
+        vec![serde_json::json!(["fail-callback"])]
+    );
+    // on_result is not retried, and later calls through the outbox still run.
+    suite.send_ping_to(&suite.receiver, "after-failed-callback");
+    assert!(suite.ping_result_after_delivery("fail-callback").is_empty());
+}
+
+#[test]
+fn idc_cpp_signature_mismatch_fails_calls_from_old_bindings() {
+    spacetimedb_smoketests::require_emscripten!();
+    let suite = IdcTest::new_with_fixtures("idc-receiver-cpp", "idc-sender-cpp");
+    suite.send_ping_to(&suite.receiver, "before-change");
+    // Add a parameter to the receiver without regenerating the sender's bindings.
+    suite.edit_module(
+        "receiver",
+        "SPACETIMEDB_REDUCER(receive_ping, ReducerContext ctx, std::string body) {",
+        "SPACETIMEDB_REDUCER(receive_ping, ReducerContext ctx, std::string body, uint32_t revision) {",
+    );
+    assert_eq!(suite.publish("receiver", &suite.receiver), suite.receiver);
+    suite
+        .test
+        .call(
+            "enqueue_ping",
+            &[&serde_json::to_string(&suite.receiver).unwrap(), "\"after-change\""],
+        )
+        .unwrap();
+    let result = suite.ping_result_after_delivery("after-change");
+    assert_eq!(result.len(), 1, "{result:?}");
+    assert_eq!(result[0][0], false);
+    let error = result[0][1][1].as_str().unwrap();
+    assert!(
+        error.contains("IDC reducer signature mismatch for receive_ping"),
+        "{error}"
+    );
+    assert!(suite.received_pings("after-change").is_empty());
+}
+
+/// Outbox declarations that compile but don't match their receiver fail to publish,
+/// with an error that names the table and parameter.
+#[test]
+fn idc_cpp_invalid_outbox_declarations_fail_to_publish() {
+    spacetimedb_smoketests::require_emscripten!();
+    let suite = IdcTest::new_with_fixtures("idc-receiver-cpp", "idc-sender-cpp");
+    let project = suite.test.project_dir.path();
+    let prelude = "#include <spacetimedb.h>\n#include <game_world/bindings.h>\nusing namespace SpacetimeDB;\nnamespace gw = game_world;\n";
+    let cases = [
+        (
+            "OUTBOX_NO_COLUMN_FOR_PARAM_body_outbound_ping",
+            "struct OutboundPing { uint64_t id; gw::Identity target; std::string text; };
+SPACETIMEDB_STRUCT(OutboundPing, id, target, text)
+SPACETIMEDB_OUTBOX_TABLE(OutboundPing, outbound_ping, Private, gw::reducers::receive_ping)
+FIELD_PrimaryKeyAutoInc(outbound_ping, id)
+FIELD_Target(outbound_ping, target)",
+        ),
+        (
+            "OUTBOX_MULTIPLE_COLUMNS_FOR_PARAM_body_outbound_ping",
+            "struct OutboundPing { uint64_t id; gw::Identity target; std::string body; std::string text; };
+SPACETIMEDB_STRUCT(OutboundPing, id, target, body, text)
+SPACETIMEDB_OUTBOX_TABLE(OutboundPing, outbound_ping, Private, gw::reducers::receive_ping)
+FIELD_PrimaryKeyAutoInc(outbound_ping, id)
+FIELD_Target(outbound_ping, target)
+FIELD_Param(outbound_ping, text, body)",
+        ),
+        (
+            "OUTBOX_PARAM_TYPE_MISMATCH_body_outbound_ping",
+            "struct OutboundPing { uint64_t id; gw::Identity target; uint32_t body; };
+SPACETIMEDB_STRUCT(OutboundPing, id, target, body)
+SPACETIMEDB_OUTBOX_TABLE(OutboundPing, outbound_ping, Private, gw::reducers::receive_ping)
+FIELD_PrimaryKeyAutoInc(outbound_ping, id)
+FIELD_Target(outbound_ping, target)",
+        ),
+        (
+            "OUTBOX_MISSING_TARGET_outbound_ping",
+            "struct OutboundPing { uint64_t id; gw::Identity target; std::string body; };
+SPACETIMEDB_STRUCT(OutboundPing, id, target, body)
+SPACETIMEDB_OUTBOX_TABLE(OutboundPing, outbound_ping, Private, gw::reducers::receive_ping)
+FIELD_PrimaryKeyAutoInc(outbound_ping, id)",
+        ),
+        (
+            "OUTBOX_PRIMARY_KEY_MUST_BE_AUTOINC_U64_outbound_ping",
+            "struct OutboundPing { uint64_t id; gw::Identity target; std::string body; };
+SPACETIMEDB_STRUCT(OutboundPing, id, target, body)
+SPACETIMEDB_OUTBOX_TABLE(OutboundPing, outbound_ping, Private, gw::reducers::receive_ping)
+FIELD_PrimaryKey(outbound_ping, id)
+FIELD_Target(outbound_ping, target)",
+        ),
+    ];
+    for (code, declaration) in cases {
+        let dir = project.join(format!("invalid-{}", code.to_lowercase()));
+        spacetimedb_smoketests::write_cpp_module(&dir, &format!("{prelude}{declaration}\n")).unwrap();
+        copy_dir(&project.join("sender/remote_bindings"), &dir.join("remote_bindings"));
+        let error = suite
+            .test
+            .spacetime(&[
+                "publish",
+                "--no-config",
+                "--server",
+                &suite.test.server_url,
+                "--module-path",
+                dir.to_str().unwrap(),
+                "--yes=all",
+                &format!("idc-invalid-{}", random_string()),
+            ])
+            .expect_err("publishing an invalid outbox should fail");
+        assert!(
+            error
+                .to_string()
+                .contains(&format!("ERROR_CONSTRAINT_REGISTRATION_{code}")),
+            "expected {code}: {error}"
+        );
+    }
+}
+
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let dest = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_dir(&entry.path(), &dest);
+        } else {
+            std::fs::copy(entry.path(), &dest).unwrap();
+        }
+    }
 }

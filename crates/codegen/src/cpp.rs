@@ -18,6 +18,11 @@ pub struct Cpp<'opts> {
     pub namespace: &'opts str,
 }
 
+/// Whether `name` is a C++ keyword, and so can't be used as an identifier.
+pub(crate) fn is_cpp_keyword(name: &str) -> bool {
+    Cpp { namespace: "" }.cpp_field_name(name).is_empty()
+}
+
 impl<'opts> Cpp<'opts> {
     fn cpp_field_name<'a>(&self, field_name: &'a str) -> &'a str {
         match field_name {

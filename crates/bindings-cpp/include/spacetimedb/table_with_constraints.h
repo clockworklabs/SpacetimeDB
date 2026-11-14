@@ -8,6 +8,7 @@
 #include "error_handling.h" // For DatabaseResult, DatabaseError, UpsertResult
 #include "index_iterator.h" // For IndexIterator
 #include "range_queries.h"  // For Range types and is_range_v
+#include "idc.h"            // For is_remote_identity_v
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -224,6 +225,7 @@ concept FilterableValue =
     std::same_as<T, SpacetimeDB::U256> ||
     std::same_as<T, SpacetimeDB::i256> ||
     std::same_as<T, SpacetimeDB::u256> ||
+    SpacetimeDB::is_remote_identity_v<T> ||
     std::is_enum_v<T>;
 
 template<typename T>
@@ -726,7 +728,7 @@ public:
     static_assert([]() constexpr { \
         using TableType = typename std::remove_cv_t<decltype(table_name)>::type; \
         using FieldType = decltype(std::declval<TableType>().field_name); \
-        static_assert(FilterableValue<FieldType>, \
+        static_assert(::SpacetimeDB::FilterableValue<FieldType>, \
             "Field '" #field_name "' cannot have Unique constraint - type is not filterable."); \
         return true; \
     }(), "Constraint validation for " #table_name "." #field_name); \
@@ -747,7 +749,7 @@ public:
     static_assert([]() constexpr { \
         using TableType = typename std::remove_cv_t<decltype(table_name)>::type; \
         using FieldType = decltype(std::declval<TableType>().field_name); \
-        static_assert(FilterableValue<FieldType>, \
+        static_assert(::SpacetimeDB::FilterableValue<FieldType>, \
             "Field '" #field_name "' cannot have Index constraint - type is not filterable."); \
         return true; \
     }(), "Constraint validation for " #table_name "." #field_name); \
@@ -768,7 +770,7 @@ public:
     static_assert([]() constexpr { \
         using TableType = typename std::remove_cv_t<decltype(table_name)>::type; \
         using FieldType = decltype(std::declval<TableType>().field_name); \
-        static_assert(AutoIncrementable<FieldType>, \
+        static_assert(::SpacetimeDB::AutoIncrementable<FieldType>, \
             "Field '" #field_name "' cannot have AutoIncrement constraint - type is not auto-incrementable."); \
         return true; \
     }(), "AutoIncrement validation for " #table_name "." #field_name); \
@@ -791,9 +793,9 @@ public:
     static_assert([]() constexpr { \
         using TableType = typename std::remove_cv_t<decltype(table_name)>::type; \
         using FieldType = decltype(std::declval<TableType>().field_name); \
-        static_assert(FilterableValue<FieldType>, \
+        static_assert(::SpacetimeDB::FilterableValue<FieldType>, \
             "Field '" #field_name "' cannot have Unique constraint - type is not filterable."); \
-        static_assert(AutoIncrementable<FieldType>, \
+        static_assert(::SpacetimeDB::AutoIncrementable<FieldType>, \
             "Field '" #field_name "' cannot have AutoIncrement constraint - type is not auto-incrementable."); \
         return true; \
     }(), "Constraint validation for " #table_name "." #field_name); \
@@ -816,9 +818,9 @@ public:
     static_assert([]() constexpr { \
         using TableType = typename std::remove_cv_t<decltype(table_name)>::type; \
         using FieldType = decltype(std::declval<TableType>().field_name); \
-        static_assert(FilterableValue<FieldType>, \
+        static_assert(::SpacetimeDB::FilterableValue<FieldType>, \
             "Field '" #field_name "' cannot have Index constraint - type is not filterable."); \
-        static_assert(AutoIncrementable<FieldType>, \
+        static_assert(::SpacetimeDB::AutoIncrementable<FieldType>, \
             "Field '" #field_name "' cannot have AutoIncrement constraint - type is not auto-incrementable."); \
         return true; \
     }(), "Constraint validation for " #table_name "." #field_name); \
@@ -840,7 +842,7 @@ public:
     static_assert([]() constexpr { \
         using TableType = typename std::remove_cv_t<decltype(table_name)>::type; \
         using FieldType = decltype(std::declval<TableType>().field_name); \
-        static_assert(AutoIncrementable<FieldType>, \
+        static_assert(::SpacetimeDB::AutoIncrementable<FieldType>, \
             "Field '" #field_name "' cannot have AutoIncrement constraint - type is not auto-incrementable."); \
         return true; \
     }(), "AutoIncrement validation for " #table_name "." #field_name); \

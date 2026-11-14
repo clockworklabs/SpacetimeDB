@@ -24,7 +24,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ "$SUITE" != "http-handlers" && "$SUITE" != "indexes" ]]; then
+if [[ "$SUITE" != "http-handlers" && "$SUITE" != "indexes" && "$SUITE" != "idc" ]]; then
     echo "Unsupported suite: $SUITE" >&2
     exit 1
 fi
@@ -125,7 +125,7 @@ if [[ "$SUITE" == "http-handlers" ]]; then
     CASE_EXPECTATION["error_http_router_wrong_return_type"]="failure"
     CASE_MARKER["error_http_router_wrong_return_type"]="no viable conversion from returned value of type 'unsigned int' to function return type 'SpacetimeDB::Router'"
     CASE_SOURCE["error_http_router_wrong_return_type"]="$SCRIPT_DIR/cases/http-handlers/error_http_router_wrong_return_type.cpp"
-else
+elif [[ "$SUITE" == "indexes" ]]; then
     declare -a CASE_NAMES=(
         "ok_multi_column_range_prefixes"
         "ok_autoinc_same_line"
@@ -141,6 +141,93 @@ else
     CASE_EXPECTATION["error_multi_column_range_not_terminal"]="failure"
     CASE_MARKER["error_multi_column_range_not_terminal"]="Range<T> in a multi-column index filter must be the final supplied element"
     CASE_SOURCE["error_multi_column_range_not_terminal"]="$SCRIPT_DIR/cases/indexes/error_multi_column_range_not_terminal.cpp"
+else
+    # Receiver bindings come from crates/bindings-cpp/tests/fixtures/idc_receiver,
+    # which the codegen tests keep in sync with the generator.
+    declare -a CASE_NAMES=(
+        "ok_receiver_bindings"
+        "error_identity_from_other_dependency"
+        "error_identity_implicit_conversion"
+        "ok_manual_outbox"
+        "error_outbox_delete"
+        "error_outbox_delete_by_name"
+        "error_outbox_update_by_key"
+        "error_outbox_target_wrong_type"
+        "error_outbox_target_on_regular_table"
+        "error_outbox_param_unknown"
+        "error_outbox_param_wrong_type"
+        "error_outbox_receiver_not_handle"
+        "error_on_result_wrong_row"
+        "error_on_result_wrong_result"
+        "error_on_result_regular_table"
+        "ok_generated_outbox"
+        "error_generated_outbox_update"
+    )
+
+    CASE_EXPECTATION["ok_receiver_bindings"]="success"
+    CASE_SOURCE["ok_receiver_bindings"]="$SCRIPT_DIR/cases/idc/ok_receiver_bindings.cpp"
+
+    CASE_EXPECTATION["error_identity_from_other_dependency"]="failure"
+    CASE_MARKER["error_identity_from_other_dependency"]="no viable conversion from 'RemoteIdentity<other::detail::module_tag>' to 'RemoteIdentity<receiver::detail::module_tag>'"
+    CASE_SOURCE["error_identity_from_other_dependency"]="$SCRIPT_DIR/cases/idc/error_identity_from_other_dependency.cpp"
+
+    CASE_EXPECTATION["error_identity_implicit_conversion"]="failure"
+    CASE_MARKER["error_identity_implicit_conversion"]="no viable conversion from 'Identity' to 'receiver::Identity'"
+    CASE_SOURCE["error_identity_implicit_conversion"]="$SCRIPT_DIR/cases/idc/error_identity_implicit_conversion.cpp"
+
+    CASE_EXPECTATION["ok_manual_outbox"]="success"
+    CASE_SOURCE["ok_manual_outbox"]="$SCRIPT_DIR/cases/idc/ok_manual_outbox.cpp"
+
+    CASE_EXPECTATION["error_outbox_delete"]="failure"
+    CASE_MARKER["error_outbox_delete"]="attempt to use a deleted function"
+    CASE_SOURCE["error_outbox_delete"]="$SCRIPT_DIR/cases/idc/error_outbox_delete.cpp"
+
+    CASE_EXPECTATION["error_outbox_delete_by_name"]="failure"
+    CASE_MARKER["error_outbox_delete_by_name"]="attempt to use a deleted function"
+    CASE_SOURCE["error_outbox_delete_by_name"]="$SCRIPT_DIR/cases/idc/error_outbox_delete_by_name.cpp"
+
+    CASE_EXPECTATION["error_outbox_update_by_key"]="failure"
+    CASE_MARKER["error_outbox_update_by_key"]="attempt to use a deleted function"
+    CASE_SOURCE["error_outbox_update_by_key"]="$SCRIPT_DIR/cases/idc/error_outbox_update_by_key.cpp"
+
+    CASE_EXPECTATION["error_outbox_target_wrong_type"]="failure"
+    CASE_MARKER["error_outbox_target_wrong_type"]="The outbox target column 'target' must have the receiver bindings' Identity type."
+    CASE_SOURCE["error_outbox_target_wrong_type"]="$SCRIPT_DIR/cases/idc/error_outbox_target_wrong_type.cpp"
+
+    CASE_EXPECTATION["error_outbox_target_on_regular_table"]="failure"
+    CASE_MARKER["error_outbox_target_on_regular_table"]="FIELD_Target applies only to outbox tables declared with SPACETIMEDB_OUTBOX_TABLE."
+    CASE_SOURCE["error_outbox_target_on_regular_table"]="$SCRIPT_DIR/cases/idc/error_outbox_target_on_regular_table.cpp"
+
+    CASE_EXPECTATION["error_outbox_param_unknown"]="failure"
+    CASE_MARKER["error_outbox_param_unknown"]="the receiver reducer has no parameter named 'text'."
+    CASE_SOURCE["error_outbox_param_unknown"]="$SCRIPT_DIR/cases/idc/error_outbox_param_unknown.cpp"
+
+    CASE_EXPECTATION["error_outbox_param_wrong_type"]="failure"
+    CASE_MARKER["error_outbox_param_wrong_type"]="the column's type doesn't match the receiver parameter's type."
+    CASE_SOURCE["error_outbox_param_wrong_type"]="$SCRIPT_DIR/cases/idc/error_outbox_param_wrong_type.cpp"
+
+    CASE_EXPECTATION["error_outbox_receiver_not_handle"]="failure"
+    CASE_MARKER["error_outbox_receiver_not_handle"]="The outbox receiver must be a reducer handle from generated receiver bindings"
+    CASE_SOURCE["error_outbox_receiver_not_handle"]="$SCRIPT_DIR/cases/idc/error_outbox_receiver_not_handle.cpp"
+
+    CASE_EXPECTATION["error_on_result_wrong_row"]="failure"
+    CASE_MARKER["error_on_result_wrong_row"]="The second parameter of an on_result reducer must be the outbox table's row type."
+    CASE_SOURCE["error_on_result_wrong_row"]="$SCRIPT_DIR/cases/idc/error_on_result_wrong_row.cpp"
+
+    CASE_EXPECTATION["error_on_result_wrong_result"]="failure"
+    CASE_MARKER["error_on_result_wrong_result"]="The third parameter of an on_result reducer must be SpacetimeDB::OutboxResult."
+    CASE_SOURCE["error_on_result_wrong_result"]="$SCRIPT_DIR/cases/idc/error_on_result_wrong_result.cpp"
+
+    CASE_EXPECTATION["error_on_result_regular_table"]="failure"
+    CASE_MARKER["error_on_result_regular_table"]="SPACETIMEDB_REDUCER_ON_RESULT requires an outbox table declared with SPACETIMEDB_OUTBOX_TABLE."
+    CASE_SOURCE["error_on_result_regular_table"]="$SCRIPT_DIR/cases/idc/error_on_result_regular_table.cpp"
+
+    CASE_EXPECTATION["ok_generated_outbox"]="success"
+    CASE_SOURCE["ok_generated_outbox"]="$SCRIPT_DIR/cases/idc/ok_generated_outbox.cpp"
+
+    CASE_EXPECTATION["error_generated_outbox_update"]="failure"
+    CASE_MARKER["error_generated_outbox_update"]="attempt to use a deleted function"
+    CASE_SOURCE["error_generated_outbox_update"]="$SCRIPT_DIR/cases/idc/error_generated_outbox_update.cpp"
 fi
 
 FAILURES=0
@@ -163,6 +250,7 @@ for CASE_NAME in "${CASE_NAMES[@]}"; do
         -DMODULE_SOURCE="${CASE_SOURCE[$CASE_NAME]}" \
         -DOUTPUT_NAME="$CASE_NAME" \
         -DSPACETIMEDB_LIBRARY_DIR="$LIBRARY_BUILD_DIR" \
+        -DEXTRA_INCLUDE_DIR="$BINDINGS_ROOT/tests/fixtures/idc_receiver" \
         -DSPACETIMEDB_INCLUDE_DIR="$INCLUDE_DIR" >"$CONFIGURE_LOG" 2>&1; then
         CONFIGURE_EXIT=0
     else
