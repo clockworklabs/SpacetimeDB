@@ -314,3 +314,26 @@ fn unreal_insert_result_okay() {
 fn unreal_blueprint_query_builder_basic_flow() {
     make_test("BlueprintQueryBuilderBasicFlowTest").run();
 }
+
+// Deterministic SDK lifecycle/cache regressions run in Unreal's automation runner.
+#[test]
+#[serial(Group1)]
+fn unreal_reconnect_lifecycle() {
+    make_test("ReconnectLifecycle").run();
+}
+#[test]
+#[serial(Group1)]
+fn unreal_reconnect_credentials() {
+    make_test("ReconnectCredentials").run();
+}
+#[test]
+#[serial(Group1)]
+fn unreal_reconnect_cache_replay() {
+    make_test("ReconnectCacheReplay").run();
+}
+
+#[test]
+#[serial(Group1)]
+fn unreal_reconnect_live_server() {
+    make_test("ReconnectLiveServer").run();
+}
