@@ -15,6 +15,8 @@
 #include "ModuleBindings/Types/OneOffQueryType.g.h"
 #include "ModuleBindings/Types/OneOffQueryResultType.g.h"
 #include "ModuleBindings/Types/PersistentTableRowsType.g.h"
+#include "ModuleBindings/Types/PingType.g.h"
+#include "ModuleBindings/Types/PongType.g.h"
 #include "ModuleBindings/Types/ProcedureResultType.g.h"
 #include "ModuleBindings/Types/ProcedureStatusType.g.h"
 #include "ModuleBindings/Types/QueryRowsType.g.h"
@@ -247,6 +249,17 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FClientMessageType ClientMessageUnsubscribe = FClientMessageType::Unsubscribe(Unsubscribe);
 	TEST_ROUNDTRIP(FClientMessageType, ClientMessageUnsubscribe, "FClientMessageType::Unsubscribe Variant");
 
+	FPingType Ping;
+	Ping.RequestId = 602;
+	Ping.ClientSendTime = 1234567890123ull;
+	TEST_ROUNDTRIP(FPingType, Ping, "FPingType");
+	FClientMessageType ClientMessagePing = FClientMessageType::Ping(Ping);
+	TEST_ROUNDTRIP(FClientMessageType, ClientMessagePing, "FClientMessageType::Ping Variant");
+	// The server only understands a Ping at tag 6, after SubscribeBatch: a tag u8, u32 request id, u64 send time.
+	const TArray<uint8> PingBytes = UE::SpacetimeDB::Serialize(ClientMessagePing);
+	TestEqual(TEXT("Ping wire size"), PingBytes.Num(), 13);
+	TestEqual(TEXT("Ping wire tag"), PingBytes.Num() > 0 ? int32(PingBytes[0]) : -1, 6);
+
 	FPersistentTableRowsType PersistentRows;
 	PersistentRows.Inserts = BsatnRowsFixed;
 	PersistentRows.Deletes = BsatnRowsOffsets;
@@ -357,6 +370,19 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	TEST_ROUNDTRIP(FServerMessageType, MessageReducerResult, "FServerMessageType::ReducerResult Variant");
 	FServerMessageType MessageProcedureResult = FServerMessageType::ProcedureResult(ProcedureResult);
 	TEST_ROUNDTRIP(FServerMessageType, MessageProcedureResult, "FServerMessageType::ProcedureResult Variant");
+
+	FPongType Pong;
+	Pong.RequestId = 603;
+	Pong.ClientSendTime = 1234567890123ull;
+	Pong.ServerReceiveTime = FSpacetimeDBTimestamp::FromFDateTime(FDateTime(2025, 6, 25, 9, 36, 0));
+	Pong.ServerHoldDuration = FSpacetimeDBTimeDuration(42);
+	TEST_ROUNDTRIP(FPongType, Pong, "FPongType");
+	FServerMessageType MessagePong = FServerMessageType::Pong(Pong);
+	TEST_ROUNDTRIP(FServerMessageType, MessagePong, "FServerMessageType::Pong Variant");
+	// The server sends a Pong at tag 9, after SubscribeBatchApplied: a tag u8, u32, u64, i64 and i64.
+	const TArray<uint8> PongBytes = UE::SpacetimeDB::Serialize(MessagePong);
+	TestEqual(TEXT("Pong wire size"), PongBytes.Num(), 29);
+	TestEqual(TEXT("Pong wire tag"), PongBytes.Num() > 0 ? int32(PongBytes[0]) : -1, 9);
 
 	return true;
 }

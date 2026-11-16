@@ -4,6 +4,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
+#include "ModuleBindings/Types/PongType.g.h"
 #include "ModuleBindings/Types/SubscribeBatchAppliedType.g.h"
 #include "ModuleBindings/Types/SubscribeAppliedType.g.h"
 #include "ModuleBindings/Types/SubscriptionErrorType.g.h"
@@ -27,7 +28,8 @@ enum class EServerMessageTag : uint8
     OneOffQueryResult,
     ReducerResult,
     ProcedureResult,
-    SubscribeBatchApplied
+    SubscribeBatchApplied,
+    Pong
 };
 
 USTRUCT(BlueprintType)
@@ -38,7 +40,7 @@ struct SPACETIMEDBSDK_API FServerMessageType
 public:
     FServerMessageType() = default;
 
-    TVariant<FReducerResultType, FSubscribeAppliedType, FSubscriptionErrorType, FSubscribeBatchAppliedType, FInitialConnectionType, FOneOffQueryResultType, FUnsubscribeAppliedType, FProcedureResultType, FTransactionUpdateType> MessageData;
+    TVariant<FReducerResultType, FSubscribeAppliedType, FSubscriptionErrorType, FSubscribeBatchAppliedType, FInitialConnectionType, FOneOffQueryResultType, FUnsubscribeAppliedType, FPongType, FProcedureResultType, FTransactionUpdateType> MessageData;
 
     UPROPERTY(BlueprintReadOnly)
     EServerMessageTag Tag = static_cast<EServerMessageTag>(0);
@@ -115,6 +117,14 @@ public:
         return Obj;
     }
 
+    static FServerMessageType Pong(const FPongType& Value)
+    {
+        FServerMessageType Obj;
+        Obj.Tag = EServerMessageTag::Pong;
+        Obj.MessageData.Set<FPongType>(Value);
+        return Obj;
+    }
+
     FORCEINLINE bool IsInitialConnection() const { return Tag == EServerMessageTag::InitialConnection; }
 
     FORCEINLINE FInitialConnectionType GetAsInitialConnection() const
@@ -187,6 +197,14 @@ public:
         return MessageData.Get<FSubscribeBatchAppliedType>();
     }
 
+    FORCEINLINE bool IsPong() const { return Tag == EServerMessageTag::Pong; }
+
+    FORCEINLINE FPongType GetAsPong() const
+    {
+        ensureMsgf(IsPong(), TEXT("MessageData does not hold Pong!"));
+        return MessageData.Get<FPongType>();
+    }
+
     // Inline equality operators
     FORCEINLINE bool operator==(const FServerMessageType& Other) const
     {
@@ -212,6 +230,8 @@ public:
                 return GetAsProcedureResult() == Other.GetAsProcedureResult();
             case EServerMessageTag::SubscribeBatchApplied:
                 return GetAsSubscribeBatchApplied() == Other.GetAsSubscribeBatchApplied();
+            case EServerMessageTag::Pong:
+                return GetAsPong() == Other.GetAsPong();
             default:
                 return false;
         }
@@ -243,6 +263,7 @@ FORCEINLINE uint32 GetTypeHash(const FServerMessageType& ServerMessage)
         case EServerMessageTag::ReducerResult: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsReducerResult()));
         case EServerMessageTag::ProcedureResult: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsProcedureResult()));
         case EServerMessageTag::SubscribeBatchApplied: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsSubscribeBatchApplied()));
+        case EServerMessageTag::Pong: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsPong()));
         default: return TagHash;
     }
 }
@@ -263,7 +284,8 @@ namespace UE::SpacetimeDB
         OneOffQueryResult, FOneOffQueryResultType,
         ReducerResult, FReducerResultType,
         ProcedureResult, FProcedureResultType,
-        SubscribeBatchApplied, FSubscribeBatchAppliedType
+        SubscribeBatchApplied, FSubscribeBatchAppliedType,
+        Pong, FPongType
     );
 }
 
@@ -406,6 +428,21 @@ private:
     static FSubscribeBatchAppliedType GetAsSubscribeBatchApplied(const FServerMessageType& InValue)
     {
         return InValue.GetAsSubscribeBatchApplied();
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ServerMessage")
+    static FServerMessageType Pong(const FPongType& InValue)
+    {
+        return FServerMessageType::Pong(InValue);
+    }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ServerMessage")
+    static bool IsPong(const FServerMessageType& InValue) { return InValue.IsPong(); }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ServerMessage")
+    static FPongType GetAsPong(const FServerMessageType& InValue)
+    {
+        return InValue.GetAsPong();
     }
 
 };

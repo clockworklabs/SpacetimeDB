@@ -636,6 +636,9 @@ void UDbConnectionBase::ProcessServerMessage(const FServerMessageType& Message)
 			}
 			break;
 		}
+		case EServerMessageTag::Pong:
+			// The SDK doesn't send Pings yet, so there is nothing to match a Pong against.
+			break;
 		default:
 			UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("Unknown server-message tag"));
 			break;
