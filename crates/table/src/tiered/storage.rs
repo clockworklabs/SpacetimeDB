@@ -649,7 +649,10 @@ impl TieredStorage {
 
         let mut freed = 0;
         for (key, slot) in slots {
-            let mut entry = slot.state.lock();
+            let Some(mut entry) = slot.state.try_lock() else {
+                self.should_reclaim.store(true, Ordering::Release);
+                continue;
+            };
             assert_eq!(slot.registering.load(Ordering::Acquire), 0);
             assert!(matches!(entry.ownership, ObjectOwnership::Unreferenced));
 
