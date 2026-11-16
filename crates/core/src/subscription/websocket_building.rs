@@ -181,6 +181,9 @@ impl BuildableWebsocketFormat for ws_v1::BsatnFormat {
 
         match decide_compression(qu_len_would_have_been, compression) {
             ws_v1::Compression::None => ws_v1::CompressableQueryUpdate::Uncompressed(qu),
+            // Zstd is outer-message compression only. Do not extend the v1
+            // inner-update enum or compress data under the transaction lock.
+            ws_v1::Compression::Zstd => ws_v1::CompressableQueryUpdate::Uncompressed(qu),
             ws_v1::Compression::Brotli => {
                 let bytes = bsatn::to_vec(&qu).unwrap();
                 let mut out = Vec::new();

@@ -127,6 +127,10 @@ fn finalize_binary_serialize_buffer(
         ws_v1::Compression::None => buffer.uncompressed(),
         ws_v1::Compression::Brotli => buffer.compress_brotli(),
         ws_v1::Compression::Gzip => buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_GZIP, gzip_compress),
+        ws_v1::Compression::Zstd => buffer.compress_with_tag(
+            ws_common::SERVER_MSG_COMPRESSION_TAG_ZSTD,
+            crate::compression::zstd_compress,
+        ),
     }
 }
 
@@ -134,6 +138,47 @@ fn finalize_binary_serialize_buffer(
 mod compression_tests {
     use super::*;
     use std::io::Read;
+
+    fn decode(frame: &[u8]) -> Vec<u8> {
+        match frame[0] {
+            ws_common::SERVER_MSG_COMPRESSION_TAG_NONE => frame[1..].to_vec(),
+            ws_common::SERVER_MSG_COMPRESSION_TAG_ZSTD => zstd::stream::decode_all(&frame[1..]).unwrap(),
+            ws_common::SERVER_MSG_COMPRESSION_TAG_BROTLI => {
+                let mut out = Vec::new();
+                brotli::Decompressor::new(&frame[1..], 4096)
+                    .read_to_end(&mut out)
+                    .unwrap();
+                out
+            }
+            tag => panic!("unexpected tag {tag}"),
+        }
+    }
+
+    #[test]
+    fn zstd_thresholds_and_buffer_reclamation() {
+        for size in [1023, 1024, 1025, 4 * 1024 * 1024 - 1, 4 * 1024 * 1024] {
+            let payload: Vec<_> = (0..size).map(|i| (i % 251) as u8).collect();
+            let mut buffer = SerializeBuffer {
+                uncompressed: BytesMut::new(),
+                compressed: BytesMut::new(),
+            };
+            buffer.write_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_NONE, |mut w| {
+                std::io::Write::write_all(&mut w, &payload).unwrap();
+            });
+            let (in_use, frame) = finalize_binary_serialize_buffer(buffer, size, ws_v1::Compression::Zstd);
+            assert_eq!(
+                frame[0],
+                if size <= 1024 {
+                    ws_common::SERVER_MSG_COMPRESSION_TAG_NONE
+                } else {
+                    ws_common::SERVER_MSG_COMPRESSION_TAG_ZSTD
+                }
+            );
+            assert_eq!(decode(&frame), payload);
+            drop(frame);
+            assert!(in_use.try_reclaim().is_some());
+        }
+    }
 
     #[test]
     fn brotli_thresholds_and_buffer_reclamation() {
@@ -166,7 +211,7 @@ mod compression_tests {
     }
 
     #[test]
-    fn brotli_v2_and_coalesced_v3_messages() {
+    fn compressed_v2_and_coalesced_v3_messages() {
         let pool = BsatnRowListBuilderPool::new();
         let message = || {
             ws_v2::ServerMessage::SubscriptionError(ws_v2::SubscriptionError {
@@ -175,7 +220,12 @@ mod compression_tests {
                 error: "example error ".repeat(100000).into(),
             })
         };
-        for count in [1, 2] {
+        for (count, compression) in [
+            (1, ws_v1::Compression::Brotli),
+            (2, ws_v1::Compression::Brotli),
+            (1, ws_v1::Compression::Zstd),
+            (2, ws_v1::Compression::Zstd),
+        ] {
             let mut expected = Vec::new();
             for _ in 0..count {
                 expected.extend_from_slice(&bsatn::to_vec(&message()).unwrap());
@@ -185,14 +235,11 @@ mod compression_tests {
                 compressed: BytesMut::new(),
             };
             let (in_use, frame) = if count == 1 {
-                serialize_v2(&pool, buffer, message(), ws_v1::Compression::Brotli)
+                serialize_v2(&pool, buffer, message(), compression)
             } else {
-                serialize_v3(&pool, buffer, [message(), message()], ws_v1::Compression::Brotli)
+                serialize_v3(&pool, buffer, [message(), message()], compression)
             };
-            let mut decoded = Vec::new();
-            brotli::Decompressor::new(&frame[1..], 4096)
-                .read_to_end(&mut decoded)
-                .unwrap();
+            let decoded = decode(&frame);
             assert_eq!(decoded, expected);
             drop(frame);
             assert!(in_use.try_reclaim().is_some());

@@ -9,6 +9,8 @@ use std::{
 const BROTLI_QUALITY: i32 = 2;
 const BROTLI_MT_MIN_BYTES: usize = 512 * 1024;
 const FOUR_THREADS_MIN_BYTES: usize = 64 * 1024 * 1024;
+const ZSTD_LEVEL: i32 = -2;
+const ZSTD_MT_MIN_BYTES: usize = 4 * 1024 * 1024;
 
 // A process-wide, nonblocking budget, not one pool per connection. Saturation
 // falls back to the same codec synchronously; never wait on an encode worker.
@@ -104,6 +106,34 @@ pub(crate) fn brotli_compress_owned(bytes: Bytes, out: &mut impl io::Write) {
     brotli_compress(&bytes, out);
 }
 
+fn zstd_worker_count(len: usize, available: usize) -> u32 {
+    if len < ZSTD_MT_MIN_BYTES {
+        return 0;
+    }
+    // Zstd counts additional workers, whereas Brotli counts all lanes.
+    let desired = if len >= FOUR_THREADS_MIN_BYTES { 4 } else { 2 };
+    desired.min(available.saturating_sub(1)) as u32
+}
+
+fn zstd_encode(bytes: &[u8], out: &mut impl io::Write, workers: u32) {
+    use io::Write;
+    let mut encoder = zstd::stream::write::Encoder::new(out, ZSTD_LEVEL).expect("valid Zstd level");
+    encoder.include_checksum(true).expect("enable Zstd checksum");
+    if workers > 0
+        && let Err(err) = encoder.multithread(workers)
+    {
+        log::warn!("Parallel Zstd unavailable; using synchronous compression: {err}");
+    }
+    encoder.write_all(bytes).expect("should be able to encode Zstd");
+    encoder.finish().expect("should be able to finish Zstd frame");
+}
+
+pub(crate) fn zstd_compress(bytes: &[u8], out: &mut impl io::Write) {
+    let workers = zstd_worker_count(bytes.len(), available_threads());
+    let permit = (workers > 0).then(|| MT_BUDGET.try_acquire()).flatten();
+    zstd_encode(bytes, out, if permit.is_some() { workers } else { 0 });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,5 +177,40 @@ mod tests {
             assert_eq!(decoded, input);
         }
         assert!(input.is_unique(), "MT must release all shared input references");
+    }
+
+    #[test]
+    fn zstd_workers_respect_size_and_cpu_budget() {
+        assert_eq!(zstd_worker_count(ZSTD_MT_MIN_BYTES - 1, 8), 0);
+        assert_eq!(zstd_worker_count(ZSTD_MT_MIN_BYTES, 8), 2);
+        assert_eq!(zstd_worker_count(FOUR_THREADS_MIN_BYTES, 8), 4);
+        assert_eq!(zstd_worker_count(FOUR_THREADS_MIN_BYTES, 2), 1);
+        assert_eq!(zstd_worker_count(FOUR_THREADS_MIN_BYTES, 1), 0);
+        assert_eq!(zstd_worker_count(FOUR_THREADS_MIN_BYTES, 0), 0);
+    }
+
+    #[cfg(feature = "core-pinning")]
+    #[test]
+    fn pinned_builds_keep_codec_workers_disabled() {
+        assert_eq!(available_threads(), 1);
+        assert_eq!(
+            thread_count(FOUR_THREADS_MIN_BYTES, BROTLI_MT_MIN_BYTES, available_threads()),
+            1
+        );
+        assert_eq!(zstd_worker_count(FOUR_THREADS_MIN_BYTES, available_threads()), 0);
+    }
+
+    #[test]
+    fn zstd_sync_parallel_and_checksum_validation() {
+        let input: Vec<_> = (0..5 * 1024 * 1024).map(|i| (i % 251) as u8).collect();
+        for workers in [0, 2, 4] {
+            let mut frame = Vec::new();
+            zstd_encode(&input, &mut frame, workers);
+            assert_eq!(zstd::stream::decode_all(frame.as_slice()).unwrap(), input);
+            let end = frame.len() - 1;
+            assert!(zstd::stream::decode_all(&frame[..end]).is_err());
+            frame[end] ^= 1;
+            assert!(zstd::stream::decode_all(frame.as_slice()).is_err());
+        }
     }
 }

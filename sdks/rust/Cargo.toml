@@ -62,8 +62,15 @@ tokio-tungstenite.workspace = true
 # native-tls 0.2.17 fails to compile with Rust 1.93.0 due non-exhaustive
 # matching in upstream code. Pin until upstream ships a compatible release.
 native-tls = "=0.2.14"
+zstd.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+ruzstd = "0.8"
 
 [dev-dependencies]
+spacetimedb-core.workspace = true
+ruzstd = "0.8"
+zstd = { workspace = true, features = ["zstdmt"] }
 futures-channel.workspace = true
 shlex = "1.3.0"
 

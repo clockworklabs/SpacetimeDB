@@ -42,3 +42,45 @@ Regression tests verify synchronous/parallel decoder compatibility, exact size
 cutoffs, CPU caps, nonblocking budget cleanup, v2/coalesced-v3 payload equality,
 and serialization-buffer reclamation. Production throughput, peak memory and
 real application payloads should also be evaluated when changing this policy.
+
+## Opt-in Zstandard
+
+Servers supporting this extension accept the existing connection query parameter
+with `compression=Zstd`. The Rust SDK requests it explicitly through
+`.with_compression(spacetimedb_sdk::Compression::Zstd)`. Brotli remains the default;
+no existing connection is automatically switched to Zstd. Other SDKs retain
+their current codecs. Requesting Zstd from an older server fails negotiation;
+use Brotli/gzip/None when connecting to servers without this extension.
+
+Zstd-compressed binary frames use tag **3**, followed by one ordinary Zstd frame
+with a content checksum and no dictionary. Tags 0 (None), 1 (Brotli), and 2 (gzip)
+are unchanged. The body and its v1/v2/v3 BSATN schema are unchanged. In particular,
+v1's inner query-update enum is not extended: Zstd operates on the outer frame.
+V3 still coalesces serialized messages before compressing them together.
+
+The encoder uses **fast-2 (level -2)**. Bodies below 4 MiB stay synchronous; bodies
+at or above 4 MiB may use two additional workers, and at or above 64 MiB may use
+four. Zstd counts workers in addition to the coordinator, unlike Brotli's total
+lane count. Workers are capped at available parallelism minus one. Both codecs
+share the same one-job MT allowance and core-pinning fallback. Thread counts are
+a server CPU policy, not a client-controlled query parameter.
+
+Exploratory fresh-context measurements first showed Zstd fast-2/level-1 MT wins
+at around 4 MiB, not at the 512 KiB Brotli cutoff. At 2 MiB, the measured fast-2
+pipeline was 2.925 ms synchronously vs 4.288 ms with two workers; at 4 MiB it was
+6.712 vs 4.785 ms, and at 64 MiB 77.553 vs 47.938 ms. These synthetic, single-host
+findings motivate separate codec cutoffs, not a universal speedup guarantee.
+
+Native Rust SDK targets use libzstd to decode. The Rust browser target uses a
+pure-Rust decoder so it does not require a native C library. Codec/frame tests
+exercise both decoders against synchronous and multithreaded frames and check
+truncation/checksum errors. A native SDK test passes actual server-serializer
+frames through the SDK parser for all four codecs, including small uncompressed
+and large compressed payloads. This tests serializer/parser interoperability,
+not a complete live-network subscription benchmark. The browser build is checked
+separately; that alone does not constitute browser runtime testing.
+
+Adding a Rust enum variant is additive on the wire but can require downstream
+Rust exhaustive matches to add a `Zstd` arm. No protocol defaults or persisted
+data formats change. Dictionaries, LZ4, Arrow, planner changes, and the earlier
+experimental SDK decompression changes are not part of this extension.
