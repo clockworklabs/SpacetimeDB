@@ -672,7 +672,7 @@ impl<'a> PublishBuilder<'a> {
                     ];
                 }
                 ModuleLanguage::CSharp => {
-                    let module_path = smoketest.prepare_csharp_module_source_internal(
+                    let module_path = smoketest.prepare_csharp_module_source(
                         &source.project_dir_name,
                         module_name,
                         &source.module_source,
@@ -1305,7 +1305,9 @@ impl Smoketest {
         Ok(module_path)
     }
 
-    fn prepare_csharp_module_source_internal(
+    /// Creates a C# module project in `project_dir_name` (with `spacetime init`), writes
+    /// `module_source` as its `Lib.cs`, and points it at the local bindings. Returns the module path.
+    pub fn prepare_csharp_module_source(
         &mut self,
         project_dir_name: &str,
         module_name: &str,
