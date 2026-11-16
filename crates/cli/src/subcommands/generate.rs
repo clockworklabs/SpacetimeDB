@@ -670,11 +670,7 @@ fn generate_dependency_module_files(files: Vec<OutputFile>, dependency_name: &st
     files
         .into_iter()
         .map(|OutputFile { filename, code }| {
-            let filename = if filename == "lib.rs" {
-                format!("{dependency_name}/mod.rs")
-            } else {
-                format!("{dependency_name}/{filename}")
-            };
+            let filename = format!("{dependency_name}/{filename}");
             OutputFile { filename, code }
         })
         .collect()
