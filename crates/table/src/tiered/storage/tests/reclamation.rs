@@ -112,6 +112,41 @@ proptest! {
     }
 }
 
+proptest! {
+    #[test]
+    fn failed_removal_requeues_the_entire_batch(
+        bytes in proptest::collection::vec(any::<u8>(), 1..128),
+    ) {
+        let local = Arc::new(TestStore::default());
+        let storage = storage(local.clone(), Arc::default(), ByteBudget::unlimited());
+
+        // Different lengths guarantee two distinct objects in the same batch.
+        let mut other_bytes = bytes.clone();
+        other_bytes.push(0);
+        let first = storage.write(object(&bytes), DiskRetention::Required).unwrap();
+        let second = storage.write(object(&other_bytes), DiskRetention::Required).unwrap();
+        let keys = [first.key(), second.key()];
+        let expected_bytes = (bytes.len() + other_bytes.len()) as u64;
+        drop((first, second));
+
+        // The failed candidate and the unprocessed candidate both need a retry.
+        local.fail_remove.store(true, Ordering::Relaxed);
+        prop_assert!(storage.reclaim().is_err());
+        prop_assert!(storage.reclaim_pending());
+        prop_assert_eq!(storage.local.budget.usage().accounted_bytes, expected_bytes);
+
+        // Retry directly, without a new owner release signaling more work.
+        local.fail_remove.store(false, Ordering::Relaxed);
+        prop_assert_eq!(storage.reclaim().unwrap(), expected_bytes);
+        prop_assert!(!storage.reclaim_pending());
+        prop_assert!(storage.catalog.read().is_empty());
+        prop_assert_eq!(storage.local.budget.usage().accounted_bytes, 0);
+        for key in keys {
+            prop_assert!(local.stat(key).unwrap().is_none());
+        }
+    }
+}
+
 #[test]
 fn busy_slots_are_retried_after_unlock() {
     let storage = Arc::new(TieredStorage::new_for_test());
@@ -127,7 +162,7 @@ fn busy_slots_are_retried_after_unlock() {
     let collector = thread::spawn(move || sender.send(collecting.reclaim()).unwrap());
     assert_eq!(receiver.recv_timeout(TIMEOUT).unwrap().unwrap(), 0);
     collector.join().unwrap();
-    assert!(storage.should_reclaim.load(Ordering::Acquire));
+    assert!(storage.reclaim_pending());
     assert!(Arc::ptr_eq(storage.catalog.read().get(&key).unwrap(), &slot));
     drop(state);
 

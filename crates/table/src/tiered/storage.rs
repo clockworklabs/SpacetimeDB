@@ -1,6 +1,6 @@
 use super::metrics::{CacheTier, EvictionDirection, FaultSource, Metrics};
 use std::{
-    fmt,
+    fmt, iter, mem,
     num::NonZeroU64,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -33,8 +33,14 @@ pub struct Object {
 /// It can only be created via the `From` impls of [Object], which makes the
 /// hash trustworthy.
 enum ObjectInner {
-    Page { hash: PageHash, bytes: ObjectBytes },
-    Blob { hash: BlobHashWrapper, bytes: ObjectBytes },
+    Page {
+        hash: PageHash,
+        bytes: ObjectBytes,
+    },
+    Blob {
+        hash: BlobHashWrapper,
+        bytes: ObjectBytes,
+    },
 }
 
 impl ObjectInner {
@@ -292,7 +298,13 @@ enum ObjectOwnership {
 
 impl ObjectOwnership {
     fn is_pinned(&self) -> bool {
-        matches!(self, Self::Referenced { total_pins: 1.., .. })
+        matches!(
+            self,
+            Self::Referenced {
+                total_pins: 1..,
+                ..
+            }
+        )
     }
 
     fn retain(&mut self, pins: u64) {
@@ -356,9 +368,7 @@ pub struct DiskObject {
     key: ObjectKey,
     slot: SharedCatalogEntry,
     pins: u64,
-    // Shared with [TieredStorage], so the object can signal pending
-    // reclamation.
-    should_reclaim: Arc<AtomicBool>,
+    pending_reclaims: Arc<ReclamationQueue>,
 }
 
 impl DiskObject {
@@ -405,7 +415,7 @@ impl Clone for DiskObject {
             key: self.key,
             slot: self.slot.clone(),
             pins: self.pins,
-            should_reclaim: self.should_reclaim.clone(),
+            pending_reclaims: self.pending_reclaims.clone(),
         }
     }
 }
@@ -414,7 +424,10 @@ impl Drop for DiskObject {
     fn drop(&mut self) {
         let mut state = self.slot.state.lock();
         if state.ownership.release(self.pins) {
-            self.should_reclaim.store(true, Ordering::Release);
+            self.pending_reclaims.push(ReclamationCandidate {
+                key: self.key,
+                slot: self.slot.clone(),
+            });
         }
     }
 }
@@ -425,7 +438,7 @@ pub struct TieredStorage {
     remote: Option<RemoteBackingStore>,
     access_epoch: AtomicU64,
     catalog: RwLock<ObjectMap<SharedCatalogEntry>>,
-    should_reclaim: Arc<AtomicBool>,
+    pending_reclaims: Arc<ReclamationQueue>,
 }
 
 impl TieredStorage {
@@ -435,7 +448,7 @@ impl TieredStorage {
             remote,
             access_epoch: 1.into(),
             catalog: <_>::default(),
-            should_reclaim: Arc::new(false.into()),
+            pending_reclaims: <_>::default(),
         }
     }
 
@@ -458,9 +471,18 @@ impl TieredStorage {
     }
 
     pub fn stat(&self, key: ObjectKey) -> Result<ObjectMetadata, ObjectStoreError> {
-        let slot = self.catalog.read().get(&key).cloned().ok_or_else(|| unknown(key))?;
+        let slot = self
+            .catalog
+            .read()
+            .get(&key)
+            .cloned()
+            .ok_or_else(|| unknown(key))?;
         let state = slot.state.lock();
-        state.object.as_ref().map(Into::into).ok_or_else(|| unknown(key))
+        state
+            .object
+            .as_ref()
+            .map(Into::into)
+            .ok_or_else(|| unknown(key))
     }
 
     pub fn contains(&self, key: ObjectKey) -> bool {
@@ -468,7 +490,11 @@ impl TieredStorage {
         maybe_slot.is_some_and(|slot| slot.state.lock().object.is_some())
     }
 
-    pub fn write(&self, object: Object, retention: impl Into<DiskRetention>) -> Result<DiskObject, ObjectStoreError> {
+    pub fn write(
+        &self,
+        object: Object,
+        retention: impl Into<DiskRetention>,
+    ) -> Result<DiskObject, ObjectStoreError> {
         let size = object.size();
         let (key, bytes) = object.into_kv();
         assert_eq!(size, bytes.len() as u64);
@@ -519,7 +545,7 @@ impl TieredStorage {
                 key,
                 slot,
                 pins,
-                should_reclaim: self.should_reclaim.clone(),
+                pending_reclaims: self.pending_reclaims.clone(),
             }
         };
 
@@ -539,7 +565,10 @@ impl TieredStorage {
         };
         if !exists {
             let permit = self.acquire_local_permit(size)?;
-            let written_key = self.local.object_store.write(object_from_trusted_bytes(key, bytes))?;
+            let written_key = self
+                .local
+                .object_store
+                .write(object_from_trusted_bytes(key, bytes))?;
             assert_eq!(written_key, key);
 
             state.object = Some(ObjectCatalogEntry {
@@ -563,7 +592,12 @@ impl TieredStorage {
         key: ObjectKey,
         source: &mut Option<FaultSource>,
     ) -> Result<ObjectBytes, ObjectStoreError> {
-        let slot = self.catalog.read().get(&key).cloned().ok_or_else(|| unknown(key))?;
+        let slot = self
+            .catalog
+            .read()
+            .get(&key)
+            .cloned()
+            .ok_or_else(|| unknown(key))?;
         // Try to read from local storage first.
         {
             let mut state = slot.state.lock();
@@ -582,7 +616,10 @@ impl TieredStorage {
         // If remote storage is configured, promote the object into the local
         // tier.
         if let Some(remote) = &self.remote {
-            let ObjectMetadata { size } = remote.object_store.stat(key)?.ok_or_else(|| not_found(key))?;
+            let ObjectMetadata { size } = remote
+                .object_store
+                .stat(key)?
+                .ok_or_else(|| not_found(key))?;
             // Acquire the permit before locking the slot, as eviction may lock
             // it, too.
             let permit = self.acquire_local_permit(size)?;
@@ -602,7 +639,10 @@ impl TieredStorage {
 
             // Fetch the remote object and store it locally.
             // Hold the entry lock to prevent eviction.
-            let bytes = remote.object_store.read(key)?.ok_or_else(|| not_found(key))?;
+            let bytes = remote
+                .object_store
+                .read(key)?
+                .ok_or_else(|| not_found(key))?;
             *source = Some(FaultSource::Remote);
             self.local
                 .object_store
@@ -646,7 +686,8 @@ impl TieredStorage {
     pub fn evict(&self, target_usage: u64) -> Result<u64, ObjectStoreError> {
         let timer = self.metrics().timer();
         let result = self.evict_inner(target_usage);
-        self.metrics().eviction(EvictionDirection::DiskToRemote, timer.nanos());
+        self.metrics()
+            .eviction(EvictionDirection::DiskToRemote, timer.nanos());
         result
     }
 
@@ -704,8 +745,14 @@ impl TieredStorage {
             let Some(entry) = state.object.as_mut().filter(|entry| entry.permit.is_some()) else {
                 continue;
             };
-            let bytes = self.local.object_store.read(key)?.ok_or_else(|| not_found(key))?;
-            remote.object_store.write(object_from_trusted_bytes(key, bytes))?;
+            let bytes = self
+                .local
+                .object_store
+                .read(key)?
+                .ok_or_else(|| not_found(key))?;
+            remote
+                .object_store
+                .write(object_from_trusted_bytes(key, bytes))?;
             // SAFETY: The remote write succeeded. The slot lock excludes
             // concurrent local writes until removal and release of this
             // object's permit are complete.
@@ -713,8 +760,11 @@ impl TieredStorage {
 
             entry.permit.take();
             bytes_freed += entry.size;
-            self.metrics()
-                .evicted(key.metric_type(), EvictionDirection::DiskToRemote, entry.size);
+            self.metrics().evicted(
+                key.metric_type(),
+                EvictionDirection::DiskToRemote,
+                entry.size,
+            );
         }
 
         Ok(bytes_freed)
@@ -727,65 +777,82 @@ impl TieredStorage {
     ///
     /// Returns the total number of bytes reclaimed.
     pub fn reclaim(&self) -> Result<u64, ObjectStoreError> {
-        if !self.should_reclaim.swap(false, Ordering::AcqRel) {
-            return Ok(0);
-        }
+        let mut candidates = self.pending_reclaims.take();
+        // Impose a stable removal order for fault injection.
+        candidates.sort_unstable_by_key(|candidate| {
+            (
+                matches!(candidate.key, ObjectKey::Blob(_)),
+                *candidate.key.as_bytes(),
+            )
+        });
 
-        let timer = self.metrics().timer();
-        let result = self
-            .reclaim_inner()
-            .inspect_err(|_| self.should_reclaim.store(true, Ordering::Release));
-        self.metrics().reclamation(timer.nanos(), result.is_ok());
-        result
+        let mut bytes_freed = 0;
+        {
+            let mut remaining = candidates.drain(..);
+            while let Some(candidate) = remaining.next() {
+                match self.reclaim_one(&candidate) {
+                    Ok(ReclamationAttempt::Done(bytes)) => bytes_freed += bytes,
+                    Ok(ReclamationAttempt::Retry) => self.pending_reclaims.push(candidate),
+                    Err(e) => {
+                        self.pending_reclaims
+                            .extend(iter::once(candidate).chain(remaining));
+                        self.pending_reclaims.recycle(candidates);
+
+                        return Err(e);
+                    }
+                }
+            }
+        }
+        self.pending_reclaims.recycle(candidates);
+
+        Ok(bytes_freed)
     }
 
-    fn reclaim_inner(&self) -> Result<u64, ObjectStoreError> {
+    fn reclaim_one(
+        &self,
+        candidate: &ReclamationCandidate,
+    ) -> Result<ReclamationAttempt, ObjectStoreError> {
         let mut catalog = self.catalog.write();
-        let mut slots = catalog
-            .iter()
-            .filter_map(|(key, slot)| {
-                if slot.registering.load(Ordering::Acquire) == 0
-                    && let Some(state) = slot.state.try_lock()
-                {
-                    matches!(state.ownership, ObjectOwnership::Unreferenced).then_some((*key, slot.clone()))
-                } else {
-                    // If we skipped an object, register a retry.
-                    self.should_reclaim.store(true, Ordering::Release);
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        // Impose a stable removal order for fault injection.
-        slots.sort_unstable_by_key(|(key, _)| (matches!(key, ObjectKey::Blob(_)), *key.as_bytes()));
 
-        let mut freed = 0;
-        for (key, slot) in slots {
-            let Some(mut entry) = slot.state.try_lock() else {
-                self.should_reclaim.store(true, Ordering::Release);
-                continue;
-            };
-            assert_eq!(slot.registering.load(Ordering::Acquire), 0);
-            assert!(matches!(entry.ownership, ObjectOwnership::Unreferenced));
-
-            // SAFETY: No owner needs the bytes. The catalog lock prevents a new
-            // owner from registering until removal completes.
-            unsafe { self.local.object_store.remove(key)? };
-
-            // Release accounted capacity only after the file was removed successfully.
-            if let Some(object) = entry.object.take()
-                && object.permit.is_some()
-            {
-                let bytes = object.size;
-                drop(object);
-                freed += bytes;
-                self.metrics().reclaimed(key.metric_type(), bytes);
-            }
-
-            drop(entry);
-            catalog.remove(&key);
+        // Check that this is still the same slot.
+        let is_current = catalog
+            .get(&candidate.key)
+            .is_some_and(|slot| Arc::ptr_eq(slot, &candidate.slot));
+        if !is_current {
+            return Ok(ReclamationAttempt::Done(0));
         }
 
-        Ok(freed)
+        // Don't wait for a slot lock while holding the catalog lock.
+        let Some(mut state) = candidate.slot.state.try_lock() else {
+            return Ok(ReclamationAttempt::Retry);
+        };
+
+        // Don't reclaim while the slot is being initialized.
+        if candidate.slot.registering.load(Ordering::Acquire) != 0 {
+            return Ok(ReclamationAttempt::Retry);
+        }
+
+        // Ensure the slot hasn't been revived after it was enqueued for
+        // reclamation.
+        if !matches!(state.ownership, ObjectOwnership::Unreferenced) {
+            return Ok(ReclamationAttempt::Done(0));
+        }
+
+        // SAFETY: There are no owners or pending registrations. Holding the
+        // catalog lock prevents new registrations until removal completes.
+        unsafe {
+            self.local.object_store.remove(candidate.key)?;
+        }
+
+        // Release capacity only after successful object store removal.
+        let bytes_freed = state
+            .object
+            .take()
+            .filter(|object| object.permit.is_some())
+            .map_or(0, |object| object.size);
+        catalog.remove(&candidate.key);
+
+        Ok(ReclamationAttempt::Done(bytes_freed))
     }
 
     fn access_epoch(&self) -> u64 {
@@ -886,6 +953,23 @@ impl TieredStorage {
             fail_reads,
         )
     }
+
+    pub fn reclaim_pending(&self) -> bool {
+        self.pending_reclaims.have_entries.load(Ordering::Acquire)
+    }
+}
+
+impl MemoryUsage for TieredStorage {
+    fn heap_usage(&self) -> usize {
+        // Catalog slots are shared with DiskObject and reclamation candidates,
+        // report them here once.
+        let catalog_bytes = {
+            let catalog = self.catalog.read();
+            catalog.allocation_size() + catalog.len() * (2 * size_of::<usize>() + size_of::<ObjectSlot>())
+        };
+
+        self.local.heap_usage() + self.remote.heap_usage() + catalog_bytes + self.pending_reclaims.heap_usage()
+    }
 }
 
 #[derive(Debug)]
@@ -904,6 +988,75 @@ fn not_found(key: ObjectKey) -> ObjectStoreError {
 
 fn unknown(key: ObjectKey) -> ObjectStoreError {
     ObjectStoreError::UnknownObject(key)
+}
+
+#[derive(Debug)]
+struct ReclamationCandidate {
+    key: ObjectKey,
+    slot: Arc<ObjectSlot>,
+}
+
+enum ReclamationAttempt {
+    Done(u64),
+    Retry,
+}
+
+#[derive(Debug, Default)]
+struct ReclamationBuffers {
+    current: Vec<ReclamationCandidate>,
+    scratch: Option<Vec<ReclamationCandidate>>,
+}
+
+#[derive(Debug, Default)]
+struct ReclamationQueue {
+    have_entries: AtomicBool,
+    buffers: Mutex<ReclamationBuffers>,
+}
+
+impl ReclamationQueue {
+    fn push(&self, candidate: ReclamationCandidate) {
+        let mut buffers = self.buffers.lock();
+        buffers.current.push(candidate);
+        self.have_entries.store(true, Ordering::Release);
+    }
+
+    fn extend(&self, candidates: impl IntoIterator<Item = ReclamationCandidate>) {
+        let mut buffers = self.buffers.lock();
+        buffers.current.extend(candidates);
+        self.have_entries
+            .store(!buffers.current.is_empty(), Ordering::Release);
+    }
+
+    fn take(&self) -> Vec<ReclamationCandidate> {
+        if !self.have_entries.swap(false, Ordering::AcqRel) {
+            return Vec::new();
+        }
+
+        let mut buffers = self.buffers.lock();
+        let scratch = buffers.scratch.take().unwrap_or_default();
+        mem::replace(&mut buffers.current, scratch)
+    }
+
+    fn recycle(&self, scratch: Vec<ReclamationCandidate>) {
+        assert!(scratch.is_empty());
+
+        let mut buffers = self.buffers.lock();
+        if buffers.scratch.is_none() {
+            buffers.scratch.replace(scratch);
+        }
+    }
+}
+
+impl MemoryUsage for ReclamationQueue {
+    fn heap_usage(&self) -> usize {
+        let capacity = {
+            let buffers = self.buffers.lock();
+            buffers.current.capacity() + buffers.scratch.as_ref().map_or(0, Vec::capacity)
+        };
+
+        // Candidates borrow slots counted through the storage catalog.
+        capacity * size_of::<ReclamationCandidate>()
+    }
 }
 
 #[cfg(test)]
