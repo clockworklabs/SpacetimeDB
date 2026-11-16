@@ -56,7 +56,7 @@ use spacetimedb_schema::{
 };
 use spacetimedb_table::{
     indexes::{RowPointer, SquashedOffset},
-    table::{PreparedBlobRelease, PreparedEvictionPolicy, RowRef, Table, TableAndIndex},
+    table::{self, PreparedBlobRelease, PreparedEvictionPolicy, ReadEviction, RowRef, Table, TableAndIndex},
     tiered::{BlobHandle, BlobSet, EvictionPolicy, PreparedCommit, TieredDatabaseStorage},
 };
 use std::{collections::BTreeMap, iter};
@@ -153,6 +153,12 @@ impl MemoryUsage for CommittedState {
             + read_sets.heap_usage()
             + view_instances.heap_usage()
             + ephemeral_tables.heap_usage()
+    }
+}
+
+impl ReadEviction for CommittedState {
+    fn evict_for_read(&self) -> std::result::Result<(), table::TableError> {
+        self.trim_resident()
     }
 }
 
@@ -457,7 +463,12 @@ impl CommittedState {
 
     /// Returns an iterator doing a full table scan on `table_id`.
     pub(super) fn table_scan<'a>(&'a self, table_id: TableId) -> Option<TableScanIter<'a>> {
-        Some(self.get_table(table_id)?.scan_rows(self.storage.blobs()).err_into())
+        Some(
+            self.get_table(table_id)?
+                .scan_rows(self.storage.blobs())
+                .with_read_eviction(self)
+                .err_into(),
+        )
     }
 
     /// Returns an index for `table_id` on `cols`, if any.
@@ -465,6 +476,7 @@ impl CommittedState {
         self.tables
             .get(&table_id)?
             .get_index_by_cols_with_table(self.storage.blobs(), cols)
+            .map(|index| index.with_read_eviction(self))
     }
 
     /// Returns the table associated with the given `index_id`, if any.
@@ -477,6 +489,7 @@ impl CommittedState {
         self.tables
             .get(&table_id)?
             .get_index_by_id_with_table(self.storage.blobs(), index_id)
+            .map(|index| index.with_read_eviction(self))
     }
 
     // TODO(perf, deep-integration): Make this method `unsafe`. Add the following to the docs:
@@ -501,9 +514,19 @@ impl CommittedState {
             .get_table(table_id)
             .expect("Attempt to get COMMITTED_STATE row from table not present in tables.");
         // TODO(perf, deep-integration): Use `get_row_ref_unchecked`.
-        Ok(table
-            .get_row_ref(self.storage.blobs(), row_ptr)?
+        Ok(self
+            .retry_read(|| Ok(table.get_row_ref(self.storage.blobs(), row_ptr)?))?
             .expect("row pointer to be present"))
+    }
+
+    pub(super) fn retry_read<T>(&self, mut read: impl FnMut() -> Result<T>) -> Result<T> {
+        match read() {
+            Err(error) if error.is_resident_memory_limit() => {
+                self.trim_resident()?;
+                read()
+            }
+            result => result,
+        }
     }
 
     /// True if the transaction `(tx_data, ctx)` will be written to the commitlog,
@@ -1126,7 +1149,7 @@ impl CommittedState {
     /// or no more objects can be evicted.
     ///
     /// TODO: Use a database-scoped LRU eviction policy instead of evicting table by table.
-    pub(super) fn trim_resident(&self) -> Result<()> {
+    pub(super) fn trim_resident(&self) -> std::result::Result<(), table::TableError> {
         let pages = self.storage.pages();
         let target = pages.resident_budget().low_water_bytes;
         for table in self.tables.values() {
