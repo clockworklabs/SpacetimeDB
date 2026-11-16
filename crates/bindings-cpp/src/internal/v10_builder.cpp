@@ -80,6 +80,8 @@ void V10Builder::SetOutboxOnResult(const std::string& table_name, const std::str
 
 namespace {
 
+// Decodes exactly 64 hex digits (case-insensitive, no prefix) into a signature hash.
+// Returns std::nullopt if the length is wrong or any character is not a hex digit.
 std::optional<U256> DecodeSignatureHash(const std::string& hex) {
     if (hex.size() != 64) {
         return std::nullopt;
