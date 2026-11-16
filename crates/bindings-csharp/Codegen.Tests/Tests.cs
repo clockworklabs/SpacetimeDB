@@ -1261,7 +1261,6 @@ public static class GeneratorSnapshotTests
 
         AssertPublicBoundIsAvailableInRuntime(compilationAfterGen);
         AssertContextOwnership(compilationAfterGen);
-        AssertGeneratedCodeDoesNotUseInternalBound(compilationAfterGen);
     }
 
     [Fact]

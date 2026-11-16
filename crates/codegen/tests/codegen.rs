@@ -228,8 +228,8 @@ fn test_codegen_receiver_bindings_include_nested_reducer_types() {
     assert!(!root.contains("export const Unrelated ="));
 }
 
-#[test]
-fn test_codegen_rust_outbox_fixture() {
+/// The receiver behind the `module-test` IDC fixtures in every language.
+fn idc_fixture_receiver() -> ModuleDef {
     use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, ExplicitNames, RawModuleDefV10Builder};
     use spacetimedb_lib::{AlgebraicType, ProductType};
 
@@ -241,8 +241,29 @@ fn test_codegen_rust_outbox_fixture() {
     let mut names = ExplicitNames::default();
     names.insert_function("receivePing", "wire_ping");
     builder.add_explicit_names(names);
-    let module: ModuleDef = builder.finish().try_into().unwrap();
-    let files = generate_receiver_bindings(&module, ReceiverLanguage::Rust, None).unwrap();
+    builder.finish().try_into().unwrap()
+}
+
+#[test]
+fn test_codegen_csharp_outbox_fixture() {
+    let lang = ReceiverLanguage::Csharp {
+        namespace: "SpacetimeDB.Modules.ModuleTestCs.Receiver",
+    };
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../modules/module-test-cs/Receiver");
+    // `module-test-cs` compiles these checked-in bindings.
+    for file in generate_receiver_bindings(&idc_fixture_receiver(), lang, None).unwrap() {
+        let path = format!("{dir}/{}", file.filename);
+        assert_eq!(
+            fs_err::read_to_string(&path).unwrap(),
+            file.code,
+            "{path} is out of date"
+        );
+    }
+}
+
+#[test]
+fn test_codegen_rust_outbox_fixture() {
+    let files = generate_receiver_bindings(&idc_fixture_receiver(), ReceiverLanguage::Rust, None).unwrap();
     let root = &files.iter().find(|file| file.filename == "mod.rs").unwrap().code;
 
     // The CLI formats generated bindings, and CI checks the fixture with the repo's rustfmt config.

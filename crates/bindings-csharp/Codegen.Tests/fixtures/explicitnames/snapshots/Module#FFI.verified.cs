@@ -570,11 +570,6 @@ namespace SpacetimeDB.Internal.TableHandles
                 [
                     new(
                         SourceName: "DemoTable_Id_idx_btree",
-                        AccessorName: "Id",
-                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
-                    ),
-                    new(
-                        SourceName: "DemoTable_Id_idx_btree",
                         AccessorName: "ById",
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
                     ),
@@ -616,7 +611,7 @@ namespace SpacetimeDB.Internal.TableHandles
         public ulong Clear() =>
             global::SpacetimeDB.Internal.ITableView<DemoTable, global::DemoTable>.DoClear();
 
-        public sealed class IdUniqueIndex
+        public sealed class ByIdUniqueIndex
             : global::SpacetimeDB.Internal.UniqueIndex<
                 DemoTable,
                 global::DemoTable,
@@ -624,7 +619,7 @@ namespace SpacetimeDB.Internal.TableHandles
                 SpacetimeDB.BSATN.I32
             >
         {
-            internal IdUniqueIndex()
+            internal ByIdUniqueIndex()
                 : base("DemoTable_Id_idx_btree") { }
 
             // Important: don't move this to the base class.
@@ -635,25 +630,7 @@ namespace SpacetimeDB.Internal.TableHandles
             public global::DemoTable Update(global::DemoTable row) => DoUpdate(row);
         }
 
-        public IdUniqueIndex Id => new();
-
-        public sealed class ByIdIndex()
-            : SpacetimeDB.Internal.IndexBase<global::DemoTable>("DemoTable_Id_idx_btree")
-        {
-            public IEnumerable<global::DemoTable> Filter(int Id) =>
-                DoFilter(new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(Id));
-
-            public ulong Delete(int Id) =>
-                DoDelete(new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(Id));
-
-            public IEnumerable<global::DemoTable> Filter(global::SpacetimeDB.Bound<int> Id) =>
-                DoFilter(new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(Id));
-
-            public ulong Delete(global::SpacetimeDB.Bound<int> Id) =>
-                DoDelete(new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(Id));
-        }
-
-        public ByIdIndex ById => new();
+        public ByIdUniqueIndex ById => new();
     }
 }
 
@@ -715,7 +692,7 @@ namespace SpacetimeDB.Internal.ViewHandles
         /// </summary>
         public ulong Count => DoCount();
 
-        public sealed class IdIndex
+        public sealed class ByIdIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
                 global::SpacetimeDB.Internal.ViewHandles.DemoTableReadOnly,
                 global::DemoTable,
@@ -723,33 +700,10 @@ namespace SpacetimeDB.Internal.ViewHandles
                 SpacetimeDB.BSATN.I32
             >
         {
-            internal IdIndex()
-                : base("DemoTable_Id_idx_btree") { }
-
-            public global::DemoTable? Find(int key) => FindSingle(key);
-        }
-
-        public IdIndex Id => new();
-
-        public sealed class ByIdIndex
-            : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::DemoTable>
-        {
             internal ByIdIndex()
                 : base("DemoTable_Id_idx_btree") { }
 
-            public IEnumerable<global::DemoTable> Filter(int Id) =>
-                DoFilter(
-                    new global::SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
-                        Id
-                    )
-                );
-
-            public IEnumerable<global::DemoTable> Filter(global::SpacetimeDB.Bound<int> Id) =>
-                DoFilter(
-                    new global::SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
-                        Id
-                    )
-                );
+            public global::DemoTable? Find(int key) => FindSingle(key);
         }
 
         public ByIdIndex ById => new();

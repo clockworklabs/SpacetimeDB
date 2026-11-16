@@ -766,15 +766,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
     private IEnumerable<string> WritableIndexCaches(TableAccessor table)
     {
-        foreach (
-            var constraint in GetConstraints(table, ColumnAttrs.Unique)
-                .Where(c => c.Col.IsEquatable)
-        )
+        foreach (var (_, index) in GetUniqueIndexes(table).Where(u => u.Constraint.Col.IsEquatable))
         {
-            var identifier = constraint.Col.Identifier;
+            var identifier = index.AccessorIdentifier;
             yield return $"internal {identifier}UniqueIndex? __index_{identifier.TrimStart('@')};";
         }
-        foreach (var index in GetIndexes(table).Where(i => i.AccessorName.Length != 0))
+        foreach (var index in GetNonUniqueIndexes(table).Where(i => i.AccessorName.Length != 0))
         {
             var identifier = index.AccessorIdentifier;
             yield return $"internal {identifier}Index? __index_{identifier.TrimStart('@')};";
@@ -946,15 +943,15 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 }
             }
             foreach (
-                var constraint in GetConstraints(table, ColumnAttrs.Unique)
-                    .Where(c => c.Col.IsEquatable)
+                var (constraint, index) in GetUniqueIndexes(table)
+                    .Where(u => u.Constraint.Col.IsEquatable)
             )
                 Index(
-                    constraint.Col.Identifier,
+                    index.AccessorIdentifier,
                     true,
                     $"unique column '{constraint.Col.Name}' of {owner}"
                 );
-            foreach (var index in GetIndexes(table).Where(i => i.AccessorName.Length != 0))
+            foreach (var index in GetNonUniqueIndexes(table).Where(i => i.AccessorName.Length != 0))
                 Index(index.AccessorIdentifier, false, $"index '{index.AccessorName}' of {owner}");
 
             foreach (var container in new[] { "Tables", "ReadOnlyTables", "Queries" })
@@ -1021,7 +1018,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         var uniqueIndexBase =
             "global::SpacetimeDB.Internal." + (isRowStruct ? "UniqueIndex" : "RefUniqueIndex");
 
-        foreach (var ct in GetConstraints(tableAccessor, ColumnAttrs.Unique))
+        foreach (var (ct, index) in GetUniqueIndexes(tableAccessor))
         {
             var f = ct.Col;
             if (!f.IsEquatable)
@@ -1030,16 +1027,17 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 // only produce a lot of noisy typechecking errors.
                 continue;
             }
-            var standardIndexName = ct.ToIndex().StandardIndexName(tableAccessor);
+            var identifier = index.AccessorIdentifier;
+            var standardIndexName = index.StandardIndexName(tableAccessor);
             var primaryKey = ct.Attr.HasFlag(ColumnAttrs.PrimaryKey);
             var instanceTable = sharedContexts && primaryKey;
             var updateMethod = primaryKey
                 ? $"public {globalName} Update({globalName} row) => DoUpdate(row{(instanceTable ? ", __table" : "")});"
                 : "";
             yield return $$"""
-                {{vis}} sealed class {{f.Identifier}}UniqueIndex : {{uniqueIndexBase}}<{{tableAccessor.Identifier}}, {{globalName}}, {{f.Type.Name}}, {{f.Type.BSATNName}}> {
+                {{vis}} sealed class {{identifier}}UniqueIndex : {{uniqueIndexBase}}<{{tableAccessor.Identifier}}, {{globalName}}, {{f.Type.Name}}, {{f.Type.BSATNName}}> {
                     {{(instanceTable ? "private readonly global::SpacetimeDB.Internal.TableHandle __table;" : "")}}
-                    internal {{f.Identifier}}UniqueIndex({{(sharedContexts ? "int instanceId" + (instanceTable ? ", global::SpacetimeDB.Internal.TableHandle table" : "") : "")}}) : base({{HandleLookupName(
+                    internal {{identifier}}UniqueIndex({{(sharedContexts ? "int instanceId" + (instanceTable ? ", global::SpacetimeDB.Internal.TableHandle table" : "") : "")}}) : base({{HandleLookupName(
                     standardIndexName
                 )}}) { {{(instanceTable ? "__table = table;" : "")}} }
                     // Important: don't move this to the base class.
@@ -1048,13 +1046,13 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     public {{globalName}}? Find({{f.Type.Name}} key) => FindSingle(key);
                     {{updateMethod}}
                 }
-                {{vis}} {{f.Identifier}}UniqueIndex {{f.Identifier}} => {{IndexInstance(
-                    f.Identifier, writable: true, primaryKey: primaryKey
+                {{vis}} {{identifier}}UniqueIndex {{identifier}} => {{IndexInstance(
+                    identifier, writable: true, primaryKey: primaryKey
                 )}};
                 """;
         }
 
-        foreach (var index in GetIndexes(tableAccessor))
+        foreach (var index in GetNonUniqueIndexes(tableAccessor))
         {
             var name = index.AccessorName;
             var identifierName = index.AccessorIdentifier;
@@ -1128,7 +1126,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             ? "global::SpacetimeDB.Internal.ReadOnlyUniqueIndex"
             : "global::SpacetimeDB.Internal.ReadOnlyRefUniqueIndex";
 
-        foreach (var ct in GetConstraints(tableAccessor, ColumnAttrs.Unique))
+        foreach (var (ct, index) in GetUniqueIndexes(tableAccessor))
         {
             var f = ct.Col;
             if (!f.IsEquatable)
@@ -1136,31 +1134,32 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 continue;
             }
 
-            var standardIndexName = ct.ToIndex().StandardIndexName(tableAccessor);
+            var identifier = index.AccessorIdentifier;
+            var standardIndexName = index.StandardIndexName(tableAccessor);
 
             yield return $$$"""
-                public sealed class {{{f.Identifier}}}Index
+                public sealed class {{{identifier}}}Index
                     : {{{uniqueIndexBase}}}<
                           global::{{{ViewHandlesNamespace}}}.{{{tableAccessor.Identifier}}}ReadOnly,
                           {{{globalName}}},
                           {{{f.Type.Name}}},
                           {{{f.Type.BSATNName}}}>
                 {
-                    internal {{{f.Identifier}}}Index({{{(sharedContexts ? "int instanceId" : "")}}}) : base({{{HandleLookupName(
+                    internal {{{identifier}}}Index({{{(sharedContexts ? "int instanceId" : "")}}}) : base({{{HandleLookupName(
                     standardIndexName
                 )}}}) { }
 
                     public {{{globalName}}}? Find({{{f.Type.Name}}} key) => FindSingle(key);
                 }
 
-                {{{IndexInstanceCache(f.Identifier + "Index", f.Identifier)}}}
-                public {{{f.Identifier}}}Index {{{f.Identifier}}} => {{{IndexInstance(
-                    f.Identifier
+                {{{IndexInstanceCache(identifier + "Index", identifier)}}}
+                public {{{identifier}}}Index {{{identifier}}} => {{{IndexInstance(
+                    identifier
                 )}}};
                 """;
         }
 
-        foreach (var index in GetIndexes(tableAccessor))
+        foreach (var index in GetNonUniqueIndexes(tableAccessor))
         {
             if (string.IsNullOrEmpty(index.AccessorName))
             {
@@ -1260,11 +1259,11 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             ? $"private {readOnly} __ReadOnly => __state.__readOnly ??= new(__state.InstanceId);"
             : $"private static {readOnly}? __readOnly;\nprivate {readOnly} __ReadOnly => __readOnly ??= new();";
         foreach (
-            var identifier in GetConstraints(tableAccessor, ColumnAttrs.Unique)
-                .Where(c => c.Col.IsEquatable)
-                .Select(c => c.Col.Identifier)
+            var identifier in GetUniqueIndexes(tableAccessor)
+                .Where(u => u.Constraint.Col.IsEquatable)
+                .Select(u => u.Index.AccessorIdentifier)
                 .Concat(
-                    GetIndexes(tableAccessor)
+                    GetNonUniqueIndexes(tableAccessor)
                         .Where(i => i.AccessorName.Length != 0)
                         .Select(i => i.AccessorIdentifier)
                 )
@@ -1375,9 +1374,9 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     Indexes: [
                         {{{string.Join(
                             ",\n",
-                            GetConstraints(v, ColumnAttrs.Unique)
-                            .Select(c => c.ToIndex())
-                            .Concat(GetIndexes(v))
+                            GetUniqueIndexes(v)
+                            .Select(u => u.Index)
+                            .Concat(GetNonUniqueIndexes(v))
                             .Select(b => b.GenerateIndexDef(v))
                         )}}}
                     ],
@@ -1686,10 +1685,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         }
     }
 
-    public record Constraint(ColumnDeclaration Col, int Pos, ColumnAttrs Attr)
-    {
-        public TableIndex ToIndex() => new(new ColumnRef(Pos, Col.Name));
-    }
+    public record Constraint(ColumnDeclaration Col, int Pos, ColumnAttrs Attr);
 
     public IEnumerable<Constraint> GetConstraints(
         TableAccessor tableAccessor,
@@ -1704,6 +1700,31 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         Indexes
             .Concat(Members.SelectMany(m => m.Indexes))
             .Where(i => i.Table == null || i.Table == tableAccessor.Name);
+
+    /// <summary>
+    /// The unique columns with their index. Like Rust, a declared single-column index on a
+    /// unique column is that column's unique index, so it keeps the declared accessor.
+    /// </summary>
+    public IEnumerable<(Constraint Constraint, TableIndex Index)> GetUniqueIndexes(
+        TableAccessor tableAccessor
+    ) =>
+        GetConstraints(tableAccessor, ColumnAttrs.Unique)
+            .Select(c =>
+                (
+                    c,
+                    GetIndexes(tableAccessor)
+                        .FirstOrDefault(i =>
+                            i.Columns.Array.Length == 1 && i.Columns.Array[0].Index == c.Pos
+                        ) ?? new TableIndex(new ColumnRef(c.Pos, c.Col.Name))
+                )
+            );
+
+    /// <summary>The indexes that aren't a unique column's index.</summary>
+    public IEnumerable<TableIndex> GetNonUniqueIndexes(TableAccessor tableAccessor)
+    {
+        var unique = GetUniqueIndexes(tableAccessor).Select(u => u.Index).ToArray();
+        return GetIndexes(tableAccessor).Where(i => !unique.Contains(i));
+    }
 
     // Reimplementation of V8 -> V9 constraint conversion in Rust.
     // See https://github.com/clockworklabs/SpacetimeDB/blob/13a800e9f88cbe885b98eab9e45b0fcfd3ab7014/crates/schema/src/def/validate/v8.rs#L74-L78
