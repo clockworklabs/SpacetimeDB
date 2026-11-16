@@ -46,6 +46,7 @@ fn unreal_reconnect_builder_and_callback_forwarding() {
             format!("U{prefix}DbConnectionBuilder* WithAutomaticReconnectOptions(const FAutomaticReconnectOptions& Options);"),
             format!("U{prefix}DbConnectionBuilder* WithTokenProvider(FTokenProviderDelegate Provider);"),
             format!("U{prefix}DbConnectionBuilder* OnAutomaticReconnect(F{prefix}OnConnectDelegate Callback);"),
+            format!("U{prefix}DbConnectionBuilder* WithPingInterval(FTimespan Interval);"),
             // The original lifecycle callbacks keep their signatures; reconnect details are additive.
             format!("U{prefix}DbConnectionBuilder* OnConnectError(FOnConnectErrorDelegate Callback);"),
             format!("U{prefix}DbConnectionBuilder* OnConnectErrorWithReconnect(FOnConnectErrorWithReconnectDelegate Callback);"),
@@ -63,6 +64,7 @@ fn unreal_reconnect_builder_and_callback_forwarding() {
             "OnDisconnectWithReconnectDelegate.Execute(this, Error, bWillReconnect, NextReconnectAttempt, NextReconnectDelaySeconds)"
         ));
         assert!(source.contains("OnAutomaticReconnectBase(BaseReconnect)"));
+        assert!(source.contains("\tWithPingIntervalBase(Interval);"));
         assert!(source.contains("ReducerEvent.CallError          = Event.CallError"));
         assert!(source.contains("ProcedureEvent.CallError          = Event.CallError"));
     }

@@ -15,6 +15,7 @@
 #include "Connection/Callback.h"
 #include "LogCategory.h"
 #include "Connection/Reconnect.h"
+#include "Connection/NetworkStats.h"
 #include "Tables/RemoteTable.h"
 #include <type_traits>
 
@@ -164,6 +165,32 @@ public:
 	/** Get the current connection id. This is used to identify the connection. */
 	UFUNCTION(BlueprintPure, Category = "SpacetimeDB")
 	FSpacetimeDBConnectionId GetConnectionId() const;
+
+	/**
+	 * Get a fresh snapshot of the network statistics, measured by periodically pinging the server.
+	 *
+	 * Returns false until the first Pong of the current connection arrives, after a reconnect
+	 * until the new connection's first Pong, and always when pinging is disabled with
+	 * WithPingInterval(0) and Ping has never been answered.
+	 * Pings are sent and Pongs processed from FrameTick, so the stats only advance while the
+	 * connection is ticked.
+	 */
+	UFUNCTION(BlueprintPure, Category = "SpacetimeDB")
+	bool TryGetNetworkStats(FSpacetimeDBNetworkStats& OutStats) const;
+
+	/** C++ version of TryGetNetworkStats: unset until the first Pong. */
+	TOptional<FSpacetimeDBNetworkStats> GetNetworkStats() const;
+
+	/**
+	 * Send a single Ping now, and call Callback with the timings from its Pong.
+	 *
+	 * The sample also feeds the network stats, exactly like the periodic Pings, and this works
+	 * even when periodic pinging is disabled. Callback is called with bSuccess false straight
+	 * away if the connection isn't established, or later if it closes before the Pong arrives.
+	 * Like other callbacks, it runs from FrameTick.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
+	void Ping(const FOnPingCompleteDelegate& Callback);
 
 	// Typed reducer call helper: hides BSATN bytes from callers.
 	template <typename ArgsStruct> uint32 CallReducerTyped(const FString& Reducer, const ArgsStruct& Args)
@@ -342,8 +369,11 @@ protected:
 
 	bool OnTickerTick(float DeltaTime);
 
-	/** Internal handler that processes a single server message. */
-	void ProcessServerMessage(const FServerMessageType& Message);
+	/**
+	 * Internal handler that processes a single server message.
+	 * ReceivedAt is the FPlatformTime::Seconds() reading taken when the message came off the socket.
+	 */
+	void ProcessServerMessage(const FServerMessageType& Message, double ReceivedAt);
 	using FTableDataMap = TMap<FPreprocessedTableKey, TArray<TSharedPtr<UE::SpacetimeDB::FPreprocessedTableDataBase>>>;
 	using FDeserializerMap = TMap<FString, TSharedPtr<UE::SpacetimeDB::ITableRowDeserializer, ESPMode::ThreadSafe>>;
 	static void PreProcessDatabaseUpdate(const FDatabaseUpdateType& Update, const FDeserializerMap& Deserializers,
@@ -372,6 +402,8 @@ protected:
 	struct FIncomingEvent
 	{
 		FServerMessageType Message;
+		/** When the message came off the socket, before parsing, so Pong timings exclude client-side queueing. */
+		double ReceivedAt = 0.0;
 		FTableDataMap TableData;
 		FString Error;
 		bool bFailure = false;
@@ -436,6 +468,28 @@ protected:
 	TObjectPtr<UReconnectTokenRequest> TokenRequest;
 	UPROPERTY()
 	FOnConnectBaseDelegate OnAutomaticReconnectBaseDelegate;
+
+	/** How often to send a periodic Ping. Zero disables periodic pinging. */
+	FTimespan PingInterval = FTimespan::FromSeconds(1.0);
+	/** When the next periodic Ping is due, as an FPlatformTime::Seconds() reading. */
+	double NextPingAt = 0.0;
+	/** Round-trip and clock-offset statistics for the current connection. Mutable so snapshots can be const. */
+	mutable FSpacetimeDBNetworkStatsTracker NetworkStatsTracker;
+	struct FPendingPing
+	{
+		double SentAt = 0.0;
+		FOnPingCompleteDelegate Callback;
+	};
+	/** On-demand Pings sent by Ping and awaiting their Pong, by request id. */
+	TMap<uint32, FPendingPing> PendingPings;
+	/** The clock Pings are timed on: FPlatformTime::Seconds() in whole microseconds. */
+	static uint64 PingMicros(double Seconds);
+	/** Send a Ping stamped with the current time, returning that time, or unset if it couldn't be sent. */
+	TOptional<double> SendPing(uint32 RequestId);
+	/** Send a periodic Ping if one is due. Called from FrameTick. */
+	void SendPeriodicPingIfDue();
+	void HandlePong(const FPongType& Pong, double ReceivedAt);
+	void FailPendingPings(const FString& Reason);
 
 	// Map of table name to row deserializer
 	TSharedRef<const FDeserializerMap, ESPMode::ThreadSafe> TableDeserializers =
