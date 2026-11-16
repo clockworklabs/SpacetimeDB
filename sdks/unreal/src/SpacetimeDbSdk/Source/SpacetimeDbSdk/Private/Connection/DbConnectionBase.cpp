@@ -299,6 +299,8 @@ void UDbConnectionBase::HandleWSBinaryMessage(const TArray<uint8>& Message)
 	{
 		return;
 	}
+	// Taken before the message is queued for parsing, so Pong timings exclude client-side queueing.
+	const double ReceivedAt = FPlatformTime::Seconds();
 	const uint64 Id = NextIncomingId++;
 	const uint64 Generation = ConnectionGeneration;
 	TWeakObjectPtr<UDbConnectionBase> WeakThis(this);
@@ -310,9 +312,10 @@ void UDbConnectionBase::HandleWSBinaryMessage(const TArray<uint8>& Message)
 	// Parsing owns only bytes and value types. Never dereference a UObject on the worker.
 	Async(
 	    EAsyncExecution::ThreadPool,
-	    [WeakThis, Message, Id, Generation, Deserializers]()
+	    [WeakThis, Message, Id, Generation, Deserializers, ReceivedAt]()
 	    {
 		    FIncomingEvent Event;
+		    Event.ReceivedAt = ReceivedAt;
 		    try
 		    {
 			    Event.bFailure = !PreProcessMessage(Message, Event.Message);
@@ -352,6 +355,7 @@ void UDbConnectionBase::FrameTick()
 	TGuardValue<bool> TickGuard(bTicking, true);
 	ReleaseIncomingEvents();
 	AdvanceReconnect();
+	SendPeriodicPingIfDue();
 }
 
 void UDbConnectionBase::ReleaseIncomingEvents()
@@ -370,7 +374,7 @@ void UDbConnectionBase::ReleaseIncomingEvents()
 			PreprocessedTableData = MoveTemp(Event.TableData);
 			try
 			{
-				ProcessServerMessage(Event.Message);
+				ProcessServerMessage(Event.Message, Event.ReceivedAt);
 			}
 			catch (const std::exception&)
 			{
@@ -395,7 +399,7 @@ bool UDbConnectionBase::OnTickerTick(float DeltaTime)
 	return true;
 }
 
-void UDbConnectionBase::ProcessServerMessage(const FServerMessageType& Message)
+void UDbConnectionBase::ProcessServerMessage(const FServerMessageType& Message, double ReceivedAt)
 {
 	if (bEnded)
 	{
@@ -459,6 +463,12 @@ void UDbConnectionBase::ProcessServerMessage(const FServerMessageType& Message)
 						SendSubscribe(*Found);
 					}
 				}
+			}
+			// Measure the network straight away, rather than one interval from now.
+			if (PingInterval > FTimespan::Zero())
+			{
+				NextPingAt = FPlatformTime::Seconds() + PingInterval.GetTotalSeconds();
+				SendPing(GetNextRequestId());
 			}
 			break;
 		}
@@ -637,7 +647,7 @@ void UDbConnectionBase::ProcessServerMessage(const FServerMessageType& Message)
 			break;
 		}
 		case EServerMessageTag::Pong:
-			// The SDK doesn't send Pings yet, so there is nothing to match a Pong against.
+			HandlePong(Message.GetAsPong(), ReceivedAt);
 			break;
 		default:
 			UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("Unknown server-message tag"));
@@ -727,6 +737,8 @@ void UDbConnectionBase::ClearPendingOperations(const FString& Reason)
 			ProcedureCallbacks->ClearAllCallbacks();
 		}
 	}
+
+	FailPendingPings(Reason.IsEmpty() ? FString(TEXT("Connection closed before the Pong was received")) : Reason);
 
 	if (!Reason.IsEmpty())
 	{
@@ -1041,6 +1053,9 @@ void UDbConnectionBase::ResetTransport()
 	bPreparingReplay = false;
 	QueuedSubscriptions.Empty();
 	bReleaseWithoutTick = false;
+	// The next socket is a new network path, so measure it afresh.
+	NetworkStatsTracker.Reset();
+	NextPingAt = 0.0;
 }
 
 void UDbConnectionBase::StartSocket()
@@ -1388,5 +1403,113 @@ void UDbConnectionBase::AcceptIncomingEvent(uint64 Generation, uint64 Id, FIncom
 		{
 			ReleaseWithoutTick(); // This parse may have been the gap a socket failure was waiting on.
 		}
+	}
+}
+
+uint64 UDbConnectionBase::PingMicros(double Seconds)
+{
+	return static_cast<uint64>(FMath::Max(Seconds, 0.0) * 1e6);
+}
+
+TOptional<FSpacetimeDBNetworkStats> UDbConnectionBase::GetNetworkStats() const
+{
+	return NetworkStatsTracker.Snapshot(PingMicros(FPlatformTime::Seconds()));
+}
+
+bool UDbConnectionBase::TryGetNetworkStats(FSpacetimeDBNetworkStats& OutStats) const
+{
+	const TOptional<FSpacetimeDBNetworkStats> Stats = GetNetworkStats();
+	if (!Stats.IsSet())
+	{
+		return false;
+	}
+	OutStats = Stats.GetValue();
+	return true;
+}
+
+void UDbConnectionBase::Ping(const FOnPingCompleteDelegate& Callback)
+{
+	// Like the other SDKs, a Ping before InitialConnection fails rather than waiting for it.
+	if (bEnded || !bEstablished || !IsActive())
+	{
+		Callback.ExecuteIfBound(false, FSpacetimeDBPingResult(), bEnded ? TEXT("Disconnected") : TEXT("Not connected"));
+		return;
+	}
+	const uint32 RequestId = GetNextRequestId();
+	const TOptional<double> SentAt = SendPing(RequestId);
+	if (!SentAt.IsSet())
+	{
+		Callback.ExecuteIfBound(false, FSpacetimeDBPingResult(), TEXT("Disconnected"));
+		return;
+	}
+	FPendingPing Pending;
+	Pending.SentAt = SentAt.GetValue();
+	Pending.Callback = Callback;
+	PendingPings.Add(RequestId, MoveTemp(Pending));
+}
+
+TOptional<double> UDbConnectionBase::SendPing(uint32 RequestId)
+{
+	// Each Ping goes out in its own WebSocket message, as every message does under protocol v2.
+	const double SentAt = FPlatformTime::Seconds();
+	FPingType Message;
+	Message.RequestId = RequestId;
+	Message.ClientSendTime = PingMicros(SentAt);
+	if (!SendRawMessage(UE::SpacetimeDB::Serialize(FClientMessageType::Ping(Message))))
+	{
+		// A lost socket reports itself through the close or error handlers.
+		return {};
+	}
+	NetworkStatsTracker.RecordPing(Message.ClientSendTime);
+	return SentAt;
+}
+
+void UDbConnectionBase::SendPeriodicPingIfDue()
+{
+	if (bEnded || !bEstablished || PingInterval <= FTimespan::Zero())
+	{
+		return;
+	}
+	const double Now = FPlatformTime::Seconds();
+	if (Now < NextPingAt)
+	{
+		return;
+	}
+	// Scheduled from now rather than from the missed due time, so a long gap between ticks
+	// sends one Ping, not a burst of them.
+	NextPingAt = Now + PingInterval.GetTotalSeconds();
+	SendPing(GetNextRequestId());
+}
+
+void UDbConnectionBase::HandlePong(const FPongType& Pong, double ReceivedAt)
+{
+	const uint64 ReceivedUs = PingMicros(ReceivedAt);
+	const int64 ServerHoldUs = Pong.ServerHoldDuration.GetMicroseconds();
+	NetworkStatsTracker.RecordPong(ReceivedUs, Pong.ClientSendTime, Pong.ServerReceiveTime.GetMicroseconds(),
+	                               ServerHoldUs);
+
+	FPendingPing Pending;
+	if (!PendingPings.RemoveAndCopyValue(Pong.RequestId, Pending))
+	{
+		return; // A periodic Ping, which only feeds the stats.
+	}
+	const int64 RoundTripUs = ReceivedUs > Pong.ClientSendTime ? int64(ReceivedUs - Pong.ClientSendTime) : 0;
+	FSpacetimeDBPingResult Result;
+	Result.RoundTrip = FTimespan(RoundTripUs * ETimespan::TicksPerMicrosecond);
+	Result.ServerHold = FTimespan(ServerHoldUs * ETimespan::TicksPerMicrosecond);
+	Result.Rtt = FTimespan(FMath::Max<int64>(RoundTripUs - ServerHoldUs, 0) * ETimespan::TicksPerMicrosecond);
+	Result.ServerReceiveTime = Pong.ServerReceiveTime;
+	Result.SentAt = Pending.SentAt;
+	Result.ReceivedAt = ReceivedAt;
+	Pending.Callback.ExecuteIfBound(true, Result, FString());
+}
+
+void UDbConnectionBase::FailPendingPings(const FString& Reason)
+{
+	TMap<uint32, FPendingPing> Pending = MoveTemp(PendingPings);
+	PendingPings.Empty();
+	for (const auto& Pair : Pending)
+	{
+		Pair.Value.Callback.ExecuteIfBound(false, FSpacetimeDBPingResult(), Reason);
 	}
 }

@@ -140,6 +140,7 @@ UDbConnectionBase* UDbConnectionBuilderBase::BuildConnection(UDbConnectionBase* 
 	Connection->ReconnectOptions.Resolve();
 	Connection->TokenProvider = TokenProvider;
 	Connection->OnAutomaticReconnectBaseDelegate = OnAutomaticReconnectCallback;
+	Connection->PingInterval = PingInterval;
 	if (!bCompressionSet)
 	{
 		Compression = ESpacetimeDBCompression::Gzip;
@@ -179,5 +180,16 @@ UDbConnectionBuilderBase* UDbConnectionBuilderBase::WithTokenProviderBase(FToken
 UDbConnectionBuilderBase* UDbConnectionBuilderBase::OnAutomaticReconnectBase(FOnConnectBaseDelegate Callback)
 {
 	OnAutomaticReconnectCallback = Callback;
+	return this;
+}
+
+UDbConnectionBuilderBase* UDbConnectionBuilderBase::WithPingIntervalBase(FTimespan Interval)
+{
+	if (Interval < FTimespan::Zero())
+	{
+		UE_LOG(LogSpacetimeDb_Connection, Warning, TEXT("WithPingInterval called with a negative interval; disabling pinging"));
+		Interval = FTimespan::Zero();
+	}
+	PingInterval = Interval;
 	return this;
 }

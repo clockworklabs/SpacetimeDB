@@ -159,6 +159,51 @@ public:
 		AcceptIncomingEvent(ConnectionGeneration, NextIncomingId++, MoveTemp(Event));
 		FrameTick();
 	}
+	/** Deliver a message as if it had come off the socket at ReceivedAt, an FPlatformTime::Seconds() reading. */
+	void InjectAt(const FServerMessageType& Message, double ReceivedAt)
+	{
+		FIncomingEvent Event;
+		Event.Message = Message;
+		Event.ReceivedAt = ReceivedAt;
+		AcceptIncomingEvent(ConnectionGeneration, NextIncomingId++, MoveTemp(Event));
+		FrameTick();
+	}
+	void SetPingInterval(FTimespan Interval)
+	{
+		PingInterval = Interval;
+	}
+	/** Make the next periodic Ping due, and tick. */
+	void PingDueNow()
+	{
+		NextPingAt = 0.0;
+		FrameTick();
+	}
+	TArray<FPingType> SentPings() const
+	{
+		TArray<FPingType> Pings;
+		for (const FClientMessageType& Message : Sent)
+		{
+			if (Message.IsPing())
+			{
+				Pings.Add(Message.GetAsPing());
+			}
+		}
+		return Pings;
+	}
+	/** Ping, recording the outcome in PingOutcomes. */
+	void PingAndRecord()
+	{
+		FOnPingCompleteDelegate Callback;
+		Callback.BindDynamic(this, &UReconnectTestConnection::PingCompleted);
+		Ping(Callback);
+	}
+	struct FPingOutcome
+	{
+		bool bSuccess = false;
+		FSpacetimeDBPingResult Result;
+		FString Error;
+	};
+	TArray<FPingOutcome> PingOutcomes;
 	void DropSessionBusy()
 	{
 		QueueFailure(TEXT("session busy"), false, false, true);
@@ -269,6 +314,11 @@ protected:
 	}
 	UFUNCTION()
 	void ProvideToken(UReconnectTokenRequest* Request);
+	UFUNCTION()
+	void PingCompleted(bool bSuccess, const FSpacetimeDBPingResult& Result, const FString& Error)
+	{
+		PingOutcomes.Add({bSuccess, Result, Error});
+	}
 };
 
 UCLASS()

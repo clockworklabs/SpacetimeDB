@@ -4078,6 +4078,11 @@ fn generate_db_connection_builder_class(output: &mut UnrealCppAutogen, module_pr
         output,
         "    U{module_prefix}DbConnectionBuilder* OnAutomaticReconnect(F{module_prefix}OnConnectDelegate Callback);"
     );
+    writeln!(output, "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB\")");
+    writeln!(
+        output,
+        "    U{module_prefix}DbConnectionBuilder* WithPingInterval(FTimespan Interval);"
+    );
     writeln!(output);
     writeln!(output, "private:");
     writeln!(output);
@@ -4970,6 +4975,11 @@ fn generate_client_implementation(
     writeln!(output, "U{module_prefix}DbConnectionBuilder* U{module_prefix}DbConnectionBuilder::OnAutomaticReconnect(F{module_prefix}OnConnectDelegate Callback)");
     writeln!(output, "{{");
     writeln!(output, "\tOnAutomaticReconnectDelegateInternal = Callback;");
+    writeln!(output, "\treturn this;");
+    writeln!(output, "}}");
+    writeln!(output, "U{module_prefix}DbConnectionBuilder* U{module_prefix}DbConnectionBuilder::WithPingInterval(FTimespan Interval)");
+    writeln!(output, "{{");
+    writeln!(output, "\tWithPingIntervalBase(Interval);");
     writeln!(output, "\treturn this;");
     writeln!(output, "}}");
     writeln!(output, "void U{module_prefix}DbConnection::ForwardOnConnect(UDbConnectionBase* BaseConnection, FSpacetimeDBIdentity InIdentity, const FString& InToken)");
