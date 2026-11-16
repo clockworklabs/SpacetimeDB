@@ -1,4 +1,4 @@
-Implement this SpacetimeDB module in rust. Return only the module source.
+Write a SpacetimeDB backend module in Rust that shares a private document with revocable permissions. Return only the module source.
 
 Implement one shared private document (ID 1). Its first writer becomes its permanent owner. Only that owner can change its text or reader permissions. Authorized users can query and subscribe to a safe projection. Revocation must remove the document from an existing reader subscription and block future content updates. Do not use row-level security. Keep both source tables private and never expose secret_body in the public view.
 

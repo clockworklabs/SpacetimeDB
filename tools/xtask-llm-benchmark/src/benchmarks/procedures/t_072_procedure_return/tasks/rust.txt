@@ -1,5 +1,7 @@
 Write a SpacetimeDB backend module in Rust that defines a procedure with a typed return value.
 
+The module defines no tables.
+
 TYPES
 - Summary
   - total: u32

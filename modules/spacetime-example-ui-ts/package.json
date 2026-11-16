@@ -15,7 +15,8 @@
       "types": "./src/server.ts",
       "default": "./src/server.ts"
     },
-    "./styles.css": "./src/styles/index.css"
+    "./styles.css": "./src/styles/index.css",
+    "./footer.css": "./src/styles/footer.css"
   },
   "scripts": {
     "format": "prettier . --write --ignore-path ../../.prettierignore",

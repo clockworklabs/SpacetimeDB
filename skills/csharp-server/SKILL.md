@@ -187,14 +187,16 @@ The pattern is `ctx.Db.{Accessor}.{ColumnName}.{Method}(value)` for all indexed 
 
 ```csharp
 [SpacetimeDB.Reducer(ReducerKind.Init)]
-public static void OnInit(ReducerContext ctx) { ... }
+public static void Init(ReducerContext ctx) { ... }
 
 [SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
-public static void OnConnect(ReducerContext ctx) { ... }
+public static void ClientConnected(ReducerContext ctx) { ... }
 
 [SpacetimeDB.Reducer(ReducerKind.ClientDisconnected)]
-public static void OnDisconnect(ReducerContext ctx) { ... }
+public static void ClientDisconnected(ReducerContext ctx) { ... }
 ```
+
+Reducer and procedure method names must not start with `On`, `on`, or `__`; the code generator rejects them (STDB0010), so name lifecycle reducers `ClientConnected`, not `OnConnect`.
 
 `ctx.ConnectionId` is `ConnectionId?`, including in connection lifecycle reducers. Check or unwrap it before storing it in a non-nullable column or passing it to an index accessor.
 
@@ -333,7 +335,7 @@ public partial struct TickTimer
 [SpacetimeDB.Reducer]
 public static void Tick(ReducerContext ctx, TickTimer timer)
 {
-    // timer row is auto-deleted after this reducer runs
+    // a one-time row is deleted after this runs; an interval row stays
 }
 
 // One-time: fires once at a specific time
@@ -344,7 +346,7 @@ var at = new ScheduleAt.Interval(TimeSpan.FromSeconds(5));
 ctx.Db.TickTimer.Insert(new TickTimer { ScheduledId = 0, ScheduledAt = at });
 ```
 
-Scheduled reducer callbacks use the ordinary `[SpacetimeDB.Reducer]` attribute. There is no `ReducerKind.Scheduled`; the table's `Scheduled` option associates the callback.
+Scheduled reducer callbacks use the ordinary `[SpacetimeDB.Reducer]` attribute. There is no `ReducerKind.Scheduled`; the table's `Scheduled` option associates the callback. To let only the scheduler run a callback, reject calls where `ctx.Sender != ctx.DatabaseIdentity`.
 
 To construct a `ConnectionId` from a 128-bit numeric representation, encode it as exactly 16 little-endian bytes and call `ConnectionId.From(bytes)`. The result is nullable and must be checked before use.
 
@@ -364,6 +366,7 @@ public static ResultValue Inspect(ProcedureContext ctx, string input) =>
 Outbound HTTP is available through `ctx.Http`; handle its success/error result before using the response. Open short database transactions with `ctx.WithTx`. Perform network I/O before opening the transaction, and keep only database work inside its callback.
 
 ```csharp
+string uri = "https://example.com/data"; // the C# HTTP API takes the URI as a string
 var result = ctx.Http.Get(uri);
 var text = result.Match(
     response => response.Body.ToStringUtf8Lossy(),
@@ -395,7 +398,7 @@ var result = ctx.Http.Send(new HttpRequest
 
 Scheduled procedures use the ordinary scheduled-table shape. Its `Scheduled` name refers to a `[SpacetimeDB.Procedure]` method taking `ProcedureContext` plus the scheduled row, and database access inside that procedure goes through `ctx.WithTx`.
 
-Inbound HTTP uses handler attributes and one router. Handler database access also goes through `ctx.WithTx`:
+Inbound HTTP uses handler attributes and one router. Handlers are unstable too, so files that define them need `#pragma warning disable STDB_UNSTABLE`. Handler database access also goes through `ctx.WithTx`:
 
 ```csharp
 [SpacetimeDB.HttpHandler]
@@ -435,3 +438,5 @@ public partial record Shape : SpacetimeDB.TaggedEnum<(Circle Circle, Rectangle R
 var a = new Shape.Circle(new Circle { Radius = 10 });
 var b = new Shape.Rectangle(new Rectangle { Width = 4, Height = 6 });
 ```
+
+Declare `TaggedEnum` records inside your `Module` class. At file scope, a variant named after its own type, such as `Circle Circle`, fails with CS8910.
