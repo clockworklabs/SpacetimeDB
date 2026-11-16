@@ -102,6 +102,34 @@ impl From<BlobError> for TableError {
     }
 }
 
+/// Allows a read to request eviction from its enclosing datastore.
+pub trait ReadEviction: Send + Sync {
+    fn evict_for_read(&self) -> Result<(), TableError>;
+}
+
+fn retry_read<T>(
+    result: Result<T, TableError>,
+    eviction: Option<&dyn ReadEviction>,
+    retry: impl FnOnce() -> Result<T, TableError>,
+) -> Result<T, TableError> {
+    let Err(error) = result else {
+        return result;
+    };
+    let Some(eviction) = eviction else {
+        return Err(error);
+    };
+    let memory_limit = match &error {
+        TableError::Page(error) => matches!(error.as_ref(), PageError::MemoryLimitExceeded(_)),
+        TableError::Blob(error) => matches!(error.as_ref(), BlobError::MemoryLimitExceeded(_)),
+    };
+    if !memory_limit {
+        return Err(error);
+    }
+    // The failed access has returned and released its temporary locks.
+    eviction.evict_for_read()?;
+    retry()
+}
+
 /// A database table containing the row schema, the rows, and indices.
 ///
 /// The table stores the rows into a page manager
@@ -2104,6 +2132,7 @@ impl Table {
             current_page_idx: PageIndex(0),
             table: self,
             blobs,
+            read_eviction: None,
         }
     }
 
@@ -2138,6 +2167,7 @@ impl Table {
             table: self,
             blobs,
             index: self.get_index_by_id(index_id)?,
+            read_eviction: None,
         })
     }
 
@@ -2153,6 +2183,7 @@ impl Table {
             table: self,
             blobs,
             index,
+            read_eviction: None,
         })
     }
 
@@ -2896,6 +2927,14 @@ pub struct TableScanIter<'table> {
     pub(crate) table: &'table Table,
     /// The [`BlobSet`] that row references may refer into.
     pub(crate) blobs: &'table BlobSet,
+    read_eviction: Option<&'table dyn ReadEviction>,
+}
+
+impl<'table> TableScanIter<'table> {
+    pub fn with_read_eviction(mut self, eviction: &'table dyn ReadEviction) -> Self {
+        self.read_eviction = Some(eviction);
+        self
+    }
 }
 
 enum CurrentPage<'a> {
@@ -2966,7 +3005,12 @@ impl<'a> Iterator for TableScanIter<'a> {
                                 page_handle,
                             )
                         };
-                        return Some(row_ref.map_err(Into::into));
+                        // This offset was consumed; retry the same row if loading its blobs failed.
+                        return Some(retry_read(row_ref.map_err(Into::into), self.read_eviction, || {
+                            self.table
+                                .get_row_ref(self.blobs, ptr)
+                                .map(|row| row.expect("row being scanned remains present"))
+                        }));
                     } else {
                         // We've finished visiting that page, so set `current_page` to `None`,
                         // increment `self.current_page_idx` to the index of the next page,
@@ -2990,7 +3034,8 @@ impl<'a> Iterator for TableScanIter<'a> {
                             // We're past the end of the pages.
                             return None;
                         }
-                        match self.table.pages().get_page(self.current_page_idx) {
+                        let read_page = || self.table.pages().get_page(self.current_page_idx).map_err(Into::into);
+                        match retry_read(read_page(), self.read_eviction, read_page) {
                             Ok(Some(next_page)) => {
                                 self.current_page = Some(CurrentPage::new(next_page, self.table.row_size()));
 
@@ -3001,7 +3046,7 @@ impl<'a> Iterator for TableScanIter<'a> {
                                 // so continue past it to the next page slot.
                                 self.current_page_idx.0 += 1;
                             }
-                            Err(e) => return Some(Err(e.into())),
+                            Err(e) => return Some(Err(e)),
                         }
                     }
                 }
@@ -3017,9 +3062,15 @@ pub struct TableAndIndex<'a> {
     table: &'a Table,
     blobs: &'a BlobSet,
     index: &'a TableIndex,
+    read_eviction: Option<&'a dyn ReadEviction>,
 }
 
 impl<'a> TableAndIndex<'a> {
+    pub fn with_read_eviction(mut self, eviction: &'a dyn ReadEviction) -> Self {
+        self.read_eviction = Some(eviction);
+        self
+    }
+
     pub fn table(&self) -> &'a Table {
         self.table
     }
@@ -3046,6 +3097,7 @@ impl<'a> TableAndIndex<'a> {
             table: self.table,
             blobs: self.blobs,
             btree_index_iter: self.index.seek_point(key),
+            read_eviction: self.read_eviction,
         }
     }
 
@@ -3061,6 +3113,7 @@ impl<'a> TableAndIndex<'a> {
             table: self.table,
             blobs: self.blobs,
             btree_index_iter: self.index.seek_range(range)?,
+            read_eviction: self.read_eviction,
         })
     }
 
@@ -3088,6 +3141,7 @@ impl<'a> TableAndIndex<'a> {
             table: self.table,
             blobs: self.blobs,
             btree_index_iter,
+            read_eviction: self.read_eviction,
         })
     }
 }
@@ -3103,6 +3157,7 @@ pub struct IndexScanPointIter<'a> {
     blobs: &'a BlobSet,
     /// The iterator performing the index scan yielding row pointers.
     btree_index_iter: TableIndexPointIter<'a>,
+    read_eviction: Option<&'a dyn ReadEviction>,
 }
 
 impl<'a> IndexScanPointIter<'a> {
@@ -3119,7 +3174,13 @@ impl<'a> Iterator for IndexScanPointIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.btree_index_iter.next().map(|ptr| {
             // SAFETY: `ptr` came from the index, which always holds pointers to valid rows for its table.
-            unsafe { self.table.get_row_ref_unchecked(self.blobs, ptr) }
+            let row = unsafe { self.table.get_row_ref_unchecked(self.blobs, ptr) };
+            // Retry this pointer; advancing the index again would skip a row.
+            retry_read(row, self.read_eviction, || {
+                self.table
+                    .get_row_ref(self.blobs, ptr)
+                    .map(|row| row.expect("row from index remains present"))
+            })
         })
     }
 }
@@ -3135,6 +3196,7 @@ pub struct IndexScanRangeIter<'a> {
     blobs: &'a BlobSet,
     /// The iterator performing the index scan yielding row pointers.
     btree_index_iter: TableIndexRangeIter<'a>,
+    read_eviction: Option<&'a dyn ReadEviction>,
 }
 
 impl<'a> Iterator for IndexScanRangeIter<'a> {
@@ -3144,7 +3206,13 @@ impl<'a> Iterator for IndexScanRangeIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.btree_index_iter.next().map(|ptr| {
             // SAFETY: `ptr` came from the index, which always holds pointers to valid rows for its table.
-            unsafe { self.table.get_row_ref_unchecked(self.blobs, ptr) }
+            let row = unsafe { self.table.get_row_ref_unchecked(self.blobs, ptr) };
+            // Retry this pointer; advancing the index again would skip a row.
+            retry_read(row, self.read_eviction, || {
+                self.table
+                    .get_row_ref(self.blobs, ptr)
+                    .map(|row| row.expect("row from index remains present"))
+            })
         })
     }
 }

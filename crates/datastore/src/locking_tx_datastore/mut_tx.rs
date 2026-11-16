@@ -742,7 +742,10 @@ impl MutTxId {
             }
 
             for ptr in deleted_table.iter() {
-                if let Some(row_ref) = table.get_row_ref(blob_store, ptr)? {
+                if let Some(row_ref) = self
+                    .committed_state_write_lock
+                    .retry_read(|| Ok(table.get_row_ref(blob_store, ptr)?))?
+                {
                     process_views(table_id, row_ref);
                 }
             }
@@ -759,7 +762,10 @@ impl MutTxId {
             }
 
             let blob_store = &self.tx_state.blob_store;
-            for row_ref in inserted_table.scan_rows(blob_store) {
+            for row_ref in inserted_table
+                .scan_rows(blob_store)
+                .with_read_eviction(&*self.committed_state_write_lock)
+            {
                 process_views(table_id, row_ref?);
             }
         }
@@ -2318,7 +2324,10 @@ impl MutTxId {
             .get_index_by_id_with_table(table_id, index_id)?;
 
         // Find the index for the tx state, if any.
-        let tx_index = self.tx_state.get_index_by_id_with_table(table_id, index_id);
+        let tx_index = self
+            .tx_state
+            .get_index_by_id_with_table(table_id, index_id)
+            .map(|index| index.with_read_eviction(&*self.committed_state_write_lock));
 
         Some((table_id, commit_index, tx_index))
     }
@@ -2975,7 +2984,8 @@ impl MutTxId {
                 // See above. Once `TxState::get` is unsafe, justify with:
                 //
                 // Our invariants satisfy `TxState::get`.
-                self.tx_state.get(table_id, row_ptr)?,
+                self.committed_state_write_lock
+                    .retry_read(|| Ok(self.tx_state.get(table_id, row_ptr)?))?,
             ),
             SquashedOffset::COMMITTED_STATE => {
                 if self.tx_state.is_deleted(table_id, row_ptr) {
@@ -4657,7 +4667,9 @@ fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
     // It's sufficient to check that the committed state has an index
     // as index schema changes are applied immediately.
     if let Some(commit_index) = committed_state.get_index_by_cols(table_id, &cols) {
-        let tx_index = tx_state.get_index_by_cols(table_id, &cols);
+        let tx_index = tx_state
+            .get_index_by_cols(table_id, &cols)
+            .map(|index| index.with_read_eviction(committed_state));
         if let Ok(iter) =
             MutTxId::index_scan_range_via_algebraic_value(tx_state, table_id, tx_index, commit_index, &range)
         {
@@ -4703,7 +4715,9 @@ fn iter_by_col_eq<'a, 'r>(
     // as index schema changes are applied immediately.
     let cols = cols.into();
     if let Some(commit_index) = committed_state.get_index_by_cols(table_id, &cols) {
-        let tx_index = tx_state.get_index_by_cols(table_id, &cols);
+        let tx_index = tx_state
+            .get_index_by_cols(table_id, &cols)
+            .map(|index| index.with_read_eviction(committed_state));
         let key = commit_index.index().key_from_algebraic_value(val);
         let iter = MutTxId::index_scan_point_inner(tx_state, table_id, tx_index, commit_index, &key);
         Ok(ScanOrIndex::Index(iter))
