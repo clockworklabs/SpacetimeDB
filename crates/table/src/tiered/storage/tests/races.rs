@@ -3,8 +3,12 @@ use super::*;
 #[test]
 fn pending_writer_prevents_slot_reclamation() {
     let storage = Arc::new(TieredStorage::new_for_test());
-    let key = ObjectKey::from(BlobHashWrapper::hash_from_bytes(b"aaaa"));
-    let slot = storage.catalog.write().entry(key).or_default().clone();
+
+    // Queue the slot through its last owner's release before pausing a new writer.
+    let owner = storage.write(object(b"aaaa"), DiskRetention::Required).unwrap();
+    let key = owner.key();
+    let slot = storage.catalog.read().get(&key).unwrap().clone();
+    drop(owner);
     let state = slot.state.lock();
 
     // Pause registration before it can acquire ownership of an otherwise unowned slot.
@@ -13,9 +17,8 @@ fn pending_writer_prevents_slot_reclamation() {
     wait_for_pending_writer(&slot);
 
     // Collection must skip the reservation without waiting for its object lock.
-    storage.should_reclaim.store(true, Ordering::Release);
     assert_eq!(storage.reclaim().unwrap(), 0);
-    assert!(storage.should_reclaim.load(Ordering::Acquire));
+    assert!(storage.reclaim_pending());
     assert!(Arc::ptr_eq(storage.catalog.read().get(&key).unwrap(), &slot));
     drop(state);
 
@@ -122,15 +125,21 @@ fn write_during_reclamation_uses_replacement_slot() {
 
 #[test]
 fn pending_registration_protects_an_unlocked_slot() {
-    let storage = TieredStorage::new_for_test();
+    let local = Arc::new(TestStore::default());
+    let storage = storage(local.clone(), <_>::default(), ByteBudget::unlimited());
     let garbage = storage.write(object(b"garbage"), DiskRetention::Evictable).unwrap();
     drop(garbage);
+
+    // A failed write queues an empty slot without retaining an owner.
+    local.fail_writes.store(true, Ordering::Relaxed);
+    assert!(storage.write(object(b"pending"), DiskRetention::Required).is_err());
+    local.fail_writes.store(false, Ordering::Relaxed);
 
     // Pause a writer immediately after catalog lookup, before it takes the slot lock.
     let key = ObjectKey::from(BlobHashWrapper::hash_from_bytes(b"pending"));
     let pending = {
-        let mut catalog = storage.catalog.write();
-        let slot = catalog.entry(key).or_default().clone();
+        let catalog = storage.catalog.write();
+        let slot = catalog.get(&key).unwrap().clone();
         slot.registering.fetch_add(1, Ordering::Relaxed);
         slot
     };
@@ -138,6 +147,7 @@ fn pending_registration_protects_an_unlocked_slot() {
     // The slot is unowned and unlocked; only the pending registration protects its identity.
     assert!(pending.state.try_lock().is_some());
     assert_eq!(storage.reclaim().unwrap(), 7);
+    assert!(storage.reclaim_pending());
     assert!(storage
         .catalog
         .read()
