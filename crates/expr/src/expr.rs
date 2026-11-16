@@ -344,6 +344,17 @@ impl CollectViews for RelExpr {
 }
 
 impl RelExpr {
+    /// Does this expression call a view with args?
+    pub fn calls_view_with_args(&self) -> bool {
+        match self {
+            Self::RelVar(relvar) => relvar.view_args.is_some(),
+            Self::Select(input, _) => input.calls_view_with_args(),
+            Self::LeftDeepJoin(join) | Self::EqJoin(join, ..) => {
+                join.rhs.view_args.is_some() || join.lhs.calls_view_with_args()
+            }
+        }
+    }
+
     /// Sets the `arg_hash` of every parameterized view call in this expression that has none.
     /// Sender-scoped views hash the `caller` with their args, and anonymous views hash only their args.
     pub fn bind_view_arg_hashes(&mut self, caller: Identity) {

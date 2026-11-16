@@ -146,8 +146,6 @@ pub enum InvalidViewArgs {
         param: Box<str>,
         ty: Box<str>,
     },
-    #[error("View `{name}` takes arguments, so it can only be queried as `SELECT * FROM {name}(...)`")]
-    UnsupportedQuery { name: TableName },
 }
 
 #[derive(Error, Debug)]

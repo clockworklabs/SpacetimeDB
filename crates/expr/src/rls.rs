@@ -252,6 +252,13 @@ fn resolve_views_for_expr(
             // Parse and type check the RLS filter
             let (expr, is_parameterized) = parse_and_type_sub(&sql, tx, auth)?;
 
+            // Publishing rejects a rule that is only a view call with args, but not one with a filter
+            let (ProjectName::None(rule) | ProjectName::Some(rule, _)) = &expr;
+            anyhow::ensure!(
+                !rule.calls_view_with_args(),
+                "Row-level security is not supported on parameterized views: {sql}"
+            );
+
             // Are any of the RLS rules parameterized?
             *has_param = *has_param || is_parameterized;
 
@@ -486,7 +493,7 @@ mod tests {
     use spacetimedb_sql_parser::ast::BinOp;
 
     use crate::{
-        check::{parse_and_type_sub, test_utils::build_module_def, SchemaView},
+        check::{parse_and_type_sub, test_utils::build_module_def_with_views, SchemaView},
         expr::{Expr, FieldProject, LeftDeepJoin, Param, ProjectName, RelExpr, Relvar},
     };
 
@@ -501,6 +508,7 @@ mod tests {
                 "admins" => Some(TableId(1)),
                 "player" => Some(TableId(2)),
                 "items" => Some(TableId(3)),
+                "v" => Some(TableId(4)),
                 _ => None,
             }
         }
@@ -520,6 +528,14 @@ mod tests {
                     .map(TableOrViewSchema::from)
                     .map(Arc::new)
             })
+            .or_else(|| match table_id.idx() {
+                4 => self.0.view("v").map(|def| {
+                    let mut schema = TableSchema::from_view_def_for_datastore(&self.0, def);
+                    schema.table_id = table_id;
+                    Arc::new(TableOrViewSchema::from(Arc::new(schema)))
+                }),
+                _ => None,
+            })
         }
 
         fn rls_rules_for_table(&self, table_id: TableId) -> anyhow::Result<Vec<Box<str>>> {
@@ -531,36 +547,56 @@ mod tests {
                     "select player.* from player join admins".into(),
                 ]),
                 TableId(3) => Ok(vec!["select * from items where kind = 1".into()]),
+                TableId(4) => Ok(vec!["select * from v(1) where x = 1".into()]),
                 _ => Ok(vec![]),
             }
         }
     }
 
     fn module_def() -> ModuleDef {
-        build_module_def(vec![
-            (
-                "users",
-                ProductType::from([("identity", AlgebraicType::identity()), ("id", AlgebraicType::U64)]),
-            ),
-            (
-                "admins",
-                ProductType::from([("identity", AlgebraicType::identity()), ("id", AlgebraicType::U64)]),
-            ),
-            (
-                "player",
-                ProductType::from([("id", AlgebraicType::U64), ("level_num", AlgebraicType::U64)]),
-            ),
-            (
-                "items",
-                ProductType::from([("id", AlgebraicType::U64), ("kind", AlgebraicType::U64)]),
-            ),
-        ])
+        build_module_def_with_views(
+            vec![
+                (
+                    "users",
+                    ProductType::from([("identity", AlgebraicType::identity()), ("id", AlgebraicType::U64)]),
+                ),
+                (
+                    "admins",
+                    ProductType::from([("identity", AlgebraicType::identity()), ("id", AlgebraicType::U64)]),
+                ),
+                (
+                    "player",
+                    ProductType::from([("id", AlgebraicType::U64), ("level_num", AlgebraicType::U64)]),
+                ),
+                (
+                    "items",
+                    ProductType::from([("id", AlgebraicType::U64), ("kind", AlgebraicType::U64)]),
+                ),
+            ],
+            vec![(
+                "v",
+                ProductType::from([("id", AlgebraicType::U32)]),
+                ProductType::from([("x", AlgebraicType::U32)]),
+            )],
+        )
     }
 
     /// Parse, type check, and resolve RLS rules
     fn resolve(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> anyhow::Result<Vec<ProjectName>> {
         let (expr, _) = parse_and_type_sub(sql, tx, auth)?;
         resolve_views_for_sub(tx, expr, auth, &mut false)
+    }
+
+    /// A rule that calls a view with args is rejected when it is resolved
+    #[test]
+    fn rls_rule_on_a_view_call_with_args_is_rejected() {
+        let tx = SchemaViewer(module_def());
+        let auth = AuthCtx::new(Identity::ZERO, Identity::ONE);
+        let err = resolve("select * from v(1)", &tx, &auth).expect_err("the rule calls a view with args");
+        assert!(
+            err.to_string().contains("not supported on parameterized views"),
+            "unexpected error: {err}"
+        );
     }
 
     /// Lifting runs before RLS, so only the query's literals are lifted, not the rule's

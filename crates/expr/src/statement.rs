@@ -15,7 +15,7 @@ use spacetimedb_sql_parser::{
 use thiserror::Error;
 
 use crate::{
-    check::{expect_select_all_view_calls, Relvars},
+    check::Relvars,
     errors::{DmlOnView, InvalidLiteral},
     expr::{FieldProject, ProjectList, RelExpr, Relvar},
     type_limit,
@@ -403,7 +403,7 @@ impl TypeChecker for SqlChecker {
     type Set = SqlSelect;
 
     fn type_ast(ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<ProjectList> {
-        expect_select_all_view_calls(Self::type_set(ast, &mut Relvars::default(), tx)?)
+        Self::type_set(ast, &mut Relvars::default(), tx)
     }
 
     fn type_set(ast: Self::Set, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<ProjectList> {
@@ -571,11 +571,11 @@ mod tests {
         assert!(build_query(2_500, ',').is_ok());
     }
 
-    /// A view called with args can only be queried as `SELECT * FROM v(...)`,
-    /// while a view without params can be queried like a table.
+    /// A view called with args can be queried like a table, except in a join,
+    /// and so can a view without params.
     #[test]
     fn view_calls() {
-        let row = || ProductType::from([("x", AlgebraicType::U32)]);
+        let row = || ProductType::from([("x", AlgebraicType::U32), ("y", AlgebraicType::U32)]);
         let tx = SchemaViewer(build_module_def_with_views(
             vec![("t", ProductType::from([("u32", AlgebraicType::U32)]))],
             vec![
@@ -587,6 +587,15 @@ mod tests {
         for sql in [
             "select * from v(42)",
             "select x.* from v(42) as x",
+            "select * from v(42) where x = 1",
+            "select * from v(42) where x = 1 and y > 2",
+            "select x from v(42)",
+            "select y, x from v(42) where x = 1",
+            "select a.x from v(42) as a where a.y = 2",
+            "select count(*) as n from v(42)",
+            "select count(*) as n from v(42) where x = 1",
+            "select * from v(42) limit 1",
+            "select x from v(42) where y = 2 limit 1",
             "select * from p where x = 1",
             "select x from p",
             "select * from p limit 5",
@@ -597,22 +606,24 @@ mod tests {
             assert!(result.is_ok(), "{sql}: {:?}", result.err());
         }
 
+        // Joins with a view call are not supported yet
         for sql in [
-            "select * from v(42) where x = 1",
-            "select x from v(42)",
-            "select count(*) as n from v(42)",
-            "select * from v(42) limit 1",
+            "select t.* from t join v(42) on t.u32 = v.x",
+            "select v.* from v(42) join t on v.x = t.u32",
         ] {
             let result = parse_and_type_sql(sql, &tx);
             assert!(
-                matches!(
-                    result,
-                    Err(TypingError::ViewArgs(InvalidViewArgs::UnsupportedQuery { .. }))
-                ),
+                matches!(result, Err(TypingError::ParseError(_))),
                 "{sql}: {:?}",
                 result.err()
             );
         }
+        let result = parse_and_type_sql("select t.* from t join v on t.u32 = v.x", &tx);
+        assert!(
+            matches!(result, Err(TypingError::ViewArgs(InvalidViewArgs::Arity { .. }))),
+            "a view with params in a join, without args: {:?}",
+            result.err()
+        );
     }
 
     #[test]
