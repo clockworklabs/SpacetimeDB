@@ -3,6 +3,9 @@ title: spacetime.json
 slug: /cli-reference/spacetime-json
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 # `spacetime.json` Configuration File
 
 The `spacetime.json` file defines project-level configuration for the SpacetimeDB CLI. It eliminates repetitive CLI flags and enables multi-target workflows such as publishing multiple databases or generating bindings for multiple languages from a single project.
@@ -144,18 +147,61 @@ Declaring a dependency does not publish the receiver. To make it a publish targe
 
 A `database` reference uses the target's `module-path`, `bin-path`, or `js-path`, and its resolved receiver build options and .NET SDK version. It fails if no matching target or module source exists. A dependency does not inherit the sending module's build options or .NET SDK version.
 
-`spacetime generate lobby` selects the sending database's regular `generate` entries and dependencies; without a database filter, generation includes all targets' entries. For `dependencies` entries, the module binding language is inferred from the sending module, not the external client project. Rust and TypeScript dependency bindings default to `<sending module-path>/src/remote_bindings`. C# dependency bindings default to `<sending module-path>/remote_bindings`, in the `RemoteBindings.<Name>` namespace; for example, a dependency named `game_world` gets `RemoteBindings.GameWorld`. Each dependency gets its own namespace, so bindings from different receivers don't conflict.
+`spacetime generate lobby` selects the sending database's regular `generate` entries and dependencies; without a database filter, generation includes all targets' entries. For `dependencies` entries, the module binding language is inferred from the sending module, not the external client project. Each dependency's bindings go in a directory named after it, under a default output directory that depends on the sending module's language:
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+`<sending module-path>/src/remote_bindings`
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+`<sending module-path>/remote_bindings`. Each dependency's bindings are in the `RemoteBindings.<Name>` namespace, so bindings from different receivers don't conflict. For example, a dependency named `game_world` gets `RemoteBindings.GameWorld`. Set `namespace` to choose another.
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+`<sending module-path>/src/remote_bindings`, with a `mod.rs` that declares each dependency's module.
+
+</TabItem>
+</Tabs>
 
 ### Explicit module-binding request
 
 Without configuration, select the binding kind with `--bindings client` (the default) or `--bindings module`. When using `spacetime.json`, `--bindings` can override the binding kind only if a single generation entry is selected; it is rejected when multiple entries are selected. Prefer the config fields described above for configured generation. Here `--module-path` identifies the **receiving module**, while `--out-dir` explicitly places output in the **sending module** project:
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```bash
+spacetime generate --no-config --bindings module --lang typescript \
+  --module-path ./game_world --out-dir ./lobby/src/remote_bindings/game_world
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```bash
+spacetime generate --no-config --bindings module --lang csharp \
+  --module-path ./game_world --out-dir ./lobby/remote_bindings/game_world \
+  --namespace RemoteBindings.GameWorld
+```
+
+`--namespace` sets the namespace of the generated bindings. Without it, they're in `RemoteBindings`.
+
+</TabItem>
+<TabItem value="rust" label="Rust">
 
 ```bash
 spacetime generate --no-config --bindings module --lang rust \
   --module-path ./game_world --out-dir ./lobby/src/remote_bindings
 ```
 
-This generates Rust module bindings for `game_world` in the `lobby` module's source tree. Use `--lang typescript` for a TypeScript sending module, or `--lang csharp` for a C# sending module. With `--lang csharp`, `--namespace` sets the namespace of the generated bindings. `unrealcpp` is client-only; the CLI accepts `cpp` only with `--bindings module`, but C++ module binding generation is not implemented yet.
+</TabItem>
+</Tabs>
+
+This generates module bindings for `game_world` in the `lobby` module's source tree. `unrealcpp` is client-only; the CLI accepts `cpp` only with `--bindings module`, but C++ module binding generation is not implemented yet.
 
 ## Children and inheritance
 
