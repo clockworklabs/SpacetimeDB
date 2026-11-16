@@ -78,8 +78,10 @@ pub(super) fn generate_cpp_module_bindings(module: &ModuleDef, dependency_name: 
     if !types.is_empty() {
         writeln!(out);
         for typ in &types {
-            if !matches!(module.typespace_for_generate()[typ.ty], AlgebraicTypeDef::PlainEnum(_)) {
-                writeln!(out, "struct {};", names.types[&typ.ty]);
+            // Arrays don't order definitions, so plain enums need declaring too.
+            match module.typespace_for_generate()[typ.ty] {
+                AlgebraicTypeDef::PlainEnum(_) => writeln!(out, "enum class {} : uint8_t;", names.types[&typ.ty]),
+                _ => writeln!(out, "struct {};", names.types[&typ.ty]),
             }
         }
         for typ in definition_order(module, &types) {

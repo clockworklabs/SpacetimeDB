@@ -195,6 +195,32 @@ fn cpp_receiver_names_avoid_keywords_and_collisions() {
 }
 
 #[test]
+fn cpp_receiver_declares_enums_held_in_arrays() {
+    let mut builder = RawModuleDefV10Builder::new();
+    let status = builder.add_algebraic_type(
+        [],
+        "Status",
+        AlgebraicType::simple_enum(["Ok", "Failed"].into_iter()),
+        true,
+    );
+    let batch = builder.add_algebraic_type(
+        [],
+        "Batch",
+        AlgebraicType::product([("statuses", AlgebraicType::array(AlgebraicType::Ref(status)))]),
+        true,
+    );
+    builder.add_reducer("receive", ProductType::from([("batch", AlgebraicType::Ref(batch))]));
+    let module: ModuleDef = builder.finish().try_into().unwrap();
+    let code = header(&module, None);
+
+    // `Batch` is defined before `Status`, so `Status` must already be declared.
+    let declared = code.find("enum class Status : uint8_t;").unwrap();
+    let batch = code.find("struct Batch {").unwrap();
+    assert!(declared < batch);
+    assert!(code.contains("std::vector<::remote_module::Status> statuses;"));
+}
+
+#[test]
 fn cpp_receiver_bindings_cover_builtin_types() {
     let mut builder = RawModuleDefV10Builder::new();
     builder.add_reducer(

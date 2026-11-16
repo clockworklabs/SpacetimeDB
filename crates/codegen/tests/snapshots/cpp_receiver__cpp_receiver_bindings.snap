@@ -30,6 +30,7 @@ struct module_tag {};
 /// The identity of a database that runs this receiver module.
 using Identity = ::SpacetimeDB::RemoteIdentity<detail::module_tag>;
 
+enum class Mood : uint8_t;
 struct PingCheckpoint;
 struct PingDetails;
 struct PingState;
