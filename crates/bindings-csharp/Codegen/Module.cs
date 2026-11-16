@@ -2712,6 +2712,7 @@ record AssemblyDeclaration(
     string DescriptorTypeName,
     EquatableArray<NamespaceDeclaration> Mounts,
     string RootOnlyDeclarations,
+    string IdcDeclarations,
     string? CaseConversionPolicy,
     EquatableArray<AssemblyTableAccessor> Tables,
     EquatableArray<AssemblyTableAccessor> ReadOnlyTables,
@@ -2994,17 +2995,9 @@ public class Module : IIncrementalGenerator
                     assembly.Identity.ToString(),
                     descriptor.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                     new(ImmutableArray<NamespaceDeclaration>.Empty),
-                    descriptor
-                        .GetMembers("RootOnlyDeclarations")
-                        .OfType<IFieldSymbol>()
-                        .FirstOrDefault()
-                        ?.ConstantValue as string
-                        ?? "",
-                    descriptor
-                        .GetMembers("CaseConversionPolicy")
-                        .OfType<IFieldSymbol>()
-                        .FirstOrDefault()
-                        ?.ConstantValue as string,
+                    ReadConstant("RootOnlyDeclarations") ?? "",
+                    ReadConstant("IdcDeclarations") ?? "",
+                    ReadConstant("CaseConversionPolicy"),
                     ReadAccessors("Tables"),
                     ReadAccessors("ReadOnlyTables"),
                     new(
@@ -3028,6 +3021,10 @@ public class Module : IIncrementalGenerator
                     )
                 )
             );
+
+            string? ReadConstant(string name) =>
+                descriptor.GetMembers(name).OfType<IFieldSymbol>().FirstOrDefault()?.ConstantValue
+                as string;
 
             EquatableArray<AssemblyTableAccessor> ReadAccessors(string container) =>
                 new(
@@ -3647,6 +3644,17 @@ public class Module : IIncrementalGenerator
                                 )
                             );
                         }
+                    }
+                }
+                foreach (var assembly in assemblies)
+                {
+                    if (assembly.IdcDeclarations.Length != 0)
+                    {
+                        context.ReportDiagnostic(
+                            ErrorDescriptor.DependencyIdcDeclarations.ToDiag(
+                                (assembly.Identity, assembly.IdcDeclarations)
+                            )
+                        );
                     }
                 }
 
@@ -4318,6 +4326,10 @@ public class Module : IIncrementalGenerator
                                 addReducers.Where(r => r.Kind != ReducerKind.UserDefined)
                                     .Select(r => $"lifecycle reducer {r.FullName} ({r.Kind})")
                             )), true)}};
+                            public const string IdcDeclarations = {{SymbolDisplay.FormatLiteral(string.Join(", ",
+                                tableAccessors.Where(t => t.Outbox is not null)
+                                    .Select(t => $"outbox table {t.TableAccessorName}")
+                            ), true)}};
                             public const int ReducerCount = {{addReducers.Array.Length}};
                             public const int ProcedureCount = {{addProcedures.Array.Length}};
                             public const int HttpHandlerCount = {{addHttpHandlers.Array.Length}};
