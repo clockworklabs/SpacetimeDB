@@ -1444,7 +1444,7 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
         public const string? CaseConversionPolicy = "SnakeCase";
         public const string RootOnlyDeclarations =
             "row-level security filters, lifecycle reducer OnResultIssues.LifecycleResult (ClientConnected), lifecycle reducer Reducers.TestDuplicateReducerKind1 (Init), lifecycle reducer Reducers.TestDuplicateReducerKind2 (Init)";
-        public const string IdcDeclarations = "";
+        public const string OutboxTables = "";
         public const int ReducerCount = 14;
         public const int ProcedureCount = 0;
         public const int HttpHandlerCount = 0;

@@ -459,13 +459,13 @@ internal static class ErrorDescriptor
 
     public static readonly ErrorDescriptor<(
         string assembly,
-        string declarations
-    )> DependencyIdcDeclarations =
+        string tables
+    )> DependencyOutboxTables =
         new(
             group,
             "Outbox tables in dependency",
             ctx =>
-                $"Dependency '{ctx.assembly}' declares {ctx.declarations}. Outbox tables are only supported in the root assembly.",
+                $"Dependency '{ctx.assembly}' declares outbox tables ({ctx.tables}). Outbox tables are only supported in the root assembly.",
             _ => Location.None
         );
 }
