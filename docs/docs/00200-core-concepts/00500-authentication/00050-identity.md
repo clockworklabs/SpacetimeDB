@@ -7,6 +7,15 @@ An `Identity` is a 256-bit identifier for a principal in SpacetimeDB. Users and
 databases both have identities. Use an identity to associate rows with their
 owner, identify the caller of a reducer, or filter a per-user view.
 
+:::note What is a principal?
+
+A **principal** is simply a person or piece of software that can act in a system.
+For example, it could be a player using your app or another database calling a
+reducer. Think of the principal as "who is doing this?" and its `Identity` as
+the name tag SpacetimeDB uses to recognize it.
+
+:::
+
 An identity is **not a credential**. It is safe to send to other clients when
 your application needs to identify a user. Knowing an identity, or constructing
 an `Identity` value from its hexadecimal representation, does not let a client
