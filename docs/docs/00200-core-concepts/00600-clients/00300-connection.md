@@ -561,14 +561,25 @@ if let Some(stats) = conn.network_stats() {
 </TabItem>
 <TabItem value="unreal" label="Unreal">
 
-Connection metrics for the Unreal C++ SDK are coming soon.
+```cpp
+FSpacetimeDBNetworkStats Stats;
+if (Conn->TryGetNetworkStats(Stats))
+{
+    UE_LOG(LogTemp, Log, TEXT("RTT %.1f ms, jitter %.1f ms"),
+        Stats.Rtt.GetTotalMilliseconds(), Stats.Jitter.GetTotalMilliseconds());
+}
+```
+
+`TryGetNetworkStats` is also a Blueprint node. C++ callers can use `GetNetworkStats()`, which returns a `TOptional<FSpacetimeDBNetworkStats>`. Pings are sent, and their replies processed, as the connection ticks, so the stats only advance while it is ticked, by automatic ticking or by calling `FrameTick()`.
+
+Round-trip times are measured from when the engine's WebSocket module hands a message to the SDK, so they can include up to a frame of the engine's own queueing. `RttMin` is the best guide to the underlying network.
 
 </TabItem>
 </Tabs>
 
-The stats are absent (`undefined`, `null` or `None`) until the first ping is answered, and again after the connection closes. Once present, every field is set. Each read returns a fresh snapshot, so read the stats again whenever you want current values.
+The stats are absent (`undefined`, `null` or `None`, or `TryGetNetworkStats` returns false) until the first ping is answered, and again after the connection closes or is replaced by a reconnect. Once present, every field is set. Each read returns a fresh snapshot, so read the stats again whenever you want current values.
 
-| TypeScript         | C#                 | Rust                 | Meaning |
+| TypeScript         | C# and Unreal      | Rust                 | Meaning |
 | ------------------ | ------------------ | -------------------- | ------- |
 | `rtt`              | `Rtt`              | `rtt`                | Smoothed round-trip time, using the same smoothing as TCP (RFC 6298). |
 | `rttLatest`        | `RttLatest`        | `rtt_latest`         | The most recent round-trip time sample. |
@@ -578,7 +589,7 @@ The stats are absent (`undefined`, `null` or `None`) until the first ping is ans
 | `serverTimeLatest` | `ServerTimeLatest` | `server_time_latest` | When the server received the most recent ping. It doesn't advance between pings. |
 | `pongWait`         | `PongWait`         | `pong_wait`          | How long the oldest unanswered ping has been waiting, or zero if every ping has been answered. |
 
-Round-trip times exclude the time the server spent handling each ping, so they measure the network, not server load. Durations are milliseconds as a `number` in TypeScript, `TimeSpan` in C#, and `Duration` in Rust.
+Round-trip times exclude the time the server spent handling each ping, so they measure the network, not server load. Durations are milliseconds as a `number` in TypeScript, `TimeSpan` in C#, `Duration` in Rust, and `FTimespan` in Unreal.
 
 `pongWait` is the field to watch for a stalled connection. On a healthy connection it stays below `rtt`. The other fields only change when a ping is answered, so if the network fails silently they keep showing their last good values, while `pongWait` keeps rising.
 
@@ -614,7 +625,12 @@ let now = conn
 </TabItem>
 <TabItem value="unreal" label="Unreal">
 
-Connection metrics for the Unreal C++ SDK are coming soon.
+```cpp
+FSpacetimeDBNetworkStats Stats;
+const FSpacetimeDBTimestamp Now = Conn->TryGetNetworkStats(Stats)
+    ? Stats.ServerNow
+    : FSpacetimeDBTimestamp::FromFDateTime(FDateTime::UtcNow());
+```
 
 </TabItem>
 </Tabs>
@@ -650,7 +666,10 @@ DbConnection::builder()
 </TabItem>
 <TabItem value="unreal" label="Unreal">
 
-Connection metrics for the Unreal C++ SDK are coming soon.
+```cpp
+UDbConnection::Builder()
+    ->WithPingInterval(FTimespan::FromSeconds(5)) // FTimespan::Zero() disables
+```
 
 </TabItem>
 </Tabs>
@@ -686,7 +705,23 @@ println!("RTT {:?}", result.rtt);
 </TabItem>
 <TabItem value="unreal" label="Unreal">
 
-Connection metrics for the Unreal C++ SDK are coming soon.
+```cpp
+// In a UCLASS, so the callback can be bound as a dynamic delegate.
+UFUNCTION()
+void OnPingComplete(bool bSuccess, const FSpacetimeDBPingResult& Result, const FString& Error)
+{
+    if (bSuccess)
+    {
+        UE_LOG(LogTemp, Log, TEXT("RTT %.1f ms"), Result.Rtt.GetTotalMilliseconds());
+    }
+}
+
+FOnPingCompleteDelegate Callback;
+Callback.BindDynamic(this, &AMyActor::OnPingComplete);
+Conn->Ping(Callback);
+```
+
+`Ping` is also a Blueprint node. The callback runs from `FrameTick()`, like the SDK's other callbacks. If the connection isn't established, it runs straight away with `bSuccess` false.
 
 </TabItem>
 </Tabs>
@@ -717,7 +752,7 @@ The ping timeout applies under the `browser` feature only. Change it with `.with
 </TabItem>
 <TabItem value="unreal" label="Unreal">
 
-Connection metrics for the Unreal C++ SDK are coming soon.
+The Unreal SDK doesn't have a ping timeout. Whether the engine's WebSocket module detects a silently failed network itself hasn't been established, so watch `PongWait` if your app needs to notice one.
 
 </TabItem>
 </Tabs>
