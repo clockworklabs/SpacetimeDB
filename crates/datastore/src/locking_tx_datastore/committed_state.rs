@@ -1210,35 +1210,11 @@ impl CommittedState {
             .set(self.storage.blobs().bytes_used_by_blobs() as _);
     }
 
-    /// Evict objects from the cache until the resident size is below the low watermark,
-    /// or no more objects can be evicted.
-    ///
-    /// TODO: Use a database-scoped LRU eviction policy instead of evicting table by table.
-    pub(super) fn trim_resident(&self) -> Result<()> {
-        let pages = self.storage.pages();
-        let target = pages.resident_budget().low_water_bytes;
-        for table in self.tables.values() {
-            if pages.resident_usage().accounted_bytes() <= target {
-                return Ok(());
-            }
-            table.trim()?;
-        }
-        if pages.resident_usage().accounted_bytes() > target {
-            self.storage.blobs().trim()?;
-        }
-        Ok(())
-    }
-
     /// Evict live objects when under budget pressure, and reclaim space used by
     /// orphaned objects.
     #[cfg(feature = "durability")]
     pub(super) fn trim(&self) -> std::result::Result<(), crate::error::TrimTableError> {
-        for table in self.tables.values() {
-            table.trim()?;
-        }
-        self.storage.trim()?;
-
-        Ok(())
+        self.storage.trim().map(drop).map_err(Into::into)
     }
 
     /// Reclaim space used by orphaned objects.

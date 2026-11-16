@@ -1,11 +1,7 @@
 use super::metrics::{CacheTier, EvictionDirection, ObjectType};
-use std::{
-    num::NonZeroUsize,
-    ops::Deref,
-    sync::{Arc, Mutex},
-};
+use std::{num::NonZeroUsize, ops::Deref, sync::Arc};
 
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use spacetimedb_data_structures::{
     map::{hash_map, IntMap},
     small_map::SmallHashMap,
@@ -19,9 +15,9 @@ use crate::{
     page::Page,
     row_type_visitor::VarLenVisitorProgram,
     tiered::{
-        error::{BlobError, ObjectStoreError},
+        error::{BlobError, EvictionError, ObjectStoreError},
         map::{BlobHashWrapper, ObjectKey},
-        mem::{self, BlobEvictionCandidate, BlobFrame, ReservedBlob},
+        mem::{self, BlobEvictionCandidate, BlobFrame, EvictionSource, ReservedBlob},
         storage::{DiskObject, DiskRetention, Object},
         ByteBudget, ByteBudgetUsage, EvictionPolicy, TieredStorage,
     },
@@ -35,6 +31,19 @@ use crate::{
 /// that get evicted from memory are handed off to the shared [TieredStorage].
 #[derive(Debug)]
 pub struct BlobSet {
+    inner: Arc<BlobSetInner>,
+}
+
+impl Deref for BlobSet {
+    type Target = BlobSetInner;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+#[derive(Debug)]
+pub struct BlobSetInner {
     resident: Arc<mem::ResidentObjects>,
     storage: Arc<TieredStorage>,
     entries: RwLock<IntMap<BlobHashWrapper, BlobEntry>>,
@@ -45,12 +54,20 @@ pub struct BlobSet {
 impl BlobSet {
     /// Create a new, empty [BlobSet].
     pub fn new(resident: Arc<mem::ResidentObjects>, storage: Arc<TieredStorage>) -> Self {
-        Self {
+        Self::from_inner(BlobSetInner {
             resident,
             storage,
             entries: <_>::default(),
             evictable: <_>::default(),
-        }
+        })
+    }
+
+    fn from_inner(inner: BlobSetInner) -> Self {
+        let inner = Arc::new(inner);
+        let source: Arc<dyn EvictionSource> = inner.clone();
+        inner.resident.register_eviction_source(&source);
+
+        Self { inner }
     }
 
     /// Create a new [BlobSet] from externally loaded blobs.
@@ -58,7 +75,11 @@ impl BlobSet {
     /// This is used when restoring from a snapshot.
     ///
     /// All blobs in the map will initially be resident, bypassing the memory budget.
-    pub fn from_blob_map(resident: Arc<mem::ResidentObjects>, storage: Arc<TieredStorage>, map: BlobMap) -> Self {
+    pub fn from_blob_map(
+        resident: Arc<mem::ResidentObjects>,
+        storage: Arc<TieredStorage>,
+        map: BlobMap,
+    ) -> Self {
         let mut entries = IntMap::default();
         for (key, BlobMapEntry { uses, blob }) in map.inner {
             let frame = resident.register_blob_unchecked(blob);
@@ -74,12 +95,12 @@ impl BlobSet {
             );
         }
 
-        Self {
+        Self::from_inner(BlobSetInner {
             resident,
             storage,
             entries: RwLock::new(entries),
             evictable: <_>::default(),
-        }
+        })
     }
 
     pub fn new_for_test() -> Self {
@@ -93,8 +114,8 @@ impl BlobSet {
     /// met.
     ///
     /// See also: [Self::evict].
-    pub fn trim(&self) -> Result<u64, BlobError> {
-        self.evict(self.resident.budget().config().low_water_bytes)
+    fn trim(&self) -> Result<u64, EvictionError> {
+        self.resident.trim()
     }
 
     /// Attempt to evict resident blobs in this set that have no external
@@ -105,88 +126,13 @@ impl BlobSet {
     /// resident pages may also prevent the usage to meet the target.
     ///
     /// Returns the number of bytes freed.
-    pub fn evict(&self, target_usage: u64) -> Result<u64, BlobError> {
+    pub fn evict(&self, target_usage: u64) -> Result<u64, EvictionError> {
         let timer = self.resident.metrics().timer();
-        let result = self.evict_inner(target_usage);
+        let result = self.inner.evict(target_usage);
         self.resident
             .metrics()
             .eviction(EvictionDirection::MemoryToDisk, timer.nanos());
         result
-    }
-
-    fn evict_inner(&self, target_usage: u64) -> Result<u64, BlobError> {
-        let mut bytes_freed = 0;
-
-        if self.resident.usage().accounted_bytes() <= target_usage {
-            return Ok(bytes_freed);
-        }
-
-        let mut candidates = self.evictable.lock().unwrap();
-        self.resident.evictable_blobs(&mut candidates);
-        for candidate in candidates.drain(..) {
-            let maybe_resident = self.entries.read().get(&candidate.key).and_then(|entry| match entry {
-                BlobEntry::Resident { blob, pins, .. } => (pins == &0).then(|| blob.clone()),
-                BlobEntry::NonResident { .. } => None,
-            });
-
-            if let Some(blob) = maybe_resident {
-                let mut backing = self.storage.write(Object::from(&blob), DiskRetention::Required)?;
-                assert_eq!(
-                    backing.key().as_blob_hash().expect("storage key to be a blob hash"),
-                    &candidate.key
-                );
-
-                let mut entries = self.entries.write();
-                let Some(entry) = entries.get_mut(&candidate.key) else {
-                    continue;
-                };
-                let BlobEntry::Resident {
-                    uses,
-                    blob: current,
-                    pins,
-                    disk_pins,
-                    ..
-                } = entry
-                else {
-                    continue;
-                };
-                // Skip pinned entries.
-                if *pins > 0 {
-                    continue;
-                }
-                // Eviction may proceed concurrent to blob set access, in
-                // particular we're not holding an entries lock while writing to
-                // the tiered storage. Therefore, ensure that the entry is still
-                // the same allocation.
-                //
-                // An evictable frame must have exactly two references: one in
-                // `entries` + the clone of `blob` that was done above.
-                if !Arc::ptr_eq(&blob.frame, &current.frame) || Arc::strong_count(&blob.frame) != 2 {
-                    continue;
-                };
-
-                let size = blob.size();
-                backing.set_pins(*disk_pins);
-                *entry = BlobEntry::NonResident {
-                    uses: *uses,
-                    size,
-                    backing,
-                };
-                self.resident
-                    .metrics()
-                    .evicted(ObjectType::Blob, EvictionDirection::MemoryToDisk, size);
-                drop(blob);
-                self.resident.evict_blob(candidate);
-                drop(entries);
-                bytes_freed += size;
-
-                if self.resident.usage().accounted_bytes() <= target_usage {
-                    break;
-                }
-            }
-        }
-
-        Ok(bytes_freed)
     }
 
     #[inline]
@@ -215,7 +161,11 @@ impl BlobSet {
     /// Insert `bytes` into this set, making it a resident blob.
     ///
     /// Subject to the memory budget.
-    pub fn insert(&self, eviction_policy: EvictionPolicy, bytes: &[u8]) -> Result<BlobHandle, BlobError> {
+    pub fn insert(
+        &self,
+        eviction_policy: EvictionPolicy,
+        bytes: &[u8],
+    ) -> Result<BlobHandle, BlobError> {
         self.insert_with_memory_limit_exemption(eviction_policy, bytes, false)
     }
 
@@ -355,7 +305,11 @@ impl BlobSet {
     /// entry catalog.
     ///
     /// On success returns the size in bytes of the blob.
-    pub fn free_ref(&self, hash: BlobHashWrapper, eviction_policy: EvictionPolicy) -> Result<u64, BlobError> {
+    pub fn free_ref(
+        &self,
+        hash: BlobHashWrapper,
+        eviction_policy: EvictionPolicy,
+    ) -> Result<u64, BlobError> {
         let mut entries = self.entries.write();
         match entries.entry(hash) {
             hash_map::Entry::Vacant(_) => Err(BlobError::MissingBlob(Box::new(hash.into()))),
@@ -401,7 +355,9 @@ impl BlobSet {
                 BlobEntry::Resident { blob, .. } => Ok::<_, BlobError>(Ok(blob.clone())),
                 BlobEntry::NonResident { .. } => {
                     let fault_guard = fault.insert(self.resident.metrics().fault(ObjectType::Blob));
-                    let bytes = self.storage.read_with_source(hash.into(), &mut fault_guard.source)?;
+                    let bytes = self
+                        .storage
+                        .read_with_source(hash.into(), &mut fault_guard.source)?;
                     Ok(Err(bytes))
                 }
             }
@@ -593,7 +549,9 @@ impl BlobSet {
 
 #[cfg(test)]
 impl BlobSet {
-    pub fn usage_counter(&self) -> spacetimedb_data_structures::map::HashMap<BlobHashWrapper, usize> {
+    pub fn usage_counter(
+        &self,
+    ) -> spacetimedb_data_structures::map::HashMap<BlobHashWrapper, usize> {
         self.entries
             .read()
             .iter()
@@ -608,10 +566,14 @@ impl BlobSet {
 
 impl MemoryUsage for BlobSet {
     fn heap_usage(&self) -> usize {
-        // Cache and backing store are counted by `TieredDatabaseStorage`.
-        let scratch = self.evictable.lock().unwrap().capacity() * size_of::<BlobEvictionCandidate>();
+        self.inner.heap_usage()
+    }
+}
 
-        self.entries.read().heap_usage() + scratch
+impl MemoryUsage for BlobSetInner {
+    fn heap_usage(&self) -> usize {
+        let scratch = self.evictable.lock().capacity() + size_of::<BlobEvictionCandidate>();
+        scratch + self.entries.read().heap_usage()
     }
 }
 
@@ -680,7 +642,9 @@ impl BlobEntry {
 
     fn pin_disk(&mut self) {
         match self {
-            Self::Resident { backing, disk_pins, .. } => {
+            Self::Resident {
+                backing, disk_pins, ..
+            } => {
                 *disk_pins = disk_pins.checked_add(1).expect("disk pin count overflow");
                 if let Some(backing) = backing {
                     backing.pin();
@@ -692,7 +656,9 @@ impl BlobEntry {
 
     fn unpin_disk(&mut self) {
         match self {
-            Self::Resident { backing, disk_pins, .. } => {
+            Self::Resident {
+                backing, disk_pins, ..
+            } => {
                 *disk_pins = disk_pins
                     .checked_sub(1)
                     .expect("attempt to decrement disk pin count already at zero");
@@ -771,7 +737,9 @@ impl BlobReadSet {
         let row_data = page.get_row_data(offset, layout.size());
         let mut inner = SmallHashMap::default();
         for vlr in unsafe { visitor.visit_var_len(row_data) }.filter(|vlr| vlr.is_large_blob()) {
-            let granule = unsafe { page.iter_var_len_object(vlr.first_granule) }.next().unwrap();
+            let granule = unsafe { page.iter_var_len_object(vlr.first_granule) }
+                .next()
+                .unwrap();
             let blob_hash = granule.blob_hash().into();
             let blob = blobs.get(blob_hash)?;
             inner.insert(blob_hash, blob);
@@ -812,7 +780,8 @@ impl BlobMap {
     /// equal to `BlobHash::hash_from_bytes(blob)`.
     pub fn insert_with_uses(&mut self, hash: &BlobHash, uses: NonZeroUsize, blob: Box<[u8]>) {
         debug_assert_eq!(hash, &BlobHash::hash_from_bytes(&blob));
-        self.inner.insert((*hash).into(), BlobMapEntry { uses, blob });
+        self.inner
+            .insert((*hash).into(), BlobMapEntry { uses, blob });
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&BlobHashWrapper, &BlobMapEntry)> {
@@ -843,21 +812,200 @@ impl IntoIterator for BlobMap {
     }
 }
 
+impl EvictionSource for BlobSetInner {
+    fn evict(&self, target_usage: u64) -> Result<u64, EvictionError> {
+        let mut bytes_freed = 0;
+
+        if self.resident.usage().accounted_bytes() <= target_usage {
+            return Ok(bytes_freed);
+        }
+
+        let mut candidates = self.evictable.lock();
+        self.resident.evictable_blobs(&mut candidates);
+        for candidate in candidates.drain(..) {
+            let maybe_resident =
+                self.entries
+                    .read()
+                    .get(&candidate.key)
+                    .and_then(|entry| match entry {
+                        BlobEntry::Resident { blob, pins, .. } => {
+                            (pins == &0).then(|| blob.clone())
+                        }
+                        BlobEntry::NonResident { .. } => None,
+                    });
+
+            if let Some(blob) = maybe_resident {
+                let mut backing = self
+                    .storage
+                    .write(Object::from(&blob), DiskRetention::Required)
+                    .map_err(Box::new)?;
+                assert_eq!(
+                    backing
+                        .key()
+                        .as_blob_hash()
+                        .expect("storage key to be a blob hash"),
+                    &candidate.key
+                );
+
+                let mut entries = self.entries.write();
+                let Some(entry) = entries.get_mut(&candidate.key) else {
+                    continue;
+                };
+                let BlobEntry::Resident {
+                    uses,
+                    blob: current,
+                    pins,
+                    disk_pins,
+                    ..
+                } = entry
+                else {
+                    continue;
+                };
+                // Skip pinned entries.
+                if *pins > 0 {
+                    continue;
+                }
+                // Eviction may proceed concurrent to blob set access, in
+                // particular we're not holding an entries lock while writing to
+                // the tiered storage. Therefore, ensure that the entry is still
+                // the same allocation.
+                //
+                // An evictable frame must have exactly two references: one in
+                // `entries` + the clone of `blob` that was done above.
+                if !Arc::ptr_eq(&blob.frame, &current.frame) || Arc::strong_count(&blob.frame) != 2
+                {
+                    continue;
+                };
+
+                let size = blob.size();
+                backing.set_pins(*disk_pins);
+                *entry = BlobEntry::NonResident {
+                    uses: *uses,
+                    size,
+                    backing,
+                };
+                self.resident.metrics().evicted(
+                    ObjectType::Blob,
+                    EvictionDirection::MemoryToDisk,
+                    size,
+                );
+                drop(blob);
+                self.resident.evict_blob(candidate);
+                drop(entries);
+                bytes_freed += size;
+
+                if self.resident.usage().accounted_bytes() <= target_usage {
+                    break;
+                }
+            }
+        }
+
+        Ok(bytes_freed)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::Arc};
+    use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
     use proptest::{collection::vec, prelude::*};
 
     use crate::{
         blob_store::BlobHash,
         tiered::{
-            map::BlobHashWrapper, metrics::CacheTier, BlobError, BlobSet, ByteBudget, ByteBudgetConfig, EvictionPolicy,
-            ResidentObjects, TieredStorage,
+            map::BlobHashWrapper, metrics::CacheTier, BlobError, BlobMap, BlobSet, ByteBudget,
+            ByteBudgetConfig, EvictionPolicy, ResidentObjects, TieredStorage,
         },
     };
 
     proptest! {
+        #[test]
+        fn global_eviction_reclaims_another_catalog_and_preserves_it_after_rollback(
+            first in vec(any::<u8>(), 1..2048),
+            second in vec(any::<u8>(), 1..2048),
+            restored in any::<bool>(),
+        ) {
+            let first_hash = BlobHash::hash_from_bytes(&first);
+            let second_hash = BlobHash::hash_from_bytes(&second);
+            prop_assume!(first_hash != second_hash);
+
+            // The shared budget can hold either blob, but never both. Exercise
+            // registration both for ordinary catalogs and snapshot restoration.
+            let limit = first.len().max(second.len()) as u64;
+            let budget = ByteBudget::new(ByteBudgetConfig {
+                tier: CacheTier::Memory,
+                low_water_bytes: 0,
+                soft_limit_bytes: limit,
+                hard_limit_bytes: limit,
+            }).unwrap();
+            let resident = Arc::new(ResidentObjects::new(budget));
+            let storage = Arc::new(TieredStorage::new_for_test());
+            let committed = if restored {
+                let mut map = BlobMap::default();
+                map.insert_with_uses(&first_hash, NonZeroUsize::MIN, first.clone().into_boxed_slice());
+                BlobSet::from_blob_map(resident.clone(), storage.clone(), map)
+            } else {
+                let set = BlobSet::new(resident.clone(), storage.clone());
+                drop(set.insert(EvictionPolicy::Memory, &first).unwrap());
+                set
+            };
+            let transaction = BlobSet::new(resident.clone(), storage);
+
+            // Allocation in an empty transaction must reclaim committed memory.
+            // Faulting either catalog back in must also be able to evict the other.
+            drop(transaction.insert(EvictionPolicy::Memory, &second).unwrap());
+            prop_assert_eq!(committed.resident_bytes_used_by_blobs(), 0);
+            prop_assert_eq!(&*committed.get(first_hash.into()).unwrap(), first.as_slice());
+            prop_assert_eq!(transaction.resident_bytes_used_by_blobs(), 0);
+            prop_assert_eq!(&*transaction.get(second_hash.into()).unwrap(), second.as_slice());
+            prop_assert_eq!(committed.resident_bytes_used_by_blobs(), 0);
+
+            // Discarding the transaction must not discard or change the committed
+            // catalog, even though it evicted the committed blob during execution.
+            drop(transaction);
+            prop_assert_eq!(resident.usage().accounted_bytes(), 0);
+            prop_assert_eq!(committed.num_blobs(), 1);
+            prop_assert_eq!(committed.uses(first_hash.into()), Some(1));
+            prop_assert_eq!(&*committed.get(first_hash.into()).unwrap(), first.as_slice());
+            prop_assert_eq!(resident.usage().accounted_bytes(), first.len() as u64);
+        }
+
+        #[test]
+        fn global_eviction_respects_a_handle_in_another_catalog(
+            first in vec(any::<u8>(), 1..2048),
+            second in vec(any::<u8>(), 1..2048),
+        ) {
+            prop_assume!(BlobHash::hash_from_bytes(&first) != BlobHash::hash_from_bytes(&second));
+            let limit = first.len().max(second.len()) as u64;
+            let budget = ByteBudget::new(ByteBudgetConfig {
+                tier: CacheTier::Memory,
+                low_water_bytes: 0,
+                soft_limit_bytes: limit,
+                hard_limit_bytes: limit,
+            }).unwrap();
+            let resident = Arc::new(ResidentObjects::new(budget));
+            let storage = Arc::new(TieredStorage::new_for_test());
+            let committed = BlobSet::new(resident.clone(), storage.clone());
+            let transaction = BlobSet::new(resident.clone(), storage);
+            let pin = committed.insert(EvictionPolicy::Memory, &first).unwrap();
+
+            // A global sweep must preserve a live handle and leave no partial
+            // catalog entry behind when the allocation still cannot fit.
+            prop_assert!(matches!(
+                transaction.insert(EvictionPolicy::Memory, &second),
+                Err(BlobError::MemoryLimitExceeded(_))
+            ));
+            prop_assert_eq!(&*pin, first.as_slice());
+            prop_assert_eq!(transaction.num_blobs(), 0);
+            prop_assert_eq!(resident.usage().accounted_bytes(), first.len() as u64);
+
+            // Releasing the handle makes the same request succeed across catalogs.
+            drop(pin);
+            let inserted = transaction.insert(EvictionPolicy::Memory, &second).unwrap();
+            prop_assert_eq!(&*inserted, second.as_slice());
+            prop_assert_eq!(committed.resident_bytes_used_by_blobs(), 0);
+        }
+
         #[test]
         fn insertion_deduplicates_content_and_tracks_reference_counts(
             blobs in vec(vec(any::<u8>(), 0..1024), 0..100),
@@ -981,14 +1129,20 @@ mod tests {
         let committed = BlobSet::new(resident.clone(), storage);
 
         // Emulate transaction prepare.
-        transaction.insert(EvictionPolicy::Memory, bytes).map(drop).unwrap();
+        transaction
+            .insert(EvictionPolicy::Memory, bytes)
+            .map(drop)
+            .unwrap();
         let pins = transaction.fault_all().unwrap();
 
         // Emulate transaction commit.
         // The shared [ResidentObjects] notices that it's the same object, so
         // reuses the already-held budget permit.
         assert!(committed.usage_counter().is_empty());
-        committed.insert(EvictionPolicy::Memory, bytes).map(drop).unwrap();
+        committed
+            .insert(EvictionPolicy::Memory, bytes)
+            .map(drop)
+            .unwrap();
 
         assert_eq!(committed.usage_counter().get(&pins[0].hash()), Some(&1));
         assert_eq!(resident.usage().accounted_bytes(), bytes.len() as u64);

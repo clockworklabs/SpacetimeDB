@@ -18,7 +18,7 @@ mod storage;
 pub use self::{
     blob_set::{BlobHandle, BlobMap, BlobReadSet, BlobSet},
     budget::{BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetConfig, ByteBudgetUsage},
-    error::{BlobError, ObjectStoreError, PageError, TrimError},
+    error::{BlobError, EvictionError, ObjectStoreError, PageError, TrimError},
     map::ObjectKey,
     mem::ResidentObjects,
     page_manager::{PageHandle, PageManager, ReservedPage},
@@ -137,11 +137,11 @@ impl TieredDatabaseStorage {
     }
 
     /// Attempt to free space by reclaiming orphaned objects and evicting from
-    /// the shared blob set and local storage.
+    /// memory resident sets and local storage.
     ///
     /// Returns the total number of bytes freed.
     pub fn trim(&self) -> Result<u64, TrimError> {
-        let mut bytes_freed = self.blobs.trim()?;
+        let mut bytes_freed = self.cache.trim()?;
         bytes_freed += self.store.trim()?;
 
         Ok(bytes_freed)

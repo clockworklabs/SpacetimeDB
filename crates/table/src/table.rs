@@ -3,8 +3,8 @@ use crate::{
     blob_store::BlobHash,
     page,
     tiered::{
-        BlobError, BlobHandle, BlobReadSet, BlobSet, EvictionPolicy, PageBorrow, PageError, PageHandle, PageManager,
-        PageRef, PageSet, PreparedCommit, ReservedPage,
+        BlobError, BlobHandle, BlobReadSet, BlobSet, EvictionError, EvictionPolicy, PageBorrow, PageError, PageHandle,
+        PageManager, PageRef, PageSet, PreparedCommit, ReservedPage,
     },
     var_len::VarLenMembers as _,
 };
@@ -293,12 +293,12 @@ impl TableInner {
         Ok(self.try_page_and_offset(ptr)?.unwrap())
     }
 
-    fn trim(&self) -> Result<u64, PageError> {
+    fn trim(&self) -> Result<u64, EvictionError> {
         self.pages.trim()
     }
 }
 
-static_assert_size!(Table, 336);
+static_assert_size!(Table, 328);
 
 impl MemoryUsage for Table {
     fn heap_usage(&self) -> usize {
@@ -2495,7 +2495,7 @@ impl Table {
         }
     }
 
-    pub fn trim(&self) -> Result<u64, PageError> {
+    pub fn trim(&self) -> Result<u64, EvictionError> {
         self.inner.trim()
     }
 }

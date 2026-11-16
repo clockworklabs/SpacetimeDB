@@ -617,7 +617,7 @@ pub struct MutTxId {
 }
 
 // The transaction-local blob map is inline to avoid an allocation when empty.
-static_assert_size!(MutTxId, 624);
+static_assert_size!(MutTxId, 544);
 
 impl MutTxId {
     /// Record that a view performs a table scan in this transaction's read set
