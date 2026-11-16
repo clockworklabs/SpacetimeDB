@@ -164,8 +164,12 @@ Use it to split an application into databases that scale and deploy independentl
 
 ## Identity
 
-- **Identity**: A long-lived, globally unique identifier for a user.
+- **Identity**: A 256-bit identifier for a principal, including a user or database. For OIDC users it is derived from the token's issuer and subject, not its email, roles, or audience. The same issuer/subject pair yields the same identity across databases; changing either yields a different identity. An identity is public identification, not a credential.
 - **ConnectionId**: Identifies a specific client connection.
 - Always use `ctx.sender` / `ctx.Sender` / `ctx.sender()` for authorization.
+- Per-user views expose the caller's identity, but neither per-user nor anonymous views expose JWT claims or sender-auth APIs. If views need claim-derived permissions, validate claims in a reducer, store the needed permissions in a private table keyed by identity, and read that table from the view. Define permission refresh/revocation explicitly. Anonymous views expose no sender.
+- Persist and reuse the authentication token to retain a server-issued identity across sessions. Knowing or parsing an identity does not authenticate as it.
+
+See the [Identity reference](https://spacetimedb.com/docs/identity/) for identity lifetime, authorization, and language-specific access and conversion APIs.
 
 SpacetimeDB works with many OIDC providers, including SpacetimeAuth (built-in), Auth0, Clerk, Keycloak, Google, and GitHub.
