@@ -62,31 +62,19 @@ pub trait TypeChecker {
     fn type_from(from: SqlFrom, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<RelExpr> {
         match from {
             SqlFrom::Expr(SqlIdent(name), SqlIdent(alias), args) => {
-                let schema = Self::type_relvar(tx, &name)?;
-                let view_args = type_view_args(&schema, args)?;
-                vars.insert(alias.clone(), schema.clone());
-                Ok(RelExpr::RelVar(Relvar {
-                    schema,
-                    alias,
-                    delta: None,
-                    view_args,
-                }))
+                let relvar = Self::type_relvar_with_args(tx, &name, alias, args)?;
+                vars.insert(relvar.alias.clone(), relvar.schema.clone());
+                Ok(RelExpr::RelVar(relvar))
             }
-            SqlFrom::Join(SqlIdent(name), SqlIdent(alias), joins) => {
-                let schema = Self::type_relvar(tx, &name)?;
-                // The parser rejects args in a JOIN, so a view that takes them is missing them
-                type_view_args(&schema, vec![])?;
-                vars.insert(alias.clone(), schema.clone());
-                let mut join = RelExpr::RelVar(Relvar {
-                    schema,
-                    alias,
-                    delta: None,
-                    view_args: None,
-                });
+            SqlFrom::Join(SqlIdent(name), SqlIdent(alias), args, joins) => {
+                let relvar = Self::type_relvar_with_args(tx, &name, alias, args)?;
+                vars.insert(relvar.alias.clone(), relvar.schema.clone());
+                let mut join = RelExpr::RelVar(relvar);
 
                 for SqlJoin {
                     var: SqlIdent(name),
                     alias: SqlIdent(alias),
+                    args,
                     on,
                 } in joins
                 {
@@ -96,13 +84,7 @@ pub trait TypeChecker {
                     }
 
                     let lhs = Box::new(join);
-                    let rhs = Relvar {
-                        schema: Self::type_relvar(tx, &name)?,
-                        alias,
-                        delta: None,
-                        view_args: None,
-                    };
-                    type_view_args(&rhs.schema, vec![])?;
+                    let rhs = Self::type_relvar_with_args(tx, &name, alias, args)?;
 
                     vars.insert(rhs.alias.clone(), rhs.schema.clone());
 
@@ -128,6 +110,23 @@ pub trait TypeChecker {
         tx.schema(name)
             .ok_or_else(|| Unresolved::table(name))
             .map_err(TypingError::from)
+    }
+
+    /// Types a relvar in `FROM` along with its view call args, which are empty for a table
+    fn type_relvar_with_args(
+        tx: &impl SchemaView,
+        name: &str,
+        alias: RawNamespacedIdentifier,
+        args: Vec<SqlLiteral>,
+    ) -> TypingResult<Relvar> {
+        let schema = Self::type_relvar(tx, name)?;
+        let view_args = type_view_args(&schema, args)?;
+        Ok(Relvar {
+            schema,
+            alias,
+            delta: None,
+            view_args,
+        })
     }
 }
 
@@ -723,6 +722,22 @@ mod tests {
                 sql: "select a.* from v(42) as a where a.x = 1",
                 msg: "Aliased view call with a filter",
             },
+            TestCase {
+                sql: "select t.* from t join v(42) on t.u32 = v.x",
+                msg: "View call on the rhs of a join",
+            },
+            TestCase {
+                sql: "select v.* from v(42) join t on v.x = t.u32",
+                msg: "View call on the lhs of a join",
+            },
+            TestCase {
+                sql: "select a.* from v(1) as a join v(2) as b on a.x = b.x",
+                msg: "Two calls of one view joined",
+            },
+            TestCase {
+                sql: "select t.* from t join v(42) as a on t.u32 = a.x where a.x = 1",
+                msg: "View call in a join with a filter",
+            },
         ] {
             let result = parse_and_type_sub(sql, &tx);
             assert!(result.is_ok(), "{msg}: {result:?}");
@@ -843,6 +858,15 @@ mod tests {
         );
         v43.lift_literals();
         assert_eq!(v42, v43);
+
+        // Both calls in a join are bound and lifted, so joins of other calls share it too
+        let mut v1_v2 = parse("select a.* from v(1) as a join v(2) as b on a.x = b.x");
+        let mut v3_v4 = parse("select a.* from v(3) as a join v(4) as b on a.x = b.x");
+        let hashes = v1_v2.lift_literals();
+        assert_eq!(hashes.len(), 2);
+        assert_ne!(hashes[0], hashes[1]);
+        assert_ne!(v3_v4.lift_literals(), hashes);
+        assert_eq!(v1_v2, v3_v4);
     }
 
     #[test]
@@ -888,16 +912,20 @@ mod tests {
                 msg: "Param type SQL can't express",
             },
             TestCase {
-                sql: "select t.* from t join v(42) on t.u32 = v.x",
-                msg: "View call with args in a join",
-            },
-            TestCase {
                 sql: "select t.* from t join v on t.u32 = v.x",
                 msg: "View with params in a join, without args",
             },
             TestCase {
-                sql: "select v.* from v(42) join t on v.x = t.u32",
-                msg: "View call with args on the lhs of a join",
+                sql: "select v.* from v join t on v.x = t.u32",
+                msg: "View with params on the lhs of a join, without args",
+            },
+            TestCase {
+                sql: "select t.* from t join v('a') on t.u32 = v.x",
+                msg: "Wrong arg type in a join",
+            },
+            TestCase {
+                sql: "select t.* from t join v(1) as a join v(2) as a on t.u32 = a.x",
+                msg: "Duplicate alias for two calls",
             },
             TestCase {
                 sql: "select x from v(42)",

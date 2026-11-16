@@ -17,6 +17,19 @@ pub fn add_item(ctx: &ReducerContext, id: u32, value: u32) {
     });
 }
 
+/// Labels for item values, indexed so a subscription can join a view call to it.
+#[spacetimedb::table(accessor = tag, public)]
+pub struct Tag {
+    #[index(btree)]
+    value: u32,
+    label: String,
+}
+
+#[spacetimedb::reducer]
+pub fn add_tag(ctx: &ReducerContext, value: u32, label: String) {
+    ctx.db.tag().insert(Tag { value, label });
+}
+
 /// An anonymous view with an argument: each `id` is its own instance.
 #[spacetimedb::view(accessor = by_id, public)]
 fn by_id(ctx: &AnonymousViewContext, id: u32) -> Vec<Item> {

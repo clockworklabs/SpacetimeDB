@@ -2198,6 +2198,30 @@ mod tests {
         Ok(())
     }
 
+    /// A subscription joining a view call to an indexed table probes indexes in its delta plans too,
+    /// with the call on either side, so a changed row never scans the view's other calls
+    #[test]
+    fn view_call_join_delta_plans_use_indexes() -> ResultTest<()> {
+        use spacetimedb_lib::ProductType;
+
+        let db = TestDB::durable()?;
+        let params = ProductType::from([("id", AlgebraicType::U32)]);
+        let row = [("id", AlgebraicType::U32), ("value", AlgebraicType::U32)];
+        create_view_with_params_for_test(&db, "by_id", params, &row, true).expect("create `by_id`");
+        let tag = [("value", AlgebraicType::U32), ("label", AlgebraicType::String)];
+        db.create_table_for_test_with_the_works("tag", &tag, &[ColList::new(0.into())], &[], StAccess::Public)?;
+
+        for sql in [
+            "select t.* from by_id(1) as v join tag as t on v.value = t.value",
+            "select v.* from tag as t join by_id(1) as v on t.value = v.value",
+        ] {
+            let plan = compile_plan(&db, sql)?;
+            assert!(!plan.template.has_non_index_join(), "{sql}");
+        }
+
+        Ok(())
+    }
+
     /// A value that a delta plan needs to probe an index comes from the binding row, so queries still share a template
     #[test]
     fn queries_share_templates_whose_delta_plans_probe_indexes_with_binding_values() -> ResultTest<()> {
