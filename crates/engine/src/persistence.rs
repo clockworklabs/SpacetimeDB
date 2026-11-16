@@ -230,26 +230,32 @@ impl PersistenceProvider for LocalPersistenceProvider {
         let replica_dir = self.data_dir.replica(replica_id);
         let snapshot_dir = replica_dir.snapshots();
         let runtime = Handle::tokio_current();
-        let table_storage = if let Some(open) = self.table_storage.clone() {
-            let dir = replica_dir.clone();
-            let pool = self.page_pool.clone();
-            asyncify(&runtime, move || open(dir, pool)).await?
-        } else {
-            self.memory_table_storage()
-        };
-
         let snapshot_worker = asyncify(&runtime, move || {
             relational_db::open_snapshot_repo(snapshot_dir, database_identity, replica_id)
         })
         .await
         .map(|repo| SnapshotWorker::new(repo, snapshot::Compression::Enabled, runtime.clone()))?;
         let (durability, disk_size) = relational_db::local_durability_with_options(
-            replica_dir,
+            replica_dir.clone(),
             runtime.clone(),
             Some(&snapshot_worker),
             self.durability.into_options(),
         )
         .await?;
+
+        // Opening table storage can clear the cache, so acquire db.lock through durability first.
+        let table_storage = if let Some(open) = self.table_storage.clone() {
+            let pool = self.page_pool.clone();
+            let durability = durability.clone();
+            asyncify(&runtime, move || {
+                // Keep db.lock held if the caller is cancelled while this task is running.
+                let _durability = durability;
+                open(replica_dir, pool)
+            })
+            .await?
+        } else {
+            self.memory_table_storage()
+        };
 
         runtime.spawn(relational_db::snapshot_watching_commitlog_compressor(
             snapshot_worker.subscribe(),
@@ -270,5 +276,41 @@ impl PersistenceProvider for LocalPersistenceProvider {
 
     async fn ephemeral(&self, _database: &Database, _replica_id: u64) -> anyhow::Result<Persistence> {
         Ok(Persistence::ephemeral(self.memory_table_storage()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spacetimedb_fs_utils::lockfile::advisory::LockedFile;
+    use spacetimedb_paths::FromPathUnchecked;
+    use std::fs;
+
+    #[tokio::test]
+    async fn opening_locked_replica_preserves_table_cache() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let data_dir = ServerDataDir::from_path_unchecked(temp.path());
+        let replica_dir = data_dir.replica(1);
+        let _lock = LockedFile::lock(replica_dir.0.join("db.lock"))?;
+        let cache_dir = replica_dir.tables();
+        fs::create_dir_all(&cache_dir)?;
+        let cache_file = cache_dir.0.join("cached-page");
+        fs::write(&cache_file, b"cached page contents")?;
+
+        // Model DiskStorage::open, which clears the cache before opening it.
+        let provider =
+            LocalPersistenceProvider::new(data_dir, PagePool::new_for_test()).with_table_storage(|dir, pool| {
+                fs::remove_dir_all(dir.tables())?;
+                Ok(TieredStorageConfig::new_for_memory_database(pool))
+            });
+        let database = Database {
+            id: 1,
+            database_identity: Identity::ZERO,
+            owner_identity: Identity::ZERO,
+        };
+
+        assert!(provider.persistent(&database, 1).await.is_err());
+        assert_eq!(fs::read(&cache_file)?, b"cached page contents");
+        Ok(())
     }
 }
