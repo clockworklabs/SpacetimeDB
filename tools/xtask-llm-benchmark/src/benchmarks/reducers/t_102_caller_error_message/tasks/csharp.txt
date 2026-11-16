@@ -1,0 +1,12 @@
+Write a SpacetimeDB backend module in C# whose reducer reports a failure back to its caller.
+
+TABLE
+- Item (public), struct Item
+  - Fields:
+    - Id: ulong (primary key)
+    - Name: string
+
+REDUCERS
+- AddItem(ctx, ulong id, string name)
+  - If name is empty, fail so that the caller receives the exact text "name required"
+  - Otherwise insert the item

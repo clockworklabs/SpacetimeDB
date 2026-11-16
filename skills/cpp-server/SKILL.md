@@ -167,6 +167,34 @@ ctx.rng()              // Deterministic RNG
 ctx.sender_auth()      // AuthCtx with JWT claims
 ```
 
+## HTTP Handlers
+
+HTTP handlers are unstable. Define `SPACETIMEDB_UNSTABLE_FEATURES` for both the module and the bindings, as the commented lines in the template's `CMakeLists.txt` do:
+
+```cmake
+target_compile_definitions(lib PRIVATE SPACETIMEDB_UNSTABLE_FEATURES)
+target_compile_definitions(spacetimedb_cpp_library PUBLIC SPACETIMEDB_UNSTABLE_FEATURES)
+```
+
+A handler takes `HandlerContext` and `HttpRequest` by value and returns `HttpResponse`. One router per module binds handlers to paths:
+
+```cpp
+SPACETIMEDB_HTTP_HANDLER(health, HandlerContext ctx, HttpRequest request) {
+    return HttpResponse{
+        200,
+        HttpVersion::Http11,
+        { HttpHeader{"content-type", "text/plain; charset=utf-8"} },
+        HttpBody::from_string("ok"),
+    };
+}
+
+SPACETIMEDB_HTTP_ROUTER(router) {
+    return Router().get("/health", health);
+}
+```
+
+`HandlerContext` has no `db`; open a transaction with `ctx.with_tx([&](TxContext& tx) { ... })` and use `tx.db[table]` inside it. `HttpRequest` exposes `uri`, `method`, `headers` and `body`. Routers support `get`, `head`, `options`, `put`, `delete_`, `post`, `patch`, `any`, `nest` and `merge`.
+
 ## Environment Variables
 
 Declare the environment in a dedicated `environment.h`:

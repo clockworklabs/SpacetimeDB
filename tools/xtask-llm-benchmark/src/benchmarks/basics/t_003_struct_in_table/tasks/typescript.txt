@@ -6,7 +6,7 @@ TYPES
   - y: number (i32)
 
 TABLE
-- entity
+- entity (private)
   - Fields:
     - id: number (i32, primary key)
     - pos: Position

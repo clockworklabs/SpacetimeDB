@@ -74,6 +74,8 @@ pub enum NodesError {
     ScheduleError(#[source] ScheduleError),
     #[error("HTTP request failed: {0}")]
     HttpError(String),
+    #[error("database is shutting down")]
+    ShuttingDown,
 }
 
 impl From<DBError> for NodesError {

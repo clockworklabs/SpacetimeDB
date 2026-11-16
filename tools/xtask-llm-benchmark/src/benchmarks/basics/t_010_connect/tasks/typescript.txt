@@ -6,6 +6,6 @@ TABLE
     - id: bigint (u64, primary key, auto-increment)
     - kind: string
 
-LIFECYCLE HOOKS (use spacetimedb.clientConnected / spacetimedb.clientDisconnected)
-- onConnect: insert event with kind="connected"
-- onDisconnect: insert event with kind="disconnected"
+LIFECYCLE HOOKS
+- onConnect: when a client connects, insert event with kind="connected"
+- onDisconnect: when a client disconnects, insert event with kind="disconnected"
