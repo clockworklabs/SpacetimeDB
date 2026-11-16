@@ -1559,7 +1559,7 @@ public static class GeneratorSnapshotTests
             .RunGenerators(Create("OutboxConsumer", "", outboxDependency))
             .GetRunResult();
         Assert.Equal(
-            "Dependency 'OutboxDependency, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null' declares outbox table PingOutbox. Outbox tables are only supported in the root assembly.",
+            "Dependency 'OutboxDependency, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null' declares outbox tables (PingOutbox). Outbox tables are only supported in the root assembly.",
             Assert
                 .Single(outboxResult.Diagnostics, d => d.Severity == DiagnosticSeverity.Error)
                 .GetMessage()
