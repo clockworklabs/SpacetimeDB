@@ -185,7 +185,6 @@ pub struct ModuleDef {
     /// Submodules, keyed by the canonical namespace they are registered under.
     submodules: IndexMap<Identifier, ModuleDef>,
 
-    /// `None` means undeclared; an explicitly empty declaration is `Some(empty)`.
     environment: Option<EnvironmentSchema>,
 
     /// Migrations, keyed by the schema hash of the old module.
