@@ -22,8 +22,8 @@ use crate::{
         error::{BlobError, ObjectStoreError},
         map::{BlobHashWrapper, ObjectKey},
         mem::{self, BlobEvictionCandidate, BlobFrame, ReservedBlob},
-        storage::Object,
-        ByteBudget, ByteBudgetUsage, EvictionPolicy, ResidentObjects, TieredStorage,
+        storage::{DiskObject, Object},
+        ByteBudget, ByteBudgetUsage, EvictionPolicy, TieredStorage,
     },
     var_len::VarLenMembers,
 };
@@ -53,27 +53,6 @@ impl BlobSet {
         }
     }
 
-    /// Create a new [BlobSet] from a catalog of entries.
-    ///
-    /// The blobs in the catalog will be faulted in lazily as they are accessed.
-    pub fn from_catalog(
-        resident: Arc<ResidentObjects>,
-        storage: Arc<TieredStorage>,
-        catalog: impl IntoIterator<Item = CatalogEntry>,
-    ) -> Self {
-        let entries = catalog
-            .into_iter()
-            .map(|CatalogEntry { hash, uses, size }| (hash, BlobEntry::NonResident { uses, size }))
-            .collect();
-
-        Self {
-            resident,
-            storage,
-            entries: RwLock::new(entries),
-            evictable: <_>::default(),
-        }
-    }
-
     /// Create a new [BlobSet] from externally loaded blobs.
     ///
     /// This is used when restoring from a snapshot.
@@ -89,6 +68,7 @@ impl BlobSet {
                     uses: uses.get(),
                     pins: 0,
                     blob: BlobHandle { frame },
+                    _backing: None,
                 },
             );
         }
@@ -149,9 +129,9 @@ impl BlobSet {
             });
 
             if let Some(blob) = maybe_resident {
-                let key = self.storage.write(Object::from(&blob))?;
+                let backing = self.storage.write(Object::from(&blob))?;
                 assert_eq!(
-                    key.as_blob_hash().expect("storage key to be a blob hash"),
+                    backing.key().as_blob_hash().expect("storage key to be a blob hash"),
                     &candidate.key
                 );
 
@@ -163,6 +143,7 @@ impl BlobSet {
                     uses,
                     blob: current,
                     pins,
+                    ..
                 } = entry
                 else {
                     continue;
@@ -183,7 +164,11 @@ impl BlobSet {
                 };
 
                 let size = blob.size();
-                *entry = BlobEntry::NonResident { uses: *uses, size };
+                *entry = BlobEntry::NonResident {
+                    uses: *uses,
+                    size,
+                    backing,
+                };
                 self.resident
                     .metrics()
                     .evicted(ObjectType::Blob, EvictionDirection::MemoryToDisk, size);
@@ -241,6 +226,7 @@ impl BlobSet {
                 uses: current_uses,
                 pins: current_pins,
                 blob,
+                ..
             }) = entries.get_mut(&hash)
             {
                 *current_uses += uses.get();
@@ -261,6 +247,7 @@ impl BlobSet {
                     uses: uses.get(),
                     pins,
                     blob: handle.clone(),
+                    _backing: None,
                 });
                 Ok(handle)
             }
@@ -271,18 +258,25 @@ impl BlobSet {
                     uses: current_uses,
                     pins: current_pins,
                     blob,
+                    ..
                 } => {
                     *current_uses += uses.get();
                     *current_pins += pins;
                     Ok(blob.clone())
                 }
-                BlobEntry::NonResident { uses: current_uses, .. } => {
+                BlobEntry::NonResident {
+                    uses: current_uses,
+                    backing,
+                    ..
+                } => {
                     let new_uses = *current_uses + uses.get();
+                    let backing = backing.clone();
                     let frame = self.resident.redeem_blob(reservation);
                     let handle = BlobHandle { frame };
                     entry.insert(BlobEntry::Resident {
                         uses: new_uses,
                         blob: handle.clone(),
+                        _backing: Some(backing),
                         pins,
                     });
                     Ok(handle)
@@ -380,13 +374,14 @@ impl BlobSet {
                     .ok_or_else(|| BlobError::MissingBlob(Box::new(hash.into())))?;
                 match entry {
                     BlobEntry::Resident { blob, .. } => Ok(blob.clone()),
-                    BlobEntry::NonResident { uses, .. } => {
+                    BlobEntry::NonResident { uses, backing, .. } => {
                         let frame = self.resident.redeem_blob(reservation);
                         let handle = BlobHandle { frame };
                         *entry = BlobEntry::Resident {
                             uses: *uses,
                             pins: 0,
                             blob: handle.clone(),
+                            _backing: Some(backing.clone()),
                         };
                         Ok(handle)
                     }
@@ -551,27 +546,20 @@ impl MemoryUsage for BlobSet {
     }
 }
 
-/// A catalog entry is metadata about a blob, without the blob's content.
-///
-/// Can be used to instantiate a [BlobSet] without any resident blobs (see:
-/// [BlobSet::from_catalog]).
-pub struct CatalogEntry {
-    pub hash: BlobHashWrapper,
-    pub uses: usize,
-    pub size: u64,
-}
-
 #[derive(Debug)]
 enum BlobEntry {
     Resident {
         uses: usize,
         pins: usize,
         blob: BlobHandle,
+        /// Ownership of the immutable version, if written to backing storage.
+        _backing: Option<DiskObject>,
     },
     #[allow(unused)]
     NonResident {
         uses: usize,
         size: u64,
+        backing: DiskObject,
     },
 }
 

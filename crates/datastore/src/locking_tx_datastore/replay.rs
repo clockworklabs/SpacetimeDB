@@ -1151,6 +1151,11 @@ impl<'cs> ReplayCommittedState<'cs> {
         // Any dropped tables should be fully gone by the end of a transaction;
         // if we see any reference to them in the future we should error, not ignore.
         self.replay_table_dropped.clear();
+        // Replay uses the ordinary insert path, so may spill to disk under
+        // memory pressure.
+        // Promptly free orphaned objects after each transaction, so their
+        // budget reservations are made available.
+        self.reclaim_disk_storage();
 
         Ok(())
     }
