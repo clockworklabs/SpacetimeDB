@@ -80,6 +80,11 @@ fn main() -> anyhow::Result<()> {
                 r"(export const RawSubmoduleV10 = [\s\S]*?)get module\(\) \{",
                 r"${1}get module(): any {"
             );
+            let code = regex_replace!(
+                &code,
+                r"(export const RawMigrationDefV10 = [\s\S]*?)get dropped\(\) \{",
+                r"${1}get dropped(): any {"
+            );
             fs::write(dir.join(filename), code.as_bytes())
         })?;
 
