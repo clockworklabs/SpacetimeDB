@@ -20,6 +20,7 @@ SPACETIMEDB_OUTBOX_TABLE(DetailedPingOutbox, detailed_ping_outbox, Public, rx::r
 FIELD_PrimaryKeyAutoInc(detailed_ping_outbox, id)
 FIELD_Target(detailed_ping_outbox, world)
 FIELD_Index(detailed_ping_outbox, world)
+FIELD_MultiColumnIndex(detailed_ping_outbox, by_world_and_id, world, id)
 FIELD_Param(detailed_ping_outbox, message, body)
 
 struct NoopOutbox {
@@ -51,6 +52,9 @@ SPACETIMEDB_REDUCER(send, ReducerContext ctx, rx::Identity world, std::string me
         (void)queued;
     }
     for (const auto& queued : ctx.db[detailed_ping_outbox_world].filter(world)) {
+        (void)queued;
+    }
+    for (const auto& queued : ctx.db[detailed_ping_outbox_by_world_and_id].filter(world)) {
         (void)queued;
     }
     auto found = ctx.db[detailed_ping_outbox_id].find(inserted.id);

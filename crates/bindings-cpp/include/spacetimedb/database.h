@@ -101,6 +101,9 @@ struct MultiColumnIndexTag;
 template<typename TableType>
 class TypedMultiColumnIndexAccessor;
 
+template<typename TableType>
+class ReadOnlyMultiColumnIndexAccessor;
+
 // Constraint system definitions for primary key operations
 
 // Field constraint info structure
@@ -338,6 +341,12 @@ public:
     template<typename TableType>
     TypedMultiColumnIndexAccessor<TableType> operator[](const MultiColumnIndexTag<TableType>& index_tag) const {
         return TypedMultiColumnIndexAccessor<TableType>(index_tag.table_name, index_tag.index_name, index_tag.column_list);
+    }
+
+    template<typename TableType>
+        requires is_outbox_row_v<TableType>
+    ReadOnlyMultiColumnIndexAccessor<TableType> operator[](const MultiColumnIndexTag<TableType>& index_tag) const {
+        return ReadOnlyMultiColumnIndexAccessor<TableType>(index_tag.table_name, index_tag.index_name, index_tag.column_list);
     }
 };
 

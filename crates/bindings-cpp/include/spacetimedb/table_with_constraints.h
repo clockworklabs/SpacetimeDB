@@ -683,6 +683,26 @@ public:
     }
 };
 
+// Multi-column index access to an outbox table: filter only, since outbox rows
+// can't be updated or deleted.
+template<typename TableType>
+class ReadOnlyMultiColumnIndexAccessor {
+public:
+    ReadOnlyMultiColumnIndexAccessor(const char* table_name, const char* index_name, const char* column_list)
+        : index_(table_name, index_name, column_list) {}
+
+    template<typename Arg>
+    IndexIteratorRange<TableType> filter(const Arg& arg) const { return index_.filter(arg); }
+
+    TableType insert(const TableType&) const = delete;
+    TableType update(const TableType&) const = delete;
+    bool delete_by_value(const TableType&) const = delete;
+    uint64_t clear() const = delete;
+
+private:
+    TypedMultiColumnIndexAccessor<TableType> index_;
+};
+
 // =============================================================================
 // Auto-Increment Integration Helper
 // =============================================================================
