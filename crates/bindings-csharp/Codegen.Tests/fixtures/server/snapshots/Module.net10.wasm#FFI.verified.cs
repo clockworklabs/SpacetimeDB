@@ -950,7 +950,7 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
         public const string? CaseConversionPolicy = null;
         public const string RootOnlyDeclarations =
             "row-level security filters, environment variables, lifecycle reducer Timers.Init (Init)";
-        public const string IdcDeclarations = "outbox table AdmitOutbox, outbox table PingOutbox";
+        public const string OutboxTables = "AdmitOutbox, PingOutbox";
         public const int ReducerCount = 8;
         public const int ProcedureCount = 0;
         public const int HttpHandlerCount = 0;

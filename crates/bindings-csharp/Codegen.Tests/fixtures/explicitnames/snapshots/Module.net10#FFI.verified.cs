@@ -639,11 +639,6 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.TableHandles
                 [
                     new(
                         SourceName: "DemoTable_Id_idx_btree",
-                        AccessorName: "Id",
-                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
-                    ),
-                    new(
-                        SourceName: "DemoTable_Id_idx_btree",
                         AccessorName: "ById",
                         Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
                     ),
@@ -691,7 +686,7 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.TableHandles
         public ulong Clear() =>
             global::SpacetimeDB.Internal.ITableView<DemoTable, global::DemoTable>.DoClear(__access);
 
-        public sealed class IdUniqueIndex
+        public sealed class ByIdUniqueIndex
             : global::SpacetimeDB.Internal.UniqueIndex<
                 DemoTable,
                 global::DemoTable,
@@ -699,7 +694,7 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.TableHandles
                 SpacetimeDB.BSATN.I32
             >
         {
-            internal IdUniqueIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
+            internal ByIdUniqueIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
                 : base(accessor, "DemoTable_Id_idx_btree") { }
 
             // Important: don't move this to the base class.
@@ -710,27 +705,7 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.TableHandles
             public global::DemoTable Update(global::DemoTable row) => DoUpdate(row);
         }
 
-        public IdUniqueIndex Id => new(__access);
-
-        public sealed class ByIdIndex : SpacetimeDB.Internal.IndexBase<global::DemoTable>
-        {
-            internal ByIdIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
-                : base(accessor, "DemoTable_Id_idx_btree") { }
-
-            public IEnumerable<global::DemoTable> Filter(int Id) =>
-                DoFilter(new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(Id));
-
-            public ulong Delete(int Id) =>
-                DoDelete(new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(Id));
-
-            public IEnumerable<global::DemoTable> Filter(global::SpacetimeDB.Bound<int> Id) =>
-                DoFilter(new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(Id));
-
-            public ulong Delete(global::SpacetimeDB.Bound<int> Id) =>
-                DoDelete(new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(Id));
-        }
-
-        public ByIdIndex ById => new(__access);
+        public ByIdUniqueIndex ById => new(__access);
     }
 }
 
@@ -792,7 +767,7 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.ViewHandles
         /// </summary>
         public ulong Count => DoCount();
 
-        public sealed class IdIndex
+        public sealed class ByIdIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
                 global::SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.ViewHandles.DemoTableReadOnly,
                 global::DemoTable,
@@ -800,33 +775,10 @@ namespace SpacetimeDB.Generated.explicitnames_7C0F8C6449994F31.ViewHandles
                 SpacetimeDB.BSATN.I32
             >
         {
-            internal IdIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
-                : base(accessor, "DemoTable_Id_idx_btree") { }
-
-            public global::DemoTable? Find(int key) => FindSingle(key);
-        }
-
-        public IdIndex Id => new(__access);
-
-        public sealed class ByIdIndex
-            : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::DemoTable>
-        {
             internal ByIdIndex(global::SpacetimeDB.Internal.TableAccessor accessor)
                 : base(accessor, "DemoTable_Id_idx_btree") { }
 
-            public IEnumerable<global::DemoTable> Filter(int Id) =>
-                DoFilter(
-                    new global::SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
-                        Id
-                    )
-                );
-
-            public IEnumerable<global::DemoTable> Filter(global::SpacetimeDB.Bound<int> Id) =>
-                DoFilter(
-                    new global::SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
-                        Id
-                    )
-                );
+            public global::DemoTable? Find(int key) => FindSingle(key);
         }
 
         public ByIdIndex ById => new(__access);
