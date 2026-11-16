@@ -150,7 +150,7 @@ fn cli_generate_rust_module_bindings() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let root = std::fs::read_to_string(output_dir.join("lib.rs")).expect("generated lib.rs should exist");
+    let root = std::fs::read_to_string(output_dir.join("mod.rs")).expect("generated mod.rs should exist");
     assert!(root.contains("pub struct Identity(pub spacetimedb::Identity);"));
     assert!(root.contains("impl spacetimedb::rt::RemoteReducer for add"));
     assert!(root.contains("const NAME: &'static str = \"add\";"));
