@@ -419,6 +419,13 @@ public partial struct PingRow
     public string Tag;
 }
 
+// [Outbox] declares MsgId, Target, Name, PlayerDetails and Nickname.
+[SpacetimeDB.Outbox(
+    typeof(RemoteBindings.Receiver.Reducers.AdmitPlayer),
+    Accessor = "AdmitGenerated"
+)]
+public partial struct AdmitGeneratedRow { }
+
 public static partial class OutboxReducers
 {
     [SpacetimeDB.Reducer]

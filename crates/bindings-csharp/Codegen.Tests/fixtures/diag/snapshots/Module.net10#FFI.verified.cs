@@ -309,6 +309,30 @@ namespace SpacetimeDB
             );
     }
 
+    public readonly struct TableAndOutboxCols
+    {
+        internal TableAndOutboxCols(string tableName) { }
+    }
+
+    public readonly struct TableAndOutboxIxCols
+    {
+        internal TableAndOutboxIxCols(string tableName) { }
+    }
+
+    public readonly partial struct QueryBuilder
+    {
+        public global::SpacetimeDB.Table<
+            global::TestOutboxAndTable,
+            TableAndOutboxCols,
+            TableAndOutboxIxCols
+        > TableAndOutbox() =>
+            new(
+                "TableAndOutbox",
+                new TableAndOutboxCols("TableAndOutbox"),
+                new TableAndOutboxIxCols("TableAndOutbox")
+            );
+    }
+
     public readonly struct TestOutboxAttributesWithoutOutboxCols
     {
         public readonly global::SpacetimeDB.Col<
@@ -758,6 +782,62 @@ namespace SpacetimeDB
                 "OutboxParamIssues",
                 new OutboxParamIssuesCols("OutboxParamIssues"),
                 new OutboxParamIssuesIxCols("OutboxParamIssues")
+            );
+    }
+
+    public readonly struct OutboxTargetParamCols
+    {
+        internal OutboxTargetParamCols(string tableName) { }
+    }
+
+    public readonly struct OutboxTargetParamIxCols
+    {
+        internal OutboxTargetParamIxCols(string tableName) { }
+    }
+
+    public readonly partial struct QueryBuilder
+    {
+        public global::SpacetimeDB.Table<
+            global::TestOutboxTargetParam,
+            OutboxTargetParamCols,
+            OutboxTargetParamIxCols
+        > OutboxTargetParam() =>
+            new(
+                "OutboxTargetParam",
+                new OutboxTargetParamCols("OutboxTargetParam"),
+                new OutboxTargetParamIxCols("OutboxTargetParam")
+            );
+    }
+
+    public readonly struct OutboxWithFieldsCols
+    {
+        public readonly global::SpacetimeDB.Col<global::TestOutboxWithFields, string> Name;
+
+        internal OutboxWithFieldsCols(string tableName)
+        {
+            Name = new global::SpacetimeDB.Col<global::TestOutboxWithFields, string>(
+                tableName,
+                "Name"
+            );
+        }
+    }
+
+    public readonly struct OutboxWithFieldsIxCols
+    {
+        internal OutboxWithFieldsIxCols(string tableName) { }
+    }
+
+    public readonly partial struct QueryBuilder
+    {
+        public global::SpacetimeDB.Table<
+            global::TestOutboxWithFields,
+            OutboxWithFieldsCols,
+            OutboxWithFieldsIxCols
+        > OutboxWithFields() =>
+            new(
+                "OutboxWithFields",
+                new OutboxWithFieldsCols("OutboxWithFields"),
+                new OutboxWithFieldsIxCols("OutboxWithFields")
             );
     }
 
@@ -1375,6 +1455,22 @@ namespace SpacetimeDB
                     "OutboxParamIssues"
                 )
             );
+        public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.OutboxTargetParam OutboxTargetParam =>
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "OutboxTargetParam"
+                )
+            );
+        public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.OutboxWithFields OutboxWithFields =>
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "OutboxWithFields"
+                )
+            );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.OutboxWrongTargetType OutboxWrongTargetType =>
             new(
                 new global::SpacetimeDB.Internal.TableAccessor(
@@ -1389,6 +1485,14 @@ namespace SpacetimeDB
                     db,
                     "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
                     "Player"
+                )
+            );
+        public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TableAndOutbox TableAndOutbox =>
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TableAndOutbox"
                 )
             );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestAutoIncNotInteger TestAutoIncNotInteger =>
@@ -1707,6 +1811,22 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                         "OutboxParamIssues"
                     )
                 );
+            public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.OutboxTargetParam OutboxTargetParam =>
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "OutboxTargetParam"
+                    )
+                );
+            public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.OutboxWithFields OutboxWithFields =>
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "OutboxWithFields"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.OutboxWrongTargetType OutboxWrongTargetType =>
                 new(
                     new global::SpacetimeDB.Internal.TableAccessor(
@@ -1721,6 +1841,14 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                         __owner,
                         "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
                         "Player"
+                    )
+                );
+            public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TableAndOutbox TableAndOutbox =>
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TableAndOutbox"
                     )
                 );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestAutoIncNotInteger TestAutoIncNotInteger =>
@@ -1862,6 +1990,22 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                         "OutboxParamIssues"
                     )
                 );
+            public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.OutboxTargetParamReadOnly OutboxTargetParam =>
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "OutboxTargetParam"
+                    )
+                );
+            public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.OutboxWithFieldsReadOnly OutboxWithFields =>
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "OutboxWithFields"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.OutboxWrongTargetTypeReadOnly OutboxWrongTargetType =>
                 new(
                     new global::SpacetimeDB.Internal.TableAccessor(
@@ -1876,6 +2020,14 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                         __owner,
                         "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
                         "Player"
+                    )
+                );
+            public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TableAndOutboxReadOnly TableAndOutbox =>
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        __owner,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TableAndOutbox"
                     )
                 );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestAutoIncNotIntegerReadOnly TestAutoIncNotInteger =>
@@ -2023,6 +2175,22 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                         "OutboxParamIssues"
                     )
                 );
+            public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.OutboxTargetParam OutboxTargetParam =>
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "OutboxTargetParam"
+                    )
+                );
+            public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.OutboxWithFields OutboxWithFields =>
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "OutboxWithFields"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.OutboxWrongTargetType OutboxWrongTargetType =>
                 new(
                     new global::SpacetimeDB.Internal.TableAccessor(
@@ -2037,6 +2205,14 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                         db,
                         "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
                         "Player"
+                    )
+                );
+            public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TableAndOutbox TableAndOutbox =>
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TableAndOutbox"
                     )
                 );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TestAutoIncNotInteger TestAutoIncNotInteger =>
@@ -2174,6 +2350,22 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                         "OutboxParamIssues"
                     )
                 );
+            public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.OutboxTargetParamReadOnly OutboxTargetParam =>
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "OutboxTargetParam"
+                    )
+                );
+            public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.OutboxWithFieldsReadOnly OutboxWithFields =>
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "OutboxWithFields"
+                    )
+                );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.OutboxWrongTargetTypeReadOnly OutboxWrongTargetType =>
                 new(
                     new global::SpacetimeDB.Internal.TableAccessor(
@@ -2188,6 +2380,14 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                         db,
                         "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
                         "Player"
+                    )
+                );
+            public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TableAndOutboxReadOnly TableAndOutbox =>
+                new(
+                    new global::SpacetimeDB.Internal.TableAccessor(
+                        db,
+                        "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                        "TableAndOutbox"
                     )
                 );
             public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestAutoIncNotIntegerReadOnly TestAutoIncNotInteger =>
@@ -2696,6 +2896,51 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 TestIndexIssuesCols,
                 TestIndexIssuesIxCols
             > TestIndexIssues() => new AssemblyDescriptor.Queries(from).TestIndexIssues();
+        }
+    }
+
+    public readonly struct TableAndOutboxCols
+    {
+        internal TableAndOutboxCols(global::SpacetimeDB.SqlTableName tableName) { }
+    }
+
+    public readonly struct TableAndOutboxIxCols
+    {
+        internal TableAndOutboxIxCols(global::SpacetimeDB.SqlTableName tableName) { }
+    }
+
+    public static partial class AssemblyDescriptor
+    {
+        public readonly partial struct Queries
+        {
+            public global::SpacetimeDB.Table<
+                global::TestOutboxAndTable,
+                TableAndOutboxCols,
+                TableAndOutboxIxCols
+            > TableAndOutbox()
+            {
+                var tableName = __owner.ResolveTableName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TableAndOutbox"
+                );
+                return new(
+                    tableName,
+                    new TableAndOutboxCols(tableName),
+                    new TableAndOutboxIxCols(tableName)
+                );
+            }
+        }
+    }
+
+    public static partial class QueryTableExtensions
+    {
+        extension(global::SpacetimeDB.QueryBuilder from)
+        {
+            public global::SpacetimeDB.Table<
+                global::TestOutboxAndTable,
+                TableAndOutboxCols,
+                TableAndOutboxIxCols
+            > TableAndOutbox() => new AssemblyDescriptor.Queries(from).TableAndOutbox();
         }
     }
 
@@ -3299,6 +3544,104 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
                 OutboxParamIssuesCols,
                 OutboxParamIssuesIxCols
             > OutboxParamIssues() => new AssemblyDescriptor.Queries(from).OutboxParamIssues();
+        }
+    }
+
+    public readonly struct OutboxTargetParamCols
+    {
+        internal OutboxTargetParamCols(global::SpacetimeDB.SqlTableName tableName) { }
+    }
+
+    public readonly struct OutboxTargetParamIxCols
+    {
+        internal OutboxTargetParamIxCols(global::SpacetimeDB.SqlTableName tableName) { }
+    }
+
+    public static partial class AssemblyDescriptor
+    {
+        public readonly partial struct Queries
+        {
+            public global::SpacetimeDB.Table<
+                global::TestOutboxTargetParam,
+                OutboxTargetParamCols,
+                OutboxTargetParamIxCols
+            > OutboxTargetParam()
+            {
+                var tableName = __owner.ResolveTableName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "OutboxTargetParam"
+                );
+                return new(
+                    tableName,
+                    new OutboxTargetParamCols(tableName),
+                    new OutboxTargetParamIxCols(tableName)
+                );
+            }
+        }
+    }
+
+    public static partial class QueryTableExtensions
+    {
+        extension(global::SpacetimeDB.QueryBuilder from)
+        {
+            public global::SpacetimeDB.Table<
+                global::TestOutboxTargetParam,
+                OutboxTargetParamCols,
+                OutboxTargetParamIxCols
+            > OutboxTargetParam() => new AssemblyDescriptor.Queries(from).OutboxTargetParam();
+        }
+    }
+
+    public readonly struct OutboxWithFieldsCols
+    {
+        public readonly global::SpacetimeDB.Col<global::TestOutboxWithFields, string> Name;
+
+        internal OutboxWithFieldsCols(global::SpacetimeDB.SqlTableName tableName)
+        {
+            Name = new global::SpacetimeDB.Col<global::TestOutboxWithFields, string>(
+                tableName,
+                "Name"
+            );
+        }
+    }
+
+    public readonly struct OutboxWithFieldsIxCols
+    {
+        internal OutboxWithFieldsIxCols(global::SpacetimeDB.SqlTableName tableName) { }
+    }
+
+    public static partial class AssemblyDescriptor
+    {
+        public readonly partial struct Queries
+        {
+            public global::SpacetimeDB.Table<
+                global::TestOutboxWithFields,
+                OutboxWithFieldsCols,
+                OutboxWithFieldsIxCols
+            > OutboxWithFields()
+            {
+                var tableName = __owner.ResolveTableName(
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "OutboxWithFields"
+                );
+                return new(
+                    tableName,
+                    new OutboxWithFieldsCols(tableName),
+                    new OutboxWithFieldsIxCols(tableName)
+                );
+            }
+        }
+    }
+
+    public static partial class QueryTableExtensions
+    {
+        extension(global::SpacetimeDB.QueryBuilder from)
+        {
+            public global::SpacetimeDB.Table<
+                global::TestOutboxWithFields,
+                OutboxWithFieldsCols,
+                OutboxWithFieldsIxCols
+            > OutboxWithFields() => new AssemblyDescriptor.Queries(from).OutboxWithFields();
         }
     }
 
@@ -4321,6 +4664,164 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
             __ReadOnly.MsgId;
     }
 
+    public readonly struct OutboxTargetParam
+        : global::SpacetimeDB.Internal.ITableView<OutboxTargetParam, global::TestOutboxTargetParam>
+    {
+        private readonly global::SpacetimeDB.Internal.TableAccessor __access;
+
+        internal OutboxTargetParam(global::SpacetimeDB.Internal.TableAccessor access) =>
+            __access = access;
+
+        public static global::TestOutboxTargetParam ReadGenFields(
+            System.IO.BinaryReader reader,
+            global::TestOutboxTargetParam row
+        )
+        {
+            return row;
+        }
+
+        public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) =>
+            new(
+                SourceName: nameof(OutboxTargetParam),
+                ProductTypeRef: (uint)
+                    new global::TestOutboxTargetParam.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [],
+                Indexes: [],
+                Constraints: [],
+                Sequences: [],
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private,
+                DefaultValues: [],
+                IsEvent: false
+            );
+
+        public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<
+                OutboxTargetParam,
+                global::TestOutboxTargetParam
+            >.DoCount(__access);
+
+        public IEnumerable<global::TestOutboxTargetParam> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<
+                OutboxTargetParam,
+                global::TestOutboxTargetParam
+            >.DoIter(__access);
+
+        public global::TestOutboxTargetParam Insert(global::TestOutboxTargetParam row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                OutboxTargetParam,
+                global::TestOutboxTargetParam
+            >.DoInsert(__access, row);
+
+        bool global::SpacetimeDB.Internal.ITableView<
+            OutboxTargetParam,
+            global::TestOutboxTargetParam
+        >.Delete(global::TestOutboxTargetParam row) =>
+            throw new global::System.NotSupportedException(
+                "Rows can't be deleted from outbox table OutboxTargetParam."
+            );
+
+        ulong global::SpacetimeDB.Internal.ITableView<
+            OutboxTargetParam,
+            global::TestOutboxTargetParam
+        >.Clear() =>
+            throw new global::System.NotSupportedException(
+                "Outbox table OutboxTargetParam can't be cleared."
+            );
+
+        private global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.OutboxTargetParamReadOnly __ReadOnly =>
+            new(__access);
+    }
+
+    public readonly struct OutboxWithFields
+        : global::SpacetimeDB.Internal.ITableView<OutboxWithFields, global::TestOutboxWithFields>
+    {
+        private readonly global::SpacetimeDB.Internal.TableAccessor __access;
+
+        internal OutboxWithFields(global::SpacetimeDB.Internal.TableAccessor access) =>
+            __access = access;
+
+        public static global::TestOutboxWithFields ReadGenFields(
+            System.IO.BinaryReader reader,
+            global::TestOutboxWithFields row
+        )
+        {
+            return row;
+        }
+
+        public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) =>
+            new(
+                SourceName: nameof(OutboxWithFields),
+                ProductTypeRef: (uint)
+                    new global::TestOutboxWithFields.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [],
+                Indexes: [],
+                Constraints: [],
+                Sequences: [],
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private,
+                DefaultValues: [],
+                IsEvent: false
+            );
+
+        public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<
+                OutboxWithFields,
+                global::TestOutboxWithFields
+            >.DoCount(__access);
+
+        public IEnumerable<global::TestOutboxWithFields> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<
+                OutboxWithFields,
+                global::TestOutboxWithFields
+            >.DoIter(__access);
+
+        public global::TestOutboxWithFields Insert(global::TestOutboxWithFields row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                OutboxWithFields,
+                global::TestOutboxWithFields
+            >.DoInsert(__access, row);
+
+        bool global::SpacetimeDB.Internal.ITableView<
+            OutboxWithFields,
+            global::TestOutboxWithFields
+        >.Delete(global::TestOutboxWithFields row) =>
+            throw new global::System.NotSupportedException(
+                "Rows can't be deleted from outbox table OutboxWithFields."
+            );
+
+        ulong global::SpacetimeDB.Internal.ITableView<
+            OutboxWithFields,
+            global::TestOutboxWithFields
+        >.Clear() =>
+            throw new global::System.NotSupportedException(
+                "Outbox table OutboxWithFields can't be cleared."
+            );
+
+        private global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.OutboxWithFieldsReadOnly __ReadOnly =>
+            new(__access);
+    }
+
     public readonly struct OutboxWrongTargetType
         : global::SpacetimeDB.Internal.ITableView<
             OutboxWrongTargetType,
@@ -4516,6 +5017,78 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles
         }
 
         public IdentityUniqueIndex Identity => new(__access);
+    }
+
+    public readonly struct TableAndOutbox
+        : global::SpacetimeDB.Internal.ITableView<TableAndOutbox, global::TestOutboxAndTable>
+    {
+        private readonly global::SpacetimeDB.Internal.TableAccessor __access;
+
+        internal TableAndOutbox(global::SpacetimeDB.Internal.TableAccessor access) =>
+            __access = access;
+
+        public static global::TestOutboxAndTable ReadGenFields(
+            System.IO.BinaryReader reader,
+            global::TestOutboxAndTable row
+        )
+        {
+            return row;
+        }
+
+        public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) =>
+            new(
+                SourceName: nameof(TableAndOutbox),
+                ProductTypeRef: (uint)
+                    new global::TestOutboxAndTable.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [],
+                Indexes: [],
+                Constraints: [],
+                Sequences: [],
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private,
+                DefaultValues: [],
+                IsEvent: false
+            );
+
+        public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<
+                TableAndOutbox,
+                global::TestOutboxAndTable
+            >.DoCount(__access);
+
+        public IEnumerable<global::TestOutboxAndTable> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TableAndOutbox,
+                global::TestOutboxAndTable
+            >.DoIter(__access);
+
+        public global::TestOutboxAndTable Insert(global::TestOutboxAndTable row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                TableAndOutbox,
+                global::TestOutboxAndTable
+            >.DoInsert(__access, row);
+
+        public bool Delete(global::TestOutboxAndTable row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                TableAndOutbox,
+                global::TestOutboxAndTable
+            >.DoDelete(__access, row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TableAndOutbox,
+                global::TestOutboxAndTable
+            >.DoClear(__access);
     }
 
     public readonly struct TestAutoIncNotInteger
@@ -6645,6 +7218,36 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
         public MsgIdIndex MsgId => new(__access);
     }
 
+    public sealed class OutboxTargetParamReadOnly
+        : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestOutboxTargetParam>
+    {
+        internal OutboxTargetParamReadOnly(global::SpacetimeDB.Internal.TableAccessor access)
+            : base(access) { }
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
+        public ulong Count => DoCount();
+    }
+
+    public sealed class OutboxWithFieldsReadOnly
+        : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestOutboxWithFields>
+    {
+        internal OutboxWithFieldsReadOnly(global::SpacetimeDB.Internal.TableAccessor access)
+            : base(access) { }
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
+        public ulong Count => DoCount();
+    }
+
     public sealed class OutboxWrongTargetTypeReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestOutboxKeyAndTargetIssues>
     {
@@ -6705,6 +7308,21 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles
         }
 
         public IdentityIndex Identity => new(__access);
+    }
+
+    public sealed class TableAndOutboxReadOnly
+        : global::SpacetimeDB.Internal.ReadOnlyTableView<global::TestOutboxAndTable>
+    {
+        internal TableAndOutboxReadOnly(global::SpacetimeDB.Internal.TableAccessor access)
+            : base(access) { }
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
+        public ulong Count => DoCount();
     }
 
     public sealed class TestAutoIncNotIntegerReadOnly
@@ -7119,6 +7737,22 @@ namespace SpacetimeDB.Internal
                     "OutboxParamIssues"
                 )
             );
+        public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.OutboxTargetParamReadOnly OutboxTargetParam =>
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "OutboxTargetParam"
+                )
+            );
+        public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.OutboxWithFieldsReadOnly OutboxWithFields =>
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "OutboxWithFields"
+                )
+            );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.OutboxWrongTargetTypeReadOnly OutboxWrongTargetType =>
             new(
                 new global::SpacetimeDB.Internal.TableAccessor(
@@ -7133,6 +7767,14 @@ namespace SpacetimeDB.Internal
                     db,
                     "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
                     "Player"
+                )
+            );
+        public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TableAndOutboxReadOnly TableAndOutbox =>
+            new(
+                new global::SpacetimeDB.Internal.TableAccessor(
+                    db,
+                    "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                    "TableAndOutbox"
                 )
             );
         public global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.ViewHandles.TestAutoIncNotIntegerReadOnly TestAutoIncNotInteger =>
@@ -7746,12 +8388,24 @@ static class ModuleRegistration
             global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.OutboxParamIssues
         >();
         builder.RegisterTable<
+            global::TestOutboxTargetParam,
+            global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.OutboxTargetParam
+        >();
+        builder.RegisterTable<
+            global::TestOutboxWithFields,
+            global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.OutboxWithFields
+        >();
+        builder.RegisterTable<
             global::TestOutboxKeyAndTargetIssues,
             global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.OutboxWrongTargetType
         >();
         builder.RegisterTable<
             global::Player,
             global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.Player
+        >();
+        builder.RegisterTable<
+            global::TestOutboxAndTable,
+            global::SpacetimeDB.Generated.diag_4F830E2879BB50E3.TableHandles.TableAndOutbox
         >();
         builder.RegisterTable<
             global::TestAutoIncNotInteger,

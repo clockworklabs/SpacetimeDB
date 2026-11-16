@@ -554,10 +554,10 @@ Like `table()`, it takes an optional `name`. Without one, the table is named aft
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-The bindings have an attribute for each reducer, such as `Gw.Outbox.AdmitPlayer`. Put it on an empty `partial struct`, in place of `[Table]`, and it declares the struct as an outbox table with a `MsgId` message ID column and a `Target` column:
+Put `[Outbox]` on an empty `partial struct`, in place of `[Table]`, and pass it the reducer from the bindings. It declares the struct as an outbox table with a `MsgId` message ID column, a `Target` column, and a column for each parameter, named in Pascal case:
 
 ```csharp
-[Gw.Outbox.AdmitPlayer(Accessor = "AdmitPlayerOutbox")]
+[Outbox(typeof(Gw.Reducers.AdmitPlayer), Accessor = "AdmitPlayerOutbox")]
 public partial struct AdmitPlayerOutbox { }
 
 // Inside a reducer:
