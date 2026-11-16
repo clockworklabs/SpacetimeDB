@@ -13,6 +13,7 @@ pub use spacetimedb_lib::identity;
 pub use spacetimedb_sats::hash;
 pub mod callgrind_flag;
 pub mod client;
+mod compression;
 pub mod config;
 pub mod database_logger;
 pub mod estimation;

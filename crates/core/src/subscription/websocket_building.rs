@@ -211,18 +211,7 @@ pub fn decide_compression(len: usize, compression: ws_v1::Compression) -> ws_v1:
 }
 
 pub fn brotli_compress(bytes: &[u8], out: &mut impl io::Write) {
-    // We are optimizing for compression speed,
-    // so we choose the lowest (fastest) level of compression.
-    // Experiments on internal workloads have shown compression ratios between 7:1 and 10:1
-    // for large `SubscriptionUpdate` messages at this level.
-    const COMPRESSION_LEVEL: i32 = 1;
-
-    let params = brotli::enc::BrotliEncoderParams {
-        quality: COMPRESSION_LEVEL,
-        ..<_>::default()
-    };
-    let reader = &mut &bytes[..];
-    brotli::BrotliCompress(reader, out, &params).expect("should be able to BrotliCompress");
+    crate::compression::brotli_compress(bytes, out);
 }
 
 pub fn gzip_compress(bytes: &[u8], out: &mut impl io::Write) {

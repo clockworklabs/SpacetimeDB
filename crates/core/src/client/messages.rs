@@ -3,7 +3,7 @@ use crate::client::consume_each_list::ConsumeEachBuffer;
 use crate::host::module_host::{EventStatus, ModuleEvent, ProcedureCallError};
 use crate::host::{ArgsTuple, ProcedureCallResult};
 use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
-use crate::subscription::websocket_building::{brotli_compress, decide_compression, gzip_compress};
+use crate::subscription::websocket_building::{decide_compression, gzip_compress};
 use bytes::{BufMut, Bytes, BytesMut};
 use bytestring::ByteString;
 use derive_more::From;
@@ -81,6 +81,20 @@ impl SerializeBuffer {
         &self.uncompressed[1..]
     }
 
+    /// Share the serialized input with Brotli workers without copying it.
+    fn compress_brotli(self) -> (InUseSerializeBuffer, Bytes) {
+        let input = self.uncompressed.freeze();
+        let mut writer = self.compressed.writer();
+        writer.get_mut().put_u8(ws_common::SERVER_MSG_COMPRESSION_TAG_BROTLI);
+        crate::compression::brotli_compress_owned(input.slice(1..), &mut writer);
+        let compressed = writer.into_inner().freeze();
+        let in_use = InUseSerializeBuffer::Compressed {
+            uncompressed: input.try_into_mut().expect("Brotli must release shared input"),
+            compressed: compressed.clone(),
+        };
+        (in_use, compressed)
+    }
+
     /// Compress the data from a `write_with_tag` call, and change the tag.
     fn compress_with_tag(
         self,
@@ -111,10 +125,78 @@ fn finalize_binary_serialize_buffer(
 ) -> (InUseSerializeBuffer, Bytes) {
     match decide_compression(uncompressed_len, compression) {
         ws_v1::Compression::None => buffer.uncompressed(),
-        ws_v1::Compression::Brotli => {
-            buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_BROTLI, brotli_compress)
-        }
+        ws_v1::Compression::Brotli => buffer.compress_brotli(),
         ws_v1::Compression::Gzip => buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_GZIP, gzip_compress),
+    }
+}
+
+#[cfg(test)]
+mod compression_tests {
+    use super::*;
+    use std::io::Read;
+
+    #[test]
+    fn brotli_thresholds_and_buffer_reclamation() {
+        for size in [1023, 1024, 1025, 512 * 1024 - 1, 512 * 1024, 1024 * 1024] {
+            let payload: Vec<_> = (0..size).map(|i| (i % 251) as u8).collect();
+            let mut buffer = SerializeBuffer {
+                uncompressed: BytesMut::new(),
+                compressed: BytesMut::new(),
+            };
+            buffer.write_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_NONE, |mut w| {
+                std::io::Write::write_all(&mut w, &payload).unwrap();
+            });
+            let (in_use, frame) = finalize_binary_serialize_buffer(buffer, size, ws_v1::Compression::Brotli);
+            if size <= 1024 {
+                assert_eq!(frame[0], ws_common::SERVER_MSG_COMPRESSION_TAG_NONE);
+                assert_eq!(&frame[1..], payload);
+            } else {
+                assert_eq!(frame[0], ws_common::SERVER_MSG_COMPRESSION_TAG_BROTLI);
+                let mut decoded = Vec::new();
+                brotli::Decompressor::new(&frame[1..], 4096)
+                    .read_to_end(&mut decoded)
+                    .unwrap();
+                assert_eq!(decoded, payload);
+            }
+            drop(frame);
+            let reclaimed = in_use.try_reclaim().expect("input/output references must be released");
+            assert!(reclaimed.uncompressed.is_empty());
+            assert!(reclaimed.compressed.is_empty());
+        }
+    }
+
+    #[test]
+    fn brotli_v2_and_coalesced_v3_messages() {
+        let pool = BsatnRowListBuilderPool::new();
+        let message = || {
+            ws_v2::ServerMessage::SubscriptionError(ws_v2::SubscriptionError {
+                request_id: Some(7),
+                query_set_id: ws_common::QuerySetId::new(3),
+                error: "example error ".repeat(100000).into(),
+            })
+        };
+        for count in [1, 2] {
+            let mut expected = Vec::new();
+            for _ in 0..count {
+                expected.extend_from_slice(&bsatn::to_vec(&message()).unwrap());
+            }
+            let buffer = SerializeBuffer {
+                uncompressed: BytesMut::new(),
+                compressed: BytesMut::new(),
+            };
+            let (in_use, frame) = if count == 1 {
+                serialize_v2(&pool, buffer, message(), ws_v1::Compression::Brotli)
+            } else {
+                serialize_v3(&pool, buffer, [message(), message()], ws_v1::Compression::Brotli)
+            };
+            let mut decoded = Vec::new();
+            brotli::Decompressor::new(&frame[1..], 4096)
+                .read_to_end(&mut decoded)
+                .unwrap();
+            assert_eq!(decoded, expected);
+            drop(frame);
+            assert!(in_use.try_reclaim().is_some());
+        }
     }
 }
 
