@@ -438,4 +438,13 @@ public static partial class OutboxReducers
         _ = ctx.Db.PingOutbox.Tag.Find("ping");
         ctx.Db.PingLog.Delete(new PingRow { Tag = "log" });
     }
+
+    // [OnResult] reducers may use the `On` prefix.
+    [SpacetimeDB.Reducer]
+    [SpacetimeDB.OnResult(typeof(PingRow), Table = "PingOutbox")]
+    public static void OnPingResult(
+        ReducerContext ctx,
+        PingRow row,
+        Result<Unit, string> result
+    ) { }
 }

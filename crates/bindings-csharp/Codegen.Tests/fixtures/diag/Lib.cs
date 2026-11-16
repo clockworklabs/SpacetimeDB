@@ -823,3 +823,58 @@ public partial struct TestOutboxAttributesWithoutOutbox
     [SpacetimeDB.Param("name")]
     public string Name;
 }
+
+public static partial class OnResultIssues
+{
+    [SpacetimeDB.Reducer]
+    [SpacetimeDB.OnResult(typeof(TestOutboxParamIssues))]
+    public static void WrongSignature(ReducerContext ctx, TestOutboxParamIssues row) { }
+
+    [SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
+    [SpacetimeDB.OnResult(typeof(TestOutboxEventAndScheduled))]
+    public static void LifecycleResult(
+        ReducerContext ctx,
+        TestOutboxEventAndScheduled row,
+        Result<Unit, string> result
+    ) { }
+
+    [SpacetimeDB.OnResult(typeof(TestOutboxBadReceiver))]
+    public static void NotAReducer(
+        ReducerContext ctx,
+        TestOutboxBadReceiver row,
+        Result<Unit, string> result
+    ) { }
+
+    [SpacetimeDB.Reducer]
+    [SpacetimeDB.OnResult(typeof(TestOutboxBadReceiver), Table = "Missing")]
+    public static void UnknownTable(
+        ReducerContext ctx,
+        TestOutboxBadReceiver row,
+        Result<Unit, string> result
+    ) { }
+
+    // TestOutboxKeyAndTargetIssues has three outbox tables.
+    [SpacetimeDB.Reducer]
+    [SpacetimeDB.OnResult(typeof(TestOutboxKeyAndTargetIssues))]
+    public static void AmbiguousOutbox(
+        ReducerContext ctx,
+        TestOutboxKeyAndTargetIssues row,
+        Result<Unit, string> result
+    ) { }
+
+    [SpacetimeDB.Reducer]
+    [SpacetimeDB.OnResult(typeof(TestOutboxBadReceiver))]
+    public static void FirstResult(
+        ReducerContext ctx,
+        TestOutboxBadReceiver row,
+        Result<Unit, string> result
+    ) { }
+
+    [SpacetimeDB.Reducer]
+    [SpacetimeDB.OnResult(typeof(TestOutboxBadReceiver))]
+    public static void SecondResult(
+        ReducerContext ctx,
+        TestOutboxBadReceiver row,
+        Result<Unit, string> result
+    ) { }
+}

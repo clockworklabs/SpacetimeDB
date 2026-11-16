@@ -442,4 +442,18 @@ internal static class ErrorDescriptor
                 $"Field {ctx.field.Name} is marked [{ctx.attribute}], but none of the tables it applies to is an outbox table.",
             ctx => ctx.field
         );
+
+    public static readonly ErrorDescriptor<(
+        MethodDeclarationSyntax method,
+        string message
+    )> InvalidOnResult =
+        new(
+            group,
+            "Invalid [OnResult] reducer",
+            ctx => $"{ctx.method.Identifier}: {ctx.message}",
+            ctx => ctx.method.Identifier
+        );
+
+    public static readonly ErrorDescriptor<string> UnresolvedOnResult =
+        new(group, "Unresolved [OnResult] reducer", message => $"{message}", _ => Location.None);
 }

@@ -1403,8 +1403,8 @@ namespace SpacetimeDB.Generated.diag_4F830E2879BB50E3
     {
         public const string? CaseConversionPolicy = "SnakeCase";
         public const string RootOnlyDeclarations =
-            "row-level security filters, lifecycle reducer Reducers.TestDuplicateReducerKind1 (Init), lifecycle reducer Reducers.TestDuplicateReducerKind2 (Init)";
-        public const int ReducerCount = 8;
+            "row-level security filters, lifecycle reducer OnResultIssues.LifecycleResult (ClientConnected), lifecycle reducer Reducers.TestDuplicateReducerKind1 (Init), lifecycle reducer Reducers.TestDuplicateReducerKind2 (Init)";
+        public const int ReducerCount = 14;
         public const int ProcedureCount = 0;
         public const int HttpHandlerCount = 0;
         public const int ViewCount = 12;
@@ -6900,6 +6900,41 @@ static class ModuleRegistration
         }
     }
 
+    sealed class AmbiguousOutbox : SpacetimeDB.Internal.IReducer
+    {
+        private static readonly TestOutboxKeyAndTargetIssues.BSATN rowRW = new();
+        private static readonly SpacetimeDB.Result<SpacetimeDB.Unit, string>.BSATN<
+            SpacetimeDB.Unit.BSATN,
+            SpacetimeDB.BSATN.String
+        > resultRW = new();
+
+        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) =>
+            new(
+                SourceName: nameof(AmbiguousOutbox),
+                Params:
+                [
+                    new("row", rowRW.GetAlgebraicType(registrar)),
+                    new("result", resultRW.GetAlgebraicType(registrar)),
+                ],
+                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
+                ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
+            );
+
+        public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
+
+        public static void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            OnResultIssues.AmbiguousOutbox(
+                (SpacetimeDB.ReducerContext)ctx,
+                rowRW.Read(reader),
+                resultRW.Read(reader)
+            );
+        }
+    }
+
     sealed class DummyScheduledReducer : SpacetimeDB.Internal.IReducer
     {
         private static readonly TestScheduleIssues.BSATN tableRW = new();
@@ -6926,6 +6961,77 @@ static class ModuleRegistration
         }
     }
 
+    sealed class FirstResult : SpacetimeDB.Internal.IReducer
+    {
+        private static readonly TestOutboxBadReceiver.BSATN rowRW = new();
+        private static readonly SpacetimeDB.Result<SpacetimeDB.Unit, string>.BSATN<
+            SpacetimeDB.Unit.BSATN,
+            SpacetimeDB.BSATN.String
+        > resultRW = new();
+
+        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) =>
+            new(
+                SourceName: nameof(FirstResult),
+                Params:
+                [
+                    new("row", rowRW.GetAlgebraicType(registrar)),
+                    new("result", resultRW.GetAlgebraicType(registrar)),
+                ],
+                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
+                ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
+            );
+
+        public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
+
+        public static void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            OnResultIssues.FirstResult(
+                (SpacetimeDB.ReducerContext)ctx,
+                rowRW.Read(reader),
+                resultRW.Read(reader)
+            );
+        }
+    }
+
+    sealed class LifecycleResult : SpacetimeDB.Internal.IReducer
+    {
+        private static readonly TestOutboxEventAndScheduled.BSATN rowRW = new();
+        private static readonly SpacetimeDB.Result<SpacetimeDB.Unit, string>.BSATN<
+            SpacetimeDB.Unit.BSATN,
+            SpacetimeDB.BSATN.String
+        > resultRW = new();
+
+        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) =>
+            new(
+                SourceName: nameof(LifecycleResult),
+                Params:
+                [
+                    new("row", rowRW.GetAlgebraicType(registrar)),
+                    new("result", resultRW.GetAlgebraicType(registrar)),
+                ],
+                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
+                ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
+            );
+
+        public SpacetimeDB.Internal.Lifecycle? Lifecycle =>
+            SpacetimeDB.Internal.Lifecycle.OnConnect;
+
+        public static void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            OnResultIssues.LifecycleResult(
+                (SpacetimeDB.ReducerContext)ctx,
+                rowRW.Read(reader),
+                resultRW.Read(reader)
+            );
+        }
+    }
+
     sealed class OnReducerWithReservedPrefix : SpacetimeDB.Internal.IReducer
     {
         public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
@@ -6944,6 +7050,41 @@ static class ModuleRegistration
         public static void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.OnReducerWithReservedPrefix((SpacetimeDB.ReducerContext)ctx);
+        }
+    }
+
+    sealed class SecondResult : SpacetimeDB.Internal.IReducer
+    {
+        private static readonly TestOutboxBadReceiver.BSATN rowRW = new();
+        private static readonly SpacetimeDB.Result<SpacetimeDB.Unit, string>.BSATN<
+            SpacetimeDB.Unit.BSATN,
+            SpacetimeDB.BSATN.String
+        > resultRW = new();
+
+        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) =>
+            new(
+                SourceName: nameof(SecondResult),
+                Params:
+                [
+                    new("row", rowRW.GetAlgebraicType(registrar)),
+                    new("result", resultRW.GetAlgebraicType(registrar)),
+                ],
+                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
+                ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
+            );
+
+        public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
+
+        public static void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            OnResultIssues.SecondResult(
+                (SpacetimeDB.ReducerContext)ctx,
+                rowRW.Read(reader),
+                resultRW.Read(reader)
+            );
         }
     }
 
@@ -7052,6 +7193,64 @@ static class ModuleRegistration
         }
     }
 
+    sealed class UnknownTable : SpacetimeDB.Internal.IReducer
+    {
+        private static readonly TestOutboxBadReceiver.BSATN rowRW = new();
+        private static readonly SpacetimeDB.Result<SpacetimeDB.Unit, string>.BSATN<
+            SpacetimeDB.Unit.BSATN,
+            SpacetimeDB.BSATN.String
+        > resultRW = new();
+
+        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) =>
+            new(
+                SourceName: nameof(UnknownTable),
+                Params:
+                [
+                    new("row", rowRW.GetAlgebraicType(registrar)),
+                    new("result", resultRW.GetAlgebraicType(registrar)),
+                ],
+                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
+                ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
+            );
+
+        public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
+
+        public static void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            OnResultIssues.UnknownTable(
+                (SpacetimeDB.ReducerContext)ctx,
+                rowRW.Read(reader),
+                resultRW.Read(reader)
+            );
+        }
+    }
+
+    sealed class WrongSignature : SpacetimeDB.Internal.IReducer
+    {
+        private static readonly TestOutboxParamIssues.BSATN rowRW = new();
+
+        public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) =>
+            new(
+                SourceName: nameof(WrongSignature),
+                Params: [new("row", rowRW.GetAlgebraicType(registrar))],
+                Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable,
+                OkReturnType: SpacetimeDB.BSATN.AlgebraicType.Unit,
+                ErrReturnType: new SpacetimeDB.BSATN.AlgebraicType.String(default)
+            );
+
+        public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
+
+        public static void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        {
+            OnResultIssues.WrongSignature((SpacetimeDB.ReducerContext)ctx, rowRW.Read(reader));
+        }
+    }
+
     public static List<T> ToListOrEmpty<T>(T? value)
         where T : struct => value is null ? new List<T>() : new List<T> { value.Value };
 
@@ -7121,13 +7320,19 @@ static class ModuleRegistration
         var __writer = new BinaryWriter(__memoryStream);
 
         builder.RegisterReducer<__ReducerWithReservedPrefix>();
+        builder.RegisterReducer<AmbiguousOutbox>();
         builder.RegisterReducer<DummyScheduledReducer>();
+        builder.RegisterReducer<FirstResult>();
+        builder.RegisterReducer<LifecycleResult>();
         builder.RegisterReducer<OnReducerWithReservedPrefix>();
+        builder.RegisterReducer<SecondResult>();
         builder.RegisterReducer<TestDuplicateReducerKind1>();
         builder.RegisterReducer<TestDuplicateReducerKind2>();
         builder.RegisterReducer<TestDuplicateReducerName>();
         builder.RegisterReducer<TestReducerReturnType>();
         builder.RegisterReducer<TestReducerWithoutContext>();
+        builder.RegisterReducer<UnknownTable>();
+        builder.RegisterReducer<WrongSignature>();
 
         // IMPORTANT: The order in which we register views matters.
         // It must correspond to the order in which we call `GenerateDispatcherClass`.
@@ -7453,7 +7658,7 @@ static class ModuleRegistration
                 ref reducerArgsBuffer
             );
             using var reader = new System.IO.BinaryReader(stream);
-            DummyScheduledReducer.Invoke(reader, ctx);
+            AmbiguousOutbox.Invoke(reader, ctx);
             SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
             return SpacetimeDB.Internal.Errno.OK;
         }
@@ -7491,7 +7696,7 @@ static class ModuleRegistration
                 ref reducerArgsBuffer
             );
             using var reader = new System.IO.BinaryReader(stream);
-            OnReducerWithReservedPrefix.Invoke(reader, ctx);
+            DummyScheduledReducer.Invoke(reader, ctx);
             SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
             return SpacetimeDB.Internal.Errno.OK;
         }
@@ -7529,7 +7734,7 @@ static class ModuleRegistration
                 ref reducerArgsBuffer
             );
             using var reader = new System.IO.BinaryReader(stream);
-            TestDuplicateReducerKind1.Invoke(reader, ctx);
+            FirstResult.Invoke(reader, ctx);
             SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
             return SpacetimeDB.Internal.Errno.OK;
         }
@@ -7567,7 +7772,7 @@ static class ModuleRegistration
                 ref reducerArgsBuffer
             );
             using var reader = new System.IO.BinaryReader(stream);
-            TestDuplicateReducerKind2.Invoke(reader, ctx);
+            LifecycleResult.Invoke(reader, ctx);
             SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
             return SpacetimeDB.Internal.Errno.OK;
         }
@@ -7605,7 +7810,7 @@ static class ModuleRegistration
                 ref reducerArgsBuffer
             );
             using var reader = new System.IO.BinaryReader(stream);
-            TestDuplicateReducerName.Invoke(reader, ctx);
+            OnReducerWithReservedPrefix.Invoke(reader, ctx);
             SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
             return SpacetimeDB.Internal.Errno.OK;
         }
@@ -7643,7 +7848,7 @@ static class ModuleRegistration
                 ref reducerArgsBuffer
             );
             using var reader = new System.IO.BinaryReader(stream);
-            TestReducerReturnType.Invoke(reader, ctx);
+            SecondResult.Invoke(reader, ctx);
             SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
             return SpacetimeDB.Internal.Errno.OK;
         }
@@ -7681,7 +7886,235 @@ static class ModuleRegistration
                 ref reducerArgsBuffer
             );
             using var reader = new System.IO.BinaryReader(stream);
+            TestDuplicateReducerKind1.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
+            return SpacetimeDB.Internal.Errno.OK;
+        }
+        catch (System.Exception e)
+        {
+            return SpacetimeDB.Internal.Module.WriteReducerError(error, e);
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_reducer_8(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink error
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateReducerContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(
+                args,
+                ref reducerArgsBuffer
+            );
+            using var reader = new System.IO.BinaryReader(stream);
+            TestDuplicateReducerKind2.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
+            return SpacetimeDB.Internal.Errno.OK;
+        }
+        catch (System.Exception e)
+        {
+            return SpacetimeDB.Internal.Module.WriteReducerError(error, e);
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_reducer_9(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink error
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateReducerContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(
+                args,
+                ref reducerArgsBuffer
+            );
+            using var reader = new System.IO.BinaryReader(stream);
+            TestDuplicateReducerName.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
+            return SpacetimeDB.Internal.Errno.OK;
+        }
+        catch (System.Exception e)
+        {
+            return SpacetimeDB.Internal.Module.WriteReducerError(error, e);
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_reducer_10(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink error
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateReducerContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(
+                args,
+                ref reducerArgsBuffer
+            );
+            using var reader = new System.IO.BinaryReader(stream);
+            TestReducerReturnType.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
+            return SpacetimeDB.Internal.Errno.OK;
+        }
+        catch (System.Exception e)
+        {
+            return SpacetimeDB.Internal.Module.WriteReducerError(error, e);
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_reducer_11(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink error
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateReducerContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(
+                args,
+                ref reducerArgsBuffer
+            );
+            using var reader = new System.IO.BinaryReader(stream);
             TestReducerWithoutContext.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
+            return SpacetimeDB.Internal.Errno.OK;
+        }
+        catch (System.Exception e)
+        {
+            return SpacetimeDB.Internal.Module.WriteReducerError(error, e);
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_reducer_12(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink error
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateReducerContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(
+                args,
+                ref reducerArgsBuffer
+            );
+            using var reader = new System.IO.BinaryReader(stream);
+            UnknownTable.Invoke(reader, ctx);
+            SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
+            return SpacetimeDB.Internal.Errno.OK;
+        }
+        catch (System.Exception e)
+        {
+            return SpacetimeDB.Internal.Module.WriteReducerError(error, e);
+        }
+    }
+
+    private static SpacetimeDB.Internal.Errno __call_reducer_13(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink error
+    )
+    {
+        try
+        {
+            var ctx = SpacetimeDB.Internal.Module.CreateReducerContext(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp
+            );
+            using var stream = SpacetimeDB.Internal.Module.ConsumeBytes(
+                args,
+                ref reducerArgsBuffer
+            );
+            using var reader = new System.IO.BinaryReader(stream);
+            WrongSignature.Invoke(reader, ctx);
             SpacetimeDB.Internal.Module.EnsureNoUnreadBytes(stream, "reducer arguments");
             return SpacetimeDB.Internal.Errno.OK;
         }
@@ -8309,6 +8742,72 @@ static class ModuleRegistration
                 error
             ),
             7 => __call_reducer_7(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp,
+                args,
+                error
+            ),
+            8 => __call_reducer_8(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp,
+                args,
+                error
+            ),
+            9 => __call_reducer_9(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp,
+                args,
+                error
+            ),
+            10 => __call_reducer_10(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp,
+                args,
+                error
+            ),
+            11 => __call_reducer_11(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp,
+                args,
+                error
+            ),
+            12 => __call_reducer_12(
+                sender_0,
+                sender_1,
+                sender_2,
+                sender_3,
+                conn_id_0,
+                conn_id_1,
+                timestamp,
+                args,
+                error
+            ),
+            13 => __call_reducer_13(
                 sender_0,
                 sender_1,
                 sender_2,

@@ -750,6 +750,40 @@ public partial struct TestOutboxParamIssues
         IsEnabledByDefault: true
       }
     },
+    {/*
+    [SpacetimeDB.OnResult(typeof(TestOutboxParamIssues))]
+    public static void WrongSignature(ReducerContext ctx, TestOutboxParamIssues row) { }
+                       ^^^^^^^^^^^^^^
+
+*/
+      Message: WrongSignature: [OnResult] reducers must take (ReducerContext ctx, TestOutboxParamIssues row, Result<Unit, string> result).,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0048,
+        Title: Invalid [OnResult] reducer,
+        MessageFormat: {0}: {1},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.OnResult(typeof(TestOutboxEventAndScheduled))]
+    public static void LifecycleResult(
+                       ^^^^^^^^^^^^^^^
+        ReducerContext ctx,
+*/
+      Message: LifecycleResult: [OnResult] reducers can't be lifecycle reducers.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0048,
+        Title: Invalid [OnResult] reducer,
+        MessageFormat: {0}: {1},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
     {
       Location: ,
       Message: Several reducers are assigned to the same lifecycle kind Init: Reducers.TestDuplicateReducerKind1, Reducers.TestDuplicateReducerKind2,
@@ -758,6 +792,23 @@ public partial struct TestOutboxParamIssues
         Id: STDB0013,
         Title: Multiple reducers of the same kind,
         MessageFormat: Several reducers are assigned to the same lifecycle kind {0}: {1},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.OnResult(typeof(TestOutboxBadReceiver))]
+    public static void NotAReducer(
+                       ^^^^^^^^^^^
+        ReducerContext ctx,
+*/
+      Message: NotAReducer: [OnResult] needs [Reducer].,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0048,
+        Title: Invalid [OnResult] reducer,
+        MessageFormat: {0}: {1},
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
@@ -848,6 +899,45 @@ public partial struct TestOutboxParamIssues
         Id: STDB0017,
         Title: ClientVisibilityFilters must be Filters,
         MessageFormat: Field {0} is marked as ClientVisibilityFilter but it has type {1} which is not SpacetimeDB.Filter,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {
+      Location: ,
+      Message: OnResultIssues.AmbiguousOutbox handles results for TestOutboxKeyAndTargetIssues, which has several outbox tables (OutboxNoAutoInc, OutboxNoTarget, OutboxWrongTargetType). Pick one with [OnResult(Table = ...)].,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0049,
+        Title: Unresolved [OnResult] reducer,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {
+      Location: ,
+      Message: Outbox table OutboxNotAReducer has several [OnResult] reducers: FirstResult and SecondResult.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0049,
+        Title: Unresolved [OnResult] reducer,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {
+      Location: ,
+      Message: OnResultIssues.UnknownTable handles results for TestOutboxBadReceiver in table Missing, but there's no such outbox table.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0049,
+        Title: Unresolved [OnResult] reducer,
+        MessageFormat: {0},
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
