@@ -3,7 +3,10 @@
 use bytes::Bytes;
 use std::{
     io,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        OnceLock,
+    },
 };
 
 const BROTLI_QUALITY: i32 = 2;
@@ -12,26 +15,57 @@ const FOUR_THREADS_MIN_BYTES: usize = 64 * 1024 * 1024;
 const ZSTD_LEVEL: i32 = -2;
 const ZSTD_MT_MIN_BYTES: usize = 4 * 1024 * 1024;
 
-// A process-wide, nonblocking budget, not one pool per connection. Saturation
-// falls back to the same codec synchronously; never wait on an encode worker.
-static MT_BUDGET: MtBudget = MtBudget(AtomicBool::new(false));
-struct MtBudget(AtomicBool);
-struct MtPermit<'a>(&'a MtBudget);
+// Share half the available CPUs across MT jobs, rather than allowing just one
+// job or creating an independent allowance per connection. Count coordinators
+// as well as workers; synchronous encode work remains on the existing executor.
+static MT_BUDGET: OnceLock<MtBudget> = OnceLock::new();
+
+struct MtBudget {
+    available: AtomicUsize,
+}
+
+struct MtPermit<'a> {
+    budget: &'a MtBudget,
+    slots: usize,
+}
 
 impl MtBudget {
-    fn try_acquire(&self) -> Option<MtPermit<'_>> {
-        self.0
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+    const fn new(capacity: usize) -> Self {
+        Self {
+            available: AtomicUsize::new(capacity),
+        }
+    }
+
+    /// Atomically reserve up to `desired` slots without waiting for capacity.
+    /// Fewer than two slots cannot run an MT job, so leave them unclaimed.
+    fn try_acquire(&self, desired: usize) -> Option<MtPermit<'_>> {
+        self.available
+            .fetch_update(Ordering::Acquire, Ordering::Relaxed, |free| {
+                let slots = desired.min(free);
+                (slots >= 2).then_some(free - slots)
+            })
             .ok()
-            .map(|_| MtPermit(self))
+            .map(|free| MtPermit {
+                budget: self,
+                slots: desired.min(free),
+            })
     }
 }
 
 impl Drop for MtPermit<'_> {
     fn drop(&mut self) {
-        let MtBudget(busy) = self.0;
-        busy.store(false, Ordering::Release);
+        self.budget.available.fetch_add(self.slots, Ordering::Release);
     }
+}
+
+fn mt_cpu_budget(available: usize) -> usize {
+    available / 2
+}
+
+fn mt_budget(available: usize) -> &'static MtBudget {
+    // Initialize once from the CPU quota/affinity visible to the encode worker.
+    // A restart is required to change this capacity after CPU limits change.
+    MT_BUDGET.get_or_init(|| MtBudget::new(mt_cpu_budget(available)))
 }
 
 fn thread_count(len: usize, minimum: usize, available: usize) -> usize {
@@ -88,11 +122,12 @@ fn brotli_parallel(bytes: Bytes, threads: usize) -> io::Result<Vec<u8>> {
 }
 
 pub(crate) fn brotli_compress_owned(bytes: Bytes, out: &mut impl io::Write) {
-    let threads = thread_count(bytes.len(), BROTLI_MT_MIN_BYTES, available_threads());
+    let available = available_threads();
+    let threads = thread_count(bytes.len(), BROTLI_MT_MIN_BYTES, available);
     if threads > 1
-        && let Some(_permit) = MT_BUDGET.try_acquire()
+        && let Some(permit) = mt_budget(available).try_acquire(threads)
     {
-        match brotli_parallel(bytes.clone(), threads) {
+        match brotli_parallel(bytes.clone(), permit.slots) {
             Ok(compressed) => {
                 // Do not retain the MT API's maximum-sized allocation in the
                 // connection's reusable serialization buffer.
@@ -129,9 +164,13 @@ fn zstd_encode(bytes: &[u8], out: &mut impl io::Write, workers: u32) {
 }
 
 pub(crate) fn zstd_compress(bytes: &[u8], out: &mut impl io::Write) {
-    let workers = zstd_worker_count(bytes.len(), available_threads());
-    let permit = (workers > 0).then(|| MT_BUDGET.try_acquire()).flatten();
-    zstd_encode(bytes, out, if permit.is_some() { workers } else { 0 });
+    let available = available_threads();
+    let workers = zstd_worker_count(bytes.len(), available);
+    let permit = (workers > 0)
+        .then(|| mt_budget(available).try_acquire(workers as usize + 1))
+        .flatten();
+    let workers = permit.as_ref().map_or(0, |permit| (permit.slots - 1) as u32);
+    zstd_encode(bytes, out, workers);
 }
 
 #[cfg(test)]
@@ -150,14 +189,90 @@ mod tests {
 
     #[test]
     fn budget_is_nonblocking_and_released_on_unwind() {
-        let budget = MtBudget(AtomicBool::new(false));
+        let budget = MtBudget::new(8);
+        let other = budget.try_acquire(3).unwrap();
         let result = std::panic::catch_unwind(|| {
-            let _permit = budget.try_acquire().unwrap();
-            assert!(budget.try_acquire().is_none());
+            let permit = budget.try_acquire(5).unwrap();
+            assert_eq!(permit.slots, 5);
+            assert!(budget.try_acquire(2).is_none());
             panic!("test permit cleanup");
         });
         assert!(result.is_err());
-        assert!(budget.try_acquire().is_some());
+        assert_eq!(budget.available.load(Ordering::Relaxed), 5);
+        drop(other);
+        assert_eq!(budget.available.load(Ordering::Relaxed), 8);
+    }
+
+    #[test]
+    fn budget_uses_half_available_cpus_and_keeps_small_machines_synchronous() {
+        for (cpus, slots) in [(0, 0), (1, 0), (2, 1), (3, 1), (4, 2), (5, 2), (32, 16), (64, 32)] {
+            assert_eq!(mt_cpu_budget(cpus), slots);
+            let budget = MtBudget::new(slots);
+            assert_eq!(budget.try_acquire(4).is_some(), slots >= 2);
+        }
+    }
+
+    #[test]
+    fn multiple_jobs_share_slots_and_can_take_partial_allocations() {
+        let budget = MtBudget::new(mt_cpu_budget(32));
+        let brotli = budget.try_acquire(4).unwrap();
+        let zstd_a = budget.try_acquire(5).unwrap();
+        let zstd_b = budget.try_acquire(5).unwrap();
+        assert_eq!((brotli.slots, zstd_a.slots, zstd_b.slots), (4, 5, 5));
+        let reduced_zstd = budget.try_acquire(5).unwrap();
+        assert_eq!(reduced_zstd.slots, 2); // one worker plus the coordinator
+        assert!(budget.try_acquire(2).is_none());
+        drop(brotli);
+        let replacement = budget.try_acquire(5).unwrap();
+        assert_eq!(replacement.slots, 4);
+        drop((zstd_a, zstd_b, reduced_zstd, replacement));
+        assert_eq!(budget.available.load(Ordering::Relaxed), 16);
+
+        let permits: Vec<_> = (0..8).map(|_| budget.try_acquire(2).unwrap()).collect();
+        assert!(budget.try_acquire(2).is_none());
+        drop(permits);
+        assert_eq!(budget.available.load(Ordering::Relaxed), 16);
+    }
+
+    #[test]
+    fn one_remaining_slot_is_not_consumed_by_an_mt_request() {
+        let budget = MtBudget::new(3);
+        let permit = budget.try_acquire(2).unwrap();
+        assert!(budget.try_acquire(4).is_none());
+        assert!(budget.try_acquire(1).is_none());
+        assert!(budget.try_acquire(0).is_none());
+        assert_eq!(budget.available.load(Ordering::Relaxed), 1);
+        drop(permit);
+        assert_eq!(budget.available.load(Ordering::Relaxed), 3);
+    }
+
+    #[test]
+    fn concurrent_reservations_never_exceed_capacity() {
+        use std::sync::{Arc, Barrier};
+        let budget = Arc::new(MtBudget::new(16));
+        let start = Arc::new(Barrier::new(16));
+        let active = Arc::new(AtomicUsize::new(0));
+        let mut threads = Vec::new();
+        for i in 0..16 {
+            let (budget, start, active) = (budget.clone(), start.clone(), active.clone());
+            threads.push(std::thread::spawn(move || {
+                start.wait();
+                for _ in 0..100 {
+                    if let Some(permit) = budget.try_acquire(2 + i % 4) {
+                        assert!((2..=2 + i % 4).contains(&permit.slots));
+                        let total = active.fetch_add(permit.slots, Ordering::SeqCst) + permit.slots;
+                        assert!(total <= 16);
+                        std::thread::yield_now();
+                        active.fetch_sub(permit.slots, Ordering::SeqCst);
+                    }
+                }
+            }));
+        }
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        assert_eq!(active.load(Ordering::Relaxed), 0);
+        assert_eq!(budget.available.load(Ordering::Relaxed), 16);
     }
 
     #[test]
@@ -168,6 +283,7 @@ mod tests {
         for frame in [
             sync,
             brotli_parallel(input.clone(), 2).unwrap(),
+            brotli_parallel(input.clone(), 3).unwrap(),
             brotli_parallel(input.clone(), 4).unwrap(),
         ] {
             let mut decoded = Vec::new();
@@ -203,7 +319,7 @@ mod tests {
     #[test]
     fn zstd_sync_parallel_and_checksum_validation() {
         let input: Vec<_> = (0..5 * 1024 * 1024).map(|i| (i % 251) as u8).collect();
-        for workers in [0, 2, 4] {
+        for workers in [0, 1, 2, 3, 4] {
             let mut frame = Vec::new();
             zstd_encode(&input, &mut frame, workers);
             assert_eq!(zstd::stream::decode_all(frame.as_slice()).unwrap(), input);

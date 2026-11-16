@@ -12,9 +12,23 @@ produced by the parallel encoder.
 
 Bodies below 512 KiB use the synchronous encoder. At or above 512 KiB, eligible
 jobs use two compression lanes; at or above 64 MiB they may use four. Counts are
-capped by available parallelism. One shared process-wide allowance limits the
-number of parallel compression jobs to one. If it is occupied, compression
-falls back to the same codec synchronously, without waiting for a permit.
+capped by available parallelism. Parallel jobs share a process-wide CPU-slot
+budget of **50% of available CPUs, rounded down**. The capacity is initialized
+when first needed from the CPU quota/affinity visible to the encode worker;
+restart the server after changing CPU limits to recalculate it.
+
+Slots account for all threads participating in an MT job, including its
+coordinator. Brotli reserves one per lane; Zstd reserves one per additional
+worker plus its coordinator. A reservation can grant fewer threads than requested,
+but needs at least two slots. Jobs never wait for capacity: when fewer than two
+slots are free they compress synchronously with the same codec. On machines with
+fewer than four available CPUs the half-CPU budget therefore disables MT.
+
+For example, 32 available CPUs give 16 slots. These can admit eight two-lane
+Brotli jobs, four four-lane Brotli jobs, five Zstd jobs with two additional workers
+each, or mixtures within the same total. No cores are pinned or reserved by this
+accounting. This is a limit on concurrent MT thread allocations, **not a cap on
+total server compression CPU**: synchronous work still uses the existing executor.
 
 Core-pinning builds stay synchronous: codec child threads inherit their caller's
 affinity, and must not silently contend on one pinned CPU or use reserved CPUs.
@@ -24,8 +38,10 @@ compress subscription results while holding database transaction locks.
 The Brotli MT API needs a maximum-sized temporary output allocation. It is
 released after compression rather than retained in each connection's reusable
 buffer. Input bytes are shared with workers without copying the serialized body.
-Parallel compression therefore still increases transient memory and CPU use;
-the concurrency budget is not a guarantee of lower process memory or throughput.
+Parallel compression therefore still increases transient memory and CPU use.
+Several large MT jobs can coexist under the CPU-slot budget, each with its own
+temporary buffers; there is no separate byte-based memory budget. The slot limit
+is not a guarantee of lower process memory or improved throughput.
 
 ### Measurement rationale and limitations
 
@@ -39,9 +55,10 @@ payloads. These are single-host synthetic findings, not a promise of production
 speedup. Quality 1 can use less aggregate CPU than quality 2.
 
 Regression tests verify synchronous/parallel decoder compatibility, exact size
-cutoffs, CPU caps, nonblocking budget cleanup, v2/coalesced-v3 payload equality,
-and serialization-buffer reclamation. Production throughput, peak memory and
-real application payloads should also be evaluated when changing this policy.
+cutoffs, CPU caps, concurrent/partial reservations, unwind cleanup,
+v2/coalesced-v3 payload equality, and serialization-buffer reclamation.
+Production throughput, peak memory and real application payloads should also be
+evaluated when changing this policy.
 
 ## Opt-in Zstandard
 
@@ -62,8 +79,9 @@ The encoder uses **fast-2 (level -2)**. Bodies below 4 MiB stay synchronous; bod
 at or above 4 MiB may use two additional workers, and at or above 64 MiB may use
 four. Zstd counts workers in addition to the coordinator, unlike Brotli's total
 lane count. Workers are capped at available parallelism minus one. Both codecs
-share the same one-job MT allowance and core-pinning fallback. Thread counts are
-a server CPU policy, not a client-controlled query parameter.
+share the same CPU-slot budget and core-pinning fallback. A partial reservation
+can reduce Zstd's worker count, including to one additional worker. Thread counts
+are a server CPU policy, not a client-controlled query parameter.
 
 Exploratory fresh-context measurements first showed Zstd fast-2/level-1 MT wins
 at around 4 MiB, not at the 512 KiB Brotli cutoff. At 2 MiB, the measured fast-2
