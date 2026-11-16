@@ -1,6 +1,7 @@
 use std::{
     fs,
     io::{self, Write as _},
+    path::PathBuf,
 };
 
 use spacetimedb_fs_utils::dir_trie::DirTrie;
@@ -15,7 +16,8 @@ use spacetimedb_table::{
 
 #[derive(Debug)]
 pub struct DiskStorage {
-    dir_trie: DirTrie,
+    pages: DirTrie,
+    blobs: DirTrie,
     page_pool: PagePool,
     metrics: Metrics,
 }
@@ -28,10 +30,12 @@ impl DiskStorage {
             return Err(e);
         }
         fs::create_dir_all(&dir)?;
-        let dir_trie = DirTrie::open(dir.0)?;
+        let pages = DirTrie::open(dir.0.join("pages"))?;
+        let blobs = DirTrie::open(dir.0.join("blobs"))?;
 
         Ok(Self {
-            dir_trie,
+            pages,
+            blobs,
             page_pool,
             metrics: Default::default(),
         })
@@ -49,8 +53,8 @@ impl DiskStorage {
         result.map(|(value, _)| value)
     }
 
-    fn write_trie_entry(&self, hash: &[u8; ObjectKey::SIZE], bytes: &[u8]) -> io::Result<()> {
-        let path = self.dir_trie.file_path(hash);
+    fn write_trie_entry(&self, key: &ObjectKey, bytes: &[u8]) -> io::Result<()> {
+        let path = self.file_path(key);
         let dir = path.parent().expect("dir trie file paths have a parent");
         fs::create_dir_all(dir)?;
 
@@ -91,6 +95,13 @@ impl DiskStorage {
             Ok(bytes)
         }
     }
+
+    fn file_path(&self, key: &ObjectKey) -> PathBuf {
+        match key {
+            ObjectKey::Page(hash) => self.pages.file_path(hash.as_bytes()),
+            ObjectKey::Blob(hash) => self.blobs.file_path(hash.as_bytes()),
+        }
+    }
 }
 
 impl ObjectStore for DiskStorage {
@@ -99,19 +110,19 @@ impl ObjectStore for DiskStorage {
     }
 
     fn stat(&self, key: ObjectKey) -> Result<Option<ObjectMetadata>, ObjectStoreError> {
-        let path = self.dir_trie.file_path(key.as_bytes());
-        path.metadata()
+        self.file_path(&key)
+            .metadata()
             .map(|meta| ObjectMetadata { size: meta.len() })
             .map_or_else(none_if_not_found, ok_some)
     }
 
     fn read(&self, key: ObjectKey) -> Result<Option<ObjectBytes>, ObjectStoreError> {
         let bytes: Option<ObjectBytes> = self.io(DiskOperation::Read, || {
-            let bytes = self
-                .dir_trie
-                .read_entry(key.as_bytes())
-                .map(ObjectBytes::from)
-                .map_or_else(none_if_not_found, ok_some)?;
+            let raw = match key {
+                ObjectKey::Page(hash) => self.pages.read_entry(hash.as_bytes()),
+                ObjectKey::Blob(hash) => self.blobs.read_entry(hash.as_bytes()),
+            };
+            let bytes = raw.map(ObjectBytes::from).map_or_else(none_if_not_found, ok_some)?;
             let len = bytes.as_ref().map_or(0, |bytes| bytes.len() as u64);
             Ok((bytes, len))
         })?;
@@ -121,7 +132,7 @@ impl ObjectStore for DiskStorage {
     fn write(&self, object: Object) -> Result<ObjectKey, ObjectStoreError> {
         let (key, bytes) = object.into_kv();
         self.io(DiskOperation::Write, || {
-            self.write_trie_entry(key.as_bytes(), &bytes)?;
+            self.write_trie_entry(&key, &bytes)?;
             Ok((key, bytes.len() as u64))
         })
     }
@@ -129,7 +140,7 @@ impl ObjectStore for DiskStorage {
 
 unsafe impl RemoveObject for DiskStorage {
     unsafe fn remove(&self, key: ObjectKey) -> Result<(), ObjectStoreError> {
-        let path = self.dir_trie.file_path(key.as_bytes());
+        let path = self.file_path(&key);
         fs::remove_file(path).or_else(|e| {
             if e.kind() == io::ErrorKind::NotFound {
                 Ok(())
