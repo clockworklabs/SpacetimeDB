@@ -87,12 +87,11 @@ impl SerializeBuffer {
         let mut writer = self.compressed.writer();
         writer.get_mut().put_u8(ws_common::SERVER_MSG_COMPRESSION_TAG_BROTLI);
         crate::compression::brotli_compress_owned(input.slice(1..), &mut writer);
-        let compressed = writer.into_inner().freeze();
-        let in_use = InUseSerializeBuffer::Compressed {
+        Self {
             uncompressed: input.try_into_mut().expect("Brotli must release shared input"),
-            compressed: compressed.clone(),
-        };
-        (in_use, compressed)
+            compressed: writer.into_inner(),
+        }
+        .finish_compression()
     }
 
     /// Compress the data from a `write_with_tag` call, and change the tag.
@@ -104,7 +103,20 @@ impl SerializeBuffer {
         let mut writer = self.compressed.writer();
         writer.get_mut().put_u8(tag);
         write(&self.uncompressed[1..], &mut writer);
-        let compressed = writer.into_inner().freeze();
+        Self {
+            uncompressed: self.uncompressed,
+            compressed: writer.into_inner(),
+        }
+        .finish_compression()
+    }
+
+    /// Both buffers include their tag. Never make a frame larger just because
+    /// its body passed the minimum compression-attempt threshold.
+    fn finish_compression(self) -> (InUseSerializeBuffer, Bytes) {
+        if self.compressed.len() >= self.uncompressed.len() {
+            return self.uncompressed();
+        }
+        let compressed = self.compressed.freeze();
         let in_use = InUseSerializeBuffer::Compressed {
             uncompressed: self.uncompressed,
             compressed: compressed.clone(),
@@ -155,9 +167,72 @@ mod compression_tests {
     }
 
     #[test]
+    fn incompressible_frames_reuse_uncompressed_input_for_all_codecs() {
+        for compression in [
+            ws_v1::Compression::Brotli,
+            ws_v1::Compression::Gzip,
+            ws_v1::Compression::Zstd,
+        ] {
+            for size in [64, 111, 303, 1024, 8192] {
+                let mut state = 987654321u64;
+                let payload: Vec<_> = (0..size)
+                    .map(|_| {
+                        state ^= state << 13;
+                        state ^= state >> 7;
+                        state ^= state << 17;
+                        state as u8
+                    })
+                    .collect();
+                let mut buffer = SerializeBuffer {
+                    uncompressed: BytesMut::new(),
+                    compressed: BytesMut::new(),
+                };
+                buffer.write_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_NONE, |mut w| {
+                    std::io::Write::write_all(&mut w, &payload).unwrap();
+                });
+                let original = buffer.uncompressed.as_ptr();
+                let (in_use, frame) = finalize_binary_serialize_buffer(buffer, size, compression);
+                assert_eq!(frame[0], ws_common::SERVER_MSG_COMPRESSION_TAG_NONE);
+                assert_eq!(frame.as_ptr(), original, "fallback must not copy the body");
+                assert_eq!(&frame[1..], payload);
+                drop(frame);
+                let reclaimed = in_use.try_reclaim().unwrap();
+                assert!(reclaimed.uncompressed.is_empty());
+                assert!(reclaimed.compressed.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn compressed_output_must_be_strictly_smaller() {
+        for compressed_len in [64, 65, 66] {
+            let mut uncompressed = BytesMut::from(&[42; 65][..]);
+            uncompressed[0] = ws_common::SERVER_MSG_COMPRESSION_TAG_NONE;
+            let mut compressed = BytesMut::from(&vec![42; compressed_len][..]);
+            compressed[0] = ws_common::SERVER_MSG_COMPRESSION_TAG_BROTLI;
+            let (in_use, frame) = SerializeBuffer {
+                uncompressed,
+                compressed,
+            }
+            .finish_compression();
+            assert_eq!(frame.len(), compressed_len.min(65));
+            assert_eq!(
+                frame[0],
+                if compressed_len < 65 {
+                    ws_common::SERVER_MSG_COMPRESSION_TAG_BROTLI
+                } else {
+                    ws_common::SERVER_MSG_COMPRESSION_TAG_NONE
+                }
+            );
+            drop(frame);
+            assert!(in_use.try_reclaim().is_some());
+        }
+    }
+
+    #[test]
     fn zstd_thresholds_and_buffer_reclamation() {
-        for size in [1023, 1024, 1025, 4 * 1024 * 1024 - 1, 4 * 1024 * 1024] {
-            let payload: Vec<_> = (0..size).map(|i| (i % 251) as u8).collect();
+        for size in [63, 64, 65, 1023, 1024, 1025, 4 * 1024 * 1024 - 1, 4 * 1024 * 1024] {
+            let payload = vec![42; size];
             let mut buffer = SerializeBuffer {
                 uncompressed: BytesMut::new(),
                 compressed: BytesMut::new(),
@@ -168,7 +243,7 @@ mod compression_tests {
             let (in_use, frame) = finalize_binary_serialize_buffer(buffer, size, ws_v1::Compression::Zstd);
             assert_eq!(
                 frame[0],
-                if size <= 1024 {
+                if size < crate::compression::MIN_COMPRESS_BYTES {
                     ws_common::SERVER_MSG_COMPRESSION_TAG_NONE
                 } else {
                     ws_common::SERVER_MSG_COMPRESSION_TAG_ZSTD
@@ -182,8 +257,8 @@ mod compression_tests {
 
     #[test]
     fn brotli_thresholds_and_buffer_reclamation() {
-        for size in [1023, 1024, 1025, 512 * 1024 - 1, 512 * 1024, 1024 * 1024] {
-            let payload: Vec<_> = (0..size).map(|i| (i % 251) as u8).collect();
+        for size in [63, 64, 65, 1023, 1024, 1025, 512 * 1024 - 1, 512 * 1024, 1024 * 1024] {
+            let payload = vec![42; size];
             let mut buffer = SerializeBuffer {
                 uncompressed: BytesMut::new(),
                 compressed: BytesMut::new(),
@@ -192,7 +267,7 @@ mod compression_tests {
                 std::io::Write::write_all(&mut w, &payload).unwrap();
             });
             let (in_use, frame) = finalize_binary_serialize_buffer(buffer, size, ws_v1::Compression::Brotli);
-            if size <= 1024 {
+            if size < crate::compression::MIN_COMPRESS_BYTES {
                 assert_eq!(frame[0], ws_common::SERVER_MSG_COMPRESSION_TAG_NONE);
                 assert_eq!(&frame[1..], payload);
             } else {

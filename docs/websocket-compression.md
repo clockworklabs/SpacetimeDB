@@ -1,8 +1,52 @@
 # WebSocket compression policy
 
 Binary messages retain the existing one-byte compression tag. Compression is
-applied only when the serialized body exceeds 1,024 bytes; the tag is not counted.
-Text messages and the client-selected `None` mode are unchanged.
+attempted when the serialized body is **at least 64 bytes**, excluding the tag.
+Compressed output is retained only when it makes the complete frame strictly
+smaller. Otherwise, the original uncompressed buffer/tag is sent without copying
+the body. Text messages and the client-selected `None` mode are unchanged.
+
+This replaces the previous >1,024-byte cutoff, not either codec's MT threshold.
+Small messages remain synchronous and do not query CPU availability or acquire
+the MT budget. An unsuccessful compression attempt still costs encoder CPU;
+the size guard prevents bandwidth expansion, not that CPU overhead.
+
+### Small-message size evidence
+
+An explicit `small_message_compression_sweep` core test compares fresh production
+encoders on synthetic v2 updates, without dictionaries. The fixture has three
+u64 fields and 40 bytes of zero padding, plus the actual update envelope. Sizes
+below exclude the common one-byte compression tag on both sides:
+
+| Row count | BSATN body bytes | Brotli 2 | gzip 1 (miniz / zlib-rs) | Zstd fast-2 |
+| --- | ---: | ---: | ---: | ---: |
+| 0 | 47 | 51 | 53 / 55 | 60 |
+| 1 | 111 | 79 | 85 / 70 | 74 |
+| 2 | 175 | 105 | 106 / 87 | 91 |
+| 4 | 303 | 143 | 144 / 121 | 130 |
+| 8 | 559 | 224 | 211 / 188 | 193 |
+
+The core-only and combined server/SDK test builds select different flate2
+backends through Cargo feature unification; both observed gzip sizes are shown.
+
+Replacing the row values/padding with random bytes made these small bodies grow
+under every codec; the serializer now falls back to the original frame in that
+case. 64 bytes is a lower **attempt** cutoff between the measured empty envelope
+and one-row update, not a proven universal network/CPU optimum. Real payload
+distributions and network rates still determine whether small-message compression
+is worthwhile.
+
+Run the sweep explicitly with:
+
+```sh
+RUSTFLAGS='--cfg tokio_unstable' cargo test -p spacetimedb-core --lib \
+  --release --locked small_message_compression_sweep -- --ignored --nocapture
+```
+
+Size validation was also run in the normal optimized test profile; its printed
+CPU timings must not be interpreted as release performance results.
+V1 inner-query-update guards include the compressed byte-array length prefix
+when checking whether compression saves bytes.
 
 ## Brotli
 

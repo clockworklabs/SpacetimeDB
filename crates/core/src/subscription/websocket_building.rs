@@ -188,25 +188,31 @@ impl BuildableWebsocketFormat for ws_v1::BsatnFormat {
                 let bytes = bsatn::to_vec(&qu).unwrap();
                 let mut out = Vec::new();
                 brotli_compress(&bytes, &mut out);
-                ws_v1::CompressableQueryUpdate::Brotli(out.into())
+                // The compressed variant adds a BSATN byte-array length prefix.
+                if out.len().saturating_add(size_of::<u32>()) < qu_len_would_have_been {
+                    ws_v1::CompressableQueryUpdate::Brotli(out.into())
+                } else {
+                    ws_v1::CompressableQueryUpdate::Uncompressed(qu)
+                }
             }
             ws_v1::Compression::Gzip => {
                 let bytes = bsatn::to_vec(&qu).unwrap();
                 let mut out = Vec::new();
                 gzip_compress(&bytes, &mut out);
-                ws_v1::CompressableQueryUpdate::Gzip(out.into())
+                if out.len().saturating_add(size_of::<u32>()) < qu_len_would_have_been {
+                    ws_v1::CompressableQueryUpdate::Gzip(out.into())
+                } else {
+                    ws_v1::CompressableQueryUpdate::Uncompressed(qu)
+                }
             }
         }
     }
 }
 
 pub fn decide_compression(len: usize, compression: ws_v1::Compression) -> ws_v1::Compression {
-    /// The threshold beyond which we start to compress messages.
-    /// 1KiB was chosen without measurement.
-    /// TODO(perf): measure!
-    const COMPRESS_THRESHOLD: usize = 1024;
-
-    if len > COMPRESS_THRESHOLD {
+    // Small row updates can compress well below 1 KiB. This selects an attempt;
+    // the serializer retains compressed output only when the frame is smaller.
+    if len >= crate::compression::MIN_COMPRESS_BYTES {
         compression
     } else {
         ws_v1::Compression::None
@@ -221,4 +227,80 @@ pub fn gzip_compress(bytes: &[u8], out: &mut impl io::Write) {
     let mut encoder = flate2::write::GzEncoder::new(out, flate2::Compression::fast());
     encoder.write_all(bytes).unwrap();
     encoder.finish().expect("should be able to gzip compress `bytes`");
+}
+
+#[cfg(test)]
+mod compression_tests {
+    use super::*;
+    use std::io::Read;
+
+    #[test]
+    fn compression_attempts_start_at_64_bytes() {
+        for codec in [
+            ws_v1::Compression::None,
+            ws_v1::Compression::Brotli,
+            ws_v1::Compression::Gzip,
+            ws_v1::Compression::Zstd,
+        ] {
+            for size in [0, 63, 64, 65, 1024] {
+                assert_eq!(
+                    decide_compression(size, codec),
+                    if size < 64 { ws_v1::Compression::None } else { codec }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn inner_query_updates_only_compress_when_the_encoded_variant_is_smaller() {
+        for codec in [
+            ws_v1::Compression::None,
+            ws_v1::Compression::Brotli,
+            ws_v1::Compression::Gzip,
+            ws_v1::Compression::Zstd,
+        ] {
+            for random in [false, true] {
+                for size in [64, 512, 1024] {
+                    let mut state = 987654321u64;
+                    let data: Vec<_> = (0..size)
+                        .map(|_| {
+                            state ^= state << 13;
+                            state ^= state >> 7;
+                            state ^= state << 17;
+                            if random {
+                                state as u8
+                            } else {
+                                42
+                            }
+                        })
+                        .collect();
+                    let query = ws_v1::QueryUpdate::<ws_v1::BsatnFormat> {
+                        deletes: ws_v1::BsatnRowList::default(),
+                        inserts: ws_v1::BsatnRowList::new(ws_v1::RowSizeHint::FixedSize(64), data.into()),
+                    };
+                    let expected = bsatn::to_vec(&query).unwrap();
+                    let actual = ws_v1::BsatnFormat::into_query_update(query, codec);
+                    // Include the enum tag and compressed-byte-array length prefix.
+                    assert!(bsatn::to_len(&actual).unwrap() <= expected.len() + 1);
+                    let mut decoded = Vec::new();
+                    match actual {
+                        ws_v1::CompressableQueryUpdate::Uncompressed(query) => {
+                            decoded = bsatn::to_vec(&query).unwrap();
+                        }
+                        ws_v1::CompressableQueryUpdate::Brotli(bytes) => {
+                            brotli::Decompressor::new(bytes.as_ref(), 4096)
+                                .read_to_end(&mut decoded)
+                                .unwrap();
+                        }
+                        ws_v1::CompressableQueryUpdate::Gzip(bytes) => {
+                            flate2::read::GzDecoder::new(bytes.as_ref())
+                                .read_to_end(&mut decoded)
+                                .unwrap();
+                        }
+                    }
+                    assert_eq!(decoded, expected);
+                }
+            }
+        }
+    }
 }

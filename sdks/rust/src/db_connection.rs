@@ -1087,8 +1087,8 @@ but you must call one of them, or else the connection will never progress.
 
     /// Sets the compression used when a certain threshold in the message size has been reached.
     ///
-    /// The current threshold used by the host is 1KiB for the entire server message
-    /// and for individual query updates.
+    /// The current host attempts compression from 64 bytes for the entire server
+    /// message and for individual query updates, retaining it only if it saves bytes.
     /// Note however that this threshold is not guaranteed and may change without notice.
     ///
     /// Brotli is the default. [`Compression::Zstd`](ws::common::Compression::Zstd)

@@ -10,6 +10,7 @@ use std::{
 };
 
 const BROTLI_QUALITY: i32 = 2;
+pub(crate) const MIN_COMPRESS_BYTES: usize = 64;
 const BROTLI_MT_MIN_BYTES: usize = 512 * 1024;
 const FOUR_THREADS_MIN_BYTES: usize = 64 * 1024 * 1024;
 const ZSTD_LEVEL: i32 = -2;
@@ -122,6 +123,10 @@ fn brotli_parallel(bytes: Bytes, threads: usize) -> io::Result<Vec<u8>> {
 }
 
 pub(crate) fn brotli_compress_owned(bytes: Bytes, out: &mut impl io::Write) {
+    if bytes.len() < BROTLI_MT_MIN_BYTES {
+        brotli_compress(&bytes, out);
+        return;
+    }
     let available = available_threads();
     let threads = thread_count(bytes.len(), BROTLI_MT_MIN_BYTES, available);
     if threads > 1
@@ -164,6 +169,10 @@ fn zstd_encode(bytes: &[u8], out: &mut impl io::Write, workers: u32) {
 }
 
 pub(crate) fn zstd_compress(bytes: &[u8], out: &mut impl io::Write) {
+    if bytes.len() < ZSTD_MT_MIN_BYTES {
+        zstd_encode(bytes, out, 0);
+        return;
+    }
     let available = available_threads();
     let workers = zstd_worker_count(bytes.len(), available);
     let permit = (workers > 0)
@@ -177,6 +186,101 @@ pub(crate) fn zstd_compress(bytes: &[u8], out: &mut impl io::Write) {
 mod tests {
     use super::*;
     use std::io::Read;
+
+    /// Run explicitly with `cargo test -p spacetimedb-core --lib --release
+    /// small_message_compression_sweep -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "manual synthetic compression size/CPU sweep"]
+    fn small_message_compression_sweep() {
+        use spacetimedb_client_api_messages::websocket::{common::*, v2::*};
+        use spacetimedb_sats::bsatn;
+        use std::{hint::black_box, time::Instant};
+
+        println!("entropy,rows,raw_bytes,codec,compressed_bytes,encode_us");
+        for random in [false, true] {
+            for count in [0usize, 1, 2, 4, 8, 16] {
+                let mut state = 987654321u64;
+                let mut next = || {
+                    state ^= state << 13;
+                    state ^= state >> 7;
+                    state ^= state << 17;
+                    state
+                };
+                let mut data = Vec::new();
+                for id in 0..count {
+                    if random {
+                        for _ in 0..8 {
+                            data.extend_from_slice(&next().to_le_bytes());
+                        }
+                    } else {
+                        data.extend_from_slice(&(id as u64).to_le_bytes());
+                        data.extend_from_slice(&((id % 16) as u64).to_le_bytes());
+                        data.extend_from_slice(&next().to_le_bytes());
+                        data.extend_from_slice(&[0; 40]);
+                    }
+                }
+                let message: ServerMessage = TransactionUpdate {
+                    query_sets: vec![QuerySetUpdate {
+                        query_set_id: QuerySetId::new(3),
+                        tables: vec![TableUpdate {
+                            table_name: "inventory".into(),
+                            rows: vec![TableUpdateRows::PersistentTable(PersistentTableRows {
+                                inserts: BsatnRowList::new(RowSizeHint::FixedSize(64), data.into()),
+                                deletes: BsatnRowList::default(),
+                            })]
+                            .into(),
+                        }]
+                        .into(),
+                    }]
+                    .into(),
+                }
+                .into();
+                let raw = Bytes::from(bsatn::to_vec(&message).unwrap());
+                for codec in ["brotli2", "gzip1", "zstd-fast2"] {
+                    let encode = || {
+                        let mut out = Vec::new();
+                        match codec {
+                            "brotli2" => brotli_compress_owned(raw.clone(), &mut out),
+                            "gzip1" => crate::subscription::websocket_building::gzip_compress(&raw, &mut out),
+                            _ => zstd_compress(&raw, &mut out),
+                        }
+                        out
+                    };
+                    let frame = encode();
+                    let mut decoded = Vec::new();
+                    match codec {
+                        "brotli2" => {
+                            brotli::Decompressor::new(frame.as_slice(), 4096)
+                                .read_to_end(&mut decoded)
+                                .unwrap();
+                        }
+                        "gzip1" => {
+                            flate2::read::GzDecoder::new(frame.as_slice())
+                                .read_to_end(&mut decoded)
+                                .unwrap();
+                        }
+                        _ => {
+                            decoded = zstd::stream::decode_all(frame.as_slice()).unwrap();
+                        }
+                    }
+                    assert_eq!(decoded, raw);
+                    let mut elapsed = std::time::Duration::ZERO;
+                    for _ in 0..200 {
+                        let start = Instant::now();
+                        let output = black_box(encode());
+                        elapsed += start.elapsed();
+                        drop(output);
+                    }
+                    println!(
+                        "{random},{count},{},{codec},{},{:.3}",
+                        raw.len(),
+                        frame.len(),
+                        elapsed.as_secs_f64() * 1e6 / 200.0
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn parallel_thresholds_and_cpu_cap() {
