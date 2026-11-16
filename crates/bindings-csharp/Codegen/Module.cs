@@ -2712,7 +2712,7 @@ record AssemblyDeclaration(
     string DescriptorTypeName,
     EquatableArray<NamespaceDeclaration> Mounts,
     string RootOnlyDeclarations,
-    string IdcDeclarations,
+    string OutboxTables,
     string? CaseConversionPolicy,
     EquatableArray<AssemblyTableAccessor> Tables,
     EquatableArray<AssemblyTableAccessor> ReadOnlyTables,
@@ -2996,7 +2996,7 @@ public class Module : IIncrementalGenerator
                     descriptor.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                     new(ImmutableArray<NamespaceDeclaration>.Empty),
                     ReadConstant("RootOnlyDeclarations") ?? "",
-                    ReadConstant("IdcDeclarations") ?? "",
+                    ReadConstant("OutboxTables") ?? "",
                     ReadConstant("CaseConversionPolicy"),
                     ReadAccessors("Tables"),
                     ReadAccessors("ReadOnlyTables"),
@@ -3648,11 +3648,11 @@ public class Module : IIncrementalGenerator
                 }
                 foreach (var assembly in assemblies)
                 {
-                    if (assembly.IdcDeclarations.Length != 0)
+                    if (assembly.OutboxTables.Length != 0)
                     {
                         context.ReportDiagnostic(
-                            ErrorDescriptor.DependencyIdcDeclarations.ToDiag(
-                                (assembly.Identity, assembly.IdcDeclarations)
+                            ErrorDescriptor.DependencyOutboxTables.ToDiag(
+                                (assembly.Identity, assembly.OutboxTables)
                             )
                         );
                     }
@@ -4326,9 +4326,9 @@ public class Module : IIncrementalGenerator
                                 addReducers.Where(r => r.Kind != ReducerKind.UserDefined)
                                     .Select(r => $"lifecycle reducer {r.FullName} ({r.Kind})")
                             )), true)}};
-                            public const string IdcDeclarations = {{SymbolDisplay.FormatLiteral(string.Join(", ",
+                            public const string OutboxTables = {{SymbolDisplay.FormatLiteral(string.Join(", ",
                                 tableAccessors.Where(t => t.Outbox is not null)
-                                    .Select(t => $"outbox table {t.TableAccessorName}")
+                                    .Select(t => t.TableAccessorName)
                             ), true)}};
                             public const int ReducerCount = {{addReducers.Array.Length}};
                             public const int ProcedureCount = {{addProcedures.Array.Length}};
