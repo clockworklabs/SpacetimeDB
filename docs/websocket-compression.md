@@ -26,8 +26,34 @@ below exclude the common one-byte compression tag on both sides:
 | 4 | 303 | 143 | 144 / 121 | 130 |
 | 8 | 559 | 224 | 211 / 188 | 193 |
 
-The core-only and combined server/SDK test builds select different flate2
-backends through Cargo feature unification; both observed gzip sizes are shown.
+These measurements preceded explicit backend selection: the core-only and
+combined server/SDK test builds selected different flate2 backends through Cargo
+feature unification. Both observed gzip sizes are shown. They are historical
+measurements, not measurements of the current native zlib-ng backend.
+
+### Gzip backend selection
+
+The workspace explicitly selects flate2's pure-Rust **`zlib-rs`** backend for
+both the native server/Rust SDK and the wasm32 browser SDK. This is neither
+`zlib-ng` nor `zlib-ng-compat`; no native zlib-ng library or its CMake/C build
+requirements are added to production. Other dependencies may still enable
+miniz features, but zlib-rs takes precedence in the locked flate2 implementation.
+Gzip framing, level 1, thresholds and single-threaded encoding are unchanged.
+
+An [isolated backend benchmark](../tools/gzip-backend-bench/README.md) compares
+miniz, zlib-rs and guaranteed zlib-ng without workspace feature contamination,
+and sweeps gzip levels. On the synthetic 500 MiB initial-response fixture,
+zlib-rs level 1 encoded in about 638 ms to 130.1 MiB. Level 2 reduced that to
+113.2 MiB but took about 1,118 ms. That is roughly the original miniz level-1
+encoding time (1,135 ms), with smaller output than its 118.5 MiB. It does not
+preserve zlib-rs level-1 speed: encoding costs about 75% more for 13% fewer bytes.
+
+Level 1 remains the speed-oriented default (`Compression::fast()`). Selecting
+`Compression::new(2)` would be a bandwidth/CPU tradeoff, not a free feature flag;
+there is no new runtime/TOML gzip-level setting in this change. These are
+codec-only synthetic release measurements, not server throughput or real-data/
+network results. The optional isolated zlib-ng comparison still needs CMake and
+a C compiler, but the production backend does not.
 
 Replacing the row values/padding with random bytes made these small bodies grow
 under every codec; the serializer now falls back to the original frame in that
