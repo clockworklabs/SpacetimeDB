@@ -1,18 +1,33 @@
-# Writing testing sections
+# Writing pull requests
 
-A PR's testing section should explain what verification gives the reviewer confidence that the change works as intended and avoids bugs. The goal is evidence for correctness, not a list of testing activities.
+Read this guide when creating or updating a PR. Use the repository's [PR template](../.github/pull_request_template.md) and preserve every section when updating an existing PR.
 
-## Choose the evidence
+## Verified commits
+
+Verified commits are required: a PR cannot be merged without them. Enable commit signing before creating commits for a PR, and ensure GitHub recognizes the commits as **Verified**. A local signature alone does not establish that GitHub can verify it.
+
+If you cannot create verified commits, alert the user promptly, explicitly tell them that the PR cannot be merged without verified commits, and help them set up commit signing and GitHub verification. Do not silently proceed with unverified commits or present the PR as ready to merge. After setup, confirm that GitHub marks the PR's commits as **Verified**.
+
+## Preserve and complete the template
+
+No section of the PR template may be removed. PRs that remove any template section will be rejected. Populate every section faithfully, following its instructions and describing the actual change; do not leave placeholders or invent information. Where a section does not apply, say so explicitly and follow any prescribed wording.
+
+## Writing the testing section
+
+Describe the automated or manual testing performed and what behavior it covers, including relevant existing test coverage. Include important gaps in that coverage.
+
+If no testing was performed, write “Not tested.” Do not justify the absence of testing or pad the section with routine checks. Reviewing the diff or instructions, checking whitespace or links, and verifying commit signatures are not substitutes for testing the change.
+
+### Choose the evidence
 
 - Start from the change's intended outcome and the important ways it could fail. Identify what verification addresses those concerns, including existing coverage.
 - Usually, the strongest evidence is how automated tests were extended or adapted, or why existing tests cover the change. Manual tests, successful use, and other verification can also provide evidence.
 - State what the evidence establishes. A same-client compilation test supports source compatibility; a client/server test supports actual interaction. Neither proves the other.
-- For documentation and instructions, look for evidence that readers can accomplish the intended task. Consistency checks and working links are useful, but don't establish that the content is effective.
 - Include important remaining uncertainty and explain any barriers to testing it. Distinguish "not tested yet" from "cannot be tested"; don't invent a reason or imply impossibility.
 
 The connection between the evidence and the intended outcome should be clear from the wording. It doesn't need a separate justification after every bullet.
 
-## Content
+### Content
 
 - Distinguish updated tests, added tests, and relevant existing coverage. Use short bullets; omit categories that don't apply.
 - Describe what each test or other check verifies. Name the inputs or API when needed to make the claim clear: incorrect reducer arguments, generated bindings, or the built package.
@@ -23,7 +38,7 @@ The connection between the evidence and the intended outcome should be clear fro
 - Label manual verification as manual and state what was checked and the result.
 - Keep caveats focused on gaps that affect confidence in the change, not a routine list of what tests don't do.
 
-## Wording and detail
+### Wording and detail
 
 Brevity comes from removing unnecessary detail, not replacing concrete information with vague labels.
 
@@ -34,7 +49,7 @@ Brevity comes from removing unnecessary detail, not replacing concrete informati
 - Omit routine mechanics, commands, counts, and assertion details unless they materially help the reviewer.
 - Scale the section to the change. Don't turn it into an inventory of every assertion or an explicit question-and-answer checklist.
 
-## Wording examples
+### Wording examples
 
 | Vague or misleading | Concrete |
 | --- | --- |
@@ -45,7 +60,7 @@ Brevity comes from removing unnecessary detail, not replacing concrete informati
 | Package and browser checks. | Tests that the new declaration API works with ESM and CommonJS imports and browser builds. |
 | End-to-end coverage. | Existing integration tests connect to a server, subscribe, call reducers, and check received rows. |
 
-## Example: generated bindings
+### Example: generated bindings
 
 Updated:
 

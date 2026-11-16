@@ -378,7 +378,7 @@ let response = ctx.http.send(request).expect("request failed");
 
 Scheduled procedures use the ordinary scheduled-table shape, but the scheduled function is marked `#[procedure]` and receives `&mut ProcedureContext` plus the scheduled row.
 
-Inbound HTTP uses handler functions and one router:
+Inbound HTTP uses handler functions and one router. Handlers are unstable, so enable the `unstable` feature: `spacetimedb = { version = "2.*", features = ["unstable"] }`.
 
 ```rust
 use spacetimedb::http::{handler, router, Body, HandlerContext, Request, Response, Router};

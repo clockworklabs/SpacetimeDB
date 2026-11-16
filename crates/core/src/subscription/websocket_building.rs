@@ -71,8 +71,8 @@ impl RowListBuilder for Vec<ByteString> {
 /// A [`BsatnRowList`] that can be added to.
 #[derive(Default)]
 pub struct BsatnRowListBuilder {
-    /// A size hint about `rows_data`
-    /// intended to facilitate parallel decode purposes on large initial updates.
+    /// The exact boundaries of each row in `rows_data`.
+    /// See [`ws_v1::BsatnRowList`] for the guarantee this must uphold.
     size_hint: RowSizeHintBuilder,
     /// The flattened byte array for a list of rows.
     rows_data: BytesMut,
