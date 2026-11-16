@@ -23,6 +23,7 @@ import {
   ModuleContext,
   tableToSchema,
   type TablesToSchema,
+  type TableToSchema,
   type UntypedSchemaDef,
 } from '../lib/schema.ts';
 import type { UntypedTableSchema } from '../lib/table_schema.ts';
@@ -66,6 +67,7 @@ import {
   type Views,
 } from './views.ts';
 import type { UntypedTableDef } from '../lib/table.ts';
+import type { MigrationFn } from './migration.ts';
 
 /**
  * Internal erased form of a scheduled reducer/procedure export.
@@ -106,6 +108,7 @@ export class SchemaInner<
   views: Views = [];
   anonViews: AnonViews = [];
   httpHandlers: HandlerFn[] = [];
+  migrations: MigrationFn[] = [];
   /**
    * Maps reducer/procedure export objects to their source names.
    * Used for resolving scheduled table targets.
@@ -863,7 +866,7 @@ type ExtractSubmoduleSchemas<H extends Record<string, SchemaEntry>> = {
     : never;
 };
 
-type SchemaDefForEntries<H extends Record<string, SchemaEntry>> =
+export type SchemaDefForEntries<H extends Record<string, SchemaEntry>> =
   TablesToSchema<ExtractTableEntries<H>> & {
     namespaces: ExtractSubmoduleSchemas<H>;
   };
@@ -975,65 +978,7 @@ export function schema<
       ctx.setCaseConversionPolicy(moduleSettings.CASE_CONVERSION_POLICY);
     }
 
-    const tableSchemas: Record<string, UntypedTableDef> = {};
-    for (const [accName, entry] of Object.entries(entries)) {
-      const mount = resolveSubmoduleEntry(accName, entry);
-      if (mount !== undefined) {
-        const { submodule, canonicalName } = mount;
-        const { rawDef, dispatch } =
-          submodule.default.buildSubmoduleDispatch(submodule);
-        dispatch.namespace = accName;
-        ctx.addSubmodule({ namespace: accName, module: rawDef });
-        if (canonicalName !== undefined) {
-          ctx.moduleDef.explicitNames.entries.push({
-            tag: 'Namespace',
-            value: { sourceName: accName, canonicalName },
-          });
-        }
-        ctx.submoduleDispatchInfos.push(dispatch);
-        continue;
-      }
-      if (!isUntypedTableSchema(entry)) {
-        throw new TypeError(
-          `schema entry '${accName}' must be a table, a submodule namespace object, or a \`{ name, module }\` submodule mount`
-        );
-      }
-
-      const table = entry;
-      const tableDef = table.tableDef(ctx, accName);
-      tableSchemas[accName] = tableToSchema(accName, table, tableDef);
-      const tableSourceNames = ctx.tableSourceNames.get(table);
-      if (tableSourceNames === undefined) {
-        ctx.tableSourceNames.set(table, [tableDef.sourceName]);
-      } else {
-        tableSourceNames.push(tableDef.sourceName);
-      }
-      ctx.moduleDef.tables.push(tableDef);
-      if (table.outbox) {
-        ctx.moduleDef.outboxes.push({
-          ...table.outbox,
-          tableName: tableDef.sourceName,
-          onResultReducer: undefined,
-        });
-      }
-      if (table.schedule) {
-        ctx.pendingSchedules.push({
-          table,
-          tableName: tableDef.sourceName,
-          scheduleAtCol: table.schedule.scheduleAtCol,
-          reducer: table.schedule.reducer,
-        });
-      }
-      if (table.tableName) {
-        ctx.moduleDef.explicitNames.entries.push({
-          tag: 'Table',
-          value: {
-            sourceName: accName,
-            canonicalName: table.tableName,
-          },
-        });
-      }
-    }
+    const tableSchemas = processSchemaEntries(entries, ctx);
     return {
       tables: tableSchemas,
       env: moduleSettings?.env ?? {},
@@ -1041,4 +986,69 @@ export function schema<
   });
 
   return new Schema(ctx);
+}
+
+export function processSchemaEntries<
+  const H extends Record<string, SchemaEntry>,
+>(entries: H, ctx: SchemaInner<TablesToSchema<ExtractTableEntries<H>>>) {
+  const tableSchemas: Record<string, UntypedTableDef> = {};
+  for (const [accName, entry] of Object.entries(entries)) {
+    const mount = resolveSubmoduleEntry(accName, entry);
+    if (mount !== undefined) {
+      const { submodule, canonicalName } = mount;
+      const { rawDef, dispatch } =
+        submodule.default.buildSubmoduleDispatch(submodule);
+      dispatch.namespace = accName;
+      ctx.addSubmodule({ namespace: accName, module: rawDef });
+      if (canonicalName !== undefined) {
+        ctx.moduleDef.explicitNames.entries.push({
+          tag: 'Namespace',
+          value: { sourceName: accName, canonicalName },
+        });
+      }
+      ctx.submoduleDispatchInfos.push(dispatch);
+      continue;
+    }
+    if (!isUntypedTableSchema(entry)) {
+      throw new TypeError(
+        `schema entry '${accName}' must be a table, a submodule namespace object, or a \`{ name, module }\` submodule mount`
+      );
+    }
+
+    const table = entry;
+    const tableDef = table.tableDef(ctx, accName);
+    tableSchemas[accName] = tableToSchema(accName, table, tableDef);
+    const tableSourceNames = ctx.tableSourceNames.get(table);
+    if (tableSourceNames === undefined) {
+      ctx.tableSourceNames.set(table, [tableDef.sourceName]);
+    } else {
+      tableSourceNames.push(tableDef.sourceName);
+    }
+    ctx.moduleDef.tables.push(tableDef);
+    if (table.outbox) {
+      ctx.moduleDef.outboxes.push({
+        ...table.outbox,
+        tableName: tableDef.sourceName,
+        onResultReducer: undefined,
+      });
+    }
+    if (table.schedule) {
+      ctx.pendingSchedules.push({
+        table,
+        tableName: tableDef.sourceName,
+        scheduleAtCol: table.schedule.scheduleAtCol,
+        reducer: table.schedule.reducer,
+      });
+    }
+    if (table.tableName) {
+      ctx.moduleDef.explicitNames.entries.push({
+        tag: 'Table',
+        value: {
+          sourceName: accName,
+          canonicalName: table.tableName,
+        },
+      });
+    }
+  }
+  return tableSchemas as TablesToSchema<ExtractTableEntries<H>>['tables'];
 }

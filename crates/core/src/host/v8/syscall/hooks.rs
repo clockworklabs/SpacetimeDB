@@ -23,6 +23,20 @@ pub(super) fn get_hook_function<'scope>(
     cast!(scope, object, Function, "module function hook `{}`", name.as_str()).map_err(|e| e.throw(scope))
 }
 
+/// Returns the hook function `name` on `hooks_obj`.
+pub(super) fn get_optional_hook_function<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    hooks_obj: Local<'_, Object>,
+    name: &'static StringConst,
+) -> ExcResult<Option<Local<'scope, Function>>> {
+    let key = name.string(scope);
+    let object = property(scope, hooks_obj, key)?;
+    (!object.is_null_or_undefined())
+        .then(|| cast!(scope, object, Function, "module function hook `{}`", name.as_str()))
+        .transpose()
+        .map_err(|e| e.throw(scope))
+}
+
 /// Registers all the module function `hooks`
 /// and sets the given `AbiVersion` to `abi`.
 pub(super) fn set_hook_slots(
@@ -45,33 +59,41 @@ pub(super) fn set_hook_slots(
 /// Registers the hooks for the current module instance so they can be reconstructed later
 /// from procedure syscalls that only have access to the current V8 context.
 pub(in super::super) fn set_registered_hooks(scope: &mut PinScope<'_, '_>, hooks: &HookFunctions<'_>) -> ExcResult<()> {
-    let mut to_register = vec![
-        (ModuleHookKey::DescribeModule, hooks.describe_module),
-        (ModuleHookKey::CallReducer, hooks.call_reducer),
+    let &HookFunctions {
+        abi,
+        recv,
+        describe_module,
+        get_error_constructor,
+        sender_error_class,
+        call_reducer,
+        call_view,
+        call_view_anon,
+        call_procedure,
+        call_http_handler,
+        call_migration,
+    } = hooks;
+    let required = [
+        (ModuleHookKey::DescribeModule, describe_module),
+        (ModuleHookKey::CallReducer, call_reducer),
     ];
-    if let Some(call_view) = hooks.call_view {
-        to_register.push((ModuleHookKey::CallView, call_view));
-    }
-    if let Some(call_view_anon) = hooks.call_view_anon {
-        to_register.push((ModuleHookKey::CallAnonymousView, call_view_anon));
-    }
-    if let Some(call_procedure) = hooks.call_procedure {
-        to_register.push((ModuleHookKey::CallProcedure, call_procedure));
-    }
-    if let Some(call_http_handler) = hooks.call_http_handler {
-        to_register.push((ModuleHookKey::CallHttpHandler, call_http_handler));
-    }
-    if let Some(get_error_constructor) = hooks.get_error_constructor {
-        to_register.push((ModuleHookKey::GetErrorConstructor, get_error_constructor));
-    }
-    if let Some(sender_error_class) = hooks.sender_error_class {
-        to_register.push((ModuleHookKey::SenderErrorClass, sender_error_class));
-    }
+    let optional = [
+        (ModuleHookKey::CallView, call_view),
+        (ModuleHookKey::CallAnonymousView, call_view_anon),
+        (ModuleHookKey::CallProcedure, call_procedure),
+        (ModuleHookKey::CallHttpHandler, call_http_handler),
+        (ModuleHookKey::CallMigration, call_migration),
+        (ModuleHookKey::GetErrorConstructor, get_error_constructor),
+        (ModuleHookKey::SenderErrorClass, sender_error_class),
+    ];
+    let to_register = required
+        .into_iter()
+        .chain(optional.into_iter().filter_map(|(key, hook)| Some((key, hook?))))
+        .collect::<Vec<_>>();
 
-    set_hook_slots(scope, hooks.abi, &to_register)?;
+    set_hook_slots(scope, abi, &to_register)?;
 
     let ctx = scope.get_current_context();
-    ctx.set_embedder_data(RECV_SLOT_INDEX, hooks.recv);
+    ctx.set_embedder_data(RECV_SLOT_INDEX, recv);
 
     Ok(())
 }
@@ -84,6 +106,7 @@ pub(in super::super) enum ModuleHookKey {
     CallAnonymousView,
     CallProcedure,
     CallHttpHandler,
+    CallMigration,
     GetErrorConstructor,
     SenderErrorClass,
 }
@@ -148,6 +171,7 @@ pub(in super::super) struct HookFunctions<'scope> {
     pub call_view_anon: Option<Local<'scope, Function>>,
     pub call_procedure: Option<Local<'scope, Function>>,
     pub call_http_handler: Option<Local<'scope, Function>>,
+    pub call_migration: Option<Local<'scope, Function>>,
 }
 
 /// Returns the hook function previously registered in [`register_hooks`].
@@ -178,5 +202,6 @@ pub(in super::super) fn get_registered_hooks<'scope>(
         call_view_anon: get(ModuleHookKey::CallAnonymousView),
         call_procedure: get(ModuleHookKey::CallProcedure),
         call_http_handler: get(ModuleHookKey::CallHttpHandler),
+        call_migration: get(ModuleHookKey::CallMigration),
     })
 }

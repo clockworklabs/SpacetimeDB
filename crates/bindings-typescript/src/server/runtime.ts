@@ -78,6 +78,7 @@ import { makeRandom, type Random } from './rng.ts';
 import type { SubmoduleDispatchInfo, SchemaInner } from './schema.ts';
 import { hostBackend, type DatastoreBackend } from './backend.ts';
 import { HttpRequest, HttpResponse } from '../lib/autogen/types.ts';
+import { MigrationContextImpl } from './migration.ts';
 
 const { freeze } = Object;
 
@@ -272,8 +273,7 @@ class AuthCtxImpl implements AuthCtx {
 // type namespace, so that `ReducerCtx` still refers to the interface.
 export const ReducerCtxImpl = class ReducerCtx<
   SchemaDef extends UntypedSchemaDef,
-> implements IReducerCtx<SchemaDef>
-{
+> implements IReducerCtx<SchemaDef> {
   #identity: Identity | undefined;
   #senderAuth: AuthCtx | undefined;
   #uuidCounter: { value: number } | undefined;
@@ -872,14 +872,35 @@ class ModuleHooksImpl implements ModuleHooks {
     HttpResponse.serialize(responseBuf, responseMetadata);
     return [responseBuf.getBuffer(), responseBody];
   }
+
+  __call_migration__(id: u32): void {
+    const moduleCtx = this.#schema;
+    const handler = moduleCtx.httpHandlers[id];
+    const ctx = new MigrationContextImpl(
+      this.#dbView,
+      this.#schema.submoduleDispatchInfos
+    );
+    const requestMetadata = HttpRequest.deserialize(new BinaryReader(request));
+    const response = callUserFunction(
+      handler,
+      ctx,
+      requestFromWire(requestMetadata, body)
+    );
+    const [responseMetadata, responseBody] = responseIntoWire(response);
+    const responseBuf = new BinaryWriter(
+      bsatnBaseSize(moduleCtx.typespace, HttpResponse.algebraicType)
+    );
+    HttpResponse.serialize(responseBuf, responseMetadata);
+    return [responseBuf.getBuffer(), responseBody];
+  }
 }
 
 const BINARY_WRITER = new BinaryWriter(0);
 const BINARY_READER = new BinaryReader(new Uint8Array());
 
-class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
-  implements HandlerContext<S>
-{
+class HandlerContextImpl<
+  S extends UntypedSchemaDef = UntypedSchemaDef,
+> implements HandlerContext<S> {
   readonly env = environment as EnvironmentFor<S>;
   #identity: Identity | undefined;
   #senderJwt: Uint8Array;
