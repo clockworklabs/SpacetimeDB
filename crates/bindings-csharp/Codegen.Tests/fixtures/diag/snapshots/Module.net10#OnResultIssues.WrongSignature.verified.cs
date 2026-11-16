@@ -4,58 +4,21 @@
 
 partial class OnResultIssues
 {
-    private static string __ScheduleWrongSignatureName =>
-        field ??= global::SpacetimeDB.Internal.Module.ResolveFunctionName(
-            "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-            nameof(WrongSignature),
-            null
-        );
-
     [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
-    public static void VolatileNonatomicScheduleImmediateWrongSignature(TestOutboxParamIssues row)
-    {
-        using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream);
-        new TestOutboxParamIssues.BSATN().Write(writer, row);
-        SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(
-            __ScheduleWrongSignatureName,
-            stream
+    public static void VolatileNonatomicScheduleImmediateWrongSignature(
+        TestOutboxParamIssues row
+    ) =>
+        throw new System.NotSupportedException(
+            "VolatileNonatomicScheduleImmediate is unavailable in managed module tests. Call the function directly."
         );
-    }
-
-    private static string?[] __ScheduleWrongSignatureNames =>
-        field ??= new string?[global::SpacetimeDB.Internal.Module.InstanceCount];
-
-    private static string __ResolveScheduleWrongSignatureName(int contextInstance)
-    {
-        var names = __ScheduleWrongSignatureNames;
-        if (names[contextInstance] is { } name)
-        {
-            return name;
-        }
-        var instance = global::SpacetimeDB.Internal.Module.ResolveInstance(
-            contextInstance,
-            "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
-        );
-        return names[contextInstance] = names[instance] ??=
-            global::SpacetimeDB.Internal.Module.ResolveFunctionName(
-                instance,
-                nameof(WrongSignature),
-                null
-            );
-    }
 
     [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
     public static void VolatileNonatomicScheduleImmediateWrongSignature<__Context>(
         __Context __context,
         TestOutboxParamIssues row
     )
-        where __Context : global::SpacetimeDB.Internal.IModuleContext
-    {
-        var __name = __ResolveScheduleWrongSignatureName(__context.InstanceId);
-        using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream);
-        new TestOutboxParamIssues.BSATN().Write(writer, row);
-        SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(__name, stream);
-    }
+        where __Context : global::SpacetimeDB.Internal.IModuleContext =>
+        throw new System.NotSupportedException(
+            "VolatileNonatomicScheduleImmediate is unavailable in managed module tests. Call the function directly."
+        );
 } // OnResultIssues

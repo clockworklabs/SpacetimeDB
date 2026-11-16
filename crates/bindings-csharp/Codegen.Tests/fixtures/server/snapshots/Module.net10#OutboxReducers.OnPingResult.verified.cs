@@ -4,53 +4,14 @@
 
 partial class OutboxReducers
 {
-    private static string __ScheduleOnPingResultName =>
-        field ??= global::SpacetimeDB.Internal.Module.ResolveFunctionName(
-            "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-            nameof(OnPingResult),
-            null
-        );
-
     [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
     public static void VolatileNonatomicScheduleImmediateOnPingResult(
         PingRow row,
         SpacetimeDB.Result<SpacetimeDB.Unit, string> result
-    )
-    {
-        using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream);
-        new PingRow.BSATN().Write(writer, row);
-        new SpacetimeDB.Result<SpacetimeDB.Unit, string>.BSATN<
-            SpacetimeDB.Unit.BSATN,
-            SpacetimeDB.BSATN.String
-        >().Write(writer, result);
-        SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(
-            __ScheduleOnPingResultName,
-            stream
+    ) =>
+        throw new System.NotSupportedException(
+            "VolatileNonatomicScheduleImmediate is unavailable in managed module tests. Call the function directly."
         );
-    }
-
-    private static string?[] __ScheduleOnPingResultNames =>
-        field ??= new string?[global::SpacetimeDB.Internal.Module.InstanceCount];
-
-    private static string __ResolveScheduleOnPingResultName(int contextInstance)
-    {
-        var names = __ScheduleOnPingResultNames;
-        if (names[contextInstance] is { } name)
-        {
-            return name;
-        }
-        var instance = global::SpacetimeDB.Internal.Module.ResolveInstance(
-            contextInstance,
-            "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
-        );
-        return names[contextInstance] = names[instance] ??=
-            global::SpacetimeDB.Internal.Module.ResolveFunctionName(
-                instance,
-                nameof(OnPingResult),
-                null
-            );
-    }
 
     [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
     public static void VolatileNonatomicScheduleImmediateOnPingResult<__Context>(
@@ -58,16 +19,8 @@ partial class OutboxReducers
         PingRow row,
         SpacetimeDB.Result<SpacetimeDB.Unit, string> result
     )
-        where __Context : global::SpacetimeDB.Internal.IModuleContext
-    {
-        var __name = __ResolveScheduleOnPingResultName(__context.InstanceId);
-        using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream);
-        new PingRow.BSATN().Write(writer, row);
-        new SpacetimeDB.Result<SpacetimeDB.Unit, string>.BSATN<
-            SpacetimeDB.Unit.BSATN,
-            SpacetimeDB.BSATN.String
-        >().Write(writer, result);
-        SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(__name, stream);
-    }
+        where __Context : global::SpacetimeDB.Internal.IModuleContext =>
+        throw new System.NotSupportedException(
+            "VolatileNonatomicScheduleImmediate is unavailable in managed module tests. Call the function directly."
+        );
 } // OutboxReducers

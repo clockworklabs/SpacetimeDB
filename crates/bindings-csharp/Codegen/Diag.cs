@@ -465,4 +465,16 @@ internal static class ErrorDescriptor
 
     public static readonly ErrorDescriptor<string> UnresolvedOnResult =
         new(group, "Unresolved [OnResult] reducer", message => $"{message}", _ => Location.None);
+
+    public static readonly ErrorDescriptor<(
+        string assembly,
+        string declarations
+    )> DependencyIdcDeclarations =
+        new(
+            group,
+            "Outbox tables in dependency",
+            ctx =>
+                $"Dependency '{ctx.assembly}' declares {ctx.declarations}. Outbox tables are only supported in the root assembly.",
+            _ => Location.None
+        );
 }

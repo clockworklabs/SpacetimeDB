@@ -759,7 +759,7 @@ public partial struct TestOutboxParamIssues
       Message: WrongSignature: [OnResult] reducers must take (ReducerContext ctx, TestOutboxParamIssues row, Result<Unit, string> result).,
       Severity: Error,
       Descriptor: {
-        Id: STDB0048,
+        Id: STDB0049,
         Title: Invalid [OnResult] reducer,
         MessageFormat: {0}: {1},
         Category: SpacetimeDB,
@@ -776,7 +776,7 @@ public partial struct TestOutboxParamIssues
       Message: LifecycleResult: [OnResult] reducers can't be lifecycle reducers.,
       Severity: Error,
       Descriptor: {
-        Id: STDB0048,
+        Id: STDB0049,
         Title: Invalid [OnResult] reducer,
         MessageFormat: {0}: {1},
         Category: SpacetimeDB,
@@ -806,7 +806,7 @@ public partial struct TestOutboxParamIssues
       Message: NotAReducer: [OnResult] needs [Reducer].,
       Severity: Error,
       Descriptor: {
-        Id: STDB0048,
+        Id: STDB0049,
         Title: Invalid [OnResult] reducer,
         MessageFormat: {0}: {1},
         Category: SpacetimeDB,
@@ -909,7 +909,7 @@ public partial struct TestOutboxParamIssues
       Message: OnResultIssues.AmbiguousOutbox handles results for TestOutboxKeyAndTargetIssues, which has several outbox tables (OutboxNoAutoInc, OutboxNoTarget, OutboxWrongTargetType). Pick one with [OnResult(Table = ...)].,
       Severity: Error,
       Descriptor: {
-        Id: STDB0049,
+        Id: STDB0050,
         Title: Unresolved [OnResult] reducer,
         MessageFormat: {0},
         Category: SpacetimeDB,
@@ -922,7 +922,7 @@ public partial struct TestOutboxParamIssues
       Message: Outbox table OutboxNotAReducer has several [OnResult] reducers: FirstResult and SecondResult.,
       Severity: Error,
       Descriptor: {
-        Id: STDB0049,
+        Id: STDB0050,
         Title: Unresolved [OnResult] reducer,
         MessageFormat: {0},
         Category: SpacetimeDB,
@@ -935,7 +935,7 @@ public partial struct TestOutboxParamIssues
       Message: OnResultIssues.UnknownTable handles results for TestOutboxBadReceiver in table Missing, but there's no such outbox table.,
       Severity: Error,
       Descriptor: {
-        Id: STDB0049,
+        Id: STDB0050,
         Title: Unresolved [OnResult] reducer,
         MessageFormat: {0},
         Category: SpacetimeDB,

@@ -1532,6 +1532,39 @@ public static class GeneratorSnapshotTests
             }
         }
 
+        // Outbox tables are root-only, even in an unmounted dependency.
+        var outboxDependency = Emit(
+            Generate(
+                Create(
+                    "OutboxDependency",
+                    """
+                    namespace Remote {
+                        [SpacetimeDB.Type] public partial struct Identity { public SpacetimeDB.Identity Value; }
+                        public abstract class Ping : SpacetimeDB.Internal.IOutboxReceiver {
+                            public const string ReducerName = "ping";
+                            public const string SignatureHash = "0000000000000000000000000000000000000000000000000000000000000000";
+                        }
+                    }
+                    [SpacetimeDB.Table(Accessor = "PingOutbox", Outbox = typeof(Remote.Ping))]
+                    public partial struct PingRow {
+                        [SpacetimeDB.PrimaryKey, SpacetimeDB.AutoInc] public ulong Id;
+                        [SpacetimeDB.Target] public Remote.Identity Target;
+                    }
+                    """
+                )
+            )
+        );
+        var outboxResult = CSharpGeneratorDriver
+            .Create([new Module().AsSourceGenerator()], parseOptions: fixture.ParseOptions)
+            .RunGenerators(Create("OutboxConsumer", "", outboxDependency))
+            .GetRunResult();
+        Assert.Equal(
+            "Dependency 'OutboxDependency, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null' declares outbox table PingOutbox. Outbox tables are only supported in the root assembly.",
+            Assert
+                .Single(outboxResult.Diagnostics, d => d.Severity == DiagnosticSeverity.Error)
+                .GetMessage()
+        );
+
         // Empty environment schemas contain no keys and are permitted by the host.
         var emptyEnvironment = Emit(
             Generate(Create("EmptyEnvironment", "[SpacetimeDB.Env] public struct Settings { }"))

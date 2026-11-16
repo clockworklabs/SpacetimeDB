@@ -4,53 +4,14 @@
 
 partial class OnResultIssues
 {
-    private static string __ScheduleFirstResultName =>
-        field ??= global::SpacetimeDB.Internal.Module.ResolveFunctionName(
-            "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-            nameof(FirstResult),
-            null
-        );
-
     [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
     public static void VolatileNonatomicScheduleImmediateFirstResult(
         TestOutboxBadReceiver row,
         SpacetimeDB.Result<SpacetimeDB.Unit, string> result
-    )
-    {
-        using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream);
-        new TestOutboxBadReceiver.BSATN().Write(writer, row);
-        new SpacetimeDB.Result<SpacetimeDB.Unit, string>.BSATN<
-            SpacetimeDB.Unit.BSATN,
-            SpacetimeDB.BSATN.String
-        >().Write(writer, result);
-        SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(
-            __ScheduleFirstResultName,
-            stream
+    ) =>
+        throw new System.NotSupportedException(
+            "VolatileNonatomicScheduleImmediate is unavailable in managed module tests. Call the function directly."
         );
-    }
-
-    private static string?[] __ScheduleFirstResultNames =>
-        field ??= new string?[global::SpacetimeDB.Internal.Module.InstanceCount];
-
-    private static string __ResolveScheduleFirstResultName(int contextInstance)
-    {
-        var names = __ScheduleFirstResultNames;
-        if (names[contextInstance] is { } name)
-        {
-            return name;
-        }
-        var instance = global::SpacetimeDB.Internal.Module.ResolveInstance(
-            contextInstance,
-            "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
-        );
-        return names[contextInstance] = names[instance] ??=
-            global::SpacetimeDB.Internal.Module.ResolveFunctionName(
-                instance,
-                nameof(FirstResult),
-                null
-            );
-    }
 
     [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
     public static void VolatileNonatomicScheduleImmediateFirstResult<__Context>(
@@ -58,16 +19,8 @@ partial class OnResultIssues
         TestOutboxBadReceiver row,
         SpacetimeDB.Result<SpacetimeDB.Unit, string> result
     )
-        where __Context : global::SpacetimeDB.Internal.IModuleContext
-    {
-        var __name = __ResolveScheduleFirstResultName(__context.InstanceId);
-        using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream);
-        new TestOutboxBadReceiver.BSATN().Write(writer, row);
-        new SpacetimeDB.Result<SpacetimeDB.Unit, string>.BSATN<
-            SpacetimeDB.Unit.BSATN,
-            SpacetimeDB.BSATN.String
-        >().Write(writer, result);
-        SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(__name, stream);
-    }
+        where __Context : global::SpacetimeDB.Internal.IModuleContext =>
+        throw new System.NotSupportedException(
+            "VolatileNonatomicScheduleImmediate is unavailable in managed module tests. Call the function directly."
+        );
 } // OnResultIssues
