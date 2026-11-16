@@ -332,6 +332,35 @@ record ColumnDeclaration : MemberDeclaration
         }
     }
 
+    // A column that `[Outbox]` declares (with no field in the source)
+    public ColumnDeclaration(
+        string tableName,
+        int index,
+        string name,
+        ITypeSymbol type,
+        ColumnAttrs attrs,
+        OutboxColumnAttr? outboxAttr,
+        ISymbol location,
+        DiagReporter diag
+    )
+        : base(name, TypeUse.Parse(location, type, diag))
+    {
+        FullTableName = tableName;
+        ColumnIndex = index;
+        Attrs = new(
+            attrs == ColumnAttrs.UnSet
+                ? ImmutableArray<ColumnAttr>.Empty
+                : ImmutableArray.Create(new ColumnAttr(attrs))
+        );
+        Indexes = new(ImmutableArray<TableIndex>.Empty);
+        OutboxAttrs = new(
+            outboxAttr is null
+                ? ImmutableArray<OutboxColumnAttr>.Empty
+                : ImmutableArray.Create(outboxAttr)
+        );
+        IsEquatable = ColumnTypeValidation.IsEquatable(type);
+    }
+
     public ColumnAttrs GetAttrs(TableAccessor tableAccessor) =>
         CombineColumnAttrs(Attrs.Where(x => x.Table == null || x.Table == tableAccessor.Name));
 
@@ -361,6 +390,21 @@ record TableAccessor
 
     public TableAccessor(TableDeclaration table, AttributeData data, DiagReporter diag)
     {
+        if (data.AttributeClass?.ToString() == typeof(OutboxAttribute).FullName)
+        {
+            var outbox = data.ParseAs<OutboxAttribute>();
+            Name = outbox.Accessor ?? table.ShortName;
+            CanonicalName = outbox.Name;
+            IsPublic = outbox.Public;
+            IsOutbox = true;
+            // Without generated columns, it already has an error, and no columns to check.
+            if (table.HasGeneratedColumns && data.GetTypeArgument("reducer") is { } outboxReducer)
+            {
+                Outbox = ResolveOutbox(table, outboxReducer, scheduled: false, data, diag);
+            }
+            return;
+        }
+
         var attr = data.ParseAs<TableAttribute>();
 
         Name = attr.Accessor ?? table.ShortName;
@@ -403,40 +447,53 @@ record TableAccessor
         if (data.GetTypeArgument(nameof(TableAttribute.Outbox)) is { } receiver)
         {
             IsOutbox = true;
-            var errors = new List<string>();
-            Outbox = ResolveOutbox(table, receiver, attr, errors);
-            foreach (var error in errors)
-            {
-                diag.Report(ErrorDescriptor.InvalidOutboxDeclaration, (data, error));
-            }
+            Outbox = ResolveOutbox(table, receiver, attr.Scheduled is not null, data, diag);
         }
     }
 
+    /// <summary>Whether a type is a reducer's marker class from receiver bindings.</summary>
+    public static bool IsReceiver(INamedTypeSymbol type) =>
+        type.AllInterfaces.Any(i => i.ToString() == "SpacetimeDB.Internal.IOutboxReceiver");
+
+    /// <summary>A receiver marker class's fields: one per reducer parameter, in order.</summary>
+    public static IEnumerable<IFieldSymbol> ReceiverParameters(INamedTypeSymbol receiver) =>
+        receiver
+            .GetMembers()
+            .OfType<IFieldSymbol>()
+            .Where(f => !f.IsConst && !f.IsStatic && !f.IsImplicitlyDeclared);
+
     /// <summary>
     /// Validates an outbox table against its receiver reducer's marker class from receiver
-    /// bindings, and matches the reducer's parameters to columns. Adds every problem to
-    /// <paramref name="errors"/>.
+    /// bindings, and matches the reducer's parameters to columns. Reports every problem.
     /// </summary>
     private OutboxInfo? ResolveOutbox(
         TableDeclaration table,
         INamedTypeSymbol receiver,
-        TableAttribute attr,
-        List<string> errors
+        bool scheduled,
+        AttributeData data,
+        DiagReporter diag
     )
     {
+        var errors = 0;
+        void Error(string message)
+        {
+            errors++;
+            diag.Report(ErrorDescriptor.InvalidOutboxDeclaration, (data, message));
+        }
+
         string? Constant(string name) =>
             receiver.GetMembers(name).OfType<IFieldSymbol>().FirstOrDefault()
                 is { IsConst: true, ConstantValue: string value }
                 ? value
                 : null;
         if (
-            !receiver.AllInterfaces.Any(i => i.ToString() == "SpacetimeDB.Internal.IOutboxReceiver")
+            !IsReceiver(receiver)
             || Constant("ReducerName") is not { } reducerName
             || Constant("SignatureHash") is not { Length: 64 } signatureHash
             || !signatureHash.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f')
         )
         {
-            errors.Add(
+            Error(
                 $"{Name}: Outbox type {receiver} is not a reducer from receiver bindings. Generate them with `spacetime generate --bindings module` and use one of their `Reducers` classes."
             );
             return null;
@@ -444,11 +501,11 @@ record TableAccessor
 
         if (IsEvent)
         {
-            errors.Add($"{Name} is an outbox table, so it can't also be an event table.");
+            Error($"{Name} is an outbox table, so it can't also be an event table.");
         }
-        if (attr.Scheduled is not null)
+        if (scheduled)
         {
-            errors.Add($"{Name} is an outbox table, so it can't also be a scheduled table.");
+            Error($"{Name} is an outbox table, so it can't also be a scheduled table.");
         }
 
         var primaryKey = table.GetPrimaryKey(this);
@@ -458,9 +515,7 @@ record TableAccessor
             || !table.Members[pk].GetAttrs(this).HasFlag(ColumnAttrs.AutoInc)
         )
         {
-            errors.Add(
-                $"{Name} is an outbox table, so it needs a [PrimaryKey, AutoInc] ulong column."
-            );
+            Error($"{Name} is an outbox table, so it needs a [PrimaryKey, AutoInc] ulong column.");
         }
 
         var identity = $"{SymbolToName(receiver.ContainingNamespace)}.Identity";
@@ -469,22 +524,18 @@ record TableAccessor
             .ToArray();
         if (targets.Length != 1)
         {
-            errors.Add(
+            Error(
                 $"{Name} is an outbox table, so it needs exactly one [Target] column of type {identity}, but it has {targets.Length}."
             );
         }
         else if (targets[0].Type.Name != identity)
         {
-            errors.Add(
+            Error(
                 $"{Name}.{targets[0].Name} is the [Target] column, so it must have type {identity}, not {targets[0].Type.Name}."
             );
         }
 
-        var parameters = receiver
-            .GetMembers()
-            .OfType<IFieldSymbol>()
-            .Where(f => !f.IsConst && !f.IsStatic && !f.IsImplicitlyDeclared)
-            .ToArray();
+        var parameters = ReceiverParameters(receiver).ToArray();
         // The name each column answers to: its [Param] for this table, else its snake_case name.
         var columnNames = new string[table.Members.Length];
         for (var i = 0; i < columnNames.Length; i++)
@@ -495,7 +546,7 @@ record TableAccessor
                 ?.Param;
             if (explicitName is not null && parameters.All(p => p.Name != explicitName))
             {
-                errors.Add(
+                Error(
                     $"{Name}.{member.Name} is marked [Param(\"{explicitName}\")], but {reducerName} has no parameter named `{explicitName}`."
                 );
             }
@@ -512,19 +563,19 @@ record TableAccessor
             var parameterType = SymbolToName(parameter.Type);
             if (matches.Length == 0)
             {
-                errors.Add(
+                Error(
                     $"{Name} has no column for parameter `{parameter.Name}` of {reducerName}. Add a column named like it, or mark one with [Param(\"{parameter.Name}\")]."
                 );
             }
             else if (matches.Length > 1)
             {
-                errors.Add(
+                Error(
                     $"{Name} has several columns for parameter `{parameter.Name}` of {reducerName}: {string.Join(", ", matches.Select(i => table.Members[i].Name))}."
                 );
             }
             else if (table.Members[matches[0]] is var column && column.Type.Name != parameterType)
             {
-                errors.Add(
+                Error(
                     $"{Name}.{column.Name} has type {column.Type.Name}, but parameter `{parameter.Name}` of {reducerName} has type {parameterType}."
                 );
             }
@@ -534,7 +585,7 @@ record TableAccessor
             }
         }
 
-        return errors.Count == 0
+        return errors == 0
             ? new(reducerName, signatureHash, targets[0].ColumnIndex, new(argColumns.ToImmutable()))
             : null;
     }
@@ -708,6 +759,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     public readonly EquatableArray<TableAccessor> TableAccessors;
     public readonly EquatableArray<TableIndex> Indexes;
 
+    public readonly bool HasGeneratedColumns; // Whether `[Outbox]` declares the columns
+
     private readonly bool isRowStruct;
     private readonly string assemblyIdentity;
     private readonly bool sharedContexts;
@@ -835,6 +888,38 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             container = container.ContainingType;
         }
 
+        var outbox = context.Attributes.FirstOrDefault(a =>
+            a.AttributeClass?.ToString() == typeof(OutboxAttribute).FullName
+        );
+        if (outbox is not null)
+        {
+            if (Members.Length != 0)
+            {
+                diag.Report(
+                    ErrorDescriptor.InvalidOutboxDeclaration,
+                    (
+                        outbox,
+                        $"{ShortName} has [Outbox], which declares its columns, so it can't declare fields. Remove them, or declare it with [Table(Outbox = ...)] instead."
+                    )
+                );
+            }
+            else if (
+                outbox.GetTypeArgument("reducer") is { } receiver
+                && GenerateOutboxColumns(
+                    (INamedTypeSymbol)context.TargetSymbol,
+                    receiver,
+                    outbox,
+                    compilation,
+                    diag
+                )
+                    is { } columns
+            )
+            {
+                Members = new(columns);
+                HasGeneratedColumns = true;
+            }
+        }
+
         TableAccessors = new(
             context.Attributes.Select(a => new TableAccessor(this, a, diag)).ToImmutableArray()
         );
@@ -868,6 +953,87 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         {
             ValidateGeneratedNames(diag, typeSyntax.GetLocation());
         }
+    }
+
+    /// <summary>
+    /// The columns of an <c>[Outbox]</c> table: <c>MsgId</c>, <c>Target</c>, and each of the
+    /// receiver's parameters in Pascal case, marked <c>[Param]</c> with the parameter's name.
+    /// Null, after reporting it, if a parameter's column name is taken.
+    /// </summary>
+    private ImmutableArray<ColumnDeclaration>? GenerateOutboxColumns(
+        INamedTypeSymbol row,
+        INamedTypeSymbol receiver,
+        AttributeData outbox,
+        Compilation compilation,
+        DiagReporter diag
+    )
+    {
+        // An invalid receiver gets no columns; the outbox validation reports it.
+        if (
+            !TableAccessor.IsReceiver(receiver)
+            || receiver.ContainingNamespace.GetTypeMembers("Identity").FirstOrDefault()
+                is not { } identity
+        )
+        {
+            return ImmutableArray<ColumnDeclaration>.Empty;
+        }
+
+        var columns = ImmutableArray.CreateBuilder<ColumnDeclaration>();
+        void Add(
+            string name,
+            ITypeSymbol type,
+            ColumnAttrs attrs,
+            OutboxColumnAttr? outboxAttr,
+            ISymbol location
+        ) =>
+            columns.Add(
+                new(FullName, columns.Count, name, type, attrs, outboxAttr, location, diag)
+            );
+
+        Add(
+            "MsgId",
+            compilation.GetSpecialType(SpecialType.System_UInt64),
+            ColumnAttrs.PrimaryKeyAuto,
+            null,
+            row
+        );
+        Add("Target", identity, ColumnAttrs.UnSet, new(null, null), row);
+        foreach (var parameter in TableAccessor.ReceiverParameters(receiver))
+        {
+            var name = string.Concat(
+                parameter
+                    .Name.Split('_')
+                    .Where(part => part.Length != 0)
+                    .Select(part => char.ToUpperInvariant(part[0]) + part.Substring(1))
+            );
+            if (columns.Any(c => c.Name == name))
+            {
+                diag.Report(
+                    ErrorDescriptor.InvalidOutboxDeclaration,
+                    (
+                        outbox,
+                        $"[Outbox] can't name a column {name} for parameter `{parameter.Name}` of {receiver.Name}, because it already declares a column with that name. Declare the outbox table with [Table(Outbox = ...)] instead, and give the columns other names."
+                    )
+                );
+                return null;
+            }
+            Add(name, parameter.Type, ColumnAttrs.UnSet, new(null, parameter.Name), parameter);
+        }
+        return columns.ToImmutable();
+    }
+
+    /// <summary>The row type's BSATN code, plus the fields of an <c>[Outbox]</c> table.</summary>
+    public Scope.Extensions ToRowExtensions()
+    {
+        var extensions = ToExtensions();
+        if (HasGeneratedColumns)
+        {
+            extensions.Contents.Insert(
+                0,
+                string.Concat(Members.Select(c => $"public {c.Type.Name} {c.Identifier};\n"))
+            );
+        }
+        return extensions;
     }
 
     private void ValidateGeneratedNames(DiagReporter diag, Location location)
@@ -3265,7 +3431,7 @@ public class Module : IIncrementalGenerator
             s => s.FullName
         );
 
-        var tables = context
+        var rowTables = context
             .SyntaxProvider.ForAttributeWithMetadataName(
                 fullyQualifiedMetadataName: typeof(TableAttribute).FullName,
                 predicate: (node, ct) => true, // already covered by attribute restrictions
@@ -3275,8 +3441,44 @@ public class Module : IIncrementalGenerator
             .ReportDiagnostics(context)
             .WithTrackingName("SpacetimeDB.Table.Parse");
 
+        var outboxTables = context
+            .SyntaxProvider.ForAttributeWithMetadataName(
+                fullyQualifiedMetadataName: typeof(OutboxAttribute).FullName,
+                predicate: (node, ct) => true,
+                transform: (context, ct) =>
+                    context.ParseWithDiags(diag =>
+                    {
+                        // Leave the struct to its [Table] parse.
+                        if (
+                            context
+                                .TargetSymbol.GetAttributes()
+                                .Any(a =>
+                                    a.AttributeClass?.ToString() == typeof(TableAttribute).FullName
+                                )
+                        )
+                        {
+                            diag.Report(
+                                ErrorDescriptor.InvalidOutboxDeclaration,
+                                (
+                                    context.Attributes[0],
+                                    $"{context.TargetSymbol.Name} has [Outbox], so it can't also have [Table]."
+                                )
+                            );
+                            return null!;
+                        }
+                        return new TableDeclaration(context, diag);
+                    })
+            )
+            .ReportDiagnostics(context)
+            .WithTrackingName("SpacetimeDB.Outbox.Parse");
+
+        var tables = rowTables
+            .Collect()
+            .Combine(outboxTables.Collect())
+            .SelectMany((pair, ct) => pair.Left.AddRange(pair.Right));
+
         tables
-            .Select((t, ct) => t.ToExtensions())
+            .Select((t, ct) => t.ToRowExtensions())
             .WithTrackingName("SpacetimeDB.Table.GenerateExtensions")
             .RegisterSourceOutputs(context);
 

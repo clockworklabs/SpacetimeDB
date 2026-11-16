@@ -108,6 +108,26 @@ namespace SpacetimeDB
     }
 
     /// <summary>
+    /// Declares an outbox table for a reducer from the receiver bindings. Put it on an empty
+    /// <c>partial struct</c>: it gets a <c>MsgId</c> message ID column, a <c>Target</c> column,
+    /// and a column for each of the reducer's parameters, named in Pascal case.
+    /// </summary>
+    /// <param name="reducer">A reducer from the receiver bindings, such as <c>typeof(Gw.Reducers.AdmitPlayer)</c>.</param>
+    [AttributeUsage(AttributeTargets.Struct, Inherited = false)]
+    public sealed class OutboxAttribute(System.Type reducer) : Attribute
+    {
+        public System.Type Reducer => reducer;
+
+        /// <inheritdoc cref="TableAttribute.Accessor"/>
+        public string? Accessor { get; init; }
+
+        public string? Name { get; init; }
+
+        /// <inheritdoc cref="TableAttribute.Public"/>
+        public bool Public { get; init; } = false;
+    }
+
+    /// <summary>
     /// Registers a method as a SpacetimeDB view, enabling codegen for it.
     /// Views are pure, read-only queries that run with a view context instead of a reducer context.
     /// </summary>

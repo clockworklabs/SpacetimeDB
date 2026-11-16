@@ -733,8 +733,31 @@ namespace OutboxDiag
             public int @count = default!;
             public string? @label = default!;
         }
+
+        public abstract class TakesTarget : global::SpacetimeDB.Internal.IOutboxReceiver
+        {
+            public const string ReducerName = "takes_target";
+            public const string SignatureHash =
+                "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+
+            public string @target = default!;
+        }
     }
 }
+
+// `target` would need a second Target column.
+[SpacetimeDB.Outbox(typeof(OutboxDiag.Reducers.TakesTarget), Accessor = "OutboxTargetParam")]
+public partial struct TestOutboxTargetParam { }
+
+[SpacetimeDB.Outbox(typeof(OutboxDiag.Reducers.Remote), Accessor = "OutboxWithFields")]
+public partial struct TestOutboxWithFields
+{
+    public string Name;
+}
+
+[SpacetimeDB.Outbox(typeof(OutboxDiag.Reducers.Remote), Accessor = "OutboxAndTable")]
+[SpacetimeDB.Table(Accessor = "TableAndOutbox")]
+public partial struct TestOutboxAndTable { }
 
 [SpacetimeDB.Table(Accessor = "OutboxNotAReducer", Outbox = typeof(OutboxDiag.NotAReducer))]
 public partial struct TestOutboxBadReceiver

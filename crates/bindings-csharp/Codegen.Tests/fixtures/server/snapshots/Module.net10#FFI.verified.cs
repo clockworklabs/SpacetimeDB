@@ -23,6 +23,72 @@ using TxContext = SpacetimeDB.Internal.TxContext;
 namespace SpacetimeDB
 {
 #if !NET10_0_OR_GREATER
+    public readonly struct AdmitGeneratedCols
+    {
+        public readonly global::SpacetimeDB.Col<global::AdmitGeneratedRow, ulong> MsgId;
+        public readonly global::SpacetimeDB.Col<
+            global::AdmitGeneratedRow,
+            RemoteBindings.Receiver.Identity
+        > Target;
+        public readonly global::SpacetimeDB.Col<global::AdmitGeneratedRow, string> Name;
+        public readonly global::SpacetimeDB.Col<
+            global::AdmitGeneratedRow,
+            RemoteBindings.Receiver.Details
+        > PlayerDetails;
+        public readonly global::SpacetimeDB.Col<global::AdmitGeneratedRow, string> Nickname;
+
+        internal AdmitGeneratedCols(string tableName)
+        {
+            MsgId = new global::SpacetimeDB.Col<global::AdmitGeneratedRow, ulong>(
+                tableName,
+                "MsgId"
+            );
+            Target = new global::SpacetimeDB.Col<
+                global::AdmitGeneratedRow,
+                RemoteBindings.Receiver.Identity
+            >(tableName, "Target");
+            Name = new global::SpacetimeDB.Col<global::AdmitGeneratedRow, string>(
+                tableName,
+                "Name"
+            );
+            PlayerDetails = new global::SpacetimeDB.Col<
+                global::AdmitGeneratedRow,
+                RemoteBindings.Receiver.Details
+            >(tableName, "PlayerDetails");
+            Nickname = new global::SpacetimeDB.Col<global::AdmitGeneratedRow, string>(
+                tableName,
+                "Nickname"
+            );
+        }
+    }
+
+    public readonly struct AdmitGeneratedIxCols
+    {
+        public readonly global::SpacetimeDB.IxCol<global::AdmitGeneratedRow, ulong> MsgId;
+
+        internal AdmitGeneratedIxCols(string tableName)
+        {
+            MsgId = new global::SpacetimeDB.IxCol<global::AdmitGeneratedRow, ulong>(
+                tableName,
+                "MsgId"
+            );
+        }
+    }
+
+    public readonly partial struct QueryBuilder
+    {
+        public global::SpacetimeDB.Table<
+            global::AdmitGeneratedRow,
+            AdmitGeneratedCols,
+            AdmitGeneratedIxCols
+        > AdmitGenerated() =>
+            new(
+                "AdmitGenerated",
+                new AdmitGeneratedCols("AdmitGenerated"),
+                new AdmitGeneratedIxCols("AdmitGenerated")
+            );
+    }
+
     public readonly struct AdmitOutboxCols
     {
         public readonly global::SpacetimeDB.Col<global::AdmitOutboxRow, ulong> MsgId;
@@ -869,6 +935,10 @@ namespace SpacetimeDB
 
     public sealed class Local : global::SpacetimeDB.LocalBase
     {
+        public global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.AdmitGenerated AdmitGenerated =>
+            global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.AdmitGenerated.__GetInstance(
+                global::SpacetimeDB.Internal.Module.GetInstanceId(db)
+            );
         public global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.AdmitOutbox AdmitOutbox =>
             global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.AdmitOutbox.__GetInstance(
                 global::SpacetimeDB.Internal.Module.GetInstanceId(db)
@@ -950,7 +1020,7 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
         public const string? CaseConversionPolicy = null;
         public const string RootOnlyDeclarations =
             "row-level security filters, environment variables, lifecycle reducer Timers.Init (Init)";
-        public const string OutboxTables = "AdmitOutbox, PingOutbox";
+        public const string OutboxTables = "AdmitGenerated, AdmitOutbox, PingOutbox";
         public const int ReducerCount = 8;
         public const int ProcedureCount = 0;
         public const int HttpHandlerCount = 0;
@@ -1078,6 +1148,10 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 __instanceId = instanceId;
             }
 
+            public global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.AdmitGenerated AdmitGenerated =>
+                global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.AdmitGenerated.__GetInstance(
+                    __instanceId
+                );
             public global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.AdmitOutbox AdmitOutbox =>
                 global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.AdmitOutbox.__GetInstance(
                     __instanceId
@@ -1133,6 +1207,10 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
                 __instanceId = instanceId;
             }
 
+            public global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.AdmitGeneratedReadOnly AdmitGenerated =>
+                global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.AdmitGeneratedReadOnly.__GetInstance(
+                    __instanceId
+                );
             public global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.AdmitOutboxReadOnly AdmitOutbox =>
                 global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.AdmitOutboxReadOnly.__GetInstance(
                     __instanceId
@@ -1194,6 +1272,10 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
     {
         extension(global::SpacetimeDB.Local db)
         {
+            public global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.AdmitGenerated AdmitGenerated =>
+                global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.AdmitGenerated.__GetInstance(
+                    global::SpacetimeDB.Internal.Module.GetInstanceId(db)
+                );
             public global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.AdmitOutbox AdmitOutbox =>
                 global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.AdmitOutbox.__GetInstance(
                     global::SpacetimeDB.Internal.Module.GetInstanceId(db)
@@ -1245,6 +1327,10 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
     {
         extension(global::SpacetimeDB.Internal.LocalReadOnly db)
         {
+            public global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.AdmitGeneratedReadOnly AdmitGenerated =>
+                global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.AdmitGeneratedReadOnly.__GetInstance(
+                    global::SpacetimeDB.Internal.Module.GetInstanceId(db)
+                );
             public global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.AdmitOutboxReadOnly AdmitOutbox =>
                 global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.AdmitOutboxReadOnly.__GetInstance(
                     global::SpacetimeDB.Internal.Module.GetInstanceId(db)
@@ -1295,6 +1381,115 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
     public static partial class QueryTableExtensions
     {
         extension(global::SpacetimeDB.QueryBuilder from) { }
+    }
+
+    public readonly struct AdmitGeneratedCols
+    {
+        public readonly global::SpacetimeDB.Col<global::AdmitGeneratedRow, ulong> MsgId;
+        public readonly global::SpacetimeDB.Col<
+            global::AdmitGeneratedRow,
+            RemoteBindings.Receiver.Identity
+        > Target;
+        public readonly global::SpacetimeDB.Col<global::AdmitGeneratedRow, string> Name;
+        public readonly global::SpacetimeDB.Col<
+            global::AdmitGeneratedRow,
+            RemoteBindings.Receiver.Details
+        > PlayerDetails;
+        public readonly global::SpacetimeDB.Col<global::AdmitGeneratedRow, string> Nickname;
+
+        internal AdmitGeneratedCols(global::SpacetimeDB.SqlTableName tableName)
+        {
+            MsgId = new global::SpacetimeDB.Col<global::AdmitGeneratedRow, ulong>(
+                tableName,
+                "MsgId"
+            );
+            Target = new global::SpacetimeDB.Col<
+                global::AdmitGeneratedRow,
+                RemoteBindings.Receiver.Identity
+            >(tableName, "Target");
+            Name = new global::SpacetimeDB.Col<global::AdmitGeneratedRow, string>(
+                tableName,
+                "Name"
+            );
+            PlayerDetails = new global::SpacetimeDB.Col<
+                global::AdmitGeneratedRow,
+                RemoteBindings.Receiver.Details
+            >(tableName, "PlayerDetails");
+            Nickname = new global::SpacetimeDB.Col<global::AdmitGeneratedRow, string>(
+                tableName,
+                "Nickname"
+            );
+        }
+    }
+
+    public readonly struct AdmitGeneratedIxCols
+    {
+        public readonly global::SpacetimeDB.IxCol<global::AdmitGeneratedRow, ulong> MsgId;
+
+        internal AdmitGeneratedIxCols(global::SpacetimeDB.SqlTableName tableName)
+        {
+            MsgId = new global::SpacetimeDB.IxCol<global::AdmitGeneratedRow, ulong>(
+                tableName,
+                "MsgId"
+            );
+        }
+    }
+
+    public static partial class AssemblyDescriptor
+    {
+        private static global::SpacetimeDB.SqlTableName?[] AdmitGeneratedSqlNames =>
+            field ??= new global::SpacetimeDB.SqlTableName?[
+                global::SpacetimeDB.Internal.Module.InstanceCount
+            ];
+
+        private static global::SpacetimeDB.SqlTableName AdmitGeneratedSqlName(int contextInstance)
+        {
+            var names = AdmitGeneratedSqlNames;
+            if (names[contextInstance] is { } name)
+            {
+                return name;
+            }
+            var instanceId = global::SpacetimeDB.Internal.Module.ResolveInstance(
+                contextInstance,
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+            );
+            var resolvedName = names[instanceId] ??=
+                global::SpacetimeDB.Internal.Module.ResolveSqlName(instanceId, "AdmitGenerated");
+            names[contextInstance] = resolvedName;
+            return resolvedName;
+        }
+
+        public readonly partial struct Queries
+        {
+            public global::SpacetimeDB.Table<
+                global::AdmitGeneratedRow,
+                AdmitGeneratedCols,
+                AdmitGeneratedIxCols
+            > AdmitGenerated()
+            {
+                var tableName = AdmitGeneratedSqlName(__instanceId);
+                return new(
+                    tableName,
+                    new AdmitGeneratedCols(tableName),
+                    new AdmitGeneratedIxCols(tableName)
+                );
+            }
+        }
+    }
+
+    public static partial class QueryTableExtensions
+    {
+        extension(global::SpacetimeDB.QueryBuilder from)
+        {
+            public global::SpacetimeDB.Table<
+                global::AdmitGeneratedRow,
+                AdmitGeneratedCols,
+                AdmitGeneratedIxCols
+            > AdmitGenerated() =>
+                new AssemblyDescriptor.Queries(
+                    global::SpacetimeDB.Internal.Module.GetInstanceId(from)
+                ).AdmitGenerated();
+        }
     }
 
     public readonly struct AdmitOutboxCols
@@ -2403,6 +2598,144 @@ namespace SpacetimeDB.Generated.server_D513E4815F57969C
 
 namespace SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles
 {
+    public readonly struct AdmitGenerated
+        : global::SpacetimeDB.Internal.ITableView<AdmitGenerated, global::AdmitGeneratedRow>
+    {
+        private sealed class __InstanceState(int instanceId)
+            : global::SpacetimeDB.Internal.TableHandle(
+                global::SpacetimeDB.Internal.Module.ResolveName(instanceId, "AdmitGenerated")
+            )
+        {
+            internal readonly int InstanceId = instanceId;
+            internal global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.AdmitGeneratedReadOnly? __readOnly;
+        }
+
+        private static readonly __InstanceState?[] __instances = new __InstanceState?[
+            global::SpacetimeDB.Internal.Module.InstanceCount
+        ];
+        private readonly __InstanceState __state;
+
+        static AdmitGenerated() { }
+
+        public AdmitGenerated()
+            : this(__GetInstance(0).__state) { }
+
+        private AdmitGenerated(__InstanceState state)
+        {
+            __state = state;
+        }
+
+        [global::System.Runtime.CompilerServices.MethodImpl(
+            global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+        )]
+        public static AdmitGenerated __GetInstance(int contextInstance) =>
+            new(__instances[contextInstance] ??= __CreateInstance(contextInstance));
+
+        private static __InstanceState __CreateInstance(int contextInstance)
+        {
+            var instanceId = global::SpacetimeDB.Internal.Module.ResolveInstance(
+                contextInstance,
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+            );
+            return __instances[instanceId] ??= new(instanceId);
+        }
+
+        public static global::AdmitGeneratedRow ReadGenFields(
+            System.IO.BinaryReader reader,
+            global::AdmitGeneratedRow row
+        )
+        {
+            if (row.MsgId == default)
+            {
+                row.MsgId = global::AdmitGeneratedRow.BSATN.MsgIdRW.Read(reader);
+            }
+            return row;
+        }
+
+        public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) =>
+            new(
+                SourceName: nameof(AdmitGenerated),
+                ProductTypeRef: (uint)
+                    new global::AdmitGeneratedRow.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [0],
+                Indexes:
+                [
+                    new(
+                        SourceName: "AdmitGenerated_MsgId_idx_btree",
+                        AccessorName: "MsgId",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                    ),
+                ],
+                Constraints:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        AdmitGenerated,
+                        global::AdmitGeneratedRow
+                    >.MakeUniqueConstraint(0),
+                ],
+                Sequences:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        AdmitGenerated,
+                        global::AdmitGeneratedRow
+                    >.MakeSequence(0),
+                ],
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private,
+                DefaultValues: [],
+                IsEvent: false
+            );
+
+        public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<
+                AdmitGenerated,
+                global::AdmitGeneratedRow
+            >.DoCount(__state);
+
+        public IEnumerable<global::AdmitGeneratedRow> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<
+                AdmitGenerated,
+                global::AdmitGeneratedRow
+            >.DoIter(__state);
+
+        public global::AdmitGeneratedRow Insert(global::AdmitGeneratedRow row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                AdmitGenerated,
+                global::AdmitGeneratedRow
+            >.DoInsert(row, __state);
+
+        bool global::SpacetimeDB.Internal.ITableView<
+            AdmitGenerated,
+            global::AdmitGeneratedRow
+        >.Delete(global::AdmitGeneratedRow row) =>
+            throw new global::System.NotSupportedException(
+                "Rows can't be deleted from outbox table AdmitGenerated."
+            );
+
+        ulong global::SpacetimeDB.Internal.ITableView<
+            AdmitGenerated,
+            global::AdmitGeneratedRow
+        >.Clear() =>
+            throw new global::System.NotSupportedException(
+                "Outbox table AdmitGenerated can't be cleared."
+            );
+
+        private global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.AdmitGeneratedReadOnly __ReadOnly =>
+            __state.__readOnly ??= new(__state.InstanceId);
+        public global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.AdmitGeneratedReadOnly.MsgIdIndex MsgId =>
+            __ReadOnly.MsgId;
+    }
+
     public readonly struct AdmitOutbox
         : global::SpacetimeDB.Internal.ITableView<AdmitOutbox, global::AdmitOutboxRow>
     {
@@ -4477,6 +4810,68 @@ sealed class find_public_table__by_identityViewDispatcher
 
 namespace SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles
 {
+    public sealed class AdmitGeneratedReadOnly
+        : global::SpacetimeDB.Internal.ReadOnlyTableView<global::AdmitGeneratedRow>
+    {
+        private static readonly AdmitGeneratedReadOnly?[] __instances = new AdmitGeneratedReadOnly?[
+            global::SpacetimeDB.Internal.Module.InstanceCount
+        ];
+        private readonly int __instanceId;
+
+        static AdmitGeneratedReadOnly() { }
+
+        [global::System.Runtime.CompilerServices.MethodImpl(
+            global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+        )]
+        public static AdmitGeneratedReadOnly __GetInstance(int contextInstance) =>
+            __instances[contextInstance] ??= __CreateInstance(contextInstance);
+
+        private static AdmitGeneratedReadOnly __CreateInstance(int contextInstance)
+        {
+            var instanceId = global::SpacetimeDB.Internal.Module.ResolveInstance(
+                contextInstance,
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+            );
+            return __instances[instanceId] ??= new(instanceId);
+        }
+
+        internal AdmitGeneratedReadOnly(int instanceId)
+            : base(global::SpacetimeDB.Internal.Module.ResolveName(instanceId, "AdmitGenerated"))
+        {
+            __instanceId = instanceId;
+        }
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
+        public ulong Count => DoCount();
+
+        public sealed class MsgIdIndex
+            : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
+                global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.AdmitGeneratedReadOnly,
+                global::AdmitGeneratedRow,
+                ulong,
+                SpacetimeDB.BSATN.U64
+            >
+        {
+            internal MsgIdIndex(int instanceId)
+                : base(
+                    global::SpacetimeDB.Internal.Module.ResolveName(
+                        instanceId,
+                        "AdmitGenerated_MsgId_idx_btree"
+                    )
+                ) { }
+
+            public global::AdmitGeneratedRow? Find(ulong key) => FindSingle(key);
+        }
+
+        private MsgIdIndex? __MsgId;
+        public MsgIdIndex MsgId => __MsgId ??= new(__instanceId);
+    }
+
     public sealed class AdmitOutboxReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::AdmitOutboxRow>
     {
@@ -5447,6 +5842,10 @@ namespace SpacetimeDB.Internal
 {
     public sealed partial class LocalReadOnly
     {
+        public global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.AdmitGeneratedReadOnly AdmitGenerated =>
+            global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.AdmitGeneratedReadOnly.__GetInstance(
+                global::SpacetimeDB.Internal.Module.GetInstanceId(db)
+            );
         public global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.AdmitOutboxReadOnly AdmitOutbox =>
             global::SpacetimeDB.Generated.server_D513E4815F57969C.ViewHandles.AdmitOutboxReadOnly.__GetInstance(
                 global::SpacetimeDB.Internal.Module.GetInstanceId(db)
@@ -5810,6 +6209,10 @@ static class ModuleRegistration
         builder.RegisterAnonymousView<find_public_table__by_identityViewDispatcher>();
 
         builder.RegisterTable<
+            global::AdmitGeneratedRow,
+            global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.AdmitGenerated
+        >();
+        builder.RegisterTable<
             global::AdmitOutboxRow,
             global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.AdmitOutbox
         >();
@@ -5853,6 +6256,19 @@ static class ModuleRegistration
             global::Timers.SendMessageTimer,
             global::SpacetimeDB.Generated.server_D513E4815F57969C.TableHandles.SendMessageTimer
         >();
+        builder.RegisterOutbox(
+            new global::SpacetimeDB.Internal.RawOutboxDefV10(
+                "AdmitGenerated",
+                "admit_player",
+                1,
+                [2, 3, 4],
+                null,
+                new global::SpacetimeDB.U256(
+                    new global::SpacetimeDB.U128(0x1f1e1d1c1b1a1918UL, 0x1716151413121110UL),
+                    new global::SpacetimeDB.U128(0x0f0e0d0c0b0a0908UL, 0x0706050403020100UL)
+                )
+            )
+        );
         builder.RegisterOutbox(
             new global::SpacetimeDB.Internal.RawOutboxDefV10(
                 "AdmitOutbox",

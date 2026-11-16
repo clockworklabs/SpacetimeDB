@@ -512,7 +512,7 @@ public abstract record BaseTypeDeclaration<M>
     public readonly string ShortName;
     public readonly string FullName;
     public readonly TypeKind Kind;
-    public readonly EquatableArray<M> Members;
+    public EquatableArray<M> Members { get; protected init; }
 
     /// <summary>The <c>Name</c> from <c>[SpacetimeDB.Type(Name = ...)]</c>, if set.</summary>
     public readonly string? SourceName;

@@ -539,6 +539,57 @@ public partial struct TestOutboxParamIssues
       }
     },
     {/*
+// `target` would need a second Target column.
+[SpacetimeDB.Outbox(typeof(OutboxDiag.Reducers.TakesTarget), Accessor = "OutboxTargetParam")]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+public partial struct TestOutboxTargetParam { }
+*/
+      Message: [Outbox] can't name a column Target for parameter `target` of TakesTarget, because it already declares a column with that name. Declare the outbox table with [Table(Outbox = ...)] instead, and give the columns other names.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0046,
+        Title: Invalid outbox table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+
+[SpacetimeDB.Outbox(typeof(OutboxDiag.Reducers.Remote), Accessor = "OutboxWithFields")]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+public partial struct TestOutboxWithFields
+*/
+      Message: TestOutboxWithFields has [Outbox], which declares its columns, so it can't declare fields. Remove them, or declare it with [Table(Outbox = ...)] instead.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0046,
+        Title: Invalid outbox table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+
+[SpacetimeDB.Outbox(typeof(OutboxDiag.Reducers.Remote), Accessor = "OutboxAndTable")]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Table(Accessor = "TableAndOutbox")]
+*/
+      Message: TestOutboxAndTable has [Outbox], so it can't also have [Table].,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0046,
+        Title: Invalid outbox table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
     // Invalid: View definition missing Public=true
     [SpacetimeDB.View(Accessor = "view_def_no_public")]
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -17,51 +17,18 @@ public partial struct OutboundPing
     public string Bodypo;
 }
 
-[Table(Accessor = "OutboundDetailedPing", Outbox = typeof(GameWorld.Reducers.ReceiveDetailedPing))]
-public partial struct OutboundDetailedPing
-{
-    [PrimaryKey, AutoInc]
-    public ulong MsgId;
+// [Outbox] declares MsgId, Target and a column per parameter.
+[Outbox(typeof(GameWorld.Reducers.ReceiveDetailedPing), Accessor = "OutboundDetailedPing")]
+public partial struct OutboundDetailedPing { }
 
-    [Target]
-    public GameWorld.Identity Target;
-    public string Body;
-    public GameWorld.PingDetails Details;
-}
+[Outbox(typeof(Auth.Reducers.ReceiveDetailedPing), Accessor = "OutboundAuthDetails")]
+public partial struct OutboundAuthDetails { }
 
-[Table(Accessor = "OutboundAuthDetails", Outbox = typeof(Auth.Reducers.ReceiveDetailedPing))]
-public partial struct OutboundAuthDetails
-{
-    [PrimaryKey, AutoInc]
-    public ulong MsgId;
+[Outbox(typeof(GameWorld.Reducers.ReceivePriority), Accessor = "OutboundWorldPriority")]
+public partial struct OutboundWorldPriority { }
 
-    [Target]
-    public Auth.Identity Target;
-    public string Body;
-    public Auth.PingDetails Details;
-}
-
-[Table(Accessor = "OutboundWorldPriority", Outbox = typeof(GameWorld.Reducers.ReceivePriority))]
-public partial struct OutboundWorldPriority
-{
-    [PrimaryKey, AutoInc]
-    public ulong MsgId;
-
-    [Target]
-    public GameWorld.Identity Target;
-    public GameWorld.PingPriority Priority;
-}
-
-[Table(Accessor = "OutboundAuthPriority", Outbox = typeof(Auth.Reducers.ReceivePriority))]
-public partial struct OutboundAuthPriority
-{
-    [PrimaryKey, AutoInc]
-    public ulong MsgId;
-
-    [Target]
-    public Auth.Identity Target;
-    public Auth.PingPriority Priority;
-}
+[Outbox(typeof(Auth.Reducers.ReceivePriority), Accessor = "OutboundAuthPriority")]
+public partial struct OutboundAuthPriority { }
 
 [Type]
 public partial struct PingDetails
