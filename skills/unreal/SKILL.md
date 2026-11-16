@@ -254,6 +254,8 @@ Handle->GetQuerySqls();  // get the SQL queries
 
 ---
 
+For views with arguments (2.13+), use only raw SQL `SELECT * FROM view_name(literal_args)`. Use explicit queries for every table on that connection, not subscribe-all. All argument values share one cache table; unsubscribe from obsolete arguments to avoid combining their rows. Validate/encode dynamic values as SQL literals rather than concatenating untrusted input.
+
 ## Reading the Client Cache
 
 Access tables through `Conn->Db`:

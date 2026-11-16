@@ -30,9 +30,18 @@ jobs:
     name: Build CLI for ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
 
+    env:
+      # Make action Node runtimes use the filtered CA bundle created by the setup action.
+      NODE_OPTIONS: ${{ matrix.runner != 'spacetimedb-windows-runner' && '--use-openssl-ca' || '' }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+
+      # Fleet VM images maintain certificate trust and rustup; only set them up here for GitHub-hosted runners.
+      - name: Set up certificate trust
+        if: runner.environment == 'github-hosted'
+        uses: ./.github/actions/setup-certificate-trust
 
       - name: Show arch
         run: uname -a

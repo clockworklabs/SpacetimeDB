@@ -91,7 +91,7 @@ pub(super) async fn publish_only(
     input: Option<&Value>,
     options: &super::EnvironmentOptions,
 ) -> anyhow::Result<()> {
-    use crate::util::{add_auth_header_opt, get_auth_header, y_or_n};
+    use crate::util::{add_auth_header_opt, get_auth_header, YesOrNo};
     use spacetimedb_client_api_messages::publish::EnvironmentMetadata;
 
     let host = config.get_host_url(server)?;
@@ -100,7 +100,10 @@ pub(super) async fn publish_only(
     if hostname != "localhost" && hostname != "127.0.0.1" {
         println!("You are about to publish environment values to a non-local server: {hostname}");
         anyhow::ensure!(
-            y_or_n(yes.publish_to_remote, "Are you sure you want to proceed?")?,
+            YesOrNo::new("Are you sure you want to proceed?")
+                .force(yes.publish_to_remote)
+                .default(false)
+                .prompt()?,
             "Publish aborted by user"
         );
     }

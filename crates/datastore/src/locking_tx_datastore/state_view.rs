@@ -5,18 +5,20 @@ use crate::locking_tx_datastore::mut_tx::{IndexScanPoint, IndexScanRanged};
 use crate::system_tables::{
     ConnectionIdViaU128, StColumnAccessorFields, StColumnAccessorRow, StColumnFields, StColumnRow,
     StConnectionCredentialsFields, StConnectionCredentialsRow, StConstraintFields, StConstraintRow, StEventTableFields,
-    StEventTableRow, StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StOutboxFields, StOutboxRow,
-    StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow,
-    StTableFields, StTableRow, StViewFields, StViewRow, SystemTable, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID,
-    ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID, ST_OUTBOX_ID,
-    ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID, ST_VIEW_ID,
+    StEventTableRow, StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StOutboundMsgFields,
+    StOutboundStreamFields, StOutboundStreamRow, StOutboxFields, StOutboxRow, StScheduledFields, StScheduledRow,
+    StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow,
+    StViewFields, StViewParamFields, StViewParamRow, StViewRow, SystemTable, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID,
+    ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID,
+    ST_OUTBOUND_MSG_ID, ST_OUTBOUND_STREAM_ID, ST_OUTBOX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID,
+    ST_TABLE_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID,
 };
 use anyhow::anyhow;
 use core::ops::RangeBounds;
 use spacetimedb_lib::ConnectionId;
-use spacetimedb_primitives::{ColList, TableId};
-use spacetimedb_sats::AlgebraicValue;
-use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, TableSchema, ViewDefInfo};
+use spacetimedb_primitives::{col_list, ColList, TableId};
+use spacetimedb_sats::{product, AlgebraicValue};
+use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, OutboxSchema, TableSchema, ViewDefInfo};
 use spacetimedb_table::table::IndexScanPointIter;
 use spacetimedb_table::{
     blob_store::HashMapBlobStore,
@@ -81,6 +83,30 @@ pub trait StateView {
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a, 'r>>;
+
+    /// Find a sender-side stream by its durable stream id.
+    fn st_outbound_stream_by_id(&self, stream_id: u64) -> Result<Option<StOutboundStreamRow>> {
+        self.iter_by_col_eq(
+            ST_OUTBOUND_STREAM_ID,
+            StOutboundStreamFields::StreamId,
+            &stream_id.into(),
+        )?
+        .map(StOutboundStreamRow::try_from)
+        .next()
+        .transpose()
+    }
+
+    /// Find a pending delivery without decoding its payload.
+    fn outbound_msg_by_stream_seq(&self, stream_id: u64, seq: u64) -> Result<Option<RowRef<'_>>> {
+        let key = AlgebraicValue::Product(product![stream_id, seq]);
+        Ok(self
+            .iter_by_col_eq(
+                ST_OUTBOUND_MSG_ID,
+                col_list![StOutboundMsgFields::StreamId, StOutboundMsgFields::Seq],
+                &key,
+            )?
+            .next())
+    }
 
     /// Look up the `st_table` row which describes `table_id`.
     ///
@@ -241,9 +267,19 @@ pub trait StateView {
                 iter.next().map(|row| -> Result<_> {
                     let row = StViewRow::try_from(row)?;
 
+                    // Look up the view's parameters, in position order.
+                    let mut params = self
+                        .iter_by_col_eq(ST_VIEW_PARAM_ID, StViewParamFields::ViewId, &row.view_id.into())?
+                        .map(StViewParamRow::try_from)
+                        .collect::<Result<Vec<_>>>()?;
+                    params.sort_by_key(|param| param.param_pos);
+
                     Ok(ViewDefInfo {
                         view_id: row.view_id,
                         is_anonymous: row.is_anonymous,
+                        params: ViewDefInfo::params_from_columns(
+                            params.into_iter().map(|param| (param.param_name, param.param_type.0)),
+                        ),
                     })
                 })
             })
@@ -269,7 +305,12 @@ pub trait StateView {
         // `st_outbox` is missing until `migrate_system_tables` runs.
         // Treat that as "no outbox metadata" while reconstructing raw schemas.
         let outbox = match self.iter_by_col_eq(ST_OUTBOX_ID, StOutboxFields::TableId, value_eq) {
-            Ok(mut iter) => iter.next().map(StOutboxRow::try_from).transpose()?.map(Into::into),
+            Ok(mut iter) => iter
+                .next()
+                .map(StOutboxRow::try_from)
+                .transpose()?
+                .map(OutboxSchema::try_from)
+                .transpose()?,
             Err(DatastoreError::Table(TableError::IdNotFound(..))) => None,
             Err(e) => return Err(e),
         };

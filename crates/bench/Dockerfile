@@ -4,6 +4,10 @@
 
 # !rust-toolchain-sync
 FROM rust:1.97.1
+# Refresh OS certificate roots to distrust the compromised eMudhra CAs.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+# rustup has its own CA bundle; 1.29.2+ distrusts the compromised eMudhra CAs.
+RUN rustup --version && rustup self update && rustup --version
 
 RUN apt-get update && \
     apt-get install -y valgrind bash && \

@@ -1,7 +1,0 @@
-feature: F051-02
-id: f051_02_01_01
-sql: CREATE TABLE TABLE_F051_02_01_011 ( A TIME )
----
-feature: F051-02
-id: f051_02_02_01
-sql: SELECT TIME '01:02:03'

@@ -1,6 +1,8 @@
 use crate::{
     common_args,
-    util::{host_or_url_to_host_and_protocol, spacetime_server_fingerprint, y_or_n, UNSTABLE_WARNING, VALID_PROTOCOLS},
+    util::{
+        host_or_url_to_host_and_protocol, spacetime_server_fingerprint, YesOrNo, UNSTABLE_WARNING, VALID_PROTOCOLS,
+    },
     Config,
 };
 use anyhow::Context;
@@ -271,7 +273,7 @@ pub async fn exec_fingerprint(mut config: Config, args: &ArgMatches) -> Result<(
     let force = args.get_flag("force");
 
     if update_server_fingerprint(&mut config, Some(server)).await? {
-        if !y_or_n(force, "Continue?")? {
+        if !YesOrNo::new("Continue?").force(force).default(false).prompt()? {
             anyhow::bail!("Aborted");
         }
 
@@ -348,7 +350,7 @@ pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyh
         }
     }
 
-    if !y_or_n(force, "Continue?")? {
+    if !YesOrNo::new("Continue?").force(force).default(false).prompt()? {
         anyhow::bail!("Aborted");
     }
 
@@ -364,10 +366,11 @@ async fn exec_clear(_config: Config, paths: &SpacetimePaths, args: &ArgMatches) 
     if data_dir.0.exists() {
         println!("Database path: {}", data_dir.display());
 
-        if !y_or_n(
-            force,
-            "Are you sure you want to delete all data from the local database?",
-        )? {
+        if !YesOrNo::new("Are you sure you want to delete all data from the local database?")
+            .force(force)
+            .default(false)
+            .prompt()?
+        {
             println!("Aborting");
             return Ok(());
         }

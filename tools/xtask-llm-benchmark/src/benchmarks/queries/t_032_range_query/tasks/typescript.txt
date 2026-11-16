@@ -3,13 +3,13 @@ Write a SpacetimeDB backend module in TypeScript that defines a product table wi
 TABLES
 - product (private)
   - Fields:
-    - id: number (u64, primary key, autoInc)
+    - id: bigint (u64, primary key, autoInc)
     - name: string
     - price: number (u32, index btree)
 
 - price_range_result (private)
   - Fields:
-    - productId: number (u64, primary key)
+    - productId: bigint (u64, primary key)
     - name: string
     - price: number (u32)
 

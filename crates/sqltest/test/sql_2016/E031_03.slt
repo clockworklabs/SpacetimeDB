@@ -1,5 +1,0 @@
-# E031-03: Trailing underscore
-
-statement ok
-CREATE TABLE TABLE_E031_03_01_01 ( A_ INT );
-SELECT A_ FROM TABLE_E031_03_01_01

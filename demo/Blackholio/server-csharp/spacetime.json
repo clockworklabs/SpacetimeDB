@@ -1,0 +1,20 @@
+{
+  "database": "blackholio",
+  "server": "local",
+  "module-path": ".",
+  "generate": [
+    {
+      "language": "csharp",
+      "out-dir": "../client-unity/Assets/Scripts/autogen"
+    },
+    {
+      "language": "csharp",
+      "out-dir": "../client-godot/module_bindings"
+    },
+    {
+      "language": "unrealcpp",
+      "uproject-dir": "../client-unreal",
+      "unreal-module-name": "client_unreal"
+    }
+  ]
+}

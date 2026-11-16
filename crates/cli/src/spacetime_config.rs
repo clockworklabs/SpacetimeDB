@@ -196,6 +196,9 @@ impl SpacetimeConfig {
                 if fields.contains_key(key) {
                     continue;
                 }
+                if key == "dependencies" {
+                    continue;
+                }
                 // If the child specifies any module source, skip inheriting the others
                 if child_specifies_source && MODULE_SOURCE_KEYS.contains(&key.as_str()) {
                     continue;
@@ -2646,6 +2649,25 @@ mod tests {
             targets[2].fields.get("module-path").and_then(|v| v.as_str()),
             Some("./mid-module")
         );
+    }
+
+    #[test]
+    fn test_dependencies_not_inherited_from_parent() {
+        let json = r#"{
+            "database": "parent-db",
+            "dependencies": [
+                { "name": "auth", "database": "auth-db" }
+            ],
+            "children": [
+                { "database": "child-db" }
+            ]
+        }"#;
+
+        let config: SpacetimeConfig = json5::from_str(json).unwrap();
+        let targets = config.collect_all_targets_with_inheritance();
+
+        assert!(targets[0].fields.contains_key("dependencies"));
+        assert!(!targets[1].fields.contains_key("dependencies"));
     }
 
     #[test]

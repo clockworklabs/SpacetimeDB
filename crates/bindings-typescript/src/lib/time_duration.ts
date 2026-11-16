@@ -1,5 +1,5 @@
-import { AlgebraicType } from './algebraic_type';
-import { coerceToBigInt } from './util';
+import { AlgebraicType } from './algebraic_type.ts';
+import { coerceToBigInt } from './util.ts';
 
 export type TimeDurationAlgebraicType = {
   tag: 'Product';

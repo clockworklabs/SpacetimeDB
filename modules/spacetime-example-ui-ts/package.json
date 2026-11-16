@@ -15,7 +15,8 @@
       "types": "./src/server.ts",
       "default": "./src/server.ts"
     },
-    "./styles.css": "./src/styles/index.css"
+    "./styles.css": "./src/styles/index.css",
+    "./footer.css": "./src/styles/footer.css"
   },
   "scripts": {
     "format": "prettier . --write --ignore-path ../../.prettierignore",
@@ -30,5 +31,8 @@
     "prettier": "^3.3.3",
     "typescript": "~5.6.2",
     "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
   }
 }

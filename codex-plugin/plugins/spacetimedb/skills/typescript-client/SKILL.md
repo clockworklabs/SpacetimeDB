@@ -136,6 +136,27 @@ conn.db.user.onDelete((ctx, user) => console.log('Left:', user.name));
 conn.db.user.onUpdate((ctx, oldUser, newUser) => console.log('Updated:', newUser.name));
 ```
 
+## Submodule Accessors and View Arguments
+
+Generated bindings preserve submodule accessors as nested members. For a namespace accessor `myAuth` pinned to canonical `auth_data`:
+
+```typescript
+conn.subscriptionBuilder().subscribe([tables.myAuth.users]);
+// Rows: conn.db.myAuth.users
+// Reducers: conn.reducers.myAuth.verifyToken({ token: 'example' })
+// React: useTable(tables.myAuth.users), useReducer(reducers.myAuth.verifyToken)
+```
+
+Use generated accessors in SDK calls; they encode canonical names automatically. Raw SQL/HTTP/CLI calls instead use canonical qualified names such as `auth_data.users` or `auth_data.verify_token`. Namespaces share the connection and cache; they are not separate database connections.
+
+For views with arguments (2.13+), use a raw SQL subscription; TypeScript has no typed argument-bearing view query builder yet:
+
+```typescript
+conn.subscriptionBuilder().subscribe('SELECT * FROM by_id(42)');
+```
+
+Use explicit queries for every table on that connection, not subscribe-all, which skips views with arguments. Only `SELECT * FROM view_name(literal_args)` is supported. All argument values share one cache table; unsubscribe from obsolete arguments to avoid combining their rows. Validate/encode dynamic values as SQL literals rather than concatenating untrusted input. In React, raw SQL subscriptions need explicit lifetime management and cleanup; `useTable` does not supply an argument-bearing view builder.
+
 ## Automatic Reconnect and Token Refresh
 
 The React provider's connection manager enables automatic reconnect; the explicit `.withAutomaticReconnect()` above also shows the setting to use for direct connections. Without it, a direct connection does not recover automatically. For direct connections, initial failures are not retried. After an established connection drops, retries use exponential backoff and jitter from `minDelayMs` (default 1 s) up to `maxDelayMs` (default 30 s), until `disconnect()` or a terminal failure. Tune these with `.withAutomaticReconnect({ minDelayMs, maxDelayMs })`; values below the 500 ms and 1 s floors are raised with a warning, so that retrying clients cannot overwhelm the database. While mounted, the React provider also preserves its separate connection-manager retries: it builds a replacement connection after an initial or terminal failure that the core connection will not retry. It respects an explicit `disconnect()`.

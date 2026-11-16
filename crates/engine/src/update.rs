@@ -1052,7 +1052,7 @@ mod test {
                     ColId(1),
                     [ColId(2)],
                     Option::<&str>::None,
-                    "test-signature",
+                    spacetimedb_lib::hash_bytes(b"test-signature"),
                 );
             }
 
@@ -1101,15 +1101,27 @@ mod test {
             } else {
                 table
             };
-            table.finish();
+            let row_type = table.finish();
 
+            if let Some(on_result) = on_result {
+                builder.add_reducer(
+                    on_result,
+                    ProductType::from([
+                        ("row", row_type.into()),
+                        (
+                            "result",
+                            AlgebraicType::result(AlgebraicType::unit(), AlgebraicType::String),
+                        ),
+                    ]),
+                );
+            }
             builder.add_outbox(
                 "outbound_pings",
                 "receive_ping",
                 ColId(1),
                 [ColId(2)],
                 on_result,
-                "test-signature",
+                spacetimedb_lib::hash_bytes(b"test-signature"),
             );
 
             builder

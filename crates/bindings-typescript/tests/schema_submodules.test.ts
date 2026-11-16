@@ -1,12 +1,9 @@
+import type { RawModuleDefV10 } from '../src/lib/autogen/types';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
-vi.mock(
-  'spacetime:sys@2.0',
-  () => ({
-    moduleHooks: Symbol('moduleHooks'),
-  }),
-  { virtual: true }
-);
+vi.mock('spacetime:sys@2.0', () => ({
+  moduleHooks: Symbol('moduleHooks'),
+}));
 
 vi.mock('../src/server/runtime', () => ({
   makeHooks: () => ({}),
@@ -75,7 +72,8 @@ describe('schema submodules', () => {
     expect(submodules).toHaveLength(1);
     expect(submodules?.[0]?.namespace).toBe('myauth');
 
-    const submoduleSections = submodules?.[0]?.module.sections ?? [];
+    const submodule = submodules?.[0]?.module as RawModuleDefV10 | undefined;
+    const submoduleSections = submodule?.sections ?? [];
     const submoduleReducers = submoduleSections.find(
       section => section.tag === 'Reducers'
     )?.value;

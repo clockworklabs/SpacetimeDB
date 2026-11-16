@@ -1,8 +1,11 @@
 Write a SpacetimeDB backend module in C# that defines a table of user profiles and a per-user view that returns only the calling user's profile.
 
+The module defines no reducers.
+
 TABLES
 - Profile
   - Struct: Profile
+  - public table
   - Fields:
     - Id: ulong (primary key, AutoInc)
     - Identity: Identity (unique)
@@ -13,5 +16,5 @@ VIEWS
 - MyProfile
   - per-user view (uses ViewContext, not AnonymousViewContext)
   - public
-  - Returns: Profile? (the single profile matching ctx.Sender, or null)
-  - Logic: find the profile by the Identity column matching ctx.Sender
+  - Returns: Profile? (the single profile matching the caller's identity, or null)
+  - Logic: find the profile by the Identity column matching the caller's identity

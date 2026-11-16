@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use serde::Serialize;
 
 use super::http::HttpClient;
@@ -93,7 +93,9 @@ impl DeepSeekClient {
         let resp: OACompatResp = serde_json::from_str(&body).context("parse deepseek resp")?;
         let input_tokens = resp.usage.as_ref().and_then(|u| u.prompt_tokens);
         let output_tokens = resp.usage.as_ref().and_then(|u| u.completion_tokens);
-        let text = resp.first_text().ok_or_else(|| anyhow!("no content from DeepSeek"))?;
+        let text = resp
+            .first_text()
+            .with_context(|| format!("DeepSeek completion failed (model={model})"))?;
         Ok(LlmOutput {
             text,
             input_tokens,

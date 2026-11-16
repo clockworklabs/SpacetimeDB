@@ -1,6 +1,6 @@
-import { AlgebraicType } from './algebraic_type';
-import { TimeDuration } from './time_duration';
-import { coerceToBigInt } from './util';
+import { AlgebraicType } from './algebraic_type.ts';
+import { TimeDuration } from './time_duration.ts';
+import { coerceToBigInt } from './util.ts';
 
 export type TimestampAlgebraicType = {
   tag: 'Product';

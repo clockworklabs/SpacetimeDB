@@ -96,6 +96,22 @@ impl ViewArgs {
     }
 }
 
+/// Is `ty` a view context, `ViewContext` or `AnonymousViewContext`
+fn is_view_context(ty: &syn::Type) -> bool {
+    let ty = if let syn::Type::Reference(reference) = ty {
+        &*reference.elem
+    } else {
+        ty
+    };
+    let syn::Type::Path(path) = ty else {
+        return false;
+    };
+    path.path
+        .segments
+        .last()
+        .is_some_and(|seg| seg.ident == "ViewContext" || seg.ident == "AnonymousViewContext")
+}
+
 /// If `ty` is `impl Query<T>`, returns `Some(T)`. Otherwise `None`.
 fn extract_impl_query_inner(ty: &syn::Type) -> Option<&syn::Type> {
     if let syn::Type::ImplTrait(impl_trait) = ty {
@@ -185,11 +201,12 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
         ));
     };
 
-    // TODO: Re-enable parameterized views once we can pass args from sql
-    if !arg_tys.is_empty() {
+    // Views can take params after the context, so a context out of place would otherwise
+    // only surface as trait errors in the generated code.
+    if let Some(misplaced) = arg_tys.iter().find(|ty| is_view_context(ty)) {
         return Err(syn::Error::new_spanned(
-            &original_function.sig,
-            "Views do not take parameters other than `&ViewContext` or `&AnonymousViewContext`",
+            misplaced,
+            "The context must be the first parameter of a view: `&ViewContext` or `&AnonymousViewContext`",
         ));
     }
 

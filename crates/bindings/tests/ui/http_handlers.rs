@@ -37,7 +37,7 @@ fn handler_wrong_return_type(_ctx: &mut HandlerContext, _req: Request) -> u32 {
 }
 
 #[handler]
-fn handler_no_sender(ctx: &mut HandlerContext, _req: Request) -> Response {
+fn handler_no_connection_id(ctx: &mut HandlerContext, _req: Request) -> Response {
     let _sender = ctx.sender();
     let _conn_id = ctx.connection_id();
     todo!()

@@ -340,7 +340,7 @@ impl WsConnection {
             // `cloud-next` cannot have message / frame size limits. That's
             // obviously a bad default for all other clients, though.
             Some(WebSocketConfig::default().max_frame_size(None).max_message_size(None)),
-            false,
+            true,
         )
         .await
         .map_err(|source| WsError::Tungstenite {

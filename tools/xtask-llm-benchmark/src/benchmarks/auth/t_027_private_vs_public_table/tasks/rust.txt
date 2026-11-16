@@ -19,5 +19,5 @@ TABLES
 
 REDUCERS
 - register_user(ctx, name: String, email: String, password_hash: String)
-  - Insert into user_internal (id: 0 for auto_inc)
+  - Insert into user_internal
   - Also insert into user_public with just the id and name (safe fields only)

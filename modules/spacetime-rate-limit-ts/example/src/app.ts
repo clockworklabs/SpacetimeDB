@@ -4,6 +4,8 @@ import {
   type ErrorContext,
   type EventContext,
 } from './module_bindings/app/index.ts';
+import { mountFooter } from '@spacetimedb/example-ui';
+import '@spacetimedb/example-ui/footer.css';
 
 type TimestampLike = { microsSinceUnixEpoch: bigint };
 
@@ -425,6 +427,8 @@ async function main(): Promise<void> {
     throw err;
   }
 }
+
+mountFooter(document.querySelector<HTMLElement>('.shell')!);
 
 main().catch(err => {
   console.error('reactor connection failed', err);

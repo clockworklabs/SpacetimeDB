@@ -1,15 +1,15 @@
-import type { EnvironmentFor } from './environment';
-import type { DbView } from '../server/db_view';
-import type { Random } from '../server/rng';
-import type { ConnectionId } from './connection_id';
-import type { Identity } from './identity';
-import { type UntypedSchemaDef } from './schema';
-import { type Timestamp } from './timestamp';
+import type { EnvironmentFor } from './environment.ts';
+import type { DbView } from '../server/db_view.ts';
+import type { Random } from '../server/rng.ts';
+import type { ConnectionId } from './connection_id.ts';
+import type { Identity } from './identity.ts';
+import { type UntypedSchemaDef } from './schema.ts';
+import { type Timestamp } from './timestamp.ts';
 import {
   ColumnBuilder,
   type InferTypeOfRow,
   type TypeBuilder,
-} from './type_builders';
+} from './type_builders.ts';
 import { Uuid } from './uuid.ts';
 
 /**
@@ -61,11 +61,20 @@ export type Reducer<S extends UntypedSchemaDef, Params extends ParamsObj> = (
  * Authentication information for the caller of a reducer.
  */
 export type AuthCtx = Readonly<{
-  /** Whether the caller is an internal system process. */
+  /**
+   * Whether the sender of this invocation is this database,
+   * as it is for scheduled reducers and procedures.
+   *
+   * This is equivalent to `ctx.sender.isEqual(ctx.databaseIdentity)`.
+   * It is false in `init`, whose sender is the database's owner.
+   */
   isInternal: boolean;
   /** Whether the caller has authenticated with a JWT token. */
   hasJWT: boolean;
-  /** The JWT claims associated with the caller, or null if hasJWT == false. */
+  /**
+   * The JWT claims associated with the caller, or null if hasJWT == false.
+   * If isInternal is true, this is null.
+   */
   jwt: JwtClaims | null;
 }>;
 
