@@ -628,12 +628,15 @@ pub mod test {
         let row = spacetimedb_sats::product![first.clone(), second.clone()];
         let mut page = Page::new(ty.size());
 
-        let error = unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &row, EvictionPolicy::Evictable) }
-            .unwrap_err();
-        assert!(matches!(error, Error::Blobs(BlobError::MemoryLimitExceeded(_))));
-        assert_eq!(page.num_rows(), 0);
-        assert_eq!(blobs.num_blobs(), 1);
-        assert_eq!(blobs.usage_counter().get(&first_hash), Some(&1));
+        // Repeat the failure to exercise granules reused from the freelist.
+        for _ in 0..2 {
+            let error = unsafe { write_row_to_page(&mut page, &blobs, &visitor, &ty, &row, EvictionPolicy::Evictable) }
+                .unwrap_err();
+            assert!(matches!(error, Error::Blobs(BlobError::MemoryLimitExceeded(_))));
+            assert_eq!(page.num_rows(), 0);
+            assert_eq!(blobs.num_blobs(), 1);
+            assert_eq!(blobs.usage_counter().get(&first_hash), Some(&1));
+        }
 
         // The failed row's page allocations must also be reusable.
         drop(first_pin);

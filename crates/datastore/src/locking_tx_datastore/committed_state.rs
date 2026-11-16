@@ -691,7 +691,17 @@ impl CommittedState {
         view_instances: ViewInstanceTxState,
         ctx: &ExecutionContext,
     ) -> Result<TxData> {
-        let prepared = match self.prepare_merge(&tx_state) {
+        let preparation = self.prepare_merge(&tx_state).or_else(|error| {
+            if error.is_resident_memory_limit() {
+                // Preparation hit the memory limit.
+                // Try to evict resident pages and then prepare again.
+                self.trim_resident()?;
+                self.prepare_merge(&tx_state)
+            } else {
+                Err(error)
+            }
+        });
+        let prepared = match preparation {
             Ok(prepared) => prepared,
             Err(error) => {
                 self.rollback(tx_state);
@@ -1110,6 +1120,25 @@ impl CommittedState {
             .data_size_blob_store_bytes_used_by_blobs
             .with_label_values(&database_identity)
             .set(self.storage.blobs().bytes_used_by_blobs() as _);
+    }
+
+    /// Evict objects from the cache until the resident size is below the low watermark,
+    /// or no more objects can be evicted.
+    ///
+    /// TODO: Use a database-scoped LRU eviction policy instead of evicting table by table.
+    pub(super) fn trim_resident(&self) -> Result<()> {
+        let pages = self.storage.pages();
+        let target = pages.resident_budget().low_water_bytes;
+        for table in self.tables.values() {
+            if pages.resident_usage().accounted_bytes() <= target {
+                return Ok(());
+            }
+            table.trim()?;
+        }
+        if pages.resident_usage().accounted_bytes() > target {
+            self.storage.blobs().trim()?;
+        }
+        Ok(())
     }
 
     #[cfg(feature = "durability")]

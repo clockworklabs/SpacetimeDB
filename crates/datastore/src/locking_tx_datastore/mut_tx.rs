@@ -4038,8 +4038,21 @@ fn insert_physically_maybe_generate<'a, const GENERATE: bool>(
     };
 
     // 1. Insert the physical row.
-    let (tx_row_ref, blob_bytes) = tx_table.insert_physically_bsatn(tx_blob_store, row)?;
-    let tx_pinned_row = tx_row_ref.into_pinned_row();
+    let insert_physical = |table: &mut Table, blobs: &mut BlobSet| {
+        table
+            .insert_physically_bsatn(blobs, row)
+            .map(|(row, bytes)| (row.into_pinned_row(), bytes))
+            .map_err(DatastoreError::from)
+    };
+    let (tx_pinned_row, blob_bytes) = match insert_physical(tx_table, tx_blob_store) {
+        Err(error) if error.is_resident_memory_limit() => {
+            // The insertion hit the memory limit.
+            // Try to evict resident pages and insert again.
+            committed_state.trim_resident()?;
+            insert_physical(tx_table, tx_blob_store)?
+        }
+        result => result?,
+    };
     // 2. Optionally: Detect, generate, write sequence values.
     let (tx_parts, gen_cols) = if GENERATE {
         // When `GENERATE` is enabled, we're instructed to deal with sequence value generation.
