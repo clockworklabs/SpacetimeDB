@@ -59,6 +59,10 @@ impl ByteBudget {
         }
     }
 
+    pub fn budget_view(&self) -> ByteBudgetStateView {
+        ByteBudgetStateView(self.state.clone())
+    }
+
     pub fn acquire(&self, bytes: u64) -> Result<BudgetPermit, BudgetExceeded> {
         self.acquire_with_exemption(bytes, false)
     }
@@ -188,6 +192,17 @@ pub struct ByteBudgetState {
 impl ByteBudgetUsage {
     pub fn accounted_bytes(&self) -> u64 {
         self.accounted_bytes
+    }
+}
+
+/// A read-only [ByteBudgetState].
+#[derive(Debug)]
+pub struct ByteBudgetStateView(Arc<Mutex<ByteBudgetState>>);
+
+impl ByteBudgetStateView {
+    pub fn usage(&self) -> ByteBudgetUsage {
+        let accounted_bytes = self.0.lock().unwrap().accounted_bytes;
+        ByteBudgetUsage { accounted_bytes }
     }
 }
 

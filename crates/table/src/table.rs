@@ -3,9 +3,9 @@ use crate::{
     blob_store::BlobHash,
     page,
     tiered::{
-        BlobError, BlobHandle, BlobReadSet, BlobSet, DiskPinnedBlobHandle, DiskPinnedPageHandle, EvictionPolicy,
-        ObjectStoreError, PageBorrow, PageError, PageHandle, PageManager, PageRef, PageSet, PreparedCommit,
-        ReservedPage,
+        BlobError, BlobHandle, BlobReadSet, BlobSet, DiskPinnedBlobHandle, DiskPinnedPageHandle, EvictionError,
+        EvictionPolicy, ObjectStoreError, PageBorrow, PageError, PageHandle, PageManager, PageRef, PageSet,
+        PreparedCommit, ReservedPage,
     },
     var_len::VarLenMembers as _,
 };
@@ -105,37 +105,6 @@ impl From<BlobError> for TableError {
     fn from(error: BlobError) -> Self {
         Self::Blob(Box::new(error))
     }
-}
-
-/// Allows a read to request eviction from its enclosing datastore.
-pub trait ReadEviction: Send + Sync {
-    fn evict_for_read(&self) -> Result<(), TableError>;
-}
-
-fn retry_read<T>(
-    result: Result<T, TableError>,
-    eviction: Option<&dyn ReadEviction>,
-    retry: impl FnOnce() -> Result<T, TableError>,
-) -> Result<T, TableError> {
-    let Err(error) = result else {
-        return result;
-    };
-    let Some(eviction) = eviction else {
-        return Err(error);
-    };
-    let memory_limit = match &error {
-        TableError::Page(error) => matches!(error.as_ref(), PageError::MemoryLimitExceeded(_)),
-        TableError::Blob(error) => matches!(error.as_ref(), BlobError::MemoryLimitExceeded(_)),
-        TableError::Storage(error) => {
-            matches!(error.as_ref(), ObjectStoreError::StorageLimitExceeded(_))
-        }
-    };
-    if !memory_limit {
-        return Err(error);
-    }
-    // The failed access has returned and released its temporary locks.
-    eviction.evict_for_read()?;
-    retry()
 }
 
 impl From<ObjectStoreError> for TableError {
@@ -334,12 +303,12 @@ impl TableInner {
         Ok(self.try_page_and_offset(ptr)?.unwrap())
     }
 
-    fn trim(&self) -> Result<u64, PageError> {
+    fn trim(&self) -> Result<u64, EvictionError> {
         self.pages.trim()
     }
 }
 
-static_assert_size!(Table, 336);
+static_assert_size!(Table, 328);
 
 impl MemoryUsage for Table {
     fn heap_usage(&self) -> usize {
@@ -2604,7 +2573,7 @@ impl Table {
         }
     }
 
-    pub fn trim(&self) -> Result<u64, PageError> {
+    pub fn trim(&self) -> Result<u64, EvictionError> {
         self.inner.trim()
     }
 }
