@@ -150,6 +150,11 @@ record OutboxColumnAttr(string? Table, string? Param)
 }
 
 /// <summary>
+/// A reducer's <c>[OnResult]</c>: the outbox row type's full name, and the outbox accessor if given.
+/// </summary>
+record OnResultRef(string Row, string? Table);
+
+/// <summary>
 /// The resolved outbox of a table accessor: everything <c>RawOutboxDefV10</c> needs except the
 /// <c>on_result</c> reducer, which is attached at registration.
 /// </summary>
@@ -2137,6 +2142,9 @@ record ReducerDeclaration
     public readonly Scope Scope;
     private readonly bool HasWrongSignature;
 
+    /// <summary>The outbox this reducer handles results for.</summary>
+    public readonly OnResultRef? OnResult;
+
     public string Identifier => EscapeIdentifier(Name);
 
     public ReducerDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
@@ -2163,17 +2171,52 @@ record ReducerDeclaration
             HasWrongSignature = true;
         }
 
+        Kind = attr.Kind;
+        var onResultData = method
+            .GetAttributes()
+            .FirstOrDefault(a =>
+                a.AttributeClass?.ToString() == typeof(OnResultAttribute).FullName
+            );
+        if (onResultData?.GetTypeArgument("row") is { } row)
+        {
+            OnResult = new(SymbolToName(row), onResultData.ParseAs<OnResultAttribute>().Table);
+            if (Kind != ReducerKind.UserDefined)
+            {
+                diag.Report(
+                    ErrorDescriptor.InvalidOnResult,
+                    (methodSyntax, "[OnResult] reducers can't be lifecycle reducers.")
+                );
+            }
+            var parameters = method.Parameters;
+            if (
+                parameters.Length != 3
+                || !SymbolEqualityComparer.Default.Equals(parameters[1].Type, row)
+                || SymbolToName(parameters[2].Type)
+                    != "SpacetimeDB.Result<SpacetimeDB.Unit, string>"
+            )
+            {
+                diag.Report(
+                    ErrorDescriptor.InvalidOnResult,
+                    (
+                        methodSyntax,
+                        $"[OnResult] reducers must take (ReducerContext ctx, {SymbolToName(row)} row, Result<Unit, string> result)."
+                    )
+                );
+            }
+        }
+
         Name = method.Name;
         if (Name.Length >= 2)
         {
             var prefix = Name[..2];
-            if (prefix is "__" or "on" or "On")
+            // `On` is reserved for client callbacks; [OnResult] reducers are private, so
+            // clients never see them.
+            if (prefix is "__" || (prefix is "on" or "On" && OnResult is null))
             {
                 diag.Report(ErrorDescriptor.ReducerReservedPrefix, (methodSyntax, prefix));
             }
         }
 
-        Kind = attr.Kind;
         CanonicalName = attr.Name;
         FullName = SymbolToName(method);
         Args = new(
@@ -3407,13 +3450,43 @@ public class Module : IIncrementalGenerator
             (ctx, diag) => ctx.ReportDiagnostic(diag)
         );
 
+        context.RegisterSourceOutput(
+            context
+                .SyntaxProvider.ForAttributeWithMetadataName(
+                    fullyQualifiedMetadataName: typeof(OnResultAttribute).FullName,
+                    predicate: (node, ct) => true, // already covered by attribute restrictions
+                    transform: (context, ct) =>
+                        context
+                            .TargetSymbol.GetAttributes()
+                            .Any(a =>
+                                a.AttributeClass?.ToString() == typeof(ReducerAttribute).FullName
+                            )
+                            ? null
+                            : ErrorDescriptor.InvalidOnResult.ToDiag(
+                                (
+                                    (MethodDeclarationSyntax)context.TargetNode,
+                                    "[OnResult] needs [Reducer]."
+                                )
+                            )
+                )
+                .Where(diag => diag is not null),
+            (ctx, diag) => ctx.ReportDiagnostic(diag!)
+        );
+
         var addReducers = CollectDistinct(
             "Reducer",
             context,
             reducers
                 .Select(
                     (r, ct) =>
-                        (r.Name, r.FullName, r.CanonicalName, r.Kind, Class: r.GenerateClass())
+                        (
+                            r.Name,
+                            r.FullName,
+                            r.CanonicalName,
+                            r.Kind,
+                            Class: r.GenerateClass(),
+                            r.OnResult
+                        )
                 )
                 .WithTrackingName("SpacetimeDB.Reducer.GenerateClass"),
             r => r.Name,
@@ -3776,6 +3849,38 @@ public class Module : IIncrementalGenerator
                     rlsFilters,
                     columnDefaultValues
                 ) = inputs;
+
+                // Attach each [OnResult] reducer to its outbox table: the outbox accessor whose
+                // row type it names, picked by `Table` when the row type has several.
+                var onResultReducers = new Dictionary<string, string>();
+                foreach (var reducer in addReducers.Where(r => r.OnResult is not null))
+                {
+                    var onResult = reducer.OnResult!;
+                    var outboxes = tableDecls
+                        .Array.Where(t => t.FullName == onResult.Row)
+                        .SelectMany(t => t.TableAccessors)
+                        .Where(a =>
+                            a.IsOutbox && (onResult.Table is null || a.Name == onResult.Table)
+                        )
+                        .Select(a => a.Name)
+                        .ToArray();
+                    var error = outboxes.Length switch
+                    {
+                        0 =>
+                            $"{reducer.FullName} handles results for {onResult.Row}{(onResult.Table is null ? "" : $" in table {onResult.Table}")}, but there's no such outbox table.",
+                        > 1 =>
+                            $"{reducer.FullName} handles results for {onResult.Row}, which has several outbox tables ({string.Join(", ", outboxes)}). Pick one with [OnResult(Table = ...)].",
+                        _ when onResultReducers.TryGetValue(outboxes[0], out var other) =>
+                            $"Outbox table {outboxes[0]} has several [OnResult] reducers: {other} and {reducer.Name}.",
+                        _ => null,
+                    };
+                    if (error is not null)
+                    {
+                        context.ReportDiagnostic(ErrorDescriptor.UnresolvedOnResult.ToDiag(error));
+                        continue;
+                    }
+                    onResultReducers[outboxes[0]] = reducer.Name;
+                }
 
                 if (sharedContexts)
                 {
@@ -4616,7 +4721,10 @@ public class Module : IIncrementalGenerator
                             {{IndentGeneratedCode(string.Join(
                                 "\n",
                                 tableAccessors.Where(t => t.Outbox is not null)
-                                    .Select(t => t.Outbox!.GenerateRegistration(t.TableAccessorName, null))
+                                    .Select(t => t.Outbox!.GenerateRegistration(
+                                        t.TableAccessorName,
+                                        onResultReducers.TryGetValue(t.TableAccessorName, out var onResult) ? onResult : null
+                                    ))
                             ), 8)}}
                             {{IndentGeneratedCode((
                                 httpRouters.Array.FirstOrDefault(r => r.IsValid) is { } router
