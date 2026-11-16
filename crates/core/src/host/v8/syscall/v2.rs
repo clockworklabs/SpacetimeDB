@@ -19,8 +19,8 @@ use super::common::{
     index_id_from_name, procedure_abort_mut_tx, procedure_commit_mut_tx, procedure_http_request,
     procedure_start_mut_tx, row_iter_bsatn_close, table_id_from_name, volatile_nonatomic_schedule_immediate,
 };
-use super::hooks::get_hook_function;
 use super::hooks::HookFunctions;
+use super::hooks::{get_hook_function, get_optional_hook_function};
 use super::{set_registered_hooks, AbiVersion};
 use crate::error::NodesError;
 use crate::host::instance_env::InstanceEnv;
@@ -425,14 +425,8 @@ pub fn get_hooks_from_default_export<'scope>(
     // and so we need to continue supporting precompiled TypeScript and JS modules
     // which used an earlier version of the bindings package,
     // prior to the inclusion of `__call_http_handler__`.
-    let call_http_handler = {
-        let key = str_from_ident!(__call_http_handler__).string(scope);
-        let value = hooks.get(scope, key.into()).ok_or_else(exception_already_thrown)?;
-        (!value.is_null_or_undefined())
-            .then(|| cast!(scope, value, Function, "module function hook `__call_http_handler__`"))
-            .transpose()
-            .map_err(|e| e.throw(scope))?
-    };
+    let call_http_handler = get_optional_hook_function(scope, hooks, str_from_ident!(__call_http_handler__))?;
+    let call_migration = get_optional_hook_function(scope, hooks, str_from_ident!(__call_migration__))?;
 
     // Cache hooks in context slots so syscall-time code can reconstruct them.
     let hooks = HookFunctions {
@@ -446,6 +440,7 @@ pub fn get_hooks_from_default_export<'scope>(
         call_view_anon: Some(call_view_anon),
         call_procedure: Some(call_procedure),
         call_http_handler,
+        call_migration,
     };
     set_registered_hooks(scope, &hooks)?;
     Ok(Some(hooks))

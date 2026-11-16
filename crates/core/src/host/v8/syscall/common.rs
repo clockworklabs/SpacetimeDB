@@ -13,7 +13,6 @@ use super::super::{
     JsInstanceEnv,
 };
 use super::{call_call_view, call_call_view_anon, get_registered_hooks, HookFunctions};
-use crate::database_logger::{LogLevel, Record};
 use crate::error::NodesError;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::wasm_common::module_host_actor::{
@@ -21,6 +20,10 @@ use crate::host::wasm_common::module_host_actor::{
     ViewReturnData,
 };
 use crate::host::wasm_common::{RowIterIdx, TimingSpan, TimingSpanIdx};
+use crate::{
+    database_logger::{LogLevel, Record},
+    host::wasm_common::module_host_actor::MigrationOp,
+};
 use anyhow::Context;
 use bytes::Bytes;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
@@ -90,6 +93,62 @@ pub fn call_call_http_handler(
         timestamp,
         request_bytes,
         request_body_bytes,
+    } = op;
+
+    let handler_id = serialize_to_js(scope, &id.0)?;
+    let timestamp = serialize_to_js(scope, &timestamp.to_micros_since_unix_epoch())?;
+    let request = serialize_to_js(scope, &request_bytes)?;
+    let request_body = serialize_to_js(scope, &request_body_bytes)?;
+    let args = &[handler_id, timestamp, request, request_body];
+
+    let ret = call_recv_fun(scope, fun, hooks.recv, args)?;
+    let ret = cast!(scope, ret, v8::Array, "tuple return from `__call_http_handler__`").map_err(|e| e.throw(scope))?;
+
+    if ret.length() != 2 {
+        return Err(TypeError("`__call_http_handler__` must return a two-element array")
+            .throw(scope)
+            .into());
+    }
+
+    let response = ret.get_index(scope, 0).ok_or_else(exception_already_thrown)?;
+    let response = cast!(
+        scope,
+        response,
+        v8::Uint8Array,
+        "response bytes return from `__call_http_handler__`"
+    )
+    .map_err(|e| e.throw(scope))?;
+
+    let body = ret.get_index(scope, 1).ok_or_else(exception_already_thrown)?;
+    let body = cast!(
+        scope,
+        body,
+        v8::Uint8Array,
+        "response body bytes return from `__call_http_handler__`"
+    )
+    .map_err(|e| e.throw(scope))?;
+
+    Ok((
+        Bytes::copy_from_slice(response.get_contents(&mut [])),
+        Bytes::copy_from_slice(body.get_contents(&mut [])),
+    ))
+}
+
+/// Calls the `__call_migration__` function `fun`.
+pub fn call_call_migration(
+    scope: &mut PinScope<'_, '_>,
+    hooks: &HookFunctions<'_>,
+    op: MigrationOp<'_>,
+) -> Result<Bytes, ErrorOrException<ExceptionThrown>> {
+    let fun = hooks
+        .call_migration
+        .context("`__call_http_handler__` was never defined")?;
+
+    let MigrationOp {
+        id,
+        hash,
+        timestamp,
+        name,
     } = op;
 
     let handler_id = serialize_to_js(scope, &id.0)?;

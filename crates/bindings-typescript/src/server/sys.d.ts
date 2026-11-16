@@ -46,9 +46,9 @@ declare module 'spacetime:sys@2.0' {
       sender: u256,
       senderJwt: Uint8Array
     ): [response: Uint8Array, body: Uint8Array];
-  }
 
-  export function register_hooks(hooks: ModuleHooks);
+    __call_migration__(id: u32, args: Uint8Array): void;
+  }
 
   export function table_id_from_name(name: string): u32;
   export function index_id_from_name(name: string): u32;
