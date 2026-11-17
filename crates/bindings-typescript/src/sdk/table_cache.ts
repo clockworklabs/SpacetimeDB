@@ -71,12 +71,14 @@ const inRange = (value: unknown, range: Range<any>): boolean => {
 
 type IndexNode<Row> = {
   rows: Map<ComparablePrimitive, Row>;
-  children: Map<ComparablePrimitive, IndexNode<Row>>;
+  // Created on the first child: the leaves (every node of a single-column
+  // index) then carry one Map, not two.
+  children: Map<ComparablePrimitive, IndexNode<Row>> | null;
 };
 
 const newIndexNode = <Row>(): IndexNode<Row> => ({
   rows: new Map(),
-  children: new Map(),
+  children: null,
 });
 
 export type TableIndexView<
@@ -179,7 +181,7 @@ export class TableCacheImpl<
     const lookup = (prefix: readonly unknown[]): IndexNode<Row> | undefined => {
       let node: IndexNode<Row> | undefined = root;
       for (let i = 0; i < prefix.length && node; i++) {
-        node = node.children.get(keyFns[i](prefix[i]));
+        node = node.children?.get(keyFns[i](prefix[i]));
       }
       return node;
     };
@@ -189,6 +191,7 @@ export class TableCacheImpl<
         let node = root;
         for (let i = 0; i < columns.length; i++) {
           const key = keyFns[i](getCol(row, i));
+          node.children ??= new Map();
           let child = node.children.get(key);
           if (!child) {
             child = newIndexNode();
@@ -202,11 +205,11 @@ export class TableCacheImpl<
         let node = root;
         for (let i = 0; i < columns.length; i++) {
           const key = keyFns[i](getCol(row, i));
-          const child = node.children.get(key);
+          const child = node.children?.get(key);
           if (!child) return;
           child.rows.delete(rowId);
           if (child.rows.size === 0) {
-            node.children.delete(key);
+            node.children!.delete(key);
             return;
           }
           node = child;
