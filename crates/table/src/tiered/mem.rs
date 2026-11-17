@@ -384,6 +384,16 @@ impl ResidentObjects {
     }
 }
 
+impl MemoryUsage for ResidentObjects {
+    fn heap_usage(&self) -> usize {
+        // `pages` and `blobs` contain weak references, count just the container
+        // allocations.
+        self.budget.heap_usage()
+            + self.pages.lock().unwrap().allocation_size()
+            + self.blobs.lock().unwrap().allocation_size()
+    }
+}
+
 #[derive(Debug)]
 pub struct BlobEvictionCandidate {
     pub key: BlobHashWrapper,

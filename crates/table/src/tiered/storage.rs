@@ -11,6 +11,7 @@ use std::{
 use bytes::Bytes;
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_lib::bsatn;
+use spacetimedb_memory_usage::MemoryUsage;
 
 use crate::{
     page::Page,
@@ -185,11 +186,11 @@ pub unsafe trait RemoveObject {
     unsafe fn remove(&self, key: ObjectKey) -> Result<(), ObjectStoreError>;
 }
 
-pub trait LocalStorage: ObjectStore + RemoveObject {}
-impl<T> LocalStorage for T where T: ObjectStore + RemoveObject {}
+pub trait LocalStorage: ObjectStore + MemoryUsage + RemoveObject {}
+impl<T> LocalStorage for T where T: ObjectStore + MemoryUsage + RemoveObject {}
 
-pub trait RemoteStorage: ObjectStore {}
-impl<T> RemoteStorage for T where T: ObjectStore {}
+pub trait RemoteStorage: ObjectStore + MemoryUsage {}
+impl<T> RemoteStorage for T where T: ObjectStore + MemoryUsage {}
 
 #[derive(Debug, Default)]
 pub struct MemoryObjectStore {
@@ -221,10 +222,24 @@ unsafe impl RemoveObject for MemoryObjectStore {
     }
 }
 
+impl MemoryUsage for MemoryObjectStore {
+    fn heap_usage(&self) -> usize {
+        let objects = self.objects.read();
+        // Bytes can be cloned by readers. Attribute each stored payload here once.
+        objects.allocation_size() + objects.values().map(ObjectBytes::len).sum::<usize>()
+    }
+}
+
 #[derive(Debug)]
 pub struct BackingStore<T> {
     pub object_store: T,
     pub budget: ByteBudget,
+}
+
+impl<T: MemoryUsage + ?Sized> MemoryUsage for BackingStore<Box<T>> {
+    fn heap_usage(&self) -> usize {
+        size_of_val(&*self.object_store) + self.object_store.heap_usage() + self.budget.heap_usage()
+    }
 }
 
 pub type LocalBackingStore = BackingStore<Box<dyn LocalStorage>>;
@@ -702,6 +717,18 @@ impl TieredStorage {
     }
 }
 
+impl MemoryUsage for TieredStorage {
+    fn heap_usage(&self) -> usize {
+        let catalog_bytes = {
+            let catalog = self.catalog.read();
+            catalog.allocation_size() + catalog.len() + (2 * size_of::<usize>() + size_of::<ObjectSlot>())
+        };
+        let reclaim_flag = 2 * size_of::<usize>() + size_of_val(&*self.should_reclaim);
+
+        self.local.heap_usage() + self.remote.heap_usage() + catalog_bytes + reclaim_flag
+    }
+}
+
 fn object_from_trusted_bytes(key: ObjectKey, bytes: ObjectBytes) -> Object {
     let inner = match key {
         ObjectKey::Page(hash) => ObjectInner::Page { hash, bytes },
@@ -747,6 +774,12 @@ impl TieredStorage {
             unsafe fn remove(&self, key: ObjectKey) -> Result<(), ObjectStoreError> {
                 // SAFETY: Forward caller requirements.
                 unsafe { self.inner.remove(key) }
+            }
+        }
+
+        impl MemoryUsage for FailingReads {
+            fn heap_usage(&self) -> usize {
+                self.inner.heap_usage()
             }
         }
 

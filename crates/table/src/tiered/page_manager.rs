@@ -746,3 +746,9 @@ impl PageManager {
         self.storage.write(page.into())
     }
 }
+
+impl MemoryUsage for PageManager {
+    fn heap_usage(&self) -> usize {
+        self.resident_cache.heap_usage()
+    }
+}

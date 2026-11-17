@@ -82,6 +82,12 @@ unsafe impl RemoveObject for Arc<TestStore> {
     }
 }
 
+impl MemoryUsage for TestStore {
+    fn heap_usage(&self) -> usize {
+        self.inner.heap_usage()
+    }
+}
+
 fn object(bytes: &[u8]) -> Object {
     let key = BlobHashWrapper::hash_from_bytes(bytes).into();
     object_from_trusted_bytes(key, Bytes::copy_from_slice(bytes))

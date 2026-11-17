@@ -537,12 +537,10 @@ impl BlobSet {
 
 impl MemoryUsage for BlobSet {
     fn heap_usage(&self) -> usize {
-        let arc = std::mem::size_of::<usize>() * 2;
-        (2 * arc)
-            + std::mem::size_of::<mem::ResidentObjects>()
-            + std::mem::size_of::<TieredStorage>()
-            + std::mem::size_of::<Mutex<Vec<BlobEvictionCandidate>>>()
-            + (self.resident_bytes_used_by_blobs() as usize)
+        // Cache and backing store are counted by `TieredDatabaseStorage`.
+        let scratch = self.evictable.lock().unwrap().capacity() * size_of::<BlobEvictionCandidate>();
+
+        self.entries.read().heap_usage() + scratch
     }
 }
 
@@ -602,6 +600,15 @@ impl BlobEntry {
     }
 }
 
+impl MemoryUsage for BlobEntry {
+    fn heap_usage(&self) -> usize {
+        match self {
+            BlobEntry::Resident { blob, .. } => blob.heap_usage(),
+            BlobEntry::NonResident { .. } => 0,
+        }
+    }
+}
+
 /// A handle to a blob.
 ///
 /// As long as a handle to a blob is live, the blob is guaranteed to be
@@ -626,6 +633,12 @@ impl Deref for BlobHandle {
 
     fn deref(&self) -> &Self::Target {
         &self.frame
+    }
+}
+
+impl MemoryUsage for BlobHandle {
+    fn heap_usage(&self) -> usize {
+        self.frame.heap_usage()
     }
 }
 

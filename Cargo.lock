@@ -9141,6 +9141,7 @@ version = "2.16.0"
 dependencies = [
  "log",
  "spacetimedb-fs-utils",
+ "spacetimedb-memory-usage",
  "spacetimedb-paths",
  "spacetimedb-snapshot",
  "spacetimedb-table",

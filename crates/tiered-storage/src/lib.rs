@@ -5,6 +5,7 @@ use std::{
 };
 
 use spacetimedb_fs_utils::dir_trie::DirTrie;
+use spacetimedb_memory_usage::MemoryUsage;
 use spacetimedb_paths::server::TablesDir;
 use spacetimedb_snapshot::FileOrDirPath;
 use spacetimedb_table::tiered::metrics::{DiskOperation, Metrics};
@@ -166,6 +167,14 @@ unsafe impl RemoveObject for DiskStorage {
         });
         self.record_operation(DiskOperation::Delete, &result);
         result
+    }
+}
+
+impl MemoryUsage for DiskStorage {
+    fn heap_usage(&self) -> usize {
+        // The page pool is a global resource, so don't count here.
+        // Also exclude metrics.
+        size_of::<DirTrie>()
     }
 }
 

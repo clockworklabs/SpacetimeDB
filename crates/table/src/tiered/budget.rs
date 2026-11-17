@@ -1,3 +1,5 @@
+use spacetimedb_memory_usage::MemoryUsage;
+
 use super::metrics::{CacheTier, Metrics};
 use std::sync::{Arc, Mutex};
 
@@ -91,6 +93,13 @@ impl TryFrom<ByteBudgetConfig> for ByteBudget {
 
     fn try_from(config: ByteBudgetConfig) -> Result<Self, Self::Error> {
         ByteBudget::new(config)
+    }
+}
+
+impl MemoryUsage for ByteBudget {
+    fn heap_usage(&self) -> usize {
+        let refcount = 2 * size_of::<usize>();
+        refcount + size_of::<Mutex<ByteBudgetState>>()
     }
 }
 

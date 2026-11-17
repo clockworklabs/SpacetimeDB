@@ -7,6 +7,7 @@ use std::{
 
 use derive_more::{From, Into};
 use spacetimedb_data_structures::map::{IntMap, ValidAsIdentityHash};
+use spacetimedb_memory_usage::MemoryUsage;
 
 use crate::{blob_store::BlobHash, page::Page};
 
@@ -96,6 +97,12 @@ impl From<BlobHashWrapper> for blake3::Hash {
 }
 
 impl ValidAsIdentityHash for BlobHashWrapper {}
+
+impl MemoryUsage for BlobHashWrapper {
+    fn heap_usage(&self) -> usize {
+        self.0.heap_usage()
+    }
+}
 
 fn hash_prefix<H: Hasher>(bytes: &[u8], state: &mut H) {
     const PREFIX_LEN: usize = (u64::BITS / 8) as usize;

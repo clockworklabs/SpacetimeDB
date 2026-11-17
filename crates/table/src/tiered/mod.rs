@@ -176,6 +176,12 @@ impl TieredDatabaseStorage {
 
 impl MemoryUsage for TieredDatabaseStorage {
     fn heap_usage(&self) -> usize {
-        todo!()
+        let Self {
+            pages,
+            blobs,
+            cache,
+            store,
+        } = self;
+        pages.heap_usage() + blobs.heap_usage() + cache.heap_usage() + store.heap_usage()
     }
 }
