@@ -331,6 +331,32 @@ Each HTTP request performed by a database will be counted either here, in `space
         #[help = "Payload bytes successfully read or written by the local disk adapter."]
         #[labels(database_identity: Identity, replica_id: u64, operation: str)]
         pub page_cache_disk_bytes: IntCounterVec,
+
+        #[name = spacetime_page_cache_disk_operations_total]
+        #[help = "Disk cache operations, including failed calls."]
+        #[labels(database_identity: Identity, replica_id: u64, operation: str)]
+        pub page_cache_disk_operations: IntCounterVec,
+
+        #[name = spacetime_page_cache_disk_failures_total]
+        #[help = "Disk cache operations that failed."]
+        #[labels(database_identity: Identity, replica_id: u64, operation: str)]
+        pub page_cache_disk_failures: IntCounterVec,
+
+        #[name = spacetime_page_cache_reclaimed_bytes_total]
+        #[help = "Bytes freed from the disk budget by deleting orphaned objects from the disk cache."]
+        #[labels(database_identity: Identity, replica_id: u64, object_type: str)]
+        pub page_cache_reclaimed_bytes: IntCounterVec,
+
+        #[name = spacetime_page_cache_reclaimed_objects_total]
+        #[help = "Orphaned objects removed from the disk cache."]
+        #[labels(database_identity: Identity, replica_id: u64, object_type: str)]
+        pub page_cache_reclaimed_objects: IntCounterVec,
+
+        #[name = spacetime_page_cache_reclamation_duration_seconds]
+        #[help = "Time spent trying to delete orphaned objects from the disk cache."]
+        #[labels(database_identity: Identity, replica_id: u64, outcome: str)]
+        #[buckets(0.00001, 0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 30.0)]
+        pub page_cache_reclamation_time: HistogramVec,
     }
 );
 

@@ -36,6 +36,18 @@ pub enum OperationMetrics {
         operation: DiskOperation,
         nanos: u64,
     },
+    DiskOperation {
+        operation: DiskOperation,
+        success: bool,
+    },
+    Reclaimed {
+        object: ObjectType,
+        bytes: u64,
+    },
+    Reclamation {
+        nanos: u64,
+        success: bool,
+    },
 }
 
 type Publish = dyn Fn(&StorageMetrics, Option<OperationMetrics>) + Send + Sync;
@@ -103,6 +115,15 @@ impl Metrics {
             operation,
             nanos,
         });
+    }
+    pub fn disk_operation(&self, operation: DiskOperation, success: bool) {
+        self.record(OperationMetrics::DiskOperation { operation, success });
+    }
+    pub fn reclaimed(&self, object: ObjectType, bytes: u64) {
+        self.record(OperationMetrics::Reclaimed { object, bytes });
+    }
+    pub fn reclamation(&self, nanos: u64, success: bool) {
+        self.record(OperationMetrics::Reclamation { nanos, success });
     }
     pub fn timer(&self) -> Timer<'_> {
         Timer {

@@ -17,6 +17,7 @@ struct PageCacheMetrics {
     memory: TierMetrics,
     disk: TierMetrics,
     disk_io: DiskIoMetrics,
+    reclamation: ReclamationMetrics,
 }
 
 #[derive(Debug, Default)]
@@ -25,6 +26,7 @@ struct ObjectCacheMetrics {
     disk_lookups: LookupCounters,
     memory_to_disk: EvictionCounters,
     disk_to_remote: EvictionCounters,
+    reclaimed: OnceLock<ReclaimedCounters>,
 }
 
 #[derive(Debug, Default)]
@@ -59,6 +61,27 @@ struct DiskIoMetrics {
     write: OnceLock<Histogram>,
     read_bytes: OnceLock<IntCounter>,
     write_bytes: OnceLock<IntCounter>,
+    read_operations: DiskOperationCounters,
+    write_operations: DiskOperationCounters,
+    delete_operations: DiskOperationCounters,
+}
+
+#[derive(Debug, Default)]
+struct DiskOperationCounters {
+    operations: OnceLock<IntCounter>,
+    failures: OnceLock<IntCounter>,
+}
+
+#[derive(Debug, Default)]
+struct ReclamationMetrics {
+    success: OnceLock<Histogram>,
+    error: OnceLock<Histogram>,
+}
+
+#[derive(Debug)]
+struct ReclaimedCounters {
+    objects: IntCounter,
+    bytes: IntCounter,
 }
 
 #[derive(Debug, Default)]
@@ -145,11 +168,34 @@ impl PageCacheMetrics {
             } => {
                 self.disk_io.record(stats, operation, nanos, bytes);
             }
+            OperationMetrics::DiskOperation { operation, success } => {
+                self.disk_io.record_operation(stats, operation, success);
+            }
+            OperationMetrics::Reclaimed { object, bytes } => {
+                self.object_metrics(object).record_reclaimed(stats, object, bytes);
+            }
+            OperationMetrics::Reclamation { nanos, success } => {
+                self.reclamation.record(stats, nanos, success);
+            }
         }
     }
 }
 
 impl ObjectCacheMetrics {
+    fn record_reclaimed(&self, stats: &StorageMetrics, object: ObjectType, bytes: u64) {
+        let (db, replica) = (&stats.database, &stats.replica);
+        let counters = self.reclaimed.get_or_init(|| ReclaimedCounters {
+            objects: DB_METRICS
+                .page_cache_reclaimed_objects
+                .with_label_values(db, replica, object.as_str()),
+            bytes: DB_METRICS
+                .page_cache_reclaimed_bytes
+                .with_label_values(db, replica, object.as_str()),
+        });
+        counters.objects.inc();
+        counters.bytes.inc_by(bytes);
+    }
+
     fn lookup(&self, stats: &StorageMetrics, object: ObjectType, tier: CacheTier, hit: bool) {
         let lookups = match tier {
             CacheTier::Memory => &self.memory_lookups,
@@ -249,6 +295,7 @@ impl DiskIoMetrics {
         let (duration, transferred_bytes) = match operation {
             DiskOperation::Read => (&self.read, &self.read_bytes),
             DiskOperation::Write => (&self.write, &self.write_bytes),
+            DiskOperation::Delete => return,
         };
         let (db, replica) = (&stats.database, &stats.replica);
         duration
@@ -268,6 +315,47 @@ impl DiskIoMetrics {
                 .inc_by(bytes);
         }
     }
+
+    fn record_operation(&self, stats: &StorageMetrics, operation: DiskOperation, success: bool) {
+        let counters = match operation {
+            DiskOperation::Read => &self.read_operations,
+            DiskOperation::Write => &self.write_operations,
+            DiskOperation::Delete => &self.delete_operations,
+        };
+        let (db, replica) = (&stats.database, &stats.replica);
+        counters
+            .operations
+            .get_or_init(|| {
+                DB_METRICS
+                    .page_cache_disk_operations
+                    .with_label_values(db, replica, operation.as_str())
+            })
+            .inc();
+        if !success {
+            counters
+                .failures
+                .get_or_init(|| {
+                    DB_METRICS
+                        .page_cache_disk_failures
+                        .with_label_values(db, replica, operation.as_str())
+                })
+                .inc();
+        }
+    }
+}
+
+impl ReclamationMetrics {
+    fn record(&self, stats: &StorageMetrics, nanos: u64, success: bool) {
+        let histogram = if success { &self.success } else { &self.error };
+        histogram
+            .get_or_init(|| {
+                let outcome = if success { "success" } else { "error" };
+                DB_METRICS
+                    .page_cache_reclamation_time
+                    .with_label_values(&stats.database, &stats.replica, outcome)
+            })
+            .observe(nanos as f64 / 1e9);
+    }
 }
 
 fn remove_series(stats: &StorageMetrics) {
@@ -285,6 +373,12 @@ fn remove_series(stats: &StorageMetrics) {
             .remove_label_values(db, replica, tier.as_str());
     }
     for object in [ObjectType::Page, ObjectType::Blob] {
+        let _ = DB_METRICS
+            .page_cache_reclaimed_objects
+            .remove_label_values(db, replica, object.as_str());
+        let _ = DB_METRICS
+            .page_cache_reclaimed_bytes
+            .remove_label_values(db, replica, object.as_str());
         for tier in [CacheTier::Memory, CacheTier::Disk] {
             for hit in [true, false] {
                 let _ = DB_METRICS.page_cache_lookups.remove_label_values(
@@ -324,7 +418,18 @@ fn remove_series(stats: &StorageMetrics) {
             .page_cache_eviction_time
             .remove_label_values(db, replica, direction.as_str());
     }
-    for operation in [DiskOperation::Read, DiskOperation::Write] {
+    for outcome in ["success", "error"] {
+        let _ = DB_METRICS
+            .page_cache_reclamation_time
+            .remove_label_values(db, replica, outcome);
+    }
+    for operation in [DiskOperation::Read, DiskOperation::Write, DiskOperation::Delete] {
+        let _ = DB_METRICS
+            .page_cache_disk_operations
+            .remove_label_values(db, replica, operation.as_str());
+        let _ = DB_METRICS
+            .page_cache_disk_failures
+            .remove_label_values(db, replica, operation.as_str());
         let _ = DB_METRICS
             .page_cache_disk_time
             .remove_label_values(db, replica, operation.as_str());

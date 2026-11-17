@@ -53,6 +53,18 @@ impl DiskStorage {
         result.map(|(value, _)| value)
     }
 
+    fn record_operation<T>(&self, operation: DiskOperation, result: &Result<T, ObjectStoreError>) {
+        self.metrics.disk_operation(operation, result.is_ok());
+        let Err(error) = result else { return };
+        let Some(stats) = self.metrics.collected() else { return };
+        log::warn!(
+            "database_identity={} replica_id={} operation={}: disk cache operation failed: {error:?}",
+            stats.database,
+            stats.replica,
+            operation.as_str(),
+        );
+    }
+
     fn write_trie_entry(&self, key: &ObjectKey, bytes: &[u8]) -> io::Result<()> {
         let path = self.file_path(key);
         let dir = path.parent().expect("dir trie file paths have a parent");
@@ -117,7 +129,7 @@ impl ObjectStore for DiskStorage {
     }
 
     fn read(&self, key: ObjectKey) -> Result<Option<ObjectBytes>, ObjectStoreError> {
-        let bytes: Option<ObjectBytes> = self.io(DiskOperation::Read, || {
+        let result = self.io(DiskOperation::Read, || {
             let raw = match key {
                 ObjectKey::Page(hash) => self.pages.read_entry(hash.as_bytes()),
                 ObjectKey::Blob(hash) => self.blobs.read_entry(hash.as_bytes()),
@@ -125,29 +137,35 @@ impl ObjectStore for DiskStorage {
             let bytes = raw.map(ObjectBytes::from).map_or_else(none_if_not_found, ok_some)?;
             let len = bytes.as_ref().map_or(0, |bytes| bytes.len() as u64);
             Ok((bytes, len))
-        })?;
-        bytes.map(|bytes| self.verify_hash(key, bytes)).transpose()
+        });
+        let result = result.and_then(|bytes| bytes.map(|bytes| self.verify_hash(key, bytes)).transpose());
+        self.record_operation(DiskOperation::Read, &result);
+        result
     }
 
     fn write(&self, object: Object) -> Result<ObjectKey, ObjectStoreError> {
         let (key, bytes) = object.into_kv();
-        self.io(DiskOperation::Write, || {
+        let result = self.io(DiskOperation::Write, || {
             self.write_trie_entry(&key, &bytes)?;
             Ok((key, bytes.len() as u64))
-        })
+        });
+        self.record_operation(DiskOperation::Write, &result);
+        result
     }
 }
 
 unsafe impl RemoveObject for DiskStorage {
     unsafe fn remove(&self, key: ObjectKey) -> Result<(), ObjectStoreError> {
         let path = self.file_path(&key);
-        fs::remove_file(path).or_else(|e| {
+        let result = fs::remove_file(path).or_else(|e| {
             if e.kind() == io::ErrorKind::NotFound {
                 Ok(())
             } else {
                 Err(e.into())
             }
-        })
+        });
+        self.record_operation(DiskOperation::Delete, &result);
+        result
     }
 }
 

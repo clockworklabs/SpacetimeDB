@@ -62,6 +62,7 @@ impl EvictionDirection {
 pub enum DiskOperation {
     Read,
     Write,
+    Delete,
 }
 
 impl DiskOperation {
@@ -69,6 +70,7 @@ impl DiskOperation {
         match self {
             Self::Read => "read",
             Self::Write => "write",
+            Self::Delete => "delete",
         }
     }
 }

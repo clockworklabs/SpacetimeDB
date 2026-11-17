@@ -9138,6 +9138,7 @@ dependencies = [
 name = "spacetimedb-tiered-storage"
 version = "2.16.0"
 dependencies = [
+ "log",
  "spacetimedb-fs-utils",
  "spacetimedb-paths",
  "spacetimedb-snapshot",
