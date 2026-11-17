@@ -657,7 +657,7 @@ impl IdcTest {
         }
     }
 
-    /// Sends `reject`, which the TypeScript receiver rejects, and checks `on_result` gets the error.
+    /// Sends `reject`, which the TypeScript and C# receivers reject, and checks `on_result` gets the error.
     fn send_rejected_ping(&self) {
         self.test
             .call(
@@ -800,13 +800,12 @@ fn idc_rust_sender_calls_typescript_receiver() {
 }
 
 #[test]
-fn idc_csharp_sender_calls_typescript_and_rust_receivers() {
+fn idc_csharp_sender_calls_csharp_and_rust_receivers() {
     spacetimedb_smoketests::require_dotnet!();
-    spacetimedb_smoketests::require_pnpm!();
     // Each C# publish is a NativeAOT build, so one sender calls both receiver languages:
-    // `game_world` is the TypeScript receiver, and `auth` the Rust one.
-    let suite = IdcTest::new_with_receivers("idc-receiver-ts", Some("idc-receiver"), "idc-sender-cs");
-    // The TypeScript receiver also has a `receive_ping`, which would log `wrong-case:` bodies,
+    // `game_world` is the C# receiver, and `auth` the Rust one.
+    let suite = IdcTest::new_with_receivers("idc-receiver-cs", Some("idc-receiver"), "idc-sender-cs");
+    // The C# receiver also has a `receive_ping`, which would log `wrong-case:` bodies,
     // so this also checks the C# bindings call `Receive_Ping`.
     let bodies: Vec<_> = (0..20).map(|i| format!("csharp-{i}")).collect();
     suite.enqueue(&bodies);
