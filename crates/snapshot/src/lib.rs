@@ -473,11 +473,26 @@ impl Snapshot {
         &mut self,
         object_repo: &DirTrie,
         tables: impl Iterator<Item = &'db mut Table>,
+        blobs: &BlobSet,
         prev_snapshot: Option<&DirTrie>,
         counter: &mut CountCreated,
     ) -> Result<(), SnapshotError> {
-        for table in tables {
-            self.write_table(object_repo, table, prev_snapshot, counter)?;
+        let mut tables = tables.collect::<Vec<_>>();
+        for index in 0..tables.len() as u64 {
+            match self.write_table(object_repo, tables[index as usize], prev_snapshot, counter) {
+                Err(SnapshotError::Page(PageError::MemoryLimitExceeded(_))) => {
+                    // The failed page fault could only evict from its own table.
+                    // Its guards are gone, so other tables and blobs can now make room.
+                    for table in &tables {
+                        table.trim()?;
+                    }
+                    blobs.trim()?;
+                    // write_table adds metadata only on success. Files already written
+                    // by this attempt are reused rather than written again.
+                    self.write_table(object_repo, tables[index as usize], prev_snapshot, counter)?;
+                }
+                result => result?,
+            }
         }
         Ok(())
     }
@@ -937,7 +952,7 @@ impl SnapshotRepository {
         // Populate both the in-memory `Snapshot` object and the on-disk object repository
         // with all the blobs and pages.
         snapshot.write_all_blobs(&object_repo, blobs, prev_snapshot.as_ref(), &mut counter)?;
-        snapshot.write_all_tables(&object_repo, tables, prev_snapshot.as_ref(), &mut counter)?;
+        snapshot.write_all_tables(&object_repo, tables, blobs, prev_snapshot.as_ref(), &mut counter)?;
 
         log::info!(
             "[{}] SNAPSHOT {:0>20}: Hardlinked {} objects and wrote {} objects",
@@ -1666,9 +1681,63 @@ impl FileOrDirPath<'_> {
 mod tests {
     use std::fs::OpenOptions;
 
+    use spacetimedb_sats::{product, AlgebraicType};
+    use spacetimedb_schema::schema::TableSchema;
+    use spacetimedb_table::{
+        indexes::SquashedOffset,
+        tiered::{
+            metrics::CacheTier, ByteBudget, ByteBudgetConfig, EvictionPolicy, TieredDatabaseStorage,
+            TieredStorageConfig,
+        },
+    };
     use tempfile::tempdir;
 
     use super::*;
+
+    #[test]
+    fn snapshot_evicts_other_tables_to_load_pages() -> anyhow::Result<()> {
+        let mut config = TieredStorageConfig::new_for_test();
+        config.resident_budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
+            low_water_bytes: 0,
+            soft_limit_bytes: size_of::<Page>() as u64,
+            hard_limit_bytes: size_of::<Page>() as u64,
+        })?;
+        let pool = config.page_pool.clone();
+        let storage = TieredDatabaseStorage::empty(config);
+        let mut tables = [TableId(1), TableId(2)].map(|table_id| {
+            let mut schema = TableSchema::from_product_type([AlgebraicType::U64].into());
+            schema.table_id = table_id;
+            Table::new(
+                schema.into(),
+                SquashedOffset::COMMITTED_STATE,
+                storage.pages().clone(),
+                EvictionPolicy::Evictable,
+            )
+        });
+        tables[0].insert(storage.blobs(), &product![11_u64])?;
+        assert_eq!(tables[0].trim()?, size_of::<Page>() as u64);
+        // The second table occupies the whole cache. Loading the first table
+        // for the snapshot must evict from the second one.
+        tables[1].insert(storage.blobs(), &product![22_u64])?;
+
+        let tmp = tempdir()?;
+        let repo = SnapshotRepository::open(SnapshotsPath::from_path_unchecked(tmp.path()), Identity::ZERO, 42)?;
+        repo.create_snapshot(tables.iter_mut(), storage.blobs(), 0)?
+            .sync_all()?;
+        let mut snapshot = repo.read_snapshot(0, &pool)?;
+        assert_eq!(snapshot.tables.len(), 2);
+        for (table, expected) in tables.iter().zip([11_u64, 22_u64]) {
+            let pages = snapshot.tables.remove(&table.schema.table_id).unwrap();
+            let mut restored = table.clone_structure(SquashedOffset::COMMITTED_STATE);
+            // SAFETY: These pages came from the same table and retain its schema.
+            unsafe { restored.set_pages(pages, storage.blobs())? };
+            let mut rows = restored.scan_rows(storage.blobs());
+            assert_eq!(rows.next().unwrap()?.to_product_value(), product![expected]);
+            assert!(rows.next().is_none());
+        }
+        Ok(())
+    }
 
     #[test]
     fn listing_ignores_if_snapshot_file_is_missing() -> anyhow::Result<()> {
