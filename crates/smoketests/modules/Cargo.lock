@@ -1052,6 +1052,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-tiered-storage"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-upload-module-2"
 version = "0.1.0"
 dependencies = [
