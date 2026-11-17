@@ -84,7 +84,7 @@ unsafe impl RemoveObject for Arc<TestStore> {
 
 fn object(bytes: &[u8]) -> Object {
     let key = BlobHashWrapper::hash_from_bytes(bytes).into();
-    object_from_trusted_bytes(key, &Arc::from(bytes))
+    object_from_trusted_bytes(key, Bytes::copy_from_slice(bytes))
 }
 
 fn storage(local: Arc<TestStore>, remote: Arc<TestStore>, budget: ByteBudget) -> Arc<TieredStorage> {
