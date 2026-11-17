@@ -81,6 +81,11 @@ const newIndexNode = <Row>(): IndexNode<Row> => ({
   children: null,
 });
 
+type IndexEntry<Row> = {
+  add(rowId: ComparablePrimitive, row: Row): void;
+  remove(rowId: ComparablePrimitive, row: Row): void;
+};
+
 export type TableIndexView<
   RemoteModule extends UntypedRemoteModule,
   TableName extends TableNamesOf<RemoteModule>,
@@ -109,16 +114,10 @@ export class TableCacheImpl<
     [RowType<TableDefForTableName<RemoteModule, TableName>>, number]
   >;
   private tableDef: TableDefForTableName<RemoteModule, TableName>;
-  #indexes: {
-    add(
-      rowId: ComparablePrimitive,
-      row: RowType<TableDefForTableName<RemoteModule, TableName>>
-    ): void;
-    remove(
-      rowId: ComparablePrimitive,
-      row: RowType<TableDefForTableName<RemoteModule, TableName>>
-    ): void;
-  }[] = [];
+  // Only the indexes built so far (see `#makeReadonlyIndex`).
+  #indexes: IndexEntry<
+    RowType<TableDefForTableName<RemoteModule, TableName>>
+  >[] = [];
   private emitter: EventEmitter<'insert' | 'delete' | 'update'>;
 
   /**
@@ -178,15 +177,7 @@ export class TableCacheImpl<
     // holds every row whose key starts with the path leading to it.
     const root = newIndexNode<Row>();
 
-    const lookup = (prefix: readonly unknown[]): IndexNode<Row> | undefined => {
-      let node: IndexNode<Row> | undefined = root;
-      for (let i = 0; i < prefix.length && node; i++) {
-        node = node.children?.get(keyFns[i](prefix[i]));
-      }
-      return node;
-    };
-
-    this.#indexes.push({
+    const entry: IndexEntry<Row> = {
       add: (rowId, row) => {
         let node = root;
         for (let i = 0; i < columns.length; i++) {
@@ -197,7 +188,7 @@ export class TableCacheImpl<
             child = newIndexNode();
             node.children.set(key, child);
           }
-          child.rows.set(rowId, row as Row);
+          child.rows.set(rowId, row);
           node = child;
         }
       },
@@ -215,7 +206,33 @@ export class TableCacheImpl<
           node = child;
         }
       },
-    });
+    };
+
+    // The index is built on its first lookup, not at insert time: most
+    // indexes of a subscribed table are never read, and building all of them
+    // can take many times the heap of the rows themselves.
+    let built = false;
+    const build = () => {
+      if (built) return;
+      built = true;
+      const start = Date.now();
+      for (const [rowId, [row]] of this.rows) entry.add(rowId, row as Row);
+      this.#indexes.push(entry as IndexEntry<RowType<TableDef>>);
+      stdbLogger(
+        'debug',
+        () =>
+          `built index ${tableDef.sourceName}.${idx.name}: ${this.rows.size} rows, ${Date.now() - start} ms`
+      );
+    };
+
+    const lookup = (prefix: readonly unknown[]): IndexNode<Row> | undefined => {
+      build();
+      let node: IndexNode<Row> | undefined = root;
+      for (let i = 0; i < prefix.length && node; i++) {
+        node = node.children?.get(keyFns[i](prefix[i]));
+      }
+      return node;
+    };
 
     // An index is unique if it shares all columns with a unique constraint
     const isUnique = tableDef.constraints.some(constraint => {
