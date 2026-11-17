@@ -1185,6 +1185,13 @@ impl Page {
         self.header.fixed.num_rows as usize
     }
 
+    /// Is this page empty, that is, does it contain zero rows?
+    ///
+    /// This method runs in constant time.
+    pub fn is_empty(&self) -> bool {
+        self.num_rows() == 0
+    }
+
     #[cfg(test)]
     /// Use this page's present rows bitvec to compute the number of present rows.
     ///
