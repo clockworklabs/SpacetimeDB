@@ -147,7 +147,8 @@ describe('table cache resolved indexes', () => {
     expect(filter('blue')).toEqual([rows[1], moved]);
   });
 
-  // Indexes are built on their first lookup.
+  // Indexes are built on their first lookup, and a unique single-column
+  // index is a flat map.
   const makeUser = () => {
     const user = table(
       {
@@ -217,6 +218,41 @@ describe('table cache resolved indexes', () => {
       log.mockRestore();
       setGlobalLogLevel(level);
     }
+  });
+
+  it('a unique index keeps the new row when a transaction adds it before it removes the old one', () => {
+    const { cache, tx } = makeUser();
+    const a = { id: 1, email: 'x', team: 't', level: 1 };
+    const b = { id: 2, email: 'y', team: 't', level: 2 };
+    tx([
+      ['insert', a],
+      ['insert', b],
+    ]);
+    expect(cache.email.find('x')).toEqual(a);
+
+    // The cache applies the inserts of a transaction before its deletes.
+    const c = { id: 3, email: 'x', team: 't', level: 3 };
+    tx([
+      ['delete', a],
+      ['insert', c],
+    ]);
+    expect(cache.email.find('x')).toEqual(c);
+
+    // Two rows swap their keys in one transaction.
+    const b2 = { ...b, email: 'x' };
+    const c2 = { ...c, email: 'y' };
+    tx([
+      ['delete', b],
+      ['insert', b2],
+      ['delete', c],
+      ['insert', c2],
+    ]);
+    expect(cache.email.find('x')).toEqual(b2);
+    expect(cache.email.find('y')).toEqual(c2);
+
+    tx([['delete', b2]]);
+    expect(cache.email.find('x')).toBeNull();
+    expect(cache.email.find('y')).toEqual(c2);
   });
 
   it('find and filter return the same rows as a scan, before and after changes', () => {

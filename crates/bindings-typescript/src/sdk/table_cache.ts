@@ -173,40 +173,66 @@ export class TableCacheImpl<
     const getCol = (row: RowType<TableDef>, i: number) =>
       (row as Record<string, unknown>)[columns[i]];
 
+    // An index is unique if it shares all columns with a unique constraint
+    const isUnique = tableDef.constraints.some(constraint => {
+      if (constraint.constraint !== 'unique') {
+        return false;
+      }
+      return deepEqual(constraint.columns, idx.columns);
+    });
+
+    // A unique single-column index is a flat key -> row map.
+    const flat =
+      isUnique && columns.length === 1
+        ? new Map<ComparablePrimitive, Row>()
+        : null;
+
     // Each level of the tree is keyed by the next index column, and each node
     // holds every row whose key starts with the path leading to it.
     const root = newIndexNode<Row>();
 
-    const entry: IndexEntry<Row> = {
-      add: (rowId, row) => {
-        let node = root;
-        for (let i = 0; i < columns.length; i++) {
-          const key = keyFns[i](getCol(row, i));
-          node.children ??= new Map();
-          let child = node.children.get(key);
-          if (!child) {
-            child = newIndexNode();
-            node.children.set(key, child);
-          }
-          child.rows.set(rowId, row);
-          node = child;
+    const entry: IndexEntry<Row> = flat
+      ? {
+          add: (_rowId, row) => {
+            flat.set(keyFns[0](getCol(row, 0)), row);
+          },
+          remove: (_rowId, row) => {
+            // Within one transaction the cache can add the new row of a key
+            // before it removes the old one. Remove only the row stored here.
+            const key = keyFns[0](getCol(row, 0));
+            if (flat.get(key) === row) flat.delete(key);
+          },
         }
-      },
-      remove: (rowId, row) => {
-        let node = root;
-        for (let i = 0; i < columns.length; i++) {
-          const key = keyFns[i](getCol(row, i));
-          const child = node.children?.get(key);
-          if (!child) return;
-          child.rows.delete(rowId);
-          if (child.rows.size === 0) {
-            node.children!.delete(key);
-            return;
-          }
-          node = child;
-        }
-      },
-    };
+      : {
+          add: (rowId, row) => {
+            let node = root;
+            for (let i = 0; i < columns.length; i++) {
+              const key = keyFns[i](getCol(row, i));
+              node.children ??= new Map();
+              let child = node.children.get(key);
+              if (!child) {
+                child = newIndexNode();
+                node.children.set(key, child);
+              }
+              child.rows.set(rowId, row);
+              node = child;
+            }
+          },
+          remove: (rowId, row) => {
+            let node = root;
+            for (let i = 0; i < columns.length; i++) {
+              const key = keyFns[i](getCol(row, i));
+              const child = node.children?.get(key);
+              if (!child) return;
+              child.rows.delete(rowId);
+              if (child.rows.size === 0) {
+                node.children!.delete(key);
+                return;
+              }
+              node = child;
+            }
+          },
+        };
 
     // The index is built on its first lookup, not at insert time: most
     // indexes of a subscribed table are never read, and building all of them
@@ -234,22 +260,18 @@ export class TableCacheImpl<
       return node;
     };
 
-    // An index is unique if it shares all columns with a unique constraint
-    const isUnique = tableDef.constraints.some(constraint => {
-      if (constraint.constraint !== 'unique') {
-        return false;
-      }
-      return deepEqual(constraint.columns, idx.columns);
-    });
-
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
     if (isUnique) {
       const impl: ReadonlyUniqueIndex<TableDef, I> = {
         find: (colVal: any): Row | null => {
           // For unique btree, caller supplies the *full* key (tuple if multi-col).
-          const node = lookup(Array.isArray(colVal) ? colVal : [colVal]);
-          return node?.rows.values().next().value ?? null;
+          const key = Array.isArray(colVal) ? colVal : [colVal];
+          if (flat) {
+            build();
+            return flat.get(keyFns[0](key[0])) ?? null;
+          }
+          return lookup(key)?.rows.values().next().value ?? null;
         },
       };
       return impl as ReadonlyIndex<TableDef, I>;
