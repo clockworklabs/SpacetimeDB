@@ -15,6 +15,8 @@ metadata:
 
 Generated bindings convert snake_case names to camelCase, including row fields: a server column `trip_id` is `tripId` on client rows.
 
+The examples below use bundler-style extensionless imports. For NodeNext or direct-TypeScript execution, choose the matching binding import extension and use explicit file imports in your application; see https://spacetimedb.com/docs/clients/typescript#import-extensions.
+
 ## React: main.tsx
 
 ```typescript

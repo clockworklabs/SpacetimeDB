@@ -85,7 +85,15 @@ spacetime generate --lang typescript \
     --module-path PATH-TO-MODULE-DIRECTORY
 ```
 
-Import the `module_bindings` in your client's _main_ file:
+### Import extensions
+
+The default generated imports are extensionless, which suits bundler-based clients. For TypeScript projects using `moduleResolution: "nodenext"`, add `--import-extension js` to the generate command. Generated files then import each other with `.js` extensions, which TypeScript resolves to their `.ts` sources and preserves when emitting JavaScript. Use explicit file paths in your own imports too, for example `./module_bindings/index.js` rather than a directory import.
+
+For runtimes that execute TypeScript source directly, use `--import-extension ts` and import `./module_bindings/index.ts` in your application. If typechecking those imports with TypeScript, enable `allowImportingTsExtensions` with `noEmit` (or another compatible emit configuration). The flag controls imports within the generated bindings, not your application's imports or how it is executed.
+
+Set `"import-extension": "js"` or `"ts"` on a `generate` entry in [`spacetime.json`](../../00300-resources/00100-cli-reference/00300-spacetime-json.md#generate-configuration) to retain the choice across generation runs.
+
+For the default bundler configuration, import the `module_bindings` in your client's _main_ file:
 
 ```typescript
 import * as moduleBindings from './module_bindings/index';
