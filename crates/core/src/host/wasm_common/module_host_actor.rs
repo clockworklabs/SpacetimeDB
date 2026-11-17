@@ -1261,7 +1261,18 @@ impl InstanceCommon {
             Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)) => {
                 inst.log_traceback("reducer", reducer_name, &err);
 
-                (self.handle_outer_error(&result.stats.energy, reducer_name, &err), None)
+                let status = self.handle_outer_error(&result.stats.energy, reducer_name, &err);
+                let reason = match &status {
+                    EventStatus::OutOfEnergy => "reached the maximum CPU usage allowed per reducer call".to_owned(),
+                    _ => format!("encountered a fatal error: {err}"),
+                };
+                let message = format!(
+                    "reducer aborted after {:.2?}: {reason}",
+                    result.stats.timings.total_duration
+                );
+                log_reducer_error(inst.replica_ctx(), timestamp, reducer_name, &message, &self.info.module_hash);
+
+                (status, None)
             }
             Err(ExecutionError::User(err)) => {
                 log_reducer_error(
