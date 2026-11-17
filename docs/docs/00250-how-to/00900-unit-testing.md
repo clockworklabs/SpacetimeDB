@@ -214,6 +214,8 @@ This won't be needed once [#6317](https://github.com/clockworklabs/SpacetimeDB/i
 
 Run these tests natively with `cargo test`, not with a WebAssembly target. The feature enables module registration and the in-memory test datastore without requiring a running host.
 
+SDK 2.13 and later also support environment values in native Rust tests. Use `TestContext::set_env` and `unset_env` for keys declared by the module's `#[spacetimedb::env]` struct. Set values before invoking code that reads `ctx.env`; the harness rejects undeclared keys and values outside a declared constraint. Clones of a `TestContext` share its environment.
+
 ### Define the module
 
 For a standalone example, put this in `src/lib.rs`. In an existing module, use your own tables and reducers instead.
@@ -1214,8 +1216,8 @@ fn shows_each_client_only_their_own_notes() {
 
 ### Known issues
 
-- **`ProcedureContext::with_tx` panics** ([#6296](https://github.com/clockworklabs/SpacetimeDB/pull/6296)). In a test, `with_tx` makes host calls instead of using the test datastore, and panics with `holding &mut HandlerContext, so should not be in a tx already`. Use `try_with_tx` in procedures you want to test until the fix is released.
-- **Projects from the `chat-console-rs` template have an invalid dev-dependency** ([#6298](https://github.com/clockworklabs/SpacetimeDB/issues/6298)). `spacetime init` writes the template's `spacetimedb` dev-dependency with a `path` into the SpacetimeDB repository. Replace it with a version that matches the normal dependency, as shown in [Enable the test utilities](#enable-the-test-utilities).
+- **SDK 2.12: `ProcedureContext::with_tx` panics in tests.** Upgrade to SDK 2.13 or later for the [fix](https://github.com/clockworklabs/SpacetimeDB/pull/6302). On 2.12, use `try_with_tx` in procedures you want to test; `with_tx` makes host calls instead of using the test datastore.
+- **CLI 2.12: `chat-console-rs` projects have an invalid dev-dependency.** CLI 2.13 and later [rewrite template dev-dependencies correctly](https://github.com/clockworklabs/SpacetimeDB/pull/6307). For projects already generated with the old CLI, replace the repository `path` with a version that matches the normal dependency, as shown in [Enable the test utilities](#enable-the-test-utilities).
 
 </TabItem>
 </Tabs>
