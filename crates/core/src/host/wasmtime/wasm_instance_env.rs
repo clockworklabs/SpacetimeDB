@@ -1698,27 +1698,36 @@ impl WasmInstanceEnv {
     ///
     /// - The calling WASM instance is holding open a transaction.
     /// - The calling WASM instance is not executing a procedure.
+    /// - The database shuts down while sleeping.
     // TODO(procedure-sleep-until): remove this
     pub fn procedure_sleep_until<'caller>(
         caller: Caller<'caller, Self>,
         (wake_at_micros_since_unix_epoch,): (i64,),
-    ) -> Fut<'caller, i64> {
+    ) -> Fut<'caller, RtResult<i64>> {
         Self::async_with_span(caller, AbiCall::ProcedureSleepUntil, move |caller| async move {
             use std::time::SystemTime;
-            let get_current_time = || (caller, Timestamp::now().to_micros_since_unix_epoch());
+            let get_current_time = |caller| (caller, Ok(Timestamp::now().to_micros_since_unix_epoch()));
 
             if wake_at_micros_since_unix_epoch < 0 {
-                return get_current_time();
+                return get_current_time(caller);
             }
 
             let wake_at = Timestamp::from_micros_since_unix_epoch(wake_at_micros_since_unix_epoch);
             let Ok(duration) = SystemTime::from(wake_at).duration_since(SystemTime::now()) else {
-                return get_current_time();
+                return get_current_time(caller);
             };
 
-            tokio::time::sleep(duration).await;
+            let procedures_running = caller.data().instance_env.replica_ctx.procedures_running.clone();
+            if procedures_running
+                .run_until_cancelled(tokio::time::sleep(duration))
+                .await
+                .is_none()
+            {
+                let err = WasmError::Db(NodesError::ShuttingDown);
+                return (caller, Self::convert_wasm_result(AbiCall::ProcedureSleepUntil, err));
+            }
 
-            get_current_time()
+            get_current_time(caller)
         })
     }
 
@@ -1859,7 +1868,7 @@ impl WasmInstanceEnv {
                 let view_def = resolved.view_def;
                 let view_name = &resolved.view_name;
                 let fn_ptr = resolved.global_fn_ptr;
-                let sender = tx
+                let instance_args = tx
                     .as_ref()
                     .expect("procedure tx missing while looking up refreshed view args")
                     .view_instance_args(&view_call)
@@ -1868,12 +1877,14 @@ impl WasmInstanceEnv {
                             "failed to look up materialized view args for view {}",
                             view_call.view_id
                         )
-                    })?
-                    .sender();
+                    })?;
+                let sender = instance_args.sender();
+                let args = crate::host::FunctionArgs::from_view_args(instance_args.args())
+                    .into_tuple_for_def(resolved.owning_def, view_def)?;
 
                 let current_tx = tx.take().expect("procedure tx missing during view refresh");
                 let (next_tx, call_result) = tx_slot.set(current_tx, || {
-                    Self::call_view(caller, &view_call, view_name, fn_ptr, sender)
+                    Self::call_view(caller, &view_call, view_name, fn_ptr, sender, &args)
                 });
                 tx = Some(next_tx);
                 let return_data = call_result?;
@@ -1931,6 +1942,7 @@ impl WasmInstanceEnv {
         view_name: &NamespacedIdentifier,
         fn_ptr: ViewFnPtr,
         sender: Option<Identity>,
+        args: &crate::host::ArgsTuple,
     ) -> anyhow::Result<ViewReturnData> {
         let (prev_func_name, prev_func_type) = caller
             .data_mut()
@@ -1941,7 +1953,7 @@ impl WasmInstanceEnv {
         let call_result = (|| -> anyhow::Result<i32> {
             let (args_source, result_sink) = {
                 let env = caller.data_mut();
-                let args_source = env.create_bytes_source(bytes::Bytes::new())?;
+                let args_source = env.create_bytes_source(args.get_bsatn().clone())?;
                 let result_sink = env.create_bytes_sink();
                 (args_source, result_sink)
             };

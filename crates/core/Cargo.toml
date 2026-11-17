@@ -139,6 +139,7 @@ proptest.workspace = true
 pretty_assertions.workspace = true
 jsonwebtoken.workspace = true
 axum.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

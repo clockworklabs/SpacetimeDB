@@ -27,6 +27,7 @@ members = [
     "views-subscribe",
     "views-query",
     "views-callable",
+    "views-args",
     "views-count",
     "views-auto-migrate-stable",
     "views-auto-migrate-stable-updated",
@@ -116,6 +117,7 @@ members = [
     "logs-level-filter",
 
     # Misc tests
+    "idc-receiver",
     "namespaces",
     "new-user-flow",
     "module-nested-op",

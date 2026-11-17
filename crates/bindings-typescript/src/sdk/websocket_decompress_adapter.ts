@@ -1,5 +1,9 @@
-import { decompress } from './decompress';
-import { openWebSocket, type WebSocketAdapter, type WebSocketArgs } from './ws';
+import { decompress } from './decompress.ts';
+import {
+  openWebSocket,
+  type WebSocketAdapter,
+  type WebSocketArgs,
+} from './ws.ts';
 
 export class WebsocketDecompressAdapter implements WebSocketAdapter {
   get protocol(): string {

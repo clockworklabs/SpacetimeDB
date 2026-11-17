@@ -275,20 +275,7 @@ fn exercise_fixture(name: &str) {
             values.insert("REQUIRED".into(), "republished".into());
             values.insert("HANDLER".into(), "handler snapshot".into());
             let module = publish(&handle, &values).await;
-            let (_, body) = module
-                .call_http_handler(
-                    module.info.module_def.http_handler_ids_and_defs().next().unwrap().0,
-                    spacetimedb_lib::http::Request {
-                        method: spacetimedb_lib::http::Method::Get,
-                        headers: std::iter::empty().collect(),
-                        timeout: None,
-                        uri: "/environment".into(),
-                        version: spacetimedb_lib::http::Version::Http11,
-                    },
-                    Default::default(),
-                )
-                .await
-                .unwrap();
+            let body = handle.call_http_route_get("/environment").await.unwrap();
             assert_eq!(&body[..], b"handler snapshot");
             let view = "SELECT * FROM environment_value";
             assert_eq!(sql(&module, view).await, vec![product![None::<String>]]);

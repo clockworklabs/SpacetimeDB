@@ -1,5 +1,5 @@
 import type { u32 } from 'spacetime:sys@2.0';
-import { sys } from './runtime';
+import { sys } from './runtime.ts';
 import inspect from 'object-inspect';
 
 const fmtLog = (...data: any[]) =>

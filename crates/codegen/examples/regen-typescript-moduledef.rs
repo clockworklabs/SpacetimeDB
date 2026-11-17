@@ -38,7 +38,7 @@ fn main() -> anyhow::Result<()> {
     fs::create_dir(dir)?;
 
     let module: ModuleDef = module.try_into()?;
-    generate(&module, &typescript::TypeScript, &CodegenOptions::default())
+    generate(&module, &typescript::TypeScript::default(), &CodegenOptions::default())
         .into_iter()
         .try_for_each(|OutputFile { filename, code }| {
             // Skip the index.ts since we don't need it.
@@ -49,7 +49,7 @@ fn main() -> anyhow::Result<()> {
             if filename.starts_with("types/") {
                 return Ok(());
             }
-            let code = regex_replace!(&code, r#"from "spacetimedb";"#, r#"from "../../lib/type_builders";"#);
+            let code = regex_replace!(&code, r#"from "spacetimedb";"#, r#"from "../../lib/type_builders.ts";"#);
 
             // Elide types which are related to client-side only things
             let code = regex_replace!(&code, r"type CallReducerFlags as __CallReducerFlags,", r"");

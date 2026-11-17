@@ -24,7 +24,7 @@ fn test_delete_database_aborts_without_confirmation() {
     test.publish().name(&name).run().unwrap();
 
     let output = test
-        .spacetime(&["delete", "--server", &test.server_url, &name])
+        .spacetime_with_stdin(&["delete", "--server", &test.server_url, &name], "\n")
         .unwrap();
     assert_delete_prompt(&output, &name);
     assert!(output.contains("Aborting"), "expected abort message:\n{output}");
@@ -89,4 +89,57 @@ fn test_delete_database_yes_skips_confirmation() {
 
     let result = test.spacetime(&["logs", "--server", &test.server_url, &name]);
     assert!(result.is_err(), "expected database to be deleted");
+}
+
+#[test]
+fn test_deleted_database_name_requires_owner() {
+    let mut test = Smoketest::builder()
+        .precompiled_module("modules-basic")
+        .autopublish(false)
+        .build();
+    test.new_identity().unwrap();
+    let owner_token = test.read_token().unwrap();
+    let name = format!("delete-republish-{}", std::process::id());
+    let previous = test.publish().name(&name).run().unwrap();
+    assert_eq!(
+        test.api_call("DELETE", &format!("/v1/database/{previous}"))
+            .unwrap()
+            .status_code,
+        200
+    );
+    assert_eq!(
+        test.api_call("GET", &format!("/v1/database/{previous}"))
+            .unwrap()
+            .status_code,
+        404
+    );
+    assert_eq!(
+        test.api_call("GET", &format!("/v1/database/{name}/identity"))
+            .unwrap()
+            .status_code,
+        200
+    );
+
+    test.new_identity().unwrap();
+    // Establish that this account can publish, then check the retained reservation.
+    let other = test.publish().run().unwrap();
+    assert_eq!(
+        test.api_call("DELETE", &format!("/v1/database/{other}"))
+            .unwrap()
+            .status_code,
+        200
+    );
+    assert!(test.publish().name(&name).run().is_err());
+    assert_eq!(
+        test.api_call("GET", &format!("/v1/database/{previous}"))
+            .unwrap()
+            .status_code,
+        404
+    );
+
+    test.login_with_token(&owner_token).unwrap();
+    let replacement = test.publish().name(&name).run().unwrap();
+    assert_eq!(replacement, previous);
+    test.call("say_hello", &[]).unwrap();
+    assert!(test.logs(100).unwrap().iter().any(|line| line.contains("World")));
 }

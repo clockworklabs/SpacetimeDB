@@ -424,7 +424,7 @@ describe('server test-utils real wasm runtime', () => {
     test.db.person.insert({ id: 2, name: 'Bob' });
 
     expect(
-      test.runQuery(peopleNamedAlice(test.viewContext(TestAuth.internal()), {}))
+      test.runQuery(peopleNamedAlice(test.viewContext(TestAuth.internal())))
     ).toEqual([{ id: 1, name: 'Alice' }]);
   });
 

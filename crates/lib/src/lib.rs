@@ -50,8 +50,8 @@ pub use spacetimedb_sats::{self as sats, bsatn, buffer, de, ser};
 pub use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, SumType};
 pub use spacetimedb_sats::{AlgebraicValue, ProductValue};
 pub use view_args::{
-    empty_view_arg_hash_value, hash_empty_view_args, hash_sender_view_args, hash_view_args, sender_view_arg_hash_value,
-    VIEW_ARGS_HASH_DOMAIN,
+    empty_view_arg_hash_value, hash_empty_view_args, hash_sender_view_args, hash_view_args, hash_view_instance_args,
+    sender_view_arg_hash_value, view_instance_arg_hash_value, VIEW_ARGS_HASH_DOMAIN,
 };
 
 pub const MODULE_ABI_MAJOR_VERSION: u16 = 10;

@@ -1,7 +1,7 @@
 import type { InjectionKey } from 'vue';
-import type { ConnectionId } from '../lib/connection_id';
-import type { Identity } from '../lib/identity';
-import type { DbConnectionImpl } from '../sdk/db_connection_impl';
+import type { ConnectionId } from '../lib/connection_id.ts';
+import type { Identity } from '../lib/identity.ts';
+import type { DbConnectionImpl } from '../sdk/db_connection_impl.ts';
 
 export interface ConnectionState {
   isActive: boolean;

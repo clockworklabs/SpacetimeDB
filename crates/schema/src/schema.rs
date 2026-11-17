@@ -14,6 +14,7 @@ use itertools::Itertools;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::raw_def::v9::RawSql;
 use spacetimedb_lib::db::raw_def::{generate_cols_name, RawConstraintDefV8};
+use spacetimedb_lib::Hash as SpacetimeHash;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::raw_identifier::{RawIdentifier, RawNamespacedIdentifier};
@@ -65,10 +66,29 @@ pub trait Schema: Sized {
     fn check_compatible(&self, module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error>;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ViewDefInfo {
     pub view_id: ViewId,
     pub is_anonymous: bool,
+    /// The view's declared parameters, in position order, as stored in `st_view_param`.
+    ///
+    /// Types are unresolved: a user-defined parameter type is an [`AlgebraicType::Ref`].
+    /// These are not SQL-ready column types.
+    /// They are used to check argument counts, and to decide which parameters SQL literals can express.
+    pub params: ProductType,
+}
+
+impl ViewDefInfo {
+    /// Builds [`Self::params`] from a view's parameter columns.
+    ///
+    /// Both schema paths use this: the one built from a [`ViewDef`] and the one loaded from `st_view_param`,
+    /// so a fresh schema and a reloaded one agree.
+    pub fn params_from_columns(columns: impl IntoIterator<Item = (RawIdentifier, AlgebraicType)>) -> ProductType {
+        columns
+            .into_iter()
+            .map(|(name, ty)| ProductTypeElement::new_named(ty, name))
+            .collect()
+    }
 }
 
 pub const VIEW_ARG_HASH_COL: ColId = ColId(0);
@@ -87,7 +107,7 @@ impl From<Arc<TableSchema>> for TableOrViewSchema {
     fn from(inner: Arc<TableSchema>) -> Self {
         Self {
             table_id: inner.table_id,
-            view_info: inner.view_info,
+            view_info: inner.view_info.clone(),
             table_name: inner.table_name.clone(),
             table_access: inner.table_access,
             inner,
@@ -844,6 +864,7 @@ impl TableSchema {
             is_anonymous,
             primary_key,
             return_columns,
+            param_columns,
             accessor_name,
             ..
         } = view_def;
@@ -918,6 +939,11 @@ impl TableSchema {
         let view_info = ViewDefInfo {
             view_id: ViewId::SENTINEL,
             is_anonymous: *is_anonymous,
+            params: ViewDefInfo::params_from_columns(
+                param_columns
+                    .iter()
+                    .map(|col| (col.name.clone().into(), col.ty.clone())),
+            ),
         };
 
         TableSchema::new(
@@ -998,7 +1024,7 @@ impl Schema for TableSchema {
             target_column: outbox.target_column,
             arg_columns: outbox.arg_columns.clone(),
             on_result_reducer: outbox.on_result_reducer.clone(),
-            signature_hash: outbox.signature_hash.clone(),
+            signature_hash: outbox.signature_hash,
         });
 
         TableSchema::new(
@@ -1446,7 +1472,7 @@ pub struct OutboxSchema {
     /// Local reducer to invoke with the remote result before acknowledging this stream.
     pub on_result_reducer: Option<ReducerName>,
     /// Hash of the receiver reducer signature as seen by the sender bindings.
-    pub signature_hash: String,
+    pub signature_hash: SpacetimeHash,
 }
 
 impl OutboxSchema {

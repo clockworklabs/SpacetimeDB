@@ -1,8 +1,11 @@
+use super::idc_actor::IdcActorSender;
 use super::scheduler::{get_schedule_from_row, scheduled_row_hash, ScheduleError, Scheduler};
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
-use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
+use crate::host::module_host::{
+    DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, TRANSACTION_CONFIRMATION_TIMEOUT,
+};
 use crate::host::wasm_common::TimingSpan;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
@@ -42,6 +45,7 @@ use std::vec::IntoIter;
 pub struct InstanceEnv {
     pub replica_ctx: Arc<ReplicaContext>,
     pub scheduler: Scheduler,
+    pub idc_sender: IdcActorSender,
     pub tx: TxSlot,
     /// The timestamp the current function began running.
     pub start_time: Timestamp,
@@ -231,10 +235,11 @@ impl ChunkedWriter {
 
 // Generic 'instance environment' delegated to from various host types.
 impl InstanceEnv {
-    pub fn new(replica_ctx: Arc<ReplicaContext>, scheduler: Scheduler) -> Self {
+    pub fn new(replica_ctx: Arc<ReplicaContext>, scheduler: Scheduler, idc_sender: IdcActorSender) -> Self {
         Self {
             replica_ctx,
             scheduler,
+            idc_sender,
             tx: TxSlot::default(),
             start_time: Timestamp::now(),
             start_instant: Instant::now(),
@@ -482,7 +487,9 @@ impl InstanceEnv {
                 self.schedule_row(stdb, tx, table_id, row_ptr)?;
             }
             if insert_flags.is_outbox_table {
-                tx.record_outbox_insert(table_id, row_ptr).map_err(DBError::from)?;
+                let msg = tx.record_outbox_insert(table_id, row_ptr).map_err(DBError::from)?;
+                // The actor rechecks committed state, so a rolled-back insert is harmless.
+                let _ = self.idc_sender.send(msg);
             }
         }
 
@@ -564,13 +571,8 @@ impl InstanceEnv {
                 },
             )?;
 
-        if update_flags.has_post_write_work() {
-            if update_flags.is_scheduler_table {
-                self.schedule_row(stdb, tx, table_id, row_ptr)?;
-            }
-            if update_flags.is_outbox_table {
-                tx.record_outbox_insert(table_id, row_ptr).map_err(DBError::from)?;
-            }
+        if update_flags.is_scheduler_table {
+            self.schedule_row(stdb, tx, table_id, row_ptr)?;
         }
         tx.metrics.bytes_written += buffer.len();
         tx.metrics.rows_updated += 1;
@@ -860,6 +862,12 @@ impl InstanceEnv {
         let tx = self
             .relational_db()
             .begin_mut_tx(IsolationLevel::Serializable, Workload::Procedure);
+        // Checked after acquiring the lock, so that `HostController::exit_module_host`
+        // can wait for procedure transactions by acquiring the lock itself.
+        if self.replica_ctx.procedures_running.is_cancelled() {
+            self.rollback_procedure_tx(tx);
+            return Err(NodesError::ShuttingDown);
+        }
         self.tx.set_raw(tx);
         self.in_anon_tx = true;
 
@@ -987,9 +995,12 @@ impl InstanceEnv {
         })();
         async move {
             if let Some((offset, mut durable)) = confirmation? {
-                durable.wait_for(offset).await.context(
-                    "transaction committed, but durability could not be confirmed; outcome unknown, do not retry without deduplication",
-                )?;
+                tokio::time::timeout(TRANSACTION_CONFIRMATION_TIMEOUT, durable.wait_for(offset))
+                    .await
+                    .context("durability confirmation timed out; outcome unknown, do not retry without deduplication")?
+                    .context(
+                        "transaction committed, but durability could not be confirmed; outcome unknown, do not retry without deduplication",
+                    )?;
             }
             Ok(())
         }
@@ -1015,6 +1026,10 @@ impl InstanceEnv {
         if self.in_tx() {
             // If we're holding a transaction open, refuse to perform this blocking operation.
             return Err(NodesError::WouldBlockTransaction(super::AbiCall::ProcedureHttpRequest));
+        }
+
+        if self.replica_ctx.procedures_running.is_cancelled() {
+            return Err(NodesError::ShuttingDown);
         }
 
         // Record in metrics that we're starting an HTTP request.
@@ -1125,10 +1140,13 @@ impl InstanceEnv {
         .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()));
 
         let database_identity = *self.database_identity();
+        let procedures_running = self.replica_ctx.procedures_running.clone();
 
         Ok(async move {
-            let (response, body) = response_fut
+            let (response, body) = procedures_running
+                .run_until_cancelled(response_fut)
                 .await
+                .ok_or(NodesError::ShuttingDown)?
                 .inspect_err(|err: &reqwest::Error| {
                     // Report the request's failure in our metrics as either a timeout or a misc. failure, as appropriate.
                     if err.is_timeout() {
@@ -1489,7 +1507,7 @@ impl Display for GetTxError {
 impl std::error::Error for GetTxError {}
 
 #[cfg(test)]
-mod test {
+pub(super) mod test {
     use super::*;
 
     use std::{ops::Bound, sync::Arc};
@@ -1544,16 +1562,21 @@ mod test {
                 subscriptions: subs,
                 module_instance_memory_tracker: ModuleInstanceMemoryTracker::new(Identity::ZERO, Arc::new(())),
                 module_http,
+                procedures_running: Default::default(),
             },
             runtime,
         ))
     }
 
     /// An `InstanceEnv` used for testing the database syscalls.
-    fn instance_env(db: Arc<RelationalDB>) -> Result<(InstanceEnv, tokio::runtime::Runtime)> {
+    pub(in crate::host) fn instance_env(db: Arc<RelationalDB>) -> Result<(InstanceEnv, tokio::runtime::Runtime)> {
         let (scheduler, _) = Scheduler::open(db.clone());
+        let (_, idc_sender) = crate::host::idc_actor::channel(&db.database_identity());
         let (replica_context, runtime) = replica_ctx(db, crate::config::ModuleHttpConfig::default())?;
-        Ok((InstanceEnv::new(Arc::new(replica_context), scheduler), runtime))
+        Ok((
+            InstanceEnv::new(Arc::new(replica_context), scheduler, idc_sender),
+            runtime,
+        ))
     }
 
     struct PendingDurability(tokio::sync::watch::Receiver<Option<u64>>);
@@ -1577,7 +1600,7 @@ mod test {
         use crate::db::relational_db::Persistence;
         use std::pin::pin;
 
-        let runtime = tokio::runtime::Runtime::new()?;
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
         let (durable, rx) = tokio::sync::watch::channel(None);
         let persistence = Persistence::new(
             PendingDurability(rx),
@@ -1601,6 +1624,7 @@ mod test {
         durable.send_replace(Some(offset - 1));
 
         runtime.block_on(async {
+            tokio::time::pause();
             let mut confirmation = pin!(confirmation);
             assert!(futures::poll!(&mut confirmation).is_pending());
 
@@ -1613,7 +1637,19 @@ mod test {
             assert!(futures::poll!(&mut confirmation).is_pending());
 
             durable.send_replace(Some(offset));
-            confirmation.await
+            confirmation.await?;
+
+            // This read observes the second transaction, which is still unconfirmed.
+            env.start_mutable_tx()?;
+            env.commit_mutable_tx()?;
+            let mut confirmation = pin!(env.procedure_confirmation());
+            assert!(futures::poll!(&mut confirmation).is_pending());
+            tokio::time::advance(TRANSACTION_CONFIRMATION_TIMEOUT + Duration::from_millis(1)).await;
+            let std::task::Poll::Ready(Err(error)) = futures::poll!(confirmation) else {
+                panic!("confirmation must time out even while the durability sender is alive");
+            };
+            assert!(error.to_string().contains("outcome unknown"));
+            Ok(())
         })
     }
 
@@ -1634,8 +1670,9 @@ mod test {
     fn module_http_config_disables_requests() -> Result<()> {
         let db = relational_db()?;
         let (scheduler, _) = Scheduler::open(db.clone());
+        let (_, idc_sender) = crate::host::idc_actor::channel(&db.database_identity());
         let (replica_context, _runtime) = replica_ctx(db, crate::config::ModuleHttpConfig { enabled: false })?;
-        let mut env = InstanceEnv::new(Arc::new(replica_context), scheduler);
+        let mut env = InstanceEnv::new(Arc::new(replica_context), scheduler, idc_sender);
         let request = st_http::Request {
             method: st_http::Method::Get,
             headers: std::iter::empty().collect(),

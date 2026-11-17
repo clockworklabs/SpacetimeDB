@@ -6,6 +6,8 @@ use syn::ext::IdentExt as _;
 use syn::punctuated::Punctuated;
 use syn::{Fields, ItemStruct, LitStr, Token};
 
+use crate::util::native_test_utils_registration;
+
 pub(crate) fn expand(args: TokenStream, mut item: ItemStruct) -> syn::Result<TokenStream> {
     if !args.is_empty() {
         return Err(syn::Error::new_spanned(args, "env does not accept arguments"));
@@ -99,6 +101,9 @@ pub(crate) fn expand(args: TokenStream, mut item: ItemStruct) -> syn::Result<Tok
     let vis = &item.vis;
     let access = format_ident!("{}Access", item.ident.unraw());
     let symbol = "__preinit__20_register_environment_there_can_only_be_one";
+    let test_utils_registration = native_test_utils_registration(quote! {
+        __register_environment()
+    });
     Ok(quote! {
         #[allow(non_snake_case)]
         #item
@@ -117,6 +122,7 @@ pub(crate) fn expand(args: TokenStream, mut item: ItemStruct) -> syn::Result<Tok
             extern "C" fn __register_environment() {
                 ::spacetimedb::rt::register_environment(|| ::std::vec![#(#declarations),*]);
             }
+            #test_utils_registration
         };
     })
 }

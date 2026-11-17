@@ -4,7 +4,7 @@ import {
   computed,
   type Signal,
 } from '@angular/core';
-import { SPACETIMEDB_CONNECTION } from '../connection_state';
+import { SPACETIMEDB_CONNECTION } from '../connection_state.ts';
 
 export function injectSpacetimeDBConnected(): Signal<boolean> {
   assertInInjectionContext(injectSpacetimeDBConnected);

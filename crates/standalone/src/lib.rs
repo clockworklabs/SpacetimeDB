@@ -15,7 +15,9 @@ use spacetimedb::db;
 use spacetimedb::db::persistence::{DurabilityConfig, LocalPersistenceProvider};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
 use spacetimedb::host::module_host::UpdateEnvironmentResult;
-use spacetimedb::host::{DiskStorage, HostController, HostRuntimeConfig, MigratePlanResult, UpdateDatabaseResult};
+use spacetimedb::host::{
+    DiskStorage, HostController, HostRuntimeConfig, IdcConfig, MigratePlanResult, UpdateDatabaseResult,
+};
 use spacetimedb::identity::{AuthCtx, Identity};
 use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
 use spacetimedb::metrics::ENGINE_METRICS;
@@ -59,7 +61,7 @@ pub struct StandaloneEnv {
     client_actor_index: ClientActorIndex,
     metrics_registry: prometheus::Registry,
     _pid_file: PidFile,
-    auth_provider: auth::DefaultJwtAuthProvider,
+    auth_provider: Arc<auth::DefaultJwtAuthProvider>,
     websocket_options: WebSocketOptions,
 }
 
@@ -113,7 +115,7 @@ impl StandaloneEnv {
             client_actor_index,
             metrics_registry,
             _pid_file,
-            auth_provider: auth_env,
+            auth_provider: Arc::new(auth_env),
             websocket_options: config.websocket,
         }))
     }
@@ -128,6 +130,13 @@ impl StandaloneEnv {
 
     pub fn bsatn_rlb_pool(&self) -> &BsatnRowListBuilderPool {
         &self.host_controller.bsatn_rlb_pool
+    }
+
+    pub fn configure_idc(&self, http_port: u16) -> anyhow::Result<()> {
+        self.host_controller.set_idc_config(IdcConfig {
+            http_port,
+            token_signer: self.auth_provider.clone(),
+        })
     }
 }
 

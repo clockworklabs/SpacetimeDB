@@ -1,7 +1,9 @@
+use std::collections::BTreeSet;
 use std::env;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -55,6 +57,35 @@ pub(crate) fn spacetime_command() -> Command {
     Command::new("spacetime")
 }
 
+fn scorer_cli_root(host: Option<&str>) -> PathBuf {
+    let host = crate::bench::utils::sanitize_db_name(host.unwrap_or("local"));
+    env::temp_dir().join(format!("stdb-llm-scorer-{}-{host}", std::process::id()))
+}
+
+// A saved token only works on the server that issued it, and each C# batch starts a new server.
+pub(crate) fn scorer_command(host: Option<&str>) -> Command {
+    static LOGGED_IN: Mutex<BTreeSet<PathBuf>> = Mutex::new(BTreeSet::new());
+    let root = scorer_cli_root(host);
+    let _ = std::fs::create_dir_all(&root);
+    if let Some(host) = host {
+        // Otherwise the first command on a fresh root prints a login prompt into the stdout scorers parse.
+        let mut logged_in = LOGGED_IN.lock().unwrap_or_else(|e| e.into_inner());
+        if !logged_in.contains(&root) {
+            let mut login = spacetime_command();
+            login
+                .arg("--root-dir")
+                .arg(&root)
+                .args(["login", "--no-browser", "--server-issued-login", host]);
+            if run_with_timeout(login, Path::new("."), Duration::from_secs(30)).is_ok_and(|(code, _, _)| code == 0) {
+                logged_in.insert(root.clone());
+            }
+        }
+    }
+    let mut cmd = spacetime_command();
+    cmd.arg("--root-dir").arg(root);
+    cmd
+}
+
 pub fn sql_exec(db: &str, query: &str, host: Option<&str>) -> Result<(), String> {
     sql_exec_with_timeout(db, query, host, Duration::from_secs(30))
 }
@@ -65,17 +96,19 @@ pub(crate) fn sql_exec_with_timeout(
     host: Option<&str>,
     timeout: Duration,
 ) -> Result<(), String> {
-    let mut cmd = spacetime_command();
-    cmd.arg("sql").arg(db).arg(query);
-    if let Some(h) = host {
-        cmd.arg("--server").arg(h);
-    }
-    let (code, _, stderr) = run_with_timeout(cmd, Path::new("."), timeout)
-        .map_err(|e| format!("spacetime sql failed or timed out: {e}"))?;
-    if code != 0 {
-        return Err(format!("spacetime sql failed:\n{}", String::from_utf8_lossy(&stderr)));
-    }
-    Ok(())
+    super::scorers::with_actual_relation_names(db, query, host, |query| {
+        let mut cmd = scorer_command(host);
+        cmd.arg("sql").arg(db).arg(query);
+        if let Some(h) = host {
+            cmd.arg("--server").arg(h);
+        }
+        let (code, _, stderr) = run_with_timeout(cmd, Path::new("."), timeout)
+            .map_err(|e| format!("spacetime sql failed or timed out: {e}"))?;
+        if code != 0 {
+            return Err(format!("spacetime sql failed:\n{}", String::from_utf8_lossy(&stderr)));
+        }
+        Ok(())
+    })
 }
 
 pub(crate) fn run_with_timeout(mut cmd: Command, cwd: &Path, timeout: Duration) -> io::Result<(i32, Vec<u8>, Vec<u8>)> {
@@ -229,5 +262,14 @@ mod tests {
         assert_eq!(code, 0);
         assert_eq!(stdout.len(), expected_len);
         assert_eq!(stderr.len(), expected_len);
+    }
+
+    #[test]
+    fn each_server_gets_its_own_scorer_identity() {
+        let first = Some("http://127.0.0.1:3000");
+        let second = Some("http://127.0.0.1:3001");
+
+        assert_eq!(scorer_cli_root(first), scorer_cli_root(first));
+        assert_ne!(scorer_cli_root(first), scorer_cli_root(second));
     }
 }

@@ -1,4 +1,4 @@
-import { stdbLogger } from './logger';
+import { stdbLogger } from './logger.ts';
 
 async function resolveWS(): Promise<typeof WebSocket> {
   // Browser or Node >= 22 (or any env that exposes global WebSocket)

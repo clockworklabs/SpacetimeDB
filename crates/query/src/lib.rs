@@ -45,7 +45,10 @@ pub fn compile_subscription(
     // Resolve any RLS filters
     let plan_fragments = resolve_views_for_sub(tx, plan, auth, &mut has_param)?
         .into_iter()
-        .map(compile_select)
+        .map(|mut fragment| {
+            fragment.bind_view_arg_hashes(auth.caller());
+            compile_select(fragment)
+        })
         .collect::<Vec<_>>();
 
     // Does this subscription read from a client-specific view?
@@ -64,7 +67,11 @@ pub fn compile_sql_stmt(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> Resu
 
     match parse_and_type_sql(sql, tx, auth)? {
         stmt @ Statement::DML(_) => Ok(stmt),
-        Statement::Select(expr) => Ok(Statement::Select(resolve_views_for_sql(tx, expr, auth)?)),
+        Statement::Select(expr) => {
+            let mut expr = resolve_views_for_sql(tx, expr, auth)?;
+            expr.bind_view_arg_hashes(auth.caller());
+            Ok(Statement::Select(expr))
+        }
     }
 }
 

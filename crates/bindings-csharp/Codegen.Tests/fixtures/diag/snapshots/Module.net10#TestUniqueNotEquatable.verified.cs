@@ -6,6 +6,11 @@ partial struct TestUniqueNotEquatable
     : System.IEquatable<TestUniqueNotEquatable>,
         SpacetimeDB.BSATN.IStructuralReadWrite
 {
+#if NET10_0_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
+#endif
     public void ReadFields(System.IO.BinaryReader reader)
     {
         UniqueField = BSATN.UniqueFieldRW.Read(reader);
@@ -82,16 +87,7 @@ partial struct TestUniqueNotEquatable
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as TestUniqueNotEquatable?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is TestUniqueNotEquatable t && Equals(t);
     }
 
     public static bool operator ==(TestUniqueNotEquatable this_, TestUniqueNotEquatable that)

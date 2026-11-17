@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A SpacetimeDB authentication example with password and OAuth sign-in, sessions, profiles, and private notes."
+    />
+    <title>SpacetimeDB Notes</title>
+    <link rel="stylesheet" href="./app.css" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="bootSplash" class="boot-splash">
+      <svg viewBox="0 0 497 332" width="84" height="56" aria-hidden="true">
+        <path
+          d="M316 166c0 37.3-30.2 67.5-67.5 67.5S181 203.3 181 166s30.2-67.5 67.5-67.5S316 128.7 316 166z"
+          stroke="currentColor"
+          stroke-width="5"
+          fill="none"
+        />
+        <path
+          d="M270 246c-40-3-79-21-96-48l-26 7c19 52 75 81 130 67s89-69 80-123l-27 7c6 40-19 79-61 90z"
+          fill="currentColor"
+        />
+        <path
+          d="M227 86c40-11 81 11 96 48l27-7c-19-52-75-81-130-67s-89 69-80 124l27-7c-6-40 19-79 60-91z"
+          fill="currentColor"
+        />
+      </svg>
+      <span class="boot-splash-label">SpacetimeDB Notes</span>
+    </div>
+    <main class="shell">
+      <header class="topnav">
+        <div class="brand">
+          <a
+            href="https://spacetimedb.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            style="display: inline-flex"
+            ><img
+              class="brand-wordmark"
+              src="/assets/brand.svg"
+              alt="SpacetimeDB"
+          /></a>
+          <h1 class="brand-sub">Notes Example</h1>
+        </div>
+        <div class="topnav-actions">
+          <span class="meta-pill" id="conn-pill">
+            <span class="meta-dot"></span>
+            <span id="conn-text">initializing…</span>
+          </span>
+          <span class="avatar-wrap" id="avatar-wrap" hidden>
+            <button
+              class="avatar-btn"
+              id="avatar-btn"
+              aria-haspopup="menu"
+              aria-expanded="false"
+              aria-controls="avatar-menu"
+            >
+              ?
+            </button>
+            <div class="avatar-menu" id="avatar-menu" role="menu">
+              <div class="who">
+                <span class="big-avatar" id="big-avatar">?</span>
+                <div class="who-text">
+                  <div class="name" id="who-name">-</div>
+                  <div class="email" id="who-email">-</div>
+                </div>
+              </div>
+              <details>
+                <summary>Connection details</summary>
+                <div class="id-row">
+                  <div class="lbl">User ID</div>
+                  <div id="who-uid">-</div>
+                </div>
+                <div class="id-row">
+                  <div class="lbl">STDB sender identity</div>
+                  <div id="who-stdb">-</div>
+                </div>
+                <div class="id-row">
+                  <div class="lbl">Session expires</div>
+                  <div id="who-exp">-</div>
+                </div>
+              </details>
+              <details id="email-unverified" hidden>
+                <summary>Email not verified</summary>
+                <div class="id-row" style="color: var(--color-yellow)">
+                  Verification email goes to STDB module log in dev.
+                </div>
+                <button
+                  class="btn block"
+                  id="resend-verify-btn"
+                  style="margin-top: 8px"
+                >
+                  Send verification email
+                </button>
+              </details>
+              <details>
+                <summary>Active sessions</summary>
+                <div id="sessions-list"><div class="id-row">Loading…</div></div>
+              </details>
+              <hr />
+              <div class="menu-actions">
+                <button class="btn block" id="whoami-btn">
+                  Refresh whoami
+                </button>
+                <button class="btn danger block" id="logout-btn">
+                  Sign out
+                </button>
+              </div>
+            </div>
+          </span>
+        </div>
+      </header>
+
+      <section class="main anon" id="anon-view">
+        <div class="auth-stack">
+          <div id="auth-panel"></div>
+        </div>
+      </section>
+
+      <!-- ====== Logged-in view: Compose + notes grid ====== -->
+      <section id="user-view" class="notes-view" hidden>
+        <div class="notes-shell">
+          <div class="compose-card collapsed" id="compose-card">
+            <input
+              class="compose-title"
+              id="nt-title"
+              aria-label="Note title"
+              type="text"
+              placeholder="Title"
+            />
+            <textarea
+              class="compose-body"
+              id="nt-body"
+              aria-label="Note body"
+              placeholder="Take a note..."
+              rows="1"
+            ></textarea>
+            <div class="compose-actions">
+              <button class="btn" id="nt-cancel">Cancel</button>
+              <button class="btn primary" id="nt-btn">Add note</button>
+            </div>
+          </div>
+
+          <div class="notes-grid" id="notes-list"></div>
+
+          <div class="empty-hero" id="notes-empty">
+            <div class="glyph">∅</div>
+            <div class="title">No notes yet</div>
+            <div class="sub">use the compose card above</div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div class="modal-backdrop" id="edit-backdrop">
+      <div
+        class="modal-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-title-label"
+      >
+        <input
+          class="modal-title"
+          id="edit-title"
+          aria-label="Note title"
+          type="text"
+          placeholder="Title"
+        />
+        <textarea
+          class="modal-body"
+          id="edit-body"
+          aria-label="Note body"
+          placeholder="Note"
+        ></textarea>
+        <div class="modal-actions">
+          <button class="btn danger" id="edit-del">Delete</button>
+          <div class="right">
+            <button class="btn" id="edit-cancel">Cancel</button>
+            <button class="btn primary" id="edit-save">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script type="module" src="/app.js"></script>
+    <script src="./ui.js"></script>
+  </body>
+</html>

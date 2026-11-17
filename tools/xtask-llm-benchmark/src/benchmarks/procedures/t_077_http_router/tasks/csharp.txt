@@ -1,5 +1,7 @@
 Write a SpacetimeDB backend module in C# that routes two HTTP methods on the same path.
 
+The module defines no tables.
+
 HANDLERS
 - GET /items
   - Return status 200

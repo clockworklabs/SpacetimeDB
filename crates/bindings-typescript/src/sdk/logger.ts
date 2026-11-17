@@ -1,5 +1,5 @@
 import { stringify as ssStringify } from 'safe-stable-stringify';
-import { u128ToHexString, u256ToHexString } from '../lib/util';
+import { u128ToHexString, u256ToHexString } from '../lib/util.ts';
 export type LogLevel = 'info' | 'warn' | 'error' | 'debug' | 'trace';
 
 const LogLevelIdentifierIcon = {

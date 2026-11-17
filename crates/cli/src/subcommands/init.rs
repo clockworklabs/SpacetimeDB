@@ -1132,9 +1132,28 @@ fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> 
         }
     }
 
-    if let Some(deps_item) = doc.get_mut("dependencies")
-        && let Some(deps_table) = deps_item.as_table_mut()
-    {
+    update_cargo_dependency_tables(doc.as_table_mut(), &patch_wildcard);
+    if let Some(targets) = doc.get_mut("target").and_then(Item::as_table_mut) {
+        for (_, target) in targets.iter_mut() {
+            if let Some(table) = target.as_table_mut() {
+                update_cargo_dependency_tables(table, &patch_wildcard);
+            }
+        }
+    }
+
+    let updated = doc.to_string();
+    if updated != original {
+        fs::write(cargo_path, updated)?;
+    }
+    Ok(())
+}
+
+/// Resolve repository dependencies in each Cargo dependency kind.
+fn update_cargo_dependency_tables(table: &mut toml_edit::Table, patch_wildcard: &str) {
+    for kind in ["dependencies", "dev-dependencies", "build-dependencies"] {
+        let Some(deps_table) = table.get_mut(kind).and_then(Item::as_table_mut) else {
+            continue;
+        };
         let keys: Vec<String> = deps_table.iter().map(|(k, _)| k.to_string()).collect();
         for key in keys {
             if let Some(dep_item) = deps_table.get_mut(&key)
@@ -1147,7 +1166,7 @@ fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> 
                             set_dependency_version(dep_item, patch_wildcard.as_str(), true);
                         }
                     } else if key == "spacetimedb-sdk" {
-                        set_dependency_version(dep_item, patch_wildcard.as_str(), true);
+                        set_dependency_version(dep_item, patch_wildcard, true);
                     }
                     continue;
                 }
@@ -1165,12 +1184,6 @@ fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> 
             }
         }
     }
-
-    let updated = doc.to_string();
-    if updated != original {
-        fs::write(cargo_path, updated)?;
-    }
-    Ok(())
 }
 
 pub fn update_csproj_server_to_nuget(dir: &Path) -> anyhow::Result<()> {
@@ -1931,11 +1944,10 @@ fn csproj_has_package_reference(content: &str, include: &str, version: &str) -> 
 /// The configuration differs depending on the target .NET version:
 ///
 /// **.NET 8 AOT** (`--native-aot`): Keeps `net8.0` TFM and adds explicit ILCompiler.LLVM 8.0.0-*
-/// package references, gated on `EXPERIMENTAL_WASM_AOT=1`.
+/// package references, gated on `SPACETIMEDB_WASM_AOT=1`.
 ///
-/// **.NET 10 AOT**: Replaces the TFM with `net10.0` directly (no conditional needed since the
-/// project is definitively targeting .NET 10). ILCompiler.LLVM refs are provided transitively
-/// by the SpacetimeDB.Runtime NuGet package.
+/// **.NET 10 AOT**: The templates already reference ILCompiler.LLVM conditionally on
+/// `RuntimeIdentifier=wasi-wasm`, so the project needs no further changes.
 ///
 /// Both paths need a NuGet.Config with the dotnet-experimental feed for ILCompiler.LLVM resolution.
 fn add_native_aot_packages_to_csproj(project_path: &Path, dotnet_major: Option<u8>) -> anyhow::Result<()> {
@@ -1960,7 +1972,7 @@ fn add_native_aot_packages_to_csproj(project_path: &Path, dotnet_major: Option<u
         } else {
             // .NET 8 AOT: keep net8.0 TFM, add explicit ILCompiler.LLVM package references.
             let native_aot_config = r#"
-  <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
+  <ItemGroup Condition="'$(SPACETIMEDB_WASM_AOT)' == '1'">
     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
     <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
   </ItemGroup>
@@ -1973,12 +1985,7 @@ fn add_native_aot_packages_to_csproj(project_path: &Path, dotnet_major: Option<u
             }
         }
     } else {
-        // .NET 10 AOT: directly set TFM to net10.0 (no conditional needed).
-        // ILCompiler.LLVM comes transitively via the SpacetimeDB.Runtime NuGet package.
-        content.replace(
-            "<TargetFramework>net8.0</TargetFramework>",
-            "<TargetFramework>net10.0</TargetFramework>",
-        )
+        content
     };
 
     std::fs::write(&csproj_path, new_content)?;
@@ -2475,7 +2482,7 @@ bytes.workspace = true
         std::fs::write(
             &csproj,
             r#"<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup Condition="$(TargetFramework.StartsWith('net10.')) Or '$(EXPERIMENTAL_WASM_AOT)' == '1'">
+  <PropertyGroup Condition="$(TargetFramework.StartsWith('net10.')) Or '$(SPACETIMEDB_WASM_AOT)' == '1'">
     <PublishTrimmed>true</PublishTrimmed>
   </PropertyGroup>
   <ItemGroup>
@@ -2491,7 +2498,7 @@ bytes.workspace = true
 
         let content = std::fs::read_to_string(csproj).unwrap();
         assert!(content
-            .contains("Condition=\"$(TargetFramework.StartsWith('net10.')) Or '$(EXPERIMENTAL_WASM_AOT)' == '1'\""));
+            .contains("Condition=\"$(TargetFramework.StartsWith('net10.')) Or '$(SPACETIMEDB_WASM_AOT)' == '1'\""));
         assert!(!content.contains("&apos;"));
         let root = xmltree::Element::parse(content.as_bytes()).unwrap();
         let runtime_version = root.children.iter().find_map(|node| {
@@ -2575,29 +2582,21 @@ bytes.workspace = true
 
     #[test]
     fn test_add_native_aot_packages_does_not_duplicate_template_refs() {
-        let temp = tempfile::TempDir::new().unwrap();
-        let csproj = temp.path().join("StdbModule.csproj");
-        let template = include_str!("../../../../templates/basic-cs/spacetimedb/StdbModule.csproj");
-        let net8 = csharp_csproj_for_target(template, 8).unwrap();
-        std::fs::write(&csproj, net8).unwrap();
+        for template in [
+            include_str!("../../../../templates/basic-cs/spacetimedb/StdbModule.csproj"),
+            include_str!("../../../../templates/chat-console-cs/spacetimedb/StdbModule.csproj"),
+        ] {
+            for dotnet_major in [8, 10] {
+                let temp = tempfile::TempDir::new().unwrap();
+                let csproj = temp.path().join("StdbModule.csproj");
+                let expected = csharp_csproj_for_target(template, dotnet_major).unwrap();
+                std::fs::write(&csproj, &expected).unwrap();
 
-        add_native_aot_packages_to_csproj(temp.path(), Some(8)).unwrap();
+                add_native_aot_packages_to_csproj(temp.path(), Some(dotnet_major)).unwrap();
 
-        let content = std::fs::read_to_string(csproj).unwrap();
-        assert_eq!(
-            content
-                .matches(r#"PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*""#)
-                .count(),
-            1
-        );
-        assert_eq!(
-            content
-                .matches(
-                    r#"PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*""#
-                )
-                .count(),
-            1
-        );
+                assert_eq!(std::fs::read_to_string(csproj).unwrap(), expected);
+            }
+        }
     }
 
     #[test]

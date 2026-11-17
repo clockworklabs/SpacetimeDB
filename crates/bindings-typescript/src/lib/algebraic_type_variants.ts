@@ -2,7 +2,7 @@ import type {
   AlgebraicTypeType,
   ProductTypeType,
   SumTypeType,
-} from './algebraic_type';
+} from './algebraic_type.ts';
 
 export type Ref = { tag: 'Ref'; value: number };
 export type Sum = { tag: 'Sum'; value: SumTypeType };

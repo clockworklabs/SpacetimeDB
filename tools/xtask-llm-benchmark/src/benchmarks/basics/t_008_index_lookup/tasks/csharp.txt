@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in C# that defines two tables and two reducers: one that inserts a user row, and one that looks up a row by primary-key index and writes a projection to another table.
 
 TABLES
-- User
+- User (private)
   - Struct: User
   - Fields:
     - Id: ulong (primary key, auto-increment)

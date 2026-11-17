@@ -1,9 +1,9 @@
 Write a SpacetimeDB backend module in TypeScript that models a minimal ECS and computes next positions.
 
 TABLES
-- entity
+- entity (private)
   - Fields:
-    - id: number (u64, primary key, autoInc)
+    - id: bigint (u64, primary key, autoInc)
 
 - position (public)
   - Fields:
@@ -11,7 +11,7 @@ TABLES
     - x: number (i32)
     - y: number (i32)
 
-- velocity
+- velocity (private)
   - Fields:
     - entityId: number (i32, primary key) — NOT autoInc, this is a foreign key to entity
     - vx: number (i32)

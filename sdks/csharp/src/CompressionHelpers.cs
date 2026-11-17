@@ -114,5 +114,20 @@ namespace SpacetimeDB
                 _ => throw new NotImplementedException()
             }
         );
+
+        /// <summary>
+        /// Move <paramref name="reader"/> to the start of row <paramref name="index"/> of <paramref name="list"/>.
+        ///
+        /// Call this before reading each row. A module can add columns to the end of a table, and clients built
+        /// against the old schema then read fewer bytes per row than the server sent; seeking to the server's row
+        /// boundary skips the columns they don't know instead of misreading the next row.
+        /// </summary>
+        internal static void SeekRow(BinaryReader reader, BsatnRowList list, int index) =>
+            reader.BaseStream.Position = list.SizeHint switch
+            {
+                RowSizeHint.FixedSize(var size) => (long)index * size,
+                RowSizeHint.RowOffsets(var offsets) => (long)offsets[index],
+                _ => throw new NotImplementedException()
+            };
     }
 }

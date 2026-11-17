@@ -10,8 +10,10 @@ export default function DocVersionBannerWrapper(
 
   if (version.version === '1.12.0') {
     return (
-      <div className="alert alert--info margin-bottom--md" role="alert">
-        Looking for the latest features? Try the <Link to="/">2.0.0 docs</Link>.
+      <div className="alert alert--warning margin-bottom--md" role="alert">
+        This is documentation for SpacetimeDB 1.12.0, which is no longer
+        maintained. Some of it does not apply to 2.0 and later. See the{' '}
+        <Link to="/">2.0.0 docs</Link> for the current version.
       </div>
     );
   }

@@ -1,6 +1,6 @@
-import type { UntypedProceduresDef } from './procedures';
-import type { UntypedSchemaDef } from '../lib/schema';
-import type { UntypedReducersDef } from './reducers';
+import type { UntypedProceduresDef } from './procedures.ts';
+import type { UntypedSchemaDef } from '../lib/schema.ts';
+import type { UntypedReducersDef } from './reducers.ts';
 
 export type RemoteModule<
   SchemaDef extends UntypedSchemaDef,
@@ -13,6 +13,11 @@ export type RemoteModule<
     versionInfo: {
       cliVersion: CLI;
     };
+    /**
+     * Source names of the views that take arguments.
+     * `subscribeToAllTables` leaves these out, as it has no arguments to pass them.
+     */
+    viewsWithArgs?: readonly string[];
   };
 
 export type UntypedRemoteModule = RemoteModule<

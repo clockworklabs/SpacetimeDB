@@ -12,6 +12,6 @@ TABLE
 
 REDUCERS
 - store_blob(filename: string, mimeType: string, data: u8 array)
-  - Store ctx.sender as owner
+  - Store the caller's identity as owner
   - Derive size from the byte length
   - Insert the bytes unchanged

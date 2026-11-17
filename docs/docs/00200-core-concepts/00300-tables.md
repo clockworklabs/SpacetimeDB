@@ -8,7 +8,7 @@ import TabItem from '@theme/TabItem';
 import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
-Tables are the way to store data in SpacetimeDB. All data in SpacetimeDB is stored in memory for extremely low latency and high throughput access. SpacetimeDB also automatically persists all data to disk.
+Tables are the way to store data in SpacetimeDB. SpacetimeDB keeps hot data in memory for extremely low latency and high throughput access, keeps colder data on disk, and automatically persists all data.
 
 ## Why Tables
 
@@ -50,7 +50,7 @@ This independence extends beyond indexes. SpacetimeDB can change internal storag
 
 A common concern when designing relational schemas is whether to consolidate data into fewer large tables or distribute it across many smaller ones. In traditional SQL databases, joins require verbose query syntax and incur significant execution cost. This friction pushes developers toward denormalized schemas with fewer, wider tables.
 
-SpacetimeDB operates under different constraints. Your reducers interact with tables through programmatic APIs rather than SQL strings. A join operation reduces to an index lookup: you retrieve a row from one table, extract a key value, and use that key to find related rows in another table. With all data resident in memory, these lookups often complete in nanoseconds.
+SpacetimeDB operates under different constraints. Your reducers interact with tables through programmatic APIs rather than SQL strings. A join operation reduces to an index lookup: you retrieve a row from one table, extract a key value, and use that key to find related rows in another table. With hot data resident in memory, these lookups often complete in nanoseconds.
 
 Consider the following schema for a game application:
 

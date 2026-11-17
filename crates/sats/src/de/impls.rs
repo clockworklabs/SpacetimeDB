@@ -883,18 +883,32 @@ pub fn validate_seq_product<'de, A: SeqProductAccess<'de>>(
 pub fn visit_named_product<'de, A: super::NamedProductAccess<'de>>(
     elems_tys: WithTypespace<[ProductTypeElement]>,
     visitor: &impl ProductVisitor<'de>,
+    tup: A,
+) -> Result<ProductValue, A::Error> {
+    let names = TupleNameVisitor {
+        elems: elems_tys.ty(),
+        kind: visitor.product_kind(),
+    };
+    visit_named_product_with_field_names(elems_tys, visitor, tup, names)
+}
+
+/// Deserialize a named product with a custom mapping from field names to element indices.
+/// The field-name visitor must return indices within `elems_tys`.
+pub fn visit_named_product_with_field_names<'de, A: super::NamedProductAccess<'de>>(
+    elems_tys: WithTypespace<[ProductTypeElement]>,
+    visitor: &impl ProductVisitor<'de>,
     mut tup: A,
+    field_names: impl FieldNameVisitor<'de, Output = usize> + Clone,
 ) -> Result<ProductValue, A::Error> {
     let elems = elems_tys.ty();
     let mut elements = vec![None; elems.len()];
-    let kind = visitor.product_kind();
 
     // Deserialize a product value corresponding to each product type field.
     // This is worst case quadratic in complexity
     // as fields can be specified out of order (value side) compared to `elems` (type side).
     for _ in 0..elems.len() {
         // Deserialize a field name, match against the element types.
-        let index = tup.get_field_ident(TupleNameVisitor { elems, kind })?.ok_or_else(|| {
+        let index = tup.get_field_ident(field_names.clone())?.ok_or_else(|| {
             // Couldn't deserialize a field name.
             // Find the first field name we haven't filled an element for.
             let missing = elements.iter().position(|field| field.is_none()).unwrap();
@@ -965,6 +979,7 @@ pub fn validate_named_product<'de, A: super::NamedProductAccess<'de>>(
 }
 
 /// A visitor for extracting indices of field names in the elements of a [`ProductType`].
+#[derive(Clone, Copy)]
 struct TupleNameVisitor<'a> {
     /// The elements of a product type, in order.
     elems: &'a [ProductTypeElement],

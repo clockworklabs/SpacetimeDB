@@ -69,6 +69,10 @@ pub struct ModuleHandle {
 }
 
 impl ModuleHandle {
+    pub fn env(&self) -> Arc<StandaloneEnv> {
+        self.env.clone()
+    }
+
     /// Publish a complete configuration through the standalone control API.
     pub async fn republish_environment(
         &self,
@@ -259,8 +263,11 @@ impl ModuleHandle {
             uri: format!("http://localhost{path}"),
             version: st_http::Version::Http11,
         };
+        let caller_auth = SpacetimeAuth::alloc(&*self.env)
+            .await
+            .map_err(|_| anyhow::anyhow!("failed to create an identity for the request"))?;
         let (_response, body) = module
-            .call_http_handler(handler_id, request, Bytes::new())
+            .call_http_handler(caller_auth.into(), handler_id, request, Bytes::new())
             .await
             .map_err(|e| anyhow::anyhow!("HTTP handler error: {e}"))?;
         Ok(body)
@@ -348,7 +355,7 @@ impl CompiledModule {
         with_runtime(move |runtime| {
             runtime.block_on(async {
                 let module = self.load_module_with_environment(config, None, environment).await;
-                let env = module.env.clone();
+                let env = module.env();
                 let db_identity = module.db_identity;
                 let routine_result = AssertUnwindSafe(routine(module)).catch_unwind().await.map(drop);
                 finish_module_test(&env, db_identity, routine_result).await;
@@ -362,7 +369,7 @@ impl CompiledModule {
     {
         with_runtime(move |runtime| {
             let module = runtime.block_on(async { self.load_module(config, None).await });
-            let env = module.env.clone();
+            let env = module.env();
             let db_identity = module.db_identity;
             let func_result = std::panic::catch_unwind(AssertUnwindSafe(|| func(runtime, &module)));
             drop(module);
@@ -415,6 +422,8 @@ impl CompiledModule {
         )
         .await
         .unwrap();
+        // These in-process module tests do not run an HTTP listener.
+        env.configure_idc(0).unwrap();
         // TODO: Fix this when we update identity generation.
         let identity = Identity::ZERO;
         let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().claims.identity;

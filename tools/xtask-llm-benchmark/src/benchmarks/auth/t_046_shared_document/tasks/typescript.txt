@@ -4,28 +4,28 @@ TABLES
 - document
   - public table
   - Fields:
-    - id: number (u64, primary key, autoInc)
+    - id: bigint (u64, primary key, autoInc)
     - owner: Identity (index btree)
     - title: string
 
 - document_share
   - public table
   - Fields:
-    - document_id: number (u64, index btree)
+    - document_id: bigint (u64, index btree)
     - shared_with: Identity (index btree)
 
 REDUCERS
 - create_document(ctx, { title: string })
-  - Insert a document with owner = ctx.sender and the given title, id = 0n for autoInc
+  - Insert a document with owner = the caller's identity and the given title
 
-- share_document(ctx, { document_id: number (u64), target: Identity })
-  - Load the document by id; if missing, throw "not found"
-  - If document.owner != ctx.sender, throw "not owner"
+- share_document(ctx, { document_id: bigint (u64), target: Identity })
+  - Load the document by id; if missing, fail with "not found"
+  - If document.owner != the caller's identity, fail with "not owner"
   - Insert a document_share { document_id, shared_with: target }
 
-- edit_document(ctx, { document_id: number (u64), new_title: string })
-  - Load the document by id; if missing, throw "not found"
+- edit_document(ctx, { document_id: bigint (u64), new_title: string })
+  - Load the document by id; if missing, fail with "not found"
   - The caller is authorized if they are the owner OR if a document_share row exists
-    with matching document_id and shared_with == ctx.sender
-  - If neither condition is true, throw "unauthorized"
+    with matching document_id and shared_with == the caller's identity
+  - If neither condition is true, fail with "unauthorized"
   - Update the document's title to new_title

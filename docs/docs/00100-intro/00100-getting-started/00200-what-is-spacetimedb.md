@@ -25,7 +25,7 @@ In fact, it's so fast that we've been able to write the entire backend of our MM
 
 SpacetimeDB is optimized for maximum speed and minimum latency, rather than batch processing or analytical workloads. It is designed for real-time applications like games, chat, and collaboration tools.
 
-Speed and latency is achieved by holding all of your application state in memory, while persisting data to a commit log which is used to recover data after restarts and system crashes.
+Speed and latency are achieved by keeping hot data in memory and colder data on disk, while persisting data to a commit log which is used to recover data after restarts and system crashes.
 
 ## Application Workflow Preview
 

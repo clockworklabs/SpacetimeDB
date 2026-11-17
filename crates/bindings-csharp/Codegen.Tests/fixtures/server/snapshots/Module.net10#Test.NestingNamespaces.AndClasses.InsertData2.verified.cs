@@ -6,18 +6,12 @@ namespace Test.NestingNamespaces
 {
     partial class AndClasses
     {
-        private static class __ScheduleInsertData2Name
-        {
-            internal static readonly string Name =
-                global::SpacetimeDB.Internal.Module.ResolveFunctionName(
-                    "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-                    nameof(InsertData2),
-                    null
-                );
-
-            // Prevent eager initialization before the root installs namespace placements.
-            static __ScheduleInsertData2Name() { }
-        }
+        private static string __ScheduleInsertData2Name =>
+            field ??= global::SpacetimeDB.Internal.Module.ResolveFunctionName(
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
+                nameof(InsertData2),
+                null
+            );
 
         [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
         public static void VolatileNonatomicScheduleImmediateInsertData2(PublicTable data)
@@ -26,9 +20,45 @@ namespace Test.NestingNamespaces
             using var writer = new BinaryWriter(stream);
             new PublicTable.BSATN().Write(writer, data);
             SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(
-                __ScheduleInsertData2Name.Name,
+                __ScheduleInsertData2Name,
                 stream
             );
+        }
+
+        private static string?[] __ScheduleInsertData2Names =>
+            field ??= new string?[global::SpacetimeDB.Internal.Module.InstanceCount];
+
+        private static string __ResolveScheduleInsertData2Name(int contextInstance)
+        {
+            var names = __ScheduleInsertData2Names;
+            if (names[contextInstance] is { } name)
+            {
+                return name;
+            }
+            var instance = global::SpacetimeDB.Internal.Module.ResolveInstance(
+                contextInstance,
+                "server, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+            );
+            return names[contextInstance] = names[instance] ??=
+                global::SpacetimeDB.Internal.Module.ResolveFunctionName(
+                    instance,
+                    nameof(InsertData2),
+                    null
+                );
+        }
+
+        [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
+        public static void VolatileNonatomicScheduleImmediateInsertData2<__Context>(
+            __Context __context,
+            PublicTable data
+        )
+            where __Context : global::SpacetimeDB.Internal.IModuleContext
+        {
+            var __name = __ResolveScheduleInsertData2Name(__context.InstanceId);
+            using var stream = new MemoryStream();
+            using var writer = new BinaryWriter(stream);
+            new PublicTable.BSATN().Write(writer, data);
+            SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(__name, stream);
         }
     } // AndClasses
 } // namespace

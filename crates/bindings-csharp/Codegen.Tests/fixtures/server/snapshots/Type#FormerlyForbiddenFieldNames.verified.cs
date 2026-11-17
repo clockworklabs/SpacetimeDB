@@ -6,6 +6,11 @@ partial struct FormerlyForbiddenFieldNames
     : System.IEquatable<FormerlyForbiddenFieldNames>,
         SpacetimeDB.BSATN.IStructuralReadWrite
 {
+#if NET10_0_OR_GREATER
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining
+    )]
+#endif
     public void ReadFields(System.IO.BinaryReader reader)
     {
         Read = BSATN.ReadRW.Read(reader);
@@ -84,16 +89,7 @@ partial struct FormerlyForbiddenFieldNames
 
     public override bool Equals(object? that)
     {
-        if (that == null)
-        {
-            return false;
-        }
-        var that_ = that as FormerlyForbiddenFieldNames?;
-        if (((object?)that_) == null)
-        {
-            return false;
-        }
-        return Equals(that_);
+        return that is FormerlyForbiddenFieldNames t && Equals(t);
     }
 
     public static bool operator ==(

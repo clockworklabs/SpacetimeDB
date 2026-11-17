@@ -1,0 +1,12 @@
+Write a SpacetimeDB backend module in Rust whose reducer reports a failure back to its caller.
+
+TABLE
+- item (public), struct Item
+  - Fields:
+    - id: u64 (primary key)
+    - name: String
+
+REDUCERS
+- add_item(id: u64, name: String)
+  - If name is empty, fail so that the caller receives the exact text "name required"
+  - Otherwise insert the item

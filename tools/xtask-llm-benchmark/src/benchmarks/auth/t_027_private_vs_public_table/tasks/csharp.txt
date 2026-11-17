@@ -19,5 +19,5 @@ TABLES
 
 REDUCERS
 - RegisterUser(ctx, string name, string email, string passwordHash)
-  - Insert into UserInternal (Id: 0 for AutoInc)
+  - Insert into UserInternal
   - Also insert into UserPublic with just the Id and Name (safe fields only)

@@ -6,7 +6,7 @@ mod impls;
 pub mod serde;
 
 #[doc(hidden)]
-pub use impls::{visit_named_product, visit_seq_product, WithBound};
+pub use impls::{visit_named_product, visit_named_product_with_field_names, visit_seq_product, WithBound};
 
 use crate::buffer::BufReader;
 use crate::{bsatn, i256, u256};
