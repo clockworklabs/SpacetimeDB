@@ -210,7 +210,7 @@ impl TieredPages {
         mut f: impl FnMut() -> Result<T, PageError>,
     ) -> Result<T, PageError> {
         match f() {
-            Err(PageError::MemoryLimitExceeded(_)) if !self.slots.is_empty() => {
+            Err(PageError::MemoryLimitExceeded(_)) => {
                 self.trim(manager)?;
                 f()
             }

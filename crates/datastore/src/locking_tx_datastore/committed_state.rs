@@ -734,17 +734,7 @@ impl CommittedState {
         view_instances: ViewInstanceTxState,
         ctx: &ExecutionContext,
     ) -> Result<TxData> {
-        let preparation = self.prepare_merge(&tx_state).or_else(|error| {
-            if error.is_resident_memory_limit() {
-                // Preparation hit the memory limit.
-                // Try to evict resident pages and then prepare again.
-                self.trim_resident()?;
-                self.prepare_merge(&tx_state)
-            } else {
-                Err(error)
-            }
-        });
-        let prepared = match preparation {
+        let prepared = match self.prepare_merge(&tx_state) {
             Ok(prepared) => prepared,
             Err(error) => {
                 self.rollback(tx_state);
