@@ -1,5 +1,7 @@
 use serde_json::{json, Value};
-use spacetimedb_smoketests::{random_string, require_dotnet, require_pnpm, ModuleLanguage, Smoketest};
+use spacetimedb_smoketests::{
+    random_string, require_dotnet, require_pnpm, ModuleLanguage, Smoketest, SubscriptionHandle,
+};
 
 const TS_VIEWS_SUBSCRIBE_MODULE: &str = r#"import { schema, t, table } from "spacetimedb/server";
 
@@ -1457,5 +1459,46 @@ fn test_subscribe_join_pk_view_with_table() {
             PkJoinMutation::UpdateLhs { id: 2, ok: true },
             PkJoinMutation::DeleteLhs { id: 2 },
         ],
+    );
+}
+
+/// Each client of a sender view joined to another table only receives updates for its own groups.
+#[test]
+fn test_subscribe_semijoin_view_per_client_updates() {
+    let test = Smoketest::builder().precompiled_module("views-query").build();
+    let query = "SELECT * FROM my_group_items";
+    let item = |id: u8, grp: u8| json!({"id": id, "grp": grp});
+    let update =
+        |deletes: Vec<Value>, inserts: Vec<Value>| json!({"my_group_items": {"deletes": deletes, "inserts": inserts}});
+    let collect =
+        |sub: SubscriptionHandle| json!(project_fields(sub.collect().unwrap(), "my_group_items", &["id", "grp"]));
+
+    test.call("put_group_item", &["1", "1"]).unwrap();
+
+    // Client A starts with no memberships, then joins group 1.
+    let sub_a = test.subscribe(&[query]).expect_rows(3).background().unwrap();
+    test.call("join_group", &["1"]).unwrap();
+
+    // Client B joins group 2, which has no items yet.
+    test.new_identity().unwrap();
+    let sub_b = test.subscribe(&[query]).expect_rows(2).background().unwrap();
+    test.call("join_group", &["2"]).unwrap();
+
+    // The first item in group 2, then item 1 moving from group 1 to group 2, then a new item in group 1.
+    test.call("put_group_item", &["2", "2"]).unwrap();
+    test.call("put_group_item", &["1", "2"]).unwrap();
+    test.call("put_group_item", &["3", "1"]).unwrap();
+
+    assert_eq!(
+        collect(sub_a),
+        json!([
+            update(vec![], vec![item(1, 1)]),
+            update(vec![item(1, 1)], vec![]),
+            update(vec![], vec![item(3, 1)]),
+        ])
+    );
+    assert_eq!(
+        collect(sub_b),
+        json!([update(vec![], vec![item(2, 2)]), update(vec![], vec![item(1, 2)])])
     );
 }
