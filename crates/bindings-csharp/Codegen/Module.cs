@@ -3437,40 +3437,48 @@ public class Module : IIncrementalGenerator
         Func<T, string> toExportName,
         Func<T, string> toFullName
     )
+        where T : IEquatable<T> =>
+        CollectDistinct(kind, context, source.Collect(), toExportName, toFullName);
+
+    private static IncrementalValueProvider<EquatableArray<T>> CollectDistinct<T>(
+        string kind,
+        IncrementalGeneratorInitializationContext context,
+        IncrementalValueProvider<ImmutableArray<T>> collected,
+        Func<T, string> toExportName,
+        Func<T, string> toFullName
+    )
         where T : IEquatable<T>
     {
-        var results = source
-            .Collect()
-            .Select(
-                (collected, ct) =>
-                    DiagReporter.With(
-                        Location.None,
-                        diag =>
+        var results = collected.Select(
+            (collected, ct) =>
+                DiagReporter.With(
+                    Location.None,
+                    diag =>
+                    {
+                        var grouped = collected
+                            .GroupBy(toExportName)
+                            // Sort tables and reducers by name to match Rust behaviour.
+                            // Not really important outside of testing, but for testing
+                            // it matters because we commit module-bindings
+                            // so they need to match 1:1 between different langs.
+                            .OrderBy(g => g.Key);
+
+                        foreach (var group in grouped.Where(group => group.Count() > 1))
                         {
-                            var grouped = collected
-                                .GroupBy(toExportName)
-                                // Sort tables and reducers by name to match Rust behaviour.
-                                // Not really important outside of testing, but for testing
-                                // it matters because we commit module-bindings
-                                // so they need to match 1:1 between different langs.
-                                .OrderBy(g => g.Key);
-
-                            foreach (var group in grouped.Where(group => group.Count() > 1))
-                            {
-                                diag.Report(
-                                    ErrorDescriptor.DuplicateExport,
-                                    (kind, group.Key, group.Select(toFullName))
-                                );
-                            }
-
-                            return new EquatableArray<T>(
-                                // Only return first item from each group.
-                                // We already reported duplicates ourselves, and don't want MSBuild to produce lots of duplicate errors too.
-                                grouped.Select(Enumerable.First).ToImmutableArray()
+                            diag.Report(
+                                ErrorDescriptor.DuplicateExport,
+                                (kind, group.Key, group.Select(toFullName))
                             );
                         }
-                    )
-            );
+
+                        return new EquatableArray<T>(
+                            // Only return first item from each group.
+                            // We already reported duplicates ourselves, and don't want MSBuild to produce lots of duplicate errors too.
+                            grouped.Select(Enumerable.First).ToImmutableArray()
+                        );
+                    }
+                )
+        );
 
         context.RegisterSourceOutput(
             results,
@@ -3638,15 +3646,23 @@ public class Module : IIncrementalGenerator
             .ReportDiagnostics(context)
             .WithTrackingName("SpacetimeDB.Outbox.Parse");
 
-        var tables = rowTables
-            .Collect()
-            .Combine(outboxTables.Collect())
-            .SelectMany((pair, ct) => pair.Left.AddRange(pair.Right));
+        foreach (var tables in new[] { rowTables, outboxTables })
+        {
+            tables
+                .Select((t, ct) => t.ToRowExtensions())
+                .WithTrackingName("SpacetimeDB.Table.GenerateExtensions")
+                .RegisterSourceOutputs(context);
+        }
 
-        tables
-            .Select((t, ct) => t.ToRowExtensions())
-            .WithTrackingName("SpacetimeDB.Table.GenerateExtensions")
-            .RegisterSourceOutputs(context);
+        // Collects both kinds of tables through `map`. Merging only after collecting keeps the
+        // work before it per table.
+        IncrementalValueProvider<ImmutableArray<T>> CollectTables<T>(
+            Func<IncrementalValuesProvider<TableDeclaration>, IncrementalValuesProvider<T>> map
+        ) =>
+            map(rowTables)
+                .Collect()
+                .Combine(map(outboxTables).Collect())
+                .Select((pair, ct) => pair.Left.AddRange(pair.Right));
 
         var viewDeclarations = context
             .SyntaxProvider.ForAttributeWithMetadataName(
@@ -3668,7 +3684,7 @@ public class Module : IIncrementalGenerator
         var tableDecls = CollectDistinct(
             "TableDecl",
             context,
-            tables,
+            CollectTables(t => t),
             t => t.FullName,
             t => t.FullName
         );
@@ -3809,9 +3825,11 @@ public class Module : IIncrementalGenerator
         var tableAccessors = CollectDistinct(
             "Table",
             context,
-            tables
-                .SelectMany((t, ct) => t.GenerateTableAccessors())
-                .WithTrackingName("SpacetimeDB.Table.GenerateTableAccessors"),
+            CollectTables(tables =>
+                tables
+                    .SelectMany((t, ct) => t.GenerateTableAccessors())
+                    .WithTrackingName("SpacetimeDB.Table.GenerateTableAccessors")
+            ),
             v => v.TableAccessorName,
             v => v.TableName
         );
@@ -3819,9 +3837,11 @@ public class Module : IIncrementalGenerator
         var readOnlyAccessors = CollectDistinct(
             "TableReadOnly",
             context,
-            tables
-                .SelectMany((t, ct) => t.GenerateReadOnlyAccessors())
-                .WithTrackingName("SpacetimeDB.Table.GenerateReadOnlyAccessors"),
+            CollectTables(tables =>
+                tables
+                    .SelectMany((t, ct) => t.GenerateReadOnlyAccessors())
+                    .WithTrackingName("SpacetimeDB.Table.GenerateReadOnlyAccessors")
+            ),
             v => v.TableAccessorName + "ReadOnly",
             v => v.TableName
         );
@@ -3852,9 +3872,11 @@ public class Module : IIncrementalGenerator
         var columnDefaultValues = CollectDistinct(
             "ColumnDefaultValues",
             context,
-            tables
-                .SelectMany((t, ct) => t.GenerateDefaultValues())
-                .WithTrackingName("SpacetimeDB.Table.GenerateDefaultValues"),
+            CollectTables(tables =>
+                tables
+                    .SelectMany((t, ct) => t.GenerateDefaultValues())
+                    .WithTrackingName("SpacetimeDB.Table.GenerateDefaultValues")
+            ),
             v => v.TableName + "_" + v.ColumnId,
             v => v.TableName + "_" + v.ColumnId
         );
