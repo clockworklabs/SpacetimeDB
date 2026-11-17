@@ -1316,13 +1316,7 @@ impl MutTxId {
     fn create_table_internal(&mut self, schema: Arc<TableSchema>) {
         // Construct the in memory tables.
         let table_id = schema.table_id;
-        let policy = self.committed_state_write_lock.page_eviction_policy(&schema);
-        let commit_table = Table::new(
-            schema,
-            SquashedOffset::COMMITTED_STATE,
-            self.committed_state_write_lock.storage.pages().clone(),
-            policy,
-        );
+        let commit_table = self.committed_state_write_lock.make_table(schema);
         let tx_table = commit_table.clone_structure(SquashedOffset::TX_STATE);
 
         // Add them to the committed and tx states.

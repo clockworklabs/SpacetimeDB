@@ -752,10 +752,13 @@ impl<'page> VarView<'page> {
         &mut self,
         blobs: &BlobSet,
         eviction_policy: EvictionPolicy,
+        memory_limit_exempt: bool,
         var_len_obj: &impl AsRef<[u8]>,
         vlr: VarLenRef,
     ) -> Result<BlobNumBytes, BlobError> {
-        let hash = blobs.insert(eviction_policy, var_len_obj.as_ref())?.hash();
+        let hash = blobs
+            .insert_with_memory_limit_exemption(eviction_policy, var_len_obj.as_ref(), memory_limit_exempt)?
+            .hash();
 
         let granule = vlr.first_granule;
         // SAFETY:
@@ -1413,7 +1416,7 @@ impl Page {
                 // As `in_blob` holds, it is also unused, as required.
                 // We'll now make that granule valid.
                 unsafe {
-                    var.write_large_blob_hash_to_granule(blobs, eviction_policy, var_len_obj, var_len_ref)
+                    var.write_large_blob_hash_to_granule(blobs, eviction_policy, false, var_len_obj, var_len_ref)
                         .expect("legacy Page::insert_row cannot propagate blob errors");
                 }
             }

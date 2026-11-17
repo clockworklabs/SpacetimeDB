@@ -28,6 +28,7 @@ use crate::{
 #[derive(Debug)]
 pub struct PageSet {
     pub eviction_policy: EvictionPolicy,
+    pub(crate) memory_limit_exempt: bool,
     fixed_row_size: Size,
     pub(crate) manager: Arc<PageManager>,
     storage: PageStorage,
@@ -129,6 +130,7 @@ impl ResidentPages {
         &mut self,
         manager: &PageManager,
         fixed_row_size: Size,
+        memory_limit_exempt: bool,
         num_var_len_granules: usize,
         reservation: Option<(PageIndex, ReservedPage)>,
         f: impl FnOnce(&mut Page) -> T,
@@ -142,7 +144,7 @@ impl ResidentPages {
                 Some(index) => index,
                 None => {
                     let index = self.pages.next_page_index().map_err(|_| PageError::TooManyPages)?;
-                    let reservation = manager.reserve_resident(fixed_row_size)?;
+                    let reservation = manager.reserve_resident(fixed_row_size, memory_limit_exempt)?;
                     let (page, permit) = reservation;
                     self.install_owned(index, page, permit);
                     index
@@ -428,6 +430,7 @@ impl PageSet {
         };
         Self {
             eviction_policy,
+            memory_limit_exempt: false,
             fixed_row_size,
             manager,
             storage,
@@ -623,6 +626,7 @@ impl PageSet {
             return resident.with_page_to_insert_row(
                 &self.manager,
                 fixed_row_size,
+                self.memory_limit_exempt,
                 num_var_len_granules,
                 reservation,
                 f,
@@ -1054,7 +1058,11 @@ impl PageSet {
     }
 
     fn reserve_page(&self, fixed_row_size: Size) -> Result<ReservedPage, PageError> {
-        let reserve = || self.manager.reserve(fixed_row_size).map_err(PageError::from);
+        let reserve = || {
+            self.manager
+                .reserve_with_memory_limit_exemption(fixed_row_size, self.memory_limit_exempt)
+                .map_err(PageError::from)
+        };
         match &self.storage {
             PageStorage::Resident(_) => reserve(),
             PageStorage::Tiered(tiered) => tiered.with_eviction_retry(&self.manager, reserve),

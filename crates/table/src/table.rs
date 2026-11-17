@@ -35,6 +35,7 @@ use derive_more::{Add, AddAssign, From, Sub, SubAssign};
 use enum_as_inner::EnumAsInner;
 use itertools::Itertools;
 use smallvec::SmallVec;
+use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId};
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
@@ -484,6 +485,16 @@ pub enum TableNotEmptyError {
 
 // Public API:
 impl Table {
+    /// Exempt a newly constructed system table from the memory limit.
+    /// Its allocations still contribute to budget usage.
+    pub fn with_memory_limit_exemption(mut self) -> Self {
+        assert_eq!(self.schema.table_type, StTableType::System);
+        assert_eq!(self.eviction_policy, EvictionPolicy::NeverEvict);
+        assert_eq!(self.num_pages(), 0);
+        self.inner.pages.memory_limit_exempt = true;
+        self
+    }
+
     /// Creates a new empty table with the given `schema` and `squashed_offset`.
     pub fn new(
         schema: Arc<TableSchema>,
@@ -2259,6 +2270,7 @@ impl Table {
             page_manager,
             eviction_policy,
         );
+        new.inner.pages.memory_limit_exempt = self.inner.pages.memory_limit_exempt;
 
         // Clone the index structure. The table is empty, so no need to `build_from_rows`.
         for (&index_id, index) in self.indexes.iter() {

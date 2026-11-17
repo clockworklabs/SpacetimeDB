@@ -191,30 +191,38 @@ impl BlobSet {
         self.resident.usage()
     }
 
-    fn reserve(&self, hash: BlobHashWrapper, bytes: &[u8]) -> Result<ReservedBlob, BlobError> {
+    fn reserve(
+        &self,
+        hash: BlobHashWrapper,
+        bytes: &[u8],
+        memory_limit_exempt: bool,
+    ) -> Result<ReservedBlob, BlobError> {
         debug_assert_eq!(hash, BlobHashWrapper::hash_from_bytes(bytes));
         let size = bytes.len() as u64;
-        self.resident.reserve_blob(size, hash, || bytes.into()).or_else(|_| {
-            self.trim()?;
-            self.resident
-                .reserve_blob(size, hash, || bytes.into())
-                .map_err(BlobError::from)
-        })
+        self.resident
+            .reserve_blob(size, hash, memory_limit_exempt, || bytes.into())
+            .or_else(|_| {
+                self.trim()?;
+                self.resident
+                    .reserve_blob(size, hash, memory_limit_exempt, || bytes.into())
+                    .map_err(BlobError::from)
+            })
     }
 
     /// Insert `bytes` into this set, making it a resident blob.
     ///
     /// Subject to the memory budget.
     pub fn insert(&self, eviction_policy: EvictionPolicy, bytes: &[u8]) -> Result<BlobHandle, BlobError> {
-        self.insert_with_uses(NonZeroUsize::MIN, eviction_policy, bytes)
+        self.insert_with_memory_limit_exemption(eviction_policy, bytes, false)
     }
 
-    fn insert_with_uses(
+    pub(crate) fn insert_with_memory_limit_exemption(
         &self,
-        uses: NonZeroUsize,
         eviction_policy: EvictionPolicy,
         bytes: &[u8],
+        memory_limit_exempt: bool,
     ) -> Result<BlobHandle, BlobError> {
+        let uses = NonZeroUsize::MIN;
         let hash = BlobHashWrapper::hash_from_bytes(bytes);
         let pins = match eviction_policy {
             EvictionPolicy::Evictable => 0,
@@ -237,7 +245,7 @@ impl BlobSet {
         // Entry needs to be faulted or created. Reserve before modifying the
         // catalog. Note that this may trigger eviction, so we must release the
         // lock.
-        let reservation = self.reserve(hash, bytes)?;
+        let reservation = self.reserve(hash, bytes, memory_limit_exempt)?;
         let mut entries = self.entries.write();
         match entries.entry(hash) {
             hash_map::Entry::Vacant(entry) => {
@@ -367,7 +375,7 @@ impl BlobSet {
         let handle = match blob_or_bytes {
             Ok(blob) => Ok::<_, BlobError>(blob),
             Err(bytes) => {
-                let reservation = self.reserve(hash, &bytes)?;
+                let reservation = self.reserve(hash, &bytes, false)?;
                 let mut entries = self.entries.write();
                 let entry = entries
                     .get_mut(&hash)

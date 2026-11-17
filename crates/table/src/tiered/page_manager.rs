@@ -484,9 +484,13 @@ impl PageManager {
         self.resident.has_unlimited_budget()
     }
 
-    pub(super) fn reserve_resident(&self, fixed_row_size: Size) -> Result<(Box<Page>, BudgetPermit), BudgetExceeded> {
+    pub(super) fn reserve_resident(
+        &self,
+        fixed_row_size: Size,
+        memory_limit_exempt: bool,
+    ) -> Result<(Box<Page>, BudgetPermit), BudgetExceeded> {
         if !self.has_unlimited_budget() {
-            let permit = self.resident.acquire_resident_page()?;
+            let permit = self.resident.acquire_resident_page(memory_limit_exempt)?;
             return Ok((self.pool.take_with_fixed_row_size(fixed_row_size), permit));
         }
         let CachedResidentPage { page, permit } = self.resident_cache.take(
@@ -494,7 +498,7 @@ impl PageManager {
             || CachedResidentPage {
                 permit: self
                     .resident
-                    .acquire_resident_page()
+                    .acquire_resident_page(false)
                     .expect("an unlimited budget cannot reject a resident page"),
                 page: self.pool.take_with_fixed_row_size(fixed_row_size),
             },
@@ -617,7 +621,7 @@ impl PageManager {
             PageSlot::NonResident { metadata, backing } => {
                 self.metrics().lookup(ObjectType::Page, CacheTier::Memory, false);
                 let fault = fault.get_or_insert_with(|| self.metrics().fault(ObjectType::Page));
-                let reservation = self.resident.reserve_page(|| {
+                let reservation = self.resident.reserve_page(false, || {
                     let bytes = self.storage.read_with_source(backing.key(), &mut fault.source)?;
                     let page = self
                         .pool
@@ -654,8 +658,16 @@ impl PageManager {
     /// The returned [ReservedPage] is not registered with the manager. To do
     /// so, call [Self::redeem()].
     pub fn reserve(&self, fixed_row_size: Size) -> Result<ReservedPage, BudgetExceeded> {
+        self.reserve_with_memory_limit_exemption(fixed_row_size, false)
+    }
+
+    pub(super) fn reserve_with_memory_limit_exemption(
+        &self,
+        fixed_row_size: Size,
+        memory_limit_exempt: bool,
+    ) -> Result<ReservedPage, BudgetExceeded> {
         let mut metadata = None;
-        let reservation = self.resident.reserve_page(|| {
+        let reservation = self.resident.reserve_page(memory_limit_exempt, || {
             let page = self.pool.take_with_fixed_row_size(fixed_row_size);
             metadata = Some(page.metadata(fixed_row_size));
             let page = PooledPage::new(page, self.pool.clone());

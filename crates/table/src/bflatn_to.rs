@@ -98,6 +98,7 @@ pub unsafe fn write_row_to_pages(
         required_var_len_granules_for_row(val)
     };
 
+    let memory_limit_exempt = pages.memory_limit_exempt;
     match pages.with_page_to_insert_row(ty.size(), num_granules, reservation, |page| {
         // SAFETY:
         // - Caller promised that `pages` is suitable for storing instances of `ty`
@@ -105,7 +106,17 @@ pub unsafe fn write_row_to_pages(
         // - Caller promised that `visitor` is prepared to visit for `ty`
         //   and in the same order as a `VarLenVisitorProgram` for `ty` would.
         // - `visitor` came from `pages` which we can trust to visit in the right order.
-        unsafe { write_row_to_page(page, blobs, visitor, ty, val, eviction_policy) }
+        unsafe {
+            write_row_to_page_with_memory_limit_exemption(
+                page,
+                blobs,
+                visitor,
+                ty,
+                val,
+                eviction_policy,
+                memory_limit_exempt,
+            )
+        }
     })? {
         (page, Ok((offset, blob_inserted))) => {
             Ok((RowPointer::new(false, page, offset, squashed_offset), blob_inserted))
@@ -137,6 +148,19 @@ pub unsafe fn write_row_to_page(
     val: &ProductValue,
     eviction_policy: EvictionPolicy,
 ) -> Result<(PageOffset, BlobNumBytes), Error> {
+    // SAFETY: Forward the caller's guarantees about the page layout and visitor.
+    unsafe { write_row_to_page_with_memory_limit_exemption(page, blobs, visitor, ty, val, eviction_policy, false) }
+}
+
+unsafe fn write_row_to_page_with_memory_limit_exemption(
+    page: &mut Page,
+    blobs: &BlobSet,
+    visitor: &impl VarLenMembers,
+    ty: &RowTypeLayout,
+    val: &ProductValue,
+    eviction_policy: EvictionPolicy,
+    memory_limit_exempt: bool,
+) -> Result<(PageOffset, BlobNumBytes), Error> {
     let fixed_row_size = ty.size();
     // SAFETY: We've used the right `row_size` and we trust that others have too.
     // `RowTypeLayout` also ensures that we satisfy the minimum row size.
@@ -159,7 +183,9 @@ pub unsafe fn write_row_to_page(
         // The layout is fixed, so there are no large blobs to write.
         Ok(()) if ty.layout.fixed => Ok(<_>::default()),
         // Now write blobs.
-        Ok(()) => serialized.write_large_blobs(blobs).map_err(Into::into),
+        Ok(()) => serialized
+            .write_large_blobs(blobs, memory_limit_exempt)
+            .map_err(Into::into),
         Err(e) => Err(e),
     };
 
@@ -230,7 +256,7 @@ impl BflatnSerializedRowBuffer<'_> {
     /// Insert all large blobs into `blob_store` and their hashes to their granules.
     #[cold]
     #[inline(never)]
-    fn write_large_blobs(&mut self, blobs: &BlobSet) -> Result<BlobNumBytes, BlobError> {
+    fn write_large_blobs(&mut self, blobs: &BlobSet, memory_limit_exempt: bool) -> Result<BlobNumBytes, BlobError> {
         let mut blob_store_inserted_bytes = BlobNumBytes::default();
         for (i, (vlr, value)) in self.large_blob_insertions.iter().enumerate() {
             // SAFETY: `vlr` was given to us by `alloc_for_slice`
@@ -238,8 +264,13 @@ impl BflatnSerializedRowBuffer<'_> {
             // However, as it was added to `self.large_blob_insertions`,
             // we have not yet written the hash to that granule.
             let inserted_bytes = unsafe {
-                self.var_view
-                    .write_large_blob_hash_to_granule(blobs, self.eviction_policy, value, *vlr)
+                self.var_view.write_large_blob_hash_to_granule(
+                    blobs,
+                    self.eviction_policy,
+                    memory_limit_exempt,
+                    value,
+                    *vlr,
+                )
             };
             match inserted_bytes {
                 Ok(inserted_bytes) => {

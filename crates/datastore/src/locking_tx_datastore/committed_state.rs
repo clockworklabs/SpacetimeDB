@@ -1071,14 +1071,37 @@ impl CommittedState {
         }
     }
 
-    fn make_table(&self, schema: Arc<TableSchema>) -> Table {
+    pub(super) fn make_table(&self, schema: Arc<TableSchema>) -> Table {
         let policy = self.page_eviction_policy(&schema);
-        Table::new(
+        Self::configure_memory_limit(Table::new(
             schema,
             SquashedOffset::COMMITTED_STATE,
             self.storage.pages().clone(),
             policy,
-        )
+        ))
+    }
+
+    fn configure_memory_limit(table: Table) -> Table {
+        // Allow connection and cache-policy bookkeeping to exceed the memory limit.
+        // These allocations still contribute to budget usage.
+        //
+        // Why do we have exemptions for these tables specifically?
+        //
+        // Hitting the memory limit shouldn't block client connections,
+        // so we exempt `st_client` and `st_connection_credentials`.
+        //
+        // Once a module has reached or exceeded the memory limit,
+        // you should also be able to update your module to use more disk or object tables
+        // as a way to evict pages from memory and get memory back inside the budget.
+        // That's why we exempt `st_module` and `st_table_cache_policy`.
+        if matches!(
+            table.schema.table_id,
+            ST_CLIENT_ID | ST_CONNECTION_CREDENTIALS_ID | ST_MODULE_ID | ST_TABLE_CACHE_POLICY_ID
+        ) {
+            table.with_memory_limit_exemption()
+        } else {
+            table
+        }
     }
 
     pub(super) fn create_table(&mut self, table_id: TableId, schema: Arc<TableSchema>) {
@@ -1092,10 +1115,14 @@ impl CommittedState {
     ) -> (&'this mut Table, &'this BlobSet) {
         let page_manager = self.storage.pages().clone();
         let policy = self.page_eviction_policy(schema);
-        let table = self
-            .tables
-            .entry(table_id)
-            .or_insert_with(|| Table::new(schema.clone(), SquashedOffset::COMMITTED_STATE, page_manager, policy));
+        let table = self.tables.entry(table_id).or_insert_with(|| {
+            Self::configure_memory_limit(Table::new(
+                schema.clone(),
+                SquashedOffset::COMMITTED_STATE,
+                page_manager,
+                policy,
+            ))
+        });
         (table, self.storage.blobs())
     }
 

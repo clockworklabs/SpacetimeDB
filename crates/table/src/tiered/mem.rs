@@ -185,8 +185,17 @@ impl ResidentObjects {
         self.budget.is_unlimited()
     }
 
-    pub(super) fn acquire_resident_page(&self) -> Result<BudgetPermit, BudgetExceeded> {
-        self.budget.acquire(PAGE_SIZE as u64)
+    fn acquire(&self, bytes: u64, memory_limit_exempt: bool) -> Result<BudgetPermit, BudgetExceeded> {
+        if memory_limit_exempt {
+            // Exempt allocations still count toward the database's resident usage.
+            Ok(self.budget.force_acquire(bytes))
+        } else {
+            self.budget.acquire(bytes)
+        }
+    }
+
+    pub(super) fn acquire_resident_page(&self, memory_limit_exempt: bool) -> Result<BudgetPermit, BudgetExceeded> {
+        self.acquire(PAGE_SIZE as u64, memory_limit_exempt)
     }
 
     pub(super) fn restored_page_permit(&self) -> BudgetPermit {
@@ -207,6 +216,7 @@ impl ResidentObjects {
         &self,
         size: u64,
         hash: BlobHashWrapper,
+        memory_limit_exempt: bool,
         alloc: impl FnOnce() -> Box<[u8]>,
     ) -> Result<ReservedBlob, BudgetExceeded> {
         // Transaction and committed blob set share this registry.
@@ -214,7 +224,7 @@ impl ResidentObjects {
         if let Some(frame) = self.blobs.lock().unwrap().get(&hash).and_then(Weak::upgrade) {
             return Ok(ReservedBlob { frame });
         }
-        let permit = self.budget.acquire(size)?;
+        let permit = self.acquire(size, memory_limit_exempt)?;
         let bytes = alloc();
         assert_eq!(size, bytes.len() as u64);
         debug_assert_eq!(hash, BlobHashWrapper::hash_from_bytes(&bytes));
@@ -285,9 +295,10 @@ impl ResidentObjects {
 
     pub(super) fn reserve_page<E: From<BudgetExceeded>>(
         &self,
+        memory_limit_exempt: bool,
         alloc: impl FnOnce() -> Result<PooledPage, E>,
     ) -> Result<ReservedPage, E> {
-        let permit = self.budget.acquire(PAGE_SIZE as _)?;
+        let permit = self.acquire_resident_page(memory_limit_exempt)?;
         let page = alloc()?;
         Ok(self.reserve_page_with_permit(permit, page))
     }
