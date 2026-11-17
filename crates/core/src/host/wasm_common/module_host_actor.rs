@@ -1270,7 +1270,13 @@ impl InstanceCommon {
                     "reducer aborted after {:.2?}: {reason}",
                     result.stats.timings.total_duration
                 );
-                log_reducer_error(inst.replica_ctx(), timestamp, reducer_name, &message, &self.info.module_hash);
+                log_reducer_error(
+                    inst.replica_ctx(),
+                    timestamp,
+                    reducer_name,
+                    &message,
+                    &self.info.module_hash,
+                );
 
                 (status, None)
             }
