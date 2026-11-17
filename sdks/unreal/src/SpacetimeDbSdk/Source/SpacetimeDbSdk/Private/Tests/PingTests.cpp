@@ -31,7 +31,7 @@ namespace SpacetimeDBPingTests
 	}
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPingConnectionTest, "SpacetimeDB.NetworkStats.Connection",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPingConnectionTest, "SpacetimeDB.TestClient.PingConnection",
                                  EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 bool FPingConnectionTest::RunTest(const FString&)
 {

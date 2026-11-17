@@ -42,7 +42,7 @@ namespace SpacetimeDBNetworkStatsTests
 
 using namespace SpacetimeDBNetworkStatsTests;
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNetworkStatsTrackerTest, "SpacetimeDB.NetworkStats.Tracker",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNetworkStatsTrackerTest, "SpacetimeDB.TestClient.NetworkStatsTracker",
                                  EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 bool FNetworkStatsTrackerTest::RunTest(const FString&)
 {
@@ -169,7 +169,7 @@ bool FNetworkStatsTrackerTest::RunTest(const FString&)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNetworkStatsPongWaitTest, "SpacetimeDB.NetworkStats.PongWait",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNetworkStatsPongWaitTest, "SpacetimeDB.TestClient.NetworkStatsPongWait",
                                  EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
 bool FNetworkStatsPongWaitTest::RunTest(const FString&)
 {
