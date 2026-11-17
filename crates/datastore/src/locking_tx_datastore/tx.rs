@@ -145,7 +145,6 @@ impl TxId {
             .and_then(|table| {
                 table
                     .get_index_by_id_with_table(self.committed_state_shared_lock.storage.blobs(), index_id)
-                    .map(|index| index.with_read_eviction(&*self.committed_state_shared_lock))
                     .map(seek)
                     .ok_or_else(|| anyhow::anyhow!("IndexId `{index_id}` does not exist"))
             })
