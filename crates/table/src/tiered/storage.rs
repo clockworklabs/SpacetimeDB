@@ -624,8 +624,12 @@ impl TieredStorage {
             return Ok(0);
         }
 
-        self.reclaim_inner()
-            .inspect_err(|_| self.should_reclaim.store(true, Ordering::Release))
+        let timer = self.metrics().timer();
+        let result = self
+            .reclaim_inner()
+            .inspect_err(|_| self.should_reclaim.store(true, Ordering::Release));
+        self.metrics().reclamation(timer.nanos(), result.is_ok());
+        result
     }
 
     fn reclaim_inner(&self) -> Result<u64, ObjectStoreError> {
@@ -664,7 +668,10 @@ impl TieredStorage {
             if let Some(object) = entry.object.take()
                 && object.permit.is_some()
             {
-                freed += object.size;
+                let bytes = object.size;
+                drop(object);
+                freed += bytes;
+                self.metrics().reclaimed(key.metric_type(), bytes);
             }
 
             drop(entry);
