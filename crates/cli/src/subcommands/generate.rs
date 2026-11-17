@@ -236,6 +236,20 @@ fn default_csharp_namespace(bindings: BindingKind, dependency_name: Option<&str>
     }
 }
 
+/// The C# source generator names `System.*` and `SpacetimeDB.*` types, and the bindings' own types,
+/// by their full names without `global::`. Inside the bindings' namespace, a later part with one of
+/// those first names would hide them, so `RemoteBindings.System` breaks the generated serializers.
+fn validate_module_bindings_namespace(namespace: &str) -> anyhow::Result<()> {
+    let mut parts = namespace.split('.');
+    let first = parts.next().unwrap_or_default();
+    if let Some(part) = parts.find(|part| ["System", "SpacetimeDB", first].contains(part)) {
+        anyhow::bail!(
+            "C# namespace `{namespace}` can't have a later part named `{part}`: it would hide the `{part}` namespace from generated code. Set another namespace with `namespace` in spacetime.json, or with `--namespace`"
+        );
+    }
+    Ok(())
+}
+
 fn dependency_generate_entry(
     dependency: &serde_json::Value,
     sender_module_path: &str,
@@ -558,6 +572,9 @@ fn prepare_generate_run_configs<'a>(
             anyhow::bail!("dependency `{name}` sets `namespace`, which only C# modules support");
         }
         let namespace = namespace.unwrap_or_else(|| default_csharp_namespace(bindings, dependency_name.as_deref()));
+        if lang == Language::Csharp && bindings == BindingKind::Module {
+            validate_module_bindings_namespace(&namespace)?;
+        }
 
         let out_dir = if bindings == BindingKind::Module {
             let default_dir = match lang {
@@ -1662,6 +1679,11 @@ mod tests {
         };
         assert_eq!(prepare("Sender.csproj", None).unwrap(), "RemoteBindings.GameWorld");
         assert_eq!(prepare("Sender.csproj", Some("Gw.Bindings")).unwrap(), "Gw.Bindings");
+        // A dependency named `system` would default to this one.
+        assert!(prepare("Sender.csproj", Some("RemoteBindings.System"))
+            .unwrap_err()
+            .to_string()
+            .contains("can't have a later part named `System`"));
         assert_eq!(
             prepare("Cargo.toml", Some("Gw.Bindings")).unwrap_err().to_string(),
             "dependency `game_world` sets `namespace`, which only C# modules support"

@@ -541,9 +541,18 @@ record TableAccessor
         for (var i = 0; i < columnNames.Length; i++)
         {
             var member = table.Members[i];
-            var explicitName = member
-                .OutboxAttrs.FirstOrDefault(a => a.Param is not null && a.AppliesTo(Name))
-                ?.Param;
+            var explicitNames = member
+                .OutboxAttrs.Where(a => a.Param is not null && a.AppliesTo(Name))
+                .Select(a => a.Param!)
+                .Distinct()
+                .ToArray();
+            if (explicitNames.Length > 1)
+            {
+                Error(
+                    $"{Name}.{member.Name} is marked with several [Param]s: {string.Join(", ", explicitNames.Select(n => $"\"{n}\""))}. Keep one."
+                );
+            }
+            var explicitName = explicitNames.FirstOrDefault();
             if (explicitName is not null && parameters.All(p => p.Name != explicitName))
             {
                 Error(
@@ -958,7 +967,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     /// <summary>
     /// The columns of an <c>[Outbox]</c> table: <c>MsgId</c>, <c>Target</c>, and each of the
     /// receiver's parameters in Pascal case, marked <c>[Param]</c> with the parameter's name.
-    /// Null, after reporting it, if a parameter's column name is taken.
+    /// Null, after reporting it, if a column can't have its name.
     /// </summary>
     private ImmutableArray<ColumnDeclaration>? GenerateOutboxColumns(
         INamedTypeSymbol row,
@@ -979,25 +988,51 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         }
 
         var columns = ImmutableArray.CreateBuilder<ColumnDeclaration>();
-        void Add(
+        // C# forbids a field named like its struct or like another member, and the serializer
+        // generates some of those.
+        var taken = new HashSet<string>(GeneratedMemberNames) { row.Name };
+        bool TryAdd(
             string name,
             ITypeSymbol type,
             ColumnAttrs attrs,
             OutboxColumnAttr? outboxAttr,
-            ISymbol location
-        ) =>
-            columns.Add(
-                new(FullName, columns.Count, name, type, attrs, outboxAttr, location, diag)
+            ISymbol location,
+            string? parameter
+        )
+        {
+            if (taken.Add(name))
+            {
+                columns.Add(
+                    new(FullName, columns.Count, name, type, attrs, outboxAttr, location, diag)
+                );
+                return true;
+            }
+            var forParameter = parameter is null
+                ? ""
+                : $" for parameter `{parameter}` of {receiver.Name}";
+            diag.Report(
+                ErrorDescriptor.InvalidOutboxDeclaration,
+                (
+                    outbox,
+                    $"[Outbox] can't name a column {name}{forParameter}, because {row.Name} already uses that name. Declare the outbox table with [Table(Outbox = ...)] instead, and give the columns other names."
+                )
             );
+            return false;
+        }
 
-        Add(
-            "MsgId",
-            compilation.GetSpecialType(SpecialType.System_UInt64),
-            ColumnAttrs.PrimaryKeyAuto,
-            null,
-            row
-        );
-        Add("Target", identity, ColumnAttrs.UnSet, new(null, null), row);
+        if (
+            !TryAdd(
+                "MsgId",
+                compilation.GetSpecialType(SpecialType.System_UInt64),
+                ColumnAttrs.PrimaryKeyAuto,
+                null,
+                row,
+                null
+            ) || !TryAdd("Target", identity, ColumnAttrs.UnSet, new(null, null), row, null)
+        )
+        {
+            return null;
+        }
         foreach (var parameter in TableAccessor.ReceiverParameters(receiver))
         {
             var name = string.Concat(
@@ -1006,18 +1041,19 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     .Where(part => part.Length != 0)
                     .Select(part => char.ToUpperInvariant(part[0]) + part.Substring(1))
             );
-            if (columns.Any(c => c.Name == name))
+            if (
+                !TryAdd(
+                    name,
+                    parameter.Type,
+                    ColumnAttrs.UnSet,
+                    new(null, parameter.Name),
+                    parameter,
+                    parameter.Name
+                )
+            )
             {
-                diag.Report(
-                    ErrorDescriptor.InvalidOutboxDeclaration,
-                    (
-                        outbox,
-                        $"[Outbox] can't name a column {name} for parameter `{parameter.Name}` of {receiver.Name}, because it already declares a column with that name. Declare the outbox table with [Table(Outbox = ...)] instead, and give the columns other names."
-                    )
-                );
                 return null;
             }
-            Add(name, parameter.Type, ColumnAttrs.UnSet, new(null, parameter.Name), parameter);
         }
         return columns.ToImmutable();
     }

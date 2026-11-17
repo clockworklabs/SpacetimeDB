@@ -442,6 +442,23 @@ public partial struct TestOutboxKeyAndTargetIssues
  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 public partial struct TestOutboxParamIssues
 */
+      Message: OutboxParamIssues.Extra is marked with several [Param]s: "unknown", "other". Keep one.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0046,
+        Title: Invalid outbox table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+
+[SpacetimeDB.Table(Accessor = "OutboxParamIssues", Outbox = typeof(OutboxDiag.Reducers.Remote))]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+public partial struct TestOutboxParamIssues
+*/
       Message: OutboxParamIssues.Extra is marked [Param("unknown")], but remote has no parameter named `unknown`.,
       Severity: Error,
       Descriptor: {
@@ -544,7 +561,24 @@ public partial struct TestOutboxParamIssues
  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 public partial struct TestOutboxTargetParam { }
 */
-      Message: [Outbox] can't name a column Target for parameter `target` of TakesTarget, because it already declares a column with that name. Declare the outbox table with [Table(Outbox = ...)] instead, and give the columns other names.,
+      Message: [Outbox] can't name a column Target for parameter `target` of TakesTarget, because TestOutboxTargetParam already uses that name. Declare the outbox table with [Table(Outbox = ...)] instead, and give the columns other names.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0046,
+        Title: Invalid outbox table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+// `equals` would clash with the generated Equals method.
+[SpacetimeDB.Outbox(typeof(OutboxDiag.Reducers.TakesEquals), Accessor = "OutboxEqualsParam")]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+public partial struct TestOutboxEqualsParam { }
+*/
+      Message: [Outbox] can't name a column Equals for parameter `equals` of TakesEquals, because TestOutboxEqualsParam already uses that name. Declare the outbox table with [Table(Outbox = ...)] instead, and give the columns other names.,
       Severity: Error,
       Descriptor: {
         Id: STDB0046,
