@@ -620,6 +620,17 @@ public abstract record BaseTypeDeclaration<M>
         return resultIfArrayEmpty;
     }
 
+    /// <summary>The named members <see cref="ToExtensions"/> adds to a product type.</summary>
+    public static readonly string[] GeneratedMemberNames =
+    [
+        "ReadFields",
+        "WriteFields",
+        "ToString",
+        "BSATN",
+        "GetHashCode",
+        "Equals",
+    ];
+
     public Scope.Extensions ToExtensions()
     {
         string read,

@@ -742,12 +742,25 @@ namespace OutboxDiag
 
             public string @target = default!;
         }
+
+        public abstract class TakesEquals : global::SpacetimeDB.Internal.IOutboxReceiver
+        {
+            public const string ReducerName = "takes_equals";
+            public const string SignatureHash =
+                "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+
+            public string @equals = default!;
+        }
     }
 }
 
 // `target` would need a second Target column.
 [SpacetimeDB.Outbox(typeof(OutboxDiag.Reducers.TakesTarget), Accessor = "OutboxTargetParam")]
 public partial struct TestOutboxTargetParam { }
+
+// `equals` would clash with the generated Equals method.
+[SpacetimeDB.Outbox(typeof(OutboxDiag.Reducers.TakesEquals), Accessor = "OutboxEqualsParam")]
+public partial struct TestOutboxEqualsParam { }
 
 [SpacetimeDB.Outbox(typeof(OutboxDiag.Reducers.Remote), Accessor = "OutboxWithFields")]
 public partial struct TestOutboxWithFields
@@ -832,8 +845,9 @@ public partial struct TestOutboxParamIssues
     // `count` is an int.
     public uint Count;
 
-    // No column for `label`, and no parameter named `unknown`.
+    // No column for `label`, no parameter named `unknown`, and two [Param]s.
     [SpacetimeDB.Param("unknown")]
+    [SpacetimeDB.Param("other")]
     public string? Extra;
 }
 
