@@ -810,14 +810,11 @@ impl InstanceCommon {
                 Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
             }
             Ok(res) => {
-                system_logger.info("Database updated");
-                log::info!("Database updated, {} host-type={}", stdb.database_identity(), host_type);
-
                 let succeed = |info: Arc<ModuleInfo>,
                                execution_budget_used: FunctionBudget,
                                host_execution_duration: Duration,
                                tx: MutTxId|
-                 -> TransactionOffset {
+                 -> Result<TransactionOffset, DBError> {
                     let event = ModuleEvent {
                         timestamp: Timestamp::now(),
                         caller_identity: info.owner_identity,
@@ -831,9 +828,11 @@ impl InstanceCommon {
                         timer: None,
                     };
                     let CommitAndBroadcastEventSuccess { tx_offset, .. } =
-                        commit_and_broadcast_event(&info.subscriptions, None, event, tx);
+                        commit_and_broadcast_event(&info.subscriptions, None, event, tx)?;
 
-                    tx_offset
+                    system_logger.info("Database updated");
+                    log::info!("Database updated, {} host-type={}", stdb.database_identity(), host_type);
+                    Ok(tx_offset)
                 };
                 let durable_offset = stdb.durable_tx_offset();
 
@@ -871,11 +870,11 @@ impl InstanceCommon {
                         stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
                         UpdateDatabaseResult::ErrorExecutingMigration(anyhow::anyhow!(msg))
                     } else {
-                        let tx_offset = succeed(self.info.clone(), out.execution_budget_used, out.total_duration, tx);
+                        let tx_offset = succeed(self.info.clone(), out.execution_budget_used, out.total_duration, tx)?;
                         effects.committed(tx_offset, durable_offset)
                     }
                 } else {
-                    let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO, Duration::ZERO, tx);
+                    let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO, Duration::ZERO, tx)?;
                     effects.committed(tx_offset, durable_offset)
                 };
 
@@ -938,7 +937,7 @@ impl InstanceCommon {
         };
         let durable_offset = db.durable_tx_offset();
         let CommitAndBroadcastEventSuccess { tx_offset, .. } =
-            commit_and_broadcast_event(&self.info.subscriptions, None, event, out.tx);
+            commit_and_broadcast_event(&self.info.subscriptions, None, event, out.tx)?;
         Ok(UpdateEnvironmentResult::UpdatePerformed {
             tx_offset,
             durable_offset,
@@ -1351,11 +1350,24 @@ impl InstanceCommon {
             request_id,
             timer,
         };
-        let CommitAndBroadcastEventSuccess { event, tx_offset, .. } =
-            commit_and_broadcast_event(&info.subscriptions, client, event, out.tx);
+        let (outcome, tx_offset) = match commit_and_broadcast_event(&info.subscriptions, client, event, out.tx) {
+            Ok(committed) => (ReducerOutcome::from(&committed.event.status), committed.tx_offset),
+            Err(error) => {
+                // Failed commits have no offset, but the result type requires a receiver.
+                // Dropping the sender closes the channel. Failed calls skip the durability wait.
+                // TODO: Make ReducerCallResultWithTxOffset::tx_offset optional so failed
+                // commits can return None instead of creating a closed channel.
+                let (sender, receiver) = tokio::sync::oneshot::channel();
+                drop(sender);
+                (
+                    ReducerOutcome::from(&EventStatus::FailedInternal(error.to_string())),
+                    receiver,
+                )
+            }
+        };
 
         let res = ReducerCallResult {
-            outcome: ReducerOutcome::from(&event.status),
+            outcome,
             execution_budget_used,
             execution_duration: total_duration,
         };

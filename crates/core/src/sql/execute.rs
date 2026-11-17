@@ -212,7 +212,7 @@ fn run_inner<I: WasmInstance>(
                 request_id: None,
                 timer: None,
             };
-            let res = commit_and_broadcast_event(&subs.unwrap(), None, event, tx);
+            let res = commit_and_broadcast_event(&subs.unwrap(), None, event, tx)?;
             Ok((
                 SqlResult {
                     tx_offset: res.tx_offset,

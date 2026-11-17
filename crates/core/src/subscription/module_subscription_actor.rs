@@ -198,9 +198,9 @@ pub(crate) fn commit_and_broadcast_event(
     client: Option<Arc<ClientConnectionSender>>,
     event: ModuleEvent,
     tx: MutTxId,
-) -> CommitAndBroadcastEventSuccess {
-    match subs.commit_and_broadcast_event(client, event, tx).unwrap() {
-        Ok(res) => res,
+) -> Result<CommitAndBroadcastEventSuccess, DBError> {
+    match subs.commit_and_broadcast_event(client, event, tx)? {
+        Ok(res) => Ok(res),
         Err(WriteConflict) => todo!("Write skew, you need to implement retries my man, T-dawg."),
     }
 }
@@ -2034,6 +2034,34 @@ impl ModuleSubscriptions {
         tx_offset
     }
 
+    fn send_failed_event(
+        &self,
+        caller: Option<Arc<ClientConnectionSender>>,
+        event: &Arc<ModuleEvent>,
+        tx_offset: Option<TxOffset>,
+    ) {
+        if let Some(client) = caller {
+            match client.config.version {
+                WsVersion::V1 => {
+                    let message = TransactionUpdateMessage {
+                        event: Some(event.clone()),
+                        database_update: SubscriptionUpdateMessage::default_for_protocol(client.config.protocol, None),
+                    };
+                    let _ = self
+                        .broadcast_queue
+                        .send_client_message_v1(client, tx_offset.map(from_tx_offset), message);
+                }
+                WsVersion::V2 | WsVersion::V3 => {
+                    if let Some(request_id) = event.request_id {
+                        self.send_reducer_failure_result_v2(client, event, request_id);
+                    }
+                }
+            }
+        } else {
+            log::trace!("Reducer failed but there is no client to send the failure to!")
+        }
+    }
+
     /// Commit a transaction and broadcast its ModuleEvent to all interested subscribers.
     ///
     /// The returned [`ExecutionMetrics`] are reported in this method via `report_tx_metrics`.
@@ -2060,7 +2088,20 @@ impl ModuleSubscriptions {
         // We'll later ensure tx is released/cleaned up once out of scope.
         let (read_tx, tx_data, tx_metrics_mut) = match &mut event.status {
             EventStatus::Committed(db_update) => {
-                let (tx_data, tx_metrics, read_tx) = stdb.commit_tx_downgrade(tx, Workload::Update)?;
+                let (tx_data, tx_metrics, read_tx) = match stdb.commit_tx_downgrade(tx, Workload::Update) {
+                    Ok(committed) => committed,
+                    Err(error) => {
+                        // Failed preparation has already rolled back the transaction.
+                        log::warn!(
+                            "Failed to commit transaction for database {}: {error:?}",
+                            stdb.database_identity()
+                        );
+                        event.status = EventStatus::FailedInternal(error.to_string());
+                        event.reducer_return_value = None;
+                        self.send_failed_event(caller, &Arc::new(event), None);
+                        return Err(error);
+                    }
+                };
                 *db_update = DatabaseUpdate::from_writes(&tx_data);
                 (read_tx, tx_data, tx_metrics)
             }
@@ -2070,32 +2111,7 @@ impl ModuleSubscriptions {
 
                 let event = Arc::new(event);
                 let tx_offset = Self::rollback_mut_tx(stdb, tx);
-                if let Some(client) = caller {
-                    match client.config.version {
-                        WsVersion::V1 => {
-                            let message = TransactionUpdateMessage {
-                                event: Some(event.clone()),
-                                database_update: SubscriptionUpdateMessage::default_for_protocol(
-                                    client.config.protocol,
-                                    None,
-                                ),
-                            };
-
-                            let _ = self.broadcast_queue.send_client_message_v1(
-                                client,
-                                Some(from_tx_offset(tx_offset)),
-                                message,
-                            );
-                        }
-                        WsVersion::V2 | WsVersion::V3 => {
-                            if let Some(request_id) = event.request_id {
-                                self.send_reducer_failure_result_v2(client, &event, request_id);
-                            }
-                        }
-                    }
-                } else {
-                    log::trace!("Reducer failed but there is no client to send the failure to!")
-                }
+                self.send_failed_event(caller, &event, Some(tx_offset));
                 return Ok(Ok(CommitAndBroadcastEventSuccess {
                     tx_offset: from_tx_offset(tx_offset),
                     event,
@@ -3178,7 +3194,7 @@ mod tests {
             db.insert(&mut tx, table_id, &bsatn::to_vec(&row)?)?;
         }
 
-        let success = commit_and_broadcast_event(subs, None, module_event(), tx);
+        let success = commit_and_broadcast_event(subs, None, module_event(), tx)?;
         Ok(success.metrics)
     }
 
