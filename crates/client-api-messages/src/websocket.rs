@@ -1,7 +1,7 @@
 //! Messages sent over the SpacetimeDB WebSocket protocol.
 //!
-//! Client -> Server messages are encoded as [`ClientMessage`].
-//! Server -> Client messages are encoded as [`ServerMessage`].
+//! Client -> Server messages are encoded as a `ClientMessage` from the protocol version in use, e.g. [`v2::ClientMessage`].
+//! Server -> Client messages are encoded as a `ServerMessage` from the protocol version in use, e.g. [`v2::ServerMessage`].
 //!
 //! Any changes to this file must be paired with a change to the WebSocket protocol identifiers
 //! defined in `crates/client-api/src/routes/subscribe.rs`,
