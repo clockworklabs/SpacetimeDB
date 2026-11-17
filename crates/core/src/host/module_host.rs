@@ -1821,6 +1821,18 @@ impl ViewCallResult {
             tx,
         }
     }
+
+    fn into_materialized_tx(self, db: &RelationalDB) -> Result<MutTxId, ViewCallError> {
+        let error = match self.outcome {
+            ViewOutcome::Success => return Ok(self.tx),
+            ViewOutcome::Failed(error) => error,
+            ViewOutcome::BudgetExceeded => "View execution exceeded its budget".into(),
+        };
+        // Materialization may have inserted some backing rows before failing.
+        // Roll back before callers can commit or mark the view materialized.
+        ModuleSubscriptions::rollback_mut_tx(db, self.tx);
+        Err(ViewCallError::InternalError(error))
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -3568,10 +3580,10 @@ impl ModuleHost {
                     caller,
                     sender,
                 )?;
-                tx = res.tx;
                 if trapped {
-                    return Ok((tx, true));
+                    return Ok((res.tx, true));
                 }
+                tx = res.into_materialized_tx(instance.instance.replica_ctx().relational_db())?;
             }
             // If this is a sql call, we only update this view's "last called" timestamp
             if let Workload::Sql = workload {
@@ -4321,6 +4333,43 @@ mod tests {
     use spacetimedb_lib::{AlgebraicType, Identity};
     use spacetimedb_sats::product;
     use std::sync::Arc;
+
+    #[test]
+    fn failed_view_materialization_rolls_back_partial_rows() -> anyhow::Result<()> {
+        use super::{ViewCallError, ViewCallResult, ViewOutcome};
+        use crate::db::relational_db::tests_utils::{begin_mut_tx, create_view_for_test, insert_into_view};
+        use spacetimedb_datastore::locking_tx_datastore::{ViewCallInfo, ViewInstanceArgs};
+        use spacetimedb_sats::ProductValue;
+
+        let db = TestDB::in_memory()?;
+        let (view_id, table_id) = create_view_for_test(&db, "test_view", &[("value", AlgebraicType::U8)], true)?;
+        let args = ViewInstanceArgs::Anonymous {
+            args: ProductValue::default(),
+        };
+        let call = ViewCallInfo::from_args(view_id, &args);
+        for outcome in [
+            ViewOutcome::Failed("storage failure".into()),
+            ViewOutcome::BudgetExceeded,
+        ] {
+            let mut tx = begin_mut_tx(&db);
+            insert_into_view(&db, &mut tx, table_id, None, product![1u8])?;
+            tx.update_view_timestamp(call.clone(), args.clone())?;
+            let result = ViewCallResult {
+                outcome,
+                ..ViewCallResult::default(tx)
+            };
+            assert!(matches!(
+                result.into_materialized_tx(&db),
+                Err(ViewCallError::InternalError(_))
+            ));
+
+            let tx = begin_mut_tx(&db);
+            assert_eq!(db.iter_mut(&tx, table_id)?.count(), 0);
+            assert!(!tx.is_view_materialized(&call)?);
+            ModuleSubscriptions::rollback_mut_tx(&db, tx);
+        }
+        Ok(())
+    }
 
     #[tokio::test]
     async fn idc_failure_recording_preserves_a_concurrent_outcome() -> anyhow::Result<()> {
