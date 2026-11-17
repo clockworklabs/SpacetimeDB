@@ -1261,24 +1261,10 @@ impl InstanceCommon {
             Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)) => {
                 inst.log_traceback("reducer", reducer_name, &err);
 
-                let status = self.handle_outer_error(&result.stats.energy, reducer_name, &err);
-                let reason = match &status {
-                    EventStatus::OutOfEnergy => "reached the maximum CPU usage allowed per reducer call".to_owned(),
-                    _ => format!("encountered a fatal error: {err}"),
-                };
-                let message = format!(
-                    "reducer aborted after {:.2?}: {reason}",
-                    result.stats.timings.total_duration
-                );
-                log_reducer_error(
-                    inst.replica_ctx(),
-                    timestamp,
-                    reducer_name,
-                    &message,
-                    &self.info.module_hash,
-                );
-
-                (status, None)
+                (
+                    self.handle_outer_error(inst.replica_ctx(), &result.stats, reducer_name, &err),
+                    None,
+                )
             }
             Err(ExecutionError::User(err)) => {
                 log_reducer_error(
@@ -1394,13 +1380,29 @@ impl InstanceCommon {
         (ReducerCallResultWithTxOffset { result: res, tx_offset }, trapped)
     }
 
-    fn handle_outer_error(&mut self, energy: &EnergyStats, reducer_name: &str, error: &anyhow::Error) -> EventStatus {
+    fn handle_outer_error(
+        &mut self,
+        replica_ctx: &ReplicaContext,
+        stats: &ExecutionStats,
+        function_name: &str,
+        error: &anyhow::Error,
+    ) -> EventStatus {
         WORKER_METRICS
             .wasm_instance_errors
-            .with_label_values(&self.info.database_identity, &self.info.module_hash, reducer_name)
+            .with_label_values(&self.info.database_identity, &self.info.module_hash, function_name)
             .inc();
 
-        if energy.remaining.get() == 0 {
+        if stats.energy.remaining.get() == 0 {
+            let message = format!(
+                "aborted after {:.2?}: reached the maximum CPU usage allowed per call",
+                stats.timings.total_duration
+            );
+            let record = database_logger::Record {
+                ts: InstanceEnv::now_for_logging(),
+                function: Some(function_name),
+                ..database_logger::Record::injected(&message)
+            };
+            replica_ctx.logger.write(database_logger::LogLevel::Error, &record, &());
             EventStatus::OutOfEnergy
         } else {
             EventStatus::FailedInternal(
@@ -1656,13 +1658,15 @@ impl InstanceCommon {
         let outcome: ViewOutcome = match (result.call_result, sender) {
             (Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)), _) => {
                 inst.log_traceback("view", &view_name, &err);
-                self.handle_outer_error(&result.stats.energy, &view_name, &err).into()
+                self.handle_outer_error(inst.replica_ctx(), &result.stats, &view_name, &err)
+                    .into()
             }
             // TODO: maybe do something else with user errors?
             (Err(ExecutionError::User(err)), _) => {
                 let err = anyhow::anyhow!(err);
                 inst.log_traceback("view", &view_name, &err);
-                self.handle_outer_error(&result.stats.energy, &view_name, &err).into()
+                self.handle_outer_error(inst.replica_ctx(), &result.stats, &view_name, &err)
+                    .into()
             }
             (Ok(raw), _) => {
                 // This is wrapped in a closure to simplify error handling.
