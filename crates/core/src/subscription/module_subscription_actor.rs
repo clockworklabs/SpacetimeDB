@@ -2096,7 +2096,9 @@ impl ModuleSubscriptions {
                             "Failed to commit transaction for database {}: {error:?}",
                             stdb.database_identity()
                         );
-                        event.status = EventStatus::FailedInternal(error.to_string());
+                        event.status = EventStatus::FailedInternal(
+                            crate::error::memory_budget_error_message(&error).unwrap_or_else(|| error.to_string()),
+                        );
                         event.reducer_return_value = None;
                         self.send_failed_event(caller, &Arc::new(event), None);
                         return Err(error);

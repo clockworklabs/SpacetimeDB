@@ -223,6 +223,7 @@ blake3 = "1.5.1"
 brotli = { version = "3.5", default-features = false, features = ["std"] }
 bytemuck = { version = "1.16.2", features = ["must_cast"] }
 bytes = "1.10.1"
+bytesize = "2.0.1"
 bytestring = { version = "1.2.0", features = ["serde"] }
 cargo_metadata = "0.17.0"
 chrono = { version = "0.4.24", default-features = false }

@@ -4,7 +4,7 @@ use crate::client::ClientActorId;
 use crate::database_logger;
 use crate::db::sql::ast::SchemaViewer;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
-use crate::error::DBError;
+use crate::error::{memory_budget_error_message, DBError};
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::host_controller::ReducerCallResultWithTxOffset;
 use crate::host::instance_env::{InstanceEnv, TxSlot};
@@ -1261,7 +1261,7 @@ impl InstanceCommon {
             Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)) => {
                 inst.log_traceback("reducer", reducer_name, &err);
 
-                (self.handle_outer_error(&result.stats.energy, reducer_name), None)
+                (self.handle_outer_error(&result.stats.energy, reducer_name, &err), None)
             }
             Err(ExecutionError::User(err)) => {
                 log_reducer_error(
@@ -1360,7 +1360,9 @@ impl InstanceCommon {
                 let (sender, receiver) = tokio::sync::oneshot::channel();
                 drop(sender);
                 (
-                    ReducerOutcome::from(&EventStatus::FailedInternal(error.to_string())),
+                    ReducerOutcome::from(&EventStatus::FailedInternal(
+                        memory_budget_error_message(&error).unwrap_or_else(|| error.to_string()),
+                    )),
                     receiver,
                 )
             }
@@ -1375,7 +1377,7 @@ impl InstanceCommon {
         (ReducerCallResultWithTxOffset { result: res, tx_offset }, trapped)
     }
 
-    fn handle_outer_error(&mut self, energy: &EnergyStats, reducer_name: &str) -> EventStatus {
+    fn handle_outer_error(&mut self, energy: &EnergyStats, reducer_name: &str, error: &anyhow::Error) -> EventStatus {
         WORKER_METRICS
             .wasm_instance_errors
             .with_label_values(&self.info.database_identity, &self.info.module_hash, reducer_name)
@@ -1384,7 +1386,10 @@ impl InstanceCommon {
         if energy.remaining.get() == 0 {
             EventStatus::OutOfEnergy
         } else {
-            EventStatus::FailedInternal("The instance encountered a fatal error.".into())
+            EventStatus::FailedInternal(
+                memory_budget_error_message(error.as_ref())
+                    .unwrap_or_else(|| "The instance encountered a fatal error.".into()),
+            )
         }
     }
 
@@ -1634,12 +1639,13 @@ impl InstanceCommon {
         let outcome: ViewOutcome = match (result.call_result, sender) {
             (Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)), _) => {
                 inst.log_traceback("view", &view_name, &err);
-                self.handle_outer_error(&result.stats.energy, &view_name).into()
+                self.handle_outer_error(&result.stats.energy, &view_name, &err).into()
             }
             // TODO: maybe do something else with user errors?
             (Err(ExecutionError::User(err)), _) => {
-                inst.log_traceback("view", &view_name, &anyhow::anyhow!(err));
-                self.handle_outer_error(&result.stats.energy, &view_name).into()
+                let err = anyhow::anyhow!(err);
+                inst.log_traceback("view", &view_name, &err);
+                self.handle_outer_error(&result.stats.energy, &view_name, &err).into()
             }
             (Ok(raw), _) => {
                 // This is wrapped in a closure to simplify error handling.

@@ -53,18 +53,30 @@ pub enum DatastoreError {
 
 impl DatastoreError {
     pub(crate) fn is_resident_memory_limit(&self) -> bool {
+        self.resident_memory_limit().is_some()
+    }
+
+    pub fn resident_memory_limit(&self) -> Option<&tiered::BudgetExceeded> {
         match self {
-            Self::Page(PageError::MemoryLimitExceeded(_))
-            | Self::Blob(BlobError::MemoryLimitExceeded(_))
-            | Self::Table(TableError::Bflatn(bflatn_to::Error::Pages(PageError::MemoryLimitExceeded(_))))
-            | Self::Table(TableError::Bflatn(bflatn_to::Error::Blobs(BlobError::MemoryLimitExceeded(_)))) => true,
+            Self::Page(PageError::MemoryLimitExceeded(error))
+            | Self::Blob(BlobError::MemoryLimitExceeded(error))
+            | Self::Table(TableError::Bflatn(bflatn_to::Error::Pages(PageError::MemoryLimitExceeded(error))))
+            | Self::Table(TableError::Bflatn(bflatn_to::Error::Blobs(BlobError::MemoryLimitExceeded(error)))) => {
+                Some(error)
+            }
             Self::TableStorage(error) | Self::Table(TableError::Bflatn(bflatn_to::Error::Table(error))) => {
                 match error {
-                    table::TableError::Page(error) => matches!(error.as_ref(), PageError::MemoryLimitExceeded(_)),
-                    table::TableError::Blob(error) => matches!(error.as_ref(), BlobError::MemoryLimitExceeded(_)),
+                    table::TableError::Page(error) => match error.as_ref() {
+                        PageError::MemoryLimitExceeded(error) => Some(error.as_ref()),
+                        _ => None,
+                    },
+                    table::TableError::Blob(error) => match error.as_ref() {
+                        BlobError::MemoryLimitExceeded(error) => Some(error.as_ref()),
+                        _ => None,
+                    },
                 }
             }
-            _ => false,
+            _ => None,
         }
     }
 }
