@@ -132,11 +132,12 @@ namespace SpacetimeDB
             return this;
         }
 
-#if UNITY_WEBGL
         /// <summary>
         /// Sets how long the periodic Pings may go unanswered before the connection is treated as lost.
-        /// Defaults to 10 seconds. Only WebGL builds have this setting: the browser's WebSocket can't
-        /// detect a silently failed network itself.
+        /// Defaults to 10 seconds.
+        ///
+        /// Only takes effect in Unity WebGL players, as the browser's WebSocket can't detect a silently
+        /// failed network itself.
         ///
         /// Once the oldest unanswered Ping is older than this timeout (or than four RFC 6298
         /// retransmission timeouts, if that is longer) and at least one Ping has been sent since it,
@@ -154,7 +155,6 @@ namespace SpacetimeDB
             pingTimeout = timeout;
             return this;
         }
-#endif
 
         public delegate void ConnectCallback(DbConnection conn, Identity identity, string token);
 
