@@ -52,31 +52,26 @@ pub enum DatastoreError {
 }
 
 impl DatastoreError {
-    pub(crate) fn is_resident_memory_limit(&self) -> bool {
-        self.resident_memory_limit().is_some()
-    }
-
     pub fn resident_memory_limit(&self) -> Option<&tiered::BudgetExceeded> {
         match self {
             Self::Page(PageError::MemoryLimitExceeded(error))
             | Self::Blob(BlobError::MemoryLimitExceeded(error))
-            | Self::Table(TableError::Bflatn(bflatn_to::Error::Pages(
-                PageError::MemoryLimitExceeded(error),
-            )))
-            | Self::Table(TableError::Bflatn(bflatn_to::Error::Blobs(
-                BlobError::MemoryLimitExceeded(error),
-            ))) => Some(error),
-            Self::TableStorage(error)
-            | Self::Table(TableError::Bflatn(bflatn_to::Error::Table(error))) => match error {
-                table::TableError::Page(error) => match error.as_ref() {
-                    PageError::MemoryLimitExceeded(error) => Some(error.as_ref()),
-                    _ => None,
-                },
-                table::TableError::Blob(error) => match error.as_ref() {
-                    BlobError::MemoryLimitExceeded(error) => Some(error.as_ref()),
-                    _ => None,
-                },
-            },
+            | Self::Table(TableError::Bflatn(bflatn_to::Error::Pages(PageError::MemoryLimitExceeded(error))))
+            | Self::Table(TableError::Bflatn(bflatn_to::Error::Blobs(BlobError::MemoryLimitExceeded(error)))) => {
+                Some(error)
+            }
+            Self::TableStorage(error) | Self::Table(TableError::Bflatn(bflatn_to::Error::Table(error))) => {
+                match error {
+                    table::TableError::Page(error) => match error.as_ref() {
+                        PageError::MemoryLimitExceeded(error) => Some(error.as_ref()),
+                        _ => None,
+                    },
+                    table::TableError::Blob(error) => match error.as_ref() {
+                        BlobError::MemoryLimitExceeded(error) => Some(error.as_ref()),
+                        _ => None,
+                    },
+                }
+            }
             _ => None,
         }
     }
@@ -151,9 +146,7 @@ pub enum IndexError {
     ColumnNotFound(RawIndexDefV8),
     #[error(transparent)]
     UniqueConstraintViolation(#[from] UniqueConstraintViolation),
-    #[error(
-        "Attempt to define a index with more than 1 auto_inc column: Table: {0:?}, Columns: {1:?}"
-    )]
+    #[error("Attempt to define a index with more than 1 auto_inc column: Table: {0:?}, Columns: {1:?}")]
     OneAutoInc(TableId, Vec<String>),
     #[error("Could not decode arguments to index scan")]
     Decode(DecodeError),
