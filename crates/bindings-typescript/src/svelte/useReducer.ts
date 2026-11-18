@@ -1,17 +1,9 @@
 import { getByAccessorPath } from '../lib/accessor_path.ts';
 import { onDestroy } from 'svelte';
 import { get } from 'svelte/store';
-import type { InferTypeOfParams } from '../lib/type_builders.ts';
 import type { UntypedReducerDef } from '../sdk/reducers.ts';
+import type { ParamsType } from '../sdk/type_utils.ts';
 import { useSpacetimeDB } from './useSpacetimeDB.ts';
-import type { Prettify } from '../lib/type_util.ts';
-
-type IsEmptyObject<T> = [keyof T] extends [never] ? true : false;
-type MaybeParams<T> = IsEmptyObject<T> extends true ? [] : [params: T];
-
-type ParamsType<R extends UntypedReducerDef> = MaybeParams<
-  Prettify<InferTypeOfParams<R['params']>>
->;
 
 export function useReducer<ReducerDef extends UntypedReducerDef>(
   reducerDef: ReducerDef

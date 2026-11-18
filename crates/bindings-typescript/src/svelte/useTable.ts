@@ -1,7 +1,7 @@
 import type { UntypedClientTable } from '../sdk/client_table.ts';
 import { getByAccessorPath } from '../lib/accessor_path.ts';
 import { onDestroy } from 'svelte';
-import { writable, get, type Readable } from 'svelte/store';
+import { writable, type Readable } from 'svelte/store';
 import { useSpacetimeDB } from './useSpacetimeDB.ts';
 import type { ConnectionState } from './connection_state.ts';
 import type { EventContextInterface } from '../sdk/db_connection_impl.ts';
@@ -75,13 +75,17 @@ export function useTable<TableDef extends UntypedTableDef>(
   let appliedConnectionId: string | null = null;
   let subscribedConnection: ReturnType<ConnectionState['getConnection']> = null;
 
-  let latestTransactionEvent: any = null;
+  // The latest connection state, kept current by the store subscription below.
+  // Reading it here instead of calling `get(connectionStore)` avoids a
+  // subscribe/unsubscribe round trip on every transaction.
+  let currentState: ConnectionState | undefined;
+
+  let latestTransactionEventId: string | null = null;
   let unsubscribeFromTable: (() => void) | null = null;
   let subscriptionHandle: { unsubscribe: () => void } | null = null;
 
   const computeFilteredRows = (): readonly Prettify<Row>[] => {
-    const state = get(connectionStore);
-    const connection = state.getConnection();
+    const connection = currentState?.getConnection();
     if (!connection) return [];
 
     const table = getByAccessorPath<UntypedClientTable>(
@@ -100,8 +104,7 @@ export function useTable<TableDef extends UntypedTableDef>(
   };
 
   const setupTableListeners = () => {
-    const state = get(connectionStore);
-    const connection = state.getConnection();
+    const connection = currentState?.getConnection();
     if (!connection) return;
 
     const table = getByAccessorPath<UntypedClientTable>(
@@ -117,11 +120,8 @@ export function useTable<TableDef extends UntypedTableDef>(
       if (whereExpr && !evaluateBooleanExpr(whereExpr, row)) return;
       callbacks?.onInsert?.(row);
 
-      if (
-        eventCtx.event !== latestTransactionEvent ||
-        !latestTransactionEvent
-      ) {
-        latestTransactionEvent = eventCtx.event;
+      if (eventCtx.event.id !== latestTransactionEventId) {
+        latestTransactionEventId = eventCtx.event.id;
         rows.set(computeFilteredRows());
       }
     };
@@ -133,11 +133,8 @@ export function useTable<TableDef extends UntypedTableDef>(
       if (whereExpr && !evaluateBooleanExpr(whereExpr, row)) return;
       callbacks?.onDelete?.(row);
 
-      if (
-        eventCtx.event !== latestTransactionEvent ||
-        !latestTransactionEvent
-      ) {
-        latestTransactionEvent = eventCtx.event;
+      if (eventCtx.event.id !== latestTransactionEventId) {
+        latestTransactionEventId = eventCtx.event.id;
         rows.set(computeFilteredRows());
       }
     };
@@ -163,11 +160,8 @@ export function useTable<TableDef extends UntypedTableDef>(
           return;
       }
 
-      if (
-        eventCtx.event !== latestTransactionEvent ||
-        !latestTransactionEvent
-      ) {
-        latestTransactionEvent = eventCtx.event;
+      if (eventCtx.event.id !== latestTransactionEventId) {
+        latestTransactionEventId = eventCtx.event.id;
         rows.set(computeFilteredRows());
       }
     };
@@ -184,8 +178,7 @@ export function useTable<TableDef extends UntypedTableDef>(
   };
 
   const setupSubscription = () => {
-    const state = get(connectionStore);
-    const connection = state.getConnection();
+    const connection = currentState?.getConnection();
     if (!connection) return;
 
     subscriptionHandle = connection
@@ -203,6 +196,7 @@ export function useTable<TableDef extends UntypedTableDef>(
   };
 
   const unsubscribeConnection = connectionStore.subscribe(state => {
+    currentState = state;
     const connection = state.getConnection();
     isReady.set(
       state.isActive && appliedConnectionId === state.connectionId.toHexString()
@@ -235,7 +229,7 @@ export function useTable<TableDef extends UntypedTableDef>(
     unsubscribeConnection();
     unsubscribeFromTable?.();
     subscriptionHandle?.unsubscribe();
-    latestTransactionEvent = null;
+    latestTransactionEventId = null;
   });
 
   return [{ subscribe: rows.subscribe }, { subscribe: isReady.subscribe }];

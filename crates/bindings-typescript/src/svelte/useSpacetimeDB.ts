@@ -1,13 +1,13 @@
 import { getContext } from 'svelte';
-import type { Writable } from 'svelte/store';
+import type { Readable } from 'svelte/store';
 import {
   SPACETIMEDB_CONTEXT_KEY,
   type ConnectionState,
 } from './connection_state.ts';
 
 // Throws an error if used outside of a SpacetimeDBProvider
-export function useSpacetimeDB(): Writable<ConnectionState> {
-  const context = getContext<Writable<ConnectionState> | undefined>(
+export function useSpacetimeDB(): Readable<ConnectionState> {
+  const context = getContext<Readable<ConnectionState> | undefined>(
     SPACETIMEDB_CONTEXT_KEY
   );
 
