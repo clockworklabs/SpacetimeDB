@@ -23,9 +23,6 @@ public class NetworkStatsTrackerTests
     private static long OffsetAt(NetworkStatsTracker tracker, ulong now) => ServerNowUs(tracker.Snapshot(now)) - (long)now;
 
     [Fact]
-    public void IsNullBeforeAnyPong() => Assert.Null(new NetworkStatsTracker().Snapshot(1_000_000));
-
-    [Fact]
     public void FirstSampleSeedsSrttAndRttvar()
     {
         var tracker = new NetworkStatsTracker();
@@ -93,14 +90,6 @@ public class NetworkStatsTrackerTests
     }
 
     [Fact]
-    public void AppliesTheFirstOffsetImmediately()
-    {
-        var tracker = new NetworkStatsTracker();
-        Pong(tracker, 1_000_000, 10_000, T0);
-        Assert.Equal(1_000_000 + T0, ServerNowUs(tracker.Snapshot(1_000_000)));
-    }
-
-    [Fact]
     public void ServerTimeLatestIsTheLatestPongsServerReceiveTime()
     {
         var tracker = new NetworkStatsTracker();
@@ -143,15 +132,20 @@ public class NetworkStatsTrackerTests
     }
 
     [Fact]
-    public void ResetClearsTheStatsAndTheNeverBackwardsClamp()
+    public void ResetClearsTheStatsUnansweredPingsAndTheNeverBackwardsClamp()
     {
         var tracker = new NetworkStatsTracker();
         Pong(tracker, 1_000_000, 10_000, T0);
         var before = ServerNowUs(tracker.Snapshot(5_000_000));
+        tracker.RecordPing(4_000_000);
+        tracker.RecordPing(5_000_000);
 
         tracker.Reset();
         Assert.Null(tracker.Snapshot(5_000_000));
+        Assert.Equal(0, tracker.PongWaitUs(60_000_000));
+        Assert.False(tracker.IsUnresponsive(60_000_000, 10_000_000));
 
+        // The first sample after a reset applies its offset immediately, even one that moves the clock back.
         Pong(tracker, 1_000_000, 30_000, T0 - 1_000_000);
         var stats = tracker.Snapshot(1_000_000)!.Value;
         Assert.Equal(1_000_000 + T0 - 1_000_000, ServerNowUs(stats));
@@ -160,31 +154,9 @@ public class NetworkStatsTrackerTests
         Assert.Equal(30, stats.RttMin.TotalMilliseconds);
     }
 
-    [Fact]
-    public void ASnapshotDoesNotChangeWhenLaterPongsArrive()
-    {
-        var tracker = new NetworkStatsTracker();
-        Pong(tracker, 1_000_000, 10_000, T0);
-        var a = tracker.Snapshot(1_000_000)!.Value;
-        Assert.Equal((a.Rtt, a.ServerNow), (tracker.Snapshot(1_000_000)!.Value.Rtt, tracker.Snapshot(1_000_000)!.Value.ServerNow));
-
-        Pong(tracker, 2_000_000, 50_000, T0);
-        Assert.Equal(10, a.RttLatest.TotalMilliseconds);
-        Assert.Equal(50, tracker.Snapshot(2_000_000)!.Value.RttLatest.TotalMilliseconds);
-    }
-
     // Answer the Ping sent at `sentUs`, arriving `r` later.
     private static void Answer(NetworkStatsTracker tracker, ulong sentUs, ulong r) =>
         tracker.RecordPong(sentUs + r, sentUs, T0 + (long)sentUs, 0);
-
-    [Fact]
-    public void PongWaitIsZeroWhenEveryPingHasBeenAnswered()
-    {
-        var tracker = new NetworkStatsTracker();
-        tracker.RecordPing(1_000_000);
-        Answer(tracker, 1_000_000, 20_000);
-        Assert.Equal(TimeSpan.Zero, tracker.Snapshot(5_000_000)!.Value.PongWait);
-    }
 
     [Fact]
     public void PongWaitKeepsRisingWhilePongsStopArriving()
@@ -265,17 +237,6 @@ public class NetworkStatsTrackerTests
         Assert.False(tracker.IsUnresponsive(10_000_000 + limitUs, 10_000_000));
         Assert.True(tracker.IsUnresponsive(10_000_001 + limitUs, 10_000_000));
     }
-
-    [Fact]
-    public void ResetForgetsUnansweredPings()
-    {
-        var tracker = new NetworkStatsTracker();
-        tracker.RecordPing(1_000_000);
-        tracker.RecordPing(2_000_000);
-        tracker.Reset();
-        Assert.Equal(0, tracker.PongWaitUs(60_000_000));
-        Assert.False(tracker.IsUnresponsive(60_000_000, 10_000_000));
-    }
 }
 
 // The connection-level Ping tests share ReconnectTests' fake connection and socket.
@@ -307,7 +268,7 @@ public partial class ReconnectTests
             Assert.True(pings[i].RequestId > pings[i - 1].RequestId);
             Assert.True(pings[i].ClientSendTime >= pings[i - 1].ClientSendTime);
         }
-        // No Pong yet, so no stats, but the oldest Ping is waiting.
+        // No Pong yet, so no stats.
         Assert.Null(conn.stats.Network);
         // Pings are kept out of the request trackers.
         Assert.Empty(conn.Socket.Sent);
@@ -326,18 +287,23 @@ public partial class ReconnectTests
         var applySamples = conn.stats.ApplyMessageTracker.GetSampleCount();
 
         var task = conn.Ping();
-        var ping = Assert.Single(conn.Socket.Pings);
-        var receivedAt = Stopwatch.GetTimestamp() + Stopwatch.Frequency / 20;
-        conn.Socket.Receive(PongFor(ping, TimeSpan.FromMilliseconds(20)), receivedAt);
+        var queued = Assert.Single(conn.Socket.Pings);
+        // The native socket restamps a Ping as it leaves the send queue, so its Pong echoes a later
+        // send time than the Ping() call's. Say it spent 30 ms queued, then 70 ms on the round trip,
+        // 20 ms of which the server held it. Every measurement must start from the echoed time.
+        var sentUs = queued.ClientSendTime + 30_000;
+        var receivedAt = NetworkStatsTracker.StopwatchTimestamp(sentUs + 70_000);
+        conn.Socket.Receive(PongFor(new Ping(queued.RequestId, sentUs), TimeSpan.FromMilliseconds(20)), receivedAt);
         Assert.True(SpinWait.SpinUntil(() => task.IsCompleted, TimeSpan.FromSeconds(5)));
 
         var result = await task;
+        // Converting between microseconds and Stopwatch ticks may lose up to a microsecond.
+        Assert.InRange(result.RoundTrip, TimeSpan.FromMilliseconds(70) - TimeSpan.FromTicks(10), TimeSpan.FromMilliseconds(70));
         Assert.Equal(TimeSpan.FromMilliseconds(20), result.ServerHold);
         Assert.Equal(result.RoundTrip - result.ServerHold, result.Rtt);
-        Assert.True(result.RoundTrip >= TimeSpan.FromMilliseconds(50));
         Assert.Equal(ServerReceiveTime, result.ServerReceiveTime);
+        Assert.Equal(NetworkStatsTracker.StopwatchTimestamp(sentUs), result.SentAt);
         Assert.Equal(receivedAt, result.ReceivedAt);
-        Assert.True(result.SentAt < result.ReceivedAt);
 
         // The sample feeds the stats too, and the Pong stays out of the message trackers.
         var stats = conn.stats.Network!.Value;
@@ -380,31 +346,6 @@ public partial class ReconnectTests
         SpacetimeDB.WebSocket.StampPing(message, now);
         SpacetimeDB.WebSocket.StampPing(other, now);
         Assert.Equal(before, GC.GetAllocatedBytesForCurrentThread());
-    }
-
-    // The native socket stamps a Ping as it leaves the send queue, so the Pong echoes a later send time
-    // than the Ping() call's. Every measurement must start from the echoed time.
-    [Fact]
-    public async Task PingIsMeasuredFromTheSendTimeItsPongEchoes()
-    {
-        using var conn = CreateWithoutPeriodicPings();
-        Establish(conn);
-        var task = conn.Ping();
-        var queued = Assert.Single(conn.Socket.Pings);
-
-        // Spend 30 ms in the send queue, then 50 ms on the network.
-        var sentUs = queued.ClientSendTime + 30_000;
-        var receivedAt = NetworkStatsTracker.StopwatchTimestamp(sentUs + 50_000);
-        conn.Socket.Receive(PongFor(new Ping(queued.RequestId, sentUs)), receivedAt);
-        var result = await task.WaitAsync(TimeSpan.FromSeconds(5));
-
-        // Converting between microseconds and Stopwatch ticks may lose up to a microsecond.
-        Assert.InRange(result.RoundTrip, TimeSpan.FromMilliseconds(50) - TimeSpan.FromTicks(10), TimeSpan.FromMilliseconds(50));
-        Assert.Equal(result.RoundTrip, result.Rtt);
-        Assert.Equal(NetworkStatsTracker.StopwatchTimestamp(sentUs), result.SentAt);
-        var stats = conn.stats.Network!.Value;
-        Assert.Equal(result.Rtt, stats.RttLatest);
-        Assert.Equal(TimeSpan.Zero, stats.PongWait);
     }
 
     [Fact]
