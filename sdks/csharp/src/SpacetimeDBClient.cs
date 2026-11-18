@@ -1545,11 +1545,16 @@ namespace SpacetimeDB
         ///
         /// Its sample also feeds <c>stats.Network</c>, exactly like the periodic Pings,
         /// and this works even when periodic pinging is disabled with <c>WithPingInterval(TimeSpan.Zero)</c>.
-        /// Like a one-off query, the task completes on a background thread, without waiting for <c>FrameTick()</c>.
         /// Safe to call from any thread, including that task's continuation.
         ///
-        /// Fails immediately if the connection isn't established, and fails if the connection closes
-        /// before the Pong arrives. With periodic pinging disabled, unanswered Pings never close the
+        /// Like a one-off query, the task completes on the SDK's message parsing thread, without waiting
+        /// for <c>FrameTick()</c>. Its continuations run on the thread pool, or on the caller's
+        /// <see cref="SynchronizationContext"/> if the <c>await</c> captured one, as Unity's main thread does.
+        /// Since WebGL players have no parsing thread, there the task completes on the main thread,
+        /// once a <c>FrameTick()</c> has received the Pong.
+        ///
+        /// Fails immediately with <see cref="InvalidOperationException"/> if the connection isn't established,
+        /// and with <see cref="OperationCanceledException"/> if the connection closes before the Pong arrives. With periodic pinging disabled, unanswered Pings never close the
         /// connection, so on a silently failed network this waits until the socket closes.
         /// </summary>
         public Task<PingResult> Ping()

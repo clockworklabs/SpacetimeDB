@@ -538,6 +538,8 @@ if (stats) {
 }
 ```
 
+`networkStats` is `undefined` while the stats are absent. Durations are milliseconds, as a `number`.
+
 </TabItem>
 <TabItem value="csharp" label="C#">
 
@@ -549,6 +551,8 @@ if (stats != null)
 }
 ```
 
+`stats.Network` is `null` while the stats are absent. Durations are `TimeSpan`s.
+
 </TabItem>
 <TabItem value="rust" label="Rust">
 
@@ -558,6 +562,8 @@ if let Some(stats) = conn.network_stats() {
 }
 ```
 
+`network_stats()` returns `None` while the stats are absent. Durations are `Duration`s.
+
 </TabItem>
 <TabItem value="unreal" label="Unreal">
 
@@ -566,7 +572,7 @@ Connection metrics for the Unreal C++ SDK are coming soon.
 </TabItem>
 </Tabs>
 
-The stats are absent (`undefined`, `null` or `None`) until the first ping is answered, and again after the connection closes. Once present, every field is set. Each read returns a fresh snapshot, so read the stats again whenever you want current values.
+The stats are absent until the first ping is answered, and again after the connection closes. Once present, every field is set. Each read returns a fresh snapshot, so read the stats again whenever you want current values.
 
 | TypeScript         | C#                 | Rust                 | Meaning |
 | ------------------ | ------------------ | -------------------- | ------- |
@@ -578,7 +584,7 @@ The stats are absent (`undefined`, `null` or `None`) until the first ping is ans
 | `serverTimeLatest` | `ServerTimeLatest` | `server_time_latest` | When the server received the most recent ping. It doesn't advance between pings. |
 | `pongWait`         | `PongWait`         | `pong_wait`          | How long the oldest unanswered ping has been waiting, or zero if every ping has been answered. |
 
-Round-trip times exclude the time the server spent handling each ping, so they measure the network, not server load. Durations are milliseconds as a `number` in TypeScript, `TimeSpan` in C#, and `Duration` in Rust.
+Round-trip times exclude the time the server spent handling each ping, so they measure the network, not server load.
 
 `pongWait` is the field to watch for a stalled connection. On a healthy connection it stays below `rtt`. The other fields only change when a ping is answered, so if the network fails silently they keep showing their last good values, while `pongWait` keeps rising.
 
@@ -675,6 +681,8 @@ var result = await conn.Ping();
 Console.WriteLine($"RTT {result.Rtt.TotalMilliseconds:F1} ms");
 ```
 
+You can call `Ping()` from any thread. The task completes without waiting for `FrameTick()`, except in WebGL players; see [`Ping()`](./00600-csharp-reference.md#method-ping) for which thread it completes on.
+
 </TabItem>
 <TabItem value="rust" label="Rust">
 
@@ -707,7 +715,7 @@ The TypeScript SDK applies the ping timeout in every environment, including Node
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-The ping timeout applies to Unity WebGL builds only. Change it with `.WithPingTimeout(TimeSpan)`, which only exists when building for WebGL. Other builds don't detect a silently failed network, so watch `PongWait` if your app needs to notice one.
+The ping timeout applies to Unity WebGL players only. Change it with `.WithPingTimeout(TimeSpan)`, which every build accepts and all but WebGL players ignore. Other builds don't detect a silently failed network, so watch `PongWait` if your app needs to notice one.
 
 </TabItem>
 <TabItem value="rust" label="Rust">
