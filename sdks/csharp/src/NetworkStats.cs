@@ -7,7 +7,7 @@ namespace SpacetimeDB
     /// <summary>
     /// A snapshot of a connection's network statistics, derived from Ping/Pong round trips.
     /// </summary>
-    public sealed class NetworkStats
+    public readonly struct NetworkStats
     {
         /// <summary>Smoothed round-trip time (RFC 6298 SRTT).</summary>
         public TimeSpan Rtt { get; }
@@ -53,7 +53,7 @@ namespace SpacetimeDB
     /// <summary>
     /// The result of a single Ping sent with <c>DbConnection.Ping()</c>.
     /// </summary>
-    public sealed class PingResult
+    public readonly struct PingResult
     {
         /// <summary>
         /// The round-trip time for this Ping, excluding the time the server held it:

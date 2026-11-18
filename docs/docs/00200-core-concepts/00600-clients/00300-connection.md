@@ -544,8 +544,7 @@ if (stats) {
 <TabItem value="csharp" label="C#">
 
 ```csharp
-var stats = conn.stats.Network;
-if (stats != null)
+if (conn.stats.Network is NetworkStats stats)
 {
     Console.WriteLine($"RTT {stats.Rtt.TotalMilliseconds:F1} ms, jitter {stats.Jitter.TotalMilliseconds:F1} ms");
 }

@@ -18,7 +18,7 @@ public class NetworkStatsTrackerTests
         tracker.RecordPong(now, clientSendTime, (long)clientSendTime + (long)r / 2 + theta, 0);
     }
 
-    private static long ServerNowUs(NetworkStats? stats) => stats!.ServerNow.MicrosecondsSinceUnixEpoch;
+    private static long ServerNowUs(NetworkStats? stats) => stats!.Value.ServerNow.MicrosecondsSinceUnixEpoch;
 
     private static long OffsetAt(NetworkStatsTracker tracker, ulong now) => ServerNowUs(tracker.Snapshot(now)) - (long)now;
 
@@ -30,7 +30,7 @@ public class NetworkStatsTrackerTests
     {
         var tracker = new NetworkStatsTracker();
         tracker.RecordPong(1_000_000, 900_000, T0, 20_000);
-        var stats = tracker.Snapshot(1_000_000)!;
+        var stats = tracker.Snapshot(1_000_000)!.Value;
         Assert.Equal(80, stats.Rtt.TotalMilliseconds);
         Assert.Equal(40, stats.Jitter.TotalMilliseconds);
         Assert.Equal(80, stats.RttLatest.TotalMilliseconds);
@@ -42,7 +42,7 @@ public class NetworkStatsTrackerTests
     {
         var tracker = new NetworkStatsTracker();
         tracker.RecordPong(1_000_000, 990_000, T0, 50_000);
-        var stats = tracker.Snapshot(1_000_000)!;
+        var stats = tracker.Snapshot(1_000_000)!.Value;
         Assert.Equal(TimeSpan.Zero, stats.RttLatest);
         Assert.Equal(TimeSpan.Zero, stats.Rtt);
         Assert.Equal(TimeSpan.Zero, stats.Jitter);
@@ -54,7 +54,7 @@ public class NetworkStatsTrackerTests
         var tracker = new NetworkStatsTracker();
         Pong(tracker, 1_000_000, 100_000, T0);
         Pong(tracker, 2_000_000, 200_000, T0);
-        var stats = tracker.Snapshot(2_000_000)!;
+        var stats = tracker.Snapshot(2_000_000)!.Value;
         Assert.Equal(62.5, stats.Jitter.TotalMilliseconds);
         Assert.Equal(112.5, stats.Rtt.TotalMilliseconds);
         Assert.Equal(200, stats.RttLatest.TotalMilliseconds);
@@ -68,11 +68,11 @@ public class NetworkStatsTrackerTests
         for (ulong i = 1; i < NetworkStatsTracker.Window; i++)
         {
             Pong(tracker, 1_000_000 + i * 1_000_000, 50_000, T0);
-            Assert.Equal(10, tracker.Snapshot(1_000_000 + i * 1_000_000)!.RttMin.TotalMilliseconds);
+            Assert.Equal(10, tracker.Snapshot(1_000_000 + i * 1_000_000)!.Value.RttMin.TotalMilliseconds);
         }
         // The 10_000 sample is now the oldest of a full window; one more evicts it.
         Pong(tracker, 20_000_000, 50_000, T0);
-        Assert.Equal(50, tracker.Snapshot(20_000_000)!.RttMin.TotalMilliseconds);
+        Assert.Equal(50, tracker.Snapshot(20_000_000)!.Value.RttMin.TotalMilliseconds);
     }
 
     [Fact]
@@ -107,7 +107,7 @@ public class NetworkStatsTrackerTests
         tracker.RecordPong(1_000_000, 900_000, T0, 0);
         tracker.RecordPong(2_000_000, 1_900_000, T0 + 1_000_000, 0);
         // It's the raw measurement, so it doesn't advance between Pongs.
-        Assert.Equal(new Timestamp(T0 + 1_000_000), tracker.Snapshot(2_500_000)!.ServerTimeLatest);
+        Assert.Equal(new Timestamp(T0 + 1_000_000), tracker.Snapshot(2_500_000)!.Value.ServerTimeLatest);
     }
 
     [Fact]
@@ -153,7 +153,7 @@ public class NetworkStatsTrackerTests
         Assert.Null(tracker.Snapshot(5_000_000));
 
         Pong(tracker, 1_000_000, 30_000, T0 - 1_000_000);
-        var stats = tracker.Snapshot(1_000_000)!;
+        var stats = tracker.Snapshot(1_000_000)!.Value;
         Assert.Equal(1_000_000 + T0 - 1_000_000, ServerNowUs(stats));
         Assert.True(ServerNowUs(stats) < before);
         Assert.Equal(30, stats.Rtt.TotalMilliseconds);
@@ -161,14 +161,16 @@ public class NetworkStatsTrackerTests
     }
 
     [Fact]
-    public void ReturnsADistinctSnapshotOnEachAccess()
+    public void ASnapshotDoesNotChangeWhenLaterPongsArrive()
     {
         var tracker = new NetworkStatsTracker();
         Pong(tracker, 1_000_000, 10_000, T0);
-        var a = tracker.Snapshot(1_000_000)!;
-        var b = tracker.Snapshot(1_000_000)!;
-        Assert.NotSame(a, b);
-        Assert.Equal((a.Rtt, a.ServerNow, a.PongWait), (b.Rtt, b.ServerNow, b.PongWait));
+        var a = tracker.Snapshot(1_000_000)!.Value;
+        Assert.Equal((a.Rtt, a.ServerNow), (tracker.Snapshot(1_000_000)!.Value.Rtt, tracker.Snapshot(1_000_000)!.Value.ServerNow));
+
+        Pong(tracker, 2_000_000, 50_000, T0);
+        Assert.Equal(10, a.RttLatest.TotalMilliseconds);
+        Assert.Equal(50, tracker.Snapshot(2_000_000)!.Value.RttLatest.TotalMilliseconds);
     }
 
     // Answer the Ping sent at `sentUs`, arriving `r` later.
@@ -181,7 +183,7 @@ public class NetworkStatsTrackerTests
         var tracker = new NetworkStatsTracker();
         tracker.RecordPing(1_000_000);
         Answer(tracker, 1_000_000, 20_000);
-        Assert.Equal(TimeSpan.Zero, tracker.Snapshot(5_000_000)!.PongWait);
+        Assert.Equal(TimeSpan.Zero, tracker.Snapshot(5_000_000)!.Value.PongWait);
     }
 
     [Fact]
@@ -194,8 +196,8 @@ public class NetworkStatsTrackerTests
         tracker.RecordPing(3_000_000);
 
         // The other fields are frozen at their last good values...
-        var early = tracker.Snapshot(2_500_000)!;
-        var late = tracker.Snapshot(6_000_000)!;
+        var early = tracker.Snapshot(2_500_000)!.Value;
+        var late = tracker.Snapshot(6_000_000)!.Value;
         Assert.Equal(early.Rtt, late.Rtt);
         // ...but PongWait measures from the oldest unanswered Ping.
         Assert.Equal(500, early.PongWait.TotalMilliseconds);
@@ -338,7 +340,7 @@ public partial class ReconnectTests
         Assert.True(result.SentAt < result.ReceivedAt);
 
         // The sample feeds the stats too, and the Pong stays out of the message trackers.
-        var stats = conn.stats.Network!;
+        var stats = conn.stats.Network!.Value;
         Assert.Equal(result.Rtt, stats.RttLatest);
         Assert.Equal(TimeSpan.Zero, stats.PongWait);
         Assert.Equal(ServerReceiveTime, stats.ServerTimeLatest);
@@ -400,7 +402,7 @@ public partial class ReconnectTests
         Assert.InRange(result.RoundTrip, TimeSpan.FromMilliseconds(50) - TimeSpan.FromTicks(10), TimeSpan.FromMilliseconds(50));
         Assert.Equal(result.RoundTrip, result.Rtt);
         Assert.Equal(NetworkStatsTracker.StopwatchTimestamp(sentUs), result.SentAt);
-        var stats = conn.stats.Network!;
+        var stats = conn.stats.Network!.Value;
         Assert.Equal(result.Rtt, stats.RttLatest);
         Assert.Equal(TimeSpan.Zero, stats.PongWait);
     }

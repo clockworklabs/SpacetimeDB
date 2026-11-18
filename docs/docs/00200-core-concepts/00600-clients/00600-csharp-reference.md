@@ -840,7 +840,7 @@ class Stats
     public NetworkStats? Network { get; }
 }
 
-public sealed class NetworkStats
+public readonly struct NetworkStats
 {
     public TimeSpan Rtt { get; }
     public TimeSpan RttLatest { get; }
@@ -852,7 +852,7 @@ public sealed class NetworkStats
 }
 ```
 
-A snapshot of the connection's network statistics, measured by periodically pinging the server, read from the connection's `stats` object as `conn.stats.Network`. Null until the first ping is answered, and after the connection closes or is lost. With periodic pinging disabled by [`WithPingInterval(TimeSpan.Zero)`](#method-withpinginterval), it stays null until a [`Ping()`](#method-ping) is answered. Each read returns a fresh snapshot. `ServerNow` estimates the server's current time on the same clock as a reducer's `ctx.Timestamp`; it adjusts gradually and never goes backwards. See [Connection Metrics](./00300-connection.md#connection-metrics) for what each property means.
+A snapshot of the connection's network statistics, measured by periodically pinging the server, read from the connection's `stats` object as `conn.stats.Network`. Null until the first ping is answered, and after the connection closes or is lost. With periodic pinging disabled by [`WithPingInterval(TimeSpan.Zero)`](#method-withpinginterval), it stays null until a [`Ping()`](#method-ping) is answered. Each read returns a fresh snapshot, a value that doesn't change as later pings are answered and doesn't allocate. Since `Network` is a nullable struct, test it with a pattern such as `if (conn.stats.Network is NetworkStats stats)`. `ServerNow` estimates the server's current time on the same clock as a reducer's `ctx.Timestamp`; it adjusts gradually and never goes backwards. See [Connection Metrics](./00300-connection.md#connection-metrics) for what each property means.
 
 #### Method `Ping`
 
@@ -862,7 +862,7 @@ class DbConnection
     public Task<PingResult> Ping();
 }
 
-public sealed class PingResult
+public readonly struct PingResult
 {
     public TimeSpan Rtt { get; }
     public TimeSpan RoundTrip { get; }
