@@ -2629,7 +2629,7 @@ mod tests {
         }
     }
 
-    // Check parent resolution and forwarding through the real route with a mocked backend.
+    // Ensure creation and updates pass the requested parent to publication without losing or changing it.
     #[tokio::test]
     async fn publish_parent_is_forwarded_for_creation_and_update() {
         let identity = test_identity(46);
