@@ -123,13 +123,14 @@ mod tests {
         let spacetimedb::spacetimedb_lib::RawModuleDef::V10(module) = spacetimedb::test_utils::module_def() else {
             panic!("expected v10 module definition");
         };
+        let module = module.into_sections();
 
-        let tables = module.tables().expect("expected tables section");
+        let tables = module.tables.expect("expected tables section");
         assert!(tables.iter().any(|table| table.source_name.as_ref() == "user"));
         assert!(tables.iter().any(|table| table.source_name.as_ref() == "message"));
         assert_eq!(tables.len(), 2, "unexpected extra tables: {tables:?}");
 
-        let reducers = module.reducers().expect("expected reducers section");
+        let reducers = module.reducers.expect("expected reducers section");
         for expected in [
             "set_name",
             "send_message",

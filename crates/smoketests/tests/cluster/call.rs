@@ -29,8 +29,10 @@ pub fn receive(_ctx: &ReducerContext, MessageBody: Message) {
         .unwrap();
     assert!(schema.is_success(), "schema request failed: {}", schema.text().unwrap());
     let SerdeWrapper(raw): SerdeWrapper<RawModuleDefV10> = serde_json::from_slice(&schema.body).unwrap();
+    let raw = raw.into_sections();
     let reducer = raw
-        .reducers()
+        .reducers
+        .as_ref()
         .unwrap()
         .iter()
         .find(|reducer| reducer.source_name.as_ref() == "receive")
@@ -41,7 +43,10 @@ pub fn receive(_ctx: &ReducerContext, MessageBody: Message) {
     let AlgebraicType::Ref(message_ref) = param.algebraic_type else {
         panic!("expected a named Message type");
     };
-    let item_name = raw.typespace().unwrap()[message_ref].as_product().unwrap().elements[0]
+    let item_name = raw.typespace.as_ref().unwrap()[message_ref]
+        .as_product()
+        .unwrap()
+        .elements[0]
         .name
         .as_deref()
         .unwrap();

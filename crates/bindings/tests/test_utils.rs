@@ -68,8 +68,9 @@ fn module_def_includes_native_test_registrations() {
     let RawModuleDef::V10(module) = spacetimedb::test_utils::module_def() else {
         panic!("test utils should return a v10 raw module def");
     };
+    let module = module.into_sections();
 
-    let tables = module.tables().expect("tables section should be present");
+    let tables = module.tables.expect("tables section should be present");
     assert!(tables
         .iter()
         .any(|table| table.source_name.as_ref() == "test_utils_user"));
@@ -80,7 +81,7 @@ fn module_def_includes_native_test_registrations() {
         .iter()
         .any(|table| table.source_name.as_ref() == "test_utils_outbox"));
 
-    let reducers = module.reducers().expect("reducers section should be present");
+    let reducers = module.reducers.expect("reducers section should be present");
     assert!(reducers
         .iter()
         .any(|reducer| reducer.source_name.as_ref() == "add_test_utils_user"));
@@ -88,7 +89,7 @@ fn module_def_includes_native_test_registrations() {
         .iter()
         .any(|reducer| reducer.source_name.as_ref() == "on_test_utils_outbox_result"));
 
-    let outboxes = module.outboxes().expect("outboxes section should be present");
+    let outboxes = module.outboxes.expect("outboxes section should be present");
     assert_eq!(outboxes.len(), 1);
     let outbox = &outboxes[0];
     assert_eq!(outbox.table_name.as_ref(), "test_utils_outbox");

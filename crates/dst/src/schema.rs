@@ -456,12 +456,12 @@ mod tests {
             }],
         };
 
-        let raw = to_raw_def(&schema);
+        let raw = to_raw_def(&schema).into_sections();
 
         // Should have Typespace, Types, and Tables sections.
-        assert!(raw.typespace().is_some());
-        assert!(raw.types().is_some());
-        let tables = raw.tables().unwrap();
+        assert!(raw.typespace.is_some());
+        assert!(raw.types.is_some());
+        let tables = raw.tables.unwrap();
         assert_eq!(tables.len(), 1);
 
         let t = &tables[0];
