@@ -350,6 +350,62 @@ public partial class ReconnectTests
     }
 
     [Fact]
+    public void StampPingGivesAPingTheTimeItLeavesTheSendQueue()
+    {
+        var now = Stopwatch.GetTimestamp();
+        var ping = new Ping(7, 1);
+        SpacetimeDB.WebSocket.StampPing(new ClientMessage.Ping(ping), now);
+        Assert.Equal(7u, ping.RequestId);
+        Assert.Equal(NetworkStatsTracker.Micros(now), ping.ClientSendTime);
+
+        var query = new OneOffQuery { RequestId = 1, QueryString = "SELECT 1" };
+        SpacetimeDB.WebSocket.StampPing(new ClientMessage.OneOffQuery(query), now);
+        Assert.Equal(1u, query.RequestId);
+        Assert.Equal("SELECT 1", query.QueryString);
+    }
+
+    [Fact]
+    public void StampPingDoesNotAllocate()
+    {
+        var message = new ClientMessage.Ping(new Ping(7, 1));
+        var other = new ClientMessage.OneOffQuery(new OneOffQuery { RequestId = 1, QueryString = "SELECT 1" });
+        var now = Stopwatch.GetTimestamp();
+        // Warm up, so that JIT compilation isn't counted.
+        SpacetimeDB.WebSocket.StampPing(message, now);
+        SpacetimeDB.WebSocket.StampPing(other, now);
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        SpacetimeDB.WebSocket.StampPing(message, now);
+        SpacetimeDB.WebSocket.StampPing(other, now);
+        Assert.Equal(before, GC.GetAllocatedBytesForCurrentThread());
+    }
+
+    // The native socket stamps a Ping as it leaves the send queue, so the Pong echoes a later send time
+    // than the Ping() call's. Every measurement must start from the echoed time.
+    [Fact]
+    public async Task PingIsMeasuredFromTheSendTimeItsPongEchoes()
+    {
+        using var conn = CreateWithoutPeriodicPings();
+        Establish(conn);
+        var task = conn.Ping();
+        var queued = Assert.Single(conn.Socket.Pings);
+
+        // Spend 30 ms in the send queue, then 50 ms on the network.
+        var sentUs = queued.ClientSendTime + 30_000;
+        var receivedAt = NetworkStatsTracker.StopwatchTimestamp(sentUs + 50_000);
+        conn.Socket.Receive(PongFor(new Ping(queued.RequestId, sentUs)), receivedAt);
+        var result = await task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // Converting between microseconds and Stopwatch ticks may lose up to a microsecond.
+        Assert.InRange(result.RoundTrip, TimeSpan.FromMilliseconds(50) - TimeSpan.FromTicks(10), TimeSpan.FromMilliseconds(50));
+        Assert.Equal(result.RoundTrip, result.Rtt);
+        Assert.Equal(NetworkStatsTracker.StopwatchTimestamp(sentUs), result.SentAt);
+        var stats = conn.stats.Network!;
+        Assert.Equal(result.Rtt, stats.RttLatest);
+        Assert.Equal(TimeSpan.Zero, stats.PongWait);
+    }
+
+    [Fact]
     public void LosingTheConnectionFailsPendingPingsAndResetsTheStats()
     {
         using var conn = CreateWithoutPeriodicPings();
