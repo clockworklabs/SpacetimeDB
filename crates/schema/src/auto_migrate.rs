@@ -223,6 +223,87 @@ impl MigratePlan<'_> {
     }
 }
 
+impl<'def> MigratePlan<'def> {
+    /// The tables a manual migration sees under `dropped`, as they are when it runs.
+    ///
+    /// These are the old definitions of the removed and changed tables:
+    /// the plan has no automatic steps for either, see [`Self::drop_steps_of_recreated_tables`].
+    /// Empty if this isn't a manual migration.
+    pub fn dropped_tables(&self) -> Vec<(TableKey<'def>, TableDef)> {
+        let Some(manual) = &self.manual else {
+            return vec![];
+        };
+        std::iter::chain(&manual.removed_tables, &manual.changed_tables)
+            .filter_map(|&key| Some((key, self.old.find_table(key)?.1.clone())))
+            .collect()
+    }
+
+    /// The existing table that `step` alters piecemeal, if any.
+    ///
+    /// Steps that add, remove, or rewrite a whole table, and steps that aren't about a table, give `None`.
+    fn step_table(&self, step: &AutoMigrateStep<'def>) -> Option<TableKey<'def>> {
+        // The table in `module` that stores the index, constraint, sequence, or schedule named `name`.
+        let storing_table = |module: &'def ModuleDef, namespace: &'def NamespacePath, name: &RawIdentifier| {
+            let (_, table) = module.find_storing_table(namespace, name)?;
+            Some((namespace, &table.name))
+        };
+        let (old, new) = (self.old, self.new);
+        match *step {
+            AutoMigrateStep::RemoveIndex((namespace, name))
+            | AutoMigrateStep::RemoveConstraint((namespace, name))
+            | AutoMigrateStep::RemoveSequence((namespace, name)) => storing_table(old, namespace, name),
+            AutoMigrateStep::RemoveSchedule((namespace, name)) => storing_table(old, namespace, name.as_raw()),
+            AutoMigrateStep::AddIndex((namespace, name))
+            | AutoMigrateStep::AddConstraint((namespace, name))
+            | AutoMigrateStep::AddSequence((namespace, name))
+            | AutoMigrateStep::ChangeIndexSourceName((namespace, name)) => storing_table(new, namespace, name),
+            AutoMigrateStep::AddSchedule((namespace, name)) => storing_table(new, namespace, name.as_raw()),
+            AutoMigrateStep::ChangeTableAccessorName(key)
+            | AutoMigrateStep::ChangeColumnAccessorName(key, _)
+            | AutoMigrateStep::ChangeAccess(key)
+            | AutoMigrateStep::ChangePrimaryKey(key)
+            | AutoMigrateStep::ChangeOutbox(key) => Some(key),
+            AutoMigrateStep::RemoveTable(_)
+            | AutoMigrateStep::AddTable(_)
+            | AutoMigrateStep::ChangeColumns(_)
+            | AutoMigrateStep::ReschemaEventTable(_)
+            | AutoMigrateStep::AddColumns(_)
+            | AutoMigrateStep::RemoveView(_)
+            | AutoMigrateStep::AddView(_)
+            | AutoMigrateStep::UpdateView(_)
+            | AutoMigrateStep::RemoveRowLevelSecurity(_)
+            | AutoMigrateStep::AddRowLevelSecurity(_)
+            | AutoMigrateStep::DisconnectAllUsers => None,
+        }
+    }
+
+    /// Drops the steps and prechecks for the tables that a manual migration recreates.
+    ///
+    /// The engine moves such a table under `dropped` and creates it afresh from its new definition,
+    /// with all its indexes, constraints, and sequences, so there is nothing to do to the old table.
+    /// Worse, the steps would apply the new definition's column positions to the old table,
+    /// where they may be out of bounds, or name different columns entirely.
+    fn drop_steps_of_recreated_tables(&mut self) {
+        let Some(manual) = &self.manual else {
+            return;
+        };
+        let recreated: HashSet<TableKey<'def>> = manual.changed_tables.iter().copied().collect();
+        let is_recreated = |table: Option<TableKey<'def>>| table.is_some_and(|table| recreated.contains(&table));
+
+        let mut steps = std::mem::take(&mut self.steps);
+        steps.retain(|step| !is_recreated(self.step_table(step)));
+        self.steps = steps;
+
+        let new = self.new;
+        self.prechecks.retain(|precheck| match *precheck {
+            AutoMigratePrecheck::CheckAddSequenceRangeValid((namespace, name)) => !is_recreated(
+                new.find_storing_table(namespace, name)
+                    .map(|(_, table)| (namespace, &table.name)),
+            ),
+        });
+    }
+}
+
 /// Checks that must be performed before performing an automatic migration.
 /// These checks can access table contents and other database state.
 #[derive(PartialEq, Eq, Debug, PartialOrd, Ord)]
@@ -495,10 +576,43 @@ pub fn ponder_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> Resul
     _ponder_migrate(old, new, manual_migration)
 }
 
+/// Construct the plan that would run if `new` declared a manual migration from `old`,
+/// whether or not it actually does.
+///
+/// The plan's [`ManualMigrateData`] lists the tables that the migration would see
+/// in its `dropped` namespace. This is used to generate the skeleton of a new migration.
+pub fn ponder_manual_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> Result<MigratePlan<'def>> {
+    let hash = hash_value(old);
+    let name = Identifier::new_unsafe_assume_valid(["migration_", &hash.to_hex()].concat().into());
+    let manual = ManualMigrateData {
+        hash,
+        id: MigrationId(new.migrations_map().get_index_of(&hash).unwrap_or(0) as u32),
+        name: NamespacePath::root().join(name),
+        removed_tables: Vec::new(),
+        changed_tables: Vec::new(),
+    };
+    ponder_migrate_with(old, new, Some(manual))
+}
+
 fn _ponder_migrate<'def>(
     old: &'def ModuleDef,
     new: &'def ModuleDef,
     manual_migration: Option<(usize, &Hash, &MigrationDef)>,
+) -> Result<MigratePlan<'def>> {
+    let manual = manual_migration.map(|(id, hash, migration)| ManualMigrateData {
+        hash: *hash,
+        id: MigrationId(id as u32),
+        name: migration.namespace.join(migration.name.clone()),
+        removed_tables: Vec::new(),
+        changed_tables: Vec::new(),
+    });
+    ponder_migrate_with(old, new, manual)
+}
+
+fn ponder_migrate_with<'def>(
+    old: &'def ModuleDef,
+    new: &'def ModuleDef,
+    manual: Option<ManualMigrateData<'def>>,
 ) -> Result<MigratePlan<'def>> {
     // Both the old and new database definitions have already been validated (this is enforced by the types).
     // All we have to do is walk through and compare them.
@@ -507,13 +621,7 @@ fn _ponder_migrate<'def>(
         new,
         steps: Vec::new(),
         prechecks: Vec::new(),
-        manual: manual_migration.map(|(id, hash, migration)| ManualMigrateData {
-            hash: *hash,
-            id: MigrationId(id as u32),
-            name: migration.namespace.join(migration.name.clone()),
-            removed_tables: Vec::new(),
-            changed_tables: Vec::new(),
-        }),
+        manual,
     };
 
     auto_migrate_views(&mut plan);
@@ -536,6 +644,7 @@ fn _ponder_migrate<'def>(
     // since they assume that any schema changes, like adding or dropping tables,
     // have already been reflected in the database state.
     auto_migrate_row_level_security(&mut plan);
+    plan.drop_steps_of_recreated_tables();
 
     let ((), (), ()) = (tables_ok, indexes_ok, constraints_ok).combine_errors()?;
 
@@ -2145,6 +2254,89 @@ mod tests {
         let plan = _ponder_migrate(&old_def, &new_def, Some((0, &hash, &migration))).expect("manual migration plan");
 
         assert_eq!(plan.manual.unwrap().changed_tables, [key("", "Apples")]);
+    }
+
+    #[test]
+    fn manual_migration_leaves_sequences_of_changed_tables_alone() {
+        // Renaming an `auto_inc` column renames its sequence too.
+        let person = |column: &'static str| {
+            create_module_def(|builder| {
+                builder
+                    .build_table_with_new_type("Person", ProductType::from([(column, AlgebraicType::U16)]), true)
+                    .with_column_sequence(0)
+                    .finish();
+            })
+        };
+        let (old_def, new_def) = (person("id"), person("new_id"));
+
+        let plan = ponder_manual_migrate(&old_def, &new_def).expect("manual migration plan");
+        assert_eq!(plan.manual.as_ref().unwrap().changed_tables, [key("", "Person")]);
+
+        // The table is recreated with the new sequence, so there's nothing to check
+        // against or apply to the old table, whose column holds the old ids.
+        assert_eq!(plan.prechecks, []);
+        assert!(
+            !plan.steps.iter().any(|step| matches!(
+                step,
+                AutoMigrateStep::AddSequence(_) | AutoMigrateStep::RemoveSequence(_)
+            )),
+            "{:?}",
+            plan.steps
+        );
+    }
+
+    #[test]
+    fn dropped_tables_are_old_definitions() {
+        let old_def = create_module_def(|builder| {
+            builder
+                .build_table_with_new_type(
+                    "Apples",
+                    ProductType::from([("id", AlgebraicType::U64), ("count", AlgebraicType::U8)]),
+                    true,
+                )
+                .with_access(TableAccess::Private)
+                .with_index(btree(0), "id_index")
+                .with_index(btree(1), "count_index")
+                .finish();
+            builder
+                .build_table_with_new_type("Pears", ProductType::from([("id", AlgebraicType::U64)]), true)
+                .with_index(btree(0), "pear_index")
+                .finish();
+        });
+        let new_def = create_module_def(|builder| {
+            builder
+                .build_table_with_new_type(
+                    "Apples",
+                    // Widening `count` can't be done automatically, so the table changes manually.
+                    ProductType::from([("id", AlgebraicType::U64), ("count", AlgebraicType::U16)]),
+                    true,
+                )
+                .with_access(TableAccess::Public)
+                .with_index(btree(0), "id_index")
+                .with_index(btree([0, 1]), "both_index")
+                .with_column_sequence(0)
+                .finish();
+        });
+
+        let plan = ponder_manual_migrate(&old_def, &new_def).expect("manual migration plan");
+        let manual = plan.manual.as_ref().unwrap();
+        assert_eq!(manual.changed_tables, [key("", "Apples")]);
+        assert_eq!(manual.removed_tables, [key("", "Pears")]);
+
+        // The changed table gets no automatic steps, since the engine recreates it from scratch.
+        assert_eq!(
+            plan.steps,
+            [
+                AutoMigrateStep::RemoveTable(key("", "Pears")),
+                AutoMigrateStep::DisconnectAllUsers
+            ]
+        );
+        assert_eq!(plan.prechecks, []);
+
+        // So both tables are moved under `dropped` as they were.
+        let dropped: HashMap<_, _> = plan.dropped_tables().into_iter().collect();
+        assert_eq!(&dropped[&key("", "Apples")], old_def.table("Apples").unwrap());
+        assert_eq!(&dropped[&key("", "Pears")], old_def.table("Pears").unwrap());
     }
 
     #[test]
