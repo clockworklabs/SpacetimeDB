@@ -347,7 +347,7 @@ impl SubscriptionPlanMetrics {
             .find_map(|(schema, _)| schema.as_ref())
             .map(|schema| schema.table_name.clone());
 
-        // Columns of the filtered table are bare; any others are qualified with their table.
+        // Qualify columns with their table name (e.g. a.b) except for columns from filtered table.
         let mut names: Vec<String> = Vec::new();
         for (schema, col_name) in columns {
             let name = match (&schema, &filtered_table) {
