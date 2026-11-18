@@ -1093,6 +1093,23 @@ fn to_major_minor_patch_wildcard(version: &str) -> String {
     }
 }
 
+/// Templates keep a `generate` script that regenerates their checked-in
+/// bindings with `cargo run -p gen-bindings`. That tool only exists inside the
+/// SpacetimeDB repository, so in a user's project the script can only fail.
+/// Users regenerate bindings with `spacetime generate` (or the template's
+/// `spacetime:generate` script) instead.
+const MONOREPO_ONLY_SCRIPT_MARKER: &str = "gen-bindings";
+
+fn remove_monorepo_only_scripts(package: &mut serde_json::Value) {
+    if let Some(scripts) = package.get_mut("scripts").and_then(|s| s.as_object_mut()) {
+        scripts.retain(|_, command| {
+            !command
+                .as_str()
+                .is_some_and(|command| command.contains(MONOREPO_ONLY_SCRIPT_MARKER))
+        });
+    }
+}
+
 fn update_package_json(dir: &Path, package_name: &str) -> anyhow::Result<()> {
     let package_path = dir.join("package.json");
     if !package_path.exists() {
@@ -1110,6 +1127,8 @@ fn update_package_json(dir: &Path, package_name: &str) -> anyhow::Result<()> {
     {
         deps["spacetimedb"] = json!(to_major_minor_patch_wildcard(get_spacetimedb_typescript_version()));
     }
+
+    remove_monorepo_only_scripts(&mut package);
 
     let updated_content = serde_json::to_string_pretty(&package)?;
     fs::write(package_path, updated_content)?;
@@ -2469,6 +2488,66 @@ mod tests {
             parsed["dependencies"]["spacetimedb"],
             to_major_minor_patch_wildcard(get_spacetimedb_typescript_version())
         );
+    }
+
+    #[test]
+    fn test_update_package_json_removes_monorepo_only_scripts_from_every_template() {
+        let mut templates_with_monorepo_scripts = 0;
+        for (source, files) in embedded::get_template_files() {
+            let Some(original) = files.get("package.json") else {
+                continue;
+            };
+            let original: serde_json::Value = serde_json::from_str(original).unwrap();
+            let original_scripts = original["scripts"].as_object().cloned().unwrap_or_default();
+            if original_scripts
+                .values()
+                .any(|command| command.as_str().unwrap_or("").contains("gen-bindings"))
+            {
+                templates_with_monorepo_scripts += 1;
+            }
+
+            let temp = tempfile::TempDir::new().unwrap();
+            let package_json = temp.path().join("package.json");
+            std::fs::write(&package_json, serde_json::to_string(&original).unwrap()).unwrap();
+            update_package_json(temp.path(), "my-app").unwrap();
+            let updated: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&package_json).unwrap()).unwrap();
+            let updated_scripts = updated["scripts"].as_object().cloned().unwrap_or_default();
+
+            for (name, command) in &original_scripts {
+                let command = command.as_str().unwrap_or("");
+                if command.contains("gen-bindings") {
+                    assert!(
+                        !updated_scripts.contains_key(name),
+                        "{source}: script `{name}` needs the SpacetimeDB repo but was kept"
+                    );
+                } else {
+                    assert_eq!(
+                        updated_scripts.get(name).and_then(|c| c.as_str()),
+                        Some(command),
+                        "{source}: script `{name}` should be kept unchanged"
+                    );
+                }
+            }
+        }
+        // Guard against the marker going stale: if no template uses it any
+        // more, this test no longer checks anything.
+        assert!(
+            templates_with_monorepo_scripts > 0,
+            "no embedded template has a gen-bindings script; update MONOREPO_ONLY_SCRIPT_MARKER"
+        );
+    }
+
+    #[test]
+    fn test_update_package_json_keeps_package_without_scripts() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let package_json = temp.path().join("package.json");
+        std::fs::write(&package_json, r#"{ "name": "old-name" }"#).unwrap();
+
+        update_package_json(temp.path(), "new-name").unwrap();
+
+        let parsed: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(package_json).unwrap()).unwrap();
+        assert_eq!(parsed, serde_json::json!({ "name": "new-name" }));
     }
 
     #[test]
