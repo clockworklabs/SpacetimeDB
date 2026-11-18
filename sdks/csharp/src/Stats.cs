@@ -339,9 +339,10 @@ namespace SpacetimeDB
         public readonly NetworkRequestTracker ApplyMessageTracker = new();
 
         /// <summary>
-        /// A fresh snapshot of the network statistics, measured by periodically pinging the server,
-        /// or null before the first Pong arrives, after the connection closes or is lost,
-        /// and always when pinging is disabled with <c>WithPingInterval(TimeSpan.Zero)</c>.
+        /// A fresh snapshot of the network statistics, measured by pinging the server,
+        /// or null before the first Pong arrives, and after the connection closes or is lost.
+        /// With periodic pinging disabled by <c>WithPingInterval(TimeSpan.Zero)</c>,
+        /// it stays null until a <c>DbConnection.Ping()</c> is answered.
         ///
         /// Pings are measured here, and are kept out of the request trackers above.
         /// </summary>
