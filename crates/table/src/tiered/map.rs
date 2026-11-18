@@ -20,6 +20,16 @@ impl PageHash {
     pub fn as_bytes(&self) -> &[u8; Self::SIZE] {
         self.0.as_bytes()
     }
+
+    /// Create a [PageHash] from a [blake3::Hash].
+    ///
+    /// # Safety
+    ///
+    /// The caller promises that the provided hash is indeed a page hash, not a
+    /// blob hash.
+    pub unsafe fn from_blake3(hash: blake3::Hash) -> Self {
+        Self(hash)
+    }
 }
 
 impl Hash for PageHash {
@@ -198,6 +208,15 @@ impl From<PageHash> for ObjectKey {
 impl From<&mut Page> for ObjectKey {
     fn from(page: &mut Page) -> Self {
         Self::Page(page.into())
+    }
+}
+
+impl From<ObjectKey> for blake3::Hash {
+    fn from(key: ObjectKey) -> Self {
+        match key {
+            ObjectKey::Page(hash) => hash.into(),
+            ObjectKey::Blob(hash) => hash.into(),
+        }
     }
 }
 
