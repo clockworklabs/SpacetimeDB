@@ -2,7 +2,7 @@ use spacetimedb::spacetimedb_lib::RawModuleDef;
 use spacetimedb::test_utils::{TestAuth, TestQueryError};
 use spacetimedb::{reducer, table, AnonymousViewContext, Query, ReducerContext, Table, Timestamp, ViewContext};
 
-#[path = "fixtures/idc_receiver/lib.rs"]
+#[path = "fixtures/idc_receiver/mod.rs"]
 mod receiver;
 
 #[table(accessor = test_utils_user, public)]

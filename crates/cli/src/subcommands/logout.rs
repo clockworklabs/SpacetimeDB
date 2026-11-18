@@ -35,10 +35,11 @@ async fn server_logout(config: &mut Config, host: &Url) -> Result<(), anyhow::Er
     // Best-effort server-side session invalidation.
     let client = reqwest::Client::builder().timeout(Duration::from_secs(5)).build()?;
     client
-        .post(host.join("auth/cli/logout")?)
+        .post(host.join("api/auth/cli/logout")?)
         .header("Authorization", format!("Bearer {web_session_token}"))
         .send()
-        .await?;
+        .await?
+        .error_for_status()?;
     Ok(())
 }
 

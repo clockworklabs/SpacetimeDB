@@ -398,7 +398,7 @@ var result = ctx.Http.Send(new HttpRequest
 
 Scheduled procedures use the ordinary scheduled-table shape. Its `Scheduled` name refers to a `[SpacetimeDB.Procedure]` method taking `ProcedureContext` plus the scheduled row, and database access inside that procedure goes through `ctx.WithTx`.
 
-Inbound HTTP uses handler attributes and one router. Handler database access also goes through `ctx.WithTx`:
+Inbound HTTP uses handler attributes and one router. Handlers are unstable too, so files that define them need `#pragma warning disable STDB_UNSTABLE`. Handler database access also goes through `ctx.WithTx`:
 
 ```csharp
 [SpacetimeDB.HttpHandler]

@@ -52,6 +52,10 @@ spacetime generate --lang typescript|csharp|rust --out-dir ./bindings --module-p
 spacetime generate --lang unrealcpp --uproject-dir ./MyGame --module-path ./server --unreal-module-name MyGame
 ```
 
+### TypeScript Import Extensions
+
+For TypeScript client bindings, `spacetime generate --lang typescript --import-extension none|js|ts` selects the relative import suffix: `none` is the bundler-friendly default, `js` suits `moduleResolution: "nodenext"`, and `ts` suits runtimes executing TypeScript source directly. Set `"import-extension"` per `generate` entry in `spacetime.json` to persist it. This setting changes imports inside generated files, not application imports; NodeNext applications should import an explicit file such as `./module_bindings/index.js`. See https://spacetimedb.com/docs/clients/typescript#import-extensions for direct-TypeScript typecheck settings.
+
 ### Client and Module Bindings
 
 `spacetime generate --bindings client` (default) generates bindings for clients connecting to a database. `--bindings module` generates receiver bindings used inside a **sending database module** to call reducers in another **receiving database** through asynchronous IDC. Rust and TypeScript module bindings are supported; C#/C++ module bindings are not implemented yet. `unrealcpp` is client-only; `cpp` is accepted only in module mode.

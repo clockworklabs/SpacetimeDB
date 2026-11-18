@@ -239,6 +239,10 @@ FContextBase::FContextBase(UDbConnection* InConn)
 	Procedures = InConn->Procedures;
 	Conn = InConn;
 }
+bool FContextBase::IsReconnecting() const
+{
+	return Conn && Conn->IsReconnecting();
+}
 bool FContextBase::IsActive() const
 {
 	return Conn->IsActive();
@@ -13902,6 +13906,7 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
     ReducerEvent.CallerConnectionId = Event.CallerConnectionId;
     ReducerEvent.CallerIdentity     = Event.CallerIdentity;
     ReducerEvent.EnergyConsumed     = Event.EnergyConsumed;
+    ReducerEvent.CallError          = Event.CallError;
     ReducerEvent.Status             = Event.Status;
     ReducerEvent.Timestamp          = Event.Timestamp;
     ReducerEvent.Reducer            = DecodedReducer;
@@ -15657,6 +15662,7 @@ void UDbConnection::ReducerEventFailed(const FReducerEvent& Event, const FString
     ReducerEvent.CallerConnectionId = Event.CallerConnectionId;
     ReducerEvent.CallerIdentity     = Event.CallerIdentity;
     ReducerEvent.EnergyConsumed     = Event.EnergyConsumed;
+    ReducerEvent.CallError          = Event.CallError;
     ReducerEvent.Status             = Event.Status;
     ReducerEvent.Timestamp          = Event.Timestamp;
 
@@ -15674,6 +15680,7 @@ void UDbConnection::ProcedureEventFailed(const FProcedureEvent& Event, const FSt
 
     FTestClientProcedureEvent ProcedureEvent;
     ProcedureEvent.Status             = FSpacetimeDBProcedureStatus::FromStatus(Event.Status);
+    ProcedureEvent.CallError          = Event.CallError;
     ProcedureEvent.Timestamp          = Event.Timestamp;
 
     FProcedureEventContext Context(this, ProcedureEvent);
@@ -16653,9 +16660,18 @@ UDbConnectionBuilder* UDbConnectionBuilder::OnConnectError(FOnConnectErrorDelega
 {
 	return Cast<UDbConnectionBuilder>(OnConnectErrorBase(Callback));
 }
+UDbConnectionBuilder* UDbConnectionBuilder::OnConnectErrorWithReconnect(FOnConnectErrorWithReconnectDelegate Callback)
+{
+	return Cast<UDbConnectionBuilder>(OnConnectErrorWithReconnectBase(Callback));
+}
 UDbConnectionBuilder* UDbConnectionBuilder::OnDisconnect(FOnDisconnectDelegate Callback)
 {
 	OnDisconnectDelegateInternal = Callback;
+	return this;
+}
+UDbConnectionBuilder* UDbConnectionBuilder::OnDisconnectWithReconnect(FOnDisconnectWithReconnectDelegate Callback)
+{
+	OnDisconnectWithReconnectDelegateInternal = Callback;
 	return this;
 }
 UDbConnection* UDbConnectionBuilder::Build()
@@ -16664,7 +16680,12 @@ UDbConnection* UDbConnectionBuilder::Build()
 
 	// Store delegates on the connection for later use
 	Connection->OnConnectDelegate = OnConnectDelegateInternal;
+	Connection->OnAutomaticReconnectDelegate = OnAutomaticReconnectDelegateInternal;
+	FOnConnectBaseDelegate BaseReconnect;
+	BaseReconnect.BindUFunction(Connection, TEXT("ForwardOnAutomaticReconnect"));
+	OnAutomaticReconnectBase(BaseReconnect);
 	Connection->OnDisconnectDelegate = OnDisconnectDelegateInternal;
+	Connection->OnDisconnectWithReconnectDelegate = OnDisconnectWithReconnectDelegateInternal;
 
 	// Wrap delegates so the base builder can bind them
 	FOnConnectBaseDelegate BaseConnect;
@@ -16672,12 +16693,36 @@ UDbConnection* UDbConnectionBuilder::Build()
 	Connection->SetOnConnectDelegate(BaseConnect);
 	OnConnectBase(BaseConnect);
 
-	FOnDisconnectBaseDelegate BaseDisconnect;
+	FOnDisconnectWithReconnectBaseDelegate BaseDisconnect;
 	BaseDisconnect.BindUFunction(Connection, TEXT("ForwardOnDisconnect"));
-	Connection->SetOnDisconnectDelegate(BaseDisconnect);
-	OnDisconnectBase(BaseDisconnect);
+	Connection->SetOnDisconnectWithReconnectDelegate(BaseDisconnect);
+	OnDisconnectWithReconnectBase(BaseDisconnect);
 
 	return Cast<UDbConnection>(BuildConnection(Connection));
+}
+void UDbConnection::ForwardOnAutomaticReconnect(UDbConnectionBase* BaseConnection, FSpacetimeDBIdentity InIdentity, const FString& InToken)
+{
+	OnAutomaticReconnectDelegate.ExecuteIfBound(this, InIdentity, InToken);
+}
+UDbConnectionBuilder* UDbConnectionBuilder::WithAutomaticReconnect()
+{
+	WithAutomaticReconnectBase();
+	return this;
+}
+UDbConnectionBuilder* UDbConnectionBuilder::WithAutomaticReconnectOptions(const FAutomaticReconnectOptions& Options)
+{
+	WithAutomaticReconnectOptionsBase(Options);
+	return this;
+}
+UDbConnectionBuilder* UDbConnectionBuilder::WithTokenProvider(FTokenProviderDelegate Provider)
+{
+	WithTokenProviderBase(Provider);
+	return this;
+}
+UDbConnectionBuilder* UDbConnectionBuilder::OnAutomaticReconnect(FOnConnectDelegate Callback)
+{
+	OnAutomaticReconnectDelegateInternal = Callback;
+	return this;
 }
 void UDbConnection::ForwardOnConnect(UDbConnectionBase* BaseConnection, FSpacetimeDBIdentity InIdentity, const FString& InToken)
 {
@@ -16686,12 +16731,19 @@ void UDbConnection::ForwardOnConnect(UDbConnectionBase* BaseConnection, FSpaceti
 		OnConnectDelegate.Execute(this, InIdentity, InToken);
 	}
 }
-void UDbConnection::ForwardOnDisconnect(UDbConnectionBase* BaseConnection, const FString& Error)
+void UDbConnection::ForwardOnDisconnect(UDbConnectionBase* BaseConnection, const FString& Error, bool bWillReconnect, int32 NextReconnectAttempt, float NextReconnectDelaySeconds)
 {
-	PendingTypedReducers.Empty();
+	if (!bAutomaticReconnect)
+	{
+		PendingTypedReducers.Empty();
+	}
 	if (OnDisconnectDelegate.IsBound())
 	{
 		OnDisconnectDelegate.Execute(this, Error);
+	}
+	if (OnDisconnectWithReconnectDelegate.IsBound())
+	{
+		OnDisconnectWithReconnectDelegate.Execute(this, Error, bWillReconnect, NextReconnectAttempt, NextReconnectDelaySeconds);
 	}
 }
 

@@ -707,9 +707,10 @@ macro_rules! outbox {
 ///
 /// ### Restricting scheduled reducers
 ///
-/// Scheduled reducers are normal reducers, and may still be called by clients.
-/// If a scheduled reducer should only be called by the scheduler,
-/// consider beginning it with a check that the caller `Identity` is the module:
+/// Scheduled reducers are private: clients cannot call them,
+/// except the database owner, who can still call them directly.
+/// If a scheduled reducer must reject the owner too,
+/// begin it with a check that the caller `Identity` is the module:
 ///
 /// ```no_run
 /// # #[cfg(target_arch = "wasm32")] mod demo {

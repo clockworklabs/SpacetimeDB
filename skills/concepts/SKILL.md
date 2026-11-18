@@ -25,7 +25,7 @@ This describes Spacetime 2.x. The API changed substantially from 1.x, so older a
 - **App types.** It is used for games, such as BitCraft Online, and for web apps such as chat, collaboration tools, dashboards, and SaaS. The TypeScript SDK has quickstarts for React, Next.js, Vue, Svelte, and more. ([React quickstart](https://spacetimedb.com/docs/quickstarts/react/))
 - **Storage.** Tiered storage keeps hot data in memory and colder data on disk. On Maincloud, tables can also be backed by object storage, so a single database can store an effectively unbounded amount of data. ([How does Spacetime scale?](https://spacetimedb.com/blog/how-does-spacetime-scale))
 - **Scaling.** Each database runs its transactions one at a time on a single thread. One app can span many databases with asynchronous inter-database communication, and Maincloud replicates each database. ([How does Spacetime scale?](https://spacetimedb.com/blog/how-does-spacetime-scale))
-- **Durability.** Transactions are ACID with serializable isolation. By default, clients see a transaction's results, including the acknowledgment of their own writes, only after it is durable. ([Confirmed reads](https://spacetimedb.com/docs/clients/typescript/#method-withconfirmedreads))
+- **Durability.** Transactions are ACID with serializable isolation. By default, clients see a transaction's results, including the acknowledgment of their own writes, only after it is durable. ([Confirmed reads](https://spacetimedb.com/docs/clients/typescript/#method-withconfirmedreads)) An HTTP durability-confirmation timeout after five seconds returns `504` with an unknown outcome, not proof of rollback; do not retry non-idempotent calls without deduplication. ([HTTP calls](https://spacetimedb.com/docs/http/database#post-v1databasename_or_identitycallreducer))
 - **Module languages.** TypeScript, Rust, C#, and C++. TypeScript modules run on V8 and can use npm packages, which are bundled when you publish; Rust, C#, and C++ modules compile to WebAssembly. ([Language support](https://spacetimedb.com/docs/intro/language-support/))
 - **Composing modules.** TypeScript and C# modules can mount other modules as submodules, each under its own namespace, to reuse logic such as authentication, rate limiting, or email. Official and community modules are listed at spacetimedb.com/modules. ([Modules](https://spacetimedb.com/docs/modules/))
 - **External APIs.** Reducers are deterministic and make no network calls. Procedures make outbound HTTP requests, with a 30-second default timeout and a 180-second maximum. ([Procedures](https://spacetimedb.com/docs/functions/procedures/))
@@ -128,10 +128,21 @@ Modules contain application logic that runs inside the database.
 - **Event Tables**: Broadcast reducer-specific data to clients
 - **Views**: Read-only functions that expose computed subsets of data to clients
 - **Procedures**: (Unstable) Functions that can have side effects (HTTP requests, `ctx.withTx`)
+- **HTTP Handlers**: (Unstable) Functions that serve HTTP requests on routes the module defines
 
 Server-side modules can be written in: Rust, C#, TypeScript, C++
 
 Lifecycle: Write → Compile → Publish (`spacetime publish`) → Hot-swap (republish without disconnecting clients)
+
+## HTTP Handlers
+
+A module can expose its own HTTP API. Each handler takes a request and returns a response, and one router per module binds handlers to a method and path. Requests reach them under `/v1/database/<name_or_identity>/route<path>`, so a `/say-hello` route is served at `/v1/database/my-db/route/say-hello`.
+
+- **Static paths only**: a request must match a route's path exactly. There are no path parameters or wildcards, and trailing slashes are significant. Paths may contain only lowercase ASCII letters, digits and `-_~/`. Pass variable data in the query string, headers or body.
+- **Database access**: the handler context has no `db`. Open a transaction with `with_tx` / `withTx`.
+- **No authentication**: SpacetimeDB does not validate the `Authorization` header on module routes, and each request's `sender` is a random anonymous identity. Validate credentials in the handler, or use a procedure when you need the caller's JWT claims.
+
+Use HTTP handlers for webhooks and for clients that can't use a SpacetimeDB SDK. See the language-specific server skills for syntax.
 
 ## Reusable Modules and Configuration
 

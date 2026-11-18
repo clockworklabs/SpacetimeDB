@@ -45,6 +45,7 @@ public sealed class ModuleBuilder
     private readonly List<RawSubmoduleV10> submoduleDefs = [];
     private readonly List<RawTypeDefV10> typeDefs = [];
     private readonly List<RawTableDefV10> tableDefs = [];
+    private readonly List<RawTableCachePolicyV10> tableCachePolicyDefs = [];
     private readonly List<RawScheduleDefV10> scheduleDefs = [];
     private readonly List<RawReducerDefV10> reducerDefs = [];
     private readonly List<RawLifeCycleReducerDefV10> lifecycleReducerDefs = [];
@@ -171,11 +172,19 @@ public sealed class ModuleBuilder
     public void RegisterTable<T, View>()
         where T : IStructuralReadWrite, new()
         where View : ITableView<View, T>, new() =>
-        RegisterTable(View.MakeTableDesc(TypeRegistrar), View.MakeScheduleDesc());
+        RegisterTable(View.MakeTableDesc(TypeRegistrar), View.MakeScheduleDesc(), View.CachePolicy);
 
-    internal void RegisterTable(RawTableDefV10 table, RawScheduleDefV10? schedule)
+    internal void RegisterTable(
+        RawTableDefV10 table,
+        RawScheduleDefV10? schedule,
+        TableCachePolicy cachePolicy = TableCachePolicy.RequiredInMemory
+    )
     {
         tableDefs.Add(table);
+        if (cachePolicy != TableCachePolicy.RequiredInMemory)
+        {
+            tableCachePolicyDefs.Add(new RawTableCachePolicyV10(table.SourceName, cachePolicy));
+        }
         if (schedule is { } scheduleDef)
         {
             scheduleDefs.Add(scheduleDef);
@@ -339,6 +348,10 @@ public sealed class ModuleBuilder
         if (scheduleDefs.Count > 0)
         {
             sections.Add(new RawModuleDefV10Section.Schedules(scheduleDefs));
+        }
+        if (tableCachePolicyDefs.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.TableCachePolicies(tableCachePolicyDefs));
         }
         if (lifecycleReducerDefs.Count > 0)
         {

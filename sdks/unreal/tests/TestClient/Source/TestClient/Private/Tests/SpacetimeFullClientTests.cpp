@@ -1010,45 +1010,45 @@ bool FInsertVecTest::RunTest(const FString &Parameters)
 
 					// Unsigned Integers
 					Ctx.Reducers->InsertVecU8({ 2, 6 });
-					VectorHandler->ExpectedVecU8 = FVecU8Type({ 2, 6 });
+					VectorHandler->ExpectedVecU8 = FVecU8Type{{ 2, 6 }};
 					Ctx.Reducers->InsertVecU16({ 3, 5 });
-					VectorHandler->ExpectedVecU16 = FVecU16Type({ 3, 5 });
+					VectorHandler->ExpectedVecU16 = FVecU16Type{{ 3, 5 }};
 					Ctx.Reducers->InsertVecU32({ 1, 9 });
-					VectorHandler->ExpectedVecU32 = FVecU32Type({ 1, 9 });
+					VectorHandler->ExpectedVecU32 = FVecU32Type{{ 1, 9 }};
 					Ctx.Reducers->InsertVecU64({ 3, 8 });
-					VectorHandler->ExpectedVecU64 = FVecU64Type({ 3, 8 });
+					VectorHandler->ExpectedVecU64 = FVecU64Type{{ 3, 8 }};
 					Ctx.Reducers->InsertVecU128({ UInt128_Zero, UInt128_One });
-					VectorHandler->ExpectedVecU128 = FVecU128Type({ UInt128_Zero, UInt128_One });
+					VectorHandler->ExpectedVecU128 = FVecU128Type{{ UInt128_Zero, UInt128_One }};
 					Ctx.Reducers->InsertVecU256({ UInt256_Zero, UInt256_One });
-					VectorHandler->ExpectedVecU256 = FVecU256Type({ UInt256_Zero, UInt256_One });
+					VectorHandler->ExpectedVecU256 = FVecU256Type{{ UInt256_Zero, UInt256_One }};
 
 					// Signed Integers
 					Ctx.Reducers->InsertVecI8({ 4, 5 });
-					VectorHandler->ExpectedVecI8 = FVecI8Type({ 4, 5 });
+					VectorHandler->ExpectedVecI8 = FVecI8Type{{ 4, 5 }};
 					Ctx.Reducers->InsertVecI16({ 6, 3 });
-					VectorHandler->ExpectedVecI16 = FVecI16Type({ 6, 3 });
+					VectorHandler->ExpectedVecI16 = FVecI16Type{{ 6, 3 }};
 					Ctx.Reducers->InsertVecI32({ 2, 1 });
-					VectorHandler->ExpectedVecI32 = FVecI32Type({ 2, 1 });
+					VectorHandler->ExpectedVecI32 = FVecI32Type{{ 2, 1 }};
 					Ctx.Reducers->InsertVecI64({ 7, 9 });
-					VectorHandler->ExpectedVecI64 = FVecI64Type({ 7, 9 });
+					VectorHandler->ExpectedVecI64 = FVecI64Type{{ 7, 9 }};
 					Ctx.Reducers->InsertVecI128({ Int128_Zero, Int128_One });
-					VectorHandler->ExpectedVecI128 = FVecI128Type({ Int128_Zero, Int128_One });
+					VectorHandler->ExpectedVecI128 = FVecI128Type{{ Int128_Zero, Int128_One }};
 					Ctx.Reducers->InsertVecI256({ Int256_Zero, Int256_One });
-					VectorHandler->ExpectedVecI256 = FVecI256Type({ Int256_Zero, Int256_One });
+					VectorHandler->ExpectedVecI256 = FVecI256Type{{ Int256_Zero, Int256_One }};
 
 					// Booleans
 					Ctx.Reducers->InsertVecBool({ false, true });
-					VectorHandler->ExpectedVecBool = FVecBoolType({ false, true });
+					VectorHandler->ExpectedVecBool = FVecBoolType{{ false, true }};
 
 					// Floating-point numbers
 					Ctx.Reducers->InsertVecF32({ 0.0f, 1.0f });
-					VectorHandler->ExpectedVecF32 = FVecF32Type({ 0.0f, 1.0f });
+					VectorHandler->ExpectedVecF32 = FVecF32Type{{ 0.0f, 1.0f }};
 					Ctx.Reducers->InsertVecF64({ 0.0, 1.0 });
-					VectorHandler->ExpectedVecF64 = FVecF64Type({ 0.0, 1.0 });
+					VectorHandler->ExpectedVecF64 = FVecF64Type{{ 0.0, 1.0 }};
 
 					// Strings
 					Ctx.Reducers->InsertVecString({ "zero", "one" });
-					VectorHandler->ExpectedVecString = FVecStringType({ "zero", "one" });
+					VectorHandler->ExpectedVecString = FVecStringType{{ "zero", "one" }};
 
 					// Other types
 					FSpacetimeDBIdentity Identity;
@@ -1056,11 +1056,11 @@ bool FInsertVecTest::RunTest(const FString &Parameters)
 					FSpacetimeDBTimestamp TimeStamp;
 
 					Ctx.Reducers->InsertVecIdentity({ Identity });
-					VectorHandler->ExpectedVecIdentity = FVecIdentityType({ Identity });
+					VectorHandler->ExpectedVecIdentity = FVecIdentityType{{ Identity }};
 					Ctx.Reducers->InsertVecConnectionId({ ConnectionId });
-					VectorHandler->ExpectedVecConnectionId = FVecConnectionIdType({ ConnectionId });
+					VectorHandler->ExpectedVecConnectionId = FVecConnectionIdType{{ ConnectionId }};
 					Ctx.Reducers->InsertVecTimestamp({ TimeStamp });
-					VectorHandler->ExpectedVecTimestamp = FVecTimestampType({ TimeStamp });
+					VectorHandler->ExpectedVecTimestamp = FVecTimestampType{{ TimeStamp }};
 				}); });
 
 	// Wait for the test counter to signal completion.
@@ -1408,7 +1408,7 @@ bool FInsertStructTest::RunTest(const FString &Parameters)
 					Handler->ExpectedEveryVecStruct = VecEveryVecStructType;
 					Handler->ExpectedVecEveryVecStruct = VecArray;
 
-					Ctx.Reducers->InsertOneUnitStruct(FUnitStructType());
+					Ctx.Reducers->InsertOneUnitStruct(FUnitStructType{});
 					Ctx.Reducers->InsertOneByteStruct(OneByteStruct);
 					Ctx.Reducers->InsertOneEveryPrimitiveStruct(EveryPrimitiveStructType);
 					Ctx.Reducers->InsertOneEveryVecStruct(VecEveryVecStructType);
@@ -1653,7 +1653,7 @@ bool FInsertDeleteLargeTableTest::RunTest(const FString &Parameters)
 					LargeTable.P = "string";
 					LargeTable.Q = ESimpleEnumType::Zero;
 					LargeTable.R = FEnumWithPayloadType::Bool(false);
-					LargeTable.S = FUnitStructType();
+					LargeTable.S = FUnitStructType{};
 					LargeTable.T = ByteStruct;
 					LargeTable.U = EveryPrimitiveStructType;
 					LargeTable.V = VecEveryVecStructType;
@@ -2153,20 +2153,20 @@ bool FIntraQueryBagSemanticsForJoinTest::RunTest(const FString &Parameters)
 				{
 					// Insert (n: 0, data: 0) into btree_u32.
 					// No on_insert for PkU32 should fire because it is empty.
-					Ctx.Reducers->InsertIntoBtreeU32(TArray<FBTreeU32Type>({ FBTreeU32Type(0, 0) }));
+					Ctx.Reducers->InsertIntoBtreeU32(TArray<FBTreeU32Type>({ FBTreeU32Type{0, 0} }));
 
 					// Now insert a row into pk_u32 and a duplicate into btree_u32.
 					// This creates a multiplicity of 2 for the join result.
 					// An on_insert for PkU32 should fire now.
-					Ctx.Reducers->InsertIntoPkBtreeU32(TArray<FPkU32Type>({ FPkU32Type(0, 0) }), TArray<FBTreeU32Type>({ FBTreeU32Type(0, 1) }));
+					Ctx.Reducers->InsertIntoPkBtreeU32(TArray<FPkU32Type>({ FPkU32Type{0, 0} }), TArray<FBTreeU32Type>({ FBTreeU32Type{0, 1} }));
 
 					// Delete one of the joining rows from btree_u32.
 					// The multiplicity of the join result becomes 1, so no on_delete for PkU32 fires.
-					Ctx.Reducers->DeleteFromBtreeU32(TArray<FBTreeU32Type>({ FBTreeU32Type(0, 0) }));
+					Ctx.Reducers->DeleteFromBtreeU32(TArray<FBTreeU32Type>({ FBTreeU32Type{0, 0} }));
 
 					// Delete the last joining row from btree_u32.
 					// The multiplicity of the join result becomes 0, so on_delete for PkU32 fires.
-					Ctx.Reducers->DeleteFromBtreeU32(TArray<FBTreeU32Type>({ FBTreeU32Type(0, 1) }));
+					Ctx.Reducers->DeleteFromBtreeU32(TArray<FBTreeU32Type>({ FBTreeU32Type{0, 1} }));
 
 					if (!AssertAllTablesEmpty(this, Conn->Db))
 					{
@@ -2336,7 +2336,7 @@ bool FRlsSubscriptionTest::RunTest(const FString &Parameters)
 					FSpacetimeDBIdentity Identity;
 					if (Ctx.TryGetIdentity(Identity))
 					{
-						AliceHandler->ExpectedUserType = FUsersType(Identity, FString("Alice"));
+						AliceHandler->ExpectedUserType = FUsersType{Identity, FString("Alice")};
 
 						// We perform the insert directly here without waiting for the other client.
 						// The subscription is what matters. Both clients will insert, and both will receive the other's insert.
@@ -2367,7 +2367,7 @@ bool FRlsSubscriptionTest::RunTest(const FString &Parameters)
 					FSpacetimeDBIdentity Identity;
 					if (Ctx.TryGetIdentity(Identity))
 					{
-						BobHandler->ExpectedUserType = FUsersType(Identity, FString("Bob"));
+						BobHandler->ExpectedUserType = FUsersType{Identity, FString("Bob")};
 
 						// We perform the insert directly here without waiting for the other client.
 						// The subscription is what matters. Both clients will insert, and both will receive the other's insert.

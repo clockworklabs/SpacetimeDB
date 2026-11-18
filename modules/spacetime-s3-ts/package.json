@@ -54,7 +54,7 @@
     "typescript"
   ],
   "submodule": {
-    "category": "integrations"
+    "category": "storage"
   },
   "scripts": {
     "format": "prettier . --write --ignore-path ../../.prettierignore",
