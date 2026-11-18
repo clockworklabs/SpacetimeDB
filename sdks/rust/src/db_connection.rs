@@ -1090,6 +1090,10 @@ but you must call one of them, or else the connection will never progress.
     /// The current threshold used by the host is 1KiB for the entire server message
     /// and for individual query updates.
     /// Note however that this threshold is not guaranteed and may change without notice.
+    ///
+    /// Brotli is the default. [`Compression::Zstd`](ws::common::Compression::Zstd)
+    /// explicitly opts in to Zstandard and requires a server supporting that codec;
+    /// older servers reject this option rather than silently choosing another codec.
     pub fn with_compression(mut self, compression: ws::common::Compression) -> Self {
         self.params.compression = compression;
         self

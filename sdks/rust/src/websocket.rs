@@ -185,6 +185,7 @@ fn make_uri_impl(
     match params.compression {
         ws::common::Compression::None => path.push_str("?compression=None"),
         ws::common::Compression::Gzip => path.push_str("?compression=Gzip"),
+        ws::common::Compression::Zstd => path.push_str("?compression=Zstd"),
         // The host uses the same default as the sdk,
         // but in case this changes, we prefer to be explicit now.
         ws::common::Compression::Brotli => path.push_str("?compression=Brotli"),
@@ -645,5 +646,33 @@ impl WsConnection {
         });
 
         (incoming_rx, outgoing_tx)
+    }
+}
+
+#[cfg(test)]
+mod compression_tests {
+    use super::*;
+
+    #[test]
+    fn zstd_is_explicitly_negotiated_and_brotli_remains_default() {
+        for (compression, expected) in [
+            (ws::common::Compression::Zstd, "compression=Zstd"),
+            (ws::common::Compression::default(), "compression=Brotli"),
+            (ws::common::Compression::None, "compression=None"),
+            (ws::common::Compression::Gzip, "compression=Gzip"),
+        ] {
+            let uri = make_uri_impl(
+                "https://localhost".parse().unwrap(),
+                "example",
+                None,
+                WsParams {
+                    compression,
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+            assert_eq!(uri.query(), Some(expected));
+        }
     }
 }

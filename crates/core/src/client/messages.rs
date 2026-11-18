@@ -115,6 +115,10 @@ fn finalize_binary_serialize_buffer(
             buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_BROTLI, brotli_compress)
         }
         ws_v1::Compression::Gzip => buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_GZIP, gzip_compress),
+        ws_v1::Compression::Zstd => buffer.compress_with_tag(
+            ws_common::SERVER_MSG_COMPRESSION_TAG_ZSTD,
+            crate::subscription::websocket_building::zstd_compress,
+        ),
     }
 }
 
