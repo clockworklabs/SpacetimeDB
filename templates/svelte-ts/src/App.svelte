@@ -54,7 +54,9 @@ function addPerson(e: SubmitEvent) {
       <p>No people yet. Add someone above!</p>
     {:else}
       <ul>
-        {#each $people as person}
+        <!-- `person` has no primary key, so key each row by its object.
+             The SDK keeps the same object for a row until it changes. -->
+        {#each $people as person (person)}
           <li>{person.name}</li>
         {/each}
       </ul>
