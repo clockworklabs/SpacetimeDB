@@ -5,7 +5,11 @@ import { tables, reducers } from './module_bindings';
 const conn = useSpacetimeDB();
 
 // Subscribe to all people in the database
-const [people] = useTable(tables.person);
+const [people, peopleReady] = useTable(tables.person);
+
+// Until the subscription's first results arrive, an empty list means
+// "not loaded yet", not "no people".
+const loading = $derived(!$peopleReady && $people.length === 0);
 
 const addReducer = useReducer(reducers.add);
 
@@ -60,8 +64,10 @@ async function addPerson(e: SubmitEvent) {
   {/if}
 
   <div>
-    <h2>People ({$people.length})</h2>
-    {#if $people.length === 0}
+    <h2>People{loading ? '' : ` (${$people.length})`}</h2>
+    {#if loading}
+      <p>Loading…</p>
+    {:else if $people.length === 0}
       <p>No people yet. Add someone above!</p>
     {:else}
       <ul>
