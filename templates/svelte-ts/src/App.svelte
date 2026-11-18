@@ -10,14 +10,21 @@ const [people] = useTable(tables.person);
 const addReducer = useReducer(reducers.add);
 
 let name = $state('');
+let error = $state<string | null>(null);
 
-function addPerson(e: SubmitEvent) {
+async function addPerson(e: SubmitEvent) {
   e.preventDefault();
   if (!name.trim() || !$conn.isActive) return;
 
-  // Call the add reducer
-  addReducer({ name: name });
+  const newName = name;
   name = '';
+  error = null;
+  try {
+    // Call the add reducer. It rejects if the reducer fails on the server.
+    await addReducer({ name: newName });
+  } catch (err) {
+    error = `Couldn't add ${newName}: ${err instanceof Error ? err.message : err}`;
+  }
 }
 </script>
 
@@ -47,6 +54,10 @@ function addPerson(e: SubmitEvent) {
       Add Person
     </button>
   </form>
+
+  {#if error}
+    <p style="color: red;">{error}</p>
+  {/if}
 
   <div>
     <h2>People ({$people.length})</h2>
