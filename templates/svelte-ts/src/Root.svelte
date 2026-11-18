@@ -32,6 +32,8 @@ const connectionBuilder = DbConnection.builder()
   .onDisconnect(onDisconnect)
   .onConnectError(onConnectError);
 
+// Shares the connection with every component below this one. It uses Svelte
+// context, so it has to be called in a component, not in main.ts.
 createSpacetimeDBProvider(connectionBuilder);
 </script>
 
