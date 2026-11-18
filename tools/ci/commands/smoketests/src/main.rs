@@ -193,6 +193,37 @@ fn build_precompiled_modules() -> Result<()> {
     Ok(())
 }
 
+/// Tells test processes the TypeScript SDK is already built. Must match
+/// `spacetimedb_smoketests::TYPESCRIPT_SDK_PREBUILT_ENV`.
+const TYPESCRIPT_SDK_PREBUILT_ENV: &str = "SPACETIME_SMOKETEST_TS_SDK_PREBUILT";
+
+/// Builds the TypeScript SDK (`crates/bindings-typescript`) that the TypeScript
+/// smoketests install into their projects.
+///
+/// Tests run in parallel and share this one copy of the SDK. If each test built
+/// it, one test's build would clear `dist/` while another was copying it into
+/// its project. Returns whether the SDK was built; without pnpm the TypeScript
+/// tests skip themselves, so there is nothing to build.
+fn build_typescript_sdk(workspace_root: &Path) -> Result<bool> {
+    let Ok(pnpm) = which::which("pnpm") else {
+        eprintln!("Skipping TypeScript SDK build (pnpm not found).\n");
+        return Ok(false);
+    };
+    let sdk_dir = workspace_root.join("crates/bindings-typescript");
+
+    eprintln!("Building TypeScript SDK...");
+    for args in [&["--filter", "spacetimedb", "install"][..], &["build"]] {
+        let status = Command::new(&pnpm).args(args).current_dir(&sdk_dir).status()?;
+        ensure!(
+            status.success(),
+            "Failed to build TypeScript SDK: pnpm {}",
+            args.join(" ")
+        );
+    }
+    eprintln!("TypeScript SDK built.\n");
+    Ok(true)
+}
+
 fn archive_smoketests(archive_file: &Path, suite: SmoketestSuite) -> Result<()> {
     build_precompiled_modules()?;
 
@@ -220,9 +251,10 @@ fn run_smoketest_archive(archive_file: &Path, args: Vec<String>) -> Result<()> {
     let cli_path = ensure_binaries_built();
     let base_config_dir = prepare_base_config(&cli_path, None, None)?;
     let base_config_path = base_config_dir.path().join("config.toml");
+    let typescript_sdk_prebuilt = build_typescript_sdk(&workspace_root)?;
 
     let mut cmd = Command::new("cargo");
-    set_env(&mut cmd, None, true, false, &base_config_path);
+    set_env(&mut cmd, None, true, false, &base_config_path, typescript_sdk_prebuilt);
     cmd.args(["nextest", "run", "--archive-file"])
         .arg(archive_file)
         .args(["--workspace-remap"])
@@ -266,6 +298,9 @@ fn run_smoketest(
     // 2. Build pre-compiled modules (this also warms the WASM dependency cache)
     build_precompiled_modules()?;
 
+    // 3. Build the TypeScript SDK once, rather than in every test that uses it
+    let typescript_sdk_prebuilt = build_typescript_sdk(&env::current_dir()?)?;
+
     let cli_path = ensure_binaries_built();
     let base_config_dir = prepare_base_config(&cli_path, server.as_deref(), auth_host)?;
     let base_config_path = base_config_dir.path().join("config.toml");
@@ -287,7 +322,14 @@ fn run_smoketest(
     let mut cmd = if use_nextest {
         eprintln!("Running smoketests with cargo nextest...\n");
         let mut cmd = Command::new("cargo");
-        set_env(&mut cmd, server, dotnet, auth_host.is_some(), &base_config_path);
+        set_env(
+            &mut cmd,
+            server,
+            dotnet,
+            auth_host.is_some(),
+            &base_config_path,
+            typescript_sdk_prebuilt,
+        );
         cmd.args(["nextest", "run", "--release", "-p", "spacetimedb-smoketests"])
             .args(suite.cargo_args())
             .arg("--no-fail-fast");
@@ -304,7 +346,14 @@ fn run_smoketest(
     } else {
         eprintln!("Running smoketests with cargo test...\n");
         let mut cmd = Command::new("cargo");
-        set_env(&mut cmd, server, dotnet, auth_host.is_some(), &base_config_path);
+        set_env(
+            &mut cmd,
+            server,
+            dotnet,
+            auth_host.is_some(),
+            &base_config_path,
+            typescript_sdk_prebuilt,
+        );
         cmd.args(["test", "--release", "-p", "spacetimedb-smoketests"])
             .args(suite.cargo_args());
         cmd
@@ -385,7 +434,17 @@ fn prepare_base_config(cli_path: &Path, server: Option<&str>, auth_host: Option<
     Ok(temp_dir)
 }
 
-fn set_env(cmd: &mut Command, server: Option<String>, dotnet: bool, auth_host: bool, base_config_path: &Path) {
+fn set_env(
+    cmd: &mut Command,
+    server: Option<String>,
+    dotnet: bool,
+    auth_host: bool,
+    base_config_path: &Path,
+    typescript_sdk_prebuilt: bool,
+) {
+    if typescript_sdk_prebuilt {
+        cmd.env(TYPESCRIPT_SDK_PREBUILT_ENV, "1");
+    }
     if let Some(ref server_url) = server {
         cmd.env("SPACETIME_REMOTE_SERVER", server_url);
     }

@@ -12,7 +12,7 @@
 use anyhow::{bail, Context, Result};
 use regex::Regex;
 use serde_json::Value;
-use spacetimedb_smoketests::{pnpm, random_string, workspace_root, Smoketest};
+use spacetimedb_smoketests::{build_typescript_sdk, pnpm, random_string, workspace_root, Smoketest};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -590,28 +590,56 @@ fn pin_csharp_client_sdk_package_version(project_path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Builds the TypeScript SDK (`crates/bindings-typescript`).
-///
-/// Should be called once before testing any TypeScript templates.
-fn build_typescript_sdk() -> Result<()> {
-    let sdk_path = workspace_root().join("crates/bindings-typescript");
-    eprintln!("[TEMPLATES] Building TypeScript SDK at {:?}", sdk_path);
-    run_pnpm(&["--filter", "spacetimedb", "install"], &sdk_path)?;
-    run_pnpm(&["build"], &sdk_path)?;
-    Ok(())
-}
-
 /// Points the `spacetimedb` entry in `package.json` at the local TypeScript
 /// SDK and removes the template's lockfile so pnpm re-resolves dependencies.
 fn setup_typescript_sdk_in_package_json(package_json_path: &Path) -> Result<()> {
     let sdk_path = workspace_root().join("crates/bindings-typescript");
     update_package_json_dependency(package_json_path, "spacetimedb", &sdk_path)?;
+    inject_package_json_dependency(package_json_path, "spacetimedb")?;
 
     // Remove the template's lockfile; the dependency changed.
     let lockfile = package_json_path.parent().unwrap().join("pnpm-lock.yaml");
     if lockfile.exists() {
         fs::remove_file(&lockfile).context("Failed to remove pnpm-lock.yaml")?;
     }
+    Ok(())
+}
+
+/// Marks a local-path dependency as injected (`dependenciesMeta.<name>.injected`).
+///
+/// By default pnpm symlinks a local directory dependency, so the SDK resolves
+/// its own imports, including the type declarations of its optional framework
+/// peers (vue, react, svelte, ...), from the monorepo's `node_modules` rather
+/// than the project's. The project then sees two copies of, for example, Vue's
+/// types, and Vue brands `Ref` with a `unique symbol`, so a `Ref` from one copy
+/// isn't recognised by the other. Injecting copies the SDK into the project and
+/// resolves its peers there, as installing the published package would.
+fn inject_package_json_dependency(package_json_path: &Path, package_name: &str) -> Result<()> {
+    let content =
+        fs::read_to_string(package_json_path).with_context(|| format!("Failed to read {:?}", package_json_path))?;
+    let mut data: Value =
+        serde_json::from_str(&content).with_context(|| format!("Failed to parse {:?}", package_json_path))?;
+
+    let has_dependency = data
+        .get("dependencies")
+        .is_some_and(|deps| deps.get(package_name).is_some());
+    if !has_dependency {
+        return Ok(());
+    }
+    let Some(package) = data.as_object_mut() else {
+        bail!("{:?} is not a JSON object", package_json_path);
+    };
+    let meta = package
+        .entry("dependenciesMeta")
+        .or_insert_with(|| Value::Object(Default::default()));
+    let Some(meta) = meta.as_object_mut() else {
+        bail!("dependenciesMeta in {:?} is not a JSON object", package_json_path);
+    };
+    meta.insert(package_name.to_string(), serde_json::json!({ "injected": true }));
+
+    let new_content =
+        serde_json::to_string_pretty(&data).with_context(|| format!("Failed to serialize {:?}", package_json_path))?;
+    fs::write(package_json_path, new_content).with_context(|| format!("Failed to write {:?}", package_json_path))?;
     Ok(())
 }
 
@@ -869,10 +897,6 @@ const TYPESCRIPT_CLIENT_BUILD_KNOWN_FAILURES: &[(&str, &str)] = &[
         "pnpm doesn't run the `bun` package's postinstall, so `bun build` can't start",
     ),
     ("tanstack-ts", "`vite build` can't resolve an entry module (index.html)"),
-    (
-        "vue-ts",
-        "vue-tsc doesn't unwrap the `Readonly<Ref<..>>` that useTable returns in App.vue",
-    ),
 ];
 
 fn typescript_client_build_known_failure(template_id: &str) -> Option<&'static str> {
