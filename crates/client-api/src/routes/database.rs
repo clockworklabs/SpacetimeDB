@@ -2636,8 +2636,7 @@ mod tests {
         let parent_identity = test_identity(47);
         for existing in [false, true] {
             for clear in [false, true] {
-                // Existing resets have their own rejection test below. For a
-                // missing target, clear=true must still follow the create path.
+                // An absent database must be created even when clear=true.
                 if existing && clear {
                     continue;
                 }
@@ -2705,7 +2704,7 @@ mod tests {
         }
     }
 
-    // Reject unknown parents before publishing new or existing databases.
+    // Prevent publication from proceeding when the requested parent cannot be resolved.
     #[tokio::test]
     async fn publish_rejects_unknown_parent_before_backend_publication() {
         let identity = test_identity(48);
@@ -2741,7 +2740,7 @@ mod tests {
         }
     }
 
-    // Prevent resets from silently ignoring a supplied parent.
+    // Reject a supplied parent rather than silently resetting the existing database.
     #[tokio::test]
     async fn publish_clear_rejects_parent_before_reset() {
         let identity = test_identity(43);
@@ -2773,7 +2772,7 @@ mod tests {
         }
     }
 
-    // Allow parent-free resets only with reset permission.
+    // Prevent unauthorized data deletion while allowing authorized resets without a parent.
     #[tokio::test]
     async fn publish_clear_without_parent_requires_reset_permission() {
         let identity = test_identity(45);
