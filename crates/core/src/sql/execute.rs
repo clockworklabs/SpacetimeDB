@@ -4,7 +4,6 @@ use std::time::Duration;
 use crate::db::sql::ast::SchemaViewer;
 use crate::energy::FunctionBudget;
 use crate::error::DBError;
-use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::host::module_host::{
     DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, RefInstance, ViewCallResult, ViewOutcome,
     WasmInstance,
@@ -22,6 +21,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductValue};
+use spacetimedb_query::estimation::{check_row_limit, estimate_rows_scanned};
 use spacetimedb_query::{compile_sql_stmt, execute_dml_stmt, execute_select_stmt};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use tokio::sync::oneshot;
