@@ -156,6 +156,12 @@ system_id! {
     pub struct ViewFnPtr(pub u32);
 }
 
+system_id! {
+    /// The index of a migration function as defined in a module's migration list.
+    // This is never stored in a system table, but is useful to have defined here.
+    pub struct MigrationId(pub u32);
+}
+
 /// An id for a function exported from a module, which may be a reducer or a procedure.
 // This is never stored in a system table,
 // but is useful to have defined here to provide a shared language for downstream crates.
