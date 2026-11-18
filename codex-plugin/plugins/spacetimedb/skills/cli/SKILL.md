@@ -81,6 +81,8 @@ when changing build modes. Managed builds alone do not enable C# module unit tes
 where supported. The CLI manages `SPACETIMEDB_WASM_AOT` and its legacy alias
 `EXPERIMENTAL_WASM_AOT`; users do not need to set either for .NET 10.
 
+New databases receive a server-allocated identity; a supplied identity can update an existing database, not create one. Only the registered name owner can recreate a deleted database whose name remains registered.
+
 ### Publishing & Deployment
 
 ```bash

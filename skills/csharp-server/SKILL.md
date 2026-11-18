@@ -47,6 +47,8 @@ spacetime build                           # CLI selects WASM automatically
   assemblies. .NET 10 composition uses generated assembly descriptors, not the
   dependency's standalone WASM exports; no special root/library build flag is needed.
 
+Table attributes also accept `CachePolicy = TableCachePolicy.RequiredInMemory` (default), `TableCachePolicy.RequiredOnDisk`, or `TableCachePolicy.NoRequirement`. See the concepts skill for storage semantics and index restrictions.
+
 ## Module Structure
 
 Reducers are static methods in a `static partial class`; tables are `public partial struct`s. This reference keeps everything in one `public static partial class Module`, which needs only `using SpacetimeDB;`:

@@ -25,6 +25,10 @@ The following changes are always allowed and will not break existing clients:
 - **Adding new reducers.**
 - **Removing `Unique` constraints.**
 
+:::note Older bindings and newer SDKs
+TypeScript and C# SDKs containing the [row-boundary decoding fix](https://github.com/clockworklabs/SpacetimeDB/pull/6091) can read rows with appended columns using bindings generated from the older schema: they skip the trailing fields they do not know. Older SDK versions may fail to decode those rows; keeping old bindings is not the same as keeping an old SDK. Regenerate bindings to access the new fields. Removing, reordering, or changing the types of existing columns is not covered by this compatibility.
+:::
+
 ## ⚠️ Potentially Breaking Changes
 
 These changes are allowed by automatic migration, but may cause runtime errors for clients that haven't been updated:

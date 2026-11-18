@@ -65,6 +65,8 @@ This command:
 4. Runs the `init` lifecycle reducer (if defined)
 5. Starts accepting client connections
 
+New databases receive a server-allocated identity; you cannot create one at an identity you supply. An existing database can be updated by name or identity. If a deleted database name is still registered, only its name owner can recreate it.
+
 After publishing, SpacetimeDB outputs your database identity. **Save this identity** - you'll need it for administrative tasks.
 
 ### Updating an Existing Database

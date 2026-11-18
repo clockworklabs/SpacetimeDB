@@ -42,7 +42,7 @@ pub struct Entity {
 }
 ```
 
-Options: `accessor = snake_case` (required), `public`, `scheduled(reducer_fn)`, `index(...)`
+Options: `accessor = snake_case` (required), `public`, `scheduled(reducer_fn)`, `index(...)`, `cache_policy = required_in_memory | required_on_disk | no_requirement` (default: `required_in_memory`; see the concepts skill for storage semantics).
 
 `ctx.db` accessors use the `accessor` name (snake_case).
 
@@ -292,7 +292,7 @@ Construct a connection ID from a numeric representation with `ConnectionId::from
 
 A reducer calls a reducer in another database by inserting a row into an outbox table. The call is sent only if the transaction commits, runs exactly once, and runs in order with other calls through the same outbox to the same database. The sending reducer doesn't wait for it. Both databases must be on the same server.
 
-Generate receiver bindings by listing the receiving module under `dependencies` in the sending database's `spacetime.json`, then running `spacetime generate <sending-database>`. Rust bindings are written to `src/remote_bindings/`.
+Generate receiver bindings by listing the receiving module under `dependencies` in the sending database's `spacetime.json`, then running `spacetime generate <sending-database>`. Rust bindings are written to `src/remote_bindings/`, with `mod.rs` roots. Regenerate older bindings and remove obsolete `lib.rs` path overrides. With `game_world` imported as a module identifier, `spacetimedb::outbox!(game_world::admit_player);` generates `AdmitPlayerOutbox` with `msg_id`, `target`, and the reducer argument columns. Optional `accessor = custom_outbox` and `name = "custom_outbox"` override table names. Use a manual table (below) for extra columns, reducer arguments named `msg_id` or `target`, or multiple outboxes for the same reducer.
 
 ```json
 {

@@ -390,7 +390,7 @@ spacetime sql lobby "SELECT * FROM admit_player_outbox"
 
 ### Generated outbox declarations
 
-You can always declare an outbox by manually specifying the table and types. However, in TypeScript, the receiver bindings can declare an outbox for you. `gw.outbox.admitPlayer()` returns an outbox table with a `msgId` message ID column, a `target` column, and a column for each parameter of the reducer:
+You can always declare an outbox by manually specifying the table and types. TypeScript and Rust receiver bindings also provide shorthand declarations. In TypeScript, `gw.outbox.admitPlayer()` returns an outbox table with a `msgId` message ID column, a `target` column, and a column for each parameter of the reducer:
 
 ```typescript
 const spacetimedb = schema({
@@ -403,6 +403,18 @@ ctx.db.admitPlayerOutbox.insert({ msgId: 0n, target: world, name });
 ```
 
 Like `table()`, it takes an optional `name`. Without one, the table is named after its key in `schema()`. It can't declare an outbox for a reducer with a parameter named `msgId` or `target`. For that reducer, use `table()` to manually declare an outbox table, and give the message ID and target columns other names.
+
+In Rust, import the receiving module and use `spacetimedb::outbox!`:
+
+```rust
+use remote_bindings::game_world;
+
+spacetimedb::outbox!(game_world::admit_player);
+```
+
+For the `admit_player(name: String)` reducer above, this creates `AdmitPlayerOutbox` with `msg_id: u64`, `target: game_world::Identity`, and `name: String`, accessed through `ctx.db.admit_player_outbox()`. Insert `msg_id: 0` to allocate the message ID. Optional `accessor = custom_outbox` and `name = "custom_outbox"` arguments override the accessor and canonical table name. The receiver must be in scope as a module identifier. If its arguments include `msg_id` or `target`, or you need multiple outboxes for the same reducer or extra columns, declare the table manually instead.
+
+Rust receiver bindings now use `mod.rs` as their root. Regenerate older bindings and remove any obsolete `#[path = "remote_bindings/game_world/lib.rs"]` override; the normal `mod remote_bindings;` declaration works with the generated directory structure.
 
 ## Receiving calls
 

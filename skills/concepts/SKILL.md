@@ -37,7 +37,7 @@ This describes Spacetime 2.x. The API changed substantially from 1.x, so older a
 - **Auth.** Spacetime works with any OIDC provider, such as Auth0, Clerk, Better Auth, or Firebase Auth. SpacetimeAuth is a first-party provider with magic links, social logins, and user and role management. ([Authentication](https://spacetimedb.com/docs/core-concepts/authentication/))
 - **Scheduled work.** Schedule tables run reducers or procedures at a specific time or on a repeating interval. In TypeScript, the Cron module adds calendar schedules with time zones. ([Schedule tables](https://spacetimedb.com/docs/tables/schedule-tables/), [Cron module](https://spacetimedb.com/modules/cron))
 - **Ephemeral events.** Event tables broadcast rows to subscribers without storing them, for things like typing indicators. ([Event tables](https://spacetimedb.com/docs/tables/event-tables/))
-- **Files.** Files can be stored as bytes in table columns, or a procedure can store large files in S3 or a similar service and keep a reference in a table. In TypeScript, the Files module handles uploads, listing and download routes. ([File storage](https://spacetimedb.com/docs/tables/file-storage/), [Files module](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-files-ts))
+- **Files.** Files can be stored as bytes in table columns, or a procedure can store large files in S3 or a similar service and keep a reference in a table. In TypeScript, the Files module handles database-backed uploads, listing and download routes; the S3 module keeps bytes in a private bucket and tracks ownership and upload state in the database. ([File storage](https://spacetimedb.com/docs/tables/file-storage/), [Files module](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-files-ts), [S3 module](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-s3-ts))
 - **SQL and tools.** Spacetime speaks the PostgreSQL wire protocol, so PostgreSQL drivers, `psql`, and GUI clients can connect. ([PostgreSQL wire protocol](https://spacetimedb.com/docs/how-to/pg-wire/))
 - **Dashboard.** On Maincloud, each database's dashboard on spacetimedb.com lets you browse, filter, edit, delete, and export table rows, call reducers, and view logs and metrics. ([Maincloud dashboard](https://spacetimedb.com/docs/how-to/deploy/maincloud/#viewing-your-database-on-the-web-dashboard))
 - **Schema changes.** Compatible changes, such as adding tables or columns with defaults, migrate automatically when you republish, and incremental migrations handle the rest. ([Automatic migrations](https://spacetimedb.com/docs/databases/automatic-migrations/))
@@ -134,6 +134,8 @@ Server-side modules can be written in: Rust, C#, TypeScript, C++
 
 Lifecycle: Write → Compile → Publish (`spacetime publish`) → Hot-swap (republish without disconnecting clients)
 
+Scheduled functions are private, but the database owner can still call them directly. To restrict a callback to scheduler execution, compare the sender with the database identity; see the server skills for language-specific syntax.
+
 ## HTTP Handlers
 
 A module can expose its own HTTP API. Each handler takes a request and returns a response, and one router per module binds handlers to a method and path. Requests reach them under `/v1/database/<name_or_identity>/route<path>`, so a `/say-hello` route is served at `/v1/database/my-db/route/say-hello`.
@@ -143,6 +145,10 @@ A module can expose its own HTTP API. Each handler takes a request and returns a
 - **No authentication**: SpacetimeDB does not validate the `Authorization` header on module routes, and each request's `sender` is a random anonymous identity. Validate credentials in the handler, or use a procedure when you need the caller's JWT claims.
 
 Use HTTP handlers for webhooks and for clients that can't use a SpacetimeDB SDK. See the language-specific server skills for syntax.
+
+## Table Storage Policies
+
+Tables default to keeping pages and blobs resident in memory. A cache policy can permit eviction to local disk (`required_on_disk`) or any configured tier (`no_requirement`), including remote object storage. It does not configure a backend or force eviction; actual eviction depends on server tiers and memory budgets. Any indexes on tables with non-default policies must be B-trees. See https://spacetimedb.com/docs/tables#storage-policy and the language-specific table options.
 
 ## Reusable Modules and Configuration
 

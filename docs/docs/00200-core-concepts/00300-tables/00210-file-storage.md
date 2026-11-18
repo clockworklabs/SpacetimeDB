@@ -10,6 +10,14 @@ import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNot
 
 SpacetimeDB can store binary data directly in table columns, making it suitable for files, images, and other blobs that need to participate in transactions and subscriptions.
 
+## Reusable File Packages (TypeScript)
+
+Use [Files](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-files-ts) for database-backed uploads, listing, and download routes. Its limits are package-specific: files are at most 4 MB, with a default total quota of 100 MB per owner.
+
+Use [S3](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-s3-ts) when file bytes should go directly between the browser and a private S3 bucket. SpacetimeDB stores ownership and upload state; a scheduled reconciliation procedure completes interrupted uploads and deletes. Follow its bucket and initialization requirements, derive ownership on the server, and never expose AWS credentials to clients. Use a dedicated bucket prefix: reconciliation removes objects the database does not know about, so restoring an older database backup can delete newer files under that prefix.
+
+These packages require SDK, CLI, and server 2.12 or later. Their limits and delivery behavior are separate from the general inline-storage examples below.
+
 ## Storing Binary Data Inline
 
 Store binary data using `Vec<u8>` (Rust), `List<byte>` (C#), `std::vector<uint8_t>` (C++), or `t.array(t.u8())` (TypeScript). This approach keeps data within the database, ensuring it participates in transactions and real-time updates.
