@@ -2629,9 +2629,7 @@ mod tests {
         }
     }
 
-    // Exercise the real publish route with DummyState: resolve parent names and
-    // identities and pass them to creation authorization and backend publication.
-    // This checks the handler/backend contract, not actual hierarchy validation.
+    // Check parent resolution and forwarding through the real route with a mocked backend.
     #[tokio::test]
     async fn publish_parent_is_forwarded_for_creation_and_update() {
         let identity = test_identity(46);
@@ -2707,8 +2705,7 @@ mod tests {
         }
     }
 
-    // An unresolved parent must fail in the HTTP handler for both creation and
-    // updates, without asking the mocked backend to publish anything.
+    // Reject unknown parents before publishing new or existing databases.
     #[tokio::test]
     async fn publish_rejects_unknown_parent_before_backend_publication() {
         let identity = test_identity(48);
@@ -2744,15 +2741,10 @@ mod tests {
         }
     }
 
-    // Protect the existing reset guard: even an authorized reset must reject a
-    // supplied parent before reaching the backend. Simply deleting the guard
-    // would silently ignore the requested parent; accepting a matching parent
-    // instead requires hierarchy-aware validation beyond this mocked backend.
+    // Prevent resets from silently ignoring a supplied parent.
     #[tokio::test]
     async fn publish_clear_rejects_parent_before_reset() {
         let identity = test_identity(43);
-        // Cover both forms accepted by the HTTP API. The shared handler cannot
-        // inspect Cloud's hierarchy, so it currently rejects any supplied parent.
         for parent in ["existing-parent".to_owned(), test_identity(44).to_hex().to_string()] {
             let mut state = DummyState::new().with_database(identity);
             state.allow_reset = true;
@@ -2781,9 +2773,7 @@ mod tests {
         }
     }
 
-    // Show that the parent guard does not prevent valid parent-free resets,
-    // while reset authorization still gates the backend call. DummyState records
-    // the call only; this does not reset a real database or check its contents.
+    // Allow parent-free resets only with reset permission.
     #[tokio::test]
     async fn publish_clear_without_parent_requires_reset_permission() {
         let identity = test_identity(45);
