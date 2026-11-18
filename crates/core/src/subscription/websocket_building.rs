@@ -212,30 +212,25 @@ pub fn decide_compression(len: usize, compression: ws_v1::Compression) -> ws_v1:
 }
 
 pub fn brotli_compress(bytes: &[u8], out: &mut impl io::Write) {
+    let params = brotli_params();
+    let reader = &mut &bytes[..];
+    brotli::BrotliCompress(reader, out, &params).expect("should be able to BrotliCompress");
+}
+
+pub(crate) fn brotli_params() -> brotli::enc::BrotliEncoderParams {
     // We are optimizing for compression speed,
     // so we choose the lowest (fastest) level of compression.
     // Experiments on internal workloads have shown compression ratios between 7:1 and 10:1
     // for large `SubscriptionUpdate` messages at this level.
     const COMPRESSION_LEVEL: i32 = 1;
-
-    let params = brotli::enc::BrotliEncoderParams {
+    brotli::enc::BrotliEncoderParams {
         quality: COMPRESSION_LEVEL,
-        ..<_>::default()
-    };
-    let reader = &mut &bytes[..];
-    brotli::BrotliCompress(reader, out, &params).expect("should be able to BrotliCompress");
+        ..Default::default()
+    }
 }
 
 pub fn gzip_compress(bytes: &[u8], out: &mut impl io::Write) {
     let mut encoder = flate2::write::GzEncoder::new(out, flate2::Compression::fast());
     encoder.write_all(bytes).unwrap();
     encoder.finish().expect("should be able to gzip compress `bytes`");
-}
-
-pub(crate) fn zstd_compress(bytes: &[u8], out: &mut impl io::Write) {
-    // Zstd fast-2, with a checksum so clients can reject damaged frames.
-    let mut encoder = zstd::stream::write::Encoder::new(out, -2).expect("valid Zstd level");
-    encoder.include_checksum(true).expect("enable Zstd checksum");
-    encoder.write_all(bytes).expect("should be able to encode Zstd");
-    encoder.finish().expect("should be able to finish Zstd frame");
 }
