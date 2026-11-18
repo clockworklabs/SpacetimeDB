@@ -521,6 +521,14 @@ namespace SpacetimeDB
 #endif
         }
 
+        internal static void StampPing(ClientMessage message, long now)
+        {
+            if (message is ClientMessage.Ping(var ping))
+            {
+                ping.ClientSendTime = NetworkStatsTracker.Micros(now);
+            }
+        }
+
         private async Task ProcessSendQueue()
         {
             try
@@ -539,6 +547,7 @@ namespace SpacetimeDB
                         }
                     }
 
+                    StampPing(message, Stopwatch.GetTimestamp());
                     var messageBSATN = new ClientMessage.BSATN();
                     var encodedMessage = IStructuralReadWrite.ToBytes(messageBSATN, message);
                     await Ws!.SendAsync(encodedMessage, WebSocketMessageType.Binary, true, CancellationToken.None);

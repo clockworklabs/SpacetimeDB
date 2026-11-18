@@ -323,14 +323,7 @@ namespace SpacetimeDB
         // Incremented with Interlocked, as Ping() may run on any thread. The Ping's request ID is
         // this as a uint: Interlocked has no uint overload on .NET Standard 2.1.
         private int lastPingRequestId;
-        private readonly ConcurrentDictionary<uint, PendingPing> pendingPings = new();
-
-        private sealed class PendingPing
-        {
-            public readonly long SentAt;
-            public readonly TaskCompletionSource<PingResult> Result = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            public PendingPing(long sentAt) => SentAt = sentAt;
-        }
+        private readonly ConcurrentDictionary<uint, TaskCompletionSource<PingResult>> pendingPings = new();
 
         private void FailPendingOperations(Exception error)
         {
@@ -347,7 +340,7 @@ namespace SpacetimeDB
             {
                 if (pendingPings.TryRemove(requestId, out var pending))
                 {
-                    pending.Result.TrySetException(new OperationCanceledException("Connection closed before the Pong arrived."));
+                    pending.TrySetException(new OperationCanceledException("Connection closed before the Pong arrived."));
                 }
             }
 
@@ -1572,14 +1565,14 @@ namespace SpacetimeDB
             }
             var requestId = NextPingRequestId();
             // Register before sending, as the Pong is handled on the parse thread.
-            var pending = new PendingPing(Stopwatch.GetTimestamp());
-            pendingPings[requestId] = pending;
-            if (!SendPing(socket, requestId, pending.SentAt, generation))
+            var result = new TaskCompletionSource<PingResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            pendingPings[requestId] = result;
+            if (!SendPing(socket, requestId, Stopwatch.GetTimestamp(), generation))
             {
                 pendingPings.TryRemove(requestId, out _);
                 return Task.FromException<PingResult>(NotConnectedForPing());
             }
-            return pending.Result.Task;
+            return result.Task;
         }
 
         private static InvalidOperationException NotConnectedForPing() => new("Not connected to server.");
@@ -1603,6 +1596,9 @@ namespace SpacetimeDB
                 {
                     return false;
                 }
+                // This is the time the Ping was queued, so PongWait includes time in the send queue.
+                // The native socket restamps the Ping as it leaves the queue, and its Pong echoes
+                // that later time, which still clears this entry.
                 stats.NetworkTracker.RecordPing(sentUs);
             }
             socket.Send(new ClientMessage.Ping(new ClientApi.Ping(requestId, sentUs)));
@@ -1660,13 +1656,15 @@ namespace SpacetimeDB
                 stats.NetworkTracker.RecordPong(nowUs, pong.ClientSendTime,
                     pong.ServerReceiveTime.MicrosecondsSinceUnixEpoch, pong.ServerHoldDuration.Microseconds);
             }
-            if (pendingPings.TryRemove(pong.RequestId, out var pending))
+            if (pendingPings.TryRemove(pong.RequestId, out var result))
             {
                 var roundTrip = NetworkStatsTracker.ToTimeSpan(Math.Max(0, (double)nowUs - pong.ClientSendTime));
                 var serverHold = NetworkStatsTracker.ToTimeSpan(pong.ServerHoldDuration.Microseconds);
                 var rtt = roundTrip > serverHold ? roundTrip - serverHold : TimeSpan.Zero;
-                pending.Result.TrySetResult(new PingResult(rtt, roundTrip, serverHold, pong.ServerReceiveTime,
-                    pending.SentAt, receivedAt));
+                // The send time is the one the Pong echoes, stamped as the Ping left the send queue,
+                // so that SentAt agrees with RoundTrip.
+                result.TrySetResult(new PingResult(rtt, roundTrip, serverHold, pong.ServerReceiveTime,
+                    NetworkStatsTracker.StopwatchTimestamp(pong.ClientSendTime), receivedAt));
             }
         }
 

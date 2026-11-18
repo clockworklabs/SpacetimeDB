@@ -67,7 +67,10 @@ namespace SpacetimeDB
         public TimeSpan ServerHold { get; }
         /// <summary>When the server received the Ping, on the same clock as a reducer's <c>ctx.Timestamp</c>.</summary>
         public Timestamp ServerReceiveTime { get; }
-        /// <summary>When the Ping was sent, as a <see cref="Stopwatch.GetTimestamp"/> reading.</summary>
+        /// <summary>
+        /// When the Ping was sent, as a <see cref="Stopwatch.GetTimestamp"/> reading, to the microsecond.
+        /// This is when it left the client's send queue, not when <c>Ping()</c> was called.
+        /// </summary>
         public long SentAt { get; }
         /// <summary>When the Pong arrived, as a <see cref="Stopwatch.GetTimestamp"/> reading.</summary>
         public long ReceivedAt { get; }
@@ -136,6 +139,13 @@ namespace SpacetimeDB
         /// <summary>A <see cref="Stopwatch.GetTimestamp"/> reading in microseconds, the unit of a Ping's <c>client_send_time</c>.</summary>
         internal static ulong Micros(long stopwatchTimestamp) =>
             (ulong)(stopwatchTimestamp * (1_000_000.0 / Stopwatch.Frequency));
+
+        /// <summary>
+        /// The inverse of <see cref="Micros"/>: a <see cref="Stopwatch.GetTimestamp"/> reading,
+        /// at most one microsecond earlier than the one that produced <paramref name="micros"/>.
+        /// </summary>
+        internal static long StopwatchTimestamp(ulong micros) =>
+            (long)(micros * (Stopwatch.Frequency / 1_000_000.0));
 
         internal static TimeSpan ToTimeSpan(double micros) =>
             TimeSpan.FromTicks((long)Math.Round(micros * (TimeSpan.TicksPerMillisecond / 1000.0)));
