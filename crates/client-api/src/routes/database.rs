@@ -2508,6 +2508,8 @@ mod tests {
         reject_publication: bool,
         name_registrations: std::sync::Arc<AtomicUsize>,
         allow_publish_update: bool,
+        allow_reset: bool,
+        reset_calls: std::sync::Arc<AtomicUsize>,
     }
 
     impl DummyState {
@@ -2525,6 +2527,8 @@ mod tests {
                 reject_publication: false,
                 name_registrations: std::sync::Arc::new(AtomicUsize::new(0)),
                 allow_publish_update: false,
+                allow_reset: false,
+                reset_calls: std::sync::Arc::new(AtomicUsize::new(0)),
             }
         }
 
@@ -2614,6 +2618,76 @@ mod tests {
                         op: PublishOp::Updated,
                         ..
                     } if database_identity == identity
+                ));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn publish_clear_rejects_parent_before_reset() {
+        let identity = test_identity(43);
+        // Cover both forms accepted by the HTTP API. The shared handler cannot
+        // inspect Cloud's hierarchy, so it currently rejects any supplied parent.
+        for parent in ["existing-parent".to_owned(), test_identity(44).to_hex()] {
+            let mut state = DummyState::new().with_database(identity);
+            state.allow_reset = true;
+            let reset_calls = state.reset_calls.clone();
+            let app = DatabaseRoutes::<DummyState>::default()
+                .into_router(state.clone())
+                .with_state(state);
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method(http::Method::PUT)
+                        .uri(format!("/{identity}?clear=true&parent={parent}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            assert_eq!(
+                body.as_ref(),
+                b"Setting the parent of an existing database is not supported"
+            );
+            assert_eq!(reset_calls.load(Ordering::Relaxed), 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn publish_clear_without_parent_requires_reset_permission() {
+        let identity = test_identity(45);
+        for allowed in [false, true] {
+            let mut state = DummyState::new().with_database(identity);
+            state.allow_reset = allowed;
+            let reset_calls = state.reset_calls.clone();
+            let app = DatabaseRoutes::<DummyState>::default()
+                .into_router(state.clone())
+                .with_state(state);
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method(http::Method::PUT)
+                        .uri(format!("/{identity}?clear=true"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(
+                response.status(),
+                if allowed { StatusCode::OK } else { StatusCode::FORBIDDEN }
+            );
+            assert_eq!(reset_calls.load(Ordering::Relaxed), usize::from(allowed));
+            if allowed {
+                let body = response.into_body().collect().await.unwrap().to_bytes();
+                assert!(matches!(
+                    serde_json::from_slice::<PublishResult>(&body).unwrap(),
+                    PublishResult::Success { database_identity, op: PublishOp::Updated, .. }
+                        if database_identity == identity
                 ));
             }
         }
@@ -2804,7 +2878,8 @@ mod tests {
             _spec: DatabaseResetDef,
             _environment: EnvironmentMap,
         ) -> anyhow::Result<()> {
-            Err(anyhow::anyhow!("unused"))
+            self.reset_calls.fetch_add(1, Ordering::Relaxed);
+            Ok(())
         }
 
         async fn add_energy(&self, _identity: &Identity, _amount: EnergyQuanta) -> anyhow::Result<()> {
@@ -2863,6 +2938,18 @@ mod tests {
                     database: Some(database),
                     source: None,
                 });
+            }
+            if matches!(action, Action::ResetDatabase) {
+                return if self.allow_reset && self.databases.contains_key(&database) {
+                    Ok(())
+                } else {
+                    Err(Unauthorized::Unauthorized {
+                        subject,
+                        action,
+                        database: Some(database),
+                        source: None,
+                    })
+                };
             }
             if self.allow_publish_update
                 && matches!(action, Action::UpdateDatabase)
