@@ -1,5 +1,4 @@
 #[rustfmt::skip]
-#[path = "receiver/lib.rs"]
 mod receiver;
 use spacetimedb::{Identity, ReducerContext, Table};
 

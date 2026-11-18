@@ -143,3 +143,37 @@ impl spacetimedb::rt::RemoteReducer for receive {
     const SIGNATURE_HASH: &'static str = "129d590f837ff9c54fa407703a9f9f7e4c06538a7851a951c113ef6b4a74e39f";
     type Args = ReceiveArgs;
 }
+
+#[doc(hidden)]
+macro_rules! __spacetimedb_outbox {
+    (receive, $module:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = receive_outbox $(, name = $name)?, outbox($module::receive))]
+        pub struct ReceiveOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+            pub body: ::std::string::String,
+            pub reject: ::core::primitive::bool,
+        }
+    };
+    (receive, $module:ident, accessor = $accessor:ident $(, name = $name:literal)?) => {
+        #[::spacetimedb::generated_outbox_table(accessor = $accessor $(, name = $name)?, outbox($module::receive))]
+        pub struct ReceiveOutbox {
+            #[primary_key]
+            #[auto_inc]
+            pub msg_id: u64,
+            #[target]
+            pub target: $module::Identity,
+            pub body: ::std::string::String,
+            pub reject: ::core::primitive::bool,
+        }
+    };
+    ($reducer:ident, $module:ident) => {
+        compile_error!("unknown remote reducer or unsupported outbox options");
+    };
+}
+
+#[doc(hidden)]
+pub(crate) use __spacetimedb_outbox;

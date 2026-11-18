@@ -1,6 +1,6 @@
 Write a SpacetimeDB backend module in Rust that sends and receives messages between databases through outboxes, not HTTP. Write only the main module source.
 
-The supplied receiver bindings are at src/receiver/lib.rs. Declare them with #[path = "receiver/lib.rs"] mod receiver; and do not edit them. They describe the root reducer receive(body: String, reject: bool).
+The supplied receiver bindings are at src/receiver/mod.rs. Declare them with mod receiver; and do not edit them. They describe the root reducer receive(body: String, reject: bool).
 
 Public tables (the first field is the auto-increment primary key):
 - receipt: id: u64, body: String, sender: Identity
