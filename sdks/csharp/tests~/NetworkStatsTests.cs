@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using SpacetimeDB;
 using SpacetimeDB.ClientApi;
@@ -372,6 +373,58 @@ public partial class ReconnectTests
         oldSocket.Receive(PongFor(lostPing));
         conn.FrameTick();
         Assert.Null(conn.stats.Network);
+    }
+
+    [Fact]
+    public async Task ConcurrentPingsGetDistinctRequestIds()
+    {
+        using var conn = Create(configure: builder => builder.WithPingInterval(TimeSpan.FromMilliseconds(1)));
+        Establish(conn);
+        var callers = Enumerable.Range(0, 4).Select(_ => Task.Run(() =>
+        {
+            for (var i = 0; i < 500; i++)
+            {
+                Assert.False(conn.Ping().IsFaulted);
+            }
+        })).ToArray();
+        Pump(conn, () => callers.All(caller => caller.IsCompleted));
+        await Task.WhenAll(callers);
+
+        var ids = conn.Socket.Pings.Select(ping => ping.RequestId).ToList();
+        Assert.True(ids.Count > 4 * 500);
+        Assert.Equal(ids.Count, ids.Distinct().Count());
+    }
+
+    [Fact]
+    public async Task PingsRacingAConnectionLossAllComplete()
+    {
+        using var conn = CreateWithoutPeriodicPings();
+        Establish(conn);
+        var stop = false;
+        var tasks = new ConcurrentQueue<Task<PingResult>>();
+        var callers = Enumerable.Range(0, 4).Select(_ => Task.Run(() =>
+        {
+            while (!Volatile.Read(ref stop))
+            {
+                tasks.Enqueue(conn.Ping());
+            }
+        })).ToArray();
+        Assert.True(SpinWait.SpinUntil(() => conn.Socket.Pings.Count > 100, TimeSpan.FromSeconds(5)));
+
+        Drop(conn);
+        // Keep pinging past the loss, so that some calls race the failure handling.
+        Thread.Sleep(10);
+        Volatile.Write(ref stop, true);
+        await Task.WhenAll(callers);
+
+        Assert.All(tasks, task => Assert.True(task.IsCompleted));
+        Assert.Contains(tasks, task => task.Exception?.InnerException is OperationCanceledException);
+        Assert.Contains(tasks, task => task.Exception?.InnerException is InvalidOperationException);
+        // No send time from the lost socket survives the reset to inflate the next connection's PongWait.
+        lock (conn.stats.NetworkTracker)
+        {
+            Assert.Equal(0, conn.stats.NetworkTracker.PongWaitUs(ulong.MaxValue));
+        }
     }
 
     [Fact]
