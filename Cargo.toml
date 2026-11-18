@@ -34,6 +34,7 @@ members = [
   "crates/sats",
   "crates/schema",
   "crates/smoketests",
+  "crates/tiered-storage",
   "sdks/csharp/test-harness~",
   "sdks/rust",
   "sdks/unreal",
@@ -199,6 +200,7 @@ spacetimedb-subscription = { path = "crates/subscription", version = "=2.16.0" }
 spacetimedb-sql-parser = { path = "crates/sql-parser", version = "=2.16.0" }
 spacetimedb-table = { path = "crates/table", version = "=2.16.0" }
 spacetimedb-test-datastore = { path = "crates/test-datastore", version = "=2.16.0" }
+spacetimedb-tiered-storage = { path = "crates/tiered-storage", version = "=2.16.0" }
 
 # Prevent `ahash` from pulling in `getrandom` by disabling default features.
 # Modules use `getrandom02` and we need to prevent an incompatible version
@@ -221,6 +223,7 @@ blake3 = "1.5.1"
 brotli = { version = "3.5", default-features = false, features = ["std"] }
 bytemuck = { version = "1.16.2", features = ["must_cast"] }
 bytes = "1.10.1"
+bytesize = "2.0.1"
 bytestring = { version = "1.2.0", features = ["serde"] }
 cargo_metadata = "0.17.0"
 chrono = { version = "0.4.24", default-features = false }
