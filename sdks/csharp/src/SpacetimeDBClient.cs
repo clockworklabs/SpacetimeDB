@@ -260,7 +260,9 @@ namespace SpacetimeDB
         public ConnectionId ConnectionId { get; private set; } = ConnectionId.Random();
         public Identity? Identity { get; private set; }
         private ConnectionId? initialConnectionId;
-        private bool connectionEstablished;
+        // Volatile because Ping() reads it from any thread: once it reads true, it also sees
+        // the webSocket that was assigned before the InitialConnection that set it.
+        private volatile bool connectionEstablished;
 
         // Created by StartSocket when Connect is first called.
         internal WebSocket? webSocket;
@@ -318,7 +320,9 @@ namespace SpacetimeDB
         private TimeSpan pingTimeout = NetworkStatsTracker.DefaultPingTimeout;
 #endif
         private long nextPingAt;
-        private uint lastPingRequestId;
+        // Incremented with Interlocked, as Ping() may run on any thread. The Ping's request ID is
+        // this as a uint: Interlocked has no uint overload on .NET Standard 2.1.
+        private int lastPingRequestId;
         private readonly ConcurrentDictionary<uint, PendingPing> pendingPings = new();
 
         private sealed class PendingPing
@@ -333,7 +337,8 @@ namespace SpacetimeDB
             stats.ClearRequestsAwaitingResponse();
 
             // Network stats describe one socket. Callers have already bumped socketGeneration,
-            // so HandlePong can't record a late Pong from the old socket after this reset.
+            // so after this reset HandlePong can't record a late Pong from the old socket, and
+            // SendPing can't record a Ping, or leave one registered below, for the old socket.
             lock (stats.NetworkTracker)
             {
                 stats.NetworkTracker.Reset();
@@ -1548,6 +1553,7 @@ namespace SpacetimeDB
         /// Its sample also feeds <c>stats.Network</c>, exactly like the periodic Pings,
         /// and this works even when periodic pinging is disabled with <c>WithPingInterval(TimeSpan.Zero)</c>.
         /// Like a one-off query, the task completes on a background thread, without waiting for <c>FrameTick()</c>.
+        /// Safe to call from any thread, including that task's continuation.
         ///
         /// Fails immediately if the connection isn't established, and fails if the connection closes
         /// before the Pong arrives. With periodic pinging disabled, unanswered Pings never close the
@@ -1555,36 +1561,59 @@ namespace SpacetimeDB
         /// </summary>
         public Task<PingResult> Ping()
         {
-            if (!CanPing)
+            // Unlike the rest of the connection, this may be called from any thread, such as the
+            // continuation of an earlier Ping(), while FrameTick replaces the socket on the main thread.
+            // Read the generation first: the socket read after it belongs to that generation or a later one,
+            // and SendPing rechecks the generation before anything is recorded or sent.
+            var generation = socketGeneration;
+            if (!CanPing || webSocket is not WebSocket socket)
             {
-                return Task.FromException<PingResult>(new InvalidOperationException("Not connected to server."));
+                return Task.FromException<PingResult>(NotConnectedForPing());
             }
-            var requestId = ++lastPingRequestId;
+            var requestId = NextPingRequestId();
             // Register before sending, as the Pong is handled on the parse thread.
             var pending = new PendingPing(Stopwatch.GetTimestamp());
             pendingPings[requestId] = pending;
-            SendPing(requestId, pending.SentAt);
+            if (!SendPing(socket, requestId, pending.SentAt, generation))
+            {
+                pendingPings.TryRemove(requestId, out _);
+                return Task.FromException<PingResult>(NotConnectedForPing());
+            }
             return pending.Result.Task;
         }
+
+        private static InvalidOperationException NotConnectedForPing() => new("Not connected to server.");
 
         // Pings may only be sent once InitialConnection has arrived.
         private bool CanPing => connectionEstablished && IsActive;
 
+        private uint NextPingRequestId() => unchecked((uint)Interlocked.Increment(ref lastPingRequestId));
+
+        // Records and sends the Ping, unless the socket of `generation` has since been replaced or closed.
         // Each ClientMessage goes out in its own WebSocket message, so this Ping isn't batched with others.
-        private void SendPing(uint requestId, long sentAt)
+        private bool SendPing(WebSocket socket, uint requestId, long sentAt, int generation)
         {
             var sentUs = NetworkStatsTracker.Micros(sentAt);
             lock (stats.NetworkTracker)
             {
+                // Socket failures bump socketGeneration, then reset the tracker under this lock, then fail
+                // every pending Ping. So if the generation is unchanged here, a Ping registered before this
+                // check is failed by that reset's caller, and this send time is cleared by the reset.
+                if (isClosing || generation != socketGeneration)
+                {
+                    return false;
+                }
                 stats.NetworkTracker.RecordPing(sentUs);
             }
-            webSocket!.Send(new ClientMessage.Ping(new ClientApi.Ping(requestId, sentUs)));
+            socket.Send(new ClientMessage.Ping(new ClientApi.Ping(requestId, sentUs)));
+            return true;
         }
 
+        // Only called from the main thread, which is the only thread that replaces the socket.
         private void SendPeriodicPing()
         {
             var sentAt = Stopwatch.GetTimestamp();
-            SendPing(++lastPingRequestId, sentAt);
+            SendPing(webSocket!, NextPingRequestId(), sentAt, socketGeneration);
             nextPingAt = sentAt + (long)(pingInterval.TotalSeconds * Stopwatch.Frequency);
         }
 
