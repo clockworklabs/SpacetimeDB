@@ -2628,7 +2628,7 @@ mod tests {
         let identity = test_identity(43);
         // Cover both forms accepted by the HTTP API. The shared handler cannot
         // inspect Cloud's hierarchy, so it currently rejects any supplied parent.
-        for parent in ["existing-parent".to_owned(), test_identity(44).to_hex()] {
+        for parent in ["existing-parent".to_owned(), test_identity(44).to_hex().to_string()] {
             let mut state = DummyState::new().with_database(identity);
             state.allow_reset = true;
             let reset_calls = state.reset_calls.clone();
