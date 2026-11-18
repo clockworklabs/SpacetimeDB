@@ -215,3 +215,16 @@ impl TestCounter {
         }
     }
 }
+
+/// Adapt a one-shot test assertion to a repeatable subscription callback.
+/// A second invocation fails the test, preserving the old tests' expectations.
+pub fn once<Ctx, F: FnOnce(&Ctx)>(callback: F) -> impl FnMut(&Ctx) {
+    let mut callback = Some(callback);
+    move |ctx| callback.take().expect("one-shot test callback fired twice")(ctx)
+}
+
+/// The equivalent adapter for lifecycle callbacks with three arguments.
+pub fn once3<Ctx, A, B, F: FnOnce(&Ctx, A, B)>(callback: F) -> impl FnMut(&Ctx, A, B) {
+    let mut callback = Some(callback);
+    move |ctx, a, b| callback.take().expect("one-shot test callback fired twice")(ctx, a, b)
+}

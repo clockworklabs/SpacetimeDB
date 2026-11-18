@@ -40,6 +40,9 @@ pub trait DbContext {
     /// Returns `true` if the connection is active, i.e. has not yet disconnected.
     fn is_active(&self) -> bool;
 
+    /// True while the SDK is waiting for or establishing an automatic reconnect.
+    fn is_reconnecting(&self) -> bool;
+
     /// Close the connection.
     ///
     /// Returns an error if we are already disconnected.
