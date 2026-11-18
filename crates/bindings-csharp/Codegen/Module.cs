@@ -278,6 +278,7 @@ record TableAccessor
     public readonly string? CanonicalName;
     public readonly bool IsPublic;
     public readonly bool IsEvent;
+    public readonly TableCachePolicy CachePolicy;
     public readonly Scheduled? Scheduled;
 
     public string Identifier => EscapeIdentifier(Name);
@@ -290,6 +291,7 @@ record TableAccessor
         CanonicalName = attr.Name;
         IsPublic = attr.Public;
         IsEvent = attr.Event;
+        CachePolicy = attr.CachePolicy;
         if (
             attr.Scheduled is { } reducer
             && table.GetColumnIndex(data, attr.ScheduledAt, diag) is { } scheduledAtIndex
@@ -1027,6 +1029,10 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             var accessorIdentifier = v.Identifier;
             var iTable =
                 $"global::SpacetimeDB.Internal.ITableView<{accessorIdentifier}, {globalName}>";
+            var cachePolicy =
+                v.CachePolicy == TableCachePolicy.RequiredInMemory
+                    ? ""
+                    : $"\n\npublic static SpacetimeDB.TableCachePolicy CachePolicy => SpacetimeDB.TableCachePolicy.{v.CachePolicy};";
             var tableArgument = sharedContexts ? "__state" : "";
             var rowArgument = sharedContexts ? "row, __state" : "row";
             var instanceMembers = sharedContexts
@@ -1104,7 +1110,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                         v.Scheduled is { } scheduled
                         ? $"{iTable}.MakeSchedule(\"{scheduled.ReducerName}\", {scheduled.ScheduledAtColumn})"
                         : "null"
-                    )}}};
+                    )}}};{{{cachePolicy}}}
 
                 /// <summary>
                 /// Returns the number of rows in this table.

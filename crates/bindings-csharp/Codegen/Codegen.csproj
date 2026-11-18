@@ -11,6 +11,7 @@
     <IsPackable>false</IsPackable>
     <IsRoslynComponent>true</IsRoslynComponent>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <DefineConstants>$(DefineConstants);SPACETIMEDB_CODEGEN</DefineConstants>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -37,6 +38,7 @@
   <ItemGroup>
     <!-- reuse attribute and adjacent types from the runtime -->
     <Compile Include="../Runtime/Attrs.cs" />
+    <Compile Include="../Runtime/Internal/Autogen/TableCachePolicy.g.cs" />
   </ItemGroup>
 
   <!-- Local project references (used by SpacetimeDB/modules/*-cs) don't use NuGet resolution. -->

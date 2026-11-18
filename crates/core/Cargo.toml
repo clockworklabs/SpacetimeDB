@@ -44,6 +44,7 @@ blake3.workspace = true
 brotli.workspace = true
 bytemuck.workspace = true
 bytes.workspace = true
+bytesize.workspace = true
 bytestring.workspace = true
 chrono.workspace = true
 crossbeam-queue.workspace = true
