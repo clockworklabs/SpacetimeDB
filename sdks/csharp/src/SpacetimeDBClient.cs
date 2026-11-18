@@ -1554,8 +1554,9 @@ namespace SpacetimeDB
         /// once a <c>FrameTick()</c> has received the Pong.
         ///
         /// Fails immediately with <see cref="InvalidOperationException"/> if the connection isn't established,
-        /// and with <see cref="OperationCanceledException"/> if the connection closes before the Pong arrives. With periodic pinging disabled, unanswered Pings never close the
-        /// connection, so on a silently failed network this waits until the socket closes.
+        /// and with <see cref="OperationCanceledException"/> if the connection closes before the Pong arrives.
+        /// With periodic pinging disabled, unanswered Pings never close the connection,
+        /// so on a silently failed network this waits until the socket closes.
         /// </summary>
         public Task<PingResult> Ping()
         {
@@ -1650,6 +1651,7 @@ namespace SpacetimeDB
         private void HandlePong(Pong pong, long receivedAt, int generation)
         {
             var nowUs = NetworkStatsTracker.Micros(receivedAt);
+            double rttUs;
             lock (stats.NetworkTracker)
             {
                 // FailPendingOperations resets the stats under this lock after socketGeneration changes,
@@ -1658,18 +1660,18 @@ namespace SpacetimeDB
                 {
                     return;
                 }
-                stats.NetworkTracker.RecordPong(nowUs, pong.ClientSendTime,
+                rttUs = stats.NetworkTracker.RecordPong(nowUs, pong.ClientSendTime,
                     pong.ServerReceiveTime.MicrosecondsSinceUnixEpoch, pong.ServerHoldDuration.Microseconds);
             }
             if (pendingPings.TryRemove(pong.RequestId, out var result))
             {
                 var roundTrip = NetworkStatsTracker.ToTimeSpan(Math.Max(0, (double)nowUs - pong.ClientSendTime));
                 var serverHold = NetworkStatsTracker.ToTimeSpan(pong.ServerHoldDuration.Microseconds);
-                var rtt = roundTrip > serverHold ? roundTrip - serverHold : TimeSpan.Zero;
                 // The send time is the one the Pong echoes, stamped as the Ping left the send queue,
-                // so that SentAt agrees with RoundTrip.
-                result.TrySetResult(new PingResult(rtt, roundTrip, serverHold, pong.ServerReceiveTime,
-                    NetworkStatsTracker.StopwatchTimestamp(pong.ClientSendTime), receivedAt));
+                // so that SentAt agrees with RoundTrip. Rtt is the tracker's own sample, so that it
+                // always matches stats.Network's RttLatest.
+                result.TrySetResult(new PingResult(NetworkStatsTracker.ToTimeSpan(rttUs), roundTrip, serverHold,
+                    pong.ServerReceiveTime, NetworkStatsTracker.StopwatchTimestamp(pong.ClientSendTime), receivedAt));
             }
         }
 
