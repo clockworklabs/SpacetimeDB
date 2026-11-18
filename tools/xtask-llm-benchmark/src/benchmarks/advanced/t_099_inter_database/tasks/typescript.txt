@@ -1,6 +1,6 @@
 Write a SpacetimeDB backend module in TypeScript that sends and receives messages between databases through outboxes, not HTTP. Write only the main module source.
 
-The supplied receiver bindings are at src/receiver/index.ts. Import them with import receiver from './receiver'; and do not edit them. They describe the root reducer receive(body: string, reject: boolean).
+Generated bindings for the receiver database are supplied at src/receiver/index.ts. They describe the root reducer receive(body: string, reject: boolean).
 
 Public tables (the first field is the auto-increment primary key):
 - receipt: id: u64 (bigint), body: string, sender: Identity
