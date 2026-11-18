@@ -1,0 +1,18 @@
+---
+source: crates/schema/src/auto_migrate.rs
+expression: "plan.pretty_print(PrettyPrintStyle::NoColor).expect(\"should pretty print\")"
+---
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Database Migration Plan
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+▸ Manual migration from schema 0x6dae87e538d2ddd6d5235265a59c1769bbfb3701b39c229ec3a20c539c23abb3
+    ▸ Changed table Apples (recreated; old rows in dropped.Apples)
+        ~ Modified: id (U64 → U32)
+        + count: U32
+        ~ Modified: kind.Green (U8 → (shade: U8))
+        - name: String
+
+▸ Removed table: Pears
+
+!!! Warning: All clients will be disconnected due to breaking schema changes
