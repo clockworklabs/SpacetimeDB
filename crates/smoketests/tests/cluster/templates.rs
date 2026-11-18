@@ -891,13 +891,10 @@ fn test_typescript_template(test: &Smoketest, template: &Template, project_path:
 
 /// TypeScript templates whose client `build` script currently fails, and why.
 /// Remove an entry as soon as its template is fixed, so the build is checked again.
-const TYPESCRIPT_CLIENT_BUILD_KNOWN_FAILURES: &[(&str, &str)] = &[
-    (
-        "bun-ts",
-        "pnpm doesn't run the `bun` package's postinstall, so `bun build` can't start",
-    ),
-    ("tanstack-ts", "`vite build` can't resolve an entry module (index.html)"),
-];
+const TYPESCRIPT_CLIENT_BUILD_KNOWN_FAILURES: &[(&str, &str)] = &[(
+    "bun-ts",
+    "pnpm doesn't run the `bun` package's postinstall, so `bun build` can't start",
+)];
 
 fn typescript_client_build_known_failure(template_id: &str) -> Option<&'static str> {
     TYPESCRIPT_CLIENT_BUILD_KNOWN_FAILURES
