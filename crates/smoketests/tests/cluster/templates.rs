@@ -815,7 +815,7 @@ fn test_rust_template(test: &Smoketest, template: &Template, project_path: &Path
     Ok(())
 }
 
-/// Publishes a TypeScript server module and verifies the TypeScript client type-checks.
+/// Publishes a TypeScript server module and verifies the TypeScript client builds.
 fn test_typescript_template(test: &Smoketest, template: &Template, project_path: &Path) -> Result<()> {
     // Server
     let server_path = project_path.join("spacetimedb");
@@ -840,16 +840,61 @@ fn test_typescript_template(test: &Smoketest, template: &Template, project_path:
     })?;
     let _ = test.spacetime(&["delete", "--server", &test.server_url, "--yes", &domain]);
 
-    // Client type-check (only if there's a client package.json in the project root)
+    // Client build (only if there's a client package.json in the project root)
     let client_package_json = project_path.join("package.json");
     if client_package_json.exists() {
         setup_typescript_sdk_in_package_json(&client_package_json)?;
         run_pnpm(&["install"], project_path)?;
 
-        // TODO: some templates don't pass tsc yet, re-enable once they're fixed.
-        // run_pnpm(&["exec", "tsc", "--noEmit"], project_path)?;
+        if let Some(reason) = typescript_client_build_known_failure(&template.id) {
+            eprintln!(
+                "[TEMPLATES] Skipping client build for {}: known failure: {reason}",
+                template.id
+            );
+        } else {
+            // Each template's own `build` script, which type-checks where the
+            // framework's tooling does (tsc, vue-tsc, svelte-check, ...).
+            run_pnpm(&["run", "--if-present", "build"], project_path)
+                .with_context(|| format!("Client build failed for template {}", template.id))?;
+        }
     }
     Ok(())
+}
+
+/// TypeScript templates whose client `build` script currently fails, and why.
+/// Remove an entry as soon as its template is fixed, so the build is checked again.
+const TYPESCRIPT_CLIENT_BUILD_KNOWN_FAILURES: &[(&str, &str)] = &[
+    (
+        "bun-ts",
+        "pnpm doesn't run the `bun` package's postinstall, so `bun build` can't start",
+    ),
+    ("tanstack-ts", "`vite build` can't resolve an entry module (index.html)"),
+    (
+        "vue-ts",
+        "vue-tsc doesn't unwrap the `Readonly<Ref<..>>` that useTable returns in App.vue",
+    ),
+];
+
+fn typescript_client_build_known_failure(template_id: &str) -> Option<&'static str> {
+    TYPESCRIPT_CLIENT_BUILD_KNOWN_FAILURES
+        .iter()
+        .find(|(id, _)| *id == template_id)
+        .map(|(_, reason)| *reason)
+}
+
+#[test]
+fn test_typescript_client_build_known_failures_name_real_templates() {
+    let typescript_templates: Vec<String> = get_templates()
+        .into_iter()
+        .filter(|template| template.server_lang.as_deref() == Some("typescript"))
+        .map(|template| template.id)
+        .collect();
+    for (id, _) in TYPESCRIPT_CLIENT_BUILD_KNOWN_FAILURES {
+        assert!(
+            typescript_templates.iter().any(|template| template == id),
+            "known-failure entry {id} is not a TypeScript template; remove it"
+        );
+    }
 }
 
 /// Publishes a C# server module and verifies the C# client builds.
