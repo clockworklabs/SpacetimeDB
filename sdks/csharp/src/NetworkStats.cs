@@ -153,8 +153,11 @@ namespace SpacetimeDB
         /// <summary>Record that a Ping went out at <paramref name="sentUs"/>, its <c>client_send_time</c>.</summary>
         internal void RecordPing(ulong sentUs) => unansweredSendTimesUs.Add(sentUs);
 
-        /// <summary>Record a Pong which arrived at <paramref name="nowUs"/>.</summary>
-        internal void RecordPong(ulong nowUs, ulong clientSendTimeUs, long serverReceiveTimeUs, long serverHoldUs)
+        /// <summary>
+        /// Record a Pong which arrived at <paramref name="nowUs"/>, and return its round-trip sample
+        /// in microseconds: the round trip less the server's hold time, floored at zero.
+        /// </summary>
+        internal double RecordPong(ulong nowUs, ulong clientSendTimeUs, long serverReceiveTimeUs, long serverHoldUs)
         {
             // A Pong proves the link was alive when its Ping arrived, so it answers every Ping sent
             // up to then. Pongs can overtake one another on the server, so this doesn't assume
@@ -195,6 +198,7 @@ namespace SpacetimeDB
                 Advance(nowUs);
                 estimate = MinSample().Theta;
             }
+            return r;
         }
 
         /// <summary>
