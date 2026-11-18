@@ -4,7 +4,7 @@
 use spacetimedb::ReducerContext;
 
 // Reuse the generated receiver bindings exercised by the bindings UI tests.
-#[path = "../../../crates/bindings/tests/fixtures/idc_receiver/lib.rs"]
+#[path = "../../../crates/bindings/tests/fixtures/idc_receiver/mod.rs"]
 mod receiver;
 
 #[spacetimedb::table(

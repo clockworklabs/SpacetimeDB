@@ -64,3 +64,26 @@ When running Unreal headlessly in CI, the following flags are commonly used:
 | `-LogCmds="automation veryverbose"` | Increases log verbosity for the automation system; useful for debugging test discovery and execution. |
 | `-test="Filter"` | (When using `-run=Automation`) Runs only tests that match the given filter. |
 | `-run=Automation` | Runs the Automation commandlet (source builds or certain editor configs only). Not always available in installed builds. |
+## Automatic reconnect tests
+
+Use Unreal Engine 5.6. On macOS, set the engine root (the directory containing `Engine`):
+
+```sh
+export UE_ROOT_PATH="/Users/Shared/Epic Games/UE_5.6"
+cargo test -p sdk-unreal-test-harness --test test unreal_reconnect -- --nocapture --test-threads=1
+```
+
+The harness publishes a fresh `sdk-test` database for each test. The reconnect suite includes:
+
+- `ReconnectLifecycle`: opt-in behavior, cancellation, unknown call results, identity changes, and stale socket events.
+- `ReconnectCredentials`: backoff bounds, expiry checks, provider failures, rejected fresh credentials, and late completion after cancellation.
+- `ReconnectCacheReplay`: atomic reconciliation across tables, overlapping sets, unchanged rows, offline cancellation, and partial batch errors.
+- `ReconnectLiveServer`: real WebSockets against SpacetimeDB, cache changes during an outage, stable identity with new connection IDs, credential rejection and refresh, and multi-set replay.
+
+The first three use deterministic transport injection. `ReconnectLiveServer` requires the database and server URL supplied by the harness; when running directly in Unreal, use `-SpacetimeDbName=<database>` and `-SpacetimeServerUrl=http://127.0.0.1:3000`.
+
+The generated C++ and Blueprint reconnect API also has a Rust regression test:
+
+```sh
+cargo test -p spacetimedb-codegen --test unreal_reconnect
+```

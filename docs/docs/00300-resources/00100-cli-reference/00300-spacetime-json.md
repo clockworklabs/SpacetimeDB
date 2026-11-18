@@ -57,6 +57,7 @@ The `generate` key is an array of objects. Each object configures bindings gener
 | `language` | string | Target language: `typescript`, `csharp`, `rust`, `unrealcpp`; `cpp` is reserved for module bindings |
 | `bindings` | string | `client` (default) for application clients, or `module` for inter-database calls |
 | `out-dir` | string | Output directory for generated files |
+| `import-extension` | string | TypeScript relative import extension: `none` (default) for bundlers, `js` for NodeNext, or `ts` for direct TypeScript execution; see [TypeScript import extensions](../../00200-core-concepts/00600-clients/00700-typescript-reference.md#import-extensions) |
 | `namespace` | string | C# namespace (`csharp` only) |
 | `unreal-module-name` | string | Unreal module name (`unrealcpp` only) |
 | `uproject-dir` | string | Unreal project directory (`unrealcpp` only) |

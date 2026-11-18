@@ -109,8 +109,8 @@ fn test_codegen_rust_module_bindings() {
     assert!(!outfiles.keys().any(|filename| filename.ends_with("_procedure.rs")));
 
     let root = outfiles
-        .get("lib.rs")
-        .expect("rust module bindings should emit a root lib.rs");
+        .get("mod.rs")
+        .expect("rust module bindings should emit a root mod.rs");
 
     assert!(root.contains("pub use test_a_type::TestA;"));
     assert!(!root.contains("pub mod baz_type;"));
@@ -209,11 +209,11 @@ fn test_codegen_receiver_bindings_include_nested_reducer_types() {
     assert!(files.contains_key("empire_state_op_type.rs"));
     assert!(files.contains_key("empire_state_type.rs"));
     assert!(!files.contains_key("unrelated_type.rs"));
-    assert!(files["lib.rs"].contains("pub mod empire_state_op_type;"));
-    assert!(files["lib.rs"].contains("pub mod empire_state_type;"));
-    assert!(files["lib.rs"].contains("pub use empire_state_op_type::EmpireStateOp;"));
-    assert!(files["lib.rs"].contains("pub use empire_state_type::EmpireState;"));
-    assert!(!files["lib.rs"].contains("pub mod unrelated_type;"));
+    assert!(files["mod.rs"].contains("pub mod empire_state_op_type;"));
+    assert!(files["mod.rs"].contains("pub mod empire_state_type;"));
+    assert!(files["mod.rs"].contains("pub use empire_state_op_type::EmpireStateOp;"));
+    assert!(files["mod.rs"].contains("pub use empire_state_type::EmpireState;"));
+    assert!(!files["mod.rs"].contains("pub mod unrelated_type;"));
 
     let files = generate_receiver_bindings(&module, ReceiverLanguage::TypeScript, None).unwrap();
     let root = &files.iter().find(|file| file.filename == "index.ts").unwrap().code;
@@ -237,11 +237,11 @@ fn test_codegen_rust_outbox_fixture() {
     builder.add_explicit_names(names);
     let module: ModuleDef = builder.finish().try_into().unwrap();
     let files = generate_receiver_bindings(&module, ReceiverLanguage::Rust, None).unwrap();
-    let root = &files.iter().find(|file| file.filename == "lib.rs").unwrap().code;
+    let root = &files.iter().find(|file| file.filename == "mod.rs").unwrap().code;
 
     // The CLI formats generated bindings, and CI checks the fixture with the repo's rustfmt config.
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("lib.rs");
+    let path = dir.path().join("mod.rs");
     fs_err::write(&path, root).unwrap();
     let status = std::process::Command::new("rustfmt")
         .arg("--config-path")
@@ -254,7 +254,7 @@ fn test_codegen_rust_outbox_fixture() {
     // The bindings UI tests compile this generated fixture and check its column mappings.
     assert_eq!(
         fs_err::read_to_string(path).unwrap().trim_end(),
-        include_str!("../../bindings/tests/fixtures/idc_receiver/lib.rs").trim_end()
+        include_str!("../../bindings/tests/fixtures/idc_receiver/mod.rs").trim_end()
     );
 }
 

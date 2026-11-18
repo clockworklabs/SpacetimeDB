@@ -157,6 +157,8 @@ impl TableOrViewSchema {
     }
 }
 
+pub use spacetimedb_lib::db::raw_def::v10::TableCachePolicy;
+
 /// A data structure representing the schema of a database table.
 ///
 /// This struct holds information about the table, including its identifier,
@@ -202,6 +204,10 @@ pub struct TableSchema {
 
     /// The visibility of the table.
     pub table_access: StAccess,
+
+    /// Stored in `st_table_cache_policy` and set when the table is created.
+    /// Changing this field alone does not change how the table stores its pages.
+    pub cache_policy: TableCachePolicy,
 
     /// The schedule for the table, if present.
     pub schedule: Option<ScheduleSchema>,
@@ -251,6 +257,7 @@ impl TableSchema {
             sequences,
             table_type,
             table_access,
+            cache_policy: TableCachePolicy::default(),
             schedule,
             primary_key,
             is_event,
@@ -1027,7 +1034,7 @@ impl Schema for TableSchema {
             signature_hash: outbox.signature_hash,
         });
 
-        TableSchema::new(
+        let mut schema = TableSchema::new(
             table_id,
             TableName::new(name.clone()),
             None,
@@ -1042,7 +1049,9 @@ impl Schema for TableSchema {
             *is_event,
             Some(accessor_name.clone().into()),
             outbox,
-        )
+        );
+        schema.cache_policy = def.cache_policy;
+        schema
     }
 
     fn check_compatible(&self, module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
@@ -1055,6 +1064,7 @@ impl Schema for TableSchema {
             "Table name mismatch"
         );
         ensure_eq!(self.primary_key, def.primary_key, "Primary key mismatch");
+        ensure_eq!(self.cache_policy, def.cache_policy, "Cache policy mismatch");
         let def_table_access: StAccess = (def.table_access).into();
         ensure_eq!(self.table_access, def_table_access, "Table access mismatch");
         let def_table_type: StTableType = (def.table_type).into();

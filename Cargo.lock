@@ -760,6 +760,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
 
 [[package]]
+name = "bytesize"
+version = "2.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6bd91ee7b2422bcb158d90ef4d14f75ef67f340943fc4149891dcce8f8b972a3"
+
+[[package]]
 name = "bytestring"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8356,6 +8362,7 @@ dependencies = [
  "brotli 3.5.0",
  "bytemuck",
  "bytes",
+ "bytesize",
  "bytestring",
  "chrono",
  "core_affinity",
@@ -8482,6 +8489,7 @@ dependencies = [
  "spacetimedb-data-structures",
  "spacetimedb-durability",
  "spacetimedb-execution",
+ "spacetimedb-fs-utils",
  "spacetimedb-lib",
  "spacetimedb-metrics",
  "spacetimedb-paths",
@@ -9030,6 +9038,7 @@ dependencies = [
  "spacetimedb-pg",
  "spacetimedb-schema",
  "spacetimedb-table",
+ "spacetimedb-tiered-storage",
  "tempfile",
  "thiserror 1.0.69",
  "tikv-jemallocator",
@@ -9059,6 +9068,7 @@ dependencies = [
  "ahash 0.8.12",
  "blake3",
  "bytemuck",
+ "bytes",
  "criterion",
  "decorum",
  "derive_more 0.99.20",
@@ -9066,6 +9076,7 @@ dependencies = [
  "foldhash 0.2.0",
  "hashbrown 0.16.1",
  "itertools 0.12.1",
+ "parking_lot 0.12.5",
  "proptest",
  "proptest-derive",
  "rand 0.9.2",
@@ -9129,6 +9140,19 @@ dependencies = [
  "tempfile",
  "tokio",
  "tower",
+]
+
+[[package]]
+name = "spacetimedb-tiered-storage"
+version = "2.16.0"
+dependencies = [
+ "log",
+ "spacetimedb-fs-utils",
+ "spacetimedb-memory-usage",
+ "spacetimedb-paths",
+ "spacetimedb-snapshot",
+ "spacetimedb-table",
+ "tempfile",
 ]
 
 [[package]]
