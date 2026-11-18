@@ -410,8 +410,25 @@ pub fn pnpm(args: &[&str], cwd: &Path) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-/// Builds the local TypeScript bindings package.
+/// Set by the smoketest runner once it has built the TypeScript SDK, so that
+/// tests skip rebuilding it.
+pub const TYPESCRIPT_SDK_PREBUILT_ENV: &str = "SPACETIME_SMOKETEST_TS_SDK_PREBUILT";
+
+/// Builds the local TypeScript bindings package, unless the runner has already
+/// built it.
+///
+/// Tests run in parallel and share one copy of the SDK. Rebuilding it clears
+/// `dist/` while other tests may be copying it into their projects, so the
+/// runner builds it once up front, and tests only build it when run directly.
 pub fn build_typescript_sdk() -> Result<()> {
+    if std::env::var_os(TYPESCRIPT_SDK_PREBUILT_ENV).is_some() {
+        return Ok(());
+    }
+    prebuild_typescript_sdk()
+}
+
+/// Builds the local TypeScript bindings package unconditionally.
+pub fn prebuild_typescript_sdk() -> Result<()> {
     let workspace = workspace_root();
     let ts_bindings = workspace.join("crates/bindings-typescript");
     pnpm(&["--filter", "spacetimedb", "install"], &ts_bindings)?;
