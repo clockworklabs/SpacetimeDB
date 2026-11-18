@@ -1,64 +1,34 @@
 # Writing pull requests
 
-Read this guide when creating or updating a PR. Use the repository's [PR template](../.github/pull_request_template.md) and preserve every section when updating an existing PR.
-
 ## Verified commits
 
 Verified commits are required: a PR cannot be merged without them. Enable commit signing before creating commits for a PR, and ensure GitHub recognizes the commits as **Verified**. A local signature alone does not establish that GitHub can verify it.
 
 If you cannot create verified commits, alert the user promptly, explicitly tell them that the PR cannot be merged without verified commits, and help them set up commit signing and GitHub verification. Do not silently proceed with unverified commits or present the PR as ready to merge. After setup, confirm that GitHub marks the PR's commits as **Verified**.
 
-## Preserve and complete the template
+## Write for the reviewer
 
-No section of the PR template may be removed. PRs that remove any template section will be rejected. Populate every section faithfully, following its instructions and describing the actual change; do not leave placeholders or invent information. Where a section does not apply, say so explicitly and follow any prescribed wording.
+Use the [PR template](../.github/pull_request_template.md). Keep and complete every section, including the prescribed wording for inapplicable sections. Replace placeholders with facts from the change. Lead the description with what changes and why it matters. For a test-only PR, identify the behavior being protected. Reserve the evidence for Testing.
 
-## Writing the testing section
+On an existing PR, work from the current body. Edit only the requested lines and preserve every section, the author's wording elsewhere, and the state of their checkboxes.
 
-Describe the automated or manual testing performed and what behavior it covers, including relevant existing test coverage. Include important gaps in that coverage.
+## Testing
 
-If no testing was performed, write “Not tested.” Do not justify the absence of testing or pad the section with routine checks. Reviewing the diff or instructions, checking whitespace or links, and verifying commit signatures are not substitutes for testing the change.
+If no behavioral testing was performed, the entire Testing section is the single sentence “Not tested.” Reviewing the patch, checking whitespace, or verifying signatures alone counts as untested.
 
-### Choose the evidence
+Otherwise, describe the observable behavior and the evidence for it. Lead with the failure that matters most. Group related cases by the claim they establish. For example, several inputs exercising the same fallback usually need one sentence. Give a separate bullet when it answers a different reviewer concern.
 
-- Start from the change's intended outcome and the important ways it could fail. Identify what verification addresses those concerns, including existing coverage.
-- Usually, the strongest evidence is how automated tests were extended or adapted, or why existing tests cover the change. Manual tests, successful use, and other verification can also provide evidence.
-- State what the evidence establishes. A same-client compilation test supports source compatibility; a client/server test supports actual interaction. Neither proves the other.
-- Include important remaining uncertainty and explain any barriers to testing it. Distinguish "not tested yet" from "cannot be tested"; don't invent a reason or imply impossibility.
+Say which coverage is new, updated, or already present when that distinction matters. Inspect existing coverage before making claims about it. A manual experiment belongs here when its result tells the reviewer something specific. Label it as manual and give that result.
 
-The connection between the evidence and the intended outcome should be clear from the wording. It doesn't need a separate justification after every bullet.
+Routine suite status (“all tests passed”), pass counts, commands, reruns, and restoration of temporary edits belong in the author handoff. In the PR, describe each distinct behavior once. Introduce a group of new or updated tests together and let each sentence name the behavior directly. Include an execution detail in the PR when it explains a known failure, helps reproduce a relevant result, or changes the conclusion a reviewer can draw. Report known failures.
 
-### Content
+State the boundary of the evidence when it matters. Name the behavior still unverified and any known barrier. A test that compiles a client against two versions of generated bindings establishes source compatibility. A claim about exchanging messages with a server needs evidence from an actual interaction.
 
-- Distinguish updated tests, added tests, and relevant existing coverage. Use short bullets; omit categories that don't apply.
-- Describe what each test or other check verifies. Name the inputs or API when needed to make the claim clear: incorrect reducer arguments, generated bindings, or the built package.
-- Explain what coverage the change adds. A new test may exercise previously tested behavior through a new path; don't imply the behavior was previously untested.
-- Make compatibility claims precise. The same client against old and new bindings is different from old bindings against a new SDK.
-- Include existing integration coverage when it helps explain why the change is covered. Inspect it before claiming coverage is missing or proposing more tests.
-- Write assuming CI passes. Don't include a running log of local test execution or say CI tests still need to be run for the PR. This does not justify claiming a known failure passes.
-- Label manual verification as manual and state what was checked and the result.
-- Keep caveats focused on gaps that affect confidence in the change, not a routine list of what tests don't do.
+### Example of selecting evidence
 
-### Wording and detail
+Working notes: 38 tests passed. The test clock reached the expiry boundary. Removing the expiry comparison let an expired credential through and failed the test. Restored the comparison and reran the suite.
 
-Brevity comes from removing unnecessary detail, not replacing concrete information with vague labels.
-
-- Use plain language and concrete actions. Each bullet should describe a distinct piece of coverage.
-- Describe observable behavior instead of labels such as "runtime checks," "metadata coverage," or "strengthened tests."
-- Be precise about what runs. Local assertions on imported bindings are not the same as a client connecting to a server. State what is checked rather than calling both "running a client."
-- Describe each piece of coverage once. Compiling a client and checking its types often describe the same test.
-- Omit routine mechanics, commands, counts, and assertion details unless they materially help the reviewer.
-- Scale the section to the change. Don't turn it into an inventory of every assertion or an explicit question-and-answer checklist.
-
-### Wording examples
-
-| Vague or misleading | Concrete |
-| --- | --- |
-| Strengthened codegen tests. | Updated codegen tests to check names and aliases using generated bindings instead of searching generated text. |
-| Added compile-time checks. | Tests that incorrect reducer arguments fail compilation. |
-| Generated-client runtime checks. | Tests that generated tables produce the expected subscription SQL. |
-| Compatibility tests. | Tests that the same client compiles against old and new bindings, including existing imports, types, and aliases. |
-| Package and browser checks. | Tests that the new declaration API works with ESM and CommonJS imports and browser builds. |
-| End-to-end coverage. | Existing integration tests connect to a server, subscribe, call reducers, and check received rows. |
+Testing excerpt: “A new test advances the clock to the expiry boundary and checks that the credential is rejected. Manually removing the expiry comparison let the credential through and made the test fail.”
 
 ### Example: generated bindings
 
