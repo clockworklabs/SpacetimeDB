@@ -473,26 +473,11 @@ impl Snapshot {
         &mut self,
         object_repo: &DirTrie,
         tables: impl Iterator<Item = &'db mut Table>,
-        blobs: &BlobSet,
         prev_snapshot: Option<&DirTrie>,
         counter: &mut CountCreated,
     ) -> Result<(), SnapshotError> {
-        let mut tables = tables.collect::<Vec<_>>();
-        for index in 0..tables.len() as u64 {
-            match self.write_table(object_repo, tables[index as usize], prev_snapshot, counter) {
-                Err(SnapshotError::Page(PageError::MemoryLimitExceeded(_))) => {
-                    // The failed page fault could only evict from its own table.
-                    // Its guards are gone, so other tables and blobs can now make room.
-                    for table in &tables {
-                        table.trim()?;
-                    }
-                    blobs.trim()?;
-                    // write_table adds metadata only on success. Files already written
-                    // by this attempt are reused rather than written again.
-                    self.write_table(object_repo, tables[index as usize], prev_snapshot, counter)?;
-                }
-                result => result?,
-            }
+        for table in tables {
+            self.write_table(object_repo, table, prev_snapshot, counter)?;
         }
         Ok(())
     }
@@ -952,7 +937,7 @@ impl SnapshotRepository {
         // Populate both the in-memory `Snapshot` object and the on-disk object repository
         // with all the blobs and pages.
         snapshot.write_all_blobs(&object_repo, blobs, prev_snapshot.as_ref(), &mut counter)?;
-        snapshot.write_all_tables(&object_repo, tables, blobs, prev_snapshot.as_ref(), &mut counter)?;
+        snapshot.write_all_tables(&object_repo, tables, prev_snapshot.as_ref(), &mut counter)?;
 
         log::info!(
             "[{}] SNAPSHOT {:0>20}: Hardlinked {} objects and wrote {} objects",
