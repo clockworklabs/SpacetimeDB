@@ -93,7 +93,7 @@ spacetime call --server http://127.0.0.1:3000 spacetime-posthog set_posthog_conf
 Verify:
 
 ```bash
-spacetime call --server http://127.0.0.1:3000 spacetime-posthog get_posthog_config_status '{}'
+spacetime call --server http://127.0.0.1:3000 spacetime-posthog get_posthog_config_status
 ```
 
 ## Public views

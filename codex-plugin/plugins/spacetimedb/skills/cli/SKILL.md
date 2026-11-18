@@ -180,6 +180,10 @@ spacetime server clear
 
 ### Authentication
 
+Log in with `spacetime login` before publishing, including to local servers. Without a saved login, the browser-login prompt defaults to yes; declining it shows a server-issued identity warning and a second prompt that defaults to no. A server-issued identity works only on its issuing server, owns databases published with it, and cannot be recovered if its token is lost. A later `spacetime login` replaces that saved token.
+
+`--yes` / `--yes=skip-login` and closed stdin can still create a server-issued identity for compatibility; they do not authenticate you with spacetimedb.com. Do not use them to bypass login setup for unattended publishing. Alert the user before intentionally creating a server-issued identity.
+
 ```bash
 # Login (opens browser)
 spacetime login

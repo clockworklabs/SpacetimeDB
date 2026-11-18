@@ -281,6 +281,8 @@ export default spacetimedb;
 
 Official reusable libraries include `@spacetimedb/cron`, `@spacetimedb/retry`, `@spacetimedb/rate-limit`, and `@spacetimedb/crypto`. Their registration shapes differ: `@spacetimedb/rate-limit/submodule` is mountable, cron/retry expose factories, and crypto exports helpers. Consult the chosen package's README/exports rather than assuming every package root is a mountable module.
 
+For server-side PostHog analytics, mount `@spacetimedb/posthog/submodule` in the root schema, then call `posthog.install(ctx.as.posthog)` from the root init reducer. After the host reducer's authorization and state change, call `posthog.enqueueEventInTx(ctx.as.posthog, args)` to queue an event in that same transaction; it does not make a network request. Use `tx.as.posthog` inside a procedure's `withTx`, not the procedure context. An administrator must configure the provider before scheduled delivery can send events. See the [package integration guide](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-posthog-ts#integrate-into-an-application) for its exact schema, imports, arguments, and delivery semantics.
+
 ## Environment Variables
 
 ```typescript
@@ -494,7 +496,7 @@ Handlers are synchronous: return `SyncResponse` directly rather than marking the
 
 ## Module Unit Tests
 
-Use `spacetimedb` 2.12+ and Node.js 22+ in the **module** project, not the client. Set `"type": "module"` in `package.json` and install the test runner with `npm install --save-dev vitest@^3.2.4`. Configure the host-import replacement:
+Use `spacetimedb` 2.12+ and a supported Node.js release (22.23.4+, 24.22.1+, or 26.12.1+ on those release lines) in the **module** project, not the client. Set `"type": "module"` in `package.json` and install the test runner with `npm install --save-dev vitest@^3.2.4`. Configure the host-import replacement:
 
 ```typescript
 // vitest.config.ts
@@ -522,4 +524,4 @@ it('inserts a record', () => {
 });
 ```
 
-Run `npx vitest run`. Create a fresh harness per test. `withReducerTx` commits on normal return and rolls back/rethrows on exceptions; do not catch a failure inside the transaction if rollback is expected. Callbacks must be synchronous. Use `TestAuth.fromJwtPayload(JSON.stringify({ iss: 'test', sub: 'alice' }), connectionId)` for client authorization tests; internal auth represents the database, not a client or the publisher. The harness exposes `clock`, `rng`, procedure/view contexts, and query execution. It does not simulate subscriptions, RLS, lifecycle calls, or scheduling; invoke lifecycle/scheduled reducers explicitly and retain live integration tests for those host behaviors.
+Run `npx vitest run`. Create a fresh harness per test. `withReducerTx` commits on normal return and rolls back/rethrows on exceptions; do not catch a failure inside the transaction if rollback is expected. Callbacks must be synchronous. Use `TestAuth.fromJwtPayload(JSON.stringify({ iss: 'test', sub: 'alice' }), connectionId)` for client authorization tests; internal auth represents the database, not a client or the publisher. The harness exposes `clock`, `rng`, procedure/view contexts, and query execution. It does not simulate subscriptions, RLS, lifecycle calls, or scheduling; invoke lifecycle/scheduled reducers explicitly and retain live integration tests for those host behaviors. It does not currently supply namespaced `ctx.as` / `tx.as` helper contexts for mounted submodules; test those integrations against a running database.

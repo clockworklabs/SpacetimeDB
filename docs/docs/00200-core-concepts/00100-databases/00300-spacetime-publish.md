@@ -43,7 +43,11 @@ Before publishing, authenticate with SpacetimeDB:
 spacetime login
 ```
 
-This opens a browser window for authentication. Once complete, your credentials are saved locally.
+This opens a browser window for authentication. Once complete, your credentials are saved locally. This login also works with local servers.
+
+If no login is saved, the CLI offers browser login by default. Declining it shows a warning and asks you to confirm creating a server-issued identity; pressing Enter at this second prompt cancels. A server-issued identity works only on that server, and databases you publish belong to it. Running `spacetime login` later replaces its saved token, and a lost server-issued token cannot be recovered.
+
+For compatibility, `--yes` (including `--yes=skip-login`) or closed standard input can still create a server-issued identity when no login is saved. These are not substitutes for authentication: log in before running unattended publishes.
 
 ### Publishing a New Database
 
