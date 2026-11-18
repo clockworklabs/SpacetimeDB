@@ -299,8 +299,6 @@ impl JoinEdge {
 #[derive(Debug, Clone)]
 pub struct SubscriptionPlanMetrics {
     scan_type: String,
-    /// The table whose rows are filtered by columns that no index lookup consumed.
-    /// In a join this can differ from the table the subscription returns.
     filtered_table: Option<TableName>,
     unindexed_columns: String,
 }
@@ -324,8 +322,7 @@ impl SubscriptionPlanMetrics {
         }
         .to_owned();
 
-        // A filter can reference any relvar in scope, including the rhs of an index join,
-        // so resolve each field by its label rather than by the last table scanned.
+        // Resolve each field by its label rather than by the last table scanned.
         let mut schemas: Vec<(Label, Arc<TableSchema>)> = Vec::new();
         plan.visit(&mut |p| match p {
             PhysicalPlan::TableScan(TableScan { schema, .. }, label)
