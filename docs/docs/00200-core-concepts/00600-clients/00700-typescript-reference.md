@@ -1495,10 +1495,53 @@ const [onlineUsers] = useTable(
 ### Svelte
 
 ```typescript
-import { SpacetimeDBProvider, useSpacetimeDB, useTable, useReducer } from 'spacetimedb/svelte';
+import { createSpacetimeDBProvider, useSpacetimeDB, useTable, useReducer, useProcedure } from 'spacetimedb/svelte';
 ```
 
-The Svelte integration provides the same hooks as React. `useTable` returns `[Readable<readonly Row[]>, Readable<boolean>]` using Svelte stores:
+The Svelte integration provides the same hooks as React, built on Svelte stores. Read them with the `$` prefix in markup and `<script>` blocks.
+
+#### `createSpacetimeDBProvider(connectionBuilder)`
+
+Call `createSpacetimeDBProvider` in the `<script>` block of a root component, passing a configured `DbConnectionBuilder` (without calling `.build()`). It makes the connection available to every component below it. It uses Svelte context, so it must run during component initialization, not in `main.ts`:
+
+```svelte
+<!-- Root.svelte -->
+<script lang="ts">
+import { createSpacetimeDBProvider } from 'spacetimedb/svelte';
+import { DbConnection } from './module_bindings';
+import App from './App.svelte';
+
+const connectionBuilder = DbConnection.builder()
+  .withUri('wss://maincloud.spacetimedb.com')
+  .withDatabaseName('my_module')
+  .onConnect((conn, identity, token) => {
+    console.log('Connected:', identity.toHexString());
+  })
+  .onDisconnect(() => console.log('Disconnected'));
+
+createSpacetimeDBProvider(connectionBuilder);
+</script>
+
+<App />
+```
+
+#### `useSpacetimeDB()`
+
+Returns a readable store of the current connection state. Besides `getConnection()`, the state includes `reconnect(builder)`, which tears down the connection and reconnects with a new builder, for example to apply a new token after sign-in. Table hooks re-subscribe automatically.
+
+```svelte
+<script lang="ts">
+import { useSpacetimeDB } from 'spacetimedb/svelte';
+
+const conn = useSpacetimeDB();
+</script>
+
+<p>{$conn.isActive ? 'Connected' : 'Disconnected'}</p>
+```
+
+#### `useTable(query, callbacks?)`
+
+Returns `[Readable<readonly Row[]>, Readable<boolean>]`. It accepts the same queries and `onInsert`, `onDelete` and `onUpdate` callbacks as React. The query is read once when the component initializes, so to change it, re-create the component (for example with `{#key}`):
 
 ```svelte
 <script lang="ts">
@@ -1512,8 +1555,23 @@ const [onlineUsers] = useTable(
 </script>
 
 {#if $isReady}
-  {#each $users as user}
+  {#each $users as user (user.identity.toHexString())}
     <div>{user.name}</div>
   {/each}
 {/if}
+```
+
+#### `useReducer(reducer)` and `useProcedure(procedure)`
+
+Return functions that call a reducer or procedure. Calls made before the connection is ready are queued and sent once connected:
+
+```svelte
+<script lang="ts">
+import { useReducer } from 'spacetimedb/svelte';
+import { reducers } from './module_bindings';
+
+const sendMessage = useReducer(reducers.sendMessage);
+</script>
+
+<button onclick={() => sendMessage({ text: 'Hello!' })}>Send</button>
 ```
