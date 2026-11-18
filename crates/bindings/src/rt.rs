@@ -2,11 +2,14 @@
 
 use crate::query_builder::{FromWhere, HasCols, LeftSemiJoin, RawQuery, RightSemiJoin, Table as QbTable};
 use crate::table::IndexAlgo;
-use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, ViewContext};
+use crate::{
+    sys, AnonymousViewContext, IterBuf, MigrationContext, ReducerContext, ReducerResult, SpacetimeType, Table,
+    ViewContext,
+};
 use spacetimedb_lib::bsatn::EncodeError;
 use spacetimedb_lib::db::raw_def::v10::{
     CaseConversionPolicy, ExplicitNames as RawExplicitNames, RawEnvVarTypeV10, RawEnvironmentDeclarationV10,
-    RawModuleDefV10Builder,
+    RawMigrationDefV10, RawModuleDefV10Builder,
 };
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableType, ViewResultHeader};
@@ -16,7 +19,7 @@ use spacetimedb_lib::de::{self, Deserialize, Error as _, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
-use spacetimedb_lib::{bsatn, AlgebraicType, ConnectionId, Identity, ProductType, RawModuleDef, Timestamp};
+use spacetimedb_lib::{bsatn, AlgebraicType, ConnectionId, Hash, Identity, ProductType, RawModuleDef, Timestamp};
 use spacetimedb_primitives::*;
 use std::convert::Infallible;
 use std::fmt;
@@ -822,56 +825,57 @@ pub fn register_reftype<T: SpacetimeType>() {
 
 /// Registers a describer for the `TableType` `T`.
 pub fn register_table<T: Table>() {
-    register_describer(|module| {
-        let product_type_ref = *T::Row::make_type(&mut module.inner).as_ref().unwrap();
-        module.inner.add_table_cache_policy(T::TABLE_NAME, T::CACHE_POLICY);
-        if let Some(schedule) = T::SCHEDULE {
-            module.inner.add_schedule(
-                T::TABLE_NAME,
-                schedule.scheduled_at_column,
-                schedule.reducer_or_procedure_name,
-            );
-        }
+    register_describer(|module| add_table_to_module::<T>(&mut module.inner))
+}
 
-        let mut table = module
-            .inner
-            .build_table(T::TABLE_NAME, product_type_ref)
-            .with_type(TableType::User)
-            .with_access(T::TABLE_ACCESS)
-            .with_event(T::IS_EVENT);
+fn add_table_to_module<T: Table>(module: &mut RawModuleDefV10Builder) {
+    let product_type_ref = *T::Row::make_type(module).as_ref().unwrap();
+    module.add_table_cache_policy(T::TABLE_NAME, T::CACHE_POLICY);
+    if let Some(schedule) = T::SCHEDULE {
+        module.add_schedule(
+            T::TABLE_NAME,
+            schedule.scheduled_at_column,
+            schedule.reducer_or_procedure_name,
+        );
+    }
 
-        for &col in T::UNIQUE_COLUMNS {
-            table = table.with_unique_constraint(col);
-        }
-        for index in T::INDEXES {
-            table = table.with_index(index.algo.into(), index.source_name, index.accessor_name);
-        }
-        if let Some(primary_key) = T::PRIMARY_KEY {
-            table = table.with_primary_key(primary_key);
-        }
-        for &col in T::SEQUENCES {
-            table = table.with_column_sequence(col);
-        }
-        for col in T::get_default_col_values().iter_mut() {
-            table = table.with_default_column_value(col.col_id, col.value.clone())
-        }
+    let mut table = module
+        .build_table(T::TABLE_NAME, product_type_ref)
+        .with_type(TableType::User)
+        .with_access(T::TABLE_ACCESS)
+        .with_event(T::IS_EVENT);
 
-        table.finish();
+    for &col in T::UNIQUE_COLUMNS {
+        table = table.with_unique_constraint(col);
+    }
+    for index in T::INDEXES {
+        table = table.with_index(index.algo.into(), index.source_name, index.accessor_name);
+    }
+    if let Some(primary_key) = T::PRIMARY_KEY {
+        table = table.with_primary_key(primary_key);
+    }
+    for &col in T::SEQUENCES {
+        table = table.with_column_sequence(col);
+    }
+    for col in T::get_default_col_values().iter_mut() {
+        table = table.with_default_column_value(col.col_id, col.value.clone())
+    }
 
-        if let Some(outbox) = T::OUTBOX {
-            module.inner.add_outbox(
-                T::TABLE_NAME,
-                outbox.remote_reducer_name,
-                outbox.target_column,
-                outbox.arg_columns.iter().copied().map(Into::into),
-                None::<&str>,
-                spacetimedb_lib::Hash::from_hex(outbox.signature_hash)
-                    .expect("generated outbox signature hash must be valid hex"),
-            );
-        }
+    table.finish();
 
-        module.inner.add_explicit_names(T::explicit_names());
-    })
+    if let Some(outbox) = T::OUTBOX {
+        module.add_outbox(
+            T::TABLE_NAME,
+            outbox.remote_reducer_name,
+            outbox.target_column,
+            outbox.arg_columns.iter().copied().map(Into::into),
+            None::<&str>,
+            spacetimedb_lib::Hash::from_hex(outbox.signature_hash)
+                .expect("generated outbox signature hash must be valid hex"),
+        );
+    }
+
+    module.add_explicit_names(T::explicit_names());
 }
 
 impl From<IndexAlgo<'_>> for RawIndexAlgorithm {
@@ -900,7 +904,7 @@ pub fn register_reducer<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl 
         if let Some(outbox_table) = I::ON_RESULT_OUTBOX {
             module.on_result_reducers.push((outbox_table, I::NAME));
         }
-        module.reducers.push(I::INVOKE);
+        module.functions.reducers.push(I::INVOKE);
 
         module.inner.add_explicit_names(I::explicit_names());
     })
@@ -931,7 +935,7 @@ where
         let params = A::schema::<I>(&mut module.inner);
         let ret_ty = <Ret as SpacetimeType>::make_type(&mut module.inner);
         module.inner.add_procedure(I::NAME, params, ret_ty);
-        module.procedures.push(I::INVOKE);
+        module.functions.procedures.push(I::INVOKE);
 
         module.inner.add_explicit_names(I::explicit_names());
     })
@@ -966,13 +970,13 @@ where
         let return_type = I::return_type(&mut module.inner).unwrap();
         module
             .inner
-            .add_view(I::NAME, module.views.len(), true, false, params, return_type);
+            .add_view(I::NAME, module.functions.views.len(), true, false, params, return_type);
         if !I::VIEW_PRIMARY_KEY_COLUMNS.is_empty() {
             module
                 .inner
                 .add_view_primary_key(I::NAME, I::VIEW_PRIMARY_KEY_COLUMNS.iter().copied());
         }
-        module.views.push(I::INVOKE);
+        module.functions.views.push(I::INVOKE);
 
         module.inner.add_explicit_names(I::explicit_names());
     })
@@ -991,7 +995,7 @@ where
         let return_type = I::return_type(&mut module.inner).unwrap();
         module
             .inner
-            .add_view(I::NAME, module.views.len(), true, false, params, return_type);
+            .add_view(I::NAME, module.functions.views.len(), true, false, params, return_type);
 
         module.inner.add_explicit_names(I::explicit_names());
     })
@@ -1001,7 +1005,7 @@ where
 pub fn register_http_handler(name: &'static str, handler: HttpHandlerFn) {
     register_describer(move |module| {
         module.inner.add_http_handler(name);
-        module.http_handlers.push(handler);
+        module.functions.http_handlers.push(handler);
     })
 }
 
@@ -1027,15 +1031,20 @@ where
     register_describer(|module| {
         let params = A::schema::<I>(&mut module.inner);
         let return_type = I::return_type(&mut module.inner).unwrap();
-        module
-            .inner
-            .add_view(I::NAME, module.views_anon.len(), true, true, params, return_type);
+        module.inner.add_view(
+            I::NAME,
+            module.functions.views_anon.len(),
+            true,
+            true,
+            params,
+            return_type,
+        );
         if !I::VIEW_PRIMARY_KEY_COLUMNS.is_empty() {
             module
                 .inner
                 .add_view_primary_key(I::NAME, I::VIEW_PRIMARY_KEY_COLUMNS.iter().copied());
         }
-        module.views_anon.push(I::INVOKE);
+        module.functions.views_anon.push(I::INVOKE);
 
         module.inner.add_explicit_names(I::explicit_names());
     })
@@ -1052,12 +1061,57 @@ where
     register_describer(|module| {
         let params = A::schema::<I>(&mut module.inner);
         let return_type = I::return_type(&mut module.inner).unwrap();
-        module
-            .inner
-            .add_view(I::NAME, module.views_anon.len(), true, true, params, return_type);
+        module.inner.add_view(
+            I::NAME,
+            module.functions.views_anon.len(),
+            true,
+            true,
+            params,
+            return_type,
+        );
 
         module.inner.add_explicit_names(I::explicit_names());
     })
+}
+
+pub trait MigrationModule {
+    const HASH: Hash;
+    fn invoke(db: crate::Local) -> ReducerResult;
+    fn describe_tables(migration: &mut MigrationBuilder);
+}
+
+pub struct MigrationBuilder {
+    inner: RawModuleDefV10Builder,
+}
+
+impl MigrationBuilder {
+    pub fn add_table<T: Table>(&mut self) {
+        add_table_to_module::<T>(&mut self.inner)
+    }
+}
+
+pub fn register_migration<T: MigrationModule>() {
+    register_describer(|module| {
+        let mut migration = MigrationBuilder {
+            inner: Default::default(),
+        };
+        T::describe_tables(&mut migration);
+        module.inner.add_migration(RawMigrationDefV10 {
+            schema_hash: T::HASH,
+            dropped: migration.inner.finish(),
+        });
+        module.functions.migrations.push(T::invoke);
+    });
+}
+
+pub fn invoke_migration<T, F, R>(f: F, db: crate::Local, dropped: T) -> ReducerResult
+where
+    T: MigrationModule,
+    F: Fn(&MigrationContext<T>) -> R,
+    R: IntoReducerResult,
+{
+    let ctx = MigrationContext { db, dropped };
+    f(&ctx).into_result()
 }
 
 /// Registers a row-level security policy.
@@ -1170,6 +1224,12 @@ pub fn register_environment(declarations: fn() -> Vec<RawEnvironmentDeclarationV
 pub struct ModuleBuilder {
     /// The module definition.
     inner: RawModuleDefV10Builder,
+    functions: ModuleFunctions,
+    on_result_reducers: Vec<(&'static str, &'static str)>,
+}
+
+#[derive(Default)]
+struct ModuleFunctions {
     /// The reducers of the module.
     reducers: Vec<ReducerFn>,
     /// The procedures of the module.
@@ -1181,32 +1241,29 @@ pub struct ModuleBuilder {
     views: Vec<ViewFn>,
     /// The anonymous views of the module.
     views_anon: Vec<AnonymousFn>,
-    on_result_reducers: Vec<(&'static str, &'static str)>,
+    /// The migrations of the module.
+    migrations: Vec<MigrationFn>,
 }
 
 // Not actually a mutex; because WASM is single-threaded this basically just turns into a refcell.
 static DESCRIBERS: Mutex<Vec<Box<dyn DescriberFn>>> = Mutex::new(Vec::new());
 
+static FUNCTIONS: OnceLock<ModuleFunctions> = OnceLock::new();
+
 /// A reducer function takes in `(ReducerContext, Args)`
 /// and returns a result with a possible error message.
 pub type ReducerFn = fn(&ReducerContext, &[u8]) -> ReducerResult;
-static REDUCERS: OnceLock<Vec<ReducerFn>> = OnceLock::new();
 
 pub type ProcedureFn = fn(&mut ProcedureContext, &[u8]) -> ProcedureResult;
-static PROCEDURES: OnceLock<Vec<ProcedureFn>> = OnceLock::new();
 
 #[cfg(feature = "unstable")]
 pub type HttpHandlerFn = fn(&mut HandlerContext, crate::http::Request) -> crate::http::Response;
-#[cfg(feature = "unstable")]
-static HTTP_HANDLERS: OnceLock<Vec<HttpHandlerFn>> = OnceLock::new();
 
 /// A view function takes in `(ViewContext, Args)` and returns a Vec of bytes.
 pub type ViewFn = fn(ViewContext, &[u8]) -> Vec<u8>;
-static VIEWS: OnceLock<Vec<ViewFn>> = OnceLock::new();
 
 /// An anonymous view function takes in `(AnonymousViewContext, Args)` and returns a Vec of bytes.
 pub type AnonymousFn = fn(AnonymousViewContext, &[u8]) -> Vec<u8>;
-static ANONYMOUS_VIEWS: OnceLock<Vec<AnonymousFn>> = OnceLock::new();
 
 #[cfg(feature = "test-utils")]
 #[doc(hidden)]
@@ -1226,6 +1283,8 @@ fn describe_module() -> ModuleBuilder {
     }
     module
 }
+
+pub type MigrationFn = fn(db: crate::Local) -> Result<(), Box<str>>;
 
 /// Called by the host when the module is initialized
 /// to describe the module into a serialized form that is returned.
@@ -1247,17 +1306,16 @@ extern "C" fn __describe_module__(description: BytesSink) {
     let module = describe_module();
 
     // Serialize the module to bsatn.
-    let module_def = module.inner.finish();
-    let module_def = RawModuleDef::V10(module_def);
+    let ModuleBuilder {
+        inner,
+        functions,
+        on_result_reducers: _,
+    } = module;
+    let module_def = RawModuleDef::V10(inner.finish());
     let bytes = bsatn::to_vec(&module_def).expect("unable to serialize typespace");
 
     // Write the sets of reducers, procedures and views.
-    REDUCERS.set(module.reducers).ok().unwrap();
-    PROCEDURES.set(module.procedures).ok().unwrap();
-    #[cfg(feature = "unstable")]
-    HTTP_HANDLERS.set(module.http_handlers).ok().unwrap();
-    VIEWS.set(module.views).ok().unwrap();
-    ANONYMOUS_VIEWS.set(module.views_anon).ok().unwrap();
+    FUNCTIONS.set(functions).ok().unwrap();
 
     // Write the bsatn data into the sink.
     write_to_sink(description, &bytes);
@@ -1320,7 +1378,7 @@ extern "C" fn __call_reducer__(
     let ctx = ReducerContext::new(crate::Local::__host(), sender, conn_id, timestamp);
 
     // Fetch reducer function.
-    let reducers = REDUCERS.get().unwrap();
+    let reducers = &FUNCTIONS.get().unwrap().reducers;
     // Dispatch to it with the arguments read.
     let res = with_read_args(args, |args| reducers[id](&ctx, args));
     // Convert any error message to an error code and writes to the `error` sink.
@@ -1416,7 +1474,7 @@ extern "C" fn __call_procedure__(
     let mut ctx = ProcedureContext::new(sender, conn_id, timestamp);
 
     // Grab the list of procedures, which is populated by the preinit functions.
-    let procedures = PROCEDURES.get().unwrap();
+    let procedures = &FUNCTIONS.get().unwrap().procedures;
 
     // Deserialize the args and pass them to the actual procedure.
     let res = with_read_args(args, |args| procedures[id](&mut ctx, args));
@@ -1472,7 +1530,7 @@ extern "C" fn __call_http_handler__(
     let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp as i64);
     let mut ctx = HandlerContext::new(sender, sender_auth, timestamp);
 
-    let handlers = HTTP_HANDLERS.get().unwrap();
+    let handlers = &FUNCTIONS.get().unwrap().http_handlers;
     let request = read_bytes_source_as::<spacetimedb_lib::http::Request>(request);
     // TODO(streaming-http): stop reading the full request body into guest memory once handlers
     // can consume the body incrementally from the host-provided byte source.
@@ -1513,7 +1571,7 @@ extern "C" fn __call_http_handler__(
 /// The previous abi, which we still support, is identified by a return code of 0.
 #[unsafe(no_mangle)]
 extern "C" fn __call_view_anon__(id: usize, args: BytesSource, sink: BytesSink) -> i16 {
-    let views = ANONYMOUS_VIEWS.get().unwrap();
+    let views = &FUNCTIONS.get().unwrap().views_anon;
     write_to_sink(
         sink,
         &with_read_args(args, |args| views[id](AnonymousViewContext::default(), args)),
@@ -1554,13 +1612,20 @@ extern "C" fn __call_view__(
     let sender: [u8; 32] = bytemuck::must_cast(sender);
     let sender = Identity::from_byte_array(sender); // The LITTLE-ENDIAN constructor.
 
-    let views = VIEWS.get().unwrap();
+    let views = &FUNCTIONS.get().unwrap().views;
 
     write_to_sink(
         sink,
         &with_read_args(args, |args| views[id](ViewContext::new(sender), args)),
     );
     2
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn __call_migration__(id: usize, _args: BytesSource, sink: BytesSink) -> i16 {
+    let migrations = &FUNCTIONS.get().unwrap().migrations;
+    let res = migrations[id](crate::Local::__host());
+    convert_err_to_errno(res, sink)
 }
 
 /// Run `logic` with `args` read from the host into a `&[u8]`.
