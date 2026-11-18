@@ -2629,6 +2629,9 @@ mod tests {
         }
     }
 
+    // Exercise the real publish route with DummyState: resolve parent names and
+    // identities and pass them to creation authorization and backend publication.
+    // This checks the handler/backend contract, not actual hierarchy validation.
     #[tokio::test]
     async fn publish_parent_is_forwarded_for_creation_and_update() {
         let identity = test_identity(46);
@@ -2704,6 +2707,8 @@ mod tests {
         }
     }
 
+    // An unresolved parent must fail in the HTTP handler for both creation and
+    // updates, without asking the mocked backend to publish anything.
     #[tokio::test]
     async fn publish_rejects_unknown_parent_before_backend_publication() {
         let identity = test_identity(48);
@@ -2739,6 +2744,10 @@ mod tests {
         }
     }
 
+    // Protect the existing reset guard: even an authorized reset must reject a
+    // supplied parent before reaching the backend. Simply deleting the guard
+    // would silently ignore the requested parent; accepting a matching parent
+    // instead requires hierarchy-aware validation beyond this mocked backend.
     #[tokio::test]
     async fn publish_clear_rejects_parent_before_reset() {
         let identity = test_identity(43);
@@ -2772,6 +2781,9 @@ mod tests {
         }
     }
 
+    // Show that the parent guard does not prevent valid parent-free resets,
+    // while reset authorization still gates the backend call. DummyState records
+    // the call only; this does not reset a real database or check its contents.
     #[tokio::test]
     async fn publish_clear_without_parent_requires_reset_permission() {
         let identity = test_identity(45);
