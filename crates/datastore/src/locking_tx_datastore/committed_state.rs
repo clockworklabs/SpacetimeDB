@@ -901,6 +901,23 @@ impl CommittedState {
                 index_schema.alias = old_alias;
                 table.with_mut_schema(|s| s.update_index(index_schema));
             }
+            // A table was renamed. Change its name back.
+            TableRename(table_id, old_name) => {
+                let table = self.tables.get_mut(&table_id)?;
+                table.with_mut_schema(|s| s.table_name = old_name);
+            }
+            // An index was renamed. Change its name back.
+            IndexRename(table_id, index_id, old_name) => {
+                let table = self.tables.get_mut(&table_id)?;
+                let mut index_schema = table
+                    .get_schema()
+                    .indexes
+                    .iter()
+                    .find(|x| x.index_id == index_id)?
+                    .clone();
+                index_schema.index_name = old_name;
+                table.with_mut_schema(|s| s.update_index(index_schema));
+            }
             // A table accessor name alias changed. Change it back.
             TableAlterAccessorName(table_id, old_alias) => {
                 let table = self.tables.get_mut(&table_id)?;

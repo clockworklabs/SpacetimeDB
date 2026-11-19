@@ -12,7 +12,7 @@ use spacetimedb_lib::db::raw_def::v9::{RawRowLevelSecurityDefV9, TableAccess};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, AlgebraicValue, Hash};
 use spacetimedb_primitives::{ColSet, ConstraintId, MigrationId, TableId};
-use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::raw_identifier::{RawIdentifier, RawNamespacedIdentifier};
 use spacetimedb_schema::auto_migrate::{AutoMigrateStep, ManualMigrateData, MigratePlan};
 use spacetimedb_schema::def::{ConstraintDef, IndexDef, ModuleDef, ModuleDefLookup, SequenceDef, TableDef, ViewDef};
 use spacetimedb_schema::identifier::{Identifier, NamespacePath, NamespacedIdentifier};
@@ -276,8 +276,7 @@ fn auto_migrate_database<'def>(
                 let table_id = stdb.table_id_from_name_mut(tx, &table_name)?.unwrap();
 
                 if is_manual {
-                    let dropped_name = namespace.child(DROPPED).join(local.clone());
-                    stdb.rename_table(tx, table_id, dropped_name.into())?;
+                    move_to_dropped(stdb, tx, namespace, local, table_id)?;
                 } else {
                     if stdb.table_row_count_mut(tx, table_id).unwrap_or(0) > 0 {
                         anyhow::bail!(
@@ -689,9 +688,7 @@ fn auto_migrate_database<'def>(
         for &(namespace, local) in &manual.changed_tables {
             let table_name = joined(namespace, local);
             let table_id = stdb.table_id_from_name_mut(tx, &table_name)?.unwrap();
-
-            let new_name = namespace.child(DROPPED).join(local.clone());
-            stdb.rename_table(tx, table_id, new_name.into())?;
+            move_to_dropped(stdb, tx, namespace, local, table_id)?;
 
             let (owning_def, table_def) = plan
                 .new
@@ -716,6 +713,27 @@ fn auto_migrate_database<'def>(
         }),
         None => UpdateStep::Done(res),
     })
+}
+
+/// Renames the table `namespace.local` and its indexes to `namespace.dropped.*`,
+/// so the migration can read it there while a new table takes its names.
+fn move_to_dropped(
+    stdb: &RelationalDB,
+    tx: &mut MutTxId,
+    namespace: &NamespacePath,
+    local: &Identifier,
+    table_id: TableId,
+) -> anyhow::Result<()> {
+    let dropped = namespace.child(DROPPED);
+    let new_name = dropped.join(local.clone());
+    stdb.move_table_aside(tx, table_id, new_name.into(), |index_name| {
+        // `create_table_from_def_with_prefix` prefixes every index name with the table's namespace.
+        let local_index_name = namespace
+            .strip_from(index_name)
+            .expect("an index name starts with its table's namespace");
+        dropped.join_raw(&RawNamespacedIdentifier::new(local_index_name))
+    })?;
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -885,7 +903,8 @@ mod test {
     };
     use spacetimedb_datastore::locking_tx_datastore::PendingSchemaChange;
     use spacetimedb_datastore::system_tables::{
-        IdentityViaU256, StOutboundStreamRow, ST_EVENT_TABLE_ID, ST_OUTBOUND_STREAM_ID,
+        IdentityViaU256, StOutboundStreamRow, StTableAccessorRow, ST_EVENT_TABLE_ID, ST_OUTBOUND_STREAM_ID,
+        ST_TABLE_ACCESSOR_ID,
     };
     use spacetimedb_lib::{
         db::raw_def::{
@@ -2190,6 +2209,100 @@ mod test {
                 .map(|r| Ok(r?.read_col::<u64>(0)?))
                 .collect::<anyhow::Result<Vec<_>>>()?;
             assert_eq!(found, [2]);
+        }
+        Ok(())
+    }
+
+    /// `t(id: u64, value)`, with an index on `id` whose source name `id` is stored as its alias.
+    fn index_accessor_module(value: AlgebraicType) -> RawModuleDefV10Builder {
+        let mut b = RawModuleDefV10Builder::new();
+        b.build_table_with_new_type("t", ProductType::from([("id", U64), ("value", value)]), true)
+            .with_index(btree(0), "id", "by_id")
+            .finish();
+        b
+    }
+
+    /// A manual migration moves a changed table and its indexes under `dropped`, so the
+    /// migration can look up either table's index by name, and the new table keeps its
+    /// accessor names after the dropped table is deleted. A rollback restores the old names.
+    #[test]
+    fn manual_migration_moves_changed_table_aside() -> anyhow::Result<()> {
+        let module_v1: ModuleDef = index_accessor_module(AlgebraicType::U8).finish().try_into()?;
+        let module_v2: ModuleDef = {
+            let mut b = index_accessor_module(AlgebraicType::U32);
+            b.add_migration(RawMigrationDefV10 {
+                schema_hash: hash_value(&module_v1),
+                name: "migrate".into(),
+                dropped: index_accessor_module(AlgebraicType::U8).finish(),
+            });
+            b.finish().try_into()?
+        };
+        let stdb = TestDB::durable()?;
+        let mut tx = begin_mut_tx(&stdb);
+        for def in module_v1.tables() {
+            create_table_from_def(&stdb, &mut tx, &module_v1, def)?;
+        }
+        let old_id = stdb.table_id_from_name_mut(&tx, "t")?.expect("t should exist");
+        let old_index = stdb.schema_for_table_mut(&tx, old_id)?.indexes[0].clone();
+        let index_name = old_index.index_name.to_string();
+        stdb.commit_tx(tx)?;
+
+        let table_accessors = |tx: &MutTxId| -> anyhow::Result<Vec<String>> {
+            stdb.iter_mut(tx, ST_TABLE_ACCESSOR_ID)?
+                .map(|r| Ok(StTableAccessorRow::try_from(r?)?.table_name.to_string()))
+                .collect()
+        };
+        assert_eq!(table_accessors(&begin_mut_tx(&stdb))?, ["t"]);
+
+        for commit in [false, true] {
+            let mut tx = begin_mut_tx(&stdb);
+            let plan = ponder_migrate(&module_v1, &module_v2)?;
+            let UpdateStep::RunManual(migration) =
+                update_database(&stdb, &mut tx, AuthCtx::for_testing(), plan, &TestLogger)?
+            else {
+                panic!("expected a manual migration");
+            };
+            let new_id = stdb.table_id_from_name_mut(&tx, "t")?.expect("t should exist");
+            assert_ne!(new_id, old_id);
+            assert_eq!(stdb.table_id_from_name_mut(&tx, "dropped.t")?, Some(old_id));
+            let old_schema = stdb.schema_for_table_mut(&tx, old_id)?;
+            assert_eq!(old_schema.table_name.to_string(), "dropped.t");
+            assert_eq!(
+                old_schema.indexes[0].index_name.to_string(),
+                format!("dropped.{index_name}")
+            );
+            assert_eq!(old_schema.indexes[0].alias, None);
+
+            // Each table's index resolves to that table's index, and the accessor to the new one.
+            let new_index_id = stdb.schema_for_table_mut(&tx, new_id)?.indexes[0].index_id;
+            assert_ne!(new_index_id, old_index.index_id);
+            assert_eq!(stdb.index_id_from_name_mut(&tx, &index_name)?, Some(new_index_id));
+            assert_eq!(
+                stdb.index_id_from_name_mut(&tx, &format!("dropped.{index_name}"))?,
+                Some(old_index.index_id)
+            );
+            assert_eq!(tx.index_id_from_name_or_alias("id")?, Some(new_index_id));
+
+            if commit {
+                assert_matches!(
+                    migration.finish(&stdb, &mut tx, &TestLogger)?,
+                    UpdateResult::Success | UpdateResult::RequiresClientDisconnect
+                );
+                assert_eq!(stdb.table_id_from_name_mut(&tx, "dropped.t")?, None);
+                assert_eq!(tx.index_id_from_name_or_alias("id")?, Some(new_index_id));
+                assert_eq!(table_accessors(&tx)?, ["t"]);
+                stdb.commit_tx(tx)?;
+            } else {
+                let _ = stdb.rollback_mut_tx(tx);
+                let tx = begin_mut_tx(&stdb);
+                assert_eq!(stdb.table_id_from_name_mut(&tx, "t")?, Some(old_id));
+                assert_eq!(stdb.table_id_from_name_mut(&tx, "dropped.t")?, None);
+                let schema = stdb.schema_for_table_mut(&tx, old_id)?;
+                assert_eq!(schema.table_name.to_string(), "t");
+                assert_eq!(schema.indexes[0], old_index);
+                assert_eq!(tx.index_id_from_name_or_alias("id")?, Some(old_index.index_id));
+                assert_eq!(table_accessors(&tx)?, ["t"]);
+            }
         }
         Ok(())
     }
