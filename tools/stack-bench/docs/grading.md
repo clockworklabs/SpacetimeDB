@@ -41,6 +41,9 @@ Rules that decide the outcome:
   assertion inconclusive. HTTP success alone does not prove the stored effect.
 - A check file whose inconclusive results are all retryable runs once more on a
   fresh database. Failures, cleanup failures, and harness failures do not retry.
+- On Spacetime, the database reset republishes the app's module. If that
+  publish fails, the run is not scored. On the other stacks, an app that cannot
+  start on an empty database fails.
 - Each check file has a grading time limit. A check still running when the limit
   is reached fails, and so do the checks after it, even when backend restarts or
   recoveries used the time.
