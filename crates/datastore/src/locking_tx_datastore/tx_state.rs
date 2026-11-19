@@ -7,6 +7,7 @@ use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
 use spacetimedb_schema::{
     identifier::{Identifier, NamespacedIdentifier},
     schema::{ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, SequenceSchema, TableCachePolicy},
+    table_name::TableName,
 };
 use spacetimedb_table::{
     indexes::{RowPointer, SquashedOffset},
@@ -150,6 +151,11 @@ pub enum PendingSchemaChange {
     /// The primary key of the table with [`TableId`] was changed.
     /// The old primary key was stored.
     TableAlterPrimaryKey(TableId, Option<ColList>),
+    /// The table with [`TableId`] was renamed. The old canonical name is stored.
+    TableRename(TableId, TableName),
+    /// The index with [`IndexId`] of the table with [`TableId`] was renamed.
+    /// The old canonical name is stored.
+    IndexRename(TableId, IndexId, RawNamespacedIdentifier),
     /// The outbox metadata of the table with [`TableId`] was changed.
     /// The old outbox metadata was stored.
     TableAlterOutbox(TableId, Option<OutboxSchema>),
@@ -183,6 +189,10 @@ impl MemoryUsage for PendingSchemaChange {
             Self::TableAlterCachePolicy(table_id, _) => table_id.heap_usage(),
             Self::TableAlterRowType(table_id, column_schemas) => table_id.heap_usage() + column_schemas.heap_usage(),
             Self::TableAlterPrimaryKey(table_id, pk) => table_id.heap_usage() + pk.heap_usage(),
+            Self::TableRename(table_id, name) => table_id.heap_usage() + name.as_ref().len(),
+            Self::IndexRename(table_id, index_id, name) => {
+                table_id.heap_usage() + index_id.heap_usage() + name.as_ref().len()
+            }
             Self::TableAlterOutbox(table_id, outbox) => {
                 table_id.heap_usage()
                     + outbox
