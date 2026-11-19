@@ -1,7 +1,7 @@
 use super::metrics::{with_fault, CacheTier, Fault, Metrics, ObjectType};
 use std::{
     ops::{Deref, DerefMut},
-    sync::Arc,
+    sync::{Arc, Weak},
 };
 
 use parking_lot::{
@@ -17,9 +17,9 @@ use crate::{
     page::{Page, PageMetadata},
     page_pool::PagePool,
     tiered::{
-        error::PageError,
+        error::{EvictionError, PageError},
         map::PageHash,
-        mem::{self, PageEvictionCandidate, PageFrame, PageId, PooledPage},
+        mem::{self, EvictionSource, PageEvictionCandidate, PageFrame, PageId, PooledPage},
         storage::{DiskObject, TieredStorage},
         BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetConfig, ByteBudgetUsage, EvictionPolicy, ObjectStoreError,
         ResidentObjects,
@@ -155,11 +155,26 @@ impl PageSlotHandle {
         self.slot.lock().page_id()
     }
 
+    pub(super) fn try_page_id(&self) -> Option<PageId> {
+        let guard = self.slot.try_lock()?;
+        guard.page_id()
+    }
+
+    pub(super) fn downgrade(&self) -> WeakPageSlotHandle {
+        WeakPageSlotHandle {
+            slot: Arc::downgrade(&self.slot),
+        }
+    }
+
     pub(super) fn lock_ref(&self) -> MutexGuard<'_, PageSlot> {
         self.slot.lock()
     }
 
-    fn lock_owned(&self) -> ArcMutexGuard<RawMutex, PageSlot> {
+    pub(super) fn try_lock_ref(&self) -> Option<MutexGuard<'_, PageSlot>> {
+        self.slot.try_lock()
+    }
+
+    pub(super) fn lock_owned(&self) -> ArcMutexGuard<RawMutex, PageSlot> {
         self.slot.lock_arc()
     }
 
@@ -193,6 +208,21 @@ impl MemoryUsage for PageSlotHandle {
         };
         let refcounts = std::mem::size_of::<usize>() * 2;
         refcounts + std::mem::size_of::<Mutex<PageSlot>>() + maybe_resident.as_ref().map_or(0, MemoryUsage::heap_usage)
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct WeakPageSlotHandle {
+    slot: Weak<Mutex<PageSlot>>,
+}
+
+impl WeakPageSlotHandle {
+    pub fn upgrade(&self) -> Option<PageSlotHandle> {
+        self.slot.upgrade().map(|slot| PageSlotHandle { slot })
+    }
+
+    pub fn strong_count(&self) -> usize {
+        self.slot.strong_count()
     }
 }
 
@@ -461,7 +491,7 @@ impl PageManager {
         let inner = self
             .resident
             .reserve_page_with_permit(permit, PooledPage::new(page, self.pool.clone()));
-        self.redeem(ReservedPage { inner, metadata }, EvictionPolicy::Evictable)
+        self.redeem(ReservedPage { inner, metadata }, EvictionPolicy::Memory)
     }
 
     /// Take a loaded page out of its slot so a memory table can own it directly.
@@ -611,10 +641,7 @@ impl PageManager {
                     cached_eviction_policy, &eviction_policy,
                     "eviction policy cannot be changed for resident pages"
                 );
-                // Avoid atomics contention if the page is not evictable.
-                if matches!(eviction_policy, EvictionPolicy::Evictable) {
-                    self.resident.touch_page(&handle.frame);
-                }
+                self.resident.touch_page(&handle.frame);
 
                 Ok(Some(handle.clone()))
             }
@@ -754,8 +781,24 @@ impl PageManager {
         self.resident.evict_page(victim);
     }
 
-    pub(super) fn ensure_lower_tier_stored(&self, page: &PageHandle) -> Result<DiskObject, ObjectStoreError> {
-        self.storage.write(page.into())
+    pub(super) fn ensure_lower_tier_stored(
+        &self,
+        page: &PageHandle,
+        eviction_policy: EvictionPolicy,
+    ) -> Result<DiskObject, ObjectStoreError> {
+        self.storage.write(page.into(), eviction_policy)
+    }
+
+    pub(super) fn trim_all(&self) -> Result<u64, EvictionError> {
+        self.resident.trim()
+    }
+
+    pub(super) fn evict_all(&self, target_usage: u64) -> Result<u64, EvictionError> {
+        self.resident.evict(target_usage)
+    }
+
+    pub(super) fn register_eviction_source(&self, source: &Arc<dyn EvictionSource>) {
+        self.resident.register_eviction_source(source);
     }
 }
 

@@ -3715,8 +3715,16 @@ pub(crate) mod tests {
 
     #[test]
     fn dropped_tables_release_repeated_blob_references_with_their_own_policy() -> ResultTest<()> {
-        for dropped_policy in [TableCachePolicy::RequiredInMemory, TableCachePolicy::NoRequirement] {
-            for retained_policy in [TableCachePolicy::RequiredInMemory, TableCachePolicy::NoRequirement] {
+        for dropped_policy in [
+            TableCachePolicy::RequiredInMemory,
+            TableCachePolicy::RequiredOnDisk,
+            TableCachePolicy::NoRequirement,
+        ] {
+            for retained_policy in [
+                TableCachePolicy::RequiredInMemory,
+                TableCachePolicy::RequiredOnDisk,
+                TableCachePolicy::NoRequirement,
+            ] {
                 let datastore = get_datastore()?;
                 let mut tx = begin_mut_tx(&datastore);
                 let baseline_bytes = tx.committed_state_write_lock.storage.resident_bytes_used_by_blobs();
@@ -5277,6 +5285,56 @@ pub(crate) mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn memory_disk_migrations_preserve_repeated_blob_requirements() -> ResultTest<()> {
+        // Observe disk reservations independently of the table's current residency.
+        let config = TieredStorageConfig::new_for_test();
+        let local_budget = config.local_store.budget.clone();
+        let datastore = Locking::bootstrap(Identity::ZERO, config)?;
+
+        // Two references to the same content must keep two policy requirements.
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = TableSchema::from_product_type([AlgebraicType::String, AlgebraicType::String].into());
+        let id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        let value = "shared".repeat(1024);
+        insert(&datastore, &mut tx, id, &product![value.clone(), value.clone()])?;
+        commit(&datastore, tx)?;
+
+        // Exercise both directions and repeat the disk policy to expose leaked pins.
+        for policy in [
+            TableCachePolicy::RequiredOnDisk,
+            TableCachePolicy::RequiredInMemory,
+            TableCachePolicy::RequiredOnDisk,
+        ] {
+            let mut tx = begin_mut_tx(&datastore);
+            tx.alter_table_cache_policy(id, policy)?;
+            commit(&datastore, tx)?;
+
+            // Inspect residency only after the policy change has been applied.
+            let tx = begin_mut_tx(&datastore);
+            let blobs = tx.committed_state_write_lock.storage.blobs();
+            blobs.evict(0)?;
+            // RequiredInMemory protects resident bytes; RequiredOnDisk protects the disk copy
+            // while allowing the shared blob's memory frame to be evicted.
+            if policy == TableCachePolicy::RequiredInMemory {
+                assert!(blobs.resident_bytes_used_by_blobs() >= value.len() as u64);
+            } else {
+                assert!(local_budget.usage().accounted_bytes >= value.len() as u64);
+            }
+
+            commit(&datastore, tx)?;
+        }
+
+        // Releasing every row must also release all restored local requirements.
+        let mut tx = begin_mut_tx(&datastore);
+        tx.drop_table(id)?;
+        commit(&datastore, tx)?;
+        assert_eq!(local_budget.usage().accounted_bytes, 0);
+
+        Ok(())
+    }
+
     #[test]
     fn committed_deletion_reclaims_local_blob_capacity() -> ResultTest<()> {
         for drop_table in [false, true] {

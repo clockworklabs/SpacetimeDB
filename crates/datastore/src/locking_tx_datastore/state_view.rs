@@ -428,7 +428,7 @@ pub(crate) fn iter_st_column_for_table<'a>(
 }
 
 pub struct IterMutTx<'a> {
-    tx_state_ins: Option<(&'a Table, &'a BlobSet, &'a CommittedState)>,
+    tx_state_ins: Option<(&'a Table, &'a BlobSet)>,
     stage: ScanStage<'a>,
 }
 
@@ -443,12 +443,9 @@ impl<'a> IterMutTx<'a> {
         let tx_state_ins = tx_state
             .insert_tables
             .get(&table_id)
-            .map(|table| (table, &tx_state.blob_store, committed_state));
+            .map(|table| (table, &tx_state.blob_store));
 
-        let iter = commit_table
-            .scan_rows(committed_state.storage.blobs())
-            .with_read_eviction(committed_state)
-            .err_into();
+        let iter = commit_table.scan_rows(committed_state.storage.blobs()).err_into();
         let stage = if let Some(deletes) = tx_state.get_delete_table(table_id) {
             // There are deletes in the tx state
             // so we must exclude those (1b).
@@ -534,11 +531,8 @@ impl<'a> Iterator for IterMutTx<'a> {
 
             // (2) We got here, so we must've exhausted the committed changes.
             // Start looking in the current tx for inserts, if any, in (3).
-            let (insert_table, blob_store, committed_state) = self.tx_state_ins?;
-            let iter = insert_table
-                .scan_rows(blob_store)
-                .with_read_eviction(committed_state)
-                .err_into();
+            let (insert_table, blob_store) = self.tx_state_ins?;
+            let iter = insert_table.scan_rows(blob_store).err_into();
             self.stage = ScanStage::CurrentTx { iter };
         }
     }

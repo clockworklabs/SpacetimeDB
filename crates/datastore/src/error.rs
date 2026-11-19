@@ -10,7 +10,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_schema::def::error::LibError;
 #[cfg(feature = "durability")]
 use spacetimedb_snapshot::SnapshotError;
-use spacetimedb_table::tiered;
+use spacetimedb_table::tiered::{self, EvictionError};
 use spacetimedb_table::{
     bflatn_to, read_column,
     table::{self, ReadViaBsatnError, UniqueConstraintViolation},
@@ -60,22 +60,23 @@ impl DatastoreError {
         match self {
             Self::Page(PageError::MemoryLimitExceeded(error))
             | Self::Blob(BlobError::MemoryLimitExceeded(error))
-            | Self::Table(TableError::Bflatn(bflatn_to::Error::Pages(PageError::MemoryLimitExceeded(error))))
-            | Self::Table(TableError::Bflatn(bflatn_to::Error::Blobs(BlobError::MemoryLimitExceeded(error)))) => {
-                Some(error)
-            }
-            Self::TableStorage(error) | Self::Table(TableError::Bflatn(bflatn_to::Error::Table(error))) => {
-                match error {
-                    table::TableError::Page(error) => match error.as_ref() {
-                        PageError::MemoryLimitExceeded(error) => Some(error.as_ref()),
-                        _ => None,
-                    },
-                    table::TableError::Blob(error) => match error.as_ref() {
-                        BlobError::MemoryLimitExceeded(error) => Some(error.as_ref()),
-                        _ => None,
-                    },
-                }
-            }
+            | Self::Table(TableError::Bflatn(bflatn_to::Error::Pages(
+                PageError::MemoryLimitExceeded(error),
+            )))
+            | Self::Table(TableError::Bflatn(bflatn_to::Error::Blobs(
+                BlobError::MemoryLimitExceeded(error),
+            ))) => Some(error),
+            Self::TableStorage(error)
+            | Self::Table(TableError::Bflatn(bflatn_to::Error::Table(error))) => match error {
+                table::TableError::Page(error) => match error.as_ref() {
+                    PageError::MemoryLimitExceeded(error) => Some(error.as_ref()),
+                    _ => None,
+                },
+                table::TableError::Blob(error) => match error.as_ref() {
+                    BlobError::MemoryLimitExceeded(error) => Some(error.as_ref()),
+                    _ => None,
+                },
+            },
             _ => None,
         }
     }
@@ -137,9 +138,9 @@ pub enum TableError {
 #[derive(Error, Debug)]
 pub enum TrimTableError {
     #[error(transparent)]
-    Pages(#[from] PageError),
-    #[error(transparent)]
     Storage(#[from] tiered::TrimError),
+    #[error(transparent)]
+    Eviction(#[from] EvictionError),
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -150,7 +151,9 @@ pub enum IndexError {
     ColumnNotFound(RawIndexDefV8),
     #[error(transparent)]
     UniqueConstraintViolation(#[from] UniqueConstraintViolation),
-    #[error("Attempt to define a index with more than 1 auto_inc column: Table: {0:?}, Columns: {1:?}")]
+    #[error(
+        "Attempt to define a index with more than 1 auto_inc column: Table: {0:?}, Columns: {1:?}"
+    )]
     OneAutoInc(TableId, Vec<String>),
     #[error("Could not decode arguments to index scan")]
     Decode(DecodeError),
