@@ -305,7 +305,7 @@ impl Locking {
         );
 
         let (mut tables, blob_store) = committed_state.persistent_tables_and_blob_store();
-        let unflushed_snapshot = repo.create_snapshot(&mut tables, blob_store, tx_offset)?;
+        let unflushed_snapshot = repo.create_snapshot(&mut tables, blob_store.scan(), tx_offset)?;
 
         Ok(Some((tx_offset, unflushed_snapshot)))
     }

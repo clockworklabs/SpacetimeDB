@@ -39,6 +39,7 @@ spacetimedb-runtime = { path = "../runtime" }
 anyhow.workspace = true
 env_logger.workspace = true
 pretty_assertions = { workspace = true, features = ["unstable"] }
+proptest.workspace = true
 rand.workspace = true
 
 [lints]

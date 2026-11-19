@@ -4248,10 +4248,10 @@ mod tests {
             let mut hard_linked_on = 0;
             let mut hard_linked_off = 0;
 
-            let (snapshot, compress) = Snapshot::read_from_file(&snapshot_dir.snapshot_file(last_compress))?;
+            let (manifest, compress) = Snapshot::read_from_file(&snapshot_dir.snapshot_file(last_compress))?;
             assert!(compress.is_compressed());
-            let repo = SnapshotRepository::object_repo(&snapshot_dir)?;
-            for (_, path) in snapshot.files(&repo) {
+            let snapshot = manifest.into_writable(&snapshot_dir)?;
+            for path in snapshot.file_paths() {
                 match path.metadata()?.nlink() {
                     0 => hard_linked_off += 1,
                     _ => hard_linked_on += 1,

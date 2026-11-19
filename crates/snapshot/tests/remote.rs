@@ -15,7 +15,6 @@ use spacetimedb::{
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::datastore::Locking;
 use spacetimedb_durability::{EmptyHistory, NoDurability, TxOffset};
-use spacetimedb_fs_utils::dir_trie::DirTrie;
 use spacetimedb_lib::{
     bsatn,
     db::raw_def::v9::{RawModuleDefV9Builder, RawTableDefBuilder},
@@ -30,7 +29,7 @@ use spacetimedb_schema::{
 };
 use spacetimedb_snapshot::{
     remote::{synchronize_snapshot, verify_snapshot},
-    Snapshot, SnapshotError, SnapshotRepository,
+    Snapshot, SnapshotError, SnapshotRepository, WritableSnapshot,
 };
 use spacetimedb_table::{page_pool::PagePool, tiered::TieredStorageConfig};
 use tempfile::{tempdir, TempDir};
@@ -48,10 +47,10 @@ async fn can_sync_a_snapshot() -> anyhow::Result<()> {
 
     let dst_repo = SnapshotRepository::open(dst_path.clone(), Identity::ZERO, 0).map(Arc::new)?;
 
-    let mut src_snapshot = src.meta.clone();
+    let mut src_snapshot = src.manifest();
     let total_objects = src_snapshot.total_objects() as u64;
 
-    let blob_provider = src.objects.clone();
+    let blob_provider = src.snapshot.clone();
 
     // This is the first snapshot in `dst_repo`, so all objects should be written.
     let stats = synchronize_snapshot(blob_provider.clone(), dst_path.clone(), src_snapshot.clone()).await?;
@@ -73,7 +72,7 @@ async fn can_sync_a_snapshot() -> anyhow::Result<()> {
 
     // Lastly, pretend the next snapshot has the same objects and
     // assert that they all get hardlinked.
-    src_snapshot.tx_offset += SNAPSHOT_FREQUENCY;
+    *src_snapshot.tx_offset_mut() += SNAPSHOT_FREQUENCY;
     let stats = synchronize_snapshot(blob_provider.clone(), dst_path.clone(), src_snapshot.clone()).await?;
     assert_eq!(stats.objects_hardlinked, total_objects);
 
@@ -93,8 +92,8 @@ async fn rejects_overwrite() -> anyhow::Result<()> {
     let dst_path = SnapshotsPath::from_path_unchecked(tmp.path());
     dst_path.create()?;
 
-    let src_snapshot = src.meta.clone();
-    let blob_provider = src.objects.clone();
+    let src_snapshot = src.manifest();
+    let blob_provider = src.snapshot.clone();
 
     synchronize_snapshot(blob_provider.clone(), dst_path.clone(), src_snapshot.clone()).await?;
 
@@ -105,7 +104,7 @@ async fn rejects_overwrite() -> anyhow::Result<()> {
     let src_snapshot_path = src.repo.snapshot_dir_path(prev_offset);
     let (mut src_snapshot, _) = Snapshot::read_from_file(&src_snapshot_path.snapshot_file(prev_offset))?;
     // Pretend it's the current snapshot, thereby altering the preimage.
-    src_snapshot.tx_offset = src.offset;
+    *src_snapshot.tx_offset_mut() = src.offset;
 
     let res = synchronize_snapshot(blob_provider, dst_path, src_snapshot).await;
     assert_matches!(res, Err(SnapshotError::HashMismatch { .. }));
@@ -122,19 +121,14 @@ async fn verifies_objects() -> anyhow::Result<()> {
     let dst_path = SnapshotsPath::from_path_unchecked(tmp.path());
     dst_path.create()?;
 
-    let src_snapshot = src.meta.clone();
-
-    synchronize_snapshot(src.objects.clone(), dst_path.clone(), src_snapshot.clone()).await?;
+    let src_snapshot = src.manifest();
+    synchronize_snapshot(src.snapshot.clone(), dst_path.clone(), src_snapshot.clone()).await?;
 
     // Read objects for verification from the destination repo.
     let blob_provider = spawn_blocking({
-        let dst_path = dst_path.clone();
-        let snapshot_offset = src_snapshot.tx_offset;
-        move || {
-            let repo = SnapshotRepository::open(dst_path, Identity::ZERO, 0)?;
-            let objects = SnapshotRepository::object_repo(&repo.snapshot_dir_path(snapshot_offset))?;
-            anyhow::Ok(Arc::new(objects))
-        }
+        let dst_dir = dst_path.snapshot_dir(src_snapshot.tx_offset());
+        let snapshot = src_snapshot.clone();
+        move || snapshot.into_writable(&dst_dir).map(Arc::new)
     })
     .await
     .unwrap()?;
@@ -143,9 +137,9 @@ async fn verifies_objects() -> anyhow::Result<()> {
 
     // Pick a random object to mess with.
     let random_object_path = {
-        let all_objects = src_snapshot.objects().collect::<Box<[_]>>();
+        let all_objects = src.snapshot.objects().collect::<Box<[_]>>();
         let random_object = all_objects.choose(&mut rand::rng()).copied().unwrap();
-        blob_provider.file_path(random_object.as_bytes())
+        blob_provider.file_path(random_object)
     };
 
     // Truncate the object file and assert that verification fails.
@@ -184,8 +178,7 @@ async fn verifies_objects() -> anyhow::Result<()> {
 /// avoid creating the source snapshot repeatedly.
 struct SourceSnapshot {
     offset: TxOffset,
-    meta: Snapshot,
-    objects: Arc<DirTrie>,
+    snapshot: Arc<WritableSnapshot>,
     repo: Arc<SnapshotRepository>,
 
     #[allow(unused)]
@@ -211,22 +204,25 @@ impl SourceSnapshot {
         let offset = create_snapshot(repo.clone()).await?;
 
         let dir_path = repo.snapshot_dir_path(offset);
-        let (meta, objects) = spawn_blocking(move || {
-            let meta = Snapshot::read_from_file(&dir_path.snapshot_file(offset)).map(|(file, _)| file)?;
-            let objects = SnapshotRepository::object_repo(&dir_path).map(Arc::new)?;
+        let snapshot = spawn_blocking(move || {
+            let manifest = Snapshot::read_from_file(&dir_path.snapshot_file(offset)).map(|(file, _)| file)?;
+            let snapshot = manifest.into_writable(&dir_path).map(Arc::new)?;
 
-            Ok::<_, SnapshotError>((meta, objects))
+            Ok::<_, SnapshotError>(snapshot)
         })
         .await
         .unwrap()?;
 
         Ok(SourceSnapshot {
             offset,
-            meta,
-            objects,
+            snapshot,
             repo,
             tmp,
         })
+    }
+
+    fn manifest(&self) -> Snapshot {
+        self.snapshot.manifest()
     }
 }
 

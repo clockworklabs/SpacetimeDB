@@ -18,7 +18,12 @@ use spacetimedb_fs_utils::{compression::ZSTD_MAGIC_BYTES, dir_trie::DirTrie, loc
 use spacetimedb_lib::bsatn;
 use spacetimedb_paths::server::{SnapshotDirPath, SnapshotsPath};
 use spacetimedb_sats::buffer::BufWriter as SatsWriter;
-use spacetimedb_table::{blob_store::BlobHash, page::Page, page_pool::PagePool};
+use spacetimedb_table::{
+    blob_store::BlobHash,
+    page::Page,
+    page_pool::PagePool,
+    tiered::{ObjectKey, PageHash},
+};
 use tempfile::NamedTempFile;
 use tokio::{
     fs,
@@ -30,46 +35,43 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::io::{InspectReader, InspectWriter, StreamReader};
 use zstd_framed::AsyncZstdReader;
 
-use crate::{ObjectType, Snapshot, SnapshotError, SnapshotRepository};
+use crate::{common::read_from_file, ObjectType, Snapshot, SnapshotError, SnapshotRepository, WritableSnapshot};
 
 pub type Result<T> = std::result::Result<T, SnapshotError>;
 
 /// A source of snapshot objects that can be obtained by `hash`.
-pub trait BlobProvider: Send {
-    fn blob_reader(
-        &self,
-        hash: blake3::Hash,
-    ) -> impl Future<Output = io::Result<impl AsyncBufRead + Send + Unpin>> + Send;
+pub trait ObjectProvider: Send {
+    type Reader: AsyncBufRead + Send + Unpin;
+
+    fn object_reader(&self, key: ObjectKey) -> impl Future<Output = io::Result<Self::Reader>> + Send;
 }
 
-impl BlobProvider for DirTrie {
-    async fn blob_reader(&self, hash: blake3::Hash) -> io::Result<impl AsyncBufRead + Send + Unpin> {
-        fs::File::open(self.file_path(hash.as_bytes()))
-            .await
-            .map(BufReader::new)
+impl ObjectProvider for DirTrie {
+    type Reader = BufReader<fs::File>;
+
+    async fn object_reader(&self, key: ObjectKey) -> io::Result<Self::Reader> {
+        fs::File::open(self.file_path(key.as_bytes())).await.map(BufReader::new)
     }
 }
 
-impl<F, Fut, R> BlobProvider for F
+impl<F, Fut, R> ObjectProvider for F
 where
-    F: Fn(blake3::Hash) -> Fut + Send + Sync,
+    F: Fn(ObjectKey) -> Fut + Send + Sync,
     Fut: Future<Output = io::Result<R>> + Send,
     R: AsyncBufRead + Send + Unpin,
 {
-    fn blob_reader(
-        &self,
-        hash: blake3::Hash,
-    ) -> impl Future<Output = io::Result<impl AsyncBufRead + Send + Unpin>> + Send {
-        (self)(hash)
+    type Reader = R;
+
+    fn object_reader(&self, key: ObjectKey) -> impl Future<Output = io::Result<Self::Reader>> + Send {
+        (self)(key)
     }
 }
 
-impl<T: BlobProvider + Send + Sync> BlobProvider for Arc<T> {
-    fn blob_reader(
-        &self,
-        hash: blake3::Hash,
-    ) -> impl Future<Output = io::Result<impl AsyncBufRead + Send + Unpin>> + Send {
-        (**self).blob_reader(hash)
+impl<T: ObjectProvider + Send + Sync> ObjectProvider for Arc<T> {
+    type Reader = T::Reader;
+
+    fn object_reader(&self, key: ObjectKey) -> impl Future<Output = io::Result<Self::Reader>> + Send {
+        (**self).object_reader(key)
     }
 }
 
@@ -125,7 +127,7 @@ impl From<StatsInner> for Stats {
 ///
 /// It is, however, safe to retry a failed [`synchronize_snapshot`] run.
 pub async fn synchronize_snapshot(
-    provider: impl BlobProvider + 'static,
+    provider: impl ObjectProvider + 'static,
     snapshots_dir: SnapshotsPath,
     snapshot: Snapshot,
 ) -> Result<Stats> {
@@ -138,7 +140,7 @@ pub async fn synchronize_snapshot(
 /// Like [`synchronize_snapshot`], but doesn't modify the local storage.
 /// Usually, a local [`BlobProvider`] like [`DirTrie`] should be provided.
 pub async fn verify_snapshot(
-    provider: impl BlobProvider + 'static,
+    provider: impl ObjectProvider + 'static,
     snapshots_dir: SnapshotsPath,
     snapshot: Snapshot,
 ) -> Result<()> {
@@ -146,7 +148,7 @@ pub async fn verify_snapshot(
 }
 
 async fn run_fetcher(
-    provider: impl BlobProvider + 'static,
+    provider: impl ObjectProvider + 'static,
     snapshots_dir: SnapshotsPath,
     snapshot: Snapshot,
     dry_run: bool,
@@ -223,10 +225,10 @@ pub fn default_page_pool() -> PagePool {
 }
 
 pub struct SnapshotFetcher<P> {
-    snapshot: Snapshot,
+    manifest: Snapshot,
     dir: SnapshotDirPath,
-    object_repo: Arc<DirTrie>,
-    parent_repo: Option<Arc<DirTrie>>,
+    object_repo: Arc<WritableSnapshot>,
+    parent_repo: Option<Arc<WritableSnapshot>>,
     provider: P,
 
     /// Re-usable memory for deserialized pages.
@@ -243,7 +245,7 @@ pub struct SnapshotFetcher<P> {
     lock: Lockfile,
 }
 
-impl<P: BlobProvider> SnapshotFetcher<P> {
+impl<P: ObjectProvider> SnapshotFetcher<P> {
     fn read_object_error(&self, ty: ObjectType, cause: io::Error) -> SnapshotError {
         SnapshotError::ReadObject {
             ty,
@@ -255,32 +257,35 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
     pub fn create(
         provider: P,
         snapshots_dir: SnapshotsPath,
-        snapshot: Snapshot,
+        manifest: Snapshot,
         page_pool: PagePool,
         buf_pool: BufPool,
     ) -> Result<Self> {
-        let snapshot_repo = SnapshotRepository::open(snapshots_dir, snapshot.database_identity, snapshot.replica_id)?;
-        let snapshot_dir = snapshot_repo.snapshot_dir_path(snapshot.tx_offset);
+        let snapshot_repo =
+            SnapshotRepository::open(snapshots_dir, manifest.database_identity(), manifest.replica_id())?;
+        let snapshot_dir = snapshot_repo.snapshot_dir_path(manifest.tx_offset());
         let lock = Lockfile::for_file(&snapshot_dir)?;
         std::fs::create_dir_all(&snapshot_dir)?;
 
-        let object_repo = SnapshotRepository::object_repo(&snapshot_dir)?;
-        let parent_offset = snapshot_repo.latest_snapshot_older_than(snapshot.tx_offset)?;
+        let snapshot_offset = manifest.tx_offset();
+        let object_repo = manifest.clone().into_writable(&snapshot_dir)?;
+        let parent_offset = snapshot_repo.latest_snapshot_older_than(snapshot_offset)?;
         // The parent offset must always be smaller than `snapshot`'s offset,
         // because we locked `snapshot_dir`, so this snapshot is not selected.
         debug_assert!(
-            parent_offset.is_none() || parent_offset.is_some_and(|offset| offset < snapshot.tx_offset),
+            parent_offset.is_none() || parent_offset.is_some_and(|offset| offset < snapshot_offset),
             "invalid parent offset"
         );
         let parent_repo = parent_offset
             .map(|offset| {
-                let path = snapshot_repo.snapshot_dir_path(offset);
-                SnapshotRepository::object_repo(&path)
+                let parent_dir = snapshot_repo.snapshot_dir_path(offset);
+                let (snapshot, _) = Snapshot::read_from_file(&parent_dir.snapshot_file(offset))?;
+                snapshot.into_writable(&parent_dir).map_err(SnapshotError::from)
             })
             .transpose()?;
 
         Ok(Self {
-            snapshot,
+            manifest,
             dir: snapshot_dir,
             object_repo: Arc::new(object_repo),
             parent_repo: parent_repo.map(Arc::new),
@@ -302,17 +307,17 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
 
         let snapshot_bsatn = {
             let mut buf = Vec::new();
-            serialize_snapshot(&mut buf, &self.snapshot)?;
+            serialize_snapshot(&mut buf, &self.manifest)?;
             buf
         };
         let snapshot_hash = blake3::hash(&snapshot_bsatn);
-        let snapshot_file_path = self.dir.snapshot_file(self.snapshot.tx_offset);
+        let snapshot_file_path = self.dir.snapshot_file(self.manifest.tx_offset());
         // If the snapshot file already exists at the target path,
         // check that it is valid and that it hashes to `snapshot_hash`.
         if fs::try_exists(&snapshot_file_path).await? {
             let (existing, _) = spawn_blocking({
                 let snapshot_file_path = snapshot_file_path.clone();
-                move || Snapshot::read_from_file(&snapshot_file_path)
+                move || read_from_file(&snapshot_file_path)
             })
             .await
             .unwrap()?;
@@ -351,13 +356,10 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
 
     async fn fetch_blobs(&self) -> Result<()> {
         let tasks = self
-            .snapshot
-            .blobs
+            .manifest
+            .blobs()
             .iter()
-            .map(|entry| {
-                let hash = blake3::Hash::from_bytes(entry.hash.data);
-                self.fetch_blob(hash)
-            })
+            .map(|entry| self.fetch_blob(entry.hash))
             .collect::<Box<[_]>>();
         stream::iter(tasks)
             .map(Ok)
@@ -367,10 +369,10 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
 
     async fn fetch_pages(&self) -> Result<()> {
         let tasks = self
-            .snapshot
-            .tables
+            .manifest
+            .tables()
             .iter()
-            .flat_map(|entry| entry.pages.iter().copied().map(|hash| self.fetch_page(hash)))
+            .flat_map(|entry| entry.present_pages().map(|hash| self.fetch_page(hash)))
             .collect::<Box<[_]>>();
         stream::iter(tasks)
             .map(Ok)
@@ -378,23 +380,17 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
             .await
     }
 
-    async fn fetch_blob(&self, hash: blake3::Hash) -> Result<()> {
-        let ty = ObjectType::Blob(BlobHash { data: *hash.as_bytes() });
-        let Some(dst_path) = self.object_file_path(ty).await? else {
+    async fn fetch_blob(&self, hash: BlobHash) -> Result<()> {
+        let key = ObjectKey::from(hash);
+        let Some(dst_path) = self.object_file_path(key).await? else {
             return Ok(());
         };
+        let err = |cause| self.read_object_error(key.into(), cause);
+
         atomically((!self.dry_run).then_some(dst_path), |out| async move {
             let mut out = BufWriter::new(out);
-            let mut src = self
-                .provider
-                .blob_reader(hash)
-                .await
-                .map_err(|e| self.read_object_error(ty, e))?;
-            let compressed = src
-                .fill_buf()
-                .await
-                .map_err(|e| self.read_object_error(ty, e))?
-                .starts_with(&ZSTD_MAGIC_BYTES);
+            let mut src = self.provider.object_reader(key).await.map_err(err)?;
+            let compressed = src.fill_buf().await.map_err(err)?.starts_with(&ZSTD_MAGIC_BYTES);
 
             // Consume the blob reader,
             // write its contents to `out`,
@@ -405,17 +401,15 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
                 let mut writer = InspectWriter::new(&mut out, |chunk| {
                     hasher.update(chunk);
                 });
-                tokio::io::copy_buf(&mut src, &mut writer)
-                    .await
-                    .map_err(|e| self.read_object_error(ty, e))?;
-                writer.flush().await.map_err(|e| self.read_object_error(ty, e))?;
+                tokio::io::copy_buf(&mut src, &mut writer).await.map_err(err)?;
+                writer.flush().await.map_err(err)?;
 
                 hasher.hash()
             } else {
                 // If the input is compressed, send a copy of all received
                 // chunks to a separate task that decompresses the stream and
                 // computes the hash from the decompressed bytes.
-                let (mut zstd, tx) = zstd_reader().map_err(|e| self.read_object_error(ty, e))?;
+                let (mut zstd, tx) = zstd_reader().map_err(err)?;
                 let decompressor = tokio::spawn(async move {
                     tokio::io::copy_buf(&mut zstd, &mut hasher).await?;
                     Ok::<_, io::Error>(hasher.hash())
@@ -426,18 +420,16 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
                     buf.extend_from_slice(chunk);
                     tx.send(buf.split().freeze()).ok();
                 });
-                tokio::io::copy(&mut src, &mut out)
-                    .await
-                    .map_err(|e| self.read_object_error(ty, e))?;
-                out.flush().await.map_err(|e| self.read_object_error(ty, e))?;
+                tokio::io::copy(&mut src, &mut out).await.map_err(err)?;
+                out.flush().await.map_err(err)?;
 
                 drop(tx);
-                decompressor.await.unwrap().map_err(|e| self.read_object_error(ty, e))?
+                decompressor.await.unwrap().map_err(err)?
             };
-            if computed_hash != hash {
+            if computed_hash != blake3::Hash::from(key) {
                 return Err(SnapshotError::HashMismatch {
-                    ty,
-                    expected: *hash.as_bytes(),
+                    ty: key.into(),
+                    expected: *key.as_bytes(),
                     computed: *computed_hash.as_bytes(),
                     source_repo: self.dir.0.clone(),
                 });
@@ -451,23 +443,17 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
         })
     }
 
-    async fn fetch_page(&self, hash: blake3::Hash) -> Result<()> {
-        let ty = ObjectType::Page(hash);
-        let Some(dst_path) = self.object_file_path(ty).await? else {
+    async fn fetch_page(&self, hash: PageHash) -> Result<()> {
+        let key = ObjectKey::from(hash);
+        let Some(dst_path) = self.object_file_path(key).await? else {
             return Ok(());
         };
+        let err = |cause| self.read_object_error(key.into(), cause);
+
         atomically((!self.dry_run).then_some(dst_path), |out| async {
             let mut out = BufWriter::new(out);
-            let mut src = self
-                .provider
-                .blob_reader(hash)
-                .await
-                .map_err(|e| self.read_object_error(ty, e))?;
-            let compressed = src
-                .fill_buf()
-                .await
-                .map_err(|e| self.read_object_error(ty, e))?
-                .starts_with(&ZSTD_MAGIC_BYTES);
+            let mut src = self.provider.object_reader(key).await.map_err(err)?;
+            let compressed = src.fill_buf().await.map_err(err)?.starts_with(&ZSTD_MAGIC_BYTES);
 
             // To compute the page hash, we need to bsatn deserialize it.
             // As bsatn doesn't support streaming deserialization yet,
@@ -479,17 +465,15 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
                 let mut writer = InspectWriter::new(&mut out, |chunk| {
                     page_buf.extend_from_slice(chunk);
                 });
-                tokio::io::copy_buf(&mut src, &mut writer)
-                    .await
-                    .map_err(|e| self.read_object_error(ty, e))?;
-                writer.flush().await.map_err(|e| self.read_object_error(ty, e))?;
+                tokio::io::copy_buf(&mut src, &mut writer).await.map_err(err)?;
+                writer.flush().await.map_err(err)?;
 
                 page_buf.split().freeze()
             } else {
                 // If the input is compressed, send all received chunks to a
                 // separate task that decompresses the stream and returns
                 // the uncompressed bytes.
-                let (mut zstd, tx) = zstd_reader().map_err(|e| self.read_object_error(ty, e))?;
+                let (mut zstd, tx) = zstd_reader().map_err(err)?;
                 let buf_pool = self.buf_pool.clone();
                 let decompressor = tokio::spawn(async move {
                     let mut page_buf = buf_pool.get();
@@ -502,13 +486,11 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
                     buf.extend_from_slice(chunk);
                     tx.send(buf.split().freeze()).ok();
                 });
-                tokio::io::copy_buf(&mut src, &mut writer)
-                    .await
-                    .map_err(|e| self.read_object_error(ty, e))?;
-                writer.flush().await.map_err(|e| self.read_object_error(ty, e))?;
+                tokio::io::copy_buf(&mut src, &mut writer).await.map_err(err)?;
+                writer.flush().await.map_err(err)?;
 
                 drop(tx);
-                decompressor.await.unwrap().map_err(|e| self.read_object_error(ty, e))?
+                decompressor.await.unwrap().map_err(err)?
             };
 
             self.verify_page(hash, &page_bytes)?;
@@ -533,13 +515,8 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
     /// if the file exists in either the target or the parent repo,
     /// in order to force hash verification.
     /// If it does not exist, an error is returned.
-    async fn object_file_path(&self, ty: ObjectType) -> Result<Option<PathBuf>> {
-        let hash = match ty {
-            ObjectType::Blob(hash) => blake3::Hash::from_bytes(hash.data),
-            ObjectType::Page(hash) => hash,
-            ObjectType::Snapshot => unreachable!("invalid argument"),
-        };
-        let path = self.object_repo.file_path(hash.as_bytes());
+    async fn object_file_path(&self, key: ObjectKey) -> Result<Option<PathBuf>> {
+        let path = self.object_repo.file_path(key);
         if fs::try_exists(&path).await? {
             if self.dry_run {
                 return Ok(Some(path));
@@ -549,7 +526,7 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
             return Ok(None);
         }
 
-        if self.try_hardlink(hash).await? {
+        if self.try_hardlink(key).await? {
             if self.dry_run {
                 return Ok(Some(path));
             }
@@ -560,7 +537,7 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
 
         if self.dry_run {
             return Err(SnapshotError::ReadObject {
-                ty,
+                ty: key.into(),
                 source_repo: self.object_repo.root().to_owned(),
                 cause: io::Error::new(io::ErrorKind::NotFound, format!("missing object {}", path.display())),
             });
@@ -569,7 +546,7 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
         Ok(Some(path))
     }
 
-    async fn try_hardlink(&self, hash: blake3::Hash) -> Result<bool> {
+    async fn try_hardlink(&self, key: ObjectKey) -> Result<bool> {
         let Some(parent) = self.parent_repo.as_ref() else {
             return Ok(false);
         };
@@ -577,30 +554,30 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
         let object_repo = Arc::clone(&self.object_repo);
         let parent_repo = Arc::clone(parent);
         if !self.dry_run {
-            spawn_blocking(move || object_repo.try_hardlink_from(&parent_repo, hash.as_bytes()))
+            spawn_blocking(move || object_repo.try_hardlink_from(&parent_repo, key))
                 .await
                 .unwrap()
                 .map_err(Into::into)
         } else {
-            let src_file = parent_repo.file_path(hash.as_bytes());
+            let src_file = parent_repo.file_path(key);
             let meta = tokio::fs::metadata(src_file).await?;
             Ok(meta.is_file())
         }
     }
 
-    fn verify_page(&self, expected_hash: blake3::Hash, buf: &[u8]) -> Result<()> {
+    fn verify_page(&self, expected_hash: PageHash, buf: &[u8]) -> Result<()> {
         let page = self
             .page_pool
             .take_deserialize_from(buf)
             .map_err(|cause| SnapshotError::Deserialize {
-                ty: ObjectType::Page(expected_hash),
+                ty: expected_hash.into(),
                 source_repo: self.dir.0.clone(),
                 cause,
             })?;
         let computed_hash = page.content_hash();
         self.page_pool.put(page);
 
-        if computed_hash != expected_hash {
+        if computed_hash != blake3::Hash::from(expected_hash) {
             return Err(SnapshotError::HashMismatch {
                 ty: ObjectType::Blob(BlobHash {
                     data: *expected_hash.as_bytes(),
@@ -826,21 +803,22 @@ impl AsyncWrite for AsyncBufWriter<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{default_page_pool, BlobProvider, BufPool, SnapshotFetcher};
-    use crate::{Snapshot, SnapshotError, CURRENT_MODULE_ABI_VERSION, CURRENT_SNAPSHOT_VERSION, MAGIC};
+    use super::{default_page_pool, BufPool, ObjectProvider, SnapshotFetcher};
+    use crate::{v0, Snapshot, SnapshotError, CURRENT_MODULE_ABI_VERSION, CURRENT_SNAPSHOT_VERSION, MAGIC};
     use pretty_assertions::assert_matches;
     use spacetimedb_lib::Identity;
     use spacetimedb_paths::{server::SnapshotsPath, FromPathUnchecked};
     use spacetimedb_sats::bsatn;
     use spacetimedb_sats::layout::{row_size_for_type, Size};
-    use spacetimedb_table::tiered::EvictionPolicy;
+    use spacetimedb_table::blob_store::BlobHash;
+    use spacetimedb_table::tiered::{EvictionPolicy, PageHash};
     use spacetimedb_table::{indexes::PageOffset, page::Page, tiered::BlobSet, var_len::AlignedVarLenOffsets};
     use std::io::Cursor;
     use tempfile::tempdir;
     use zstd_framed::AsyncZstdWriter;
 
     const ZEROES: &[u8] = &[0; 32];
-    const DUMMY_SNAPSHOT: Snapshot = Snapshot {
+    const DUMMY_SNAPSHOT: v0::Snapshot = v0::Snapshot {
         magic: MAGIC,
         version: CURRENT_SNAPSHOT_VERSION,
         database_identity: Identity::ZERO,
@@ -852,12 +830,12 @@ mod tests {
     };
 
     /// [`BlobProvider`] that serves only zeroes.
-    fn zeroes_provider() -> impl BlobProvider {
+    fn zeroes_provider() -> impl ObjectProvider {
         |_hash| async { Ok(Box::new(ZEROES)) }
     }
 
     /// [`BlobProvider`] that serves only the given `data`.
-    fn const_provider(data: Vec<u8>) -> impl BlobProvider {
+    fn const_provider(data: Vec<u8>) -> impl ObjectProvider {
         move |_hash| {
             let data = Cursor::new(data.clone());
             async move { Ok(data) }
@@ -869,18 +847,24 @@ mod tests {
         let tmp = tempdir().unwrap();
         let dir = SnapshotsPath::from_path_unchecked(tmp.path());
 
-        let blob_hash = blake3::hash(&[1; 32]);
+        let ones = BlobHash {
+            data: *blake3::hash(&[1, 32]).as_bytes(),
+        };
+        let zeroes = BlobHash {
+            data: *blake3::hash(ZEROES).as_bytes(),
+        };
         let sf = SnapshotFetcher::create(
+            // Only serve blobs made of zeroes.
             zeroes_provider(),
             dir,
-            DUMMY_SNAPSHOT,
+            Snapshot::V0(DUMMY_SNAPSHOT),
             default_page_pool(),
             BufPool::default(),
         )
         .unwrap();
 
-        sf.fetch_blob(blake3::hash(ZEROES)).await.unwrap();
-        assert_matches!(sf.fetch_blob(blob_hash).await, Err(SnapshotError::HashMismatch { .. }));
+        sf.fetch_blob(zeroes).await.unwrap();
+        assert_matches!(sf.fetch_blob(ones).await, Err(SnapshotError::HashMismatch { .. }));
     }
 
     #[tokio::test]
@@ -889,14 +873,16 @@ mod tests {
         let dir = SnapshotsPath::from_path_unchecked(tmp.path());
 
         let blob_data = [1; 1024];
-        let blob_hash = blake3::hash(&blob_data);
+        let blob_hash = BlobHash {
+            data: *blake3::hash(&blob_data).as_bytes(),
+        };
         let mut blob_zstd = Vec::new();
         compress(&mut blob_data.as_slice(), &mut blob_zstd).await;
 
         let sf = SnapshotFetcher::create(
             const_provider(blob_zstd),
             dir,
-            DUMMY_SNAPSHOT,
+            Snapshot::V0(DUMMY_SNAPSHOT),
             default_page_pool(),
             BufPool::default(),
         )
@@ -904,7 +890,10 @@ mod tests {
 
         sf.fetch_blob(blob_hash).await.unwrap();
         assert_matches!(
-            sf.fetch_blob(blake3::hash(ZEROES)).await,
+            sf.fetch_blob(BlobHash {
+                data: *blake3::hash(ZEROES).as_bytes()
+            })
+            .await,
             Err(SnapshotError::HashMismatch { .. })
         );
     }
@@ -918,23 +907,22 @@ mod tests {
         for val in 0..64 {
             insert_u64(&mut page, val);
         }
-        let page_hash = page_hash_save_get(&mut page);
+        let page_hash = PageHash::from(&mut *page);
         let page_blob = bsatn::to_vec(&page).unwrap();
 
         let sf = SnapshotFetcher::create(
             const_provider(page_blob),
             dir,
-            DUMMY_SNAPSHOT,
+            Snapshot::V0(DUMMY_SNAPSHOT),
             default_page_pool(),
             BufPool::default(),
         )
         .unwrap();
 
         sf.fetch_page(page_hash).await.unwrap();
-        assert_matches!(
-            sf.fetch_page(blake3::hash(ZEROES)).await,
-            Err(SnapshotError::HashMismatch { .. })
-        );
+        // SAFETY: Deliberately invalid.
+        let invalid = unsafe { PageHash::from_blake3(blake3::hash(ZEROES)) };
+        assert_matches!(sf.fetch_page(invalid).await, Err(SnapshotError::HashMismatch { .. }));
     }
 
     #[tokio::test]
@@ -946,7 +934,7 @@ mod tests {
         for val in 0..64 {
             insert_u64(&mut page, val);
         }
-        let page_hash = page_hash_save_get(&mut page);
+        let page_hash = PageHash::from(&mut *page);
         let page_blob = bsatn::to_vec(&page).unwrap();
         let mut page_zstd = Vec::new();
         compress(&mut page_blob.as_slice(), &mut page_zstd).await;
@@ -954,17 +942,16 @@ mod tests {
         let sf = SnapshotFetcher::create(
             const_provider(page_zstd),
             dir,
-            DUMMY_SNAPSHOT,
+            Snapshot::V0(DUMMY_SNAPSHOT),
             default_page_pool(),
             BufPool::default(),
         )
         .unwrap();
 
         sf.fetch_page(page_hash).await.unwrap();
-        pretty_assertions::assert_matches!(
-            sf.fetch_page(blake3::hash(ZEROES)).await,
-            Err(SnapshotError::HashMismatch { .. })
-        );
+        // SAFETY: Deliberately invalid.
+        let invalid = unsafe { PageHash::from_blake3(blake3::hash(ZEROES)) };
+        pretty_assertions::assert_matches!(sf.fetch_page(invalid).await, Err(SnapshotError::HashMismatch { .. }));
     }
 
     async fn compress(input: &mut &[u8], output: &mut Vec<u8>) {
@@ -995,10 +982,5 @@ mod tests {
     const U64_VL_VISITOR: AlignedVarLenOffsets<'_> = AlignedVarLenOffsets::from_offsets(&[]);
     fn u64_var_len_visitor() -> &'static AlignedVarLenOffsets<'static> {
         &U64_VL_VISITOR
-    }
-
-    fn page_hash_save_get(page: &mut Page) -> blake3::Hash {
-        page.save_content_hash();
-        page.content_hash()
     }
 }

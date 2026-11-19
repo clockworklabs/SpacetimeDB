@@ -33,14 +33,8 @@ pub struct Object {
 /// It can only be created via the `From` impls of [Object], which makes the
 /// hash trustworthy.
 enum ObjectInner {
-    Page {
-        hash: PageHash,
-        bytes: ObjectBytes,
-    },
-    Blob {
-        hash: BlobHashWrapper,
-        bytes: ObjectBytes,
-    },
+    Page { hash: PageHash, bytes: ObjectBytes },
+    Blob { hash: BlobHashWrapper, bytes: ObjectBytes },
 }
 
 impl ObjectInner {
@@ -298,13 +292,7 @@ enum ObjectOwnership {
 
 impl ObjectOwnership {
     fn is_pinned(&self) -> bool {
-        matches!(
-            self,
-            Self::Referenced {
-                total_pins: 1..,
-                ..
-            }
-        )
+        matches!(self, Self::Referenced { total_pins: 1.., .. })
     }
 
     fn retain(&mut self, pins: u64) {
@@ -471,18 +459,9 @@ impl TieredStorage {
     }
 
     pub fn stat(&self, key: ObjectKey) -> Result<ObjectMetadata, ObjectStoreError> {
-        let slot = self
-            .catalog
-            .read()
-            .get(&key)
-            .cloned()
-            .ok_or_else(|| unknown(key))?;
+        let slot = self.catalog.read().get(&key).cloned().ok_or_else(|| unknown(key))?;
         let state = slot.state.lock();
-        state
-            .object
-            .as_ref()
-            .map(Into::into)
-            .ok_or_else(|| unknown(key))
+        state.object.as_ref().map(Into::into).ok_or_else(|| unknown(key))
     }
 
     pub fn contains(&self, key: ObjectKey) -> bool {
@@ -490,11 +469,7 @@ impl TieredStorage {
         maybe_slot.is_some_and(|slot| slot.state.lock().object.is_some())
     }
 
-    pub fn write(
-        &self,
-        object: Object,
-        retention: impl Into<DiskRetention>,
-    ) -> Result<DiskObject, ObjectStoreError> {
+    pub fn write(&self, object: Object, retention: impl Into<DiskRetention>) -> Result<DiskObject, ObjectStoreError> {
         let size = object.size();
         let (key, bytes) = object.into_kv();
         assert_eq!(size, bytes.len() as u64);
@@ -565,10 +540,7 @@ impl TieredStorage {
         };
         if !exists {
             let permit = self.acquire_local_permit(size)?;
-            let written_key = self
-                .local
-                .object_store
-                .write(object_from_trusted_bytes(key, bytes))?;
+            let written_key = self.local.object_store.write(object_from_trusted_bytes(key, bytes))?;
             assert_eq!(written_key, key);
 
             state.object = Some(ObjectCatalogEntry {
@@ -592,12 +564,7 @@ impl TieredStorage {
         key: ObjectKey,
         source: &mut Option<FaultSource>,
     ) -> Result<ObjectBytes, ObjectStoreError> {
-        let slot = self
-            .catalog
-            .read()
-            .get(&key)
-            .cloned()
-            .ok_or_else(|| unknown(key))?;
+        let slot = self.catalog.read().get(&key).cloned().ok_or_else(|| unknown(key))?;
         // Try to read from local storage first.
         {
             let mut state = slot.state.lock();
@@ -616,10 +583,7 @@ impl TieredStorage {
         // If remote storage is configured, promote the object into the local
         // tier.
         if let Some(remote) = &self.remote {
-            let ObjectMetadata { size } = remote
-                .object_store
-                .stat(key)?
-                .ok_or_else(|| not_found(key))?;
+            let ObjectMetadata { size } = remote.object_store.stat(key)?.ok_or_else(|| not_found(key))?;
             // Acquire the permit before locking the slot, as eviction may lock
             // it, too.
             let permit = self.acquire_local_permit(size)?;
@@ -639,10 +603,7 @@ impl TieredStorage {
 
             // Fetch the remote object and store it locally.
             // Hold the entry lock to prevent eviction.
-            let bytes = remote
-                .object_store
-                .read(key)?
-                .ok_or_else(|| not_found(key))?;
+            let bytes = remote.object_store.read(key)?.ok_or_else(|| not_found(key))?;
             *source = Some(FaultSource::Remote);
             self.local
                 .object_store
@@ -686,8 +647,7 @@ impl TieredStorage {
     pub fn evict(&self, target_usage: u64) -> Result<u64, ObjectStoreError> {
         let timer = self.metrics().timer();
         let result = self.evict_inner(target_usage);
-        self.metrics()
-            .eviction(EvictionDirection::DiskToRemote, timer.nanos());
+        self.metrics().eviction(EvictionDirection::DiskToRemote, timer.nanos());
         result
     }
 
@@ -745,14 +705,8 @@ impl TieredStorage {
             let Some(entry) = state.object.as_mut().filter(|entry| entry.permit.is_some()) else {
                 continue;
             };
-            let bytes = self
-                .local
-                .object_store
-                .read(key)?
-                .ok_or_else(|| not_found(key))?;
-            remote
-                .object_store
-                .write(object_from_trusted_bytes(key, bytes))?;
+            let bytes = self.local.object_store.read(key)?.ok_or_else(|| not_found(key))?;
+            remote.object_store.write(object_from_trusted_bytes(key, bytes))?;
             // SAFETY: The remote write succeeded. The slot lock excludes
             // concurrent local writes until removal and release of this
             // object's permit are complete.
@@ -760,11 +714,8 @@ impl TieredStorage {
 
             entry.permit.take();
             bytes_freed += entry.size;
-            self.metrics().evicted(
-                key.metric_type(),
-                EvictionDirection::DiskToRemote,
-                entry.size,
-            );
+            self.metrics()
+                .evicted(key.metric_type(), EvictionDirection::DiskToRemote, entry.size);
         }
 
         Ok(bytes_freed)
@@ -779,12 +730,8 @@ impl TieredStorage {
     pub fn reclaim(&self) -> Result<u64, ObjectStoreError> {
         let mut candidates = self.pending_reclaims.take();
         // Impose a stable removal order for fault injection.
-        candidates.sort_unstable_by_key(|candidate| {
-            (
-                matches!(candidate.key, ObjectKey::Blob(_)),
-                *candidate.key.as_bytes(),
-            )
-        });
+        candidates
+            .sort_unstable_by_key(|candidate| (matches!(candidate.key, ObjectKey::Blob(_)), *candidate.key.as_bytes()));
 
         let mut bytes_freed = 0;
         {
@@ -794,8 +741,7 @@ impl TieredStorage {
                     Ok(ReclamationAttempt::Done(bytes)) => bytes_freed += bytes,
                     Ok(ReclamationAttempt::Retry) => self.pending_reclaims.push(candidate),
                     Err(e) => {
-                        self.pending_reclaims
-                            .extend(iter::once(candidate).chain(remaining));
+                        self.pending_reclaims.extend(iter::once(candidate).chain(remaining));
                         self.pending_reclaims.recycle(candidates);
 
                         return Err(e);
@@ -808,10 +754,7 @@ impl TieredStorage {
         Ok(bytes_freed)
     }
 
-    fn reclaim_one(
-        &self,
-        candidate: &ReclamationCandidate,
-    ) -> Result<ReclamationAttempt, ObjectStoreError> {
+    fn reclaim_one(&self, candidate: &ReclamationCandidate) -> Result<ReclamationAttempt, ObjectStoreError> {
         let mut catalog = self.catalog.write();
 
         // Check that this is still the same slot.
@@ -871,18 +814,6 @@ impl TieredStorage {
                 .map_err(Box::new)
                 .map_err(ObjectStoreError::from)
         })
-    }
-}
-
-impl MemoryUsage for TieredStorage {
-    fn heap_usage(&self) -> usize {
-        let catalog_bytes = {
-            let catalog = self.catalog.read();
-            catalog.allocation_size() + catalog.len() + (2 * size_of::<usize>() + size_of::<ObjectSlot>())
-        };
-        let reclaim_flag = 2 * size_of::<usize>() + size_of_val(&*self.should_reclaim);
-
-        self.local.heap_usage() + self.remote.heap_usage() + catalog_bytes + reclaim_flag
     }
 }
 
@@ -1023,8 +954,7 @@ impl ReclamationQueue {
     fn extend(&self, candidates: impl IntoIterator<Item = ReclamationCandidate>) {
         let mut buffers = self.buffers.lock();
         buffers.current.extend(candidates);
-        self.have_entries
-            .store(!buffers.current.is_empty(), Ordering::Release);
+        self.have_entries.store(!buffers.current.is_empty(), Ordering::Release);
     }
 
     fn take(&self) -> Vec<ReclamationCandidate> {

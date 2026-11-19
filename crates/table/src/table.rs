@@ -461,7 +461,7 @@ impl Table {
     /// Its allocations still contribute to budget usage.
     pub fn with_memory_limit_exemption(mut self) -> Self {
         assert_eq!(self.schema.table_type, StTableType::System);
-        assert_eq!(self.eviction_policy, EvictionPolicy::NeverEvict);
+        assert_eq!(self.eviction_policy, EvictionPolicy::Never);
         assert_eq!(self.num_pages(), 0);
         self.inner.pages.memory_limit_exempt = true;
         self

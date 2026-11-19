@@ -250,10 +250,43 @@ path_type! {
     /// `{data-dir}/replica/$replica_id/snapshots/$tx_offset.snapshot_dir/$tx_offset.snapshot_bsatn`
     SnapshotFilePath: file
 }
+
+impl SnapshotFilePath {
+    pub fn snapshot_dir(&self) -> SnapshotDirPath {
+        SnapshotDirPath(
+            self.0
+                .parent()
+                .map(ToOwned::to_owned)
+                .expect("snapshot file must be in a directory"),
+        )
+    }
+}
+
 path_type! {
     /// The objects directory for a snapshot.
     /// `{data-dir}/replica/$replica_id/snapshots/$tx_offset.snapshot_dir/objects`
     SnapshotObjectsPath: dir
+}
+
+impl SnapshotObjectsPath {
+    pub fn pages(&self) -> SnapshotPagesPath {
+        SnapshotPagesPath(self.0.join("pages"))
+    }
+
+    pub fn blobs(&self) -> SnapshotBlobsPath {
+        SnapshotBlobsPath(self.0.join("blobs"))
+    }
+}
+path_type! {
+    /// The pages directory within a [SnapshotObjectsPath]
+    /// `{data-dir}/replica/$replica_id/snapshots/$tx_offset.snapshot_dir/objects/pages`
+    SnapshotPagesPath: dir
+}
+
+path_type! {
+    /// The blobs directory within a [SnapshotObjectsPath]
+    /// `{data-dir}/replica/$replica_id/snapshots/$tx_offset.snapshot_dir/objects/blobs`
+    SnapshotBlobsPath: dir
 }
 
 path_type! {
