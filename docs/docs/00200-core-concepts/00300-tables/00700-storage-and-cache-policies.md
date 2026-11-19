@@ -12,7 +12,7 @@ SpacetimeDB uses tiered storage to keep frequently accessed data in memory while
 
 | Allowed storage tiers | TypeScript / Rust value | C# value | Behavior |
 |-----------------------|-------------------------|----------|----------|
-| Memory only (default) | `required_in_memory` | `RequiredInMemory` | Keep the table's pages and blobs resident in memory. |
+| Memory only (default) | `required_in_memory` | `RequiredInMemory` | Load all the table's pages and blobs into memory at start up. |
 | Memory and local disk | `required_on_disk` | `RequiredOnDisk` | Allow colder data to page out of memory to local disk. Hot data can remain in memory. |
 | Any available tier | `no_requirement` | `NoRequirement` | Allow memory, local disk, and object storage where the deployment enables it. |
 
@@ -105,9 +105,9 @@ pub struct ArchivedHistory {
 
 ## Residency, Durability, and Performance
 
-Cache policies control where data can reside while the database is running. They do not affect durability. For example, when a database restarts, SpacetimeDB recovers data even for tables configured to stay in memory.
+Cache policies control where data can reside while the database is running. They do not affect durability. For example, when a database restarts, SpacetimeDB recovers data even for tables configured to reside fully in memory.
 
-The policy applies to table pages and large values stored as blobs. System tables remain in memory. A blob shared by multiple tables stays in memory if any of their policies requires it.
+The policy applies to table pages and large values stored as blobs. A blob shared by multiple tables stays in memory if at least one of their policies requires it.
 
 Accessing cold data may require storage reads, increasing latency. Use indexed lookups to limit the pages an operation touches, and reserve the in-memory policy for data that needs consistently fast access. Large scans can bring substantial amounts of cold data into the cache. See [Performance Best Practices](./00600-performance.md).
 
