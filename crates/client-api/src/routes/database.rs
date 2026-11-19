@@ -850,7 +850,7 @@ fn publish_error(error: anyhow::Error) -> axum::response::ErrorResponse {
 
 fn publish_migration_error(error: MigrationExecutionError) -> axum::response::ErrorResponse {
     match error {
-        MigrationExecutionError::User(_) => todo!(),
+        MigrationExecutionError::User(error) => bad_request(format!("The migration failed: {error}").into()),
         MigrationExecutionError::Other(error) => {
             environment_error_response(error, PublishResult::EnvironmentError, migration_error_fallback)
         }
@@ -2397,6 +2397,18 @@ mod tests {
             let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
             assert!(std::str::from_utf8(&body).unwrap().contains("outcome unknown"));
         }
+    }
+
+    #[tokio::test]
+    async fn publish_migration_user_error_is_a_bad_request() {
+        let error = MigrationExecutionError::User("rows of `person` have not been migrated".into());
+        let response = Err::<(), _>(publish_migration_error(error)).into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+        assert_eq!(
+            std::str::from_utf8(&body).unwrap(),
+            "The migration failed: rows of `person` have not been migrated"
+        );
     }
 
     #[tokio::test]
