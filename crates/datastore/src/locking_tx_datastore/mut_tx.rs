@@ -2039,7 +2039,7 @@ impl MutTxId {
                     &from_seq.sequence_id.into(),
                 )?
                 .last()
-                .ok_or(SequenceError::NotFound(from_seq.sequence_id))?
+                .ok_or(SequenceError::NotFound(from_seq.sequence_id))??
                 .read_col(StSequenceFields::Allocated)?;
             self.update_st_sequence_row(to_seq.sequence_id, |st| st.allocated = allocated)?;
         }
