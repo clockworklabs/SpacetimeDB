@@ -262,7 +262,8 @@ impl<'def> MigratePlan<'def> {
             | AutoMigrateStep::ChangeColumnAccessorName(key, _)
             | AutoMigrateStep::ChangeAccess(key)
             | AutoMigrateStep::ChangePrimaryKey(key)
-            | AutoMigrateStep::ChangeOutbox(key) => Some(key),
+            | AutoMigrateStep::ChangeOutbox(key)
+            | AutoMigrateStep::ChangeCachePolicy(key) => Some(key),
             AutoMigrateStep::RemoveTable(_)
             | AutoMigrateStep::AddTable(_)
             | AutoMigrateStep::ChangeColumns(_)
