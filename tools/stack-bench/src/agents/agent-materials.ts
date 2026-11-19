@@ -33,7 +33,7 @@ export function selectAgentSkills(defaults: string[], requested: string[] | null
 
 export function agentSkillPaths(stackBenchRoot: string, skills: string[]): string[] {
   // Container workflow instructions belong to Stack Bench, not the public SDK skills.
-  return validateSkills(skills).map(skill => ['spacetime-dev', 'spacetime-managed-dev'].includes(skill)
+  return validateSkills(skills).map(skill => skill === 'spacetime-dev'
     ? join(stackBenchRoot, 'backends', 'workflows', `${skill}.md`)
     : join(stackBenchRoot, '..', '..', 'skills', skill, 'SKILL.md'));
 }

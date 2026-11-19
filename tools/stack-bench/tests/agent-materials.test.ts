@@ -14,15 +14,13 @@ test('stack defaults and explicit agent skill selections resolve predictably', (
 });
 
 test('benchmark workflows resolve separately from public SDK skills in selected order', () => {
-  const ids = ['typescript-server', 'spacetime-dev', 'spacetime-managed-dev'];
+  const ids = ['typescript-server', 'spacetime-dev'];
   const paths = [join('/repo', 'skills', 'typescript-server', 'SKILL.md'),
-    join('/repo', 'tools', 'stack-bench', 'backends', 'workflows', 'spacetime-dev.md'),
-    join('/repo', 'tools', 'stack-bench', 'backends', 'workflows', 'spacetime-managed-dev.md')];
+    join('/repo', 'tools', 'stack-bench', 'backends', 'workflows', 'spacetime-dev.md')];
   assert.deepEqual(agentSkillPaths('/repo/tools/stack-bench', ids), paths);
   assert.deepEqual(agentSkillPaths('/opt/stack-bench', ids), [
     join('/skills', 'typescript-server', 'SKILL.md'),
     join('/opt/stack-bench/backends/workflows', 'spacetime-dev.md'),
-    join('/opt/stack-bench/backends/workflows', 'spacetime-managed-dev.md'),
   ]);
   assert.equal(readAgentSkillDocuments('/repo/tools/stack-bench', ids, {
     read: path => `---\nname: ignored\n---\n${ids[paths.indexOf(path)]}`,

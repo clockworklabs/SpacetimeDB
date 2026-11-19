@@ -75,7 +75,7 @@ export function runSetupCatalog(results: string, env: NodeJS.ProcessEnv = proces
       const skills = resolveGuidanceProfile(condition.guidanceProfile, d.stacks.map(s => s.id)).skills.spacetime?.ids ?? [];
       return { id: condition.id, guidance: condition.guidanceProfile,
         sdkSkills: skills.some(id => ['typescript-server', 'typescript-client', 'cli'].includes(id)),
-        devWorkflow: skills.some(id => ['spacetime-dev', 'spacetime-managed-dev'].includes(id)) };
+        devWorkflow: skills.includes('spacetime-dev') };
     }),
     defaults: { repetitions: d.repetitions, parallelism: d.parallelism,
       repairs: d.repair.budget.total ?? 0, timeoutMinutes: d.budgets.attemptTimeoutMinutes,

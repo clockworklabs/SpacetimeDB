@@ -7,7 +7,6 @@
     "neutral": "guidance/neutral.json",
     "neutral-dev": "guidance/neutral-dev.json",
     "neutral-dev-no-sdk": "guidance/neutral-dev-no-sdk.json",
-    "neutral-managed-dev": "guidance/neutral-managed-dev.json",
     "neutral-no-sdk": "guidance/neutral-no-sdk.json"
   },
   "repairPolicies": {

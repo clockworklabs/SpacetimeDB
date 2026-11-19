@@ -94,7 +94,6 @@ of these, from [`conditions/catalog.json`](../conditions/catalog.json):
 | --- | --- |
 | `neutral` (default) | TypeScript server, TypeScript client, CLI |
 | `neutral-dev` | The same, plus the `spacetime dev` watch workflow |
-| `neutral-managed-dev` | The same, plus a managed start/status/stop helper |
 | `neutral-no-sdk` | None |
 | `neutral-dev-no-sdk` | Dev workflow only |
 | `prescribed` | SDK skills plus stack documents with design advice |
