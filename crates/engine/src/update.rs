@@ -2117,8 +2117,8 @@ mod test {
 
         let mut extras = stdb
             .iter_mut(&tx, new_id)?
-            .map(|r| r.read_col::<u32>(1))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|r| Ok(r?.read_col::<u32>(1)?))
+            .collect::<anyhow::Result<Vec<_>>>()?;
         extras.sort();
         assert_eq!(extras, [1, 2]);
         Ok(())
@@ -2187,8 +2187,8 @@ mod test {
             assert_eq!(schema.constraints.len(), unique as usize, "{:?}", schema.constraints);
             let found = stdb
                 .iter_by_col_eq_mut(&tx, new_id, 1, &20u32.into())?
-                .map(|r| r.read_col::<u64>(0))
-                .collect::<Result<Vec<_>, _>>()?;
+                .map(|r| Ok(r?.read_col::<u64>(0)?))
+                .collect::<anyhow::Result<Vec<_>>>()?;
             assert_eq!(found, [2]);
         }
         Ok(())
@@ -2257,8 +2257,8 @@ mod test {
             let table_id = stdb.table_id_from_name_mut(tx, "seq_t")?.expect("seq_t should exist");
             let mut ids = stdb
                 .iter_mut(tx, table_id)?
-                .map(|r| r.read_col::<i64>(0))
-                .collect::<Result<Vec<_>, _>>()?;
+                .map(|r| Ok(r?.read_col::<i64>(0)?))
+                .collect::<anyhow::Result<Vec<_>>>()?;
             ids.sort();
             Ok(ids)
         };
@@ -2290,7 +2290,10 @@ mod test {
             let new_id = stdb.table_id_from_name_mut(&tx, "seq_t")?.expect("seq_t should exist");
             let rows = stdb
                 .iter_mut(&tx, old_id)?
-                .map(|r| Ok((r.read_col::<i64>(0)?, r.read_col::<u8>(1)?)))
+                .map(|r| {
+                    let r = r?;
+                    Ok((r.read_col::<i64>(0)?, r.read_col::<u8>(1)?))
+                })
                 .collect::<anyhow::Result<Vec<_>>>()?;
             for (id, value) in rows {
                 insert(&stdb, &mut tx, new_id, &product![id, value as u64])?;
