@@ -1007,8 +1007,11 @@ fn implement_query_view_call_accessor(
 #[derive(Clone, Copy)]
 enum TypeContext {
     Client,
+    /// Receiver bindings, which define their own `Identity`.
     Module,
     OutboxMacro,
+    /// A generated migration, which the user adds to their module's own crate.
+    Migration,
 }
 
 pub fn write_type<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicTypeUse) -> fmt::Result {
@@ -1025,11 +1028,13 @@ fn write_type_in_context<W: Write>(
         TypeContext::Client => ("__sdk", "__sats", "__sdk::Identity", ""),
         TypeContext::Module => ("::spacetimedb", "::spacetimedb::sats", "Identity", ""),
         TypeContext::OutboxMacro => ("::spacetimedb", "::spacetimedb::sats", "$module::Identity", "$module::"),
+        TypeContext::Migration => ("spacetimedb", "spacetimedb::sats", "spacetimedb::Identity", ""),
     };
     // Receiver-defined types can shadow builtins inside the bindings, and macros
     // resolve types in the caller's scope. Preserve the established client spelling.
     let qualify_builtins = match context {
-        TypeContext::Client => false,
+        // A migration is meant to be read and edited, so keep its types short.
+        TypeContext::Client | TypeContext::Migration => false,
         TypeContext::Module | TypeContext::OutboxMacro => true,
     };
     let write_builtin = |out: &mut W, path: &str, name: &str| -> fmt::Result {
@@ -2753,6 +2758,16 @@ mod tests {
                     "::core::option::Option::<::std::vec::Vec::<::spacetimedb::Timestamp>>",
                     "::core::result::Result::<::spacetimedb::ConnectionId, ::spacetimedb::TimeDuration>",
                     "::core::result::Result::<::spacetimedb::Uuid, ::spacetimedb::ScheduleAt>",
+                ],
+            ),
+            (
+                TypeContext::Migration,
+                [
+                    "Option::<Vec::<Result::<Payload, spacetimedb::Identity>>>",
+                    "Result::<spacetimedb::sats::i256, spacetimedb::sats::u256>",
+                    "Option::<Vec::<spacetimedb::Timestamp>>",
+                    "Result::<spacetimedb::ConnectionId, spacetimedb::TimeDuration>",
+                    "Result::<spacetimedb::Uuid, spacetimedb::ScheduleAt>",
                 ],
             ),
         ];
