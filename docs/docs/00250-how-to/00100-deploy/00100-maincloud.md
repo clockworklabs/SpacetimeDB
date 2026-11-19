@@ -122,9 +122,9 @@ The database dashboard gives you access to:
 
 Maincloud's standard resident memory limit is **24 GiB per database**. Your database may have a different configured limit. This budget governs memory used by the database's storage engine and applies regardless of which cache policies your tables use.
 
-When an operation needs more memory than the budget allows, SpacetimeDB can make room by moving eligible data to another storage tier. If every table uses the in-memory policy, all table data stays in memory. An operation can fail if SpacetimeDB can't free enough memory for it to finish. For example, a query can need more data in memory at once than the budget allows.
+When an operation would exceed the memory budget, SpacetimeDB can make room by paging data to local disk or object storage, depending on the table's cache policy and the available storage tiers. If it can't free enough memory, the operation fails with `Database resident memory budget exceeded`. The database stays running and can still serve reads and other operations that have enough memory to finish.
 
-Reaching the limit does not pause the database. For instructions on configuring a table's cache policy, see [Table Storage and Cache Policies](../../00200-core-concepts/00300-tables/00700-storage-and-cache-policies.md). If an operation fails with a memory budget error, see [Troubleshooting](../00050-troubleshooting.md#database-resident-memory-budget-exceeded).
+For ways to free up memory, see [Troubleshooting](../00050-troubleshooting.md#database-resident-memory-budget-exceeded). To configure which storage tiers a table can use, see [Table Storage and Cache Policies](../../00200-core-concepts/00300-tables/00700-storage-and-cache-policies.md).
 
 ## Database Lifecycle
 
