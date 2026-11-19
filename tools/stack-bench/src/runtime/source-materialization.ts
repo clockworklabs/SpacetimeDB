@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, existsSync, fstatSync, ftruncateSync, openSync, readFileSync,
+  writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
 import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
@@ -82,7 +83,14 @@ export async function materializeAcceptedSource(sourcePath: string, appDir: stri
     const started = installs(join(appDir, file));
     if (started === null || started !== installs(join(sourcePath, file))) return false;
     // Written in place: the file belongs to the app's user, and the controller may write it but not replace it.
-    writeFileSync(join(appDir, file), readFileSync(join(sourcePath, file)));
+    // The started app can still write here, so a link or pipe in its place is refused, not followed.
+    const fd = openSync(join(appDir, file), constants.O_WRONLY
+      | (process.platform === 'win32' ? 0 : constants.O_NOFOLLOW | constants.O_NONBLOCK));
+    try {
+      if (!fstatSync(fd).isFile()) return false;
+      ftruncateSync(fd, 0);
+      writeFileSync(fd, readFileSync(join(sourcePath, file)));
+    } finally { closeSync(fd); }
     return true;
   };
   const changed = accepted.files.filter(file => !existsSync(join(appDir, file))

@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { closeSync, constants, fstatSync, openSync, readFileSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { SESSION_ENDED_AFTER_ANSWER } from './codex-protocol.js';
@@ -119,10 +119,16 @@ export function antigravityFinishedAnswer(stateDirectory: string, marker: string
   for (const conversation of readdirSync(brain)) {
     const transcript = join(brain, conversation, '.system_generated', 'logs', 'transcript.jsonl');
     let last: unknown;
+    let fd: number | null = null;
     try {
-      if (statSync(transcript).mtimeMs < sinceMs) continue;
-      last = JSON.parse(readFileSync(transcript, 'utf8').trimEnd().split('\n').at(-1) ?? '');
-    } catch { continue; }
+      // The agent is still running and can write here: refuse links and pipes, which
+      // could point the read elsewhere or block it.
+      fd = openSync(transcript, constants.O_RDONLY
+        | (process.platform === 'win32' ? 0 : constants.O_NOFOLLOW | constants.O_NONBLOCK));
+      const stat = fstatSync(fd);
+      if (!stat.isFile() || stat.mtimeMs < sinceMs) continue;
+      last = JSON.parse(readFileSync(fd, 'utf8').trimEnd().split('\n').at(-1) ?? '');
+    } catch { continue; } finally { if (fd !== null) closeSync(fd); }
     if (record(last) && last.source === 'MODEL' && last.type === 'PLANNER_RESPONSE' && last.status === 'DONE'
       && !(Array.isArray(last.tool_calls) && last.tool_calls.length) && typeof last.content === 'string'
       && last.content.includes(marker)) return last.content;

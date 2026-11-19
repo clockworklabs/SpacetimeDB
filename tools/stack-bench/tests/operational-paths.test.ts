@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync,
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync,
   writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -43,4 +43,25 @@ test('transcript archiving includes nested agent sessions without replacing a lo
   const second = archiveTranscripts(app, 'attempt-1', output, storeRoot);
   assert.equal(second.copied, 0);
   assert.equal(readFileSync(archived, 'utf8'), 'longer preserved archive\n');
+});
+
+test('transcript archiving does not follow a link an agent left in its store', { skip: process.platform === 'win32' }, t => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-archive-link-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const app = join(root, 'app');
+  const storeRoot = join(root, 'projects');
+  const store = join(storeRoot, resolve(app).replace(/[\\/:]/g, '-').toLowerCase());
+  mkdirSync(store, { recursive: true });
+  const secret = join(root, 'secret.jsonl');
+  writeFileSync(secret, 'controller only\n');
+  symlinkSync(secret, join(store, 'session.jsonl'));
+  const output = join(root, 'out');
+  assert.equal(archiveTranscripts(app, 'attempt-1', output, storeRoot).copied, 0);
+
+  const elsewhere = join(root, 'elsewhere');
+  mkdirSync(elsewhere);
+  writeFileSync(join(elsewhere, 'other.jsonl'), 'controller only\n');
+  rmSync(store, { recursive: true });
+  symlinkSync(elsewhere, store);
+  assert.equal(archiveTranscripts(app, 'attempt-2', output, storeRoot).missing, 1);
 });

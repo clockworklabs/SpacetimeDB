@@ -7,7 +7,8 @@ import { readBackendLease, updateBackendLease } from '../runtime/backend-lease.j
 import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 import { harnessControlError } from '../evidence/harness-errors.js';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_CONTROL_DIR,
-  codingContainerAgentExecOptions, codingContainerWorkspaceHandoffCommands }
+  codingContainerAgentExecOptions, codingContainerAgentStopCommand,
+  codingContainerWorkspaceHandoffCommands }
   from '../runtime/coding-container-policy.js';
 import type { BackendLease, BackendLeaseContainer } from '../runtime/backend-lease.js';
 import type { TextCommandExecutor } from '../runtime/command-executor.js';
@@ -187,6 +188,10 @@ export async function controlHostedAppServer({ adapterId: stack, lease, app, por
       { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
     await waitFor(async () => !(await answers(url, { freshConnection: true })),
       30_000, `${stack} application to stop`, abort);
+    // Workers the application started without a listener stop with it; the controller
+    // restores the workspace next, and nothing the agent user runs may outlive that.
+    exec('docker', ['exec', '--user', '0:0', container.id, ...codingContainerAgentStopCommand()],
+      { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
   }
   if (handoffWorkspace) {
     handoffHostedWorkspace(lease, exec);

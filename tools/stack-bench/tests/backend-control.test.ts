@@ -295,7 +295,10 @@ test('hosted application control inspects and stops listeners as the application
   ]);
   assert.equal(stop.args[7], id);
   assert.match(stop.args.at(-1) ?? '', /lsof -ti tcp:65534 -sTCP:LISTEN/);
-  assert(calls.some(call => call.args.slice(0, 3).join(' ') === `exec ${id} chown`));
+  const stopAll = calls.findIndex(call => call.args.slice(0, 4).join(' ') === `exec --user 0:0 ${id}`
+    && /pkill -KILL -u 10001/.test(call.args.at(-1) ?? ''));
+  assert(stopAll > 2, 'every agent-user process stops after the listeners');
+  assert(calls.findIndex(call => call.args.slice(0, 3).join(' ') === `exec ${id} chown`) > stopAll);
 });
 
 test('application control rejects unsupported modes before touching a container', async () => {

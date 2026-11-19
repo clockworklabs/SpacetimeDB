@@ -30,8 +30,8 @@ import { BUILD_CONTAINER_CREATION_LABEL, buildContainerName, containerIdFromDock
 import { CODING_SESSION_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.js';
 import { CODING_CONTAINER_AGENT, CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_CONTROL_DIR,
   CODING_CONTAINER_PROCESS_IDENTITY,
-  codingContainerAgentEnvironment, codingContainerTranscriptHandoffCommands,
-  codingContainerWorkspaceHandoffCommands }
+  codingContainerAgentEnvironment, codingContainerAgentStopCommand,
+  codingContainerTranscriptHandoffCommands, codingContainerWorkspaceHandoffCommands }
   from '../src/runtime/coding-container-policy.js';
 import { PRICING_UNIT, validatePricingAuthority }
   from '../src/evidence/pricing-authority.js';
@@ -648,6 +648,10 @@ const renewal = renewAgyLogin ? setInterval(() => {
     .catch(error => console.error(`run-build.js: ${errorMessage(error)}`));
 }, AGY_RENEWAL_INTERVAL_MS) : undefined;
 try {
+  // The graded application ran as the agent user; it must not outlive grading.
+  runCleanupCommand('agent process stop', codingContainerAgentStopCommand());
+  const notStopped = cleanupErrors.splice(0);
+  if (notStopped.length) throw new Error(notStopped.join('; '));
   res = await codingProvider.run({ command: 'docker', args, input: promptInput,
     env: dockerExecEnv, timeoutMs: CODING_SESSION_TIMEOUT_MS, terminate: terminateSession,
     projects, containerId, marker: completionMarker as string, model,
@@ -666,6 +670,7 @@ try {
       return next;
     });
   }
+  runCleanupCommand('agent process stop', codingContainerAgentStopCommand());
   for (const command of codingContainerTranscriptHandoffCommands(CONTROLLER_GID, containerTranscripts)) {
     runCleanupCommand('transcript handoff', command);
   }

@@ -37,6 +37,16 @@ export function codingContainerAgentCommand(command: string, args: readonly stri
   return ['sh', '-c', 'umask 022; exec "$@"', 'application-command', command, ...args];
 }
 
+// Run as root before the controller touches agent-writable files: a process the
+// agent left running could otherwise swap a path for a link while it is copied.
+export function codingContainerAgentStopCommand(): string[] {
+  const uid = CODING_CONTAINER_AGENT.uid;
+  return ['sh', '-ec', `pkill -KILL -u ${uid} || [ "$?" = 1 ]; attempt=0; `
+    + `while ps -u ${uid} -o stat= | grep -qv '^[[:space:]]*Z'; do `
+    + '[ "$attempt" -lt 50 ] || { echo "application writers did not stop" >&2; exit 1; }; '
+    + `pkill -KILL -u ${uid} || [ "$?" = 1 ]; attempt=$((attempt + 1)); sleep 0.1; done`];
+}
+
 // Give only the agent and controller access to session transcripts after handoff.
 export function codingContainerTranscriptHandoffCommands(controllerGid: number,
   transcripts = `${CODING_CONTAINER_AGENT.home}/.claude/projects/-app`): string[][] {

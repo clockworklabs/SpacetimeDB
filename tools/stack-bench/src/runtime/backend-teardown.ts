@@ -7,7 +7,8 @@ import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
 import { ATTEMPT_CREATION_LABEL, attemptDocker } from './docker-network.js';
 import type { BackendCreationKind, BackendLease, BackendLeaseContainer } from './backend-lease.js';
 import type { TextCommandExecutor } from './command-executor.js';
-import { CODING_CONTAINER_AGENT, codingContainerWorkspaceHandoffCommands } from './coding-container-policy.js';
+import { codingContainerAgentStopCommand, codingContainerWorkspaceHandoffCommands }
+  from './coding-container-policy.js';
 
 const DOCKER_TIMEOUT_MS = 120_000;
 const REMOVE_RETRY_DELAYS_MS = [0, 250, 750] as const;
@@ -53,12 +54,7 @@ export function handoffBuildWorkspace(id: string, exec: TextCommandExecutor = ex
   if (runtime.pidMode !== '' && runtime.pidMode !== 'private') {
     throw new Error(`workspace handback requires a private PID namespace for ${id}`);
   }
-  const uid = CODING_CONTAINER_AGENT.uid;
-  const stopWriters = `pkill -KILL -u ${uid} || [ "$?" = 1 ]; attempt=0; `
-    + `while ps -u ${uid} -o stat= | grep -qv '^[[:space:]]*Z'; do `
-    + '[ "$attempt" -lt 50 ] || { echo "application writers did not stop" >&2; exit 1; }; '
-    + `pkill -KILL -u ${uid} || [ "$?" = 1 ]; attempt=$((attempt + 1)); sleep 0.1; done`;
-  for (const command of [['sh', '-ec', stopWriters],
+  for (const command of [codingContainerAgentStopCommand(),
     ...codingContainerWorkspaceHandoffCommands(process.getgid?.() ?? 0)]) {
     exec('docker', ['exec', '--user', '0:0', id, ...command],
       { encoding: 'utf8', stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });

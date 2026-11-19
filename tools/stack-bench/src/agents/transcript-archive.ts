@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -28,7 +28,9 @@ export function transcriptDirectories(appDirectory: string,
   storeRoot = join(homedir(), '.claude', 'projects')): string[] {
   return [transcriptStoreFor(appDirectory, storeRoot), codexTranscriptDirectory(appDirectory),
     grokTranscriptDirectory(appDirectory), antigravityTranscriptDirectory(appDirectory)]
-    .filter((directory): directory is string => directory !== null && existsSync(directory));
+    // Agents can write inside these stores; a link could point the copy anywhere.
+    .filter((directory): directory is string => directory !== null && existsSync(directory)
+      && lstatSync(directory).isDirectory());
 }
 
 export function archiveTranscripts(appDirectory: string, label: string,
@@ -50,7 +52,9 @@ export function archiveTranscripts(appDirectory: string, label: string,
       if (codex && !source.endsWith('.events.jsonl')) continue;
       const relativeName = source.slice(store.length + 1).replace(/[\\/]/g, '__');
       const target = join(destination, relativeName);
-      const sourceSize = statSync(source).size;
+      const sourceStat = lstatSync(source);
+      if (!sourceStat.isFile()) continue;
+      const sourceSize = sourceStat.size;
       if (existsSync(target) && statSync(target).size >= sourceSize) continue;
       copyFileSync(source, target);
       copied += 1;
