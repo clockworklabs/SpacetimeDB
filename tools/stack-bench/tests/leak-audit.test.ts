@@ -82,6 +82,39 @@ test('Codex archive copies controller events and excludes native session files',
   }
 });
 
+test('a tool returning a harness path contaminates even when the command never named it', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-harness-output-'));
+  const found = 'vendor/SpacetimeDB/tools/stack-bench/grader/grade.ts:12: checkout race';
+  const audit = (name: string, events: unknown[]) => {
+    const file = join(root, name);
+    writeFileSync(file, `${events.map(event => JSON.stringify(event)).join('\n')}\n`);
+    return auditTranscript(file, '/app').hits.filter(hit => hit.kind === STACKBENCH_SOURCE)
+      .map(hit => [hit.path, hit.via]);
+  };
+  try {
+    assert.deepEqual(audit('claude.jsonl', [
+      { cwd: '/app', message: { content: [{ type: 'tool_use', id: 'g', name: 'Bash',
+        input: { command: 'grep -rn "checkout race" vendor/SpacetimeDB' } }] } },
+      { message: { content: [{ type: 'tool_result', tool_use_id: 'g', content: found }] } },
+    ]), [['tools/stack-bench', 'tool output']]);
+    assert.deepEqual(audit('codex.events.jsonl', [
+      { type: 'stack_bench_context', cwd: '/app' },
+      { type: 'item.completed', item: { id: 'g', type: 'command_execution',
+        command: "node -e 'console.log(require(\"fs\").readdirSync(\"vendor\", { recursive: true }))'",
+        status: 'completed', exit_code: 0, aggregated_output: found } },
+    ]), [['tools/stack-bench', 'tool output']]);
+    // A refused call that only names the path in its command returned nothing.
+    assert.deepEqual(audit('refused.jsonl', [
+      { cwd: '/app', message: { content: [{ type: 'tool_use', id: 'r', name: 'WebFetch',
+        input: { url: 'https://example.com/tools/stack-bench' } }] } },
+      { message: { content: [{ type: 'tool_result', tool_use_id: 'r', is_error: true,
+        content: 'network blocked' }] } },
+    ]), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('a completed external Bash read contaminates the transcript', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-leak-audit-'));
   const transcript = join(root, 'session.jsonl');

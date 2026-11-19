@@ -250,6 +250,19 @@ function transcriptContent(event: Record<string, unknown>): TranscriptContent[] 
   return content;
 }
 
+// What tools returned, in each agent's format; commands and requests are audited separately.
+function toolOutputText(event: Record<string, unknown>): string {
+  const message = event.message as { content?: Array<{ type?: string; content?: unknown }> } | undefined;
+  if (Array.isArray(message?.content)) {
+    return message.content.filter(part => part.type === 'tool_result')
+      .map(part => JSON.stringify(part.content ?? '')).join('\n');
+  }
+  const step = event.step_update as { state?: string; tool_info?: { output?: unknown } } | undefined;
+  if (event.event === 'step_update' && step?.state !== 'ACTIVE') return String(step?.tool_info?.output ?? '');
+  const item = event.item as { aggregated_output?: unknown } | undefined;
+  return event.type === 'item.completed' ? String(item?.aggregated_output ?? '') : '';
+}
+
 export function auditTranscript(file: string, boundary: string | null,
   { ownEndpoints = [], isolatedLoopback = false }: AuditNetworkContext = {}): TranscriptAudit {
   const endpoints = new Set(ownEndpoints.map(endpoint => {
@@ -264,10 +277,14 @@ export function auditTranscript(file: string, boundary: string | null,
   const refused: AuditHit[] = [];
   const pending = new Map<string, PendingRead>();
   let fileTool = 0, bashReads = 0;
+  // Nothing StackBench gives an agent names this path, so a tool returning it, such as a
+  // search across a cloned repository, means the agent reached the harness.
+  let harnessOutput = false;
 
   for (const line of lines) {
     let event: Record<string, unknown>;
     try { event = JSON.parse(line) as typeof event; } catch { continue; }
+    harnessOutput ||= HARNESS_PATH.test(toolOutputText(event).toLowerCase());
     const c = transcriptContent(event);
     for (const p of c) {
       if (p.type === 'tool_result' && p.tool_use_id && pending.has(p.tool_use_id)) {
@@ -330,6 +347,7 @@ export function auditTranscript(file: string, boundary: string | null,
     for (const n of paths) hits.push({ path: n, via, kind: classify(n), unresolved: true });
     for (const target of network) hits.push({ ...target, via: `${via} network attempt`, unresolved: true });
   }
+  if (harnessOutput) hits.push({ path: 'tools/stack-bench', via: 'tool output', kind: STACKBENCH_SOURCE });
 
   return { file, cwd, fileTool, bashReads, hits, refused };
 }
