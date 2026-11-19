@@ -528,6 +528,20 @@ if (projects) {
   } finally { unlinkSync(path); }
 }
 
+// Work in the container, a session or a prepared one, starts here. The graded application
+// ran as the agent user and must not outlive grading; only once it has stopped may the
+// attempt reach the internet again.
+const stopped = spawnSync('docker', ['exec', containerName, ...codingContainerAgentStopCommand()],
+  { encoding: 'utf8', env: dockerEnv, timeout: DOCKER_PROBE_TIMEOUT_MS });
+if (stopped.status !== 0) {
+  console.error(`run-build.js: agent processes did not stop in ${containerName}`);
+  console.error(stopped.stderr || stopped.stdout || stopped.error?.message || '');
+  process.exit(2);
+}
+if (leaseContext.lease.resources.network) {
+  setAttemptFirewallMode(leaseContext.path, leaseFromEnv(process.env, { backend, active: true }).lease, 'coding');
+}
+
 if (prepareOnly) {
   process.stdout.write(`${JSON.stringify({ containerName,
     identity: `${containerId} ${containerImage}`,
@@ -648,14 +662,6 @@ const renewal = renewAgyLogin ? setInterval(() => {
     .catch(error => console.error(`run-build.js: ${errorMessage(error)}`));
 }, AGY_RENEWAL_INTERVAL_MS) : undefined;
 try {
-  // The graded application ran as the agent user; it must not outlive grading.
-  runCleanupCommand('agent process stop', codingContainerAgentStopCommand());
-  const notStopped = cleanupErrors.splice(0);
-  if (notStopped.length) throw new Error(notStopped.join('; '));
-  // Only now that nothing from grading runs may the attempt reach the internet again.
-  if (leaseContext.lease.resources.network) {
-    setAttemptFirewallMode(leaseContext.path, leaseFromEnv(process.env, { backend, active: true }).lease, 'coding');
-  }
   res = await codingProvider.run({ command: 'docker', args, input: promptInput,
     env: dockerExecEnv, timeoutMs: CODING_SESSION_TIMEOUT_MS, terminate: terminateSession,
     projects, containerId, marker: completionMarker as string, model,
