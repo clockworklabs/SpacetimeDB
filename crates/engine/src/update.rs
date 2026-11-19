@@ -1979,4 +1979,182 @@ mod test {
 
         Ok(())
     }
+
+    /// Migrations of a table larger than the database's memory limit.
+    ///
+    /// The tiered storage budget bounds the table's pages. These tests check that a migration
+    /// doesn't also hold the table's rows somewhere the budget doesn't see, like a `Vec`.
+    /// They measure the peak heap the test thread allocates while the migration runs,
+    /// which includes the pages the budget accounts for.
+    mod memory_limit {
+        use super::*;
+        use crate::persistence::Persistence;
+        use crate::relational_db::RelationalDB;
+        use crate::test_alloc::peak_heap_bytes;
+        use spacetimedb_sats::{bsatn, ProductValue};
+        use spacetimedb_schema::schema::TableCachePolicy;
+        use spacetimedb_table::tiered::{metrics::CacheTier, ByteBudget, ByteBudgetConfig, TieredStorageConfig};
+
+        const MIB: u64 = 1024 * 1024;
+        /// The database's memory limit.
+        const MEMORY_MIB: u64 = 16;
+        /// The size of the table, half again the memory limit.
+        const TABLE_MIB: u64 = 24;
+        /// Heap a migration may use beyond the memory limit, for indexes and bookkeeping.
+        const SLACK_MIB: u64 = 4;
+        const PAD: usize = 512;
+        const ROWS_PER_MIB: u64 = MIB / (PAD as u64 + 64);
+
+        /// `t(id: u64, value: u32, pad: String)`, kept on disk.
+        fn module(extra_column: bool) -> anyhow::Result<ModuleDef> {
+            let mut b = RawModuleDefV10Builder::new();
+            let mut columns = vec![
+                ("id", U64),
+                ("value", AlgebraicType::U32),
+                ("pad", AlgebraicType::String),
+            ];
+            if extra_column {
+                columns.push(("extra", AlgebraicType::U32));
+            }
+            let mut t = b
+                .build_table_with_new_type("t", ProductType::from_iter(columns), true)
+                .with_unique_constraint(0)
+                .with_index_no_accessor_name(btree(0), "t_id_idx_btree");
+            if extra_column {
+                t = t.with_default_column_value(3, AlgebraicValue::U32(7));
+            }
+            t.finish();
+            b.add_table_cache_policy("t", TableCachePolicy::RequiredOnDisk);
+            Ok(b.finish().try_into()?)
+        }
+
+        fn row(id: u64) -> ProductValue {
+            product![id, id as u32, "p".repeat(PAD)]
+        }
+
+        /// A database with a `MEMORY_MIB` memory limit, holding `t` from `module(false)`
+        /// with `TABLE_MIB` of rows. Returns the database and the number of rows.
+        fn database_with_large_table() -> anyhow::Result<(RelationalDB, u64)> {
+            let mut config = TieredStorageConfig::new_for_test();
+            config.resident_budget = ByteBudget::new(ByteBudgetConfig {
+                tier: CacheTier::Memory,
+                low_water_bytes: 0,
+                soft_limit_bytes: MEMORY_MIB * MIB,
+                hard_limit_bytes: MEMORY_MIB * MIB,
+            })?;
+            let stdb = TestDB::open_db(
+                spacetimedb_durability::EmptyHistory::new(),
+                Persistence::ephemeral(config),
+                None,
+                0,
+            )?;
+            let v1 = module(false)?;
+            let mut tx = begin_mut_tx(&stdb);
+            for def in v1.tables() {
+                create_table_from_def(&stdb, &mut tx, &v1, def)?;
+            }
+            stdb.commit_tx(tx)?;
+            let t = table_id(&stdb)?;
+            for chunk in 0..TABLE_MIB {
+                let mut tx = begin_mut_tx(&stdb);
+                for id in chunk * ROWS_PER_MIB..(chunk + 1) * ROWS_PER_MIB {
+                    stdb.insert(&mut tx, t, &bsatn::to_vec(&row(id))?)?;
+                }
+                stdb.commit_tx(tx)?;
+            }
+            Ok((stdb, TABLE_MIB * ROWS_PER_MIB))
+        }
+
+        fn table_id(stdb: &RelationalDB) -> anyhow::Result<TableId> {
+            Ok(stdb
+                .with_read_only(Workload::ForTests, |tx| stdb.table_id_from_name(tx, "t"))?
+                .expect("t should exist"))
+        }
+
+        /// `(row count, sum of ids)` of `t`.
+        fn count_rows(stdb: &RelationalDB) -> anyhow::Result<(u64, u64)> {
+            let t = table_id(stdb)?;
+            stdb.with_read_only(Workload::ForTests, |tx| {
+                let (mut count, mut ids) = (0, 0);
+                for r in stdb.iter(tx, t)? {
+                    count += 1;
+                    ids += r?.read_col::<u64>(0)?;
+                }
+                Ok((count, ids))
+            })
+        }
+
+        fn assert_within_memory_limit(what: &str, peak: u64) {
+            assert!(
+                peak <= (MEMORY_MIB + SLACK_MIB) * MIB,
+                "{what} used {:.1} MiB of heap, more than the {MEMORY_MIB} MiB memory limit and {SLACK_MIB} MiB of slack",
+                peak as f64 / MIB as f64,
+            );
+        }
+
+        /// Checks that the measurement can tell a bounded operation from an unbounded one:
+        /// reading every row of the table faults its pages in through the budget.
+        #[test]
+        fn reading_a_table_larger_than_memory_stays_within_memory_limit() -> anyhow::Result<()> {
+            let (stdb, n) = database_with_large_table()?;
+            let (rows, peak) = peak_heap_bytes(|| count_rows(&stdb));
+            assert_eq!(rows?, (n, (0..n).sum()));
+            assert_within_memory_limit("reading the table", peak);
+            Ok(())
+        }
+
+        /// Adding a column with a default rewrites the table in an automatic migration.
+        /// The migration may fail because the table doesn't fit in memory, but it must not
+        /// use more memory than the limit to find that out.
+        #[test]
+        fn adding_a_column_to_a_table_larger_than_memory_stays_within_memory_limit() -> anyhow::Result<()> {
+            let (stdb, n) = database_with_large_table()?;
+            let (v1, v2) = (module(false)?, module(true)?);
+            let (result, peak) = peak_heap_bytes(|| -> anyhow::Result<()> {
+                let mut tx = begin_mut_tx(&stdb);
+                let plan = ponder_migrate(&v1, &v2)?;
+                match update_database(&stdb, &mut tx, AuthCtx::for_testing(), plan, &TestLogger) {
+                    Ok(_) => {
+                        stdb.commit_tx(tx)?;
+                        Ok(())
+                    }
+                    Err(e) => {
+                        let _ = stdb.rollback_mut_tx(tx);
+                        Err(e)
+                    }
+                }
+            });
+            match result {
+                // The table was rewritten.
+                Ok(()) => assert_eq!(count_rows(&stdb)?, (n, (0..n).sum())),
+                // The table doesn't fit, and the migration rolled back.
+                Err(error) => {
+                    assert!(format!("{error:#}").contains("memory limit exceeded"), "{error:#}");
+                    assert_eq!(count_rows(&stdb)?, (n, (0..n).sum()));
+                }
+            }
+            assert_within_memory_limit("adding a column", peak);
+            Ok(())
+        }
+
+        /// A migration that rewrites a table drops the old one when it commits,
+        /// both an automatic migration that adds a column and a manual migration.
+        /// Dropping the table must not hold all of its rows in memory.
+        #[test]
+        fn dropping_a_table_larger_than_memory_stays_within_memory_limit() -> anyhow::Result<()> {
+            let (stdb, _) = database_with_large_table()?;
+            let t = table_id(&stdb)?;
+            let (result, peak) = peak_heap_bytes(|| -> anyhow::Result<()> {
+                let mut tx = begin_mut_tx(&stdb);
+                stdb.drop_table(&mut tx, t)?;
+                stdb.commit_tx(tx)?;
+                Ok(())
+            });
+            result?;
+            let dropped = stdb.with_read_only(Workload::ForTests, |tx| stdb.table_id_from_name(tx, "t"))?;
+            assert_eq!(dropped, None);
+            assert_within_memory_limit("dropping the table", peak);
+            Ok(())
+        }
+    }
 }

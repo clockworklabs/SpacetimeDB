@@ -6,6 +6,8 @@ pub mod relational_db;
 pub mod resource;
 pub mod snapshot;
 pub mod sql;
+#[cfg(test)]
+mod test_alloc;
 pub mod update;
 pub mod util;
 
