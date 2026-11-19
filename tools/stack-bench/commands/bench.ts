@@ -33,6 +33,7 @@ import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest }
   from '../src/composition/recipe-selection.js';
 import { criterionEvidence, evidencePassed } from '../src/evidence/check-evidence.js';
 import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
+import { resetBackend } from '../src/stacks/backend-reset.js';
 import { agentRecipeIdentity, agentRequestArgv, validateProviderRoute, validateProviderOutputLimit } from '../src/agents/agent-adapter-contract.js';
 import { agentSessionFailure, validateAgentResult }
   from '../src/agents/agent-result-contract.js';
@@ -1680,6 +1681,12 @@ async function main() {
     onFailure?: () => Promise<void>): Promise<ValidatedAgentResult> => {
     try {
       clearPrivateGradingEvidence(appDir);
+      // Grading leaves rows its checks created; the next session starts from an empty
+      // database, which the application seeds as on any first start.
+      if ((mode === 'upgrade' || mode === 'fix')
+        && STACK_ADAPTER_REGISTRY.get(args.backend!).runPolicy.resetEnabled) {
+        resetBackend({ backend: args.backend!, app: appDir });
+      }
       pendingLevel ??= { level, graded: false, score: null, max: null, selection: null,
         outcome: { kind: 'ungraded' }, buildSessions: [], repairSessions: [] };
       sessionInFlight = true;
