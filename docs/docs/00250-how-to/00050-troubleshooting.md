@@ -57,6 +57,14 @@ If SpacetimeDB rejects connections from your application's client, it's most lik
 | Unity                            | Clear PlayerPrefs by selecting **Edit -> Clear All PlayerPrefs**                                                                                                                                        |
 | Unreal                           | Delete the file `Saved/Config/WindowsEditor/GameUserSettings.ini` in your Unreal project.                                                                                                               |
 
+## Database resident memory budget exceeded
+
+If you see `Database resident memory budget exceeded`, the operation couldn't get enough memory to finish within the [Maincloud resident memory limit](./00100-deploy/00100-maincloud.md#resident-memory-limits). The database stays running. Connections and reads can still work, though they can also fail if they need additional memory.
+
+1. **Delete rows you no longer need in small batches.** Look up rows by primary key or another index where possible so each transaction touches fewer rows.
+2. **Allow a table to use more storage tiers.** Change its [cache policy](../00200-core-concepts/00300-tables/00700-storage-and-cache-policies.md) to `RequiredOnDisk` to allow paging to local disk, or to `NoRequirement` to allow paging to any available tier. Follow the [migration steps](../00200-core-concepts/00100-databases/00500-migrations/00200-automatic-migrations.md#changing-a-tables-cache-policy) to republish while keeping existing rows. SpacetimeDB can then evict eligible data as it needs room.
+3. **Contact Maincloud support if recovery operations also hit the limit.** Include your database identity, the operation that failed, and the full error message.
+
 ## In Modules
 
 ### Identity seen by reducers never changes

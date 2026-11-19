@@ -14,7 +14,6 @@ use crate::client::messages::{
 use crate::client::{ClientActorId, ClientConnectionSender, Protocol, WsVersion};
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
-use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, RefInstance, WasmInstance};
 use crate::host::{self, ModuleHost};
 use crate::subscription::query::is_subscribe_to_all_tables;
@@ -42,6 +41,7 @@ use spacetimedb_lib::Identity;
 use spacetimedb_lib::{bsatn, identity::AuthCtx};
 use spacetimedb_metrics::utils::IntGaugeExt;
 use spacetimedb_physical_plan::plan::ProjectPlan;
+use spacetimedb_query::estimation::{check_row_limit, estimate_rows_scanned};
 use spacetimedb_schema::def::RawModuleDefVersion;
 use spacetimedb_table::static_assert_size;
 use std::{

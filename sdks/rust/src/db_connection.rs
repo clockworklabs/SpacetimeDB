@@ -362,8 +362,13 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
     /// Apply all queued [`PendingMutation`]s.
     fn apply_pending_mutations(&self) -> crate::Result<()> {
-        while let Ok(Some(pending_mutation)) = get_lock_sync(&self.pending_mutations_recv).try_next() {
-            self.apply_mutation(pending_mutation)?;
+        while let Ok(Some(mutation)) = get_lock_sync(&self.pending_mutations_recv).try_next() {
+            match self.apply_mutation(mutation) {
+                Err(crate::Error::Disconnected) => {
+                    return Err(self.end_connection(None));
+                }
+                result => result?,
+            }
         }
 
         Ok(())
@@ -386,7 +391,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                         .as_mut()
                         .ok_or(crate::Error::Disconnected)?
                         .unbounded_send(ws::v2::ClientMessage::Subscribe(msg))
-                        .expect("Unable to send subscribe message: WS sender loop has dropped its recv channel");
+                        .map_err(|_| crate::Error::Disconnected)?;
                 }
                 // else, the handle was already cancelled.
             }
@@ -410,7 +415,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                             .as_mut()
                             .ok_or(crate::Error::Disconnected)?
                             .unbounded_send(ws::v2::ClientMessage::Unsubscribe(m))
-                            .expect("Unable to send unsubscribe message: WS sender loop has dropped its recv channel");
+                            .map_err(|_| crate::Error::Disconnected)?;
                     }
                 }
             }
@@ -443,7 +448,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     .as_mut()
                     .ok_or(crate::Error::Disconnected)?
                     .unbounded_send(msg)
-                    .expect("Unable to send reducer call message: WS sender loop has dropped its recv channel");
+                    .map_err(|_| crate::Error::Disconnected)?;
             }
 
             // Invoke a procedure: stash its callback, then send the `CallProcedure` WS message.
@@ -472,7 +477,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     .as_mut()
                     .ok_or(crate::Error::Disconnected)?
                     .unbounded_send(msg)
-                    .expect("Unable to send procedure call message: WS sender loop has dropped its recv channel");
+                    .map_err(|_| crate::Error::Disconnected)?;
             }
 
             // Disconnect: close the connection.
