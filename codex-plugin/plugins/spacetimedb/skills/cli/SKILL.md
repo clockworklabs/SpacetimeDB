@@ -45,14 +45,12 @@ spacetime build --debug            # faster iteration, slower runtime
 
 # Dev mode (auto-rebuild, auto-publish, generates bindings)
 spacetime dev
-spacetime dev my-database --server local --yes --delete-data=never --client-lang typescript --module-bindings-path ./client/src/module_bindings
+spacetime dev --client-lang typescript --module-bindings-path ./client/src/module_bindings
 
 # Generate client bindings
 spacetime generate --lang typescript|csharp|rust --out-dir ./bindings --module-path ./server
 spacetime generate --lang unrealcpp --uproject-dir ./MyGame --module-path ./server --unreal-module-name MyGame
 ```
-
-`dev` stays running and watches module changes. `--run "npm run dev"` starts a client command; `--server-only` omits it. `--module-path` selects the module directory when no publish targets exist in `spacetime.json`. Once targets exist, use their configured paths and omit that flag. Separate build/publish/generate commands remain useful for one-shot deployment.
 
 ### TypeScript Import Extensions
 
@@ -170,7 +168,7 @@ spacetime server add myserver --url https://my-spacetime.example.com
 # Set default server
 spacetime server set-default local
 
-# Check connectivity
+# Test connectivity
 spacetime server ping local
 
 # Start local instance
@@ -243,7 +241,10 @@ spacetime server ping <server>
 ```
 
 ### "Schema conflict"
-`--delete-data=never` rejects incompatible schema updates without clearing data. A compatible migration preserves existing data; `--delete-data=always` destroys it and is only appropriate for an intentional reset.
+```bash
+# Clear data and republish
+spacetime publish my-db --delete-data=always --yes
+```
 
 ### "Build failed"
 ```bash

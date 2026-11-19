@@ -30,11 +30,14 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
 WORKDIR /workspace
 COPY --from=source /workspace/ ./
 # The existing source-archive path in cli/build.rs avoids retaining Git metadata.
+# Their build scripts embed the commit but do not rerun when only the commit changes,
+# so the cached target must not keep their outputs.
 RUN --mount=type=cache,id=stack-bench-rust-target,target=/target \
     --mount=type=cache,id=stack-bench-cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=stack-bench-cargo-git,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,id=stack-bench-rustup,target=/usr/local/rustup,sharing=locked \
     export SPACETIMEDB_NIX_BUILD_GIT_COMMIT="$(python3 -c 'import json; print(json.load(open("stack-bench-source.json"))["revision"])')" \
+    && CARGO_TARGET_DIR=/target cargo clean --release -p spacetimedb-cli -p spacetimedb-codegen \
     && CARGO_TARGET_DIR=/target cargo build --release --locked \
       -p spacetimedb-cli --bin spacetimedb-cli \
       -p spacetimedb-standalone --bin spacetimedb-standalone \

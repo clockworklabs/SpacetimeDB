@@ -95,16 +95,12 @@ export async function openWebSocket({
 
   const WS = await resolveWS();
 
-  // Endpoints resolve under the URI's path, so `ws://host/stdb` reaches `/stdb/v1/...`.
-  const base = new URL(url);
-  if (!base.pathname.endsWith('/')) base.pathname += '/';
-
   // We swap our original token to a shorter-lived token
   // to avoid sending the original via query params.
   let temporaryAuthToken: string | undefined;
   if (authToken) {
     headers.set('Authorization', `Bearer ${authToken}`);
-    const tokenUrl = new URL('v1/identity/websocket-token', base);
+    const tokenUrl = new URL('v1/identity/websocket-token', url);
     tokenUrl.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
 
     const response = await fetch(tokenUrl, { method: 'POST', headers });
@@ -116,7 +112,7 @@ export async function openWebSocket({
     }
   }
 
-  const databaseUrl = new URL(`v1/database/${nameOrAddress}/subscribe`, base);
+  const databaseUrl = new URL(`v1/database/${nameOrAddress}/subscribe`, url);
   if (temporaryAuthToken) {
     databaseUrl.searchParams.set('token', temporaryAuthToken);
   }
