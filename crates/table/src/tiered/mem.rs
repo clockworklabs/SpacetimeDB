@@ -15,10 +15,12 @@ use spacetimedb_memory_usage::MemoryUsage;
 
 use crate::{
     blob_store::BlobHash,
-    indexes::PAGE_SIZE,
+    indexes::{SquashedOffset, PAGE_SIZE},
     page::Page,
     page_pool::PagePool,
-    tiered::{map::BlobHashWrapper, BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetUsage},
+    tiered::{
+        map::BlobHashWrapper, page_manager::WeakPageSlot, BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetUsage,
+    },
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -87,6 +89,7 @@ impl ReservedPage {
 pub struct PageFrame {
     pub(super) id: PageId,
     page: Arc<RwLock<PooledPage>>,
+    slot: Option<(WeakPageSlot, SquashedOffset)>,
     access: Access,
     #[allow(unused)]
     permit: BudgetPermit,
@@ -303,13 +306,19 @@ impl ResidentObjects {
         Ok(self.reserve_page_with_permit(permit, page))
     }
 
-    pub(super) fn redeem_page(&self, ReservedPage { id, frame }: ReservedPage) -> Arc<PageFrame> {
+    pub(super) fn redeem_page(
+        &self,
+        ReservedPage { id, mut frame }: ReservedPage,
+        slot: WeakPageSlot,
+        squashed_offset: SquashedOffset,
+    ) -> Arc<PageFrame> {
+        frame.slot = Some((slot, squashed_offset));
         let frame = Arc::new(frame);
         assert!(self.pages.lock().unwrap().insert(id, Arc::downgrade(&frame)).is_none());
         frame
     }
 
-    pub(super) fn evictable_pages(&self, candidates: &mut Vec<PageEvictionCandidate>) {
+    pub(super) fn evictable_pages(&self, candidates: &mut Vec<PageEvictionCandidate>, scope: Option<SquashedOffset>) {
         {
             let mut pages = self.pages.lock().unwrap();
             pages.retain(|&id, weak| {
@@ -317,9 +326,12 @@ impl ResidentObjects {
                     return false;
                 };
 
-                if Arc::strong_count(&frame) <= 2 {
+                let (slot, squashed_offset) = frame.slot.as_ref().expect("registered frames belong to a slot");
+                if scope.is_none_or(|scope| scope == *squashed_offset) && Arc::strong_count(&frame) <= 2 {
                     candidates.push(PageEvictionCandidate {
                         id,
+                        slot: slot.clone(),
+                        squashed_offset: *squashed_offset,
                         access: frame.access(),
                     });
                 }
@@ -331,9 +343,9 @@ impl ResidentObjects {
         candidates.sort_unstable_by_key(|candidate| candidate.access);
     }
 
-    pub(super) fn evict_page(&self, victim: PageEvictionCandidate) {
+    pub(super) fn evict_page(&self, id: PageId) {
         let mut pages = self.pages.lock().unwrap();
-        if let hash_map::Entry::Occupied(entry) = pages.entry(victim.id)
+        if let hash_map::Entry::Occupied(entry) = pages.entry(id)
             && entry.get().strong_count() == 0
         {
             entry.remove();
@@ -348,10 +360,16 @@ impl ResidentObjects {
         self.budget.usage()
     }
 
-    pub(super) fn register_page_unchecked(&self, pool: PagePool, page: Box<Page>) -> Arc<PageFrame> {
+    pub(super) fn register_page_unchecked(
+        &self,
+        pool: PagePool,
+        page: Box<Page>,
+        slot: WeakPageSlot,
+        squashed_offset: SquashedOffset,
+    ) -> Arc<PageFrame> {
         let permit = self.budget.force_acquire(PAGE_SIZE as u64);
         let reservation = self.reserve_page_with_permit(permit, PooledPage::new(page, pool));
-        self.redeem_page(reservation)
+        self.redeem_page(reservation, slot, squashed_offset)
     }
 
     pub(super) fn detach_page(&self, frame: Arc<PageFrame>) -> (Box<Page>, BudgetPermit) {
@@ -374,6 +392,7 @@ impl ResidentObjects {
         let frame = PageFrame {
             id,
             page: Arc::new(RwLock::new(page)),
+            slot: None,
             access: Access::new(self.access_epoch.fetch_add(1, Ordering::Relaxed)),
             permit,
         };
@@ -412,8 +431,10 @@ pub struct BlobEvictionCandidate {
 }
 
 #[derive(Debug)]
-pub struct PageEvictionCandidate {
+pub(super) struct PageEvictionCandidate {
     pub id: PageId,
+    pub slot: WeakPageSlot,
+    pub squashed_offset: SquashedOffset,
     access: AccessSnapshot,
 }
 

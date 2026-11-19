@@ -320,13 +320,9 @@ impl TableInner {
     fn page_and_offset(&self, ptr: RowPointer) -> Result<(PageRef<'_>, PageOffset), PageError> {
         Ok(self.try_page_and_offset(ptr)?.unwrap())
     }
-
-    fn trim(&self) -> Result<u64, PageError> {
-        self.pages.trim()
-    }
 }
 
-static_assert_size!(Table, 336);
+static_assert_size!(Table, 328);
 
 impl MemoryUsage for Table {
     fn heap_usage(&self) -> usize {
@@ -854,7 +850,7 @@ impl Table {
         let source_page = source_page.read();
         let source = source_page.get_row_data(source_offset, fixed_row_size);
         let squashed_offset = self.squashed_offset;
-        let (page_index, fixed_offset) =
+        let (page_index, fixed_offset, page_pin) =
             self.inner
                 .pages
                 .with_page_to_insert_row(fixed_row_size, 0, reservation, |page| {
@@ -868,8 +864,10 @@ impl Table {
         let fixed_offset = fixed_offset?;
         let ptr = RowPointer::new(false, page_index, fixed_offset, squashed_offset);
 
-        // SAFETY: We just inserted `ptr`, so it must be present.
+        // SAFETY: `ptr` points to the live row we just wrote to this table.
         let row_ref = unsafe { self.inner.get_row_ref_unchecked(blobs, squashed_offset, ptr) }?;
+        // Drop the write pin. If the write needed one, `row_ref` now holds its own.
+        drop(page_pin);
 
         Ok((row_ref, BlobNumBytes::default()))
     }
@@ -887,7 +885,7 @@ impl Table {
     ) -> Result<(RowRef<'a>, BlobNumBytes), Error> {
         // SAFETY: `self.pages` is known to be specialized for `self.row_layout`,
         // as `self.pages` was constructed from `self.row_layout` in `Table::new`.
-        let (ptr, blob_bytes) = unsafe {
+        let (ptr, blob_bytes, page_pin) = unsafe {
             write_row_to_pages(
                 &mut self.inner.pages,
                 reservation,
@@ -900,7 +898,9 @@ impl Table {
             )
         }?;
 
-        self.finish_physical_insert(blobs, ptr, blob_bytes)
+        // Pass the write pin so `finish_physical_insert` can find the page in
+        // RAM. Reloading it could fail after the row has already been written.
+        self.finish_physical_insert(blobs, ptr, blob_bytes, page_pin)
     }
 
     /// Physically insert a `row`, encoded in BSATN, into this table,
@@ -923,7 +923,7 @@ impl Table {
         row: &[u8],
     ) -> Result<(RowRef<'a>, BlobNumBytes), Error> {
         // Got a static layout? => Use fast-path insertion.
-        let (ptr, blob_bytes) = if let Some((static_layout, static_validator)) = self.inner.static_layout.as_ref() {
+        let (ptr, bytes, pin) = if let Some((static_layout, static_validator)) = self.inner.static_layout.as_ref() {
             // Before inserting, validate the row, ensuring type safety.
             // SAFETY: The `static_validator` was derived from the same row layout as the static layout.
             unsafe { validate_bsatn(static_validator, static_layout, row) }.map_err(Error::Decode)?;
@@ -947,8 +947,12 @@ impl Table {
                 })
                 .map_err(Error::Pages)?;
             match res {
-                (page, Ok(offset)) => (RowPointer::new(false, page, offset, squashed_offset), 0usize.into()),
-                (_, Err(e)) => return Err(e),
+                (index, Ok(offset), pin) => (
+                    RowPointer::new(false, index, offset, squashed_offset),
+                    0_u64.into(),
+                    pin,
+                ),
+                (_, Err(e), _) => return Err(e),
             }
         } else {
             // SAFETY: `self.pages` is known to be specialized for `self.row_layout`,
@@ -966,7 +970,9 @@ impl Table {
             }?
         };
 
-        self.finish_physical_insert(blobs, ptr, blob_bytes)
+        // Both write paths pass the pin so the lookup in `finish_physical_insert`
+        // can use the page in RAM. Reloading it could fail after the write.
+        self.finish_physical_insert(blobs, ptr, bytes, pin)
     }
 
     /// Finish a physical insertion without leaving an untracked row if pinning
@@ -979,13 +985,18 @@ impl Table {
         blobs: &BlobSet,
         ptr: RowPointer,
         blob_bytes: BlobNumBytes,
+        page_pin: Option<PageHandle>,
     ) -> Result<(RowRef<'a>, BlobNumBytes), Error> {
+        // Hold the write pin while `get_page` looks up the page in RAM.
         let page = self
             .inner
             .pages
             .get_page(ptr.page_index())
             .expect("just written page is resident")
             .expect("just written page exists");
+        // If `page_pin` is set, the `PageRef` now pins the page for the row or
+        // cleanup, so we can drop the write pin.
+        drop(page_pin);
         let row_blobs = if self.inner.row_layout.layout().fixed {
             Ok(BlobReadSet::empty())
         } else {
@@ -1783,7 +1794,7 @@ impl Table {
         // fail after serialization succeeds, and that must also run cleanup.
         //
         // SAFETY: The page set, visitor, and row layout belong to this table.
-        let (temp_ptr, _) = unsafe {
+        let (temp_ptr, _, page_pin) = unsafe {
             write_row_to_pages(
                 &mut self.inner.pages,
                 None,
@@ -1795,9 +1806,8 @@ impl Table {
                 self.eviction_policy,
             )
         }?;
-        // The just written page is resident.
-        // Pin it with an empty blob read set, as we don't need resident blobs
-        // for deletion after applying `with`.
+        // Take a second page pin for `temp_pin` if the table allows paging.
+        // Cleanup needs the page even if loading the row's blobs fails.
         let temp_page = match self
             .inner
             .pages
@@ -1809,6 +1819,8 @@ impl Table {
             PageRef::Tiered(page_handle) => Some(page_handle),
         };
         let temp_pin = PinnedRow::new(temp_ptr, temp_page, BlobReadSet::empty());
+        // Cleanup now owns the pin in `temp_pin`, so release the write pin.
+        drop(page_pin);
 
         // SAFETY: The temporary row is live and its page is pinned.
         // Keep blob-pinning errors in `result` so they also run cleanup below.
@@ -2514,10 +2526,6 @@ impl Table {
             required_var_len_granules,
             extra_pages_to_pin,
         }
-    }
-
-    pub fn trim(&self) -> Result<u64, PageError> {
-        self.inner.trim()
     }
 }
 
@@ -3315,7 +3323,7 @@ impl Table {
                 row_layout,
                 static_layout,
                 visitor_prog,
-                pages: PageSet::new(page_manager, eviction_policy, fixed_row_size),
+                pages: PageSet::new(page_manager, eviction_policy, fixed_row_size, squashed_offset),
             },
             is_scheduler: schema.schedule.is_some(),
             is_outbox: schema.outbox.is_some(),
@@ -3465,10 +3473,7 @@ impl PreparedEvictionPolicy {
                 }
             })
             .expect("preparation and insertion pins keep pages and blobs resident");
-        // Exclusive table access prevents page eviction during conversion.
-        // Release our page handles so conversion can unwrap the shared frames.
-        drop(self.pinned_pages);
-        table.inner.pages.apply_eviction_policy(self.policy);
+        table.inner.pages.apply_eviction_policy(self.policy, self.pinned_pages);
         table.eviction_policy = self.policy;
     }
 }
@@ -4807,7 +4812,7 @@ pub(crate) mod test {
         // The target page is now evicted. Its empty tx-table clone
         // shares the same page budget, so writing the needle takes all the room
         // needed to fault the target page back in. Blob contents are shared too.
-        committed.inner.pages.trim().unwrap();
+        committed.inner.pages.manager.trim_committed().unwrap();
         let mut tx_table = committed.clone_structure(SquashedOffset::TX_STATE);
 
         // This is the lookup used by live delete_by_row_value: the temporary
