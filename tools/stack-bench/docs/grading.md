@@ -41,6 +41,10 @@ Rules that decide the outcome:
   assertion inconclusive. HTTP success alone does not prove the stored effect.
 - A check file whose inconclusive results are all retryable runs once more on a
   fresh database. Failures, cleanup failures, and harness failures do not retry.
+- When StackBench stops or starts the app server and its command fails, the
+  check fails, unless the control was refused, the container was lost, or the
+  command could not run or timed out. The app must run in one process group on
+  its port.
 - On Spacetime, the database reset republishes the app's module. If that
   publish fails, the run is not scored. On the other stacks, an app that cannot
   start on an empty database fails.
