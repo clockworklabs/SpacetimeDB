@@ -29,6 +29,16 @@ The following changes are always allowed and will not break existing clients:
 TypeScript and C# SDKs containing the [row-boundary decoding fix](https://github.com/clockworklabs/SpacetimeDB/pull/6091) can read rows with appended columns using bindings generated from the older schema: they skip the trailing fields they do not know. Older SDK versions may fail to decode those rows; keeping old bindings is not the same as keeping an old SDK. Regenerate bindings to access the new fields. Removing, reordering, or changing the types of existing columns is not covered by this compatibility.
 :::
 
+## Changing a table's cache policy
+
+To change which storage tiers an existing table can use, update its [cache policy](../../00300-tables/00700-storage-and-cache-policies.md) in your module and republish. For a database named `my-database` on Maincloud, use:
+
+```bash
+spacetime publish my-database --server maincloud --delete-data=never
+```
+
+Once the new policy allows paging, SpacetimeDB can evict the table's pages and blobs from memory as it needs room. Changing back to the in-memory policy requires enough room to load and keep the table's data in memory. If there isn't enough room, the migration fails and the existing policy stays in effect.
+
 ## ⚠️ Potentially Breaking Changes
 
 These changes are allowed by automatic migration, but may cause runtime errors for clients that haven't been updated:
