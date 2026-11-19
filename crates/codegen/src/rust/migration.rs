@@ -291,7 +291,7 @@ fn define_table(module: &ModuleDef, out: &mut Indenter, table: &TableDef, struct
                 writeln!(out, "#[index({kind})]");
             }
             write!(out, "pub {}: ", ident(&column.accessor_name));
-            write_type_in_context(module, out, &column.ty_for_generate, TypeContext::Client).unwrap();
+            write_type_in_context(module, out, &column.ty_for_generate, TypeContext::Migration).unwrap();
             writeln!(out, ",");
         }
     });
@@ -313,7 +313,7 @@ fn define_type(module: &ModuleDef, out: &mut Indenter, name: &str, r: AlgebraicT
         AlgebraicTypeDef::Product(product) => block(out, &format!("pub struct {name}"), |out| {
             for (field, ty) in product.elements.iter() {
                 write!(out, "pub {}: ", ident(&field.deref().to_case(Case::Snake)));
-                write_type_in_context(module, out, ty, TypeContext::Module).unwrap();
+                write_type_in_context(module, out, ty, TypeContext::Migration).unwrap();
                 writeln!(out, ",");
             }
         }),
@@ -322,7 +322,7 @@ fn define_type(module: &ModuleDef, out: &mut Indenter, name: &str, r: AlgebraicT
                 write!(out, "{}", ident(&variant.deref().to_case(Case::Pascal)));
                 if !matches!(ty, AlgebraicTypeUse::Unit) {
                     write!(out, "(");
-                    write_type_in_context(module, out, ty, TypeContext::Module).unwrap();
+                    write_type_in_context(module, out, ty, TypeContext::Migration).unwrap();
                     write!(out, ")");
                 }
                 writeln!(out, ",");
