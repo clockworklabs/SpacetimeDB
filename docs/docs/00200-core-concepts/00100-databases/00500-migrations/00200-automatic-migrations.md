@@ -25,6 +25,10 @@ The following changes are always allowed and will not break existing clients:
 - **Adding new reducers.**
 - **Removing `Unique` constraints.**
 
+:::note Older bindings and newer SDKs
+TypeScript and C# SDKs containing the [row-boundary decoding fix](https://github.com/clockworklabs/SpacetimeDB/pull/6091) can read rows with appended columns using bindings generated from the older schema: they skip the trailing fields they do not know. Older SDK versions may fail to decode those rows; keeping old bindings is not the same as keeping an old SDK. Regenerate bindings to access the new fields. Removing, reordering, or changing the types of existing columns is not covered by this compatibility.
+:::
+
 ## Changing a table's cache policy
 
 To change which storage tiers an existing table can use, update its [cache policy](../../00300-tables/00700-storage-and-cache-policies.md) in your module and republish. For a database named `my-database` on Maincloud, use:
@@ -118,7 +122,3 @@ The SpacetimeDB team is working on enhanced migration capabilities, including:
 - Automatic client compatibility checking
 
 Check the [SpacetimeDB documentation](https://spacetimedb.com/docs) and [GitHub repository](https://github.com/clockworklabs/SpacetimeDB) for the latest migration features and capabilities.
-
-:::note Older bindings and newer SDKs
-TypeScript and C# SDKs containing the [row-boundary decoding fix](https://github.com/clockworklabs/SpacetimeDB/pull/6091) can read rows with appended columns using bindings generated from the older schema: they skip the trailing fields they do not know. Older SDK versions may fail to decode those rows; keeping old bindings is not the same as keeping an old SDK. Regenerate bindings to access the new fields. Removing, reordering, or changing the types of existing columns is not covered by this compatibility.
-:::

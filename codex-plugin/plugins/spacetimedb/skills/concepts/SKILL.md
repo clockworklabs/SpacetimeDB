@@ -148,7 +148,7 @@ Use HTTP handlers for webhooks and for clients that can't use a SpacetimeDB SDK.
 
 ## Table Storage Policies
 
-Tables default to keeping pages and blobs resident in memory. A cache policy can permit eviction to local disk (`required_on_disk`) or any configured tier (`no_requirement`), including remote object storage. It does not configure a backend or force eviction; actual eviction depends on server tiers and memory budgets. Any indexes on tables with non-default policies must be B-trees. See https://spacetimedb.com/docs/tables#storage-policy and the language-specific table options.
+Tables default to keeping pages and blobs resident in memory. A cache policy can permit eviction to local disk (`required_on_disk`) or any configured tier (`no_requirement`), including remote object storage. It does not configure a backend or force eviction; actual eviction depends on server tiers and memory budgets. Any indexes on tables with non-default policies must be B-trees. The standalone server currently uses an unlimited resident-memory budget. Change a policy by republishing without deleting data; moving back to the in-memory policy requires enough memory to load and retain the table. See https://spacetimedb.com/docs/tables/storage-and-cache-policies and the language-specific table options.
 
 ## Reusable Modules and Configuration
 

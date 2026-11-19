@@ -330,66 +330,9 @@ These conventions align with each language's standard style guides and make your
 
 ## Storage Policy
 
-A table's cache policy controls the furthest storage tier its pages and blobs may use. It does not change transaction guarantees or table visibility.
+A table's cache policy controls which storage tiers its pages and blobs may use. It does not change transaction guarantees, durability, or table visibility. Tables default to keeping their data resident in memory.
 
-| Policy | Behavior |
-| --- | --- |
-| `required_in_memory` (default) | Keep pages and blobs resident in memory. |
-| `required_on_disk` | Allow eviction to local disk, but not to remote storage alone. |
-| `no_requirement` | Allow any configured storage tier, including remote object storage. |
-
-Choosing a policy permits eviction; it does not force data out of memory or configure a storage backend. Actual eviction depends on the server's configured tiers and memory budget. The standalone server currently uses an unlimited resident-memory budget. Any indexes on tables with non-default policies must be B-trees; hash and direct indexes are not supported on those tables.
-
-<Tabs groupId="server-language" queryString>
-<TabItem value="typescript" label="TypeScript">
-
-Set `cachePolicy` in the table options:
-
-```typescript
-import { schema, table, t } from 'spacetimedb/server';
-
-const archiveEntry = table(
-  { cachePolicy: 'required_on_disk' },
-  { id: t.u64(), payload: t.string() }
-);
-const spacetimedb = schema({ archiveEntry });
-export default spacetimedb;
-```
-
-</TabItem>
-<TabItem value="rust" label="Rust">
-
-Set `cache_policy` in the table attribute:
-
-```rust
-#[spacetimedb::table(accessor = archive_entry, cache_policy = required_on_disk)]
-pub struct ArchiveEntry {
-    id: u64,
-    payload: String,
-}
-```
-
-</TabItem>
-<TabItem value="csharp" label="C#">
-
-Set `CachePolicy` in the table attribute. The enum variants are `RequiredInMemory`, `RequiredOnDisk`, and `NoRequirement`:
-
-```csharp
-using SpacetimeDB;
-
-public static partial class Module
-{
-    [SpacetimeDB.Table(Accessor = "ArchiveEntry", CachePolicy = TableCachePolicy.RequiredOnDisk)]
-    public partial struct ArchiveEntry
-    {
-        public ulong Id;
-        public string Payload;
-    }
-}
-```
-
-</TabItem>
-</Tabs>
+See [Table Storage and Cache Policies](./00300-tables/00700-storage-and-cache-policies.md) for policy values, cross-language examples, index restrictions, and migration requirements.
 
 ## Table Visibility
 
