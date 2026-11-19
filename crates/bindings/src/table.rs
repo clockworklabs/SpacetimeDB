@@ -76,6 +76,19 @@ impl TableHandleBackend {
         }
     }
 
+    /// The id of the table `T`.
+    ///
+    /// On the host, this goes through [`TableInternal::table_id`] rather than `T::TABLE_NAME`,
+    /// so that a migration's dropped tables resolve to their `dropped.` tables.
+    pub fn table_id_of<T: TableInternal>(&self) -> Result<TableId, sys::Errno> {
+        match self {
+            #[cfg(target_arch = "wasm32")]
+            Self::Host => Ok(T::table_id()),
+            #[allow(unreachable_patterns)]
+            _ => self.table_id(T::TABLE_NAME),
+        }
+    }
+
     pub fn index_id<I: Index>(&self) -> Result<IndexId, sys::Errno> {
         match self {
             Self::Host => Ok(I::index_id()),
@@ -340,7 +353,7 @@ pub trait Table: TableInternal + ExplicitNames {
 
         let table_id = self
             .__backend()
-            .table_id(Self::TABLE_NAME)
+            .table_id_of::<Self>()
             .expect("table_id_from_name() call failed");
         if Self::IS_EVENT {
             self.__backend()
@@ -368,7 +381,7 @@ pub trait Table: TableInternal + ExplicitNames {
 
         let table_id = self
             .__backend()
-            .table_id(Self::TABLE_NAME)
+            .table_id_of::<Self>()
             .expect("table_id_from_name() call failed");
         let iter = self.__backend();
         let iter = if Self::IS_EVENT {
@@ -1864,7 +1877,7 @@ fn insert_with_backend<T: Table>(
     }
 
     let table_id = backend
-        .table_id(T::TABLE_NAME)
+        .table_id_of::<T>()
         .expect("table_id_from_name() call failed");
     // Encode the row as bsatn into the buffer `buf`.
     buf.clear();
@@ -1897,7 +1910,7 @@ fn update<T: Table>(backend: &TableHandleBackend, index_id: IndexId, mut row: T:
     }
 
     let table_id = backend
-        .table_id(T::TABLE_NAME)
+        .table_id_of::<T>()
         .expect("table_id_from_name() call failed");
     // Encode the row as bsatn into the buffer `buf`.
     buf.clear();
