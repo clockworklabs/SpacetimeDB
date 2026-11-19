@@ -128,7 +128,7 @@ The sending module needs **receiver bindings**: code generated from the receivin
 
 `parent` makes `game-world` a child database of `lobby` when it's first published, so that it inherits the lobby's team permissions. Async IDC doesn't require this; any database can call another on the same server.
 
-`name` is the name of the directory created for the generated code, and `database` refers to either a deployed receiving database or the receiving database's source code. Next generate the bindings:
+`name` is the name of the directory created for the generated code. `database` must match another target in the same `spacetime.json`; here, it selects the `game-world` child's local `./game_world` module source. It does not fetch a deployed database's schema, so the receiving module's source must be available locally. Next generate the bindings:
 
 ```bash
 spacetime generate lobby

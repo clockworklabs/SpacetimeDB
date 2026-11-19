@@ -85,12 +85,7 @@ fn receiver_bindings_and_outbox_macros_preserve_builtin_and_custom_types() {
     let receiver_dir = project.path().join("src/receiver");
     std::fs::create_dir_all(&receiver_dir).unwrap();
     for file in files {
-        let name = if file.filename == "lib.rs" {
-            "mod.rs"
-        } else {
-            &file.filename
-        };
-        std::fs::write(receiver_dir.join(name), file.code).unwrap();
+        std::fs::write(receiver_dir.join(file.filename), file.code).unwrap();
     }
     let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")

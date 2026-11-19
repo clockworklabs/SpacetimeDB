@@ -760,6 +760,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
 
 [[package]]
+name = "bytesize"
+version = "2.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6bd91ee7b2422bcb158d90ef4d14f75ef67f340943fc4149891dcce8f8b972a3"
+
+[[package]]
 name = "bytestring"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4902,15 +4908,14 @@ checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 
 [[package]]
 name = "openssl"
-version = "0.10.74"
+version = "0.10.82"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24ad14dd45412269e1a30f52ad8f0664f0f4f4a89ee8fe28c3b3527021ebb654"
+checksum = "4de8111e94a56adca7ebfe6c365b6d42f99deb69b74b6becacd4204e2f193aa2"
 dependencies = [
  "bitflags 2.10.0",
  "cfg-if",
  "foreign-types",
  "libc",
- "once_cell",
  "openssl-macros",
  "openssl-sys",
 ]
@@ -4943,9 +4948,9 @@ dependencies = [
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.110"
+version = "0.9.118"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a9f0075ba3c21b09f8e8b2026584b1d18d49388648f2fbbf3c97ea8deced8e2"
+checksum = "19c413d6ec9ebaf5e1c829d355cb3e9f783778d700f135be0921d52fce3c60ae"
 dependencies = [
  "cc",
  "libc",
@@ -8356,6 +8361,7 @@ dependencies = [
  "brotli 3.5.0",
  "bytemuck",
  "bytes",
+ "bytesize",
  "bytestring",
  "chrono",
  "core_affinity",
@@ -8482,6 +8488,7 @@ dependencies = [
  "spacetimedb-data-structures",
  "spacetimedb-durability",
  "spacetimedb-execution",
+ "spacetimedb-fs-utils",
  "spacetimedb-lib",
  "spacetimedb-metrics",
  "spacetimedb-paths",
@@ -8780,6 +8787,8 @@ name = "spacetimedb-query"
 version = "2.16.0"
 dependencies = [
  "anyhow",
+ "spacetimedb-datastore",
+ "spacetimedb-engine",
  "spacetimedb-execution",
  "spacetimedb-expr",
  "spacetimedb-lib",
@@ -9030,6 +9039,7 @@ dependencies = [
  "spacetimedb-pg",
  "spacetimedb-schema",
  "spacetimedb-table",
+ "spacetimedb-tiered-storage",
  "tempfile",
  "thiserror 1.0.69",
  "tikv-jemallocator",
@@ -9059,6 +9069,7 @@ dependencies = [
  "ahash 0.8.12",
  "blake3",
  "bytemuck",
+ "bytes",
  "criterion",
  "decorum",
  "derive_more 0.99.20",
@@ -9066,6 +9077,7 @@ dependencies = [
  "foldhash 0.2.0",
  "hashbrown 0.16.1",
  "itertools 0.12.1",
+ "parking_lot 0.12.5",
  "proptest",
  "proptest-derive",
  "rand 0.9.2",
@@ -9085,8 +9097,9 @@ version = "2.16.0"
 dependencies = [
  "anyhow",
  "scopeguard",
- "spacetimedb-core",
  "spacetimedb-datastore",
+ "spacetimedb-engine",
+ "spacetimedb-execution",
  "spacetimedb-expr",
  "spacetimedb-lib",
  "spacetimedb-primitives",
@@ -9129,6 +9142,19 @@ dependencies = [
  "tempfile",
  "tokio",
  "tower",
+]
+
+[[package]]
+name = "spacetimedb-tiered-storage"
+version = "2.16.0"
+dependencies = [
+ "log",
+ "spacetimedb-fs-utils",
+ "spacetimedb-memory-usage",
+ "spacetimedb-paths",
+ "spacetimedb-snapshot",
+ "spacetimedb-table",
+ "tempfile",
 ]
 
 [[package]]

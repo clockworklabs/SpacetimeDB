@@ -1,3 +1,6 @@
+use spacetimedb_memory_usage::MemoryUsage;
+
+use super::metrics::{CacheTier, Metrics};
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -18,18 +21,32 @@ pub enum ConfigError {
 pub struct ByteBudget {
     state: Arc<Mutex<ByteBudgetState>>,
     config: ByteBudgetConfig,
+    pub(super) metrics: Metrics,
 }
 
 impl ByteBudget {
+    pub(super) fn is_unlimited(&self) -> bool {
+        self.config.hard_limit_bytes == u64::MAX
+    }
+
     pub fn new(config: ByteBudgetConfig) -> Result<Self, ConfigError> {
         config.validate_then(|config| Self {
             state: Arc::new(Mutex::new(ByteBudgetState { accounted_bytes: 0 })),
             config,
+            metrics: Default::default(),
         })
     }
 
     pub fn unlimited() -> Self {
         Self::try_from(ByteBudgetConfig::unlimited()).unwrap()
+    }
+
+    pub fn metrics(&self) -> &Metrics {
+        &self.metrics
+    }
+
+    pub fn config(&self) -> &ByteBudgetConfig {
+        &self.config
     }
 
     pub fn usage(&self) -> ByteBudgetUsage {
@@ -49,6 +66,7 @@ impl ByteBudget {
                 bytes,
             })
         } else {
+            self.metrics.budget_rejected(self.config.tier);
             Err(BudgetExceeded {
                 requested_bytes: bytes,
                 accounted_bytes: state.accounted_bytes,
@@ -78,8 +96,16 @@ impl TryFrom<ByteBudgetConfig> for ByteBudget {
     }
 }
 
+impl MemoryUsage for ByteBudget {
+    fn heap_usage(&self) -> usize {
+        let refcount = 2 * size_of::<usize>();
+        refcount + size_of::<Mutex<ByteBudgetState>>()
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct ByteBudgetConfig {
+    pub tier: CacheTier,
     pub low_water_bytes: u64,
     pub soft_limit_bytes: u64,
     pub hard_limit_bytes: u64,
@@ -88,6 +114,7 @@ pub struct ByteBudgetConfig {
 impl ByteBudgetConfig {
     pub const fn unlimited() -> Self {
         Self {
+            tier: CacheTier::Memory,
             low_water_bytes: u64::MAX,
             soft_limit_bytes: u64::MAX,
             hard_limit_bytes: u64::MAX,
@@ -160,6 +187,7 @@ mod tests {
             hard_limit_bytes: u64,
         ) {
             let config = ByteBudgetConfig {
+                tier: CacheTier::Memory,
                 low_water_bytes,
                 soft_limit_bytes,
                 hard_limit_bytes,
@@ -176,6 +204,7 @@ mod tests {
             requests in vec(0_u64..100_000, 0..100),
         ) {
             let budget = ByteBudget::new(ByteBudgetConfig {
+                tier: CacheTier::Memory,
                 low_water_bytes: 0,
                 soft_limit_bytes: 0,
                 hard_limit_bytes,
@@ -225,6 +254,7 @@ mod tests {
             operations in vec(operation(), 0..100),
         ) {
             let budget = ByteBudget::new(ByteBudgetConfig {
+                tier: CacheTier::Memory,
                 low_water_bytes: 0,
                 soft_limit_bytes: 0,
                 hard_limit_bytes,
@@ -272,6 +302,7 @@ mod tests {
             excess_bytes in 1_u64..1_000_000,
         ) {
             let budget = ByteBudget::new(ByteBudgetConfig {
+                tier: CacheTier::Memory,
                 low_water_bytes: 0,
                 soft_limit_bytes: hard_limit_bytes,
                 hard_limit_bytes,

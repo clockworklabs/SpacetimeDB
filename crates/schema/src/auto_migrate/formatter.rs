@@ -3,6 +3,7 @@
 use std::io;
 
 use super::AutoMigratePlan;
+use crate::schema::TableCachePolicy;
 use crate::{
     auto_migrate::AutoMigrateStep,
     def::{
@@ -105,6 +106,13 @@ fn format_step<F: MigrationFormatter>(
             f.format_change_primary_key(&name, old_table.primary_key, new_table.primary_key)
         }
         AutoMigrateStep::ChangeOutbox(_) => Ok(()),
+        AutoMigrateStep::ChangeCachePolicy(table) => {
+            let name = joined(*table);
+            let not_found = || FormattingErrors::TableNotFound { table: (&*name).into() };
+            let (_, old_table) = plan.old.find_table(*table).ok_or_else(not_found)?;
+            let (_, new_table) = plan.new.find_table(*table).ok_or_else(not_found)?;
+            f.format_change_cache_policy(&name, old_table.cache_policy, new_table.cache_policy)
+        }
         AutoMigrateStep::AddSchedule(schedule) => {
             let schedule_info = extract_schedule_info(*schedule, plan.new)?;
             f.format_schedule(&schedule_info, Action::Created)
@@ -188,6 +196,12 @@ pub trait MigrationFormatter {
     fn format_constraint(&mut self, constraint_info: &ConstraintInfo, action: Action) -> io::Result<()>;
     fn format_sequence(&mut self, sequence_info: &SequenceInfo, action: Action) -> io::Result<()>;
     fn format_change_access(&mut self, access_info: &AccessChangeInfo) -> io::Result<()>;
+    fn format_change_cache_policy(
+        &mut self,
+        table_name: &NamespacedIdentifier,
+        old: TableCachePolicy,
+        new: TableCachePolicy,
+    ) -> io::Result<()>;
     fn format_change_primary_key(
         &mut self,
         table_name: &NamespacedIdentifier,
