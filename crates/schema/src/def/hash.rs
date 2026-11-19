@@ -30,6 +30,7 @@ fn canonicalize(raw: &mut RawModuleDefV10) {
                 sort_by_bsatn(tables);
             }
             RawModuleDefV10Section::Schedules(schedules) => sort_by_bsatn(schedules),
+            RawModuleDefV10Section::Outboxes(outboxes) => sort_by_bsatn(outboxes),
             RawModuleDefV10Section::RowLevelSecurity(rls) => sort_by_bsatn(rls),
             RawModuleDefV10Section::ExplicitNames(names) => {
                 let mut entries = std::mem::take(names).into_entries();
@@ -61,6 +62,7 @@ mod tests {
     use spacetimedb_lib::db::raw_def::v10::{RawModuleDefV10Builder, RawModuleDefV10Section};
     use spacetimedb_lib::db::raw_def::v9::btree;
     use spacetimedb_lib::{bsatn, AlgebraicType, ProductType};
+    use spacetimedb_primitives::ColId;
 
     use super::*;
 
@@ -81,6 +83,24 @@ mod tests {
                 .with_index_no_accessor_name(btree(1), format!("table_{i}_idx_1"))
                 .with_column_sequence(0)
                 .finish();
+            let outbox = format!("outbox_{i}");
+            builder
+                .build_table_with_new_type(
+                    outbox.clone(),
+                    ProductType::from([("msg_id", AlgebraicType::U64), ("target", AlgebraicType::identity())]),
+                    true,
+                )
+                .with_auto_inc_primary_key(0)
+                .with_index_no_accessor_name(btree(0), format!("{outbox}_idx_0"))
+                .finish();
+            builder.add_outbox(
+                outbox,
+                "receive",
+                ColId(1),
+                [],
+                Option::<&str>::None,
+                spacetimedb_lib::hash_bytes(b"signature"),
+            );
         }
         let def: ModuleDef = builder.finish().try_into().unwrap();
 
@@ -96,6 +116,7 @@ mod tests {
                     }
                     tables.reverse();
                 }
+                RawModuleDefV10Section::Outboxes(outboxes) => outboxes.reverse(),
                 RawModuleDefV10Section::ExplicitNames(names) => {
                     let mut entries = std::mem::take(names).into_entries();
                     entries.reverse();

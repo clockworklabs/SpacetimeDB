@@ -6,7 +6,7 @@ expression: "plan.pretty_print(PrettyPrintStyle::NoColor).expect(\"should pretty
 Database Migration Plan
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-▸ Manual migration from schema 0x6dae87e538d2ddd6d5235265a59c1769bbfb3701b39c229ec3a20c539c23abb3
+▸ Manual migration from schema 0xe7d098635b6f4fe68db319804796cda95590215e3eb9ed3506ea523881d30cb2
     ▸ Changed table Apples (recreated; old rows in dropped.Apples)
         ~ Modified: id (U64 → U32)
         + count: U32

@@ -360,6 +360,8 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                             | RawModuleDefV10Section::Types(_)
                             | RawModuleDefV10Section::Typespace(_)
                             | RawModuleDefV10Section::ExplicitNames(_)
+                            | RawModuleDefV10Section::CaseConversionPolicy(_)
+                            | RawModuleDefV10Section::TableCachePolicies(_)
                     )
                 })
                 .then_some(())
@@ -1551,8 +1553,8 @@ mod tests {
     use itertools::Itertools;
     use spacetimedb_data_structures::expect_error_matching;
     use spacetimedb_lib::db::raw_def::v10::{
-        CaseConversionPolicy, ExplicitNames, MethodOrAny, RawModuleDefV10, RawModuleDefV10Builder,
-        RawModuleDefV10Section, RawSubmoduleV10,
+        CaseConversionPolicy, ExplicitNames, MethodOrAny, RawMigrationDefV10, RawModuleDefV10, RawModuleDefV10Builder,
+        RawModuleDefV10Section, RawSubmoduleV10, TableCachePolicy,
     };
     use spacetimedb_lib::db::raw_def::v9::{btree, direct, hash};
     use spacetimedb_lib::db::raw_def::*;
@@ -2356,6 +2358,64 @@ mod tests {
             def.submodules()["PinnedLib"].mount_accessor_name().map(|n| &**n),
             Some("pinned")
         );
+    }
+
+    /// A migration's `dropped` def declares its tables like the module does, cache policy included.
+    #[test]
+    fn migration_dropped_def_may_declare_cache_policies() {
+        let tables = || {
+            let mut builder = RawModuleDefV10Builder::new();
+            builder
+                .build_table_with_new_type("t", ProductType::from([("id", AlgebraicType::U64)]), true)
+                .finish();
+            builder.add_table_cache_policy("t", TableCachePolicy::RequiredOnDisk);
+            builder
+        };
+        let mut builder = tables();
+        builder.add_migration(RawMigrationDefV10 {
+            schema_hash: hash_bytes(b"old schema"),
+            name: "migrate".into(),
+            dropped: tables().finish(),
+        });
+        let def: ModuleDef = builder.finish().try_into().expect("migration should validate");
+        assert_eq!(def.migrations_map().len(), 1);
+    }
+
+    /// Converting a module back to its raw def gives each migration's `dropped` def
+    /// a case conversion policy section, which must still validate.
+    #[test]
+    fn migration_round_trips_through_raw_def() {
+        fn tables() -> RawModuleDefV10Builder {
+            let mut builder = RawModuleDefV10Builder::new();
+            builder
+                .build_table_with_new_type("t", ProductType::from([("id", AlgebraicType::U64)]), true)
+                .finish();
+            builder
+        }
+        let mut builder = tables();
+        builder.add_migration(RawMigrationDefV10 {
+            schema_hash: hash_bytes(b"old schema"),
+            name: "migrate".into(),
+            dropped: tables().finish(),
+        });
+        let def: ModuleDef = builder.finish().try_into().expect("migration should validate");
+
+        let raw: RawModuleDefV10 = def.into();
+        let migrations = raw
+            .sections
+            .iter()
+            .find_map(|section| match section {
+                RawModuleDefV10Section::Migrations(migrations) => Some(migrations),
+                _ => None,
+            })
+            .expect("raw def should have the migration");
+        assert!(migrations[0]
+            .dropped
+            .sections
+            .iter()
+            .any(|section| matches!(section, RawModuleDefV10Section::CaseConversionPolicy(_))));
+        let def: ModuleDef = raw.try_into().expect("round-tripped migration should validate");
+        assert_eq!(def.migrations_map().len(), 1);
     }
 
     #[test]

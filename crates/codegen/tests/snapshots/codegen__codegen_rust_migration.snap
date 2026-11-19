@@ -5,7 +5,7 @@ expression: code
 // A migration from the database schema with hash
 // HASH.
 //
-// Include it in your module with `mod migration_95a00106bdf5bd06;`, then fill in `migrate`.
+// Include it in your module with `mod migration_558e9511352016b3;`, then fill in `migrate`.
 //
 // When this module is published to a database with that schema,
 // every table that the new schema removes or changes incompatibly is moved under `dropped`,
@@ -27,6 +27,31 @@ mod dropped {
     pub struct HasSpecialStuff {
         pub identity: spacetimedb::Identity,
         pub connection_id: spacetimedb::ConnectionId,
+    }
+
+    #[spacetimedb::table(
+        accessor = idc_noop_outbox,
+        index(accessor = msgId, btree(columns = [msg_id])),
+    )]
+    pub struct IdcNoopOutbox {
+        #[primary_key]
+        #[auto_inc]
+        pub msg_id: u64,
+        pub target: spacetimedb::Identity,
+    }
+
+    #[spacetimedb::table(
+        accessor = idc_outbox,
+        public,
+        index(accessor = by_tag, btree(columns = [tag])),
+    )]
+    pub struct IdcOutbox {
+        #[primary_key]
+        #[auto_inc]
+        pub id: u64,
+        pub tag: String,
+        pub target: spacetimedb::Identity,
+        pub message: String,
     }
 
     #[spacetimedb::table(accessor = logged_out_player, public)]
@@ -116,8 +141,8 @@ mod dropped {
 
     #[spacetimedb::table(accessor = test_d, public)]
     pub struct TestD {
-        pub test_c: Option<NamespaceTestC>,
-        pub test_c_nested: Option<Vec<NamespaceTestC>>,
+        pub test_c: Option::<NamespaceTestC>,
+        pub test_c_nested: Option::<Vec::<NamespaceTestC>>,
     }
 
     #[spacetimedb::table(accessor = test_e)]
@@ -161,6 +186,12 @@ fn migrate(ctx: &MigrationContext<Dropped>) -> Result<(), String> {
     // Until then, refuse to delete any rows.
     if ctx.dropped.has_special_stuff().count() != 0 {
         return Err("the new schema removes the `has_special_stuff` table; delete this check to discard its rows".into());
+    }
+    if ctx.dropped.idc_noop_outbox().count() != 0 {
+        return Err("the new schema removes the `idc_noop_outbox` table; delete this check to discard its rows".into());
+    }
+    if ctx.dropped.idc_outbox().count() != 0 {
+        return Err("the new schema removes the `idc_outbox` table; delete this check to discard its rows".into());
     }
     if ctx.dropped.logged_out_player().count() != 0 {
         return Err("the new schema removes the `logged_out_player` table; delete this check to discard its rows".into());
