@@ -5,9 +5,9 @@ import type {
   UseSuspenseQueryOptions,
   UseSuspenseQueryResult,
 } from '@tanstack/react-query';
-import type { UntypedTableDef, RowType } from '../lib/table';
-import type { Query } from '../lib/query';
-import { spacetimeDBQuery } from './SpacetimeDBQueryClient';
+import type { UntypedTableDef, RowType } from '../lib/table.ts';
+import type { Query } from '../lib/query.ts';
+import { spacetimeDBQuery } from './SpacetimeDBQueryClient.ts';
 
 export type UseSpacetimeDBQueryResult<T> = [
   T[],

@@ -2,7 +2,7 @@
 source: crates/codegen/tests/outbox_builtin_shadowing.rs
 expression: declarations
 ---
-"lib.rs" = '''
+"mod.rs" = '''
 pub use receive_args_type::ReceiveArgs;
 pub use string_type::String;
 pub struct Identity(pub spacetimedb::Identity);

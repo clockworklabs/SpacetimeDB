@@ -1,6 +1,6 @@
-import type { RowType, UntypedTableDef } from './table';
-import { Timestamp } from './timestamp';
-import { Uuid } from './uuid';
+import type { RowType, UntypedTableDef } from './table.ts';
+import { Timestamp } from './timestamp.ts';
+import { Uuid } from './uuid.ts';
 
 export type Value = string | number | boolean | Uuid | Timestamp;
 

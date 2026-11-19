@@ -265,7 +265,7 @@ describe('IDC outboxes', () => {
       '',
       '',
       true
-    ) as OutboxTable<typeof db.schemaType.tables.outbox>;
+    ) as unknown as OutboxTable<typeof db.schemaType.tables.outbox>;
     expect(view.insert).toBeTypeOf('function');
     expect(view.iter).toBeTypeOf('function');
     expect('delete' in view).toBe(false);
@@ -292,7 +292,7 @@ describe('IDC outboxes', () => {
     const view = makeTableView(
       db.typespace,
       db.schemaType.tables.ordinary.tableDef
-    ) as Table<typeof db.schemaType.tables.ordinary>;
+    ) as unknown as Table<typeof db.schemaType.tables.ordinary>;
     expect(view.delete).toBeTypeOf('function');
     expect(view.clear).toBeTypeOf('function');
     expect(view.id.update).toBeTypeOf('function');

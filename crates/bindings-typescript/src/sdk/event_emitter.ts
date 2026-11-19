@@ -1,3 +1,5 @@
+import { stdbLogger } from './logger.ts';
+
 // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
 export class EventEmitter<Key, Callback extends Function = Function> {
   #events: Map<Key, Set<Callback>> = new Map();
@@ -25,8 +27,14 @@ export class EventEmitter<Key, Callback extends Function = Function> {
       return;
     }
 
+    // Like the C# SDK, a throwing callback is logged and does not stop the
+    // others or escape into the WebSocket listener, which would crash Node.
     for (const callback of callbacks) {
-      callback(...args);
+      try {
+        callback(...args);
+      } catch (e) {
+        stdbLogger('error', 'A callback threw', e);
+      }
     }
   }
 }

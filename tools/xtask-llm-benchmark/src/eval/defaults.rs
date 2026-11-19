@@ -8,6 +8,19 @@ use crate::eval::{derive_cat_task_from_file, ReducerDataParityConfig, ReducerSql
 use std::time::Duration;
 
 pub fn default_schema_parity_scorers(host_url: &str, src_file: &str, route_tag: &str) -> Vec<Box<dyn Scorer>> {
+    schema_parity_scorers(host_url, src_file, route_tag, false)
+}
+
+pub fn view_primary_key_schema_parity_scorers(host_url: &str, src_file: &str, route_tag: &str) -> Vec<Box<dyn Scorer>> {
+    schema_parity_scorers(host_url, src_file, route_tag, true)
+}
+
+fn schema_parity_scorers(
+    host_url: &str,
+    src_file: &str,
+    route_tag: &str,
+    view_primary_keys_required: bool,
+) -> Vec<Box<dyn Scorer>> {
     let (cat, task) = derive_cat_task_from_file(src_file);
 
     let golden_db = golden_db_name(&cat, &task, route_tag);
@@ -19,6 +32,7 @@ pub fn default_schema_parity_scorers(host_url: &str, src_file: &str, route_tag: 
         llm_db,
         timeout: Duration::from_secs(10),
         id_str: "schema_parity",
+        view_primary_keys_required,
     }) as Box<dyn Scorer>]
 }
 

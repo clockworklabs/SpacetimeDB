@@ -1,6 +1,6 @@
 use spacetimedb::Table;
 
-#[path = "../fixtures/idc_receiver/lib.rs"]
+#[path = "../fixtures/idc_receiver/mod.rs"]
 mod receiver;
 
 #[spacetimedb::table(

@@ -8,6 +8,18 @@ use spacetimedb_schema::def::error::RelationError;
 use spacetimedb_schema::table_name::TableName;
 use thiserror::Error;
 
+pub(crate) fn memory_budget_error_message(error: &(dyn std::error::Error + 'static)) -> Option<String> {
+    std::iter::successors(Some(error), |cause| cause.source())
+        .filter_map(|cause| cause.downcast_ref::<DatastoreError>())
+        .find_map(DatastoreError::resident_memory_limit)
+        .map(|budget| {
+            format!(
+                "Database resident memory budget exceeded (limit: {}).",
+                bytesize::ByteSize::b(budget.hard_limit_bytes).display().iec()
+            )
+        })
+}
+
 impl From<ViewCallError> for DBError {
     fn from(err: ViewCallError) -> Self {
         match err {
@@ -74,6 +86,8 @@ pub enum NodesError {
     ScheduleError(#[source] ScheduleError),
     #[error("HTTP request failed: {0}")]
     HttpError(String),
+    #[error("database is shutting down")]
+    ShuttingDown,
 }
 
 impl From<DBError> for NodesError {

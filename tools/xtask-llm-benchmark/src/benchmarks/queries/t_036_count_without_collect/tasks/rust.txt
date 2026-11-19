@@ -16,7 +16,7 @@ TABLES
 
 REDUCERS
 - compute_user_counts(ctx)
-  - Count total users by iterating with .count() (do not collect into a Vec)
-  - Count active users by iterating with .filter(|u| u.active).count()
+  - Count total users without collecting them into a Vec
+  - Count active users the same way
   - Insert a UserStats row with key="total" and the total count
   - Insert a UserStats row with key="active" and the active count

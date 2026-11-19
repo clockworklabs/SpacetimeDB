@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use serde::Serialize;
 
 use super::http::HttpClient;
@@ -101,7 +101,7 @@ impl MetaLlamaClient {
         let output_tokens = resp.usage.as_ref().and_then(|u| u.completion_tokens);
         let text = resp
             .first_text()
-            .ok_or_else(|| anyhow!("no content from Meta/OpenRouter"))?;
+            .with_context(|| format!("Meta/OpenRouter completion failed (model={model})"))?;
         Ok(LlmOutput {
             text,
             input_tokens,

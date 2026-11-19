@@ -111,9 +111,20 @@ The database dashboard gives you access to:
 
 - **Overview**: View your database identity, name, status (Running or Paused), table and reducer counts, and energy usage. The overview also shows stats for the past 24 hours including CCU, rows per table, and transactions.
 - **Usage breakdown**: See this month's energy consumption broken down by bytes scanned, bytes written, index seeks, CPU instructions, bandwidth, and table storage.
+- **Metrics**: Chart connected clients, requests and reducer calls per second, compute time, data read and written, memory and storage per table, network traffic, and billed usage.
+- **Tables**: Browse each table's rows, filter them with a SQL `WHERE` clause, and copy or export them. Double-click a cell to edit its value, or right-click a row to view its details or delete it.
+- **Functions**: Call your module's reducers and watch their logs.
 - **Logs**: View your module's log output in real time.
-- **SQL console**: Run ad-hoc SQL queries against your database.
 - **SpacetimeAuth**: Enable and configure the built-in authentication provider (see [SpacetimeAuth](../../00200-core-concepts/00500-authentication/00100-spacetimeauth/index.md)).
+- **Settings**: Rename the database, change its visibility, manage its [environment variables](../../00200-core-concepts/00100-databases/00700-environment-variables.md) and collaborators, or delete it.
+
+## Resident memory limits
+
+Maincloud's standard resident memory limit is **24 GiB per database**. Your database may have a different configured limit. This budget governs memory used by the database's storage engine and applies regardless of which cache policies your tables use.
+
+When an operation would exceed the memory budget, SpacetimeDB can make room by paging data to local disk or object storage, depending on the table's cache policy and the available storage tiers. If it can't free enough memory, the operation fails with `Database resident memory budget exceeded`. The database stays running and can still serve reads and other operations that have enough memory to finish.
+
+For ways to free up memory, see [Troubleshooting](../00050-troubleshooting.md#database-resident-memory-budget-exceeded). To configure which storage tiers a table can use, see [Table Storage and Cache Policies](../../00200-core-concepts/00300-tables/00700-storage-and-cache-policies.md).
 
 ## Database Lifecycle
 
@@ -150,7 +161,7 @@ This action cannot be undone.
 
 ## Next Steps
 
-- **Explore the dashboard**: Visit [spacetimedb.com](https://spacetimedb.com) to view your database, check logs, and run queries.
+- **Explore the dashboard**: Visit [spacetimedb.com](https://spacetimedb.com) to browse and edit your data, call reducers, and check logs.
 - **Set up authentication**: Enable [SpacetimeAuth](../../00200-core-concepts/00500-authentication/00100-spacetimeauth/index.md) or connect a third-party [OIDC provider](../../00200-core-concepts/00500-authentication.md) to authenticate your users.
 - **Connect a client**: Follow a [quickstart guide](../../00100-intro/00200-quickstarts/00100-react.md) to build a client that connects to your Maincloud database.
 - **Monitor your usage**: Check your energy consumption and plan limits on the [pricing page](https://spacetimedb.com/pricing).

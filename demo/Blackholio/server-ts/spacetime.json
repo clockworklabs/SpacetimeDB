@@ -1,0 +1,8 @@
+{
+  "database": "blackholio",
+  "server": "local",
+  "module-path": ".",
+  "generate": [
+    { "language": "typescript", "out-dir": "../client-ts/src/module_bindings" }
+  ]
+}

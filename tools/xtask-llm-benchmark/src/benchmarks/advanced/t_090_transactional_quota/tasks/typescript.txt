@@ -1,4 +1,4 @@
-Implement this SpacetimeDB module in typescript. Return only the module source.
+Write a SpacetimeDB backend module in TypeScript that enforces a per-identity transactional quota. Return only the module source.
 
 Implement a per-identity lifetime quota of 3 accepted units. The sender, not a caller-supplied identity, owns each request. This is a transaction/quota test, not a timed-window rate limiter. Invalid requests and failed transactions must not consume quota or reserve request IDs. Exact replay is a no-op; changing owner or amount for an existing request ID is a conflict.
 

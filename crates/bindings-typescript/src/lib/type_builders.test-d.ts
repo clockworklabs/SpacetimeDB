@@ -1,5 +1,5 @@
-import { t } from '../server';
-import { type AlgebraicTypeVariants } from '..';
+import { t } from '../server/index.ts';
+import { type AlgebraicTypeVariants } from '../index.ts';
 import type {
   I32ColumnBuilder,
   I64ColumnBuilder,
@@ -7,7 +7,7 @@ import type {
   InferTypeOfTypeBuilder,
   TypeBuilder,
   U8ColumnBuilder,
-} from './type_builders';
+} from './type_builders.ts';
 
 type MustBeNever<T> = [T] extends [never]
   ? true

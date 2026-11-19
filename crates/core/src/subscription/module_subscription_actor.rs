@@ -14,7 +14,6 @@ use crate::client::messages::{
 use crate::client::{ClientActorId, ClientConnectionSender, Protocol, WsVersion};
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
-use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, RefInstance, WasmInstance};
 use crate::host::{self, ModuleHost};
 use crate::subscription::query::is_subscribe_to_all_tables;
@@ -42,6 +41,7 @@ use spacetimedb_lib::Identity;
 use spacetimedb_lib::{bsatn, identity::AuthCtx};
 use spacetimedb_metrics::utils::IntGaugeExt;
 use spacetimedb_physical_plan::plan::ProjectPlan;
+use spacetimedb_query::estimation::{check_row_limit, estimate_rows_scanned};
 use spacetimedb_schema::def::RawModuleDefVersion;
 use spacetimedb_table::static_assert_size;
 use std::{
@@ -198,9 +198,9 @@ pub(crate) fn commit_and_broadcast_event(
     client: Option<Arc<ClientConnectionSender>>,
     event: ModuleEvent,
     tx: MutTxId,
-) -> CommitAndBroadcastEventSuccess {
-    match subs.commit_and_broadcast_event(client, event, tx).unwrap() {
-        Ok(res) => res,
+) -> Result<CommitAndBroadcastEventSuccess, DBError> {
+    match subs.commit_and_broadcast_event(client, event, tx)? {
+        Ok(res) => Ok(res),
         Err(WriteConflict) => todo!("Write skew, you need to implement retries my man, T-dawg."),
     }
 }
@@ -2034,6 +2034,34 @@ impl ModuleSubscriptions {
         tx_offset
     }
 
+    fn send_failed_event(
+        &self,
+        caller: Option<Arc<ClientConnectionSender>>,
+        event: &Arc<ModuleEvent>,
+        tx_offset: Option<TxOffset>,
+    ) {
+        if let Some(client) = caller {
+            match client.config.version {
+                WsVersion::V1 => {
+                    let message = TransactionUpdateMessage {
+                        event: Some(event.clone()),
+                        database_update: SubscriptionUpdateMessage::default_for_protocol(client.config.protocol, None),
+                    };
+                    let _ = self
+                        .broadcast_queue
+                        .send_client_message_v1(client, tx_offset.map(from_tx_offset), message);
+                }
+                WsVersion::V2 | WsVersion::V3 => {
+                    if let Some(request_id) = event.request_id {
+                        self.send_reducer_failure_result_v2(client, event, request_id);
+                    }
+                }
+            }
+        } else {
+            log::trace!("Reducer failed but there is no client to send the failure to!")
+        }
+    }
+
     /// Commit a transaction and broadcast its ModuleEvent to all interested subscribers.
     ///
     /// The returned [`ExecutionMetrics`] are reported in this method via `report_tx_metrics`.
@@ -2060,7 +2088,22 @@ impl ModuleSubscriptions {
         // We'll later ensure tx is released/cleaned up once out of scope.
         let (read_tx, tx_data, tx_metrics_mut) = match &mut event.status {
             EventStatus::Committed(db_update) => {
-                let (tx_data, tx_metrics, read_tx) = stdb.commit_tx_downgrade(tx, Workload::Update);
+                let (tx_data, tx_metrics, read_tx) = match stdb.commit_tx_downgrade(tx, Workload::Update) {
+                    Ok(committed) => committed,
+                    Err(error) => {
+                        // Failed preparation has already rolled back the transaction.
+                        log::warn!(
+                            "Failed to commit transaction for database {}: {error:?}",
+                            stdb.database_identity()
+                        );
+                        event.status = EventStatus::FailedInternal(
+                            crate::error::memory_budget_error_message(&error).unwrap_or_else(|| error.to_string()),
+                        );
+                        event.reducer_return_value = None;
+                        self.send_failed_event(caller, &Arc::new(event), None);
+                        return Err(error);
+                    }
+                };
                 *db_update = DatabaseUpdate::from_writes(&tx_data);
                 (read_tx, tx_data, tx_metrics)
             }
@@ -2070,32 +2113,7 @@ impl ModuleSubscriptions {
 
                 let event = Arc::new(event);
                 let tx_offset = Self::rollback_mut_tx(stdb, tx);
-                if let Some(client) = caller {
-                    match client.config.version {
-                        WsVersion::V1 => {
-                            let message = TransactionUpdateMessage {
-                                event: Some(event.clone()),
-                                database_update: SubscriptionUpdateMessage::default_for_protocol(
-                                    client.config.protocol,
-                                    None,
-                                ),
-                            };
-
-                            let _ = self.broadcast_queue.send_client_message_v1(
-                                client,
-                                Some(from_tx_offset(tx_offset)),
-                                message,
-                            );
-                        }
-                        WsVersion::V2 | WsVersion::V3 => {
-                            if let Some(request_id) = event.request_id {
-                                self.send_reducer_failure_result_v2(client, &event, request_id);
-                            }
-                        }
-                    }
-                } else {
-                    log::trace!("Reducer failed but there is no client to send the failure to!")
-                }
+                self.send_failed_event(caller, &event, Some(tx_offset));
                 return Ok(Ok(CommitAndBroadcastEventSuccess {
                     tx_offset: from_tx_offset(tx_offset),
                     event,
@@ -2168,7 +2186,7 @@ impl ModuleSubscriptions {
         sender: Identity,
     ) -> Result<(TxGuard<impl FnOnce(TxId) + '_>, TransactionOffset), DBError> {
         Self::_unsubscribe_views(&mut tx, view_collector, sender)?;
-        let (tx_data, tx_metrics_mut, tx) = self.relational_db.commit_tx_downgrade(tx, Workload::Unsubscribe);
+        let (tx_data, tx_metrics_mut, tx) = self.relational_db.commit_tx_downgrade(tx, Workload::Unsubscribe)?;
         let opts = GuardTxOptions::from_mut(tx_data, tx_metrics_mut);
         Ok(self.guard_tx(tx, opts))
     }
@@ -2207,7 +2225,7 @@ impl ModuleSubscriptions {
             (tx, trapped) = ModuleHost::materialize_views(tx, instance, view_collector, sender, Workload::Subscribe)?;
         };
 
-        let (tx_data, tx_metrics_mut, tx) = self.relational_db.commit_tx_downgrade(tx, Workload::Subscribe);
+        let (tx_data, tx_metrics_mut, tx) = self.relational_db.commit_tx_downgrade(tx, Workload::Subscribe)?;
 
         let opts = GuardTxOptions::from_mut(tx_data, tx_metrics_mut);
         let (a, b) = self.guard_tx(tx, opts);
@@ -3178,7 +3196,7 @@ mod tests {
             db.insert(&mut tx, table_id, &bsatn::to_vec(&row)?)?;
         }
 
-        let success = commit_and_broadcast_event(subs, None, module_event(), tx);
+        let success = commit_and_broadcast_event(subs, None, module_event(), tx)?;
         Ok(success.metrics)
     }
 

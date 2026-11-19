@@ -43,8 +43,9 @@ use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::system_tables::ModuleKind;
-use spacetimedb_datastore::traits::Program;
+use spacetimedb_datastore::traits::{IsolationLevel, Program};
 use spacetimedb_durability::{self as durability};
+use spacetimedb_engine::persistence::Persistence;
 use spacetimedb_lib::{identity::AuthCtx, AlgebraicValue, Identity, Timestamp};
 use spacetimedb_paths::server::{ModuleLogsDir, ServerDataDir};
 use spacetimedb_runtime::AbortHandle;
@@ -375,6 +376,7 @@ impl HostController {
         energy_monitor: Arc<impl EnergyMonitor>,
         memory_observer: Arc<dyn MemoryObserver>,
         persistence: Arc<dyn PersistenceProvider>,
+        page_pool: PagePool,
         db_cores: JobCores,
     ) -> Self {
         Self {
@@ -387,7 +389,7 @@ impl HostController {
             persistence,
             runtimes: HostRuntimes::new(Some(&data_dir), runtime_config),
             data_dir,
-            page_pool: PagePool::new(default_config.page_pool_max_size),
+            page_pool,
             bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
             db_cores,
             idc_config: OnceCell::new(),
@@ -823,8 +825,16 @@ impl HostController {
             defer!(remove_database_gauges(&database_identity, table_names));
 
             info!("replica={replica_id} database={database_identity} exiting module");
+            module.replica_ctx().procedures_running.cancel();
             module.exit().await;
             info!("replica={replica_id} database={database_identity} exiting database");
+            // Procedures can't start a transaction once `procedures_running` is cancelled,
+            // so acquiring the lock waits for the ones still running to commit.
+            let db = module.relational_db().clone();
+            asyncify(move || {
+                let _ = db.rollback_mut_tx(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal));
+            })
+            .await;
             module.relational_db().shutdown().await;
             info!("replica={replica_id} database={database_identity} module host exited");
         })
@@ -1020,6 +1030,7 @@ async fn make_replica_ctx(
         subscriptions,
         module_instance_memory_tracker,
         module_http,
+        procedures_running: Default::default(),
     })
 }
 
@@ -1263,7 +1274,6 @@ impl Host {
             energy_monitor,
             runtimes,
             persistence,
-            page_pool,
             bsatn_rlb_pool,
             memory_observer,
             ..
@@ -1273,14 +1283,30 @@ impl Host {
         let (tx_metrics_queue, tx_metrics_recorder_task) = spawn_tx_metrics_recorder(&runtime);
         let tx_metrics_recorder_task = guard(tx_metrics_recorder_task, |task| task.abort());
 
+        let persistence_db = db::persistence::Database {
+            id: database.id,
+            database_identity: database.database_identity,
+            owner_identity: database.owner_identity,
+        };
+        let instrument_table_storage = |storage: spacetimedb_table::tiered::TieredStorageConfig| {
+            let epoch = std::time::Instant::now();
+            storage.with_metrics(spacetimedb_datastore::db_metrics::page_cache::new_metrics(
+                database_identity,
+                replica_id,
+                move || u64::try_from(epoch.elapsed().as_nanos()).unwrap_or(u64::MAX),
+            ))
+        };
         let (db, connected_clients) = match config.storage {
             db::Storage::Memory => RelationalDB::open(
                 database.database_identity,
                 database.owner_identity,
                 EmptyHistory::new(),
-                None,
+                {
+                    let mut persistence = persistence.ephemeral(&persistence_db, replica_id).await?;
+                    persistence.table_storage = instrument_table_storage(persistence.table_storage);
+                    persistence
+                },
                 Some(tx_metrics_queue),
-                page_pool.clone(),
             )?,
             db::Storage::Disk => {
                 // Replay from the local state.
@@ -1290,21 +1316,20 @@ impl Host {
                     database_identity: database.database_identity,
                     owner_identity: database.owner_identity,
                 };
-                let persistence = persistence.persistence(&persistence_db, replica_id).await?;
+                let mut persistence = persistence.persistent(&persistence_db, replica_id).await?;
+                persistence.table_storage = instrument_table_storage(persistence.table_storage);
                 // Loading a database from persistent storage involves heavy
                 // blocking I/O. `asyncify` to avoid blocking the async worker.
                 let (db, clients) = asyncify({
                     let database_identity = database.database_identity;
                     let owner_identity = database.owner_identity;
-                    let page_pool = page_pool.clone();
                     move || {
                         RelationalDB::open(
                             database_identity,
                             owner_identity,
                             history,
-                            Some(persistence),
+                            persistence,
                             Some(tx_metrics_queue),
-                            page_pool,
                         )
                     }
                 })
@@ -1551,9 +1576,8 @@ impl Host {
             database.database_identity,
             database.owner_identity,
             EmptyHistory::new(),
+            Persistence::for_module_check(page_pool),
             None,
-            None,
-            page_pool,
         )?;
         let memory_observer: Arc<dyn MemoryObserver> = Arc::new(());
 

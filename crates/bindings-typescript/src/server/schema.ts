@@ -1,4 +1,7 @@
-import { environmentDeclarations, type EnvironmentSchema } from './environment';
+import {
+  environmentDeclarations,
+  type EnvironmentSchema,
+} from './environment.ts';
 import { moduleHooks, type ModuleDefaultExport } from 'spacetime:sys@2.0';
 import {
   CaseConversionPolicy,
@@ -9,22 +12,22 @@ import {
   type RawReducerDefV10,
   type RawTableDefV10,
   type Typespace,
-} from '../lib/autogen/types';
+} from '../lib/autogen/types.ts';
 import {
   type ParamsAsObject,
   type ParamsObj,
   type Reducer,
   type ReducerCtx,
-} from '../lib/reducers';
+} from '../lib/reducers.ts';
 import {
   ModuleContext,
   tableToSchema,
   type TablesToSchema,
   type UntypedSchemaDef,
-} from '../lib/schema';
-import type { UntypedTableSchema } from '../lib/table_schema';
-import { TypeBuilder, type ColumnBuilder } from '../lib/type_builders';
-import { hasOwn } from '../lib/util';
+} from '../lib/schema.ts';
+import type { UntypedTableSchema } from '../lib/table_schema.ts';
+import { TypeBuilder, type ColumnBuilder } from '../lib/type_builders.ts';
+import { hasOwn } from '../lib/util.ts';
 import {
   Router,
   type HandlerFn,
@@ -32,7 +35,7 @@ import {
   type HttpHandlerOpts,
   makeHttpHandlerExport,
   makeHttpRouterExport,
-} from './http_handlers';
+} from './http_handlers.ts';
 import {
   makeProcedureExport,
   type ProcedureExport,
@@ -40,15 +43,15 @@ import {
   type ProcedureOpts,
   type ProcedureOptsWithOptionalName,
   type Procedures,
-} from './procedures';
+} from './procedures.ts';
 import {
   makeReducerExport,
   type ReducerExport,
   type ReducerOpts,
   type ReducerOptsWithOptionalName,
   type Reducers,
-} from './reducers';
-import { makeHooks } from './runtime';
+} from './reducers.ts';
+import { makeHooks } from './runtime.ts';
 
 import {
   makeAnonViewExport,
@@ -61,8 +64,8 @@ import {
   type ViewReturnTypeBuilder,
   type ValidateViewPrimaryKey,
   type Views,
-} from './views';
-import type { UntypedTableDef } from '../lib/table';
+} from './views.ts';
+import type { UntypedTableDef } from '../lib/table.ts';
 
 /**
  * Internal erased form of a scheduled reducer/procedure export.

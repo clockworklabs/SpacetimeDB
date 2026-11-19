@@ -134,9 +134,19 @@ pub struct RouteRun {
 #[derive(Debug, Error)]
 pub enum RunOneError {
     #[error("{msg}")]
-    WithOutput { msg: String, llm_output: String },
-    #[error("{msg}")]
-    Infrastructure { msg: String, llm_output: Option<String> },
+    Infrastructure {
+        msg: String,
+        llm_output: Option<String>,
+        // Provider details stay in local evidence, not console messages.
+        provider_error: Option<anyhow::Error>,
+        completed_outcome: Option<Box<RunOutcome>>,
+    },
+    // Scores as a failure. Provider details stay in local evidence, not console messages.
+    #[error("{error:#}")]
+    Rejected {
+        outcome: Box<RunOutcome>,
+        error: anyhow::Error,
+    },
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -193,6 +203,7 @@ pub struct BenchRunContext<'a> {
     pub dry_run_id: Option<String>,
 }
 
+#[derive(Clone)]
 pub struct RunConfig {
     pub modes: Option<Vec<String>>,
     pub hash_only: bool,

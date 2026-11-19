@@ -20,6 +20,7 @@ use anyhow::{anyhow, Context as _};
 use prometheus::IntGauge;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
+use spacetimedb_engine::error::DBError;
 use spacetimedb_lib::{bsatn, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use spacetimedb_primitives::{errno, ColId, ViewFnPtr};
@@ -1698,27 +1699,36 @@ impl WasmInstanceEnv {
     ///
     /// - The calling WASM instance is holding open a transaction.
     /// - The calling WASM instance is not executing a procedure.
+    /// - The database shuts down while sleeping.
     // TODO(procedure-sleep-until): remove this
     pub fn procedure_sleep_until<'caller>(
         caller: Caller<'caller, Self>,
         (wake_at_micros_since_unix_epoch,): (i64,),
-    ) -> Fut<'caller, i64> {
+    ) -> Fut<'caller, RtResult<i64>> {
         Self::async_with_span(caller, AbiCall::ProcedureSleepUntil, move |caller| async move {
             use std::time::SystemTime;
-            let get_current_time = || (caller, Timestamp::now().to_micros_since_unix_epoch());
+            let get_current_time = |caller| (caller, Ok(Timestamp::now().to_micros_since_unix_epoch()));
 
             if wake_at_micros_since_unix_epoch < 0 {
-                return get_current_time();
+                return get_current_time(caller);
             }
 
             let wake_at = Timestamp::from_micros_since_unix_epoch(wake_at_micros_since_unix_epoch);
             let Ok(duration) = SystemTime::from(wake_at).duration_since(SystemTime::now()) else {
-                return get_current_time();
+                return get_current_time(caller);
             };
 
-            tokio::time::sleep(duration).await;
+            let procedures_running = caller.data().instance_env.replica_ctx.procedures_running.clone();
+            if procedures_running
+                .run_until_cancelled(tokio::time::sleep(duration))
+                .await
+                .is_none()
+            {
+                let err = WasmError::Db(NodesError::ShuttingDown);
+                return (caller, Self::convert_wasm_result(AbiCall::ProcedureSleepUntil, err));
+            }
 
-            get_current_time()
+            get_current_time(caller)
         })
     }
 
@@ -1843,7 +1853,13 @@ impl WasmInstanceEnv {
             )));
         };
 
-        let views_for_refresh = tx.views_for_refresh().cloned().collect::<Vec<_>>();
+        let views_for_refresh = tx
+            .views_for_refresh()
+            .map_err(DBError::from)
+            .map_err(NodesError::from)
+            .map_err(WasmError::from)?
+            .cloned()
+            .collect::<Vec<_>>();
         let mut tx = Some(tx);
         let mut tx_slot = caller.data().instance_env.tx.clone();
 

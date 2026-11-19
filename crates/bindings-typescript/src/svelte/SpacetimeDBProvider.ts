@@ -3,16 +3,16 @@ import { writable, type Writable } from 'svelte/store';
 import {
   DbConnectionBuilder,
   type DbConnectionImpl,
-} from '../sdk/db_connection_impl';
-import { ConnectionId } from '../lib/connection_id';
+} from '../sdk/db_connection_impl.ts';
+import { ConnectionId } from '../lib/connection_id.ts';
 import {
   ConnectionManager,
   type ConnectionState as ManagerConnectionState,
-} from '../sdk/connection_manager';
+} from '../sdk/connection_manager.ts';
 import {
   SPACETIMEDB_CONTEXT_KEY,
   type ConnectionState,
-} from './connection_state';
+} from './connection_state.ts';
 
 /**
  * Establish a SpacetimeDB connection for the current component subtree and make

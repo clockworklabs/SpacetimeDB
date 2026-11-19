@@ -281,7 +281,11 @@ Use the context-provided random API for any reducer logic that needs random valu
 const fraction = ctx.random();                         // [0.0, 1.0)
 const roll = ctx.random.integerInRange(1, 6);          // inclusive
 const bytes = ctx.random.fill(new Uint8Array(16));
+const cards = ['ace', 'king', 'queen'];
+const shuffledCards = ctx.random.shuffle([...cards]);
 ```
+
+In SpacetimeDB 2.13+, `ctx.random.shuffle(array)` shuffles the array in place and returns the same array. Copy it first, as above, to preserve the original order.
 
 </TabItem>
 <TabItem value="csharp" label="C#">

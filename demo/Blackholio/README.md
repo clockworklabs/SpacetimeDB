@@ -40,9 +40,9 @@ If you just want to checkout the final project and play around a bit, follow the
    ```bash
    cd server-rust/
    # Upload the module to SpacetimeDB
-   bash ./publish.sh
+   spacetime publish --delete-data -y
    # Update the client bindings in case they are out of date
-   bash ./generate.sh
+   spacetime generate
    ```
 5. Install [Unity Hub](https://unity.com/download) and Unity version **2021.2** or newer.
 6. Open the scene named `Main.unity`

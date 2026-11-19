@@ -82,7 +82,7 @@ This means that you can write your entire application in a single language and d
     </figcaption>
 </figure>
 
-SpacetimeDB is optimized for maximum speed and minimum latency. SpacetimeDB provides all the ACID guarantees of a traditional RDBMS, with all the speed of an optimized web server. All application state is held in memory for fast access, while a commit log on disk provides [durability](#durability) and crash recovery. The entire backend of our MMORPG [BitCraft Online](https://bitcraftonline.com) runs as a single SpacetimeDB module: chat, items, terrain, player positions, everything, synchronized to thousands of players in real-time.
+SpacetimeDB is optimized for maximum speed and minimum latency. SpacetimeDB provides all the ACID guarantees of a traditional RDBMS, with all the speed of an optimized web server. Hot data stays in memory for fast access and colder data lives on disk, while a commit log provides [durability](#durability) and crash recovery. The entire backend of our MMORPG [BitCraft Online](https://bitcraftonline.com) runs as a single SpacetimeDB module: chat, items, terrain, player positions, everything, synchronized to thousands of players in real-time.
 
 ## Quick Start
 
@@ -249,7 +249,15 @@ To find your way around the code, see the [architecture diagram](docs/DEVELOP.md
 
 ## Documentation
 
-To prepare your AI coding environment, follow the [agent setup guide](docs/static/agent-setup.md).
+To set up a coding agent such as Claude Code, Codex, or Cursor, paste this prompt into it. It points the agent to the [agent setup guide](docs/static/agent-setup.md).
+
+```text
+Set yourself up to build with Spacetime (SpacetimeDB).
+
+1. Read https://spacetimedb.com/agent-setup.md carefully, in full rather than a summary, and follow it. Run the commands yourself, and ask me only for approvals, logins, or restarts.
+2. Read https://spacetimedb.com/docs/intro/misconceptions/ carefully, in full. Spacetime has changed a lot, so what you remember about it, and older articles online, may be out of date. When you describe Spacetime or compare it with other backends, go by the current docs.
+3. Tell me what you installed, what you verified, and anything I still need to do.
+```
 
 Full documentation is available at **[spacetimedb.com/docs](https://spacetimedb.com/docs)**, including:
 

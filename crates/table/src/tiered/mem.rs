@@ -1,3 +1,4 @@
+use super::metrics::Metrics;
 use std::{
     cmp, fmt,
     mem::ManuallyDrop,
@@ -32,7 +33,7 @@ impl std::hash::Hash for PageId {
 impl ValidAsIdentityHash for PageId {}
 
 pub struct ReservedBlob {
-    frame: BlobFrame,
+    frame: Arc<BlobFrame>,
 }
 
 #[derive(Debug)]
@@ -75,6 +76,13 @@ pub struct ReservedPage {
     frame: PageFrame,
 }
 
+impl ReservedPage {
+    /// An unpublished reservation has no external pins or registry entry.
+    pub(super) fn into_resident(self) -> (Box<Page>, BudgetPermit) {
+        self.frame.into_owned()
+    }
+}
+
 #[derive(Debug)]
 pub struct PageFrame {
     pub(super) id: PageId,
@@ -85,6 +93,15 @@ pub struct PageFrame {
 }
 
 impl PageFrame {
+    /// Remove the frame's lock without copying the page or releasing its memory charge.
+    fn into_owned(self) -> (Box<Page>, BudgetPermit) {
+        let Self { page, permit, .. } = self;
+        let page = Arc::try_unwrap(page)
+            .expect("page ownership transfer requires all read and write guards to be dropped")
+            .into_inner();
+        (page.into_owned(), permit)
+    }
+
     pub fn read(&self) -> ArcRwLockReadGuard<RawRwLock, PooledPage> {
         RwLock::read_arc(&self.page)
     }
@@ -156,6 +173,35 @@ pub struct ResidentObjects {
 }
 
 impl ResidentObjects {
+    pub(super) fn budget(&self) -> &ByteBudget {
+        &self.budget
+    }
+
+    pub fn metrics(&self) -> &Metrics {
+        self.budget.metrics()
+    }
+
+    pub(super) fn has_unlimited_budget(&self) -> bool {
+        self.budget.is_unlimited()
+    }
+
+    fn acquire(&self, bytes: u64, memory_limit_exempt: bool) -> Result<BudgetPermit, BudgetExceeded> {
+        if memory_limit_exempt {
+            // Exempt allocations still count toward the database's resident usage.
+            Ok(self.budget.force_acquire(bytes))
+        } else {
+            self.budget.acquire(bytes)
+        }
+    }
+
+    pub(super) fn acquire_resident_page(&self, memory_limit_exempt: bool) -> Result<BudgetPermit, BudgetExceeded> {
+        self.acquire(PAGE_SIZE as u64, memory_limit_exempt)
+    }
+
+    pub(super) fn restored_page_permit(&self) -> BudgetPermit {
+        self.budget.force_acquire(PAGE_SIZE as u64)
+    }
+
     pub fn new(budget: ByteBudget) -> Self {
         Self {
             budget,
@@ -169,18 +215,27 @@ impl ResidentObjects {
     pub(super) fn reserve_blob(
         &self,
         size: u64,
+        hash: BlobHashWrapper,
+        memory_limit_exempt: bool,
         alloc: impl FnOnce() -> Box<[u8]>,
     ) -> Result<ReservedBlob, BudgetExceeded> {
-        let permit = self.budget.acquire(size)?;
+        // Transaction and committed blob set share this registry.
+        // Hand out an existing frame if there is one.
+        if let Some(frame) = self.blobs.lock().unwrap().get(&hash).and_then(Weak::upgrade) {
+            return Ok(ReservedBlob { frame });
+        }
+        let permit = self.acquire(size, memory_limit_exempt)?;
         let bytes = alloc();
         assert_eq!(size, bytes.len() as u64);
+        debug_assert_eq!(hash, BlobHashWrapper::hash_from_bytes(&bytes));
         let hash = BlobHash::hash_from_bytes(&bytes).into();
         let frame = BlobFrame {
             hash,
             bytes,
             access: Access::new(self.access_epoch.fetch_add(1, Ordering::Relaxed)),
             permit,
-        };
+        }
+        .into();
 
         Ok(ReservedBlob { frame })
     }
@@ -192,23 +247,27 @@ impl ResidentObjects {
         // frames and replace stale weak entries when a hash becomes resident again.
         if let Some(existing) = blobs.get(&key).and_then(Weak::upgrade) {
             assert_eq!(existing.hash(), frame.hash());
-            assert_eq!(&**existing, &*frame);
+            assert!(Arc::ptr_eq(&existing, &frame));
+
             return existing;
         }
-        let frame = Arc::new(frame);
-        assert!(self.blobs.lock().unwrap().insert(key, Arc::downgrade(&frame)).is_none());
+        blobs.insert(key, Arc::downgrade(&frame));
         frame
     }
 
     pub(super) fn evictable_blobs(&self, candidates: &mut Vec<BlobEvictionCandidate>) {
         {
+            // - one ref is from upgrading the weak reference below
+            // - one ref is held by a blob set
+            const EVICTABLE_REFCOUNT: usize = 2;
+
             let mut blobs = self.blobs.lock().unwrap();
             blobs.retain(|&key, weak| {
                 let Some(frame) = weak.upgrade() else {
                     return false;
                 };
 
-                if Arc::strong_count(&frame) <= 2 {
+                if Arc::strong_count(&frame) <= EVICTABLE_REFCOUNT {
                     candidates.push(BlobEvictionCandidate {
                         key,
                         access: frame.access(),
@@ -236,9 +295,10 @@ impl ResidentObjects {
 
     pub(super) fn reserve_page<E: From<BudgetExceeded>>(
         &self,
+        memory_limit_exempt: bool,
         alloc: impl FnOnce() -> Result<PooledPage, E>,
     ) -> Result<ReservedPage, E> {
-        let permit = self.budget.acquire(PAGE_SIZE as _)?;
+        let permit = self.acquire_resident_page(memory_limit_exempt)?;
         let page = alloc()?;
         Ok(self.reserve_page_with_permit(permit, page))
     }
@@ -294,13 +354,22 @@ impl ResidentObjects {
         self.redeem_page(reservation)
     }
 
+    pub(super) fn detach_page(&self, frame: Arc<PageFrame>) -> (Box<Page>, BudgetPermit) {
+        // The memory table will own the page directly. Remove the frame from
+        // eviction tracking, but keep its allocation and memory charge alive.
+        assert!(self.pages.lock().unwrap().remove(&frame.id).is_some());
+        Arc::try_unwrap(frame)
+            .expect("page ownership transfer requires all eviction pins to be dropped")
+            .into_owned()
+    }
+
     pub(super) fn register_blob_unchecked(&self, blob: Box<[u8]>) -> Arc<BlobFrame> {
         let permit = self.budget.force_acquire(blob.len() as u64);
         let reservation = self.reserve_blob_with_permit(permit, blob);
         self.redeem_blob(reservation)
     }
 
-    fn reserve_page_with_permit(&self, permit: BudgetPermit, page: PooledPage) -> ReservedPage {
+    pub(super) fn reserve_page_with_permit(&self, permit: BudgetPermit, page: PooledPage) -> ReservedPage {
         let id = PageId(self.page_id.fetch_add(1, Ordering::Relaxed));
         let frame = PageFrame {
             id,
@@ -319,9 +388,20 @@ impl ResidentObjects {
             bytes,
             access: Access::new(self.access_epoch.fetch_add(1, Ordering::Relaxed)),
             permit,
-        };
+        }
+        .into();
 
         ReservedBlob { frame }
+    }
+}
+
+impl MemoryUsage for ResidentObjects {
+    fn heap_usage(&self) -> usize {
+        // `pages` and `blobs` contain weak references, count just the container
+        // allocations.
+        self.budget.heap_usage()
+            + self.pages.lock().unwrap().allocation_size()
+            + self.blobs.lock().unwrap().allocation_size()
     }
 }
 
@@ -413,6 +493,17 @@ pub(super) struct PooledPage {
 }
 
 impl PooledPage {
+    fn into_owned(self) -> Box<Page> {
+        let mut this = ManuallyDrop::new(self);
+        // SAFETY: `this` suppresses PooledPage::drop, and both fields are moved
+        // exactly once. The receiving resident page set assumes pool ownership.
+        unsafe {
+            let page = ManuallyDrop::take(&mut this.page);
+            std::ptr::drop_in_place(&mut this.pool);
+            page
+        }
+    }
+
     pub fn new(page: Box<Page>, pool: PagePool) -> Self {
         Self {
             page: ManuallyDrop::new(page),

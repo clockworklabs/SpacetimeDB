@@ -4,7 +4,7 @@ import {
   SumType,
   type AlgebraicTypeType,
   type AlgebraicTypeVariants,
-} from './algebraic_type';
+} from './algebraic_type.ts';
 import type {
   CaseConversionPolicy,
   RawSubmoduleV10,
@@ -12,10 +12,10 @@ import type {
   RawModuleDefV10Section,
   RawScopedTypeNameV10,
   RawTableDefV10,
-} from './autogen/types';
-import type { UntypedIndex } from './indexes';
-import type { UntypedTableDef } from './table';
-import type { OutboxMetadata, UntypedTableSchema } from './table_schema';
+} from './autogen/types.ts';
+import type { UntypedIndex } from './indexes.ts';
+import type { UntypedTableDef } from './table.ts';
+import type { OutboxMetadata, UntypedTableSchema } from './table_schema.ts';
 import {
   ArrayBuilder,
   OptionBuilder,
@@ -31,8 +31,8 @@ import {
   type InferSpacetimeTypeOfTypeBuilder,
   type RowObj,
   type VariantsObj,
-} from './type_builders';
-import type { Values } from './type_util';
+} from './type_builders.ts';
+import type { Values } from './type_util.ts';
 
 export type TableNamesOf<S extends UntypedSchemaDef> = Values<
   S['tables']
@@ -200,6 +200,7 @@ export class ModuleContext {
     rowLevelSecurity: [],
     schedules: [],
     outboxes: [],
+    tableCachePolicies: [],
     procedures: [],
     views: [],
     viewPrimaryKeys: [],
@@ -241,6 +242,7 @@ export class ModuleContext {
     );
     push(module.schedules && { tag: 'Schedules', value: module.schedules });
     push(module.outboxes && { tag: 'Outboxes', value: module.outboxes });
+    push({ tag: 'TableCachePolicies', value: module.tableCachePolicies });
     push(
       module.lifeCycleReducers && {
         tag: 'LifeCycleReducers',
