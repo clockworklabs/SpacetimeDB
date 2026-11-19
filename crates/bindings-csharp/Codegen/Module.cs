@@ -1052,7 +1052,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 parameter
                     .Name.Split('_')
                     .Where(part => part.Length != 0)
-                    .Select(part => char.ToUpperInvariant(part[0]) + part.Substring(1))
+                    .Select(part => char.ToUpperInvariant(part[0]) + part[1..])
             );
             if (
                 !TryAdd(
