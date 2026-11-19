@@ -20,10 +20,8 @@ export const Person2 = __t.object('Person2', {
 });
 export type Person2 = __Infer<typeof Person2>;
 
-export const Person3Info = __t.object('Person3Info', {
-  ageValue1: __t.u8(),
-  scoreTotal: __t.u32(),
-});
+import { Person3Info } from './module';
+export { Person3Info };
 export type Person3Info = __Infer<typeof Person3Info>;
 
 export const Player1 = __t.object('Player1', {
@@ -36,9 +34,6 @@ export const Player1 = __t.object('Player1', {
 });
 export type Player1 = __Infer<typeof Player1>;
 
-// The tagged union or sum type for the algebraic type `Player2Status`.
-export const Player2Status = __t.enum('Player2Status', {
-  Active1: __t.unit(),
-  BannedUntil: __t.u32(),
-});
+import { Player2Status } from './module';
+export { Player2Status };
 export type Player2Status = __Infer<typeof Player2Status>;

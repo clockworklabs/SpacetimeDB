@@ -10,328 +10,138 @@ import {
   type Infer as __Infer,
 } from '../../lib/type_builders.ts';
 
-export const BsatnRowList = __t.object('BsatnRowList', {
-  get sizeHint() {
-    return RowSizeHint;
-  },
-  rowsData: __t.byteArray(),
-});
+import { BsatnRowList } from './module.ts';
+export { BsatnRowList };
 export type BsatnRowList = __Infer<typeof BsatnRowList>;
 
-export const CallProcedure = __t.object('CallProcedure', {
-  requestId: __t.u32(),
-  flags: __t.u8(),
-  procedure: __t.string(),
-  args: __t.byteArray(),
-});
+import { CallProcedure } from './module.ts';
+export { CallProcedure };
 export type CallProcedure = __Infer<typeof CallProcedure>;
 
-export const CallReducer = __t.object('CallReducer', {
-  requestId: __t.u32(),
-  flags: __t.u8(),
-  reducer: __t.string(),
-  args: __t.byteArray(),
-});
+import { CallReducer } from './module.ts';
+export { CallReducer };
 export type CallReducer = __Infer<typeof CallReducer>;
 
-// The tagged union or sum type for the algebraic type `ClientMessage`.
-export const ClientMessage = __t.enum('ClientMessage', {
-  get Subscribe() {
-    return Subscribe;
-  },
-  get Unsubscribe() {
-    return Unsubscribe;
-  },
-  get OneOffQuery() {
-    return OneOffQuery;
-  },
-  get CallReducer() {
-    return CallReducer;
-  },
-  get CallProcedure() {
-    return CallProcedure;
-  },
-  get SubscribeBatch() {
-    return SubscribeBatch;
-  },
-});
+import { ClientMessage } from './module.ts';
+export { ClientMessage };
 export type ClientMessage = __Infer<typeof ClientMessage>;
 
-export const EventTableRows = __t.object('EventTableRows', {
-  get events() {
-    return BsatnRowList;
-  },
-});
+import { EventTableRows } from './module.ts';
+export { EventTableRows };
 export type EventTableRows = __Infer<typeof EventTableRows>;
 
-export const InitialConnection = __t.object('InitialConnection', {
-  identity: __t.identity(),
-  connectionId: __t.connectionId(),
-  token: __t.string(),
-});
+import { InitialConnection } from './module.ts';
+export { InitialConnection };
 export type InitialConnection = __Infer<typeof InitialConnection>;
 
-export const OneOffQuery = __t.object('OneOffQuery', {
-  requestId: __t.u32(),
-  queryString: __t.string(),
-});
+import { OneOffQuery } from './module.ts';
+export { OneOffQuery };
 export type OneOffQuery = __Infer<typeof OneOffQuery>;
 
-export const OneOffQueryResult = __t.object('OneOffQueryResult', {
-  requestId: __t.u32(),
-  get result() {
-    return __t.result(QueryRows, __t.string());
-  },
-});
+import { OneOffQueryResult } from './module.ts';
+export { OneOffQueryResult };
 export type OneOffQueryResult = __Infer<typeof OneOffQueryResult>;
 
-export const PersistentTableRows = __t.object('PersistentTableRows', {
-  get inserts() {
-    return BsatnRowList;
-  },
-  get deletes() {
-    return BsatnRowList;
-  },
-});
+import { PersistentTableRows } from './module.ts';
+export { PersistentTableRows };
 export type PersistentTableRows = __Infer<typeof PersistentTableRows>;
 
-export const ProcedureResult = __t.object('ProcedureResult', {
-  get status() {
-    return ProcedureStatus;
-  },
-  timestamp: __t.timestamp(),
-  totalHostExecutionDuration: __t.timeDuration(),
-  requestId: __t.u32(),
-});
+import { ProcedureResult } from './module.ts';
+export { ProcedureResult };
 export type ProcedureResult = __Infer<typeof ProcedureResult>;
 
-// The tagged union or sum type for the algebraic type `ProcedureStatus`.
-export const ProcedureStatus = __t.enum('ProcedureStatus', {
-  Returned: __t.byteArray(),
-  InternalError: __t.string(),
-});
+import { ProcedureStatus } from './module.ts';
+export { ProcedureStatus };
 export type ProcedureStatus = __Infer<typeof ProcedureStatus>;
 
-export const QueryRows = __t.object('QueryRows', {
-  get tables() {
-    return __t.array(SingleTableRows);
-  },
-});
+import { QueryRows } from './module.ts';
+export { QueryRows };
 export type QueryRows = __Infer<typeof QueryRows>;
 
-export const QuerySetId = __t.object('QuerySetId', {
-  id: __t.u32(),
-});
+import { QuerySetId } from './module.ts';
+export { QuerySetId };
 export type QuerySetId = __Infer<typeof QuerySetId>;
 
-export const QuerySetUpdate = __t.object('QuerySetUpdate', {
-  get querySetId() {
-    return QuerySetId;
-  },
-  get tables() {
-    return __t.array(TableUpdate);
-  },
-});
+import { QuerySetUpdate } from './module.ts';
+export { QuerySetUpdate };
 export type QuerySetUpdate = __Infer<typeof QuerySetUpdate>;
 
-export const ReducerOk = __t.object('ReducerOk', {
-  retValue: __t.byteArray(),
-  get transactionUpdate() {
-    return TransactionUpdate;
-  },
-});
+import { ReducerOk } from './module.ts';
+export { ReducerOk };
 export type ReducerOk = __Infer<typeof ReducerOk>;
 
-// The tagged union or sum type for the algebraic type `ReducerOutcome`.
-export const ReducerOutcome = __t.enum('ReducerOutcome', {
-  get Ok() {
-    return ReducerOk;
-  },
-  OkEmpty: __t.unit(),
-  Err: __t.byteArray(),
-  InternalError: __t.string(),
-});
+import { ReducerOutcome } from './module.ts';
+export { ReducerOutcome };
 export type ReducerOutcome = __Infer<typeof ReducerOutcome>;
 
-export const ReducerResult = __t.object('ReducerResult', {
-  requestId: __t.u32(),
-  timestamp: __t.timestamp(),
-  get result() {
-    return ReducerOutcome;
-  },
-});
+import { ReducerResult } from './module.ts';
+export { ReducerResult };
 export type ReducerResult = __Infer<typeof ReducerResult>;
 
-// The tagged union or sum type for the algebraic type `RowSizeHint`.
-export const RowSizeHint = __t.enum('RowSizeHint', {
-  FixedSize: __t.u16(),
-  RowOffsets: __t.array(__t.u64()),
-});
+import { RowSizeHint } from './module.ts';
+export { RowSizeHint };
 export type RowSizeHint = __Infer<typeof RowSizeHint>;
 
-// The tagged union or sum type for the algebraic type `ServerMessage`.
-export const ServerMessage = __t.enum('ServerMessage', {
-  get InitialConnection() {
-    return InitialConnection;
-  },
-  get SubscribeApplied() {
-    return SubscribeApplied;
-  },
-  get UnsubscribeApplied() {
-    return UnsubscribeApplied;
-  },
-  get SubscriptionError() {
-    return SubscriptionError;
-  },
-  get TransactionUpdate() {
-    return TransactionUpdate;
-  },
-  get OneOffQueryResult() {
-    return OneOffQueryResult;
-  },
-  get ReducerResult() {
-    return ReducerResult;
-  },
-  get ProcedureResult() {
-    return ProcedureResult;
-  },
-  get SubscribeBatchApplied() {
-    return SubscribeBatchApplied;
-  },
-});
+import { ServerMessage } from './module.ts';
+export { ServerMessage };
 export type ServerMessage = __Infer<typeof ServerMessage>;
 
-export const SingleTableRows = __t.object('SingleTableRows', {
-  table: __t.string(),
-  get rows() {
-    return BsatnRowList;
-  },
-});
+import { SingleTableRows } from './module.ts';
+export { SingleTableRows };
 export type SingleTableRows = __Infer<typeof SingleTableRows>;
 
-export const Subscribe = __t.object('Subscribe', {
-  requestId: __t.u32(),
-  get querySetId() {
-    return QuerySetId;
-  },
-  queryStrings: __t.array(__t.string()),
-});
+import { Subscribe } from './module.ts';
+export { Subscribe };
 export type Subscribe = __Infer<typeof Subscribe>;
 
-export const SubscribeApplied = __t.object('SubscribeApplied', {
-  requestId: __t.u32(),
-  get querySetId() {
-    return QuerySetId;
-  },
-  get rows() {
-    return QueryRows;
-  },
-});
+import { SubscribeApplied } from './module.ts';
+export { SubscribeApplied };
 export type SubscribeApplied = __Infer<typeof SubscribeApplied>;
 
-export const SubscribeBatch = __t.object('SubscribeBatch', {
-  requestId: __t.u32(),
-  get sets() {
-    return __t.array(SubscribeSet);
-  },
-});
+import { SubscribeBatch } from './module.ts';
+export { SubscribeBatch };
 export type SubscribeBatch = __Infer<typeof SubscribeBatch>;
 
-export const SubscribeBatchApplied = __t.object('SubscribeBatchApplied', {
-  requestId: __t.u32(),
-  get results() {
-    return __t.array(SubscribeSetResult);
-  },
-});
+import { SubscribeBatchApplied } from './module.ts';
+export { SubscribeBatchApplied };
 export type SubscribeBatchApplied = __Infer<typeof SubscribeBatchApplied>;
 
-export const SubscribeSet = __t.object('SubscribeSet', {
-  get querySetId() {
-    return QuerySetId;
-  },
-  queryStrings: __t.array(__t.string()),
-});
+import { SubscribeSet } from './module.ts';
+export { SubscribeSet };
 export type SubscribeSet = __Infer<typeof SubscribeSet>;
 
-// The tagged union or sum type for the algebraic type `SubscribeSetOutcome`.
-export const SubscribeSetOutcome = __t.enum('SubscribeSetOutcome', {
-  get Applied() {
-    return QueryRows;
-  },
-  Error: __t.string(),
-});
+import { SubscribeSetOutcome } from './module.ts';
+export { SubscribeSetOutcome };
 export type SubscribeSetOutcome = __Infer<typeof SubscribeSetOutcome>;
 
-export const SubscribeSetResult = __t.object('SubscribeSetResult', {
-  get querySetId() {
-    return QuerySetId;
-  },
-  get outcome() {
-    return SubscribeSetOutcome;
-  },
-});
+import { SubscribeSetResult } from './module.ts';
+export { SubscribeSetResult };
 export type SubscribeSetResult = __Infer<typeof SubscribeSetResult>;
 
-export const SubscriptionError = __t.object('SubscriptionError', {
-  requestId: __t.option(__t.u32()),
-  get querySetId() {
-    return QuerySetId;
-  },
-  error: __t.string(),
-});
+import { SubscriptionError } from './module.ts';
+export { SubscriptionError };
 export type SubscriptionError = __Infer<typeof SubscriptionError>;
 
-export const TableUpdate = __t.object('TableUpdate', {
-  tableName: __t.string(),
-  get rows() {
-    return __t.array(TableUpdateRows);
-  },
-});
+import { TableUpdate } from './module.ts';
+export { TableUpdate };
 export type TableUpdate = __Infer<typeof TableUpdate>;
 
-// The tagged union or sum type for the algebraic type `TableUpdateRows`.
-export const TableUpdateRows = __t.enum('TableUpdateRows', {
-  get PersistentTable() {
-    return PersistentTableRows;
-  },
-  get EventTable() {
-    return EventTableRows;
-  },
-});
+import { TableUpdateRows } from './module.ts';
+export { TableUpdateRows };
 export type TableUpdateRows = __Infer<typeof TableUpdateRows>;
 
-export const TransactionUpdate = __t.object('TransactionUpdate', {
-  get querySets() {
-    return __t.array(QuerySetUpdate);
-  },
-});
+import { TransactionUpdate } from './module.ts';
+export { TransactionUpdate };
 export type TransactionUpdate = __Infer<typeof TransactionUpdate>;
 
-export const Unsubscribe = __t.object('Unsubscribe', {
-  requestId: __t.u32(),
-  get querySetId() {
-    return QuerySetId;
-  },
-  get flags() {
-    return UnsubscribeFlags;
-  },
-});
+import { Unsubscribe } from './module.ts';
+export { Unsubscribe };
 export type Unsubscribe = __Infer<typeof Unsubscribe>;
 
-export const UnsubscribeApplied = __t.object('UnsubscribeApplied', {
-  requestId: __t.u32(),
-  get querySetId() {
-    return QuerySetId;
-  },
-  get rows() {
-    return __t.option(QueryRows);
-  },
-});
+import { UnsubscribeApplied } from './module.ts';
+export { UnsubscribeApplied };
 export type UnsubscribeApplied = __Infer<typeof UnsubscribeApplied>;
 
-// The tagged union or sum type for the algebraic type `UnsubscribeFlags`.
-export const UnsubscribeFlags = __t.enum('UnsubscribeFlags', {
-  Default: __t.unit(),
-  SendDroppedRows: __t.unit(),
-});
+import { UnsubscribeFlags } from './module.ts';
+export { UnsubscribeFlags };
 export type UnsubscribeFlags = __Infer<typeof UnsubscribeFlags>;

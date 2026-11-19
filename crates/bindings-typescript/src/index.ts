@@ -14,3 +14,10 @@ export * from './lib/option.ts';
 export * from './lib/result.ts';
 export * from './lib/query.ts';
 export * from './sdk/index.ts';
+
+export {
+  createClient,
+  type Client,
+  type ClientConnection,
+  type RemoteModuleOfSchema,
+} from './sdk/create_client.ts';

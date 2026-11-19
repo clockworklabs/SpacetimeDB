@@ -5,7 +5,7 @@
 
 use fs_err as fs;
 use regex::Regex;
-use spacetimedb_codegen::{generate, typescript, CodegenOptions, OutputFile};
+use spacetimedb_codegen::{typescript, OutputFile};
 use spacetimedb_lib::db::raw_def::v9::ViewResultHeader;
 use spacetimedb_lib::{RawModuleDef, RawModuleDefV8};
 use spacetimedb_schema::def::ModuleDef;
@@ -38,18 +38,14 @@ fn main() -> anyhow::Result<()> {
     fs::create_dir(dir)?;
 
     let module: ModuleDef = module.try_into()?;
-    generate(&module, &typescript::TypeScript::default(), &CodegenOptions::default())
+    [typescript::TypeScript::default().generate_type_builders(&module)]
         .into_iter()
         .try_for_each(|OutputFile { filename, code }| {
-            // Skip the index.ts since we don't need it.
-            if filename == "index.ts" {
-                return Ok(());
-            }
-            // We don't need the convenience types.
-            if filename.starts_with("types/") {
-                return Ok(());
-            }
-            let code = regex_replace!(&code, r#"from "spacetimedb";"#, r#"from "../../lib/type_builders.ts";"#);
+            let code = regex_replace!(
+                &code,
+                r#"from ['"]spacetimedb(?:/schema)?['"];"#,
+                r#"from "../../lib/type_builders.ts";"#
+            );
 
             // Elide types which are related to client-side only things
             let code = regex_replace!(&code, r"type CallReducerFlags as __CallReducerFlags,", r"");

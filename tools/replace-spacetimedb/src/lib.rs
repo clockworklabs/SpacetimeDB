@@ -52,6 +52,7 @@ pub fn replace_in_tree(
     // We intentionally DO NOT include a trailing semicolon so we preserve it (or its absence).
     let re_single = Regex::new(r#"}\s*from\s*'spacetimedb'"#).unwrap();
     let re_double = Regex::new(r#"}\s*from\s*"spacetimedb""#).unwrap();
+    let re_schema = Regex::new(r#"(?s)import\s*(type\s+)?\{([^}]*)\}\s*from\s*['"]spacetimedb/schema['"]"#).unwrap();
 
     let mut builder = WalkBuilder::new(&root);
     builder
@@ -102,8 +103,12 @@ pub fn replace_in_tree(
         let depth = rel_parent.components().count();
 
         // Decide which replacement to use for this file
-        let is_index_ts = depth == 0 && path.file_name().and_then(|n| n.to_str()) == Some("index.ts");
-        let repl = if is_index_ts {
+        let is_entry_point = depth == 0
+            && matches!(
+                path.file_name().and_then(|n| n.to_str()),
+                Some("index.ts" | "module.ts")
+            );
+        let repl = if is_entry_point {
             replacement_index_ts
         } else {
             replacement_other_ts
@@ -130,6 +135,29 @@ pub fn replace_in_tree(
             Err(_) => continue,
         };
 
+        // Source-based SDK consumers must use the same declaration classes as
+        // their local root SDK, rather than mixing in the packaged schema entry.
+        let content = re_schema.replace_all(&content, |caps: &regex::Captures<'_>| {
+            let imports = caps[2]
+                .split(',')
+                .map(|item| {
+                    let item = item.trim();
+                    if item == "schema" {
+                        "moduleSchema as schema".to_string()
+                    } else if let Some(alias) = item.strip_prefix("schema as ") {
+                        format!("moduleSchema as {alias}")
+                    } else {
+                        item.to_string()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "import {}{{{imports}}} from 'spacetimedb'",
+                caps.get(1).map_or("", |m| m.as_str())
+            )
+        });
+
         // Count before replacing
         let matches = re_single.find_iter(&content).count() + re_double.find_iter(&content).count();
         if matches == 0 {
@@ -141,13 +169,13 @@ pub fn replace_in_tree(
         let updated = re_double.replace_all(&updated1, format!("}} from \"{}\"", repl));
 
         if options.dry_run {
-            let which = if is_index_ts { "index.ts" } else { "*.ts" };
+            let which = if is_entry_point { "entry point" } else { "*.ts" };
             println!("[dry-run] {} ({} matches, rule: {})", path.display(), matches, which);
         } else if let Err(err) = fs::write(path, updated.as_ref()) {
             eprintln!("write error {}: {err}", path.display());
             continue;
         } else {
-            let which = if is_index_ts { "index.ts" } else { "*.ts" };
+            let which = if is_entry_point { "entry point" } else { "*.ts" };
             println!("✔ {} ({} matches, rule: {})", path.display(), matches, which);
         }
 

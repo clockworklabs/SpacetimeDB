@@ -1,5 +1,7 @@
 #![warn(clippy::uninlined_format_args)]
 
+mod sdk_version;
+
 use anyhow::Context;
 use clap::parser::ValueSource;
 use clap::Arg;
@@ -719,7 +721,7 @@ pub async fn run_prepared_generate_configs(
     force: bool,
     namespace_from_cli: bool,
 ) -> anyhow::Result<()> {
-    for run in run_configs {
+    for run in &run_configs {
         println!(
             "Generating {} {} bindings for module {}",
             run.lang.display_name(),
@@ -895,6 +897,10 @@ pub async fn run_prepared_generate_configs(
         }
 
         println!("Generate finished successfully.");
+    }
+
+    for run in run_configs {
+        sdk_version::warn_if_incompatible(run.lang, &run.out_dir);
     }
 
     Ok(())
