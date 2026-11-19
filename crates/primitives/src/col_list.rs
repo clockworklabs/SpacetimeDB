@@ -283,7 +283,11 @@ impl spacetimedb_memory_usage::MemoryUsage for ColList {
     fn heap_usage(&self) -> usize {
         match self.as_inline() {
             Ok(_) => 0,
-            Err(heap) => heap.capacity() as usize,
+            Err(heap) => {
+                // `ColListVec` allocates a u16 length, a u16 capacity and `capacity` elements.
+                // `MemoryUsage` measures bytes, so count allocation slots rather than elements.
+                (usize::from(heap.capacity()) + 2) * size_of::<u16>()
+            }
         }
     }
 }
@@ -740,6 +744,24 @@ mod tests {
 
     fn contains(list: &ColList, x: &ColId) -> bool {
         list.iter().any(|y| y == *x)
+    }
+
+    #[test]
+    #[cfg(feature = "memory-usage")]
+    fn heap_usage_counts_allocation_bytes() {
+        use spacetimedb_memory_usage::MemoryUsage;
+
+        let mut list = ColList::new(ColId(0));
+        assert!(list.is_inline());
+        assert_eq!(list.heap_usage(), 0);
+
+        // A column at the inline cutoff forces a heap allocation with capacity 2 * (1 + 1).
+        list.push(ColId(ColList::FIRST_HEAP_COL_U16));
+        assert!(!list.is_inline());
+        assert_eq!(list.len(), 2);
+
+        // The allocation is `[u16; capacity + 2]`: a length, a capacity and 4 element slots.
+        assert_eq!(list.heap_usage(), 12);
     }
 
     proptest! {
