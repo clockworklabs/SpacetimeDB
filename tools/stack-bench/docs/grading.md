@@ -129,6 +129,10 @@ Notes on individual checks:
   session token, and from an untrusted origin, with stock and orders unchanged.
   A probe that cannot be built, such as mixed cookie and bearer credentials, is
   inconclusive.
+- **Restart** restarts the Spacetime and Convex servers, where those apps run
+  their server code, and the application server on PostgreSQL, MongoDB, and
+  Supabase. Supabase's own services keep running, so state held only in an
+  Edge Function's memory is not tested.
 - **Checkout crash** kills the application and database processes separately
   on PostgreSQL and MongoDB, and the single combined process on Spacetime,
   Convex, and Supabase. A missed fault window is inconclusive.
