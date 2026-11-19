@@ -5,7 +5,8 @@ use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
 use spacetimedb_datastore::system_tables::{
-    StOutboundStreamFields, StOutboundStreamRow, StViewFields, StViewRow, ST_OUTBOUND_STREAM_ID, ST_VIEW_ID,
+    StOutboundMsgRow, StOutboundStreamFields, StOutboundStreamRow, StViewFields, StViewRow, ST_OUTBOUND_STREAM_ID,
+    ST_VIEW_ID,
 };
 use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::db::raw_def::v9::{RawRowLevelSecurityDefV9, TableAccess};
@@ -691,6 +692,11 @@ fn auto_migrate_database<'def>(
             // Continue the old table's sequences, so new rows don't reuse ids.
             let new_table_id = stdb.table_id_from_name_mut(tx, &table_name)?.unwrap();
             stdb.copy_sequence_allocations(tx, table_id, new_table_id)?;
+            // Keep the old outbox's IDC streams on the new table. The migration copies the
+            // pending calls with their message ids, so they keep their place in the streams.
+            if table_def.outbox.is_some() {
+                rewrite_outbound_stream_outbox_table_id(stdb, tx, table_id, new_table_id)?;
+            }
         }
     }
 
@@ -755,8 +761,50 @@ impl InflightMigration<'_> {
             let table_id = stdb.table_id_from_name_mut(tx, &table_name)?.unwrap();
             stdb.drop_table(tx, table_id)?;
         }
+        check_pending_outbox_calls(stdb, tx)?;
         Ok(self.result)
     }
+}
+
+/// Fails if a pending IDC call no longer has its outbox row.
+///
+/// The IDC actor sends each stream's calls in order, reading each from its outbox row,
+/// and stops delivering if one is missing. Outbox rows can't be deleted, so a migration
+/// that recreates an outbox table must copy every pending call with its message id,
+/// and can't remove an outbox table with pending calls.
+fn check_pending_outbox_calls(stdb: &RelationalDB, tx: &MutTxId) -> anyhow::Result<()> {
+    let streams = stdb
+        .iter_mut(tx, ST_OUTBOUND_STREAM_ID)?
+        .map(|row| Ok(StOutboundStreamRow::try_from(row?)?))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    for stream in streams {
+        assert!(stream.ack_prefix < stream.next_seq, "{stream:?}");
+        let pending = stream.ack_prefix + 1..stream.next_seq;
+        if pending.is_empty() {
+            continue;
+        }
+        let outbox = match tx.schema_for_table(stream.outbox_table_id) {
+            Ok(schema) if schema.outbox.is_some() => schema,
+            _ => anyhow::bail!(
+                "the migration removes an outbox table that still has {} pending calls",
+                pending.end - pending.start
+            ),
+        };
+        for seq in pending {
+            let msg = stdb
+                .outbound_msg_by_stream_seq(tx, stream.stream_id, seq)?
+                .with_context(|| format!("IDC stream {} is missing pending sequence {seq}", stream.stream_id))?;
+            let msg = StOutboundMsgRow::try_from(msg)?;
+            anyhow::ensure!(
+                stdb.outbox_row(tx, stream.outbox_table_id, msg.msg_id)?.is_some(),
+                "the migration didn't copy pending call {} into the outbox table `{}`; \
+                 copy every row of the dropped outbox table, keeping its message id",
+                msg.msg_id,
+                outbox.table_name,
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Preserve durable IDC stream state when an outbox table is recreated during migration.
@@ -905,7 +953,9 @@ mod test {
         hash_value, Identity,
     };
     use spacetimedb_primitives::ColId;
-    use spacetimedb_sats::{product, raw_identifier::RawIdentifier, AlgebraicType, AlgebraicType::U64, ProductType};
+    use spacetimedb_sats::{
+        product, raw_identifier::RawIdentifier, AlgebraicType, AlgebraicType::U64, ProductType, ProductValue,
+    };
     use spacetimedb_schema::auto_migrate::ponder_migrate;
 
     struct TestLogger;
@@ -1272,6 +1322,137 @@ mod test {
         let (_, _, insert_flags) = stdb.insert(&mut tx, table_id, &row)?;
         assert!(insert_flags.is_outbox_table);
 
+        Ok(())
+    }
+
+    /// `outbound_pings(msg_id, target, payload)`, an outbox for `receive_ping(payload)` if `outbox`.
+    /// A migration's `dropped` module declares it as a plain table.
+    fn outbox_module(payload: AlgebraicType, outbox: bool) -> RawModuleDefV10Builder {
+        let mut builder = RawModuleDefV10Builder::new();
+        builder
+            .build_table_with_new_type(
+                "outbound_pings",
+                ProductType::from([
+                    ("msg_id", U64),
+                    ("target", AlgebraicType::identity()),
+                    ("payload", payload),
+                ]),
+                true,
+            )
+            .with_auto_inc_primary_key(0)
+            .with_index_no_accessor_name(direct(0), "outbound_pings_msg_id_idx_btree")
+            .finish();
+        if outbox {
+            builder.add_outbox(
+                "outbound_pings",
+                "receive_ping",
+                ColId(1),
+                [ColId(2)],
+                Option::<&str>::None,
+                spacetimedb_lib::hash_bytes(b"test-signature"),
+            );
+        }
+        builder
+    }
+
+    /// Inserts a call into an outbox table, as a reducer does.
+    fn insert_outbox_call(
+        stdb: &TestDB,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        row: ProductValue,
+    ) -> anyhow::Result<StOutboundMsgRow> {
+        let (_, row_ref, flags) = stdb.insert(tx, table_id, &bsatn::to_vec(&row)?)?;
+        assert!(flags.is_outbox_table);
+        let ptr = row_ref.pointer();
+        Ok(tx.record_outbox_insert(table_id, ptr)?)
+    }
+
+    /// A manual migration that recreates an outbox table keeps its IDC streams and their pending
+    /// calls, which the migration copies with their message ids. Leaving one behind fails it.
+    #[test]
+    fn manual_migration_keeps_pending_outbox_calls() -> anyhow::Result<()> {
+        let module_v1: ModuleDef = outbox_module(AlgebraicType::U32, true).finish().try_into()?;
+        let module_v2: ModuleDef = {
+            let mut b = outbox_module(U64, true);
+            b.add_migration(RawMigrationDefV10 {
+                schema_hash: hash_value(&module_v1),
+                name: "migrate".into(),
+                dropped: outbox_module(AlgebraicType::U32, false).finish(),
+            });
+            b.finish().try_into()?
+        };
+        let stdb = TestDB::durable()?;
+        let target = IdentityViaU256(Identity::ONE);
+        let mut tx = begin_mut_tx(&stdb);
+        for def in module_v1.tables() {
+            create_table_from_def(&stdb, &mut tx, &module_v1, def)?;
+        }
+        let old_id = stdb
+            .table_id_from_name_mut(&tx, "outbound_pings")?
+            .expect("outbox should exist");
+        let pending = [
+            insert_outbox_call(&stdb, &mut tx, old_id, product![0u64, target, 10u32])?,
+            insert_outbox_call(&stdb, &mut tx, old_id, product![0u64, target, 11u32])?,
+        ];
+        stdb.commit_tx(tx)?;
+        let stream_id = pending[0].stream_id;
+        assert_eq!(
+            pending.iter().map(|m| (m.msg_id, m.seq)).collect::<Vec<_>>(),
+            [(1, 1), (2, 2)]
+        );
+
+        for copy in [false, true] {
+            let mut tx = begin_mut_tx(&stdb);
+            let plan = ponder_migrate(&module_v1, &module_v2)?;
+            let UpdateStep::RunManual(migration) =
+                update_database(&stdb, &mut tx, AuthCtx::for_testing(), plan, &TestLogger)?
+            else {
+                panic!("expected a manual migration");
+            };
+            let new_id = stdb
+                .table_id_from_name_mut(&tx, "outbound_pings")?
+                .expect("outbox should exist");
+            assert_ne!(new_id, old_id);
+            let stream = stdb
+                .st_outbound_stream_by_id(&tx, stream_id)?
+                .expect("stream should exist");
+            assert_eq!(stream.outbox_table_id, new_id);
+
+            if !copy {
+                let error = migration.finish(&stdb, &mut tx, &TestLogger).unwrap_err().to_string();
+                assert!(error.contains("didn't copy pending call 1"), "{error}");
+                let _ = stdb.rollback_mut_tx(tx);
+                let tx = begin_mut_tx(&stdb);
+                let stream = stdb
+                    .st_outbound_stream_by_id(&tx, stream_id)?
+                    .expect("stream should exist");
+                assert_eq!(stream.outbox_table_id, old_id);
+                continue;
+            }
+
+            // Copying a call with its message id finds its existing place in the stream.
+            for (msg, payload) in pending.iter().zip([10u64, 11]) {
+                let copied = insert_outbox_call(&stdb, &mut tx, new_id, product![msg.msg_id, target, payload])?;
+                assert_eq!(
+                    (copied.stream_id, copied.msg_id, copied.seq),
+                    (stream_id, msg.msg_id, msg.seq)
+                );
+            }
+            assert_matches!(
+                migration.finish(&stdb, &mut tx, &TestLogger)?,
+                UpdateResult::Success | UpdateResult::RequiresClientDisconnect
+            );
+            let stream = stdb
+                .st_outbound_stream_by_id(&tx, stream_id)?
+                .expect("stream should exist");
+            assert_eq!((stream.ack_prefix, stream.next_seq), (0, 3));
+            let row = stdb
+                .outbox_row(&tx, new_id, 1)?
+                .expect("pending call should be in the new outbox");
+            assert_eq!(row.elements[2], AlgebraicValue::U64(10));
+            stdb.commit_tx(tx)?;
+        }
         Ok(())
     }
 
