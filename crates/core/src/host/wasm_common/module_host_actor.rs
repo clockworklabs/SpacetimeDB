@@ -836,9 +836,14 @@ impl InstanceCommon {
         match res {
             Err(e) => {
                 // TODO: Review log level after migration/user errors can be distinguished from internal database failures.
-                if let MigrationExecutionError::Other(e) = &e {
-                    log::warn!("Database update failed: {:#} @ {}", e, stdb.database_identity());
-                    system_logger.warn(&format!("Database update failed: {e:#}"));
+                match &e {
+                    MigrationExecutionError::Other(e) => {
+                        log::warn!("Database update failed: {:#} @ {}", e, stdb.database_identity());
+                        system_logger.warn(&format!("Database update failed: {e:#}"));
+                    }
+                    MigrationExecutionError::User(e) => {
+                        system_logger.warn(&format!("Database update failed: the migration returned an error: {e}"));
+                    }
                 }
                 let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
                 stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
