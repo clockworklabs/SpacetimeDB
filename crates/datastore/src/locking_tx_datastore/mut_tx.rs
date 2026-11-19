@@ -1492,6 +1492,101 @@ impl MutTxId {
         self.update_st_table_row(table_id, |st| st.table_name = new_name)
     }
 
+    /// Moves the table `table_id` out of the way of a new table with the same names.
+    ///
+    /// Renames the table to `new_name` and each of its indexes with `rename_index`,
+    /// and removes the accessor names of the table, its columns and its indexes.
+    /// Accessor rows are keyed by canonical name, so leaving them would let the new table's
+    /// accessors resolve to this table, and dropping this table later would delete the
+    /// new table's accessor rows. All of it is undone if the transaction rolls back.
+    pub fn move_table_aside(
+        &mut self,
+        table_id: TableId,
+        new_name: TableName,
+        mut rename_index: impl FnMut(&RawNamespacedIdentifier) -> RawNamespacedIdentifier,
+    ) -> Result<()> {
+        let schema = self.schema_for_table(table_id)?;
+        let old_name = schema.table_name.clone();
+        assert_ne!(old_name, new_name, "moving a table aside must rename it");
+        assert_eq!(self.find_st_table_row(table_id)?.table_name, old_name);
+
+        self.drop_st_table_accessor(&old_name)?;
+        self.drop_st_column_accessor(&old_name)?;
+        self.update_st_table_row(table_id, |st| st.table_name = new_name.clone())?;
+
+        let mut index_names = Vec::with_capacity(schema.indexes.len());
+        for index in &schema.indexes {
+            let new_index_name = rename_index(&index.index_name);
+            assert_ne!(
+                index.index_name, new_index_name,
+                "moving a table aside must rename its indexes"
+            );
+            self.drop_st_index_accessor(&index.index_name)?;
+            self.update_st_index_row(index.index_id, |st| st.index_name = new_index_name.clone())?;
+            index_names.push((index.index_id, new_index_name));
+        }
+
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+        tx_table.with_mut_schema_and_clone(commit_table, |s| {
+            s.table_name = new_name;
+            s.alias = None;
+            for column in &mut s.columns {
+                column.alias = None;
+            }
+            assert_eq!(s.indexes.len(), index_names.len());
+            for (index, (index_id, new_index_name)) in s.indexes.iter_mut().zip(&index_names) {
+                assert_eq!(index.index_id, *index_id);
+                index.index_name = new_index_name.clone();
+                index.alias = None;
+            }
+        });
+
+        // Rollback undoes these in reverse, restoring the aliases before the names.
+        self.push_schema_change(PendingSchemaChange::TableRename(table_id, old_name));
+        for index in &schema.indexes {
+            self.push_schema_change(PendingSchemaChange::IndexRename(
+                table_id,
+                index.index_id,
+                index.index_name.clone(),
+            ));
+        }
+        self.push_schema_change(PendingSchemaChange::TableAlterAccessorName(
+            table_id,
+            schema.alias.clone(),
+        ));
+        for column in &schema.columns {
+            self.push_schema_change(PendingSchemaChange::ColumnAlterAccessorName(
+                table_id,
+                column.col_pos,
+                column.alias.clone(),
+            ));
+        }
+        for index in &schema.indexes {
+            self.push_schema_change(PendingSchemaChange::IndexAlterSourceName(
+                table_id,
+                index.index_id,
+                index.alias.clone(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn update_st_index_row<R>(&mut self, index_id: IndexId, updater: impl FnOnce(&mut StIndexRow) -> R) -> Result<R> {
+        let st_index_ref = self
+            .iter_by_col_eq(ST_INDEX_ID, StIndexFields::IndexId, &index_id.into())?
+            .next()
+            .transpose()?
+            .ok_or_else(|| TableError::IdNotFound(SystemTable::st_index, index_id.into()))?;
+        let ptr = st_index_ref.pointer();
+        let mut row = StIndexRow::try_from(st_index_ref)?;
+
+        self.delete(ST_INDEX_ID, ptr)?;
+        let ret = updater(&mut row);
+        self.insert_via_serialize_bsatn(ST_INDEX_ID, &row)?;
+
+        Ok(ret)
+    }
+
     fn update_st_table_row<R>(&mut self, table_id: TableId, updater: impl FnOnce(&mut StTableRow) -> R) -> Result<R> {
         // Fetch the row.
         let st_table_ref = self

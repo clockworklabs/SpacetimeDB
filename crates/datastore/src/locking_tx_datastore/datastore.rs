@@ -35,6 +35,7 @@ use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId, ViewId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
+use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_schema::{
@@ -448,6 +449,16 @@ impl Locking {
         to_table: TableId,
     ) -> Result<()> {
         tx.copy_sequence_allocations(from_table, to_table)
+    }
+
+    pub fn move_table_aside_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        new_name: TableName,
+        rename_index: impl FnMut(&RawNamespacedIdentifier) -> RawNamespacedIdentifier,
+    ) -> Result<()> {
+        tx.move_table_aside(table_id, new_name, rename_index)
     }
 }
 

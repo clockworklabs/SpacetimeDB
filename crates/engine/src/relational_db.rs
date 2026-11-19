@@ -51,7 +51,7 @@ use spacetimedb_primitives::*;
 use spacetimedb_runtime::sync::watch;
 use spacetimedb_runtime::Handle;
 use spacetimedb_sats::memory_usage::MemoryUsage;
-use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::raw_identifier::{RawIdentifier, RawNamespacedIdentifier};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
 use spacetimedb_schema::identifier::NamespacePath;
@@ -1507,6 +1507,20 @@ impl RelationalDB {
         to_table: TableId,
     ) -> Result<(), DBError> {
         Ok(self.inner.copy_sequence_allocations_mut_tx(tx, from_table, to_table)?)
+    }
+
+    /// Renames a table and its indexes and removes their accessor names, so that a new table
+    /// can take its names. See [`MutTxId::move_table_aside`].
+    pub fn move_table_aside(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        new_name: TableName,
+        rename_index: impl FnMut(&RawNamespacedIdentifier) -> RawNamespacedIdentifier,
+    ) -> Result<(), DBError> {
+        Ok(self
+            .inner
+            .move_table_aside_mut_tx(tx, table_id, new_name, rename_index)?)
     }
 
     pub fn view_id_from_name_mut(&self, tx: &MutTx, view_name: &str) -> Result<Option<ViewId>, DBError> {
