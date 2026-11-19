@@ -52,6 +52,7 @@ esac
 # of the run login, so no change outlives the call.
 home=$(mktemp -d)
 cp -R ${SPACETIME_CLI_HOME}/. "$home"
+chmod -R u+w "$home"
 exec env HOME="$home" ${SPACETIME_CLI_BINARY} "$@"
 `;
   const encodedWrapper = Buffer.from(wrapper).toString('base64');
