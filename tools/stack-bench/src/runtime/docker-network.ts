@@ -9,6 +9,7 @@ import type { BackendCreationKind, BackendLease, BackendLeaseContainer } from '.
 import { BROWSER_CONTAINER_RESOURCE_LIMITS, SIDECAR_CONTAINER_RESOURCE_LIMITS } from '../composition/product-config.js';
 import { ATTEMPT_CREATION_LABEL } from './container-identity.js';
 import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
+import { GITHUB_IPV4_RANGES } from './github-addresses.js';
 export { ATTEMPT_CREATION_LABEL } from './container-identity.js';
 
 // `environment` supplies values for `-e NAME` arguments, so they never enter the command line.
@@ -252,17 +253,38 @@ export function installAttemptFirewall(leasePath: string, lease: BackendLease,
   if (!connection || typeof connection !== 'object' || !('IPAddress' in connection)
     || typeof connection.IPAddress !== 'string') throw new Error('cache did not join the owned network');
   const services = [{ address: connection.IPAddress, port: 4873 }];
-  const rules = attemptNetworkRules({ services, hostAddresses: network.hostAddresses });
+  // Every container in the namespace shares the anchor's hosts file. Installs during
+  // grading reach the cache by this entry, since grading allows no name lookups.
+  docker(['exec', '--user', '0:0', network.namespaceContainerId, 'sh', '-c',
+    'printf "%s stack-bench-npm-cache\\n" "$1" >> /etc/hosts', 'hosts', connection.IPAddress]);
+  const withServices = updateBackendLease(leasePath, { token: lease.ownershipToken }, next => {
+    next.resources.network!.services = services;
+    return next;
+  });
+  return setAttemptFirewallMode(leasePath, withServices, 'coding', docker);
+}
+
+// Coding sessions reach public HTTP and HTTPS except GitHub. Grading reaches nothing outside
+// the attempt, so an application cannot send what it recorded of the hidden checks.
+export type AttemptFirewallMode = 'coding' | 'grading';
+
+export function setAttemptFirewallMode(leasePath: string, lease: BackendLease, mode: AttemptFirewallMode,
+  docker: typeof attemptDocker = attemptDocker): BackendLease {
+  const network = lease.resources.network;
+  if (!network?.namespaceContainerId) throw new Error('attempt has no backend namespace');
+  const rules = attemptNetworkRules({ services: network.services, hostAddresses: network.hostAddresses, mode });
   const intent = recordAttemptCreation(leasePath, lease, 'firewall');
+  // One transaction: the old table is removed and the new one added together, or neither.
   docker(['run', '--rm', '-i', '--name', intent.name,
     '--label', `${ATTEMPT_CREATION_LABEL}=${intent.creationToken}`,
     '--network', `container:${network.namespaceContainerId}`, '--cap-drop', 'ALL', '--cap-add', 'NET_ADMIN',
     '--security-opt', 'no-new-privileges:true', '--read-only', '--entrypoint', 'nft',
-    attemptControllerImage(), '-f', '-'], rules);
+    attemptControllerImage(), '-f', '-'], `table inet stack_bench\ndelete table inet stack_bench\n${rules}`);
   return updateBackendLease(leasePath, { token: lease.ownershipToken }, next => {
-    next.resources.network!.services = services;
     next.resources.network!.firewallSha256 = createHash('sha256').update(rules).digest('hex');
     next.resources.network!.firewallInstalledAt = new Date().toISOString();
+    // The run removed its own container; a later mode change may record a new one.
+    delete next.resources.creationIntents?.firewall;
     return next;
   });
 }
@@ -296,10 +318,11 @@ export function createAttemptBrowser(leasePath: string, lease: BackendLease): vo
 export const DOCKER_HOST_ALIAS = 'host.docker.internal';
 
 // Applied only to the attempt's network namespace, before any untrusted process.
-// Public HTTPS/HTTP is intentional: it is internet access, not an offline policy.
-export function attemptNetworkRules({ services, hostAddresses }: {
+// Public HTTPS/HTTP while coding is intentional: it is internet access, not an offline policy.
+export function attemptNetworkRules({ services, hostAddresses, mode = 'coding' }: {
   services: readonly { address: string; port: number }[];
   hostAddresses: readonly string[];
+  mode?: AttemptFirewallMode;
 }): string {
   const address = (value: string): string => {
     if (!isIPv4(value)) throw new Error('attempt firewall requires literal IPv4 addresses');
@@ -319,6 +342,24 @@ export function attemptNetworkRules({ services, hostAddresses }: {
     '127.0.0.0/8', '169.254.0.0/16', '172.16.0.0/12', '192.0.0.0/24', '192.0.2.0/24',
     '192.168.0.0/16', '198.18.0.0/15', '198.51.100.0/24', '203.0.113.0/24',
     '224.0.0.0/4', '240.0.0.0/4'])];
+  if (mode === 'grading') {
+    return [
+      'table inet stack_bench {',
+      '  chain output {',
+      '    type filter hook output priority -10; policy drop;',
+      // Replies to connections made into the attempt, such as the grader's; a connection
+      // the application opened earlier is not a reply and is cut.
+      '    ct direction reply accept',
+      // Docker's resolver forwards lookups out of the attempt.
+      '    ip daddr 127.0.0.11 reject',
+      '    oifname "lo" accept',
+      ...allows,
+      '    reject',
+      '  }',
+      '}',
+      '',
+    ].join('\n');
+  }
   return [
     'table inet stack_bench {',
     '  chain output {',
@@ -327,6 +368,7 @@ export function attemptNetworkRules({ services, hostAddresses }: {
     '    oifname "lo" accept',
     ...allows,
     `    ip daddr { ${denied.join(', ')} } reject`,
+    `    ip daddr { ${GITHUB_IPV4_RANGES.join(', ')} } reject`,
     '    meta nfproto ipv4 tcp dport { 80, 443 } accept',
     '    reject',
     '  }',

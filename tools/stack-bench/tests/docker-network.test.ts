@@ -8,7 +8,7 @@ import { attemptBrowserLaunchOptions } from '../container/browser-pipe.js';
 
 import { attemptNetworkRules, recordAttemptCreation, dockerHostGatewayArguments, dockerHostServiceAddress,
   installAttemptFirewall, createAttemptNetwork, createAttemptContainer, createAttemptService,
-  startAttemptContainer } from '../src/runtime/docker-network.js';
+  setAttemptFirewallMode, startAttemptContainer } from '../src/runtime/docker-network.js';
 
 test('only the authenticated owned browser uses its private shared memory', () => {
   const root = mkdtempSync(join(tmpdir(), 'browser-shm-'));
@@ -71,6 +71,24 @@ test('attempt cache attachment preserves the shared gateway and binds only its e
       [['network', 'connect', '--gw-priority', '-1', network, cache]]);
     assert.equal(active.resources.network?.cacheContainerId, cache);
     assert.deepEqual(active.resources.network?.services, [{ address: '172.20.0.3', port: 4873 }]);
+    // Installs reach the cache by name without a lookup.
+    assert.deepEqual(commands.find(args => args[0] === 'exec')?.slice(0, 4), ['exec', '--user', '0:0', anchor]);
+    assert.equal(commands.find(args => args[0] === 'exec')?.at(-1), '172.20.0.3');
+
+    // Each mode replaces the table in one transaction, and the run's authority is released after.
+    const inputs: string[] = [];
+    const graded = setAttemptFirewallMode(path, active, 'grading', (args, input) => {
+      if (args[0] === 'run') inputs.push(input ?? '');
+      return '';
+    });
+    assert.match(inputs[0] ?? '', /^table inet stack_bench\ndelete table inet stack_bench\ntable inet stack_bench \{/);
+    assert.equal(graded.resources.creationIntents?.firewall, undefined);
+    assert.notEqual(graded.resources.network?.firewallSha256, active.resources.network?.firewallSha256);
+    setAttemptFirewallMode(path, graded, 'coding', (args, input) => {
+      if (args[0] === 'run') inputs.push(input ?? '');
+      return '';
+    });
+    assert.equal(inputs.length, 2);
   } finally {
     if (image === undefined) delete process.env.STACK_BENCH_CONTROLLER_IMAGE_ID;
     else process.env.STACK_BENCH_CONTROLLER_IMAGE_ID = image;
@@ -93,6 +111,18 @@ test('lease binds sidecars to the exact backend namespace and excludes creation 
   assert.equal(lease.resources.creationIntents.browser?.creationToken, 'e'.repeat(32));
   lease.resources.browserContainer.networkMode = `container:${'f'.repeat(64)}`;
   assert.throws(() => validateBackendLease(lease), /outside the leased network namespace/);
+});
+
+test('coding reaches the public web except GitHub; grading reaches only the attempt', () => {
+  const input = { services: [{ address: '172.20.0.3', port: 4873 }], hostAddresses: ['172.20.0.1'] };
+  const coding = attemptNetworkRules(input);
+  assert.match(coding, /ip daddr \{[^}]*140\.82\.112\.0\/20[^}]*\} reject\n {4}meta nfproto ipv4 tcp dport \{ 80, 443 \} accept/);
+  const grading = attemptNetworkRules({ ...input, mode: 'grading' });
+  assert.doesNotMatch(grading, /dport \{ 80, 443 \}/);
+  assert.doesNotMatch(grading, /ct state established/);
+  // Replies to the grader's connections pass; lookups through Docker's resolver do not.
+  assert.match(grading, /ct direction reply accept\n {4}ip daddr 127\.0\.0\.11 reject\n {4}oifname "lo" accept/);
+  assert.match(grading, /ip daddr 172\.20\.0\.3 tcp dport 4873 accept\n {4}reject\n/);
 });
 
 test('attempt firewall limits private services to their port and rejects unsafe rule inputs', () => {

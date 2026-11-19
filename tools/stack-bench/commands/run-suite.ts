@@ -49,6 +49,7 @@ import type { RecipeBinding, RecipeCheck } from '../src/composition/recipe-relea
 import type { Track, TrackSuite } from '../src/composition/tracks.js';
 
 import { STACK_BENCH_ROOT as ROOT, compiledEntrypoint } from '../src/package-root.js';
+import { setAttemptFirewallMode } from '../src/runtime/docker-network.js';
 const RESET = compiledEntrypoint('commands', 'reset-backend.js');
 
 type Observation = 'scored' | 'observed';
@@ -802,6 +803,13 @@ async function main() {
   const startedAt = new Date().toISOString();
   const args = parseArgs(process.argv);
   args.databaseLease = databaseLeaseForGrading(args.backend);
+  // From the first check until the next coding session stops the application, nothing it
+  // records of the hidden checks can leave the attempt.
+  const leasePath = process.env.STACK_BENCH_LEASE?.trim();
+  if (leasePath) {
+    const lease = readBackendLease(leasePath, { token: String(process.env.STACK_BENCH_LEASE_TOKEN ?? '').trim() });
+    if (lease.resources.network) setAttemptFirewallMode(leasePath, lease, 'grading');
+  }
   const track = loadTrack(args.track);
   const recipeBinding = resolveRecipeRelease(track, Number(args.level), args.recipeTask?.recipe ?? args.recipe);
   const selectedTask = recipeBinding

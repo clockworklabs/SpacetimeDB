@@ -14,7 +14,7 @@ import { BUILD_CONTAINER_RESOURCE_LIMITS, DEFAULT_BUILD_IMAGE }
 import { dockerMountArguments } from '../src/runtime/container-mount.js';
 import type { ContainerMount } from '../src/runtime/container-mount.js';
 import { dockerHostGatewayArguments, requireAttemptNetwork, attemptControllerImage,
-  recordAttemptCreation, ATTEMPT_CREATION_LABEL } from '../src/runtime/docker-network.js';
+  recordAttemptCreation, setAttemptFirewallMode, ATTEMPT_CREATION_LABEL } from '../src/runtime/docker-network.js';
 import { packageRegistry, packageRegistryEnvironment } from '../src/runtime/package-registry.js';
 import { resolveContainerAuth } from './container-auth.js';
 import { hasRequiredBuildContainerIsolation, inspectBuildContainer, parseCgroupResources,
@@ -652,6 +652,10 @@ try {
   runCleanupCommand('agent process stop', codingContainerAgentStopCommand());
   const notStopped = cleanupErrors.splice(0);
   if (notStopped.length) throw new Error(notStopped.join('; '));
+  // Only now that nothing from grading runs may the attempt reach the internet again.
+  if (leaseContext.lease.resources.network) {
+    setAttemptFirewallMode(leaseContext.path, leaseFromEnv(process.env, { backend, active: true }).lease, 'coding');
+  }
   res = await codingProvider.run({ command: 'docker', args, input: promptInput,
     env: dockerExecEnv, timeoutMs: CODING_SESSION_TIMEOUT_MS, terminate: terminateSession,
     projects, containerId, marker: completionMarker as string, model,
