@@ -95,7 +95,6 @@ export async function openWebSocket({
 
   const WS = await resolveWS();
 
-  // Endpoints resolve under the URI's path, so `ws://host/stdb` reaches `/stdb/v1/...`.
   const base = new URL(url.toString());
   if (!base.pathname.endsWith('/')) base.pathname += '/';
 
