@@ -21,6 +21,8 @@ On an existing PR, work from the current body. Edit only the requested lines and
 
 ## Testing
 
+Running the changed workflow on a representative input and inspecting its output is behavioral testing, including for changes to authoring instructions. Use the recorded output as evidence.
+
 If no behavioral testing was performed, the entire Testing section is the single sentence “Not tested.” Reviewing the patch, checking whitespace, or verifying signatures alone counts as untested.
 
 Otherwise, describe the observable behavior and the evidence for it. Lead with the failure that matters most. Group related cases by the claim they establish. For example, several inputs exercising the same fallback usually need one sentence. Give a separate bullet when it answers a different reviewer concern.
