@@ -9,8 +9,6 @@ use std::path::{Path, PathBuf};
 const GREEN: u32 = 0x57F287;
 const YELLOW: u32 = 0xFEE75C;
 const RED: u32 = 0xED4245;
-const MAX_ITEMS: usize = 5;
-const MAX_FIELD_LENGTH: usize = 1000;
 const INFRASTRUCTURE: &str = "Infrastructure/provider problem";
 
 #[derive(Parser)]
@@ -29,10 +27,11 @@ struct Cli {
     attachment: PathBuf,
 }
 
-struct Action {
+/// A problem on our side: a recommended action or an infrastructure failure.
+struct Problem {
     category: String,
     severity: String,
-    headline: String,
+    title: String,
     text: String,
 }
 
@@ -40,8 +39,7 @@ struct Report {
     language: String,
     passed_tasks: u64,
     total_tasks: u64,
-    actions: Vec<Action>,
-    infrastructure: Vec<String>,
+    problems: Vec<Problem>,
 }
 
 fn field<'a>(text: &'a str, name: &str) -> &'a str {
@@ -70,8 +68,28 @@ fn severity_rank(severity: &str) -> u8 {
     }
 }
 
+fn problem(category: &str, severity: &str, source: &str, title: &str, details: &str) -> Problem {
+    let title = title.trim().trim_end_matches('.');
+    let label = if severity.is_empty() {
+        format!("{category}, {source}")
+    } else {
+        format!("[{severity}] {category}, {source}")
+    };
+    // Plain text, because Discord shows a .txt attachment as a short preview that expands.
+    let mut text = format!("{label}\n{title}.");
+    if !details.is_empty() {
+        text = format!("{text}\n{}", details.replace("**", ""));
+    }
+    Problem {
+        category: category.to_owned(),
+        severity: severity.to_owned(),
+        title: title.to_owned(),
+        text,
+    }
+}
+
 /// Splits `**[Category | Severity] Title.** Details` into its parts.
-fn parse_action(prefix: &str, item: &str) -> Action {
+fn parse_action(source: &str, item: &str) -> Problem {
     let parts = item.strip_prefix("**[").and_then(|rest| {
         let (tag, rest) = rest.split_once(']')?;
         let (title, details) = rest.split_once("**")?;
@@ -79,31 +97,12 @@ fn parse_action(prefix: &str, item: &str) -> Action {
         Some((
             category.trim(),
             severity.trim(),
-            title.trim().trim_end_matches('.'),
+            title,
             details.trim_start_matches([' ', '—', '–', '-']).trim(),
         ))
     });
     let (category, severity, title, details) = parts.unwrap_or(("Other", "", item, ""));
-    let label = if severity.is_empty() {
-        format!("{category}, {prefix}")
-    } else {
-        format!("[{severity}] {category}, {prefix}")
-    };
-    // Plain text, because Discord shows a .txt attachment as a short preview that expands.
-    let mut text = format!("{label}\n{title}.");
-    if !details.is_empty() {
-        text = format!("{text}\n{}", details.replace("**", ""));
-    }
-    Action {
-        category: category.to_owned(),
-        severity: severity.to_owned(),
-        headline: if severity.is_empty() {
-            format!("- {prefix}: {title}")
-        } else {
-            format!("- {prefix}: [{severity}] {title}")
-        },
-        text,
-    }
+    problem(category, severity, source, title, details)
 }
 
 fn parse_report(text: &str) -> Report {
@@ -119,8 +118,7 @@ fn parse_report(text: &str) -> Report {
         language: language.to_owned(),
         passed_tasks,
         total_tasks,
-        actions: Vec::new(),
-        infrastructure: Vec::new(),
+        problems: Vec::new(),
     };
     let language = language_name(language);
     let mut section = "";
@@ -131,7 +129,7 @@ fn parse_report(text: &str) -> Report {
             title = "";
         } else if section == "Recommended actions" && line.starts_with("- **[") {
             report
-                .actions
+                .problems
                 .push(parse_action(&format!("{language} / {mode}"), &line[2..]));
         } else if section == "Failure patterns" {
             if let Some(heading) = line.strip_prefix("### ") {
@@ -145,9 +143,13 @@ fn parse_report(text: &str) -> Report {
                     })
                     .map_or(heading, |(title, _)| title);
             } else if line.strip_prefix("- **Classification:** ") == Some(INFRASTRUCTURE) && !title.is_empty() {
-                report
-                    .infrastructure
-                    .push(format!("- {language} / {mode} / {model}: {title}"));
+                report.problems.push(problem(
+                    INFRASTRUCTURE,
+                    "",
+                    &format!("{language} / {mode} / {model}"),
+                    title,
+                    "",
+                ));
             }
         }
     }
@@ -176,109 +178,45 @@ fn load_reports(directory: &Path) -> Result<Vec<Report>> {
     Ok(reports)
 }
 
-fn rate(passed: u64, total: u64) -> String {
-    let percent = if total == 0 {
+fn percent(passed: u64, total: u64) -> f64 {
+    if total == 0 {
         0.0
     } else {
         passed as f64 * 100.0 / total as f64
-    };
-    format!("{passed}/{total} ({percent:.1}%)")
-}
-
-fn utf16_len(text: &str) -> usize {
-    text.encode_utf16().count()
-}
-
-/// Keeps as many whole lines as Discord allows in a field, then says how many were left out.
-fn field_value(lines: &[String], empty: &str, max_items: usize) -> String {
-    let mut seen = BTreeSet::new();
-    let unique: Vec<_> = lines.iter().filter(|line| seen.insert(line.as_str())).collect();
-    if unique.is_empty() {
-        return empty.to_owned();
     }
-    let more = |hidden: usize| (hidden > 0).then(|| format!("- ...and {hidden} more"));
-    for shown in (1..=unique.len().min(max_items)).rev() {
-        let mut value = unique[..shown]
-            .iter()
-            .map(|line| line.as_str())
-            .collect::<Vec<_>>()
-            .join("\n");
-        if let Some(more) = more(unique.len() - shown) {
-            value = format!("{value}\n{more}");
-        }
-        // Discord counts UTF-16 units.
-        if utf16_len(&value) <= MAX_FIELD_LENGTH {
-            return value;
-        }
-    }
-    // Even the first line is too long: cut it at a word.
-    let tail = more(unique.len() - 1).map_or(String::new(), |more| format!("\n{more}"));
-    let budget = MAX_FIELD_LENGTH.saturating_sub(utf16_len(&tail) + 1);
-    let mut length = 0;
-    let first: String = unique[0]
-        .chars()
-        .take_while(|ch| {
-            length += ch.len_utf16();
-            length <= budget
-        })
-        .collect();
-    let first = first
-        .rsplit_once(' ')
-        .map_or(first.as_str(), |(head, _)| head)
-        .trim_end();
-    format!("{first}…{tail}")
 }
 
-fn action_lines(actions: &[&Action]) -> Vec<String> {
-    let mut by_category = BTreeMap::<&str, Vec<&Action>>::new();
-    for action in actions {
-        by_category.entry(&action.category).or_default().push(action);
+/// One line per category, most common first, with its most severe title.
+fn problem_lines(problems: &[&Problem]) -> Vec<String> {
+    let mut by_category = BTreeMap::<&str, Vec<&Problem>>::new();
+    for problem in problems {
+        by_category.entry(&problem.category).or_default().push(problem);
     }
     let mut categories: Vec<_> = by_category.into_iter().collect();
     categories.sort_by_key(|(_, items)| Reverse(items.len()));
-    let mut lines = Vec::new();
-    for (category, items) in &categories {
-        let high = items
-            .iter()
-            .filter(|action| severity_rank(&action.severity) <= 1)
-            .count();
-        lines.push(if high > 0 {
-            format!("- {category}: {} ({high} high)", items.len())
-        } else {
-            format!("- {category}: {}", items.len())
-        });
-    }
-    // The most severe headline of each category, most common category first.
-    for (_, items) in &categories {
-        if let Some(action) = items.iter().min_by_key(|action| severity_rank(&action.severity)) {
-            lines.push(action.headline.clone());
-        }
-    }
-    lines
+    categories
+        .into_iter()
+        .filter_map(|(category, items)| {
+            let top = items.iter().min_by_key(|problem| severity_rank(&problem.severity))?;
+            Some(format!("- {category} ({}): {}", items.len(), top.title))
+        })
+        .collect()
 }
 
-fn attachment(actions: &[&Action], infrastructure: &[&String]) -> String {
-    let mut actions = actions.to_vec();
-    actions.sort_by_key(|action| severity_rank(&action.severity));
-    let sections = [
-        (
-            "ACTION ITEMS",
-            actions.iter().map(|action| action.text.as_str()).collect::<Vec<_>>(),
-        ),
-        (
-            "INFRASTRUCTURE/PROVIDER PROBLEMS",
-            infrastructure.iter().map(|line| line.as_str()).collect(),
-        ),
-    ];
-    let mut text = String::new();
-    for (name, items) in sections {
-        let mut seen = BTreeSet::new();
-        let items: Vec<_> = items.into_iter().filter(|item| seen.insert(*item)).collect();
-        if !items.is_empty() {
-            text.push_str(&format!("{name}\n\n{}\n\n", items.join("\n\n")));
-        }
+fn attachment(problems: &[&Problem]) -> String {
+    let mut problems = problems.to_vec();
+    problems.sort_by_key(|problem| severity_rank(&problem.severity));
+    let mut seen = BTreeSet::new();
+    let texts: Vec<_> = problems
+        .iter()
+        .map(|problem| problem.text.as_str())
+        .filter(|text| seen.insert(*text))
+        .collect();
+    if texts.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n", texts.join("\n\n"))
     }
-    text
 }
 
 fn build(reports: &[Report], run_url: &str, run_label: &str) -> (Value, String) {
@@ -291,45 +229,39 @@ fn build(reports: &[Report], run_url: &str, run_label: &str) -> (Value, String) 
         counts.0 += report.passed_tasks;
         counts.1 += report.total_tasks;
     }
-    let actions: Vec<_> = reports.iter().flat_map(|report| &report.actions).collect();
-    let infrastructure: Vec<_> = reports.iter().flat_map(|report| &report.infrastructure).collect();
-    let percent = if total == 0 {
-        0.0
-    } else {
-        passed as f64 * 100.0 / total as f64
-    };
-    let color = if total == 0 || percent < 90.0 || !infrastructure.is_empty() {
+    let problems: Vec<_> = reports.iter().flat_map(|report| &report.problems).collect();
+    let rate = percent(passed, total);
+    let color = if total == 0 || rate < 90.0 || problems.iter().any(|problem| problem.category == INFRASTRUCTURE) {
         RED
-    } else if !actions.is_empty() || percent < 95.0 {
+    } else if !problems.is_empty() || rate < 95.0 {
         YELLOW
     } else {
         GREEN
     };
-    let language_rates: Vec<_> = by_language
-        .into_iter()
-        .map(|(language, (passed, total))| format!("- **{}:** {}", language_name(language), rate(passed, total)))
-        .collect();
-    let mut fields = vec![
-        json!({"name": "By language", "value": field_value(&language_rates, "No analysis reports were produced.", usize::MAX), "inline": false}),
-        json!({"name": "Action items", "value": field_value(&action_lines(&actions), "None", usize::MAX), "inline": false}),
-    ];
-    if !infrastructure.is_empty() {
-        let lines: Vec<_> = infrastructure.iter().map(|line| (*line).clone()).collect();
-        fields.push(json!({"name": "Infrastructure/provider problems", "value": field_value(&lines, "None", MAX_ITEMS), "inline": false}));
+    let mut description = if total == 0 {
+        "No analysis reports were produced.".to_owned()
+    } else {
+        let languages: Vec<_> = by_language
+            .into_iter()
+            .map(|(language, (passed, total))| format!("{} {:.1}%", language_name(language), percent(passed, total)))
+            .collect();
+        format!("**{rate:.1}%** passed ({passed}/{total}) · {}", languages.join(" · "))
+    };
+    let lines = problem_lines(&problems);
+    if !lines.is_empty() {
+        description = format!("{description}\n\n{}", lines.join("\n"));
     }
     let payload = json!({
         "username": "SpacetimeDB LLM Benchmarks",
         "allowed_mentions": {"parse": []},
         "embeds": [{
-            "title": "LLM Benchmark Analysis",
+            "title": format!("LLM Benchmark Analysis · {run_label}"),
             "url": run_url,
-            "description": format!("**{}** task runs passed", rate(passed, total)),
-            "color": color,
-            "fields": fields,
-            "footer": {"text": run_label}
+            "description": description,
+            "color": color
         }]
     });
-    (payload, attachment(&actions, &infrastructure))
+    (payload, attachment(&problems))
 }
 
 fn main() -> Result<()> {
@@ -353,29 +285,23 @@ mod tests {
     }
 
     #[test]
-    fn aggregates_rates_and_leaves_out_model_limitations() {
+    fn summarizes_rates_and_leaves_out_model_limitations() {
         let reports = [
             report("csharp", "36/37 (97.3%)", "", ""),
             report("rust", "34/37 (91.9%)", "", "Model limitation"),
         ];
         let (payload, attachment) = build(&reports, "https://example.com/run", "Weekly run");
         let embed = &payload["embeds"][0];
-        assert_eq!(embed["description"], "**70/74 (94.6%)** task runs passed");
+        assert_eq!(embed["description"], "**94.6%** passed (70/74) · C# 97.3% · Rust 91.9%");
         assert_eq!(embed["color"], YELLOW);
-        assert_eq!(
-            embed["fields"][0]["value"],
-            "- **C#:** 36/37 (97.3%)\n- **Rust:** 34/37 (91.9%)"
-        );
-        assert_eq!(embed["fields"][1]["value"], "None");
-        assert_eq!(embed["fields"].as_array().unwrap().len(), 2);
+        assert_eq!(embed["title"], "LLM Benchmark Analysis · Weekly run");
+        assert_eq!(embed["url"], "https://example.com/run");
         assert_eq!(attachment, "");
         assert_eq!(payload["allowed_mentions"], json!({"parse": []}));
-        assert_eq!(embed["url"], "https://example.com/run");
-        assert_eq!(embed["footer"]["text"], "Weekly run");
     }
 
     #[test]
-    fn groups_actions_by_category_and_attaches_the_details() {
+    fn lists_one_line_per_category_and_attaches_the_details() {
         let reports = [
             report(
                 "csharp",
@@ -391,25 +317,19 @@ mod tests {
             ),
         ];
         let (payload, attachment) = build(&reports, "", "");
-        let fields = &payload["embeds"][0]["fields"];
         assert_eq!(
-            fields[1]["value"],
-            "- Eval problem: 2 (1 high)\n- API/ergonomics problem: 1\n- Rust / guidelines: [High] Capture build output\n- C# / guidelines: [Low] Rename Index"
-        );
-        assert_eq!(fields[2]["name"], "Infrastructure/provider problems");
-        assert_eq!(
-            fields[2]["value"],
-            "- Rust / guidelines / test-model: Incorrect sum-type syntax"
+            payload["embeds"][0]["description"],
+            "**100.0%** passed (74/74) · C# 100.0% · Rust 100.0%\n\n- Eval problem (2): Capture build output\n- API/ergonomics problem (1): Rename Index\n- Infrastructure/provider problem (1): Incorrect sum-type syntax"
         );
         assert_eq!(payload["embeds"][0]["color"], RED);
         assert_eq!(
             attachment,
-            "ACTION ITEMS\n\n[High] Eval problem, Rust / guidelines\nCapture build output.\nEvidence: t_001.\n\n[Medium] Eval problem, C# / guidelines\nKeep publish errors.\nStore all stderr.\n\n[Low] API/ergonomics problem, C# / guidelines\nRename Index.\nIt collides.\n\nINFRASTRUCTURE/PROVIDER PROBLEMS\n\n- Rust / guidelines / test-model: Incorrect sum-type syntax\n\n"
+            "[High] Eval problem, Rust / guidelines\nCapture build output.\nEvidence: t_001.\n\n[Medium] Eval problem, C# / guidelines\nKeep publish errors.\nStore all stderr.\n\n[Low] API/ergonomics problem, C# / guidelines\nRename Index.\nIt collides.\n\nInfrastructure/provider problem, Rust / guidelines / test-model\nIncorrect sum-type syntax.\n"
         );
     }
 
     #[test]
-    fn colors_reflect_pass_rate_actions_and_infrastructure() {
+    fn colors_reflect_pass_rate_problems_and_infrastructure() {
         for (tasks, action, classification, color) in [
             ("37/37", "", "", GREEN),
             ("35/37", "", "Model limitation", YELLOW),
@@ -425,28 +345,11 @@ mod tests {
             let (payload, _) = build(&[report("csharp", tasks, action, classification)], "", "");
             assert_eq!(payload["embeds"][0]["color"], color);
         }
-    }
-
-    #[test]
-    fn empty_and_long_fields_stay_valid() {
         let (payload, _) = build(&[], "", "");
         assert_eq!(payload["embeds"][0]["color"], RED);
         assert_eq!(
-            payload["embeds"][0]["fields"][0]["value"],
+            payload["embeds"][0]["description"],
             "No analysis reports were produced."
-        );
-        let lines: Vec<_> = (0..6).map(|i| format!("- {i} {}", "🦀".repeat(400))).collect();
-        let value = field_value(&lines, "None", usize::MAX);
-        assert!(utf16_len(&value) <= MAX_FIELD_LENGTH);
-        assert!(value.ends_with("\n- ...and 5 more"));
-        let value = field_value(&["word ".repeat(300)], "None", usize::MAX);
-        assert!(utf16_len(&value) <= MAX_FIELD_LENGTH);
-        assert!(value.ends_with("word…"));
-        let mut lines: Vec<_> = (0..6).map(|i| format!("- {i}")).collect();
-        lines.insert(1, "- 0".to_owned());
-        assert_eq!(
-            field_value(&lines, "None", 5),
-            "- 0\n- 1\n- 2\n- 3\n- 4\n- ...and 1 more"
         );
     }
 }

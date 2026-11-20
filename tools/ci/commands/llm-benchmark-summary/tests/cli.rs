@@ -35,7 +35,10 @@ fn formats_downloaded_reports_and_reports_io_errors() {
 
     // A failed benchmark job can leave no report artifact to download.
     assert!(run().status.success());
-    assert_eq!(payload()["embeds"][0]["description"], "**0/0 (0.0%)** task runs passed");
+    assert_eq!(
+        payload()["embeds"][0]["description"],
+        "No analysis reports were produced."
+    );
 
     fs::create_dir_all(reports.join("nested")).unwrap();
     fs::write(
@@ -48,12 +51,10 @@ fn formats_downloaded_reports_and_reports_io_errors() {
     assert!(run().status.success());
     let result = payload();
     let embed = &result["embeds"][0];
-    assert_eq!(embed["description"], "**3/4 (75.0%)** task runs passed");
     assert_eq!(
-        embed["fields"][0]["value"],
-        "- **Rust:** 1/1 (100.0%)\n- **TypeScript:** 2/3 (66.7%)"
+        embed["description"],
+        "**75.0%** passed (3/4) · Rust 100.0% · TypeScript 66.7%"
     );
-    assert_eq!(embed["fields"][1]["value"], "None");
     assert_eq!(fs::read_to_string(&attachment).unwrap(), "");
 
     let broken = reports.join("broken.md");
