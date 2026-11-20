@@ -43,7 +43,13 @@ Fresh agents tried the skill on a regression-test PR. Other cases covered failed
 
 **Input.** Same route diff as above. The tests used a mock backend. All 85 library tests passed. Manually removing the parent check changed the response from 400 to 200 and failed the new test. The guard was restored and the suite rerun.
 
-**Example Testing section.** Added route tests for parent handling during database creation and updates, invalid parents on reset, and reset permissions. Live database hierarchy behavior remains untested.
+**Editorial target for Testing**
+
+- Publishing to an existing database with `clear=true` rejects a parent supplied by name or identity. Removing the guard made the test fail.
+- Clearing an existing database with no parent requires reset permission.
+- Create and update requests use the requested parent. On creation, the permission check uses that same parent.
+- Publishing with `clear=true` creates the database if it does not exist.
+- An unknown parent name returns 404 for both creation and update.
 
 ## Other regression cases
 

@@ -25,7 +25,7 @@ Running the changed workflow on a representative input and inspecting its output
 
 If no behavioral testing was performed, the entire Testing section is the single sentence “Not tested.” Reviewing the patch, checking whitespace, or verifying signatures alone counts as untested.
 
-Write a coverage summary a reviewer can skim. For a test-only change, a useful shape is “Added [kind of test] for [behavior], [behavior], and [boundary].” Use a few short bullets when the behaviors need separate lines. For example: “Added checkout tests for expired vouchers and refunds after cancellation.” Name the regression in product terms. The code diff supplies the permutations, flags, expected values, and assertions.
+Use one short bullet per behavior a reviewer would recognize: the relevant condition and what should happen. Keep a flag, status code, or input form when it defines that case. If a test spans several components, say what would go wrong for the caller if it broke. Split independent behaviors even when one test exercises them. Leave the call sequence and assertion details in the diff.
 
 Include a known failure or consequential gap in its own short sentence. Inspect existing tests before claiming coverage. Distinguish new, updated, and existing coverage when relevant. Routine successful runs, configurations and reruns belong in the author handoff. Include a manual result only when it changes the reviewer's understanding of coverage.
 
