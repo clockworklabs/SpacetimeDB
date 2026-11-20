@@ -34,5 +34,5 @@ and what other components it interacts with in potentially concerning ways.  -->
 # Testing
 
 <!-- If untested, write only “Not tested.”
-Otherwise, briefly name the behaviors covered and any important failure or gap.
+Otherwise, summarize coverage in short test-case titles. Group additional behaviors beneath the test that covers them. Mention any important failure or gap.
 Include a reviewer task only when a specific action is needed. -->

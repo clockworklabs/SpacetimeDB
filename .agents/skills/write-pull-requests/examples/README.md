@@ -45,7 +45,7 @@ Fresh agents tried the skill on a regression-test PR. Other cases covered failed
 
 **Editorial target for Testing**
 
-Added four HTTP route tests covering the following behaviors.
+Added four HTTP route tests covering the following behaviors:
 
 - Publishing to an existing database with `clear=true` and a parent (supplied by name or identity). Removing the guard correctly failed the test.
 - Clearing an existing database with no parent requires reset permission
