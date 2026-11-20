@@ -12,7 +12,11 @@ Compare instructions on identical inputs and model settings. Reserve a separate 
 
 **Example Testing section**
 
-Fresh agents drafted Testing sections from the same diff and notes.
+Fresh agents tried the skill on a regression-test PR. Other cases covered failed tests, untested changes, and edits to existing PR descriptions.
+
+<details>
+<summary>Full comparison from the original drafting trial</summary>
+
 
 ```diff
 --- Before
@@ -35,11 +39,13 @@ Fresh agents drafted Testing sections from the same diff and notes.
 +The tests use a mock backend, so live Cloud hierarchy behavior remains unverified.
 ```
 
+</details>
+
 ## Database route regression
 
 **Input.** Same route diff as above. The tests used a mock backend. All 85 library tests passed. Manually removing the parent check changed the response from 400 to 200 and failed the new test. The guard was restored and the suite rerun.
 
-**Example Testing excerpt.** “Publishing to an existing database with `clear=true` and a parent returns HTTP 400 before calling the reset backend, whether the parent is supplied by name or identity. Manually removing the guard changed the response to HTTP 200 and failed the new test.”
+**Example Testing section.** Added route tests for parent handling during database creation and updates, invalid parents on reset, and reset permissions. Live database hierarchy behavior remains untested.
 
 ## Other regression cases
 

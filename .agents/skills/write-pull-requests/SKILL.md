@@ -25,14 +25,10 @@ Running the changed workflow on a representative input and inspecting its output
 
 If no behavioral testing was performed, the entire Testing section is the single sentence “Not tested.” Reviewing the patch, checking whitespace, or verifying signatures alone counts as untested.
 
-Otherwise, describe the observable behavior and the evidence for it. Lead with the failure that matters most. Group related cases by the claim they establish. For example, several inputs exercising the same fallback usually need one sentence. Give a separate bullet when it answers a different reviewer concern.
+Write a coverage summary a reviewer can skim. For a test-only change, a useful shape is “Added [kind of test] for [behavior], [behavior], and [boundary].” Use a few short bullets when the behaviors need separate lines. For example: “Added checkout tests for expired vouchers and refunds after cancellation.” Name the regression in product terms. The code diff supplies the permutations, flags, expected values, and assertions.
 
-Say which coverage is new, updated, or already present when that distinction matters. Inspect existing coverage before making claims about it. A manual experiment belongs here when its result tells the reviewer something specific. Label it as manual and give that result.
+Include a known failure or consequential gap in its own short sentence. Inspect existing tests before claiming coverage. Distinguish new, updated, and existing coverage when relevant. Routine successful runs, configurations and reruns belong in the author handoff. Include a manual result only when it changes the reviewer's understanding of coverage.
 
-Routine suite status (“all tests passed”), pass counts, commands, reruns, and restoration of temporary edits belong in the author handoff. In the PR, describe each distinct behavior once. Introduce a group of new or updated tests together and let each sentence name the behavior directly. Include an execution detail in the PR when it explains a known failure, helps reproduce a relevant result, or changes the conclusion a reviewer can draw. Report known failures.
-
-State the boundary of the evidence when it matters. Name the behavior still unverified and any known barrier. A test that compiles a client against two versions of generated bindings establishes source compatibility. A claim about exchanging messages with a server needs evidence from an actual interaction.
-
-When comparing generated text, identify the input and show the complete unit being evaluated (for example, the Testing section) as a unified diff or two intact before-and-after blocks. “Before” is the observed output from before the PR. Preserve that baseline. Label a later run on the base revision as a reproduction. Mention trial conditions that affect interpretation. If only one output was captured, show it and limit the claim to that observation.
+For generated output, lead with what the trial covered. Put the complete comparison in a collapsed details block or link directly to it if it would interrupt the summary. Use a unified diff or two intact outputs for the unit under review. “Before” is the observed output from before the PR. Preserve that baseline. Label a later run on the base revision as a reproduction. Mention trial conditions that affect interpretation. If only one output was captured, show it and limit the claim to that observation.
 
 For examples to use when refining this skill, see the [golden cases](examples/README.md).
