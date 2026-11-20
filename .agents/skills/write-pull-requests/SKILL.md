@@ -29,6 +29,6 @@ Write a coverage summary a reviewer can skim. For a test-only change, a useful s
 
 Include a known failure or consequential gap in its own short sentence. Inspect existing tests before claiming coverage. Distinguish new, updated, and existing coverage when relevant. Routine successful runs, configurations and reruns belong in the author handoff. Include a manual result only when it changes the reviewer's understanding of coverage.
 
-For generated output, lead with what the trial covered. Put the complete comparison in a collapsed details block or link directly to it if it would interrupt the summary. Use a unified diff or two intact outputs for the unit under review. “Before” is the observed output from before the PR. Preserve that baseline. Label a later run on the base revision as a reproduction. Mention trial conditions that affect interpretation. If only one output was captured, show it and limit the claim to that observation.
+For generated output, lead with what the trial covered. Show the complete comparison inline after the summary. Use a unified diff or two intact outputs for the unit under review. “Before” is the observed output from before the PR. Preserve that baseline. Label a later run on the base revision as a reproduction. Mention trial conditions that affect interpretation. If only one output was captured, show it and limit the claim to that observation.
 
 For examples to use when refining this skill, see the [golden cases](examples/README.md).

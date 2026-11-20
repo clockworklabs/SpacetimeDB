@@ -14,8 +14,7 @@ Compare instructions on identical inputs and model settings. Reserve a separate 
 
 Fresh agents tried the skill on a regression-test PR. Other cases covered failed tests, untested changes, and edits to existing PR descriptions.
 
-<details>
-<summary>Full comparison from the original drafting trial</summary>
+**Full comparison from the original drafting trial**
 
 
 ```diff
@@ -39,7 +38,6 @@ Fresh agents tried the skill on a regression-test PR. Other cases covered failed
 +The tests use a mock backend, so live Cloud hierarchy behavior remains unverified.
 ```
 
-</details>
 
 ## Database route regression
 
