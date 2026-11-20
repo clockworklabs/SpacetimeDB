@@ -49,6 +49,15 @@ on:
         required: false
         type: boolean
         default: false
+      attachment_format:
+        description: 'File format of the details attached to the Discord post'
+        required: false
+        type: choice
+        options:
+          - html
+          - md
+          - txt
+        default: html
 
 permissions:
   contents: read
@@ -337,25 +346,32 @@ jobs:
         env:
           RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
           RUN_LABEL: ${{ github.event_name == 'schedule' && 'Weekly scheduled run' || 'Manual run' }}
+          ATTACHMENT: analysis.${{ inputs.attachment_format || 'html' }}
         run: >
           cargo ci other-workflows llm-benchmark-summary
           --reports-dir reports
           --run-url "$RUN_URL"
           --run-label "$RUN_LABEL"
           --output discord-payload.json
+          --attachment "$ATTACHMENT"
 
       - name: Post Discord summary
         if: github.event_name == 'schedule' || inputs.post_discord
         continue-on-error: true
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.LLM_BENCHMARK_DISCORD_WEBHOOK_URL }}
+          ATTACHMENT: analysis.${{ inputs.attachment_format || 'html' }}
         run: |
           if [ -z "$DISCORD_WEBHOOK_URL" ]; then
             echo "::warning::LLM_BENCHMARK_DISCORD_WEBHOOK_URL is not configured"
             exit 0
           fi
 
+          attachment=()
+          if [ -s "$ATTACHMENT" ]; then
+            attachment=(--form "files[0]=@$ATTACHMENT")
+          fi
           curl --fail --silent --show-error \
-            --header 'Content-Type: application/json' \
-            --data-binary @discord-payload.json \
+            --form 'payload_json=<discord-payload.json;type=application/json' \
+            "${attachment[@]}" \
             "$DISCORD_WEBHOOK_URL"
