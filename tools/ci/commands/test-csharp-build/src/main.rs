@@ -328,12 +328,10 @@ public class ModuleReferenceTests
 }
 
 fn check_library_reference(work: &Path, cli: &Path, version: &str) -> Result<()> {
-    // The SDK builds a plain library reference without the module's wasi-wasm RID.
-    // It must still compile its generated code for the WASM Runtime the module links.
-    println!("Checking a WASM module with a library project reference");
+    // The SDK builds library references without the module's wasi-wasm RID, including
+    // CoreLib, which the module only reaches through AuthLib. Both must still target WASM.
+    println!("Checking a WASM module with nested library project references");
     let module = work.join("library/module");
-    let library = module.join("libraries/AuthLib");
-    fs::create_dir_all(&library)?;
     let mut project = Element::parse(File::open(work.join("basic-cs/module/StdbModule.csproj"))?)?;
     let references = Element::parse(
         r#"<ItemGroup>
@@ -343,32 +341,56 @@ fn check_library_reference(work: &Path, cli: &Path, version: &str) -> Result<()>
             .as_bytes(),
     )?;
     project.children.push(XMLNode::Element(references));
-    project.write(File::create(module.join("StdbModule.csproj"))?)?;
-    fs::copy(work.join("basic-cs/global.json"), work.join("library/global.json"))?;
-    fs::write(
-        module.join("Lib.cs"),
-        r#"using SpacetimeDB;
+    write_library(
+        &module.join("libraries/AuthLib"),
+        version,
+        r#"<ProjectReference Include="../CoreLib/CoreLib.csproj" />"#,
+        r#"[assembly: Namespace(typeof(CoreLib.Marker), Accessor = "Core")]
 
-[assembly: Namespace(typeof(AuthLib.Marker), Accessor = "MyAuth", Name = "auth_data")]
+namespace AuthLib;
 
-public static partial class Module
+public class Marker { }
+"#,
+    )?;
+    write_library(
+        &module.join("libraries/CoreLib"),
+        version,
+        "",
+        r#"namespace CoreLib;
+
+public class Marker { }
+
+[Table(Accessor = "Item")]
+public partial struct Item
 {
-    [Reducer]
-    public static void AddAuthUser(ReducerContext ctx, uint id) => AuthLib.Functions.Add(ctx.As.MyAuth, id);
+    public uint Id;
 }
 "#,
     )?;
+    project.write(File::create(module.join("StdbModule.csproj"))?)?;
     fs::write(
-        library.join("AuthLib.csproj"),
+        module.join("Lib.cs"),
+        r#"[assembly: SpacetimeDB.Namespace(typeof(AuthLib.Marker), Accessor = "Auth")]"#,
+    )?;
+    fs::copy(work.join("basic-cs/global.json"), work.join("library/global.json"))?;
+    run(work, cmd!(cli, "build", "--module-path", &module))?;
+    Ok(())
+}
+
+fn write_library(library: &Path, version: &str, references: &str, source: &str) -> Result<()> {
+    let name = library.file_name().context("Library path has no name")?.to_string_lossy();
+    fs::create_dir_all(library)?;
+    fs::write(
+        library.join(format!("{name}.csproj")),
         format!(
             r#"<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="SpacetimeDB.Runtime" Version="{version}" />
+    {references}
   </ItemGroup>
 </Project>
 "#
@@ -376,32 +398,16 @@ public static partial class Module
     )?;
     fs::write(
         library.join("Lib.cs"),
-        r#"using SpacetimeDB;
+        format!(
+            r#"using SpacetimeDB;
 
-// This check only builds the library as part of the WASM module.
 #if !SPACETIMEDB_WASM_AOT
-#error The library was compiled for the managed Runtime, but the module links the WASM Runtime.
+#error {name} was compiled for the managed Runtime, but the module links the WASM Runtime.
 #endif
 
-namespace AuthLib;
-
-public class Marker { }
-
-[Table(Accessor = "User", Name = "auth_users", Public = true)]
-public partial struct User
-{
-    [PrimaryKey]
-    public uint Id;
-}
-
-public static partial class Functions
-{
-    [Reducer]
-    public static void Add(ReducerContext ctx, uint id) => ctx.Db.User.Insert(new User { Id = id });
-}
-"#,
+{source}"#
+        ),
     )?;
-    run(work, cmd!(cli, "build", "--module-path", &module))?;
     Ok(())
 }
 
