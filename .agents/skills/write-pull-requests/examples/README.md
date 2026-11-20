@@ -48,11 +48,11 @@ Fresh agents tried the skill on a regression-test PR. Other cases covered failed
 Added four HTTP route tests covering the following behaviors.
 
 - Publishing to an existing database with `clear=true` and a parent (supplied by name or identity). Removing the guard correctly failed the test.
-- Clearing an existing database with no parent requires reset permission.
+- Clearing an existing database with no parent requires reset permission
 - Create and update requests use the requested parent. The same test covers:
   - Creation checks permission for the requested parent.
   - Publishing with `clear=true` creates the database if it does not exist.
-- An unknown parent name returns 404 for both creation and update.
+- An unknown parent name returns 404 for both creation and update
 
 ## Other regression cases
 
