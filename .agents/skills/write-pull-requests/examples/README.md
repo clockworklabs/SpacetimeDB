@@ -1,6 +1,8 @@
 # Golden Testing sections
 
-When revising the skill, give a fresh agent the linked diff and the case's input notes. Keep the expected answer out of its prompt. Compare its draft with the example for factual accuracy, evidence selection, and brevity. Wording can vary. To extend the collection, add a diff, the evidence available to the author, and a short example of what a reviewer should see.
+Use these cases to judge fresh drafts. Give the writer the case diff, raw evidence, and the instructions being tested. Keep this README and expected answers outside its workspace, including in the diff. For a change to the skill itself, supply a patch with example files excluded. Give the complete observed outputs so the writer has to choose the evidence.
+
+Compare instructions on identical inputs and model settings. Reserve a separate case the author of the instructions did not tune against. Judge accuracy, evidence selection, and brevity; wording can vary. Add a diff, input notes, and a short example when a new case teaches a distinct decision.
 
 ## A change to PR-writing instructions
 
