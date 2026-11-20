@@ -4,8 +4,8 @@ This model-free fixture tests the native protocol before Convex becomes a
 selectable stack. It is not an ecommerce reference, qualified account implementation,
 qualification receipt, or paid campaign. Do not supply it to a coding agent.
 
-Runtime pin: `ghcr.io/convex/convex-backend@sha256:afbf4292df387c8f031a68d00048551cf1640ddf0013c51ac704a89d7e73e743`
-(Linux amd64, backend revision `4e9b83a27fb214e470c9706a0bae234e411d134f`).
+Runtime pin: `ghcr.io/convex/convex-backend@sha256:7427e3eef2b79cac55e2488ad0ef235baf53bbf7c18902f6fb5e02d2d049f88a`
+(Linux amd64, backend revision `3d585751a2de8c9066dc3fc5ac18340c1ef48810`).
 The fixture lockfile pins the native client/CLI to `1.46.0`.
 
 Use a fresh, owned backend with its own instance secret and data directory.
