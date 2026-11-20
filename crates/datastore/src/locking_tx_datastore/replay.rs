@@ -498,12 +498,21 @@ impl<'cs> ReplayCommittedState<'cs> {
     // Replaying a whole record again could repeat rows already applied before the failure.
     fn with_eviction_retry<T>(&mut self, mut operation: impl FnMut(&mut Self) -> Result<T>) -> Result<T> {
         match operation(self) {
-            Err(error) if error.is_resident_memory_limit() => {
-                self.trim_resident()?;
-                operation(self)
-            }
-            result => result,
+            Err(error) if error.is_resident_memory_limit() => {}
+            result => return result,
         }
+        self.trim_resident()?;
+        match operation(self) {
+            Err(error) if error.is_resident_memory_limit() => {}
+            result => return result,
+        }
+        // Replayed transactions were already committed, so they must apply
+        // even when nothing else can be evicted, e.g. if the limit was lowered
+        // below the size of tables that must stay in memory. Failing here would
+        // stop the database from starting at all. The limit still applies to
+        // new transactions once replay is done.
+        let _suspension = self.storage.suspend_resident_hard_limit();
+        operation(self)
     }
 
     /// The purpose of this is to rebuild the state of the datastore
@@ -1305,6 +1314,45 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn replay_exceeds_memory_limit_when_nothing_can_be_evicted() -> ResultTest<()> {
+        const LIMIT: u64 = 16 * 1024 * 1024;
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
+            low_water_bytes: 0,
+            soft_limit_bytes: LIMIT,
+            hard_limit_bytes: LIMIT,
+        })?;
+        let mut config = TieredStorageConfig::new_for_test();
+        config.resident_budget = budget.clone();
+        let datastore = Locking::bootstrap(Identity::ZERO, config)?;
+        let mut tx = begin_mut_tx(&datastore);
+        let mut schema = TableSchema::from_product_type([AlgebraicType::U64].into());
+        schema.table_name = TableName::for_test("in_memory");
+        schema.cache_policy = TableCachePolicy::RequiredInMemory;
+        let table = tx.create_table(schema)?;
+        commit(&datastore, tx)?;
+        let row = product![42_u64];
+
+        {
+            let mut replay = ReplayCommittedState::new(datastore.committed_state.write());
+            let schema = replay.schema_for_table(table)?;
+            // Fill the budget. Every resident page belongs to a table that must
+            // stay in memory, so eviction cannot make room for the replayed row.
+            let reservation = budget.acquire(LIMIT - budget.usage().accounted_bytes)?;
+            replay.replay_insert(table, &schema, &row)?;
+            assert!(budget.usage().accounted_bytes > LIMIT);
+            // The limit is enforced again after the replayed operation.
+            assert!(budget.acquire(0).is_err());
+            drop(reservation);
+            replay.rebuild_state_after_replay()?;
+        }
+        let tx = begin_mut_tx(&datastore);
+        assert_eq!(all_rows(&datastore, &tx, table), [row]);
+        let _ = datastore.rollback_mut_tx(tx);
+        Ok(())
+    }
+
     fn append_committed_transaction(log: &mut MemoryCommitlog, data: &TxData) -> ResultTest<()> {
         use spacetimedb_commitlog::payload::txdata::{Mutations, Ops};
 
@@ -1764,18 +1812,25 @@ mod tests {
                 let state = datastore.committed_state.write();
                 let mut state = ReplayCommittedState::new(state);
                 let schema = state.schema_for_table(table_id)?;
-                assert!(state.replay_insert(table_id, &schema, &row).is_err());
+                // Replay retries with the memory limit suspended, so the insert
+                // succeeds, but only after the same pinning failure twice.
+                state.replay_insert(table_id, &schema, &row)?;
                 // Remove memory pressure before inspecting state, so subsequent
                 // reads can reveal leaked rows instead of failing to load them.
                 drop(reservation);
                 let table = &state.tables[&table_id];
-                assert_eq!(table.num_rows(), 0);
-                assert!(table.scan_all_row_ptrs()?.is_empty());
-                assert_eq!(state.storage.blobs().num_blobs(), 0);
-                // A subsequent replay operation must not see a ghost row from
-                // the failed operation, or inherit its blob references.
+                // The failed attempts must leave neither a ghost row nor extra
+                // blob references behind.
+                assert_eq!(table.num_rows(), 1);
+                assert_eq!(table.scan_all_row_ptrs()?.len(), 1);
+                let mut blob_uses = Vec::new();
+                state.storage.blobs().try_for_each::<ObjectStoreError>(|_, uses, _| {
+                    blob_uses.push(uses.get() as u64);
+                    Ok(())
+                })?;
+                assert_eq!(blob_uses, [1, 1]);
                 state.replay_insert(table_id, &schema, &product!["small", "row"])?;
-                assert_eq!(state.tables[&table_id].num_rows(), 1);
+                assert_eq!(state.tables[&table_id].num_rows(), 2);
             } else {
                 // An insertion error must undo its own physical writes while
                 // the transaction remains open. Rolling back here would hide

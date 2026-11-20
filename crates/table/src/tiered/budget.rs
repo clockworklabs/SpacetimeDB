@@ -31,7 +31,10 @@ impl ByteBudget {
 
     pub fn new(config: ByteBudgetConfig) -> Result<Self, ConfigError> {
         config.validate_then(|config| Self {
-            state: Arc::new(Mutex::new(ByteBudgetState { accounted_bytes: 0 })),
+            state: Arc::new(Mutex::new(ByteBudgetState {
+                accounted_bytes: 0,
+                hard_limit_suspensions: 0,
+            })),
             config,
             metrics: Default::default(),
         })
@@ -58,7 +61,7 @@ impl ByteBudget {
     pub fn acquire(&self, bytes: u64) -> Result<BudgetPermit, BudgetExceeded> {
         let mut state = self.state.lock().unwrap();
         if let Some(accounted_bytes) = state.accounted_bytes.checked_add(bytes)
-            && accounted_bytes <= self.config.hard_limit_bytes
+            && (accounted_bytes <= self.config.hard_limit_bytes || state.hard_limit_suspensions > 0)
         {
             state.accounted_bytes = accounted_bytes;
             Ok(BudgetPermit {
@@ -85,6 +88,38 @@ impl ByteBudget {
             state: self.state.clone(),
             bytes,
         }
+    }
+
+    /// Let [`Self::acquire`] exceed the hard limit until the returned guard is dropped.
+    ///
+    /// Bytes acquired meanwhile still count toward usage,
+    /// so the limit applies again to acquisitions after the guard is dropped.
+    pub fn suspend_hard_limit(&self) -> HardLimitSuspension {
+        let mut state = self.state.lock().unwrap();
+        state.hard_limit_suspensions = state
+            .hard_limit_suspensions
+            .checked_add(1)
+            .expect("hard limit suspensions overflow");
+        HardLimitSuspension {
+            state: self.state.clone(),
+        }
+    }
+}
+
+/// Guard returned by [`ByteBudget::suspend_hard_limit`].
+#[derive(Debug)]
+#[must_use = "the hard limit is enforced again as soon as the suspension is dropped"]
+pub struct HardLimitSuspension {
+    state: Arc<Mutex<ByteBudgetState>>,
+}
+
+impl Drop for HardLimitSuspension {
+    fn drop(&mut self) {
+        let mut state = self.state.lock().unwrap();
+        state.hard_limit_suspensions = state
+            .hard_limit_suspensions
+            .checked_sub(1)
+            .expect("hard limit suspensions underflow");
     }
 }
 
@@ -133,6 +168,8 @@ impl ByteBudgetConfig {
 #[derive(Debug)]
 pub struct ByteBudgetState {
     accounted_bytes: u64,
+    /// Number of live [`HardLimitSuspension`]s.
+    hard_limit_suspensions: u32,
 }
 
 impl ByteBudgetUsage {
@@ -315,6 +352,36 @@ mod tests {
             prop_assert_eq!(budget.usage().accounted_bytes(), forced_bytes);
             drop(permit);
             prop_assert_eq!(budget.usage().accounted_bytes(), 0);
+        }
+
+        #[test]
+        fn suspended_hard_limit_admits_acquisitions_and_is_enforced_after_drop(
+            hard_limit_bytes in 0_u64..1_000_000,
+            excess_bytes in 1_u64..1_000_000,
+        ) {
+            let budget = ByteBudget::new(ByteBudgetConfig {
+                tier: CacheTier::Memory,
+                low_water_bytes: 0,
+                soft_limit_bytes: hard_limit_bytes,
+                hard_limit_bytes,
+            }).unwrap();
+            let over_limit_bytes = hard_limit_bytes + excess_bytes;
+            prop_assert!(budget.acquire(over_limit_bytes).is_err());
+
+            let outer = budget.suspend_hard_limit();
+            let inner = budget.suspend_hard_limit();
+            drop(inner);
+            // The outer suspension is still live.
+            let permit = budget.acquire(over_limit_bytes).unwrap();
+            prop_assert_eq!(budget.usage().accounted_bytes(), over_limit_bytes);
+            drop(outer);
+
+            // Usage acquired while suspended still counts against the limit.
+            let error = budget.acquire(0).unwrap_err();
+            prop_assert_eq!(error.accounted_bytes, over_limit_bytes);
+            drop(permit);
+            prop_assert_eq!(budget.usage().accounted_bytes(), 0);
+            prop_assert!(budget.acquire(hard_limit_bytes).is_ok());
         }
     }
 }

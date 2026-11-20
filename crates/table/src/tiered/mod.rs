@@ -17,7 +17,7 @@ mod storage;
 
 pub use self::{
     blob_set::{BlobHandle, BlobMap, BlobReadSet, BlobSet},
-    budget::{BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetConfig, ByteBudgetUsage},
+    budget::{BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetConfig, ByteBudgetUsage, HardLimitSuspension},
     error::{BlobError, ObjectStoreError, PageError, TrimError},
     map::ObjectKey,
     mem::ResidentObjects,
@@ -155,6 +155,11 @@ impl TieredDatabaseStorage {
 
     pub fn metrics(&self) -> &metrics::Metrics {
         self.cache.metrics()
+    }
+
+    /// Let resident pages and blobs exceed the memory limit until the returned guard is dropped.
+    pub fn suspend_resident_hard_limit(&self) -> HardLimitSuspension {
+        self.cache.budget().suspend_hard_limit()
     }
 
     pub fn pages(&self) -> &Arc<PageManager> {
