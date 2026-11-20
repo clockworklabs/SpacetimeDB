@@ -30,22 +30,22 @@ RUN npm ci --prefix /opt/browser-tools --omit=dev --ignore-scripts \
 # Pinned, and the auto-updater disabled: a CLI that updates itself mid-series
 # changes the thing under test between one backend and the next. Override at
 # build time to move deliberately rather than by drift.
-ARG CLAUDE_VERSION=2.1.284
-ARG CODEX_VERSION=0.159.3
+ARG CLAUDE_VERSION=2.1.329
+ARG CODEX_VERSION=0.171.0
 ENV DISABLE_AUTOUPDATER=1
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_VERSION} \
     && claude --version
 RUN npm install -g @openai/codex@${CODEX_VERSION} && codex --version
 # xAI's installer does not verify the download, so the binary is checked here.
-ARG GROK_VERSION=1.0.46
-ARG GROK_SHA256=41626a53292324140b92556b9d42ff5542e3dcd04aff85eafb8689dd4adb44fc
+ARG GROK_VERSION=1.0.89
+ARG GROK_SHA256=a3dface51d9bdc71fd121e0481dd02d9b46a721f7a6b892f756480e9666eba1f
 ENV GROK_DISABLE_AUTOUPDATER=1
 RUN curl -fsSL "https://x.ai/cli/grok-${GROK_VERSION}-linux-x86_64.gz" | gzip -dc > /usr/local/bin/grok \
     && echo "${GROK_SHA256}  /usr/local/bin/grok" | sha256sum -c - \
     && chmod 0755 /usr/local/bin/grok && grok --version
 # The release Google's installer resolves for linux_x64, checked against its manifest's SHA-512.
-ARG AGY_URL=https://storage.googleapis.com/antigravity-public/antigravity-cli/1.3.2-5813501495738368/linux-x64/cli_linux_x64.tar.gz
-ARG AGY_SHA512=8dc2bb8471cfa6326e29e2896add767ad2d1f3714304b70fbae720d68af011182e7afde43964a7a3f54c604ab72c4fad772c8595608b059cfc582fb6798a25d2
+ARG AGY_URL=https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.13-5999302598852608/linux-x64/cli_linux_x64.tar.gz
+ARG AGY_SHA512=014b37387703acab1f47cd532c8bb60167a6a3537b0f9891de03f1b1ffa9614307bc83c4b2f7551273b0877d722716b0cd9e26782f6b2a50705db4f05e18c68f
 RUN curl -fsSL "${AGY_URL}" -o /tmp/agy.tar.gz \
     && echo "${AGY_SHA512}  /tmp/agy.tar.gz" | sha512sum -c - \
     && tar -xzf /tmp/agy.tar.gz -C /tmp antigravity && install -m 0755 /tmp/antigravity /usr/local/bin/agy \
