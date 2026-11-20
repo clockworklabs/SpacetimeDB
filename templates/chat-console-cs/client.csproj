@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <Compile Remove="spacetimedb/**" />
+    <Compile Remove="tests/**" />
   </ItemGroup>
 
 </Project>
