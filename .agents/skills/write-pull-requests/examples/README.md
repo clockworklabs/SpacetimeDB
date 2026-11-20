@@ -8,23 +8,32 @@ Compare instructions on identical inputs and model settings. Reserve a separate 
 
 **Diff under review.** The authoring guide put behavior ahead of routine run details. The template changed its Testing prompt from “Describe any testing you've done” to “If untested, write only ‘Not tested.’ Otherwise, describe the behavior verified and any gap that affects confidence in this change.” See `git show 5c5f7bc0df` for the full historical patch.
 
-**Trial input.** Two fresh agents drafted Testing sections for the same [database route test diff](https://github.com/clockworklabs/SpacetimeDB/compare/34dcbf8084cf07b978e9a1b9b14127a2fb24279d...5ef5f833a7a4e4230f0662f5e6d93990ba3e1d29). Both received the notes below. The original run did not record a model setting here. The revised run used Sol at low reasoning. The excerpts below are verbatim.
+**Trial input.** Two fresh agents drafted Testing sections for the same [database route test diff](https://github.com/clockworklabs/SpacetimeDB/compare/34dcbf8084cf07b978e9a1b9b14127a2fb24279d...5ef5f833a7a4e4230f0662f5e6d93990ba3e1d29). Both received the notes below. The original run did not record a model setting here. The revised run used Sol at low reasoning. The diff below covers both complete Testing sections.
 
 **Example Testing section**
 
-Fresh agents drafted a description from the same diff and test notes. The original draft opened with:
+Fresh agents drafted Testing sections from the same diff and notes.
 
-> All 85 client API library tests passed with default features disabled.
-
-The original draft described the regression in its third bullet:
-
-> Resetting an existing database with either form of `parent` returns 400 and skips the backend reset, even with reset permission. Temporarily removing the parent guard made this test fail with 200.
-
-The revised draft led with:
-
-> Publishing to an existing database with `clear=true` and a parent returns HTTP 400 before calling the reset backend, whether the parent is supplied by name or identity. Manually removing the guard changed the response to HTTP 200 and failed the new test.
-
-Both drafts described the regression. The revised draft led with it and omitted the pass count. The model settings were only recorded for the revised run.
+```diff
+--- Before
++++ After
+@@ -1,8 +1,10 @@
+ # Testing
+ 
+-All 85 client API library tests passed with default features disabled. The new tests exercise the HTTP route with a mock backend. Live Cloud hierarchy behavior remains untested.
++New HTTP route tests cover these cases:
+ 
+-- Create and update requests forward the expected parent to publication when `parent` is omitted, supplied by name, or supplied as a hex identity. Creation authorization receives the same parent, including when `clear=true` targets a missing database.
+-- An unknown parent name returns 404 before backend publication for both creates and updates.
+-- Resetting an existing database with either form of `parent` returns 400 and skips the backend reset, even with reset permission. Temporarily removing the parent guard made this test fail with 200.
+-- Without `parent`, a denied reset returns 403 and skips the backend reset. An authorized reset calls the backend once and reports the existing database as updated.
++- Publishing to an existing database with `clear=true` and a parent returns HTTP 400 before calling the reset backend, whether the parent is supplied by name or identity. Manually removing the guard changed the response to HTTP 200 and failed the new test.
++- Clearing an existing database with no parent returns HTTP 403 without reset permission. With permission, the route calls reset once and reports the database as updated.
++- Creation and update forward the parent identity to publication when the request supplies a name or identity, and forward no parent when it is omitted. Creation also forwards the same value to authorization. A missing target follows the create path even with `clear=true`.
++- An unknown parent name returns HTTP 404 for both creation and update before calling the publication backend.
++
++The tests use a mock backend, so live Cloud hierarchy behavior remains unverified.
+```
 
 ## Database route regression
 
