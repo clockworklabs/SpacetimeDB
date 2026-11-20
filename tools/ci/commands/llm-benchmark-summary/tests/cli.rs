@@ -15,6 +15,7 @@ fn formats_downloaded_reports_and_reports_io_errors() {
     let reports = root.join("reports");
     fs::create_dir_all(&root).unwrap();
     let output = root.join("payload.json");
+    let attachment = root.join("analysis.md");
     // Nextest archives relocate binaries, so prefer its runtime path over the compile-time one.
     let exe = std::env::var_os("NEXTEST_BIN_EXE_ci-llm-benchmark-summary")
         .unwrap_or_else(|| env!("CARGO_BIN_EXE_ci-llm-benchmark-summary").into());
@@ -25,6 +26,8 @@ fn formats_downloaded_reports_and_reports_io_errors() {
             .args(["--run-url", "https://example.com/run", "--run-label", "Manual run"])
             .arg("--output")
             .arg(&output)
+            .arg("--attachment")
+            .arg(&attachment)
             .output()
             .unwrap()
     };
@@ -50,10 +53,8 @@ fn formats_downloaded_reports_and_reports_io_errors() {
         embed["fields"][0]["value"],
         "- **Rust:** 1/1 (100.0%)\n- **TypeScript:** 2/3 (66.7%)"
     );
-    assert_eq!(
-        embed["fields"][2]["value"],
-        "- TypeScript / guidelines / test-model: API usage - Model limitation"
-    );
+    assert_eq!(embed["fields"][1]["value"], "None");
+    assert_eq!(fs::read_to_string(&attachment).unwrap(), "");
 
     let broken = reports.join("broken.md");
     fs::write(&broken, [0xff]).unwrap();

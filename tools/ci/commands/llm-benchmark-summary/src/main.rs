@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use serde_json::{json, Value};
+use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -10,9 +11,10 @@ const YELLOW: u32 = 0xFEE75C;
 const RED: u32 = 0xED4245;
 const MAX_ITEMS: usize = 5;
 const MAX_FIELD_LENGTH: usize = 1000;
+const INFRASTRUCTURE: &str = "Infrastructure/provider problem";
 
 #[derive(Parser)]
-#[command(about = "Build a Discord embed from LLM benchmark analysis reports.")]
+#[command(about = "Build a Discord embed and attachment from LLM benchmark analysis reports.")]
 struct Cli {
     #[arg(long)]
     reports_dir: PathBuf,
@@ -22,14 +24,24 @@ struct Cli {
     run_label: String,
     #[arg(long)]
     output: PathBuf,
+    /// Full text of the problems on our side; left empty when there are none.
+    #[arg(long)]
+    attachment: PathBuf,
+}
+
+struct Action {
+    category: String,
+    severity: String,
+    headline: String,
+    line: String,
 }
 
 struct Report {
     language: String,
     passed_tasks: u64,
     total_tasks: u64,
-    actions: Vec<String>,
-    other_findings: Vec<String>,
+    actions: Vec<Action>,
+    infrastructure: Vec<String>,
 }
 
 fn field<'a>(text: &'a str, name: &str) -> &'a str {
@@ -48,6 +60,37 @@ fn language_name(language: &str) -> &str {
     }
 }
 
+fn severity_rank(severity: &str) -> u8 {
+    match severity.to_ascii_lowercase().as_str() {
+        "critical" => 0,
+        "high" => 1,
+        "medium" => 2,
+        "low" => 3,
+        _ => 4,
+    }
+}
+
+/// Splits `**[Category | Severity] Title.** Details` into its parts.
+fn parse_action(prefix: &str, item: &str) -> Action {
+    let parts = item.strip_prefix("**[").and_then(|rest| {
+        let (tag, rest) = rest.split_once(']')?;
+        let (title, _) = rest.split_once("**")?;
+        let (category, severity) = tag.split_once('|').unwrap_or((tag, ""));
+        Some((category.trim(), severity.trim(), title.trim().trim_end_matches('.')))
+    });
+    let (category, severity, title) = parts.unwrap_or(("Other", "", item));
+    Action {
+        category: category.to_owned(),
+        severity: severity.to_owned(),
+        headline: if severity.is_empty() {
+            format!("- {prefix}: {title}")
+        } else {
+            format!("- {prefix}: [{severity}] {title}")
+        },
+        line: format!("- {prefix}: {item}"),
+    }
+}
+
 fn parse_report(text: &str) -> Report {
     let language = field(text, "Language");
     let mode = field(text, "Mode");
@@ -62,7 +105,7 @@ fn parse_report(text: &str) -> Report {
         passed_tasks,
         total_tasks,
         actions: Vec::new(),
-        other_findings: Vec::new(),
+        infrastructure: Vec::new(),
     };
     let language = language_name(language);
     let mut section = "";
@@ -72,7 +115,9 @@ fn parse_report(text: &str) -> Report {
             section = heading;
             title = "";
         } else if section == "Recommended actions" && line.starts_with("- **[") {
-            report.actions.push(format!("- {language} / {mode}: {}", &line[2..]));
+            report
+                .actions
+                .push(parse_action(&format!("{language} / {mode}"), &line[2..]));
         } else if section == "Failure patterns" {
             if let Some(heading) = line.strip_prefix("### ") {
                 title = heading
@@ -84,16 +129,10 @@ fn parse_report(text: &str) -> Report {
                             .is_some_and(|count| count.parse::<u64>().is_ok())
                     })
                     .map_or(heading, |(title, _)| title);
-            } else if let Some(classification) = line.strip_prefix("- **Classification:** ")
-                && !title.is_empty()
-                && matches!(
-                    classification,
-                    "Model limitation" | "Infrastructure/provider problem" | "No action"
-                )
-            {
+            } else if line.strip_prefix("- **Classification:** ") == Some(INFRASTRUCTURE) && !title.is_empty() {
                 report
-                    .other_findings
-                    .push(format!("- {language} / {mode} / {model}: {title} - {classification}"));
+                    .infrastructure
+                    .push(format!("- {language} / {mode} / {model}: {title}"));
             }
         }
     }
@@ -131,67 +170,130 @@ fn rate(passed: u64, total: u64) -> String {
     format!("{passed}/{total} ({percent:.1}%)")
 }
 
-fn field_value(lines: &[String], empty: &str, overflow_label: &str) -> String {
-    let mut seen = BTreeSet::new();
-    let unique: Vec<_> = lines.iter().filter(|line| seen.insert(line.as_str())).collect();
-    let mut value = if unique.is_empty() {
-        empty.to_owned()
-    } else {
-        unique
-            .iter()
-            .take(MAX_ITEMS)
-            .map(|line| line.as_str())
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-    if unique.len() > MAX_ITEMS {
-        value.push_str(&format!(
-            "\n- ...and {} more {overflow_label}(s)",
-            unique.len() - MAX_ITEMS
-        ));
-    }
-    // Discord counts UTF-16 units; keep Unicode text intact when limiting a field.
-    if value.encode_utf16().count() > MAX_FIELD_LENGTH {
-        let suffix = "\n... View the full analysis.";
-        let mut length = 0;
-        value = value
-            .chars()
-            .take_while(|ch| {
-                length += ch.len_utf16();
-                length <= MAX_FIELD_LENGTH - suffix.len()
-            })
-            .collect();
-        value.truncate(value.trim_end().len());
-        value.push_str(suffix);
-    }
-    value
+fn utf16_len(text: &str) -> usize {
+    text.encode_utf16().count()
 }
 
-fn build_payload(reports: &[Report], run_url: &str, run_label: &str) -> Value {
+/// Keeps as many whole lines as Discord allows in a field, then says how many were left out.
+fn field_value(lines: &[String], empty: &str, max_items: usize) -> String {
+    let mut seen = BTreeSet::new();
+    let unique: Vec<_> = lines.iter().filter(|line| seen.insert(line.as_str())).collect();
+    if unique.is_empty() {
+        return empty.to_owned();
+    }
+    let more = |hidden: usize| (hidden > 0).then(|| format!("- ...and {hidden} more"));
+    for shown in (1..=unique.len().min(max_items)).rev() {
+        let mut value = unique[..shown]
+            .iter()
+            .map(|line| line.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        if let Some(more) = more(unique.len() - shown) {
+            value = format!("{value}\n{more}");
+        }
+        // Discord counts UTF-16 units.
+        if utf16_len(&value) <= MAX_FIELD_LENGTH {
+            return value;
+        }
+    }
+    // Even the first line is too long: cut it at a word.
+    let tail = more(unique.len() - 1).map_or(String::new(), |more| format!("\n{more}"));
+    let budget = MAX_FIELD_LENGTH.saturating_sub(utf16_len(&tail) + 1);
+    let mut length = 0;
+    let first: String = unique[0]
+        .chars()
+        .take_while(|ch| {
+            length += ch.len_utf16();
+            length <= budget
+        })
+        .collect();
+    let first = first
+        .rsplit_once(' ')
+        .map_or(first.as_str(), |(head, _)| head)
+        .trim_end();
+    format!("{first}…{tail}")
+}
+
+fn action_lines(actions: &[&Action]) -> Vec<String> {
+    let mut by_category = BTreeMap::<&str, Vec<&Action>>::new();
+    for action in actions {
+        by_category.entry(&action.category).or_default().push(action);
+    }
+    let mut categories: Vec<_> = by_category.into_iter().collect();
+    categories.sort_by_key(|(_, items)| Reverse(items.len()));
+    let mut lines = Vec::new();
+    for (category, items) in &categories {
+        let high = items
+            .iter()
+            .filter(|action| severity_rank(&action.severity) <= 1)
+            .count();
+        lines.push(if high > 0 {
+            format!("- {category}: {} ({high} high)", items.len())
+        } else {
+            format!("- {category}: {}", items.len())
+        });
+    }
+    // The most severe headline of each category, most common category first.
+    for (_, items) in &categories {
+        if let Some(action) = items.iter().min_by_key(|action| severity_rank(&action.severity)) {
+            lines.push(action.headline.clone());
+        }
+    }
+    lines
+}
+
+fn attachment(actions: &[&Action], infrastructure: &[&String]) -> String {
+    let mut actions = actions.to_vec();
+    actions.sort_by_key(|action| severity_rank(&action.severity));
+    let sections = [
+        (
+            "Action items",
+            actions.iter().map(|action| action.line.as_str()).collect::<Vec<_>>(),
+        ),
+        (
+            "Infrastructure/provider problems",
+            infrastructure.iter().map(|line| line.as_str()).collect(),
+        ),
+    ];
+    let mut text = String::new();
+    for (name, lines) in sections {
+        let mut seen = BTreeSet::new();
+        let lines: Vec<_> = lines.into_iter().filter(|line| seen.insert(*line)).collect();
+        if !lines.is_empty() {
+            text.push_str(&format!(
+                "## {name}
+
+{}
+
+",
+                lines.join(
+                    "
+"
+                )
+            ));
+        }
+    }
+    text
+}
+
+fn build(reports: &[Report], run_url: &str, run_label: &str) -> (Value, String) {
     let (mut passed, mut total) = (0, 0);
     let mut by_language = BTreeMap::<&str, (u64, u64)>::new();
-    let mut actions = Vec::new();
-    let mut other_findings = Vec::new();
     for report in reports {
         passed += report.passed_tasks;
         total += report.total_tasks;
         let counts = by_language.entry(&report.language).or_default();
         counts.0 += report.passed_tasks;
         counts.1 += report.total_tasks;
-        actions.extend(report.actions.iter().cloned());
-        other_findings.extend(report.other_findings.iter().cloned());
     }
+    let actions: Vec<_> = reports.iter().flat_map(|report| &report.actions).collect();
+    let infrastructure: Vec<_> = reports.iter().flat_map(|report| &report.infrastructure).collect();
     let percent = if total == 0 {
         0.0
     } else {
         passed as f64 * 100.0 / total as f64
     };
-    let color = if total == 0
-        || percent < 90.0
-        || other_findings
-            .iter()
-            .any(|item| item.contains("Infrastructure/provider problem"))
-    {
+    let color = if total == 0 || percent < 90.0 || !infrastructure.is_empty() {
         RED
     } else if !actions.is_empty() || percent < 95.0 {
         YELLOW
@@ -202,7 +304,15 @@ fn build_payload(reports: &[Report], run_url: &str, run_label: &str) -> Value {
         .into_iter()
         .map(|(language, (passed, total))| format!("- **{}:** {}", language_name(language), rate(passed, total)))
         .collect();
-    json!({
+    let mut fields = vec![
+        json!({"name": "By language", "value": field_value(&language_rates, "No analysis reports were produced.", usize::MAX), "inline": false}),
+        json!({"name": "Action items", "value": field_value(&action_lines(&actions), "None", usize::MAX), "inline": false}),
+    ];
+    if !infrastructure.is_empty() {
+        let lines: Vec<_> = infrastructure.iter().map(|line| (*line).clone()).collect();
+        fields.push(json!({"name": "Infrastructure/provider problems", "value": field_value(&lines, "None", MAX_ITEMS), "inline": false}));
+    }
+    let payload = json!({
         "username": "SpacetimeDB LLM Benchmarks",
         "allowed_mentions": {"parse": []},
         "embeds": [{
@@ -210,22 +320,21 @@ fn build_payload(reports: &[Report], run_url: &str, run_label: &str) -> Value {
             "url": run_url,
             "description": format!("**{}** task runs passed", rate(passed, total)),
             "color": color,
-            "fields": [
-                {"name": "By language", "value": field_value(&language_rates, "No analysis reports were produced.", "language"), "inline": false},
-                {"name": "Action items", "value": field_value(&actions, "None", "action"), "inline": false},
-                {"name": "Other failures", "value": field_value(&other_findings, "None", "finding"), "inline": false}
-            ],
+            "fields": fields,
             "footer": {"text": run_label}
         }]
-    })
+    });
+    (payload, attachment(&actions, &infrastructure))
 }
 
 fn main() -> Result<()> {
     let args = Cli::parse();
     let reports = load_reports(&args.reports_dir)?;
-    let payload = build_payload(&reports, &args.run_url, &args.run_label);
+    let (payload, attachment) = build(&reports, &args.run_url, &args.run_label);
     fs::write(&args.output, serde_json::to_vec(&payload)?)
-        .with_context(|| format!("writing Discord payload {}", args.output.display()))
+        .with_context(|| format!("writing Discord payload {}", args.output.display()))?;
+    fs::write(&args.attachment, attachment)
+        .with_context(|| format!("writing Discord attachment {}", args.attachment.display()))
 }
 
 #[cfg(test)]
@@ -239,12 +348,12 @@ mod tests {
     }
 
     #[test]
-    fn aggregates_rates_and_formats_findings() {
+    fn aggregates_rates_and_leaves_out_model_limitations() {
         let reports = [
             report("csharp", "36/37 (97.3%)", "", ""),
             report("rust", "34/37 (91.9%)", "", "Model limitation"),
         ];
-        let payload = build_payload(&reports, "https://example.com/run", "Weekly run");
+        let (payload, attachment) = build(&reports, "https://example.com/run", "Weekly run");
         let embed = &payload["embeds"][0];
         assert_eq!(embed["description"], "**70/74 (94.6%)** task runs passed");
         assert_eq!(embed["color"], YELLOW);
@@ -252,13 +361,46 @@ mod tests {
             embed["fields"][0]["value"],
             "- **C#:** 36/37 (97.3%)\n- **Rust:** 34/37 (91.9%)"
         );
-        assert_eq!(
-            embed["fields"][2]["value"],
-            "- Rust / guidelines / test-model: Incorrect sum-type syntax - Model limitation"
-        );
+        assert_eq!(embed["fields"][1]["value"], "None");
+        assert_eq!(embed["fields"].as_array().unwrap().len(), 2);
+        assert_eq!(attachment, "");
         assert_eq!(payload["allowed_mentions"], json!({"parse": []}));
         assert_eq!(embed["url"], "https://example.com/run");
         assert_eq!(embed["footer"]["text"], "Weekly run");
+    }
+
+    #[test]
+    fn groups_actions_by_category_and_attaches_the_details() {
+        let reports = [
+            report(
+                "csharp",
+                "37/37",
+                "- **[Eval problem | Medium] Keep publish errors.** Store all stderr.\n- **[API/ergonomics problem | Low] Rename Index.** It collides.",
+                "",
+            ),
+            report(
+                "rust",
+                "37/37",
+                "- **[Eval problem | High] Capture build output** — Evidence: t_001.",
+                INFRASTRUCTURE,
+            ),
+        ];
+        let (payload, attachment) = build(&reports, "", "");
+        let fields = &payload["embeds"][0]["fields"];
+        assert_eq!(
+            fields[1]["value"],
+            "- Eval problem: 2 (1 high)\n- API/ergonomics problem: 1\n- Rust / guidelines: [High] Capture build output\n- C# / guidelines: [Low] Rename Index"
+        );
+        assert_eq!(fields[2]["name"], "Infrastructure/provider problems");
+        assert_eq!(
+            fields[2]["value"],
+            "- Rust / guidelines / test-model: Incorrect sum-type syntax"
+        );
+        assert_eq!(payload["embeds"][0]["color"], RED);
+        assert_eq!(
+            attachment,
+            "## Action items\n\n- Rust / guidelines: **[Eval problem | High] Capture build output** — Evidence: t_001.\n- C# / guidelines: **[Eval problem | Medium] Keep publish errors.** Store all stderr.\n- C# / guidelines: **[API/ergonomics problem | Low] Rename Index.** It collides.\n\n## Infrastructure/provider problems\n\n- Rust / guidelines / test-model: Incorrect sum-type syntax\n\n"
+        );
     }
 
     #[test]
@@ -269,41 +411,37 @@ mod tests {
             ("30/37", "", "Model limitation", RED),
             (
                 "37/37",
-                "- **[Skill problem | High] Clarify transactions** — Update the skill. Evidence: t_075.",
-                "Skill problem",
+                "- **[Skill problem | High] Clarify transactions** — Update the skill.",
+                "",
                 YELLOW,
             ),
-            ("37/37", "", "Infrastructure/provider problem", RED),
+            ("37/37", "", INFRASTRUCTURE, RED),
         ] {
-            let payload = build_payload(&[report("csharp", tasks, action, classification)], "", "");
+            let (payload, _) = build(&[report("csharp", tasks, action, classification)], "", "");
             assert_eq!(payload["embeds"][0]["color"], color);
-            if !action.is_empty() {
-                assert_eq!(
-                    payload["embeds"][0]["fields"][1]["value"],
-                    format!("- C# / guidelines: {}", &action[2..])
-                );
-                assert_eq!(payload["embeds"][0]["fields"][2]["value"], "None");
-            }
         }
     }
 
     #[test]
     fn empty_and_long_fields_stay_valid() {
-        let payload = build_payload(&[], "", "");
+        let (payload, _) = build(&[], "", "");
         assert_eq!(payload["embeds"][0]["color"], RED);
         assert_eq!(
             payload["embeds"][0]["fields"][0]["value"],
             "No analysis reports were produced."
         );
         let lines: Vec<_> = (0..6).map(|i| format!("- {i} {}", "🦀".repeat(400))).collect();
-        let value = field_value(&lines, "None", "finding");
-        assert!(value.encode_utf16().count() <= MAX_FIELD_LENGTH);
-        assert!(value.ends_with("... View the full analysis."));
+        let value = field_value(&lines, "None", usize::MAX);
+        assert!(utf16_len(&value) <= MAX_FIELD_LENGTH);
+        assert!(value.ends_with("\n- ...and 5 more"));
+        let value = field_value(&["word ".repeat(300)], "None", usize::MAX);
+        assert!(utf16_len(&value) <= MAX_FIELD_LENGTH);
+        assert!(value.ends_with("word…"));
         let mut lines: Vec<_> = (0..6).map(|i| format!("- {i}")).collect();
         lines.insert(1, "- 0".to_owned());
         assert_eq!(
-            field_value(&lines, "None", "finding"),
-            "- 0\n- 1\n- 2\n- 3\n- 4\n- ...and 1 more finding(s)"
+            field_value(&lines, "None", 5),
+            "- 0\n- 1\n- 2\n- 3\n- 4\n- ...and 1 more"
         );
     }
 }

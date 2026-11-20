@@ -343,6 +343,7 @@ jobs:
           --run-url "$RUN_URL"
           --run-label "$RUN_LABEL"
           --output discord-payload.json
+          --attachment analysis.md
 
       - name: Post Discord summary
         if: github.event_name == 'schedule' || inputs.post_discord
@@ -355,7 +356,11 @@ jobs:
             exit 0
           fi
 
+          attachment=()
+          if [ -s analysis.md ]; then
+            attachment=(--form 'files[0]=@analysis.md;type=text/markdown')
+          fi
           curl --fail --silent --show-error \
-            --header 'Content-Type: application/json' \
-            --data-binary @discord-payload.json \
+            --form 'payload_json=<discord-payload.json;type=application/json' \
+            "${attachment[@]}" \
             "$DISCORD_WEBHOOK_URL"
