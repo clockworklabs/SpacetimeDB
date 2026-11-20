@@ -531,7 +531,7 @@ function containerBlocker(backend: string): string | null {
   if (!STACK_ADAPTER_REGISTRY.get(backend).agent.linuxCliRequired) return null;
   if (!existsSync(LINUX_CLI)) {
     return `no Linux SpacetimeDB CLI at ${fwd(LINUX_CLI)} — `
-      + 'bash tools/stack-bench/container/build-linux-cli.sh';
+      + 'run npm run build:linux-cli in tools/stack-bench';
   }
   // A file at this path must be a Linux executable, not the Windows build.
   const magic = Buffer.alloc(4);
@@ -542,8 +542,7 @@ function containerBlocker(backend: string): string | null {
     return `cannot read the Linux SpacetimeDB CLI at ${fwd(LINUX_CLI)}`;
   }
   if (magic.toString('binary') !== '\x7fELF') {
-    return `${fwd(LINUX_CLI)} is not a Linux binary; rebuild it with `
-      + 'container/build-linux-cli.sh';
+    return `${fwd(LINUX_CLI)} is not a Linux binary; rebuild it with npm run build:linux-cli`;
   }
   return null;
 }

@@ -53,7 +53,7 @@ function assertSha256(value: unknown, label: string): asserts value is string {
 
 function inspectBinary(path: string, name: string): BinaryRecord {
   if (!existsSync(path)) {
-    throw new Error(`${name} is absent; run tools/stack-bench/container/build-linux-cli.sh`);
+    throw new Error(`${name} is absent; run npm run build:linux-cli`);
   }
   const stat = statSync(path);
   if (!stat.isFile() || stat.size < 4) throw new Error(`${name} is not a non-empty file`);
@@ -100,7 +100,7 @@ export function assertBinarySourceUnchanged(before: BinarySourceIdentity,
 function readProvenance(stackBenchRoot: string): BinaryProvenance {
   const path = provenancePath(stackBenchRoot);
   if (!existsSync(path)) {
-    throw new Error(`${PROVENANCE_NAME} is absent; run tools/stack-bench/container/build-linux-cli.sh`);
+    throw new Error(`${PROVENANCE_NAME} is absent; run npm run build:linux-cli`);
   }
   let manifest: BinaryProvenance & { status?: string };
   try { manifest = JSON.parse(readFileSync(path, 'utf8')); }
@@ -109,7 +109,7 @@ function readProvenance(stackBenchRoot: string): BinaryProvenance {
       ? error.message : String(error)}`);
   }
   if (manifest.status === 'unbuilt') {
-    throw new Error(`${PROVENANCE_NAME} has no verified binaries; run tools/stack-bench/container/build-linux-cli.sh`);
+    throw new Error(`${PROVENANCE_NAME} has no verified binaries; run npm run build:linux-cli`);
   }
   return manifest;
 }

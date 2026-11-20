@@ -7,6 +7,7 @@
   },
   "scripts": {
     "build": "npm run clean && tsc -p tsconfig.build.json && node scripts/build-spacetime-codec.mjs && node dist/scripts/copy-dashboard-assets.js",
+    "build:linux-cli": "docker build --platform linux/amd64 --file appliance/Controller.Dockerfile --target binary-export --output type=local,dest=container ../..",
     "clean": "node --eval \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "lint": "eslint appliance commands container dashboard grader linter scripts src tests",
     "typecheck": "tsc -p tsconfig.json --noEmit",

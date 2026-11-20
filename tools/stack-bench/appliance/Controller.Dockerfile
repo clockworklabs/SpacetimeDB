@@ -50,7 +50,7 @@ RUN node dist/container/binary-provenance.js record-snapshot \
       --root /workspace/tools/stack-bench --source-file /workspace/stack-bench-binary-source.json \
     && npm prune --omit=dev --ignore-scripts --no-audit --no-fund
 
-# build-linux-cli.sh uses this same build, rather than a second Rust recipe.
+# npm run build:linux-cli uses this same build, rather than a second Rust recipe.
 FROM scratch AS binary-export
 COPY --from=stack-bench-build /workspace/tools/stack-bench/container/bin/ /bin/
 COPY --from=stack-bench-build /workspace/tools/stack-bench/container/spacetimedb-binaries.json /spacetimedb-binaries.json

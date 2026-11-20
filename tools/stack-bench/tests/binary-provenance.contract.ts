@@ -66,7 +66,7 @@ test('binary provenance rejects stale source and an unbuilt clean checkout', () 
       schemaVersion: 1, status: 'unbuilt',
     }));
     assert.throws(() => verifyBinaryProvenance(root, { sourceSha256: SOURCE.sha256 }),
-      /build-linux-cli\.sh/);
+      /npm run build:linux-cli/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

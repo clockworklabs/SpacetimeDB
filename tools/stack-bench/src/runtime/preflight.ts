@@ -710,7 +710,7 @@ export function runPreflight(
     add('spacetime.linux-cli', cliReady ? 'pass' : 'fail', cliReady
       ? `Repository Linux CLI is ELF ${cli.arch}`
       : `Repository Linux CLI is missing, invalid, or ${cli.arch ?? 'unknown'} instead of ${expectedCliArch ?? 'the target architecture'}`,
-    cliReady ? null : 'Run bash tools/stack-bench/container/build-linux-cli.sh on the target architecture.');
+    cliReady ? null : 'Run npm run build:linux-cli in tools/stack-bench on the target architecture.');
   }
 
   if (request.smoke && imageId) {
