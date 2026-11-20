@@ -25,9 +25,9 @@ Running the changed workflow on a representative input and inspecting its output
 
 If no behavioral testing was performed, the entire Testing section is the single sentence “Not tested.” Reviewing the patch, checking whitespace, or verifying signatures alone counts as untested.
 
-Use one short bullet per behavior a reviewer would recognize: the relevant condition and what should happen. Keep a flag, status code, or input form when it defines that case. If a test spans several components, say what would go wrong for the caller if it broke. Split independent behaviors even when one test exercises them. Leave the call sequence and assertion details in the diff.
+Write Testing as a list of short test-case titles. Each should fit comfortably on one line: “Expired vouchers are rejected”, “Refunds after cancellation require manager approval”. Use the words a caller would use. Combine equivalent inputs in parentheses only if they matter. Stop at the expected behavior. The reader can inspect the diff for how the test establishes it.
 
-Include a known failure or consequential gap in its own short sentence. Inspect existing tests before claiming coverage. Distinguish new, updated, and existing coverage when relevant. Routine successful runs, configurations and reruns belong in the author handoff. Include a manual result only when it changes the reviewer's understanding of coverage.
+Use a separate short line for a known failure or an important gap. Mention a manual experiment only if it adds distinct evidence. Leave suite results and setup notes in the handoff.
 
 For generated output, lead with what the trial covered. Show the complete comparison inline after the summary. Use a unified diff or two intact outputs for the unit under review. “Before” is the observed output from before the PR. Preserve that baseline. Label a later run on the base revision as a reproduction. Mention trial conditions that affect interpretation. If only one output was captured, show it and limit the claim to that observation.
 
