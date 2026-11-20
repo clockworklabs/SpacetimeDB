@@ -25,7 +25,7 @@ Running the changed workflow on a representative input and inspecting its output
 
 If no behavioral testing was performed, the entire Testing section is the single sentence “Not tested.” Reviewing the patch, checking whitespace, or verifying signatures alone counts as untested.
 
-Write Testing as a list of short test-case titles. Each should fit comfortably on one line: “Expired vouchers are rejected”, “Refunds after cancellation require manager approval”. Use the words a caller would use. Combine equivalent inputs in parentheses only if they matter. Stop at the expected behavior. The reader can inspect the diff for how the test establishes it.
+Introduce the list by saying which tests were added, updated, or exercised. Group related cases covered by one test so the list conveys the scope without implying extra tests. Use short test-case titles. Each should fit comfortably on one line: “Expired vouchers are rejected”, “Refunds after cancellation require manager approval”. Use the words a caller would use. Combine equivalent inputs in parentheses only if they matter. Stop at the expected behavior. The reader can inspect the diff for how the test establishes it.
 
 Use a separate short line for a known failure or an important gap. Mention a manual experiment only if it adds distinct evidence. Leave suite results and setup notes in the handoff.
 
