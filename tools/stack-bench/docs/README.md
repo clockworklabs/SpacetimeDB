@@ -21,6 +21,7 @@ for a first run.
 - [Grading](grading.md): outcomes, scoring, what the checks observe, and what
   they do not prove
 - [Study method](study-method.md): running a comparison that holds up
+- [Fairness](fairness.md): where the stacks are treated differently, and why
 - [System design](system-design.md): owners, terms, data flow, and isolation
 - [Reference apps](../reference-apps/README.md): the fixtures that prove the
   checks

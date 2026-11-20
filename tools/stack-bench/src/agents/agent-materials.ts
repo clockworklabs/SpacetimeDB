@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { assertAgentVisibleText } from '../composition/agent-visible-contract.js';
 
 const SKILL_ID = /^[a-z][a-z0-9-]*$/;
 
@@ -44,7 +45,10 @@ export function readAgentSkillDocuments(
   { read = (path, encoding) => readFileSync(path, encoding) }: ReadAgentSkillDocumentOptions = {},
 ): string {
   const strip = (markdown: string): string => markdown.replace(/^---\n[\s\S]*?\n---\n/, '');
-  return agentSkillPaths(stackBenchRoot, skills)
-    .map(path => strip(normalizePromptText(read(path, 'utf8'))))
-    .join('\n\n---\n\n');
+  const workflows = join(stackBenchRoot, 'backends', 'workflows');
+  return agentSkillPaths(stackBenchRoot, skills).map(path => {
+    const text = strip(normalizePromptText(read(path, 'utf8')));
+    // The prompt check skips the product's own skills; StackBench's workflow documents still get it.
+    return path.startsWith(workflows) ? assertAgentVisibleText(text) : text;
+  }).join('\n\n---\n\n');
 }

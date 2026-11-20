@@ -25,6 +25,11 @@ test('benchmark workflows resolve separately from public SDK skills in selected 
   assert.equal(readAgentSkillDocuments('/repo/tools/stack-bench', ids, {
     read: path => `---\nname: ignored\n---\n${ids[paths.indexOf(path)]}`,
   }), ids.join('\n\n---\n\n'));
+  // A public skill may discuss tests; a workflow document StackBench wrote may not.
+  const mentioning = (path: string) => paths.indexOf(path) === 0 ? 'Run the module tests.' : 'Start the watcher.';
+  assert.doesNotThrow(() => readAgentSkillDocuments('/repo/tools/stack-bench', ids, { read: mentioning }));
+  assert.throws(() => readAgentSkillDocuments('/repo/tools/stack-bench', ids,
+    { read: path => paths.indexOf(path) === 1 ? 'Check the grader first.' : 'SDK notes.' }), /internal language/);
 });
 
 test('prompt material is identical across platform line endings', () => {

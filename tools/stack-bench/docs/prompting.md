@@ -107,7 +107,9 @@ Every agent has files and a shell. Two tool groups follow the campaign's
 `tools` setting, the same for every agent: `webSearch` (the agent's own search
 and fetch tools) and `subagents`. Both are off by default, and `subagents` is
 refused for every agent, because the contamination audit cannot see what a
-sub-agent does. The container can reach public websites whatever the setting.
+sub-agent does. During coding, the container can reach public websites except
+GitHub, whatever the setting. During grading, it can reach nothing outside the
+attempt.
 
 The audit treats a fetch of StackBench's own source as contamination: anything
 under `tools/stack-bench` in `clockworklabs/SpacetimeDB` on any host, GitHub or
