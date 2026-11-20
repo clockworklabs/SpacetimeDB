@@ -6,9 +6,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const GREEN: u32 = 0x57F287;
-const YELLOW: u32 = 0xFEE75C;
-const RED: u32 = 0xED4245;
 const INFRASTRUCTURE: &str = "Infrastructure/provider problem";
 
 #[derive(Parser)]
@@ -229,6 +226,16 @@ fn attachment(problems: &[&Problem]) -> String {
     }
 }
 
+fn dot(rate: f64) -> &'static str {
+    if rate >= 95.0 {
+        "🟢"
+    } else if rate >= 90.0 {
+        "🟡"
+    } else {
+        "🔴"
+    }
+}
+
 fn build(reports: &[Report], run_url: &str, run_label: &str) -> (Value, String) {
     type Counts = (u64, u64);
     let mut by_mode = BTreeMap::<&str, (Counts, BTreeMap<&str, Counts>)>::new();
@@ -241,20 +248,8 @@ fn build(reports: &[Report], run_url: &str, run_label: &str) -> (Value, String) 
         }
     }
     let problems: Vec<_> = reports.iter().flat_map(|report| &report.problems).collect();
-    let all = by_mode
-        .values()
-        .fold((0, 0), |sum, (counts, _)| (sum.0 + counts.0, sum.1 + counts.1));
-    // Guidelines is what people get from our docs; no-context rates are expected to be low.
-    let (passed, total) = by_mode.get("guidelines").map_or(all, |(counts, _)| *counts);
-    let rate = percent(passed, total);
-    let color = if total == 0 || rate < 90.0 || problems.iter().any(|problem| problem.category == INFRASTRUCTURE) {
-        RED
-    } else if !problems.is_empty() || rate < 95.0 {
-        YELLOW
-    } else {
-        GREEN
-    };
-    let mut description = if all.1 == 0 {
+    let total: u64 = by_mode.values().map(|((_, total), _)| total).sum();
+    let mut description = if total == 0 {
         "No analysis reports were produced.".to_owned()
     } else {
         by_mode
@@ -266,10 +261,11 @@ fn build(reports: &[Report], run_url: &str, run_label: &str) -> (Value, String) 
                         format!("{} {:.1}%", language_name(language), percent(*passed, *total))
                     })
                     .collect();
+                let rate = percent(*passed, *total);
                 format!(
-                    "**{} {:.1}%** · {}",
+                    "{} **{} {rate:.1}%** · {}",
+                    dot(rate),
                     mode_name(mode),
-                    percent(*passed, *total),
                     languages.join(" · ")
                 )
             })
@@ -286,8 +282,7 @@ fn build(reports: &[Report], run_url: &str, run_label: &str) -> (Value, String) 
         "embeds": [{
             "title": format!("LLM Benchmark Analysis · {run_label}"),
             "url": run_url,
-            "description": description,
-            "color": color
+            "description": description
         }]
     });
     (payload, attachment(&problems))
@@ -328,10 +323,8 @@ mod tests {
         let embed = &payload["embeds"][0];
         assert_eq!(
             embed["description"],
-            "**Guidelines 94.6%** · C# 97.3% · Rust 91.9%\n**No context 54.1%** · Rust 54.1%"
+            "🟡 **Guidelines 94.6%** · C# 97.3% · Rust 91.9%\n🔴 **No context 54.1%** · Rust 54.1%"
         );
-        // A low no-context rate alone does not turn the card red.
-        assert_eq!(embed["color"], YELLOW);
         assert_eq!(embed["title"], "LLM Benchmark Analysis · Weekly run");
         assert_eq!(embed["url"], "https://example.com/run");
         assert_eq!(attachment, "");
@@ -357,9 +350,8 @@ mod tests {
         let (payload, attachment) = build(&reports, "", "");
         assert_eq!(
             payload["embeds"][0]["description"],
-            "**Guidelines 100.0%** · C# 100.0% · Rust 100.0%\n\n- Eval problem (2): Capture build output\n- API/ergonomics problem (1): Rename Index\n- Infrastructure/provider problem (1): Incorrect sum-type syntax"
+            "🟢 **Guidelines 100.0%** · C# 100.0% · Rust 100.0%\n\n- Eval problem (2): Capture build output\n- API/ergonomics problem (1): Rename Index\n- Infrastructure/provider problem (1): Incorrect sum-type syntax"
         );
-        assert_eq!(payload["embeds"][0]["color"], RED);
         assert_eq!(
             attachment,
             "[High] Eval problem, Rust / guidelines\nCapture build output.\nEvidence: t_001.\n\n[Medium] Eval problem, C# / guidelines\nKeep publish errors.\nStore all stderr.\n\n[Low] API/ergonomics problem, C# / guidelines\nRename Index.\nIt collides.\n\nInfrastructure/provider problem, Rust / guidelines / test-model\nIncorrect sum-type syntax.\n"
@@ -367,24 +359,9 @@ mod tests {
     }
 
     #[test]
-    fn colors_reflect_pass_rate_problems_and_infrastructure() {
-        for (tasks, action, classification, color) in [
-            ("37/37", "", "", GREEN),
-            ("35/37", "", "Model limitation", YELLOW),
-            ("30/37", "", "Model limitation", RED),
-            (
-                "37/37",
-                "- **[Skill problem | High] Clarify transactions** — Update the skill.",
-                "",
-                YELLOW,
-            ),
-            ("37/37", "", INFRASTRUCTURE, RED),
-        ] {
-            let (payload, _) = build(&[report("csharp", tasks, action, classification)], "", "");
-            assert_eq!(payload["embeds"][0]["color"], color);
-        }
+    fn dots_follow_the_rate() {
+        assert_eq!([dot(95.0), dot(94.9), dot(90.0), dot(89.9)], ["🟢", "🟡", "🟡", "🔴"]);
         let (payload, _) = build(&[], "", "");
-        assert_eq!(payload["embeds"][0]["color"], RED);
         assert_eq!(
             payload["embeds"][0]["description"],
             "No analysis reports were produced."
