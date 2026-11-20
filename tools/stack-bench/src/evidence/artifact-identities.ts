@@ -152,7 +152,7 @@ export function validateArtifactIdentities(
 export function currentEngineIdentity(): EngineArtifactIdentity {
   if (cachedEngineIdentity) return structuredClone(cachedEngineIdentity);
   const excludedRoots = new Set([
-    'archive', 'local-notes', 'media', 'qualification-evidence', 'reference-apps', 'results',
+    'archive', 'media', 'qualification-evidence', 'reference-apps', 'results',
     'tests', 'tracks', 'transcripts',
   ]);
   const exclude = (name: string, entry: Dirent): boolean => {

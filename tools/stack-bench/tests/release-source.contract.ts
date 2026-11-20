@@ -149,7 +149,6 @@ test('controller build context excludes ignored local Stack Bench state', () => 
     'Controller.Dockerfile.dockerignore'), 'utf8');
   const rules = new Set(ignore.split(/\r?\n/));
   const localPaths = [
-    'tools/stack-bench/local-notes',
     'tools/stack-bench/media',
     'tools/stack-bench/snapshot-l*',
     'tools/stack-bench/grader/.candidates',

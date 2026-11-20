@@ -158,7 +158,6 @@ function qualificationInputs(): { sha256: string; files: string[] } {
   const ignoredRoots = new Set([
     'archive',
     'dist',
-    'local-notes',
     'media',
     'node_modules',
     'qualification-evidence',

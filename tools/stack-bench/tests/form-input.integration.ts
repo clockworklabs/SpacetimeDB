@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { chromium } from 'playwright';
@@ -55,7 +56,7 @@ test('form entry selects real choices and preserves refusal and delayed-readines
   } finally {
     await browser.close();
     const evidence = process.env.STACK_BENCH_FORM_EVIDENCE
-      ?? join(STACK_BENCH_ROOT, 'local-notes', 'form-input-evidence');
+      ?? join(tmpdir(), 'stack-bench-form-input-evidence');
     mkdirSync(evidence, { recursive: true });
     writeFileSync(join(evidence, 'receipt.json'), JSON.stringify({ result,
         command: 'node --test dist/tests/form-input.integration.js', cases, observations, browserClosed: true,

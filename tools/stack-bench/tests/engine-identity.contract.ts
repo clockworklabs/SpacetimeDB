@@ -20,7 +20,7 @@ function currentIdentity(root: string): unknown {
 function writableEngineRoot(): { temp: string; root: string } {
   const temp = mkdtempSync(join(tmpdir(), 'stack-bench-engine-'));
   const root = join(temp, 'stack-bench');
-  const excluded = new Set(['archive', 'local-notes', 'media', 'node_modules',
+  const excluded = new Set(['archive', 'media', 'node_modules',
     'qualification-evidence', 'reference-apps', 'results', 'tests', 'tracks', 'transcripts']);
   cpSync(STACK_BENCH_ROOT, root, { recursive: true, filter: source => {
     if (source === STACK_BENCH_ROOT) return true;
@@ -45,7 +45,7 @@ test('engine identity excludes generated and local-only files', () => {
     writeFileSync(join(nested, 'candidate.mjs'), 'generated candidate\n');
     writeFileSync(join(root, 'grader', '.generated-report.json'), '{"generated":true}\n');
 
-    for (const directory of ['archive', 'local-notes', 'media', 'qualification-evidence',
+    for (const directory of ['archive', 'media', 'qualification-evidence',
       'transcripts']) {
       const path = join(root, directory);
       mkdirSync(path, { recursive: true });

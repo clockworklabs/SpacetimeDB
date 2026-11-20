@@ -1,17 +1,17 @@
 /// <reference lib="dom" />
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { chromium } from 'playwright';
 import { createDashboardServer } from '../dashboard/dashboard-server.js';
-import { STACK_BENCH_ROOT } from '../src/package-root.js';
 
 // Failure cases: dead navigation; wrong default scope; missing repeated work;
 // unreadable source; filters lost on reload; blank results; mobile overflow;
 // script injection through search; accidental campaign/model work from this page.
 test('check guide exposes current procedures through the real dashboard', async () => {
-  const evidence = join(STACK_BENCH_ROOT, 'local-notes', 'dashboard-check-guide-evidence',
+  const evidence = join(tmpdir(), 'stack-bench-dashboard-check-guide',
     new Date().toISOString().replace(/[:.]/g, '-'));
   mkdirSync(evidence, { recursive: true });
   const { server } = createDashboardServer({ resultsRoot: join(evidence, 'results'),

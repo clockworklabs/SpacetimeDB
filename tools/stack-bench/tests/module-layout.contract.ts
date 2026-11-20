@@ -7,7 +7,7 @@ import { STACK_BENCH_ROOT as ROOT } from '../src/package-root.js';
 import { DATABASE_IMAGES } from '../src/stacks/database-containers.js';
 
 const SKIPPED_DIRECTORIES = new Set([
-  'archive', 'dist', 'local-notes', 'node_modules', 'results',
+  'archive', 'dist', 'node_modules', 'results',
 ]);
 const RELATIVE_MODULE = /(?:from\s+|import\s*\()(['"])(\.\.?\/[^'"\r\n]+?\.js)\1/g;
 
