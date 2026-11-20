@@ -952,7 +952,7 @@ async function main() {
       providerThrottle: { maxWaitMinutes: throttleMaxWaitMinutes,
         waits: throttle?.waits ?? 0, waitedMs: throttle?.waitedMs ?? 0,
         jitterMs: throttle?.jitterMs ?? throttleJitterMs },
-      cliVersion: imageCliVersion(imageIdentity.id, CODING_PROVIDERS[args.provider].executable),
+      cliVersion: imageCliVersion(imageIdentity.id, CODING_PROVIDERS[args.provider].cli),
       isolation: { mode: 'container', image: imageIdentity.reference,
         imageId: imageIdentity.id, hostAlias: HOST_ADDR },
       auth: selectedAuthMode ?? 'not-selected',

@@ -27,6 +27,7 @@ type ProcessOptions = Parameters<typeof runCodexProcess>[0] & {
 interface CodingProvider {
   requiresBudget: boolean;
   executable: string;
+  cli: string;
   apiKeyEnvironment: string;
   credentialPath?: string;
   containerTranscripts: string;
@@ -42,7 +43,7 @@ interface CodingProvider {
 
 const codexProvider: CodingProvider = {
   requiresBudget: true,
-  executable: 'codex', apiKeyEnvironment: 'OPENAI_API_KEY',
+  executable: 'codex', cli: 'codex', apiKeyEnvironment: 'OPENAI_API_KEY',
   containerTranscripts: `${CODING_CONTAINER_AGENT.home}/.codex/sessions`,
   tokenEnvironment: 'MODEL_PROXY_TOKEN',
   environment: () => [`CODEX_HOME=${CODING_CONTAINER_AGENT.home}/.codex`],
@@ -68,7 +69,7 @@ const codexProvider: CodingProvider = {
 const GROK_SIGN_IN = `printf '{"access_token":"%s","expires_in":86400,"issuer":"https://auth.x.ai"}' "$GROK_BROKER_TOKEN"`;
 const grokProvider: CodingProvider = {
   requiresBudget: true,
-  executable: 'sh', apiKeyEnvironment: 'XAI_API_KEY',
+  executable: 'sh', cli: 'grok', apiKeyEnvironment: 'XAI_API_KEY',
   containerTranscripts: `${CODING_CONTAINER_AGENT.home}/.grok/sessions`,
   tokenEnvironment: 'GROK_BROKER_TOKEN',
   // Telemetry and session uploads would reach the broker as refused requests. The
@@ -99,7 +100,7 @@ const grokProvider: CodingProvider = {
 // so a session can resume.
 const googleProvider: CodingProvider = {
   requiresBudget: true,
-  executable: 'sh', apiKeyEnvironment: 'GEMINI_API_KEY',
+  executable: 'sh', cli: 'agy', apiKeyEnvironment: 'GEMINI_API_KEY',
   containerTranscripts: `${CODING_CONTAINER_AGENT.home}/.gemini/antigravity-cli`,
   tokenEnvironment: 'GEMINI_API_KEY',
   environment: (baseUrl, mode) => mode === 'subscription-token' ? [`CLOUD_CODE_URL=${baseUrl}`, `HTTPS_PROXY=${baseUrl}`]
@@ -126,7 +127,7 @@ const googleProvider: CodingProvider = {
 export const CODING_PROVIDERS = {
   anthropic: {
     requiresBudget: false,
-    executable: 'claude', apiKeyEnvironment: 'ANTHROPIC_API_KEY',
+    executable: 'claude', cli: 'claude', apiKeyEnvironment: 'ANTHROPIC_API_KEY',
     credentialPath: join(homedir(), '.claude', '.credentials.json'),
     containerTranscripts: `${CODING_CONTAINER_AGENT.home}/.claude/projects/-app`,
     tokenEnvironment: 'ANTHROPIC_AUTH_TOKEN',
