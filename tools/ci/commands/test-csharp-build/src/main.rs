@@ -378,7 +378,10 @@ public partial struct Item
 }
 
 fn write_library(library: &Path, version: &str, references: &str, source: &str) -> Result<()> {
-    let name = library.file_name().context("Library path has no name")?.to_string_lossy();
+    let name = library
+        .file_name()
+        .context("Library path has no name")?
+        .to_string_lossy();
     fs::create_dir_all(library)?;
     fs::write(
         library.join(format!("{name}.csproj")),
