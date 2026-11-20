@@ -26,7 +26,6 @@ pub fn create_parent_dir(file: &Path) -> Result<(), std::io::Error> {
     std::fs::create_dir_all(parent)
 }
 
-/// `atomic_write` stops looking for an unused temporary name after this many are taken.
 const TEMP_NAME_ATTEMPTS_MAX: u32 = 100;
 
 pub fn atomic_write(file_path: &Path, data: String) -> anyhow::Result<()> {
