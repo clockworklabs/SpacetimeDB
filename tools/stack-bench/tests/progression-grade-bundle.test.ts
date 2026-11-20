@@ -287,4 +287,23 @@ test('a typed application abort charges current work but not earlier regression 
   crashed.totals.score = 0;
   assert.throws(() => gradeBundleToProgressionResult(artifact(crashed, 'zeroed-abort'),
     action(), conversion), /application abort is incomplete/);
+
+  // Earlier work that passed before the abort: the bundle counts it unless it was an inherited
+  // regression guard, and never counts more.
+  for (const [score, accepted] of [[1, true], [0, true], [2, false]] as const) {
+    const earlier = structuredClone(crashed);
+    earlier.totals = { score, max: 3, regression: null };
+    const convert = () => gradeBundleToProgressionResult(artifact(earlier, `earlier-pass-${score}`),
+      selected, conversion);
+    if (!accepted) {
+      assert.throws(convert, /application abort is incomplete/);
+      continue;
+    }
+    const converted = convert();
+    if (converted.outcome !== 'conclusive') throw new Error('expected a conclusive result');
+    assert.deepEqual(converted.nodes, [
+      { id: 'accounts', checks: [{ id: 'check.accounts', outcome: 'pass' }] },
+      { id: 'catalog', checks: [{ id: 'check.catalog', outcome: 'fail' }] },
+    ]);
+  }
 });

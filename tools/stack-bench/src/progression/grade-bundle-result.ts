@@ -342,6 +342,10 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
       .filter(([id]) => reported.includes(id)));
     const measuredPoints = expected.reduce((total, check) => total + (currentNodes.has(check.nodeId)
       && measured.get(check.id)?.status === 'passed' ? check.points : 0), 0);
+    // The bundle also counts earlier work it graded in the same scope, but not inherited
+    // regression guards, which this conversion cannot tell apart from it.
+    const earlierPoints = expected.reduce((total, check) => total + (!currentNodes.has(check.nodeId)
+      && measured.get(check.id)?.status === 'passed' ? check.points : 0), 0);
     const score = bundle.totals?.score;
     const max = bundle.totals?.max;
     const regression = bundle.totals?.regression ?? { score: 0, max: 0 };
@@ -351,7 +355,8 @@ export function gradeBundleToProgressionResult(input: unknown, action: unknown,
       || typeof bundleOutcome.reason !== 'string' || !bundleOutcome.reason
       || new Set(accounted).size !== accounted.length || !sameKeys(accounted, expectedIds)
       || reported.some(id => !attempted.includes(id))
-      || typeof score !== 'number' || !Number.isSafeInteger(score) || score !== measuredPoints
+      || typeof score !== 'number' || !Number.isSafeInteger(score)
+      || score < measuredPoints || score > measuredPoints + earlierPoints
       || typeof max !== 'number' || !Number.isSafeInteger(max)
       || typeof regressionScore !== 'number' || !Number.isSafeInteger(regressionScore)
       || regressionScore !== 0
