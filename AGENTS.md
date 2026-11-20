@@ -16,4 +16,4 @@ These markers are provisional, and CI does not check any of this yet.
 
 # Writing PRs
 
-Use [Writing pull requests](.agents/writing-prs.md) when preparing commits for a PR and when drafting or editing its GitHub description.
+Use the [write-pull-requests skill](.agents/skills/write-pull-requests/SKILL.md) when preparing commits for a PR and when drafting or editing its GitHub description.

@@ -1,4 +1,11 @@
+---
+name: write-pull-requests
+description: Prepare verified commits and write or update GitHub pull request descriptions for SpacetimeDB.
+---
+
 # Writing pull requests
+
+When preparing commits, use the signing requirements below. When drafting or editing a description, use the template and the writing guidance.
 
 ## Verified commits
 
@@ -8,7 +15,7 @@ If you cannot create verified commits, alert the user promptly, explicitly tell 
 
 ## Write for the reviewer
 
-Use the [PR template](../.github/pull_request_template.md). Keep and complete every section, including the prescribed wording for inapplicable sections. Replace placeholders with facts from the change. Lead the description with what changes and why it matters. For a test-only PR, identify the behavior being protected. Reserve the evidence for Testing.
+Use the [PR template](../../../.github/pull_request_template.md). Keep and complete every section, including the prescribed wording for inapplicable sections. Replace placeholders with facts from the change. Lead the description with what changes and why it matters. For a test-only PR, identify the behavior being protected. Reserve the evidence for Testing.
 
 On an existing PR, work from the current body. Edit only the requested lines and preserve every section, the author's wording elsewhere, and the state of their checkboxes.
 
@@ -24,24 +31,6 @@ Routine suite status (“all tests passed”), pass counts, commands, reruns, an
 
 State the boundary of the evidence when it matters. Name the behavior still unverified and any known barrier. A test that compiles a client against two versions of generated bindings establishes source compatibility. A claim about exchanging messages with a server needs evidence from an actual interaction.
 
-### Example of selecting evidence
+When generated text is the behavior under review, let a reviewer see the change. Introduce the sample task in a phrase. Quote the shortest useful before/after pair from actual runs on the same input, preserving the wording and labeling each excerpt. A sentence can explain a difference the excerpts leave implicit or a trial condition that affects interpretation. End the comparison there. If only one output was captured, quote it and limit the claim to that observation.
 
-Working notes: 38 tests passed. The test clock reached the expiry boundary. Removing the expiry comparison let an expired credential through and failed the test. Restored the comparison and reran the suite.
-
-Testing excerpt: “A new test advances the clock to the expiry boundary and checks that the credential is rejected. Manually removing the expiry comparison let the credential through and made the test fail.”
-
-### Example: generated bindings
-
-Updated:
-
-- Codegen snapshots for the new bindings format.
-- Existing codegen tests to check table and function names and aliases using generated bindings instead of searching generated text.
-
-Added:
-
-- Tests that the same client compiles against old and new bindings, covering existing imports, types, builders, callbacks, and aliases.
-- Tests that clients compile using generated submodule types, tables, reducers, and procedures.
-- Tests that incorrect reducer arguments fail compilation with the new bindings.
-- Tests that the new declaration API works with ESM and CommonJS imports and browser builds.
-
-Existing server integration tests generate bindings and check connections, subscriptions, reducer calls, received rows, and query filters and joins.
+For examples to use when refining this skill, see the [golden cases](examples/README.md).
