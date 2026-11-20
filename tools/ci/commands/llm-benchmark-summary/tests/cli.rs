@@ -15,7 +15,7 @@ fn formats_downloaded_reports_and_reports_io_errors() {
     let reports = root.join("reports");
     fs::create_dir_all(&root).unwrap();
     let output = root.join("payload.json");
-    let attachment = root.join("analysis.md");
+    let attachment = root.join("analysis.txt");
     // Nextest archives relocate binaries, so prefer its runtime path over the compile-time one.
     let exe = std::env::var_os("NEXTEST_BIN_EXE_ci-llm-benchmark-summary")
         .unwrap_or_else(|| env!("CARGO_BIN_EXE_ci-llm-benchmark-summary").into());

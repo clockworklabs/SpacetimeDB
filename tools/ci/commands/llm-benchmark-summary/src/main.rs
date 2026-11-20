@@ -33,7 +33,7 @@ struct Action {
     category: String,
     severity: String,
     headline: String,
-    line: String,
+    text: String,
 }
 
 struct Report {
@@ -74,11 +74,26 @@ fn severity_rank(severity: &str) -> u8 {
 fn parse_action(prefix: &str, item: &str) -> Action {
     let parts = item.strip_prefix("**[").and_then(|rest| {
         let (tag, rest) = rest.split_once(']')?;
-        let (title, _) = rest.split_once("**")?;
+        let (title, details) = rest.split_once("**")?;
         let (category, severity) = tag.split_once('|').unwrap_or((tag, ""));
-        Some((category.trim(), severity.trim(), title.trim().trim_end_matches('.')))
+        Some((
+            category.trim(),
+            severity.trim(),
+            title.trim().trim_end_matches('.'),
+            details.trim_start_matches([' ', '—', '–', '-']).trim(),
+        ))
     });
-    let (category, severity, title) = parts.unwrap_or(("Other", "", item));
+    let (category, severity, title, details) = parts.unwrap_or(("Other", "", item, ""));
+    let label = if severity.is_empty() {
+        format!("{category}, {prefix}")
+    } else {
+        format!("[{severity}] {category}, {prefix}")
+    };
+    // Plain text, because Discord shows a .txt attachment as a short preview that expands.
+    let mut text = format!("{label}\n{title}.");
+    if !details.is_empty() {
+        text = format!("{text}\n{}", details.replace("**", ""));
+    }
     Action {
         category: category.to_owned(),
         severity: severity.to_owned(),
@@ -87,7 +102,7 @@ fn parse_action(prefix: &str, item: &str) -> Action {
         } else {
             format!("- {prefix}: [{severity}] {title}")
         },
-        line: format!("- {prefix}: {item}"),
+        text,
     }
 }
 
@@ -247,30 +262,20 @@ fn attachment(actions: &[&Action], infrastructure: &[&String]) -> String {
     actions.sort_by_key(|action| severity_rank(&action.severity));
     let sections = [
         (
-            "Action items",
-            actions.iter().map(|action| action.line.as_str()).collect::<Vec<_>>(),
+            "ACTION ITEMS",
+            actions.iter().map(|action| action.text.as_str()).collect::<Vec<_>>(),
         ),
         (
-            "Infrastructure/provider problems",
+            "INFRASTRUCTURE/PROVIDER PROBLEMS",
             infrastructure.iter().map(|line| line.as_str()).collect(),
         ),
     ];
     let mut text = String::new();
-    for (name, lines) in sections {
+    for (name, items) in sections {
         let mut seen = BTreeSet::new();
-        let lines: Vec<_> = lines.into_iter().filter(|line| seen.insert(*line)).collect();
-        if !lines.is_empty() {
-            text.push_str(&format!(
-                "## {name}
-
-{}
-
-",
-                lines.join(
-                    "
-"
-                )
-            ));
+        let items: Vec<_> = items.into_iter().filter(|item| seen.insert(*item)).collect();
+        if !items.is_empty() {
+            text.push_str(&format!("{name}\n\n{}\n\n", items.join("\n\n")));
         }
     }
     text
@@ -399,7 +404,7 @@ mod tests {
         assert_eq!(payload["embeds"][0]["color"], RED);
         assert_eq!(
             attachment,
-            "## Action items\n\n- Rust / guidelines: **[Eval problem | High] Capture build output** — Evidence: t_001.\n- C# / guidelines: **[Eval problem | Medium] Keep publish errors.** Store all stderr.\n- C# / guidelines: **[API/ergonomics problem | Low] Rename Index.** It collides.\n\n## Infrastructure/provider problems\n\n- Rust / guidelines / test-model: Incorrect sum-type syntax\n\n"
+            "ACTION ITEMS\n\n[High] Eval problem, Rust / guidelines\nCapture build output.\nEvidence: t_001.\n\n[Medium] Eval problem, C# / guidelines\nKeep publish errors.\nStore all stderr.\n\n[Low] API/ergonomics problem, C# / guidelines\nRename Index.\nIt collides.\n\nINFRASTRUCTURE/PROVIDER PROBLEMS\n\n- Rust / guidelines / test-model: Incorrect sum-type syntax\n\n"
         );
     }
 
