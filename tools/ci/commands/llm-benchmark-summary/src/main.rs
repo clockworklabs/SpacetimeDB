@@ -37,6 +37,7 @@ struct Problem {
 
 struct Report {
     language: String,
+    mode: String,
     passed_tasks: u64,
     total_tasks: u64,
     problems: Vec<Problem>,
@@ -47,6 +48,14 @@ fn field<'a>(text: &'a str, name: &str) -> &'a str {
     text.lines()
         .find_map(|line| line.strip_prefix(&prefix))
         .unwrap_or("unknown")
+}
+
+fn mode_name(mode: &str) -> &str {
+    match mode {
+        "guidelines" => "Guidelines",
+        "no_context" => "No context",
+        other => other,
+    }
 }
 
 fn language_name(language: &str) -> &str {
@@ -116,6 +125,7 @@ fn parse_report(text: &str) -> Report {
         .unwrap_or((0, 0));
     let mut report = Report {
         language: language.to_owned(),
+        mode: mode.to_owned(),
         passed_tasks,
         total_tasks,
         problems: Vec::new(),
@@ -220,16 +230,22 @@ fn attachment(problems: &[&Problem]) -> String {
 }
 
 fn build(reports: &[Report], run_url: &str, run_label: &str) -> (Value, String) {
-    let (mut passed, mut total) = (0, 0);
-    let mut by_language = BTreeMap::<&str, (u64, u64)>::new();
+    type Counts = (u64, u64);
+    let mut by_mode = BTreeMap::<&str, (Counts, BTreeMap<&str, Counts>)>::new();
     for report in reports {
-        passed += report.passed_tasks;
-        total += report.total_tasks;
-        let counts = by_language.entry(&report.language).or_default();
-        counts.0 += report.passed_tasks;
-        counts.1 += report.total_tasks;
+        let (totals, languages) = by_mode.entry(&report.mode).or_default();
+        let counts = languages.entry(&report.language).or_default();
+        for counts in [totals, counts] {
+            counts.0 += report.passed_tasks;
+            counts.1 += report.total_tasks;
+        }
     }
     let problems: Vec<_> = reports.iter().flat_map(|report| &report.problems).collect();
+    let all = by_mode
+        .values()
+        .fold((0, 0), |sum, (counts, _)| (sum.0 + counts.0, sum.1 + counts.1));
+    // Guidelines is what people get from our docs; no-context rates are expected to be low.
+    let (passed, total) = by_mode.get("guidelines").map_or(all, |(counts, _)| *counts);
     let rate = percent(passed, total);
     let color = if total == 0 || rate < 90.0 || problems.iter().any(|problem| problem.category == INFRASTRUCTURE) {
         RED
@@ -238,14 +254,27 @@ fn build(reports: &[Report], run_url: &str, run_label: &str) -> (Value, String) 
     } else {
         GREEN
     };
-    let mut description = if total == 0 {
+    let mut description = if all.1 == 0 {
         "No analysis reports were produced.".to_owned()
     } else {
-        let languages: Vec<_> = by_language
-            .into_iter()
-            .map(|(language, (passed, total))| format!("{} {:.1}%", language_name(language), percent(passed, total)))
-            .collect();
-        format!("**{rate:.1}%** passed ({passed}/{total}) · {}", languages.join(" · "))
+        by_mode
+            .iter()
+            .map(|(mode, ((passed, total), languages))| {
+                let languages: Vec<_> = languages
+                    .iter()
+                    .map(|(language, (passed, total))| {
+                        format!("{} {:.1}%", language_name(language), percent(*passed, *total))
+                    })
+                    .collect();
+                format!(
+                    "**{} {:.1}%** · {}",
+                    mode_name(mode),
+                    percent(*passed, *total),
+                    languages.join(" · ")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     };
     let lines = problem_lines(&problems);
     if !lines.is_empty() {
@@ -279,8 +308,12 @@ mod tests {
     use super::*;
 
     fn report(language: &str, tasks: &str, action: &str, classification: &str) -> Report {
+        report_in("guidelines", language, tasks, action, classification)
+    }
+
+    fn report_in(mode: &str, language: &str, tasks: &str, action: &str, classification: &str) -> Report {
         parse_report(&format!(
-            "# LLM Benchmark Analysis\n\n- Language: {language}\n- Mode: guidelines\n- Model: test-model\n- Tasks: {tasks}\n- Scorers: 100/100 (100.0%)\n\n## Recommended actions\n\n{action}\n\n## Failure patterns\n\n### Incorrect sum-type syntax (1 task)\n\n- **Classification:** {classification}\n"
+            "# LLM Benchmark Analysis\n\n- Language: {language}\n- Mode: {mode}\n- Model: test-model\n- Tasks: {tasks}\n- Scorers: 100/100 (100.0%)\n\n## Recommended actions\n\n{action}\n\n## Failure patterns\n\n### Incorrect sum-type syntax (1 task)\n\n- **Classification:** {classification}\n"
         ))
     }
 
@@ -289,10 +322,15 @@ mod tests {
         let reports = [
             report("csharp", "36/37 (97.3%)", "", ""),
             report("rust", "34/37 (91.9%)", "", "Model limitation"),
+            report_in("no_context", "rust", "20/37 (54.1%)", "", "Model limitation"),
         ];
         let (payload, attachment) = build(&reports, "https://example.com/run", "Weekly run");
         let embed = &payload["embeds"][0];
-        assert_eq!(embed["description"], "**94.6%** passed (70/74) · C# 97.3% · Rust 91.9%");
+        assert_eq!(
+            embed["description"],
+            "**Guidelines 94.6%** · C# 97.3% · Rust 91.9%\n**No context 54.1%** · Rust 54.1%"
+        );
+        // A low no-context rate alone does not turn the card red.
         assert_eq!(embed["color"], YELLOW);
         assert_eq!(embed["title"], "LLM Benchmark Analysis · Weekly run");
         assert_eq!(embed["url"], "https://example.com/run");
@@ -319,7 +357,7 @@ mod tests {
         let (payload, attachment) = build(&reports, "", "");
         assert_eq!(
             payload["embeds"][0]["description"],
-            "**100.0%** passed (74/74) · C# 100.0% · Rust 100.0%\n\n- Eval problem (2): Capture build output\n- API/ergonomics problem (1): Rename Index\n- Infrastructure/provider problem (1): Incorrect sum-type syntax"
+            "**Guidelines 100.0%** · C# 100.0% · Rust 100.0%\n\n- Eval problem (2): Capture build output\n- API/ergonomics problem (1): Rename Index\n- Infrastructure/provider problem (1): Incorrect sum-type syntax"
         );
         assert_eq!(payload["embeds"][0]["color"], RED);
         assert_eq!(

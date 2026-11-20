@@ -53,7 +53,7 @@ fn formats_downloaded_reports_and_reports_io_errors() {
     let embed = &result["embeds"][0];
     assert_eq!(
         embed["description"],
-        "**75.0%** passed (3/4) · Rust 100.0% · TypeScript 66.7%"
+        "**Guidelines 66.7%** · TypeScript 66.7%\n**unknown 100.0%** · Rust 100.0%"
     );
     assert_eq!(fs::read_to_string(&attachment).unwrap(), "");
 
