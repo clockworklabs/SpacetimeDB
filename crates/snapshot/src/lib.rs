@@ -204,7 +204,7 @@ impl SnapshotError {
 pub const MAGIC: [u8; 4] = *b"txyz";
 
 /// Snapshot format version number.
-pub const CURRENT_SNAPSHOT_VERSION: u8 = 0;
+pub const CURRENT_SNAPSHOT_VERSION: u8 = 1;
 
 /// ABI version of the module from which this snapshot was created, as [MAJOR, MINOR].
 pub const CURRENT_MODULE_ABI_VERSION: [u16; 2] = [7, 0];
