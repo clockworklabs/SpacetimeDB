@@ -16,9 +16,13 @@ Fresh agents drafted a description from the same diff and test notes. The origin
 
 > All 85 client API library tests passed with default features disabled.
 
-The revised draft opened its first bullet with:
+The original draft described the regression in its third bullet:
 
-> Publishing to an existing database with `clear=true` and a parent returns HTTP 400 before calling the reset backend, whether the parent is supplied by name or identity.
+> Resetting an existing database with either form of `parent` returns 400 and skips the backend reset, even with reset permission. Temporarily removing the parent guard made this test fail with 200.
+
+The revised draft led with:
+
+> Publishing to an existing database with `clear=true` and a parent returns HTTP 400 before calling the reset backend, whether the parent is supplied by name or identity. Manually removing the guard changed the response to HTTP 200 and failed the new test.
 
 Both drafts described the regression. The revised draft led with it and omitted the pass count. The model settings were only recorded for the revised run.
 
