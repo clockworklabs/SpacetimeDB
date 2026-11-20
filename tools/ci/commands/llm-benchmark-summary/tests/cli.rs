@@ -1,5 +1,6 @@
 use serde_json::Value;
 use std::fs;
+use std::path::Path;
 use std::process::Command;
 
 #[test]
@@ -19,7 +20,7 @@ fn formats_downloaded_reports_and_reports_io_errors() {
     // Nextest archives relocate binaries, so prefer its runtime path over the compile-time one.
     let exe = std::env::var_os("NEXTEST_BIN_EXE_ci-llm-benchmark-summary")
         .unwrap_or_else(|| env!("CARGO_BIN_EXE_ci-llm-benchmark-summary").into());
-    let run = || {
+    let run_with = |attachment: &Path| {
         Command::new(&exe)
             .arg("--reports-dir")
             .arg(&reports)
@@ -27,10 +28,11 @@ fn formats_downloaded_reports_and_reports_io_errors() {
             .arg("--output")
             .arg(&output)
             .arg("--attachment")
-            .arg(&attachment)
+            .arg(attachment)
             .output()
             .unwrap()
     };
+    let run = || run_with(&attachment);
     let payload = || serde_json::from_slice::<Value>(&fs::read(&output).unwrap()).unwrap();
 
     // A failed benchmark job can leave no report artifact to download.
@@ -56,6 +58,27 @@ fn formats_downloaded_reports_and_reports_io_errors() {
         "🔴 **Guidelines 66.7%** · TypeScript 66.7%\n🟢 **unknown 100.0%** · Rust 100.0%"
     );
     assert_eq!(fs::read_to_string(&attachment).unwrap(), "");
+
+    fs::write(
+        reports.join("csharp.md"),
+        "- Language: csharp\n- Mode: guidelines\n- Model: m\n- Tasks: 1/1\n\n## Recommended actions\n\n- **[Eval problem | High] Keep errors.** Details.\n",
+    )
+    .unwrap();
+    for (name, start) in [
+        ("analysis.html", "<!doctype html>"),
+        (
+            "analysis.md",
+            "- C# / guidelines / m: **[Eval problem | High] Keep errors.** Details.",
+        ),
+    ] {
+        let path = root.join(name);
+        assert!(run_with(&path).status.success());
+        assert!(fs::read_to_string(&path).unwrap().starts_with(start));
+    }
+    let failure = run_with(&root.join("analysis.pdf"));
+    assert!(!failure.status.success());
+    assert!(String::from_utf8_lossy(&failure.stderr).contains("must end in .html, .md or .txt"));
+    fs::remove_file(reports.join("csharp.md")).unwrap();
 
     let broken = reports.join("broken.md");
     fs::write(&broken, [0xff]).unwrap();
