@@ -312,7 +312,7 @@ cargo test
 
 `with_reducer_tx` commits when its callback returns `Ok`, rolls back on `Err`, and rolls back during panic unwinding. Use `?` to propagate reducer errors. For a reducer that returns `()`, call it inside the closure and then return `Ok::<(), String>(())`.
 
-`TestContext` exposes the database's tables as `test.db`, the test clock as `test.clock` and the random number source as `test.rng`. The database's own identity is always `Identity::ZERO`.
+`TestContext` exposes the database's tables as `test.db`, the test clock as `test.clock` and the random number source as `test.rng`. The database's own identity, which is `ctx.sender()` for internal calls, is `test.identity`. It starts as `Identity::ZERO`; assign another identity to it before running calls that depend on it.
 
 The rollback examples deliberately call the reducer twice inside one test transaction to demonstrate atomicity. Calls from clients normally run in separate transactions; use one transaction per call when testing that behavior. Running several reducers in one transaction is still useful for setting up a scenario in a single step.
 
@@ -436,6 +436,8 @@ dotnet test tests/Module.Tests.csproj
 ```
 
 `WithReducerTx` commits when the callback returns normally and rolls back when it throws. Keep callbacks synchronous and do not use their contexts after they return.
+
+The database's own identity, which is `ctx.Sender` for internal calls, is `test.DatabaseIdentity`. It defaults to the zero identity; pass another one when creating the fixture, as in `ModuleTestContext.Create(typeof(Module).Assembly, databaseIdentity: identity)`.
 
 Reference one root module per test project; it may include module libraries. Dispose each fixture with `using`. Separate fixtures can run in parallel, but each fixture supports only one execution flow at a time.
 

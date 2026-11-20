@@ -15,16 +15,18 @@ internal sealed class DatabaseBackend : IDatabaseBackend
     private readonly Dictionary<(int Instance, string Index), uint> _indexIds = [];
 
     public NamespaceRegistry Namespaces { get; }
-    public Identity DatabaseIdentity => default;
+    public Identity DatabaseIdentity { get; }
     internal bool HasActiveTransaction { get; private set; }
 
     internal DatabaseBackend(
         ReadOnlySpan<byte> schema,
         NamespaceRegistry namespaces,
-        IReadOnlyDictionary<string, RawEnvVarTypeV10>? environment = null
+        IReadOnlyDictionary<string, RawEnvVarTypeV10>? environment = null,
+        Identity databaseIdentity = default
     )
     {
         Namespaces = namespaces;
+        DatabaseIdentity = databaseIdentity;
         _datastore = NativeDatastore.Create(schema);
         _environmentDeclarations =
             environment ?? new Dictionary<string, RawEnvVarTypeV10>(StringComparer.Ordinal);

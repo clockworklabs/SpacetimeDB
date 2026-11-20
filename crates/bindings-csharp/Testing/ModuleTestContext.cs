@@ -17,19 +17,26 @@ public sealed class ModuleTestContext : IDisposable
     private static readonly ConditionalWeakTable<Assembly, ModuleSchema> Schemas = [];
     private readonly DatabaseBackend _backend;
 
-    private ModuleTestContext(ModuleSchema schema)
+    private ModuleTestContext(ModuleSchema schema, Identity databaseIdentity)
     {
-        _backend = new DatabaseBackend(schema.Bytes, schema.Namespaces, schema.Environment);
+        _backend = new DatabaseBackend(
+            schema.Bytes,
+            schema.Namespaces,
+            schema.Environment,
+            databaseIdentity
+        );
         Db = new SpacetimeDB.Local(new DatabaseAccess(_backend));
         Clock = new TestClock(_backend);
         Rng = new TestRng(_backend);
     }
 
     /// <summary>Registers the specified root and its dependencies without initializing WASM.</summary>
-    public static ModuleTestContext Create(Assembly module)
+    /// <param name="module">The root module assembly.</param>
+    /// <param name="databaseIdentity">The database's own identity, which is the sender for internal calls.</param>
+    public static ModuleTestContext Create(Assembly module, Identity databaseIdentity = default)
     {
         ArgumentNullException.ThrowIfNull(module);
-        return new ModuleTestContext(Schemas.GetValue(module, BuildSchema));
+        return new ModuleTestContext(Schemas.GetValue(module, BuildSchema), databaseIdentity);
     }
 
     private static ModuleSchema BuildSchema(Assembly module)
