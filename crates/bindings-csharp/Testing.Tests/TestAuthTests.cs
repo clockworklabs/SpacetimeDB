@@ -23,15 +23,13 @@ public class TestAuthTests
     [Fact]
     public void InternalCredentialsActAsTheDatabase()
     {
-        using var test = ModuleTestContext.Create(typeof(Module).Assembly);
-        var internalAuth = TestAuth.Internal();
-        Assert.Null(internalAuth.Sender);
-        Assert.Null(internalAuth.ConnectionId);
+        var databaseIdentity = Identity.FromHexString(new string('a', 64));
+        using var test = ModuleTestContext.Create(typeof(Module).Assembly, databaseIdentity);
         test.WithReducerTx(
-            internalAuth,
+            TestAuth.Internal(),
             ctx =>
             {
-                Assert.Equal(test.DatabaseIdentity, ctx.Sender);
+                Assert.Equal(databaseIdentity, ctx.Sender);
                 Assert.Null(ctx.ConnectionId);
                 Assert.True(ctx.SenderAuth.IsInternal);
             }
