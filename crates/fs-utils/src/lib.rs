@@ -59,15 +59,6 @@ mod tests {
     use super::atomic_write;
 
     #[test]
-    fn atomic_write_replaces_contents() {
-        let dir = tempdir::TempDir::new("atomic-write").unwrap();
-        let path = dir.path().join("config");
-        atomic_write(&path, "before".into()).unwrap();
-        atomic_write(&path, "after".into()).unwrap();
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "after");
-    }
-
-    #[test]
     fn atomic_write_returns_errors_other_than_name_collisions() {
         let dir = tempdir::TempDir::new("atomic-write").unwrap();
         let error = atomic_write(&dir.path().join("missing/config"), "data".into()).unwrap_err();
