@@ -12,20 +12,15 @@ const SIGN_IN_AGAIN = 'sign in with agy again';
 export function readAgyLogin(text: string): AgyLogin {
   let file: unknown;
   try { file = JSON.parse(text); } catch { throw new Error(`Antigravity login must be the JSON file agy writes; ${SIGN_IN_AGAIN}`); }
-  const { token, auth_method: method, id_token: idToken } = (file ?? {}) as Record<string, unknown>;
+  const { token, auth_method: method } = (file ?? {}) as Record<string, unknown>;
   const { access_token: access, refresh_token: refresh, expiry } = (token ?? {}) as Record<string, unknown>;
   if (method !== 'consumer' || typeof access !== 'string' || !access || typeof refresh !== 'string' || !refresh
-    || typeof expiry !== 'string' || !Number.isFinite(Date.parse(expiry)) || typeof idToken !== 'string') {
+    || typeof expiry !== 'string' || !Number.isFinite(Date.parse(expiry))) {
     throw new Error(`Antigravity login is not a Google account sign-in; ${SIGN_IN_AGAIN}`);
   }
-  let claims: Record<string, unknown>;
-  try { claims = JSON.parse(Buffer.from(idToken.split('.')[1] ?? '', 'base64url').toString('utf8')); }
-  catch { throw new Error(`Antigravity login has no readable account identity; ${SIGN_IN_AGAIN}`); }
-  if (claims?.iss !== 'https://accounts.google.com' || typeof claims.sub !== 'string' || !claims.sub) {
-    throw new Error(`Antigravity login has no Google account identity; ${SIGN_IN_AGAIN}`);
-  }
-  // The account, not the current token bytes, is what a campaign pins: tokens rotate.
-  const identity = createHash('sha256').update(JSON.stringify([claims.iss, claims.aud ?? null, claims.sub])).digest('hex');
+  // A campaign pins the sign-in, not the current access token. Renewal keeps the refresh
+  // token, while the file's account fields differ between CLI versions.
+  const identity = createHash('sha256').update(refresh).digest('hex');
   return { token: access, expiresAtMs: Date.parse(expiry), identity };
 }
 
