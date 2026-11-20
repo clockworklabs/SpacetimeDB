@@ -21,7 +21,7 @@
  * IMPORTANT LIMITATIONS:
  * - HTTP requests CANNOT be performed inside with_tx() or try_with_tx()
  * - The host will reject HTTP requests with WOULD_BLOCK_TRANSACTION
- * - All timeouts are clamped to a maximum of 500ms by the host
+ * - Requests default to a 30-second timeout, and the host clamps all timeouts to a maximum of 180 seconds
  * - No external HTTP library dependencies (host does actual HTTP)
  *
  * Example usage:
@@ -165,7 +165,7 @@ struct HttpBody {
  * };
  * @endcode
  *
- * The host clamps all timeouts to a maximum of 500ms.
+ * The host clamps all timeouts to a maximum of 180 seconds.
  */
 struct HttpRequest {
     std::string uri;
@@ -208,7 +208,7 @@ public:
      * @brief Send a simple GET request
      *
      * @param uri The request URI
-     * @param timeout Optional timeout (clamped to 500ms by host)
+     * @param timeout Optional timeout (clamped to 180 seconds by host)
      * @return Outcome<HttpResponse> - Ok if response received, Err if transport failed
      *
      * @code
