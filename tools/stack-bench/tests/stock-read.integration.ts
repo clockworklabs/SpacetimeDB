@@ -21,7 +21,7 @@ for (const backend of ['postgres', 'mongodb'] as const) {
     const id = docker(['run', '--pull=never', '--rm', '-d', '--name', name,
       '--network', 'none', '--cpus', '1', '--memory', '384m',
       ...(postgres ? ['-e', 'POSTGRES_HOST_AUTH_METHOD=trust', '-e', 'POSTGRES_USER=appuser',
-        '-e', 'POSTGRES_DB=bench', 'postgres:16-alpine'] : ['mongo:7'])]);
+        '-e', 'POSTGRES_DB=bench', 'postgres:19-alpine'] : ['mongo:9'])]);
     const lease = { resources: { container: { name, id }, database: 'bench' } };
     const run = (source: string): string => postgres
       ? docker(['exec', '-i', id, 'psql', '-U', 'appuser', '-d', 'bench', '-v', 'ON_ERROR_STOP=1', '-At'], source)

@@ -1,6 +1,6 @@
 export const DATABASE_IMAGES = {
-  postgres: 'postgres:16@sha256:219341e4cedb06c8634f80af40851da3425b41b76603fd890272f58e37e139f7',
-  mongodb: 'mongo:7@sha256:554a9bb1ec6e00c40ba078a41974a834d1a9a8ab1772645b69142afecc87f082',
+  postgres: 'postgres:19@sha256:d2c8a7d3d224a9c0335bf9f69ae6ad0b9aa7d88c4b64bab89f0f261332f6d4de',
+  mongodb: 'mongo:9@sha256:e5964383224061a512e9a886a4beaf6ed299f0237b7239dbf9876cbc7882910d',
 };
 
 type ContainerEnvironment = Readonly<Record<string, string | undefined>>;
