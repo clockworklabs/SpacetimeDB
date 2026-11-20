@@ -35,6 +35,23 @@
     <RestoreAdditionalProjectSources>https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json;$(RestoreAdditionalProjectSources)</RestoreAdditionalProjectSources>
   </PropertyGroup>
 
+  <!-- The SDK builds RID-agnostic project references, such as libraries mounted with
+       [Namespace], without the module's wasi-wasm RID. Their generated code must still
+       target the WASM Runtime that the module links. -->
+  <PropertyGroup Condition="'$(_SpacetimeWasmLibrary)' == 'true'">
+    <DefineConstants>$(DefineConstants);SPACETIMEDB_WASM_AOT</DefineConstants>
+  </PropertyGroup>
+
+  <Target Name="_SpacetimeFlowWasmToProjectReferences"
+          BeforeTargets="AssignProjectConfiguration"
+          Condition="'$(_UseNativeAotLlvm)' == 'true' And $(TargetFramework.StartsWith('net10.'))">
+    <ItemGroup>
+      <ProjectReference Condition="'%(ProjectReference.ReferenceOutputAssembly)' != 'false'">
+        <AdditionalProperties>%(ProjectReference.AdditionalProperties);_SpacetimeWasmLibrary=true</AdditionalProperties>
+      </ProjectReference>
+    </ItemGroup>
+  </Target>
+
   <Import
       Project="$(PkgMicrosoft_DotNet_ILCompiler_LLVM)\build\Microsoft.DotNet.ILCompiler.LLVM.targets"
       Condition="'$(_UseNativeAotLlvm)' == 'true' and '$(ILCompilerTargetsPath)' == '' and '$(PkgMicrosoft_DotNet_ILCompiler_LLVM)' != '' and Exists('$(PkgMicrosoft_DotNet_ILCompiler_LLVM)\build\Microsoft.DotNet.ILCompiler.LLVM.targets')" />
