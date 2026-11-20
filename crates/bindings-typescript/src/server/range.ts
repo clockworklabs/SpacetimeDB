@@ -1,6 +1,3 @@
-// Registered globally, so every copy of this module shares it.
-const RANGE_BRAND = Symbol.for('spacetimedb.Range');
-
 /**
  * A class representing a range with optional lower and upper bounds.
  * This class is used to specify ranges for index scans in SpacetimeDB.
@@ -19,24 +16,6 @@ const RANGE_BRAND = Symbol.for('spacetimedb.Range');
  * ```
  */
 export class Range<T> {
-  /**
-   * Recognise a `Range` built by another copy of this class.
-   *
-   * The package's entry points are bundled separately, so a module that imports
-   * `Range` from `spacetimedb/server` and is run by the test harness in
-   * `spacetimedb/server/test-utils` holds a different class from the one the
-   * harness checks against. Without this, the harness would take the range for
-   * a scalar key and fail to serialize it.
-   */
-  static [Symbol.hasInstance](value: unknown): boolean {
-    return (
-      typeof value === 'object' &&
-      value !== null &&
-      (value as { [RANGE_BRAND]?: unknown })[RANGE_BRAND] === true
-    );
-  }
-
-  readonly [RANGE_BRAND] = true;
   #from: Bound<T>;
   #to: Bound<T>;
   public constructor(from?: Bound<T> | null, to?: Bound<T> | null) {
