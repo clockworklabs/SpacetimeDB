@@ -322,7 +322,7 @@ Each HTTP request performed by a database will be counted either here, in `space
         pub page_cache_evicted_bytes: IntCounterVec,
 
         #[name = spacetime_page_cache_disk_io_duration_seconds]
-        #[help = "Local-cache read and write durations, including failed operations."]
+        #[help = "Local-cache read, write, and hardlink durations, including failed operations."]
         #[labels(database_identity: Identity, replica_id: u64, operation: str)]
         #[buckets(0.00001, 0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 30.0)]
         pub page_cache_disk_time: HistogramVec,

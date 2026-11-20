@@ -19,7 +19,7 @@ use crate::{
         map::{BlobHashWrapper, ObjectKey},
         mem::{self, BlobEvictionCandidate, BlobFrame, EvictionSource, ReservedBlob},
         storage::{DiskObject, DiskRetention, Object},
-        ByteBudget, ByteBudgetUsage, EvictionPolicy, ObjectBytes, TieredStorage,
+        ByteBudget, ByteBudgetUsage, EvictionPolicy, TieredStorage,
     },
     var_len::VarLenMembers,
 };
@@ -539,7 +539,6 @@ impl BlobSet {
     pub fn scan(&self) -> BlobScan<'_> {
         BlobScan {
             entries: self.entries.read(),
-            storage: &self.storage,
         }
     }
 
@@ -926,49 +925,67 @@ impl BlobSetInner {
     }
 }
 
-pub struct ScannedBlob<'a> {
-    pub hash: BlobHash,
-    pub uses: NonZeroUsize,
-    pub data: ScannedBlobData<'a>,
+pub struct BlobScan<'a> {
+    entries: RwLockReadGuard<'a, IntMap<BlobHashWrapper, BlobEntry>>,
 }
 
-pub enum ScannedBlobData<'a> {
-    Resident(&'a [u8]),
-    Stored(ObjectBytes),
+impl<'a> BlobScan<'a> {
+    pub fn iter(&'a self) -> IterBlobScan<'a> {
+        self.into_iter()
+    }
 }
 
-impl AsRef<[u8]> for ScannedBlobData<'_> {
-    fn as_ref(&self) -> &[u8] {
-        match self {
-            Self::Resident(bytes) => bytes,
-            Self::Stored(bytes) => bytes.as_ref(),
+impl<'a> IntoIterator for &'a BlobScan<'_> {
+    type IntoIter = IterBlobScan<'a>;
+    type Item = <Self::IntoIter as Iterator>::Item;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IterBlobScan {
+            iter: self.entries.iter(),
         }
     }
 }
 
-pub struct BlobScan<'a> {
-    entries: RwLockReadGuard<'a, IntMap<BlobHashWrapper, BlobEntry>>,
-    storage: &'a TieredStorage,
+pub struct ScannedBlob<'a> {
+    pub hash: BlobHash,
+    pub uses: NonZeroUsize,
+    pub(crate) data: BlobData<'a>,
 }
 
-impl<'a> BlobScan<'a> {
-    pub fn iter(&'a self) -> impl Iterator<Item = Result<ScannedBlob<'a>, ObjectStoreError>> + 'a {
-        self.entries.iter().filter_map(move |(&hash, entry)| {
-            let uses = NonZeroUsize::new(entry.uses())?;
-            let get_or_read = || {
-                let data = match entry {
-                    BlobEntry::Resident { blob, .. } => ScannedBlobData::Resident(blob),
-                    BlobEntry::NonResident { .. } => self.storage.read(hash.into()).map(ScannedBlobData::Stored)?,
-                };
+pub(crate) enum BlobData<'a> {
+    Resident {
+        bytes: &'a BlobHandle,
+        backing: Option<DiskObject>,
+    },
+    Stored {
+        backing: DiskObject,
+    },
+}
 
-                Ok(ScannedBlob {
-                    hash: hash.into(),
-                    uses,
-                    data,
-                })
-            };
+pub struct IterBlobScan<'a> {
+    iter: hash_map::Iter<'a, BlobHashWrapper, BlobEntry>,
+}
 
-            Some(get_or_read())
+impl<'a> Iterator for IterBlobScan<'a> {
+    type Item = ScannedBlob<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (&hash, entry) = self.iter.by_ref().next()?;
+        let uses = NonZeroUsize::new(entry.uses())?;
+        let data = match entry {
+            BlobEntry::Resident { blob, backing, .. } => BlobData::Resident {
+                bytes: blob,
+                backing: backing.clone(),
+            },
+            BlobEntry::NonResident { backing, .. } => BlobData::Stored {
+                backing: backing.clone(),
+            },
+        };
+
+        Some(ScannedBlob {
+            hash: hash.into(),
+            uses,
+            data,
         })
     }
 }

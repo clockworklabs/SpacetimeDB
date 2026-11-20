@@ -461,15 +461,8 @@ pub struct PageManager {
     pool: PagePool,
     resident_cache: Pool<CachedResidentPage>,
     resident: Arc<ResidentObjects>,
-    pub(crate) storage: Arc<TieredStorage>,
+    pub(super) storage: Arc<TieredStorage>,
     eviction: Arc<PageEviction>,
-}
-
-#[derive(Debug)]
-pub(super) struct PageEviction {
-    resident: Arc<ResidentObjects>,
-    storage: Arc<TieredStorage>,
-    candidates: Mutex<Vec<PageEvictionCandidate>>,
 }
 
 impl PageManager {
@@ -818,6 +811,13 @@ impl PageManager {
             res => res,
         }
     }
+}
+
+#[derive(Debug)]
+pub(super) struct PageEviction {
+    resident: Arc<ResidentObjects>,
+    storage: Arc<TieredStorage>,
+    candidates: Mutex<Vec<PageEvictionCandidate>>,
 }
 
 impl PageEviction {

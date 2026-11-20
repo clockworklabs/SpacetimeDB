@@ -9273,6 +9273,7 @@ dependencies = [
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "spacetimedb-schema",
+ "tempfile",
  "thiserror 1.0.69",
 ]
 

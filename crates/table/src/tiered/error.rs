@@ -179,3 +179,20 @@ impl EvictionError {
         }
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum SnapshotError {
+    #[error(transparent)]
+    Storage(#[from] ObjectStoreError),
+    #[error(transparent)]
+    Io(#[from] io::Error),
+}
+
+impl SnapshotError {
+    pub fn is_transient(&self) -> bool {
+        match self {
+            Self::Storage(e) => e.is_transient(),
+            Self::Io(_) => true,
+        }
+    }
+}

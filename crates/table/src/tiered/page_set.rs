@@ -1,4 +1,3 @@
-use super::metrics::{CacheTier, ObjectType};
 use std::{
     collections::{btree_map, BTreeMap, BTreeSet},
     convert::Infallible,
@@ -9,6 +8,7 @@ use spacetimedb_lib::ProductValue;
 use spacetimedb_memory_usage::MemoryUsage;
 use spacetimedb_sats::layout::Size;
 
+use super::metrics::{CacheTier, ObjectType};
 use crate::{
     indexes::{PageIndex, RowPointer},
     page::{Page, PageCapacity},
@@ -16,9 +16,10 @@ use crate::{
     table::{BlobNumBytes, PreparedInsert, Table, TableError},
     tiered::{
         blob_set::BlobHandle,
+        map::PageHash,
         page_manager::{PageFrameWriteGuard, PageHandle, PageManager, PageSlot, PageSlotHandle, ReservedPage},
         storage::DiskObject,
-        BlobSet, BudgetPermit, EvictionError, EvictionPolicy, ObjectStoreError, PageError, PageRead, PageRef,
+        BlobSet, BudgetPermit, EvictionError, EvictionPolicy, Object, ObjectStoreError, PageError, PageRead, PageRef,
     },
     var_len::VarLenMembers,
 };
@@ -232,39 +233,44 @@ pub enum PageInfo<'a> {
 }
 
 impl PageInfo<'_> {
-    #[cfg(test)]
-    fn is_full(&self, size: Size) -> Option<bool> {
-        match self {
-            Self::Resident(p) => Some(p.is_full(size)),
-            Self::Tiered(p) => p.is_full(size),
-        }
-    }
     fn available_var_len_granules(&self) -> Option<usize> {
         match self {
             Self::Resident(p) => Some(p.available_var_len_granules()),
             Self::Tiered(p) => p.available_var_len_granules(),
         }
     }
+
     fn has_space_for_row(&self, size: Size, granules: usize) -> Option<bool> {
         match self {
             Self::Resident(p) => Some(p.has_space_for_row(size, granules)),
             Self::Tiered(p) => p.has_space_for_row(size, granules),
         }
     }
+
     pub fn bytes_used_by_rows(&self, size: Size) -> usize {
         match self {
             Self::Resident(p) => p.bytes_used_by_rows(size),
             Self::Tiered(p) => p.bytes_used_by_rows(),
         }
     }
-    #[cfg(test)]
+}
+
+#[cfg(test)]
+impl PageInfo<'_> {
+    fn is_full(&self, size: Size) -> Option<bool> {
+        match self {
+            Self::Resident(p) => Some(p.is_full(size)),
+            Self::Tiered(p) => p.is_full(size),
+        }
+    }
+
     pub fn reconstruct_num_rows(&self) -> usize {
         match self {
             Self::Resident(p) => p.reconstruct_num_rows(),
             Self::Tiered(p) => p.reconstruct_num_rows(),
         }
     }
-    #[cfg(test)]
+
     pub unsafe fn reconstruct_bytes_used_by_rows(&self, size: Size, visitor: &impl VarLenMembers) -> usize {
         unsafe {
             match self {
@@ -501,37 +507,6 @@ impl PageSet {
             .pages
             .get(index)
             .expect("row reference points at a present page")
-    }
-
-    /// Iterate over all pages in this page set, ensuring that the page's hash
-    /// is computed before yielding it.
-    ///
-    /// This will fault in each page if it is not resident.
-    ///
-    /// Used when capturing a snapshot.
-    pub(crate) fn iter_pages_with_hashes(
-        &mut self,
-    ) -> impl Iterator<Item = Result<Option<(blake3::Hash, PageRef<'_>)>, PageError>> {
-        match &mut self.storage {
-            PageStorage::Resident(resident) => itertools::Either::Left(resident.pages.iter_mut().map(|page| {
-                Ok(page.as_deref_mut().map(|page| {
-                    let hash = page.save_or_get_content_hash();
-                    (hash, PageRef::Resident(page))
-                }))
-            })),
-            PageStorage::Tiered(tiered) => itertools::Either::Right(tiered.slots.iter().map(|slot| {
-                if slot.is_absent() {
-                    Ok(None)
-                } else {
-                    let mut page = self.manager.with_page_retry(|fault| {
-                        self.manager
-                            .get_mut_with_fault(slot, self.eviction_policy, self.fixed_row_size, fault)
-                    })?;
-                    let hash = page.save_or_get_content_hash();
-                    Ok(Some((hash, PageRef::Tiered(page.into_page_handle()))))
-                }
-            })),
-        }
     }
 
     /// Run a closure over a mutable [Page].
@@ -1055,6 +1030,74 @@ impl PageSet {
             PageStorage::Tiered(_) => self.manager.with_eviction_retry(reserve),
         }
     }
+
+    pub(crate) fn iter_pages_with_hashes(
+        &mut self,
+    ) -> impl Iterator<Item = Result<Option<(PageHash, PageRef<'_>)>, PageError>> {
+        use itertools::Either::*;
+
+        match &mut self.storage {
+            PageStorage::Resident(resident) => Left(resident.pages.iter_mut().map(|page| {
+                Ok(page.as_deref_mut().map(|page| {
+                    let hash = PageHash::from(&mut *page);
+                    (hash, PageRef::Resident(page))
+                }))
+            })),
+            PageStorage::Tiered(tiered) => Right(tiered.slots.iter().map(|slot| {
+                if slot.is_absent() {
+                    Ok(None)
+                } else {
+                    let mut page = self.manager.with_page_retry(|fault| {
+                        self.manager
+                            .get_mut_with_fault(slot, self.eviction_policy, self.fixed_row_size, fault)
+                    })?;
+                    let hash = PageHash::from(&mut *page);
+                    Ok(Some((hash, PageRef::Tiered(page.into_page_handle()))))
+                }
+            })),
+        }
+    }
+
+    pub(crate) fn snapshot(&mut self) -> impl Iterator<Item = Option<PageSnapshot>> {
+        use itertools::Either::*;
+
+        // TODO: Resident pages are serialized eagerly to bsatn. Instead, we
+        // should do that lazily as the page is being written, so as to use
+        // memory only for one page at a time.
+        // Requires some form of copy-on-write.
+        match &mut self.storage {
+            PageStorage::Resident(resident) => {
+                let iter = resident
+                    .pages
+                    .iter_mut()
+                    .map(|page| page.as_deref_mut().map(Object::from).map(PageSnapshot::Memory));
+
+                Left(iter)
+            }
+            PageStorage::Tiered(tiered) => {
+                let iter = tiered.slots.iter().map(|handle| {
+                    let slot = handle.lock_ref();
+                    match &*slot {
+                        PageSlot::Absent => None,
+                        PageSlot::NonResident { backing, .. }
+                        | PageSlot::Resident {
+                            backing: Some(backing), ..
+                        } => Some(PageSnapshot::Stored(backing.clone())),
+                        PageSlot::Resident {
+                            handle, backing: None, ..
+                        } => Some(PageSnapshot::Memory(Object::from(handle))),
+                    }
+                });
+
+                Right(iter)
+            }
+        }
+    }
+}
+
+pub(crate) enum PageSnapshot {
+    Memory(Object),
+    Stored(DiskObject),
 }
 
 #[cfg(test)]

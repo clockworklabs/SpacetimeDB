@@ -5,20 +5,19 @@ use std::{
 };
 
 use spacetimedb_durability::TxOffset;
-use spacetimedb_fs_utils::dir_trie::{CountCreated, DirTrie};
+use spacetimedb_fs_utils::dir_trie::DirTrie;
 use spacetimedb_lib::{bsatn, Identity};
 use spacetimedb_paths::server::SnapshotDirPath;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{Deserialize, Serialize};
 use spacetimedb_table::{
     page_pool::PagePool,
-    table::Table,
-    tiered::{BlobMap, ObjectKey, ObjectStoreError, ScannedBlob},
+    tiered::{BlobMap, ObjectKey},
 };
 
 use crate::{
-    common, remote::ObjectProvider, BlobEntry, ObjectType, SnapshotError, SnapshotReadKindMetrics, TableEntry,
-    TablePages,
+    common, remote::ObjectProvider, BlobEntry, ObjectType, ParentRepo, SnapshotError, SnapshotReadKindMetrics,
+    TableEntry, TablePages,
 };
 
 pub const SNAPSHOT_VERSION: u8 = 0;
@@ -66,37 +65,6 @@ impl Snapshot {
     /// Obtain an iterator over the [`PathBuf`]s of all objects
     pub fn files<'a>(&'a self, repo: &'a SnapshotRepo) -> impl Iterator<Item = (blake3::Hash, PathBuf)> + 'a {
         self.objects().map(|key| (key.into(), repo.file_path(key)))
-    }
-
-    pub fn write_objects<'db, 'a>(
-        &mut self,
-        repo: &SnapshotRepo,
-        parent: Option<&SnapshotDirPath>,
-        tables: impl Iterator<Item = &'db mut Table>,
-        blobs: impl Iterator<Item = Result<ScannedBlob<'a>, ObjectStoreError>>,
-        counter: &mut CountCreated,
-    ) -> Result<(), SnapshotError> {
-        let parent = parent.map(SnapshotRepo::open).transpose()?;
-
-        let on_blob_write = |entry| self.blobs.push(entry);
-        let on_table_write = |entry| self.tables.push(entry);
-
-        common::write_blobs(
-            &repo.inner,
-            parent.as_ref().map(|repo| &repo.inner),
-            on_blob_write,
-            counter,
-            blobs,
-        )?;
-        common::write_tables(
-            &repo.inner,
-            parent.as_ref().map(|repo| &repo.inner),
-            on_table_write,
-            counter,
-            tables,
-        )?;
-
-        Ok(())
     }
 
     pub fn write_snapshot_file(self, repo: &SnapshotRepo) -> Result<(), SnapshotError> {
@@ -160,6 +128,12 @@ impl SnapshotRepo {
 
     pub fn file_path(&self, key: ObjectKey) -> PathBuf {
         self.inner.file_path(key.as_bytes())
+    }
+
+    pub(crate) fn parent(&self) -> Result<Option<ParentRepo>, SnapshotError> {
+        let snapshots_dir = self.root.snapshots();
+        let offset = self.root.tx_offset().map(|offset| offset - 1).unwrap_or(TxOffset::MAX);
+        common::parent_repo(&snapshots_dir, offset)
     }
 }
 

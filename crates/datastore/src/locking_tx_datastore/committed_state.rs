@@ -1147,16 +1147,12 @@ impl CommittedState {
         (table, self.storage.blobs())
     }
 
-    /// Returns an iterator over all persistent tables (i.e., non-ephemeral tables)
     #[cfg(feature = "durability")]
-    pub(super) fn persistent_tables_and_blob_store(&mut self) -> (impl Iterator<Item = &mut Table>, &BlobSet) {
-        (
-            self.tables
-                .iter_mut()
-                .filter(|(table_id, _)| !self.ephemeral_tables.contains(*table_id))
-                .map(|(_, table)| table),
-            self.storage.blobs(),
-        )
+    pub(super) fn tables_for_snapshot(&mut self) -> impl Iterator<Item = &mut Table> {
+        self.tables
+            .iter_mut()
+            .filter(|(table_id, _)| !self.ephemeral_tables.contains(*table_id))
+            .map(|(_, table)| table)
     }
 
     #[cfg(feature = "metrics")]

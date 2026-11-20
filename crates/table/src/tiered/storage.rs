@@ -1,7 +1,10 @@
 use super::metrics::{CacheTier, EvictionDirection, FaultSource, Metrics};
 use std::{
-    fmt, iter, mem,
+    fmt, fs,
+    io::{self, Write},
+    iter, mem,
     num::NonZeroU64,
+    path::Path,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
@@ -12,6 +15,7 @@ use bytes::Bytes;
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use spacetimedb_lib::bsatn;
 use spacetimedb_memory_usage::MemoryUsage;
+use tempfile::NamedTempFile;
 
 use crate::{
     page::Page,
@@ -62,6 +66,22 @@ impl ObjectInner {
             ObjectInner::Blob { hash, bytes } => ((*hash).into(), bytes.clone()),
         }
     }
+
+    #[inline]
+    pub fn as_bytes(&self) -> &ObjectBytes {
+        match self {
+            Self::Page { bytes, .. } => bytes,
+            Self::Blob { bytes, .. } => bytes,
+        }
+    }
+
+    #[inline]
+    pub fn key(&self) -> ObjectKey {
+        match self {
+            Self::Page { hash, .. } => (*hash).into(),
+            Self::Blob { hash, .. } => (*hash).into(),
+        }
+    }
 }
 
 impl Object {
@@ -71,6 +91,14 @@ impl Object {
 
     pub fn into_kv(self) -> (ObjectKey, ObjectBytes) {
         self.inner.into_kv()
+    }
+
+    pub fn as_bytes(&self) -> &ObjectBytes {
+        self.inner.as_bytes()
+    }
+
+    pub fn key(&self) -> ObjectKey {
+        self.inner.key()
     }
 }
 
@@ -99,6 +127,16 @@ impl From<&PageHandle> for Object {
 impl From<&Page> for Object {
     fn from(page: &Page) -> Self {
         let hash = PageHash::from(page);
+        let bytes = bsatn::to_vec(page).unwrap().into();
+        Self {
+            inner: ObjectInner::Page { hash, bytes },
+        }
+    }
+}
+
+impl From<&mut Page> for Object {
+    fn from(page: &mut Page) -> Self {
+        let hash = PageHash::from(&mut *page);
         let bytes = bsatn::to_vec(page).unwrap().into();
         Self {
             inner: ObjectInner::Page { hash, bytes },
@@ -187,8 +225,23 @@ pub unsafe trait RemoveObject {
     unsafe fn remove(&self, key: ObjectKey) -> Result<(), ObjectStoreError>;
 }
 
-pub trait LocalStorage: ObjectStore + MemoryUsage + RemoveObject {}
-impl<T> LocalStorage for T where T: ObjectStore + MemoryUsage + RemoveObject {}
+#[derive(Clone, Copy, Debug)]
+pub enum Fsync {
+    Require,
+    Defer,
+}
+
+pub trait HardlinkObject {
+    fn hardlink_to(&self, _: ObjectKey, _: &Path, _: Fsync) -> io::Result<()> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "hardlinking not supported by this object store",
+        ))
+    }
+}
+
+pub trait LocalStorage: ObjectStore + MemoryUsage + RemoveObject + HardlinkObject {}
+impl<T> LocalStorage for T where T: ObjectStore + MemoryUsage + RemoveObject + HardlinkObject {}
 
 pub trait RemoteStorage: ObjectStore + MemoryUsage {}
 impl<T> RemoteStorage for T where T: ObjectStore + MemoryUsage {}
@@ -222,6 +275,8 @@ unsafe impl RemoveObject for MemoryObjectStore {
         Ok(())
     }
 }
+
+impl HardlinkObject for MemoryObjectStore {}
 
 impl MemoryUsage for MemoryObjectStore {
     fn heap_usage(&self) -> usize {
@@ -861,6 +916,31 @@ impl TieredStorage {
                 .map_err(ObjectStoreError::from)
         })
     }
+
+    pub(crate) fn hardlink_or_write(&self, object: &DiskObject, dst: impl AsRef<Path>, fsync: Fsync) -> io::Result<()> {
+        let _guard = object.slot.state.lock();
+        self.local
+            .object_store
+            .hardlink_to(object.key, dst.as_ref(), fsync)
+            .or_else(|e| {
+                if e.kind() == io::ErrorKind::Unsupported {
+                    let bytes = self
+                        .local
+                        .object_store
+                        .read(object.key)
+                        .map_err(io::Error::other)?
+                        .expect("object must exist locally");
+
+                    write_atomically(&bytes, dst.as_ref(), fsync)
+                } else {
+                    Err(e)
+                }
+            })
+    }
+
+    pub(crate) fn stat_local(&self, object: &DiskObject) -> Result<Option<ObjectMetadata>, ObjectStoreError> {
+        self.local.object_store.stat(object.key)
+    }
 }
 
 fn object_from_trusted_bytes(key: ObjectKey, bytes: ObjectBytes) -> Object {
@@ -869,6 +949,24 @@ fn object_from_trusted_bytes(key: ObjectKey, bytes: ObjectBytes) -> Object {
         ObjectKey::Blob(hash) => ObjectInner::Blob { hash, bytes },
     };
     Object { inner }
+}
+
+pub(crate) fn write_atomically(data: &[u8], path: &Path, fsync: Fsync) -> io::Result<()> {
+    let dir = path.parent().expect("output path must have a parent");
+
+    let mut tmp = NamedTempFile::new_in(dir)?;
+    tmp.write_all(data)?;
+    if let Fsync::Require = fsync {
+        tmp.as_file().sync_data()?;
+    }
+    tmp.persist(path)?;
+
+    if let Fsync::Require = fsync {
+        #[cfg(not(target_os = "windows"))]
+        fs::File::open(dir)?.sync_all()?;
+    }
+
+    Ok(())
 }
 
 /// Helper struct for promoting an object from remote to local storage.
@@ -1000,6 +1098,8 @@ impl TieredStorage {
                 unsafe { self.inner.remove(key) }
             }
         }
+
+        impl HardlinkObject for FailingReads {}
 
         impl MemoryUsage for FailingReads {
             fn heap_usage(&self) -> usize {

@@ -61,11 +61,13 @@ struct TierMetrics {
 struct DiskIoMetrics {
     read: OnceLock<Histogram>,
     write: OnceLock<Histogram>,
+    hardlink: OnceLock<Histogram>,
     read_bytes: OnceLock<IntCounter>,
     write_bytes: OnceLock<IntCounter>,
     read_operations: DiskOperationCounters,
     write_operations: DiskOperationCounters,
     delete_operations: DiskOperationCounters,
+    hardlink_operations: DiskOperationCounters,
 }
 
 #[derive(Debug, Default)]
@@ -342,8 +344,9 @@ impl FaultMetrics {
 impl DiskIoMetrics {
     fn record(&self, stats: &StorageMetrics, operation: DiskOperation, nanos: u64, bytes: u64) {
         let (duration, transferred_bytes) = match operation {
-            DiskOperation::Read => (&self.read, &self.read_bytes),
-            DiskOperation::Write => (&self.write, &self.write_bytes),
+            DiskOperation::Read => (&self.read, Some(&self.read_bytes)),
+            DiskOperation::Write => (&self.write, Some(&self.write_bytes)),
+            DiskOperation::Hardlink => (&self.hardlink, None),
             DiskOperation::Delete => return,
         };
         let (db, replica) = (&stats.database, &stats.replica);
@@ -354,7 +357,9 @@ impl DiskIoMetrics {
                     .with_label_values(db, replica, operation.as_str())
             })
             .observe(nanos as f64 / 1e9);
-        if bytes > 0 {
+        if bytes > 0
+            && let Some(transferred_bytes) = transferred_bytes
+        {
             transferred_bytes
                 .get_or_init(|| {
                     DB_METRICS
@@ -370,6 +375,7 @@ impl DiskIoMetrics {
             DiskOperation::Read => &self.read_operations,
             DiskOperation::Write => &self.write_operations,
             DiskOperation::Delete => &self.delete_operations,
+            DiskOperation::Hardlink => &self.hardlink_operations,
         };
         let (db, replica) = (&stats.database, &stats.replica);
         counters
@@ -472,7 +478,12 @@ fn remove_series(stats: &StorageMetrics) {
             .page_cache_reclamation_time
             .remove_label_values(db, replica, outcome);
     }
-    for operation in [DiskOperation::Read, DiskOperation::Write, DiskOperation::Delete] {
+    for operation in [
+        DiskOperation::Read,
+        DiskOperation::Write,
+        DiskOperation::Delete,
+        DiskOperation::Hardlink,
+    ] {
         let _ = DB_METRICS
             .page_cache_disk_operations
             .remove_label_values(db, replica, operation.as_str());

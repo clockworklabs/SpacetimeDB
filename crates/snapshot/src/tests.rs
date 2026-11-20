@@ -4,6 +4,7 @@ use spacetimedb_sats::{product, AlgebraicType};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_table::{
     indexes::SquashedOffset,
+    table::Table,
     tiered::{
         metrics::CacheTier, ByteBudget, ByteBudgetConfig, EvictionPolicy, TieredDatabaseStorage, TieredStorageConfig,
     },
@@ -43,8 +44,7 @@ fn snapshot_evicts_other_tables_to_load_pages() -> anyhow::Result<()> {
 
     let tmp = tempdir()?;
     let repo = SnapshotRepository::open(SnapshotsPath::from_path_unchecked(tmp.path()), Identity::ZERO, 42)?;
-    repo.create_snapshot(tables.iter_mut(), storage.blobs().scan(), 0)?
-        .sync_all()?;
+    repo.create_snapshot(0, &storage, &mut tables.iter_mut())?.sync_all()?;
     let mut snapshot = repo.read_snapshot(0, &pool)?;
     assert_eq!(snapshot.tables.len(), 2);
     for (table, expected) in tables.iter().zip([11_u64, 22_u64]) {
