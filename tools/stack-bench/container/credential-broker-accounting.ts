@@ -31,7 +31,8 @@ export const noUnpriced = (): UnpricedCounts => Object.fromEntries(
   UNPRICED_REASONS.map(reason => [reason, 0])) as UnpricedCounts;
 export const firstUnpricedReason = (...reasons: Array<UnpricedReason | null | undefined>): UnpricedReason | null =>
   UNPRICED_REASONS.find(reason => reasons.includes(reason)) ?? null;
-export const MAX_BROKER_OUTPUT_TOKENS = 128_000;
+export const MAX_BROKER_OUTPUT_TOKENS = 262_144;
+export const DEFAULT_BROKER_OUTPUT_TOKENS = 128_000;
 export const CLAUDE_USAGE_FIELDS = ['input', 'output', 'cacheRead', 'cacheWrite5m', 'cacheWrite1h'] as const;
 const COST_TOLERANCE_USD = 0.0001;
 

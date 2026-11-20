@@ -7,7 +7,7 @@ import { isAbsolute, join } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
 
 import type { ContainerAuth } from './container-auth.js';
-import { MAX_BROKER_OUTPUT_TOKENS, readCredentialBrokerLedger, validateBrokerConfig }
+import { DEFAULT_BROKER_OUTPUT_TOKENS, readCredentialBrokerLedger, validateBrokerConfig }
   from './credential-broker-accounting.js';
 import type { BrokerLedger, PricingRates } from './credential-broker-accounting.js';
 import { brokerProtocol } from './broker-protocols.js';
@@ -217,7 +217,7 @@ export async function startCredentialBroker(selectedAuth: ContainerAuth, { netwo
       mode: selectedAuth.mode, credential, ...(renewable ? { credentialPath } : {}), sessionToken, readyPath,
       ...(docker ? { heartbeatPath } : { parentPid: process.pid }),
       expiresAt: Date.now() + deadlineMs + 60_000, listenHost, ledgerPath,
-      model, maxOutputTokens: maxOutputTokens ?? MAX_BROKER_OUTPUT_TOKENS,
+      model, maxOutputTokens: maxOutputTokens ?? DEFAULT_BROKER_OUTPUT_TOKENS,
       ...(maxOutputTokens !== undefined ? { explicitOutputLimit: true } : {}), maxBudgetUsd, pricingRates,
       ...(tools ? { tools } : {}) };
     const lookup = brokerProtocol(validateBrokerConfig(settings)).accountLookup;
