@@ -356,15 +356,11 @@ jobs:
             exit 0
           fi
 
-          curl --fail --silent --show-error \
-            --header 'Content-Type: application/json' \
-            --data-binary @discord-payload.json \
-            "$DISCORD_WEBHOOK_URL"
-
-          # Discord shows attachments above the card, so the details follow in their own message.
+          attachment=()
           if [ -s analysis.txt ]; then
-            curl --fail --silent --show-error \
-              --form 'payload_json={"username":"SpacetimeDB LLM Benchmarks","allowed_mentions":{"parse":[]}};type=application/json' \
-              --form 'files[0]=@analysis.txt;type=text/plain' \
-              "$DISCORD_WEBHOOK_URL"
+            attachment=(--form 'files[0]=@analysis.txt;type=text/plain')
           fi
+          curl --fail --silent --show-error \
+            --form 'payload_json=<discord-payload.json;type=application/json' \
+            "${attachment[@]}" \
+            "$DISCORD_WEBHOOK_URL"
