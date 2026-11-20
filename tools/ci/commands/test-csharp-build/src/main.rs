@@ -21,6 +21,7 @@ fn main() -> Result<()> {
             .with_context(|| format!("Build checks failed for {template}"))?;
     }
     check_test_references(work, &version).context("Test-project reference checks failed")?;
+    check_library_reference(work, &cli, &version).context("Library project reference check failed")?;
     check_net8(work, &cli).context(".NET 8 WASM build check failed")?;
     Ok(())
 }
@@ -323,6 +324,84 @@ public class ModuleReferenceTests
         ),
     )?;
     run(work, cmd!("dotnet", "test", &project, "-c", "Release")).context("Module package reference failed")?;
+    Ok(())
+}
+
+fn check_library_reference(work: &Path, cli: &Path, version: &str) -> Result<()> {
+    // The SDK builds a plain library reference without the module's wasi-wasm RID.
+    // It must still compile its generated code for the WASM Runtime the module links.
+    println!("Checking a WASM module with a library project reference");
+    let module = work.join("library/module");
+    let library = module.join("libraries/AuthLib");
+    fs::create_dir_all(&library)?;
+    let mut project = Element::parse(File::open(work.join("basic-cs/module/StdbModule.csproj"))?)?;
+    let references = Element::parse(
+        r#"<ItemGroup>
+  <ProjectReference Include="libraries/AuthLib/AuthLib.csproj" />
+  <Compile Remove="libraries/**/*.cs" />
+</ItemGroup>"#
+            .as_bytes(),
+    )?;
+    project.children.push(XMLNode::Element(references));
+    project.write(File::create(module.join("StdbModule.csproj"))?)?;
+    fs::copy(work.join("basic-cs/global.json"), work.join("library/global.json"))?;
+    fs::write(
+        module.join("Lib.cs"),
+        r#"using SpacetimeDB;
+
+[assembly: Namespace(typeof(AuthLib.Marker), Accessor = "MyAuth", Name = "auth_data")]
+
+public static partial class Module
+{
+    [Reducer]
+    public static void AddAuthUser(ReducerContext ctx, uint id) => AuthLib.Functions.Add(ctx.As.MyAuth, id);
+}
+"#,
+    )?;
+    fs::write(
+        library.join("AuthLib.csproj"),
+        format!(
+            r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="SpacetimeDB.Runtime" Version="{version}" />
+  </ItemGroup>
+</Project>
+"#
+        ),
+    )?;
+    fs::write(
+        library.join("Lib.cs"),
+        r#"using SpacetimeDB;
+
+// This check only builds the library as part of the WASM module.
+#if !SPACETIMEDB_WASM_AOT
+#error The library was compiled for the managed Runtime, but the module links the WASM Runtime.
+#endif
+
+namespace AuthLib;
+
+public class Marker { }
+
+[Table(Accessor = "User", Name = "auth_users", Public = true)]
+public partial struct User
+{
+    [PrimaryKey]
+    public uint Id;
+}
+
+public static partial class Functions
+{
+    [Reducer]
+    public static void Add(ReducerContext ctx, uint id) => ctx.Db.User.Insert(new User { Id = id });
+}
+"#,
+    )?;
+    run(work, cmd!(cli, "build", "--module-path", &module))?;
     Ok(())
 }
 
