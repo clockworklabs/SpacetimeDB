@@ -44,6 +44,7 @@
 
   <Target Name="_SpacetimeFlowWasmToProjectReferences"
           BeforeTargets="AssignProjectConfiguration"
+          DependsOnTargets="ResolvePackageDependenciesForBuild"
           Condition="'$(_UseNativeAotLlvm)' == 'true' And $(TargetFramework.StartsWith('net10.'))">
     <ItemGroup>
       <ProjectReference Condition="'%(ProjectReference.ReferenceOutputAssembly)' != 'false'">
