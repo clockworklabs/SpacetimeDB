@@ -252,7 +252,7 @@ fn build(reports: &[Report], run_url: &str, run_label: &str) -> (Value, String) 
         description = format!("{description}\n\n{}", lines.join("\n"));
     }
     let payload = json!({
-        "username": "SpacetimeDB LLM Benchmarks",
+        "username": "Spacetime LLM Benchmarks",
         "allowed_mentions": {"parse": []},
         "embeds": [{
             "title": format!("LLM Benchmark Analysis · {run_label}"),
