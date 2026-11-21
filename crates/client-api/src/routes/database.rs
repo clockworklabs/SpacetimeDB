@@ -149,7 +149,7 @@ pub(crate) fn map_reducer_error(e: ReducerCallError, reducer: &str) -> (StatusCo
     (status_code, format!("{:#}", anyhow::anyhow!(e)))
 }
 
-fn map_procedure_error(e: ProcedureCallError, procedure: &str) -> (StatusCode, String) {
+pub(crate) fn map_procedure_error(e: ProcedureCallError, procedure: &str) -> (StatusCode, String) {
     let status_code = match &e {
         ProcedureCallError::Args(_) => {
             // TODO: Remove this host log once the error is logged to the guest log instead.
@@ -266,7 +266,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 }
 
 /// If `confirmed`, waits for a committed reducer's transaction to be durable.
-async fn confirm_reducer_call(
+pub(crate) async fn confirm_reducer_call(
     res: ReducerCallResultWithTxOffset,
     confirmed: bool,
     durable: Option<DurableOffset>,
@@ -277,7 +277,7 @@ async fn confirm_reducer_call(
     Ok(res.result)
 }
 
-async fn confirm_call_offset(
+pub(crate) async fn confirm_call_offset(
     offset: Option<spacetimedb::subscription::module_subscription_manager::TransactionOffset>,
     durable: Option<spacetimedb::host::module_host::DurableOffset>,
 ) -> axum::response::Result<()> {
@@ -1083,7 +1083,7 @@ pub struct SqlQueryParams {
 /// The lifecycle is detached from the request task, so once `client_connected`
 /// succeeds, `client_disconnected` still runs if the handler is dropped or
 /// `fut` returns an error.
-async fn with_connection<F, Fut, R>(
+pub(crate) async fn with_connection<F, Fut, R>(
     module: ModuleHost,
     caller_auth: ConnectionAuthCtx,
     caller_identity: Identity,
