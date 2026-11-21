@@ -1822,12 +1822,14 @@ pub async fn set_names<S: ControlStateDelegate + Authorization>(
             Unauthorized::InternalError(e) => log_and_500(e),
         })?;
 
+    // Names already registered to this database can be kept,
+    // only names that point at another database are taken.
     for name in &validated_names {
         if ctx
             .lookup_database_identity(name.as_str())
             .await
             .map_err(log_and_500)?
-            .is_some()
+            .is_some_and(|existing| existing != database_identity)
         {
             return Ok((
                 StatusCode::BAD_REQUEST,
@@ -2508,6 +2510,8 @@ mod tests {
         reject_publication: bool,
         name_registrations: std::sync::Arc<AtomicUsize>,
         allow_publish_update: bool,
+        allow_rename: bool,
+        replaced_names: std::sync::Arc<std::sync::Mutex<Option<Vec<DomainName>>>>,
     }
 
     impl DummyState {
@@ -2525,6 +2529,8 @@ mod tests {
                 reject_publication: false,
                 name_registrations: std::sync::Arc::new(AtomicUsize::new(0)),
                 allow_publish_update: false,
+                allow_rename: false,
+                replaced_names: std::sync::Arc::new(std::sync::Mutex::new(None)),
             }
         }
 
@@ -2536,9 +2542,7 @@ mod tests {
         }
 
         fn with_dns(mut self, name: &str, database_identity: Identity) -> Self {
-            let mut dns = HashMap::new();
-            dns.insert(name.to_owned(), database_identity);
-            self.dns = std::sync::Arc::new(dns);
+            std::sync::Arc::make_mut(&mut self.dns).insert(name.to_owned(), database_identity);
             self
         }
 
@@ -2616,6 +2620,54 @@ mod tests {
                     } if database_identity == identity
                 ));
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn set_names_keeps_own_names_and_rejects_names_of_other_databases() {
+        let identity = test_identity(43);
+        let other_identity = test_identity(44);
+
+        for (names, expected_status, expect_replaced) in [
+            // Re-sending the current names is a no-op.
+            (r#"["current-name"]"#, StatusCode::OK, true),
+            // Keeping the current name while adding a new one.
+            (r#"["current-name","new-name"]"#, StatusCode::OK, true),
+            // A name registered to another database is still rejected.
+            (r#"["current-name","other-name"]"#, StatusCode::BAD_REQUEST, false),
+        ] {
+            let mut state = DummyState::new()
+                .with_database(identity)
+                .with_dns("current-name", identity)
+                .with_dns("other-name", other_identity);
+            state.allow_rename = true;
+            let replaced_names = state.replaced_names.clone();
+            let app = DatabaseRoutes::<DummyState>::default()
+                .into_router(state.clone())
+                .with_state(state);
+
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method(http::Method::PUT)
+                        .uri(format!("/{identity}/names"))
+                        .header(http::header::CONTENT_TYPE, "application/json")
+                        .body(Body::from(names))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let status = response.status();
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            assert_eq!(status, expected_status, "{names}: {}", String::from_utf8_lossy(&body));
+
+            let replaced = replaced_names
+                .lock()
+                .unwrap()
+                .clone()
+                .map(|names| names.iter().map(|name| name.as_str().to_owned()).collect::<Vec<_>>());
+            let expected: Option<Vec<String>> = expect_replaced.then(|| serde_json::from_str(names).unwrap());
+            assert_eq!(replaced, expected, "{names}");
         }
     }
 
@@ -2833,9 +2885,10 @@ mod tests {
             &self,
             _database_identity: &Identity,
             _owner_identity: &Identity,
-            _domain_names: &[DomainName],
+            domain_names: &[DomainName],
         ) -> anyhow::Result<SetDomainsResult> {
-            Err(anyhow::anyhow!("unused"))
+            *self.replaced_names.lock().unwrap() = Some(domain_names.to_vec());
+            Ok(SetDomainsResult::Success)
         }
 
         async fn update_environment(
@@ -2868,6 +2921,9 @@ mod tests {
                 && matches!(action, Action::UpdateDatabase)
                 && self.databases.contains_key(&database)
             {
+                return Ok(());
+            }
+            if self.allow_rename && matches!(action, Action::RenameDatabase) && self.databases.contains_key(&database) {
                 return Ok(());
             }
             Err(Unauthorized::InternalError(anyhow::anyhow!("unused")))
