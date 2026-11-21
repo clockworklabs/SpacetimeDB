@@ -222,11 +222,19 @@ pub struct LogConfig {
 pub struct ModuleHttpConfig {
     /// Whether modules may issue outbound HTTP requests.
     pub enabled: bool,
+    /// Follow redirects automatically. Disable to return 3xx responses to module code.
+    pub follow_redirects: bool,
+    /// Reject plaintext HTTP, including redirect targets.
+    pub https_only: bool,
 }
 
 impl Default for ModuleHttpConfig {
     fn default() -> Self {
-        Self { enabled: true }
+        Self {
+            enabled: true,
+            follow_redirects: true,
+            https_only: false,
+        }
     }
 }
 
@@ -581,6 +589,8 @@ mod tests {
         let config: ConfigFile = toml::from_str("").unwrap();
 
         assert!(config.module_http.enabled);
+        assert!(config.module_http.follow_redirects);
+        assert!(!config.module_http.https_only);
         assert_eq!(
             config.wasm.procedure_instance_pool_size,
             default_wasm_procedure_instance_pool_size()
