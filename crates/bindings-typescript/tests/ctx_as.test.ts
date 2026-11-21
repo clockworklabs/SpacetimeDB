@@ -16,12 +16,14 @@ describe('ctx.as alias proxy', () => {
   let schema: typeof import('../src/server/schema').schema;
   let table: typeof import('../src/lib/table').table;
   let t: typeof import('../src/lib/type_builders').t;
+  let toSql: typeof import('../src/lib/query').toSql;
   let moduleHooks: symbol;
 
   beforeAll(async () => {
     ({ schema } = await import('../src/server/schema'));
     ({ table } = await import('../src/lib/table'));
     ({ t } = await import('../src/lib/type_builders'));
+    ({ toSql } = await import('../src/lib/query'));
     ({ moduleHooks } = (await import('spacetime:sys@2.0')) as any);
   });
 
@@ -128,5 +130,30 @@ describe('ctx.as alias proxy', () => {
     expect(capturedCtx.as.myauth.as.baz).toBeDefined();
     expect(capturedCtx.as.myauth.as.baz.db.bazTable).toBeDefined();
     expect(capturedCtx.as.myauth.as.baz.sender).toBe(capturedCtx.sender);
+  });
+
+  it('ctx.from in a submodule view names an explicitly named table by its accessor', async () => {
+    const sessions = table(
+      { name: 'auth_sessions', public: true },
+      { id: t.u64().primaryKey().autoInc() }
+    );
+    const authSchema = schema({ sessions });
+    let sql: string | undefined;
+    const allSessions = authSchema.anonymousView(
+      { public: true },
+      t.array(sessions.rowType),
+      ctx => {
+        sql = toSql(ctx.from.sessions);
+        return ctx.from.sessions;
+      }
+    );
+    const consumer = schema({ myAuth: { default: authSchema, allSessions } });
+
+    const hooks = (consumer as any)[moduleHooks]({});
+    hooks.__call_view_anon__(0, new Uint8Array());
+
+    // The host resolves `myAuth.sessions` (accessors) and the canonical
+    // `my_auth.auth_sessions`, but not a mix of the two.
+    expect(sql).toBe('SELECT * FROM "myAuth"."sessions"');
   });
 });
