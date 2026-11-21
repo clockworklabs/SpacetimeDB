@@ -1871,7 +1871,15 @@ impl Table {
             pinned_pages: Vec::new(),
             pinned_blobs: Vec::new(),
         };
-        if policy == self.eviction_policy || policy == EvictionPolicy::Evictable {
+        let is_noop =
+            // The policy is unchanged.
+            policy == self.eviction_policy
+            // `Disk` relaxes residency, we don't need to pin anything.
+            || policy == EvictionPolicy::Disk
+            // `Never` already protects every object needed to apply a new
+            // policy.
+            || self.eviction_policy == EvictionPolicy::Never;
+        if is_noop {
             return Ok(prepared);
         }
 
@@ -2343,8 +2351,10 @@ impl Table {
 
                     blob_store_bytes += blob.size() as usize;
 
-                    if let EvictionPolicy::NeverEvict = self.eviction_policy {
-                        blobs.pin_handle(&blob)?;
+                    match self.eviction_policy {
+                        EvictionPolicy::Never => blobs.pin_handle(&blob)?,
+                        EvictionPolicy::Memory => blobs.pin_disk(blob.hash()),
+                        EvictionPolicy::Disk => {}
                     }
                 }
 
@@ -3457,12 +3467,20 @@ impl PreparedEvictionPolicy {
         // For disk tables, preparation holds the existing pages and blobs in memory.
         // The commit's insertion handles keep newly inserted blobs resident.
         table
-            .for_each_blob_ref(|hash| match self.policy {
-                EvictionPolicy::NeverEvict => blobs.pin(hash.into()),
-                EvictionPolicy::Evictable => {
-                    blobs.unpin(hash.into());
-                    Ok(())
+            .for_each_blob_ref(|hash| {
+                match self.policy {
+                    EvictionPolicy::Never => blobs.pin(hash.into())?,
+                    EvictionPolicy::Memory => blobs.pin_disk(hash.into()),
+                    EvictionPolicy::Disk => {}
                 }
+
+                match self.old_policy {
+                    EvictionPolicy::Never => blobs.unpin(hash.into()),
+                    EvictionPolicy::Memory => blobs.unpin_disk(hash.into()),
+                    EvictionPolicy::Disk => {}
+                }
+
+                Ok(())
             })
             .expect("preparation and insertion pins keep pages and blobs resident");
         // Exclusive table access prevents page eviction during conversion.
@@ -3531,7 +3549,7 @@ pub(crate) mod test {
             schema.into(),
             SquashedOffset::COMMITTED_STATE,
             page_manager,
-            EvictionPolicy::NeverEvict,
+            EvictionPolicy::Never,
         )
     }
 
@@ -3559,7 +3577,7 @@ pub(crate) mod test {
             schema.into(),
             SquashedOffset::COMMITTED_STATE,
             PageManager::new_for_test().into(),
-            EvictionPolicy::NeverEvict,
+            EvictionPolicy::Never,
         );
         let blob_store = &mut BlobSet::new_for_test();
         let cols = ColList::new(0.into());
@@ -4267,7 +4285,7 @@ pub(crate) mod test {
             schema.clone().into(),
             SquashedOffset::COMMITTED_STATE,
             manager.clone(),
-            EvictionPolicy::Evictable,
+            EvictionPolicy::Memory,
         );
         let blobs = BlobSet::new_for_test();
         let index_id = IndexId(1);
@@ -4288,12 +4306,7 @@ pub(crate) mod test {
 
         // Occupy and pin the entire resident-page budget with another table.
         // The target table's evicted page therefore cannot be faulted in.
-        let mut blocker = Table::new(
-            schema.into(),
-            SquashedOffset::TX_STATE,
-            manager,
-            EvictionPolicy::Evictable,
-        );
+        let mut blocker = Table::new(schema.into(), SquashedOffset::TX_STATE, manager, EvictionPolicy::Memory);
         let (_, blocker_pin) = blocker.insert(&blobs, &product![1_u64]).unwrap();
 
         // Rebuilding the pointer map fails. The unique index must remain in
@@ -4333,7 +4346,7 @@ pub(crate) mod test {
             schema.clone().into(),
             SquashedOffset::COMMITTED_STATE,
             manager.clone(),
-            EvictionPolicy::Evictable,
+            EvictionPolicy::Memory,
         );
         let blobs = BlobSet::new_for_test();
         let index_id = IndexId(1);
@@ -4353,12 +4366,7 @@ pub(crate) mod test {
 
         // Occupy and pin the entire resident-page budget with another table.
         // The target table's evicted page therefore cannot be faulted in.
-        let mut blocker = Table::new(
-            schema.into(),
-            SquashedOffset::TX_STATE,
-            manager,
-            EvictionPolicy::Evictable,
-        );
+        let mut blocker = Table::new(schema.into(), SquashedOffset::TX_STATE, manager, EvictionPolicy::Memory);
         let (_, blocker_pin) = blocker.insert(&blobs, &product![1_u64]).unwrap();
 
         // Rebuilding the pointer map fails. The unique index must remain in
@@ -4409,7 +4417,7 @@ pub(crate) mod test {
             schema.into(),
             SquashedOffset::COMMITTED_STATE,
             Arc::new(manager),
-            EvictionPolicy::Evictable,
+            EvictionPolicy::Memory,
         );
         let blobs = BlobSet::new_for_test();
 
@@ -4456,7 +4464,7 @@ pub(crate) mod test {
             schema.into(),
             SquashedOffset::COMMITTED_STATE,
             manager,
-            EvictionPolicy::Evictable,
+            EvictionPolicy::Memory,
         );
         let mut expected = Vec::new();
         loop {
@@ -4511,7 +4519,7 @@ pub(crate) mod test {
             schema.into(),
             SquashedOffset::COMMITTED_STATE,
             manager,
-            EvictionPolicy::Evictable,
+            EvictionPolicy::Memory,
         );
 
         // The two blobs can be written one at a time, evicting the previous one,
@@ -4612,12 +4620,7 @@ pub(crate) mod test {
             let manager = Arc::new(PageManager::new(resident, PagePool::new_for_test(), storage));
             let schema =
                 TableSchema::from_product_type(ProductType::from([AlgebraicType::String, AlgebraicType::String]));
-            let mut table = Table::new(
-                schema.into(),
-                SquashedOffset::TX_STATE,
-                manager,
-                EvictionPolicy::Evictable,
-            );
+            let mut table = Table::new(schema.into(), SquashedOffset::TX_STATE, manager, EvictionPolicy::Memory);
             let row = product![first, second];
 
             // Serialization can write and evict the blobs one at a time. The
@@ -4664,7 +4667,7 @@ pub(crate) mod test {
                 schema.into(),
                 SquashedOffset::COMMITTED_STATE,
                 manager,
-                EvictionPolicy::Evictable,
+                EvictionPolicy::Memory,
             );
             // Keep an index in both cases: clearing must discard its entries,
             // whether set semantics are provided by it or by a pointer map.
@@ -4681,7 +4684,7 @@ pub(crate) mod test {
             table.insert(&blobs, &product![1_u64, large.clone()]).unwrap();
             // Another owner still references the same blob, so clear must
             // decrement the reference count rather than remove it outright.
-            let other_use = blobs.insert(EvictionPolicy::Evictable, large.as_bytes()).unwrap();
+            let other_use = blobs.insert(EvictionPolicy::Memory, large.as_bytes()).unwrap();
             let hash = other_use.hash();
             // Drop the residency pin, but retain the logical reference created
             // by insert. Eviction can now move the bytes out of memory.
@@ -4706,7 +4709,7 @@ pub(crate) mod test {
             let index = table.get_index_by_id(index_id).unwrap();
             let key = AlgebraicValue::U64(0);
             assert!(index.seek_point(&index.key_from_algebraic_value(&key)).next().is_none());
-            blobs.free_ref(hash, EvictionPolicy::Evictable).unwrap();
+            blobs.free_ref(hash, EvictionPolicy::Memory).unwrap();
             assert_eq!(blobs.num_blobs(), 0);
             // The empty index and page set must remain usable after clear.
             table.insert(&blobs, &product![0_u64, "new"]).unwrap();
@@ -4735,7 +4738,7 @@ pub(crate) mod test {
             schema.into(),
             SquashedOffset::COMMITTED_STATE,
             manager,
-            EvictionPolicy::Evictable,
+            EvictionPolicy::Memory,
         );
         let large = "x".repeat(VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
         // Distinct IDs make every row unique; the shared string gives one blob
@@ -4800,7 +4803,7 @@ pub(crate) mod test {
             schema.into(),
             SquashedOffset::COMMITTED_STATE,
             manager,
-            EvictionPolicy::Evictable,
+            EvictionPolicy::Memory,
         );
         let row = product![0_u64, large.clone()];
         committed.insert(&blobs, &row).unwrap();
@@ -4856,7 +4859,7 @@ pub(crate) mod test {
             schema.into(),
             SquashedOffset::COMMITTED_STATE,
             manager,
-            EvictionPolicy::Evictable,
+            EvictionPolicy::Memory,
         );
         // Fill the first page completely. Remove the row that overflowed onto
         // the second page so the next insertion can allocate a fresh page
@@ -4900,7 +4903,7 @@ pub(crate) mod test {
 
         // An evictable table still logically owns the bytes after this table
         // is cleared. Drop its read handle so it does not pin residency itself.
-        let other_owner = blobs.insert(EvictionPolicy::Evictable, large.as_bytes()).unwrap();
+        let other_owner = blobs.insert(EvictionPolicy::Memory, large.as_bytes()).unwrap();
         let hash = other_owner.hash();
         drop(other_owner);
         drop(table.insert(&blobs, &product![large]).unwrap());
@@ -4919,7 +4922,7 @@ pub(crate) mod test {
         let blobs = BlobSet::new_for_test();
         let mut table = table(ProductType::from([AlgebraicType::String]));
         let large = "x".repeat(VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
-        let other_owner = blobs.insert(EvictionPolicy::Evictable, large.as_bytes()).unwrap();
+        let other_owner = blobs.insert(EvictionPolicy::Memory, large.as_bytes()).unwrap();
         let hash = other_owner.hash();
         drop(other_owner);
 
@@ -4937,7 +4940,7 @@ pub(crate) mod test {
 
     #[test]
     fn row_insertion_applies_table_policy_to_blobs() {
-        for policy in [EvictionPolicy::Evictable, EvictionPolicy::NeverEvict] {
+        for policy in [EvictionPolicy::Memory, EvictionPolicy::Never] {
             for use_bsatn in [false, true] {
                 let blobs = &mut BlobSet::new_for_test();
                 let schema = TableSchema::from_product_type(ProductType::from([AlgebraicType::String]));
@@ -4961,8 +4964,8 @@ pub(crate) mod test {
                 assert_eq!(
                     blobs.resident_usage().accounted_bytes(),
                     match policy {
-                        EvictionPolicy::NeverEvict => large.len() as u64,
-                        EvictionPolicy::Evictable => 0,
+                        EvictionPolicy::Never => large.len() as u64,
+                        EvictionPolicy::Memory | EvictionPolicy::Disk => 0,
                     }
                 );
                 // Reading after eviction must preserve the stored value too.
@@ -4973,7 +4976,7 @@ pub(crate) mod test {
 
     #[test]
     fn snapshot_restore_applies_table_policy_to_shared_blobs() {
-        for policy in [EvictionPolicy::Evictable, EvictionPolicy::NeverEvict] {
+        for policy in [EvictionPolicy::Memory, EvictionPolicy::Never] {
             let blobs = BlobSet::new_for_test();
             let schema = TableSchema::from_product_type(ProductType::from([AlgebraicType::U64, AlgebraicType::String]));
             let mut table = Table::new(
@@ -4996,7 +4999,7 @@ pub(crate) mod test {
                         &table.inner.visitor_prog,
                         &table.inner.row_layout,
                         row,
-                        EvictionPolicy::Evictable,
+                        EvictionPolicy::Memory,
                     )
                 }
                 .unwrap();
@@ -5018,8 +5021,8 @@ pub(crate) mod test {
             assert_eq!(
                 blobs.resident_usage().accounted_bytes(),
                 match policy {
-                    EvictionPolicy::NeverEvict => large.len() as u64,
-                    EvictionPolicy::Evictable => 0,
+                    EvictionPolicy::Never => large.len() as u64,
+                    EvictionPolicy::Memory | EvictionPolicy::Disk => 0,
                 }
             );
             let actual = table
@@ -5060,7 +5063,7 @@ pub(crate) mod test {
                     &table.inner.visitor_prog,
                     &table.inner.row_layout,
                     row,
-                    EvictionPolicy::Evictable,
+                    EvictionPolicy::Memory,
                 )
             }
             .unwrap();
@@ -5093,14 +5096,9 @@ pub(crate) mod test {
             schema.clone(),
             SquashedOffset::COMMITTED_STATE,
             manager.clone(),
-            EvictionPolicy::NeverEvict,
+            EvictionPolicy::Never,
         );
-        let mut evictable = Table::new(
-            schema,
-            SquashedOffset::COMMITTED_STATE,
-            manager,
-            EvictionPolicy::Evictable,
-        );
+        let mut evictable = Table::new(schema, SquashedOffset::COMMITTED_STATE, manager, EvictionPolicy::Memory);
         let large = "x".repeat(VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
         let row = product![large.clone()];
         drop(required.insert(&blobs, &row).unwrap());
@@ -5138,7 +5136,7 @@ pub(crate) mod test {
             schema.into(),
             SquashedOffset::COMMITTED_STATE,
             manager,
-            EvictionPolicy::Evictable,
+            EvictionPolicy::Memory,
         );
         let value: AlgebraicValue = if fixed_rows {
             42_u64.into()
@@ -5224,5 +5222,139 @@ pub(crate) mod test {
     #[test]
     fn prepared_fixed_commit_retains_pointer_map_candidate_pins() {
         assert_prepared_commit_protects_pointer_map_candidates(false, true);
+    }
+
+    proptest! {
+        #[test]
+        fn cache_policy_changes_preserve_shared_blobs(
+            value in "[a-z]{1024,1100}",
+            restored in any::<bool>(),
+            initial_policy in prop_oneof![
+                Just(EvictionPolicy::Never),
+                Just(EvictionPolicy::Memory),
+            ],
+        ) {
+            use crate::tiered::{BackingStore, MemoryObjectStore, Object};
+
+            // Give remote eviction a real alternative while measuring local reservations.
+            let local_budget = ByteBudget::unlimited();
+            let storage = Arc::new(TieredStorage::empty(
+                BackingStore {
+                    object_store: Box::new(MemoryObjectStore::default()),
+                    budget: local_budget.clone(),
+                },
+                Some(BackingStore {
+                    object_store: Box::new(MemoryObjectStore::default()),
+                    budget: ByteBudget::unlimited(),
+                }),
+            ));
+            let resident = Arc::new(ResidentObjects::new(ByteBudget::unlimited()));
+            let manager = Arc::new(PageManager::new(
+                resident.clone(),
+                PagePool::new_for_test(),
+                storage.clone(),
+            ));
+            let blobs = BlobSet::new(resident, storage.clone());
+            let schema =
+                TableSchema::from_product_type([AlgebraicType::String, AlgebraicType::String].into());
+            let mut table = Table::new(
+                schema.into(),
+                SquashedOffset::COMMITTED_STATE,
+                manager,
+                initial_policy,
+            );
+            let row = product![value.clone(), value.clone()];
+            let hash = BlobHash::hash_from_bytes(value.as_bytes());
+
+            // Both insertion and snapshot recovery must contribute two independent policy pins.
+            if restored {
+                let mut page = Page::new(table.row_size());
+                // SAFETY: The page, layout, visitor, and row all use the table's schema.
+                unsafe {
+                    crate::bflatn_to::write_row_to_page(
+                        &mut page,
+                        &blobs,
+                        &table.inner.visitor_prog,
+                        &table.inner.row_layout,
+                        &row,
+                        EvictionPolicy::Disk,
+                    )
+                }
+                .unwrap();
+                // SAFETY: The page was written with this exact table's layout.
+                unsafe { table.set_pages(vec![Some(page)], &blobs) }.unwrap();
+            } else {
+                drop(table.insert(&blobs, &row).unwrap());
+            }
+
+            // A Disk row shares the object without relaxing the table's current residency.
+            // Install a disk copy to model backing left behind by an earlier policy.
+            drop(
+                blobs
+                    .insert(EvictionPolicy::Disk, value.as_bytes())
+                    .unwrap(),
+            );
+            let handle = blobs.get(hash.into()).unwrap();
+            let object = Object::from(&handle);
+            let copy = storage.write(object, EvictionPolicy::Disk).unwrap();
+            let key = copy.key();
+            drop(copy);
+            drop(handle);
+
+            // Moving to Never makes the previous disk copy redundant. Moving back to Memory
+            // must restore disk protection before the resident bytes become evictable.
+            for policy in [
+                EvictionPolicy::Never,
+                EvictionPolicy::Memory,
+                EvictionPolicy::Never,
+                EvictionPolicy::Memory,
+            ] {
+                table
+                    .prepare_eviction_policy(&blobs, policy)
+                    .unwrap()
+                    .apply(&mut table, &blobs);
+                blobs.evict(0).unwrap();
+                let freed = storage.evict(0).unwrap();
+                match policy {
+                    // Never keeps the blob resident, so a copy left on disk must be evictable.
+                    EvictionPolicy::Never => {
+                        prop_assert_eq!(freed, value.len() as u64);
+                        prop_assert_eq!(local_budget.usage().accounted_bytes, 0);
+                        prop_assert!(blobs.resident_bytes_used_by_blobs() >= value.len() as u64);
+                        let actual = table
+                            .scan_rows(&blobs)
+                            .next()
+                            .unwrap()
+                            .unwrap()
+                            .to_product_value();
+                        prop_assert_eq!(&actual, &row);
+                    }
+                    // Memory allows the resident frame to leave but must retain its disk copy.
+                    EvictionPolicy::Memory => {
+                        prop_assert_eq!(freed, 0);
+                        prop_assert_eq!(local_budget.usage().accounted_bytes, value.len() as u64);
+                        prop_assert_eq!(blobs.resident_bytes_used_by_blobs(), 0);
+                    }
+                    EvictionPolicy::Disk => {
+                        unreachable!("this sequence tests memory/disk residency changes")
+                    }
+                }
+                prop_assert_eq!(blobs.uses(hash.into()), Some(3));
+            }
+
+            // Releasing the final Memory policy drops its disk pins while the Disk row stays alive.
+            table.prepare_blob_release().unwrap().apply(&blobs);
+            drop(table);
+            blobs.evict(0).unwrap();
+            prop_assert_eq!(storage.evict(0).unwrap(), value.len() as u64);
+            prop_assert_eq!(local_budget.usage().accounted_bytes, 0);
+            let recovered = storage.read(key).unwrap();
+            prop_assert_eq!(recovered.as_ref(), value.as_bytes());
+
+            blobs.free_ref(hash.into(), EvictionPolicy::Disk).unwrap();
+            storage.reclaim().unwrap();
+            prop_assert!(!storage.contains(key));
+            prop_assert_eq!(local_budget.usage().accounted_bytes, 0);
+        }
     }
 }

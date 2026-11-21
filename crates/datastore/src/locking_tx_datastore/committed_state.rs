@@ -20,10 +20,11 @@ use crate::{
         IterByColRangeTx,
     },
     system_tables::{
-        system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, SystemTable, ST_CLIENT_ID,
-        ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX, ST_INDEX_ID, ST_INDEX_IDX,
-        ST_MODULE_ID, ST_MODULE_IDX, ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX, ST_SCHEDULED_ID,
-        ST_SCHEDULED_IDX, ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID, ST_VAR_IDX,
+        system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow,
+        SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_CONSTRAINT_ID,
+        ST_CONSTRAINT_IDX, ST_INDEX_ID, ST_INDEX_IDX, ST_MODULE_ID, ST_MODULE_IDX,
+        ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX, ST_SCHEDULED_ID, ST_SCHEDULED_IDX,
+        ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID, ST_VAR_IDX,
         ST_VIEW_ARG_ID, ST_VIEW_ARG_IDX,
     },
     traits::{EphemeralTables, TxData},
@@ -31,12 +32,14 @@ use crate::{
 use crate::{
     locking_tx_datastore::ViewCallInfo,
     system_tables::{
-        ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ACCESSOR_IDX, ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX,
-        ST_ENV_ID, ST_ENV_IDX, ST_EVENT_TABLE_ID, ST_EVENT_TABLE_IDX, ST_INBOUND_MSG_ID, ST_INBOUND_MSG_IDX,
-        ST_INBOUND_STREAM_ID, ST_INBOUND_STREAM_IDX, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_IDX, ST_OUTBOUND_MSG_ID,
-        ST_OUTBOUND_MSG_IDX, ST_OUTBOUND_STREAM_ID, ST_OUTBOUND_STREAM_IDX, ST_OUTBOX_ID, ST_OUTBOX_IDX,
-        ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_IDX, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID, ST_VIEW_IDX,
-        ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX, ST_VIEW_SUB_ID, ST_VIEW_SUB_IDX,
+        ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ACCESSOR_IDX, ST_CONNECTION_CREDENTIALS_ID,
+        ST_CONNECTION_CREDENTIALS_IDX, ST_ENV_ID, ST_ENV_IDX, ST_EVENT_TABLE_ID,
+        ST_EVENT_TABLE_IDX, ST_INBOUND_MSG_ID, ST_INBOUND_MSG_IDX, ST_INBOUND_STREAM_ID,
+        ST_INBOUND_STREAM_IDX, ST_INDEX_ACCESSOR_ID, ST_INDEX_ACCESSOR_IDX, ST_OUTBOUND_MSG_ID,
+        ST_OUTBOUND_MSG_IDX, ST_OUTBOUND_STREAM_ID, ST_OUTBOUND_STREAM_IDX, ST_OUTBOX_ID,
+        ST_OUTBOX_IDX, ST_TABLE_ACCESSOR_ID, ST_TABLE_ACCESSOR_IDX, ST_VIEW_COLUMN_ID,
+        ST_VIEW_COLUMN_IDX, ST_VIEW_ID, ST_VIEW_IDX, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX,
+        ST_VIEW_SUB_ID, ST_VIEW_SUB_IDX,
     },
 };
 use anyhow::anyhow;
@@ -56,7 +59,10 @@ use spacetimedb_schema::{
 };
 use spacetimedb_table::{
     indexes::{RowPointer, SquashedOffset},
-    table::{self, PreparedBlobRelease, PreparedEvictionPolicy, ReadEviction, RowRef, Table, TableAndIndex},
+    table::{
+        self, PreparedBlobRelease, PreparedEvictionPolicy, ReadEviction, RowRef, Table,
+        TableAndIndex,
+    },
     tiered::{BlobHandle, BlobSet, EvictionPolicy, PreparedCommit, TieredDatabaseStorage},
 };
 use std::{collections::BTreeMap, iter};
@@ -115,7 +121,10 @@ impl CommittedState {
     }
 
     /// Returns the views that perform a full scan of this table
-    pub(super) fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> + use<'_> {
+    pub(super) fn views_for_table_scan(
+        &self,
+        table_id: &TableId,
+    ) -> impl Iterator<Item = &ViewCallInfo> + use<'_> {
         self.read_sets.views_for_table_scan(table_id)
     }
 
@@ -285,16 +294,19 @@ impl CommittedState {
         // and therefore has performance implications and must not be disabled.
         #[cfg(feature = "metrics")]
         let with_label_values = |table_id: TableId, table_name: &str| {
-            DB_METRICS
-                .rdb_num_table_rows
-                .with_label_values(&database_identity, &table_id.0, table_name)
+            DB_METRICS.rdb_num_table_rows.with_label_values(
+                &database_identity,
+                &table_id.0,
+                table_name,
+            )
         };
 
         let schemas = system_tables().map(Arc::new);
         let ref_schemas = schemas.each_ref().map(|s| &**s);
 
         // Insert the table row into st_tables, creating st_tables if it's missing.
-        let (st_tables, blob_store) = self.get_table_and_blob_store_or_create(ST_TABLE_ID, &schemas[ST_TABLE_IDX]);
+        let (st_tables, blob_store) =
+            self.get_table_and_blob_store_or_create(ST_TABLE_ID, &schemas[ST_TABLE_IDX]);
         // Insert the table row into `st_tables` for all system tables
         for schema in ref_schemas {
             let table_id = schema.table_id;
@@ -315,7 +327,8 @@ impl CommittedState {
         }
 
         // Insert the columns into `st_columns`
-        let (st_columns, blob_store) = self.get_table_and_blob_store_or_create(ST_COLUMN_ID, &schemas[ST_COLUMN_IDX]);
+        let (st_columns, blob_store) =
+            self.get_table_and_blob_store_or_create(ST_COLUMN_ID, &schemas[ST_COLUMN_IDX]);
         for col in ref_schemas.iter().flat_map(|x| x.columns()).cloned() {
             let row = StColumnRow {
                 table_id: col.table_id,
@@ -352,7 +365,8 @@ impl CommittedState {
         }
 
         // Insert the indexes into `st_indexes`
-        let (st_indexes, blob_store) = self.get_table_and_blob_store_or_create(ST_INDEX_ID, &schemas[ST_INDEX_IDX]);
+        let (st_indexes, blob_store) =
+            self.get_table_and_blob_store_or_create(ST_INDEX_ID, &schemas[ST_INDEX_IDX]);
 
         for index in ref_schemas.iter().flat_map(|x| &x.indexes) {
             let row: StIndexRow = index.clone().into();
@@ -374,7 +388,10 @@ impl CommittedState {
 
         self.create_table(ST_SCHEDULED_ID, schemas[ST_SCHEDULED_IDX].clone());
 
-        self.create_table(ST_ROW_LEVEL_SECURITY_ID, schemas[ST_ROW_LEVEL_SECURITY_IDX].clone());
+        self.create_table(
+            ST_ROW_LEVEL_SECURITY_ID,
+            schemas[ST_ROW_LEVEL_SECURITY_IDX].clone(),
+        );
         self.create_table(
             ST_CONNECTION_CREDENTIALS_ID,
             schemas[ST_CONNECTION_CREDENTIALS_IDX].clone(),
@@ -389,14 +406,23 @@ impl CommittedState {
         self.create_table(ST_EVENT_TABLE_ID, schemas[ST_EVENT_TABLE_IDX].clone());
         self.create_table(ST_TABLE_ACCESSOR_ID, schemas[ST_TABLE_ACCESSOR_IDX].clone());
         self.create_table(ST_INDEX_ACCESSOR_ID, schemas[ST_INDEX_ACCESSOR_IDX].clone());
-        self.create_table(ST_COLUMN_ACCESSOR_ID, schemas[ST_COLUMN_ACCESSOR_IDX].clone());
+        self.create_table(
+            ST_COLUMN_ACCESSOR_ID,
+            schemas[ST_COLUMN_ACCESSOR_IDX].clone(),
+        );
         self.create_table(ST_ENV_ID, schemas[ST_ENV_IDX].clone());
-        self.create_table(ST_OUTBOUND_STREAM_ID, schemas[ST_OUTBOUND_STREAM_IDX].clone());
+        self.create_table(
+            ST_OUTBOUND_STREAM_ID,
+            schemas[ST_OUTBOUND_STREAM_IDX].clone(),
+        );
         self.create_table(ST_OUTBOUND_MSG_ID, schemas[ST_OUTBOUND_MSG_IDX].clone());
         self.create_table(ST_INBOUND_STREAM_ID, schemas[ST_INBOUND_STREAM_IDX].clone());
         self.create_table(ST_INBOUND_MSG_ID, schemas[ST_INBOUND_MSG_IDX].clone());
         self.create_table(ST_OUTBOX_ID, schemas[ST_OUTBOX_IDX].clone());
-        self.create_table(ST_TABLE_CACHE_POLICY_ID, schemas[ST_TABLE_CACHE_POLICY_IDX].clone());
+        self.create_table(
+            ST_TABLE_CACHE_POLICY_ID,
+            schemas[ST_TABLE_CACHE_POLICY_IDX].clone(),
+        );
 
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store) =
@@ -466,13 +492,16 @@ impl CommittedState {
         Some(
             self.get_table(table_id)?
                 .scan_rows(self.storage.blobs())
-                .with_read_eviction(self)
                 .err_into(),
         )
     }
 
     /// Returns an index for `table_id` on `cols`, if any.
-    pub(super) fn get_index_by_cols(&self, table_id: TableId, cols: &ColList) -> Option<TableAndIndex<'_>> {
+    pub(super) fn get_index_by_cols(
+        &self,
+        table_id: TableId,
+        cols: &ColList,
+    ) -> Option<TableAndIndex<'_>> {
         self.tables
             .get(&table_id)?
             .get_index_by_cols_with_table(self.storage.blobs(), cols)
@@ -485,7 +514,11 @@ impl CommittedState {
     }
 
     /// Returns the table for `table_id` combined with the index for `index_id`, if both exist.
-    pub(super) fn get_index_by_id_with_table(&self, table_id: TableId, index_id: IndexId) -> Option<TableAndIndex<'_>> {
+    pub(super) fn get_index_by_id_with_table(
+        &self,
+        table_id: TableId,
+        index_id: IndexId,
+    ) -> Option<TableAndIndex<'_>> {
         self.tables
             .get(&table_id)?
             .get_index_by_id_with_table(self.storage.blobs(), index_id)
@@ -555,7 +588,10 @@ impl CommittedState {
         self.view_instances.get(call)
     }
 
-    pub(super) fn active_view_calls_for_subscriber(&self, subscriber: Identity) -> HashSet<ViewCallInfo> {
+    pub(super) fn active_view_calls_for_subscriber(
+        &self,
+        subscriber: Identity,
+    ) -> HashSet<ViewCallInfo> {
         self.view_instances
             .iter()
             .filter(|(_, state)| {
@@ -568,7 +604,9 @@ impl CommittedState {
             .collect()
     }
 
-    pub(super) fn view_instances(&self) -> impl Iterator<Item = (&ViewCallInfo, &ViewInstanceState)> {
+    pub(super) fn view_instances(
+        &self,
+    ) -> impl Iterator<Item = (&ViewCallInfo, &ViewInstanceState)> {
         self.view_instances.iter()
     }
 
@@ -686,7 +724,10 @@ impl CommittedState {
     /// rows have changed. Preparation leaves page ownership and blob pin counts
     /// unchanged, so failure needs no reverse conversion: dropping the plans
     /// releases their temporary pins, and rollback restores the policy metadata.
-    fn prepare_cache_policy_changes(&self, tx_state: &TxState) -> Result<BTreeMap<TableId, PreparedEvictionPolicy>> {
+    fn prepare_cache_policy_changes(
+        &self,
+        tx_state: &TxState,
+    ) -> Result<BTreeMap<TableId, PreparedEvictionPolicy>> {
         let mut changes = BTreeMap::new();
         for change in &tx_state.pending_schema_changes {
             let PendingSchemaChange::TableAlterCachePolicy(table_id, _) = change else {
@@ -760,7 +801,14 @@ impl CommittedState {
                 Either::Left((deletes, source)) => {
                     let count = deletes.map_or(0, |deletes| deletes.len() as u64);
                     let deletes = deletes.map(|deletes| deletes.iter());
-                    PreparedCommit::apply_resident(table, blob_store, count, deletes, source, &tx_state.blob_store)
+                    PreparedCommit::apply_resident(
+                        table,
+                        blob_store,
+                        count,
+                        deletes,
+                        source,
+                        &tx_state.blob_store,
+                    )
                 }
                 Either::Right(commit) => commit.apply(table, blob_store),
             };
@@ -859,7 +907,10 @@ impl CommittedState {
     pub(super) fn rollback(&mut self, mut tx_state: TxState) -> TxOffset {
         // Roll back the changes in the reverse order in which they were made
         // so that the last change is undone first.
-        for change in mem::take(&mut tx_state.pending_schema_changes).into_iter().rev() {
+        for change in mem::take(&mut tx_state.pending_schema_changes)
+            .into_iter()
+            .rev()
+        {
             self.rollback_pending_schema_change(change);
         }
         drop(tx_state);
@@ -974,8 +1025,12 @@ impl CommittedState {
                 // and thus will only have rows compatible with it.
                 // The rows in the tx state might not be, as they may use e.g., a new variant.
                 // However, we don't care about that, as the tx state is being discarded.
-                unsafe { table.change_columns_to_unchecked(column_schemas, |_, _, _| Ok::<_, Infallible>(())) }
-                    .unwrap_or_else(|e| match e {});
+                unsafe {
+                    table.change_columns_to_unchecked(column_schemas, |_, _, _| {
+                        Ok::<_, Infallible>(())
+                    })
+                }
+                .unwrap_or_else(|e| match e {});
             }
             ReschemaEventTable(table_id, column_schemas) => {
                 let table = self.tables.get_mut(&table_id)?;
@@ -983,8 +1038,12 @@ impl CommittedState {
                 // Same argument as in `TableAlterRowType` applies,
                 // except that rather than knowing the types to be compatible, we know the commit table to be empty,
                 // so there are no rows or pages to have a conflicting type.
-                unsafe { table.change_columns_to_unchecked(column_schemas, |_, _, _| Ok::<_, Infallible>(())) }
-                    .unwrap_or_else(|e| match e {});
+                unsafe {
+                    table.change_columns_to_unchecked(column_schemas, |_, _, _| {
+                        Ok::<_, Infallible>(())
+                    })
+                }
+                .unwrap_or_else(|e| match e {});
             }
             // A constraint was removed. Add it back.
             ConstraintRemoved(table_id, constraint_schema, index_ids) => {
@@ -993,7 +1052,8 @@ impl CommittedState {
                 // If the constraint had unique indices, make them unique again.
                 for index_id in index_ids {
                     if let Some(idx) = table.indexes.get_mut(&index_id) {
-                        idx.make_unique().expect("rollback: index should have no duplicates");
+                        idx.make_unique()
+                            .expect("rollback: index should have no duplicates");
                     }
                 }
                 // Forward `drop_constraint` calls `Table::make_index_non_unique`, which
@@ -1040,7 +1100,10 @@ impl CommittedState {
     }
 
     #[allow(clippy::unnecessary_lazy_evaluations)]
-    pub fn get_table_and_blob_store(&self, table_id: TableId) -> Result<CommitTableForInsertion<'_>> {
+    pub fn get_table_and_blob_store(
+        &self,
+        table_id: TableId,
+    ) -> Result<CommitTableForInsertion<'_>> {
         let table = self
             .get_table(table_id)
             .ok_or_else(|| TableError::IdNotFoundState(table_id))?;
@@ -1064,10 +1127,14 @@ impl CommittedState {
 
     pub(super) fn page_eviction_policy(&self, schema: &TableSchema) -> EvictionPolicy {
         // Schema recovery needs system tables to stay in memory.
-        if schema.table_type == StTableType::System || schema.cache_policy == TableCachePolicy::RequiredInMemory {
-            EvictionPolicy::NeverEvict
+        if schema.table_type == StTableType::System
+            || schema.cache_policy == TableCachePolicy::RequiredInMemory
+        {
+            EvictionPolicy::Never
+        } else if schema.cache_policy == TableCachePolicy::RequiredOnDisk {
+            EvictionPolicy::Memory
         } else {
-            EvictionPolicy::Evictable
+            EvictionPolicy::Disk
         }
     }
 
@@ -1128,7 +1195,9 @@ impl CommittedState {
 
     /// Returns an iterator over all persistent tables (i.e., non-ephemeral tables)
     #[cfg(feature = "durability")]
-    pub(super) fn persistent_tables_and_blob_store(&mut self) -> (impl Iterator<Item = &mut Table>, &BlobSet) {
+    pub(super) fn persistent_tables_and_blob_store(
+        &mut self,
+    ) -> (impl Iterator<Item = &mut Table>, &BlobSet) {
         (
             self.tables
                 .iter_mut()
@@ -1191,6 +1260,8 @@ impl CommittedState {
         Ok(())
     }
 
+    /// Evict live objects when under budget pressure, and reclaim space used by
+    /// orphaned objects.
     #[cfg(feature = "durability")]
     pub(super) fn trim(&self) -> std::result::Result<(), crate::error::TrimTableError> {
         for table in self.tables.values() {

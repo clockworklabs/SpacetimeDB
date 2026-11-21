@@ -13,7 +13,7 @@ proptest! {
         // Failure returns no owner and publishes neither bytes nor a permit.
         local.fail_writes.store(true, Ordering::Relaxed);
         prop_assert!(storage
-            .write(object(&bytes))
+            .write(object(&bytes), DiskRetention::Required)
             .is_err());
         prop_assert!(!storage.contains(key));
         prop_assert!(local.stat(key).unwrap().is_none());
@@ -26,7 +26,7 @@ proptest! {
         // Retrying establishes a fresh backing lifetime.
         local.fail_writes.store(false, Ordering::Relaxed);
         let reference = storage
-            .write(object(&bytes))
+            .write(object(&bytes), DiskRetention::Evictable)
             .unwrap();
         prop_assert!(storage.contains(key));
         drop(reference);
@@ -45,7 +45,7 @@ proptest! {
         let storage = TieredStorage::new_for_test();
         let object_to_write = object(&bytes);
         let first = storage
-            .write(object_to_write)
+            .write(object_to_write, DiskRetention::Evictable)
             .unwrap();
         let key = first.key();
         let owners = (0..owner_count)
@@ -54,7 +54,7 @@ proptest! {
                     first.clone()
                 } else {
                     storage
-                        .write(object(&bytes))
+                        .write(object(&bytes), DiskRetention::Evictable)
                         .unwrap()
                 }
             })
@@ -84,7 +84,7 @@ proptest! {
         let storage = storage(local.clone(), Arc::default(), ByteBudget::unlimited());
         let object_to_write = object(&bytes);
         let owner = storage
-            .write(object_to_write)
+            .write(object_to_write, DiskRetention::Required)
             .unwrap();
         let key = owner.key();
 
@@ -100,7 +100,7 @@ proptest! {
 
         // A new owner cancels pending deletion until it releases the object again.
         let revived = storage
-            .write(object(&bytes))
+            .write(object(&bytes), DiskRetention::Evictable)
             .unwrap();
         local.fail_remove.store(false, Ordering::Relaxed);
         prop_assert_eq!(storage.reclaim().unwrap(), 0);
@@ -115,7 +115,7 @@ proptest! {
 #[test]
 fn busy_slots_are_retried_after_unlock() {
     let storage = Arc::new(TieredStorage::new_for_test());
-    let owner = storage.write(object(b"aaaa")).unwrap();
+    let owner = storage.write(object(b"aaaa"), DiskRetention::Required).unwrap();
     let key = owner.key();
     let slot = storage.catalog.read().get(&key).unwrap().clone();
     drop(owner);
@@ -147,7 +147,7 @@ fn full_disk_reclaims_unreferenced_objects() {
     })
     .unwrap();
     let storage = storage(Arc::default(), Arc::default(), budget);
-    let owner = storage.write(object(b"aaaa")).unwrap();
+    let owner = storage.write(object(b"aaaa"), DiskRetention::Required).unwrap();
     let old_key = owner.key();
     drop(owner);
 
@@ -155,7 +155,9 @@ fn full_disk_reclaims_unreferenced_objects() {
     let (sender, receiver) = mpsc::sync_channel(1);
     let writing = storage.clone();
     let writer = thread::spawn(move || {
-        sender.send(writing.write(object(b"bbbb"))).unwrap();
+        sender
+            .send(writing.write(object(b"bbbb"), DiskRetention::Required))
+            .unwrap();
     });
     let owner = receiver.recv_timeout(TIMEOUT).unwrap().unwrap();
     writer.join().unwrap();

@@ -2183,7 +2183,7 @@ pub(crate) mod tests {
                 &[] as &[&[u8]],
                 u64_var_len_visitor(),
                 &mut BlobSet::new_for_test(),
-                EvictionPolicy::NeverEvict,
+                EvictionPolicy::Never,
             )
         }
         .expect("Failed to insert first row")
@@ -2329,7 +2329,7 @@ pub(crate) mod tests {
                     u64_row_size(),
                     u64_var_len_visitor(),
                     blobs,
-                    EvictionPolicy::NeverEvict,
+                    EvictionPolicy::Never,
                 )
             };
         }
@@ -2378,7 +2378,7 @@ pub(crate) mod tests {
                 u64_row_size(),
                 u64_var_len_visitor(),
                 &BlobSet::new_for_test(),
-                EvictionPolicy::NeverEvict,
+                EvictionPolicy::Never,
             )
         };
 
@@ -2421,7 +2421,7 @@ pub(crate) mod tests {
                 &[data],
                 str_var_len_visitor(),
                 &mut BlobSet::new_for_test(),
-                EvictionPolicy::NeverEvict,
+                EvictionPolicy::Never,
             )
         }
         .expect("Failed to insert row")
@@ -2450,7 +2450,7 @@ pub(crate) mod tests {
                     STR_ROW_SIZE,
                     str_var_len_visitor(),
                     blobs,
-                    EvictionPolicy::NeverEvict,
+                    EvictionPolicy::Never,
                 )
             };
             assert_page_summaries_match(&page, &capacity, STR_ROW_SIZE);
@@ -2586,7 +2586,7 @@ pub(crate) mod tests {
                 STR_ROW_SIZE,
                 str_var_len_visitor(),
                 blobs,
-                EvictionPolicy::NeverEvict,
+                EvictionPolicy::Never,
             )
         };
 
@@ -2636,7 +2636,7 @@ pub(crate) mod tests {
                 STR_ROW_SIZE,
                 str_var_len_visitor(),
                 blobs,
-                EvictionPolicy::NeverEvict,
+                EvictionPolicy::Never,
             )
         };
 
@@ -2695,7 +2695,7 @@ pub(crate) mod tests {
                 STR_ROW_SIZE,
                 str_var_len_visitor(),
                 blobs,
-                EvictionPolicy::NeverEvict,
+                EvictionPolicy::Never,
             )
         };
 
@@ -2807,7 +2807,7 @@ pub(crate) mod tests {
                     STR_ROW_SIZE,
                     str_var_len_visitor(),
                     blobs,
-                    EvictionPolicy::NeverEvict,
+                    EvictionPolicy::Never,
                 )
             };
         }
@@ -2877,7 +2877,7 @@ pub(crate) mod tests {
                             u64_row_size(),
                             u64_var_len_visitor(),
                             blobs,
-                            EvictionPolicy::NeverEvict,
+                            EvictionPolicy::Never,
                         )
                     };
                     None
