@@ -39,6 +39,10 @@ use crate::compression::decompress_server_message;
 #[cfg(not(feature = "browser"))]
 use crate::db_connection::debug_log;
 use crate::metrics::CLIENT_METRICS;
+use crate::network_stats;
+use crate::ping::{self, PingConfig, PingHandle};
+#[cfg(not(feature = "browser"))]
+use crate::ping::{PingDriver, PingRequests};
 
 #[cfg(not(feature = "browser"))]
 type TokioTungsteniteError = tokio_tungstenite::tungstenite::Error;
@@ -103,6 +107,10 @@ pub enum WsError {
     #[error("Token verification error: {0}")]
     TokenVerification(String),
 }
+
+/// A message from the WebSocket loop to the parse loop:
+/// either a message from the server, or an error which ends the connection.
+pub(crate) type Incoming = Result<ws::v2::ServerMessage, crate::Error>;
 
 pub(crate) struct WsConnection {
     db_name: Box<str>,
@@ -393,8 +401,10 @@ impl WsConnection {
     #[cfg(not(feature = "browser"))]
     async fn message_loop(
         mut self,
-        incoming_messages: mpsc::UnboundedSender<ws::v2::ServerMessage>,
+        incoming_messages: mpsc::UnboundedSender<Incoming>,
         outgoing_messages: mpsc::UnboundedReceiver<ws::v2::ClientMessage>,
+        pings: PingDriver,
+        mut ping_requests: PingRequests,
         extra_logging: Option<Arc<Mutex<File>>>,
     ) {
         let websocket_received = CLIENT_METRICS.websocket_received.with_label_values(&self.db_name);
@@ -438,6 +448,16 @@ impl WsConnection {
         let mut idle = true;
         let mut want_pong = false;
 
+        // Periodic protocol-level `Ping` messages, which measure the network stats.
+        // These are separate from the WebSocket `Ping` frames above:
+        // native builds leave dead-connection detection to the idle timeout,
+        // so unanswered protocol `Ping`s don't close the connection here.
+        let mut ping_interval = pings.interval().map(|period| {
+            let mut interval = tokio::time::interval_at(Instant::now() + period, period);
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            interval
+        });
+
         let mut outgoing_messages = Some(outgoing_messages);
         loop {
             tokio::select! {
@@ -457,6 +477,9 @@ impl WsConnection {
                     },
 
                     Ok(Some(WebSocketMessage::Binary(bytes))) => {
+                        // Timestamp the message before decoding it,
+                        // so that client-side work doesn't inflate a Pong's round-trip time.
+                        let received_at = network_stats::Instant::now();
                         idle = false;
                         record_metrics(bytes.len());
                         match Self::parse_response(&bytes) {
@@ -465,11 +488,26 @@ impl WsConnection {
                                 "Error decoding WebSocketMessage::Binary payload",
                                 Result::<(), _>::Err(e)
                             ),
-                            Ok(msg) => maybe_log_error!(
-                                &extra_logging,
-                                "Error sending decoded message to incoming_messages queue",
-                                incoming_messages.unbounded_send(msg)
-                            ),
+                            // Pongs are consumed here, rather than queued behind other messages for the parse loop.
+                            Ok(ws::v2::ServerMessage::Pong(pong)) => pings.on_pong(received_at, pong),
+                            Ok(msg) => {
+                                let first_ping = match msg {
+                                    ws::v2::ServerMessage::InitialConnection(_) => pings.on_initial_connection(),
+                                    _ => None,
+                                };
+                                maybe_log_error!(
+                                    &extra_logging,
+                                    "Error sending decoded message to incoming_messages queue",
+                                    incoming_messages.unbounded_send(Ok(msg))
+                                );
+                                if let Some(ping) = first_ping
+                                    && let Err(e) = self.sock.send(Self::encode_message(ping)).await
+                                {
+                                    debug_log(&extra_logging, |file| writeln!(file, "Error sending Ping message: {e:?}"));
+                                    log::warn!("Error sending Ping message: {e:?}");
+                                    break;
+                                }
+                            }
                         }
                     }
 
@@ -517,6 +555,30 @@ impl WsConnection {
                     }
                 },
 
+                // Each Ping goes out in its own WebSocket message,
+                // stamped with its send time just before it's written to the socket.
+                Some(ping) = async {
+                    let ping_interval = ping_interval.as_mut()?;
+                    ping_interval.tick().await;
+                    pings.on_tick()
+                } => {
+                    if let Err(e) = self.sock.send(Self::encode_message(ping)).await {
+                        debug_log(&extra_logging, |file| writeln!(file, "Error sending Ping message: {e:?}"));
+                        log::warn!("Error sending Ping message: {e:?}");
+                        break;
+                    }
+                },
+
+                Some(request_id) = ping_requests.next() => {
+                    if let Some(ping) = pings.on_request(request_id)
+                        && let Err(e) = self.sock.send(Self::encode_message(ping)).await
+                    {
+                        debug_log(&extra_logging, |file| writeln!(file, "Error sending Ping message: {e:?}"));
+                        log::warn!("Error sending Ping message: {e:?}");
+                        break;
+                    }
+                },
+
                 // this is stupid. we want to handle the channel close *once*, and then disable this branch
                 Some(outgoing) = async { Some(outgoing_messages.as_mut()?.next().await) } => match outgoing {
                     Some(outgoing) => {
@@ -530,34 +592,44 @@ impl WsConnection {
                     None => {
                         maybe_log_error!(&extra_logging, "Error sending close frame", SinkExt::close(&mut self.sock).await);
                         outgoing_messages = None;
+                        // Nothing may be sent after the close frame, Pings included.
+                        ping_interval = None;
+                        pings.close();
                     }
                 },
             }
         }
+        pings.close();
     }
 
     #[cfg(not(feature = "browser"))]
     pub(crate) fn spawn_message_loop(
         self,
         runtime: &runtime::Handle,
+        ping_config: PingConfig,
         extra_logging: Option<Arc<Mutex<File>>>,
     ) -> (
         JoinHandle<()>,
-        mpsc::UnboundedReceiver<ws::v2::ServerMessage>,
+        mpsc::UnboundedReceiver<Incoming>,
         mpsc::UnboundedSender<ws::v2::ClientMessage>,
+        PingHandle,
     ) {
         let (outgoing_send, outgoing_recv) = mpsc::unbounded();
         let (incoming_send, incoming_recv) = mpsc::unbounded();
-        let handle = runtime.spawn(self.message_loop(incoming_send, outgoing_recv, extra_logging));
-        (handle, incoming_recv, outgoing_send)
+        let (ping_handle, pings, ping_requests) = ping::new(ping_config);
+        let handle =
+            runtime.spawn(self.message_loop(incoming_send, outgoing_recv, pings, ping_requests, extra_logging));
+        (handle, incoming_recv, outgoing_send, ping_handle)
     }
 
     #[cfg(feature = "browser")]
     pub(crate) fn spawn_message_loop(
         self,
+        ping_config: PingConfig,
     ) -> (
-        mpsc::UnboundedReceiver<ws::v2::ServerMessage>,
+        mpsc::UnboundedReceiver<Incoming>,
         mpsc::UnboundedSender<ws::v2::ClientMessage>,
+        PingHandle,
     ) {
         let websocket_received = CLIENT_METRICS.websocket_received.with_label_values(&self.db_name);
         let websocket_received_msg_size = CLIENT_METRICS
@@ -569,13 +641,24 @@ impl WsConnection {
         };
 
         let (outgoing_tx, outgoing_rx) = mpsc::unbounded::<ws::v2::ClientMessage>();
-        let (incoming_tx, incoming_rx) = mpsc::unbounded::<ws::v2::ServerMessage>();
+        let (incoming_tx, incoming_rx) = mpsc::unbounded::<Incoming>();
+        let (ping_handle, pings, mut ping_requests) = ping::new(ping_config);
 
         let (mut ws_writer, ws_reader) = self.sock.split();
 
         wasm_bindgen_futures::spawn_local(async move {
             let mut incoming = ws_reader.fuse();
             let mut outgoing = outgoing_rx.fuse();
+            // Periodic protocol-level Pings, which measure the network stats,
+            // and detect a dead connection, since the browser's WebSocket can't.
+            let mut ping_ticks = match pings.interval() {
+                Some(period) => {
+                    let millis = u32::try_from(period.as_millis()).unwrap_or(u32::MAX).max(1);
+                    gloo_timers::future::IntervalStream::new(millis).boxed_local()
+                }
+                None => futures::stream::pending().boxed_local(),
+            }
+            .fuse();
 
             loop {
                 futures::select! {
@@ -587,12 +670,29 @@ impl WsConnection {
                         },
 
                         Some(Ok(WebSocketMessage::Binary(bytes))) => {
+                            // Timestamp the message before decoding it,
+                            // so that client-side work doesn't inflate a Pong's round-trip time.
+                            let received_at = network_stats::Instant::now();
                             record_metrics(bytes.len());
                             // parse + forward into `incoming_tx`
                             match Self::parse_response(&bytes) {
-                                Ok(msg) => if let Err(_e) = incoming_tx.unbounded_send(msg) {
-                                    gloo_console::warn!("Incoming receiver dropped.");
-                                    break;
+                                // Pongs are consumed here, rather than queued behind other messages for the parse loop.
+                                Ok(ws::v2::ServerMessage::Pong(pong)) => pings.on_pong(received_at, pong),
+                                Ok(msg) => {
+                                    let first_ping = match msg {
+                                        ws::v2::ServerMessage::InitialConnection(_) => pings.on_initial_connection(),
+                                        _ => None,
+                                    };
+                                    if let Err(_e) = incoming_tx.unbounded_send(Ok(msg)) {
+                                        gloo_console::warn!("Incoming receiver dropped.");
+                                        break;
+                                    }
+                                    if let Some(ping) = first_ping
+                                        && let Err(e) = ws_writer.send(Self::encode_message(ping)).await
+                                    {
+                                        gloo_console::warn!("Error sending Ping message:", format!("{:?}", e));
+                                        break;
+                                    }
                                 },
                                 Err(e) => {
                                     gloo_console::warn!(
@@ -626,7 +726,34 @@ impl WsConnection {
                         }
                     },
 
-                    // 2) outbound messages
+                    // 2) periodic Pings, each in its own WebSocket message
+                    _ = ping_ticks.next() => {
+                        if let Some(error) = pings.check_unresponsive() {
+                            gloo_console::warn!(format!("{error}; closing the connection"));
+                            let _ = incoming_tx.unbounded_send(Err(error));
+                            let _ = ws_writer.close().await;
+                            break;
+                        }
+                        if let Some(ping) = pings.on_tick()
+                            && let Err(e) = ws_writer.send(Self::encode_message(ping)).await
+                        {
+                            gloo_console::warn!("Error sending Ping message:", format!("{:?}", e));
+                            break;
+                        }
+                    },
+
+                    // 3) on-demand Pings from `DbConnection::ping`
+                    request_id = ping_requests.next() => {
+                        if let Some(request_id) = request_id
+                            && let Some(ping) = pings.on_request(request_id)
+                            && let Err(e) = ws_writer.send(Self::encode_message(ping)).await
+                        {
+                            gloo_console::warn!("Error sending Ping message:", format!("{:?}", e));
+                            break;
+                        }
+                    },
+
+                    // 4) outbound messages
                     outbound = outgoing.next() => if let Some(client_msg) = outbound {
                         let raw = Self::encode_message(client_msg);
                         if let Err(e) = ws_writer.send(raw).await {
@@ -642,8 +769,9 @@ impl WsConnection {
                     },
                 }
             }
+            pings.close();
         });
 
-        (incoming_rx, outgoing_tx)
+        (incoming_rx, outgoing_tx, ping_handle)
     }
 }

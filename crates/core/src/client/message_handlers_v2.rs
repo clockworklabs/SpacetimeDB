@@ -89,6 +89,11 @@ pub(super) async fn handle_decoded_message(
             }
             Ok(())
         }
+        ws_v2::ClientMessage::Ping(_) => {
+            // The websocket actor answers every ping as soon as it is read from the socket,
+            // including pings batched with other messages, so there is nothing left to do.
+            Ok(())
+        }
     };
     res.map_err(|(reducer_name, reducer_id, err)| MessageExecutionError {
         reducer: reducer_name.cloned(),

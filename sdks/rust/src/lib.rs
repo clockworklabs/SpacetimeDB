@@ -15,6 +15,8 @@ mod client_cache;
 mod compression;
 mod db_connection;
 mod metrics;
+mod network_stats;
+mod ping;
 mod spacetime_module;
 mod subscription;
 mod websocket;
@@ -29,6 +31,7 @@ pub use db_connection::DbConnectionBuilder;
 pub use db_context::DbContext;
 pub use error::{Error, Result};
 pub use event::{Event, ReducerEvent, Status};
+pub use network_stats::{NetworkStats, PingResult};
 pub use table::{EventTable, Table, TableAccessor, TableWithPrimaryKey};
 
 pub use spacetime_module::SubscriptionHandle;
@@ -62,8 +65,8 @@ pub mod __codegen {
     pub use crate::subscription::{OnEndedCallback, SubscriptionBuilder, SubscriptionHandleImpl};
     pub use crate::table::{TableLike, WithDelete, WithInsert, WithUpdate};
     pub use crate::{
-        ConnectionId, DbConnectionBuilder, DbContext, Event, EventTable, Identity, ReducerEvent, ScheduleAt, Table,
-        TableAccessor, TableWithPrimaryKey, TimeDuration, Timestamp, Uuid,
+        ConnectionId, DbConnectionBuilder, DbContext, Event, EventTable, Identity, NetworkStats, PingResult,
+        ReducerEvent, ScheduleAt, Table, TableAccessor, TableWithPrimaryKey, TimeDuration, Timestamp, Uuid,
     };
 }
 

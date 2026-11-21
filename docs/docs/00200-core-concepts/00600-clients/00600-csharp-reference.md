@@ -333,6 +333,28 @@ public readonly struct NextReconnect
 
 Retry information supplied to the connection-error and disconnect callbacks. `Attempt` starts at 1 and `Delay` is the scheduled wait before that attempt. A nullable `NextReconnect` value of `null` means no retry is scheduled. A server response indicating that the previous session is still closing retains the current attempt number and uses the initial backoff delay.
 
+#### Method `WithPingInterval`
+
+```csharp
+class DbConnectionBuilder
+{
+    public DbConnectionBuilder<DbConnection> WithPingInterval(TimeSpan interval);
+}
+```
+
+Set how often the connection pings the server to measure [`stats.Network`](#property-statsnetwork). The first ping is sent as soon as the connection is established, then one every `interval`, checked on each `FrameTick()`. Defaults to 1 second. `TimeSpan.Zero` disables periodic pinging, which leaves `stats.Network` null until a [`Ping()`](#method-ping) is answered. Throws `ArgumentOutOfRangeException` if `interval` is negative.
+
+#### Method `WithPingTimeout`
+
+```csharp
+class DbConnectionBuilder
+{
+    public DbConnectionBuilder<DbConnection> WithPingTimeout(TimeSpan timeout);
+}
+```
+
+Set how long pings may go unanswered before the connection is treated as lost. Defaults to 10 seconds. Only takes effect in Unity WebGL players; other builds (including the Unity Editor with WebGL as the build target), accept and ignore it. A silently failed network closes the connection once the oldest unanswered ping is older than this, or than a few round-trip timeouts on a slow link, and another ping has been sent since. It reconnects if [automatic reconnect](#method-withautomaticreconnect) is enabled, and disconnects with an error otherwise. The check runs once per ping interval, and is off when periodic pinging is disabled. See [Detecting a Dead Connection](./00300-connection.md#detecting-a-dead-connection). Throws `ArgumentOutOfRangeException` if `timeout` is not positive.
+
 #### Method `Build`
 
 ```csharp
@@ -809,6 +831,53 @@ class DbConnection
 ```
 
 `true` while an automatically reconnecting connection that previously succeeded is waiting for a retry, obtaining a token, or connecting again. It is false during the initial connection, after a successful reconnect handshake, and after a terminal failure or explicit `Disconnect()`. Continue ticking the connection while this property is true.
+
+#### Property `stats.Network`
+
+```csharp
+class Stats
+{
+    public NetworkStats? Network { get; }
+}
+
+public readonly struct NetworkStats
+{
+    public TimeSpan Rtt { get; }
+    public TimeSpan RttLatest { get; }
+    public TimeSpan RttMin { get; }
+    public TimeSpan Jitter { get; }
+    public Timestamp ServerNow { get; }
+    public Timestamp ServerTimeLatest { get; }
+    public TimeSpan PongWait { get; }
+}
+```
+
+A snapshot of the connection's network statistics, measured by periodically pinging the server, read from the connection's `stats` object as `conn.stats.Network`. Null until the first ping is answered, and after the connection closes or is lost. With periodic pinging disabled by [`WithPingInterval(TimeSpan.Zero)`](#method-withpinginterval), it stays null until a [`Ping()`](#method-ping) is answered. Each read returns a fresh snapshot, a value that doesn't change as later pings are answered and doesn't allocate. Since `Network` is a nullable struct, test it with a pattern such as `if (conn.stats.Network is NetworkStats stats)`. `ServerNow` estimates the server's current time on the same clock as a reducer's `ctx.Timestamp`; it adjusts gradually and never goes backwards. See [Connection Metrics](./00300-connection.md#connection-metrics) for what each property means.
+
+#### Method `Ping`
+
+```csharp
+class DbConnection
+{
+    public Task<PingResult> Ping();
+}
+
+public readonly struct PingResult
+{
+    public TimeSpan Rtt { get; }
+    public TimeSpan RoundTrip { get; }
+    public TimeSpan ServerHold { get; }
+    public Timestamp ServerReceiveTime { get; }
+    public long SentAt { get; }
+    public long ReceivedAt { get; }
+}
+```
+
+Send a single ping now and complete with the timings from its reply. `Rtt` is `RoundTrip - ServerHold`, floored at zero. `SentAt` and `ReceivedAt` are `Stopwatch.GetTimestamp()` readings. `SentAt` is when the ping left the connection's send queue, so time spent waiting behind earlier messages doesn't count towards `RoundTrip`. The sample also feeds [`stats.Network`](#property-statsnetwork), and this works even with periodic pinging disabled.
+
+You can call `Ping()` from any thread, including the continuation of an earlier `Ping()`. Like a one-off query, the task completes on the SDK's message parsing thread, without waiting for `FrameTick()`. Its continuations run on the thread pool, or on the `SynchronizationContext` the `await` captured, such as Unity's main thread. Since WebGL players have no parsing thread, there the task completes on the main thread, once a `FrameTick()` has received the reply.
+
+The task fails immediately with `InvalidOperationException` if the connection isn't established, and with `OperationCanceledException` if the connection closes before the reply arrives.
 
 ## Type `EventContext`
 

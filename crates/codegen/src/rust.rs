@@ -2380,6 +2380,22 @@ impl DbConnection {{
     pub async fn run_async(&self) -> __sdk::Result<()> {{
         self.imp.run_async().await
     }}
+
+    /// A snapshot of this connection's network statistics, measured by periodically pinging the server.
+    ///
+    /// Returns `None` until the first Pong arrives, after the connection closes,
+    /// and always when pinging is disabled with [`__sdk::DbConnectionBuilder::with_ping_interval`].
+    pub fn network_stats(&self) -> Option<__sdk::NetworkStats> {{
+        self.imp.network_stats()
+    }}
+
+    /// Send a single Ping now, and resolve with the timings from its Pong.
+    ///
+    /// The Ping is sent when this method is called, not when the returned future is first polled.
+    /// Resolves to an error if the connection isn't established, or closes before the Pong arrives.
+    pub fn ping(&self) -> impl std::future::Future<Output = __sdk::Result<__sdk::PingResult>> + Send + 'static {{
+        self.imp.ping()
+    }}
 }}
 
 impl __sdk::DbConnection for DbConnection {{

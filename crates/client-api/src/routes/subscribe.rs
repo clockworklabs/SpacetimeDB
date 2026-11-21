@@ -61,6 +61,10 @@ use crate::util::websocket::{
 use crate::util::{async_cleanup_guard, NameOrIdentity, XForwardedFor};
 use crate::{log_and_500, Authorization, ControlStateDelegate, NodeDelegate};
 
+mod ping;
+
+use ping::{ws_answer_pings, PendingPong};
+
 #[allow(clippy::declare_interior_mutable_const)]
 pub const TEXT_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_v1::TEXT_PROTOCOL);
 #[allow(clippy::declare_interior_mutable_const)]
@@ -910,8 +914,8 @@ async fn ws_idle_timer(last_activity: Arc<Mutex<Instant>>, idle_timeout: Duratio
     }
 }
 
-/// Consumes `ws` by composing [`ws_recv_queue`], [`ws_recv_loop`],
-/// [`ws_client_message_handler`] and `message_handler`.
+/// Consumes `ws` by composing [`ws_answer_pings`], [`ws_recv_queue`],
+/// [`ws_recv_loop`], [`ws_client_message_handler`] and `message_handler`.
 ///
 /// The [`ws_recv_loop`] records activity on the shared [`ActorState`] whenever
 /// it receives a message, extending the idle deadline.
@@ -942,6 +946,7 @@ async fn ws_recv_task<MessageHandler>(
     let recv_queue_gauge = WORKER_METRICS
         .total_incoming_queue_length
         .with_label_values(&state.database);
+    let ws = ws_answer_pings(state.clone(), unordered_tx.clone(), ws_version, ws);
     let recv_queue = ws_recv_queue(state.clone(), unordered_tx.clone(), recv_queue_gauge, ws);
     let recv_loop = pin!(ws_recv_loop(state.clone(), recv_queue));
     let recv_handler = ws_client_message_handler(state.clone(), client_closed_metric, recv_loop);
@@ -1238,6 +1243,10 @@ enum UnorderedWsMessage {
     /// The error indicates that the reducer was **not** called,
     /// and can thus be unordered wrt subscription updates.
     Error(MessageExecutionError),
+    /// Reply to a client's [`ws_v2::Ping`].
+    ///
+    /// Answered ahead of other messages, see [`ws_answer_pings`].
+    Pong(PendingPong),
 }
 
 /// Abstraction over [`ClientConnectionReceiver`], so tests can use a plain
@@ -1312,7 +1321,7 @@ async fn ws_send_loop_inner<T, U, Encoder>(
     encoder: impl FnOnce(mpsc::UnboundedReceiver<U>, mpsc::UnboundedSender<Frame>) -> Encoder,
 ) where
     T: Into<U>,
-    U: From<MessageExecutionError>,
+    U: From<MessageExecutionError> + From<PendingPong>,
     Encoder: Future<Output = ()> + Send + 'static,
 {
     // The number of frames we'll `feed` to the `ws` sink in one iteration
@@ -1414,6 +1423,14 @@ async fn ws_send_loop_inner<T, U, Encoder>(
                         }
                         state.record_ping_sent();
                     },
+                    UnorderedWsMessage::Pong(pong) => {
+                        log::trace!("encoding pong");
+                        encode_tx
+                            .send(pong.into())
+                            // `ws_encode_task` shouldn't terminate until
+                            // `encode_tx` is dropped, except by panicking.
+                            .expect("encode task panicked");
+                    },
                     UnorderedWsMessage::Error(err) => {
                         log::trace!("encoding execution error");
                         encode_tx
@@ -1474,6 +1491,7 @@ async fn ws_send_loop_inner<T, U, Encoder>(
 enum OutboundWsMessage {
     Error(MessageExecutionError),
     Message(OutboundMessage),
+    Pong(PendingPong),
 }
 
 /// Controls how many binary protocol messages may be packed into a single
@@ -1509,6 +1527,12 @@ fn v2_outbound_message(message: OutboundWsMessage) -> Option<V2OutboundMessage> 
         OutboundWsMessage::Error(message) => {
             log::error!("dropping v1 error message on v2 connection: {:?}", message);
             return None;
+        }
+        OutboundWsMessage::Pong(pong) => {
+            return Some(V2OutboundMessage {
+                message: ws_v2::ServerMessage::Pong(pong.into_pong()),
+                num_rows: None,
+            });
         }
         OutboundWsMessage::Message(message) => message,
     };
@@ -1683,6 +1707,9 @@ impl WsEncoder<'_> {
             match message {
                 OutboundWsMessage::Error(message) => {
                     self.encode_and_forward_v1_message(None, message).await?;
+                }
+                OutboundWsMessage::Pong(pong) => {
+                    log::error!("dropping v2 pong on v1 connection: {:?}", pong);
                 }
                 OutboundWsMessage::Message(message) => {
                     let num_rows = message.num_rows();
@@ -2132,7 +2159,7 @@ mod tests {
         }
     }
 
-    fn dummy_actor_state() -> ActorState {
+    pub(super) fn dummy_actor_state() -> ActorState {
         dummy_actor_state_with_config(<_>::default())
     }
 
@@ -2805,6 +2832,8 @@ mod tests {
         enum OutgoingBytes {
             #[allow(unused)]
             Error(MessageExecutionError),
+            #[allow(unused)]
+            Pong(PendingPong),
             Bytes(Bytes),
         }
 
