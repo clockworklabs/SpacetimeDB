@@ -186,12 +186,7 @@ impl ResidentObjects {
     }
 
     fn acquire(&self, bytes: u64, memory_limit_exempt: bool) -> Result<BudgetPermit, BudgetExceeded> {
-        if memory_limit_exempt {
-            // Exempt allocations still count toward the database's resident usage.
-            Ok(self.budget.force_acquire(bytes))
-        } else {
-            self.budget.acquire(bytes)
-        }
+        self.budget.acquire_with_exemption(bytes, memory_limit_exempt)
     }
 
     pub(super) fn acquire_resident_page(&self, memory_limit_exempt: bool) -> Result<BudgetPermit, BudgetExceeded> {
@@ -199,7 +194,7 @@ impl ResidentObjects {
     }
 
     pub(super) fn restored_page_permit(&self) -> BudgetPermit {
-        self.budget.force_acquire(PAGE_SIZE as u64)
+        self.acquire(PAGE_SIZE as u64, true).expect("accounted bytes overflow")
     }
 
     pub fn new(budget: ByteBudget) -> Self {
@@ -349,7 +344,7 @@ impl ResidentObjects {
     }
 
     pub(super) fn register_page_unchecked(&self, pool: PagePool, page: Box<Page>) -> Arc<PageFrame> {
-        let permit = self.budget.force_acquire(PAGE_SIZE as u64);
+        let permit = self.restored_page_permit();
         let reservation = self.reserve_page_with_permit(permit, PooledPage::new(page, pool));
         self.redeem_page(reservation)
     }
@@ -364,7 +359,7 @@ impl ResidentObjects {
     }
 
     pub(super) fn register_blob_unchecked(&self, blob: Box<[u8]>) -> Arc<BlobFrame> {
-        let permit = self.budget.force_acquire(blob.len() as u64);
+        let permit = self.acquire(blob.len() as u64, true).expect("accounted bytes overflow");
         let reservation = self.reserve_blob_with_permit(permit, blob);
         self.redeem_blob(reservation)
     }

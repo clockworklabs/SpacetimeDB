@@ -83,6 +83,23 @@ impl MemoryUsage for Locking {
 }
 
 impl Locking {
+    /// Ignore the resident memory limit while reconstructing committed data.
+    ///
+    /// The caller must keep exclusive access while the synchronous operation
+    /// runs, then trim storage before serving new transactions.
+    pub fn with_resident_hard_limit_suspended<R>(&self, operation: impl FnOnce() -> R) -> R {
+        // Release the state lock before recovery acquires it for writing.
+        let storage = self.committed_state.read().storage.clone();
+        storage.with_resident_hard_limit_suspended(operation)
+    }
+
+    /// Trim the resident and local caches to their low watermarks, as far as possible.
+    /// Required-in-memory data may keep usage above the limit without an error.
+    #[cfg(feature = "durability")]
+    pub fn trim(&self) -> Result<()> {
+        Ok(self.committed_state.read().trim()?)
+    }
+
     #[cfg(feature = "metrics")]
     pub fn update_data_size_metrics(&self) {
         let state = self.committed_state.read();
@@ -184,6 +201,10 @@ impl Locking {
     ///   after replaying the suffix of the commitlog.
     #[cfg(feature = "durability")]
     pub fn restore_from_snapshot(snapshot: ReconstructedSnapshot, config: TieredStorageConfig) -> Result<Self> {
+        // Full database recovery defers eviction until replay, rebuilding, and
+        // system-table migration have all completed. Preserve immediate trimming
+        // for direct snapshot API callers.
+        let trim_after_restore = !config.resident_budget.is_hard_limit_suspended();
         let ReconstructedSnapshot {
             database_identity,
             tx_offset,
@@ -243,8 +264,9 @@ impl Locking {
         // The next TX offset after restoring from a snapshot is one greater than the snapshotted offset.
         committed_state.next_tx_offset = tx_offset + 1;
 
-        // Free memory + disk storage to budget.
-        committed_state.trim()?;
+        if trim_after_restore {
+            committed_state.trim()?;
+        }
 
         Ok(datastore)
     }

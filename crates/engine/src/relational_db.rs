@@ -288,6 +288,30 @@ impl RelationalDB {
         persistence: Persistence,
         metrics_recorder_queue: Option<MetricsRecorderQueue>,
     ) -> Result<(Self, ConnectedClients), DBError> {
+        // Persisted transactions must be recoverable even if the memory limit
+        // was lowered below the size of required-in-memory data. Keep startup
+        // migrations and reads in the same scope so they cannot block recovery.
+        let budget = persistence.table_storage.resident_budget.clone();
+        let (db, connected_clients) = budget.with_hard_limit_suspended(|| {
+            Self::open_recovering(
+                database_identity,
+                owner_identity,
+                history,
+                persistence,
+                metrics_recorder_queue,
+            )
+        })?;
+        db.trim_after_recovery();
+        Ok((db, connected_clients))
+    }
+
+    fn open_recovering(
+        database_identity: Identity,
+        owner_identity: Identity,
+        history: impl durability::History<TxData = Txdata>,
+        persistence: Persistence,
+        metrics_recorder_queue: Option<MetricsRecorderQueue>,
+    ) -> Result<(Self, ConnectedClients), DBError> {
         log::trace!("[{database_identity}] DATABASE: OPEN");
 
         let Persistence {
@@ -367,6 +391,17 @@ impl RelationalDB {
         let connected_clients = db.connected_clients()?;
 
         Ok((db, connected_clients))
+    }
+
+    fn trim_after_recovery(&self) {
+        // Recovery is complete and the allocation limit is enforced again.
+        // Failed eviction must leave the reconstructed database available.
+        if let Err(error) = self.inner.trim() {
+            log::warn!(
+                "[{}] cache eviction after recovery failed: {error:#}",
+                self.database_identity
+            );
+        }
     }
 
     /// Shut down the database, without dropping it.
@@ -760,7 +795,9 @@ impl RelationalDB {
     where
         T: durability::History<TxData = Txdata>,
     {
-        apply_history(&self.inner, self.database_identity, history)?;
+        self.inner
+            .with_resident_hard_limit_suspended(|| apply_history(&self.inner, self.database_identity, history))?;
+        self.trim_after_recovery();
         Ok(self)
     }
 
