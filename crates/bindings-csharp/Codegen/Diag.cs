@@ -424,4 +424,48 @@ internal static class ErrorDescriptor
                 $"Assembly '{ctx.owner}' uses case conversion policy '{ctx.policy}' in scope '{ctx.scope}', but dependency '{ctx.dependency}' declares '{ctx.dependencyPolicy}' in the same scope. Use the same policy, remove the dependency's setting to inherit the containing scope's policy, or mount the dependency in a distinct namespace.",
             _ => Location.None
         );
+
+    public static readonly ErrorDescriptor<(
+        AttributeData attr,
+        string message
+    )> InvalidOutboxDeclaration =
+        new(group, "Invalid outbox table declaration", ctx => $"{ctx.message}", ctx => ctx.attr);
+
+    public static readonly ErrorDescriptor<(
+        IFieldSymbol field,
+        string attribute
+    )> OutboxAttributeWithoutOutbox =
+        new(
+            group,
+            "Outbox column attribute on a table that isn't an outbox",
+            ctx =>
+                $"Field {ctx.field.Name} is marked [{ctx.attribute}], but none of the tables it applies to is an outbox table.",
+            ctx => ctx.field
+        );
+
+    public static readonly ErrorDescriptor<(
+        MethodDeclarationSyntax method,
+        string message
+    )> InvalidOnResult =
+        new(
+            group,
+            "Invalid [OnResult] reducer",
+            ctx => $"{ctx.method.Identifier}: {ctx.message}",
+            ctx => ctx.method.Identifier
+        );
+
+    public static readonly ErrorDescriptor<string> UnresolvedOnResult =
+        new(group, "Unresolved [OnResult] reducer", message => $"{message}", _ => Location.None);
+
+    public static readonly ErrorDescriptor<(
+        string assembly,
+        string tables
+    )> DependencyOutboxTables =
+        new(
+            group,
+            "Outbox tables in dependency",
+            ctx =>
+                $"Dependency '{ctx.assembly}' declares outbox tables ({ctx.tables}). Outbox tables are only supported in the root assembly.",
+            _ => Location.None
+        );
 }

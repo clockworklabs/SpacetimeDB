@@ -29,4 +29,9 @@
     <PackageReference Include="PolySharp" Version="1.14.1" PrivateAssets="all" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The runtime's snake_case conversion, so generated and runtime names always agree. -->
+    <Compile Include="../Runtime/Internal/CanonicalName.SnakeCase.cs" />
+  </ItemGroup>
+
 </Project>

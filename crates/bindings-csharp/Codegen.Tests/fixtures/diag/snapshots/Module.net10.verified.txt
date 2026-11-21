@@ -311,6 +311,319 @@ public partial struct TestScheduleIssues
       }
     },
     {/*
+
+[SpacetimeDB.Table(Accessor = "OutboxNotAReducer", Outbox = typeof(OutboxDiag.NotAReducer))]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+public partial struct TestOutboxBadReceiver
+*/
+      Message: OutboxNotAReducer: Outbox type OutboxDiag.NotAReducer is not a reducer from receiver bindings. Generate them with `spacetime generate --bindings module` and use one of their `Reducers` classes.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0046,
+        Title: Invalid outbox table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+
+[SpacetimeDB.Table(
+ ^^^^^^^^^^^^^^^^^^
+    Accessor = "OutboxEventAndScheduled",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Event = true,
+^^^^^^^^^^^^^^^^^
+    Scheduled = "DummyScheduledReducer",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ScheduledAt = nameof(At),
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Outbox = typeof(OutboxDiag.Reducers.Remote)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+)]
+^
+public partial struct TestOutboxEventAndScheduled
+*/
+      Message: OutboxEventAndScheduled is an outbox table, so it can't also be an event table.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0046,
+        Title: Invalid outbox table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+
+[SpacetimeDB.Table(
+ ^^^^^^^^^^^^^^^^^^
+    Accessor = "OutboxEventAndScheduled",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Event = true,
+^^^^^^^^^^^^^^^^^
+    Scheduled = "DummyScheduledReducer",
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ScheduledAt = nameof(At),
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Outbox = typeof(OutboxDiag.Reducers.Remote)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+)]
+^
+public partial struct TestOutboxEventAndScheduled
+*/
+      Message: OutboxEventAndScheduled is an outbox table, so it can't also be a scheduled table.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0046,
+        Title: Invalid outbox table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+
+[SpacetimeDB.Table(Accessor = "OutboxNoAutoInc", Outbox = typeof(OutboxDiag.Reducers.Remote))]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Table(Accessor = "OutboxNoTarget", Outbox = typeof(OutboxDiag.Reducers.Remote))]
+*/
+      Message: OutboxNoAutoInc is an outbox table, so it needs a [PrimaryKey, AutoInc] ulong column.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0046,
+        Title: Invalid outbox table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+[SpacetimeDB.Table(Accessor = "OutboxNoAutoInc", Outbox = typeof(OutboxDiag.Reducers.Remote))]
+[SpacetimeDB.Table(Accessor = "OutboxNoTarget", Outbox = typeof(OutboxDiag.Reducers.Remote))]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Table(Accessor = "OutboxWrongTargetType", Outbox = typeof(OutboxDiag.Reducers.Remote))]
+*/
+      Message: OutboxNoTarget is an outbox table, so it needs exactly one [Target] column of type OutboxDiag.Identity, but it has 0.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0046,
+        Title: Invalid outbox table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+[SpacetimeDB.Table(Accessor = "OutboxNoTarget", Outbox = typeof(OutboxDiag.Reducers.Remote))]
+[SpacetimeDB.Table(Accessor = "OutboxWrongTargetType", Outbox = typeof(OutboxDiag.Reducers.Remote))]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+public partial struct TestOutboxKeyAndTargetIssues
+*/
+      Message: OutboxWrongTargetType.WrongTarget is the [Target] column, so it must have type OutboxDiag.Identity, not SpacetimeDB.Identity.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0046,
+        Title: Invalid outbox table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+
+[SpacetimeDB.Table(Accessor = "OutboxParamIssues", Outbox = typeof(OutboxDiag.Reducers.Remote))]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+public partial struct TestOutboxParamIssues
+*/
+      Message: OutboxParamIssues.Extra is marked with several [Param]s: "unknown", "other". Keep one.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0046,
+        Title: Invalid outbox table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+
+[SpacetimeDB.Table(Accessor = "OutboxParamIssues", Outbox = typeof(OutboxDiag.Reducers.Remote))]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+public partial struct TestOutboxParamIssues
+*/
+      Message: OutboxParamIssues.Extra is marked [Param("unknown")], but remote has no parameter named `unknown`.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0046,
+        Title: Invalid outbox table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+
+[SpacetimeDB.Table(Accessor = "OutboxParamIssues", Outbox = typeof(OutboxDiag.Reducers.Remote))]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+public partial struct TestOutboxParamIssues
+*/
+      Message: OutboxParamIssues has several columns for parameter `name` of remote: Name, Nickname.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0046,
+        Title: Invalid outbox table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+
+[SpacetimeDB.Table(Accessor = "OutboxParamIssues", Outbox = typeof(OutboxDiag.Reducers.Remote))]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+public partial struct TestOutboxParamIssues
+*/
+      Message: OutboxParamIssues.Count has type uint, but parameter `count` of remote has type int.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0046,
+        Title: Invalid outbox table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+
+[SpacetimeDB.Table(Accessor = "OutboxParamIssues", Outbox = typeof(OutboxDiag.Reducers.Remote))]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+public partial struct TestOutboxParamIssues
+*/
+      Message: OutboxParamIssues has no column for parameter `label` of remote. Add a column named like it, or mark one with [Param("label")].,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0046,
+        Title: Invalid outbox table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.Target]
+    public Identity Target;
+                    ^^^^^^
+
+*/
+      Message: Field Target is marked [Target], but none of the tables it applies to is an outbox table.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0047,
+        Title: Outbox column attribute on a table that isn't an outbox,
+        MessageFormat: Field {0} is marked [{1}], but none of the tables it applies to is an outbox table.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.Param("name")]
+    public string Name;
+                  ^^^^
+}
+*/
+      Message: Field Name is marked [Param], but none of the tables it applies to is an outbox table.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0047,
+        Title: Outbox column attribute on a table that isn't an outbox,
+        MessageFormat: Field {0} is marked [{1}], but none of the tables it applies to is an outbox table.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+// `target` would need a second Target column.
+[SpacetimeDB.Outbox(typeof(OutboxDiag.Reducers.TakesTarget), Accessor = "OutboxTargetParam")]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+public partial struct TestOutboxTargetParam { }
+*/
+      Message: [Outbox] can't name a column Target for parameter `target` of TakesTarget, because TestOutboxTargetParam already uses that name. Declare the outbox table with [Table(Outbox = ...)] instead, and give the columns other names.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0046,
+        Title: Invalid outbox table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+// `equals` would clash with the generated Equals method.
+[SpacetimeDB.Outbox(typeof(OutboxDiag.Reducers.TakesEquals), Accessor = "OutboxEqualsParam")]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+public partial struct TestOutboxEqualsParam { }
+*/
+      Message: [Outbox] can't name a column Equals for parameter `equals` of TakesEquals, because TestOutboxEqualsParam already uses that name. Declare the outbox table with [Table(Outbox = ...)] instead, and give the columns other names.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0046,
+        Title: Invalid outbox table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+
+[SpacetimeDB.Outbox(typeof(OutboxDiag.Reducers.Remote), Accessor = "OutboxWithFields")]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+public partial struct TestOutboxWithFields
+*/
+      Message: TestOutboxWithFields has [Outbox], which declares its columns, so it can't declare fields. Remove them, or declare it with [Table(Outbox = ...)] instead.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0046,
+        Title: Invalid outbox table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+
+[SpacetimeDB.Outbox(typeof(OutboxDiag.Reducers.Remote), Accessor = "OutboxAndTable")]
+ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[SpacetimeDB.Table(Accessor = "TableAndOutbox")]
+*/
+      Message: TestOutboxAndTable has [Outbox], so it can't also have [Table].,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0046,
+        Title: Invalid outbox table declaration,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
     // Invalid: View definition missing Public=true
     [SpacetimeDB.View(Accessor = "view_def_no_public")]
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -522,6 +835,40 @@ public partial struct TestScheduleIssues
         IsEnabledByDefault: true
       }
     },
+    {/*
+    [SpacetimeDB.OnResult(typeof(TestOutboxParamIssues))]
+    public static void WrongSignature(ReducerContext ctx, TestOutboxParamIssues row) { }
+                       ^^^^^^^^^^^^^^
+
+*/
+      Message: WrongSignature: [OnResult] reducers must take (ReducerContext ctx, TestOutboxParamIssues row, Result<Unit, string> result).,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0048,
+        Title: Invalid [OnResult] reducer,
+        MessageFormat: {0}: {1},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.OnResult(typeof(TestOutboxEventAndScheduled))]
+    public static void LifecycleResult(
+                       ^^^^^^^^^^^^^^^
+        ReducerContext ctx,
+*/
+      Message: LifecycleResult: [OnResult] reducers can't be lifecycle reducers.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0048,
+        Title: Invalid [OnResult] reducer,
+        MessageFormat: {0}: {1},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
     {
       Location: ,
       Message: Several reducers are assigned to the same lifecycle kind Init: Reducers.TestDuplicateReducerKind1, Reducers.TestDuplicateReducerKind2,
@@ -530,6 +877,23 @@ public partial struct TestScheduleIssues
         Id: STDB0013,
         Title: Multiple reducers of the same kind,
         MessageFormat: Several reducers are assigned to the same lifecycle kind {0}: {1},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.OnResult(typeof(TestOutboxBadReceiver))]
+    public static void NotAReducer(
+                       ^^^^^^^^^^^
+        ReducerContext ctx,
+*/
+      Message: NotAReducer: [OnResult] needs [Reducer].,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0048,
+        Title: Invalid [OnResult] reducer,
+        MessageFormat: {0}: {1},
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
@@ -620,6 +984,45 @@ public partial struct TestScheduleIssues
         Id: STDB0017,
         Title: ClientVisibilityFilters must be Filters,
         MessageFormat: Field {0} is marked as ClientVisibilityFilter but it has type {1} which is not SpacetimeDB.Filter,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {
+      Location: ,
+      Message: OnResultIssues.AmbiguousOutbox handles results for TestOutboxKeyAndTargetIssues, which has several outbox tables (OutboxNoAutoInc, OutboxNoTarget, OutboxWrongTargetType). Pick one with [OnResult(Table = ...)].,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0049,
+        Title: Unresolved [OnResult] reducer,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {
+      Location: ,
+      Message: Outbox table OutboxNotAReducer has several [OnResult] reducers: FirstResult and SecondResult.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0049,
+        Title: Unresolved [OnResult] reducer,
+        MessageFormat: {0},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {
+      Location: ,
+      Message: OnResultIssues.UnknownTable handles results for TestOutboxBadReceiver in table Missing, but there's no such outbox table.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0049,
+        Title: Unresolved [OnResult] reducer,
+        MessageFormat: {0},
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true

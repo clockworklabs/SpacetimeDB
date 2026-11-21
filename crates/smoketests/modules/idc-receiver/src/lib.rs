@@ -56,3 +56,22 @@ pub fn receive_detailed_ping(ctx: &spacetimedb::ReducerContext, body: String, de
         .detailed_ping_log()
         .insert(DetailedPingLog { id: 0, body, details });
 }
+
+#[derive(spacetimedb::SpacetimeType)]
+pub enum PingPriority {
+    Low,
+    High,
+}
+
+#[spacetimedb::table(accessor = priority_log)]
+pub struct PriorityLog {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    priority: PingPriority,
+}
+
+#[spacetimedb::reducer]
+pub fn receive_priority(ctx: &spacetimedb::ReducerContext, priority: PingPriority) {
+    ctx.db.priority_log().insert(PriorityLog { id: 0, priority });
+}

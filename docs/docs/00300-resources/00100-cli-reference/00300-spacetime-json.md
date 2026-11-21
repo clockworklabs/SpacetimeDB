@@ -3,6 +3,9 @@ title: spacetime.json
 slug: /cli-reference/spacetime-json
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 # `spacetime.json` Configuration File
 
 The `spacetime.json` file defines project-level configuration for the SpacetimeDB CLI. It eliminates repetitive CLI flags and enables multi-target workflows such as publishing multiple databases or generating bindings for multiple languages from a single project.
@@ -89,7 +92,7 @@ When `spacetime generate` runs, it deduplicates by module path. If multiple data
 `spacetime generate` produces two kinds of bindings:
 
 - **Client bindings** are used by clients to connect to a database, subscribe to data, and call its reducers.
-- **Module bindings**, also called **receiver bindings**, are used inside one database module to make [asynchronous inter-database communication (IDC)](../../00200-core-concepts/00100-databases/00650-inter-database-communication.md) calls to another database's reducers. Rust and TypeScript modules support these bindings; C# and C++ module bindings are not implemented yet.
+- **Module bindings**, also called **receiver bindings**, are used inside one database module to make [asynchronous inter-database communication (IDC)](../../00200-core-concepts/00100-databases/00650-inter-database-communication.md) calls to another database's reducers. Rust, TypeScript, and C# modules support these bindings; C++ module bindings are not implemented yet.
 
 With `spacetime.json`, put client bindings in `generate` and receiver bindings in `dependencies`. Running `spacetime generate` processes both arrays: regular `generate` entries default to client bindings, and dependencies automatically generate module bindings. No `--bindings` flag or second `generate` entry is needed for a dependency.
 
@@ -107,6 +110,7 @@ Each sending database with dependencies must define `module-path`. Dependencies 
 | `out-dir` | No | Output directory, relative to the config directory |
 | `build-options` | No | Receiver build options when using a direct `module-path` |
 | `dotnet-version` | No | Receiver .NET SDK version when using a direct `module-path` |
+| `namespace` | No | C# namespace for the generated bindings, for a C# sending module. Defaults to `RemoteBindings.<Name>`, where `<Name>` is `name` in Pascal case |
 
 ### Receiver source without a publish target
 
@@ -143,18 +147,61 @@ Declaring a dependency does not publish the receiver. To make it a publish targe
 
 A `database` reference uses the target's `module-path`, `bin-path`, or `js-path`, and its resolved receiver build options and .NET SDK version. It fails if no matching target or module source exists. A dependency does not inherit the sending module's build options or .NET SDK version.
 
-`spacetime generate lobby` selects the sending database's regular `generate` entries and dependencies; without a database filter, generation includes all targets' entries. For `dependencies` entries, the module binding language is inferred from the sending module, not the external client project. Rust and TypeScript dependency bindings default to `<sending module-path>/src/remote_bindings`.
+`spacetime generate lobby` selects the sending database's regular `generate` entries and dependencies; without a database filter, generation includes all targets' entries. For `dependencies` entries, the module binding language is inferred from the sending module, not the external client project. Each dependency's bindings go in a directory named after it, under a default output directory that depends on the sending module's language:
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+`<sending module-path>/src/remote_bindings`
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+`<sending module-path>/remote_bindings`. Each dependency's bindings are in the `RemoteBindings.<Name>` namespace, so bindings from different receivers don't conflict. For example, a dependency named `game_world` gets `RemoteBindings.GameWorld`. Set `namespace` to choose another.
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+`<sending module-path>/src/remote_bindings`, with a `mod.rs` that declares each dependency's module.
+
+</TabItem>
+</Tabs>
 
 ### Explicit module-binding request
 
 Without configuration, select the binding kind with `--bindings client` (the default) or `--bindings module`. When using `spacetime.json`, `--bindings` can override the binding kind only if a single generation entry is selected; it is rejected when multiple entries are selected. Prefer the config fields described above for configured generation. Here `--module-path` identifies the **receiving module**, while `--out-dir` explicitly places output in the **sending module** project:
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```bash
+spacetime generate --no-config --bindings module --lang typescript \
+  --module-path ./game_world --out-dir ./lobby/src/remote_bindings/game_world
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```bash
+spacetime generate --no-config --bindings module --lang csharp \
+  --module-path ./game_world --out-dir ./lobby/remote_bindings/game_world \
+  --namespace RemoteBindings.GameWorld
+```
+
+`--namespace` sets the namespace of the generated bindings. Without it, they're in `RemoteBindings`.
+
+</TabItem>
+<TabItem value="rust" label="Rust">
 
 ```bash
 spacetime generate --no-config --bindings module --lang rust \
   --module-path ./game_world --out-dir ./lobby/src/remote_bindings
 ```
 
-This generates Rust module bindings for `game_world` in the `lobby` module's source tree. Use `--lang typescript` for a TypeScript sending module. `unrealcpp` is client-only; the CLI accepts `cpp` only with `--bindings module`, but C++ module binding generation is not implemented yet.
+</TabItem>
+</Tabs>
+
+This generates module bindings for `game_world` in the `lobby` module's source tree. `unrealcpp` is client-only; the CLI accepts `cpp` only with `--bindings module`, but C++ module binding generation is not implemented yet.
 
 ## Children and inheritance
 

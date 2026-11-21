@@ -47,6 +47,7 @@ public sealed class ModuleBuilder
     private readonly List<RawTableDefV10> tableDefs = [];
     private readonly List<RawTableCachePolicyV10> tableCachePolicyDefs = [];
     private readonly List<RawScheduleDefV10> scheduleDefs = [];
+    private readonly List<RawOutboxDefV10> outboxDefs = [];
     private readonly List<RawReducerDefV10> reducerDefs = [];
     private readonly List<RawLifeCycleReducerDefV10> lifecycleReducerDefs = [];
     private readonly List<RawProcedureDefV10> procedureDefs = [];
@@ -69,8 +70,18 @@ public sealed class ModuleBuilder
             ? $"{type.Name[..type.Name.IndexOf('`')]}_{string.Join("_", type.GetGenericArguments().Select(GetFriendlyName))}"
             : type.Name;
 
-    private static RawScopedTypeNameV10 MakeScopedTypeName(Type type) =>
-        new([], GetFriendlyName(type));
+    // Like Rust's `sats_name_to_scoped_name_v10`: split on "::" and "."; the last segment is the name.
+    private static RawScopedTypeNameV10 MakeScopedTypeName(Type type, string? sourceName)
+    {
+        if (sourceName is null)
+        {
+            return new([], GetFriendlyName(type));
+        }
+        var scope = sourceName.Replace("::", ".").Split('.').ToList();
+        var name = scope[^1];
+        scope.RemoveAt(scope.Count - 1);
+        return new(scope, name);
+    }
 
     internal void RegisterSubmodule(RawSubmoduleV10 submodule) => submoduleDefs.Add(submodule);
 
@@ -86,7 +97,8 @@ public sealed class ModuleBuilder
     // Receives types to store the reference in the dictionary so that we can resolve it later and to avoid infinite recursion inside `makeType`.
     internal AlgebraicType.Ref RegisterType<T>(
         Dictionary<Type, AlgebraicType.Ref> types,
-        Func<AlgebraicType.Ref, AlgebraicType> makeType
+        Func<AlgebraicType.Ref, AlgebraicType> makeType,
+        string? sourceName
     )
     {
         var typeList = typespace.Types;
@@ -97,7 +109,7 @@ public sealed class ModuleBuilder
         typeList[typeRef.Ref_] = makeType(typeRef);
         typeDefs.Add(
             new RawTypeDefV10(
-                SourceName: MakeScopedTypeName(typeof(T)),
+                SourceName: MakeScopedTypeName(typeof(T), sourceName),
                 Ty: (uint)typeRef.Ref_,
                 CustomOrdering: true
             )
@@ -190,6 +202,8 @@ public sealed class ModuleBuilder
             scheduleDefs.Add(scheduleDef);
         }
     }
+
+    public void RegisterOutbox(RawOutboxDefV10 outbox) => outboxDefs.Add(outbox);
 
     public void RegisterView<TDispatcher>()
         where TDispatcher : IView, new()
@@ -285,6 +299,7 @@ public sealed class ModuleBuilder
         var internalFunctions = lifecycleReducerDefs
             .Select(l => l.FunctionName)
             .Concat(scheduleDefs.Select(s => s.FunctionName))
+            .Concat(outboxDefs.Select(o => o.OnResultReducer).OfType<string>())
             .ToHashSet(StringComparer.Ordinal);
 
         foreach (var reducer in reducerDefs)
@@ -356,6 +371,10 @@ public sealed class ModuleBuilder
         if (lifecycleReducerDefs.Count > 0)
         {
             sections.Add(new RawModuleDefV10Section.LifeCycleReducers(lifecycleReducerDefs));
+        }
+        if (outboxDefs.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.Outboxes(outboxDefs));
         }
         // TODO: Add sections for Event tables and Case conversion policy (mirrors Rust `raw_def/v10.rs` TODO).
         if (caseConversionPolicy is { } policy)

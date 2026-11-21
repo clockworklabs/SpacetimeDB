@@ -123,6 +123,67 @@ record SettingsDeclaration
 /// <param name="Name">The name of the column as defined in the source code</param>
 record ColumnRef(int Index, string Name);
 
+/// <summary>
+/// A <c>[Target]</c> (when <paramref name="Param"/> is null) or <c>[Param]</c> on an outbox column.
+/// </summary>
+record OutboxColumnAttr(string? Table, string? Param)
+{
+    private static readonly string TargetAttrName = typeof(TargetAttribute).FullName!;
+    private static readonly string ParamAttrName = typeof(ParamAttribute).FullName!;
+
+    public static OutboxColumnAttr? Parse(AttributeData data)
+    {
+        var name = data.AttributeClass?.ToString();
+        if (name == TargetAttrName)
+        {
+            return new(data.ParseAs<TargetAttribute>().Table, null);
+        }
+        if (name == ParamAttrName)
+        {
+            var param = data.ParseAs<ParamAttribute>();
+            return new(param.Table, param.Name);
+        }
+        return null;
+    }
+
+    public bool AppliesTo(string table) => Table is null || Table == table;
+}
+
+/// <summary>
+/// A reducer's <c>[OnResult]</c>: the outbox row type's full name, and the outbox accessor if given.
+/// </summary>
+record OnResultRef(string Row, string? Table);
+
+/// <summary>
+/// The resolved outbox of a table accessor: everything <c>RawOutboxDefV10</c> needs except the
+/// <c>on_result</c> reducer, which is attached at registration.
+/// </summary>
+record OutboxInfo(
+    string RemoteReducer,
+    string SignatureHash,
+    int TargetColumn,
+    EquatableArray<int> ArgColumns
+)
+{
+    public string GenerateRegistration(string tableName, string? onResultReducer)
+    {
+        // The hash is a `Hash`: a U256 read from its 32 bytes (64 hex digits) in little-endian
+        // order. Word(n) is the ulong made of bytes n..n+7, most significant byte first.
+        string Word(int offset) =>
+            "0x"
+            + string.Concat(
+                Enumerable.Range(0, 8).Select(i => SignatureHash.Substring((offset + 7 - i) * 2, 2))
+            )
+            + "UL";
+        var hash =
+            $"new global::SpacetimeDB.U256(new global::SpacetimeDB.U128({Word(24)}, {Word(16)}), new global::SpacetimeDB.U128({Word(8)}, {Word(0)}))";
+        var onResult = onResultReducer is null
+            ? "null"
+            : SymbolDisplay.FormatLiteral(onResultReducer, true);
+        return $"builder.RegisterOutbox(new global::SpacetimeDB.Internal.RawOutboxDefV10({SymbolDisplay.FormatLiteral(tableName, true)}, {SymbolDisplay.FormatLiteral(RemoteReducer, true)}, {TargetColumn}, [{string.Join(", ", ArgColumns)}], {onResult}, {hash}));";
+    }
+}
+
 static class ColumnTypeValidation
 {
     public static bool IsInteger(ITypeSymbol type) =>
@@ -193,6 +254,7 @@ record ColumnDeclaration : MemberDeclaration
     public readonly string FullTableName;
     public readonly int ColumnIndex;
     public readonly string? ColumnDefaultValue;
+    public readonly EquatableArray<OutboxColumnAttr> OutboxAttrs;
 
     // A helper to combine multiple column attributes into a single mask.
     // Note: it doesn't check the table names, this is left up to the caller.
@@ -233,6 +295,14 @@ record ColumnDeclaration : MemberDeclaration
             .ToList()
             .FirstOrDefault();
 
+        OutboxAttrs = new(
+            field
+                .GetAttributes()
+                .Select(OutboxColumnAttr.Parse)
+                .OfType<OutboxColumnAttr>()
+                .ToImmutableArray()
+        );
+
         var type = field.Type;
 
         var attrs = CombineColumnAttrs(Attrs);
@@ -262,6 +332,35 @@ record ColumnDeclaration : MemberDeclaration
         }
     }
 
+    // A column that `[Outbox]` declares (with no field in the source)
+    public ColumnDeclaration(
+        string tableName,
+        int index,
+        string name,
+        ITypeSymbol type,
+        ColumnAttrs attrs,
+        OutboxColumnAttr? outboxAttr,
+        ISymbol location,
+        DiagReporter diag
+    )
+        : base(name, TypeUse.Parse(location, type, diag))
+    {
+        FullTableName = tableName;
+        ColumnIndex = index;
+        Attrs = new(
+            attrs == ColumnAttrs.UnSet
+                ? ImmutableArray<ColumnAttr>.Empty
+                : ImmutableArray.Create(new ColumnAttr(attrs))
+        );
+        Indexes = new(ImmutableArray<TableIndex>.Empty);
+        OutboxAttrs = new(
+            outboxAttr is null
+                ? ImmutableArray<OutboxColumnAttr>.Empty
+                : ImmutableArray.Create(outboxAttr)
+        );
+        IsEquatable = ColumnTypeValidation.IsEquatable(type);
+    }
+
     public ColumnAttrs GetAttrs(TableAccessor tableAccessor) =>
         CombineColumnAttrs(Attrs.Where(x => x.Table == null || x.Table == tableAccessor.Name));
 
@@ -281,10 +380,31 @@ record TableAccessor
     public readonly TableCachePolicy CachePolicy;
     public readonly Scheduled? Scheduled;
 
+    /// <summary>Whether the table declares an <c>Outbox</c>, even an invalid one.</summary>
+    public readonly bool IsOutbox;
+
+    /// <summary>The resolved outbox, or null if there is none or it has errors.</summary>
+    public readonly OutboxInfo? Outbox;
+
     public string Identifier => EscapeIdentifier(Name);
 
     public TableAccessor(TableDeclaration table, AttributeData data, DiagReporter diag)
     {
+        if (data.AttributeClass?.ToString() == typeof(OutboxAttribute).FullName)
+        {
+            var outbox = data.ParseAs<OutboxAttribute>();
+            Name = outbox.Accessor ?? table.ShortName;
+            CanonicalName = outbox.Name;
+            IsPublic = outbox.Public;
+            IsOutbox = true;
+            // Without generated columns, it already has an error, and no columns to check.
+            if (table.HasGeneratedColumns && data.GetTypeArgument("reducer") is { } outboxReducer)
+            {
+                Outbox = ResolveOutbox(table, outboxReducer, scheduled: false, data, diag);
+            }
+            return;
+        }
+
         var attr = data.ParseAs<TableAttribute>();
 
         Name = attr.Accessor ?? table.ShortName;
@@ -323,6 +443,160 @@ record TableAccessor
                 diag.Report(ErrorDescriptor.InvalidScheduledDeclaration, (data, e.Message));
             }
         }
+
+        if (data.GetTypeArgument(nameof(TableAttribute.Outbox)) is { } receiver)
+        {
+            IsOutbox = true;
+            Outbox = ResolveOutbox(table, receiver, attr.Scheduled is not null, data, diag);
+        }
+    }
+
+    /// <summary>Whether a type is a reducer's marker class from receiver bindings.</summary>
+    public static bool IsReceiver(INamedTypeSymbol type) =>
+        type.AllInterfaces.Any(i => i.ToString() == "SpacetimeDB.Internal.IOutboxReceiver");
+
+    /// <summary>A receiver marker class's fields: one per reducer parameter, in order.</summary>
+    public static IEnumerable<IFieldSymbol> ReceiverParameters(INamedTypeSymbol receiver) =>
+        receiver
+            .GetMembers()
+            .OfType<IFieldSymbol>()
+            .Where(f => !f.IsConst && !f.IsStatic && !f.IsImplicitlyDeclared);
+
+    /// <summary>
+    /// Validates an outbox table against its receiver reducer's marker class from receiver
+    /// bindings, and matches the reducer's parameters to columns. Reports every problem.
+    /// </summary>
+    private OutboxInfo? ResolveOutbox(
+        TableDeclaration table,
+        INamedTypeSymbol receiver,
+        bool scheduled,
+        AttributeData data,
+        DiagReporter diag
+    )
+    {
+        var errors = 0;
+        void Error(string message)
+        {
+            errors++;
+            diag.Report(ErrorDescriptor.InvalidOutboxDeclaration, (data, message));
+        }
+
+        string? Constant(string name) =>
+            receiver.GetMembers(name).OfType<IFieldSymbol>().FirstOrDefault()
+                is { IsConst: true, ConstantValue: string value }
+                ? value
+                : null;
+        if (
+            !IsReceiver(receiver)
+            || Constant("ReducerName") is not { } reducerName
+            || Constant("SignatureHash") is not { Length: 64 } signatureHash
+            || !signatureHash.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f')
+        )
+        {
+            Error(
+                $"{Name}: Outbox type {receiver} is not a reducer from receiver bindings. Generate them with `spacetime generate --bindings module` and use one of their `Reducers` classes."
+            );
+            return null;
+        }
+
+        if (IsEvent)
+        {
+            Error($"{Name} is an outbox table, so it can't also be an event table.");
+        }
+        if (scheduled)
+        {
+            Error($"{Name} is an outbox table, so it can't also be a scheduled table.");
+        }
+
+        var primaryKey = table.GetPrimaryKey(this);
+        if (
+            primaryKey is not { } pk
+            || table.Members[pk].Type.Name != "ulong"
+            || !table.Members[pk].GetAttrs(this).HasFlag(ColumnAttrs.AutoInc)
+        )
+        {
+            Error($"{Name} is an outbox table, so it needs a [PrimaryKey, AutoInc] ulong column.");
+        }
+
+        var identity = $"{SymbolToName(receiver.ContainingNamespace)}.Identity";
+        var targets = table
+            .Members.Where(m => m.OutboxAttrs.Any(a => a.Param is null && a.AppliesTo(Name)))
+            .ToArray();
+        if (targets.Length != 1)
+        {
+            Error(
+                $"{Name} is an outbox table, so it needs exactly one [Target] column of type {identity}, but it has {targets.Length}."
+            );
+        }
+        else if (targets[0].Type.Name != identity)
+        {
+            Error(
+                $"{Name}.{targets[0].Name} is the [Target] column, so it must have type {identity}, not {targets[0].Type.Name}."
+            );
+        }
+
+        var parameters = ReceiverParameters(receiver).ToArray();
+        // The name each column answers to: its [Param] for this table, else its snake_case name.
+        var columnNames = new string[table.Members.Length];
+        for (var i = 0; i < columnNames.Length; i++)
+        {
+            var member = table.Members[i];
+            var explicitNames = member
+                .OutboxAttrs.Where(a => a.Param is not null && a.AppliesTo(Name))
+                .Select(a => a.Param!)
+                .Distinct()
+                .ToArray();
+            if (explicitNames.Length > 1)
+            {
+                Error(
+                    $"{Name}.{member.Name} is marked with several [Param]s: {string.Join(", ", explicitNames.Select(n => $"\"{n}\""))}. Keep one."
+                );
+            }
+            var explicitName = explicitNames.FirstOrDefault();
+            if (explicitName is not null && parameters.All(p => p.Name != explicitName))
+            {
+                Error(
+                    $"{Name}.{member.Name} is marked [Param(\"{explicitName}\")], but {reducerName} has no parameter named `{explicitName}`."
+                );
+            }
+            columnNames[i] = explicitName ?? SnakeCase(member.Name);
+        }
+
+        var argColumns = ImmutableArray.CreateBuilder<int>();
+        foreach (var parameter in parameters)
+        {
+            var matches = Enumerable
+                .Range(0, columnNames.Length)
+                .Where(i => columnNames[i] == parameter.Name)
+                .ToArray();
+            var parameterType = SymbolToName(parameter.Type);
+            if (matches.Length == 0)
+            {
+                Error(
+                    $"{Name} has no column for parameter `{parameter.Name}` of {reducerName}. Add a column named like it, or mark one with [Param(\"{parameter.Name}\")]."
+                );
+            }
+            else if (matches.Length > 1)
+            {
+                Error(
+                    $"{Name} has several columns for parameter `{parameter.Name}` of {reducerName}: {string.Join(", ", matches.Select(i => table.Members[i].Name))}."
+                );
+            }
+            else if (table.Members[matches[0]] is var column && column.Type.Name != parameterType)
+            {
+                Error(
+                    $"{Name}.{column.Name} has type {column.Type.Name}, but parameter `{parameter.Name}` of {reducerName} has type {parameterType}."
+                );
+            }
+            else
+            {
+                argColumns.Add(matches[0]);
+            }
+        }
+
+        return errors == 0
+            ? new(reducerName, signatureHash, targets[0].ColumnIndex, new(argColumns.ToImmutable()))
+            : null;
     }
 }
 
@@ -494,6 +768,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     public readonly EquatableArray<TableAccessor> TableAccessors;
     public readonly EquatableArray<TableIndex> Indexes;
 
+    public readonly bool HasGeneratedColumns; // Whether `[Outbox]` declares the columns
+
     private readonly bool isRowStruct;
     private readonly string assemblyIdentity;
     private readonly bool sharedContexts;
@@ -552,15 +828,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
     private IEnumerable<string> WritableIndexCaches(TableAccessor table)
     {
-        foreach (
-            var constraint in GetConstraints(table, ColumnAttrs.Unique)
-                .Where(c => c.Col.IsEquatable)
-        )
+        foreach (var (_, index) in GetUniqueIndexes(table).Where(u => u.Constraint.Col.IsEquatable))
         {
-            var identifier = constraint.Col.Identifier;
+            var identifier = index.AccessorIdentifier;
             yield return $"internal {identifier}UniqueIndex? __index_{identifier.TrimStart('@')};";
         }
-        foreach (var index in GetIndexes(table).Where(i => i.AccessorName.Length != 0))
+        foreach (var index in GetNonUniqueIndexes(table).Where(i => i.AccessorName.Length != 0))
         {
             var identifier = index.AccessorIdentifier;
             yield return $"internal {identifier}Index? __index_{identifier.TrimStart('@')};";
@@ -624,9 +897,60 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             container = container.ContainingType;
         }
 
+        var outbox = context.Attributes.FirstOrDefault(a =>
+            a.AttributeClass?.ToString() == typeof(OutboxAttribute).FullName
+        );
+        if (outbox is not null)
+        {
+            if (Members.Length != 0)
+            {
+                diag.Report(
+                    ErrorDescriptor.InvalidOutboxDeclaration,
+                    (
+                        outbox,
+                        $"{ShortName} has [Outbox], which declares its columns, so it can't declare fields. Remove them, or declare it with [Table(Outbox = ...)] instead."
+                    )
+                );
+            }
+            else if (
+                outbox.GetTypeArgument("reducer") is { } receiver
+                && GenerateOutboxColumns(
+                    (INamedTypeSymbol)context.TargetSymbol,
+                    receiver,
+                    outbox,
+                    compilation,
+                    diag
+                )
+                    is { } columns
+            )
+            {
+                Members = new(columns);
+                HasGeneratedColumns = true;
+            }
+        }
+
         TableAccessors = new(
             context.Attributes.Select(a => new TableAccessor(this, a, diag)).ToImmutableArray()
         );
+        foreach (var member in Members)
+        {
+            foreach (var attr in member.OutboxAttrs)
+            {
+                if (!TableAccessors.Any(t => t.IsOutbox && attr.AppliesTo(t.Name)))
+                {
+                    diag.Report(
+                        ErrorDescriptor.OutboxAttributeWithoutOutbox,
+                        (
+                            ((INamedTypeSymbol)context.TargetSymbol)
+                                .GetMembers(member.Name)
+                                .OfType<IFieldSymbol>()
+                                .First(),
+                            attr.Param is null ? "Target" : "Param"
+                        )
+                    );
+                }
+            }
+        }
         Indexes = new(
             context
                 .TargetSymbol.GetAttributes()
@@ -638,6 +962,114 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         {
             ValidateGeneratedNames(diag, typeSyntax.GetLocation());
         }
+    }
+
+    /// <summary>
+    /// The columns of an <c>[Outbox]</c> table: <c>MsgId</c>, <c>Target</c>, and each of the
+    /// receiver's parameters in Pascal case, marked <c>[Param]</c> with the parameter's name.
+    /// Null, after reporting it, if a column can't have its name.
+    /// </summary>
+    private ImmutableArray<ColumnDeclaration>? GenerateOutboxColumns(
+        INamedTypeSymbol row,
+        INamedTypeSymbol receiver,
+        AttributeData outbox,
+        Compilation compilation,
+        DiagReporter diag
+    )
+    {
+        // An invalid receiver gets no columns; the outbox validation reports it.
+        if (
+            !TableAccessor.IsReceiver(receiver)
+            || receiver.ContainingNamespace.GetTypeMembers("Identity").FirstOrDefault()
+                is not { } identity
+        )
+        {
+            return ImmutableArray<ColumnDeclaration>.Empty;
+        }
+
+        var columns = ImmutableArray.CreateBuilder<ColumnDeclaration>();
+        // C# forbids a field named like its struct or like another member, and the serializer
+        // generates some of those.
+        var taken = new HashSet<string>(GeneratedMemberNames) { row.Name };
+        bool TryAdd(
+            string name,
+            ITypeSymbol type,
+            ColumnAttrs attrs,
+            OutboxColumnAttr? outboxAttr,
+            ISymbol location,
+            string? parameter
+        )
+        {
+            if (taken.Add(name))
+            {
+                columns.Add(
+                    new(FullName, columns.Count, name, type, attrs, outboxAttr, location, diag)
+                );
+                return true;
+            }
+            var forParameter = parameter is null
+                ? ""
+                : $" for parameter `{parameter}` of {receiver.Name}";
+            diag.Report(
+                ErrorDescriptor.InvalidOutboxDeclaration,
+                (
+                    outbox,
+                    $"[Outbox] can't name a column {name}{forParameter}, because {row.Name} already uses that name. Declare the outbox table with [Table(Outbox = ...)] instead, and give the columns other names."
+                )
+            );
+            return false;
+        }
+
+        if (
+            !TryAdd(
+                "MsgId",
+                compilation.GetSpecialType(SpecialType.System_UInt64),
+                ColumnAttrs.PrimaryKeyAuto,
+                null,
+                row,
+                null
+            ) || !TryAdd("Target", identity, ColumnAttrs.UnSet, new(null, null), row, null)
+        )
+        {
+            return null;
+        }
+        foreach (var parameter in TableAccessor.ReceiverParameters(receiver))
+        {
+            var name = string.Concat(
+                parameter
+                    .Name.Split('_')
+                    .Where(part => part.Length != 0)
+                    .Select(part => char.ToUpperInvariant(part[0]) + part[1..])
+            );
+            if (
+                !TryAdd(
+                    name,
+                    parameter.Type,
+                    ColumnAttrs.UnSet,
+                    new(null, parameter.Name),
+                    parameter,
+                    parameter.Name
+                )
+            )
+            {
+                return null;
+            }
+        }
+        return columns.ToImmutable();
+    }
+
+    /// <summary>The row type's BSATN code, plus the fields of an <c>[Outbox]</c> table.</summary>
+    public Scope.Extensions ToRowExtensions()
+    {
+        var extensions = ToExtensions();
+        if (HasGeneratedColumns)
+        {
+            extensions.Contents.Insert(
+                0,
+                string.Concat(Members.Select(c => $"public {c.Type.Name} {c.Identifier};\n"))
+            );
+        }
+        return extensions;
     }
 
     private void ValidateGeneratedNames(DiagReporter diag, Location location)
@@ -689,6 +1121,11 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 }
             )
                 names.Add(readOnly, member, "generated read-only table member");
+            if (table.IsOutbox)
+            {
+                names.Add(writable, "__ReadOnly", "generated outbox member");
+                names.Add(writable + ".__InstanceState", "__readOnly", "generated outbox member");
+            }
 
             void Index(string identifier, bool unique, string contributor)
             {
@@ -708,15 +1145,15 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 }
             }
             foreach (
-                var constraint in GetConstraints(table, ColumnAttrs.Unique)
-                    .Where(c => c.Col.IsEquatable)
+                var (constraint, index) in GetUniqueIndexes(table)
+                    .Where(u => u.Constraint.Col.IsEquatable)
             )
                 Index(
-                    constraint.Col.Identifier,
+                    index.AccessorIdentifier,
                     true,
                     $"unique column '{constraint.Col.Name}' of {owner}"
                 );
-            foreach (var index in GetIndexes(table).Where(i => i.AccessorName.Length != 0))
+            foreach (var index in GetNonUniqueIndexes(table).Where(i => i.AccessorName.Length != 0))
                 Index(index.AccessorIdentifier, false, $"index '{index.AccessorName}' of {owner}");
 
             foreach (var container in new[] { "Tables", "ReadOnlyTables", "Queries" })
@@ -783,7 +1220,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         var uniqueIndexBase =
             "global::SpacetimeDB.Internal." + (isRowStruct ? "UniqueIndex" : "RefUniqueIndex");
 
-        foreach (var ct in GetConstraints(tableAccessor, ColumnAttrs.Unique))
+        foreach (var (ct, index) in GetUniqueIndexes(tableAccessor))
         {
             var f = ct.Col;
             if (!f.IsEquatable)
@@ -792,16 +1229,17 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 // only produce a lot of noisy typechecking errors.
                 continue;
             }
-            var standardIndexName = ct.ToIndex().StandardIndexName(tableAccessor);
+            var identifier = index.AccessorIdentifier;
+            var standardIndexName = index.StandardIndexName(tableAccessor);
             var primaryKey = ct.Attr.HasFlag(ColumnAttrs.PrimaryKey);
             var instanceTable = sharedContexts && primaryKey;
             var updateMethod = primaryKey
                 ? $"public {globalName} Update({globalName} row) => DoUpdate(row{(instanceTable ? ", __table" : "")});"
                 : "";
             yield return $$"""
-                {{vis}} sealed class {{f.Identifier}}UniqueIndex : {{uniqueIndexBase}}<{{tableAccessor.Identifier}}, {{globalName}}, {{f.Type.Name}}, {{f.Type.BSATNName}}> {
+                {{vis}} sealed class {{identifier}}UniqueIndex : {{uniqueIndexBase}}<{{tableAccessor.Identifier}}, {{globalName}}, {{f.Type.Name}}, {{f.Type.BSATNName}}> {
                     {{(instanceTable ? "private readonly global::SpacetimeDB.Internal.TableHandle __table;" : "")}}
-                    internal {{f.Identifier}}UniqueIndex({{(sharedContexts ? "int instanceId" + (instanceTable ? ", global::SpacetimeDB.Internal.TableHandle table" : "") : "")}}) : base({{HandleLookupName(
+                    internal {{identifier}}UniqueIndex({{(sharedContexts ? "int instanceId" + (instanceTable ? ", global::SpacetimeDB.Internal.TableHandle table" : "") : "")}}) : base({{HandleLookupName(
                     standardIndexName
                 )}}) { {{(instanceTable ? "__table = table;" : "")}} }
                     // Important: don't move this to the base class.
@@ -810,13 +1248,13 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     public {{globalName}}? Find({{f.Type.Name}} key) => FindSingle(key);
                     {{updateMethod}}
                 }
-                {{vis}} {{f.Identifier}}UniqueIndex {{f.Identifier}} => {{IndexInstance(
-                    f.Identifier, writable: true, primaryKey: primaryKey
+                {{vis}} {{identifier}}UniqueIndex {{identifier}} => {{IndexInstance(
+                    identifier, writable: true, primaryKey: primaryKey
                 )}};
                 """;
         }
 
-        foreach (var index in GetIndexes(tableAccessor))
+        foreach (var index in GetNonUniqueIndexes(tableAccessor))
         {
             var name = index.AccessorName;
             var identifierName = index.AccessorIdentifier;
@@ -890,7 +1328,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             ? "global::SpacetimeDB.Internal.ReadOnlyUniqueIndex"
             : "global::SpacetimeDB.Internal.ReadOnlyRefUniqueIndex";
 
-        foreach (var ct in GetConstraints(tableAccessor, ColumnAttrs.Unique))
+        foreach (var (ct, index) in GetUniqueIndexes(tableAccessor))
         {
             var f = ct.Col;
             if (!f.IsEquatable)
@@ -898,31 +1336,32 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 continue;
             }
 
-            var standardIndexName = ct.ToIndex().StandardIndexName(tableAccessor);
+            var identifier = index.AccessorIdentifier;
+            var standardIndexName = index.StandardIndexName(tableAccessor);
 
             yield return $$$"""
-                public sealed class {{{f.Identifier}}}Index
+                public sealed class {{{identifier}}}Index
                     : {{{uniqueIndexBase}}}<
                           global::{{{ViewHandlesNamespace}}}.{{{tableAccessor.Identifier}}}ReadOnly,
                           {{{globalName}}},
                           {{{f.Type.Name}}},
                           {{{f.Type.BSATNName}}}>
                 {
-                    internal {{{f.Identifier}}}Index({{{(sharedContexts ? "int instanceId" : "")}}}) : base({{{HandleLookupName(
+                    internal {{{identifier}}}Index({{{(sharedContexts ? "int instanceId" : "")}}}) : base({{{HandleLookupName(
                     standardIndexName
                 )}}}) { }
 
                     public {{{globalName}}}? Find({{{f.Type.Name}}} key) => FindSingle(key);
                 }
 
-                {{{IndexInstanceCache(f.Identifier + "Index", f.Identifier)}}}
-                public {{{f.Identifier}}}Index {{{f.Identifier}}} => {{{IndexInstance(
-                    f.Identifier
+                {{{IndexInstanceCache(identifier + "Index", identifier)}}}
+                public {{{identifier}}}Index {{{identifier}}} => {{{IndexInstance(
+                    identifier
                 )}}};
                 """;
         }
 
-        foreach (var index in GetIndexes(tableAccessor))
+        foreach (var index in GetNonUniqueIndexes(tableAccessor))
         {
             if (string.IsNullOrEmpty(index.AccessorName))
             {
@@ -1001,12 +1440,40 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     /// <param name="TableName">Fully qualified name of the table type</param>
     /// <param name="TableAccessor">C# source code for the accessor implementation</param>
     /// <param name="Getter">C# property getter for accessing the accessor</param>
+    /// <param name="Outbox">The accessor's outbox, if it's a valid outbox table</param>
     public record struct GeneratedTableAccessor(
         string TableAccessorName,
         string TableName,
         string TableAccessor,
-        string Getter
+        string Getter,
+        OutboxInfo? Outbox = null
     );
+
+    /// <summary>
+    /// An outbox handle's index lookups, forwarded to the table's read-only view so that
+    /// they can't delete or update rows, like Rust's <c>OutboxTable</c>.
+    /// </summary>
+    private IEnumerable<string> GenerateOutboxIndexForwarders(TableAccessor tableAccessor)
+    {
+        var vis = SyntaxFacts.GetText(Visibility);
+        var readOnly = $"global::{ViewHandlesNamespace}.{tableAccessor.Identifier}ReadOnly";
+        yield return sharedContexts
+            ? $"private {readOnly} __ReadOnly => __state.__readOnly ??= new(__state.InstanceId);"
+            : $"private static {readOnly}? __readOnly;\nprivate {readOnly} __ReadOnly => __readOnly ??= new();";
+        foreach (
+            var identifier in GetUniqueIndexes(tableAccessor)
+                .Where(u => u.Constraint.Col.IsEquatable)
+                .Select(u => u.Index.AccessorIdentifier)
+                .Concat(
+                    GetNonUniqueIndexes(tableAccessor)
+                        .Where(i => i.AccessorName.Length != 0)
+                        .Select(i => i.AccessorIdentifier)
+                )
+        )
+        {
+            yield return $"{vis} {readOnly}.{identifier}Index {identifier} => __ReadOnly.{identifier};";
+        }
+    }
 
     /// <summary>
     /// Generates accessor implementations for all table accessors defined in this table declaration.
@@ -1035,6 +1502,23 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     : $"\n\npublic static SpacetimeDB.TableCachePolicy CachePolicy => SpacetimeDB.TableCachePolicy.{v.CachePolicy};";
             var tableArgument = sharedContexts ? "__state" : "";
             var rowArgument = sharedContexts ? "row, __state" : "row";
+            var stateCaches = v.IsOutbox
+                ? $"internal global::{ViewHandlesNamespace}.{accessorIdentifier}ReadOnly? __readOnly;"
+                : string.Join("\n", WritableIndexCaches(v));
+            // Outboxes can only insert, like Rust's `OutboxTable`; the host removes delivered rows.
+            var operations = v.IsOutbox
+                ? $$"""
+                    bool {{iTable}}.Delete({{globalName}} row) => throw new global::System.NotSupportedException("Rows can't be deleted from outbox table {{v.Name}}.");
+                    ulong {{iTable}}.Clear() => throw new global::System.NotSupportedException("Outbox table {{v.Name}} can't be cleared.");
+
+                    {{string.Join("\n", GenerateOutboxIndexForwarders(v))}}
+                    """
+                : $$"""
+                    public bool Delete({{globalName}} row) => {{iTable}}.DoDelete({{rowArgument}});
+                    public ulong Clear() => {{iTable}}.DoClear({{tableArgument}});
+
+                    {{string.Join("\n", GenerateTableAccessorFilters(v))}}
+                    """;
             var instanceMembers = sharedContexts
                 ? $$"""
                     private sealed class __InstanceState(int instanceId) : global::SpacetimeDB.Internal.TableHandle({{HandleLookupName(
@@ -1042,7 +1526,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     )}})
                     {
                         internal readonly int InstanceId = instanceId;
-                        {{string.Join("\n", WritableIndexCaches(v))}}
+                        {{stateCaches}}
                     }
 
                     private static readonly __InstanceState?[] __instances = new __InstanceState?[global::SpacetimeDB.Internal.Module.InstanceCount];
@@ -1092,9 +1576,9 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     Indexes: [
                         {{{string.Join(
                             ",\n",
-                            GetConstraints(v, ColumnAttrs.Unique)
-                            .Select(c => c.ToIndex())
-                            .Concat(GetIndexes(v))
+                            GetUniqueIndexes(v)
+                            .Select(u => u.Index)
+                            .Concat(GetNonUniqueIndexes(v))
                             .Select(b => b.GenerateIndexDef(v))
                         )}}}
                     ],
@@ -1121,13 +1605,11 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 public ulong Count => {{{iTable}}}.DoCount({{{tableArgument}}});
                 public IEnumerable<{{{globalName}}}> Iter() => {{{iTable}}}.DoIter({{{tableArgument}}});
                 public {{{globalName}}} Insert({{{globalName}}} row) => {{{iTable}}}.DoInsert({{{rowArgument}}});
-                public bool Delete({{{globalName}}} row) => {{{iTable}}}.DoDelete({{{rowArgument}}});
-                public ulong Clear() => {{{iTable}}}.DoClear({{{tableArgument}}});
-
-                {{{string.Join("\n", GenerateTableAccessorFilters(v))}}}
+                {{{operations}}}
             }
             """,
-                $"{SyntaxFacts.GetText(Visibility)} global::{TableHandlesNamespace}.{accessorIdentifier} {accessorIdentifier} => {(sharedContexts ? $"global::{TableHandlesNamespace}.{accessorIdentifier}.__GetInstance(global::SpacetimeDB.Internal.Module.GetInstanceId(db))" : "new()")};"
+                $"{SyntaxFacts.GetText(Visibility)} global::{TableHandlesNamespace}.{accessorIdentifier} {accessorIdentifier} => {(sharedContexts ? $"global::{TableHandlesNamespace}.{accessorIdentifier}.__GetInstance(global::SpacetimeDB.Internal.Module.GetInstanceId(db))" : "new()")};",
+                v.Outbox
             );
         }
     }
@@ -1405,10 +1887,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         }
     }
 
-    public record Constraint(ColumnDeclaration Col, int Pos, ColumnAttrs Attr)
-    {
-        public TableIndex ToIndex() => new(new ColumnRef(Pos, Col.Name));
-    }
+    public record Constraint(ColumnDeclaration Col, int Pos, ColumnAttrs Attr);
 
     public IEnumerable<Constraint> GetConstraints(
         TableAccessor tableAccessor,
@@ -1423,6 +1902,31 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         Indexes
             .Concat(Members.SelectMany(m => m.Indexes))
             .Where(i => i.Table == null || i.Table == tableAccessor.Name);
+
+    /// <summary>
+    /// The unique columns with their index. Like Rust, a declared single-column index on a
+    /// unique column is that column's unique index, so it keeps the declared accessor.
+    /// </summary>
+    public IEnumerable<(Constraint Constraint, TableIndex Index)> GetUniqueIndexes(
+        TableAccessor tableAccessor
+    ) =>
+        GetConstraints(tableAccessor, ColumnAttrs.Unique)
+            .Select(c =>
+                (
+                    c,
+                    GetIndexes(tableAccessor)
+                        .FirstOrDefault(i =>
+                            i.Columns.Array.Length == 1 && i.Columns.Array[0].Index == c.Pos
+                        ) ?? new TableIndex(new ColumnRef(c.Pos, c.Col.Name))
+                )
+            );
+
+    /// <summary>The indexes that aren't a unique column's index.</summary>
+    public IEnumerable<TableIndex> GetNonUniqueIndexes(TableAccessor tableAccessor)
+    {
+        var unique = GetUniqueIndexes(tableAccessor).Select(u => u.Index).ToArray();
+        return GetIndexes(tableAccessor).Where(i => !unique.Contains(i));
+    }
 
     // Reimplementation of V8 -> V9 constraint conversion in Rust.
     // See https://github.com/clockworklabs/SpacetimeDB/blob/13a800e9f88cbe885b98eab9e45b0fcfd3ab7014/crates/schema/src/def/validate/v8.rs#L74-L78
@@ -1813,6 +2317,9 @@ record ReducerDeclaration
     public readonly Scope Scope;
     private readonly bool HasWrongSignature;
 
+    /// <summary>The outbox this reducer handles results for.</summary>
+    public readonly OnResultRef? OnResult;
+
     public string Identifier => EscapeIdentifier(Name);
 
     public ReducerDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
@@ -1838,17 +2345,52 @@ record ReducerDeclaration
             HasWrongSignature = true;
         }
 
+        Kind = attr.Kind;
+        var onResultData = method
+            .GetAttributes()
+            .FirstOrDefault(a =>
+                a.AttributeClass?.ToString() == typeof(OnResultAttribute).FullName
+            );
+        if (onResultData?.GetTypeArgument("row") is { } row)
+        {
+            OnResult = new(SymbolToName(row), onResultData.ParseAs<OnResultAttribute>().Table);
+            if (Kind != ReducerKind.UserDefined)
+            {
+                diag.Report(
+                    ErrorDescriptor.InvalidOnResult,
+                    (methodSyntax, "[OnResult] reducers can't be lifecycle reducers.")
+                );
+            }
+            var parameters = method.Parameters;
+            if (
+                parameters.Length != 3
+                || !SymbolEqualityComparer.Default.Equals(parameters[1].Type, row)
+                || SymbolToName(parameters[2].Type)
+                    != "SpacetimeDB.Result<SpacetimeDB.Unit, string>"
+            )
+            {
+                diag.Report(
+                    ErrorDescriptor.InvalidOnResult,
+                    (
+                        methodSyntax,
+                        $"[OnResult] reducers must take (ReducerContext ctx, {SymbolToName(row)} row, Result<Unit, string> result)."
+                    )
+                );
+            }
+        }
+
         Name = method.Name;
         if (Name.Length >= 2)
         {
             var prefix = Name[..2];
-            if (prefix is "__" or "on" or "On")
+            // `On` is reserved for client callbacks; [OnResult] reducers are private, so
+            // clients never see them.
+            if (prefix is "__" || (prefix is "on" or "On" && OnResult is null))
             {
                 diag.Report(ErrorDescriptor.ReducerReservedPrefix, (methodSyntax, prefix));
             }
         }
 
-        Kind = attr.Kind;
         CanonicalName = attr.Name;
         FullName = SymbolToName(method);
         Args = new(
@@ -2393,6 +2935,7 @@ record AssemblyDeclaration(
     string DescriptorTypeName,
     EquatableArray<NamespaceDeclaration> Mounts,
     string RootOnlyDeclarations,
+    string OutboxTables,
     string? CaseConversionPolicy,
     EquatableArray<AssemblyTableAccessor> Tables,
     EquatableArray<AssemblyTableAccessor> ReadOnlyTables,
@@ -2675,17 +3218,9 @@ public class Module : IIncrementalGenerator
                     assembly.Identity.ToString(),
                     descriptor.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
                     new(ImmutableArray<NamespaceDeclaration>.Empty),
-                    descriptor
-                        .GetMembers("RootOnlyDeclarations")
-                        .OfType<IFieldSymbol>()
-                        .FirstOrDefault()
-                        ?.ConstantValue as string
-                        ?? "",
-                    descriptor
-                        .GetMembers("CaseConversionPolicy")
-                        .OfType<IFieldSymbol>()
-                        .FirstOrDefault()
-                        ?.ConstantValue as string,
+                    ReadConstant("RootOnlyDeclarations") ?? "",
+                    ReadConstant("OutboxTables") ?? "",
+                    ReadConstant("CaseConversionPolicy"),
                     ReadAccessors("Tables"),
                     ReadAccessors("ReadOnlyTables"),
                     new(
@@ -2709,6 +3244,10 @@ public class Module : IIncrementalGenerator
                     )
                 )
             );
+
+            string? ReadConstant(string name) =>
+                descriptor.GetMembers(name).OfType<IFieldSymbol>().FirstOrDefault()?.ConstantValue
+                as string;
 
             EquatableArray<AssemblyTableAccessor> ReadAccessors(string container) =>
                 new(
@@ -2770,40 +3309,48 @@ public class Module : IIncrementalGenerator
         Func<T, string> toExportName,
         Func<T, string> toFullName
     )
+        where T : IEquatable<T> =>
+        CollectDistinct(kind, context, source.Collect(), toExportName, toFullName);
+
+    private static IncrementalValueProvider<EquatableArray<T>> CollectDistinct<T>(
+        string kind,
+        IncrementalGeneratorInitializationContext context,
+        IncrementalValueProvider<ImmutableArray<T>> collected,
+        Func<T, string> toExportName,
+        Func<T, string> toFullName
+    )
         where T : IEquatable<T>
     {
-        var results = source
-            .Collect()
-            .Select(
-                (collected, ct) =>
-                    DiagReporter.With(
-                        Location.None,
-                        diag =>
+        var results = collected.Select(
+            (collected, ct) =>
+                DiagReporter.With(
+                    Location.None,
+                    diag =>
+                    {
+                        var grouped = collected
+                            .GroupBy(toExportName)
+                            // Sort tables and reducers by name to match Rust behaviour.
+                            // Not really important outside of testing, but for testing
+                            // it matters because we commit module-bindings
+                            // so they need to match 1:1 between different langs.
+                            .OrderBy(g => g.Key);
+
+                        foreach (var group in grouped.Where(group => group.Count() > 1))
                         {
-                            var grouped = collected
-                                .GroupBy(toExportName)
-                                // Sort tables and reducers by name to match Rust behaviour.
-                                // Not really important outside of testing, but for testing
-                                // it matters because we commit module-bindings
-                                // so they need to match 1:1 between different langs.
-                                .OrderBy(g => g.Key);
-
-                            foreach (var group in grouped.Where(group => group.Count() > 1))
-                            {
-                                diag.Report(
-                                    ErrorDescriptor.DuplicateExport,
-                                    (kind, group.Key, group.Select(toFullName))
-                                );
-                            }
-
-                            return new EquatableArray<T>(
-                                // Only return first item from each group.
-                                // We already reported duplicates ourselves, and don't want MSBuild to produce lots of duplicate errors too.
-                                grouped.Select(Enumerable.First).ToImmutableArray()
+                            diag.Report(
+                                ErrorDescriptor.DuplicateExport,
+                                (kind, group.Key, group.Select(toFullName))
                             );
                         }
-                    )
-            );
+
+                        return new EquatableArray<T>(
+                            // Only return first item from each group.
+                            // We already reported duplicates ourselves, and don't want MSBuild to produce lots of duplicate errors too.
+                            grouped.Select(Enumerable.First).ToImmutableArray()
+                        );
+                    }
+                )
+        );
 
         context.RegisterSourceOutput(
             results,
@@ -2928,7 +3475,7 @@ public class Module : IIncrementalGenerator
             s => s.FullName
         );
 
-        var tables = context
+        var rowTables = context
             .SyntaxProvider.ForAttributeWithMetadataName(
                 fullyQualifiedMetadataName: typeof(TableAttribute).FullName,
                 predicate: (node, ct) => true, // already covered by attribute restrictions
@@ -2938,10 +3485,54 @@ public class Module : IIncrementalGenerator
             .ReportDiagnostics(context)
             .WithTrackingName("SpacetimeDB.Table.Parse");
 
-        tables
-            .Select((t, ct) => t.ToExtensions())
-            .WithTrackingName("SpacetimeDB.Table.GenerateExtensions")
-            .RegisterSourceOutputs(context);
+        var outboxTables = context
+            .SyntaxProvider.ForAttributeWithMetadataName(
+                fullyQualifiedMetadataName: typeof(OutboxAttribute).FullName,
+                predicate: (node, ct) => true,
+                transform: (context, ct) =>
+                    context.ParseWithDiags(diag =>
+                    {
+                        // Leave the struct to its [Table] parse.
+                        if (
+                            context
+                                .TargetSymbol.GetAttributes()
+                                .Any(a =>
+                                    a.AttributeClass?.ToString() == typeof(TableAttribute).FullName
+                                )
+                        )
+                        {
+                            diag.Report(
+                                ErrorDescriptor.InvalidOutboxDeclaration,
+                                (
+                                    context.Attributes[0],
+                                    $"{context.TargetSymbol.Name} has [Outbox], so it can't also have [Table]."
+                                )
+                            );
+                            return null!;
+                        }
+                        return new TableDeclaration(context, diag);
+                    })
+            )
+            .ReportDiagnostics(context)
+            .WithTrackingName("SpacetimeDB.Outbox.Parse");
+
+        foreach (var tables in new[] { rowTables, outboxTables })
+        {
+            tables
+                .Select((t, ct) => t.ToRowExtensions())
+                .WithTrackingName("SpacetimeDB.Table.GenerateExtensions")
+                .RegisterSourceOutputs(context);
+        }
+
+        // Collects both kinds of tables through `map`. Merging only after collecting keeps the
+        // work before it per table.
+        IncrementalValueProvider<ImmutableArray<T>> CollectTables<T>(
+            Func<IncrementalValuesProvider<TableDeclaration>, IncrementalValuesProvider<T>> map
+        ) =>
+            map(rowTables)
+                .Collect()
+                .Combine(map(outboxTables).Collect())
+                .Select((pair, ct) => pair.Left.AddRange(pair.Right));
 
         var viewDeclarations = context
             .SyntaxProvider.ForAttributeWithMetadataName(
@@ -2963,7 +3554,7 @@ public class Module : IIncrementalGenerator
         var tableDecls = CollectDistinct(
             "TableDecl",
             context,
-            tables,
+            CollectTables(t => t),
             t => t.FullName,
             t => t.FullName
         );
@@ -3001,13 +3592,43 @@ public class Module : IIncrementalGenerator
             (ctx, diag) => ctx.ReportDiagnostic(diag)
         );
 
+        context.RegisterSourceOutput(
+            context
+                .SyntaxProvider.ForAttributeWithMetadataName(
+                    fullyQualifiedMetadataName: typeof(OnResultAttribute).FullName,
+                    predicate: (node, ct) => true, // already covered by attribute restrictions
+                    transform: (context, ct) =>
+                        context
+                            .TargetSymbol.GetAttributes()
+                            .Any(a =>
+                                a.AttributeClass?.ToString() == typeof(ReducerAttribute).FullName
+                            )
+                            ? null
+                            : ErrorDescriptor.InvalidOnResult.ToDiag(
+                                (
+                                    (MethodDeclarationSyntax)context.TargetNode,
+                                    "[OnResult] needs [Reducer]."
+                                )
+                            )
+                )
+                .Where(diag => diag is not null),
+            (ctx, diag) => ctx.ReportDiagnostic(diag!)
+        );
+
         var addReducers = CollectDistinct(
             "Reducer",
             context,
             reducers
                 .Select(
                     (r, ct) =>
-                        (r.Name, r.FullName, r.CanonicalName, r.Kind, Class: r.GenerateClass())
+                        (
+                            r.Name,
+                            r.FullName,
+                            r.CanonicalName,
+                            r.Kind,
+                            Class: r.GenerateClass(),
+                            r.OnResult
+                        )
                 )
                 .WithTrackingName("SpacetimeDB.Reducer.GenerateClass"),
             r => r.Name,
@@ -3074,9 +3695,11 @@ public class Module : IIncrementalGenerator
         var tableAccessors = CollectDistinct(
             "Table",
             context,
-            tables
-                .SelectMany((t, ct) => t.GenerateTableAccessors())
-                .WithTrackingName("SpacetimeDB.Table.GenerateTableAccessors"),
+            CollectTables(tables =>
+                tables
+                    .SelectMany((t, ct) => t.GenerateTableAccessors())
+                    .WithTrackingName("SpacetimeDB.Table.GenerateTableAccessors")
+            ),
             v => v.TableAccessorName,
             v => v.TableName
         );
@@ -3084,9 +3707,11 @@ public class Module : IIncrementalGenerator
         var readOnlyAccessors = CollectDistinct(
             "TableReadOnly",
             context,
-            tables
-                .SelectMany((t, ct) => t.GenerateReadOnlyAccessors())
-                .WithTrackingName("SpacetimeDB.Table.GenerateReadOnlyAccessors"),
+            CollectTables(tables =>
+                tables
+                    .SelectMany((t, ct) => t.GenerateReadOnlyAccessors())
+                    .WithTrackingName("SpacetimeDB.Table.GenerateReadOnlyAccessors")
+            ),
             v => v.TableAccessorName + "ReadOnly",
             v => v.TableName
         );
@@ -3117,9 +3742,11 @@ public class Module : IIncrementalGenerator
         var columnDefaultValues = CollectDistinct(
             "ColumnDefaultValues",
             context,
-            tables
-                .SelectMany((t, ct) => t.GenerateDefaultValues())
-                .WithTrackingName("SpacetimeDB.Table.GenerateDefaultValues"),
+            CollectTables(tables =>
+                tables
+                    .SelectMany((t, ct) => t.GenerateDefaultValues())
+                    .WithTrackingName("SpacetimeDB.Table.GenerateDefaultValues")
+            ),
             v => v.TableName + "_" + v.ColumnId,
             v => v.TableName + "_" + v.ColumnId
         );
@@ -3300,6 +3927,17 @@ public class Module : IIncrementalGenerator
                         }
                     }
                 }
+                foreach (var assembly in assemblies)
+                {
+                    if (assembly.OutboxTables.Length != 0)
+                    {
+                        context.ReportDiagnostic(
+                            ErrorDescriptor.DependencyOutboxTables.ToDiag(
+                                (assembly.Identity, assembly.OutboxTables)
+                            )
+                        );
+                    }
+                }
 
                 string Descriptor(string contributor) =>
                     contributor == identity
@@ -3346,6 +3984,38 @@ public class Module : IIncrementalGenerator
                     rlsFilters,
                     columnDefaultValues
                 ) = inputs;
+
+                // Attach each [OnResult] reducer to its outbox table: the outbox accessor whose
+                // row type it names, picked by `Table` when the row type has several.
+                var onResultReducers = new Dictionary<string, string>();
+                foreach (var reducer in addReducers.Where(r => r.OnResult is not null))
+                {
+                    var onResult = reducer.OnResult!;
+                    var outboxes = tableDecls
+                        .Array.Where(t => t.FullName == onResult.Row)
+                        .SelectMany(t => t.TableAccessors)
+                        .Where(a =>
+                            a.IsOutbox && (onResult.Table is null || a.Name == onResult.Table)
+                        )
+                        .Select(a => a.Name)
+                        .ToArray();
+                    var error = outboxes.Length switch
+                    {
+                        0 =>
+                            $"{reducer.FullName} handles results for {onResult.Row}{(onResult.Table is null ? "" : $" in table {onResult.Table}")}, but there's no such outbox table.",
+                        > 1 =>
+                            $"{reducer.FullName} handles results for {onResult.Row}, which has several outbox tables ({string.Join(", ", outboxes)}). Pick one with [OnResult(Table = ...)].",
+                        _ when onResultReducers.TryGetValue(outboxes[0], out var other) =>
+                            $"Outbox table {outboxes[0]} has several [OnResult] reducers: {other} and {reducer.Name}.",
+                        _ => null,
+                    };
+                    if (error is not null)
+                    {
+                        context.ReportDiagnostic(ErrorDescriptor.UnresolvedOnResult.ToDiag(error));
+                        continue;
+                    }
+                    onResultReducers[outboxes[0]] = reducer.Name;
+                }
 
                 if (sharedContexts)
                 {
@@ -3937,6 +4607,10 @@ public class Module : IIncrementalGenerator
                                 addReducers.Where(r => r.Kind != ReducerKind.UserDefined)
                                     .Select(r => $"lifecycle reducer {r.FullName} ({r.Kind})")
                             )), true)}};
+                            public const string OutboxTables = {{SymbolDisplay.FormatLiteral(string.Join(", ",
+                                tableAccessors.Where(t => t.Outbox is not null)
+                                    .Select(t => t.TableAccessorName)
+                            ), true)}};
                             public const int ReducerCount = {{addReducers.Array.Length}};
                             public const int ProcedureCount = {{addProcedures.Array.Length}};
                             public const int HttpHandlerCount = {{addHttpHandlers.Array.Length}};
@@ -4167,6 +4841,14 @@ public class Module : IIncrementalGenerator
                             {{IndentGeneratedCode(string.Join(
                                 "\n",
                                 tableAccessors.Select(t => $"builder.RegisterTable<{t.TableName}, global::{handlesNamespace}.TableHandles.{EscapeIdentifier(t.TableAccessorName)}>();")
+                            ), 8)}}
+                            {{IndentGeneratedCode(string.Join(
+                                "\n",
+                                tableAccessors.Where(t => t.Outbox is not null)
+                                    .Select(t => t.Outbox!.GenerateRegistration(
+                                        t.TableAccessorName,
+                                        onResultReducers.TryGetValue(t.TableAccessorName, out var onResult) ? onResult : null
+                                    ))
                             ), 8)}}
                             {{IndentGeneratedCode((
                                 httpRouters.Array.FirstOrDefault(r => r.IsValid) is { } router

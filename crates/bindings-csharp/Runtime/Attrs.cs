@@ -99,6 +99,32 @@ namespace SpacetimeDB
         /// <para>Defaults to <c>ScheduledAt</c>.</para>
         /// </summary>
         public string ScheduledAt { get; init; } = "ScheduledAt";
+
+        /// <summary>
+        /// Makes this an outbox table: each row is a call to this reducer in another database.
+        /// Set it to a reducer from the receiver bindings.
+        /// </summary>
+        public System.Type? Outbox { get; init; }
+    }
+
+    /// <summary>
+    /// Declares an outbox table for a reducer from the receiver bindings. Put it on an empty
+    /// <c>partial struct</c>: it gets a <c>MsgId</c> message ID column, a <c>Target</c> column,
+    /// and a column for each of the reducer's parameters, named in Pascal case.
+    /// </summary>
+    /// <param name="reducer">A reducer from the receiver bindings, such as <c>typeof(Gw.Reducers.AdmitPlayer)</c>.</param>
+    [AttributeUsage(AttributeTargets.Struct, Inherited = false)]
+    public sealed class OutboxAttribute(System.Type reducer) : Attribute
+    {
+        public System.Type Reducer => reducer;
+
+        /// <inheritdoc cref="TableAttribute.Accessor"/>
+        public string? Accessor { get; init; }
+
+        public string? Name { get; init; }
+
+        /// <inheritdoc cref="TableAttribute.Public"/>
+        public bool Public { get; init; } = false;
     }
 
     /// <summary>
@@ -202,6 +228,27 @@ namespace SpacetimeDB
         internal override Internal.ColumnAttrs Mask => Internal.ColumnAttrs.Default;
     }
 
+    /// <summary>
+    /// Marks the column of an outbox table that holds the identity of the database to call.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Field, AllowMultiple = true)]
+    public sealed class TargetAttribute : Attribute
+    {
+        public string? Table { get; init; }
+    }
+
+    /// <summary>
+    /// Maps a column of an outbox table to a parameter of the remote reducer.
+    /// </summary>
+    /// <param name="name">The remote reducer's parameter name in snake_case, such as <c>player_name</c>.</param>
+    [AttributeUsage(AttributeTargets.Field, AllowMultiple = true)]
+    public sealed class ParamAttribute(string name) : Attribute
+    {
+        public string Name => name;
+
+        public string? Table { get; init; }
+    }
+
     public enum ReducerKind
     {
         /// <summary>
@@ -219,6 +266,19 @@ namespace SpacetimeDB
         public ReducerKind Kind => kind;
 
         public string? Name { get; init; }
+    }
+
+    /// <summary>
+    /// Runs this reducer with the result of each call sent from an outbox table.
+    /// </summary>
+    /// <param name="row">The outbox table's row type.</param>
+    [AttributeUsage(AttributeTargets.Method, Inherited = false)]
+    public sealed class OnResultAttribute(System.Type row) : Attribute
+    {
+        public System.Type Row => row;
+
+        /// <summary>The outbox table's accessor, needed when the row type has more than one outbox table.</summary>
+        public string? Table { get; init; }
     }
 
     [AttributeUsage(AttributeTargets.Method, Inherited = false)]
