@@ -1,5 +1,6 @@
 import type { ConnectionId } from './connection_id.ts';
 import type { Identity } from './identity.ts';
+import type { Infer, TypeBuilder } from './type_builders.ts';
 import type { Prettify } from './type_util.ts';
 import type { TimeDuration } from './time_duration.ts';
 import type { Timestamp } from './timestamp.ts';
@@ -19,6 +20,17 @@ declare const userId: Prettify<UserId>;
 const _brandedIsStillAString: string = userId;
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _brandedKeepsItsBrand: UserId = userId;
+
+// The checks above pass for `never` too, so also assign in the other
+// direction: an existing branded value must be accepted where the prettified
+// type is expected, directly and through a column builder's inferred type.
+declare const existingUserId: UserId;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _brandedAcceptsItself: Prettify<UserId> = existingUserId;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _brandedColumnAcceptsItself: Infer<
+  TypeBuilder<UserId, { tag: 'String' }>
+> = existingUserId;
 
 // Plain primitives round-trip unchanged.
 declare const str: Prettify<string>;
