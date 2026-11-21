@@ -84,7 +84,7 @@ These optimizations apply across all supported languages.
 | Composite | `t.array(element)` | `T<Element>[]` | Array of elements |
 | Composite | `t.option(value)` | `Value \| undefined` | Optional value |
 | Composite | `t.unit()` | `{}` | Zero-field product type |
-| Special | `t.identity()` | `Identity` | Unique identity for authentication |
+| Special | `t.identity()` | `Identity` | [Principal identifier](../00500-authentication/00050-identity.md) for ownership and authorization |
 | Special | `t.connectionId()` | `ConnectionId` | Client connection identifier |
 | Special | `t.timestamp()` | `Timestamp` | Absolute point in time (microseconds since Unix epoch) |
 | Special | `t.timeDuration()` | `TimeDuration` | Relative duration in microseconds |
@@ -107,7 +107,7 @@ These optimizations apply across all supported languages.
 | Composite | `TaggedEnum<Variants>` | Sum type (tagged union) |
 | Composite | `List<T>` | List of elements |
 | Composite | `T?` | Nullable/optional value |
-| Special | `Identity` | Unique identity for authentication |
+| Special | `Identity` | [Principal identifier](../00500-authentication/00050-identity.md) for ownership and authorization |
 | Special | `ConnectionId` | Client connection identifier |
 | Special | `Timestamp` | Absolute point in time (microseconds since Unix epoch) |
 | Special | `TimeDuration` | Relative duration in microseconds |
@@ -127,7 +127,7 @@ These optimizations apply across all supported languages.
 | Composite | `enum` with `#[derive(SpacetimeType)]` | Sum type (tagged union) |
 | Composite | `Vec<T>` | Vector of elements |
 | Composite | `Option<T>` | Optional value |
-| Special | `Identity` | Unique identity for authentication |
+| Special | `Identity` | [Principal identifier](../00500-authentication/00050-identity.md) for ownership and authorization |
 | Special | `ConnectionId` | Client connection identifier |
 | Special | `Timestamp` | Absolute point in time (microseconds since Unix epoch) |
 | Special | `TimeDuration` | Relative duration in microseconds |
@@ -152,7 +152,7 @@ These optimizations apply across all supported languages.
 | Composite | `SPACETIMEDB_ENUM` | Sum type (tagged union) |
 | Composite | `std::vector<T>` | Vector of elements |
 | Composite | `std::optional<T>` | Optional value |
-| Special | `Identity` | Unique identity for authentication |
+| Special | `Identity` | [Principal identifier](../00500-authentication/00050-identity.md) for ownership and authorization |
 | Special | `ConnectionId` | Client connection identifier |
 | Special | `Timestamp` | Absolute point in time (microseconds since Unix epoch) |
 | Special | `TimeDuration` | Relative duration in microseconds |

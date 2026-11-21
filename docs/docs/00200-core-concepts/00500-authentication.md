@@ -142,8 +142,11 @@ module, known as **authentication**. You also need to implement **authorization*
 to control what authenticated users can do within your module.
 
 When a client connects to your SpacetimeDB module, the SpacetimeDB server
-validates the client's OIDC token and extracts the identity claims. These claims
-are then made available to your module's reducers, views and procedures via the context.
+validates the client's OIDC token and derives the caller's
+[`Identity`](./00500-authentication/00050-identity.md) from its issuer and subject.
+Reducers and procedures can access the caller's JWT claims through their context.
+Views cannot access JWT claims or `senderAuth`: a per-user view exposes only the
+caller's `Identity`, and an anonymous view exposes neither.
 
 [Check out the usage guide](./00500-authentication/00500-usage.md) for more
 information on how to access and use authentication claims in your module:

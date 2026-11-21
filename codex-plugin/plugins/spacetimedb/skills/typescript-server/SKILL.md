@@ -215,7 +215,7 @@ const shuffled = ctx.random.shuffle([...cards]);
 new Date(Number(row.createdAt.microsSinceUnixEpoch / 1000n));
 ```
 
-Do not construct `Identity` values from strings (e.g. `'hex' as Identity`): serialization fails and kills the module. Identities come from `ctx.sender` or `t.identity()` columns.
+Do not cast strings to `Identity` (e.g. `'hex' as Identity`): a cast does not construct an SDK value and serialization fails. Identities normally come from `ctx.sender` or `t.identity()` columns. To parse a stored hexadecimal value, import `Identity` from `'spacetimedb'` and use `Identity.fromString(hex)`. Compare values with `a.isEqual(b)` or `a.equals(b)`, not object `===`. Parsing an identity does not authenticate as it or change `ctx.sender`.
 
 Construct a `ConnectionId` from its numeric representation with `new ConnectionId(value)` after importing `ConnectionId` from `spacetimedb`.
 
