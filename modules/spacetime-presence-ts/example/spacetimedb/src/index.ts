@@ -1,0 +1,866 @@
+import { ScheduleAt } from 'spacetimedb';
+import { Router, t } from 'spacetimedb/server';
+import * as presence from '@spacetimedb/presence/submodule';
+import * as auth from '@spacetimedb/auth/submodule';
+import * as rateLimit from '@spacetimedb/rate-limit/submodule';
+import * as files from '@spacetimedb/files/submodule';
+import {
+  RATE_LIMIT_PROFILE,
+  RATE_LIMIT_REACTION,
+  RATE_LIMIT_ROOM_WRITE,
+  RATE_LIMIT_SEND,
+  RATE_LIMIT_TYPING,
+  typingScope,
+} from './chat-policy';
+import { registerChatViews } from './views';
+import { chatSweepTick, spacetimedb } from './schema';
+
+const TYPING_TTL_SECONDS = 4;
+const CHAT_SWEEP_INTERVAL_MICROS = 10n * 1_000_000n;
+const ACTIVITY_CLEANUP_BATCH = 1000;
+const ROOM_NAME_MAX = 64;
+const DISPLAY_NAME_MAX = 32;
+const MESSAGE_MAX = 2000;
+const ATTACHMENT_MAX_BYTES = 4_000_000;
+const ATTACHMENT_MAX_COUNT = 5;
+const ATTACHMENT_MIME_MAX = 128;
+const ATTACHMENT_FILENAME_MAX = 256;
+
+const ALLOWED_REACTIONS = new Set(['+1', 'heart', 'joy', 'wow', 'sad', 'fire']);
+
+const consoleSendMail: auth.SendMailFn = (_ctx, params) => {
+  console.log(
+    `[mail] to=${params.to} subject=${params.subject}\n${params.text}`
+  );
+};
+
+// Chat presence states. The presence-ts submodule's presence_entry.status
+// stays a free-form string (the submodule is consumer-agnostic); chat_user
+// pins down the exact set of values this app supports.
+import { chatUserStatus, message } from './model';
+import {
+  ACTIVITY_WINDOW_MICROS,
+  canModerateRoom,
+  canReadAttachmentFile,
+  deleteMessageTree,
+  enforceChatRateLimit,
+  ensureUser,
+  findMembership,
+  findServerMembership,
+  insertRoom,
+  normalizeText,
+  removeTypingPresence,
+  requireMembership,
+  requireRoom,
+  requireRoomAdminOrOwner,
+  requireServer,
+  requireServerMembership,
+  senderError,
+  updateGlobalPresence,
+  updateRoomActivity,
+  upsertRoomReadCursor,
+  type Tx,
+} from './domain';
+
+export default spacetimedb;
+
+export type { DbSchema } from './schema';
+export const {
+  myServers,
+  serverDirectory,
+  myServerMembers,
+  myChatUsers,
+  myPresenceEntries,
+  myRooms,
+  myRoomMembers,
+  myRoomMessages,
+  myRoomMessageReactions,
+  myMessageThreads,
+  myThreadMessages,
+  myRoomAttachments,
+  myRoomReadCursors,
+  myRateLimitStatus,
+} = registerChatViews(spacetimedb);
+export const init = spacetimedb.init(ctx => {
+  auth.install(ctx.as.auth);
+  rateLimit.install(ctx.as.rateLimit);
+  presence.install(ctx.as.presence);
+  ctx.db.chatSweepTick.insert({
+    scheduledId: 0n,
+    scheduledAt: ScheduleAt.interval(CHAT_SWEEP_INTERVAL_MICROS),
+  });
+});
+
+export const heartbeat = spacetimedb.reducer({}, ctx => {
+  const userId = auth.requireCallerUserId(ctx.as.auth);
+  updateGlobalPresence(ctx, ensureUser(ctx, userId));
+});
+
+export const setDisplayName = spacetimedb.reducer(
+  { displayName: t.string() },
+  (ctx, args) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const displayName = normalizeText(
+      'display_name',
+      args.displayName,
+      DISPLAY_NAME_MAX
+    );
+    const tx: Tx = ctx;
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_PROFILE);
+    const user = ensureUser(tx, userId);
+    tx.db.chatUser.userId.update({ ...user, displayName });
+  }
+);
+
+export const setStatus = spacetimedb.reducer(
+  { status: chatUserStatus },
+  (ctx, args) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const tx: Tx = ctx;
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_PROFILE);
+    const next = { ...ensureUser(tx, userId), status: args.status };
+    tx.db.chatUser.userId.update(next);
+    updateGlobalPresence(tx, next);
+  }
+);
+
+export const createServer = spacetimedb.reducer(
+  { name: t.string() },
+  (ctx, args) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const name = normalizeText('server_name', args.name, ROOM_NAME_MAX);
+    const tx: Tx = ctx;
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
+    ensureUser(tx, userId);
+    const srv = tx.db.server.insert({
+      id: 0n,
+      name,
+      createdByUserId: userId,
+      createdAt: tx.timestamp,
+    });
+    tx.db.serverMember.insert({
+      id: 0n,
+      serverId: srv.id,
+      userId,
+      role: 'owner',
+      joinedAt: tx.timestamp,
+    });
+    insertRoom(tx, {
+      serverId: srv.id,
+      name: 'general',
+      isPrivate: false,
+      createdByUserId: userId,
+      role: 'owner',
+    });
+  }
+);
+
+export const renameServer = spacetimedb.reducer(
+  { serverId: t.u64(), name: t.string() },
+  (ctx, args) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const name = normalizeText('server_name', args.name, ROOM_NAME_MAX);
+    const tx: Tx = ctx;
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
+    const srv = requireServer(tx, args.serverId);
+    if (srv.createdByUserId !== userId) senderError('chat.not_server_owner');
+    tx.db.server.id.update({ ...srv, name });
+  }
+);
+
+export const deleteServer = spacetimedb.reducer(
+  { serverId: t.u64() },
+  (ctx, { serverId }) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const tx: Tx = ctx;
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
+    const srv = requireServer(tx, serverId);
+    if (srv.createdByUserId !== userId) senderError('chat.not_server_owner');
+
+    for (const r of [...tx.db.room.serverId.filter(serverId)]) {
+      for (const m of [...tx.db.message.roomId.filter(r.id)]) {
+        deleteMessageTree(tx, m);
+      }
+      for (const c of [...tx.db.roomReadCursor.roomId.filter(r.id)])
+        tx.db.roomReadCursor.id.delete(c.id);
+      for (const mem of [...tx.db.roomMember.roomId.filter(r.id)])
+        tx.db.roomMember.id.delete(mem.id);
+      for (const ev of [...tx.db.roomActivityEvent.roomId.filter(r.id)])
+        tx.db.roomActivityEvent.id.delete(ev.id);
+      tx.db.room.id.delete(r.id);
+    }
+    for (const sm of [...tx.db.serverMember.serverId.filter(serverId)])
+      tx.db.serverMember.id.delete(sm.id);
+    tx.db.server.id.delete(serverId);
+  }
+);
+
+export const joinServer = spacetimedb.reducer(
+  { serverId: t.u64() },
+  (ctx, { serverId }) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const tx: Tx = ctx;
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
+    ensureUser(tx, userId);
+    requireServer(tx, serverId);
+    if (findServerMembership(tx, serverId, userId)) return;
+    tx.db.serverMember.insert({
+      id: 0n,
+      serverId,
+      userId,
+      role: 'member',
+      joinedAt: tx.timestamp,
+    });
+  }
+);
+
+export const leaveServer = spacetimedb.reducer(
+  { serverId: t.u64() },
+  (ctx, { serverId }) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const tx: Tx = ctx;
+    const srv = requireServer(tx, serverId);
+    if (srv.createdByUserId === userId)
+      senderError('chat.owner_cannot_leave_server');
+    const mem = requireServerMembership(tx, serverId, userId);
+    tx.db.serverMember.id.delete(mem.id);
+    for (const r of [...tx.db.room.serverId.filter(serverId)]) {
+      const rm = findMembership(tx, r.id, userId);
+      if (rm) tx.db.roomMember.id.delete(rm.id);
+    }
+  }
+);
+
+export const createRoom = spacetimedb.reducer(
+  {
+    serverId: t.u64(),
+    name: t.string(),
+    isPrivate: t.bool(),
+    category: t.option(t.string()),
+  },
+  (ctx, args) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const name = normalizeText('room_name', args.name, ROOM_NAME_MAX);
+    const category = args.category
+      ? normalizeText('room_category', args.category, ROOM_NAME_MAX)
+      : undefined;
+    const tx: Tx = ctx;
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
+    ensureUser(tx, userId);
+    requireServer(tx, args.serverId);
+    requireServerMembership(tx, args.serverId, userId);
+    insertRoom(tx, {
+      serverId: args.serverId,
+      name,
+      category,
+      isPrivate: args.isPrivate,
+      createdByUserId: userId,
+      role: 'owner',
+    });
+  }
+);
+
+export const joinRoom = spacetimedb.reducer(
+  { roomId: t.u64() },
+  (ctx, { roomId }) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const tx: Tx = ctx;
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
+    ensureUser(tx, userId);
+    const targetRoom = requireRoom(tx, roomId);
+    if (targetRoom.isPrivate) senderError('chat.room_private');
+    requireServerMembership(tx, targetRoom.serverId, userId);
+    const existing = findMembership(tx, roomId, userId);
+    if (existing) return;
+    tx.db.roomMember.insert({
+      id: 0n,
+      roomId,
+      userId,
+      role: 'member',
+      joinedAt: tx.timestamp,
+    });
+  }
+);
+
+// Room admins add server members to a room; this is how private rooms gain
+// members.
+export const addRoomMember = spacetimedb.reducer(
+  { roomId: t.u64(), userId: t.string() },
+  (ctx, args) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const tx: Tx = ctx;
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
+    const targetRoom = requireRoomAdminOrOwner(tx, args.roomId, userId);
+    requireServerMembership(tx, targetRoom.serverId, args.userId);
+    if (findMembership(tx, args.roomId, args.userId)) return;
+    tx.db.roomMember.insert({
+      id: 0n,
+      roomId: args.roomId,
+      userId: args.userId,
+      role: 'member',
+      joinedAt: tx.timestamp,
+    });
+  }
+);
+
+export const leaveRoom = spacetimedb.reducer(
+  { roomId: t.u64() },
+  (ctx, { roomId }) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const tx: Tx = ctx;
+    requireRoom(tx, roomId);
+    const membership = requireMembership(tx, roomId, userId);
+    tx.db.roomMember.id.delete(membership.id);
+    removeTypingPresence(tx, roomId, userId);
+  }
+);
+
+export const renameRoom = spacetimedb.reducer(
+  { roomId: t.u64(), name: t.string() },
+  (ctx, args) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const name = normalizeText('room_name', args.name, ROOM_NAME_MAX);
+    const tx: Tx = ctx;
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
+    const room = requireRoomAdminOrOwner(tx, args.roomId, userId);
+    tx.db.room.id.update({ ...room, name });
+  }
+);
+
+export const setRoomCategory = spacetimedb.reducer(
+  { roomId: t.u64(), category: t.option(t.string()) },
+  (ctx, args) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const category = args.category
+      ? normalizeText('room_category', args.category, ROOM_NAME_MAX)
+      : undefined;
+    const tx: Tx = ctx;
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
+    const room = requireRoomAdminOrOwner(tx, args.roomId, userId);
+    tx.db.room.id.update({ ...room, category });
+  }
+);
+
+export const setRoomPrivacy = spacetimedb.reducer(
+  { roomId: t.u64(), isPrivate: t.bool() },
+  (ctx, args) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const tx: Tx = ctx;
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
+    const room = requireRoomAdminOrOwner(tx, args.roomId, userId);
+    tx.db.room.id.update({ ...room, isPrivate: args.isPrivate });
+  }
+);
+
+export const deleteRoom = spacetimedb.reducer(
+  { roomId: t.u64() },
+  (ctx, { roomId }) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const tx: Tx = ctx;
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_ROOM_WRITE);
+    requireRoomAdminOrOwner(tx, roomId, userId);
+
+    for (const m of [...tx.db.message.roomId.filter(roomId)]) {
+      deleteMessageTree(tx, m);
+    }
+    for (const c of [...tx.db.roomReadCursor.roomId.filter(roomId)])
+      tx.db.roomReadCursor.id.delete(c.id);
+    for (const mem of [...tx.db.roomMember.roomId.filter(roomId)])
+      tx.db.roomMember.id.delete(mem.id);
+    for (const ev of [...tx.db.roomActivityEvent.roomId.filter(roomId)])
+      tx.db.roomActivityEvent.id.delete(ev.id);
+    tx.db.room.id.delete(roomId);
+  }
+);
+
+const attachmentInput = t.object('AttachmentInput', {
+  mimeType: t.string(),
+  filename: t.option(t.string()),
+  bytes: t.array(t.u8()),
+});
+
+const attachmentFileResult = t.object('AttachmentFileResult', {
+  filename: t.option(t.string()),
+  mimeType: t.string(),
+  bytes: t.array(t.u8()),
+});
+
+export const getAttachmentFile = spacetimedb.procedure(
+  { fileId: t.u64() },
+  attachmentFileResult,
+  (ctx, args) =>
+    ctx.withTx(tx => {
+      const userId = auth.getCallerUserId(tx.as.auth);
+      if (!userId || !canReadAttachmentFile(tx, userId, args.fileId)) {
+        senderError('chat.attachment_not_found');
+      }
+      const file = tx.db.files.file.id.find(args.fileId);
+      if (!file) senderError('chat.attachment_not_found');
+      const blob = tx.db.files.fileBlob.fileId.find(args.fileId);
+      if (!blob) senderError('chat.attachment_not_found');
+      let filename: string | undefined;
+      for (const a of tx.db.attachment.fileId.filter(args.fileId)) {
+        filename = a.filename ?? undefined;
+        break;
+      }
+      return {
+        filename,
+        mimeType: file.mimeType,
+        bytes: blob.bytes,
+      };
+    })
+);
+
+export const sendMessage = spacetimedb.reducer(
+  {
+    roomId: t.u64(),
+    content: t.string(),
+    replyToMessageId: t.option(t.u64()),
+    attachments: t.array(attachmentInput),
+  },
+  (ctx, args) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const trimmedContent = args.content.trim().replace(/\s+/g, ' ');
+    const hasAttachments = args.attachments.length > 0;
+    if (!hasAttachments && trimmedContent.length === 0)
+      senderError('chat.invalid_message');
+    if (trimmedContent.length > MESSAGE_MAX)
+      senderError('chat.message_too_long');
+
+    if (args.attachments.length > ATTACHMENT_MAX_COUNT) {
+      senderError(
+        `chat.too_many_attachments:${args.attachments.length}/${ATTACHMENT_MAX_COUNT}`
+      );
+    }
+    for (const a of args.attachments) {
+      if (a.mimeType.length === 0 || a.mimeType.length > ATTACHMENT_MIME_MAX)
+        senderError('chat.invalid_attachment_mime');
+      if (
+        a.filename !== undefined &&
+        a.filename.length > ATTACHMENT_FILENAME_MAX
+      )
+        senderError('chat.invalid_attachment_filename');
+      if (a.bytes.length === 0) senderError('chat.empty_attachment');
+      if (a.bytes.length > ATTACHMENT_MAX_BYTES)
+        senderError(
+          `chat.attachment_too_large:${a.bytes.length}/${ATTACHMENT_MAX_BYTES}`
+        );
+    }
+
+    const tx: Tx = ctx;
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_SEND);
+    ensureUser(tx, userId);
+    requireRoom(tx, args.roomId);
+    requireMembership(tx, args.roomId, userId);
+
+    if (args.replyToMessageId !== undefined) {
+      const parent = tx.db.message.id.find(args.replyToMessageId);
+      if (!parent || parent.roomId !== args.roomId)
+        senderError('chat.invalid_reply_target');
+    }
+
+    const msg = tx.db.message.insert({
+      id: 0n,
+      roomId: args.roomId,
+      authorUserId: userId,
+      content: trimmedContent,
+      createdAt: tx.timestamp,
+      editedAt: undefined,
+      replyToMessageId: args.replyToMessageId,
+      pinnedAt: undefined,
+      pinnedByUserId: undefined,
+    });
+
+    for (let i = 0; i < args.attachments.length; i++) {
+      const a = args.attachments[i]!;
+      const path = `/room/${args.roomId}/msg/${msg.id}/${i}`;
+      const fileId = files.uploadFile(
+        tx.as.files,
+        {
+          path,
+          mimeType: a.mimeType,
+          bytes: a.bytes,
+          visibility: files.FILE_VISIBILITY_OWNER,
+        },
+        userId
+      );
+      tx.db.attachment.insert({
+        id: 0n,
+        messageId: msg.id,
+        fileId,
+        ownerUserId: userId,
+        ordinal: i,
+        filename: a.filename,
+        createdAt: tx.timestamp,
+      });
+    }
+
+    tx.db.roomActivityEvent.insert({
+      id: 0n,
+      roomId: args.roomId,
+      createdAt: tx.timestamp,
+    });
+    updateRoomActivity(tx, args.roomId);
+    removeTypingPresence(tx, args.roomId, userId);
+  }
+);
+
+export const editMessage = spacetimedb.reducer(
+  { messageId: t.u64(), content: t.string() },
+  (ctx, args) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const content = normalizeText('message', args.content, MESSAGE_MAX);
+    const tx: Tx = ctx;
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_SEND);
+    ensureUser(tx, userId);
+    const msg = tx.db.message.id.find(args.messageId);
+    if (!msg) senderError('chat.message_not_found');
+    requireMembership(tx, msg.roomId, userId);
+    if (msg.authorUserId !== userId) senderError('chat.not_message_author');
+    tx.db.message.id.update({
+      ...msg,
+      content,
+      editedAt: tx.timestamp,
+    });
+  }
+);
+
+export const deleteMessage = spacetimedb.reducer(
+  { messageId: t.u64() },
+  (ctx, args) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const tx: Tx = ctx;
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_SEND);
+    ensureUser(tx, userId);
+    const msg = tx.db.message.id.find(args.messageId);
+    if (!msg) senderError('chat.message_not_found');
+    requireMembership(tx, msg.roomId, userId);
+    if (msg.authorUserId !== userId && !canModerateRoom(tx, msg.roomId, userId))
+      senderError('chat.not_message_author');
+    deleteMessageTree(tx, msg);
+  }
+);
+
+export const sendThreadMessage = spacetimedb.reducer(
+  { rootMessageId: t.u64(), content: t.string() },
+  (ctx, args) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const content = normalizeText('thread_message', args.content, MESSAGE_MAX);
+    const tx: Tx = ctx;
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_SEND);
+    ensureUser(tx, userId);
+    const root = tx.db.message.id.find(args.rootMessageId);
+    if (!root) senderError('chat.message_not_found');
+    requireMembership(tx, root.roomId, userId);
+
+    let thread = tx.db.messageThread.rootMessageId.find(root.id);
+    if (!thread) {
+      thread = tx.db.messageThread.insert({
+        id: 0n,
+        rootMessageId: root.id,
+        roomId: root.roomId,
+        createdByUserId: userId,
+        createdAt: tx.timestamp,
+        updatedAt: tx.timestamp,
+      });
+    } else {
+      tx.db.messageThread.id.update({ ...thread, updatedAt: tx.timestamp });
+    }
+
+    tx.db.threadMessage.insert({
+      id: 0n,
+      threadId: thread.id,
+      authorUserId: userId,
+      content,
+      createdAt: tx.timestamp,
+      editedAt: undefined,
+    });
+  }
+);
+
+export const editThreadMessage = spacetimedb.reducer(
+  { threadMessageId: t.u64(), content: t.string() },
+  (ctx, args) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const content = normalizeText('thread_message', args.content, MESSAGE_MAX);
+    const tx: Tx = ctx;
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_SEND);
+    ensureUser(tx, userId);
+    const msg = tx.db.threadMessage.id.find(args.threadMessageId);
+    if (!msg) senderError('chat.thread_message_not_found');
+    const thread = tx.db.messageThread.id.find(msg.threadId);
+    if (!thread) senderError('chat.thread_not_found');
+    requireMembership(tx, thread.roomId, userId);
+    if (msg.authorUserId !== userId) senderError('chat.not_message_author');
+    tx.db.threadMessage.id.update({ ...msg, content, editedAt: tx.timestamp });
+  }
+);
+
+export const deleteThreadMessage = spacetimedb.reducer(
+  { threadMessageId: t.u64() },
+  (ctx, args) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const tx: Tx = ctx;
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_SEND);
+    ensureUser(tx, userId);
+    const msg = tx.db.threadMessage.id.find(args.threadMessageId);
+    if (!msg) senderError('chat.thread_message_not_found');
+    const thread = tx.db.messageThread.id.find(msg.threadId);
+    if (!thread) senderError('chat.thread_not_found');
+    requireMembership(tx, thread.roomId, userId);
+    if (
+      msg.authorUserId !== userId &&
+      !canModerateRoom(tx, thread.roomId, userId)
+    )
+      senderError('chat.not_message_author');
+    tx.db.threadMessage.id.delete(msg.id);
+    let latestAt = thread.createdAt;
+    let remaining = 0;
+    for (const row of tx.db.threadMessage.threadId.filter(thread.id)) {
+      remaining++;
+      if (
+        (row.createdAt.microsSinceUnixEpoch as bigint) >
+        (latestAt.microsSinceUnixEpoch as bigint)
+      )
+        latestAt = row.createdAt;
+    }
+    if (remaining === 0) tx.db.messageThread.id.delete(thread.id);
+    else tx.db.messageThread.id.update({ ...thread, updatedAt: latestAt });
+  }
+);
+
+export const startTyping = spacetimedb.reducer(
+  { roomId: t.u64() },
+  (ctx, { roomId }) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const tx: Tx = ctx;
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_TYPING);
+    const user = ensureUser(tx, userId);
+    requireRoom(tx, roomId);
+    requireMembership(tx, roomId, userId);
+    if (user.status.tag === 'Invisible') return;
+    presence.upsertPresence(tx.as.presence, {
+      scope: typingScope(roomId),
+      subject: userId,
+      status: 'typing',
+      ttlSeconds: TYPING_TTL_SECONDS,
+    });
+  }
+);
+
+export const stopTyping = spacetimedb.reducer(
+  { roomId: t.u64() },
+  (ctx, { roomId }) => {
+    removeTypingPresence(ctx, roomId, auth.requireCallerUserId(ctx.as.auth));
+  }
+);
+
+export const markRoomRead = spacetimedb.reducer(
+  { roomId: t.u64() },
+  (ctx, { roomId }) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const tx: Tx = ctx;
+    requireRoom(tx, roomId);
+    requireMembership(tx, roomId, userId);
+    let latestMessageId = 0n;
+    let latestMicros = 0n;
+    for (const msg of tx.db.message.roomId.filter(roomId)) {
+      const micros = msg.createdAt.microsSinceUnixEpoch as bigint;
+      if (micros > latestMicros) {
+        latestMicros = micros;
+        latestMessageId = msg.id;
+      }
+    }
+    upsertRoomReadCursor(tx, roomId, userId, latestMessageId);
+  }
+);
+
+export const toggleReaction = spacetimedb.reducer(
+  { messageId: t.u64(), emoji: t.string() },
+  (ctx, args) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const emoji = args.emoji.trim();
+    if (!ALLOWED_REACTIONS.has(emoji))
+      senderError('chat.invalid_reaction_emoji');
+    const tx: Tx = ctx;
+    enforceChatRateLimit(tx, userId, RATE_LIMIT_REACTION);
+    ensureUser(tx, userId);
+    const msg = tx.db.message.id.find(args.messageId);
+    if (!msg) senderError('chat.message_not_found');
+    requireMembership(tx, msg.roomId, userId);
+    for (const r of tx.db.messageReaction.messageId.filter(msg.id)) {
+      if (r.userId === userId && r.emoji === emoji) {
+        tx.db.messageReaction.id.delete(r.id);
+        return;
+      }
+    }
+    tx.db.messageReaction.insert({
+      id: 0n,
+      messageId: msg.id,
+      userId,
+      emoji,
+      createdAt: tx.timestamp,
+    });
+  }
+);
+
+export const pinMessage = spacetimedb.reducer(
+  { messageId: t.u64() },
+  (ctx, args) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const tx: Tx = ctx;
+    const msg = tx.db.message.id.find(args.messageId);
+    if (!msg) senderError('chat.message_not_found');
+    requireMembership(tx, msg.roomId, userId);
+    if (msg.pinnedAt) return;
+    tx.db.message.id.update({
+      ...msg,
+      pinnedAt: tx.timestamp,
+      pinnedByUserId: userId,
+    });
+  }
+);
+
+export const unpinMessage = spacetimedb.reducer(
+  { messageId: t.u64() },
+  (ctx, args) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const tx: Tx = ctx;
+    const msg = tx.db.message.id.find(args.messageId);
+    if (!msg) senderError('chat.message_not_found');
+    requireMembership(tx, msg.roomId, userId);
+    if (!msg.pinnedAt) return;
+    tx.db.message.id.update({
+      ...msg,
+      pinnedAt: undefined,
+      pinnedByUserId: undefined,
+    });
+  }
+);
+
+const SEARCH_MAX_RESULTS = 50;
+const SEARCH_QUERY_MAX = 200;
+export const searchMessages = spacetimedb.procedure(
+  { roomId: t.u64(), query: t.string() },
+  t.array(message.rowType),
+  (ctx, args) => {
+    const userId = auth.requireCallerUserId(ctx.as.auth);
+    const q = args.query.trim().slice(0, SEARCH_QUERY_MAX).toLowerCase();
+    if (q.length === 0) return [];
+    return ctx.withTx(tx => {
+      requireMembership(tx, args.roomId, userId);
+      const matches = [...tx.db.message.roomId.filter(args.roomId)].filter(m =>
+        m.content.toLowerCase().includes(q)
+      );
+      matches.sort((a, b) =>
+        b.createdAt.microsSinceUnixEpoch < a.createdAt.microsSinceUnixEpoch
+          ? -1
+          : 1
+      );
+      return matches.slice(0, SEARCH_MAX_RESULTS);
+    });
+  }
+);
+
+export const chatSweep = spacetimedb.reducer(
+  { onSchedule: chatSweepTick },
+  { arg: chatSweepTick.rowType },
+  ctx => {
+    const cutoff = ctx.timestamp.microsSinceUnixEpoch - ACTIVITY_WINDOW_MICROS;
+    let deleted = 0;
+    const affectedRoomIds = new Set<bigint>();
+    for (const evt of ctx.db.roomActivityEvent.iter()) {
+      if (deleted >= ACTIVITY_CLEANUP_BATCH) break;
+      if ((evt.createdAt.microsSinceUnixEpoch as bigint) >= cutoff) continue;
+      affectedRoomIds.add(evt.roomId);
+      ctx.db.roomActivityEvent.delete(evt);
+      deleted++;
+    }
+
+    for (const roomId of affectedRoomIds) {
+      updateRoomActivity(ctx, roomId);
+    }
+  }
+);
+
+const authHttp = auth.client({
+  sendMail: consoleSendMail,
+  appName: 'Chat',
+  emailVerifiedRedirect: '/?verified=1',
+});
+
+export const authPasswordSignup = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.passwordSignup(ctx.as.auth, req)
+);
+export const authPasswordLogin = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.passwordLogin(ctx.as.auth, req)
+);
+export const authMe = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.me(ctx.as.auth, req)
+);
+export const authLogout = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.logout(ctx.as.auth, req)
+);
+export const authRefresh = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.refresh(ctx.as.auth, req)
+);
+export const authGoogleStart = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.googleStart(ctx.as.auth, req)
+);
+export const authGoogleCallback = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.googleCallback(ctx.as.auth, req)
+);
+export const authGithubStart = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.githubStart(ctx.as.auth, req)
+);
+export const authGithubCallback = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.githubCallback(ctx.as.auth, req)
+);
+export const authPasswordForgot = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.forgotPassword(ctx.as.auth, req)
+);
+export const authPasswordReset = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.resetPassword(ctx.as.auth, req)
+);
+export const authEmailVerifyRequest = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.emailVerifyRequest(ctx.as.auth, req)
+);
+export const authEmailVerify = spacetimedb.httpHandler((ctx, req) =>
+  authHttp.emailVerify(ctx.as.auth, req)
+);
+
+// Attachments are readable by their owner and by members of the room they
+// were posted in; the request's session cookie or bearer token identifies the
+// caller.
+export const fileServe = spacetimedb.httpHandler((ctx, req) => {
+  const userId = ctx.withTx(tx => auth.requestUserId(tx.as.auth, req));
+  return files.serveFile(
+    ctx.as.files,
+    req,
+    file =>
+      userId !== undefined &&
+      (file.ownerUserId === userId ||
+        ctx.withTx(tx => canReadAttachmentFile(tx, userId, file.id)))
+  );
+});
+
+export const router = spacetimedb.httpRouter(
+  new Router()
+    .post('/auth/password/signup', authPasswordSignup)
+    .post('/auth/password/login', authPasswordLogin)
+    .post('/auth/session/refresh', authRefresh)
+    .get('/auth/me', authMe)
+    .post('/auth/logout', authLogout)
+    .get('/auth/google/start', authGoogleStart)
+    .get('/auth/google/callback', authGoogleCallback)
+    .get('/auth/github/start', authGithubStart)
+    .get('/auth/github/callback', authGithubCallback)
+    .post('/auth/password/forgot', authPasswordForgot)
+    .post('/auth/password/reset', authPasswordReset)
+    .post('/auth/email/verify-request', authEmailVerifyRequest)
+    .get('/auth/email/verify', authEmailVerify)
+    .get('/files', fileServe)
+    .get('/files/', fileServe)
+    .head('/files/', fileServe)
+    .head('/files', fileServe)
+);
