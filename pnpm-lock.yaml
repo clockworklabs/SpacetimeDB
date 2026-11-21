@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@signalwire/docusaurus-plugin-llms-txt@1.2.2':
+    hash: 3ed49912d510efcea32486fa5a443b7327aef91e35a4f996e0e00dabf04c0da6
+    path: patches/@signalwire__docusaurus-plugin-llms-txt@1.2.2.patch
+
 importers:
 
   .:
@@ -293,7 +298,7 @@ importers:
         version: 3.9.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@signalwire/docusaurus-plugin-llms-txt':
         specifier: ^1.2.2
-        version: 1.2.2(@docusaurus/core@3.9.2(@mdx-js/react@3.1.1(@types/react@18.3.23)(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3))
+        version: 1.2.2(patch_hash=3ed49912d510efcea32486fa5a443b7327aef91e35a4f996e0e00dabf04c0da6)(@docusaurus/core@3.9.2(@mdx-js/react@3.1.1(@types/react@18.3.23)(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3))
       '@types/react':
         specifier: ^18.3.23
         version: 18.3.23
@@ -22052,7 +22057,7 @@ snapshots:
 
   '@sideway/pinpoint@2.0.0': {}
 
-  '@signalwire/docusaurus-plugin-llms-txt@1.2.2(@docusaurus/core@3.9.2(@mdx-js/react@3.1.1(@types/react@18.3.23)(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3))':
+  '@signalwire/docusaurus-plugin-llms-txt@1.2.2(patch_hash=3ed49912d510efcea32486fa5a443b7327aef91e35a4f996e0e00dabf04c0da6)(@docusaurus/core@3.9.2(@mdx-js/react@3.1.1(@types/react@18.3.23)(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3))':
     dependencies:
       '@docusaurus/core': 3.9.2(@mdx-js/react@3.1.1(@types/react@18.3.23)(react@18.3.1))(debug@4.4.3)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.6.3)
       fs-extra: 11.3.2

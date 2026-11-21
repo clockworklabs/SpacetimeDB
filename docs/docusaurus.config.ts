@@ -319,7 +319,10 @@ const config: Config = {
         depth: 2,
         content: {
           enableLlmsFullTxt: true,
-          enableMarkdownFiles: false,
+          enableMarkdownFiles: true,
+          // Relative links in llms.txt drop the /docs/ baseUrl. Absolute links
+          // inside pages rely on patches/@signalwire__docusaurus-plugin-llms-txt*.
+          relativePaths: false,
           includeVersionedDocs: false,
         },
       },
