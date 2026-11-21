@@ -63,6 +63,9 @@ function build(options?: {
     .withUri('ws://127.0.0.1:1234')
     .withDatabaseName('db')
     .withWSFn(factory.openWebSocket)
+    // These tests assert on exact outgoing messages; pinging is covered by
+    // db_connection_ping.test.ts.
+    .withPingInterval(0)
     .onConnect((_conn, identity, token) => connects.push({ identity, token }))
     .onAutomaticReconnect((_conn, identity, token) =>
       automaticReconnects.push({ identity, token })

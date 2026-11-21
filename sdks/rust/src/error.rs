@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use thiserror::Error;
 
@@ -7,6 +7,16 @@ use thiserror::Error;
 pub enum Error {
     #[error("Connection is already disconnected or has terminated normally")]
     Disconnected,
+
+    #[error("Connection has not been established yet")]
+    NotYetConnected,
+
+    /// The connection stopped answering Pings, so the SDK treated it as lost.
+    ///
+    /// Only the `browser` build detects this:
+    /// native builds rely on the WebSocket's own idle check instead.
+    #[error("Connection unresponsive: no Pong for {waited:?}")]
+    ConnectionUnresponsive { waited: Duration },
 
     #[error("Failed to connect: {source}")]
     FailedToConnect {

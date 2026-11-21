@@ -337,3 +337,20 @@ fn unreal_reconnect_cache_replay() {
 fn unreal_reconnect_live_server() {
     make_test("ReconnectLiveServer").run();
 }
+
+// Network stats and Ping/Pong, driven through the estimator and the reconnect tests' fake socket.
+#[test]
+#[serial(Group1)]
+fn unreal_network_stats_tracker() {
+    make_test("NetworkStatsTracker").run();
+}
+#[test]
+#[serial(Group1)]
+fn unreal_network_stats_pong_wait() {
+    make_test("NetworkStatsPongWait").run();
+}
+#[test]
+#[serial(Group1)]
+fn unreal_ping_connection() {
+    make_test("PingConnection").run();
+}

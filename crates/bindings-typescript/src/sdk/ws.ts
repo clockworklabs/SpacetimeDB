@@ -26,6 +26,8 @@ async function resolveWS(): Promise<typeof WebSocket> {
   }
 }
 
+export type WebSocketMessage = { data: Uint8Array; receivedAt?: number };
+
 export interface WebSocketAdapter {
   readonly protocol: string;
   /**
@@ -45,7 +47,13 @@ export interface WebSocketAdapter {
 
   set onclose(handler: (ev: CloseEvent) => void);
   set onopen(handler: () => void);
-  set onmessage(handler: (msg: { data: Uint8Array }) => void);
+  /**
+   * `receivedAt` is the `performance.now()` reading (in milliseconds) taken
+   * when the frame arrived on the socket, before any decompression or
+   * queueing. It is optional so existing custom adapters stay valid; when it
+   * is absent, the connection takes its own reading on delivery.
+   */
+  set onmessage(handler: (msg: WebSocketMessage) => void);
   set onerror(handler: (msg: ErrorEvent) => void);
 }
 

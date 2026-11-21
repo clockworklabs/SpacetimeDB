@@ -16,10 +16,10 @@ struct SPACETIMEDBSDK_API FSpacetimeDbSdkResultQueryRowsString
     bool bIsOk = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB", meta = (EditCondition = "bIsOk"))
-    FQueryRowsType OkValue;
+    FQueryRowsType OkValue = {};
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB", meta = (EditCondition = "!bIsOk"))
-    FString ErrValue;
+    FString ErrValue = {};
 
     FSpacetimeDbSdkResultQueryRowsString() = default;
 

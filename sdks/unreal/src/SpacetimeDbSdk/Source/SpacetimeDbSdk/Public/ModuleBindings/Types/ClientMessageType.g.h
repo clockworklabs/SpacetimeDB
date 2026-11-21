@@ -4,12 +4,13 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
+#include "ModuleBindings/Types/CallReducerType.g.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "ModuleBindings/Types/UnsubscribeType.g.h"
-#include "ModuleBindings/Types/CallReducerType.g.h"
 #include "ModuleBindings/Types/CallProcedureType.g.h"
-#include "ModuleBindings/Types/SubscribeType.g.h"
 #include "ModuleBindings/Types/SubscribeBatchType.g.h"
+#include "ModuleBindings/Types/SubscribeType.g.h"
+#include "ModuleBindings/Types/PingType.g.h"
 #include "ModuleBindings/Types/OneOffQueryType.g.h"
 #include "ClientMessageType.g.generated.h"
 
@@ -21,7 +22,8 @@ enum class EClientMessageTag : uint8
     OneOffQuery,
     CallReducer,
     CallProcedure,
-    SubscribeBatch
+    SubscribeBatch,
+    Ping
 };
 
 USTRUCT(BlueprintType)
@@ -32,7 +34,7 @@ struct SPACETIMEDBSDK_API FClientMessageType
 public:
     FClientMessageType() = default;
 
-    TVariant<FCallProcedureType, FOneOffQueryType, FSubscribeType, FUnsubscribeType, FCallReducerType, FSubscribeBatchType> MessageData;
+    TVariant<FPingType, FCallProcedureType, FOneOffQueryType, FSubscribeType, FUnsubscribeType, FCallReducerType, FSubscribeBatchType> MessageData;
 
     UPROPERTY(BlueprintReadOnly)
     EClientMessageTag Tag = static_cast<EClientMessageTag>(0);
@@ -85,6 +87,14 @@ public:
         return Obj;
     }
 
+    static FClientMessageType Ping(const FPingType& Value)
+    {
+        FClientMessageType Obj;
+        Obj.Tag = EClientMessageTag::Ping;
+        Obj.MessageData.Set<FPingType>(Value);
+        return Obj;
+    }
+
     FORCEINLINE bool IsSubscribe() const { return Tag == EClientMessageTag::Subscribe; }
 
     FORCEINLINE FSubscribeType GetAsSubscribe() const
@@ -133,6 +143,14 @@ public:
         return MessageData.Get<FSubscribeBatchType>();
     }
 
+    FORCEINLINE bool IsPing() const { return Tag == EClientMessageTag::Ping; }
+
+    FORCEINLINE FPingType GetAsPing() const
+    {
+        ensureMsgf(IsPing(), TEXT("MessageData does not hold Ping!"));
+        return MessageData.Get<FPingType>();
+    }
+
     // Inline equality operators
     FORCEINLINE bool operator==(const FClientMessageType& Other) const
     {
@@ -152,6 +170,8 @@ public:
                 return GetAsCallProcedure() == Other.GetAsCallProcedure();
             case EClientMessageTag::SubscribeBatch:
                 return GetAsSubscribeBatch() == Other.GetAsSubscribeBatch();
+            case EClientMessageTag::Ping:
+                return GetAsPing() == Other.GetAsPing();
             default:
                 return false;
         }
@@ -180,6 +200,7 @@ FORCEINLINE uint32 GetTypeHash(const FClientMessageType& ClientMessage)
         case EClientMessageTag::CallReducer: return HashCombine(TagHash, ::GetTypeHash(ClientMessage.GetAsCallReducer()));
         case EClientMessageTag::CallProcedure: return HashCombine(TagHash, ::GetTypeHash(ClientMessage.GetAsCallProcedure()));
         case EClientMessageTag::SubscribeBatch: return HashCombine(TagHash, ::GetTypeHash(ClientMessage.GetAsSubscribeBatch()));
+        case EClientMessageTag::Ping: return HashCombine(TagHash, ::GetTypeHash(ClientMessage.GetAsPing()));
         default: return TagHash;
     }
 }
@@ -197,7 +218,8 @@ namespace UE::SpacetimeDB
         OneOffQuery, FOneOffQueryType,
         CallReducer, FCallReducerType,
         CallProcedure, FCallProcedureType,
-        SubscribeBatch, FSubscribeBatchType
+        SubscribeBatch, FSubscribeBatchType,
+        Ping, FPingType
     );
 }
 
@@ -295,6 +317,21 @@ private:
     static FSubscribeBatchType GetAsSubscribeBatch(const FClientMessageType& InValue)
     {
         return InValue.GetAsSubscribeBatch();
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ClientMessage")
+    static FClientMessageType Ping(const FPingType& InValue)
+    {
+        return FClientMessageType::Ping(InValue);
+    }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ClientMessage")
+    static bool IsPing(const FClientMessageType& InValue) { return InValue.IsPing(); }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ClientMessage")
+    static FPingType GetAsPing(const FClientMessageType& InValue)
+    {
+        return InValue.GetAsPing();
     }
 
 };

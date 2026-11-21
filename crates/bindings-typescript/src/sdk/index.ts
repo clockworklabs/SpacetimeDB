@@ -6,6 +6,7 @@ export * from '../lib/errors.ts';
 export * from './logger.ts';
 export { type ClientTable } from './client_table.ts';
 export { type RemoteModule } from './spacetime_module.ts';
+export type { NetworkStats, PingResult } from './network_stats.ts';
 export * from '../lib/type_builders.ts';
 export { schema, convertToAccessorMap } from './schema.ts';
 export { table } from '../lib/table.ts';

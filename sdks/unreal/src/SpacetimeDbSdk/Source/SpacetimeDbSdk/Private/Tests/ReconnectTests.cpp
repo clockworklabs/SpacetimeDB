@@ -6,6 +6,8 @@ void UReconnectTestConnection::Initialize(bool bEnable)
 {
 	bAutomaticReconnect = bEnable;
 	ReconnectOptions.Resolve();
+	// Off by default, so tests can assert exactly what was sent; the Ping tests turn it on.
+	PingInterval = FTimespan::Zero();
 	OnConnectBaseDelegate.BindDynamic(this, &UReconnectTestConnection::Connected);
 	OnAutomaticReconnectBaseDelegate.BindDynamic(this, &UReconnectTestConnection::Reconnected);
 	OnDisconnectWithReconnectBaseDelegate.BindDynamic(this, &UReconnectTestConnection::Disconnected);

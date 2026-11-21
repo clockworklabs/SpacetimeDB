@@ -14,6 +14,7 @@ namespace SpacetimeDB.ClientApi
         OneOffQuery OneOffQuery,
         CallReducer CallReducer,
         CallProcedure CallProcedure,
-        SubscribeBatch SubscribeBatch
+        SubscribeBatch SubscribeBatch,
+        Ping Ping
     )>;
 }
