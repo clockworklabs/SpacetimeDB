@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <Compile Remove="libraries/**/*.cs" />
+    <ProjectReference Include="libraries/Branch/Branch.csproj" />
+    <ProjectReference Include="libraries/Inventory/Inventory.csproj" />
+  </ItemGroup>
+</Project>

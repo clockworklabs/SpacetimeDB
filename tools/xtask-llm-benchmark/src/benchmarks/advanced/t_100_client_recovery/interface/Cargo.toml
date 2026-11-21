@@ -1,0 +1,10 @@
+[package]
+name = "eval-client-interface"
+version = "0.1.0"
+edition = "2024"
+publish = false
+[lib]
+crate-type = ["cdylib"]
+[dependencies]
+spacetimedb = { path = "../../../../../../../crates/bindings" }
+[workspace]

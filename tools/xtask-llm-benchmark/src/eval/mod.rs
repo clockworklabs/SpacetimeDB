@@ -1,3 +1,4 @@
+pub mod client;
 pub mod defaults;
 pub mod lang;
 pub mod scenario;
