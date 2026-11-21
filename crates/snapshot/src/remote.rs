@@ -30,7 +30,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::io::{InspectReader, InspectWriter, StreamReader};
 use zstd_framed::AsyncZstdReader;
 
-use crate::{ObjectType, Snapshot, SnapshotError, SnapshotRepository};
+use crate::{table_present_pages, ObjectType, Snapshot, SnapshotError, SnapshotRepository};
 
 pub type Result<T> = std::result::Result<T, SnapshotError>;
 
@@ -370,7 +370,8 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
             .snapshot
             .tables
             .iter()
-            .flat_map(|entry| entry.pages.iter().copied().map(|hash| self.fetch_page(hash)))
+            .flat_map(|entry| table_present_pages(&entry.pages))
+            .map(|hash| self.fetch_page(hash))
             .collect::<Box<[_]>>();
         stream::iter(tasks)
             .map(Ok)
@@ -826,8 +827,11 @@ impl AsyncWrite for AsyncBufWriter<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{default_page_pool, BlobProvider, BufPool, SnapshotFetcher};
-    use crate::{Snapshot, SnapshotError, CURRENT_MODULE_ABI_VERSION, CURRENT_SNAPSHOT_VERSION, MAGIC};
+    use super::{default_page_pool, verify_snapshot, BlobProvider, BufPool, SnapshotFetcher};
+    use crate::{
+        Snapshot, SnapshotError, SnapshotRepository, TableEntry, CURRENT_MODULE_ABI_VERSION, CURRENT_SNAPSHOT_VERSION,
+        MAGIC, ZERO_HASH_DENOTING_ABSENT_PAGE,
+    };
     use pretty_assertions::assert_matches;
     use spacetimedb_lib::Identity;
     use spacetimedb_paths::{server::SnapshotsPath, FromPathUnchecked};
@@ -907,6 +911,47 @@ mod tests {
             sf.fetch_blob(blake3::hash(ZEROES)).await,
             Err(SnapshotError::HashMismatch { .. })
         );
+    }
+
+    #[tokio::test]
+    async fn verifies_snapshot_with_absent_page_slot() {
+        let temporary_directory = tempdir().unwrap();
+        let snapshots = SnapshotsPath::from_path_unchecked(temporary_directory.path());
+        let mut previous = SnapshotFetcher::create(
+            zeroes_provider(),
+            snapshots.clone(),
+            DUMMY_SNAPSHOT,
+            default_page_pool(),
+            BufPool::default(),
+        )
+        .unwrap();
+        previous.run(false).await.unwrap();
+        drop(previous);
+
+        let mut page = Page::new(u64_row_size());
+        insert_u64(&mut page, 42);
+        let page_hash = page_hash_save_get(&mut page);
+        let snapshot = Snapshot {
+            tx_offset: DUMMY_SNAPSHOT.tx_offset + 1,
+            tables: vec![TableEntry {
+                table_id: 0.into(),
+                pages: vec![ZERO_HASH_DENOTING_ABSENT_PAGE, page_hash],
+            }],
+            ..DUMMY_SNAPSHOT
+        };
+        let fetcher = SnapshotFetcher::create(
+            const_provider(bsatn::to_vec(&page).unwrap()),
+            snapshots.clone(),
+            snapshot.clone(),
+            default_page_pool(),
+            BufPool::default(),
+        )
+        .unwrap();
+        fetcher.fetch_page(page_hash).await.unwrap();
+        let objects = SnapshotRepository::object_repo(&fetcher.dir).unwrap();
+        drop(fetcher);
+
+        verify_snapshot(objects, snapshots, snapshot).await.unwrap();
     }
 
     #[tokio::test]
