@@ -2508,6 +2508,11 @@ mod tests {
         reject_publication: bool,
         name_registrations: std::sync::Arc<AtomicUsize>,
         allow_publish_update: bool,
+        allow_reset: bool,
+        allow_create: bool,
+        published: std::sync::Arc<std::sync::Mutex<Vec<(Identity, Option<Identity>)>>>,
+        authorized_parents: std::sync::Arc<std::sync::Mutex<Vec<Option<Identity>>>>,
+        reset_calls: std::sync::Arc<AtomicUsize>,
     }
 
     impl DummyState {
@@ -2525,6 +2530,11 @@ mod tests {
                 reject_publication: false,
                 name_registrations: std::sync::Arc::new(AtomicUsize::new(0)),
                 allow_publish_update: false,
+                allow_reset: false,
+                allow_create: false,
+                published: Default::default(),
+                authorized_parents: Default::default(),
+                reset_calls: std::sync::Arc::new(AtomicUsize::new(0)),
             }
         }
 
@@ -2614,6 +2624,187 @@ mod tests {
                         op: PublishOp::Updated,
                         ..
                     } if database_identity == identity
+                ));
+            }
+        }
+    }
+
+    // Ensure creation and updates pass the requested parent to publication without losing or changing it.
+    #[tokio::test]
+    async fn publish_parent_is_forwarded_for_creation_and_update() {
+        let identity = test_identity(46);
+        let parent_identity = test_identity(47);
+        for existing in [false, true] {
+            for clear in [false, true] {
+                // An absent database must be created even when clear=true.
+                if existing && clear {
+                    continue;
+                }
+                for parent in [
+                    None,
+                    Some("parent-db".to_owned()),
+                    Some(parent_identity.to_hex().to_string()),
+                ] {
+                    let mut state = DummyState::new().with_dns("parent-db", parent_identity);
+                    if existing {
+                        state = state.with_database(identity);
+                        state.allow_publish_update = true;
+                    } else {
+                        state.allow_create = true;
+                    }
+                    let published = state.published.clone();
+                    let authorized_parents = state.authorized_parents.clone();
+                    let reset_calls = state.reset_calls.clone();
+                    let target = if existing {
+                        identity.to_hex().to_string()
+                    } else {
+                        "new-child".into()
+                    };
+                    let mut uri = format!("/{target}?clear={clear}");
+                    if let Some(parent) = &parent {
+                        uri.push_str(&format!("&parent={parent}"));
+                    }
+                    let app = DatabaseRoutes::<DummyState>::default()
+                        .into_router(state.clone())
+                        .with_state(state);
+                    let response = app
+                        .oneshot(
+                            Request::builder()
+                                .method(http::Method::PUT)
+                                .uri(uri)
+                                .body(Body::empty())
+                                .unwrap(),
+                        )
+                        .await
+                        .unwrap();
+                    assert_eq!(response.status(), StatusCode::OK);
+                    let body = response.into_body().collect().await.unwrap().to_bytes();
+                    let PublishResult::Success {
+                        database_identity, op, ..
+                    } = serde_json::from_slice::<PublishResult>(&body).unwrap()
+                    else {
+                        panic!("expected successful publication");
+                    };
+                    assert!(matches!(
+                        (existing, op),
+                        (true, PublishOp::Updated) | (false, PublishOp::Created)
+                    ));
+                    if existing {
+                        assert_eq!(database_identity, identity);
+                    }
+                    let expected_parent = parent.as_ref().map(|_| parent_identity);
+                    assert_eq!(*published.lock().unwrap(), vec![(database_identity, expected_parent)]);
+                    assert_eq!(
+                        *authorized_parents.lock().unwrap(),
+                        if existing { vec![] } else { vec![expected_parent] }
+                    );
+                    assert_eq!(reset_calls.load(Ordering::Relaxed), 0);
+                }
+            }
+        }
+    }
+
+    // Prevent publication from proceeding when the requested parent cannot be resolved.
+    #[tokio::test]
+    async fn publish_rejects_unknown_parent_before_backend_publication() {
+        let identity = test_identity(48);
+        for existing in [false, true] {
+            let mut state = DummyState::new();
+            if existing {
+                state = state.with_database(identity);
+                state.allow_publish_update = true;
+            } else {
+                state.allow_create = true;
+            }
+            let published = state.published.clone();
+            let target = if existing {
+                identity.to_hex().to_string()
+            } else {
+                "new-child".into()
+            };
+            let app = DatabaseRoutes::<DummyState>::default()
+                .into_router(state.clone())
+                .with_state(state);
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method(http::Method::PUT)
+                        .uri(format!("/{target}?parent=missing-parent"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NOT_FOUND);
+            assert!(published.lock().unwrap().is_empty());
+        }
+    }
+
+    // Reject a supplied parent rather than silently resetting the existing database.
+    #[tokio::test]
+    async fn publish_clear_rejects_parent_before_reset() {
+        let identity = test_identity(43);
+        for parent in ["existing-parent".to_owned(), test_identity(44).to_hex().to_string()] {
+            let mut state = DummyState::new().with_database(identity);
+            state.allow_reset = true;
+            let reset_calls = state.reset_calls.clone();
+            let app = DatabaseRoutes::<DummyState>::default()
+                .into_router(state.clone())
+                .with_state(state);
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method(http::Method::PUT)
+                        .uri(format!("/{identity}?clear=true&parent={parent}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            assert_eq!(
+                body.as_ref(),
+                b"Setting the parent of an existing database is not supported"
+            );
+            assert_eq!(reset_calls.load(Ordering::Relaxed), 0);
+        }
+    }
+
+    // Prevent unauthorized data deletion while allowing authorized resets without a parent.
+    #[tokio::test]
+    async fn publish_clear_without_parent_requires_reset_permission() {
+        let identity = test_identity(45);
+        for allowed in [false, true] {
+            let mut state = DummyState::new().with_database(identity);
+            state.allow_reset = allowed;
+            let reset_calls = state.reset_calls.clone();
+            let app = DatabaseRoutes::<DummyState>::default()
+                .into_router(state.clone())
+                .with_state(state);
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method(http::Method::PUT)
+                        .uri(format!("/{identity}?clear=true"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(
+                response.status(),
+                if allowed { StatusCode::OK } else { StatusCode::FORBIDDEN }
+            );
+            assert_eq!(reset_calls.load(Ordering::Relaxed), usize::from(allowed));
+            if allowed {
+                let body = response.into_body().collect().await.unwrap().to_bytes();
+                assert!(matches!(
+                    serde_json::from_slice::<PublishResult>(&body).unwrap(),
+                    PublishResult::Success { database_identity, op: PublishOp::Updated, .. }
+                        if database_identity == identity
                 ));
             }
         }
@@ -2767,7 +2958,12 @@ mod tests {
             _policy: MigrationPolicy,
             _environment: EnvironmentUpdate,
         ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
-            if self.allow_publish_update && self.databases.contains_key(&spec.database_identity) {
+            self.published
+                .lock()
+                .unwrap()
+                .push((spec.database_identity, spec.parent));
+            if (self.allow_publish_update && self.databases.contains_key(&spec.database_identity)) || self.allow_create
+            {
                 return Ok(None);
             }
             Err(anyhow::anyhow!("unused"))
@@ -2804,7 +3000,8 @@ mod tests {
             _spec: DatabaseResetDef,
             _environment: EnvironmentMap,
         ) -> anyhow::Result<()> {
-            Err(anyhow::anyhow!("unused"))
+            self.reset_calls.fetch_add(1, Ordering::Relaxed);
+            Ok(())
         }
 
         async fn add_energy(&self, _identity: &Identity, _amount: EnergyQuanta) -> anyhow::Result<()> {
@@ -2815,17 +3012,26 @@ mod tests {
             Err(anyhow::anyhow!("unused"))
         }
 
-        async fn register_tld(&self, _identity: &Identity, _tld: Tld) -> anyhow::Result<RegisterTldResult> {
+        async fn register_tld(&self, _identity: &Identity, tld: Tld) -> anyhow::Result<RegisterTldResult> {
             self.name_registrations.fetch_add(1, Ordering::Relaxed);
+            if self.allow_create {
+                return Ok(RegisterTldResult::Success { domain: tld });
+            }
             Err(anyhow::anyhow!("unused"))
         }
 
         async fn create_dns_record(
             &self,
             _owner_identity: &Identity,
-            _domain: &DomainName,
-            _database_identity: &Identity,
+            domain: &DomainName,
+            database_identity: &Identity,
         ) -> anyhow::Result<InsertDomainResult> {
+            if self.allow_create {
+                return Ok(InsertDomainResult::Success {
+                    domain: domain.clone(),
+                    database_identity: *database_identity,
+                });
+            }
             Err(anyhow::anyhow!("unused"))
         }
 
@@ -2856,6 +3062,12 @@ mod tests {
             database: Identity,
             action: Action,
         ) -> Result<(), Unauthorized> {
+            if let Action::CreateDatabase { parent, .. } = &action {
+                self.authorized_parents.lock().unwrap().push(*parent);
+                if self.allow_create {
+                    return Ok(());
+                }
+            }
             if self.reject_publication {
                 return Err(Unauthorized::Unauthorized {
                     subject,
@@ -2863,6 +3075,18 @@ mod tests {
                     database: Some(database),
                     source: None,
                 });
+            }
+            if matches!(action, Action::ResetDatabase) {
+                return if self.allow_reset && self.databases.contains_key(&database) {
+                    Ok(())
+                } else {
+                    Err(Unauthorized::Unauthorized {
+                        subject,
+                        action,
+                        database: Some(database),
+                        source: None,
+                    })
+                };
             }
             if self.allow_publish_update
                 && matches!(action, Action::UpdateDatabase)
