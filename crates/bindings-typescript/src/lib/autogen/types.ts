@@ -336,6 +336,14 @@ export type RawLifeCycleReducerDefV10 = __Infer<
   typeof RawLifeCycleReducerDefV10
 >;
 
+export const RawMigrationDefV10 = __t.object('RawMigrationDefV10', {
+  schemaHash: __t.u256(),
+  get dropped(): any {
+    return RawModuleDefV10;
+  },
+});
+export type RawMigrationDefV10 = __Infer<typeof RawMigrationDefV10>;
+
 // The tagged union or sum type for the algebraic type `RawMiscModuleExportV9`.
 export const RawMiscModuleExportV9 = __t.enum('RawMiscModuleExportV9', {
   get ColumnDefaultValue() {
@@ -426,6 +434,9 @@ export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
   },
   get TableCachePolicies() {
     return __t.array(RawTableCachePolicyV10);
+  },
+  get Migrations() {
+    return __t.array(RawMigrationDefV10);
   },
 });
 export type RawModuleDefV10Section = __Infer<typeof RawModuleDefV10Section>;

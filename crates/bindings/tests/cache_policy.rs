@@ -23,8 +23,11 @@ fn declarations_emit_only_nondefault_cache_policies() {
     let RawModuleDef::V10(module) = spacetimedb::rt::module_def_for_tests() else {
         panic!("Rust bindings should emit V10 metadata");
     };
+    let module = module.into_sections();
     let policies: Vec<_> = module
-        .table_cache_policies()
+        .table_cache_policies
+        .iter()
+        .flatten()
         .map(|entry| (entry.table_name.as_ref(), entry.policy))
         .collect();
     assert_eq!(policies.len(), 2);
