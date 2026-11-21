@@ -1419,15 +1419,7 @@ fn define_body_for_sum(
         write!(out, ": __TypeBuilder<__AlgebraicTypeType, __AlgebraicTypeType>");
     }
     writeln!(out, " = __t.enum({}, {{", ts_string_literal(sats_name));
-    // Convert variant names to PascalCase
-    let pascal_variants: Vec<(Identifier, AlgebraicTypeUse)> = variants
-        .iter()
-        .map(|(ident, ty)| {
-            let pascal = ident.deref().to_case(Case::Pascal);
-            (Identifier::for_test(pascal), ty.clone())
-        })
-        .collect();
-    out.with_indent(|out| write_object_type_builder_fields(module, out, &pascal_variants, None, false, None).unwrap());
+    out.with_indent(|out| write_object_type_builder_fields(module, out, variants, None, false, None).unwrap());
     writeln!(out, "}});");
     writeln!(out, "export type {name} = __Infer<typeof {name}>;");
     out.newline();

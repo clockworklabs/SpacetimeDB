@@ -223,6 +223,37 @@ fn test_codegen_receiver_bindings_include_nested_reducer_types() {
 }
 
 #[test]
+fn typescript_bindings_preserve_enum_variant_names() {
+    use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+    use spacetimedb_lib::{AlgebraicType, ProductType};
+
+    let mut builder = RawModuleDefV10Builder::new();
+    let role = builder.add_algebraic_type(
+        [],
+        "Role",
+        AlgebraicType::sum([
+            ("owner", AlgebraicType::unit()),
+            ("admin", AlgebraicType::unit()),
+            ("member", AlgebraicType::unit()),
+        ]),
+        true,
+    );
+    builder.add_reducer("setRole", ProductType::from([("role", AlgebraicType::Ref(role))]));
+    let module: ModuleDef = builder.finish().try_into().unwrap();
+    let files = generate(&module, &TypeScript::default(), &CodegenOptions::default())
+        .into_iter()
+        .map(|file| (file.filename, file.code))
+        .collect::<HashMap<_, _>>();
+    let types = &files["types.ts"];
+
+    assert!(types.contains("export const Role = __t.enum(\"Role\", {"));
+    assert!(types.contains("  owner: __t.unit(),"));
+    assert!(types.contains("  admin: __t.unit(),"));
+    assert!(types.contains("  member: __t.unit(),"));
+    assert!(!types.contains("Owner: __t.unit()"));
+}
+
+#[test]
 fn test_codegen_rust_outbox_fixture() {
     use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, ExplicitNames, RawModuleDefV10Builder};
     use spacetimedb_lib::{AlgebraicType, ProductType};
