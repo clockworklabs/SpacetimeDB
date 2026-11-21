@@ -60,6 +60,8 @@ export default defineConfig({
 
 The plugin also configures the installed `spacetimedb` package to pass through Vitest's transforms. The package includes the test datastore's WebAssembly runtime; you do not need to compile it yourself.
 
+The TypeScript harness does not currently supply namespaced `ctx.as` / `tx.as` helper contexts for mounted submodules. Test integrations that use those contexts against a running database.
+
 ### Define the module
 
 For a standalone example, put this in `src/index.ts`. In an existing module, keep your own schema and reducers instead.

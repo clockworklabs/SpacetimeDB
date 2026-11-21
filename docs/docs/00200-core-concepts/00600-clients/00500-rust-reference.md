@@ -326,6 +326,8 @@ trait DbContext {
 
 Gracefully close the `DbConnection`. Returns an `Err` if the connection is already disconnected.
 
+The close request is queued, so keep advancing the connection (for example, with `run_threaded`, `run_async`, or `frame_tick`) until shutdown is processed. Once an established connection ends, its `on_disconnect` callback runs even if another mutation was queued after the close request. Do not queue new reducer or procedure calls after requesting shutdown; they cannot be sent after the connection closes.
+
 ### Subscribe to queries
 
 | Name                                                    | Description                                                 |

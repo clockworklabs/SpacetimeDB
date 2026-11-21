@@ -72,7 +72,7 @@ const entity = table(
 );
 ```
 
-Options: `name` (snake_case, recommended), `public: true`, `event: true`, `indexes: [...]`
+Options: `name` (snake_case, recommended), `public: true`, `event: true`, `indexes: [...]`, `cachePolicy: 'required_in_memory' | 'required_on_disk' | 'no_requirement'` (default: `required_in_memory`; see the concepts skill for storage semantics).
 
 `ctx.db` accessors are the keys passed to `schema({...})`, verbatim: `schema({ scoreRecord })` -> `ctx.db.scoreRecord`. Keep TypeScript identifiers and accessors camelCase. Use explicit `name: 'snake_case'` strings when you need a canonical database name that differs from the TypeScript identifier.
 
@@ -280,6 +280,12 @@ export default spacetimedb;
 `myAuth` is the accessor (`ctx.db.myAuth.<table>`); `auth_data` is the canonical namespace used in SQL and wire names. Without an explicit `name`, the root's case policy derives it (`myAuth` → `my_auth` by default). Pin `name` when renaming an accessor: changing the canonical namespace drops its tables and their data. The library keeps its own flat `ctx.db` accessors. To call a library function directly, pass `ctx.as.myAuth`; inside `withTx`, use `tx.as.myAuth`. Nested TypeScript submodules are supported. Lifecycle reducers and nonempty environment declarations belong in the root. Submodule routers are ignored; register delegated handlers on the root router. Composition is not cross-language.
 
 Official reusable libraries include `@spacetimedb/cron`, `@spacetimedb/retry`, `@spacetimedb/rate-limit`, and `@spacetimedb/crypto`. Their registration shapes differ: `@spacetimedb/rate-limit/submodule` is mountable, cron/retry expose factories, and crypto exports helpers. Consult the chosen package's README/exports rather than assuming every package root is a mountable module.
+
+Additional mountable packages include `@spacetimedb/auth/submodule` (application-managed sign-in and sessions, distinct from hosted SpacetimeAuth), `@spacetimedb/agents/submodule` (conversations/model calls), and `@spacetimedb/files/submodule` (database-backed files). Auth and Agents require root initialization via `install(ctx.as.auth)` / `install(ctx.as.agents)`. Auth HTTP handlers must be delegated from the root router; configure its signing key first. Agents hosts must authenticate callers, derive owners from trusted state, and enforce quotas before paid model calls. Files helpers accept `ctx.as.files` from reducers or `tx.as.files` inside `withTx`. These libraries require SDK/CLI/server 2.12+. Follow the [package integration guides](https://spacetimedb.com/docs/modules#reusable-typescript-packages) for exact exports and initialization rather than assuming all packages share an `install` API.
+
+For large external files, `@spacetimedb/s3/submodule` supplies the private state tables; `@spacetimedb/s3` supplies `client` and `s3Tick`. Declare AWS credentials on the root environment, construct a client with `client(options)`, call its `initialize(tx)` method during initialization, and schedule its `reconcile(ctx, credentials)` method in a procedure. Derive owners on the server. The [S3 guide](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-s3-ts) specifies bucket constraints and reconciliation behavior; restoring an old database can remove newer S3 objects under its dedicated prefix.
+
+For server-side PostHog analytics, mount `@spacetimedb/posthog/submodule` in the root schema, then call `posthog.install(ctx.as.posthog)` from the root init reducer. After the host reducer's authorization and state change, call `posthog.enqueueEventInTx(ctx.as.posthog, args)` to queue an event in that same transaction; it does not make a network request. Use `tx.as.posthog` inside a procedure's `withTx`, not the procedure context. An administrator must configure the provider before scheduled delivery can send events. See the [package integration guide](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-posthog-ts#integrate-into-an-application) for its exact schema, imports, arguments, and delivery semantics.
 
 ## Environment Variables
 
@@ -494,7 +500,7 @@ Handlers are synchronous: return `SyncResponse` directly rather than marking the
 
 ## Module Unit Tests
 
-Use `spacetimedb` 2.12+ and Node.js 22+ in the **module** project, not the client. Set `"type": "module"` in `package.json` and install the test runner with `npm install --save-dev vitest@^3.2.4`. Configure the host-import replacement:
+Use `spacetimedb` 2.12+ and a supported Node.js release (22.23.4+, 24.22.1+, or 26.12.1+ on those release lines) in the **module** project, not the client. Set `"type": "module"` in `package.json` and install the test runner with `npm install --save-dev vitest@^3.2.4`. Configure the host-import replacement:
 
 ```typescript
 // vitest.config.ts
@@ -522,4 +528,4 @@ it('inserts a record', () => {
 });
 ```
 
-Run `npx vitest run`. Create a fresh harness per test. `withReducerTx` commits on normal return and rolls back/rethrows on exceptions; do not catch a failure inside the transaction if rollback is expected. Callbacks must be synchronous. Use `TestAuth.fromJwtPayload(JSON.stringify({ iss: 'test', sub: 'alice' }), connectionId)` for client authorization tests; internal auth represents the database, not a client or the publisher. The harness exposes `clock`, `rng`, procedure/view contexts, and query execution. It does not simulate subscriptions, RLS, lifecycle calls, or scheduling; invoke lifecycle/scheduled reducers explicitly and retain live integration tests for those host behaviors.
+Run `npx vitest run`. Create a fresh harness per test. `withReducerTx` commits on normal return and rolls back/rethrows on exceptions; do not catch a failure inside the transaction if rollback is expected. Callbacks must be synchronous. Use `TestAuth.fromJwtPayload(JSON.stringify({ iss: 'test', sub: 'alice' }), connectionId)` for client authorization tests; internal auth represents the database, not a client or the publisher. The harness exposes `clock`, `rng`, procedure/view contexts, and query execution. It does not simulate subscriptions, RLS, lifecycle calls, or scheduling; invoke lifecycle/scheduled reducers explicitly and retain live integration tests for those host behaviors. It does not currently supply namespaced `ctx.as` / `tx.as` helper contexts for mounted submodules; test those integrations against a running database.

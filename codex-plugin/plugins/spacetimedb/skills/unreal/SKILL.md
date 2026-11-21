@@ -153,7 +153,7 @@ void AGameManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void AGameManager::Tick(float DeltaTime)
 {
-    if (Conn && Conn->IsActive())
+    if (Conn) // Keep ticking during automatic recovery, too.
     {
         Conn->FrameTick();
     }
@@ -219,6 +219,18 @@ void OnConnected(UDbConnection* Connection, FSpacetimeDBIdentity Identity, const
 ```
 
 Save the `Token` for future reconnection. The `Identity` is the user's persistent identifier.
+
+---
+
+## Automatic Reconnect and Token Refresh
+
+Automatic reconnect is opt-in: add `->WithAutomaticReconnect()` to the builder. Regenerate bindings to get the reconnect methods. Initial connection failures are not retried; after an established connection drops, retries continue with exponential backoff and jitter. Configure `FAutomaticReconnectOptions.MinDelaySeconds` (default 1) and `MaxDelaySeconds` (default 30) with `->WithAutomaticReconnectOptions(Options)`; the effective floors are 0.5 and 1 second. `Disconnect()` cancels recovery. Keep `FrameTick()` running even when `IsActive()` is false; `IsReconnecting()` reports recovery in progress.
+
+`OnConnect` runs once. `OnAutomaticReconnect` takes the same `FOnConnectDelegate` and runs after recovery, before subscription replay; use it to save the new token. Register subscriptions and row callbacks once, not on every recovery or `OnApplied`: subscriptions replay atomically, their `OnApplied` callbacks run again, and unchanged rows do not fire row callbacks. Cached rows remain readable but stale until reconciliation.
+
+Existing disconnect/error delegates keep their signatures. `OnDisconnectWithReconnect` and `OnConnectErrorWithReconnect` additionally receive `bWillReconnect`, `NextReconnectAttempt`, and `NextReconnectDelaySeconds`. Do not create a replacement connection while a retry is pending. Calls are never replayed: interrupted calls may have executed and report `UnknownResult`; calls during recovery report `Disconnected`.
+
+For expiring credentials, use `WithToken` for the initial token and `WithTokenProvider` for recovery. Its `FTokenProviderDelegate` receives `UReconnectTokenRequest*`; complete it asynchronously with `Request->Complete(NewToken, FString())` or an empty token and an error. Tokens must retain the original identity. Provider failures retry; rejection of a fresh token is terminal. The server must support session replacement and batch subscriptions. See https://spacetimedb.com/docs/clients/unreal#method-withautomaticreconnect.
 
 ---
 
@@ -304,7 +316,7 @@ UFUNCTION()
 void OnUserUpdate(const FEventContext& Context, const FUserType& OldRow, const FUserType& NewRow);
 ```
 
-Register callbacks before connecting or in `HandleSubscriptionApplied`.
+Register row callbacks once before subscribing, for example in `HandleConnect`. Do not register them in `HandleSubscriptionApplied`: it runs again after automatic subscription replay.
 
 ---
 

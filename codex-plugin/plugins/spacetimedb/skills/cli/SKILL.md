@@ -81,6 +81,8 @@ when changing build modes. Managed builds alone do not enable C# module unit tes
 where supported. The CLI manages `SPACETIMEDB_WASM_AOT` and its legacy alias
 `EXPERIMENTAL_WASM_AOT`; users do not need to set either for .NET 10.
 
+New databases receive a server-allocated identity; a supplied identity can update an existing database, not create one. Only the registered name owner can recreate a deleted database whose name remains registered.
+
 ### Publishing & Deployment
 
 ```bash
@@ -179,6 +181,10 @@ spacetime server clear
 ```
 
 ### Authentication
+
+Log in with `spacetime login` before publishing, including to local servers. Without a saved login, the browser-login prompt defaults to yes; declining it shows a server-issued identity warning and a second prompt that defaults to no. A server-issued identity works only on its issuing server, owns databases published with it, and cannot be recovered if its token is lost. A later `spacetime login` replaces that saved token.
+
+`--yes` / `--yes=skip-login` and closed stdin can still create a server-issued identity for compatibility; they do not authenticate you with spacetimedb.com. Do not use them to bypass login setup for unattended publishing. Alert the user before intentionally creating a server-issued identity.
 
 ```bash
 # Login (opens browser)

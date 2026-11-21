@@ -15,6 +15,10 @@ However, procedures don't automatically run in database transactions,
 and must manually open and commit a transaction in order to read from or modify the database state.
 For this reason, prefer defining reducers rather than procedures unless you need to use one of the special procedure operators.
 
+:::note Database shutdown
+Pausing or suspending a database interrupts in-flight procedure HTTP requests and sleeps, and prevents procedures from starting further transactions during shutdown. Transactions committed earlier in the procedure are not rolled back with the interrupted work. Handle failure at the caller; do not assume a procedure finishes after the database stops.
+:::
+
 ## Defining Procedures
 
 <Tabs groupId="server-language" queryString>
