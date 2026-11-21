@@ -46,6 +46,43 @@ public class RouterTests
     }
 
     [Fact]
+    public void AcceptsTrailingWildcardAndRejectsWildcardElsewhere()
+    {
+        Assert.NotNull(Router.New().Get("/webhooks/*", TestHandlers.GetHandler));
+
+        var ex = Assert.Throws<ArgumentException>(
+            () => Router.New().Get("/mid*path", TestHandlers.GetHandler)
+        );
+
+        Assert.Contains("`*` only as the final character", ex.Message);
+    }
+
+    [Fact]
+    public void RejectsWildcardRouteOverlappingStaticRoute()
+    {
+        var ex = Assert.Throws<ArgumentException>(
+            () =>
+                Router
+                    .New()
+                    .Get("/webhooks/*", TestHandlers.GetHandler)
+                    .Get("/webhooks/github", TestHandlers.GetHandler)
+        );
+
+        Assert.Contains("Route conflict", ex.Message);
+    }
+
+    [Fact]
+    public void AllowsWildcardRouteAndCoveredPathWithOtherMethod()
+    {
+        var router = Router
+            .New()
+            .Get("/webhooks/*", TestHandlers.GetHandler)
+            .Post("/webhooks/github", TestHandlers.PostHandler);
+
+        Assert.NotNull(router);
+    }
+
+    [Fact]
     public void NestJoinsPathsWithoutDoubleSlash()
     {
         var router = Router.New().Nest("/api", Router.New().Get("/hooks", TestHandlers.GetHandler));
