@@ -112,6 +112,11 @@ namespace SpacetimeDB
 
         public delegate void ConnectCallback(DbConnection conn, Identity identity, string token);
 
+        /// <summary>
+        /// Register a callback for a successful connection. The token is the original
+        /// credential supplied to WithToken, or the new server-issued credential for
+        /// an anonymous connection. Save it to authenticate future connections.
+        /// </summary>
         public DbConnectionBuilder<DbConnection> OnConnect(ConnectCallback cb)
         {
             conn.AddOnConnect((identity, token) => cb(conn, identity, token));
@@ -824,7 +829,8 @@ namespace SpacetimeDB
             try
             {
                 var callback = reconnect ? onAutomaticReconnect : onConnect;
-                callback?.Invoke(initial.Identity, automaticReconnect ? retainedToken! : initial.Token);
+                // The original credential, not the server's short-lived copy (WebGL handshakes use one).
+                callback?.Invoke(initial.Identity, retainedToken!);
             }
             catch (Exception error)
             {
