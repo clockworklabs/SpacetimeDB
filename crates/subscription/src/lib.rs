@@ -299,6 +299,7 @@ impl JoinEdge {
 #[derive(Debug, Clone)]
 pub struct SubscriptionPlanMetrics {
     scan_type: String,
+    filtered_table: Option<TableName>,
     unindexed_columns: String,
 }
 
@@ -321,27 +322,49 @@ impl SubscriptionPlanMetrics {
         }
         .to_owned();
 
-        let mut schema: Option<Arc<TableSchema>> = None;
+        // Resolve each field by its label rather than by the last table scanned.
+        let mut schemas: Vec<(Label, Arc<TableSchema>)> = Vec::new();
         plan.visit(&mut |p| match p {
-            PhysicalPlan::TableScan(scan, _) => {
-                schema = Some(scan.schema.clone());
+            PhysicalPlan::TableScan(TableScan { schema, .. }, label)
+            | PhysicalPlan::IxScan(IxScan { schema, .. }, label) => {
+                schemas.push((*label, schema.clone()));
             }
-            PhysicalPlan::IxScan(scan, _) => {
-                schema = Some(scan.schema.clone());
+            PhysicalPlan::IxJoin(join, _) => {
+                schemas.push((join.rhs_label, join.rhs.clone()));
             }
             _ => {}
         });
 
-        let mut columns = Vec::new();
+        let mut columns: Vec<(Option<Arc<TableSchema>>, String)> = Vec::new();
         plan.visit(&mut |p| {
             if let PhysicalPlan::Filter(_, expr) = p {
-                extract_columns(expr, schema.as_ref(), &mut columns);
+                extract_columns(expr, &schemas, &mut columns);
             }
         });
 
+        let filtered_table = columns
+            .iter()
+            .find_map(|(schema, _)| schema.as_ref())
+            .map(|schema| schema.table_name.clone());
+
+        // Qualify columns with their table name (e.g. a.b) except for columns from filtered table.
+        let mut names: Vec<String> = Vec::new();
+        for (schema, col_name) in columns {
+            let name = match (&schema, &filtered_table) {
+                (Some(schema), Some(table)) if schema.table_name != *table => {
+                    format!("{}.{col_name}", schema.table_name)
+                }
+                _ => col_name,
+            };
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+
         Self {
             scan_type,
-            unindexed_columns: columns.join(","),
+            filtered_table,
+            unindexed_columns: names.join(","),
         }
     }
 
@@ -349,32 +372,41 @@ impl SubscriptionPlanMetrics {
         &self.scan_type
     }
 
+    /// The table that the unindexed columns belong to, if the plan has a filter.
+    pub fn filtered_table(&self) -> Option<&TableName> {
+        self.filtered_table.as_ref()
+    }
+
     pub fn unindexed_columns(&self) -> &str {
         &self.unindexed_columns
     }
 }
 
-fn extract_columns(expr: &PhysicalExpr, schema: Option<&Arc<TableSchema>>, columns: &mut Vec<String>) {
+fn extract_columns(
+    expr: &PhysicalExpr,
+    schemas: &[(Label, Arc<TableSchema>)],
+    columns: &mut Vec<(Option<Arc<TableSchema>>, String)>,
+) {
     match expr {
         PhysicalExpr::Field(tuple_field) => {
+            let schema = schemas
+                .iter()
+                .find(|(label, _)| *label == tuple_field.label)
+                .map(|(_, schema)| schema.clone());
             let col_name = schema
+                .as_ref()
                 .and_then(|s| s.columns.get(tuple_field.field_pos))
                 .map(|col| col.col_name.to_string())
                 .unwrap_or_else(|| format!("col_{}", tuple_field.field_pos));
-            columns.push(col_name);
+            columns.push((schema, col_name));
         }
         PhysicalExpr::BinOp(_, lhs, rhs) => {
-            extract_columns(lhs, schema, columns);
-            extract_columns(rhs, schema, columns);
+            extract_columns(lhs, schemas, columns);
+            extract_columns(rhs, schemas, columns);
         }
-        PhysicalExpr::LogOp(_, exprs) => {
+        PhysicalExpr::LogOp(_, exprs) | PhysicalExpr::Product(exprs) => {
             for expr in exprs {
-                extract_columns(expr, schema, columns);
-            }
-        }
-        PhysicalExpr::Product(exprs) => {
-            for expr in exprs {
-                extract_columns(expr, schema, columns);
+                extract_columns(expr, schemas, columns);
             }
         }
         PhysicalExpr::Value(_) | PhysicalExpr::Param(..) => {}
