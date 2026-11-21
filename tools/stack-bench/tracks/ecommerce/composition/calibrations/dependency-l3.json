@@ -36,7 +36,7 @@
       {
         "backend": "convex",
         "id": "ecommerce-reference-convex",
-        "sourceSha256": "8c647a96fbab91b8f51c1d7b6831f926a99d8e681b145b66add7ae52ce24e6c6"
+        "sourceSha256": "c067558c81c5fcc0027a4331fa689780106f57d9142563b433c7019993103a58"
       },
       {
         "backend": "supabase",
@@ -67,7 +67,7 @@
     {
       "backend": "convex",
       "path": "grader/mutations/convex-ecommerce.json",
-      "sha256": "5f8e894b014f6cf09bad0d408071184532dbe26c01454c175881c7f64e697246",
+      "sha256": "215e00854db8e77d4ef32acfb3a01c7c9b026c2dcef5e044f7f244edac6501de",
       "referenceId": "ecommerce-reference-convex"
     },
     {

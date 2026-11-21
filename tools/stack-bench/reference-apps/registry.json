@@ -117,7 +117,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/convex",
-        "sourceSha256": "8c647a96fbab91b8f51c1d7b6831f926a99d8e681b145b66add7ae52ce24e6c6"
+        "sourceSha256": "c067558c81c5fcc0027a4331fa689780106f57d9142563b433c7019993103a58"
       },
       "mutationManifests": [
         "grader/mutations/convex-ecommerce.json"

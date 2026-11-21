@@ -5,7 +5,7 @@
   "dependencies": {
     "@auth/core": "0.41.1",
     "@convex-dev/auth": "0.0.95",
-    "convex": "1.46.0",
+    "convex": "1.51.0",
     "lucia": "3.2.2"
   },
   "scripts": {
