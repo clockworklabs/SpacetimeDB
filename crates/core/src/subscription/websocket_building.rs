@@ -180,7 +180,8 @@ impl BuildableWebsocketFormat for ws_v1::BsatnFormat {
         let qu_len_would_have_been = bsatn::to_len(&qu).unwrap();
 
         match decide_compression(qu_len_would_have_been, compression) {
-            ws_v1::Compression::None => ws_v1::CompressableQueryUpdate::Uncompressed(qu),
+            // Zstd is outer-message compression only.
+            ws_v1::Compression::None | ws_v1::Compression::Zstd => ws_v1::CompressableQueryUpdate::Uncompressed(qu),
             ws_v1::Compression::Brotli => {
                 let bytes = bsatn::to_vec(&qu).unwrap();
                 let mut out = Vec::new();
@@ -211,18 +212,21 @@ pub fn decide_compression(len: usize, compression: ws_v1::Compression) -> ws_v1:
 }
 
 pub fn brotli_compress(bytes: &[u8], out: &mut impl io::Write) {
+    let params = brotli_params();
+    let reader = &mut &bytes[..];
+    brotli::BrotliCompress(reader, out, &params).expect("should be able to BrotliCompress");
+}
+
+pub(crate) fn brotli_params() -> brotli::enc::BrotliEncoderParams {
     // We are optimizing for compression speed,
     // so we choose the lowest (fastest) level of compression.
     // Experiments on internal workloads have shown compression ratios between 7:1 and 10:1
     // for large `SubscriptionUpdate` messages at this level.
     const COMPRESSION_LEVEL: i32 = 1;
-
-    let params = brotli::enc::BrotliEncoderParams {
+    brotli::enc::BrotliEncoderParams {
         quality: COMPRESSION_LEVEL,
-        ..<_>::default()
-    };
-    let reader = &mut &bytes[..];
-    brotli::BrotliCompress(reader, out, &params).expect("should be able to BrotliCompress");
+        ..Default::default()
+    }
 }
 
 pub fn gzip_compress(bytes: &[u8], out: &mut impl io::Write) {
