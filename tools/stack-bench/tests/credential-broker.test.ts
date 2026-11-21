@@ -542,6 +542,42 @@ test('credential broker survives a downstream disconnect and settles exact upstr
   }
 });
 
+test('a Gemini stream cut off part way is charged its last reported usage', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-broker-cut-'));
+  const event = (usageMetadata: Record<string, number>) => `data: ${JSON.stringify({ usageMetadata })}\r\n\r\n`;
+  const upstreamServer = createServer((request, response) => {
+    request.resume();
+    request.on('end', () => {
+      response.writeHead(200, { 'content-type': 'text/event-stream' });
+      response.write(event({ promptTokenCount: 1000, thoughtsTokenCount: 20 })
+        + event({ promptTokenCount: 1000, candidatesTokenCount: 30, thoughtsTokenCount: 20 }) + 'data: {"usageMeta');
+      setTimeout(() => response.socket?.destroy(), 25);
+    });
+  });
+  const upstreamPort = await listen(upstreamServer);
+  const sessionToken = 'session-token-value-1234567890';
+  const { server, stats } = createCredentialBroker({ provider: 'google', mode: 'api-key',
+    credential: 'provider-secret-value-1234567890', sessionToken, ledgerPath: join(root, 'ledger.json'),
+    model: 'test-model', maxOutputTokens: 4096, maxBudgetUsd: 1, pricingRates: PRICING_RATES }, {
+    requestUpstream: httpRequest,
+    upstream: { protocol: 'http:', hostname: '127.0.0.1', port: upstreamPort },
+  });
+  const brokerPort = await listen(server);
+  try {
+    // The cut-off response never ends, so the client is not awaited.
+    void send(brokerPort, { path: '/v1beta/models/test-model:streamGenerateContent?alt=sse',
+      headers: { 'x-goog-api-key': sessionToken, 'content-type': 'application/json' }, body: '{"contents":[]}' })
+      .catch(() => null);
+    await waitFor(() => stats().completedBillableRequests === 1);
+    assert.equal(stats().estimatedBillableRequests, 0);
+    assert.equal(stats().spentUsd, 0.00375);
+  } finally {
+    await close(server);
+    await close(upstreamServer);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('credential broker survives malformed client socket input', async () => {
   await withBroker('api-key', async ({ brokerPort, sessionToken }) => {
     await new Promise<void>((resolveSocket, reject) => {

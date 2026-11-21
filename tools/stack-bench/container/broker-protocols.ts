@@ -210,6 +210,8 @@ interface BrokerProtocol {
   inputTokenAdjustment?(payload: JsonRecord): number;
   outputLimit(payload: JsonRecord): number;
   responseUsage(body: Buffer, encoding?: string | string[]): JsonRecord | null;
+  // Usage up to where a response was cut off, for providers that report it as they stream.
+  partialUsage?(body: Buffer, encoding?: string | string[]): JsonRecord | null;
   // A call the CLI makes beside the session's own work, such as titling it.
   sideCall?(path: string, payload: JsonRecord): boolean;
   responseRejection?(body: Buffer, encoding?: string | string[]): Pick<ProviderFailure, 'category' | 'code'> | null;
@@ -585,6 +587,16 @@ function geminiOutputLimit(request: JsonRecord): number {
   return (generation.maxOutputTokens as number) + (typeof thinking === 'number' && thinking > 0 ? thinking : 0);
 }
 
+// Every complete event of a Gemini stream carries the running token count, so a stream cut
+// off part way still reports what was used up to its last complete event.
+function googlePartialUsage(body: Buffer, encoding?: string | string[]): JsonRecord | null {
+  try {
+    const text = decodedResponseBody(body, encoding).toString('utf8').replace(/\r\n/g, '\n');
+    const end = text.lastIndexOf('\n\n');
+    return end < 0 ? null : googleUsage(Buffer.from(text.slice(0, end)));
+  } catch { return null; }
+}
+
 function jsonObject(body: Buffer): JsonRecord {
   const payload: unknown = JSON.parse(body.toString('utf8'));
   return isRecord(payload) ? payload : fail('request body must be an object');
@@ -611,6 +623,7 @@ function googleProtocol(config: BrokerConfig): BrokerProtocol {
     requestPricing: geminiPricing,
     outputLimit: geminiOutputLimit,
     responseUsage: googleUsage,
+    partialUsage: googlePartialUsage,
     sideCall: path => path === title,
   };
 }
@@ -644,6 +657,7 @@ function googleAccountProtocol(config: BrokerConfig): BrokerProtocol {
     requestPricing: payload => geminiPricing(payload.request as JsonRecord),
     outputLimit: payload => geminiOutputLimit(payload.request as JsonRecord),
     responseUsage: googleUsage,
+    partialUsage: googlePartialUsage,
     sideCall: (_path, payload) => helperPrompt(payload) !== null,
   };
 }

@@ -358,6 +358,12 @@ export function createCredentialBroker(configInput: unknown, {
         });
         const settleAbortedResponse = () => {
           if (!abandoned) recordFailure(requestOrdinal, { category: 'transport', status: null, code: null });
+          const partial = billable && responseBytes <= maxRequestBytes
+            ? protocol.partialUsage?.(Buffer.concat(responseChunks), upstreamResponse.headers['content-encoding']) ?? null : null;
+          try {
+            if (partial) settleBillable({ usage: normalizeClaudeUsage(partial),
+              unpriced: firstUnpricedReason(pricing.unpriced, partial.unpriced_reason as UnpricedReason | null) });
+          } catch { /* Fall back to the reservation ceiling. */ }
           settleBillable({ estimated: 'response-aborted', unpriced: unprovenPricing });
           if (responseOpen()) response.destroy();
         };
