@@ -9,7 +9,7 @@ use core::{
 
 use spin::Mutex;
 
-use super::NodeId;
+use super::TaskMeta;
 
 /// A spawned simulated task.
 ///
@@ -17,10 +17,10 @@ use super::NodeId;
 /// - `JoinHandle` awaits the output and holds an `AbortHandle` for cancellation.
 /// - The executor holds the `Runnable` (not visible here).
 pub struct JoinHandle<T> {
-    // async_task::Task owns a shared heap-allocated cell that holds the future,
-    // its output, metadata (NodeId), and waker. Polling it drives the future
-    // to completion. Dropping it without detach cancels the future.
-    pub(crate) task: async_task::Task<Result<T, JoinError>, NodeId>,
+    // async_task::FallibleTask owns a shared heap-allocated cell that holds the
+    // future, output, task metadata, and waker. `None` means the executor
+    // intentionally dropped the runnable before polling it.
+    pub(crate) task: async_task::FallibleTask<Result<T, JoinError>, TaskMeta>,
     // Clone of the same AbortHandle that Abortable holds inside the task.
     pub(crate) abort: AbortHandle,
 }
@@ -33,16 +33,20 @@ impl<T> JoinHandle<T> {
 
     /// Drop the join handle without cancelling the task.
     pub fn detach(self) {
-        // async_task::Task::detach makes Drop a no-op — the future keeps running.
+        // async_task::Task::detach makes Drop a no-op; the future keeps running.
         self.task.detach();
     }
 
     /// Poll the underlying async_task::Task for its output.
     #[doc(hidden)]
     pub fn poll_join(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<T, JoinError>> {
-        // async_task::Task implements Future. Polling it drives the wrapped
-        // Abortable future inside the executor.
-        Pin::new(&mut self.task).poll(cx)
+        // FallibleTask lets node crash discard stale runnables without panicking
+        // when their JoinHandle is awaited.
+        match Pin::new(&mut self.task).poll(cx) {
+            Poll::Ready(Some(result)) => Poll::Ready(result),
+            Poll::Ready(None) => Poll::Ready(Err(JoinError)),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
