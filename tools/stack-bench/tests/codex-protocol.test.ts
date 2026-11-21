@@ -1,0 +1,89 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { codexArguments, parseCodexResult, runCodexProcess } from '../src/agents/codex-protocol.js';
+import { DEFAULT_TOOL_POLICY } from '../src/agents/tool-policy.js';
+
+test('Codex terminal receipt excludes cached input and requires a complete valid turn', () => {
+  const events = [
+    { type: 'thread.started', thread_id: '12345678-1234-4234-8234-123456789abc' },
+    { type: 'item.completed', item: { type: 'agent_message', text: 'APP_READY' } },
+    { type: 'turn.completed', usage: { input_tokens: 30, cached_input_tokens: 20, output_tokens: 5 } },
+  ];
+  const jsonl = events.map(event => JSON.stringify(event)).join('\n');
+  const result = parseCodexResult(jsonl);
+  assert.equal(result.is_error, false);
+  assert.equal(result.result, 'APP_READY');
+  assert.equal(result.total_cost_usd, undefined);
+  assert.deepEqual(result.usage, { input_tokens: 10, cache_read_input_tokens: 20,
+    output_tokens: 5, cache_creation_input_tokens: 0 });
+  assert.equal(parseCodexResult(jsonl + '\n{"type":"turn.failed"}').is_error, true);
+  assert.equal(parseCodexResult(jsonl + '\n{"type":"turn.started"}').is_error, true);
+  assert.equal(parseCodexResult(jsonl.replace('"input_tokens":30', '"input_tokens":2')).is_error, true);
+  assert.equal(parseCodexResult('{').is_error, true);
+  assert.match(String(parseCodexResult('{"type":"error","message":"HTTP 429 quota exhausted"}').result),
+    /429 quota exhausted/);
+});
+
+test('a resumed Codex thread reports only what this invocation used', () => {
+  // Observed on gpt-6.1-sol: after a capacity refusal, the resumed turn reported the whole thread.
+  const jsonl = [
+    { type: 'thread.started', thread_id: '01a0f9ba-5285-73c2-95d7-cbb4f54cd772' },
+    { type: 'turn.completed', usage: { input_tokens: 1_621_834, cached_input_tokens: 1_553_664, output_tokens: 29_835 } },
+  ].map(event => JSON.stringify(event)).join('\n');
+  const prior = { input_tokens: 67_757, output_tokens: 29_804, cache_read_input_tokens: 1_482_880,
+    cache_creation_input_tokens: 0 };
+  assert.deepEqual(parseCodexResult(jsonl, prior).usage, { input_tokens: 413, output_tokens: 31,
+    cache_read_input_tokens: 70_784, cache_creation_input_tokens: 0 });
+});
+
+test('Codex uses only the temporary broker token and preserves explicit resume identity', () => {
+  const args = codexArguments({ model: 'gpt-test', effort: 'high', baseUrl: 'http://127.0.0.1:123',
+    resumeSession: '12345678-1234-4234-8234-123456789abc', tools: DEFAULT_TOOL_POLICY });
+  assert.deepEqual(args.slice(0, 2), ['exec', 'resume']);
+  assert.ok(args.includes('model_providers.model_proxy.env_key="MODEL_PROXY_TOKEN"'));
+  assert.ok(args.includes('--ignore-user-config'));
+  assert.deepEqual(args.slice(-2), ['12345678-1234-4234-8234-123456789abc', '-']);
+});
+
+test('Codex web search and subagents follow the tool policy', () => {
+  const settings = (webSearch: boolean, subagents: boolean) => codexArguments({ model: 'gpt-test', effort: 'high',
+    baseUrl: 'http://127.0.0.1:123', resumeSession: null, tools: { webSearch, subagents } })
+    .filter(arg => arg.startsWith('web_search=') || arg.startsWith('features.multi_agent='));
+  // The default is how Codex ran in 1.1.
+  assert.deepEqual(settings(DEFAULT_TOOL_POLICY.webSearch, DEFAULT_TOOL_POLICY.subagents),
+    ['web_search="disabled"', 'features.multi_agent=false']);
+  assert.deepEqual(settings(true, false), ['web_search="live"', 'features.multi_agent=false']);
+  assert.deepEqual(settings(false, true), ['web_search="disabled"', 'features.multi_agent=true']);
+});
+
+test('Codex process capture runs without provider access', async () => {
+  const result = await runCodexProcess({ command: process.execPath,
+    args: ['-e', 'process.stdin.pipe(process.stdout)'], input: 'events', env: process.env,
+    timeoutMs: 5_000, terminate: child => { child.kill(); } });
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, 'events');
+  let terminated = false;
+  const timedOut = await runCodexProcess({ command: process.execPath,
+    args: ['-e', 'setInterval(() => {}, 1000)'], input: '', env: process.env,
+    timeoutMs: 30, terminate: child => { terminated = true; child.kill(); } });
+  assert.equal(terminated, true);
+  assert.notEqual(timedOut.status, 0);
+  assert.match(String(timedOut.error), /timed out/);
+});
+
+test('a CLI that keeps running after its finished answer is stopped and the answer recorded', async () => {
+  let answers = 0;
+  const lingering = await runCodexProcess({ command: process.execPath,
+    args: ['-e', 'process.stdout.write("stream\\n"); setInterval(() => {}, 1000)'], input: '', env: process.env,
+    timeoutMs: 10_000, terminate: child => { child.kill(); },
+    // The first reading is not final; the same answer must stand for the grace period.
+    finishedAnswer: () => (answers += 1) === 1 ? 'draft' : 'DONE', answerGraceMs: 60, answerPollMs: 20 });
+  assert.equal(lingering.status, 0);
+  assert.equal(lingering.error, null);
+  assert.deepEqual(lingering.stdout.trim().split('\n'),
+    ['stream', JSON.stringify({ event: 'session_ended_after_answer', response: 'DONE' })]);
+  const exited = await runCodexProcess({ command: process.execPath, args: ['-e', 'process.stdout.write("out")'],
+    input: '', env: process.env, timeoutMs: 5_000, terminate: () => assert.fail('a CLI that exits is not stopped'),
+    finishedAnswer: () => 'DONE', answerGraceMs: 5_000 });
+  assert.equal(exited.stdout, 'out');
+});

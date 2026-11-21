@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 5,
+  "fixtures": [
+    {
+      "id": "ecommerce-reference-mongodb",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 6,
+      "actionLevels": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "recipes": [
+        "ecommerce.sequential-l1",
+        "ecommerce.sequential-l2",
+        "ecommerce.sequential-l3",
+        "ecommerce.progression-catalog"
+      ],
+      "targetPath": "reference-apps/ecommerce/mongodb",
+      "origin": {
+        "kind": "authored",
+        "note": "Cumulative MongoDB reference shared by the registered ecommerce recipes."
+      },
+      "imported": {
+        "path": "reference-apps/ecommerce/mongodb",
+        "sourceSha256": "8a167a23e422534dcf58d664edcd0506ec454c5880b54e170da391c600dfe6c2"
+      },
+      "mutationManifests": [
+        "grader/mutations/mongodb-ecommerce.json"
+      ]
+    },
+    {
+      "id": "ecommerce-reference-postgres",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "level": 6,
+      "actionLevels": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "recipes": [
+        "ecommerce.sequential-l1",
+        "ecommerce.sequential-l2",
+        "ecommerce.sequential-l3",
+        "ecommerce.progression-catalog"
+      ],
+      "targetPath": "reference-apps/ecommerce/postgres",
+      "origin": {
+        "kind": "authored",
+        "note": "Cumulative PostgreSQL reference shared by the registered ecommerce recipes."
+      },
+      "imported": {
+        "path": "reference-apps/ecommerce/postgres",
+        "sourceSha256": "b54d02f7b19b4f2e59349c776780fbec6560575a998f2c8592cf4cda6d24acac"
+      },
+      "mutationManifests": [
+        "grader/mutations/postgres-ecommerce.json"
+      ]
+    },
+    {
+      "id": "ecommerce-reference-spacetime",
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 6,
+      "actionLevels": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "recipes": [
+        "ecommerce.sequential-l1",
+        "ecommerce.sequential-l2",
+        "ecommerce.sequential-l3",
+        "ecommerce.progression-catalog"
+      ],
+      "targetPath": "reference-apps/ecommerce/spacetime",
+      "origin": {
+        "kind": "authored",
+        "note": "Cumulative SpacetimeDB reference shared by the registered ecommerce recipes."
+      },
+      "imported": {
+        "path": "reference-apps/ecommerce/spacetime",
+        "sourceSha256": "218a8e6298b8becef513b68d4b9a5068b84bde9c14789e0ae45ebc0d6ce703aa"
+      },
+      "mutationManifests": [
+        "grader/mutations/spacetime-ecommerce.json"
+      ]
+    },
+    {
+      "id": "ecommerce-reference-convex",
+      "backend": "convex",
+      "track": "ecommerce",
+      "level": 3,
+      "actionLevels": [
+        1,
+        2,
+        3
+      ],
+      "recipes": [
+        "ecommerce.progression-catalog"
+      ],
+      "targetPath": "reference-apps/ecommerce/convex",
+      "origin": {
+        "kind": "authored",
+        "note": "Native Convex ecommerce reference through dependency depth 3; draft until matching qualification passes."
+      },
+      "imported": {
+        "path": "reference-apps/ecommerce/convex",
+        "sourceSha256": "8c647a96fbab91b8f51c1d7b6831f926a99d8e681b145b66add7ae52ce24e6c6"
+      },
+      "mutationManifests": [
+        "grader/mutations/convex-ecommerce.json"
+      ]
+    },
+    {
+      "id": "ecommerce-reference-supabase",
+      "backend": "supabase",
+      "track": "ecommerce",
+      "level": 3,
+      "actionLevels": [
+        1,
+        2,
+        3
+      ],
+      "recipes": [
+        "ecommerce.progression-catalog"
+      ],
+      "targetPath": "reference-apps/ecommerce/supabase",
+      "origin": {
+        "kind": "authored",
+        "note": "Native Supabase ecommerce reference through dependency depth 3; draft until matching qualification passes."
+      },
+      "imported": {
+        "path": "reference-apps/ecommerce/supabase",
+        "sourceSha256": "0f6a67cbb1922d02cee1750b2b802431fc6cc05e055748dd6885e9545c12eeef"
+      },
+      "mutationManifests": [
+        "grader/mutations/supabase-ecommerce.json"
+      ]
+    }
+  ]
+}
