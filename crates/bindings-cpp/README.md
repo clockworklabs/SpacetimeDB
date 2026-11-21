@@ -36,6 +36,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed technical documentation.
 - **Procedures**: Pure functions with return values using `SPACETIMEDB_PROCEDURE` macro
 - **Views**: Read-only query functions with `SPACETIMEDB_VIEW` macro
 - **Field accessor patterns**: Efficient indexed operations with `ctx.db[table_field]`
+- **Inter-database communication**: Call reducers in other databases through outbox tables with `SPACETIMEDB_OUTBOX_TABLE` or `SPACETIMEDB_OUTBOX_FOR`, and handle results with `SPACETIMEDB_REDUCER_ON_RESULT`. See the [docs](../../docs/docs/00200-core-concepts/00100-databases/00650-inter-database-communication.md)
 
 See the working examples in `modules/*-cpp/src/lib.cpp` for comprehensive feature usage.
 

@@ -27,6 +27,18 @@ Covered cases:
 - router wrong return type
 - router misuse in a non-function position
 
+## IDC Coverage
+
+The `idc` suite builds modules against the generated receiver bindings in
+`crates/bindings-cpp/tests/fixtures/idc_receiver`. The codegen test
+`cpp_receiver_fixtures_are_up_to_date` keeps those headers in sync with the generator;
+regenerate them with `SPACETIMEDB_UPDATE_FIXTURES=1 cargo test -p spacetimedb-codegen --test cpp_receiver`.
+
+Covered cases:
+- bindings for two dependencies used side by side, with a same-named local type
+- an identity from one dependency used for another
+- an implicit conversion from a plain `Identity`
+
 ## Run
 
 From Git Bash or Linux-style shells:
