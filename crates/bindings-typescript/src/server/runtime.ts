@@ -594,15 +594,17 @@ class ModuleHooksImpl implements ModuleHooks {
     ));
   }
 
-  /** Query builder scoped to the submodule's own tables, with namespace-prefixed
-   *  source names so generated SQL targets the mounted table names. */
+  /** Query builder scoped to the submodule's own tables. Like the db view, it
+   *  names each table by accessor path (`namePrefix` holds accessor keys): the
+   *  host resolves that alias, but not an accessor namespace joined to a
+   *  table's explicit canonical name. */
   #getSubmoduleQueryBuilder(submoduleIdx: number): QueryBuilder<any> {
     const m = this.#flatSubmodules[submoduleIdx];
     return (m.queryBuilder_ ??= makeQueryBuilder({
       tables: Object.fromEntries(
         Object.entries(m.schemaTables).map(([key, def]) => [
           key,
-          { ...def, sourceName: m.namePrefix + def.sourceName },
+          { ...def, sourceName: m.namePrefix + def.accessorName },
         ])
       ),
     }));
