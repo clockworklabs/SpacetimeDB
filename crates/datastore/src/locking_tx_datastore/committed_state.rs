@@ -1174,17 +1174,10 @@ impl CommittedState {
 
     /// Evict objects from the cache until the resident size is below the low watermark,
     /// or no more objects can be evicted.
-    ///
-    /// TODO: Use a database-scoped LRU eviction policy instead of evicting table by table.
     pub(super) fn trim_resident(&self) -> std::result::Result<(), table::TableError> {
         let pages = self.storage.pages();
         let target = pages.resident_budget().low_water_bytes;
-        for table in self.tables.values() {
-            if pages.resident_usage().accounted_bytes() <= target {
-                return Ok(());
-            }
-            table.trim()?;
-        }
+        pages.trim_committed()?;
         if pages.resident_usage().accounted_bytes() > target {
             self.storage.blobs().trim()?;
         }
@@ -1193,9 +1186,7 @@ impl CommittedState {
 
     #[cfg(feature = "durability")]
     pub(super) fn trim(&self) -> std::result::Result<(), crate::error::TrimTableError> {
-        for table in self.tables.values() {
-            table.trim()?;
-        }
+        self.storage.pages().trim_committed()?;
         self.storage.trim()?;
 
         Ok(())

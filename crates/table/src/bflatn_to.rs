@@ -6,7 +6,7 @@ use crate::{
     blob_store::BlobHash,
     indexes::PageIndex,
     table::TableError,
-    tiered::{BlobError, BlobSet, EvictionPolicy, PageError, PageSet, ReservedPage},
+    tiered::{BlobError, BlobSet, EvictionPolicy, PageError, PageHandle, PageSet, ReservedPage},
 };
 
 use super::{
@@ -47,6 +47,9 @@ pub enum Error {
 /// Writes `row` typed at `ty` to `pages`
 /// using `blob_store` as needed to write large blobs.
 ///
+/// Returns the write pin from [`write_row_to_pages`]. The caller holds it
+/// to keep the page in RAM until `get_page` returns its own pin.
+///
 /// Panics if `val` is not of type `ty`.
 ///
 /// # Safety
@@ -63,13 +66,18 @@ pub unsafe fn write_row_to_pages_bsatn(
     mut bytes: &[u8],
     squashed_offset: SquashedOffset,
     eviction_policy: EvictionPolicy,
-) -> Result<(RowPointer, BlobNumBytes), Error> {
+) -> Result<(RowPointer, BlobNumBytes, Option<PageHandle>), Error> {
     let val = ty.product().deserialize(bsatn::Deserializer::new(&mut bytes))?;
     unsafe { write_row_to_pages(pages, None, visitor, blobs, ty, &val, squashed_offset, eviction_policy) }
 }
 
 /// Writes `row` typed at `ty` to `pages`
 /// using `blob_store` as needed to write large blobs.
+///
+/// If the table allows paging, the caller gets a pin on the page we just wrote.
+/// It keeps the page in RAM after the write guard drops. The caller can
+/// drop it when `get_page` returns a `PageRef` with its own pin.
+/// In-memory tables own their pages directly and return `None`.
 ///
 /// Panics if `val` is not of type `ty`.
 ///
@@ -89,7 +97,7 @@ pub unsafe fn write_row_to_pages(
     val: &ProductValue,
     squashed_offset: SquashedOffset,
     eviction_policy: EvictionPolicy,
-) -> Result<(RowPointer, BlobNumBytes), Error> {
+) -> Result<(RowPointer, BlobNumBytes, Option<PageHandle>), Error> {
     let num_granules = if ty.layout().fixed {
         // Fast-path: The row type doesn't contain var-len members,
         // so 0 granules are needed.
@@ -118,10 +126,12 @@ pub unsafe fn write_row_to_pages(
             )
         }
     })? {
-        (page, Ok((offset, blob_inserted))) => {
-            Ok((RowPointer::new(false, page, offset, squashed_offset), blob_inserted))
-        }
-        (_, Err(e)) => Err(e),
+        (index, Ok((offset, blob_inserted)), pin) => Ok((
+            RowPointer::new(false, index, offset, squashed_offset),
+            blob_inserted,
+            pin,
+        )),
+        (_, Err(e), _) => Err(e),
     }
 }
 
