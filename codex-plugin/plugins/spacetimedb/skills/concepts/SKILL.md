@@ -136,6 +136,8 @@ Lifecycle: Write → Compile → Publish (`spacetime publish`) → Hot-swap (rep
 
 Scheduled functions are private, but the database owner can still call them directly. To restrict a callback to scheduler execution, compare the sender with the database identity; see the server skills for language-specific syntax.
 
+Outbound HTTP requests from procedures default to a 30-second timeout when none is specified; the host clamps requested timeouts to a maximum of 180 seconds. See [procedure HTTP requests](https://spacetimedb.com/docs/functions/procedures#http-requests) and the language-specific server skills for request syntax.
+
 ## HTTP Handlers
 
 A module can expose its own HTTP API. Each handler takes a request and returns a response, and one router per module binds handlers to a method and path. Requests reach them under `/v1/database/<name_or_identity>/route<path>`, so a `/say-hello` route is served at `/v1/database/my-db/route/say-hello`.
