@@ -83,16 +83,12 @@ impl MetadataFile {
             return Ok(());
         }
 
-        let cmp = semver::Comparator {
-            op: semver::Op::Caret,
-            major: previous.version.major,
-            minor: Some(previous.version.minor),
-            patch: None,
-            // We deal with pre-releases separately above.
-            pre: semver::Prerelease::new("").unwrap(),
-        };
-
-        if cmp.matches(&current.version) {
+        // Compatible if the major version matches and the running minor is not older.
+        // Patch versions and pre-release suffixes are ignored, so patch downgrades
+        // and running pre-releases are allowed.
+        // (`semver::Comparator::matches` can't be used here: it rejects every
+        // pre-release unless the comparator names the same major.minor.patch.)
+        if previous.version.major == current.version.major && previous.version.minor <= current.version.minor {
             return Ok(());
         }
 
@@ -561,18 +557,25 @@ mod tests {
             .check_compatibility_and_update(mkmeta(2, 0, 0), Path::new("metadata.toml"))
             .unwrap();
 
-        // Now check some failures..
-
+        // Pre-release suffixes and patch downgrades are fine within a major.minor.
         mkmeta_pre(2, 0, 0, "rc1")
             .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc2"), Path::new("metadata.toml"))
-            .unwrap_err();
-
-        mkmeta_pre(2, 0, 0, "rc2")
-            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc1"), Path::new("metadata.toml"))
-            .unwrap_err();
-
+            .unwrap();
+        mkmeta(2, 16, 2)
+            .check_compatibility_and_update(mkmeta_pre(2, 16, 0, "rc1"), Path::new("metadata.toml"))
+            .unwrap();
         mkmeta(2, 0, 0)
             .check_compatibility_and_update(mkmeta_pre(2, 1, 0, "rc1"), Path::new("metadata.toml"))
+            .unwrap();
+
+        // Now check some failures..
+
+        mkmeta_pre(2, 1, 0, "rc1")
+            .check_compatibility_and_update(mkmeta_pre(2, 0, 5, "rc1"), Path::new("metadata.toml"))
+            .unwrap_err();
+
+        mkmeta(3, 0, 0)
+            .check_compatibility_and_update(mkmeta_pre(2, 9, 0, "rc1"), Path::new("metadata.toml"))
             .unwrap_err();
     }
 
