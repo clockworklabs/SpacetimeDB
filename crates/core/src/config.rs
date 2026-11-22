@@ -584,6 +584,7 @@ mod tests {
         mkmeta_pre(2, 0, 0, "rc1")
             .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc2"), Path::new("metadata.toml"))
             .unwrap_err();
+
         mkmeta_pre(2, 0, 0, "rc2")
             .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc1"), Path::new("metadata.toml"))
             .unwrap_err();
