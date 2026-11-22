@@ -581,6 +581,12 @@ mod tests {
         // Now check some failures..
 
         // Major pre-releases are distinct: only the identical version is allowed.
+        mkmeta_pre(2, 0, 0, "rc1")
+            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc2"), Path::new("metadata.toml"))
+            .unwrap_err();
+        mkmeta_pre(2, 0, 0, "rc2")
+            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc1"), Path::new("metadata.toml"))
+            .unwrap_err();
         mkmeta(3, 0, 0)
             .check_compatibility_and_update(mkmeta_pre(3, 0, 0, "rc1"), Path::new("metadata.toml"))
             .unwrap_err();
