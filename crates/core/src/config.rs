@@ -83,9 +83,19 @@ impl MetadataFile {
             return Ok(());
         }
 
+        // Pre-releases of a major version (e.g. 3.0.0-rc1) are distinct from everything else:
+        // they may only run against exactly the same version (handled above).
+        if !current.version.pre.is_empty() && current.version.minor == 0 && current.version.patch == 0 {
+            anyhow::bail!(
+                "metadata.toml indicates that this database is from {:?}, which is not compatible with the running major pre-release {:?}.",
+                previous.version,
+                current.version,
+            );
+        }
+
         // Compatible if the major version matches and the running minor is not older.
-        // Patch versions and pre-release suffixes are ignored, so patch downgrades
-        // and running pre-releases are allowed.
+        // Patch versions and (non-major) pre-release suffixes are ignored, so patch
+        // downgrades and running minor/patch pre-releases are allowed.
         // (`semver::Comparator::matches` can't be used here: it rejects every
         // pre-release unless the comparator names the same major.minor.patch.)
         if previous.version.major == current.version.major && previous.version.minor <= current.version.minor {
@@ -558,17 +568,25 @@ mod tests {
             .unwrap();
 
         // Pre-release suffixes and patch downgrades are fine within a major.minor.
-        mkmeta_pre(2, 0, 0, "rc1")
-            .check_compatibility_and_update(mkmeta_pre(2, 0, 0, "rc2"), Path::new("metadata.toml"))
-            .unwrap();
         mkmeta(2, 16, 2)
             .check_compatibility_and_update(mkmeta_pre(2, 16, 0, "rc1"), Path::new("metadata.toml"))
+            .unwrap();
+        mkmeta(2, 1, 0)
+            .check_compatibility_and_update(mkmeta_pre(2, 1, 0, "rc1"), Path::new("metadata.toml"))
             .unwrap();
         mkmeta(2, 0, 0)
             .check_compatibility_and_update(mkmeta_pre(2, 1, 0, "rc1"), Path::new("metadata.toml"))
             .unwrap();
 
         // Now check some failures..
+
+        // Major pre-releases are distinct: only the identical version is allowed.
+        mkmeta(3, 0, 0)
+            .check_compatibility_and_update(mkmeta_pre(3, 0, 0, "rc1"), Path::new("metadata.toml"))
+            .unwrap_err();
+        mkmeta_pre(3, 0, 0, "rc1")
+            .check_compatibility_and_update(mkmeta_pre(3, 0, 0, "rc2"), Path::new("metadata.toml"))
+            .unwrap_err();
 
         mkmeta_pre(2, 1, 0, "rc1")
             .check_compatibility_and_update(mkmeta_pre(2, 0, 5, "rc1"), Path::new("metadata.toml"))
