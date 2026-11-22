@@ -94,7 +94,10 @@ test('service specifications keep secrets out of arguments and apply the platfor
   assert.deepEqual(specs.realtime.args.slice(0, 4), ['--user', '65534:65534', '--entrypoint', '/bin/bash']);
   assert.deepEqual(specs.gateway.args.slice(0, 4), ['--user', '101:101', '--entrypoint', 'envoy']);
   assert.deepEqual(specs.functions.args.slice(0, 2), ['-v', '/work/app:/home/deno/app:ro']);
-  assert.match(specs.functions.files['/home']!['deno/functions/main/index.ts']!, /\/home\/deno\/app\/supabase\/functions\//);
+  const router = specs.functions.files['/home']!['deno/functions/main/index.ts']!;
+  assert.match(router, /'\/home\/deno\/app\/supabase\/functions'/);
+  // A worker per request held memory until its timeout; a burst of requests killed the service.
+  assert.doesNotMatch(router, /forceCreate: true/);
   assert.equal(specs.functions.environment.SUPABASE_DB_URL, `postgresql://postgres:${secrets.postgresPassword}@127.0.0.1:5432/postgres`);
   assert.deepEqual(specs.storage.args.slice(0, 2), ['-v', '/var/lib/storage']);
   assert.match(specs.gateway.files['/etc/envoy']!['lds.yaml']!, /port_value: 13410/);
