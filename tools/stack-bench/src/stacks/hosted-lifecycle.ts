@@ -362,9 +362,13 @@ export function activateAttemptBackend({ leasePath, lease, ports }: {
     attemptDocker(['exec', container.id, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c',
       `CREATE USER appuser PASSWORD '${credentials.password}'; ALTER DATABASE "${lease.resources.database}" OWNER TO appuser;`]);
   } else if (lease.backend === 'mongodb') {
+    // collMod lets the app change its own views and validators, as a Postgres owner can; it still may not drop the database.
+    const database = JSON.stringify(lease.resources.database);
     attemptDocker(['exec', container.id, 'mongosh', '--quiet', '--username', 'admin',
       '--password', credentials.adminPassword, '--authenticationDatabase', 'admin', '--eval',
-      `db.getSiblingDB(${JSON.stringify(lease.resources.database)}).createUser({user:'appuser',pwd:${JSON.stringify(credentials.password)},roles:[{role:'readWrite',db:${JSON.stringify(lease.resources.database)}}]})`]);
+      `const app=db.getSiblingDB(${database}); `
+      + `app.createRole({role:'appSchema',privileges:[{resource:{db:${database},collection:''},actions:['collMod']}],roles:[]}); `
+      + `app.createUser({user:'appuser',pwd:${JSON.stringify(credentials.password)},roles:[{role:'readWrite',db:${database}},{role:'appSchema',db:${database}}]})`]);
   }
   createAttemptBrowser(leasePath, current);
   updateBackendLease(leasePath, { token: lease.ownershipToken }, next => { next.state = 'active'; return next; });

@@ -92,7 +92,11 @@ for (const backend of ['postgres', 'mongodb', 'spacetime']) test(`owned ${backen
               +'if(db.proof.updateOne({id:2},{$set:{id:3}}).modifiedCount!==1) throw new Error("update failed"); '
               +'if(db.proof.deleteOne({id:3}).deletedCount!==1) throw new Error("delete failed"); '
               +'let denied; try { db.dropDatabase(); } catch(error) { denied=error.code; } '
-              +'if(denied!==13) throw new Error("application role did not reject dropDatabase");']);
+              +'if(denied!==13) throw new Error("application role did not reject dropDatabase"); '
+              +'db.createCollection("proof_view",{viewOn:"proof",pipeline:[]}); '
+              +'db.runCommand({collMod:"proof_view",viewOn:"proof",pipeline:[{$match:{id:4}}]}); '
+              +'db.proof.insertOne({id:4}); db.proof.insertOne({id:5}); '
+              +'if(db.proof_view.countDocuments()!==1) throw new Error("application role could not change its view");']);
             console.log('mongodb: trusted reset preserved application CRUD and denied dropDatabase');
           } else {
             const started=active.resources.network.namespaceStartedAt;
