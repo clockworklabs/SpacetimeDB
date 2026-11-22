@@ -827,7 +827,7 @@ impl AsyncWrite for AsyncBufWriter<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{default_page_pool, verify_snapshot, BlobProvider, BufPool, SnapshotFetcher};
+    use super::{default_page_pool, BlobProvider, BufPool, SnapshotFetcher};
     use crate::{
         Snapshot, SnapshotError, SnapshotRepository, TableEntry, CURRENT_MODULE_ABI_VERSION, CURRENT_SNAPSHOT_VERSION,
         MAGIC, ZERO_HASH_DENOTING_ABSENT_PAGE,
@@ -914,44 +914,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn verifies_snapshot_with_absent_page_slot() {
-        let temporary_directory = tempdir().unwrap();
-        let snapshots = SnapshotsPath::from_path_unchecked(temporary_directory.path());
-        let mut previous = SnapshotFetcher::create(
-            zeroes_provider(),
-            snapshots.clone(),
-            DUMMY_SNAPSHOT,
-            default_page_pool(),
-            BufPool::default(),
-        )
-        .unwrap();
-        previous.run(false).await.unwrap();
-        drop(previous);
+    async fn verifies_snapshot_with_absent_page_slot() -> anyhow::Result<()> {
+        let temp = tempdir()?;
+        let snapshots = SnapshotsPath::from_path_unchecked(temp.path());
+        let repo = SnapshotRepository::open(snapshots, Identity::ZERO, DUMMY_SNAPSHOT.replica_id)?;
 
-        let mut page = Page::new(u64_row_size());
-        insert_u64(&mut page, 42);
-        let page_hash = page_hash_save_get(&mut page);
-        let snapshot = Snapshot {
-            tx_offset: DUMMY_SNAPSHOT.tx_offset + 1,
+        let tx_offset = DUMMY_SNAPSHOT.tx_offset + 1;
+        let sparse = Snapshot {
+            tx_offset,
             tables: vec![TableEntry {
                 table_id: 0.into(),
-                pages: vec![ZERO_HASH_DENOTING_ABSENT_PAGE, page_hash],
+                pages: vec![ZERO_HASH_DENOTING_ABSENT_PAGE],
             }],
             ..DUMMY_SNAPSHOT
         };
-        let fetcher = SnapshotFetcher::create(
-            const_provider(bsatn::to_vec(&page).unwrap()),
-            snapshots.clone(),
-            snapshot.clone(),
-            default_page_pool(),
-            BufPool::default(),
-        )
-        .unwrap();
-        fetcher.fetch_page(page_hash).await.unwrap();
-        let objects = SnapshotRepository::object_repo(&fetcher.dir).unwrap();
-        drop(fetcher);
 
-        verify_snapshot(objects, snapshots, snapshot).await.unwrap();
+        for snapshot in [DUMMY_SNAPSHOT, sparse] {
+            let dir = repo.snapshot_dir_path(snapshot.tx_offset);
+            dir.create()?;
+            repo.write_snapshot_file(&dir, snapshot)?;
+        }
+
+        repo.verify_snapshot(tx_offset).await?;
+        Ok(())
     }
 
     #[tokio::test]
