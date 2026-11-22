@@ -738,7 +738,21 @@ log = "0.4"
                     "bin~/Release",
                 )?;
 
-                run_cmd(&["dotnet", "add", "package", "SpacetimeDB.ClientSDK"], client_path)?;
+                // Resolve the version from the locally packed SDK only. Without `--source`, `add` picks the
+                // newest version from nuget.org, which the restore (limited to the local source by
+                // package source mapping) can't find if nuget.org has a newer release than this checkout.
+                let local_sdk_source = workspace.join("sdks/csharp/bin~/Release");
+                run_cmd(
+                    &[
+                        "dotnet",
+                        "add",
+                        "package",
+                        "SpacetimeDB.ClientSDK",
+                        "--source",
+                        &local_sdk_source.display().to_string(),
+                    ],
+                    client_path,
+                )?;
             }
             _ => {}
         }
