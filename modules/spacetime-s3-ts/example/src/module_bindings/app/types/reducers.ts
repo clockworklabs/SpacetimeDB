@@ -9,3 +9,4 @@ import { type Infer as __Infer } from "spacetimedb";
 import DeleteFileReducer from "../delete_file_reducer";
 
 export type DeleteFileParams = __Infer<typeof DeleteFileReducer>;
+

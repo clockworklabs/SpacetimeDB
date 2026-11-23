@@ -56,3 +56,4 @@ export const OwnerUsage = __t.object("OwnerUsage", {
   bytes: __t.u64(),
 });
 export type OwnerUsage = __Infer<typeof OwnerUsage>;
+
