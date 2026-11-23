@@ -61,6 +61,56 @@ fn concurrent_idc_deliveries_commit_once() {
     );
 }
 
+/// Pipelined deliveries can arrive out of order. An early one waits for its
+/// predecessor instead of failing and sending the sender into backoff.
+#[test]
+#[serial_test::serial]
+fn early_idc_delivery_waits_for_earlier_sequence() {
+    CompiledModule::compile("module-test", CompilationMode::Debug).with_module_async(
+        IN_MEMORY_CONFIG,
+        |handle| async move {
+            let host = handle.client.module();
+            let (_, reducer, _) = host.info.module_def.reducer_by_name_with_module("say_hello").unwrap();
+            let hash = host.info.reducer_signature_hash(&reducer.name);
+            let call = |seq| {
+                let host = host.clone();
+                async move {
+                    host.call_idc_reducer(
+                        Identity::ZERO,
+                        ConnectionId::from_u128(1),
+                        "say_hello",
+                        FunctionArgs::Nullary,
+                        7,
+                        seq,
+                        0,
+                        hash,
+                    )
+                    .await
+                }
+            };
+
+            let second = tokio::spawn(call(2));
+            // Give the second delivery time to find its predecessor missing.
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            assert!(!second.is_finished(), "an early delivery must wait");
+            let IdcReducerCallOutcome::Recorded(first) = call(1).await.unwrap() else {
+                panic!("the first delivery must run");
+            };
+            assert!(first.result.outcome.into_result().is_ok());
+            let IdcReducerCallOutcome::Recorded(second) = second.await.unwrap().unwrap() else {
+                panic!("the waiting delivery must run after its predecessor");
+            };
+            assert!(second.result.outcome.into_result().is_ok());
+
+            // With no predecessor coming, the wait ends and the sender retries later.
+            assert!(matches!(
+                call(4).await,
+                Err(IdcDeliveryFailure::OutOfOrder { expected: 3, actual: 4 })
+            ));
+        },
+    );
+}
+
 #[test]
 #[serial_test::serial]
 fn terminal_signature_errors_are_replayed_and_do_not_stall_the_stream() {

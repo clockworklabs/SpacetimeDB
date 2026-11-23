@@ -643,9 +643,9 @@ fn idc_stored_outcome_response(result_status: StInboundMsgResultStatus, result_p
 fn map_idc_call_error(e: IdcDeliveryFailure, reducer: &str) -> IdcDeliveryError {
     let status = match &e {
         IdcDeliveryFailure::OutOfOrder { .. } => {
-            // The receiver needs an earlier sequence before it can process this one.
-            // TODO(idc): Lower the log level when pipelining makes this expected.
-            log::error!("Retryable IDC delivery error for {reducer}: {e:#}");
+            // An earlier sequence did not arrive while this one waited.
+            // The sender retries it after sending the missing message again.
+            log::warn!("Retryable IDC delivery error for {reducer}: {e:#}");
             StatusCode::TOO_EARLY
         }
         IdcDeliveryFailure::NoSuchModule(_) | IdcDeliveryFailure::Datastore(_) | IdcDeliveryFailure::Internal(_) => {
