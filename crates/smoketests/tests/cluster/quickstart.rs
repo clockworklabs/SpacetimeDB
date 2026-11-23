@@ -738,7 +738,21 @@ log = "0.4"
                     "bin~/Release",
                 )?;
 
-                run_cmd(&["dotnet", "add", "package", "SpacetimeDB.ClientSDK"], client_path)?;
+                // Add a floating reference without resolving it. Resolving here would pick the newest version
+                // from nuget.org, which the restore (limited to the local sources by package source mapping)
+                // can't find if nuget.org has a newer release than this checkout.
+                run_cmd(
+                    &[
+                        "dotnet",
+                        "add",
+                        "package",
+                        "SpacetimeDB.ClientSDK",
+                        "--version",
+                        "*",
+                        "--no-restore",
+                    ],
+                    client_path,
+                )?;
             }
             _ => {}
         }
