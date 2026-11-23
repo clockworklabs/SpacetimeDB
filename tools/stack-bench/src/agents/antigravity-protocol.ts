@@ -22,6 +22,7 @@ export const ANTIGRAVITY_ACCOUNT_MODELS: Readonly<Record<string, readonly string
   'gemini-4-argon': ['gemini-4-argon-low', 'gemini-4-argon-medium', 'gemini-4-argon-high'],
   'gemini-4-carbon': ['gemini-4-carbon-medium'],
   'gemini-4-hydrogen': ['gemini-4-hydrogen-medium'],
+  'gemini-4-neon': ['gemini-4-neon-medium'],
   'gemini-3.1-pro-preview': ['gemini-3.1-pro-low'],
   'gemini-3.1-pro-preview-customtools': ['gemini-pro-agent'],
 };
