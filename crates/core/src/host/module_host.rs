@@ -2279,7 +2279,7 @@ impl ModuleHost {
         ) {
             // The database was deleted, replaced by a publish, or its replica was stopped.
             // This is expected, so don't log it as an error.
-            log::warn!("Client disconnect transaction: {e}");
+            log::warn!("Error from client_disconnected transaction: {e}");
         }
     }
 
