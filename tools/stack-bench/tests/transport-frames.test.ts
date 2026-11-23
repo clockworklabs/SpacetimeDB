@@ -45,6 +45,10 @@ test('transport absence cannot pass after truncation, eviction, or an unreadable
   assert.throws(() => received.contains('absent'), /incomplete/);
   assert.equal(captureFailure(received)?.pendingBodies, 1);
   assert.equal(received.contains('absent', false), false);
+  assert.equal(received.contains('absent', true, true), false, 'a body read after the window settled is a later request');
+  received.incomplete = true;
+  assert.throws(() => received.contains('absent', true, true), /incomplete/, 'settling never excuses lost evidence');
+  received.incomplete = false;
   received.pending = 0;
   const bounded = new ReceivedTransport(20);
   bounded.record('first-secret');

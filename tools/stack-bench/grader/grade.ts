@@ -528,7 +528,7 @@ export class Actor {
   }
   // `settled`: every request of the observation window had finished; one that began later is outside it.
   wasSent(needle: string, requireComplete = true, settled = false): boolean {
-    const found = this.transport.contains(needle, requireComplete);
+    const found = this.transport.contains(needle, requireComplete, settled);
     if (!found && requireComplete && !settled && (this.pendingHttp || this.unobservedRequests().length)) {
       this.reportPendingRequests('absence');
       inconclusive('transport-incomplete', {});

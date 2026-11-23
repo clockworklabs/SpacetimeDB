@@ -122,9 +122,11 @@ export class ReceivedTransport {
     }
   }
 
-  contains(needle: string, requireComplete = true): boolean {
+  // `settled`: nothing was pending once the observation window closed, so a body
+  // still being read now belongs to a later request.
+  contains(needle: string, requireComplete = true, settled = false): boolean {
     if (this.chunks.some(chunk => chunk.includes(needle))) return true;
-    if (requireComplete && (this.incomplete || this.pending)) {
+    if (requireComplete && (this.incomplete || (this.pending && !settled))) {
       for (const [response, { page, startedAt }] of [...this.pendingResponses].slice(0, 8)) {
         try { process.stderr.write(`transport body pending ${JSON.stringify({
           ...responseDiagnostic(response, page), elapsedMs: Date.now() - startedAt,
