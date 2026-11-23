@@ -392,6 +392,21 @@
       ]
     },
     {
+      "id": "catalog-search-shows-every-product",
+      "scenario": "tracks/ecommerce/scenarios/01-catalog-search.json",
+      "targets": [
+        "ecommerce.feature.catalog.catalog-search.2d"
+      ],
+      "desc": "A non-empty catalog search shows every product instead of only matching names.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "(!q || it.name.toLowerCase().includes(q))",
+          "replace": "(!q || q.length > 0)"
+        }
+      ]
+    },
+    {
       "id": "scheduled-restock-countdown-is-fixed",
       "scenario": "tracks/ecommerce/scenarios/03-scheduled-restocks.json",
       "targets": [
@@ -1056,6 +1071,21 @@
         {
           "find": "  update support_ticket set reference = 'SUP-' || lpad(ticket.id::text, 6, '0') where id = ticket.id",
           "replace": "  update support_ticket set reference = '' where id = ticket.id"
+        }
+      ]
+    },
+    {
+      "id": "support-intake-shows-a-fixed-reference",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-intake.json",
+      "targets": [
+        "ecommerce.progression.support-intake.support-intake.610a"
+      ],
+      "desc": "Every support ticket shows the same text in place of its reference.",
+      "file": "client/src/ProgressionPanel.tsx",
+      "edits": [
+        {
+          "find": "<span data-role=\"support-reference\">{supportReference}</span>",
+          "replace": "<span data-role=\"support-reference\">Thanks</span>"
         }
       ]
     },

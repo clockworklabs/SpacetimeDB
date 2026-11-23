@@ -82,8 +82,8 @@ interface BrowserCapability {
   readonly applicationUrl?: string;
   readonly defaultWithin: number;
   readonly recorded: {
-    get(key: string): number | undefined;
-    set(key: string, value: number): void;
+    get(key: string): unknown;
+    set(key: string, value: number | string): void;
   };
   expand(value: string | undefined): string | undefined;
   sleep(milliseconds: number, signal: AbortSignal): Promise<void>;
@@ -128,6 +128,8 @@ type ExpectInput = CommonInput & {
   readonly ignoreCase?: boolean;
   readonly notContains?: string;
   readonly nonEmpty?: boolean;
+  readonly recordAs?: string;
+  readonly differsFrom?: string;
 };
 type ElementCountInput = CommonInput & {
   readonly equals?: number;
@@ -475,7 +477,7 @@ async function wait({ input, capabilities, signal }:
 
 function elapsedSince(capabilities: BrowserArguments<unknown>['capabilities'], since: string): number {
   const start = observation(capabilities).recorded.get(since);
-  if (start === undefined) inconclusive('assertion-without-action', { action: 'recordTime' });
+  if (typeof start !== 'number') inconclusive('assertion-without-action', { action: 'recordTime' });
   return performance.now() - start;
 }
 
@@ -607,9 +609,23 @@ async function expect({ input, capabilities, signal }: BrowserArguments<ExpectIn
     if (text.includes(input.notContains)) fail('text-unexpected', { control: input.testid,
       ...(!/password|secret|token/i.test(input.testid) ? { matchedText: findingText(input.notContains) } : {}) });
   }
-  if (input.nonEmpty) {
-    const text = (await readValue(loc)).trim();
-    if (!text) fail('control-empty', { control: input.testid });
+  if (input.nonEmpty || input.recordAs !== undefined || input.differsFrom !== undefined) {
+    let text = (await readValue(loc)).trim();
+    // A reference that identifies a record differs from the one an earlier record
+    // received. The earlier one may stay on screen until the new one arrives.
+    if (input.differsFrom !== undefined) {
+      const earlier = browser.recorded.get(input.differsFrom);
+      if (typeof earlier !== 'string') inconclusive('assertion-without-action', { action: 'expect' });
+      const deadline = Date.now() + within;
+      while ((text === earlier || (input.nonEmpty && !text)) && Date.now() <= deadline) {
+        await browser.sleep(250, signal);
+        text = (await readValue(loc)).trim();
+      }
+      if (text && text === earlier) fail('text-unexpected', { control: input.testid,
+        ...(!/password|secret|token/i.test(input.testid) ? { matchedText: findingText(text) } : {}) });
+    }
+    if (input.nonEmpty && !text) fail('control-empty', { control: input.testid });
+    if (input.recordAs !== undefined) browser.recorded.set(input.recordAs, text);
   }
   return { visible: true, ...(input.value === undefined ? {} : {
     ...(input.attribute ? { attribute: input.attribute } : {}), value: input.value,
@@ -766,7 +782,7 @@ function countLocator(actor: BrowserActor, browser: BrowserCapability, input: Co
 function expectedNumber(browser: BrowserCapability, input: ElementCountInput): number | undefined {
   if (input.relativeTo === undefined) return input.equals;
   const base = browser.recorded.get(input.relativeTo);
-  if (base === undefined) inconclusive('assertion-without-action', { action: 'recordNumber' });
+  if (typeof base !== 'number') inconclusive('assertion-without-action', { action: 'recordNumber' });
   return base + (input.plus ?? 0);
 }
 
@@ -1161,7 +1177,7 @@ async function armScriptCanary(args: ScriptCanaryArguments): Promise<void> {
   const key = `script-canary:${input.actor}`;
   if (recorded.get(key) !== undefined) throw new Error('script execution observer is already armed');
   await actor.page.exposeFunction('__stackBenchScriptCanary', (probe?: boolean) => {
-    if (probe !== true) recorded.set(key, (recorded.get(key) ?? 0) + 1);
+    if (probe !== true) recorded.set(key, Number(recorded.get(key) ?? 0) + 1);
     return 'ready';
   });
   recorded.set(key, 0);
@@ -1174,7 +1190,7 @@ async function expectNoScriptExecution(args: ScriptCanaryArguments): Promise<unk
   const recorded = capabilities['browser-observation'].recorded;
   if (recorded.get(key) === undefined) inconclusive('invalid-input', { detail: 'script execution observer was not armed' });
   await scriptCanaryProbe(args);
-  const observation = { actor: input.actor, executions: recorded.get(key)! };
+  const observation = { actor: input.actor, executions: Number(recorded.get(key)) };
   if (observation.executions > 0) throw new ActionApplicationFailure('stored content executed script', { observation });
   return observation;
 }

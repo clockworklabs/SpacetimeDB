@@ -22,7 +22,11 @@
             { "do": "fill", "actor": "visitor", "testid": "support-subject", "text": "Damaged package" },
             { "do": "fill", "actor": "visitor", "testid": "support-message", "text": "The package arrived damaged." },
             { "do": "click", "actor": "visitor", "testid": "support-submit" },
-            { "do": "expect", "actor": "visitor", "testid": "support-reference", "nonEmpty": true }
+            { "do": "expect", "actor": "visitor", "testid": "support-reference", "nonEmpty": true, "recordAs": "first-reference" },
+            { "do": "fill", "actor": "visitor", "testid": "support-subject", "text": "Missing item" },
+            { "do": "fill", "actor": "visitor", "testid": "support-message", "text": "One item was missing from the package." },
+            { "do": "click", "actor": "visitor", "testid": "support-submit" },
+            { "do": "expect", "actor": "visitor", "testid": "support-reference", "nonEmpty": true, "differsFrom": "first-reference" }
           ]
         }
       ]

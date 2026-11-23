@@ -1046,6 +1046,21 @@
       ]
     },
     {
+      "id": "progression-support-intake-shows-a-fixed-reference",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-intake.json",
+      "targets": [
+        "ecommerce.progression.support-intake.support-intake.610a"
+      ],
+      "desc": "Every support ticket shows the same text in place of its reference.",
+      "file": "client/src/ProgressionPanel.tsx",
+      "edits": [
+        {
+          "find": "<strong data-role=\"support-reference\">{createdReference}</strong>",
+          "replace": "<strong data-role=\"support-reference\">Thanks</strong>"
+        }
+      ]
+    },
+    {
       "id": "progression-support-triage-update-is-disabled",
       "scenario": "tracks/ecommerce/scenarios/progression-support-triage.json",
       "targets": [
@@ -1574,6 +1589,21 @@
         {
           "find": "return items.filter((item) => (!q || item.name.toLowerCase().includes(q))",
           "replace": "return items.filter((item) => (!q || item.name.toLowerCase() === q)"
+        }
+      ]
+    },
+    {
+      "id": "progression-catalog-search-shows-every-product",
+      "scenario": "tracks/ecommerce/scenarios/01-catalog-search.json",
+      "targets": [
+        "ecommerce.feature.catalog.catalog-search.2d"
+      ],
+      "desc": "A non-empty catalog search shows every product instead of only matching names.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "(!q || item.name.toLowerCase().includes(q))",
+          "replace": "(!q || q.length > 0)"
         }
       ]
     },

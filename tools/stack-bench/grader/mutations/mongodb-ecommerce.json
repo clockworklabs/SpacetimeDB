@@ -882,6 +882,21 @@
       ]
     },
     {
+      "id": "catalog-search-shows-every-product",
+      "scenario": "tracks/ecommerce/scenarios/01-catalog-search.json",
+      "targets": [
+        "ecommerce.feature.catalog.catalog-search.2d"
+      ],
+      "desc": "A non-empty catalog search shows every product instead of only matching names.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "(!q || it.name.toLowerCase().includes(q))",
+          "replace": "(!q || q.length > 0)"
+        }
+      ]
+    },
+    {
       "id": "catalog-price-is-offset",
       "scenario": "tracks/ecommerce/scenarios/01-catalog-values.json",
       "targets": [
@@ -1672,6 +1687,21 @@
         {
           "find": "res.status(201).json({ ticket });",
           "replace": "res.status(201).json({ ticket: { ...ticket.toJSON(), reference: \"\" } });"
+        }
+      ]
+    },
+    {
+      "id": "support-intake-shows-a-fixed-reference",
+      "scenario": "tracks/ecommerce/scenarios/progression-support-intake.json",
+      "targets": [
+        "ecommerce.progression.support-intake.support-intake.610a"
+      ],
+      "desc": "Every support ticket shows the same text in place of its reference.",
+      "file": "client/src/ProgressionPanel.tsx",
+      "edits": [
+        {
+          "find": "<span data-role=\"support-reference\">{supportReference}</span>",
+          "replace": "<span data-role=\"support-reference\">Thanks</span>"
         }
       ]
     },
