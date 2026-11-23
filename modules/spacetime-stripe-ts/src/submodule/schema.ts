@@ -8,6 +8,8 @@ import {
   type ReducerCtx,
   type TransactionCtx,
   type SumBuilder,
+  type IdentityColumnBuilder,
+  type TimestampBuilder,
 } from 'spacetimedb/server';
 import * as v from 'valibot';
 import { install } from './install.js';
@@ -299,7 +301,10 @@ export const stripeConfigTable: ReturnType<
 > = table(stripeConfigOptions, stripeConfigRow);
 
 // Allowlist of identities permitted to call privileged procedures.
-export const stripeAdminIdentityRow = {
+export const stripeAdminIdentityRow: {
+  identity: IdentityColumnBuilder<{ isPrimaryKey: true }>;
+  addedAt: TimestampBuilder;
+} = {
   identity: t.identity().primaryKey(),
   addedAt: t.timestamp(),
 };

@@ -1,4 +1,10 @@
-import { table, t } from 'spacetimedb/server';
+import {
+  table,
+  t,
+  type IdentityColumnBuilder,
+  type StringColumnBuilder,
+  type TimestampBuilder,
+} from 'spacetimedb/server';
 
 export const authUserRow = {
   userId: t.string().primaryKey(),
@@ -72,7 +78,12 @@ export const authConfigRow = {
 
 // Maps an STDB Identity to the session it presented to link_connection.
 // Deleting a session deletes its bindings.
-export const authConnectionBindingRow = {
+export const authConnectionBindingRow: {
+  stdbIdentity: IdentityColumnBuilder<{ isPrimaryKey: true }>;
+  userId: StringColumnBuilder<{ indexType: 'btree' }>;
+  sessionId: StringColumnBuilder<{ indexType: 'btree' }>;
+  linkedAt: TimestampBuilder;
+} = {
   stdbIdentity: t.identity().primaryKey(),
   userId: t.string().index(),
   sessionId: t.string().index(),
@@ -81,7 +92,10 @@ export const authConnectionBindingRow = {
 
 // Operator allowlist. install seeds the publishing identity; privileged calls
 // (set_auth_config, revoke_session, admin changes) must come from an admin.
-export const authAdminIdentityRow = {
+export const authAdminIdentityRow: {
+  identity: IdentityColumnBuilder<{ isPrimaryKey: true }>;
+  addedAt: TimestampBuilder;
+} = {
   identity: t.identity().primaryKey(),
   addedAt: t.timestamp(),
 };
