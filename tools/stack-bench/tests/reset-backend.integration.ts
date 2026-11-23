@@ -25,12 +25,19 @@ test('runtime database provenance works against the Docker services', () => {
       '-v', 'ON_ERROR_STOP=1', '-c', `CREATE DATABASE ${postgresDatabase} OWNER ${POSTGRES_USER};`]);
     docker(['exec', 'stack-bench-postgres', 'psql', '-U', POSTGRES_USER, '-d', postgresDatabase,
       '-v', 'ON_ERROR_STOP=1', '-c',
-      `CREATE TABLE account (username text NOT NULL); INSERT INTO account VALUES ('${marker}');`]);
+      `CREATE TABLE account (username text NOT NULL); INSERT INTO account VALUES ('${marker}'); `
+      + `CREATE SCHEMA store; CREATE TABLE store.member (name text); INSERT INTO store.member VALUES ('${marker}-schema'); `
+      + `CREATE TABLE profile (doc jsonb); INSERT INTO profile VALUES ('{"user":{"name":"${marker}-json"}}');`]);
     docker(['exec', 'stack-bench-mongodb', 'mongosh', mongoDatabase, '--quiet', '--eval',
       `db.account.insertOne({ username: ${JSON.stringify(marker)} })`]);
 
     assert.equal(provePostgresUse({ lease: { resources: { database: postgresDatabase,
       container: container('stack-bench-postgres') } }, marker }).ok, true);
+    // An account kept in the application's own schema or inside a JSON document is found; part of a value is not.
+    for (const [value, found] of [[`${marker}-schema`, true], [`${marker}-json`, true], [marker.slice(0, -1), false]] as const) {
+      assert.equal(provePostgresUse({ lease: { resources: { database: postgresDatabase,
+        container: container('stack-bench-postgres') } }, marker: value }).ok, found, value);
+    }
     assert.equal(proveMongoDbUse({ lease: { resources: { database: mongoDatabase,
       container: container('stack-bench-mongodb') } }, marker }).ok, true);
   } finally {

@@ -156,27 +156,26 @@ test('only Realtime subscription upkeep on the leased gateway is a passive socke
   assert.equal(passive('ws://127.0.0.1:5173/socket', heartbeat), false);
 });
 
-test('Supabase provenance scans public application columns, then Auth accounts, through privileged SQL', () => {
+test('Supabase provenance searches every application column, then Auth email addresses, through privileged SQL', () => {
   const lease = supabaseLease();
   for (const [output, accounts, matches] of [['', '0\n', 0], ['', '1\n', 1], ['public.order_account.username\n', null, 1],
-    ['public.order_account.username\npublic.profile.name\n', null, 2]] as const) {
+    ['auth.users.raw_user_meta_data\nstorefront.profile.name\n', null, 2]] as const) {
     const sql: string[] = [];
     const result = proveSupabaseUse({ lease, marker: "sb'marker",
       exec: supabaseExec(lease, input => {
         sql.push(input);
-        if (input.includes('auth.users')) return accounts ?? assert.fail('a public match needs no account search');
+        if (input.includes('auth.users')) return accounts ?? assert.fail('a column match needs no email search');
         return output;
       }) });
     assert.equal(result.matches, matches);
     assert.equal(result.ok, matches > 0);
     assert.equal(result.verified, true);
-    assert.match(sql[0]!, /WHERE table_schema = 'public'/);
+    assert.match(sql[0]!, /NOT IN \('pg_catalog', 'information_schema'\)/);
     assert.match(sql[0]!, /'sb''marker'/);
     assert.match(sql[0]!, /\n\\gexec\n$/);
     assert.equal(sql.length, accounts === null ? 1 : 2);
     if (accounts !== null) {
-      // The metadata may keep the username under any key; the email keeps it as its local part.
-      assert.match(sql[1]!, /FROM auth\.users WHERE split_part\(email, '@', 1\) = 'sb''marker' OR jsonb_path_exists\(raw_user_meta_data, '\$\.\*\* \? \(@ == \$m\)', jsonb_build_object\('m', 'sb''marker'\)\)/);
+      assert.equal(sql[1], "SELECT count(*) FROM auth.users WHERE split_part(email, '@', 1) = 'sb''marker';\n");
     }
     if (accounts === '1\n') assert.match(result.reason, /Supabase Auth accounts/);
   }

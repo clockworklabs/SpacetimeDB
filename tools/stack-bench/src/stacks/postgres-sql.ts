@@ -149,16 +149,25 @@ export function readPostgresOrderData(run: PsqlRunner, account: string, item: st
   return readOrderDataSnapshot(JSON.parse(output.trim()), account, item, storage);
 }
 
-// Application data lives in `public`.
+// An application may keep its records in any schema it creates, and inside a
+// JSON document. Every readable column of every table outside PostgreSQL's own
+// schemas is searched for the exact marker, and every JSON value within one.
 export function provePostgresMarker(run: PsqlRunner, { label }: PostgresStack, marker: unknown):
   { ok: boolean; verified: boolean; matches: number; reason: string } {
   if (typeof marker !== 'string' || !marker) {
     throw new Error(`${label} provenance requires a non-empty application marker`);
   }
-  const output = run("SELECT format('SELECT %L WHERE EXISTS (SELECT 1 FROM %I.%I WHERE %I::text = %L LIMIT 1);', "
-    + "table_schema || '.' || table_name || '.' || column_name, table_schema, table_name, "
-    + `column_name, ${sqlString(marker)}) FROM information_schema.columns `
-    + "WHERE table_schema = 'public' ORDER BY table_name, ordinal_position\n\\gexec\n").trim();
+  const value = sqlString(marker);
+  const output = run("SELECT format('SELECT %L WHERE EXISTS (SELECT 1 FROM %I.%I WHERE %I::text = %L%s LIMIT 1);', "
+    + "c.table_schema || '.' || c.table_name || '.' || c.column_name, c.table_schema, c.table_name, "
+    + `c.column_name, ${value}, CASE WHEN c.data_type IN ('json', 'jsonb') THEN `
+    + "format(' OR jsonb_path_exists(%I::jsonb, %L, jsonb_build_object(''m'', %L))', "
+    + `c.column_name, '$.** ? (@ == $m)', ${value}) ELSE '' END) FROM information_schema.columns c `
+    + 'JOIN information_schema.tables t ON t.table_schema = c.table_schema AND t.table_name = c.table_name '
+    + "WHERE t.table_type = 'BASE TABLE' AND c.table_schema NOT IN ('pg_catalog', 'information_schema') "
+    + "AND c.table_schema NOT LIKE 'pg\\_%' AND has_schema_privilege(c.table_schema, 'USAGE') "
+    + "AND has_column_privilege(format('%I.%I', c.table_schema, c.table_name), c.column_name, 'SELECT') "
+    + 'ORDER BY c.table_schema, c.table_name, c.ordinal_position\n\\gexec\n').trim();
   const matches = output ? output.split(/\r?\n/).filter(Boolean).length : 0;
   return { ok: matches > 0, verified: true, matches,
     reason: matches
