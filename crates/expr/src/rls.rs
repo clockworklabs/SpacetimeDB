@@ -443,6 +443,67 @@ fn extend_lhs(expr: RelExpr, with: RelExpr) -> RelExpr {
     }
 }
 
+/// Extends a left deep join tree with `with`, preserving an equi-join predicate `(a, b)`
+/// when the leftmost leaf of `expr` is the joined table itself (matching `table_id` and `alias`).
+/// Returns the extended expression along with any unattached equi-join predicate.
+fn extend_lhs_eq(
+    expr: RelExpr,
+    with: RelExpr,
+    table_id: TableId,
+    alias: &str,
+    a: FieldProject,
+    b: FieldProject,
+) -> (RelExpr, Option<(FieldProject, FieldProject)>) {
+    match expr {
+        RelExpr::RelVar(rhs) if rhs.schema.table_id == table_id && rhs.alias.as_ref() == alias => (
+            RelExpr::EqJoin(
+                LeftDeepJoin {
+                    lhs: Box::new(with),
+                    rhs,
+                },
+                a,
+                b,
+            ),
+            None,
+        ),
+        RelExpr::RelVar(rhs) => (
+            RelExpr::LeftDeepJoin(LeftDeepJoin {
+                lhs: Box::new(with),
+                rhs,
+            }),
+            Some((a, b)),
+        ),
+        RelExpr::Select(input, pred) => {
+            let (input, leftover) = extend_lhs_eq(*input, with, table_id, alias, a, b);
+            (RelExpr::Select(Box::new(input), pred), leftover)
+        }
+        RelExpr::LeftDeepJoin(join) => {
+            let (lhs, leftover) = extend_lhs_eq(*join.lhs, with, table_id, alias, a, b);
+            (
+                RelExpr::LeftDeepJoin(LeftDeepJoin {
+                    lhs: Box::new(lhs),
+                    ..join
+                }),
+                leftover,
+            )
+        }
+        RelExpr::EqJoin(join, c, d) => {
+            let (lhs, leftover) = extend_lhs_eq(*join.lhs, with, table_id, alias, a, b);
+            (
+                RelExpr::EqJoin(
+                    LeftDeepJoin {
+                        lhs: Box::new(lhs),
+                        ..join
+                    },
+                    c,
+                    d,
+                ),
+                leftover,
+            )
+        }
+    }
+}
+
 /// Replaces the leaf node determined by `table_id` and `alias` with the subtree `with`.
 /// Ensures the expanded tree stays left deep.
 fn expand_leaf(expr: RelExpr, table_id: TableId, alias: &str, with: &RelExpr) -> RelExpr {
@@ -456,10 +517,16 @@ fn expand_leaf(expr: RelExpr, table_id: TableId, alias: &str, with: &RelExpr) ->
             lhs: Box::new(expand_leaf(*lhs, table_id, alias, with)),
             rhs,
         }),
-        RelExpr::EqJoin(join, a, b) if ok(&join.rhs) => RelExpr::Select(
-            Box::new(extend_lhs(with.clone(), *join.lhs)),
-            Expr::BinOp(BinOp::Eq, Box::new(Expr::Field(a)), Box::new(Expr::Field(b))),
-        ),
+        RelExpr::EqJoin(join, a, b) if ok(&join.rhs) => {
+            let (extended, leftover) = extend_lhs_eq(with.clone(), *join.lhs, table_id, alias, a, b);
+            match leftover {
+                None => extended,
+                Some((a, b)) => RelExpr::Select(
+                    Box::new(extended),
+                    Expr::BinOp(BinOp::Eq, Box::new(Expr::Field(a)), Box::new(Expr::Field(b))),
+                ),
+            }
+        }
         RelExpr::EqJoin(LeftDeepJoin { lhs, rhs }, a, b) => RelExpr::EqJoin(
             LeftDeepJoin {
                 lhs: Box::new(expand_leaf(*lhs, table_id, alias, with)),
@@ -631,8 +698,8 @@ mod tests {
                 ProjectName::Some(
                     RelExpr::Select(
                         Box::new(RelExpr::Select(
-                            Box::new(RelExpr::Select(
-                                Box::new(RelExpr::LeftDeepJoin(LeftDeepJoin {
+                            Box::new(RelExpr::EqJoin(
+                                LeftDeepJoin {
                                     lhs: Box::new(RelExpr::RelVar(Relvar {
                                         schema: player_schema.clone(),
                                         alias: "player".into(),
@@ -645,29 +712,26 @@ mod tests {
                                         delta: None,
                                         view_args: None,
                                     },
-                                })),
-                                Expr::BinOp(
-                                    BinOp::Eq,
-                                    Box::new(Expr::Field(FieldProject {
-                                        table: "u_2".into(),
-                                        field: 0,
-                                        ty: AlgebraicType::identity(),
-                                    })),
-                                    Box::new(Expr::Param(Parameter::Sender, AlgebraicType::identity())),
-                                ),
+                                },
+                                FieldProject {
+                                    table: "player".into(),
+                                    field: 0,
+                                    ty: AlgebraicType::U64,
+                                },
+                                FieldProject {
+                                    table: "u_2".into(),
+                                    field: 1,
+                                    ty: AlgebraicType::U64,
+                                },
                             )),
                             Expr::BinOp(
                                 BinOp::Eq,
                                 Box::new(Expr::Field(FieldProject {
-                                    table: "player".into(),
-                                    field: 0,
-                                    ty: AlgebraicType::U64,
-                                })),
-                                Box::new(Expr::Field(FieldProject {
                                     table: "u_2".into(),
-                                    field: 1,
-                                    ty: AlgebraicType::U64,
+                                    field: 0,
+                                    ty: AlgebraicType::identity(),
                                 })),
+                                Box::new(Expr::Param(Parameter::Sender, AlgebraicType::identity())),
                             ),
                         )),
                         Expr::BinOp(

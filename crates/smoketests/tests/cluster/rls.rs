@@ -104,3 +104,69 @@ fn test_rls_no_disconnect() {
         logs
     );
 }
+
+/// The `id` of every `doc` row inserted across a subscription's updates, sorted.
+fn inserted_doc_ids(events: &[serde_json::Value]) -> Vec<u64> {
+    let mut ids: Vec<u64> = events
+        .iter()
+        .filter_map(|event| event.get("doc"))
+        .flat_map(|doc| doc["inserts"].as_array().cloned().unwrap_or_default())
+        .map(|row| row["id"].as_u64().expect("doc row has an id"))
+        .collect();
+    ids.sort();
+    ids
+}
+
+/// Tests subscribing to a table whose RLS rule joins a table that has its own RLS rule
+#[test]
+fn test_rls_subscribe_join_on_table_with_rls() {
+    let test = Smoketest::builder().precompiled_module("rls-join").build();
+
+    // The database owner bypasses RLS, so both clients are new identities.
+    test.new_identity().unwrap();
+    test.call("join", &["1"]).unwrap();
+    test.call("add_doc", &["1", "1"]).unwrap();
+    let alice = test.read_token().unwrap();
+
+    test.new_identity().unwrap();
+    test.call("join", &["2"]).unwrap();
+    test.call("add_doc", &["2", "2"]).unwrap();
+    let bob = test.read_token().unwrap();
+
+    // Each client's initial update holds only the docs in its own scopes.
+    let initial = test.subscribe(&["select * from doc"]).expect_rows(0).run().unwrap();
+    assert_eq!(inserted_doc_ids(&initial), [2]);
+    test.login_with_token(&alice).unwrap();
+    let initial = test.subscribe(&["select * from doc"]).expect_rows(0).run().unwrap();
+    assert_eq!(inserted_doc_ids(&initial), [1]);
+
+    // Joining a scope sends Alice the docs already in it.
+    let sub = test
+        .subscribe(&["select * from doc"])
+        .expect_rows(1)
+        .background()
+        .unwrap();
+    test.call("join", &["2"]).unwrap();
+    assert_eq!(inserted_doc_ids(&sub.collect().unwrap()), [2]);
+
+    // A new doc reaches every member of its scope.
+    let alice_sub = test
+        .subscribe(&["select * from doc"])
+        .expect_rows(1)
+        .background()
+        .unwrap();
+    test.login_with_token(&bob).unwrap();
+    let bob_sub = test
+        .subscribe(&["select * from doc"])
+        .expect_rows(1)
+        .background()
+        .unwrap();
+    test.call("add_doc", &["3", "2"]).unwrap();
+    assert_eq!(inserted_doc_ids(&alice_sub.collect().unwrap()), [3]);
+    assert_eq!(inserted_doc_ids(&bob_sub.collect().unwrap()), [3]);
+
+    // A client in no scope sees no docs.
+    test.new_identity().unwrap();
+    let initial = test.subscribe(&["select * from doc"]).expect_rows(0).run().unwrap();
+    assert_eq!(inserted_doc_ids(&initial), Vec::<u64>::new());
+}

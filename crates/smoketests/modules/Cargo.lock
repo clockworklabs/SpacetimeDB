@@ -992,6 +992,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-rls-join"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-rls-no-filter"
 version = "0.1.0"
 dependencies = [

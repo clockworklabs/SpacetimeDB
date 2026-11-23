@@ -39,6 +39,7 @@ members = [
     "rls-broken-private-table",
     "rls-no-filter",
     "rls-with-filter",
+    "rls-join",
     "permissions-private",
     "permissions-lifecycle",
 
