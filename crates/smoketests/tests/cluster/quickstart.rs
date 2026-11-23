@@ -738,18 +738,24 @@ log = "0.4"
                     "bin~/Release",
                 )?;
 
-                // Add a floating reference without resolving it. Resolving here would pick the newest version
-                // from nuget.org, which the restore (limited to the local source by package source mapping)
-                // can't find if nuget.org has a newer release than this checkout.
+                // Resolve only against the locally packed SDK and its dependency. Without `--source`, `add`
+                // picks the newest version from nuget.org, which the restore (limited to the local sources by
+                // package source mapping) can't find if nuget.org has a newer release than this checkout.
+                let sdk_source = workspace.join("sdks/csharp/bin~/Release").display().to_string();
+                let bsatn_source = workspace
+                    .join("crates/bindings-csharp/BSATN.Runtime/bin/Release")
+                    .display()
+                    .to_string();
                 run_cmd(
                     &[
                         "dotnet",
                         "add",
                         "package",
                         "SpacetimeDB.ClientSDK",
-                        "--version",
-                        "*",
-                        "--no-restore",
+                        "--source",
+                        &sdk_source,
+                        "--source",
+                        &bsatn_source,
                     ],
                     client_path,
                 )?;
