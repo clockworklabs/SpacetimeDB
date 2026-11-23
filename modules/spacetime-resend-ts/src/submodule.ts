@@ -26,6 +26,11 @@ export {
   type SendEmailArgs,
 } from './submodule/operations.js';
 
-export { enqueueEmailInTx, resendSendEmailJob } from './submodule/queue.js';
+export {
+  cancelQueuedEmail,
+  enqueueEmailInTx,
+  resendSendEmailJob,
+  setEmailQueueLimit,
+} from './submodule/queue.js';
 export { setResendConfig, getResendConfigStatus } from './submodule/config.js';
 export { addAdminIdentity, removeAdminIdentity } from './submodule/auth.js';

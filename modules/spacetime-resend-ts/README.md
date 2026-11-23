@@ -71,14 +71,22 @@ export const signUp = spacetimedb.reducer(
 ```
 
 - Resend's own copy of `@spacetimedb/retry` sends queued emails from the `email`
-  queue, up to 8 attempts starting 5 seconds apart. Every attempt sends the same
-  `Idempotency-Key`, so a retry can't send twice.
-- 4xx responses other than 408, 409 and 429 aren't retried.
-- An email that is sent gets a `resend_email` row like `send_email`'s. One that
-  fails or is cancelled gets a `resend_email` row with ID `outbox:<id>` and
-  status `failed` or `cancelled`.
-- `enqueueEmailInTx` throws a `SenderError` for invalid input, which rolls back
-  the caller's transaction. It doesn't check who is calling.
+  queue: up to 8 attempts over about 10 minutes, starting 5 seconds apart.
+  Every attempt sends the same `Idempotency-Key`, so a retry can't send twice.
+- A missing config, 401, 403, 408, 429 and 5xx responses are retried, so a
+  rotated API key can be fixed while emails wait. Other 4xx responses, and a 409
+  for an idempotency key already used for a different email, are not.
+- An email Resend accepts gets a `resend_email` row like `send_email`'s. One
+  that fails or is cancelled first gets a `resend_email` row with ID
+  `outbox:<id>` and status `failed` or `cancelled`. If an attempt already in
+  flight then sends it, the real row replaces that one.
+- `cancelQueuedEmail(ctx, outboxId)` cancels a queued email.
+  `setEmailQueueLimit(ctx, maxParallelism)` limits how many send at once; 0
+  pauses sending. Without a limit, bursts can hit Resend's rate limit, which is
+  retried.
+- `enqueueEmailInTx`, `cancelQueuedEmail` and `setEmailQueueLimit` don't check
+  who is calling. `enqueueEmailInTx` throws a `SenderError` for invalid input,
+  which rolls back the caller's transaction.
 
 For delivery updates, register `makeResendWebhookHandler()` on an HTTP route
 and add that URL in Resend. See the [Dispatch example](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/spacetime-resend-ts/example) for a
@@ -140,6 +148,7 @@ Host modules should expose caller- or tenant-scoped views over `userId` or
 - `send_email({ from, to, subject, html, text, cc, bcc, replyTo, tagsJson, headersJson, scheduledAt, idempotencyKey})` - admin-gated; inserts a `resend_email` row with `status = queued`, returns `{ resendId }`. The first webhook flips it to `sent`/`delivered`.
 - `enqueueEmailInTx(ctx, email)` - takes the same fields as `send_email`; queues
   the email in the caller's transaction and returns its outbox ID
+- `cancelQueuedEmail(ctx, outboxId)` / `setEmailQueueLimit(ctx, maxParallelism)`
 - `cancel_email({ resendId })` - admin-gated
 - `resend_api_request({ method, path, jsonBody, idempotencyKey })` - admin-gated
   request to a relative `api.resend.com` path; accepted methods are `GET`, `POST`,

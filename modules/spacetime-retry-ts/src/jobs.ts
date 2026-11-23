@@ -8,7 +8,7 @@ import {
   type SumBuilder,
   type VariantsObj,
 } from 'spacetimedb/server';
-import { Timestamp } from 'spacetimedb';
+import { Timestamp, type Identity } from 'spacetimedb';
 import { retryFailed, type RetryResult } from './handler.js';
 
 const ONE_SECOND_MICROS = 1_000_000n;
@@ -19,6 +19,7 @@ const MAX_ERROR_LENGTH = 2048;
 const MAX_ROWS = 1000;
 const MAX_PARALLELISM = 1000;
 const DEFAULT_LEASE_SECONDS = 300;
+const MAX_LEASE_SECONDS = 86_400;
 
 export const jobErrors = {
   invalidTaskName: 'retry.invalid_task_name',
@@ -29,6 +30,7 @@ export const jobErrors = {
   taskAlreadyExists: 'retry.task_already_exists',
   notAuthorized: 'retry.not_authorized',
   leaseExpired: 'retry.lease_expired',
+  onCompleteFailed: 'retry.on_complete_failed',
 } as const;
 
 type JobStatusBuilder = SumBuilder<
@@ -142,7 +144,6 @@ type IndexScan<Row> = IteratorObject<Row, undefined>;
 /** A transaction whose schema includes `retry.tables`. */
 export interface RetryJobCtx {
   readonly timestamp: Timestamp;
-  readonly senderAuth: { readonly isInternal: boolean };
   readonly random: () => number;
   newUuidV7(): { toString(): string };
   readonly db: {
@@ -188,6 +189,8 @@ export interface RetryJobCtx {
 
 /** A host procedure context whose schema includes `retry.tables`. */
 export interface RetryProcedureCtx<Tx extends RetryJobCtx = RetryJobCtx> {
+  readonly sender: Identity;
+  readonly databaseIdentity: Identity;
   withTx<T>(body: (tx: Tx) => T): T;
 }
 
@@ -198,8 +201,8 @@ export interface RetryJobInfo {
   /** 1 for the first attempt. */
   readonly attempt: number;
   /**
-   * The same for every attempt of this job and unique across databases. Send
-   * it as an idempotency key.
+   * The same for every attempt of this job: `retry-` and a UUID v7 made when
+   * the job was enqueued. Send it as an idempotency key.
    */
   readonly idempotencyKey: string;
 }
@@ -254,6 +257,15 @@ export function jobs<Args extends { tag: string }>(
   retryJob: ReturnType<typeof retryJobTable>,
   leaseSecs = DEFAULT_LEASE_SECONDS
 ) {
+  if (
+    !Number.isInteger(leaseSecs) ||
+    leaseSecs < 1 ||
+    leaseSecs > MAX_LEASE_SECONDS
+  ) {
+    throw new Error(
+      `retry: leaseSecs must be an integer from 1 to ${MAX_LEASE_SECONDS}`
+    );
+  }
   const leaseMicros = BigInt(leaseSecs) * ONE_SECOND_MICROS;
   let onComplete:
     | ((tx: unknown, outcome: RetryOutcome<Args>) => void)
@@ -266,15 +278,26 @@ export function jobs<Args extends { tag: string }>(
     error: string | undefined
   ): void {
     const done = update(ctx, job, { status: { tag: status }, error });
-    onComplete?.(ctx, {
-      id: done.id,
-      name: done.name,
-      queue: done.queue,
-      args: done.args as Args,
-      status,
-      attempts: done.attempt,
-      error,
-    });
+    try {
+      onComplete?.(ctx, {
+        id: done.id,
+        name: done.name,
+        queue: done.queue,
+        args: done.args as Args,
+        status,
+        attempts: done.attempt,
+        error,
+      });
+    } catch (caught) {
+      // Rethrowing would roll back the job's result and run it again.
+      ctx.db.retryJob.id.update({
+        ...done,
+        error: `${jobErrors.onCompleteFailed}:${errorText(caught)}`.slice(
+          0,
+          MAX_ERROR_LENGTH
+        ),
+      });
+    }
     if (job.status.tag === 'Running') wake(ctx, done.queue);
     prune(ctx, status);
   }
@@ -370,15 +393,26 @@ export function jobs<Args extends { tag: string }>(
     });
   }
 
-  /** Keep at most `MAX_ROWS` finished jobs of each status. */
+  /** Keep at most `MAX_ROWS` finished jobs of each status, newest first. */
   function prune(ctx: RetryJobCtx, status: JobStatusTag): void {
-    const scan = () =>
-      ctx.db.retryJob.byStatusUpdatedAt.filter([
-        { tag: status },
-        new Range<Timestamp>(),
-      ]);
-    const excess = [...scan()].length - MAX_ROWS;
-    for (const row of take(scan(), excess)) ctx.db.retryJob.delete(row);
+    let count = 0;
+    for (const _ of ctx.db.retryJob.byStatusUpdatedAt.filter([
+      { tag: status },
+      new Range<Timestamp>(),
+    ]))
+      count++;
+    if (count <= MAX_ROWS) return;
+    // An index scan yields rows written in this transaction first, so only
+    // rows from earlier transactions are candidates.
+    const older = ctx.db.retryJob.byStatusUpdatedAt.filter([
+      { tag: status },
+      new Range<Timestamp>(undefined, {
+        tag: 'excluded',
+        value: ctx.timestamp,
+      }),
+    ]);
+    for (const row of take(older, count - MAX_ROWS))
+      ctx.db.retryJob.delete(row);
   }
 
   return {
@@ -507,10 +541,10 @@ export function jobs<Args extends { tag: string }>(
         wake(tx, job.queue);
       };
 
+      if (!ctx.sender.isEqual(ctx.databaseIdentity)) {
+        throw new SenderError(jobErrors.notAuthorized);
+      }
       const claimed = ctx.withTx(tx => {
-        if (!tx.senderAuth.isInternal) {
-          throw new SenderError(jobErrors.notAuthorized);
-        }
         const job = tx.db.retryJob.id.find(fire.jobId);
         if (!job || job.generation !== fire.generation) return undefined;
         if (job.status.tag === 'Running') {

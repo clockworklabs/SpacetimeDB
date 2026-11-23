@@ -122,14 +122,18 @@ export const sendWelcome = db.reducer({ emailId: t.u64() }, (ctx, args) => {
   send `job.idempotencyKey` to services that accept one.
 - `setQueue(ctx, name, { maxParallelism })` limits how many jobs in a queue run
   at once. 0 pauses the queue. Jobs that come due while the queue is full wait
-  and start oldest first when there is room. Queues without a limit run up to
+  and start oldest first when there is room, though a job that comes due just
+  as room frees up may start before them. Queues without a limit run up to
   1,000 jobs at once.
 - `cancel(ctx, id)` stops a job. A running attempt keeps going, but its result
   is dropped.
-- `onComplete` runs for jobs that succeed, fail, or are cancelled. A throw rolls
-  back that transaction.
+- `onComplete` runs for jobs that succeed, fail, or are cancelled, in the
+  transaction that finishes the job. If it throws, the job still finishes,
+  its `error` is set to `retry.on_complete_failed:<message>`, and writes it
+  made before throwing are kept.
 - `status(ctx, id)` returns the job's row. The latest 1,000 jobs of each final
   status are kept.
+- `leaseSecs` must be an integer from 1 to 86,400.
 
 A submodule can mount its own copy of Retry by spreading `retry.tables` into
 its schema. Each copy's tables and queues are separate.
@@ -160,7 +164,8 @@ its schema. Each copy's tables and queues are separate.
   `notAuthorized`, `invalidTaskName`, `invalidQueueName`, `invalidMaxAttempts`,
   `invalidBackoffSeconds`, `invalidParallelism`, `taskAlreadyExists` (followed
   by `:` and the task or job name), and `cannotRemoveLastAdmin`.
-  `leaseExpired` is recorded as an attempt's error, not thrown.
+  `leaseExpired` and `onCompleteFailed` are recorded as a job's error, not
+  thrown.
 
 The generated client can submit a task when the host exports
 `submitRetryTask`:

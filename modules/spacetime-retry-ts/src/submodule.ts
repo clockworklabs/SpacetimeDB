@@ -46,6 +46,7 @@ export const errors = {
   invalidQueueName: 'retry.invalid_queue_name',
   invalidParallelism: 'retry.invalid_parallelism',
   leaseExpired: 'retry.lease_expired',
+  onCompleteFailed: 'retry.on_complete_failed',
 } as const;
 
 function retryTaskColumns(args: SumBuilder<VariantsObj>) {
@@ -176,7 +177,7 @@ export type RetryTasks = VariantsObj;
 
 export interface RetryConfig<
   Tasks extends RetryTasks,
-  Jobs extends RetryTasks,
+  Jobs extends RetryTasks = Record<never, never>,
 > {
   /** Tasks for `submit` and `retryReducer`. */
   tasks?: Tasks;
@@ -225,7 +226,7 @@ export type RetryProcedureHandlers<Jobs extends RetryTasks, Proc> = {
 export interface RetryProcedureOptions<Jobs extends RetryTasks, Tx> {
   /**
    * Runs in the transaction that finishes a job, including `cancel`. A throw
-   * rolls that transaction back.
+   * is caught and saved in the job's `error`.
    */
   onComplete?: (tx: Tx, outcome: RetryOutcome<RetryArgs<Jobs>>) => void;
 }

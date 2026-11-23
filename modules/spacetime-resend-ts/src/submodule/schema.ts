@@ -160,6 +160,8 @@ export const resendOutboxRow = {
   headersJson: t.option(t.string()),
   scheduledAt: t.option(t.string()),
   idempotencyKey: t.option(t.string()),
+  // Set once Resend accepts the email.
+  resendId: t.option(t.string()),
   createdAt: t.timestamp(),
 };
 

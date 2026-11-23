@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
-import { Timestamp } from 'spacetimedb';
-import { schema, SenderError, t } from 'spacetimedb/server';
+import { Identity, Timestamp } from 'spacetimedb';
+import { Range, schema, SenderError, t } from 'spacetimedb/server';
 import {
   client,
   errors,
@@ -31,9 +31,6 @@ const tx: RetryJobCtx = {
   get timestamp() {
     return new Timestamp(now);
   },
-  get senderAuth() {
-    return { isInternal: internal };
-  },
   random: () => random,
   newUuidV7: () => `uuid-${nextId + 1n}`,
   db: {
@@ -58,12 +55,27 @@ const tx: RetryJobCtx = {
             j => j.id
           ).values(),
       },
+      // Like the datastore, rows written in the current transaction (here,
+      // at `now`) come before committed rows.
       byStatusUpdatedAt: {
-        filter: ([status]) =>
-          sortBy(
-            [...jobs.values()].filter(j => j.status.tag === status.tag),
+        filter: ([status, range]: [{ tag: string }, Range<Timestamp>]) => {
+          const to = range.to;
+          const rows = sortBy(
+            [...jobs.values()].filter(
+              j =>
+                j.status.tag === status.tag &&
+                (to.tag !== 'excluded' ||
+                  j.updatedAt.microsSinceUnixEpoch <
+                    to.value.microsSinceUnixEpoch)
+            ),
             j => j.updatedAt.microsSinceUnixEpoch
-          ).values(),
+          );
+          const current = (j: Job) => j.updatedAt.microsSinceUnixEpoch === now;
+          return [
+            ...rows.filter(current),
+            ...rows.filter(j => !current(j)),
+          ].values();
+        },
       },
       insert(row) {
         const inserted = { ...row, id: ++nextId };
@@ -114,6 +126,7 @@ const tx: RetryJobCtx = {
 
 const calls: string[] = [];
 const outcomes: RetryOutcome<unknown>[] = [];
+let completeThrows = false;
 // Set by a test to act while an attempt is in flight.
 let during: (() => void) | undefined;
 const retry = client({
@@ -137,9 +150,21 @@ const run = retry.retryProcedure(
       throw new SenderError('bad.input');
     },
   },
-  { onComplete: (_tx: unknown, outcome) => outcomes.push(outcome) }
+  {
+    onComplete(_tx: unknown, outcome) {
+      outcomes.push(outcome);
+      if (completeThrows) throw new Error('hook broke');
+    },
+  }
 );
-const proc = { withTx: <T>(body: (ctx: RetryJobCtx) => T) => body(tx) };
+const database = Identity.zero();
+const proc = {
+  get sender() {
+    return internal ? database : new Identity(1n);
+  },
+  databaseIdentity: database,
+  withTx: <T>(body: (ctx: RetryJobCtx) => T) => body(tx),
+};
 const fire = (row: Fire) => {
   fires.delete(row.scheduledId);
   (run as (ctx: unknown, args: { arg: Fire }) => void)(proc, { arg: row });
@@ -294,6 +319,24 @@ assert.throws(() => retry.setQueue(tx, 'mail', { maxParallelism: -1 }), {
   message: errors.invalidParallelism,
 });
 
+// A throwing onComplete still finishes the job, with the error saved.
+completeThrows = true;
+const hook = send('hook');
+fire(firesOf(hook)[0]);
+completeThrows = false;
+assert.equal(retry.status(tx, hook)?.status.tag, 'Succeeded');
+assert.equal(
+  retry.status(tx, hook)?.error,
+  `${errors.onCompleteFailed}:hook broke`
+);
+assert.equal(firesOf(hook).length, 0);
+assert.equal(calls.filter(c => c.startsWith('hook:')).length, 1);
+
+// leaseSecs is checked when the client is made.
+for (const leaseSecs of [0, 1.5, 86_401]) {
+  assert.throws(() => client({ leaseSecs, jobs: { x: t.unit() } }));
+}
+
 // Cancelling runs onComplete, and drops a running attempt's result.
 const c = send('c');
 during = () => {
@@ -306,7 +349,7 @@ assert.equal(outcomes.at(-1)?.status, 'Cancelled');
 assert.equal(retry.cancel(tx, c), false);
 assert.equal(firesOf(c).length, 0);
 
-// Finished jobs are kept up to 1000 per status.
+// Finished jobs are kept up to 1000 per status, newest first.
 for (let i = 0; i < 1001; i++) {
   now += 1n;
   retry.cancel(tx, send(`bulk-${i}`));
