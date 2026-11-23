@@ -151,7 +151,10 @@ test('PostgreSQL runtime provenance finds an application marker in the exact lea
   assert.equal(proof.args.includes('ON_ERROR_STOP=1'), true);
   assert.match(proof.options.input ?? '', /FROM information_schema\.columns/);
   assert.match(proof.options.input ?? '', /ann''proof/);
-  assert.match(proof.options.input ?? '', /ORDER BY table_name, ordinal_position\n\\gexec/);
+  assert.match(proof.options.input ?? '', /NOT IN \('pg_catalog', 'information_schema'\)/);
+  assert.match(proof.options.input ?? '', /has_schema_privilege\(c\.table_schema, 'USAGE'\)/);
+  assert.match(proof.options.input ?? '', /jsonb_path_exists/);
+  assert.match(proof.options.input ?? '', /ORDER BY c\.table_schema, c\.table_name, c\.ordinal_position\n\\gexec/);
 
   const emptyExec = (_command: string, args: readonly string[], _options: TextCommandOptions): string =>
     args[0] === 'inspect'
@@ -360,6 +363,29 @@ test('Spacetime reset publishes inside the exact leased build container', () => 
         throw new Error('404 Not Found');
       } }), 'an already absent rejected module is ready for accepted startup');
 
+    // Output of spacetime 2.16 publish --delete-data, recorded live.
+    const built = 'Build finished successfully.\nEnvironment STOREFRONT_GATEWAY (shell)\nPublishing module...\n';
+    const refused = (message: string) => `${built}Error: ${message}\nCaused by:\n    HTTP status server error `
+      + '(500 Internal Server Error) for url (http://127.0.0.1:3214/v1/database/app-ecom-run4?clear=true&host_type=Js)\n';
+    for (const [stdout, appFault] of [
+      [refused('The instance encountered a fatal error.'), true],
+      [refused('init sender boom'), false],
+      [`${built.replace('Environment STOREFRONT_GATEWAY (shell)\n', '')}Error: Missing required environment variable(s) ["STOREFRONT_GATEWAY"]\n`, false],
+      ["src/index.ts(182,14): error TS2322: Type 'string' is not assignable to type 'number'.\n", false],
+      ['Error: The instance encountered a fatal error.\nCaused by:\n    0: client error (Connect)\n', false],
+    ] as const) {
+      const failure = (() => {
+        try {
+          resetBackend({ backend: 'spacetime', app, exec: (_command, args) => {
+            if (args[0] === 'inspect') return buildContainer.id;
+            if (args.includes('publish')) throw Object.assign(new Error('Command failed'), { status: 1, stdout, stderr: '' });
+            return '';
+          } });
+        } catch (error) { return error as { code?: string }; }
+        assert.fail('the reset publish failed');
+      })();
+      assert.equal(failure.code === 'generated_app_not_restartable', appFault, stdout);
+    }
   } finally {
     if (previousLease === undefined) delete process.env.STACK_BENCH_LEASE;
     else process.env.STACK_BENCH_LEASE = previousLease;

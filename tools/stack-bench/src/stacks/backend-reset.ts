@@ -10,6 +10,7 @@ import { CODING_CONTAINER_SPACETIME_CLI, codingContainerAgentCommand, codingCont
   from '../runtime/coding-container-policy.js';
 
 export const GENERATED_APP_LAYOUT_EXIT_CODE = 10;
+export const GENERATED_APP_NOT_RESTARTABLE_EXIT_CODE = 11;
 
 interface BackendResetRequest {
   backend: string;

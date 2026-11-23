@@ -27,8 +27,8 @@ Rules that decide the outcome:
 
 - A refusal is the stack's defined error result: HTTP 400, 401, 403, 409, or
   422; HTTP 404 only after the same operation succeeded for an authorized
-  caller; a Spacetime reducer failure (HTTP 530, which also covers a panic);
-  or a thrown `ConvexError`. HTTP 500 is never a refusal. A missing route or an
+  caller; a Spacetime reducer error with the module's own message (HTTP 530,
+  but not the host's fixed text for a crash); or a thrown `ConvexError`. HTTP 500 is never a refusal. A missing route or an
   incomplete response cannot prove authorization, so a refusal check without a
   proven route is inconclusive.
 - A page navigation timeout is inconclusive, because external resources can
@@ -45,9 +45,10 @@ Rules that decide the outcome:
   check fails, unless the control was refused, the container was lost, or the
   command could not run or timed out. The app must run in one process group on
   its port.
-- On Spacetime, the database reset republishes the app's module. If that
-  publish fails, the run is not scored. On the other stacks, an app that cannot
-  start on an empty database fails.
+- On Spacetime, the database reset republishes the app's module. If the module
+  builds and its instance crashes while initializing the empty database, the app
+  fails. If the publish fails any other way, the run is not scored. On the other
+  stacks, an app that cannot start on an empty database fails.
 - Each check file has a grading time limit. A check still running when the limit
   is reached fails, and so do the checks after it, even when backend restarts or
   recoveries used the time.

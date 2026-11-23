@@ -138,9 +138,19 @@ export function resetSpacetime({ lease, app, exec = execFileSync }:
     { encoding: 'utf8', stdio: 'pipe', timeout: RESET_TIMEOUT_MS });
   } catch (error) {
     const detail = streams(error, 'stdout', 'stderr').trim() || streams(error, 'message');
-    throw new Error(`SpacetimeDB reset publish failed in leased container: ${detail}`, { cause: error });
+    const failure = new Error(`SpacetimeDB reset publish failed in leased container: ${detail}`, { cause: error });
+    throw spacetimeInitCrashed(detail) ? Object.assign(failure, { code: 'generated_app_not_restartable' }) : failure;
   }
   return `reset spacetime module ${lease.resources.module} on ${lease.resources.serverUri}`;
+}
+
+// The module built, and the server reported its own instance crash while the
+// empty database ran init. A module's message (a SenderError) cannot be told
+// apart from other server errors on that response, so it stays a reset failure.
+export function spacetimeInitCrashed(output: string): boolean {
+  return /^Build finished successfully\.$/m.test(output)
+    && /^Error: The instance encountered a fatal error\.$/m.test(output)
+    && /HTTP status server error \(500 [^)]*\) for url \([^)\s]*\/v1\/database\/[^)\s]*\?clear=true[^)\s]*\)/.test(output);
 }
 
 export function setSpacetimeStock({ item, warehouse, quantity, spacetime,

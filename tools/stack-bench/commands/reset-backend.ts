@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { GENERATED_APP_LAYOUT_EXIT_CODE, resetBackend } from '../src/stacks/backend-reset.js';
+import { GENERATED_APP_LAYOUT_EXIT_CODE, GENERATED_APP_NOT_RESTARTABLE_EXIT_CODE, resetBackend }
+  from '../src/stacks/backend-reset.js';
 import { GeneratedAppLayoutError } from '../src/runtime/spacetime-layout.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 
@@ -20,5 +21,5 @@ Promise.resolve().then(() => resetBackend({ backend, app })).then(result => {
     .map(value => String(value).trim()).join('\n');
   if (childOutput) console.error(redactCredentials(childOutput).slice(-2000));
     console.error(redactCredentials(error.stack ?? error.message));
-  process.exitCode = 1;
+  process.exitCode = error?.code === 'generated_app_not_restartable' ? GENERATED_APP_NOT_RESTARTABLE_EXIT_CODE : 1;
 });

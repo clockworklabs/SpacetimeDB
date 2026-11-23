@@ -34,7 +34,7 @@ import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
 import { aggregatePackRuntime, exceededPackBudgets } from '../src/composition/pack-runtime.js';
 import { hashAppSource } from '../src/runtime/source-snapshot.js';
-import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.js';
+import { GENERATED_APP_LAYOUT_EXIT_CODE, GENERATED_APP_NOT_RESTARTABLE_EXIT_CODE } from '../src/stacks/backend-reset.js';
 import { acquireGradingSlot, readBackendLease } from '../src/runtime/backend-lease.js';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.js';
@@ -185,7 +185,7 @@ export function resetFailureOutcome(error: unknown): ResetOutcome {
   return failure.status === GENERATED_APP_LAYOUT_EXIT_CODE
     ? { kind: 'app_failure', phase: 'application-layout',
       appFailures: ['application-layout'] }
-    : failure.code === 'generated_app_not_restartable'
+    : failure.code === 'generated_app_not_restartable' || failure.status === GENERATED_APP_NOT_RESTARTABLE_EXIT_CODE
     ? { kind: 'app_failure', phase: 'application-restart',
       appFailures: ['application-restart'] }
     : { kind: 'harness_failure', phase: 'database-reset' };
@@ -535,13 +535,16 @@ export function databaseProvenanceFailure(error: unknown): { kind: string; phase
 }
 
 // A successful browser/provider flow is not evidence of an application database write.
+// A failed sign-up is evidence of nothing about the database: the account checks
+// measure the failure, and the level is graded with the database unproven.
 export async function verifyApplicationDatabaseMarker(
   args: Pick<RunArguments, 'backend' | 'url' | 'browserWsEndpoint' | 'databaseLease'>,
   definition: DatabaseProvenanceDefinition,
   { write = writeApplicationDatabaseMarker, read = checkRuntimeDatabaseProvenance } = {},
-): Promise<{ write: ProvenanceWrite; runtime: RuntimeProvenance | null }> {
+): Promise<{ write: ProvenanceWrite; runtime: RuntimeProvenance }> {
   const result = await write(args, definition);
-  return { write: result, runtime: result.ok ? read(args, result.marker) : null };
+  return { write: result, runtime: result.ok ? read(args, result.marker) : { ok: null, verified: false,
+    reason: `not proven: the application sign-up failed (${result.reason})` } };
 }
 
 export function checkRuntimeDatabaseProvenance(args: Pick<RunArguments, 'backend' | 'databaseLease'>,
@@ -1071,7 +1074,7 @@ async function main() {
     }
     let runtime = checkRuntimeDatabaseProvenance(args);
     let proofError = null;
-    let actionFailure: string | null = null;
+    let signUpFailed = false;
     const proof = track.databaseProvenance;
     const supportsRuntimeProof = 'proveUse' in STACK_ADAPTER_REGISTRY.get(args.backend).database;
     const requiresRuntimeProof = supportsRuntimeProof && args.databaseLease && args.reset;
@@ -1080,8 +1083,8 @@ async function main() {
     } else if (requiresRuntimeProof && proof) {
       try {
         const result = await verifyApplicationDatabaseMarker(args, proof);
-        if (!result.write.ok) actionFailure = result.write.reason;
-        else if (result.runtime) runtime = result.runtime;
+        if (!result.write.ok) signUpFailed = true;
+        runtime = result.runtime;
       } catch (error) {
         proofError = error;
       }
@@ -1102,7 +1105,7 @@ async function main() {
         reason: 'runtime marker proof requires database reset to isolate its write' };
     }
 
-    if (!proofError && !actionFailure && supportsRuntimeProof && args.databaseLease && !runtime.verified) {
+    if (!proofError && !signUpFailed && supportsRuntimeProof && args.databaseLease && !runtime.verified) {
       proofError = new Error(`leased database identity was not verified: ${runtime.reason}`);
     }
     if (proofError) {
@@ -1111,17 +1114,6 @@ async function main() {
       markRemainingNotRun('run aborted because runtime database provenance could not be verified');
       writeBundle();
       console.log(`\nABORTED: ${bundle.error}`);
-      process.exit(1);
-    }
-
-    if (actionFailure) {
-      bundle.error = actionFailure;
-      bundle.outcome = { kind: 'app_failure', phase: 'database-provenance-action',
-        reason: actionFailure, appFailures: ['database-provenance-action'] };
-      recordApplicationAbort();
-      markRemainingNotRun('run aborted because the application database write failed');
-      writeBundle();
-      console.log(`\nABORTED: ${actionFailure}`);
       process.exit(1);
     }
 

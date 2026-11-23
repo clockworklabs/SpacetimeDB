@@ -10,12 +10,12 @@ import { isModularRecipeTaskRequest } from '../src/composition/recipe-selection.
 import { requireRecipeRelease as resolveRecipeRelease } from '../src/composition/recipe-release.js';
 import { attachRegressionScope, childFailureDetail, clearPreviousGradeOutputs, findMutationBackups, selectObservationScope,
   applicationFailureTotals, codeMetrics, resetFailureOutcome, suitesForRecipe,
-  checkRuntimeDatabaseProvenance, databaseProvenanceFailure,
+  checkRuntimeDatabaseProvenance, databaseProvenanceFailure, verifyApplicationDatabaseMarker,
   contractLintArgv, databaseLeaseForGrading, databaseNameForGrading, runGraderChild,
   verifyApplicationProbe, waitForApplicationProbe, closeSuiteBrowser, preserveStartFailure, suiteMayRetry }
   from '../commands/run-suite.js';
 import { loadTrack } from '../src/composition/tracks.js';
-import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.js';
+import { GENERATED_APP_LAYOUT_EXIT_CODE, GENERATED_APP_NOT_RESTARTABLE_EXIT_CODE } from '../src/stacks/backend-reset.js';
 import { createBackendLease } from '../src/runtime/backend-lease.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.js';
@@ -267,6 +267,20 @@ test('runtime database proof requires an authenticated lease', () => {
   });
 });
 
+test('a failed provenance sign-up leaves the database unproven and the level graded', async () => {
+  const track = loadTrack('ecommerce');
+  let read = 0;
+  const reader = () => { read += 1; return { ok: true, verified: true, reason: 'found' }; };
+  const failed = await verifyApplicationDatabaseMarker({ backend: 'postgres', url: 'http://127.0.0.1:1' },
+    track.databaseProvenance, { write: async () => ({ ok: false, marker: null, reason: 'no current-user' }), read: reader });
+  assert.deepEqual(failed.runtime, { ok: null, verified: false,
+    reason: 'not proven: the application sign-up failed (no current-user)' });
+  assert.equal(read, 0, 'a failed sign-up has no marker to look for');
+  const written = await verifyApplicationDatabaseMarker({ backend: 'postgres', url: 'http://127.0.0.1:1' },
+    track.databaseProvenance, { write: async () => ({ ok: true, marker: 'sbmarker' }), read: reader });
+  assert.deepEqual(written.runtime, { ok: true, verified: true, reason: 'found' });
+});
+
 test('generated layout and restart defects are repairable app failures, not harness failures', () => {
   const application = Object.assign(new Error('server/package.json has no dev or start script'),
     { code: 'generated_app_not_restartable' });
@@ -278,6 +292,9 @@ test('generated layout and restart defects are repairable app failures, not harn
   assert.deepEqual(resetFailureOutcome({ status: GENERATED_APP_LAYOUT_EXIT_CODE }),
     { kind: 'app_failure', phase: 'application-layout',
       appFailures: ['application-layout'] });
+  assert.deepEqual(resetFailureOutcome({ status: GENERATED_APP_NOT_RESTARTABLE_EXIT_CODE }),
+    { kind: 'app_failure', phase: 'application-restart', appFailures: ['application-restart'] },
+    'a reset child reports an app that cannot start on an empty database by its exit status');
 });
 
 test('application readiness returns as soon as the public app responds', async () => {
