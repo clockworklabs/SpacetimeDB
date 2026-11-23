@@ -2282,7 +2282,6 @@ impl ModuleHost {
             Err(e @ NoSuchModule) => {
                 log::warn!("Error from client_disconnected transaction: {e}");
             }
-            // Errors from the reducer itself are logged where they occur.
             Ok(_) => {}
         }
     }
