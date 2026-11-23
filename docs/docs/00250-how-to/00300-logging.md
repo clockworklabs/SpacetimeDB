@@ -183,12 +183,15 @@ spacetime logs --level error <DATABASE_NAME>
 
 # Show warnings and errors
 spacetime logs --level warn <DATABASE_NAME>
-
-# Show logs from a specific time range
-spacetime logs --since "2023-01-01 00:00:00" <DATABASE_NAME>
 ```
 
 For all log viewing options, see the [`spacetime logs` CLI reference](../00300-resources/00100-cli-reference/00100-cli-reference.md#spacetime-logs).
+
+## Diagnosing CPU-Budget Aborts
+
+When a reducer or view exhausts its per-call CPU budget, the host writes an error-level database log entry containing `aborted after <duration>: reached the maximum CPU usage allowed per call`, with the function name attached. `<duration>` represents the measured execution duration, not a fixed time limit. This diagnostic is available in server builds containing the [CPU-budget logging change](https://github.com/clockworklabs/SpacetimeDB/pull/6612); older servers may not emit it.
+
+Read these entries as the database owner with `spacetime logs --level error <DATABASE_NAME>`. The entry reports per-call CPU-budget exhaustion, not necessarily an empty account balance. Inspect the function's work and queries, especially large scans or loops.
 
 ## Best Practices
 

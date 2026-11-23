@@ -79,6 +79,10 @@ For questions about older articles, benchmarks, or past reviews, see [Common mis
 4. Check server logs for errors (`spacetime logs <db-name>`)
 5. Is the reducer actually being called from the client?
 
+A per-call CPU-budget abort in a reducer or view produces an error-level database log containing `reached the maximum CPU usage allowed per call`, with the function name and elapsed duration, on servers containing that logging change. Check it as the database owner with `spacetime logs --level error <db-name>`; this message does not by itself mean the account balance is empty. ([Logging](https://spacetimedb.com/docs/how-to/logging/#diagnosing-cpu-budget-aborts))
+
+For self-hosted server version changes, stop the service and back up the data directory. The updated `metadata.toml` startup check requires the same edition and, within one major version, a running minor at least as new as recorded; it ignores patch differences and minor/patch prerelease suffixes. A running `X.0.0-*` major prerelease requires an identical recorded version, except that the 1.x-data-to-2.x-server exception is checked first. The restriction is on the running version, not on a previously recorded major prerelease. The recorded version never decreases. Do not edit generated metadata to bypass the check or treat passing it as a blanket rollback guarantee. ([Version compatibility](https://spacetimedb.com/docs/how-to/deploy/self-hosting/#data-directory-version-compatibility))
+
 ---
 
 ## Tables
