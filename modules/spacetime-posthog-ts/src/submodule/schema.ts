@@ -8,6 +8,8 @@ import {
   type TransactionCtx,
   type ViewCtx,
   type SumBuilder,
+  type IdentityColumnBuilder,
+  type TimestampBuilder,
 } from 'spacetimedb/server';
 import { install } from './install.js';
 
@@ -63,7 +65,10 @@ const posthogAdminIdentityOptions = {
   name: 'posthog_admin_identity',
   public: false,
 };
-const posthogAdminIdentityColumns = {
+const posthogAdminIdentityColumns: {
+  identity: IdentityColumnBuilder<{ isPrimaryKey: true }>;
+  addedAt: TimestampBuilder;
+} = {
   identity: t.identity().primaryKey(),
   addedAt: t.timestamp(),
 };
