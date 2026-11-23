@@ -44,10 +44,21 @@ export function setSupabaseStock({ item, warehouse, quantity, lease, exec }: {
   return writePostgresStock(psql(lease, exec, READ_TIMEOUT_MS), SUPABASE, { item, warehouse, quantity });
 }
 
-// Auth's own tables are not the application's records.
+// Supabase Auth keeps accounts in the leased database too. An application that
+// signs up through Auth stores the username in the user metadata or as the
+// local part of the email.
 export function proveSupabaseUse({ lease, marker, exec }: { lease: BackendLease; marker: unknown; exec?: TextCommandExecutor }):
   { ok: boolean; verified: boolean; matches: number; reason: string } {
-  return provePostgresMarker(psql(lease, exec, PROVENANCE_TIMEOUT_MS), SUPABASE, marker);
+  const run = psql(lease, exec, PROVENANCE_TIMEOUT_MS);
+  const proof = provePostgresMarker(run, SUPABASE, marker);
+  if (proof.ok) return proof;
+  const value = `'${String(marker).replaceAll("'", "''")}'`;
+  const output = run(`SELECT count(*) FROM auth.users WHERE split_part(email, '@', 1) = ${value} `
+    + `OR jsonb_path_exists(raw_user_meta_data, '$.** ? (@ == $m)', jsonb_build_object('m', ${value}));\n`).trim();
+  if (!/^\d+$/.test(output)) throw new Error('Supabase provenance returned an invalid account count');
+  const matches = Number(output);
+  return matches ? { ok: true, verified: true, matches,
+    reason: 'the application marker exists in the leased Supabase Auth accounts' } : proof;
 }
 
 // Data API and Edge Function requests to the leased gateway carry the
