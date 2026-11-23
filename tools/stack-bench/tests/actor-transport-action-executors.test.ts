@@ -239,6 +239,19 @@ test('session tampering reaches the server, preserves context, requires a valid 
   }
 });
 
+test('a Spacetime reducer refusal keeps its message; a crash is not a refusal', () => {
+  const request = { applicationRejectionStatuses: [530] };
+  for (const [text, refused] of [['Only staff can restock', true], ['', true],
+    ['The instance encountered a fatal error.', false],
+    ['The module instance encountered a fatal error: trap', false],
+    ['Database resident memory budget exceeded (limit: 1 GiB).', false]] as const) {
+    const classified = classifyResponseContract(request, { status: 530, text });
+    assert.equal(classified.applicationRejected, refused, text);
+    assert.equal(classified.refusalKind, refused ? 'application' : null, text);
+    assert.equal(classified.ok, false);
+  }
+});
+
 // Failure cases: normal dotted names and encoded signed cookies must reach the
 // server, while extra cookies and CSRF context must not become forged-session proof.
 test('browser session cookies preserve format, prove controls and refuse forged values', async t => {

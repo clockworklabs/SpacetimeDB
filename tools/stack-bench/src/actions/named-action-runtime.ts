@@ -108,7 +108,12 @@ export function classifyResponseContract(request: Omit<NamedActionRequest, 'body
         : result.kind === 'application-error' ? 'application' : result.kind === 'validation-error' ? 'validation' : null,
       responseContract, complete: response.status !== 0 };
   }
-  const applicationRejected = (request.applicationRejectionStatuses ?? []).includes(response.status);
+  // A Spacetime reducer's crash shares the refusal status but never its message: the
+  // host replaces it with a fixed fatal-error or memory-budget text, so a crash is
+  // not a refusal, as an untyped Convex error and an HTTP 500 are not.
+  const crashed = responseContract === 'spacetime-reducer'
+    && /^(?:The (?:module )?instance encountered a fatal error|Database resident memory budget exceeded)/.test(response.text);
+  const applicationRejected = !crashed && (request.applicationRejectionStatuses ?? []).includes(response.status);
   return { ok: response.status >= 200 && response.status < 300, applicationRejected,
     refusalKind: applicationRejected ? 'application' : [401, 403].includes(response.status) ? 'access'
       : [400, 409, 422].includes(response.status) ? 'validation' : response.status === 404 ? 'not-found' : null,
