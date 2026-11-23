@@ -30,7 +30,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::io::{InspectReader, InspectWriter, StreamReader};
 use zstd_framed::AsyncZstdReader;
 
-use crate::{ObjectType, Snapshot, SnapshotError, SnapshotRepository};
+use crate::{table_present_pages, ObjectType, Snapshot, SnapshotError, SnapshotRepository};
 
 pub type Result<T> = std::result::Result<T, SnapshotError>;
 
@@ -370,7 +370,8 @@ impl<P: BlobProvider> SnapshotFetcher<P> {
             .snapshot
             .tables
             .iter()
-            .flat_map(|entry| entry.pages.iter().copied().map(|hash| self.fetch_page(hash)))
+            .flat_map(|entry| table_present_pages(&entry.pages))
+            .map(|hash| self.fetch_page(hash))
             .collect::<Box<[_]>>();
         stream::iter(tasks)
             .map(Ok)
@@ -827,7 +828,10 @@ impl AsyncWrite for AsyncBufWriter<'_> {
 #[cfg(test)]
 mod tests {
     use super::{default_page_pool, BlobProvider, BufPool, SnapshotFetcher};
-    use crate::{Snapshot, SnapshotError, CURRENT_MODULE_ABI_VERSION, CURRENT_SNAPSHOT_VERSION, MAGIC};
+    use crate::{
+        Snapshot, SnapshotError, SnapshotRepository, TableEntry, CURRENT_MODULE_ABI_VERSION, CURRENT_SNAPSHOT_VERSION,
+        MAGIC, ZERO_HASH_DENOTING_ABSENT_PAGE,
+    };
     use pretty_assertions::assert_matches;
     use spacetimedb_lib::Identity;
     use spacetimedb_paths::{server::SnapshotsPath, FromPathUnchecked};
@@ -907,6 +911,32 @@ mod tests {
             sf.fetch_blob(blake3::hash(ZEROES)).await,
             Err(SnapshotError::HashMismatch { .. })
         );
+    }
+
+    #[tokio::test]
+    async fn verifies_snapshot_with_absent_page_slot() -> anyhow::Result<()> {
+        let temp = tempdir()?;
+        let snapshots = SnapshotsPath::from_path_unchecked(temp.path());
+        let repo = SnapshotRepository::open(snapshots, Identity::ZERO, DUMMY_SNAPSHOT.replica_id)?;
+
+        let tx_offset = DUMMY_SNAPSHOT.tx_offset + 1;
+        let sparse = Snapshot {
+            tx_offset,
+            tables: vec![TableEntry {
+                table_id: 0.into(),
+                pages: vec![ZERO_HASH_DENOTING_ABSENT_PAGE],
+            }],
+            ..DUMMY_SNAPSHOT
+        };
+
+        for snapshot in [DUMMY_SNAPSHOT, sparse] {
+            let dir = repo.snapshot_dir_path(snapshot.tx_offset);
+            dir.create()?;
+            repo.write_snapshot_file(&dir, snapshot)?;
+        }
+
+        repo.verify_snapshot(tx_offset).await?;
+        Ok(())
     }
 
     #[tokio::test]

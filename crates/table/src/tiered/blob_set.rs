@@ -1,11 +1,7 @@
 use super::metrics::{CacheTier, EvictionDirection, ObjectType};
-use std::{
-    num::NonZeroUsize,
-    ops::Deref,
-    sync::{Arc, Mutex},
-};
+use std::{num::NonZeroUsize, ops::Deref, sync::Arc};
 
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use spacetimedb_data_structures::{
     map::{hash_map, IntMap},
     small_map::SmallHashMap,
@@ -120,7 +116,7 @@ impl BlobSet {
             return Ok(bytes_freed);
         }
 
-        let mut candidates = self.evictable.lock().unwrap();
+        let mut candidates = self.evictable.lock();
         self.resident.evictable_blobs(&mut candidates);
         for candidate in candidates.drain(..) {
             let maybe_resident = self.entries.read().get(&candidate.key).and_then(|entry| match entry {
@@ -546,7 +542,7 @@ impl BlobSet {
 impl MemoryUsage for BlobSet {
     fn heap_usage(&self) -> usize {
         // Cache and backing store are counted by `TieredDatabaseStorage`.
-        let scratch = self.evictable.lock().unwrap().capacity() * size_of::<BlobEvictionCandidate>();
+        let scratch = self.evictable.lock().capacity() * size_of::<BlobEvictionCandidate>();
 
         self.entries.read().heap_usage() + scratch
     }

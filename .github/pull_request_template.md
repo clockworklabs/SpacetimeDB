@@ -1,6 +1,6 @@
 # Description of Changes
 
-<!-- Please describe your change, mention any related tickets, and so on here. -->
+<!-- What changes for users or maintainers, and why? Link related public issues where useful. -->
 
 # API and ABI breaking changes
 
@@ -33,8 +33,6 @@ and what other components it interacts with in potentially concerning ways.  -->
 
 # Testing
 
-<!-- Describe any testing you've done, and any testing you'd like your reviewers to do,
-so that you're confident that all the changes work as expected! -->
-
-- [ ] <!-- maybe a test you want to do -->
-- [ ] <!-- maybe a test you want a reviewer to do, so they can check it off when they're satisfied. -->
+<!-- If untested, write only “Not tested.”
+Otherwise, summarize coverage in short test-case titles. Group additional behaviors beneath the test that covers them. Mention any important failure or gap.
+Include a reviewer task only when a specific action is needed. -->
