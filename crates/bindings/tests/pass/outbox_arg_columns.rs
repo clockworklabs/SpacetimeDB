@@ -1,4 +1,4 @@
-#[path = "../fixtures/idc_receiver/lib.rs"]
+#[path = "../fixtures/idc_receiver/mod.rs"]
 mod receiver;
 
 mod remote_bindings {

@@ -106,7 +106,7 @@ For all available publishing options and flags, see the [`spacetime publish` CLI
 
 ### Environment Variables
 
-Modules can declare environment variables for configuration and secrets. Each publish supplies the complete set of values from the target's `env` configuration and declared shell variables. Required values must be supplied on every publish; omitted optional values are removed. The module and its environment update atomically.
+Modules can declare environment variables for configuration and secrets. Each publish supplies values from the target's `env` configuration and declared shell variables, then preserves unspecified stored values by default. Required values must exist in the resulting environment; optional values are removed only when you unset them explicitly or use `--replace-env`. The module and its environment update atomically.
 
 See [Environment Variables](./00700-environment-variables.md) for declarations, reading values in module code, publishing examples, and private tables for secrets that need to change without republishing.
 

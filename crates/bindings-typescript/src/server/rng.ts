@@ -65,17 +65,16 @@ export interface Random {
 }
 
 const { asUintN } = BigInt;
+const MUL = 6364136223846793005n;
+const INC = 11634580027462260723n;
 
 /** Based on the function of the same name in `rand_core::SeedableRng::seed_from_u64` */
 function pcg32(state: bigint): number {
-  const MUL = 6364136223846793005n;
-  const INC = 11634580027462260723n;
-
   state = asUintN(64, state * MUL + INC);
   const xorshifted = Number(asUintN(32, ((state >> 18n) ^ state) >> 27n));
   const rot = Number(asUintN(32, state >> 59n));
   // rotate `xorshifted` right by `rot` bits
-  return (xorshifted >> rot) | (xorshifted << (32 - rot));
+  return ((xorshifted >>> rot) | (xorshifted << (32 - rot))) >>> 0;
 }
 
 /** From the `pure-rand` README */
@@ -89,8 +88,14 @@ function generateFloat64(rng: RandomGenerator): number {
 export function makeRandomFromSeed(
   seed: Timestamp | number | bigint | Uint8Array
 ): Random {
-  // Use PCG32 to turn a 64-bit seed into a 32-bit seed, as the Rust `rand` crate does.
-  const rng = xoroshiro128plus(pcg32(seedToBigInt(seed)));
+  // Fill the 128-bit state with successive PCG32 outputs, as `seed_from_u64` does.
+  let state = seedToBigInt(seed);
+  const words: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    words.push(pcg32(state) | 0);
+    state = asUintN(64, state * MUL + INC);
+  }
+  const rng = xoroshiro128plus.fromState(words);
 
   const random: Random = () => generateFloat64(rng);
 

@@ -14,6 +14,6 @@ A path's review tier comes from the nearest `.deep` marker in its directory or a
 
 These markers are provisional, and CI does not check any of this yet.
 
-# PR testing sections
+# Writing PRs
 
-When writing or updating a PR's testing section, read [Writing testing sections](.agents/testing-sections.md). Explain what verification supports confidence that the change works as intended, and identify important remaining uncertainty.
+Use the [write-pull-requests skill](.agents/skills/write-pull-requests/SKILL.md) when preparing commits for a PR and when drafting or editing its GitHub description.
