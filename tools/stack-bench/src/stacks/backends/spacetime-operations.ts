@@ -101,6 +101,24 @@ export function proveSpacetimeUse({ lease, marker, exec = execFileSync }:
       : 'the application marker is absent from the leased SpacetimeDB module' };
 }
 
+// `publish --delete-data` also drops the module's stored environment values, so
+// a module that requires one refuses the reset. The script reads the stored
+// values and supplies them as the shell variables the publish reads. Values stay
+// inside the container, off every command line. Arguments: cli, module, server,
+// then the publish arguments. A module that does not exist yet has no values.
+export const SPACETIME_RESET_PUBLISH_SCRIPT = `umask 022; set -f
+cli=$1 mod=$2 uri=$3; shift 3
+if ! list=$("$cli" env list "$mod" -s "$uri" --no-config 2>&1); then
+  case $list in *"404"*|*"no such database"*|*"failed to find database"*) list= ;;
+    *) printf '%s\\n' "$list" >&2; exit 1 ;; esac
+fi
+for key in $(printf '%s\\n' "$list" | sed -n '3,$s/^ *"\\([A-Za-z_][A-Za-z0-9_]*\\)" *|.*/\\1/p'); do
+  value=$("$cli" env get "$mod" "$key" -s "$uri" --no-config && printf .) || exit 1
+  value=\${value%.}
+  export "$key=\${value%?}"
+done
+exec "$cli" "$@"`;
+
 export function resetSpacetime({ lease, app, exec = execFileSync }:
   { lease: SpacetimeLease; app: string; exec?: TextCommandExecutor }): string {
   const layout = resolveSpacetimeModuleLayout(app);
@@ -113,9 +131,10 @@ export function resetSpacetime({ lease, app, exec = execFileSync }:
       ...codingContainerAgentCommand('test', ['-d', containerModule])],
       { encoding: 'utf8', stdio: 'pipe', timeout: RESET_TIMEOUT_MS });
     exec('docker', [...agentExec(), '-w', containerModule, container.id,
-      ...codingContainerAgentCommand(CODING_CONTAINER_SPACETIME_CLI,
-        ['publish', lease.resources.module, '--module-path', containerModule,
-          '-s', target.containerUri, '--delete-data', '-y'])],
+      'sh', '-c', SPACETIME_RESET_PUBLISH_SCRIPT, 'spacetime-reset',
+      CODING_CONTAINER_SPACETIME_CLI, lease.resources.module, target.containerUri,
+      'publish', lease.resources.module, '--module-path', containerModule,
+      '-s', target.containerUri, '--delete-data', '-y'],
     { encoding: 'utf8', stdio: 'pipe', timeout: RESET_TIMEOUT_MS });
   } catch (error) {
     const detail = streams(error, 'stdout', 'stderr').trim() || streams(error, 'message');

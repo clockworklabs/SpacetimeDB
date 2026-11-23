@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -10,7 +10,7 @@ import { resetBackend, resetRepairBackend } from '../src/stacks/backend-reset.js
 import { prepareMongoDbDatabase, proveMongoDbUse, resetMongoDb } from '../src/stacks/backends/mongodb-operations.js';
 import { attemptDatabaseIdentity } from '../src/stacks/hosted-database-identity.js';
 import { provePostgresUse, resetPostgres } from '../src/stacks/backends/postgres-operations.js';
-import { proveSpacetimeUse } from '../src/stacks/backends/spacetime-operations.js';
+import { proveSpacetimeUse, SPACETIME_RESET_PUBLISH_SCRIPT } from '../src/stacks/backends/spacetime-operations.js';
 import { containerReachableSpacetimeUri } from '../src/runtime/spacetime-target.js';
 import { GeneratedAppLayoutError, resolveSpacetimeModuleLayout }
   from '../src/runtime/spacetime-layout.js';
@@ -367,6 +367,42 @@ test('Spacetime reset publishes inside the exact leased build container', () => 
     else process.env.STACK_BENCH_LEASE_TOKEN = previousToken;
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('the Spacetime reset publish keeps the module environment values', {
+  skip: process.platform === 'win32' ? 'needs a POSIX shell' : false,
+}, () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-spacetime-reset-env-'));
+  try {
+    // A stand-in CLI with the 2.16 table output, where a multi-line value continues on rows without a key.
+    const cli = join(root, 'cli');
+    const value = 'a | b\nc \n';
+    writeFileSync(join(root, 'value'), value);
+    writeFileSync(cli, [
+      '#!/bin/sh',
+      'case "$1 $2" in',
+      `  "env list") [ -e "${root}/missing" ] && { echo "Error: failed to find database \\\`$3\\\`." >&2; exit 1; }`,
+      `    [ -e "${root}/broken" ] && { echo "Error: connection refused" >&2; exit 1; }`,
+      `    printf ' key          | value\\n--------------+-------\\n "GATEWAY_ID" | "a | b\\n              | c\\n              | "\\n' ;;`,
+      `  "env get") [ "$3 $4 $5 $6 $7" = "mod GATEWAY_ID -s uri --no-config" ] || exit 1; cat "${root}/value"; echo ;;`,
+      `  publish\\ *) printf '%s\\n' "$@" > "${root}/args"; printf '%s' "\${GATEWAY_ID-unset}" > "${root}/env" ;;`,
+      'esac',
+    ].join('\n'));
+    chmodSync(cli, 0o755);
+    const reset = () => execFileSync('sh', ['-c', SPACETIME_RESET_PUBLISH_SCRIPT, 'spacetime-reset', cli, 'mod', 'uri',
+      'publish', 'mod', '--delete-data', '-y'], { encoding: 'utf8', stdio: 'pipe' });
+    reset();
+    assert.equal(readFileSync(join(root, 'args'), 'utf8'), 'publish\nmod\n--delete-data\n-y\n');
+    assert.equal(readFileSync(join(root, 'env'), 'utf8'), value);
+    writeFileSync(join(root, 'missing'), '');
+    reset();
+    assert.equal(readFileSync(join(root, 'env'), 'utf8'), 'unset', 'a module not yet published has no values');
+    rmSync(join(root, 'missing'));
+    rmSync(join(root, 'args'));
+    writeFileSync(join(root, 'broken'), '');
+    assert.throws(reset, /connection refused/);
+    assert.equal(existsSync(join(root, 'args')), false, 'an unreadable environment stops the reset');
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('Spacetime root target takes precedence over nested scaffolds and stays inside the mounted app', () => {
