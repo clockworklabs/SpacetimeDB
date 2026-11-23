@@ -9,8 +9,11 @@ const retry = client({
       throwOnFailure: t.bool(),
     }),
   },
+  jobs: {
+    fetchUrl: t.object('FetchUrlArgs', { url: t.string() }),
+  },
 });
-const { retryTask, retryHistory, retryAdminIdentity } = retry.tables;
+const { retryTask, retryHistory } = retry.tables;
 
 const retryMetric = table(
   { name: 'retry_metric', public: true },
@@ -22,12 +25,7 @@ const retryMetric = table(
   }
 );
 
-const spacetimedb = schema({
-  retryTask,
-  retryHistory,
-  retryAdminIdentity,
-  retryMetric,
-});
+const spacetimedb = schema({ ...retry.tables, retryMetric });
 export default spacetimedb;
 
 export const retryTasksAdmin = spacetimedb.view(
@@ -64,6 +62,66 @@ export const retryFire = retry.retryReducer(spacetimedb, {
     return retryOk();
   },
 });
+
+export const retryRunJob = retry.retryProcedure(
+  spacetimedb,
+  {
+    fetchUrl(ctx, { url }, job) {
+      const response = ctx.http.fetch(url, {
+        headers: { 'Idempotency-Key': job.idempotencyKey },
+      });
+      return response.ok
+        ? retryOk()
+        : retryFailed(`status ${response.status} on attempt ${job.attempt}`);
+    },
+  },
+  {
+    onComplete(tx, outcome) {
+      tx.db.retryMetric.insert({
+        id: 0n,
+        name: `job-${outcome.status}-${outcome.name}`,
+        value: outcome.attempts,
+        recordedAt: tx.timestamp,
+      });
+    },
+  }
+);
+
+export const enqueueFetch = spacetimedb.reducer(
+  {
+    name: t.string(),
+    url: t.string(),
+    queue: t.option(t.string()),
+    maxAttempts: t.u8(),
+    backoffSecs: t.u32(),
+  },
+  (ctx, { name, url, queue, maxAttempts, backoffSecs }) => {
+    retry.requireAdmin(ctx);
+    retry.enqueue(ctx, {
+      name,
+      queue,
+      args: { tag: 'fetchUrl', value: { url } },
+      maxAttempts,
+      backoffSecs,
+    });
+  }
+);
+
+export const retryJobsAdmin = spacetimedb.view(
+  { name: 'retry_jobs_admin', public: true },
+  t.array(retry.tables.retryJob.rowType),
+  retry.views.retryJobsAdmin
+);
+
+export const cancelRetryJob = spacetimedb.reducer(
+  retry.reducers.cancelRetryJob.params,
+  retry.reducers.cancelRetryJob.handler
+);
+
+export const setRetryQueue = spacetimedb.reducer(
+  retry.reducers.setRetryQueue.params,
+  retry.reducers.setRetryQueue.handler
+);
 
 export const submitRetryTask = spacetimedb.reducer(
   retry.reducers.submitRetryTask.params,

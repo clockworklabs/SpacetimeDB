@@ -67,10 +67,79 @@ abort can still prevent the retry from being scheduled.
 History retains the latest 1,000 attempts across all tasks. The admin history
 view returns these attempts newest first.
 
+## Jobs that call outside services
+
+A reducer can't make HTTP calls. For work like sending an email, declare
+`jobs` and register `retryProcedure`. Each attempt runs in a procedure outside
+a transaction, so the handler can call `ctx.http.fetch`.
+
+```ts
+const retry = client({
+  jobs: {
+    sendEmail: t.object('SendEmailArgs', { emailId: t.u64() }),
+  },
+});
+
+export const retryRunJob = retry.retryProcedure(
+  db,
+  {
+    sendEmail(ctx, { emailId }, job) {
+      const response = ctx.http.fetch(url, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': job.idempotencyKey },
+        body: emailBody(ctx, emailId),
+      });
+      return response.ok ? retryOk() : retryFailed(`status ${response.status}`);
+    },
+  },
+  {
+    onComplete(tx, outcome) {
+      // Runs in the transaction that finishes the job.
+    },
+  }
+);
+
+export const sendWelcome = db.reducer({ emailId: t.u64() }, (ctx, args) => {
+  retry.enqueue(ctx, {
+    name: `email:${args.emailId}`,
+    args: { tag: 'sendEmail', value: args },
+    maxAttempts: 5,
+    backoffSecs: 2,
+    queue: 'email',
+  });
+});
+```
+
+- `enqueue` writes the job in the caller's transaction, so the job exists only
+  if that transaction commits. It returns the job's ID. Set `runAt` to start
+  later.
+- A failed attempt waits `backoffSecs * 2^(attempt - 1)` seconds, plus or minus
+  25%, before the next one.
+- An attempt that hasn't recorded a result after `leaseSecs` (set in `client`,
+  default 300) counts as failed with `retry.lease_expired`, and the job is
+  retried. This covers a host that stops mid-attempt. Set `leaseSecs` above
+  your slowest handler. The late result of a timed-out attempt is dropped, so
+  send `job.idempotencyKey` to services that accept one.
+- `setQueue(ctx, name, { maxParallelism })` limits how many jobs in a queue run
+  at once. 0 pauses the queue. Jobs that come due while the queue is full wait
+  and start oldest first when there is room. Queues without a limit run up to
+  1,000 jobs at once.
+- `cancel(ctx, id)` stops a job. A running attempt keeps going, but its result
+  is dropped.
+- `onComplete` runs for jobs that succeed, fail, or are cancelled. A throw rolls
+  back that transaction.
+- `status(ctx, id)` returns the job's row. The latest 1,000 jobs of each final
+  status are kept.
+
+A submodule can mount its own copy of Retry by spreading `retry.tables` into
+its schema. Each copy's tables and queues are separate.
+
 ## API
 
-- `client({ tasks })` returns `tables`, `retryReducer`, `install`, `submit`,
-  `requireAdmin`, `views`, and `reducers`.
+- `client({ tasks, jobs, leaseSecs })` returns `tables`, `retryReducer`,
+  `retryProcedure`, `install`, `submit`, `enqueue`, `cancel`, `status`,
+  `setQueue`, `requireAdmin`, `views`, and `reducers`. `tasks` and `jobs` are
+  both optional.
 - `retryReducer(schema, handlers)` registers the scheduled reducer that runs
   attempts. Export its result. Each handler returns `retryOk()` or
   `retryFailed(error)`.
@@ -78,14 +147,20 @@ view returns these attempts newest first.
   from the host's `init` reducer.
 - `submit(ctx, task)` validates a task and schedules its first attempt without
   an authorization check. Call it from host reducers that authorize the caller.
-- `reducers.submitRetryTask`, `reducers.addRetryAdminIdentity`, and
+- `retryProcedure(schema, handlers, options)`, `enqueue`, `cancel`, `status`,
+  and `setQueue` are described in Jobs that call outside services. `enqueue`,
+  `cancel` and `setQueue` don't check authorization.
+- `reducers.submitRetryTask`, `reducers.cancelRetryJob`,
+  `reducers.setRetryQueue`, `reducers.addRetryAdminIdentity`, and
   `reducers.removeRetryAdminIdentity` require a Retry admin.
-- `views.retryTasksAdmin` and `views.retryHistoryAdmin` return up to 1,000
-  pending tasks and attempts, newest first, to Retry admins.
+- `views.retryTasksAdmin`, `views.retryJobsAdmin` and `views.retryHistoryAdmin`
+  return up to 1,000 pending tasks, jobs, and attempts, newest first, to Retry
+  admins.
 - `errors` holds the `retry.*` codes these operations throw as `SenderError`s:
-  `notAuthorized`, `invalidTaskName`, `invalidMaxAttempts`,
-  `invalidBackoffSeconds`, `taskAlreadyExists` (followed by `:` and the task
-  name), and `cannotRemoveLastAdmin`.
+  `notAuthorized`, `invalidTaskName`, `invalidQueueName`, `invalidMaxAttempts`,
+  `invalidBackoffSeconds`, `invalidParallelism`, `taskAlreadyExists` (followed
+  by `:` and the task or job name), and `cannotRemoveLastAdmin`.
+  `leaseExpired` is recorded as an attempt's error, not thrown.
 
 The generated client can submit a task when the host exports
 `submitRetryTask`:

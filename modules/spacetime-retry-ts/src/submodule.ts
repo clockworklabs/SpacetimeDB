@@ -4,13 +4,29 @@ import {
   SenderError,
   t,
   table,
+  type IdentityBuilder,
+  type IdentityColumnBuilder,
   type Infer,
   type ModuleExport,
+  type TimestampBuilder,
   type SumBuilder,
   type VariantsObj,
 } from 'spacetimedb/server';
 import type { Identity, Timestamp } from 'spacetimedb';
 import { retryFailed, type RetryResult } from './handler.js';
+import {
+  jobs,
+  retryJobFire,
+  retryJobTable,
+  retryQueue,
+  type EnqueueInput,
+  type RetryJobFireRow,
+  type RetryJobCtx,
+  type RetryJobInfo,
+  type RetryJobRow,
+  type RetryOutcome,
+  type RetryProcedureCtx,
+} from './jobs.js';
 
 const ONE_SECOND_MICROS = 1_000_000n;
 const MAX_ATTEMPTS = 10;
@@ -27,6 +43,9 @@ export const errors = {
   invalidBackoffSeconds: 'retry.invalid_backoff_seconds',
   taskAlreadyExists: 'retry.task_already_exists',
   cannotRemoveLastAdmin: 'retry.cannot_remove_last_admin',
+  invalidQueueName: 'retry.invalid_queue_name',
+  invalidParallelism: 'retry.invalid_parallelism',
+  leaseExpired: 'retry.lease_expired',
 } as const;
 
 function retryTaskColumns(args: SumBuilder<VariantsObj>) {
@@ -72,7 +91,10 @@ const retryHistory: ReturnType<
 > = table(historyOptions, historyColumns);
 
 const adminOptions = { name: 'retry_admin_identity', public: false } as const;
-const adminColumns = {
+const adminColumns: {
+  identity: IdentityColumnBuilder<{ isPrimaryKey: true }>;
+  addedAt: TimestampBuilder;
+} = {
   identity: t.identity().primaryKey(),
   addedAt: t.timestamp(),
 };
@@ -84,6 +106,9 @@ interface RetryTables {
   retryTask: ReturnType<typeof retryTaskTable>;
   retryHistory: typeof retryHistory;
   retryAdminIdentity: typeof retryAdminIdentity;
+  retryJob: ReturnType<typeof retryJobTable>;
+  retryJobFire: typeof retryJobFire;
+  retryQueue: typeof retryQueue;
 }
 
 export type RetryTaskRow = Infer<ReturnType<typeof retryTaskTable>['rowType']>;
@@ -108,6 +133,11 @@ export interface RetryViewCtx {
       readonly identity: { find(identity: Identity): AdminRow | null };
     };
   };
+}
+
+/** The job table of a host view context. */
+export interface RetryJobsViewCtx {
+  readonly db: { readonly retryJob: { iter(): Iterable<RetryJobRow> } };
 }
 
 /** A host reducer context whose schema includes `retry.tables`. */
@@ -144,8 +174,19 @@ export interface RetryCtx {
 /** Task argument types keyed by task tag. */
 export type RetryTasks = VariantsObj;
 
-export interface RetryConfig<Tasks extends RetryTasks> {
-  tasks: Tasks;
+export interface RetryConfig<
+  Tasks extends RetryTasks,
+  Jobs extends RetryTasks,
+> {
+  /** Tasks for `submit` and `retryReducer`. */
+  tasks?: Tasks;
+  /** Jobs for `enqueue` and `retryProcedure`. */
+  jobs?: Jobs;
+  /**
+   * How long a procedure attempt may run before it counts as lost and the job
+   * is retried. Set it above the slowest handler. Defaults to 300.
+   */
+  leaseSecs?: number;
 }
 
 /** Tagged task arguments for the configured tasks. */
@@ -172,16 +213,63 @@ export interface RetrySchema<Tx extends RetryCtx = RetryCtx> {
   reducer(...args: unknown[]): RetryReducerExport<Tx>;
 }
 
+/** One procedure handler per job tag. Each call runs one attempt. */
+export type RetryProcedureHandlers<Jobs extends RetryTasks, Proc> = {
+  [K in keyof Jobs & string]: (
+    ctx: Proc,
+    args: Infer<Jobs[K]>,
+    job: RetryJobInfo
+  ) => RetryResult;
+};
+
+export interface RetryProcedureOptions<Jobs extends RetryTasks, Tx> {
+  /**
+   * Runs in the transaction that finishes a job, including `cancel`. A throw
+   * rolls that transaction back.
+   */
+  onComplete?: (tx: Tx, outcome: RetryOutcome<RetryArgs<Jobs>>) => void;
+}
+
+/** The scheduled procedure that runs job attempts. */
+export type RetryProcedureExport<Proc> = ModuleExport &
+  ((ctx: Proc, args: { arg: RetryJobFireRow }) => unknown);
+
+/** The host schema returned by `schema()`, for `retryProcedure`. */
+export interface RetryProcedureSchema<
+  Tx extends RetryJobCtx,
+  Proc extends RetryProcedureCtx<Tx>,
+> {
+  reducer(
+    ...args: unknown[]
+  ): ModuleExport & ((ctx: Tx, args: never) => unknown);
+  procedure(...args: unknown[]): RetryProcedureExport<Proc>;
+}
+
 type InternalHandler = (...args: unknown[]) => RetryResult;
 
+const identityParams: { identity: IdentityBuilder } = {
+  identity: t.identity(),
+};
+
 /** Create the retry tables and the functions that manage them. */
-export function client<const Tasks extends RetryTasks>({
-  tasks,
-}: RetryConfig<Tasks>) {
-  const variants: VariantsObj = tasks;
+export function client<
+  const Tasks extends RetryTasks = Record<never, never>,
+  const Jobs extends RetryTasks = Record<never, never>,
+>({ tasks, jobs: jobTypes, leaseSecs }: RetryConfig<Tasks, Jobs>) {
+  const variants: VariantsObj = tasks ?? {};
   const retryArgs = t.enum('RetryArgs', variants);
   const retryTask = retryTaskTable(retryArgs);
-  const tables: RetryTables = { retryTask, retryHistory, retryAdminIdentity };
+  const jobVariants: VariantsObj = jobTypes ?? {};
+  const retryJob = retryJobTable(t.enum('RetryJobArgs', jobVariants));
+  const queue = jobs<RetryArgs<Jobs>>(retryJob, leaseSecs);
+  const tables: RetryTables = {
+    retryTask,
+    retryHistory,
+    retryAdminIdentity,
+    retryJob,
+    retryJobFire,
+    retryQueue,
+  };
 
   function isAdmin(ctx: RetryViewCtx): boolean {
     return ctx.db.retryAdminIdentity.identity.find(ctx.sender) != null;
@@ -299,9 +387,51 @@ export function client<const Tasks extends RetryTasks>({
     );
   }
 
+  /**
+   * Register the scheduled procedure that runs jobs from `enqueue`. Handlers
+   * run outside a transaction, so they can call `ctx.http.fetch`. Call after
+   * `schema()` and export the result.
+   */
+  function retryProcedure<
+    Tx extends RetryJobCtx,
+    Proc extends RetryProcedureCtx<Tx>,
+  >(
+    spacetimedb: RetryProcedureSchema<Tx, Proc>,
+    handlers: RetryProcedureHandlers<Jobs, Proc>,
+    options: RetryProcedureOptions<Jobs, Tx> = {}
+  ): RetryProcedureExport<Proc> {
+    const byTag = handlers as Record<string, InternalHandler>;
+    queue.onComplete(
+      options.onComplete as Parameters<typeof queue.onComplete>[0]
+    );
+    return spacetimedb.procedure(
+      { name: 'retry_run_job', onSchedule: retryJobFire },
+      { arg: retryJobFire.rowType },
+      t.unit(),
+      (ctx: Proc, { arg }: { arg: RetryJobFireRow }) => {
+        queue.runAttempt(ctx, arg, byTag);
+        return {};
+      }
+    );
+  }
+
   return {
     tables,
     retryReducer,
+    retryProcedure,
+    /**
+     * Add a job for `retryProcedure` and return its ID. Jobs in one queue run
+     * up to the queue's parallelism, oldest first. The caller authorizes.
+     */
+    enqueue(ctx: RetryJobCtx, job: EnqueueInput<RetryArgs<Jobs>>): bigint {
+      return queue.enqueue(ctx, job);
+    },
+    /** Stop a job. Returns false if it had already finished. The caller authorizes. */
+    cancel: queue.cancel,
+    /** A job's current row, kept for the last 1000 jobs of each final status. */
+    status: queue.status,
+    /** Limit how many jobs in a queue run at once. 0 pauses it. The caller authorizes. */
+    setQueue: queue.setQueue,
     /** Call from the host's init reducer to seed the publishing identity as admin. */
     install(ctx: RetryCtx): void {
       addAdmin(ctx, ctx.sender);
@@ -328,6 +458,13 @@ export function client<const Tasks extends RetryTasks>({
           )
           .slice(0, MAX_ROWS);
       },
+      /** Jobs from `enqueue`, newest first. */
+      retryJobsAdmin(ctx: RetryViewCtx & RetryJobsViewCtx): RetryJobRow[] {
+        if (!isAdmin(ctx)) return [];
+        return [...ctx.db.retryJob.iter()]
+          .sort((a, b) => (a.id > b.id ? -1 : a.id < b.id ? 1 : 0))
+          .slice(0, MAX_ROWS);
+      },
       /** Retained attempt history, newest first. */
       retryHistoryAdmin(ctx: RetryViewCtx): RetryHistoryRow[] {
         if (!isAdmin(ctx)) return [];
@@ -350,14 +487,31 @@ export function client<const Tasks extends RetryTasks>({
         },
       },
       addRetryAdminIdentity: {
-        params: { identity: t.identity() },
+        params: identityParams,
         handler(ctx: RetryCtx, { identity }: { identity: Identity }): void {
           requireAdmin(ctx);
           addAdmin(ctx, identity);
         },
       },
+      cancelRetryJob: {
+        params: { id: t.u64() },
+        handler(ctx: RetryCtx & RetryJobCtx, { id }: { id: bigint }): void {
+          requireAdmin(ctx);
+          queue.cancel(ctx, id);
+        },
+      },
+      setRetryQueue: {
+        params: { name: t.string(), maxParallelism: t.u32() },
+        handler(
+          ctx: RetryCtx & RetryJobCtx,
+          args: { name: string; maxParallelism: number }
+        ): void {
+          requireAdmin(ctx);
+          queue.setQueue(ctx, args.name, args);
+        },
+      },
       removeRetryAdminIdentity: {
-        params: { identity: t.identity() },
+        params: identityParams,
         handler(ctx: RetryCtx, { identity }: { identity: Identity }): void {
           requireAdmin(ctx);
           const existing = ctx.db.retryAdminIdentity.identity.find(identity);
