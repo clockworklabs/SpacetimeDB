@@ -8,9 +8,11 @@ import {
   type ReducerCtx,
   type TransactionCtx,
   type SumBuilder,
+  type IdentityColumnBuilder,
+  type TimestampBuilder,
 } from 'spacetimedb/server';
 import * as v from 'valibot';
-import { client as retryClient } from '@spacetimedb/retry';
+import { client as retryClient, type RetryClient } from '@spacetimedb/retry';
 import { install } from './install.js';
 
 // Webhook delivery state. Received = ingest accepted. Processed = applied.
@@ -133,7 +135,10 @@ export const resendConfigRow = {
 };
 
 // Fresh publishes seed the owner via init; public procedures never bootstrap admin state.
-export const resendAdminIdentityRow = {
+export const resendAdminIdentityRow: {
+  identity: IdentityColumnBuilder<{ isPrimaryKey: true }>;
+  addedAt: TimestampBuilder;
+} = {
   identity: t.identity().primaryKey(),
   addedAt: t.timestamp(),
 };
@@ -222,9 +227,13 @@ export const resendOutboxTable: ReturnType<
   typeof table<typeof resendOutboxRow, typeof resendOutboxOptions>
 > = table(resendOutboxOptions, resendOutboxRow);
 
-export const emailQueue = retryClient({
-  jobs: { sendEmail: t.object('ResendSendJob', { outboxId: t.u64() }) },
-});
+const emailJobs = {
+  sendEmail: t.object('ResendSendJob', { outboxId: t.u64() }),
+};
+export const emailQueue: RetryClient<
+  Record<never, never>,
+  typeof emailJobs
+> = retryClient({ jobs: emailJobs });
 
 const tables: typeof emailQueue.tables & {
   resendOutbox: typeof resendOutboxTable;

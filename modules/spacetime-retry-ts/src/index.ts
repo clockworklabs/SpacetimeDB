@@ -3,6 +3,7 @@ export {
   client,
   errors,
   type RetryArgs,
+  type RetryClient,
   type RetryConfig,
   type RetryCtx,
   type RetryHandlers,

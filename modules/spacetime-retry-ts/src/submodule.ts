@@ -251,6 +251,12 @@ const identityParams: { identity: IdentityBuilder } = {
   identity: t.identity(),
 };
 
+/** The value `client` returns. */
+export type RetryClient<
+  Tasks extends RetryTasks = Record<never, never>,
+  Jobs extends RetryTasks = Record<never, never>,
+> = ReturnType<typeof client<Tasks, Jobs>>;
+
 /** Create the retry tables and the functions that manage them. */
 export function client<
   const Tasks extends RetryTasks = Record<never, never>,
