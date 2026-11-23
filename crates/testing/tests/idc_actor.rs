@@ -573,8 +573,9 @@ async fn run_shutdown_test(host: ModuleHost) -> anyhow::Result<()> {
         assert!(requests_rx.try_recv().is_err());
     }
 
-    // A failed attempt remains pending. Restart retries it; a successful attempt
-    // finishes local cleanup before shutdown returns, leaving the next row pending.
+    // Both messages are in flight at once. A failed attempt remains pending, and
+    // restart sends it again. A successful attempt stores its result before shutdown
+    // returns, but shutdown does not start cleanup.
     for status in [StatusCode::SERVICE_UNAVAILABLE, StatusCode::OK] {
         let (starter, notify_tx) = idc_actor::channel(&host.info.database_identity);
         let _actor = starter.start(
@@ -584,9 +585,15 @@ async fn run_shutdown_test(host: ModuleHost) -> anyhow::Result<()> {
             config.clone(),
             host.downgrade(),
         )?;
-        let (seq, reply, peer) = tokio::time::timeout(TEST_TIMEOUT, requests_rx.recv()).await?.unwrap();
-        connections.insert(peer);
-        assert_eq!(seq, first.seq);
+        let mut replies = Vec::new();
+        let mut seqs = HashSet::new();
+        for _ in 0..2 {
+            let (seq, reply, peer) = tokio::time::timeout(TEST_TIMEOUT, requests_rx.recv()).await?.unwrap();
+            connections.insert(peer);
+            seqs.insert(seq);
+            replies.push(reply);
+        }
+        assert_eq!(seqs, HashSet::from([first.seq, second.seq]));
         {
             // ModuleHost::exit signals closure through its sender and waits for
             // completion. Multiple waiters must all observe the completed drain.
@@ -598,9 +605,11 @@ async fn run_shutdown_test(host: ModuleHost) -> anyhow::Result<()> {
                 tokio::time::timeout(Duration::from_millis(50), shutdown.as_mut())
                     .await
                     .is_err(),
-                "shutdown returned before the active HTTP request completed"
+                "shutdown returned before the active HTTP requests completed"
             );
-            reply.send(status).unwrap();
+            for reply in replies {
+                reply.send(status).unwrap();
+            }
             tokio::time::timeout(TEST_TIMEOUT, shutdown).await?;
         }
         // Repeated shutdown is harmless.
@@ -611,26 +620,27 @@ async fn run_shutdown_test(host: ModuleHost) -> anyhow::Result<()> {
             "shutdown must not dispatch another attempt"
         );
         let tx = db.begin_tx(Workload::Internal);
-        let stream = db.st_outbound_stream_by_id(&tx, first.stream_id)?.unwrap();
-        if status == StatusCode::OK {
-            assert_eq!(stream.ack_prefix, first.seq);
-            assert!(db
-                .outbound_msg_by_stream_seq(&tx, first.stream_id, first.seq)?
-                .is_none());
-        } else {
-            assert_eq!(stream.ack_prefix, 0);
-            let row = db.outbound_msg_by_stream_seq(&tx, first.stream_id, first.seq)?.unwrap();
+        assert_eq!(
+            db.st_outbound_stream_by_id(&tx, first.stream_id)?.unwrap().ack_prefix,
+            0
+        );
+        for message in [&first, &second] {
+            let row = db
+                .outbound_msg_by_stream_seq(&tx, message.stream_id, message.seq)?
+                .unwrap();
             let row = StOutboundMsgRow::try_from(row)?;
             assert_eq!(row.retry_count, 1);
-            assert!(row.result_status.is_none());
+            assert_eq!(row.result_status.is_some(), status == StatusCode::OK);
         }
-        assert!(db
-            .outbound_msg_by_stream_seq(&tx, second.stream_id, second.seq)?
-            .is_some());
         let _ = db.release_tx(tx);
     }
+    assert_eq!(
+        connections.len(),
+        1,
+        "replacement actors must reuse the HTTP/2 connection"
+    );
 
-    // Startup discovers the untouched second message without a notification.
+    // Startup cleans up stored results in order without sending them again.
     let (starter, notify_tx) = idc_actor::channel(&host.info.database_identity);
     let _actor = starter.start(
         db.clone(),
@@ -639,19 +649,101 @@ async fn run_shutdown_test(host: ModuleHost) -> anyhow::Result<()> {
         config,
         host.downgrade(),
     )?;
-    let (seq, reply, peer) = tokio::time::timeout(TEST_TIMEOUT, requests_rx.recv()).await?.unwrap();
-    connections.insert(peer);
-    assert_eq!(
-        connections.len(),
-        1,
-        "replacement actors must reuse the HTTP/2 connection"
-    );
-    assert_eq!(seq, second.seq);
-    reply.send(StatusCode::OK).unwrap();
     wait_for_ack(&db, SLOW_TARGET, second.seq).await?;
+    assert!(requests_rx.try_recv().is_err(), "stored results must not be sent again");
     notify_tx.close();
     tokio::time::timeout(TEST_TIMEOUT, notify_tx.closed()).await?;
     tokio::time::timeout(TEST_TIMEOUT, host.exit()).await?;
     tokio::time::timeout(TEST_TIMEOUT, host.exited()).await?;
+    Ok(())
+}
+
+/// Later messages go out while an earlier one waits, but cleanup still follows
+/// sequence order. A lost reply for the first message holds back only cleanup.
+#[test]
+#[serial_test::serial]
+fn idc_actor_pipelines_deliveries_and_retires_in_order() {
+    CompiledModule::compile("module-test", CompilationMode::Debug).with_module_async(
+        IN_MEMORY_CONFIG,
+        |module| async move {
+            run_pipeline_test(module.client.module()).await.unwrap();
+        },
+    );
+}
+
+async fn run_pipeline_test(host: ModuleHost) -> anyhow::Result<()> {
+    let (requests_tx, mut requests_rx) = mpsc::unbounded_channel();
+    let app = Router::new().route(
+        "/v1/database/:target_db/call-from-database/:reducer",
+        post(move |Query(query): Query<DeliveryQuery>| {
+            let (reply_tx, reply_rx) = tokio::sync::oneshot::channel::<StatusCode>();
+            requests_tx.send((query.seq, reply_tx)).unwrap();
+            async move { reply_rx.await.unwrap() }
+        }),
+    );
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
+    let config = IdcConfig {
+        http_port: listener.local_addr()?.port(),
+        token_signer: Arc::new(spacetimedb::auth::JwtKeys::generate()?.private),
+    };
+    let server = tokio::spawn(async move { axum::serve(listener, app).await });
+    let _server_abort = scopeguard::guard(server.abort_handle(), |handle| handle.abort());
+    let db = host.relational_db().clone();
+    let table_id = create_outbox(&db)?;
+    let messages = (0..3)
+        .map(|_| insert_outbox_row(&db, table_id, SLOW_TARGET))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    let (starter, notify_tx) = idc_actor::channel(&host.info.database_identity);
+    let _actor = starter.start(
+        db.clone(),
+        host.info.database_identity,
+        idc_actor::http_client(),
+        config,
+        host.downgrade(),
+    )?;
+
+    // All three are sent before any reply arrives.
+    let mut replies = std::collections::HashMap::new();
+    for _ in &messages {
+        let (seq, reply) = tokio::time::timeout(TEST_TIMEOUT, requests_rx.recv()).await?.unwrap();
+        replies.insert(seq, reply);
+    }
+    for message in &messages[1..] {
+        replies.remove(&message.seq).unwrap().send(StatusCode::OK).unwrap();
+    }
+    // The first message's reply is lost, so later results wait to be cleaned up.
+    replies
+        .remove(&messages[0].seq)
+        .unwrap()
+        .send(StatusCode::SERVICE_UNAVAILABLE)
+        .unwrap();
+    let (seq, reply) = tokio::time::timeout(TEST_TIMEOUT, requests_rx.recv()).await?.unwrap();
+    assert_eq!(seq, messages[0].seq, "only the failed message is sent again");
+    {
+        let tx = db.begin_tx(Workload::Internal);
+        assert_eq!(
+            db.st_outbound_stream_by_id(&tx, messages[0].stream_id)?
+                .unwrap()
+                .ack_prefix,
+            0
+        );
+        for message in &messages[1..] {
+            let row = db
+                .outbound_msg_by_stream_seq(&tx, message.stream_id, message.seq)?
+                .unwrap();
+            assert!(StOutboundMsgRow::try_from(row)?.result_status.is_some());
+        }
+        let _ = db.release_tx(tx);
+    }
+
+    reply.send(StatusCode::OK).unwrap();
+    wait_for_ack(&db, SLOW_TARGET, messages[2].seq).await?;
+    assert!(
+        requests_rx.try_recv().is_err(),
+        "delivered messages must not be sent again"
+    );
+    notify_tx.close();
+    tokio::time::timeout(TEST_TIMEOUT, notify_tx.closed()).await?;
     Ok(())
 }
