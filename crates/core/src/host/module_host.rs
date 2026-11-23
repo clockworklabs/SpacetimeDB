@@ -2277,7 +2277,9 @@ impl ModuleHost {
             |client_id, inst| inst.disconnect_client(client_id),
             |client_id, inst| inst.disconnect_client(client_id).await,
         ) {
-            log::error!("Error from client_disconnected transaction: {e}");
+            // The database was deleted, replaced by a publish, or its replica was stopped.
+            // This is expected, so don't log it as an error.
+            log::warn!("Client disconnect transaction: {e}");
         }
     }
 
