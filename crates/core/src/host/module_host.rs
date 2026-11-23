@@ -2270,7 +2270,7 @@ impl ModuleHost {
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
         log::trace!("disconnecting client {client_id}");
-        if let Err(e) = call_instance!(
+        match call_instance!(
             self,
             "disconnect_client",
             client_id,
@@ -2279,7 +2279,11 @@ impl ModuleHost {
         ) {
             // The database was deleted, replaced by a publish, or its replica was stopped.
             // This is expected, so don't log it as an error.
-            log::warn!("Error from client_disconnected transaction: {e}");
+            Err(e @ NoSuchModule) => {
+                log::warn!("Error from client_disconnected transaction: {e}");
+            }
+            // Errors from the reducer itself are logged where they occur.
+            Ok(_) => {}
         }
     }
 
