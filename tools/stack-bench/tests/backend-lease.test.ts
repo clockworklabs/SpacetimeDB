@@ -184,7 +184,7 @@ test('build workspace handback stops private-namespace writers before changing p
     recorded.push([...args]);
     return args[0] === 'inspect' ? JSON.stringify({ state: { Status: 'running', Running: true }, pidMode: '' }) : '';
   });
-  assert.equal(recorded.length, 4);
+  assert.equal(recorded.length, 5);
   assert.equal(recorded[0]?.at(-1), id);
   assert.deepEqual(recorded[1]?.slice(0, 6), ['exec', '--user', '0:0', id, 'sh', '-ec']);
   assert.match(recorded[1]?.at(-1) ?? '', /pkill -KILL -u 10001/);
@@ -192,6 +192,7 @@ test('build workspace handback stops private-namespace writers before changing p
   assert.deepEqual(recorded.slice(2).map(args => args.slice(4)), [
     ['chown', '-R', `10001:${process.getgid?.() ?? 0}`, '/app'],
     ['chmod', '-R', 'u+rwX,g+rwX,o-rwx', '/app'],
+    ['find', '/app', '-type', 'd', '-exec', 'chmod', 'g+s', '{}', '+'],
   ]);
   for (const runtime of [
     { state: { Status: 'exited', Running: false }, pidMode: '' },

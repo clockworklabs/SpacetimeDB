@@ -49,10 +49,15 @@ test('capability-dropped controller and agent retain access through source resto
         assert.equal(fs.readFileSync('/app/src/app.js','utf8'),'original');
         fs.writeFileSync('/app/src/app.js','agent edit');
         fs.writeFileSync('/app/src/new.js','agent addition');
+        // A startup build copies a group-only file, keeping its mode, into a new directory.
+        fs.mkdirSync('/app/src/build/web',{recursive:true});
+        fs.copyFileSync('/app/src/app.js','/app/src/build/web/copied.js');
         assert.equal(fs.statSync('/app/src/app.js').mode & 0o007,0);`]);
       docker(['exec', controller, 'node', '-e', `const fs=require('node:fs'),assert=require('node:assert/strict');
         assert.equal(fs.readFileSync('/proof/app/src/app.js','utf8'),'agent edit');
+        assert.equal(fs.readFileSync('/proof/app/src/build/web/copied.js','utf8'),'agent edit');
         fs.writeFileSync('/proof/app/controller-note','controller can write');`]);
+      docker(['exec', agent, 'rm', '-rf', '/app/src/build']);
     }
   } finally {
     for (const id of containers.reverse()) docker(['rm', '-f', '--volumes', id]);

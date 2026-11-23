@@ -56,9 +56,13 @@ export function codingContainerTranscriptHandoffCommands(controllerGid: number,
   ];
 }
 
+// Directories keep the controller's group for files the application creates later:
+// a startup build that copies a group-only file must still leave it readable to a
+// controller without file-permission capabilities.
 export function codingContainerWorkspaceHandoffCommands(controllerGid: number): string[][] {
   return [
     ['chown', '-R', `${CODING_CONTAINER_AGENT.uid}:${controllerGid}`, CODING_CONTAINER_APP_ROOT],
     ['chmod', '-R', 'u+rwX,g+rwX,o-rwx', CODING_CONTAINER_APP_ROOT],
+    ['find', CODING_CONTAINER_APP_ROOT, '-type', 'd', '-exec', 'chmod', 'g+s', '{}', '+'],
   ];
 }
