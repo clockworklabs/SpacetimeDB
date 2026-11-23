@@ -883,7 +883,7 @@
                     "do": "signUp",
                     "expectFailure": true,
                     "name": "ann",
-                    "password": "different-pw"
+                    "password": "different-password-2026"
                   },
                   {
                     "actor": "impostor",
