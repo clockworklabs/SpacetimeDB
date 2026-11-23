@@ -111,6 +111,56 @@ fn early_idc_delivery_waits_for_earlier_sequence() {
     );
 }
 
+/// A failed delivery records its error in a separate transaction. That must
+/// also wake deliveries waiting behind it.
+#[test]
+#[serial_test::serial]
+fn failed_idc_delivery_releases_waiting_successor() {
+    CompiledModule::compile("module-test", CompilationMode::Debug).with_module_async(
+        IN_MEMORY_CONFIG,
+        |handle| async move {
+            let host = handle.client.module();
+            let call = |seq, reducer: &'static str, args: FunctionArgs| {
+                let host = host.clone();
+                async move {
+                    let (_, def, _) = host.info.module_def.reducer_by_name_with_module(reducer).unwrap();
+                    let hash = host.info.reducer_signature_hash(&def.name);
+                    host.call_idc_reducer(
+                        Identity::ZERO,
+                        ConnectionId::from_u128(1),
+                        reducer,
+                        args,
+                        9,
+                        seq,
+                        0,
+                        hash,
+                    )
+                    .await
+                }
+            };
+
+            let second = tokio::spawn(call(2, "say_hello", FunctionArgs::Nullary));
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            assert!(!second.is_finished(), "an early delivery must wait");
+
+            // There is no such row, so the reducer fails and its transaction rolls back.
+            let args = spacetimedb_lib::bsatn::to_vec(&spacetimedb_lib::sats::product![u64::MAX]).unwrap();
+            let IdcReducerCallOutcome::Recorded(first) = call(1, "delete_player", FunctionArgs::Bsatn(args.into()))
+                .await
+                .unwrap()
+            else {
+                panic!("the failure must be recorded");
+            };
+            assert!(first.result.outcome.into_result().is_err());
+
+            let IdcReducerCallOutcome::Recorded(second) = second.await.unwrap().unwrap() else {
+                panic!("the waiting delivery must run after its predecessor fails");
+            };
+            assert!(second.result.outcome.into_result().is_ok());
+        },
+    );
+}
+
 #[test]
 #[serial_test::serial]
 fn terminal_signature_errors_are_replayed_and_do_not_stall_the_stream() {
