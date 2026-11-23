@@ -35,6 +35,7 @@ const tx: RetryJobCtx = {
     return { isInternal: internal };
   },
   random: () => random,
+  newUuidV7: () => `uuid-${nextId + 1n}`,
   db: {
     retryJob: {
       id: {
@@ -199,7 +200,8 @@ internal = true;
 // A claim swaps both rows for a guard row, and success finishes the job.
 const [first, backup] = firesOf(ok);
 fire(first);
-assert.deepEqual(calls, [`ok:1:retry-job-${ok}`]);
+assert.deepEqual(calls, [`ok:1:${'retry-' + jobs.get(ok)?.key}`]);
+assert.match(calls[0], /^ok:1:retry-uuid-\d+$/);
 assert.equal(retry.status(tx, ok)?.status.tag, 'Succeeded');
 assert.equal(fires.size, 0);
 assert.equal(outcomes.at(-1)?.status, 'Succeeded');
@@ -258,6 +260,21 @@ assert.equal(retry.status(tx, lost)?.status.tag, 'Queued');
 fire(firesOf(lost)[0]);
 assert.equal(retry.status(tx, lost)?.status.tag, 'Succeeded');
 assert.equal(retry.status(tx, lost)?.attempt, 2);
+
+// The backup guard row recovers the job if the first one is lost.
+const stuck = send('stuck');
+during = () => {
+  during = undefined;
+  // The host stops after deleting the first guard row.
+  fires.delete(firesOf(stuck)[0].scheduledId);
+  now += 20_000_000n;
+  fire(firesOf(stuck)[0]);
+};
+fire(firesOf(stuck)[0]);
+assert.equal(history.at(-1)?.error, errors.leaseExpired);
+assert.equal(retry.status(tx, stuck)?.status.tag, 'Queued');
+fire(firesOf(stuck)[0]);
+assert.equal(retry.status(tx, stuck)?.status.tag, 'Succeeded');
 
 // A paused queue parks due jobs, and room starts them oldest first.
 retry.setQueue(tx, 'mail', { maxParallelism: 0 });

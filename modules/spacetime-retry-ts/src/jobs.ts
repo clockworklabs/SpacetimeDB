@@ -52,6 +52,7 @@ function retryJobColumns(args: SumBuilder<VariantsObj>) {
   return {
     id: t.u64().primaryKey().autoInc(),
     name: t.string().index(),
+    key: t.string(),
     queue: t.string(),
     args,
     status: jobStatus,
@@ -90,29 +91,42 @@ export function retryJobTable(
 }
 
 const fireOptions = { name: 'retry_job_fire', public: false } as const;
-const fireColumns = {
-  scheduledId: t.u64().primaryKey().autoInc(),
-  scheduledAt: t.scheduleAt(),
-  jobId: t.u64().index(),
-  generation: t.u64(),
-};
-export const retryJobFire: ReturnType<
-  typeof table<typeof fireColumns, typeof fireOptions>
-> = table(fireOptions, fireColumns);
+function fireColumns() {
+  return {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+    jobId: t.u64().index(),
+    generation: t.u64(),
+  };
+}
+/** Each client gets its own, so each copy's procedure has its own schedule. */
+export function retryJobFireTable(): ReturnType<
+  typeof table<ReturnType<typeof fireColumns>, typeof fireOptions>
+> {
+  return table(fireOptions, fireColumns());
+}
 
 const queueOptions = { name: 'retry_queue', public: false } as const;
-const queueColumns = {
-  name: t.string().primaryKey(),
-  maxParallelism: t.u32(),
-  updatedAt: t.timestamp(),
-};
-export const retryQueue: ReturnType<
-  typeof table<typeof queueColumns, typeof queueOptions>
-> = table(queueOptions, queueColumns);
+function queueColumns() {
+  return {
+    name: t.string().primaryKey(),
+    maxParallelism: t.u32(),
+    updatedAt: t.timestamp(),
+  };
+}
+export function retryQueueTable(): ReturnType<
+  typeof table<ReturnType<typeof queueColumns>, typeof queueOptions>
+> {
+  return table(queueOptions, queueColumns());
+}
 
 export type RetryJobRow = Infer<ReturnType<typeof retryJobTable>['rowType']>;
-export type RetryJobFireRow = Infer<typeof retryJobFire.rowType>;
-export type RetryQueueRow = Infer<typeof retryQueue.rowType>;
+export type RetryJobFireRow = Infer<
+  ReturnType<typeof retryJobFireTable>['rowType']
+>;
+export type RetryQueueRow = Infer<
+  ReturnType<typeof retryQueueTable>['rowType']
+>;
 type HistoryRow = {
   id: bigint;
   taskName: string;
@@ -130,6 +144,7 @@ export interface RetryJobCtx {
   readonly timestamp: Timestamp;
   readonly senderAuth: { readonly isInternal: boolean };
   readonly random: () => number;
+  newUuidV7(): { toString(): string };
   readonly db: {
     readonly retryJob: {
       readonly id: {
@@ -182,7 +197,10 @@ export interface RetryJobInfo {
   readonly name: string;
   /** 1 for the first attempt. */
   readonly attempt: number;
-  /** The same for every attempt of this job. Send it as an idempotency key. */
+  /**
+   * The same for every attempt of this job and unique across databases. Send
+   * it as an idempotency key.
+   */
   readonly idempotencyKey: string;
 }
 
@@ -392,6 +410,7 @@ export function jobs<Args extends { tag: string }>(
       const job = ctx.db.retryJob.insert({
         id: 0n,
         name: input.name,
+        key: ctx.newUuidV7().toString(),
         queue,
         args: input.args as RetryJobRow['args'],
         status: { tag: 'Queued' },
@@ -509,7 +528,10 @@ export function jobs<Args extends { tag: string }>(
           status: { tag: 'Running' },
           attempt: job.attempt + 1,
         });
-        fireAt(tx, started, tx.timestamp.microsSinceUnixEpoch + leaseMicros);
+        // The second guard row covers a host that stops after deleting the first.
+        const guard = tx.timestamp.microsSinceUnixEpoch + leaseMicros;
+        fireAt(tx, started, guard);
+        fireAt(tx, started, guard + leaseMicros);
         return started;
       });
       if (!claimed) return;
@@ -528,7 +550,7 @@ export function jobs<Args extends { tag: string }>(
             id: claimed.id,
             name: claimed.name,
             attempt: claimed.attempt,
-            idempotencyKey: `retry-job-${claimed.id}`,
+            idempotencyKey: `retry-${claimed.key}`,
           }
         );
       } catch (error) {

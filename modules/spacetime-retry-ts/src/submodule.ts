@@ -16,9 +16,9 @@ import type { Identity, Timestamp } from 'spacetimedb';
 import { retryFailed, type RetryResult } from './handler.js';
 import {
   jobs,
-  retryJobFire,
+  retryJobFireTable,
   retryJobTable,
-  retryQueue,
+  retryQueueTable,
   type EnqueueInput,
   type RetryJobFireRow,
   type RetryJobCtx,
@@ -107,8 +107,8 @@ type RetryTables = {
   retryHistory: typeof retryHistory;
   retryAdminIdentity: typeof retryAdminIdentity;
   retryJob: ReturnType<typeof retryJobTable>;
-  retryJobFire: typeof retryJobFire;
-  retryQueue: typeof retryQueue;
+  retryJobFire: ReturnType<typeof retryJobFireTable>;
+  retryQueue: ReturnType<typeof retryQueueTable>;
 };
 
 export type RetryTaskRow = Infer<ReturnType<typeof retryTaskTable>['rowType']>;
@@ -267,6 +267,7 @@ export function client<
   const retryTask = retryTaskTable(retryArgs);
   const jobVariants: VariantsObj = jobTypes ?? {};
   const retryJob = retryJobTable(t.enum('RetryJobArgs', jobVariants));
+  const retryJobFire = retryJobFireTable();
   const queue = jobs<RetryArgs<Jobs>>(retryJob, leaseSecs);
   const tables: RetryTables = {
     retryTask,
@@ -274,7 +275,7 @@ export function client<
     retryAdminIdentity,
     retryJob,
     retryJobFire,
-    retryQueue,
+    retryQueue: retryQueueTable(),
   };
 
   function isAdmin(ctx: RetryViewCtx): boolean {

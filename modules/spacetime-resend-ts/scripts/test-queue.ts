@@ -21,6 +21,7 @@ const jobs = table();
 const fires = table();
 const tx = {
   timestamp: new Timestamp(1_000_000n),
+  newUuidV7: () => '0198-uuid',
   db: {
     resendOutbox: {
       ...outbox,
