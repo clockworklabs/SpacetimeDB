@@ -118,6 +118,14 @@ The database dashboard gives you access to:
 - **SpacetimeAuth**: Enable and configure the built-in authentication provider (see [SpacetimeAuth](../../00200-core-concepts/00500-authentication/00100-spacetimeauth/index.md)).
 - **Settings**: Rename the database, change its visibility, manage its [environment variables](../../00200-core-concepts/00100-databases/00700-environment-variables.md) and collaborators, or delete it.
 
+## Resident memory limits
+
+Maincloud's standard resident memory limit is **24 GiB per database**. Your database may have a different configured limit. This budget governs memory used by the database's storage engine and applies regardless of which cache policies your tables use.
+
+When an operation would exceed the memory budget, SpacetimeDB can make room by paging data to local disk or object storage, depending on the table's cache policy and the available storage tiers. If it can't free enough memory, the operation fails with `Database resident memory budget exceeded`. The database stays running and can still serve reads and other operations that have enough memory to finish.
+
+For ways to free up memory, see [Troubleshooting](../00050-troubleshooting.md#database-resident-memory-budget-exceeded). To configure which storage tiers a table can use, see [Table Storage and Cache Policies](../../00200-core-concepts/00300-tables/00700-storage-and-cache-policies.md).
+
 ## Database Lifecycle
 
 Maincloud databases have two states:

@@ -200,6 +200,7 @@ export class ModuleContext {
     rowLevelSecurity: [],
     schedules: [],
     outboxes: [],
+    tableCachePolicies: [],
     procedures: [],
     views: [],
     viewPrimaryKeys: [],
@@ -241,6 +242,7 @@ export class ModuleContext {
     );
     push(module.schedules && { tag: 'Schedules', value: module.schedules });
     push(module.outboxes && { tag: 'Outboxes', value: module.outboxes });
+    push({ tag: 'TableCachePolicies', value: module.tableCachePolicies });
     push(
       module.lifeCycleReducers && {
         tag: 'LifeCycleReducers',

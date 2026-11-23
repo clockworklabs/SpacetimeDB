@@ -8,7 +8,7 @@ import TabItem from '@theme/TabItem';
 import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 
-Tables are the way to store data in SpacetimeDB. SpacetimeDB keeps hot data in memory for extremely low latency and high throughput access, keeps colder data on disk, and automatically persists all data.
+Tables are the way to store data in SpacetimeDB. By default, tables keep their data resident in memory for extremely low latency and high throughput access. You can choose a [cache policy](./00300-tables/00700-storage-and-cache-policies.md) that allows colder data to page to local disk or, where enabled, object storage. These policies control data residency while preserving the database's configured durability guarantees.
 
 ## Why Tables
 

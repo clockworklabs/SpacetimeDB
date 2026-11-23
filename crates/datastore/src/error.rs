@@ -1,3 +1,5 @@
+use std::io;
+
 use super::system_tables::SystemTable;
 use spacetimedb_lib::db::raw_def::{v9::RawSql, RawIndexDefV8};
 use spacetimedb_primitives::{ColId, IndexId, SequenceId, TableId, ViewId};
@@ -8,9 +10,11 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_schema::def::error::LibError;
 #[cfg(feature = "durability")]
 use spacetimedb_snapshot::SnapshotError;
+use spacetimedb_table::tiered;
 use spacetimedb_table::{
     bflatn_to, read_column,
     table::{self, ReadViaBsatnError, UniqueConstraintViolation},
+    tiered::{BlobError, PageError},
 };
 use thiserror::Error;
 
@@ -31,12 +35,50 @@ pub enum DatastoreError {
     // TODO(cloutiertyler): should this be a TableError? I couldn't get it to compile
     #[error("Error reading a value from a table through BSATN: {0}")]
     ReadViaBsatnError(#[from] ReadViaBsatnError),
-
     #[error("ViewError: {0}")]
     View(#[from] ViewError),
-
+    #[error(transparent)]
+    Page(#[from] PageError),
+    #[error(transparent)]
+    TableStorage(#[from] table::TableError),
+    #[error(transparent)]
+    Trim(#[from] TrimTableError),
+    #[error(transparent)]
+    Blob(#[from] BlobError),
+    #[error(transparent)]
+    Io(#[from] io::Error),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+impl DatastoreError {
+    pub(crate) fn is_resident_memory_limit(&self) -> bool {
+        self.resident_memory_limit().is_some()
+    }
+
+    pub fn resident_memory_limit(&self) -> Option<&tiered::BudgetExceeded> {
+        match self {
+            Self::Page(PageError::MemoryLimitExceeded(error))
+            | Self::Blob(BlobError::MemoryLimitExceeded(error))
+            | Self::Table(TableError::Bflatn(bflatn_to::Error::Pages(PageError::MemoryLimitExceeded(error))))
+            | Self::Table(TableError::Bflatn(bflatn_to::Error::Blobs(BlobError::MemoryLimitExceeded(error)))) => {
+                Some(error)
+            }
+            Self::TableStorage(error) | Self::Table(TableError::Bflatn(bflatn_to::Error::Table(error))) => {
+                match error {
+                    table::TableError::Page(error) => match error.as_ref() {
+                        PageError::MemoryLimitExceeded(error) => Some(error.as_ref()),
+                        _ => None,
+                    },
+                    table::TableError::Blob(error) => match error.as_ref() {
+                        BlobError::MemoryLimitExceeded(error) => Some(error.as_ref()),
+                        _ => None,
+                    },
+                }
+            }
+            _ => None,
+        }
+    }
 }
 
 #[derive(Error, Debug)]
@@ -92,6 +134,14 @@ pub enum TableError {
     ReschemaNotAnEventTable(TableId),
 }
 
+#[derive(Error, Debug)]
+pub enum TrimTableError {
+    #[error(transparent)]
+    Pages(#[from] PageError),
+    #[error(transparent)]
+    Storage(#[from] tiered::TrimError),
+}
+
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum IndexError {
     #[error("Index not found: {0:?}")]
@@ -142,6 +192,7 @@ impl From<table::InsertError> for DatastoreError {
             table::InsertError::Duplicate(e) => TableError::from(e).into(),
             table::InsertError::Bflatn(e) => TableError::from(e).into(),
             table::InsertError::IndexError(e) => IndexError::from(e).into(),
+            table::InsertError::Table(e) => e.into(),
         }
     }
 }

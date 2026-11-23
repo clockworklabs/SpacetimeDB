@@ -50,21 +50,16 @@ impl<T: StateView> SchemaView for SchemaViewer<'_, T> {
                 &AlgebraicValue::from(table_id),
             )?
             .map(|row| {
-                row.read_col::<AlgebraicValue>(StRowLevelSecurityFields::Sql)
-                    .with_context(|| {
-                        format!(
-                            "Failed to read value from the `{}` column of `{}` for table_id `{}`",
-                            "sql", "st_row_level_security", table_id
-                        )
-                    })
-                    .and_then(|sql| {
-                        sql.into_string().map_err(|_| {
-                            anyhow::anyhow!(format!(
-                                "Failed to read value from the `{}` column of `{}` for table_id `{}`",
-                                "sql", "st_row_level_security", table_id
-                            ))
-                        })
-                    })
+                let context = || {
+                    format!(
+                        "Failed to read value from the `{}` column of `{}` for table_id `{}`",
+                        "sql", "st_row_level_security", table_id
+                    )
+                };
+                row.with_context(context)?
+                    .read_col::<AlgebraicValue>(StRowLevelSecurityFields::Sql)
+                    .with_context(context)
+                    .and_then(|sql| sql.into_string().map_err(|_| anyhow::anyhow!(context())))
             })
             .collect::<anyhow::Result<_>>()
     }

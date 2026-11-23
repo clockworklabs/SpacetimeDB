@@ -2155,7 +2155,7 @@ where
                 // Must be called *after* we check `has_terminated()`, or else it will
                 // cause it to return `false`.
                 scope.cancel_terminate_execution();
-                let e = e.unwrap_or_else(|unknown| termination_error.unwrap_or_else(|| unknown.into()));
+                let e = termination_error.unwrap_or_else(|| e.unwrap_or_else(Into::into));
                 ExecutionError::Recoverable(e)
             } else {
                 // We cannot continue.

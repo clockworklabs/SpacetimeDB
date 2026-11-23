@@ -150,6 +150,10 @@ pub enum ValidationError {
     MultipleColumnDefaultValues { table: RawIdentifier, col_id: ColId },
     #[error("Table {table} not found")]
     TableNotFound { table: RawIdentifier },
+    #[error("table {table} has more than one cache policy")]
+    DuplicateTableCachePolicy { table: Identifier },
+    #[error("index {index} on table {table} must use btree for a disk or object cache policy")]
+    CachePolicyRequiresBTree { table: Identifier, index: RawIdentifier },
     #[error("table {table} is assigned in multiple outboxes")]
     DuplicateOutbox { table: Identifier },
     #[error("outbox table {} not found", table_name)]
