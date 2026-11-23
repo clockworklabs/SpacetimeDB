@@ -738,15 +738,9 @@ log = "0.4"
                     "bin~/Release",
                 )?;
 
-                // Pin the version of the locally packed SDK. Without a version, `add` picks the newest
-                // version from nuget.org, which the restore (limited to the local source by package
-                // source mapping) can't find if nuget.org has a newer release than this checkout.
-                let csproj = fs::read_to_string(workspace.join("sdks/csharp/SpacetimeDB.ClientSDK.csproj"))?;
-                let version = regex::Regex::new(r"<Version>([^<]+)</Version>")
-                    .unwrap()
-                    .captures(&csproj)
-                    .context("No <Version> in SpacetimeDB.ClientSDK.csproj")?[1]
-                    .to_string();
+                // Add a floating reference without resolving it. Resolving here would pick the newest version
+                // from nuget.org, which the restore (limited to the local source by package source mapping)
+                // can't find if nuget.org has a newer release than this checkout.
                 run_cmd(
                     &[
                         "dotnet",
@@ -754,7 +748,8 @@ log = "0.4"
                         "package",
                         "SpacetimeDB.ClientSDK",
                         "--version",
-                        &version,
+                        "*",
+                        "--no-restore",
                     ],
                     client_path,
                 )?;
