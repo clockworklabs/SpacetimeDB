@@ -2,6 +2,7 @@ import {
   Range,
   SenderError,
   t,
+  type IdentityBuilder,
   type Infer,
   type InferTypeOfParams,
 } from 'spacetimedb/server';
@@ -80,7 +81,9 @@ export function setAuthConfig(
   else ctx.db.authConfig.insert(row);
 }
 
-export const adminParams = { identity: t.identity() };
+export const adminParams: { identity: IdentityBuilder } = {
+  identity: t.identity(),
+};
 
 export function addAuthAdmin(
   ctx: AuthReducerCtx,

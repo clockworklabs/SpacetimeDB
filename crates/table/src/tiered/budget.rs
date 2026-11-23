@@ -1,7 +1,8 @@
 use spacetimedb_memory_usage::MemoryUsage;
 
 use super::metrics::{CacheTier, Metrics};
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 #[error("memory limit exceeded")]
@@ -31,7 +32,10 @@ impl ByteBudget {
 
     pub fn new(config: ByteBudgetConfig) -> Result<Self, ConfigError> {
         config.validate_then(|config| Self {
-            state: Arc::new(Mutex::new(ByteBudgetState { accounted_bytes: 0 })),
+            state: Arc::new(Mutex::new(ByteBudgetState {
+                accounted_bytes: 0,
+                hard_limit_suspensions: 0,
+            })),
             config,
             metrics: Default::default(),
         })
@@ -51,14 +55,26 @@ impl ByteBudget {
 
     pub fn usage(&self) -> ByteBudgetUsage {
         ByteBudgetUsage {
-            accounted_bytes: self.state.lock().unwrap().accounted_bytes,
+            accounted_bytes: self.state.lock().accounted_bytes,
         }
     }
 
     pub fn acquire(&self, bytes: u64) -> Result<BudgetPermit, BudgetExceeded> {
-        let mut state = self.state.lock().unwrap();
+        self.acquire_with_exemption(bytes, false)
+    }
+
+    /// Charge an allocation, applying the same exemption policy to system
+    /// allocations and recovery. Accounting overflow is always rejected.
+    pub(super) fn acquire_with_exemption(
+        &self,
+        bytes: u64,
+        allocation_exempt: bool,
+    ) -> Result<BudgetPermit, BudgetExceeded> {
+        let mut state = self.state.lock();
         if let Some(accounted_bytes) = state.accounted_bytes.checked_add(bytes)
-            && accounted_bytes <= self.config.hard_limit_bytes
+            && (allocation_exempt
+                || state.hard_limit_suspensions > 0
+                || accounted_bytes <= self.config.hard_limit_bytes)
         {
             state.accounted_bytes = accounted_bytes;
             Ok(BudgetPermit {
@@ -66,25 +82,58 @@ impl ByteBudget {
                 bytes,
             })
         } else {
-            self.metrics.budget_rejected(self.config.tier);
-            Err(BudgetExceeded {
+            let error = BudgetExceeded {
                 requested_bytes: bytes,
                 accounted_bytes: state.accounted_bytes,
                 hard_limit_bytes: self.config.hard_limit_bytes,
-            })
+            };
+            // Metrics callbacks may inspect this budget or unwind. Neither
+            // should happen while the accounting lock is held.
+            drop(state);
+            self.metrics.budget_rejected(self.config.tier);
+            Err(error)
         }
     }
 
-    pub(super) fn force_acquire(&self, bytes: u64) -> BudgetPermit {
-        let mut state = self.state.lock().unwrap();
-        state.accounted_bytes = state
-            .accounted_bytes
-            .checked_add(bytes)
-            .expect("accounted bytes overflow");
-        BudgetPermit {
+    /// Run a synchronous recovery operation with the hard limit suspended.
+    ///
+    /// Acquisitions still count toward usage, including those from budget clones.
+    /// The suspension ends before this call returns or unwinds. The caller must
+    /// exclude ordinary database access for the duration of the operation.
+    pub fn with_hard_limit_suspended<R>(&self, operation: impl FnOnce() -> R) -> R {
+        let _suspension = self.suspend_hard_limit();
+        operation()
+    }
+
+    fn suspend_hard_limit(&self) -> HardLimitSuspension {
+        let mut state = self.state.lock();
+        state.hard_limit_suspensions = state
+            .hard_limit_suspensions
+            .checked_add(1)
+            .expect("hard limit suspensions overflow");
+        HardLimitSuspension {
             state: self.state.clone(),
-            bytes,
         }
+    }
+
+    pub fn is_hard_limit_suspended(&self) -> bool {
+        self.state.lock().hard_limit_suspensions > 0
+    }
+}
+
+/// Keeps the shared budget's hard limit suspended until dropped.
+#[derive(Debug)]
+struct HardLimitSuspension {
+    state: Arc<Mutex<ByteBudgetState>>,
+}
+
+impl Drop for HardLimitSuspension {
+    fn drop(&mut self) {
+        let mut state = self.state.lock();
+        state.hard_limit_suspensions = state
+            .hard_limit_suspensions
+            .checked_sub(1)
+            .expect("hard limit suspensions underflow");
     }
 }
 
@@ -133,6 +182,7 @@ impl ByteBudgetConfig {
 #[derive(Debug)]
 pub struct ByteBudgetState {
     accounted_bytes: u64,
+    hard_limit_suspensions: u32,
 }
 
 impl ByteBudgetUsage {
@@ -149,7 +199,7 @@ pub struct BudgetPermit {
 
 impl Drop for BudgetPermit {
     fn drop(&mut self) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock();
         state.accounted_bytes = state
             .accounted_bytes
             .checked_sub(self.bytes)
@@ -244,6 +294,11 @@ mod tests {
 
             prop_assert_eq!(error.accounted_bytes, accounted_bytes);
             prop_assert_eq!(budget.usage().accounted_bytes(), accounted_bytes);
+
+            // Suspending the limit must not suspend accounting overflow checks.
+            let error = budget.with_hard_limit_suspended(|| budget.acquire(requested_bytes).unwrap_err());
+            prop_assert_eq!(error.accounted_bytes, accounted_bytes);
+            prop_assert_eq!(budget.usage().accounted_bytes(), accounted_bytes);
             drop(permit);
             prop_assert_eq!(budget.usage().accounted_bytes(), 0);
         }
@@ -297,7 +352,7 @@ mod tests {
         }
 
         #[test]
-        fn force_acquire_can_exceed_hard_limit(
+        fn exempt_acquisition_can_exceed_hard_limit(
             hard_limit_bytes in 0_u64..1_000_000,
             excess_bytes in 1_u64..1_000_000,
         ) {
@@ -307,12 +362,12 @@ mod tests {
                 soft_limit_bytes: hard_limit_bytes,
                 hard_limit_bytes,
             }).unwrap();
-            let forced_bytes = hard_limit_bytes + excess_bytes;
+            let exempt_bytes = hard_limit_bytes + excess_bytes;
 
-            let permit = budget.force_acquire(forced_bytes);
+            let permit = budget.acquire_with_exemption(exempt_bytes, true).unwrap();
 
             prop_assert!(budget.usage().accounted_bytes() > hard_limit_bytes);
-            prop_assert_eq!(budget.usage().accounted_bytes(), forced_bytes);
+            prop_assert_eq!(budget.usage().accounted_bytes(), exempt_bytes);
             drop(permit);
             prop_assert_eq!(budget.usage().accounted_bytes(), 0);
         }

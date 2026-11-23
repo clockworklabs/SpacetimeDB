@@ -1,4 +1,4 @@
-import type { ProcedureExport } from 'spacetimedb/server';
+import type { IdentityBuilder, ProcedureExport } from 'spacetimedb/server';
 import {
   spacetimedb,
   t,
@@ -32,7 +32,9 @@ export function requireAdmin(ctx: WriteCtx, sender: Sender): void {
 
 const unitResult: ReturnType<typeof t.unit> = t.unit();
 
-const addAdminIdentityArgs = { identity: t.identity() };
+const addAdminIdentityArgs: { identity: IdentityBuilder } = {
+  identity: t.identity(),
+};
 export const addAdminIdentity: ProcedureExport<
   typeof spacetimedb.schemaType,
   typeof addAdminIdentityArgs,
@@ -55,7 +57,9 @@ export const addAdminIdentity: ProcedureExport<
   }
 );
 
-const removeAdminIdentityArgs = { identity: t.identity() };
+const removeAdminIdentityArgs: { identity: IdentityBuilder } = {
+  identity: t.identity(),
+};
 export const removeAdminIdentity: ProcedureExport<
   typeof spacetimedb.schemaType,
   typeof removeAdminIdentityArgs,
