@@ -19,6 +19,7 @@ export const errors = {
   sendEmailMissingFrom: 'resend.send_email_missing_from',
   sendEmailFailed: 'resend.send_email_failed',
   sendEmailInvalidResponse: 'resend.send_email_invalid_response',
+  queuedEmailMissing: 'resend.queued_email_missing',
   toTooMany: 'resend.to_too_many',
   toInvalidAddress: 'resend.to_invalid_address',
   ccTooMany: 'resend.cc_too_many',

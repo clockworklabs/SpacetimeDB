@@ -102,14 +102,14 @@ const retryAdminIdentity: ReturnType<
   typeof table<typeof adminColumns, typeof adminOptions>
 > = table(adminOptions, adminColumns);
 
-interface RetryTables {
+type RetryTables = {
   retryTask: ReturnType<typeof retryTaskTable>;
   retryHistory: typeof retryHistory;
   retryAdminIdentity: typeof retryAdminIdentity;
   retryJob: ReturnType<typeof retryJobTable>;
   retryJobFire: typeof retryJobFire;
   retryQueue: typeof retryQueue;
-}
+};
 
 export type RetryTaskRow = Infer<ReturnType<typeof retryTaskTable>['rowType']>;
 export type RetryHistoryRow = Infer<typeof retryHistory.rowType>;

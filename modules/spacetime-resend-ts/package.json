@@ -1,7 +1,7 @@
 {
   "name": "@spacetimedb/resend",
   "description": "Resend email delivery, webhook verification, and event storage for SpacetimeDB TypeScript modules.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./src/index.ts",
@@ -63,7 +63,7 @@
     "format": "prettier . --write --ignore-path ../../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../../.prettierignore",
     "typecheck": "tsc --noEmit",
-    "test": "tsx scripts/test-unit.ts && node --js-explicit-resource-management --import tsx --import ./scripts/sys-abi-test-register.mjs scripts/test-webhooks.ts",
+    "test": "tsx scripts/test-unit.ts && node --js-explicit-resource-management --import tsx --import ./scripts/sys-abi-test-register.mjs scripts/test-webhooks.ts && node --js-explicit-resource-management --import tsx --import ./scripts/sys-abi-test-register.mjs scripts/test-queue.ts",
     "spacetime:generate": "spacetime generate --lang typescript --out-dir ts-codegen",
     "publish:module": "spacetime publish",
     "publish:local": "spacetime publish --server local --yes spacetime-resend",
@@ -73,6 +73,7 @@
   },
   "dependencies": {
     "@spacetimedb/crypto": "workspace:^",
+    "@spacetimedb/retry": "workspace:^",
     "valibot": "^1.4.2"
   },
   "peerDependencies": {

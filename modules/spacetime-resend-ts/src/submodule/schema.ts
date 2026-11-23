@@ -10,6 +10,7 @@ import {
   type SumBuilder,
 } from 'spacetimedb/server';
 import * as v from 'valibot';
+import { client as retryClient } from '@spacetimedb/retry';
 import { install } from './install.js';
 
 // Webhook delivery state. Received = ingest accepted. Processed = applied.
@@ -137,6 +138,26 @@ export const resendAdminIdentityRow = {
   addedAt: t.timestamp(),
 };
 
+// Emails from `enqueueEmailInTx`, waiting for the send job. Deleted when the
+// job finishes.
+export const resendOutboxRow = {
+  id: t.u64().primaryKey().autoInc(),
+  jobId: t.u64(),
+  from: t.option(t.string()),
+  to: t.array(t.string()),
+  subject: t.string(),
+  html: t.option(t.string()),
+  text: t.option(t.string()),
+  cc: t.option(t.array(t.string())),
+  bcc: t.option(t.array(t.string())),
+  replyTo: t.option(t.array(t.string())),
+  tagsJson: t.option(t.string()),
+  headersJson: t.option(t.string()),
+  scheduledAt: t.option(t.string()),
+  idempotencyKey: t.option(t.string()),
+  createdAt: t.timestamp(),
+};
+
 const resendEmailOptions = {
   name: 'resend_email',
   public: false,
@@ -196,13 +217,25 @@ export const resendAdminIdentityTable: ReturnType<
   typeof table<typeof resendAdminIdentityRow, typeof resendAdminIdentityOptions>
 > = table(resendAdminIdentityOptions, resendAdminIdentityRow);
 
-const tables: {
+const resendOutboxOptions = { name: 'resend_outbox', public: false };
+export const resendOutboxTable: ReturnType<
+  typeof table<typeof resendOutboxRow, typeof resendOutboxOptions>
+> = table(resendOutboxOptions, resendOutboxRow);
+
+export const emailQueue = retryClient({
+  jobs: { sendEmail: t.object('ResendSendJob', { outboxId: t.u64() }) },
+});
+
+const tables: typeof emailQueue.tables & {
+  resendOutbox: typeof resendOutboxTable;
   resendEmail: typeof resendEmailTable;
   resendDeliveryEvent: typeof resendDeliveryEventTable;
   resendWebhookEvent: typeof resendWebhookEventTable;
   resendConfig: typeof resendConfigTable;
   resendAdminIdentity: typeof resendAdminIdentityTable;
 } = {
+  ...emailQueue.tables,
+  resendOutbox: resendOutboxTable,
   resendEmail: resendEmailTable,
   resendDeliveryEvent: resendDeliveryEventTable,
   resendWebhookEvent: resendWebhookEventTable,

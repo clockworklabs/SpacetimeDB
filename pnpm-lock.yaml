@@ -956,6 +956,9 @@ importers:
       '@spacetimedb/crypto':
         specifier: workspace:^
         version: link:../spacetime-crypto-ts
+      '@spacetimedb/retry':
+        specifier: workspace:^
+        version: link:../spacetime-retry-ts
       valibot:
         specifier: ^1.4.2
         version: 1.5.0(typescript@5.9.3)

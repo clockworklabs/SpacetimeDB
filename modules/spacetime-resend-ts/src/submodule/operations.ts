@@ -49,7 +49,7 @@ function takeRows<T>(rows: Iterable<T>): T[] {
 // Resend's send API takes tags as `[{ name, value }]`.
 const vSendTags = v.array(v.object({ name: v.string(), value: v.string() }));
 
-function extractTagFieldsFromJson(tagsJson: string | undefined): {
+export function extractTagFieldsFromJson(tagsJson: string | undefined): {
   userId: string | undefined;
   orgId: string | undefined;
 } {
@@ -77,7 +77,7 @@ type ResendSendEmailBody = {
   headers?: unknown;
 };
 
-function buildSendEmailBody(args: {
+export function buildSendEmailBody(args: {
   from: string;
   to: string[];
   subject: string;
@@ -114,7 +114,7 @@ function buildSendEmailBody(args: {
   return JSON.stringify(body);
 }
 
-function recordQueuedEmail(
+export function recordQueuedEmail(
   ctx: WriteCtx,
   now: ProcedureModuleCtx['timestamp'],
   args: {
