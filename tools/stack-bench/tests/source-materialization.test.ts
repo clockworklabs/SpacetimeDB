@@ -150,6 +150,41 @@ test('startup may add runtime files but not change or remove accepted source', a
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('a start may rewrite or lock away files the app\'s own ignore files exclude', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-ignored-writes-'));
+  try {
+    const app = join(root, 'app'), accepted = join(root, 'accepted');
+    mkdirSync(join(app, '.runtime', 'bindings'), { recursive: true });
+    mkdirSync(join(app, 'server'));
+    writeFileSync(join(app, 'start.sh'), '#!/bin/sh\n');
+    writeFileSync(join(app, 'app.js'), 'export const ready = true;\n');
+    writeFileSync(join(app, '.gitignore'), 'node_modules/\n.runtime/*\n!.runtime/kept.ts\n');
+    writeFileSync(join(app, 'server', '.gitignore'), 'generated.ts\n');
+    writeFileSync(join(app, '.runtime', 'bindings', 'index.ts'), 'saved bindings\n');
+    writeFileSync(join(app, '.runtime', 'service-key'), 'saved key\n');
+    writeFileSync(join(app, '.runtime', 'kept.ts'), 'kept\n');
+    writeFileSync(join(app, 'server', 'generated.ts'), 'saved\n');
+    snapshotAppSource(app, accepted);
+    const start = (write: () => void) => materializeAcceptedSource(accepted, app,
+      { backend: 'spacetime', app, port: 0, probe: '' }, async (_spec, mode) => { if (mode === 'start') write(); });
+    await start(() => {
+      writeFileSync(join(app, '.runtime', 'bindings', 'index.ts'), 'regenerated bindings\n');
+      writeFileSync(join(app, 'server', 'generated.ts'), 'regenerated\n');
+      // The controller has no file-permission capabilities in the appliance.
+      if (process.platform !== 'win32') execFileSync('chmod', ['000', join(app, '.runtime', 'service-key')]);
+    });
+    if (process.platform !== 'win32') execFileSync('chmod', ['600', join(app, '.runtime', 'service-key')]);
+    for (const [file, change] of [
+      ['app.js', () => writeFileSync(join(app, 'app.js'), 'export const ready = false;\n')],
+      ['.runtime/kept.ts', () => writeFileSync(join(app, '.runtime', 'kept.ts'), 'changed\n')],
+      ['.gitignore', () => writeFileSync(join(app, '.gitignore'), 'node_modules/\n.runtime/\napp.js\n')],
+    ] as const) {
+      await assert.rejects(start(change), (error: { code?: string; message?: string }) =>
+        error.code === 'generated_app_source_changed' && (error.message ?? '').endsWith(`: ${file}`));
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('a start that only rewrites the package entry in its lock file keeps the accepted application', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-lock-identity-'));
   try {

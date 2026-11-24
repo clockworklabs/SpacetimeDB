@@ -1,5 +1,7 @@
-import { closeSync, constants, existsSync, fstatSync, ftruncateSync, openSync, readFileSync,
-  writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { closeSync, constants, existsSync, fstatSync, ftruncateSync, mkdtempSync, openSync, readFileSync,
+  rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 
 import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
@@ -93,8 +95,11 @@ export async function materializeAcceptedSource(sourcePath: string, appDir: stri
     } finally { closeSync(fd); }
     return true;
   };
-  const changed = accepted.files.filter(file => !existsSync(join(appDir, file))
-    || digest(appDir, file) !== digest(sourcePath, file) && !sameInstall(file));
+  // What the app's own ignore files exclude is its runtime state: a start may rewrite it or
+  // restrict who can read it.
+  const ignored = appIgnoredFiles(sourcePath, accepted.files);
+  const changed = accepted.files.filter(file => !ignored.has(file) && (!existsSync(join(appDir, file))
+    || digest(appDir, file) !== digest(sourcePath, file) && !sameInstall(file)));
   if (changed.length) {
     await restoreAcceptedSource();
     throw Object.assign(
@@ -105,6 +110,30 @@ export async function materializeAcceptedSource(sourcePath: string, appDir: stri
     await restoreAcceptedSource();
     throw startFailure;
   }
+}
+
+// Git reads only the app's ignore files. Its repository is an empty one of ours, with no user or
+// system configuration, so nothing the agent configured in its own repository runs.
+export function appIgnoredFiles(root: string, files: readonly string[]): Set<string> {
+  if (!files.length) return new Set();
+  const gitDir = mkdtempSync(join(tmpdir(), 'stack-bench-ignored-'));
+  try {
+    const env: NodeJS.ProcessEnv = { ...Object.fromEntries(Object.entries(process.env)
+      .filter(([key]) => !key.startsWith('GIT_'))),
+    GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: join(gitDir, 'no-global-config'), HOME: gitDir,
+    XDG_CONFIG_HOME: gitDir };
+    const git = (args: string[], input?: string) => spawnSync('git', args,
+      { env, encoding: 'utf8', input, maxBuffer: 64 * 1024 * 1024, timeout: 60_000 });
+    const init = git(['init', '-q', '--bare', gitDir]);
+    if (init.status !== 0) throw new Error(`git init failed: ${init.stderr || init.error?.message}`);
+    // Exit 1 means nothing is ignored.
+    const checked = git(['--git-dir', gitDir, '--work-tree', root, 'check-ignore', '--no-index', '--stdin', '-z'],
+      `${files.join('\0')}\0`);
+    if (checked.status !== 0 && checked.status !== 1) {
+      throw new Error(`git check-ignore failed: ${checked.stderr || checked.error?.message}`);
+    }
+    return new Set(checked.stdout.split('\0').filter(Boolean));
+  } finally { rmSync(gitDir, { recursive: true, force: true }); }
 }
 
 export function materializationAppFailure(error: unknown): RunOutcome {

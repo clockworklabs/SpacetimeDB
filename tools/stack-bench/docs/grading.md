@@ -101,7 +101,8 @@ that score zero points, such as setup controls, are evidence only.
 - **Scheduled work.** Checks anchor on the time the work was scheduled and
   observe early and late. A missed window is inconclusive. Clocks are never moved.
 - **Source.** Snapshots exclude logs, pid files, installed packages, and build
-  output. The store must start from the saved source alone.
+  output. The store must start from the saved source alone. Starting it may
+  change only files its own ignore files exclude.
 
 ## Production check families
 
