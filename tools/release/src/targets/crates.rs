@@ -43,14 +43,18 @@ impl CratesRelease {
         // After each upload, Cargo waits for the crate version to appear in the registry index
         // before publishing crates that depend on it. Give that wait 120 seconds (default: 60).
         // The publish.timeout setting requires -Zpublish-timeout, which the pinned stable Cargo
-        // accepts with RUSTC_BOOTSTRAP=1. The rustc processes Cargo starts to verify packages
-        // also inherit RUSTC_BOOTSTRAP, which enables unstable compiler features.
+        // accepts with RUSTC_BOOTSTRAP=1. Force RUSTC_BOOTSTRAP=-1 in Cargo's child
+        // processes so package verification still uses stable compiler feature gates.
         cmd.current_dir(workspace_root).env("RUSTC_BOOTSTRAP", "1").args([
             "publish",
             "--allow-dirty",
             "-Zpublish-timeout",
             "--config",
             "publish.timeout=120",
+            "--config",
+            r#"env.RUSTC_BOOTSTRAP.value="-1""#,
+            "--config",
+            "env.RUSTC_BOOTSTRAP.force=true",
         ]);
         for crate_name in crates {
             cmd.args(["-p", crate_name]);
