@@ -40,7 +40,8 @@ public static class GeneratorSnapshotTests
 
         public static async Task<Fixture> Compile(string name)
         {
-            var targetFramework = name == "client" ? "netstandard2.1" : ModuleTargetFramework;
+            var targetFramework =
+                (name is "client" or "client-module") ? "netstandard2.1" : ModuleTargetFramework;
             var projectDir = Path.Combine(GetProjectDir(), "fixtures", name);
             using var workspace = MSBuildWorkspace.Create(
                 new Dictionary<string, string> { ["TargetFramework"] = targetFramework }
@@ -723,6 +724,57 @@ public static class GeneratorSnapshotTests
         );
 
         Assert.Empty(GetCompilationErrors(compilationAfterGen));
+    }
+
+    [Fact]
+    public static async Task ClientModuleSelectsSchemaBySourceFolder()
+    {
+        var fixture = await Fixture.Compile("client-module");
+        var generator = new ClientModule();
+        var generated = fixture.RunGeneratorAndGetResult(generator);
+        Assert.Empty(generated.Diagnostics);
+        await fixture.Verify("ClientModule", generated);
+
+        var source = fixture.SampleCompilation;
+        var parse = (CSharpParseOptions)source.SyntaxTrees.First().Options;
+        var wrapper = source.SyntaxTrees.Single(t =>
+            t.FilePath.EndsWith("DbConnection.cs", StringComparison.Ordinal)
+        );
+        var project = Path.GetDirectoryName(wrapper.FilePath)!;
+        SyntaxTree File(string path, string text) =>
+            CSharpSyntaxTree.ParseText(text, parse, Path.Combine(project, path));
+        var secondSchema = source.AddSyntaxTrees(
+            File(
+                "other/DbConnection.cs",
+                "namespace B { [SpacetimeDB.ClientConnection(\"schema\")] public sealed class DbConnection : ModuleConnectionBase { } }"
+            ),
+            File(
+                "other/schema/Row.cs",
+                "namespace Shared { [SpacetimeDB.Table(Public = true)] public partial class Other { public string Value; } }"
+            ),
+            File(
+                "OtherUsage.cs",
+                "class Client { void Use(B.DbConnection db) => db.Db.Other.Iter(); }"
+            )
+        );
+        var driver = CSharpGeneratorDriver.Create(
+            [generator.AsSourceGenerator(), new Type().AsSourceGenerator()],
+            parseOptions: parse
+        );
+        driver.RunGeneratorsAndUpdateCompilation(secondSchema, out var output, out var diagnostics);
+        Assert.Empty(diagnostics);
+        Assert.Empty(GetCompilationErrors(output));
+        Assert.Empty(output.GetTypeByMetadataName("A.RemoteTables")!.GetMembers("Other"));
+        Assert.Empty(output.GetTypeByMetadataName("B.RemoteTables")!.GetMembers("Person"));
+
+        var overlapping = source.AddSyntaxTrees(
+            File(
+                "Overlap.cs",
+                "namespace B { [SpacetimeDB.ClientConnection(\"schema\")] public sealed class DbConnection : ModuleConnectionBase { } }"
+            )
+        );
+        var conflicts = driver.RunGenerators(overlapping).GetRunResult().Diagnostics;
+        Assert.Equal(2, conflicts.Count(d => d.Id == "STDBCLIENT001"));
     }
 
 #if NET10_0_OR_GREATER
