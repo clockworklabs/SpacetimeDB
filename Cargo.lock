@@ -8308,6 +8308,7 @@ dependencies = [
  "serde_json",
  "spacetimedb-data-structures",
  "spacetimedb-lib",
+ "spacetimedb-paths",
  "spacetimedb-primitives",
  "spacetimedb-schema",
  "spacetimedb-testing",
