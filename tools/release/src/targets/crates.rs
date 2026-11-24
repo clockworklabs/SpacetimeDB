@@ -40,7 +40,14 @@ impl CratesRelease {
         // Without this, dry-run doesn't work properly: every crate will look for its deps on crates.io
         // and fail, but if they're on one invocation then they're able to resolve properly.
         let mut cmd = Command::new("cargo");
-        cmd.current_dir(workspace_root).args(["publish", "--allow-dirty"]);
+        // Cargo still gates the registry index wait timeout behind an unstable flag.
+        cmd.current_dir(workspace_root).env("RUSTC_BOOTSTRAP", "1").args([
+            "publish",
+            "--allow-dirty",
+            "-Zpublish-timeout",
+            "--config",
+            "publish.timeout=120",
+        ]);
         for crate_name in crates {
             cmd.args(["-p", crate_name]);
         }
