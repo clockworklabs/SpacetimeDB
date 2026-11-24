@@ -20,10 +20,16 @@ internal static class ClientSchemaMembers
     {
         // [Type] already triggers BSATN generation. In a client schema [Table] alone
         // also describes a serializable row, just as it does in a server module.
-        var extensions = type.GetAttributes()
-            .Any(a => a.AttributeClass?.ToDisplayString() == "SpacetimeDB.TypeAttribute")
+        var hasTypeAttribute = type.GetAttributes()
+            .Any(a => a.AttributeClass?.ToDisplayString() == "SpacetimeDB.TypeAttribute");
+        var extensions = hasTypeAttribute
             ? new Scope.Extensions(new Scope(syntax), SymbolToName(type))
             : new TypeDeclaration(syntax, type, diag).ToExtensions();
+        if (!hasTypeAttribute)
+        {
+            // Old generated row classes exposed [Type] to consumers inspecting their serializers.
+            extensions.ExtraAttrs.Add("[global::SpacetimeDB.Type]");
+        }
 
         if (type.TypeKind == Microsoft.CodeAnalysis.TypeKind.Class && !type.IsRecord)
         {

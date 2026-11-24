@@ -13,6 +13,7 @@ public class ModuleSchemaTests
     [Fact]
     public void ServerRowDeclarationPreservesClientConstructorsAndSerialization()
     {
+        Assert.True(typeof(Person).IsDefined(typeof(SpacetimeDB.TypeAttribute), inherit: false));
         var empty = new Person();
         Assert.Equal(string.Empty, empty.Name);
         Assert.Equal(string.Empty, empty.Address.City);

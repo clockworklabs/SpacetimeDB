@@ -49,6 +49,7 @@ namespace Shared
 
 namespace Shared
 {
+    [global::SpacetimeDB.Type]
     partial class Person : System.IEquatable<Person>, SpacetimeDB.BSATN.IStructuralReadWrite
     {
 #if NET10_0_OR_GREATER
