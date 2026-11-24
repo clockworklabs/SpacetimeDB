@@ -18,8 +18,8 @@ Use the same restock action as the visible control.
 
 ## Stock data interface
 
-Expose singular native tables or views `item(id, name, price)`, `warehouse(id, name)`, and
-`stock(item_id, warehouse_id, quantity)` for direct database access.
+Expose singular native tables or views `item(id, name, price)` and `warehouse(id, name)`, and a
+singular native table `stock(item_id, warehouse_id, quantity)`, for direct database access.
 `stock.item_id` and `stock.warehouse_id` reference `item.id` and `warehouse.id`; in a document
 store they hold the referenced document's `id` value, or its `_id` when it has no `id`.
 Each item and warehouse must have a unique ID and name, with one stock holding per item and

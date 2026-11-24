@@ -148,6 +148,7 @@ test('neutral dependency prompts include only selected product and stack contrac
   assert.match(spacetimeReference, /ctx\.sender/);
   const disclosedGuarantees = /change together|applied only once|does not create a second payment|without a reload|cannot attach or inspect another|another customer's purchase history|cancelled restock never changes stock|restores the stock to its original warehouse|same authorization and price rules|same administrator, stock, and warehouse rules|invalid quantity|`-3`/i;
   const browserClients = new Set<string>();
+  let stockInterfaces = 0;
   for (const level of [1, 2, 3, 4, 5, 6] as const) {
     const binding = resolveRecipeRelease(track, level, 'ecommerce.progression-catalog');
     const selected = resolveProgressionRecipeLevelSelection(binding, catalog, level,
@@ -196,6 +197,11 @@ test('neutral dependency prompts include only selected product and stack contrac
           assert.match(request, /order_reservation\(account_id, item_id, warehouse_id, quantity\)/);
           assert.match(request, /This does not require adding stock reservations to the app/);
           assert.match(request, /When warehouse stock is available/);
+        }
+        // Stock takes native writes, which a view cannot accept on every stack.
+        if (request.includes('Stock data interface')) {
+          stockInterfaces++;
+          assert.match(request, /`warehouse(id, name)`, and as+singular native table `stock(item_id, warehouse_id, quantity)`/);
         }
       }
       if (level === 2) {
@@ -265,6 +271,7 @@ test('neutral dependency prompts include only selected product and stack contrac
       }
     }
   }
+  assert(stockInterfaces > 0);
   assert.equal(browserClients.size, 1);
   assert.doesNotMatch([...browserClients][0]!, EVALUATION_LANGUAGE);
 });
