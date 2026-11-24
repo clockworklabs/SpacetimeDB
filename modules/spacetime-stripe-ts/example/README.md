@@ -5,8 +5,9 @@ with Stripe test payments.
 
 ## Run it locally
 
-Requires Node.js 20+, pnpm 10, and the SpacetimeDB CLI and server built from
-this checkout.
+Requires a supported Node.js release (22.23.4+, 24.22.1+, or 26.12.1+ on
+those release lines), pnpm 10.16+, and the SpacetimeDB CLI and server built
+from this checkout.
 
 Start SpacetimeDB in a separate terminal:
 

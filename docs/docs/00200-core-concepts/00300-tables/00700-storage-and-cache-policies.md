@@ -111,6 +111,8 @@ pub struct ArchivedHistory {
 
 Cache policies control where data can reside while the database is running. They do not affect durability. For example, when a database restarts, SpacetimeDB recovers data even for tables configured to reside fully in memory.
 
+During database recovery, the storage engine temporarily suspends enforcement of the resident-memory hard limit while reconstructing committed data, rebuilding state, and running startup migrations. It then re-enables the limit and attempts to trim eligible data before serving transactions. Required-in-memory data can keep usage above the configured limit; recovery is not a guarantee that subsequent operations have enough memory to succeed. This storage-engine budget is not a process or machine memory limit: recovery still needs enough physical memory to complete.
+
 The policy applies to table pages and large values stored as blobs. A blob shared by multiple tables stays in memory if at least one of their policies requires it.
 
 Accessing cold data may require storage reads, increasing latency. Use indexed lookups to limit the pages an operation touches, and reserve the in-memory policy for data that needs consistently fast access. Large scans can bring substantial amounts of cold data into the cache. See [Performance Best Practices](./00600-performance.md).
