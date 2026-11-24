@@ -1,6 +1,6 @@
-using System.Text;
-
 namespace SpacetimeDB.Codegen;
+
+using System.Text;
 
 internal static class ClientConnectionEmitter
 {
