@@ -2065,7 +2065,7 @@ mod test {
         let mut tx = begin_mut_tx(&stdb);
         let plan = ponder_migrate(&old, &new)?;
         let result = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger);
-        let err = result.err().expect("removing a non-empty table should fail");
+        let err = result.expect_err("removing a non-empty table should fail");
         assert!(
             err.to_string().contains("table contains data"),
             "error should mention that the table contains data, got: {err}"
@@ -2113,8 +2113,7 @@ mod test {
         let mut tx = begin_mut_tx(&stdb);
         let plan = ponder_migrate(&module_v1, &module_v2)?;
         let err = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)
-            .err()
-            .expect("adding a sequence over an existing max value should fail");
+            .expect_err("adding a sequence over an existing max value should fail");
         assert!(
             err.to_string().contains("already has values in range"),
             "error should mention existing values in range, got: {err}"
