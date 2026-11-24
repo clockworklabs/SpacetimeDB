@@ -117,10 +117,15 @@ CLIENT_URL=http://localhost:5173 npm run benchmark -- ../staging/<lang>/<llm>/<b
 
 ## After Grading
 
-After grading is complete, ask to promote:
+After grading is complete, ask to publish:
 
-> "Grading complete! Would you like me to promote this app from staging to the final location?"
+> "Grading complete! Would you like me to publish this app to spacetimedb-llm-oneshot-results?"
 
 ```bash
-npm run promote -- ../staging/<lang>/<llm>/<backend>/<app-name>-YYYYMMDD-HHMMSS/
+cd tools/llm-oneshot
+pnpm run publish-result -- apps/<app-name>/staging/<lang>/<llm>/<backend>/<app-name>-YYYYMMDD-HHMMSS/
 ```
+
+This checks that `GRADING_RESULTS.md` exists, then copies the app to `apps/<app-name>/<lang>/<llm>/<backend>/...` in
+[`clockworklabs/spacetimedb-llm-oneshot-results`](https://github.com/clockworklabs/spacetimedb-llm-oneshot-results)
+(cloned next to the SpacetimeDB checkout if missing), commits, and pushes. Generated apps are never committed to the SpacetimeDB repo.

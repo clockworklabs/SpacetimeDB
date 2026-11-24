@@ -25,9 +25,8 @@ apps/chat-app/
 │   ├── rust/
 │   └── csharp/
 │
-├── typescript/                 # ← GRADED apps get promoted here
-├── rust/
-├── csharp/
+│                               # (gitignored; GRADED apps are published to
+│                               #  clockworklabs/spacetimedb-llm-oneshot-results)
 ├── prompts/
 └── test-harness/
 ```
@@ -43,13 +42,16 @@ npm run create -- --lang=typescript --llm=opus-4-5 --backend=spacetime
 
 This creates: `staging/typescript/opus-4-5/spacetime/chat-app-YYYYMMDD-HHMMSS/`
 
-### After Grading: Promote to Final Location
+### After Grading: Publish to the Results Repo
 
 ```bash
-npm run promote -- ../staging/typescript/opus-4-5/spacetime/chat-app-YYYYMMDD-HHMMSS/
+cd tools/llm-oneshot
+pnpm run publish-result -- apps/<app-name>/staging/<lang>/<llm>/<backend>/<app-name>-YYYYMMDD-HHMMSS/
 ```
 
-This verifies `GRADING_RESULTS.md` exists and moves to `typescript/opus-4-5/spacetime/...`
+This checks that `GRADING_RESULTS.md` exists, then copies the app to `apps/<app-name>/<lang>/<llm>/<backend>/...` in
+[`clockworklabs/spacetimedb-llm-oneshot-results`](https://github.com/clockworklabs/spacetimedb-llm-oneshot-results)
+(cloned next to the SpacetimeDB checkout if missing), commits, and pushes. Generated apps are never committed to the SpacetimeDB repo.
 
 ---
 
@@ -57,7 +59,7 @@ This verifies `GRADING_RESULTS.md` exists and moves to `typescript/opus-4-5/spac
 
 | Wrong | Right |
 |-------|-------|
-| Create app in `typescript/llm/...` directly | Create app in `staging/typescript/llm/...` first |
+| Create app outside `staging/` | Create app in `staging/typescript/llm/...` first |
 | Write backend AND client, then deploy | Write backend, publish, generate bindings, THEN write client |
 | Create files, list commands, stop | Create files, verify, **ASK** to deploy, **RUN** commands if yes |
 | Deploy benchmark app, stop | Deploy, **ASK** to run benchmark test harness |

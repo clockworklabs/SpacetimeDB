@@ -2,7 +2,7 @@
 
 Canonical formats for the two grading artifacts produced during a sequential
 upgrade run. They match the published results in
-[`spacetimedb-ai-test-results`](https://github.com/clockworklabs/spacetimedb-ai-test-results)
+[`spacetimedb-llm-sequential-upgrade-results`](https://github.com/clockworklabs/spacetimedb-llm-sequential-upgrade-results)
 so every backend (spacetime / postgres / mongodb) files identically-structured
 artifacts — which is what keeps the runs comparable.
 

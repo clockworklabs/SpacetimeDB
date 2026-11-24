@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "summarize": "npx tsx scripts/summarize-grades.ts"
+    "summarize": "npx tsx scripts/summarize-grades.ts",
+    "publish-result": "npx tsx scripts/publish-result.ts"
   },
   "devDependencies": {
     "tsx": "^4.7.0",

@@ -26,5 +26,5 @@ telemetry/metrics.jsonl
 **/telemetry/**/app-dir.txt
 **/telemetry/**/metadata.json
 
-# Sequential-upgrade run output lives in the external spacetimedb-ai-test-results repo
+# Sequential-upgrade run output lives in the external spacetimedb-llm-sequential-upgrade-results repo
 sequential-upgrade/sequential-upgrade-*/

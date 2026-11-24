@@ -125,8 +125,10 @@ To generate summary reports from all graded apps:
 ```bash
 cd tools/llm-oneshot
 pnpm install
-pnpm run summarize -- --apps-dir /path/to/spacetimedb-llm-oneshot-results/apps
+pnpm run summarize
 ```
+
+This reads graded apps from the local checkout of `spacetimedb-llm-oneshot-results` (see below); pass `--results-repo <path>` if it is not next to your SpacetimeDB checkout.
 
 This outputs to `docs/llms/`:
 
@@ -137,10 +139,23 @@ This outputs to `docs/llms/`:
 
 ## Folder Structure
 
-Generated apps are not committed to this repository. They are written locally under
-`apps/` (which is gitignored apart from `prompts/` and `test-harness/`) and published in
-[`clockworklabs/spacetimedb-llm-oneshot-results`](https://github.com/clockworklabs/spacetimedb-llm-oneshot-results),
-using the same layout:
+Generated apps are not committed to this repository. The agent creates them under
+`apps/<app-name>/staging/`, which is gitignored. After grading, publish the app to
+[`clockworklabs/spacetimedb-llm-oneshot-results`](https://github.com/clockworklabs/spacetimedb-llm-oneshot-results):
+
+```bash
+cd tools/llm-oneshot
+pnpm run publish-result -- apps/<app-name>/staging/<lang>/<llm>/<backend>/<app-name>-YYYYMMDD-HHMMSS/
+```
+
+This checks that `GRADING_RESULTS.md` exists, then copies the app to `apps/<app-name>/<lang>/<llm>/<backend>/...` in
+[`clockworklabs/spacetimedb-llm-oneshot-results`](https://github.com/clockworklabs/spacetimedb-llm-oneshot-results)
+(cloned next to the SpacetimeDB checkout if missing), commits, and pushes. Generated apps are never committed to the SpacetimeDB repo.
+
+By default the results checkout is expected at `../spacetimedb-llm-oneshot-results` relative to the SpacetimeDB
+checkout. Override it with `--results-repo <path>` or the `LLM_ONESHOT_RESULTS_REPO` environment variable.
+
+Published apps use this layout:
 
 ```
 apps/{app-name}/{language}/{model}/{platform}/{app-name}-{YYYYMMDD-HHMMSS}/

@@ -6,16 +6,21 @@
  * - oneshot-summary.md (combined summary with feature scores)
  * - oneshot-grades.json (structured data for websites)
  *
+ * Graded apps are read from a checkout of clockworklabs/spacetimedb-llm-oneshot-results
+ * (see scripts/results-repo.ts for how it is located; it is cloned if missing).
+ *
  * Output is written to: docs/llms/
  *
  * Usage:
  *   pnpm run summarize
  *   pnpm run summarize -- --app chat-app
  *   pnpm run summarize -- --llm opus-4-5
+ *   pnpm run summarize -- --results-repo ../../../spacetimedb-llm-oneshot-results
  */
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { ensureResultsRepo } from './results-repo.ts';
 
 // ============================================================================
 // Types
@@ -455,17 +460,17 @@ function generateCombinedSummary(
 // Main
 // ============================================================================
 
-function parseArgs(): { app?: string; llm?: string; appsDir?: string } {
+function parseArgs(): { app?: string; llm?: string; resultsRepo?: string } {
   const args = process.argv.slice(2);
-  const result: { app?: string; llm?: string; appsDir?: string } = {};
+  const result: { app?: string; llm?: string; resultsRepo?: string } = {};
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--app' && args[i + 1]) {
       result.app = args[++i];
     } else if (args[i] === '--llm' && args[i + 1]) {
       result.llm = args[++i];
-    } else if (args[i] === '--apps-dir' && args[i + 1]) {
-      result.appsDir = path.resolve(args[++i]);
+    } else if (args[i] === '--results-repo' && args[i + 1]) {
+      result.resultsRepo = args[++i];
     }
   }
 
@@ -478,9 +483,7 @@ function main() {
   const normalizedScriptDir = scriptDir.replace(/^\/([A-Za-z]:)/, '$1');
   const baseDir = path.resolve(normalizedScriptDir, '..');
   const filters = parseArgs();
-  // Graded apps are published in clockworklabs/spacetimedb-llm-oneshot-results,
-  // not in this repo. Pass --apps-dir to point at a checkout of it.
-  const appsDir = filters.appsDir ?? path.join(baseDir, 'apps');
+  const appsDir = path.join(ensureResultsRepo(filters.resultsRepo), 'apps');
 
   // Output directory: docs/llms (relative to repo root)
   const repoRoot = path.resolve(baseDir, '../..');

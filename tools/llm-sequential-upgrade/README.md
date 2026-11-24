@@ -4,7 +4,7 @@ Automated benchmark harness for measuring AI app-generation cost, bug rate, and 
 
 Results viewer: https://spacetimedb.com/llms-benchmark-sequential-upgrade
 
-Generated test data (app source, telemetry, cost summaries): https://github.com/clockworklabs/spacetimedb-ai-test-results
+Generated test data (app source, telemetry, cost summaries): https://github.com/clockworklabs/spacetimedb-llm-sequential-upgrade-results
 
 ## What this measures
 
@@ -51,7 +51,7 @@ docker compose -f docker-compose.otel.yaml up -d
 ./run.sh --fix <app-dir> --level N
 ```
 
-Generated apps and telemetry land in `sequential-upgrade/sequential-upgrade-<timestamp>/` locally. For published test data from canonical runs, see the [AI Test Results repo](https://github.com/clockworklabs/spacetimedb-ai-test-results).
+Generated apps and telemetry land in `sequential-upgrade/sequential-upgrade-<timestamp>/` locally. For published test data from canonical runs, see the [sequential-upgrade results repo](https://github.com/clockworklabs/spacetimedb-llm-sequential-upgrade-results).
 
 ## Performance benchmark
 
