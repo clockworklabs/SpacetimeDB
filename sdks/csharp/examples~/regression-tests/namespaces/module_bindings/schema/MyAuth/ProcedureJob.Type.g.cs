@@ -12,13 +12,13 @@ namespace SpacetimeDB.Types.MyAuth
     [DataContract]
     public sealed partial class ProcedureJob
     {
-        [DataMember(Name = "Id")]
+        [DataMember(Name = "id")]
         public ulong Id;
-        [DataMember(Name = "JobId")]
+        [DataMember(Name = "job_id")]
         public uint JobId;
-        [DataMember(Name = "Payload")]
+        [DataMember(Name = "payload")]
         public uint Payload;
-        [DataMember(Name = "Due")]
+        [DataMember(Name = "due")]
         public SpacetimeDB.ScheduleAt Due;
     }
 }

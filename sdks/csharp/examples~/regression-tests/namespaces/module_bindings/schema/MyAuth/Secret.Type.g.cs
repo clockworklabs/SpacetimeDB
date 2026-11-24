@@ -12,7 +12,7 @@ namespace SpacetimeDB.Types.MyAuth
     [DataContract]
     public sealed partial class Secret
     {
-        [DataMember(Name = "Id")]
+        [DataMember(Name = "id")]
         public uint Id;
     }
 }

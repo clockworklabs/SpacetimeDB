@@ -12,9 +12,9 @@ namespace SpacetimeDB.Types
     [DataContract]
     public sealed partial class RefUser
     {
-        [DataMember(Name = "Id")]
+        [DataMember(Name = "id")]
         public int Id;
-        [DataMember(Name = "Value")]
+        [DataMember(Name = "value")]
         public int Value;
     }
 }

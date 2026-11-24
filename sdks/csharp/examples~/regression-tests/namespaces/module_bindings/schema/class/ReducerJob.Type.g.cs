@@ -12,13 +12,13 @@ namespace SpacetimeDB.Types.@class
     [DataContract]
     public sealed partial class ReducerJob
     {
-        [DataMember(Name = "Id")]
+        [DataMember(Name = "id")]
         public ulong Id;
-        [DataMember(Name = "JobId")]
+        [DataMember(Name = "job_id")]
         public uint JobId;
-        [DataMember(Name = "Due")]
+        [DataMember(Name = "due")]
         public SpacetimeDB.ScheduleAt Due;
-        [DataMember(Name = "Payload")]
+        [DataMember(Name = "payload")]
         public uint Payload;
     }
 }

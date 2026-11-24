@@ -12,9 +12,9 @@ namespace SpacetimeDB.Types
     [DataContract]
     public sealed partial class ProductItem
     {
-        [DataMember(Name = "ProductId")]
+        [DataMember(Name = "product_id")]
         public uint ProductId;
-        [DataMember(Name = "Quantity")]
+        [DataMember(Name = "quantity")]
         public int Quantity;
     }
 }

@@ -9,7 +9,7 @@ use convert_case::{Case, Casing};
 use itertools::Itertools;
 use spacetimedb_lib::db::raw_def::v9::{Lifecycle, TableAccess};
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
-use spacetimedb_lib::sats::{layout::PrimitiveType, AlgebraicValue};
+use spacetimedb_lib::sats::{layout::PrimitiveType, AlgebraicTypeRef, AlgebraicValue};
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, TypeDef, ViewDef};
 use spacetimedb_schema::schema::{TableCachePolicy, TableSchema};
 use spacetimedb_schema::type_for_generate::{
@@ -96,7 +96,7 @@ impl Csharp<'_> {
             let code = match &module.typespace_for_generate()[typ.ty] {
                 AlgebraicTypeDef::Sum(sum) => autogen_csharp_sum(module, name.clone(), sum, &namespace),
                 AlgebraicTypeDef::PlainEnum(en) => autogen_csharp_plain_enum(name.clone(), en, &namespace),
-                AlgebraicTypeDef::Product(product) => {
+                AlgebraicTypeDef::Product(_) => {
                     let tables = visible_tables
                         .iter()
                         .copied()
@@ -108,7 +108,7 @@ impl Csharp<'_> {
                     }
                     let mut out = CsharpAutogen::new(&namespace, &["System.Runtime.Serialization"], false);
                     writeln!(out, "[SpacetimeDB.Type]");
-                    write_product_fields(module, &mut out, &name, product, &tables);
+                    write_product_fields(module, &mut out, &name, typ.ty, &tables);
                     out.into_inner()
                 }
             };
@@ -211,9 +211,11 @@ fn write_product_fields(
     module: &ModuleDef,
     out: &mut CodeIndenter<String>,
     name: &str,
-    product: &ProductTypeDef,
+    ty: AlgebraicTypeRef,
     tables: &[&TableDef],
 ) {
+    let product = module.typespace_for_generate()[ty].as_product().unwrap();
+    let wire_product = module.typespace()[ty].as_product().unwrap();
     writeln!(out, "[DataContract]");
     writeln!(out, "public sealed partial class {name}");
     indented_block(out, |out| {
@@ -246,7 +248,7 @@ fn write_product_fields(
             {
                 writeln!(out, "[SpacetimeDB.Default({default})]");
             }
-            let wire = tables.first().map_or(field, |table| &table.columns[i].name);
+            let wire = wire_product.elements[i].name.as_deref().expect("named product field");
             writeln!(out, "[DataMember(Name = \"{wire}\")]");
             writeln!(
                 out,
@@ -366,7 +368,7 @@ impl Lang for Csharp<'_> {
         if shared {
             writeln!(out, "public sealed partial class {row} {{ }}");
         } else {
-            write_product_fields(module, &mut out, &row, product, &[table]);
+            write_product_fields(module, &mut out, &row, table.product_type_ref, &[table]);
         }
         self.schema_file(module, format!("{accessor}.Table"), out.into_inner())
     }

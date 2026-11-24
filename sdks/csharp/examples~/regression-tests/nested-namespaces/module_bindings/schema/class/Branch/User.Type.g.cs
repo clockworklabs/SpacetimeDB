@@ -12,9 +12,9 @@ namespace SpacetimeDB.Types.@class.Branch
     [DataContract]
     public sealed partial class User
     {
-        [DataMember(Name = "Id")]
+        [DataMember(Name = "id")]
         public int Id;
-        [DataMember(Name = "Value")]
+        [DataMember(Name = "value")]
         public int Value;
     }
 }

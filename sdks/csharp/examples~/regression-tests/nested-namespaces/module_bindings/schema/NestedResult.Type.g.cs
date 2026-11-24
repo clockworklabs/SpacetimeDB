@@ -12,7 +12,7 @@ namespace SpacetimeDB.Types
     [DataContract]
     public sealed partial class NestedResult
     {
-        [DataMember(Name = "Value")]
+        [DataMember(Name = "value")]
         public int Value;
     }
 }

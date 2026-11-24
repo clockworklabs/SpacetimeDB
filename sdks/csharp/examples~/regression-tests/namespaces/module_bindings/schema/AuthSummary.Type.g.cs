@@ -12,7 +12,7 @@ namespace SpacetimeDB.Types
     [DataContract]
     public sealed partial class AuthSummary
     {
-        [DataMember(Name = "Score")]
+        [DataMember(Name = "score")]
         public uint Score;
     }
 }

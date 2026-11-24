@@ -12,11 +12,11 @@ namespace SpacetimeDB.Types
     [DataContract]
     public sealed partial class ScheduledTask
     {
-        [DataMember(Name = "Id")]
+        [DataMember(Name = "id")]
         public ulong Id;
-        [DataMember(Name = "TaskName")]
+        [DataMember(Name = "task_name")]
         public string TaskName;
-        [DataMember(Name = "ScheduledAt")]
+        [DataMember(Name = "scheduled_at")]
         public SpacetimeDB.ScheduleAt ScheduledAt;
     }
 }
