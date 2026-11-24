@@ -15,7 +15,7 @@ mod dropped {
 
 fn migration(ctx: &MigrationContext<Dropped>) {
     for abc in ctx.dropped.abc().iter() {
-        abc.x;
+        let _ = abc.x;
     }
     // ctx.dropped
 }
