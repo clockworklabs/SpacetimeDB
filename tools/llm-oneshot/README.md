@@ -125,7 +125,7 @@ To generate summary reports from all graded apps:
 ```bash
 cd tools/llm-oneshot
 pnpm install
-pnpm run summarize
+pnpm run summarize -- --apps-dir /path/to/spacetimedb-llm-oneshot-results/apps
 ```
 
 This outputs to `docs/llms/`:
@@ -137,7 +137,10 @@ This outputs to `docs/llms/`:
 
 ## Folder Structure
 
-Generated apps are stored in:
+Generated apps are not committed to this repository. They are written locally under
+`apps/` (which is gitignored apart from `prompts/` and `test-harness/`) and published in
+[`clockworklabs/spacetimedb-llm-oneshot-results`](https://github.com/clockworklabs/spacetimedb-llm-oneshot-results),
+using the same layout:
 
 ```
 apps/{app-name}/{language}/{model}/{platform}/{app-name}-{YYYYMMDD-HHMMSS}/

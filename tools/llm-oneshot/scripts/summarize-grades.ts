@@ -455,15 +455,17 @@ function generateCombinedSummary(
 // Main
 // ============================================================================
 
-function parseArgs(): { app?: string; llm?: string } {
+function parseArgs(): { app?: string; llm?: string; appsDir?: string } {
   const args = process.argv.slice(2);
-  const result: { app?: string; llm?: string } = {};
+  const result: { app?: string; llm?: string; appsDir?: string } = {};
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--app' && args[i + 1]) {
       result.app = args[++i];
     } else if (args[i] === '--llm' && args[i + 1]) {
       result.llm = args[++i];
+    } else if (args[i] === '--apps-dir' && args[i + 1]) {
+      result.appsDir = path.resolve(args[++i]);
     }
   }
 
@@ -475,7 +477,10 @@ function main() {
   // Handle Windows paths (remove leading slash if present)
   const normalizedScriptDir = scriptDir.replace(/^\/([A-Za-z]:)/, '$1');
   const baseDir = path.resolve(normalizedScriptDir, '..');
-  const appsDir = path.join(baseDir, 'apps');
+  const filters = parseArgs();
+  // Graded apps are published in clockworklabs/spacetimedb-llm-oneshot-results,
+  // not in this repo. Pass --apps-dir to point at a checkout of it.
+  const appsDir = filters.appsDir ?? path.join(baseDir, 'apps');
 
   // Output directory: docs/llms (relative to repo root)
   const repoRoot = path.resolve(baseDir, '../..');
@@ -499,7 +504,6 @@ function main() {
   console.log(`Successfully parsed ${results.length} grading files`);
 
   // Apply filters
-  const filters = parseArgs();
   if (filters.app) {
     results = results.filter(r => r.app === filters.app);
     console.log(`Filtered to app "${filters.app}": ${results.length} results`);
