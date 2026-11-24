@@ -788,10 +788,6 @@ impl PageManager {
         )
     }
 
-    pub(super) fn pause_eviction(&self) -> MutexGuard<'_, Vec<PageEvictionCandidate>> {
-        self.eviction_candidates.lock()
-    }
-
     pub(super) fn evict(&self, target_usage: u64, scope: Option<SquashedOffset>) -> Result<u64, PageError> {
         let timer = self.metrics().timer();
         let result = self.evict_inner(target_usage, scope);

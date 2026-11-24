@@ -282,16 +282,19 @@ impl PageSet {
         Ok(pins)
     }
 
-    /// Change who owns the existing page allocations, without copying their contents.
-    /// Pass the preparation pins for disk-to-memory conversion. Release all
-    /// other pins before calling this method.
+    /// Update an existing table's cache-policy.
+    ///
+    /// Callers must hold the database write lock during this update so other
+    /// transactions cannot trigger another eviction concurrently.
+    ///
+    /// For disk-to-memory conversion, all live pages must already be resident.
+    /// Pass the preparation pins and release any other slot handles or page pins
+    /// before calling. This method drops the preparation pins so it can take
+    /// ownership of the pages without copying them.
     pub(crate) fn apply_eviction_policy(&mut self, policy: EvictionPolicy, pinned_pages: Vec<PageHandle>) {
         if policy == self.eviction_policy {
             return;
         }
-        // Disk-to-memory conversion takes ownership of the frames. Pause
-        // eviction before releasing the preparation pins.
-        let _eviction = self.manager.pause_eviction();
         drop(pinned_pages);
         let old = std::mem::replace(&mut self.storage, PageStorage::Tiered(TieredPages::default()));
         self.storage = match old {
