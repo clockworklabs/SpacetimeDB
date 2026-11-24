@@ -46,15 +46,17 @@ impl CratesRelease {
             .args([
                 "publish",
                 "--allow-dirty",
+                // -Zpublish-timeout enables the publish.timeout setting. Set it to 120 seconds
+                // (default: 60) for Cargo to wait for an uploaded crate to appear in the registry
+                // index before publishing its dependents.
                 "-Zpublish-timeout",
-                // Wait up to 120 seconds (default: 60) for an uploaded version to appear
-                // in the registry index before publishing crates that depend on it.
                 "--config",
                 "publish.timeout=120",
-                // Keep stable compiler feature gates during package verification.
+                // Set RUSTC_BOOTSTRAP=-1 in Cargo's child processes to enforce stable compiler
+                // feature gates during package verification. force=true makes that value override
+                // the RUSTC_BOOTSTRAP=1 they would otherwise inherit from Cargo.
                 "--config",
                 r#"env.RUSTC_BOOTSTRAP.value="-1""#,
-                // Override the RUSTC_BOOTSTRAP=1 Cargo would pass to its child processes.
                 "--config",
                 "env.RUSTC_BOOTSTRAP.force=true",
             ]);
