@@ -13,7 +13,7 @@ import { resolveFeatureCatalog } from '../src/progression/feature-catalog-select
 import { resolveProgressionRecipeLevelSelection }
   from '../src/progression/progression-recipe-selection.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
-import { readAgentSkillDocuments } from '../src/agents/agent-materials.js';
+import { isWorkflowSkill, readAgentSkillDocuments } from '../src/agents/agent-materials.js';
 
 test('production framing is one sentence and never changes restoration prompts', () => {
   const sentence = 'Build a production-quality application suitable for real users, not a prototype or demo.';
@@ -41,7 +41,10 @@ test('the prompt names the installed skills and the disclosure check covers all 
     ['openai', '/home/developer/.codex/skills'], ['xai', '/home/developer/.grok/skills'],
     ['google', '/home/developer/.gemini/config/skills']] as const) {
     const prompt = render(provider, ids, 'Build the requested store.');
-    assert.equal(prompt.split(`This stack's agent skills are installed in ${directory}: ${ids.join(', ')}.`).length, 2);
+    // StackBench's own workflow page is part of the prompt; only the product skills are installed.
+    assert.equal(prompt.split(`This stack's agent skills are installed in ${directory}: `
+      + 'typescript-server, typescript-client, cli.').length, 2);
+    assert.equal(prompt.split(readAgentSkillDocuments(STACK_BENCH_ROOT, ['spacetime-dev'])).length, 2);
     assert.doesNotMatch(prompt, /## Selected API reference|subscriptionBuilder/);
   }
   assert.doesNotMatch(render('anthropic', [], 'Build the requested store.'), /agent skills/);
@@ -83,10 +86,18 @@ test('SDK skills and dev guidance vary independently without changing product re
     for (const stack of STACKS) for (const repair of [false, true]) {
       const prompts = profiles.map(guidance => {
         const ids = guidance.skills[stack]!.ids;
-        const prompt = renderPrompt({ level, stack, task, guidance, repair });
-        const pointer = `\n\nThis stack's agent skills are installed in /home/developer/.claude/skills: ${ids.join(', ')}.`;
-        assert.equal(prompt.includes(pointer), ids.length > 0);
-        return ids.length ? prompt.replace(pointer, '') : prompt;
+        const installed = ids.filter(id => !isWorkflowSkill(id));
+        const workflow = ids.filter(isWorkflowSkill);
+        let prompt = renderPrompt({ level, stack, task, guidance, repair });
+        const pointer = `\n\nThis stack's agent skills are installed in /home/developer/.claude/skills: ${installed.join(', ')}.`;
+        assert.equal(prompt.includes(pointer), installed.length > 0);
+        if (installed.length) prompt = prompt.replace(pointer, '');
+        if (workflow.length) {
+          const page = `\n\n${readAgentSkillDocuments(STACK_BENCH_ROOT, workflow)}`;
+          assert(prompt.includes(page));
+          prompt = prompt.replace(page, '');
+        }
+        return prompt;
       });
       for (const prompt of prompts) {
         assert.equal(prompt, prompts[0], `${stack} L${level}${repair ? ' repair' : ''} differs outside the supplied skills`);
@@ -319,7 +330,7 @@ test('direct neutral guidance uses the current stack access documents', () => {
       assert(ids.length > 0);
       // Convex and Supabase name the address the browser uses; the server URI is that address here.
       if (guidance === 'neutral') {
-        assert.match(prompt, /The browser and this environment both reach the server at `http://[^`]+`./);
+        assert.match(prompt, /The browser and this environment both reach the server at `http:\/\/[^`]+`\./);
       }
       assert(prompt.includes(`This stack's agent skills are installed in /home/developer/.claude/skills: ${ids.join(', ')}.`));
     }

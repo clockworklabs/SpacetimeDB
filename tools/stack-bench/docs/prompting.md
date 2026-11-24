@@ -89,6 +89,7 @@ contract. The agent chooses libraries, architecture, and project structure.
 Stacks that are newer and less represented in model training also get SDK
 skills; today that is Spacetime. Before each session they are installed in the
 agent's own skills folder, and the prompt names the folder and the skills.
+StackBench's own `spacetime dev` workflow page is part of the prompt.
 A condition's `guidanceProfile` picks one
 of these, from [`conditions/catalog.json`](../conditions/catalog.json):
 

@@ -36,7 +36,7 @@ import { requireLeasedDatabase, requireLeasedSpacetime }
   from '../src/stacks/backend-reset-guard.js';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { dockerMountArguments } from '../src/runtime/container-mount.js';
-import { normalizePromptText, readAgentSkillDocuments, selectAgentSkills } from '../src/agents/agent-materials.js';
+import { isWorkflowSkill, normalizePromptText, readAgentSkillDocuments, selectAgentSkills } from '../src/agents/agent-materials.js';
 import { codingSessionFailure, DEFAULT_THROTTLE_MAX_WAIT_MS, providerSessionFailure,
   runCodingSessionWithRetries, PROVIDER_CONTINUATION_MESSAGE } from '../src/agents/coding-session-retry.js';
 import { captureNativeContinuation } from '../src/agents/provider-native-continuation.js';
@@ -600,8 +600,11 @@ function resolveIsolation(args: AgentArgs): { container: true; reason: null } {
 
 export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
   materials: PromptMaterials = {}): string {
-  // The skills are installed in the agent's own skills folder; the prompt only says where.
+  // Product skills are installed in the agent's own skills folder and the prompt says where;
+  // StackBench's workflow pages are part of the prompt.
   const skillIds = materials.skillIds ?? args.skills ?? [];
+  const installedSkills = skillIds.filter(id => !isWorkflowSkill(id));
+  const workflowSkills = skillIds.filter(isWorkflowSkill);
   const prompt = (lines: string[]): string => assertAgentVisibleText(lines.join('\n'));
   const applicationInterface = args.guidanceDocument?.applicationInterface
     ?? resolveDefaultGuidanceForStack(args.guidance, args.backend)
@@ -632,9 +635,10 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
     agentVisibleContractText(backendDoc(args, p, track), args.credentialAliases,
       applicationInterface),
   ];
-  if (skillIds.length) {
+  if (workflowSkills.length) common.push('', readAgentSkillDocuments(ROOT, workflowSkills));
+  if (installedSkills.length) {
     common.push('', `This stack's agent skills are installed in ${CODING_PROVIDERS[args.provider].skillsDirectory}: `
-      + `${skillIds.join(', ')}.`);
+      + `${installedSkills.join(', ')}.`);
   }
 
   if (args.mode === 'resume') {
@@ -884,7 +888,7 @@ async function main() {
           '--image', imageIdentity.id,
           '--effort', EFFORT,
           '--model', args.model,
-          '--skills-json', JSON.stringify(selectedSkills),
+          '--skills-json', JSON.stringify(selectedSkills.filter(id => !isWorkflowSkill(id))),
           '--web-search', toolPolicySwitch(TOOLS.webSearch),
           '--subagents', toolPolicySwitch(TOOLS.subagents),
           ...(args.pricing ? ['--pricing-json', JSON.stringify(args.pricing)] : []),
@@ -945,7 +949,7 @@ async function main() {
       effort: EFFORT,
       tools: TOOLS,
       skills: selectedSkills,
-      ...(selectedSkills.length ? { skillsDirectory: CODING_PROVIDERS[args.provider].skillsDirectory } : {}),
+      ...(selectedSkills.some(id => !isWorkflowSkill(id)) ? { skillsDirectory: CODING_PROVIDERS[args.provider].skillsDirectory } : {}),
       cacheTier: args.provider === 'anthropic' ? '5m' : 'provider-managed',
       autoUpdater: 'disabled',
       codingInterruptionRetries: { limit: retryLimit,

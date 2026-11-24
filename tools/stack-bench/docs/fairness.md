@@ -29,9 +29,10 @@ their setup only.
   profiles run Spacetime with no skills (see [Prompting](prompting.md#stack-setup)).
 
 Spacetime agents also receive one short page StackBench wrote,
-`backends/workflows/spacetime-dev.md`, on using `spacetime dev`. The prompt
-check that refuses any hint of the hidden checks covers that page. It skips
-only the public skills, which are product documents and discuss testing.
+`backends/workflows/spacetime-dev.md`, on using `spacetime dev`, as part of the
+prompt. The prompt check that refuses any hint of the hidden checks covers that
+page. It skips only the public skills, which are product documents and discuss
+testing.
 
 ## Which Spacetime runs
 

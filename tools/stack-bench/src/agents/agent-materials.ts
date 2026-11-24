@@ -32,9 +32,12 @@ export function selectAgentSkills(defaults: string[], requested: string[] | null
   return [...(requested ?? defaults)];
 }
 
+// StackBench's own workflow pages describe its sandbox, so they go in the prompt; product skills are installed.
+const WORKFLOW_SKILLS = new Set(['spacetime-dev']);
+export const isWorkflowSkill = (id: string): boolean => WORKFLOW_SKILLS.has(id);
+
 export function agentSkillPaths(stackBenchRoot: string, skills: string[]): string[] {
-  // Container workflow instructions belong to Stack Bench, not the public SDK skills.
-  return validateSkills(skills).map(skill => skill === 'spacetime-dev'
+  return validateSkills(skills).map(skill => isWorkflowSkill(skill)
     ? join(stackBenchRoot, 'backends', 'workflows', `${skill}.md`)
     : join(stackBenchRoot, '..', '..', 'skills', skill, 'SKILL.md'));
 }
