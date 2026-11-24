@@ -4,10 +4,10 @@ TABLES
 - damage_event
   - public event table (rows exist only for the duration of the transaction, set event: true)
   - Fields:
-    - entityId: number (u64)
+    - entityId: bigint (u64)
     - damage: number (u32)
     - source: string
 
 REDUCERS
-- deal_damage(ctx, { entityId: number (u64), damage: number (u32), source: string })
+- deal_damage(ctx, { entityId: bigint (u64), damage: number (u32), source: string })
   - Insert a row into the damage_event event table

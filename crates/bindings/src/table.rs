@@ -3,6 +3,7 @@ use core::borrow::Borrow;
 use core::convert::Infallible;
 use core::fmt;
 use core::marker::PhantomData;
+pub use spacetimedb_lib::db::raw_def::v10::TableCachePolicy;
 pub use spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb_lib::{
     buffer::{BufReader, Cursor, DecodeError},
@@ -522,6 +523,7 @@ pub trait TableInternal: Sized {
     const SCHEDULE: Option<ScheduleDesc<'static>> = None;
     const OUTBOX: Option<OutboxDesc<'static>> = None;
     const IS_EVENT: bool = false;
+    const CACHE_POLICY: TableCachePolicy = TableCachePolicy::RequiredInMemory;
 
     /// Returns the ID of this table.
     fn table_id() -> TableId;

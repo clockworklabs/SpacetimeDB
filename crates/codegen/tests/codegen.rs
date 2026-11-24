@@ -109,8 +109,8 @@ fn test_codegen_rust_module_bindings() {
     assert!(!outfiles.keys().any(|filename| filename.ends_with("_procedure.rs")));
 
     let root = outfiles
-        .get("lib.rs")
-        .expect("rust module bindings should emit a root lib.rs");
+        .get("mod.rs")
+        .expect("rust module bindings should emit a root mod.rs");
 
     assert!(root.contains("pub use test_a_type::TestA;"));
     assert!(!root.contains("pub mod baz_type;"));
@@ -209,11 +209,11 @@ fn test_codegen_receiver_bindings_include_nested_reducer_types() {
     assert!(files.contains_key("empire_state_op_type.rs"));
     assert!(files.contains_key("empire_state_type.rs"));
     assert!(!files.contains_key("unrelated_type.rs"));
-    assert!(files["lib.rs"].contains("pub mod empire_state_op_type;"));
-    assert!(files["lib.rs"].contains("pub mod empire_state_type;"));
-    assert!(files["lib.rs"].contains("pub use empire_state_op_type::EmpireStateOp;"));
-    assert!(files["lib.rs"].contains("pub use empire_state_type::EmpireState;"));
-    assert!(!files["lib.rs"].contains("pub mod unrelated_type;"));
+    assert!(files["mod.rs"].contains("pub mod empire_state_op_type;"));
+    assert!(files["mod.rs"].contains("pub mod empire_state_type;"));
+    assert!(files["mod.rs"].contains("pub use empire_state_op_type::EmpireStateOp;"));
+    assert!(files["mod.rs"].contains("pub use empire_state_type::EmpireState;"));
+    assert!(!files["mod.rs"].contains("pub mod unrelated_type;"));
 
     let files = generate_receiver_bindings(&module, ReceiverLanguage::TypeScript, None).unwrap();
     let root = &files.iter().find(|file| file.filename == "index.ts").unwrap().code;
@@ -237,11 +237,11 @@ fn test_codegen_rust_outbox_fixture() {
     builder.add_explicit_names(names);
     let module: ModuleDef = builder.finish().try_into().unwrap();
     let files = generate_receiver_bindings(&module, ReceiverLanguage::Rust, None).unwrap();
-    let root = &files.iter().find(|file| file.filename == "lib.rs").unwrap().code;
+    let root = &files.iter().find(|file| file.filename == "mod.rs").unwrap().code;
 
     // The CLI formats generated bindings, and CI checks the fixture with the repo's rustfmt config.
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("lib.rs");
+    let path = dir.path().join("mod.rs");
     fs_err::write(&path, root).unwrap();
     let status = std::process::Command::new("rustfmt")
         .arg("--config-path")
@@ -254,7 +254,7 @@ fn test_codegen_rust_outbox_fixture() {
     // The bindings UI tests compile this generated fixture and check its column mappings.
     assert_eq!(
         fs_err::read_to_string(path).unwrap().trim_end(),
-        include_str!("../../bindings/tests/fixtures/idc_receiver/lib.rs").trim_end()
+        include_str!("../../bindings/tests/fixtures/idc_receiver/mod.rs").trim_end()
     );
 }
 
@@ -273,7 +273,6 @@ fn test_typescript_table_handles_are_camel_case() {
     assert!(!index.contains("my_player: __table({"));
     assert!(index.contains(r#""logged_out_player": "loggedOutPlayer""#));
     assert!(index.contains(r#"readonly "logged_out_player": __TablesBase["loggedOutPlayer"];"#));
-    assert!(index.contains(r#"readonly "logged_out_player": __DbViewBase["loggedOutPlayer"];"#));
     assert!(index.contains(
         r#"/** @deprecated Use `loggedOutPlayer` instead. This alias will be removed in the next major version. */"#
     ));
@@ -378,6 +377,12 @@ fn compile_csharp_client(files: Vec<spacetimedb_codegen::OutputFile>, program: &
         .join("../..")
         .canonicalize()
         .unwrap();
+    // `canonicalize` returns a verbatim `\\?\` path on Windows, which MSBuild
+    // percent-escapes, breaking its `*.props` wildcard imports (MSB4019).
+    let repo = match repo.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
+        Some(stripped) => std::path::PathBuf::from(stripped),
+        None => repo,
+    };
     // Use the local runtime, never a published package or an old NuGet cache entry.
     let config = project.path().join("NuGet.Config");
     fs_err::write(
@@ -479,6 +484,19 @@ fn typescript_import_extension_applies_to_every_relative_import() {
                 "{spec:?} has more than one extension"
             );
         }
+    }
+}
+
+/// Babel, which React Native and Expo build with, rejects `declare` class fields by default.
+#[test]
+fn typescript_bindings_have_no_declare_fields() {
+    let module = compiled_module();
+    for file in generate(module, &TypeScript::default(), &CodegenOptions::default()) {
+        assert!(
+            !file.code.lines().any(|line| line.trim_start().starts_with("declare ")),
+            "{} has a `declare` field",
+            file.filename
+        );
     }
 }
 

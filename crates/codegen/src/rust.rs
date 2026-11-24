@@ -1400,7 +1400,7 @@ fn generate_module_bindings_root_file(module: &ModuleDef, type_refs: &BTreeSet<A
     print_module_binding_outbox_macro(module, out);
 
     OutputFile {
-        filename: "lib.rs".to_owned(),
+        filename: "mod.rs".to_owned(),
         code: output.into_inner(),
     }
 }

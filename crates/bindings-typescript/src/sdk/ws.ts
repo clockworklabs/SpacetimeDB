@@ -1,4 +1,4 @@
-import { stdbLogger } from './logger';
+import { stdbLogger } from './logger.ts';
 
 async function resolveWS(): Promise<typeof WebSocket> {
   // Browser or Node >= 22 (or any env that exposes global WebSocket)
@@ -95,12 +95,15 @@ export async function openWebSocket({
 
   const WS = await resolveWS();
 
+  const base = new URL(url.toString());
+  if (!base.pathname.endsWith('/')) base.pathname += '/';
+
   // We swap our original token to a shorter-lived token
   // to avoid sending the original via query params.
   let temporaryAuthToken: string | undefined;
   if (authToken) {
     headers.set('Authorization', `Bearer ${authToken}`);
-    const tokenUrl = new URL('v1/identity/websocket-token', url);
+    const tokenUrl = new URL('v1/identity/websocket-token', base);
     tokenUrl.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
 
     const response = await fetch(tokenUrl, { method: 'POST', headers });
@@ -112,7 +115,7 @@ export async function openWebSocket({
     }
   }
 
-  const databaseUrl = new URL(`v1/database/${nameOrAddress}/subscribe`, url);
+  const databaseUrl = new URL(`v1/database/${nameOrAddress}/subscribe`, base);
   if (temporaryAuthToken) {
     databaseUrl.searchParams.set('token', temporaryAuthToken);
   }

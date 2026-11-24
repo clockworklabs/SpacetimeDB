@@ -1411,6 +1411,21 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         .map_err(log_and_500)?;
     match existing.as_ref() {
         None => {
+            match name_or_identity.as_ref() {
+                Some(NameOrIdentity::Identity(_)) => {
+                    return Err(bad_request("Cannot create a database at a supplied identity".into()));
+                }
+                Some(NameOrIdentity::Name(name)) if name_to_register.is_none() => {
+                    // Deleted databases retain their name and namespace owner.
+                    // Reusing the identity requires that owner, not merely
+                    // permission to create a new database.
+                    let owner = ctx.lookup_namespace_owner(name.as_ref()).await.map_err(log_and_500)?;
+                    if owner != Some(auth.claims.identity) {
+                        return Err((StatusCode::FORBIDDEN, "Only the name owner can recreate this database").into());
+                    }
+                }
+                Some(NameOrIdentity::Name(_)) | None => {}
+            }
             allow_creation(&auth)?;
             ctx.authorize_action(
                 auth.claims.identity,
@@ -2492,6 +2507,7 @@ mod tests {
         dns_lookups: std::sync::Arc<AtomicUsize>,
         reject_publication: bool,
         name_registrations: std::sync::Arc<AtomicUsize>,
+        allow_publish_update: bool,
     }
 
     impl DummyState {
@@ -2508,6 +2524,7 @@ mod tests {
                 dns_lookups: std::sync::Arc::new(AtomicUsize::new(0)),
                 reject_publication: false,
                 name_registrations: std::sync::Arc::new(AtomicUsize::new(0)),
+                allow_publish_update: false,
             }
         }
 
@@ -2565,6 +2582,41 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         assert_eq!(registrations.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn supplied_identity_can_update_but_not_create_database() {
+        let identity = test_identity(42);
+        let mut existing = DummyState::new().with_database(identity);
+        existing.allow_publish_update = true;
+
+        for (state, expected_status) in [(DummyState::new(), StatusCode::BAD_REQUEST), (existing, StatusCode::OK)] {
+            let app = DatabaseRoutes::<DummyState>::default()
+                .into_router(state.clone())
+                .with_state(state);
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .method(http::Method::PUT)
+                        .uri(format!("/{identity}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected_status);
+            if expected_status == StatusCode::OK {
+                let body = response.into_body().collect().await.unwrap().to_bytes();
+                assert!(matches!(
+                    serde_json::from_slice::<PublishResult>(&body).unwrap(),
+                    PublishResult::Success {
+                        database_identity,
+                        op: PublishOp::Updated,
+                        ..
+                    } if database_identity == identity
+                ));
+            }
+        }
     }
 
     fn http_response_size_metric(database_identity: Identity) -> u64 {
@@ -2711,10 +2763,13 @@ mod tests {
         async fn publish_database(
             &self,
             _publisher: &Identity,
-            _spec: DatabaseDef,
+            spec: DatabaseDef,
             _policy: MigrationPolicy,
             _environment: EnvironmentUpdate,
         ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
+            if self.allow_publish_update && self.databases.contains_key(&spec.database_identity) {
+                return Ok(None);
+            }
             Err(anyhow::anyhow!("unused"))
         }
 
@@ -2808,6 +2863,12 @@ mod tests {
                     database: Some(database),
                     source: None,
                 });
+            }
+            if self.allow_publish_update
+                && matches!(action, Action::UpdateDatabase)
+                && self.databases.contains_key(&database)
+            {
+                return Ok(());
             }
             Err(Unauthorized::InternalError(anyhow::anyhow!("unused")))
         }

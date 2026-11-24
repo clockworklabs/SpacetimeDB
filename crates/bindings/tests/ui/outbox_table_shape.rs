@@ -1,4 +1,4 @@
-#[path = "../fixtures/idc_receiver/lib.rs"]
+#[path = "../fixtures/idc_receiver/mod.rs"]
 mod receiver;
 #[spacetimedb::table(accessor = missing_pk, outbox(receiver::receive_ping))]
 pub struct MissingPk {

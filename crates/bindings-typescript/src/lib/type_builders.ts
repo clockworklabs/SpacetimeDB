@@ -1,19 +1,25 @@
-import { AlgebraicType, type AlgebraicTypeVariants } from './algebraic_type';
-import type BinaryReader from './binary_reader';
-import type BinaryWriter from './binary_writer';
-import { ConnectionId, type ConnectionIdAlgebraicType } from './connection_id';
-import { Identity, type IdentityAlgebraicType } from './identity';
-import { Option, type OptionAlgebraicType } from './option';
-import { Result, type ResultAlgebraicType } from './result';
-import ScheduleAt, { type ScheduleAtAlgebraicType } from './schedule_at';
-import type { CoerceRow } from './table';
-import { TimeDuration, type TimeDurationAlgebraicType } from './time_duration';
-import { Timestamp, type TimestampAlgebraicType } from './timestamp';
-import { set, type Prettify, type SetField } from './type_util';
-import { Uuid, type UuidAlgebraicType } from './uuid';
+import { AlgebraicType, type AlgebraicTypeVariants } from './algebraic_type.ts';
+import type BinaryReader from './binary_reader.ts';
+import type BinaryWriter from './binary_writer.ts';
+import {
+  ConnectionId,
+  type ConnectionIdAlgebraicType,
+} from './connection_id.ts';
+import { Identity, type IdentityAlgebraicType } from './identity.ts';
+import { Option, type OptionAlgebraicType } from './option.ts';
+import { Result, type ResultAlgebraicType } from './result.ts';
+import ScheduleAt, { type ScheduleAtAlgebraicType } from './schedule_at.ts';
+import type { CoerceRow } from './table.ts';
+import {
+  TimeDuration,
+  type TimeDurationAlgebraicType,
+} from './time_duration.ts';
+import { Timestamp, type TimestampAlgebraicType } from './timestamp.ts';
+import { set, type Prettify, type SetField } from './type_util.ts';
+import { Uuid, type UuidAlgebraicType } from './uuid.ts';
 
 // Used in codegen files
-export { type AlgebraicTypeType } from './algebraic_type';
+export { type AlgebraicTypeType } from './algebraic_type.ts';
 
 /**
  * Helper type to extract the TypeScript type from a TypeBuilder

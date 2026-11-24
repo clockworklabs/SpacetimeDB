@@ -52,6 +52,10 @@ spacetime generate --lang typescript|csharp|rust --out-dir ./bindings --module-p
 spacetime generate --lang unrealcpp --uproject-dir ./MyGame --module-path ./server --unreal-module-name MyGame
 ```
 
+### TypeScript Import Extensions
+
+For TypeScript client bindings, `spacetime generate --lang typescript --import-extension none|js|ts` selects the relative import suffix: `none` is the bundler-friendly default, `js` suits `moduleResolution: "nodenext"`, and `ts` suits runtimes executing TypeScript source directly. Set `"import-extension"` per `generate` entry in `spacetime.json` to persist it. This setting changes imports inside generated files, not application imports; NodeNext applications should import an explicit file such as `./module_bindings/index.js`. See https://spacetimedb.com/docs/clients/typescript#import-extensions for direct-TypeScript typecheck settings.
+
 ### Client and Module Bindings
 
 `spacetime generate --bindings client` (default) generates bindings for clients connecting to a database. `--bindings module` generates receiver bindings used inside a **sending database module** to call reducers in another **receiving database** through asynchronous IDC. Rust and TypeScript module bindings are supported; C#/C++ module bindings are not implemented yet. `unrealcpp` is client-only; `cpp` is accepted only in module mode.
@@ -59,6 +63,23 @@ spacetime generate --lang unrealcpp --uproject-dir ./MyGame --module-path ./serv
 In `spacetime.json`, each sending database's non-inherited `dependencies` array requires its own `module-path` and dependency `name` plus receiving-module `module-path` or `database`. A `database` reference resolves another target's local source/build settings in the same config; it does not fetch a running database's schema. A direct receiving module source takes precedence. Dependencies do not themselves publish receiving databases or inherit the sending module's build settings. `generate <sending-database>` processes both its regular `generate` entries (client bindings by default) and `dependencies` (module bindings automatically); no `--bindings` flag or second `generate` entry is needed for a dependency. For dependencies, module binding language defaults to the sending module's language and Rust/TypeScript output defaults to `<sending module-path>/src/remote_bindings`. Explicit config `out-dir` is config-relative. A regular `generate` entry can select `"bindings": "module"`, but does not use dependency language or output defaults. The CLI `--bindings` override is allowed only when a single generation entry is selected.
 
 `dev` generates only root dependencies before building the sending module, and watches their source paths. Child targets are available for source lookup, not recursive dependency generation. `--skip-generate` skips receiver/client generation and receiver-only watching; `--skip-publish` does not. See https://spacetimedb.com/docs/cli-reference/spacetime-json#receiver-dependencies for examples.
+
+### C# Build Modes
+
+For new .NET 10 modules, `dotnet build` produces a managed library.
+`spacetime build` and `spacetime publish` explicitly select `wasi-wasm` and use
+NativeAOT-LLVM; `--native-aot` is not required. The manual WASM equivalent is
+`dotnet publish -c Release -r wasi-wasm` from the module directory.
+Use `spacetime init --lang csharp --dotnet-version 10 my-project` to select
+.NET 10 explicitly.
+
+Do not make the project permanently WASM-only to fix a managed build: keep LLVM
+package references and WASM settings conditional on the RID. Let dotnet restore
+when changing build modes. Managed builds alone do not enable C# module unit tests.
+
+.NET 8 retains WASM/JIT by default and requires `--native-aot` to select NativeAOT
+where supported. The CLI manages `SPACETIMEDB_WASM_AOT` and its legacy alias
+`EXPERIMENTAL_WASM_AOT`; users do not need to set either for .NET 10.
 
 ### Publishing & Deployment
 

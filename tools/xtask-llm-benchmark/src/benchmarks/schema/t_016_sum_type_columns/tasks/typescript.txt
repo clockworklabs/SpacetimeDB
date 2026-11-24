@@ -11,7 +11,7 @@ TYPES
 TABLE
 - drawing (public)
   - Fields:
-    - id: number (u64, primary key, autoInc)
+    - id: bigint (u64, primary key, autoInc)
     - a: Shape
     - b: Shape
 

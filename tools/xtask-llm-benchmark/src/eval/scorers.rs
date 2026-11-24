@@ -1,13 +1,15 @@
 use crate::bench::utils::debug_llm_verbose;
 use crate::eval::utils::{run_with_timeout, sql_exec_with_timeout};
-use crate::eval::{normalize, spacetime_command, ScoreDetails};
+use crate::eval::{normalize, scorer_command, ScoreDetails};
+use regex::Regex;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 use std::{io, thread};
 
-pub trait Scorer {
+pub trait Scorer: Send {
     fn id(&self) -> &'static str;
     fn score(&self, llm_output: &str) -> ScoreDetails;
 }
@@ -18,6 +20,7 @@ pub struct SchemaParityScorer {
     pub llm_db: String,
     pub timeout: Duration,
     pub id_str: &'static str,
+    pub view_primary_keys_required: bool,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -105,10 +108,18 @@ impl Scorer for SchemaParityScorer {
             }
         }
 
-        let schema_a = extract_schema(&golden);
-        let schema_b = extract_schema(&llm);
+        let mut schema_a = extract_schema(&golden);
+        let mut schema_b = extract_schema(&llm);
+        compare_view_primary_keys(
+            &mut schema_a.exports,
+            &mut schema_b.exports,
+            self.view_primary_keys_required,
+        );
+        accept_extra_http_routes(&schema_a.exports, &mut schema_b.exports);
+        let candidate_tables =
+            accept_extra_indexes(&schema_a.tables, align_table_names(&schema_a.tables, &schema_b.tables));
 
-        let tables_diff = diff_maps(&schema_a.tables, &schema_b.tables);
+        let tables_diff = diff_maps(&schema_a.tables, &candidate_tables);
         let reducers_diff = diff_sets(&schema_a.reducers, &schema_b.reducers);
         let exports_diff = diff_sets(&schema_a.exports, &schema_b.exports);
         let rls_diff = diff_sets(&schema_a.row_level_security, &schema_b.row_level_security);
@@ -242,9 +253,30 @@ fn extract_schema(v: &Value) -> SchemaSnapshot {
         }
     }
 
+    // Clients cannot call lifecycle reducers, so they match by lifecycle kind, not by name.
+    let mut lifecycle_kinds = BTreeMap::new();
+    for lifecycle in schema_array(v, "life_cycle_reducers", "LifeCycleReducers")
+        .into_iter()
+        .flatten()
+    {
+        let spec = lifecycle.get("lifecycle_spec");
+        let kind = spec
+            .and_then(Value::as_object)
+            .and_then(|spec| spec.keys().next().cloned())
+            .unwrap_or_else(|| canonical_value(spec));
+        lifecycle_kinds.insert(schema_name(lifecycle.get("function_name")), kind.clone());
+        schema.exports.insert(format!("lifecycle:{kind}"));
+    }
+
     if let Some(rs) = schema_array(v, "reducers", "Reducers") {
         for r in rs {
-            let name = names.function(schema_name(r.get("source_name").or_else(|| r.get("name"))));
+            let source = schema_name(r.get("source_name").or_else(|| r.get("name")));
+            let name = names.function(source.clone());
+            let name = lifecycle_kinds
+                .get(&name)
+                .or_else(|| lifecycle_kinds.get(&source))
+                .map(|kind| format!("<{kind}>"))
+                .unwrap_or(name);
             let mut sig = format!("{}({})", name, parameter_types(r, types).join(","));
             append_field(&mut sig, "visibility", r.get("visibility"));
             append_type(&mut sig, "ok", r.get("ok_return_type"), types);
@@ -276,22 +308,32 @@ fn extract_schema(v: &Value) -> SchemaSnapshot {
     for view in schema_array(v, "views", "Views").into_iter().flatten() {
         schema.exports.insert(view_export(view, types, &names));
     }
-    insert_canonical_exports(&mut schema.exports, v, "schedules", "Schedules", "schedule");
-    insert_canonical_exports(
-        &mut schema.exports,
-        v,
-        "life_cycle_reducers",
-        "LifeCycleReducers",
-        "lifecycle",
-    );
+    for schedule in schema_array(v, "schedules", "Schedules").into_iter().flatten() {
+        // The table is compared on its own; these fields only repeat its exact spelling.
+        let mut schedule = schedule.clone();
+        if let Some(fields) = schedule.as_object_mut() {
+            fields.remove("source_name");
+            if let Some(table) = fields.get_mut("table_name") {
+                *table = Value::String(loose_name(&schema_name(Some(table))));
+            }
+        }
+        schema
+            .exports
+            .insert(format!("schedule:{}", canonical_value(Some(&schedule))));
+    }
     insert_http_routes(&mut schema.exports, v);
-    insert_canonical_exports(
-        &mut schema.exports,
-        v,
-        "view_primary_keys",
-        "ViewPrimaryKeys",
-        "view_primary_key",
-    );
+    for key in schema_array(v, "view_primary_keys", "ViewPrimaryKeys")
+        .into_iter()
+        .flatten()
+    {
+        let mut key = key.clone();
+        if let Some(view) = key.get_mut("view_source_name") {
+            *view = Value::String(loose_name(&schema_name(Some(view))));
+        }
+        schema
+            .exports
+            .insert(format!("view_primary_key:{}", canonical_value(Some(&key))));
+    }
 
     for rule in schema_array(v, "row_level_security", "RowLevelSecurity")
         .into_iter()
@@ -353,29 +395,23 @@ fn function_export(kind: &str, function: &Value, types: &[Value], names: &Schema
     let name = names.function(schema_name(
         function.get("source_name").or_else(|| function.get("name")),
     ));
+    named_function_export(kind, &name, function, types)
+}
+
+fn named_function_export(kind: &str, name: &str, function: &Value, types: &[Value]) -> String {
     let mut signature = format!("{kind}:{name}({})", parameter_types(function, types).join(","));
     append_type(&mut signature, "return", function.get("return_type"), types);
     append_field(&mut signature, "visibility", function.get("visibility"));
     signature
 }
 
+// Prompts do not fix a view's casing, and TypeScript modules often camelCase it.
 fn view_export(view: &Value, types: &[Value], names: &SchemaNames) -> String {
-    let mut signature = function_export("view", view, types, names);
+    let name = names.function(schema_name(view.get("source_name").or_else(|| view.get("name"))));
+    let mut signature = named_function_export("view", &loose_name(&name), view, types);
     append_field(&mut signature, "public", view.get("is_public"));
     append_field(&mut signature, "anonymous", view.get("is_anonymous"));
     signature
-}
-
-fn insert_canonical_exports(
-    exports: &mut BTreeSet<String>,
-    schema: &Value,
-    direct_name: &str,
-    section_name: &str,
-    kind: &str,
-) {
-    for export in schema_array(schema, direct_name, section_name).into_iter().flatten() {
-        exports.insert(format!("{kind}:{}", canonical_value(Some(export))));
-    }
 }
 
 fn insert_http_routes(exports: &mut BTreeSet<String>, schema: &Value) {
@@ -510,6 +546,69 @@ fn insert_schema_property(columns: &mut BTreeMap<String, String>, name: &str, va
     }
 }
 
+// Prompts do not fix a table's casing, so a name differing only by case or underscores is the same table.
+// shortcut: `User` and `USER` beside a golden `user` collapse into one table; compare counts if a model ever does this.
+fn align_table_names(
+    golden: &BTreeMap<String, BTreeMap<String, String>>,
+    candidate: &BTreeMap<String, BTreeMap<String, String>>,
+) -> BTreeMap<String, BTreeMap<String, String>> {
+    candidate
+        .iter()
+        .map(|(name, table)| {
+            let golden_name = golden.keys().find(|golden_name| {
+                !candidate.contains_key(*golden_name) && loose_name(golden_name) == loose_name(name)
+            });
+            (golden_name.unwrap_or(name).clone(), table.clone())
+        })
+        .collect()
+}
+
+// TypeScript row types carry a table's key into a view implicitly, so only a task that asks for a key requires one.
+fn compare_view_primary_keys(golden: &mut BTreeSet<String>, candidate: &mut BTreeSet<String>, required: bool) {
+    let is_key = |export: &String| export.starts_with("view_primary_key:");
+    if required {
+        candidate.retain(|export| !is_key(export) || golden.contains(export));
+    } else {
+        golden.retain(|export| !is_key(export));
+        candidate.retain(|export| !is_key(export));
+    }
+}
+
+// A handler that rejects a method explicitly is as valid as leaving the route unregistered.
+fn accept_extra_http_routes(golden: &BTreeSet<String>, candidate: &mut BTreeSet<String>) {
+    candidate.retain(|export| !export.starts_with("http_route:") || golden.contains(export));
+}
+
+fn loose_name(name: &str) -> String {
+    name.to_lowercase().replace('_', "")
+}
+
+// Extra indexes only speed up lookups; a missing golden index still fails.
+fn accept_extra_indexes(
+    golden: &BTreeMap<String, BTreeMap<String, String>>,
+    mut candidate: BTreeMap<String, BTreeMap<String, String>>,
+) -> BTreeMap<String, BTreeMap<String, String>> {
+    for (name, table) in &mut candidate {
+        let Some(golden_table) = golden.get(name) else {
+            continue;
+        };
+        let expected = golden_table.get("@indexes").map(String::as_str).unwrap_or("");
+        let actual = table.get("@indexes").map(String::as_str).unwrap_or("");
+        let actual: BTreeSet<&str> = actual.split(';').collect();
+        if expected
+            .split(';')
+            .filter(|index| !index.is_empty())
+            .all(|index| actual.contains(index))
+        {
+            match golden_table.get("@indexes") {
+                Some(expected) => table.insert("@indexes".to_owned(), expected.clone()),
+                None => table.remove("@indexes"),
+            };
+        }
+    }
+    candidate
+}
+
 fn diff_maps(a: &BTreeMap<String, BTreeMap<String, String>>, b: &BTreeMap<String, BTreeMap<String, String>>) -> Value {
     let mut only_a = BTreeMap::new();
     let mut only_b = BTreeMap::new();
@@ -570,7 +669,7 @@ fn call_reducer_json_out_with_timeout(
     host: Option<&str>,
     timeout: Duration,
 ) -> Result<String, String> {
-    let mut cmd = spacetime_command();
+    let mut cmd = scorer_command(host);
     cmd.arg("call");
     if let Some(h) = host {
         cmd.arg("--server").arg(h);
@@ -606,8 +705,72 @@ pub fn sql_raw(db: &str, query: &str, host: Option<&str>) -> Result<String, Stri
     sql_raw_with_timeout(db, query, host, Duration::from_secs(30))
 }
 
+// Checks guess a table's name from the language's convention; a model may spell it differently.
+pub(crate) fn with_actual_relation_names<T>(
+    db: &str,
+    query: &str,
+    host: Option<&str>,
+    run: impl Fn(&str) -> Result<T, String>,
+) -> Result<T, String> {
+    static MISSING: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"no such table: `([^`]+)`").unwrap());
+    let mut query = query.to_owned();
+    for _ in 0..4 {
+        let error = match run(&query) {
+            Ok(value) => return Ok(value),
+            Err(error) => error,
+        };
+        let renamed = MISSING.captures(&error).and_then(|missing| {
+            let actual = actual_relation_name(host?, db, &missing[1])?;
+            Some(rename_relation(&query, &missing[1], &actual))
+        });
+        match renamed {
+            Some(renamed) if renamed != query => query = renamed,
+            _ => return Err(error),
+        }
+    }
+    run(&query)
+}
+
+fn rename_relation(query: &str, missing: &str, actual: &str) -> String {
+    let pattern = Regex::new(&format!(r#""{0}"|\b{0}\b"#, regex::escape(missing))).unwrap();
+    pattern
+        .replace_all(query, format!("\"{actual}\"").as_str())
+        .into_owned()
+}
+
+/// The module's spelling of `wanted`: an exact match first, else one differing only by case or underscores.
+pub(crate) fn actual_relation_name(server: &str, db: &str, wanted: &str) -> Option<String> {
+    let schema = describe_db(server, db, Duration::from_secs(15)).ok()?;
+    let names = SchemaNames::from_schema(&schema);
+    let relations: Vec<String> = ["Tables", "Views"]
+        .into_iter()
+        .flat_map(|section| {
+            schema_array(&schema, &section.to_lowercase(), section)
+                .into_iter()
+                .flatten()
+        })
+        .map(|relation| {
+            let source = schema_name(relation.get("source_name").or_else(|| relation.get("name")));
+            names
+                .tables
+                .get(&source)
+                .or_else(|| names.functions.get(&source))
+                .cloned()
+                .unwrap_or(source)
+        })
+        .collect();
+    let exact = relations.iter().find(|name| *name == wanted);
+    exact
+        .or_else(|| relations.iter().find(|name| loose_name(name) == loose_name(wanted)))
+        .cloned()
+}
+
 fn sql_raw_with_timeout(db: &str, query: &str, host: Option<&str>, timeout: Duration) -> Result<String, String> {
-    let mut cmd = spacetime_command();
+    with_actual_relation_names(db, query, host, |query| sql_raw_once(db, query, host, timeout))
+}
+
+fn sql_raw_once(db: &str, query: &str, host: Option<&str>, timeout: Duration) -> Result<String, String> {
+    let mut cmd = scorer_command(host);
     cmd.arg("sql").arg(db).arg(query);
     if let Some(h) = host {
         cmd.arg("--server").arg(h);
@@ -634,7 +797,11 @@ fn sql_raw_with_timeout(db: &str, query: &str, host: Option<&str>, timeout: Dura
 }
 
 fn sql_json_with_timeout(db: &str, query: &str, host: Option<&str>, timeout: Duration) -> Result<Value, String> {
-    let mut cmd = spacetime_command();
+    with_actual_relation_names(db, query, host, |query| sql_json_once(db, query, host, timeout))
+}
+
+fn sql_json_once(db: &str, query: &str, host: Option<&str>, timeout: Duration) -> Result<Value, String> {
+    let mut cmd = scorer_command(host);
     cmd.arg("sql").arg(db).arg(query).args(["--format", "json"]);
     if let Some(h) = host {
         cmd.arg("--server").arg(h);
@@ -663,7 +830,11 @@ pub fn sql_count(db: &str, query: &str, host: Option<&str>) -> Result<i64, Strin
 }
 
 fn sql_count_with_timeout(db: &str, query: &str, host: Option<&str>, timeout: Duration) -> Result<i64, String> {
-    let mut cmd = spacetime_command();
+    with_actual_relation_names(db, query, host, |query| sql_count_once(db, query, host, timeout))
+}
+
+fn sql_count_once(db: &str, query: &str, host: Option<&str>, timeout: Duration) -> Result<i64, String> {
+    let mut cmd = scorer_command(host);
     cmd.arg("sql").arg(db).arg(query);
     if let Some(h) = host {
         cmd.arg("--server").arg(h);
@@ -1438,6 +1609,179 @@ mod tests {
         let candidate = extract_schema(&current_schema(false));
 
         assert!(!diff_maps(&golden.tables, &candidate.tables).is_null());
+        assert!(!diff_maps(&golden.tables, &accept_extra_indexes(&golden.tables, candidate.tables)).is_null());
+    }
+
+    #[test]
+    fn missing_relation_is_renamed_quoted_or_bare() {
+        assert_eq!(
+            rename_relation(r#"SELECT * FROM "OnlineUser" WHERE x = 1"#, "OnlineUser", "online_user"),
+            r#"SELECT * FROM "online_user" WHERE x = 1"#
+        );
+        assert_eq!(
+            rename_relation("SELECT COUNT(*) FROM OnlineUser", "OnlineUser", "online_user"),
+            r#"SELECT COUNT(*) FROM "online_user""#
+        );
+        assert_eq!(
+            rename_relation("SELECT * FROM OnlineUsers", "OnlineUser", "online_user"),
+            "SELECT * FROM OnlineUsers"
+        );
+    }
+
+    #[test]
+    fn extra_index_is_accepted() {
+        let golden = extract_schema(&current_schema(false)).tables;
+        let candidate = extract_schema(&current_schema(true)).tables;
+
+        assert!(diff_maps(&golden, &accept_extra_indexes(&golden, candidate)).is_null());
+    }
+
+    fn lifecycle_schema(function: &str, kind: &str) -> Value {
+        json!({
+            "sections": [
+                { "Typespace": { "types": [] } },
+                { "Reducers": [{ "source_name": function, "params": { "elements": [] } }] },
+                { "LifeCycleReducers": [{ "lifecycle_spec": { kind: [] }, "function_name": function }] }
+            ]
+        })
+    }
+
+    #[test]
+    fn lifecycle_reducers_match_by_kind_not_name() {
+        let golden = extract_schema(&lifecycle_schema("client_connected", "OnConnect"));
+
+        assert_eq!(golden, extract_schema(&lifecycle_schema("on_connect", "OnConnect")));
+        assert_ne!(golden, extract_schema(&lifecycle_schema("client_connected", "Init")));
+    }
+
+    #[test]
+    fn schedules_ignore_table_spelling_but_not_their_reducer() {
+        let schema = |table: &str, function: &str| {
+            json!({
+                "sections": [
+                    { "Typespace": { "types": [] } },
+                    { "Schedules": [{
+                        "source_name": { "some": format!("{table}_sched") },
+                        "table_name": table,
+                        "schedule_at_col": 1,
+                        "function_name": function
+                    }] }
+                ]
+            })
+        };
+        let golden = extract_schema(&schema("tick_timer", "tick"));
+
+        assert_eq!(golden, extract_schema(&schema("TickTimer", "tick")));
+        assert_ne!(golden, extract_schema(&schema("tick_timer", "other")));
+        assert_ne!(golden, extract_schema(&schema("other_timer", "tick")));
+    }
+
+    #[test]
+    fn view_primary_keys_only_matter_when_a_task_requires_them() {
+        let keys = |names: &[&str]| {
+            names
+                .iter()
+                .map(|name| format!("view_primary_key:{name}"))
+                .collect::<BTreeSet<_>>()
+        };
+        for (required, golden, candidate, equal) in [
+            (false, vec!["id"], vec![], true),
+            (false, vec![], vec!["id"], true),
+            (true, vec!["id"], vec!["id"], true),
+            (true, vec![], vec!["id"], true),
+            (true, vec!["id"], vec![], false),
+            (true, vec!["id"], vec!["name"], false),
+        ] {
+            let (mut golden, mut candidate) = (keys(&golden), keys(&candidate));
+            compare_view_primary_keys(&mut golden, &mut candidate, required);
+            assert_eq!(diff_sets(&golden, &candidate).is_null(), equal);
+        }
+    }
+
+    #[test]
+    fn extra_http_routes_are_accepted_but_missing_ones_fail() {
+        let routes = |names: &[&str]| {
+            names
+                .iter()
+                .map(|name| format!("http_route:{name}"))
+                .collect::<BTreeSet<_>>()
+        };
+        let golden = routes(&["get", "post"]);
+        let mut extra = routes(&["get", "post", "put"]);
+        accept_extra_http_routes(&golden, &mut extra);
+        assert!(diff_sets(&golden, &extra).is_null());
+        let mut missing = routes(&["get"]);
+        accept_extra_http_routes(&golden, &mut missing);
+        assert!(!diff_sets(&golden, &missing).is_null());
+    }
+
+    #[test]
+    fn view_names_differing_only_by_case_or_underscores_match() {
+        let schema = |view: &str| {
+            json!({
+                "sections": [
+                    { "Typespace": { "types": [] } },
+                    { "Views": [{ "source_name": view, "params": { "elements": [] }, "is_public": true }] },
+                    { "ViewPrimaryKeys": [{ "view_source_name": view, "columns": ["id"] }] }
+                ]
+            })
+        };
+
+        assert_eq!(
+            extract_schema(&schema("active_announcements")),
+            extract_schema(&schema("activeAnnouncements"))
+        );
+        assert_ne!(
+            extract_schema(&schema("active_announcements")),
+            extract_schema(&schema("announcements"))
+        );
+    }
+
+    fn tables_named(names: &[&str]) -> BTreeMap<String, BTreeMap<String, String>> {
+        let table = extract_schema(&current_schema(true))
+            .tables
+            .remove("child_item")
+            .unwrap();
+        names.iter().map(|name| (name.to_string(), table.clone())).collect()
+    }
+
+    #[test]
+    fn table_names_differing_only_by_case_or_underscores_match() {
+        for (golden, candidate) in [("user", "User"), ("leased_job", "LeasedJob"), ("item_v_2", "item_v2")] {
+            let golden = tables_named(&[golden]);
+            let candidate = align_table_names(&golden, &tables_named(&[candidate]));
+
+            assert!(diff_maps(&golden, &candidate).is_null());
+        }
+    }
+
+    #[test]
+    fn different_table_names_produce_a_schema_diff() {
+        let golden = tables_named(&["item_v_2"]);
+        let candidate = align_table_names(&golden, &tables_named(&["item_v3"]));
+
+        assert!(!diff_maps(&golden, &candidate).is_null());
+    }
+
+    #[test]
+    fn extra_table_differing_only_by_case_produces_a_schema_diff() {
+        let golden = tables_named(&["user"]);
+        let candidate = align_table_names(&golden, &tables_named(&["User", "user"]));
+
+        assert_eq!(
+            diff_maps(&golden, &candidate)["only_llm"]["User"]["id"],
+            r#"{"U64":[]}"#
+        );
+    }
+
+    #[test]
+    fn matched_table_still_compares_properties() {
+        let golden = extract_schema(&current_schema(true)).tables;
+        let mut candidate = tables_named(&["ChildItem"]);
+        candidate.get_mut("ChildItem").unwrap().remove("@indexes");
+        let candidate = align_table_names(&golden, &candidate);
+
+        assert!(diff_maps(&golden, &candidate)["changed"]["child_item"].is_object());
     }
 
     #[test]

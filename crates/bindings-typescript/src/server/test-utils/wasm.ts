@@ -4,7 +4,7 @@ import type {
   TestRuntimeTarget,
   TestRuntime,
   TestRuntimeTx,
-} from './runtime';
+} from './runtime.ts';
 
 export type WasmCommitMode = 'Normal' | 'DropEventTableRows';
 

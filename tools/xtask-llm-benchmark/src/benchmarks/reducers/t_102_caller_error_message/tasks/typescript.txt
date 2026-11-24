@@ -1,0 +1,12 @@
+Write a SpacetimeDB backend module in TypeScript whose reducer reports a failure back to its caller.
+
+TABLE
+- item (public)
+  - Fields:
+    - id: bigint (u64, primary key)
+    - name: string
+
+REDUCERS
+- add_item(ctx, { id: bigint (u64), name: string })
+  - If name is empty, fail so that the caller receives the exact text "name required"
+  - Otherwise insert the item

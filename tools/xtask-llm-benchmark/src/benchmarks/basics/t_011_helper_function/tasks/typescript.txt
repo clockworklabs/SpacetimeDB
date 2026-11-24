@@ -10,4 +10,4 @@ HELPER FUNCTION
 - add(a: number, b: number): number - returns a + b
 
 REDUCERS
-- computeSum: given id:number, a:number, b:number, insert row with sum=add(a,b)
+- computeSum: given id:number (i32), a:number (i32), b:number (i32), insert row with sum=add(a,b)

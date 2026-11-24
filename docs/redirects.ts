@@ -58,7 +58,7 @@ const legacyRedirects: Redirect[] = [
 
   // Server module languages. The per-language module references are gone;
   // that material now lives in the language-agnostic core-concepts pages.
-  { from: '/modules', to: '/functions' },
+  // `/modules` itself is now the page about including modules.
   { from: '/modules/rust', to: '/functions' },
   { from: '/modules/c-sharp', to: '/functions' },
   { from: '/modules/typescript', to: '/functions' },
@@ -162,6 +162,7 @@ const legacyRedirects: Redirect[] = [
   { from: '/databases/sql', to: '/reference/sql' },
   { from: '/databases/sql/pg-wire', to: '/how-to/pg-wire' },
   { from: '/how-to/migrating-to-2-0', to: '/upgrade' },
+  { from: '/submodules', to: '/modules' },
   {
     from: '/how-to/using-auth-claims',
     to: '/core-concepts/authentication/usage',

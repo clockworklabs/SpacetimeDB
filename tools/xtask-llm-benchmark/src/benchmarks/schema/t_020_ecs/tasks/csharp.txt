@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in C# that models a minimal ECS and computes next positions.
 
 TABLES
-- Entity
+- Entity (private)
   - Struct: Entity
   - Fields:
     - Id: ulong (primary key, auto-increment)
@@ -13,7 +13,7 @@ TABLES
     - X: int
     - Y: int
 
-- Velocity
+- Velocity (private)
   - Struct: Velocity
   - Fields:
     - EntityId: int (primary key) — NOT auto-increment, this is a foreign key to Entity

@@ -13,6 +13,8 @@
   --danger: #ff6a66;
   --ok: #52df8f;
   --button: #b9c5d4;
+  --example-footer-border: rgba(23, 56, 70, 0.4);
+  --example-footer-label: #7e9cad;
   font-family:
     Inter,
     ui-sans-serif,
@@ -142,34 +144,6 @@ button:disabled {
 .brand img {
   width: 28px;
   height: 28px;
-}
-
-.page-foot {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 11px;
-  margin-top: 0;
-  padding-top: 12px;
-  border-top: 1px solid rgba(23, 56, 70, 0.4);
-}
-
-.page-foot .by {
-  color: #7e9cad;
-  font:
-    800 10px/1 ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Consolas,
-    monospace;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.page-foot img {
-  height: 28px;
-  width: auto;
-  opacity: 0.9;
 }
 
 .layout {

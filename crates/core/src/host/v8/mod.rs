@@ -200,7 +200,7 @@ impl V8RuntimeInner {
     fn init() -> Self {
         // If the number in the name of this function is changed, update the version
         // of the `deno_core_icudata` dep to match the number in the function name.
-        v8::icu::set_common_data_77(deno_core_icudata::ICU_DATA).ok();
+        v8::icu::set_common_data_78(deno_core_icudata::ICU_DATA).ok();
         // Set a default locale for functions like `toLocaleString()`.
         // en-001 is "International English". <https://www.ctrl.blog/entry/en-001.html>
         v8::icu::set_default_locale("en-001");
@@ -209,11 +209,11 @@ impl V8RuntimeInner {
         // as we intend to run on a single core.
         // Per the docs, `new_single_threaded_default_platform` requires
         // that we pass `--single-threaded`.
-        let mut flags = "--single-threaded".to_owned();
+        let flags = "--single-threaded --enforce-global-heap-limit --maximum-global-heap-limit-factor=1";
+        v8::V8::set_flags_from_string(flags);
         if let Ok(env_flags) = std::env::var("STDB_V8_FLAGS") {
-            flags.extend([" ", &env_flags]);
+            v8::V8::set_flags_from_string(&env_flags);
         }
-        v8::V8::set_flags_from_string(&flags);
         let platform = v8::new_single_threaded_default_platform(false).make_shared();
         // Initialize V8. Internally, this uses a global lock so it's safe that we don't.
         v8::V8::initialize_platform(platform);
@@ -1748,12 +1748,31 @@ where
                 let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler.clone(), idc_sender);
                 scope.set_slot(JsInstanceEnv::new(instance_env));
 
+                let scope: &mut PinScope<'_, '_> = scope;
                 let startup_result = panic::catch_unwind(AssertUnwindSafe(|| {
-                    catch_exception(scope, |scope| Ok(builtins::evaluate_builtins(scope)?))
-                        .expect("our builtin code shouldn't error");
+                    let terminator = error::RemoteTerminator::new(scope);
+                    let near_heap_limit_callback = |current: usize, initial: usize| {
+                        // As in common_call, give V8 headroom to honor termination
+                        // instead of reaching its process-fatal hard heap limit.
+                        terminator.terminate_execution(ExceededMemoryLimit { current, initial }.into());
+                        current.saturating_mul(2)
+                    };
+                    let result = with_near_heap_limit_callback(
+                        scope,
+                        heap_policy.heap_limit_bytes,
+                        near_heap_limit_callback,
+                        |scope| {
+                            catch_exception(scope, |scope| Ok(builtins::evaluate_builtins(scope)?))?;
 
-                    // Setup the JS module, find call_reducer, and maybe build the module.
-                    startup_instance_worker(scope, program.clone(), generation_module_or_mcc)
+                            // Protect compilation, evaluation, and schema extraction,
+                            // including when recreating a worker's isolate.
+                            startup_instance_worker(scope, program.clone(), generation_module_or_mcc)
+                        },
+                    );
+                    match terminator.flag.clear() {
+                        Some(err) => Err(err),
+                        None => result,
+                    }
                 }));
 
                 let (hooks, module_common) = match startup_result {
@@ -2136,7 +2155,7 @@ where
                 // Must be called *after* we check `has_terminated()`, or else it will
                 // cause it to return `false`.
                 scope.cancel_terminate_execution();
-                let e = e.unwrap_or_else(|unknown| termination_error.unwrap_or_else(|| unknown.into()));
+                let e = termination_error.unwrap_or_else(|| e.unwrap_or_else(Into::into));
                 ExecutionError::Recoverable(e)
             } else {
                 // We cannot continue.

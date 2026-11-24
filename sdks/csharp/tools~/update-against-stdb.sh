@@ -8,7 +8,7 @@ STDB_PATH="$1"
 SDK_PATH="$(dirname "$0")/.."
 SDK_PATH="$(realpath "$SDK_PATH")"
 
-"$SDK_PATH/tools~/write-nuget-config.sh" "$STDB_PATH"
+(cd "$STDB_PATH" && cargo regen csharp nuget-config)
 "$SDK_PATH/tools~/gen-client-api.sh"
 "$SDK_PATH/tools~/gen-quickstart.sh"
 "$SDK_PATH/tools~/gen-regression-tests.sh"

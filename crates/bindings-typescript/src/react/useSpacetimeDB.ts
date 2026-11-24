@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { ConnectionState } from './connection_state';
+import type { ConnectionState } from './connection_state.ts';
 
 export const SpacetimeDBContext = createContext<ConnectionState | undefined>(
   undefined

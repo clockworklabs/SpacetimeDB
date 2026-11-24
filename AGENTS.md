@@ -13,3 +13,7 @@ A path's review tier comes from the nearest `.deep` marker in its directory or a
 - Do not add, remove, move or edit a marker unless asked.
 
 These markers are provisional, and CI does not check any of this yet.
+
+# Writing PRs
+
+Use the [write-pull-requests skill](.agents/skills/write-pull-requests/SKILL.md) when preparing commits for a PR and when drafting or editing its GitHub description.

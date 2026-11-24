@@ -9,6 +9,6 @@ TABLE
 
 REDUCERS
 - Generate()
-  - Store ctx.Timestamp in CreatedAt
-  - Store a random long from ctx.Rng in RandomValue
+  - Store the reducer context timestamp in CreatedAt
+  - Store a random long from the reducer context RNG in RandomValue
   - Do not use a host clock or a separately seeded Random

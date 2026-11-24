@@ -278,6 +278,7 @@ record TableAccessor
     public readonly string? CanonicalName;
     public readonly bool IsPublic;
     public readonly bool IsEvent;
+    public readonly TableCachePolicy CachePolicy;
     public readonly Scheduled? Scheduled;
 
     public string Identifier => EscapeIdentifier(Name);
@@ -290,6 +291,7 @@ record TableAccessor
         CanonicalName = attr.Name;
         IsPublic = attr.Public;
         IsEvent = attr.Event;
+        CachePolicy = attr.CachePolicy;
         if (
             attr.Scheduled is { } reducer
             && table.GetColumnIndex(data, attr.ScheduledAt, diag) is { } scheduledAtIndex
@@ -1027,6 +1029,10 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             var accessorIdentifier = v.Identifier;
             var iTable =
                 $"global::SpacetimeDB.Internal.ITableView<{accessorIdentifier}, {globalName}>";
+            var cachePolicy =
+                v.CachePolicy == TableCachePolicy.RequiredInMemory
+                    ? ""
+                    : $"\n\npublic static SpacetimeDB.TableCachePolicy CachePolicy => SpacetimeDB.TableCachePolicy.{v.CachePolicy};";
             var tableArgument = sharedContexts ? "__state" : "";
             var rowArgument = sharedContexts ? "row, __state" : "row";
             var instanceMembers = sharedContexts
@@ -1104,7 +1110,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                         v.Scheduled is { } scheduled
                         ? $"{iTable}.MakeSchedule(\"{scheduled.ReducerName}\", {scheduled.ScheduledAtColumn})"
                         : "null"
-                    )}}};
+                    )}}};{{{cachePolicy}}}
 
                 /// <summary>
                 /// Returns the number of rows in this table.
@@ -4089,7 +4095,7 @@ public class Module : IIncrementalGenerator
                         public static List<T> ToListOrEmpty<T>(T? value) where T : class
                                 => value is null ? new List<T>() : new List<T> { value };
 
-                    #if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+                    #if SPACETIMEDB_WASM_AOT
                         // In AOT mode we're building a library.
                         // Main method won't be called automatically, so we need to export it as a preinit function.
                         [UnmanagedCallersOnly(EntryPoint = "__preinit__10_init_csharp")]
@@ -4187,7 +4193,7 @@ public class Module : IIncrementalGenerator
 
                     // Export entrypoints live in generated module code so all build modes can
                     // dispatch directly to concrete generated functions.
-                    #if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+                    #if SPACETIMEDB_WASM_AOT
                         [UnmanagedCallersOnly(EntryPoint = "__describe_module__")]
                     #endif
                         public static void __describe_module__(SpacetimeDB.Internal.BytesSink d) => SpacetimeDB.Internal.Module.__describe_module__(d);
@@ -4339,7 +4345,7 @@ public class Module : IIncrementalGenerator
                             )
                         ), 4)}}
 
-                    #if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+                    #if SPACETIMEDB_WASM_AOT
                         [UnmanagedCallersOnly(EntryPoint = "__call_reducer__")]
                     #endif
                         public static SpacetimeDB.Internal.Errno __call_reducer__(
@@ -4382,7 +4388,7 @@ public class Module : IIncrementalGenerator
                             _ => SpacetimeDB.Internal.Module.WriteReducerError(error, new System.ArgumentOutOfRangeException(nameof(id), id, "Unknown reducer id"))
                         };
                         
-                    #if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+                    #if SPACETIMEDB_WASM_AOT
                         [UnmanagedCallersOnly(EntryPoint = "__call_procedure__")]
                     #endif
                         public static SpacetimeDB.Internal.Errno __call_procedure__(
@@ -4425,7 +4431,7 @@ public class Module : IIncrementalGenerator
                             _ => throw new System.ArgumentOutOfRangeException(nameof(id), id, "Unknown procedure id")
                         };
 
-                    #if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+                    #if SPACETIMEDB_WASM_AOT
                         [UnmanagedCallersOnly(EntryPoint = "__call_http_handler__")]
                     #endif
                         public static SpacetimeDB.Internal.Errno __call_http_handler__(
@@ -4470,7 +4476,7 @@ public class Module : IIncrementalGenerator
                             _ => throw new System.ArgumentOutOfRangeException(nameof(id), id, "Unknown HTTP handler id")
                         };
                         
-                    #if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+                    #if SPACETIMEDB_WASM_AOT
                         [UnmanagedCallersOnly(EntryPoint = "__call_view__")]
                     #endif
                         public static SpacetimeDB.Internal.Errno __call_view__(
@@ -4507,7 +4513,7 @@ public class Module : IIncrementalGenerator
                             _ => UnknownViewId(id)
                         };
 
-                    #if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+                    #if SPACETIMEDB_WASM_AOT
                         [UnmanagedCallersOnly(EntryPoint = "__call_view_anon__")]
                     #endif
                         public static SpacetimeDB.Internal.Errno __call_view_anon__(
