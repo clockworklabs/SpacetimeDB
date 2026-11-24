@@ -87,7 +87,9 @@ packs and enter the prompt only as `requested`.
 Every stack's setup names the stack, its connection details, and the start
 contract. The agent chooses libraries, architecture, and project structure.
 Stacks that are newer and less represented in model training also get SDK
-skills; today that is Spacetime. A condition's `guidanceProfile` picks one
+skills; today that is Spacetime. Before each session they are installed in the
+agent's own skills folder, and the prompt names the folder and the skills.
+A condition's `guidanceProfile` picks one
 of these, from [`conditions/catalog.json`](../conditions/catalog.json):
 
 | Profile | Spacetime skills |

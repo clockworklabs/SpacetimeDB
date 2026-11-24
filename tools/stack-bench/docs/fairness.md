@@ -16,7 +16,9 @@ records where the stacks are treated differently, and why.
 ## Spacetime gets SDK skills
 
 Spacetime agents also receive Spacetime's public agent skills for the TypeScript
-server, TypeScript client, and CLI. Other stacks receive their setup only.
+server, TypeScript client, and CLI. They are installed in the agent's own skills
+folder, and the prompt names the folder and the skills. Other stacks receive
+their setup only.
 
 - **Why:** Spacetime's current SDK is newer than the models' training data.
   Without the skills, agents write code for an older API.

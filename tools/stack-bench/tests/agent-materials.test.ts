@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { agentSkillPaths, normalizePromptText, readAgentSkillDocuments,
+import { agentSkillPaths, normalizePromptText, readAgentSkillDocuments, readAgentSkillFiles,
   selectAgentSkills } from '../src/agents/agent-materials.js';
 
 test('stack defaults and explicit agent skill selections resolve predictably', () => {
@@ -30,6 +30,17 @@ test('benchmark workflows resolve separately from public SDK skills in selected 
   assert.doesNotThrow(() => readAgentSkillDocuments('/repo/tools/stack-bench', ids, { read: mentioning }));
   assert.throws(() => readAgentSkillDocuments('/repo/tools/stack-bench', ids,
     { read: path => paths.indexOf(path) === 1 ? 'Check the grader first.' : 'SDK notes.' }), /internal language/);
+});
+
+test('installed skill files keep their frontmatter in selected order', () => {
+  const files = readAgentSkillFiles('/repo/tools/stack-bench', ['typescript-server', 'spacetime-dev'], {
+    read: path => `---\r\nname: ${path.includes('workflows') ? 'spacetime-dev' : 'typescript-server'}\r\n---\r\nbody\r\n`,
+  });
+  assert.deepEqual(files, [
+    { id: 'typescript-server', text: '---\nname: typescript-server\n---\nbody\n' },
+    { id: 'spacetime-dev', text: '---\nname: spacetime-dev\n---\nbody\n' },
+  ]);
+  assert.throws(() => readAgentSkillFiles('/repo/tools/stack-bench', ['../private']), /invalid/);
 });
 
 test('prompt material is identical across platform line endings', () => {

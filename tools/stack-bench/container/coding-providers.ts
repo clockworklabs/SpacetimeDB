@@ -37,6 +37,8 @@ interface CodingProvider {
   apiKeyEnvironment: string;
   credentialPath?: string;
   containerTranscripts: string;
+  // Where the CLI discovers user skills; the stack's skills are installed here before each session.
+  skillsDirectory: string;
   tokenEnvironment: string;
   environment(baseUrl: string, mode: 'api-key' | 'subscription-token'): string[];
   projects(appDir: string): string;
@@ -59,6 +61,7 @@ const codexProvider: CodingProvider = {
     + 'if (found !== name) { console.error(`${file} names ${JSON.stringify(found)} as the directory Codex adds '
     + 'to PATH, not ${name}`); process.exit(1); }', `${CODEX_PACKAGE_DIRECTORY}/codex-package.json`, 'codex-path'],
   containerTranscripts: `${CODING_CONTAINER_AGENT.home}/.codex/sessions`,
+  skillsDirectory: `${CODING_CONTAINER_AGENT.home}/.codex/skills`,
   tokenEnvironment: 'MODEL_PROXY_TOKEN',
   environment: () => [`CODEX_HOME=${CODING_CONTAINER_AGENT.home}/.codex`],
   projects: appDir => join(codexTranscriptDirectory(appDir), 'sessions'),
@@ -85,6 +88,7 @@ const grokProvider: CodingProvider = {
   requiresBudget: true,
   executable: 'sh', cli: 'grok', apiKeyEnvironment: 'XAI_API_KEY',
   containerTranscripts: `${CODING_CONTAINER_AGENT.home}/.grok/sessions`,
+  skillsDirectory: `${CODING_CONTAINER_AGENT.home}/.grok/skills`,
   tokenEnvironment: 'GROK_BROKER_TOKEN',
   // Telemetry and session uploads would reach the broker as refused requests. The
   // turn summary is a display call over the whole turn that the CLI exits without
@@ -116,6 +120,7 @@ const googleProvider: CodingProvider = {
   requiresBudget: true,
   executable: 'sh', cli: 'agy', apiKeyEnvironment: 'GEMINI_API_KEY',
   containerTranscripts: `${CODING_CONTAINER_AGENT.home}/.gemini/antigravity-cli`,
+  skillsDirectory: `${CODING_CONTAINER_AGENT.home}/.gemini/config/skills`,
   tokenEnvironment: 'GEMINI_API_KEY',
   environment: (baseUrl, mode) => mode === 'subscription-token' ? [`CLOUD_CODE_URL=${baseUrl}`, `HTTPS_PROXY=${baseUrl}`]
     : [`GOOGLE_GEMINI_BASE_URL=${baseUrl}`],
@@ -144,6 +149,7 @@ export const CODING_PROVIDERS = {
     executable: 'claude', cli: 'claude', apiKeyEnvironment: 'ANTHROPIC_API_KEY',
     credentialPath: join(homedir(), '.claude', '.credentials.json'),
     containerTranscripts: `${CODING_CONTAINER_AGENT.home}/.claude/projects/-app`,
+    skillsDirectory: `${CODING_CONTAINER_AGENT.home}/.claude/skills`,
     tokenEnvironment: 'ANTHROPIC_AUTH_TOKEN',
     environment: baseUrl => [`ANTHROPIC_BASE_URL=${baseUrl}`, 'DISABLE_AUTOUPDATER=1', 'FORCE_PROMPT_CACHING_5M=1'],
     projects: appDir => join(homedir(), '.claude', 'projects',

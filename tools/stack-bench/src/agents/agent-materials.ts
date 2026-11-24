@@ -39,6 +39,16 @@ export function agentSkillPaths(stackBenchRoot: string, skills: string[]): strin
     : join(stackBenchRoot, '..', '..', 'skills', skill, 'SKILL.md'));
 }
 
+// The skill files the agent's CLI installs, frontmatter included, so it can list them by name and description.
+export function readAgentSkillFiles(
+  stackBenchRoot: string,
+  skills: string[],
+  { read = (path, encoding) => readFileSync(path, encoding) }: ReadAgentSkillDocumentOptions = {},
+): { id: string; text: string }[] {
+  const paths = agentSkillPaths(stackBenchRoot, skills);
+  return skills.map((id, index) => ({ id, text: normalizePromptText(read(paths[index]!, 'utf8')) }));
+}
+
 export function readAgentSkillDocuments(
   stackBenchRoot: string,
   skills: string[],

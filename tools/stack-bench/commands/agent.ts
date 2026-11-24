@@ -60,7 +60,7 @@ const DEFAULT_CODING_INTERRUPTION_RETRIES = 2;
 
 type UnknownRecord = Record<string, unknown>;
 interface PromptMaterials {
-  skillsText?: string;
+  skillIds?: string[];
   requirementText?: string;
   contractText?: string;
   startingCatalog?: string;
@@ -600,13 +600,9 @@ function resolveIsolation(args: AgentArgs): { container: true; reason: null } {
 
 export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
   materials: PromptMaterials = {}): string {
-  const skills = materials.skillsText ?? readAgentSkillDocuments(ROOT, args.skills ?? []);
-  // Skills are the product's own documents and discuss an app's tests; the check covers what StackBench writes.
-  const prompt = (lines: string[]): string => {
-    const text = lines.join('\n');
-    assertAgentVisibleText(skills ? text.replace(skills, '') : text);
-    return text;
-  };
+  // The skills are installed in the agent's own skills folder; the prompt only says where.
+  const skillIds = materials.skillIds ?? args.skills ?? [];
+  const prompt = (lines: string[]): string => assertAgentVisibleText(lines.join('\n'));
   const applicationInterface = args.guidanceDocument?.applicationInterface
     ?? resolveDefaultGuidanceForStack(args.guidance, args.backend)
       ?.documents[args.backend]?.applicationInterface;
@@ -636,7 +632,10 @@ export function buildPrompt(args: AgentArgs, p: StackRunPorts, track: Track,
     agentVisibleContractText(backendDoc(args, p, track), args.credentialAliases,
       applicationInterface),
   ];
-  if (skills) common.push('', '## Selected API reference', '', skills);
+  if (skillIds.length) {
+    common.push('', `This stack's agent skills are installed in ${CODING_PROVIDERS[args.provider].skillsDirectory}: `
+      + `${skillIds.join(', ')}.`);
+  }
 
   if (args.mode === 'resume') {
     return prompt([
@@ -781,7 +780,7 @@ async function main() {
   // Print the exact prompt without starting a session or changing the app.
   if (args.printPrompt) {
     process.stdout.write(buildPrompt(args, p, track,
-      { skillsText, requirementText, contractText, startingCatalog }));
+      { skillIds: selectedSkills, requirementText, contractText, startingCatalog }));
     return;
   }
   if (args.mode === 'build') {
@@ -796,7 +795,7 @@ async function main() {
   writeFileSync(resolve(args.app, '..', '.stack-bench-backend'), args.backend);
 
   const prompt = buildPrompt(args, p, track,
-    { skillsText, requirementText, contractText, startingCatalog });
+    { skillIds: selectedSkills, requirementText, contractText, startingCatalog });
   const bugReportPath = join(args.app, CODING_CONTAINER_BUG_REPORT_FILE);
   const bugReportText = args.mode === 'fix' && existsSync(bugReportPath)
     ? readFileSync(bugReportPath, 'utf8') : null;
@@ -885,6 +884,7 @@ async function main() {
           '--image', imageIdentity.id,
           '--effort', EFFORT,
           '--model', args.model,
+          '--skills-json', JSON.stringify(selectedSkills),
           '--web-search', toolPolicySwitch(TOOLS.webSearch),
           '--subagents', toolPolicySwitch(TOOLS.subagents),
           ...(args.pricing ? ['--pricing-json', JSON.stringify(args.pricing)] : []),
@@ -945,6 +945,7 @@ async function main() {
       effort: EFFORT,
       tools: TOOLS,
       skills: selectedSkills,
+      ...(selectedSkills.length ? { skillsDirectory: CODING_PROVIDERS[args.provider].skillsDirectory } : {}),
       cacheTier: args.provider === 'anthropic' ? '5m' : 'provider-managed',
       autoUpdater: 'disabled',
       codingInterruptionRetries: { limit: retryLimit,

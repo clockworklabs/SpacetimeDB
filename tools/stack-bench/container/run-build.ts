@@ -40,7 +40,10 @@ import { ensureFreshGrokLogin } from '../src/agents/grok-login.js';
 import { ensureFreshAgyLogin } from '../src/agents/agy-login.js';
 import { agyRenewal } from './agy-renewal.js';
 import { validateProviderRoute, validateProviderOutputLimit } from '../src/agents/agent-adapter-contract.js';
-import { REPOSITORY_ROOT } from '../src/package-root.js';
+import { REPOSITORY_ROOT, STACK_BENCH_ROOT } from '../src/package-root.js';
+import { readAgentSkillFiles } from '../src/agents/agent-materials.js';
+import { installAgentSkills } from './agent-skills.js';
+import type { AgentSkillFile } from './agent-skills.js';
 import { DEFAULT_TOOL_POLICY, parseToolPolicySwitch, unavailableToolsReason } from '../src/agents/tool-policy.js';
 import type { ToolPolicy } from '../src/agents/tool-policy.js';
 
@@ -59,6 +62,7 @@ const { values } = parseArgs({ options: {
   'recover-stopped-container': { type: 'boolean' },
   'completion-marker': { type: 'string' }, ports: { type: 'string' },
   'web-search': { type: 'string' }, subagents: { type: 'string' },
+  'skills-json': { type: 'string' },
 } });
 const prepareOnly = values['prepare-only'] ?? false;
 
@@ -164,6 +168,12 @@ if (!prepareOnly && !/^[A-Z][A-Z0-9_]*$/.test(completionMarker ?? '')) {
 let ports: string[] = [];
 try { ports = parsePublishedPorts(values.ports); }
 catch (error) { console.error(`run-build.js: ${errorMessage(error)}`); process.exit(2); }
+let skills: AgentSkillFile[] = [];
+try {
+  const ids: unknown = JSON.parse(values['skills-json'] ?? '[]');
+  if (!Array.isArray(ids) || ids.some(id => typeof id !== 'string')) throw new Error('--skills-json must be an array of skill ids');
+  skills = readAgentSkillFiles(STACK_BENCH_ROOT, ids as string[]);
+} catch (error) { console.error(`run-build.js: ${errorMessage(error)}`); process.exit(2); }
 
 const containerPlan = adapter!.buildContainer.plan({
   repo: REPO, appDir, env: process.env,
@@ -566,6 +576,15 @@ if (prepareOnly) {
     identity: `${containerId} ${containerImage}`,
     networkMode: expectedNetworkMode })}\n`);
   return;
+}
+
+// Every session reinstalls the skills, so the agent always starts from the recorded files.
+try {
+  installAgentSkills({ containerName, user: `${AGENT_UID}:${AGENT_GID}`, directory: codingProvider.skillsDirectory,
+    skills, env: dockerEnv, timeoutMs: DOCKER_PROBE_TIMEOUT_MS });
+} catch (error) {
+  console.error(`run-build.js: ${errorMessage(error)}`);
+  process.exit(2);
 }
 
 const args = ['exec', '-i', '--user', `${AGENT_UID}:${AGENT_GID}`, '-w', CODING_CONTAINER_APP_ROOT];

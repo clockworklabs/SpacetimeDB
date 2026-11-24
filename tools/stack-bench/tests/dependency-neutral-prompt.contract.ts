@@ -22,7 +22,7 @@ test('production framing is one sentence and never changes restoration prompts',
     for (const mode of ['build', 'upgrade', 'fix', 'resume']) {
     const argv = ['node', 'agent', '--mode', mode, '--backend', backend, '--level', String(level), '--app', '/app', '--guidance', 'neutral'];
     const enabled = parseAgentArgs(argv), disabled = parseAgentArgs([...argv, '--no-production-quality']);
-    const materials = { skillsText: '', requirementText: 'Build the requested store.', contractText: '' };
+    const materials = { skillIds: [], requirementText: 'Build the requested store.', contractText: '' };
     const render = (args: typeof enabled) => buildPrompt(args, portsFor(track, backend, 0), track, materials);
     const on = render(enabled), off = render(disabled);
     assert.equal(on.includes(sentence), mode !== 'resume');
@@ -30,14 +30,22 @@ test('production framing is one sentence and never changes restoration prompts',
   }
 });
 
-test('the disclosure check covers StackBench text and leaves supplied skills alone', () => {
+test('the prompt names the installed skills and the disclosure check covers all of it', () => {
   const track = loadTrack('ecommerce');
-  const args = parseAgentArgs(['node', 'agent', '--mode', 'build', '--backend', 'spacetime', '--level', '1',
-    '--app', '/app', '--guidance', 'neutral']);
-  const render = (skillsText: string, requirementText: string) => buildPrompt(args, portsFor(track, 'spacetime', 0),
-    track, { skillsText, requirementText, contractText: '' });
-  assert.match(render('## Module Unit Tests', 'Build the requested store.'), /## Module Unit Tests/);
-  assert.throws(() => render('## Module Unit Tests', 'Pass the tests.'), /contains internal language/);
+  const args = parseAgentArgs(['node', 'agent', '--mode', 'build', '--backend', 'spacetime',
+    '--level', '1', '--app', '/app', '--guidance', 'neutral']);
+  const render = (provider: typeof args.provider, skillIds: string[], requirementText: string) => buildPrompt(
+    { ...args, provider }, portsFor(track, 'spacetime', 0), track, { skillIds, requirementText, contractText: '' });
+  const ids = ['typescript-server', 'typescript-client', 'cli', 'spacetime-dev'];
+  for (const [provider, directory] of [['anthropic', '/home/developer/.claude/skills'],
+    ['openai', '/home/developer/.codex/skills'], ['xai', '/home/developer/.grok/skills'],
+    ['google', '/home/developer/.gemini/config/skills']] as const) {
+    const prompt = render(provider, ids, 'Build the requested store.');
+    assert.equal(prompt.split(`This stack's agent skills are installed in ${directory}: ${ids.join(', ')}.`).length, 2);
+    assert.doesNotMatch(prompt, /## Selected API reference|subscriptionBuilder/);
+  }
+  assert.doesNotMatch(render('anthropic', [], 'Build the requested store.'), /agent skills/);
+  assert.throws(() => render('anthropic', ids, 'Pass the tests.'), /contains internal language/);
 });
 
 const AGENT = resolve(STACK_BENCH_ROOT, 'dist', 'commands', 'agent.js');
@@ -74,10 +82,11 @@ test('SDK skills and dev guidance vary independently without changing product re
     const task = resolveProgressionRecipeLevelSelection(binding, catalog, level, { cumulative: true }).agent.request;
     for (const stack of STACKS) for (const repair of [false, true]) {
       const prompts = profiles.map(guidance => {
-        const skills = readAgentSkillDocuments(STACK_BENCH_ROOT, guidance.skills[stack]!.ids);
+        const ids = guidance.skills[stack]!.ids;
         const prompt = renderPrompt({ level, stack, task, guidance, repair });
-        assert(prompt.includes(skills));
-        return skills ? prompt.replace('\n\n## Selected API reference\n\n' + skills, '') : prompt;
+        const pointer = `\n\nThis stack's agent skills are installed in /home/developer/.claude/skills: ${ids.join(', ')}.`;
+        assert.equal(prompt.includes(pointer), ids.length > 0);
+        return ids.length ? prompt.replace(pointer, '') : prompt;
       });
       for (const prompt of prompts) {
         assert.equal(prompt, prompts[0], `${stack} L${level}${repair ? ' repair' : ''} differs outside the supplied skills`);
@@ -118,7 +127,7 @@ function renderPrompt({ level, stack, task, guidance, repair = false, cli = fals
     const binding = resolveRecipeRelease(track, level, 'ecommerce.progression-catalog');
     const selected = resolveBoundRecipeTaskRequest(binding, args.recipeTask!);
     return buildPrompt(args, portsFor(track, stack, 0), track, {
-      skillsText: readAgentSkillDocuments(STACK_BENCH_ROOT, skills.ids),
+      skillIds: skills.ids,
       requirementText: selected.task.requirementText,
       contractText: selected.task.contractText,
       startingCatalog: JSON.stringify({
@@ -201,7 +210,7 @@ test('neutral dependency prompts include only selected product and stack contrac
         // Stock takes native writes, which a view cannot accept on every stack.
         if (request.includes('Stock data interface')) {
           stockInterfaces++;
-          assert.match(request, /`warehouse(id, name)`, and as+singular native table `stock(item_id, warehouse_id, quantity)`/);
+          assert.match(request, /`warehouse\(id, name\)`, and a\s+singular native table `stock\(item_id, warehouse_id, quantity\)`/);
         }
       }
       if (level === 2) {
@@ -306,12 +315,9 @@ test('direct neutral guidance uses the current stack access documents', () => {
       assert.match(prompt, /Serve the complete application on `\d+`/);
       assert.doesNotMatch(prompt, /Application service port/);
     } else {
-      assert.match(prompt, /withToken/);
-      if (guidance === 'prescribed') assert.match(prompt, /localStorage/);
-      else {
-        assert.match(prompt, /spacetime publish/);
-        assert.match(prompt, /ctx\.sender/);
-      }
+      const ids = resolveGuidanceProfile(guidance, STACKS).skills.spacetime!.ids;
+      assert(ids.length > 0);
+      assert(prompt.includes(`This stack's agent skills are installed in /home/developer/.claude/skills: ${ids.join(', ')}.`));
     }
   }
 });
