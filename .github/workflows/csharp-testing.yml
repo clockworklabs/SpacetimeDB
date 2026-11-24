@@ -1,0 +1,141 @@
+name: C# Testing Packages
+
+on:
+  workflow_call:
+    inputs:
+      use-release-tag:
+        type: boolean
+        default: false
+      release-tag:
+        type: string
+        default: ""
+      # Pull requests build and test linux-x64 only. Everything that lands or ships covers all platforms.
+      all-platforms:
+        type: boolean
+        default: true
+    outputs:
+      package-version:
+        value: ${{ jobs.prepare.outputs.package-version }}
+      source-sha:
+        value: ${{ jobs.prepare.outputs.sha }}
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    outputs:
+      sha: ${{ steps.prepare.outputs.sha }}
+      package-version: ${{ steps.prepare.outputs.package-version }}
+      platforms: ${{ steps.prepare.outputs.platforms }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: ${{ inputs.use-release-tag && '0' || '1' }}
+      - uses: dsherret/rust-toolchain-file@v1
+      - id: prepare
+        env:
+          RELEASE_TAG: ${{ inputs.release-tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          cargo ci other-workflows csharp-testing-packages prepare
+          --use-release-tag ${{ inputs.use-release-tag }} --all-platforms ${{ inputs.all-platforms }}
+
+  csharp_testing_native:
+    needs: prepare
+    name: C# testing native bridge (${{ matrix.rid }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.platforms) }}
+    env:
+      RUST_BACKTRACE: full
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: dsherret/rust-toolchain-file@v1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: csharp-testing-${{ matrix.rid }}
+          # Only CI pushes to master populate the cache, so pull requests don't evict each other's entries
+          # and release runs never write the cache every branch reads.
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Build, inspect and test native bridge
+        run: cargo ci other-workflows csharp-testing-packages native --rid ${{ matrix.rid }}
+
+      - name: Upload tested native bridge
+        uses: actions/upload-artifact@v4
+        with:
+          name: spacetimedb-testing-native-${{ matrix.rid }}
+          path: native/
+          if-no-files-found: error
+          retention-days: 14
+
+  csharp_testing_pack:
+    needs: [prepare, csharp_testing_native]
+    name: Assemble C# testing packages
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: dsherret/rust-toolchain-file@v1
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: spacetimedb-testing-native-*
+          merge-multiple: true
+          path: native
+
+      - name: Pack and check complete package set
+        run: >-
+          cargo ci other-workflows csharp-testing-packages pack
+          --version ${{ needs.prepare.outputs.package-version }} --all-platforms ${{ inputs.all-platforms }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spacetimedb-testing-packages
+          path: feed/*.nupkg
+          if-no-files-found: error
+          retention-days: 14
+
+  csharp_testing_packages:
+    needs: [prepare, csharp_testing_pack]
+    name: C# testing package acceptance (${{ matrix.rid }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.platforms) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: dsherret/rust-toolchain-file@v1
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/download-artifact@v4
+        with:
+          name: spacetimedb-testing-packages
+          path: feed
+
+      - name: Check C# testing NuGet packages
+        run: >-
+          cargo ci other-workflows csharp-testing-packages accept
+          --version ${{ needs.prepare.outputs.package-version }} --rid ${{ matrix.rid }}

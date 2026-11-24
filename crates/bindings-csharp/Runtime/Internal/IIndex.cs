@@ -3,18 +3,50 @@ namespace SpacetimeDB.Internal;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Text;
 using SpacetimeDB.BSATN;
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
+using System.Text;
+#endif
+
+// Managed builds have additional constructors; keep the declarations shared with WASM.
+#pragma warning disable IDE0290
 
 public abstract class IndexBase<Row>
     where Row : IStructuralReadWrite, new()
 {
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
     internal readonly FFI.IndexId indexId;
+#endif
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    private readonly TableAccessor accessor;
+    private readonly string indexName;
+
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    protected IndexBase(TableAccessor accessor, string name)
+    {
+        this.accessor = accessor;
+        indexName = name;
+    }
+
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    protected IEnumerable<Row> ScanPoint(byte[] point) =>
+        accessor.IndexScanPoint<Row>(indexName, point);
+
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    protected bool DeletePoint(byte[] point) => accessor.IndexDeletePoint(indexName, point);
+
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    protected byte[] UpdateRow(byte[] row) => accessor.Update(indexName, row);
+#endif
 
     public IndexBase(string name)
     {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        throw new InvalidOperationException("Managed indexes require a bound table accessor.");
+#else
         var name_bytes = System.Text.Encoding.UTF8.GetBytes(name);
         FFI.index_id_from_name(name_bytes, name_bytes.Length, out indexId);
+#endif
     }
 
     private static void ToParams<Bounds>(
@@ -44,12 +76,35 @@ public abstract class IndexBase<Row>
     }
 
     protected IEnumerable<Row> DoFilter<Bounds>(Bounds bounds)
-        where Bounds : IBTreeIndexBounds => new RawTableIter<Bounds>(indexId, bounds);
+        where Bounds : IBTreeIndexBounds
+    {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        ToParams(bounds, out _, out var prefix, out var start, out var end);
+        return accessor.IndexScanRange<Row>(
+            indexName,
+            bounds.PrefixElems,
+            prefix.ToArray(),
+            start.ToArray(),
+            end.ToArray()
+        );
+#else
+        return new RawTableIter<Bounds>(indexId, bounds);
+#endif
+    }
 
     protected uint DoDelete<Bounds>(Bounds bounds)
         where Bounds : IBTreeIndexBounds
     {
         ToParams(bounds, out var prefixElems, out var prefix, out var rstart, out var rend);
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        return accessor.IndexDeleteRange(
+            indexName,
+            bounds.PrefixElems,
+            prefix.ToArray(),
+            rstart.ToArray(),
+            rend.ToArray()
+        );
+#else
         FFI.datastore_delete_by_index_scan_range_bsatn(
             indexId,
             prefix,
@@ -62,8 +117,10 @@ public abstract class IndexBase<Row>
             out var out_
         );
         return out_;
+#endif
     }
 
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
     private class RawTableIter<Bounds>(FFI.IndexId indexId, Bounds bounds) : RawTableIterBase<Row>
         where Bounds : IBTreeIndexBounds
     {
@@ -83,27 +140,48 @@ public abstract class IndexBase<Row>
             );
         }
     }
+#endif
 }
 
-public abstract class ReadOnlyIndexBase<Row>(string name) : IndexBase<Row>(name)
+public abstract class ReadOnlyIndexBase<Row> : IndexBase<Row>
     where Row : IStructuralReadWrite, new()
 {
+    public ReadOnlyIndexBase(string name)
+        : base(name) { }
+
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    protected ReadOnlyIndexBase(TableAccessor accessor, string name)
+        : base(accessor, name) { }
+#endif
+
     protected IEnumerable<Row> Filter<Bounds>(Bounds bounds)
         where Bounds : IBTreeIndexBounds => DoFilter(bounds);
 }
 
-public abstract class UniqueIndex<Handle, Row, T, RW>(string name) : IndexBase<Row>(name)
+public abstract class UniqueIndex<Handle, Row, T, RW> : IndexBase<Row>
     where Handle : ITableView<Handle, Row>
     where Row : struct, IStructuralReadWrite
     where RW : struct, BSATN.IReadWrite<T>
 {
+    public UniqueIndex(string name)
+        : base(name) { }
+
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    protected UniqueIndex(TableAccessor accessor, string name)
+        : base(accessor, name) { }
+#endif
+
     private static BTreeIndexBounds<T, RW> ToBounds(T key) => new(key);
 
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
     private sealed class RawPointIter(FFI.IndexId indexId, byte[] point) : RawTableIterBase<Row>
     {
         protected override void IterStart(out FFI.RowIter handle) =>
             FFI.datastore_index_scan_point_bsatn(indexId, point, point.Length, out handle);
     }
+#endif
 
     protected IEnumerable<Row> DoFilter(T key) => DoFilter(ToBounds(key));
 
@@ -113,6 +191,9 @@ public abstract class UniqueIndex<Handle, Row, T, RW>(string name) : IndexBase<R
         using var w = new BinaryWriter(s);
         new RW().Write(w, key);
         var point = s.ToArray();
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        return DeletePoint(point);
+#else
         FFI.datastore_delete_by_index_scan_point_bsatn(
             indexId,
             point,
@@ -120,6 +201,7 @@ public abstract class UniqueIndex<Handle, Row, T, RW>(string name) : IndexBase<R
             out var numDeleted
         );
         return numDeleted > 0;
+#endif
     }
 
     protected Row? FindSingle(T key)
@@ -129,7 +211,11 @@ public abstract class UniqueIndex<Handle, Row, T, RW>(string name) : IndexBase<R
         new RW().Write(w, key);
         var point = s.ToArray();
 
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        using var e = ScanPoint(point).GetEnumerator();
+#else
         using var e = new RawPointIter(indexId, point).GetEnumerator();
+#endif
         if (!e.MoveNext())
         {
             return null;
@@ -144,33 +230,59 @@ public abstract class UniqueIndex<Handle, Row, T, RW>(string name) : IndexBase<R
         return row;
     }
 
-    protected Row DoUpdate(Row row) => UpdateRow(row, ITableView<Handle, Row>.tableId);
+    protected Row DoUpdate(Row row)
+    {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        var bytes = IStructuralReadWrite.ToBytes(row);
+        var generated = UpdateRow(bytes);
+        return ITableView<Handle, Row>.IntegrateGeneratedColumns(row, generated, generated.Length);
+#else
+        return UpdateRow(row, ITableView<Handle, Row>.tableId);
+#endif
+    }
 
-    protected Row DoUpdate(Row row, TableHandle table) => UpdateRow(row, table.Id);
+    protected Row DoUpdate(Row row, TableHandle table) =>
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        DoUpdate(row);
+#else
+        UpdateRow(row, table.Id);
+#endif
 
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
     private Row UpdateRow(Row row, FFI.TableId tableId)
     {
-        // Insert the row.
         var bytes = IStructuralReadWrite.ToBytes(row);
         var bytes_len = bytes.Length;
         FFI.datastore_update_bsatn(tableId, indexId, bytes, ref bytes_len);
 
         return ITableView<Handle, Row>.IntegrateGeneratedColumns(row, bytes, bytes_len);
     }
+#endif
 }
 
-public abstract class RefUniqueIndex<Handle, Row, T, RW>(string name) : IndexBase<Row>(name)
+public abstract class RefUniqueIndex<Handle, Row, T, RW> : IndexBase<Row>
     where Handle : ITableView<Handle, Row>
     where Row : class, IStructuralReadWrite, new()
     where RW : struct, BSATN.IReadWrite<T>
 {
+    public RefUniqueIndex(string name)
+        : base(name) { }
+
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    protected RefUniqueIndex(TableAccessor accessor, string name)
+        : base(accessor, name) { }
+#endif
+
     private static BTreeIndexBounds<T, RW> ToBounds(T key) => new(key);
 
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
     private sealed class RawPointIter(FFI.IndexId indexId, byte[] point) : RawTableIterBase<Row>
     {
         protected override void IterStart(out FFI.RowIter handle) =>
             FFI.datastore_index_scan_point_bsatn(indexId, point, point.Length, out handle);
     }
+#endif
 
     protected IEnumerable<Row> DoFilter(T key) => DoFilter(ToBounds(key));
 
@@ -180,6 +292,9 @@ public abstract class RefUniqueIndex<Handle, Row, T, RW>(string name) : IndexBas
         using var w = new BinaryWriter(s);
         new RW().Write(w, key);
         var point = s.ToArray();
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        return DeletePoint(point);
+#else
         FFI.datastore_delete_by_index_scan_point_bsatn(
             indexId,
             point,
@@ -187,6 +302,7 @@ public abstract class RefUniqueIndex<Handle, Row, T, RW>(string name) : IndexBas
             out var numDeleted
         );
         return numDeleted > 0;
+#endif
     }
 
     protected Row? FindSingle(T key)
@@ -196,7 +312,11 @@ public abstract class RefUniqueIndex<Handle, Row, T, RW>(string name) : IndexBas
         new RW().Write(w, key);
         var point = s.ToArray();
 
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        using var e = ScanPoint(point).GetEnumerator();
+#else
         using var e = new RawPointIter(indexId, point).GetEnumerator();
+#endif
         if (!e.MoveNext())
         {
             return null;
@@ -211,34 +331,59 @@ public abstract class RefUniqueIndex<Handle, Row, T, RW>(string name) : IndexBas
         return row;
     }
 
-    protected Row DoUpdate(Row row) => UpdateRow(row, ITableView<Handle, Row>.tableId);
+    protected Row DoUpdate(Row row)
+    {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        var bytes = IStructuralReadWrite.ToBytes(row);
+        var generated = UpdateRow(bytes);
+        return ITableView<Handle, Row>.IntegrateGeneratedColumns(row, generated, generated.Length);
+#else
+        return UpdateRow(row, ITableView<Handle, Row>.tableId);
+#endif
+    }
 
-    protected Row DoUpdate(Row row, TableHandle table) => UpdateRow(row, table.Id);
+    protected Row DoUpdate(Row row, TableHandle table) =>
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        DoUpdate(row);
+#else
+        UpdateRow(row, table.Id);
+#endif
 
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
     private Row UpdateRow(Row row, FFI.TableId tableId)
     {
-        // Insert the row.
         var bytes = IStructuralReadWrite.ToBytes(row);
         var bytes_len = bytes.Length;
         FFI.datastore_update_bsatn(tableId, indexId, bytes, ref bytes_len);
 
         return ITableView<Handle, Row>.IntegrateGeneratedColumns(row, bytes, bytes_len);
     }
+#endif
 }
 
-public abstract class ReadOnlyUniqueIndex<Handle, Row, T, RW>(string name)
-    : ReadOnlyIndexBase<Row>(name)
+public abstract class ReadOnlyUniqueIndex<Handle, Row, T, RW> : ReadOnlyIndexBase<Row>
     where Handle : ReadOnlyTableView<Row>
     where Row : struct, IStructuralReadWrite
     where RW : struct, BSATN.IReadWrite<T>
 {
+    public ReadOnlyUniqueIndex(string name)
+        : base(name) { }
+
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    protected ReadOnlyUniqueIndex(TableAccessor accessor, string name)
+        : base(accessor, name) { }
+#endif
+
     private static BTreeIndexBounds<T, RW> ToBounds(T key) => new(key);
 
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
     private sealed class RawPointIter(FFI.IndexId indexId, byte[] point) : RawTableIterBase<Row>
     {
         protected override void IterStart(out FFI.RowIter handle) =>
             FFI.datastore_index_scan_point_bsatn(indexId, point, point.Length, out handle);
     }
+#endif
 
     protected IEnumerable<Row> Filter(T key) => Filter(ToBounds(key));
 
@@ -249,7 +394,11 @@ public abstract class ReadOnlyUniqueIndex<Handle, Row, T, RW>(string name)
         new RW().Write(w, key);
         var point = s.ToArray();
 
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        using var e = ScanPoint(point).GetEnumerator();
+#else
         using var e = new RawPointIter(indexId, point).GetEnumerator();
+#endif
         if (!e.MoveNext())
         {
             return null;
@@ -265,19 +414,29 @@ public abstract class ReadOnlyUniqueIndex<Handle, Row, T, RW>(string name)
     }
 }
 
-public abstract class ReadOnlyRefUniqueIndex<Handle, Row, T, RW>(string name)
-    : ReadOnlyIndexBase<Row>(name)
+public abstract class ReadOnlyRefUniqueIndex<Handle, Row, T, RW> : ReadOnlyIndexBase<Row>
     where Handle : ReadOnlyTableView<Row>
     where Row : class, IStructuralReadWrite, new()
     where RW : struct, BSATN.IReadWrite<T>
 {
+    public ReadOnlyRefUniqueIndex(string name)
+        : base(name) { }
+
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    protected ReadOnlyRefUniqueIndex(TableAccessor accessor, string name)
+        : base(accessor, name) { }
+#endif
+
     private static BTreeIndexBounds<T, RW> ToBounds(T key) => new(key);
 
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
     private sealed class RawPointIter(FFI.IndexId indexId, byte[] point) : RawTableIterBase<Row>
     {
         protected override void IterStart(out FFI.RowIter handle) =>
             FFI.datastore_index_scan_point_bsatn(indexId, point, point.Length, out handle);
     }
+#endif
 
     protected IEnumerable<Row> Filter(T key) => Filter(ToBounds(key));
 
@@ -288,7 +447,11 @@ public abstract class ReadOnlyRefUniqueIndex<Handle, Row, T, RW>(string name)
         new RW().Write(w, key);
         var point = s.ToArray();
 
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        using var e = ScanPoint(point).GetEnumerator();
+#else
         using var e = new RawPointIter(indexId, point).GetEnumerator();
+#endif
         if (!e.MoveNext())
         {
             return null;
@@ -307,7 +470,19 @@ public abstract class ReadOnlyRefUniqueIndex<Handle, Row, T, RW>(string name)
 public abstract class ReadOnlyTableView<Row>
     where Row : IStructuralReadWrite, new()
 {
+#if !NET10_0_OR_GREATER || SPACETIMEDB_WASM_RUNTIME
     private readonly FFI.TableId tableId;
+#endif
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    protected readonly TableAccessor __access;
+
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    protected ReadOnlyTableView(TableAccessor accessor)
+    {
+        __access = accessor;
+    }
+#endif
 
     private sealed class TableIter(FFI.TableId tableId) : RawTableIterBase<Row>
     {
@@ -317,15 +492,28 @@ public abstract class ReadOnlyTableView<Row>
 
     protected ReadOnlyTableView(string tableName)
     {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        throw new InvalidOperationException("Managed tables require a bound table accessor.");
+#else
         var nameBytes = Encoding.UTF8.GetBytes(tableName);
         FFI.table_id_from_name(nameBytes, nameBytes.Length, out tableId);
+#endif
     }
 
     protected ulong DoCount()
     {
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        return __access.Count();
+#else
         FFI.datastore_table_row_count(tableId, out var count);
         return count;
+#endif
     }
 
-    protected IEnumerable<Row> DoIter() => new TableIter(tableId);
+    protected IEnumerable<Row> DoIter() =>
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+        __access.Iter<Row>();
+#else
+        new TableIter(tableId);
+#endif
 }

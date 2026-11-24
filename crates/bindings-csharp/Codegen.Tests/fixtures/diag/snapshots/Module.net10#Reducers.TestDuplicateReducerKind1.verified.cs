@@ -4,57 +4,18 @@
 
 partial class Reducers
 {
-    private static string __ScheduleTestDuplicateReducerKind1Name =>
-        field ??= global::SpacetimeDB.Internal.Module.ResolveFunctionName(
-            "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null",
-            nameof(TestDuplicateReducerKind1),
-            null
-        );
-
     [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
-    public static void VolatileNonatomicScheduleImmediateTestDuplicateReducerKind1()
-    {
-        using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream);
-
-        SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(
-            __ScheduleTestDuplicateReducerKind1Name,
-            stream
+    public static void VolatileNonatomicScheduleImmediateTestDuplicateReducerKind1() =>
+        throw new System.NotSupportedException(
+            "VolatileNonatomicScheduleImmediate is unavailable in managed module tests. Call the function directly."
         );
-    }
-
-    private static string?[] __ScheduleTestDuplicateReducerKind1Names =>
-        field ??= new string?[global::SpacetimeDB.Internal.Module.InstanceCount];
-
-    private static string __ResolveScheduleTestDuplicateReducerKind1Name(int contextInstance)
-    {
-        var names = __ScheduleTestDuplicateReducerKind1Names;
-        if (names[contextInstance] is { } name)
-        {
-            return name;
-        }
-        var instance = global::SpacetimeDB.Internal.Module.ResolveInstance(
-            contextInstance,
-            "diag, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
-        );
-        return names[contextInstance] = names[instance] ??=
-            global::SpacetimeDB.Internal.Module.ResolveFunctionName(
-                instance,
-                nameof(TestDuplicateReducerKind1),
-                null
-            );
-    }
 
     [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
     public static void VolatileNonatomicScheduleImmediateTestDuplicateReducerKind1<__Context>(
         __Context __context
     )
-        where __Context : global::SpacetimeDB.Internal.IModuleContext
-    {
-        var __name = __ResolveScheduleTestDuplicateReducerKind1Name(__context.InstanceId);
-        using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream);
-
-        SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(__name, stream);
-    }
+        where __Context : global::SpacetimeDB.Internal.IModuleContext =>
+        throw new System.NotSupportedException(
+            "VolatileNonatomicScheduleImmediate is unavailable in managed module tests. Call the function directly."
+        );
 } // Reducers
