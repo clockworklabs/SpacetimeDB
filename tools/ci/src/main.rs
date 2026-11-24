@@ -120,6 +120,10 @@ const COMMANDS: &[Command] = &[
         path: &["other-workflows", "cache-warm"],
         package: "ci-cache-warm",
     },
+    Command {
+        path: &["other-workflows", "csharp-testing-packages"],
+        package: "ci-csharp-testing-packages",
+    },
 ];
 
 fn print_help() {
