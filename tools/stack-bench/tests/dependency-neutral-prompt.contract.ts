@@ -317,6 +317,10 @@ test('direct neutral guidance uses the current stack access documents', () => {
     } else {
       const ids = resolveGuidanceProfile(guidance, STACKS).skills.spacetime!.ids;
       assert(ids.length > 0);
+      // Convex and Supabase name the address the browser uses; the server URI is that address here.
+      if (guidance === 'neutral') {
+        assert.match(prompt, /The browser and this environment both reach the server at `http://[^`]+`./);
+      }
       assert(prompt.includes(`This stack's agent skills are installed in /home/developer/.claude/skills: ${ids.join(', ')}.`));
     }
   }

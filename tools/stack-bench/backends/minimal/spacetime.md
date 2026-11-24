@@ -17,6 +17,8 @@ Use the connection settings below.
 | Module source directory | `/app/backend/spacetimedb` |
 | Web application | `http://localhost:<VITE_PORT>` |
 
+The browser and this environment both reach the server at `<STDB_URI>`.
+
 Publish only the named module to the exact server URI. Local publish and
 development commands must use `--yes`. Do not pipe confirmation input, publish
 anonymously, or use the hosted service. Create `/app/start.sh`. From a clean
