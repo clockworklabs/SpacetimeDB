@@ -63,8 +63,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: csharp-testing-${{ matrix.rid }}
-          # Only master populates the cache, so pull requests don't evict each other's entries.
-          save-if: ${{ github.ref == 'refs/heads/master' }}
+          # Only CI pushes to master populate the cache, so pull requests don't evict each other's entries
+          # and release runs never write the cache every branch reads.
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
