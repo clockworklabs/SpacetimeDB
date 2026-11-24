@@ -4,7 +4,7 @@ import { join, relative, resolve, sep } from 'node:path';
 import { ARTIFACT_FILE, currentEngineIdentity, readArtifact } from '../evidence/artifacts.js';
 import type { Artifact } from '../evidence/artifacts.js';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
-import { hashDirectory } from '../evidence/provenance.js';
+import { adoptRecordedSourceIdentity } from './source-snapshot.js';
 import type { LevelCheckpoint } from './source-checkpoint.js';
 import type { RunRepairRecord } from '../evidence/benchmark-run.js';
 
@@ -279,7 +279,7 @@ export function inspectRepairParent(parentDirectory: string,
     || checkpoint.payload.selectionSha256 !== (level.selection?.sha256 ?? null)) {
     throw new Error('checkpoint does not bind the parent level result');
   }
-  const source = hashDirectory(sourcePath);
+  const source = adoptRecordedSourceIdentity(sourcePath, checkpointRef);
   if (source.sha256 !== checkpointRef.sha256 || source.files.length !== checkpointRef.files) {
     throw new Error('checkpoint source bytes do not match their recorded identity');
   }

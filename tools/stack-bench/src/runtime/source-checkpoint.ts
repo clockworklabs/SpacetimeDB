@@ -6,7 +6,6 @@ import { ARTIFACT_FILE, readArtifactPayload, writeArtifact } from '../evidence/a
 import type { GradeBundlePayload } from '../evidence/benchmark-run.js';
 import { classifyBundle } from '../evidence/outcomes.js';
 import type { RunOutcome } from '../evidence/outcomes.js';
-import { hashDirectory } from '../evidence/provenance.js';
 import { hashAppSource, snapshotAppSource } from './source-snapshot.js';
 
 const HASH = /^[a-f0-9]{64}$/;
@@ -52,7 +51,7 @@ export function preserveFinalPackageEvidence(
     const live = hashAppSource(appDir);
     const sourceDirectory = join(outputDir, 'source');
     snapshotAppSource(appDir, sourceDirectory);
-    const saved = hashDirectory(sourceDirectory);
+    const saved = hashAppSource(sourceDirectory);
     if (saved.sha256 !== live.sha256 || saved.files.length !== live.files.length) {
       throw new Error('preserved final source differs from the live application source');
     }
@@ -113,7 +112,7 @@ export function preserveLevelCheckpoint({ appDir, outputDir, runId, identities,
   const sourcePath = join(outputDir, directory);
   const live = hashAppSource(appDir);
   snapshotAppSource(appDir, sourcePath);
-  const saved = hashDirectory(sourcePath);
+  const saved = hashAppSource(sourcePath);
   if (live.sha256 !== saved.sha256 || live.files.length !== saved.files.length) {
     throw new Error('preserved level source differs from the live application source');
   }

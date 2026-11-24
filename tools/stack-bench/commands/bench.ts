@@ -47,8 +47,8 @@ import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { SUPERVISOR_STATE_VERSION, writeRecoveryArtifact } from '../src/runtime/recovery.js';
 import { applyAgentCredential } from '../src/agents/agent-credentials.js';
-import { adoptRecordedSourceIdentity, assertPlainAppSourceTree, hashAppSource, resetAppToSource, seedAppSource,
-  snapshotAppSource } from '../src/runtime/source-snapshot.js';
+import { adoptRecordedSourceIdentity, assertPlainAppSourceTree, hashAppSource, matchRecordedSourceIdentity,
+  resetAppToSource, seedAppSource, snapshotAppSource } from '../src/runtime/source-snapshot.js';
 import { finalPackageEvidenceRequired, preserveFinalPackageEvidence, preserveLevelCheckpoint,
   sourceBoundFirstBuildOutcome } from '../src/runtime/source-checkpoint.js';
 import { materializationAppFailure, materializeAcceptedSource, restoreRepairSource }
@@ -2185,7 +2185,7 @@ async function main() {
       rmSync(path, { recursive: true, force: true });
       const live = hashAppSource(appDir);
       snapshotAppSource(appDir, path);
-      const preserved = hashDirectory(path);
+      const preserved = hashAppSource(path);
       if (live.sha256 !== preserved.sha256 || live.files.length !== preserved.files.length) {
         throw new Error('preserved repair source differs from the live application source');
       }
@@ -2201,7 +2201,7 @@ async function main() {
         candidateFailure = 'the interrupted repair left no source to grade';
       } else {
         const candidatePath = join(candidateRoot, candidate.directory);
-        const preserved = hashDirectory(candidatePath);
+        const preserved = matchRecordedSourceIdentity(candidatePath, candidate);
         if (preserved.sha256 !== candidate.sha256
           || preserved.files.length !== candidate.files) {
           candidateFailure = 'the interrupted repair source does not match its record';
@@ -2264,7 +2264,7 @@ async function main() {
     try {
       const liveSource = hashAppSource(appDir);
       snapshotAppSource(appDir, firstBuildPath);
-      const preservedSource = hashDirectory(firstBuildPath);
+      const preservedSource = hashAppSource(firstBuildPath);
       if (liveSource.sha256 !== preservedSource.sha256) {
         throw new Error('preserved first-build source differs from the live application source');
       }

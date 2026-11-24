@@ -10,8 +10,8 @@ import { ARTIFACT_FILE, currentEngineIdentity, readArtifact } from '../evidence/
 import type { Artifact } from '../evidence/artifacts.js';
 import type { GradeBundlePayload, RunLevelRecord, RunTotals }
   from '../evidence/benchmark-run.js';
-import { hashDirectory, sha256 } from '../evidence/provenance.js';
-import { hashAppSource, restoreAppSource, snapshotAppSource }
+import { sha256 } from '../evidence/provenance.js';
+import { adoptRecordedSourceIdentity, hashAppSource, restoreAppSource, snapshotAppSource }
   from '../runtime/source-snapshot.js';
 import { replayDependencyMode } from './dependency-mode.js';
 import type { DependencyScore } from './dependency-score.js';
@@ -183,7 +183,7 @@ export function timeContinuationEligibility(root: string): TimeContinuationEligi
       throw new Error('Continuation source escapes its execution.');
     }
     rejectSymlinks(source, 'continuation source');
-    const actual = hashDirectory(source);
+    const actual = adoptRecordedSourceIdentity(source, binding.source);
     if (actual.sha256 !== binding.source.sha256 || actual.files.length !== binding.source.files) {
       throw new Error('Continuation source changed after its boundary.');
     }
@@ -304,7 +304,7 @@ export function createLiveProgressionExecution(
       throw new Error('live dependency progression has no saved source');
     }
     rejectSymlinks(sourceDirectory, 'live dependency progression source');
-    const source = hashDirectory(sourceDirectory);
+    const source = hashAppSource(sourceDirectory);
     if (capture) {
       const live = hashAppSource(appDir);
       if (live.sha256 !== source.sha256 || live.files.length !== source.files.length) {
@@ -332,7 +332,7 @@ export function createLiveProgressionExecution(
       throw new Error('saved dependency progression source is outside its state directory');
     }
     rejectSymlinks(source, 'saved dependency progression source');
-    const actual = hashDirectory(source);
+    const actual = adoptRecordedSourceIdentity(source, resume.source);
     if (actual.sha256 !== resume.source.sha256 || actual.files.length !== resume.source.files) {
       throw new Error('saved dependency progression source does not match its state');
     }

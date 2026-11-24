@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { adoptRecordedSourceIdentity, assertAppSourceIdentity, assertPlainAppSourceTree, hashAppSource,
-  resetAppToSource, restoreAppSource, seedAppSource, snapshotAppSource, SOURCE_IDENTITY_RULE_VARIABLE }
+  matchRecordedSourceIdentity, resetAppToSource, restoreAppSource, seedAppSource, snapshotAppSource, SOURCE_IDENTITY_RULE_VARIABLE }
   from '../src/runtime/source-snapshot.js';
 
 const TOOL_CACHES = ['.apt', '.cache', '.debroot', '.libs', '.npm-cache', '.pw-browsers', '.pwcache'];
@@ -251,6 +251,12 @@ test('source identity leaves out what the app\'s own ignore files exclude, and o
     put(join(app, '.runtime', 'keys', 'service-key'), 'secret\n');
     const current = hashAppSource(app);
     assert.deepEqual([...current.files].sort(), ['.gitignore', 'server.mjs']);
+    // A level's saved copy keeps the ignored files and must hash like the live app it came from.
+    snapshotAppSource(app, join(root, 'saved'));
+    assert.equal(existsSync(join(root, 'saved', '.runtime', 'server.state')), true);
+    assert.equal(hashAppSource(join(root, 'saved')).sha256, current.sha256);
+    assert.equal(matchRecordedSourceIdentity(join(root, 'saved'), { sha256: hashAppSource(app, 'all-files').sha256 }).sha256,
+      hashAppSource(app, 'all-files').sha256);
     put(join(app, '.runtime', 'server.state'), '200 stamp\n');
     put(join(app, '.env.local'), 'STDB_URI=two\n');
     assert.equal(hashAppSource(app).sha256, current.sha256);

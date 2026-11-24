@@ -244,17 +244,29 @@ export function hashAppSource(appDir: string, rule: SourceIdentityRule = sourceI
     : withAppIgnoreCheck(appDir, check => hash(appIgnoreMatcher(appDir, check)));
 }
 
-// Use the rule that reproduces a saved source's recorded identity for the rest of this process.
-export function adoptRecordedSourceIdentity(appDir: string,
-  recorded: { sha256: string; files?: number }): HashFilesResult {
+function recordedSourceRule(appDir: string, recorded: { sha256: string; files?: number }) {
   for (const rule of ['app-ignore', 'all-files'] as const) {
     const source = hashAppSource(appDir, rule);
     if (source.sha256 === recorded.sha256 && (recorded.files === undefined || source.files.length === recorded.files)) {
-      process.env[SOURCE_IDENTITY_RULE_VARIABLE] = rule;
-      return source;
+      return { rule, source };
     }
   }
-  return hashAppSource(appDir);
+  return null;
+}
+
+// A saved source's hash under the rule that reproduces its record, or the current rule if none does.
+export function matchRecordedSourceIdentity(appDir: string,
+  recorded: { sha256: string; files?: number }): HashFilesResult {
+  return recordedSourceRule(appDir, recorded)?.source ?? hashAppSource(appDir);
+}
+
+// The same, and the rest of this process continues the saved work under that rule.
+export function adoptRecordedSourceIdentity(appDir: string,
+  recorded: { sha256: string; files?: number }): HashFilesResult {
+  const match = recordedSourceRule(appDir, recorded);
+  if (!match) return hashAppSource(appDir);
+  process.env[SOURCE_IDENTITY_RULE_VARIABLE] = match.rule;
+  return match.source;
 }
 
 export function assertAppSourceIdentity(appDir: string, expectedSha256: string,

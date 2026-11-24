@@ -14,7 +14,8 @@ import { aggregateRunOutcome, classifyBundle } from '../evidence/outcomes.js';
 import type { OutcomeBundle, RunOutcome as EvidenceRunOutcome } from '../evidence/outcomes.js';
 import type { BenchmarkRunRecord, GradeBundleSelection, RunLevelRecord }
   from '../evidence/benchmark-run.js';
-import { hashDirectory, sha256 } from '../evidence/provenance.js';
+import { sha256 } from '../evidence/provenance.js';
+import { matchRecordedSourceIdentity } from '../runtime/source-snapshot.js';
 import { dependencyLevelRepairRecords } from '../progression/dependency-mode.js';
 import { liveProgressionStatus } from '../progression/live-progression.js';
 import { DEPENDENCY_MODE_POLICY } from '../progression/dependency-definition.js';
@@ -245,13 +246,10 @@ function validatePackageEvidence(run: BenchmarkRun, resultDir: string | null,
     mismatch(true, 'packageEvidence');
     return;
   }
-  let source = null;
+  let sourcePath: string | null = join(resolve(resultDir), 'source');
   let grading = null;
-  try {
-    const sourcePath = join(resolve(resultDir), 'source');
-    if (!existsSync(sourcePath)) throw new Error('missing source');
-    source = hashDirectory(sourcePath);
-  } catch {
+  if (!existsSync(sourcePath)) {
+    sourcePath = null;
     mismatch(true, 'packageEvidence.source');
   }
   try {
@@ -261,7 +259,14 @@ function validatePackageEvidence(run: BenchmarkRun, resultDir: string | null,
   } catch {
     mismatch(true, 'packageEvidence.grading');
   }
-  if (!source || !grading) return;
+  if (!sourcePath || !grading) return;
+  let source;
+  try {
+    source = matchRecordedSourceIdentity(sourcePath, { sha256: String(grading.source?.sha256 ?? '') });
+  } catch {
+    mismatch(true, 'packageEvidence.source');
+    return;
+  }
   mismatch(grading.source?.sha256 !== source.sha256,
     'packageEvidence.grading.sourceSha256');
   mismatch(grading.selection?.sha256 !== finalGradedLevel.selection?.sha256,

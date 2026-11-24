@@ -4,8 +4,8 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { DEFAULT_TOOL_POLICY } from '../agents/tool-policy.js';
 import { ARTIFACT_FILE, readArtifact } from '../evidence/artifacts.js';
-import { hashDirectory, sha256 } from '../evidence/provenance.js';
-import { snapshotAppSource } from '../runtime/source-snapshot.js';
+import { sha256 } from '../evidence/provenance.js';
+import { matchRecordedSourceIdentity, snapshotAppSource } from '../runtime/source-snapshot.js';
 import { compileCampaignFile } from './campaign-compiler.js';
 import type { CampaignAttemptPlan } from './campaign-compiler.js';
 import { campaignChildPath } from './campaign-path.js';
@@ -93,7 +93,7 @@ export function prepareCampaignExtension(targetCampaignFile: string, parentDirec
     const source = object(checkpoint.source, 'parent source checkpoint source');
     const sourcePath = campaignChildPath(executionDirectory,
       String(source.directory), 'parent checkpoint source');
-    const actual = hashDirectory(sourcePath);
+    const actual = matchRecordedSourceIdentity(sourcePath, { sha256: String(source.sha256), files: Number(source.files) });
     if (source.sha256 !== actual.sha256 || source.files !== actual.files.length) {
       throw new Error(`parent attempt ${prior.plan.id} checkpoint source does not match its evidence`);
     }
@@ -108,7 +108,7 @@ export function prepareCampaignExtension(targetCampaignFile: string, parentDirec
     for (const item of prepared) {
       const source = `.private/extensions/${item.attempt.id}/source`;
       snapshotAppSource(item.sourcePath, join(temporary, source));
-      const copied = hashDirectory(join(temporary, source));
+      const copied = matchRecordedSourceIdentity(join(temporary, source), { sha256: item.actual.sha256, files: item.actual.files.length });
       if (copied.sha256 !== item.actual.sha256 || copied.files.length !== item.actual.files.length) {
         throw new Error(`extension source copy failed for ${item.attempt.id}`);
       }
