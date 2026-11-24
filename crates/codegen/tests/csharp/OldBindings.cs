@@ -1536,7 +1536,7 @@ namespace SpacetimeDB
                 Error += callback;
                 return this;
             }
-        
+
             /// <summary>
             /// Add a typed query to this subscription.
             ///
