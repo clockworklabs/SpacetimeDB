@@ -325,7 +325,8 @@ fn pack(version: &str, native_dir: &Path, out: &Path, all_platforms: bool) -> Re
             "-p:TestingNativeArtifactsDir={}",
             std::path::absolute(native_dir)?.display()
         ),
-        format!("-p:TestingNativeRids={rids}"),
+        // Unquoted, MSBuild would read each `;` as the start of another property.
+        format!(r#"-p:TestingNativeRids="{rids}""#),
         format!("-p:TestingLocalPackage={}", !all_platforms)
     )
     .run()?;
