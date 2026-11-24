@@ -28,6 +28,12 @@ interface CodingProvider {
   requiresBudget: boolean;
   executable: string;
   cli: string;
+  // Directories the CLI adds to its commands' PATH. They are hidden in the coding
+  // container, so the agent's commands find only the tools its app has at grading.
+  hiddenPathDirectories?: readonly string[];
+  // A command the build image runs before a session. It fails unless the hidden
+  // directories are still the ones the CLI adds.
+  pathDirectoryCheck?: readonly string[];
   apiKeyEnvironment: string;
   credentialPath?: string;
   containerTranscripts: string;
@@ -41,9 +47,17 @@ interface CodingProvider {
   validateContinuation(directory: string, sessionId: string, model: string): void;
 }
 
+// The pathDir of the native package's codex-package.json: Codex prepends it, holding
+// its own ripgrep, to the PATH of every command the agent runs.
+export const CODEX_PACKAGE_DIRECTORY = '/usr/local/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/'
+  + 'vendor/x86_64-unknown-linux-musl';
 const codexProvider: CodingProvider = {
   requiresBudget: true,
   executable: 'codex', cli: 'codex', apiKeyEnvironment: 'OPENAI_API_KEY',
+  hiddenPathDirectories: [`${CODEX_PACKAGE_DIRECTORY}/codex-path`],
+  pathDirectoryCheck: ['node', '-e', 'const [file, name] = process.argv.slice(1); const found = require(file).pathDir; '
+    + 'if (found !== name) { console.error(`${file} names ${JSON.stringify(found)} as the directory Codex adds '
+    + 'to PATH, not ${name}`); process.exit(1); }', `${CODEX_PACKAGE_DIRECTORY}/codex-package.json`, 'codex-path'],
   containerTranscripts: `${CODING_CONTAINER_AGENT.home}/.codex/sessions`,
   tokenEnvironment: 'MODEL_PROXY_TOKEN',
   environment: () => [`CODEX_HOME=${CODING_CONTAINER_AGENT.home}/.codex`],
@@ -183,4 +197,14 @@ export type CodingProviderId = keyof typeof CODING_PROVIDERS;
 export function parseCodingProvider(value: string): CodingProviderId {
   if (!Object.hasOwn(CODING_PROVIDERS, value)) throw new Error(`unsupported coding provider: ${value}`);
   return value as CodingProviderId;
+}
+
+export function hiddenPathDirectories(provider: CodingProviderId): readonly string[] {
+  const value: CodingProvider = CODING_PROVIDERS[provider];
+  return value.hiddenPathDirectories ?? [];
+}
+
+export function pathDirectoryCheck(provider: CodingProviderId): readonly string[] {
+  const value: CodingProvider = CODING_PROVIDERS[provider];
+  return value.pathDirectoryCheck ?? [];
 }

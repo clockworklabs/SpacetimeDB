@@ -35,7 +35,7 @@ import { CODING_CONTAINER_AGENT, CODING_CONTAINER_APP_ROOT, CODING_CONTAINER_CON
   from '../src/runtime/coding-container-policy.js';
 import { PRICING_UNIT, validatePricingAuthority }
   from '../src/evidence/pricing-authority.js';
-import { CODING_PROVIDERS, parseCodingProvider } from './coding-providers.js';
+import { CODING_PROVIDERS, hiddenPathDirectories, pathDirectoryCheck, parseCodingProvider } from './coding-providers.js';
 import { ensureFreshGrokLogin } from '../src/agents/grok-login.js';
 import { ensureFreshAgyLogin } from '../src/agents/agy-login.js';
 import { agyRenewal } from './agy-renewal.js';
@@ -216,10 +216,29 @@ catch (error) {
 const inspectContainer = (name: string) => inspectBuildContainer(name,
   { env: dockerEnv, timeoutMs: DOCKER_TIMEOUT_MS });
 
+// An empty read-only directory replaces each one the provider's CLI adds to PATH.
+const BUILD_TMPFS: Readonly<Record<string, string>> = Object.freeze({ ...REQUIRED_TMPFS,
+  ...Object.fromEntries(hiddenPathDirectories(provider).map(path => [path, 'ro,nosuid,nodev,size=4k'])) });
+
+// A CLI upgrade that moved its PATH directory would leave the hidden one empty and put
+// the new one in PATH, so no session starts until the provider is updated.
+const pathCheck = pathDirectoryCheck(provider);
+if (pathCheck.length) {
+  const checked = spawnSync('docker', ['run', '--rm', '--pull', 'never', '--network', 'none', '--read-only',
+    '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--user', '10001:10001',
+    '--entrypoint', pathCheck[0]!, image, ...pathCheck.slice(1)],
+  { encoding: 'utf8', env: dockerEnv, timeout: DOCKER_TIMEOUT_MS });
+  if (checked.status !== 0) {
+    console.error(`run-build.js: the ${provider} CLI's PATH directory check failed: `
+      + (checked.stderr || checked.error?.message || '').trim().split(/\r?\n/).slice(-3).join(' '));
+    process.exit(2);
+  }
+}
+
 const hasRequiredIsolation = (container: NonNullable<ReturnType<typeof inspectBuildContainer>>,
   expectedMounts: ContainerMount[]): boolean => hasRequiredBuildContainerIsolation(container, {
   expectedMounts,
-  requiredTmpfs: REQUIRED_TMPFS,
+  requiredTmpfs: BUILD_TMPFS,
   requiredCapabilities: REQUIRED_CAPABILITIES,
   pidsLimit: BUILD_CONTAINER_RESOURCE_LIMITS.pids,
   cpuCount: BUILD_CONTAINER_RESOURCE_LIMITS.cpuCount,
@@ -329,7 +348,7 @@ if (!existing) {
     '-v', `${resolve(appDir)}:${CODING_CONTAINER_APP_ROOT}`,
   ];
   for (const capability of REQUIRED_CAPABILITIES) create.push('--cap-add', capability);
-  for (const [path, options] of Object.entries(REQUIRED_TMPFS)) {
+  for (const [path, options] of Object.entries(BUILD_TMPFS)) {
     create.push('--tmpfs', `${path}:${options}`);
   }
   create.push('--network', expectedNetworkMode);

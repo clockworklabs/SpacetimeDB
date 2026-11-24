@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { brokerProtocol } from '../container/broker-protocols.js';
-import { CODING_PROVIDERS } from '../container/coding-providers.js';
+import { CODING_PROVIDERS, hiddenPathDirectories } from '../container/coding-providers.js';
 import { ANTIGRAVITY_SUBAGENT_TOOLS, ANTIGRAVITY_TOOLS, ANTIGRAVITY_WEB_TOOLS } from '../src/agents/antigravity-protocol.js';
 import { DEFAULT_TOOL_POLICY, toolPolicyFromEnvironment, unavailableToolsReason } from '../src/agents/tool-policy.js';
 import type { ToolPolicy } from '../src/agents/tool-policy.js';
@@ -119,4 +119,14 @@ test('a declared web search is priced when unused, and each search is counted wh
   assert.equal(grounded?.unpriced_reason, 'hosted-tool');
   assert.equal(gemini.responseUsage(sse([{ usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 2 } }]))
     ?.unpriced_reason, null);
+});
+
+test('only the Codex CLIs hide the directory they add to their commands\' PATH', () => {
+  const hidden = ['/usr/local/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/'
+    + 'x86_64-unknown-linux-musl/codex-path'];
+  assert.deepEqual(hiddenPathDirectories('openai'), hidden);
+  assert.deepEqual(hiddenPathDirectories('openrouter'), hidden);
+  for (const provider of ['anthropic', 'xai', 'google'] as const) {
+    assert.deepEqual(hiddenPathDirectories(provider), [], provider);
+  }
 });
