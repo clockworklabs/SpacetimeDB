@@ -157,6 +157,11 @@ impl TieredDatabaseStorage {
         self.cache.metrics()
     }
 
+    /// Run synchronous recovery with the resident memory limit suspended.
+    pub fn with_resident_hard_limit_suspended<R>(&self, operation: impl FnOnce() -> R) -> R {
+        self.cache.budget().with_hard_limit_suspended(operation)
+    }
+
     pub fn pages(&self) -> &Arc<PageManager> {
         &self.pages
     }
