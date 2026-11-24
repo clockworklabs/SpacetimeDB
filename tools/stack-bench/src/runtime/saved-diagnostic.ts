@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { z } from 'zod';
 import { readArtifact } from '../evidence/artifacts.js';
-import { hashAppSource } from './source-snapshot.js';
+import { adoptRecordedSourceIdentity } from './source-snapshot.js';
 
 const sha = z.string().regex(/^[a-f0-9]{64}$/);
 export const savedDiagnosticSchema = z.strictObject({
@@ -60,7 +60,9 @@ export function inspectSavedDiagnostic(input: unknown, base: string) {
   }).parse(readArtifact(checkpointPath, { expectedKind: 'grade_bundle' }).payload);
   if (checkpoint.backend !== run.backend || checkpoint.source.sha256 !== declaration.sourceSha256
     || checkpoint.selection.sha256 !== declaration.selectionSha256
-    || hashAppSource(source).sha256 !== declaration.sourceSha256) throw new Error('saved diagnostic source or selection mismatch');
+    || adoptRecordedSourceIdentity(source, { sha256: declaration.sourceSha256 }).sha256 !== declaration.sourceSha256) {
+    throw new Error('saved diagnostic source or selection mismatch');
+  }
   const keys = checkpoint.selection.checks.map(row => row.stableKey);
   if (new Set(keys).size !== keys.length || keys.some(key => /payment-records|payment-deduplication|reservation/.test(key))) {
     throw new Error('saved order reader requires an order-only selection without reservations');

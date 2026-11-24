@@ -9,7 +9,7 @@ import { currentEngineIdentity, emptyArtifactIdentities, readArtifact,
 import { sha256 } from '../evidence/provenance.js';
 import { acquireCampaignLock, releaseCampaignLock } from '../campaigns/campaign-lock.js';
 import type { CampaignLock } from '../campaigns/campaign-lock.js';
-import { hashAppSource } from '../runtime/source-snapshot.js';
+import { adoptRecordedSourceIdentity, hashAppSource } from '../runtime/source-snapshot.js';
 import type { RepairExhaustionReason } from './repair-plan.js';
 import { formatZodError } from '../zod-error.js';
 import {
@@ -421,7 +421,8 @@ function validateGrantSource(state: ProgressionState, owner: WorkspaceProgressio
   const sourcePath = ownedPath(workspaceRoot, resume.source.directory,
     'progression application');
   rejectTreeSymlinks(sourcePath, 'progression application');
-  const source = hashAppSource(sourcePath);
+  const source = adoptRecordedSourceIdentity(sourcePath,
+    { sha256: resume.source.sha256, files: Number(resume.source.files) });
   if (source.sha256 !== resume.source.sha256 || source.files.length !== resume.source.files) {
     throw new Error('current accepted source does not match the progression state');
   }

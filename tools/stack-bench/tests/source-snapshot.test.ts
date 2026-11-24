@@ -5,8 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { assertAppSourceIdentity, assertPlainAppSourceTree, hashAppSource, resetAppToSource,
-  restoreAppSource, seedAppSource, snapshotAppSource } from '../src/runtime/source-snapshot.js';
+import { adoptRecordedSourceIdentity, assertAppSourceIdentity, assertPlainAppSourceTree, hashAppSource,
+  resetAppToSource, restoreAppSource, seedAppSource, snapshotAppSource, SOURCE_IDENTITY_RULE_VARIABLE }
+  from '../src/runtime/source-snapshot.js';
 
 const TOOL_CACHES = ['.apt', '.cache', '.debroot', '.libs', '.npm-cache', '.pw-browsers', '.pwcache'];
 
@@ -233,6 +234,50 @@ test('clean source reset removes all runtime state and preserves only root git m
       assert.equal(statSync(join(app, 'src', 'app.ts')).mode & 0o602, 0o600);
     }
   } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('source identity leaves out what the app\'s own ignore files exclude, and older records keep their rule', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-ignored-identity-'));
+  const app = join(root, 'app');
+  const plain = join(root, 'plain');
+  const before = process.env[SOURCE_IDENTITY_RULE_VARIABLE];
+  try {
+    put(join(app, '.gitignore'), '.runtime/\n.env.local\n');
+    put(join(app, 'server.mjs'), 'export const port = 1;\n');
+    put(join(app, '.env.local'), 'STDB_URI=one\n');
+    put(join(app, '.runtime', 'server.state'), '100 stamp\n');
+    put(join(app, '.runtime', 'keys', 'service-key'), 'secret\n');
+    const current = hashAppSource(app);
+    assert.deepEqual([...current.files].sort(), ['.gitignore', 'server.mjs']);
+    put(join(app, '.runtime', 'server.state'), '200 stamp\n');
+    put(join(app, '.env.local'), 'STDB_URI=two\n');
+    assert.equal(hashAppSource(app).sha256, current.sha256);
+    // A start may lock its runtime folder away from the controller.
+    if (process.platform !== 'win32') {
+      chmodSync(join(app, '.runtime'), 0o000);
+      try {
+        assert.equal(hashAppSource(app).sha256, current.sha256);
+        assert.doesNotThrow(() => assertPlainAppSourceTree(app));
+      } finally { chmodSync(join(app, '.runtime'), 0o755); }
+    }
+    const allFiles = hashAppSource(app, 'all-files');
+    assert.equal(allFiles.files.length, 5);
+    delete process.env[SOURCE_IDENTITY_RULE_VARIABLE];
+    assert.deepEqual(adoptRecordedSourceIdentity(app, { sha256: allFiles.sha256, files: allFiles.files.length }), allFiles);
+    assert.equal(process.env[SOURCE_IDENTITY_RULE_VARIABLE], 'all-files');
+    assert.equal(hashAppSource(app).sha256, allFiles.sha256);
+    assert.equal(adoptRecordedSourceIdentity(app, { sha256: current.sha256 }).sha256, current.sha256);
+    assert.equal(process.env[SOURCE_IDENTITY_RULE_VARIABLE], 'app-ignore');
+    put(join(app, 'server.mjs'), 'export const port = 2;\n');
+    assert.notEqual(hashAppSource(app).sha256, current.sha256);
+    // Without ignore files both rules agree, so earlier records still match.
+    put(join(plain, 'server.mjs'), 'export const port = 1;\n');
+    assert.equal(hashAppSource(plain, 'app-ignore').sha256, hashAppSource(plain, 'all-files').sha256);
+  } finally {
+    if (before === undefined) delete process.env[SOURCE_IDENTITY_RULE_VARIABLE];
+    else process.env[SOURCE_IDENTITY_RULE_VARIABLE] = before;
     rmSync(root, { recursive: true, force: true });
   }
 });

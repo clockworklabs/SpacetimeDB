@@ -1,6 +1,9 @@
-import { accessSync, chmodSync, constants, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync,
-  rmSync } from 'node:fs';
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { accessSync, chmodSync, constants, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync,
+  readdirSync, rmSync } from 'node:fs';
+import type { Dirent } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 
 import { hashDirectory } from '../evidence/provenance.js';
 import { CODING_CONTAINER_BUG_REPORT_FILE } from './coding-container-policy.js';
@@ -172,9 +175,86 @@ export function snapshotAppSource(appDir: string, to: string): void {
   copySourceTree(appDir, to);
 }
 
-export function hashAppSource(appDir: string): HashFilesResult {
-  return hashDirectory(appDir, { exclude: (rel, entry) => directoryDisposition(rel) !== 'source'
-    || (!entry.isDirectory() && (preservedRuntimeFile(rel) || transientRuntimeFile(join(appDir, rel), rel))) });
+// Git reads only the app's ignore files. Its repository is an empty one of ours, with no user or
+// system configuration, so nothing the agent configured in its own repository runs.
+function withAppIgnoreCheck<T>(root: string, run: (check: (paths: readonly string[]) => Set<string>) => T): T {
+  const gitDir = mkdtempSync(join(tmpdir(), 'stack-bench-ignored-'));
+  try {
+    const env: NodeJS.ProcessEnv = { ...Object.fromEntries(Object.entries(process.env)
+      .filter(([key]) => !key.startsWith('GIT_'))),
+    GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: join(gitDir, 'no-global-config'), HOME: gitDir,
+    XDG_CONFIG_HOME: gitDir };
+    const git = (args: string[], input?: string) => spawnSync('git', args,
+      { env, encoding: 'utf8', input, maxBuffer: 64 * 1024 * 1024, timeout: 60_000 });
+    const init = git(['init', '-q', '--bare', gitDir]);
+    if (init.status !== 0) throw new Error(`git init failed: ${init.stderr || init.error?.message}`);
+    return run(paths => {
+      if (!paths.length) return new Set();
+      // Exit 1 means nothing is ignored.
+      const checked = git(['--git-dir', gitDir, '--work-tree', root, 'check-ignore', '--no-index', '--stdin', '-z'],
+        `${paths.join('\0')}\0`);
+      if (checked.status !== 0 && checked.status !== 1) {
+        throw new Error(`git check-ignore failed: ${checked.stderr || checked.error?.message}`);
+      }
+      return new Set(checked.stdout.split('\0').filter(Boolean));
+    });
+  } finally { rmSync(gitDir, { recursive: true, force: true }); }
+}
+
+export function appIgnoredFiles(root: string, files: readonly string[]): Set<string> {
+  return files.length ? withAppIgnoreCheck(root, check => check(files)) : new Set();
+}
+
+// Answers one directory at a time, so an ignored folder is excluded before anything reads it.
+function appIgnoreMatcher(root: string, check: (paths: readonly string[]) => Set<string>) {
+  const byDirectory = new Map<string, Set<string>>();
+  return (rel: string): boolean => {
+    const path = rel.replaceAll('\\', '/');
+    const parent = posix.dirname(path) === '.' ? '' : posix.dirname(path);
+    let ignored = byDirectory.get(parent);
+    if (!ignored) {
+      // No trailing slash: git reads the entry's type from disk, and `dir/` would match `dir/*`.
+      ignored = check(readdirSync(join(root, parent)).map(name => parent ? `${parent}/${name}` : name));
+      byDirectory.set(parent, ignored);
+    }
+    return ignored.has(path);
+  };
+}
+
+// A store's own ignore files mark its runtime state, which its start may rewrite or lock away, so
+// the source identity leaves it out. Runs recorded before that rule hashed every file; a regrade
+// of one adopts `all-files` from its record, and the environment carries it to child processes.
+export type SourceIdentityRule = 'app-ignore' | 'all-files';
+export const SOURCE_IDENTITY_RULE_VARIABLE = 'STACK_BENCH_SOURCE_IDENTITY';
+
+export function sourceIdentityRule(env: NodeJS.ProcessEnv = process.env): SourceIdentityRule {
+  const value = env[SOURCE_IDENTITY_RULE_VARIABLE] ?? 'app-ignore';
+  if (value !== 'app-ignore' && value !== 'all-files') {
+    throw new Error(`${SOURCE_IDENTITY_RULE_VARIABLE} must be app-ignore or all-files`);
+  }
+  return value;
+}
+
+export function hashAppSource(appDir: string, rule: SourceIdentityRule = sourceIdentityRule()): HashFilesResult {
+  const hash = (ignored: (rel: string, entry: Dirent) => boolean) => hashDirectory(appDir, {
+    exclude: (rel, entry) => directoryDisposition(rel) !== 'source'
+      || (!entry.isDirectory() && (preservedRuntimeFile(rel) || transientRuntimeFile(join(appDir, rel), rel)))
+      || ignored(rel, entry) });
+  return rule === 'all-files' ? hash(() => false)
+    : withAppIgnoreCheck(appDir, check => hash(appIgnoreMatcher(appDir, check)));
+}
+
+// Use the rule that reproduces a saved source's recorded identity for the rest of this process.
+export function adoptRecordedSourceIdentity(appDir: string,
+  recorded: { sha256: string; files?: number }): HashFilesResult {
+  for (const rule of ['app-ignore', 'all-files'] as const) {
+    const source = hashAppSource(appDir, rule);
+    if (source.sha256 === recorded.sha256 && (recorded.files === undefined || source.files.length === recorded.files)) {
+      process.env[SOURCE_IDENTITY_RULE_VARIABLE] = rule;
+      return source;
+    }
+  }
+  return hashAppSource(appDir);
 }
 
 export function assertAppSourceIdentity(appDir: string, expectedSha256: string,
@@ -192,19 +272,24 @@ export function assertAppSourceIdentity(appDir: string, expectedSha256: string,
 export function assertPlainAppSourceTree(appDir: string): void {
   if (!existsSync(appDir)) return;
   if (!lstatSync(appDir).isDirectory()) throw new Error('application source root is not a plain directory');
-  const walk = (directory: string, rel = ''): void => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const childRel = rel ? join(rel, entry.name) : entry.name;
-      if (directoryDisposition(childRel) !== 'source') continue;
-      if (!entry.isDirectory() && (preservedRuntimeFile(childRel)
-        || transientRuntimeFile(join(directory, entry.name), childRel))) continue;
-      if (entry.isDirectory()) walk(join(directory, entry.name), childRel);
-      else if (!entry.isFile()) {
-        throw new Error(`application source contains unsupported filesystem entry ${childRel}`);
+  const check = (ignored: (rel: string, entry: Dirent) => boolean): void => {
+    const walk = (directory: string, rel = ''): void => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const childRel = rel ? join(rel, entry.name) : entry.name;
+        if (directoryDisposition(childRel) !== 'source') continue;
+        if (!entry.isDirectory() && (preservedRuntimeFile(childRel)
+          || transientRuntimeFile(join(directory, entry.name), childRel))) continue;
+        if (ignored(childRel, entry)) continue;
+        if (entry.isDirectory()) walk(join(directory, entry.name), childRel);
+        else if (!entry.isFile()) {
+          throw new Error(`application source contains unsupported filesystem entry ${childRel}`);
+        }
       }
-    }
+    };
+    walk(appDir);
   };
-  walk(appDir);
+  if (sourceIdentityRule() === 'all-files') check(() => false);
+  else withAppIgnoreCheck(appDir, ignoreCheck => check(appIgnoreMatcher(appDir, ignoreCheck)));
 }
 
 export function restoreAppSource(from: string, appDir: string,

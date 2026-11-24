@@ -47,7 +47,8 @@ import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { SUPERVISOR_STATE_VERSION, writeRecoveryArtifact } from '../src/runtime/recovery.js';
 import { applyAgentCredential } from '../src/agents/agent-credentials.js';
-import { assertPlainAppSourceTree, hashAppSource, resetAppToSource, seedAppSource, snapshotAppSource } from '../src/runtime/source-snapshot.js';
+import { adoptRecordedSourceIdentity, assertPlainAppSourceTree, hashAppSource, resetAppToSource, seedAppSource,
+  snapshotAppSource } from '../src/runtime/source-snapshot.js';
 import { finalPackageEvidenceRequired, preserveFinalPackageEvidence, preserveLevelCheckpoint,
   sourceBoundFirstBuildOutcome } from '../src/runtime/source-checkpoint.js';
 import { materializationAppFailure, materializeAcceptedSource, restoreRepairSource }
@@ -874,8 +875,12 @@ export function inspectGradeSource(directory: string,
   };
   const sourceDirectory = dependency ? `first-build-l${level.level}` : checkpoint!.directory;
   const sourcePath = child(sourceDirectory);
+  const recorded = dependency ? level.firstBuild?.source
+    : { sha256: checkpoint!.sha256, files: checkpoint!.files };
+  const source = object(recorded) && typeof recorded.sha256 === 'string' && typeof recorded.files === 'number'
+    ? adoptRecordedSourceIdentity(sourcePath, { sha256: recorded.sha256, files: recorded.files })
+    : hashAppSource(sourcePath);
   assertPlainAppSourceTree(sourcePath);
-  const source = hashAppSource(sourcePath);
   let candidate = null;
   if (dependency) {
     const gradePath = `first-build-l${level.level}-grading/bundle.json`;
@@ -1461,7 +1466,8 @@ async function main() {
     if (!existsSync(from)) { console.error(`--seed-from path does not exist: ${from}`); process.exit(2); }
     seedAppSource(from, appDir);
     if (args.progressionSeed) {
-      const seeded = hashAppSource(appDir);
+      const seeded = adoptRecordedSourceIdentity(appDir,
+        { sha256: args.progressionSeed.sourceSha256, files: args.progressionSeed.sourceFiles });
       if (seeded.sha256 !== args.progressionSeed.sourceSha256
         || seeded.files.length !== args.progressionSeed.sourceFiles) {
         throw new Error('extension source does not match its recorded identity');
