@@ -1,5 +1,7 @@
 #![warn(clippy::uninlined_format_args)]
 
+mod sdk_version;
+
 use anyhow::Context;
 use clap::parser::ValueSource;
 use clap::Arg;
@@ -827,6 +829,9 @@ pub async fn run_prepared_generate_configs(
             generate(&module, gen_lang, &options)
         };
 
+        if run.bindings == BindingKind::Client {
+            sdk_version::warn_if_incompatible(run.lang, &run.out_dir);
+        }
         fs::create_dir_all(&run.out_dir)?;
         for OutputFile { filename, code } in generated_files {
             let fname = Path::new(&filename);

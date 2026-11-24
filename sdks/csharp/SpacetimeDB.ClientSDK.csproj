@@ -25,7 +25,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SpacetimeDB.BSATN.Runtime" Version="2.16.*" />
+    <PackageReference Include="SpacetimeDB.BSATN.Runtime" Version="$(Version)" />
 
     <InternalsVisibleTo Include="SpacetimeDB.Tests" />
   </ItemGroup>
