@@ -576,25 +576,18 @@ export function codeMetrics(args: Pick<RunArguments, 'app' | 'backend'>): { serv
   const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);
   const conventional = adapter.agent.serverDirectory;
   const SERVER_DIR = existsSync(join(args.app, conventional)) ? conventional : '.';
-  const walk = (dir: string, out: string[] = []): string[] => {
-    if (!existsSync(dir)) return out;
-    for (const e of readdirSync(dir, { withFileTypes: true })) {
-      if (/^(node_modules|dist|\.vite|module_bindings|drizzle)$/.test(e.name)) continue;
-      const p = join(dir, e.name);
-      if (e.isDirectory()) walk(p, out);
-      // Count supported source files; agent-planted links and FIFOs are not read.
-      else if (e.isFile() && /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(e.name)) out.push(p);
-    }
-    return out;
-  };
-  const count = (files: string[]): number => files.reduce((n, f) => n + readFileSync(f, 'utf8').split('\n').length, 0);
+  // Count the source identity's files, so runtime state the store locks away is never read.
+  const source = existsSync(args.app) ? hashAppSource(args.app).files : [];
+  const counted = source.filter(file => /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(file)
+    && !file.split('/').some(part => /^(node_modules|dist|\.vite|module_bindings|drizzle)$/.test(part)));
+  const count = (files: string[]): number => files.reduce((n, f) => n + readFileSync(join(args.app, f), 'utf8').split('\n').length, 0);
   // With no conventional server directory, "server" is everything that is not
   // the client — otherwise the fallback counts the client twice and serverLoc
   // equals totalLoc, which reads as a much larger backend than was written.
-  const allFiles = walk(args.app);
+  const allFiles = counted;
   const serverFiles = SERVER_DIR === '.'
-    ? allFiles.filter(f => !/[\\/]client[\\/]/.test(f))
-    : walk(join(args.app, SERVER_DIR));
+    ? allFiles.filter(f => !/(^|\/)client\//.test(f))
+    : allFiles.filter(f => f.startsWith(`${SERVER_DIR}/`));
 
   let deps = 0;
   const packageFiles = new Set([

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -122,6 +122,25 @@ test('code metrics count each package manifest once when server code is at the a
     }));
 
     assert.equal(codeMetrics({ app: temp, backend: 'mongodb' }).runtimeDeps, 3);
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('code metrics count the source identity and never read runtime state the store locks away', () => {
+  const temp = mkdtempSync(join(tmpdir(), 'stack-bench-code-metrics-ignored-'));
+  try {
+    mkdirSync(join(temp, 'backend', 'src'), { recursive: true });
+    mkdirSync(join(temp, '.runtime'));
+    writeFileSync(join(temp, '.gitignore'), '.runtime/\n');
+    writeFileSync(join(temp, 'backend', 'src', 'index.ts'), 'export const a = 1;\nexport const b = 2;\n');
+    writeFileSync(join(temp, 'app.js'), 'export {};\n');
+    writeFileSync(join(temp, '.runtime', 'state.js'), 'runtime\n');
+    if (process.platform !== 'win32') chmodSync(join(temp, '.runtime'), 0o000);
+    try {
+      const metrics = codeMetrics({ app: temp, backend: 'spacetime' });
+      assert.deepEqual([metrics.totalFiles, metrics.serverFiles, metrics.serverLoc], [2, 1, 3]);
+    } finally { if (process.platform !== 'win32') chmodSync(join(temp, '.runtime'), 0o755); }
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }
