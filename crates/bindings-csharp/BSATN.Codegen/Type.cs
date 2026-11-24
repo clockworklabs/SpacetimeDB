@@ -522,11 +522,33 @@ public abstract record BaseTypeDeclaration<M>
 
     protected abstract M ConvertMember(int index, IFieldSymbol field, DiagReporter diag);
 
-    public BaseTypeDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
+    protected BaseTypeDeclaration(
+        Scope scope,
+        string name,
+        string fullName,
+        EquatableArray<M> members
+    )
     {
-        var typeSyntax = (TypeDeclarationSyntax)context.TargetNode;
-        var type = (INamedTypeSymbol)context.TargetSymbol;
+        Scope = scope;
+        ShortName = name;
+        FullName = fullName;
+        Kind = TypeKind.Product;
+        Members = members;
+    }
 
+    public BaseTypeDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
+        : this(
+            (TypeDeclarationSyntax)context.TargetNode,
+            (INamedTypeSymbol)context.TargetSymbol,
+            diag
+        ) { }
+
+    protected BaseTypeDeclaration(
+        TypeDeclarationSyntax typeSyntax,
+        INamedTypeSymbol type,
+        DiagReporter diag
+    )
+    {
         // Note: we could use naively use `type.GetMembers()` to get all fields of the type,
         // but some users add their own fields in extra partial declarations like this:
         //
@@ -839,6 +861,9 @@ record TypeDeclaration : BaseTypeDeclaration<MemberDeclaration>
 {
     public TypeDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
         : base(context, diag) { }
+
+    public TypeDeclaration(TypeDeclarationSyntax syntax, INamedTypeSymbol type, DiagReporter diag)
+        : base(syntax, type, diag) { }
 
     protected override MemberDeclaration ConvertMember(
         int index,
