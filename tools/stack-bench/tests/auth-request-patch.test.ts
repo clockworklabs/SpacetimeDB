@@ -27,6 +27,7 @@ test('UI write completion drains delayed HTTP effects, accepts no write, and rej
     release = () => {
       release = undefined;
       if (req.url === '/lost') res.destroy();
+      else if (req.url === '/no-content') res.writeHead(204).end();
       else res.writeHead(req.url === '/invalid-json' ? 400 : req.url === '/accepted-pending' ? 202 : 200).end('{}');
     };
     received();
@@ -38,11 +39,11 @@ test('UI write completion drains delayed HTTP effects, accepts no write, and rej
     await installAuthWebSocketCapture(page);
     await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}`);
     assert.deepEqual((await withWriteCompletion(page, async () => {})).writes, []);
-    for (const mode of ['json', 'form', 'invalid-json', 'accepted-pending', 'lost']) {
+    for (const mode of ['json', 'form', 'invalid-json', 'no-content', 'accepted-pending', 'lost']) {
       const request = new Promise<void>(resolve => { received = resolve; });
       await page.evaluate(mode => {
         document.querySelector<HTMLButtonElement>('#buy')!.onclick = () => {
-          void fetch(['lost', 'invalid-json', 'accepted-pending'].includes(mode) ? '/' + mode : '/buy', { method: 'POST',
+          void fetch(['lost', 'invalid-json', 'no-content', 'accepted-pending'].includes(mode) ? '/' + mode : '/buy', { method: 'POST',
             headers: { 'content-type': mode === 'form' ? 'application/x-www-form-urlencoded' : 'application/json' },
             body: mode === 'form' ? 'item=keyboard' : mode === 'invalid-json' ? '{' : '{"item":"keyboard"}' }).catch(() => {});
         };
@@ -64,7 +65,7 @@ test('UI write completion drains delayed HTTP effects, accepts no write, and rej
     const request = new Promise<void>(resolve => { received = resolve; });
     const later = page.evaluate(() => (window as unknown as { laterWrite(): Promise<unknown> }).laterWrite());
     await request; release!(); await later;
-    assert.equal(writes, 6);
+    assert.equal(writes, 7);
   } finally {
     release?.(); await browser.close(); server.closeAllConnections();
     await new Promise<void>(resolve => server.close(() => resolve()));
