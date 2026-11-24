@@ -40,22 +40,24 @@ impl CratesRelease {
         // Without this, dry-run doesn't work properly: every crate will look for its deps on crates.io
         // and fail, but if they're on one invocation then they're able to resolve properly.
         let mut cmd = Command::new("cargo");
-        // After each upload, Cargo waits for the crate version to appear in the registry index
-        // before publishing crates that depend on it. Give that wait 120 seconds (default: 60).
-        // The publish.timeout setting requires -Zpublish-timeout, which the pinned stable Cargo
-        // accepts with RUSTC_BOOTSTRAP=1. Force RUSTC_BOOTSTRAP=-1 in Cargo's child
-        // processes so package verification still uses stable compiler feature gates.
-        cmd.current_dir(workspace_root).env("RUSTC_BOOTSTRAP", "1").args([
-            "publish",
-            "--allow-dirty",
-            "-Zpublish-timeout",
-            "--config",
-            "publish.timeout=120",
-            "--config",
-            r#"env.RUSTC_BOOTSTRAP.value="-1""#,
-            "--config",
-            "env.RUSTC_BOOTSTRAP.force=true",
-        ]);
+        cmd.current_dir(workspace_root)
+            // The pinned stable Cargo requires RUSTC_BOOTSTRAP=1 to accept -Zpublish-timeout.
+            .env("RUSTC_BOOTSTRAP", "1")
+            .args([
+                "publish",
+                "--allow-dirty",
+                "-Zpublish-timeout",
+                // Wait up to 120 seconds (default: 60) for an uploaded version to appear
+                // in the registry index before publishing crates that depend on it.
+                "--config",
+                "publish.timeout=120",
+                // Keep stable compiler feature gates during package verification.
+                "--config",
+                r#"env.RUSTC_BOOTSTRAP.value="-1""#,
+                // Override the RUSTC_BOOTSTRAP=1 Cargo would pass to its child processes.
+                "--config",
+                "env.RUSTC_BOOTSTRAP.force=true",
+            ]);
         for crate_name in crates {
             cmd.args(["-p", crate_name]);
         }
