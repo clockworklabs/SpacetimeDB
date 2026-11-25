@@ -36,14 +36,14 @@ test('the prompt names the installed skills and the disclosure check covers all 
     '--level', '1', '--app', '/app', '--guidance', 'neutral']);
   const render = (provider: typeof args.provider, skillIds: string[], requirementText: string) => buildPrompt(
     { ...args, provider }, portsFor(track, 'spacetime', 0), track, { skillIds, requirementText, contractText: '' });
-  const ids = ['concepts', 'typescript-server', 'typescript-client', 'cli', 'spacetime-dev'];
+  const ids = ['typescript-server', 'typescript-client', 'cli', 'spacetime-dev'];
   for (const [provider, directory] of [['anthropic', '/home/developer/.claude/skills'],
     ['openai', '/home/developer/.codex/skills'], ['xai', '/home/developer/.grok/skills'],
     ['google', '/home/developer/.gemini/config/skills']] as const) {
     const prompt = render(provider, ids, 'Build the requested store.');
     // StackBench's own workflow page is part of the prompt; only the product skills are installed.
     assert.equal(prompt.split(`This stack's agent skills are installed in ${directory}: `
-      + 'concepts, typescript-server, typescript-client, cli.').length, 2);
+      + 'typescript-server, typescript-client, cli.').length, 2);
     assert.equal(prompt.split(readAgentSkillDocuments(STACK_BENCH_ROOT, ['spacetime-dev'])).length, 2);
     assert.doesNotMatch(prompt, /## Selected API reference|subscriptionBuilder/);
   }
@@ -75,8 +75,8 @@ test('SDK skills and dev guidance vary independently without changing product re
     for (const stack of ['mongodb', 'postgres', 'convex', 'supabase']) assert.deepEqual(profile.skills[stack], standard.skills[stack]);
   }
   assert.deepEqual(profiles.map(p => p.skills.spacetime!.ids), [
-    ['concepts', 'typescript-server', 'typescript-client', 'cli'], [],
-    ['concepts', 'typescript-server', 'typescript-client', 'cli', 'spacetime-dev'], ['spacetime-dev'],
+    ['typescript-server', 'typescript-client', 'cli'], [],
+    ['typescript-server', 'typescript-client', 'cli', 'spacetime-dev'], ['spacetime-dev'],
   ]);
   const track = loadTrack('ecommerce');
   const catalog = resolveFeatureCatalog('progression/ecommerce.json', track);
@@ -162,7 +162,7 @@ test('neutral dependency prompts include only selected product and stack contrac
   const guidance = resolveGuidanceProfile('neutral', STACKS);
   const spacetimeReference = readAgentSkillDocuments(
     STACK_BENCH_ROOT, guidance.skills.spacetime?.ids ?? []);
-  assert.deepEqual(guidance.skills.spacetime?.ids, ['concepts', 'typescript-server', 'typescript-client', 'cli']);
+  assert.deepEqual(guidance.skills.spacetime?.ids, ['typescript-server', 'typescript-client', 'cli']);
   assert.match(spacetimeReference, /spacetime publish/);
   assert.match(spacetimeReference, /withToken/);
   assert.match(spacetimeReference, /ctx\.sender/);
