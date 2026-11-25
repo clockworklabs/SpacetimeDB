@@ -1,0 +1,21 @@
+[package]
+name = "spacetimedb-test-datastore-ffi"
+version.workspace = true
+edition.workspace = true
+license-file = "../test-datastore/LICENSE"
+rust-version.workspace = true
+description = "Native C ABI for SpacetimeDB module test datastores."
+# Shipped inside the SpacetimeDB.Testing NuGet package, not on crates.io.
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+bench = false
+
+[dependencies]
+spacetimedb-lib.workspace = true
+spacetimedb-primitives.workspace = true
+spacetimedb-test-datastore.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,10 @@
+# Module tests in spacetimedb-testing open a database in a fixed directory per
+# module (see `crates/testing/src/modules.rs`). `#[serial_test::serial]` only
+# serializes tests within one process, but nextest runs each test in its own
+# process, so run them one at a time.
+[test-groups]
+module-db = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'package(spacetimedb-testing)'
+test-group = 'module-db'

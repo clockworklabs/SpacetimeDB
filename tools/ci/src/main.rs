@@ -61,6 +61,10 @@ const COMMANDS: &[Command] = &[
         package: "ci-global-json-policy",
     },
     Command {
+        path: &["lockfile-policy"],
+        package: "ci-lockfile-policy",
+    },
+    Command {
         path: &["check-style"],
         package: "ci-check-style",
     },
@@ -119,6 +123,10 @@ const COMMANDS: &[Command] = &[
     Command {
         path: &["other-workflows", "cache-warm"],
         package: "ci-cache-warm",
+    },
+    Command {
+        path: &["other-workflows", "csharp-testing-packages"],
+        package: "ci-csharp-testing-packages",
     },
 ];
 

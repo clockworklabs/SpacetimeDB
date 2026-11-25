@@ -44,6 +44,7 @@ members = [
   "crates/subscription",
   "crates/table",
   "crates/test-datastore",
+  "crates/test-datastore-ffi",
   "crates/testing",
   "crates/update",
   "modules/benchmarks",
@@ -86,6 +87,7 @@ members = [
   "tools/ci/commands/update-flow",
   "tools/ci/commands/cli-docs",
   "tools/ci/commands/global-json-policy",
+  "tools/ci/commands/lockfile-policy",
   "tools/ci/commands/check-style",
   "tools/ci/commands/portable-datastore",
   "tools/ci/commands/publish-checks",
@@ -103,6 +105,7 @@ members = [
   "tools/ci/commands/check-release-deps",
   "tools/ci/commands/llm-benchmark-summary",
   "tools/ci/commands/cache-warm",
+  "tools/ci/commands/csharp-testing-packages",
   "tools/ci/common",
   "tools/keynote-bench-harness",
   "tools/license-check",
@@ -112,6 +115,7 @@ members = [
   "tools/release",
   "tools/rollback-coordination",
   "tools/regen",
+  "tools/llm-apps",
   "tools/xtask-llm-benchmark",
   "crates/bindings-typescript/test-app/server",
   "crates/bindings-typescript/test-react-router-app/server",
@@ -368,10 +372,10 @@ uuid = { version = "1.18.1", default-features = false }
 # See librusty_v8.nix for more details.
 # When updating the V8 crate, either update the version and hashes in that file,
 # or ping phoebe @gefjon to do so.
-v8 = "=145.0.0"
+v8 = "=152.2.0"
 # This version is kept in sync with the version of ICU required by v8.
 # When that changes, the `v8::icu::set_common_data_XX()` function is renamed.
-deno_core_icudata = "0.77"
+deno_core_icudata = "0.78"
 
 walkdir = "2.2.5"
 wasmbin = "0.6"

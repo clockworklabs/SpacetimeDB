@@ -20,8 +20,8 @@ Code generation and fix iterations are token-tracked (the benchmark metric). Gra
 
 ```bash
 # One-shot, both backends, standard rules, level 7
-./run.sh --variant one-shot --level 7 --backend spacetime --rules standard --run-index 0
-./run.sh --variant one-shot --level 7 --backend postgres --rules standard --run-index 1
+cargo llm-apps sequential generate --variant one-shot --level 7 --backend spacetime --rules standard --run-index 0
+cargo llm-apps sequential generate --variant one-shot --level 7 --backend postgres --rules standard --run-index 1
 ```
 
 After generation, apps are running at:
@@ -86,7 +86,7 @@ Or more detailed:
 
 Claude Code will:
 1. Write `BUG_REPORT.md` in the app directory
-2. Run `./run.sh --fix <app-dir>` to launch the fix LLM
+2. Run `cargo llm-apps sequential fix <app-dir>` to launch the fix LLM
 3. Report when the fix is done
 
 The fix cost is token-tracked and adds to the benchmark total.
@@ -121,13 +121,14 @@ Claude Code will write the GRADING_RESULTS.md and generate the comparison report
 
 | Action | Command |
 |--------|---------|
-| Generate (one-shot) | `./run.sh --variant one-shot --level 7 --backend spacetime --rules standard` |
-| Generate (sequential L1) | `./run.sh --level 1 --backend spacetime --rules standard` |
-| Upgrade to level N | `./run.sh --upgrade <app-dir> --level N --resume-session` |
-| Fix bugs | `./run.sh --fix <app-dir>` |
-| Parse telemetry | `node parse-telemetry.mjs <telemetry-dir> --logs-file=telemetry/logs.jsonl --extract-raw` |
-| Generate report | `node generate-report.mjs <run-base-dir>` |
-| Reset app state | `./reset-app.sh <app-dir>` |
+| Generate (one-shot) | `cargo llm-apps sequential generate --variant one-shot --level 7 --backend spacetime --rules standard` |
+| Generate (sequential L1) | `cargo llm-apps sequential generate --level 1 --backend spacetime --rules standard` |
+| Upgrade to level N | `cargo llm-apps sequential upgrade <app-dir> --level N --resume-session` |
+| Fix bugs | `cargo llm-apps sequential fix <app-dir>` |
+| Parse telemetry | `cargo llm-apps sequential parse-telemetry <telemetry-dir> --logs-file telemetry/logs.jsonl --extract-raw` |
+| Generate report | `cargo llm-apps sequential report <run-base-dir>` |
+| Publish results | `cargo llm-apps sequential publish <run-base-dir>` |
+| Reset app state | `cargo llm-apps sequential reset <app-dir>` |
 
 ---
 

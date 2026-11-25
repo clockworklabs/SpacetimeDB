@@ -1,3 +1,3 @@
 mod streams;
 
-pub(super) use streams::{DeliveryStreams, StreamId};
+pub(super) use streams::{DeliveryStreams, StreamId, StreamWork};
