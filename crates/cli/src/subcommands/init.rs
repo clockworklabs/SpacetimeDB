@@ -373,12 +373,32 @@ async fn get_project_path(
     Ok(PathBuf::from(path_str))
 }
 
+/// Returns the current ID of a built-in template that was renamed, so the old name keeps working
+/// instead of being looked up as a GitHub repository.
+fn renamed_template(template_id: &str) -> Option<&'static str> {
+    match template_id {
+        // Remix 2 continues as React Router 7 and later.
+        "remix-ts" => Some("react-router-ts"),
+        _ => None,
+    }
+}
+
 fn create_template_config_from_template_str(
     project_name: String,
     project_path: PathBuf,
     template_str: &str,
     templates: &[TemplateDefinition],
 ) -> anyhow::Result<TemplateConfig> {
+    let template_str = match renamed_template(template_str) {
+        Some(new_id) => {
+            println!(
+                "{}",
+                format!("Note: the `{template_str}` template is now called `{new_id}`.").yellow()
+            );
+            new_id
+        }
+        None => template_str,
+    };
     if let Some(template) = templates.iter().find(|t| t.id == template_str) {
         // Builtin template
         Ok(TemplateConfig {
@@ -2755,6 +2775,21 @@ bytes.workspace = true
 
         let db = get_local_database_name(&options, "my-project", false).unwrap();
         assert_eq!(db, "my-explicit-db");
+    }
+
+    #[test]
+    fn test_renamed_template_id_resolves_to_builtin() {
+        let templates: TemplatesList = serde_json::from_str(embedded::get_templates_json()).unwrap();
+        let config = create_template_config_from_template_str(
+            "my-app".to_string(),
+            PathBuf::from("my-app"),
+            "remix-ts",
+            &templates.templates,
+        )
+        .unwrap();
+
+        assert!(matches!(config.template_type, TemplateType::Builtin));
+        assert_eq!(config.template_def.unwrap().id, "react-router-ts");
     }
 
     #[test]

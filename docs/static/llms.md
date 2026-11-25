@@ -136,7 +136,7 @@ A guide for teams moving an application backend from Convex to a SpacetimeDB mod
 - [Node.js Quickstart](/docs/quickstarts/nodejs): Get a SpacetimeDB Node.js app running in under 5 minutes.
 - [Nuxt Quickstart](/docs/quickstarts/nuxt): Get a SpacetimeDB Nuxt app running in under 5 minutes.
 - [React Quickstart](/docs/quickstarts/react): Get a SpacetimeDB React app running in under 5 minutes.
-- [Remix Quickstart](/docs/quickstarts/remix): Get a SpacetimeDB Remix app running in under 5 minutes.
+- [React Router Quickstart](/docs/quickstarts/react-router): Get a SpacetimeDB React Router app running in under 5 minutes.
 - [Rust Quickstart](/docs/quickstarts/rust): Get a SpacetimeDB Rust app running in under 5 minutes.
 - [SolidJS Quickstart](/docs/quickstarts/solid): Get a SpacetimeDB SolidJS app running in under 5 minutes.
 - [Svelte Quickstart](/docs/quickstarts/svelte): Get a SpacetimeDB Svelte app running in under 5 minutes.

@@ -1,7 +1,7 @@
 ---
-title: Remix Quickstart
-sidebar_label: Remix
-slug: /quickstarts/remix
+title: React Router Quickstart
+sidebar_label: React Router
+slug: /quickstarts/react-router
 hide_table_of_contents: true
 ---
 
@@ -9,7 +9,9 @@ import { InstallCardLink } from "@site/src/components/InstallCardLink";
 import { StepByStep, Step, StepText, StepCode } from "@site/src/components/Steps";
 
 
-Get a SpacetimeDB Remix app running in under 5 minutes.
+Get a SpacetimeDB React Router app running in under 5 minutes.
+
+This template replaces the earlier Remix template (`remix-ts`), because Remix 2 continues as React Router 7 and later.
 
 ## Prerequisites
 
@@ -23,13 +25,13 @@ Get a SpacetimeDB Remix app running in under 5 minutes.
 <StepByStep>
   <Step title="Create your project">
     <StepText>
-      Run the `spacetime dev` command to create a new project with a SpacetimeDB module and Remix client.
+      Run the `spacetime dev` command to create a new project with a SpacetimeDB module and React Router client.
 
-      This will start the local SpacetimeDB server, publish your module, generate TypeScript bindings, and start the Remix development server.
+      This will start the local SpacetimeDB server, publish your module, generate TypeScript bindings, and start the React Router development server.
     </StepText>
     <StepCode>
 ```bash
-spacetime dev --template remix-ts
+spacetime dev --template react-router-ts
 ```
     </StepCode>
   </Step>
@@ -44,18 +46,19 @@ spacetime dev --template remix-ts
 
   <Step title="Explore the project structure">
     <StepText>
-      Your project contains both server and client code using Remix with Vite.
+      Your project contains both server and client code using React Router with Vite.
 
       Edit `spacetimedb/src/index.ts` to add tables and reducers. Edit `app/routes/_index.tsx` to build your UI.
     </StepText>
     <StepCode>
 ```
-my-remix-app/
+my-react-router-app/
 ├── spacetimedb/          # Your SpacetimeDB module
 │   └── src/
 │       └── index.ts      # SpacetimeDB module logic
-├── app/                  # Remix app
+├── app/                  # React Router app
 │   ├── root.tsx          # Root layout with SpacetimeDB provider
+│   ├── routes.ts         # Route configuration
 │   ├── lib/
 │   │   └── spacetimedb.server.ts  # Server-side data fetching
 │   └── routes/
@@ -134,7 +137,7 @@ spacetime logs
 
   <Step title="Understand server-side rendering">
     <StepText>
-      The SpacetimeDB SDK works both server-side and client-side. The template uses Remix loaders for SSR:
+      The SpacetimeDB SDK works both server-side and client-side. The template uses React Router loaders for SSR:
 
       - **Loader**: Fetches initial data from SpacetimeDB during server rendering
       - **Client**: Maintains a real-time WebSocket connection for live updates
@@ -169,12 +172,12 @@ export async function fetchPeople() {
 
   <Step title="Use loaders and hooks for data">
     <StepText>
-      Use Remix loaders to fetch initial data server-side, then React hooks for real-time updates. The loader data is passed to the component and displayed immediately while the client connects.
+      Use React Router loaders to fetch initial data server-side, then React hooks for real-time updates. The loader data is passed to the component and displayed immediately while the client connects.
     </StepText>
     <StepCode>
 ```tsx
 // app/routes/_index.tsx
-import { useLoaderData } from '@remix-run/react';
+import type { Route } from './+types/_index';
 import { tables, reducers } from '../../src/module_bindings';
 import { useTable, useReducer } from 'spacetimedb/react';
 import { fetchPeople } from '../lib/spacetimedb.server';
@@ -184,8 +187,8 @@ export async function loader() {
   return { initialPeople: people };
 }
 
-export default function Index() {
-  const { initialPeople } = useLoaderData<typeof loader>();
+export default function Index({ loaderData }: Route.ComponentProps) {
+  const { initialPeople } = loaderData;
 
   // Real-time data from WebSocket subscription
   const [people, isLoading] = useTable(tables.person);
