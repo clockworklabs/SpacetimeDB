@@ -1,12 +1,13 @@
 use spacetimedb_lib::db::raw_def::v10::*;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableAccess, TableType};
 use spacetimedb_primitives::{ColId, ColList};
-use spacetimedb_runtime::sim::Rng;
 use spacetimedb_sats::{AlgebraicType, ArrayType, ProductType, ProductTypeElement};
 
-pub fn default_schema(rng: Rng) -> SchemaPlan {
+use crate::harness::Choices;
+
+pub fn default_schema(choices: &mut Choices) -> SchemaPlan {
     let profile = SchemaProfile::default();
-    let mut plan = SchemaGenerator::new(rng, profile).gen_schema();
+    let mut plan = SchemaGenerator::new(choices, profile).gen_schema();
     plan.ensure_auto_inc_table();
     plan
 }
@@ -243,29 +244,34 @@ impl Default for SchemaProfile {
     }
 }
 
-pub struct SchemaGenerator {
-    rng: Rng,
+pub struct SchemaGenerator<'a> {
+    choices: &'a mut Choices,
     profile: SchemaProfile,
 }
 
-impl SchemaGenerator {
-    pub fn new(rng: Rng, profile: SchemaProfile) -> Self {
-        Self { rng, profile }
+impl<'a> SchemaGenerator<'a> {
+    pub fn new(choices: &'a mut Choices, profile: SchemaProfile) -> Self {
+        Self { choices, profile }
     }
 
-    fn range(&self, (lo, hi): (usize, usize)) -> usize {
+    fn range(&mut self, label: &'static str, (lo, hi): (usize, usize)) -> usize {
         if lo >= hi {
             return lo;
         }
-        lo + (self.rng.next_u64() as usize % (hi - lo + 1))
+        self.choices.range(label, lo as u64..=hi as u64) as usize
     }
 
-    fn gen_type(&self) -> Type {
-        Type::ALL[self.rng.index(Type::ALL.len())]
+    /// Index into a collection of `len` items, which stdlib types as `usize`.
+    fn index(&mut self, label: &'static str, len: usize) -> usize {
+        self.choices.below(label, len as u64) as usize
     }
 
-    fn gen_columns(&self) -> Vec<ColumnPlan> {
-        let n = self.range(self.profile.columns);
+    fn gen_type(&mut self) -> Type {
+        Type::ALL[self.index("schema.column_type", Type::ALL.len())]
+    }
+
+    fn gen_columns(&mut self) -> Vec<ColumnPlan> {
+        let n = self.range("schema.columns", self.profile.columns);
         let mut names = Vec::with_capacity(n);
         let mut seen = Vec::with_capacity(n);
         for _ in 0..n {
@@ -279,19 +285,19 @@ impl SchemaGenerator {
         names
     }
 
-    fn gen_ident(&self) -> String {
+    fn gen_ident(&mut self) -> String {
         const CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789_";
         const FIRST: &[u8] = b"abcdefghijklmnopqrstuvwxyz_";
-        let len = 4 + (self.rng.next_u64() as usize % 12);
+        let len = 4 + self.index("schema.ident_len", 12);
         let mut s = String::with_capacity(len);
-        s.push(FIRST[self.rng.index(FIRST.len())] as char);
+        s.push(FIRST[self.index("schema.ident_char", FIRST.len())] as char);
         for _ in 1..len {
-            s.push(CHARS[self.rng.index(CHARS.len())] as char);
+            s.push(CHARS[self.index("schema.ident_char", CHARS.len())] as char);
         }
         s
     }
 
-    fn gen_column_name(&self, seen: &[String]) -> String {
+    fn gen_column_name(&mut self, seen: &[String]) -> String {
         loop {
             let name = self.gen_ident();
             if !seen.contains(&name) {
@@ -300,13 +306,15 @@ impl SchemaGenerator {
         }
     }
 
-    fn gen_unique_constraints(&self, columns: &[ColumnPlan], pk: &Option<usize>) -> Vec<UniqueConstraintPlan> {
-        let n = self.range(self.profile.unique_constraints);
+    fn gen_unique_constraints(&mut self, columns: &[ColumnPlan], pk: &Option<usize>) -> Vec<UniqueConstraintPlan> {
+        let n = self.range("schema.unique_constraints", self.profile.unique_constraints);
         let mut seen: Vec<Vec<usize>> = Vec::new();
         let mut result = Vec::new();
         for _ in 0..n {
-            let num_cols = 1 + self.rng.index(columns.len().min(3));
-            let mut cols: Vec<usize> = (0..num_cols).map(|_| self.rng.index(columns.len())).collect();
+            let num_cols = 1 + self.index("schema.key_width", columns.len().min(3));
+            let mut cols: Vec<usize> = (0..num_cols)
+                .map(|_| self.index("schema.key_column", columns.len()))
+                .collect();
             cols.sort();
             cols.dedup();
             if !cols.is_empty() && !seen.contains(&cols) {
@@ -324,7 +332,7 @@ impl SchemaGenerator {
     }
 
     fn gen_indexes(
-        &self,
+        &mut self,
         columns: &[ColumnPlan],
         unique_constraints: &[UniqueConstraintPlan],
         pk: &Option<usize>,
@@ -355,17 +363,19 @@ impl SchemaGenerator {
         }
 
         // Additional random indexes.
-        let n = self.range(self.profile.indexes);
+        let n = self.range("schema.indexes", self.profile.indexes);
         for _ in 0..n {
-            let num_cols = 1 + self.rng.index(columns.len().min(3));
-            let mut cols: Vec<usize> = (0..num_cols).map(|_| self.rng.index(columns.len())).collect();
+            let num_cols = 1 + self.index("schema.key_width", columns.len().min(3));
+            let mut cols: Vec<usize> = (0..num_cols)
+                .map(|_| self.index("schema.key_column", columns.len()))
+                .collect();
             cols.sort();
             cols.dedup();
             if cols.is_empty() || seen_cols.contains(&cols) {
                 continue;
             }
             seen_cols.push(cols.clone());
-            let algorithm = if self.rng.sample_probability(self.profile.btree_prob) {
+            let algorithm = if self.choices.probability("schema.btree", self.profile.btree_prob) {
                 IndexAlgorithm::BTree
             } else {
                 IndexAlgorithm::Hash
@@ -379,19 +389,20 @@ impl SchemaGenerator {
         indexes
     }
 
-    fn gen_table(&self, _table_index: usize) -> TablePlan {
+    fn gen_table(&mut self, _table_index: usize) -> TablePlan {
         let columns = self.gen_columns();
 
-        let primary_key = if self.rng.sample_probability(self.profile.pk_prob) && !columns.is_empty() {
-            Some(self.rng.index(columns.len()))
-        } else {
-            None
-        };
+        let primary_key =
+            if self.choices.probability("schema.has_primary_key", self.profile.pk_prob) && !columns.is_empty() {
+                Some(self.index("schema.primary_key", columns.len()))
+            } else {
+                None
+            };
 
         let unique_constraints = self.gen_unique_constraints(&columns, &primary_key);
 
         let sequences = if let Some(pk) = primary_key {
-            if columns[pk].ty.is_integral() && self.rng.sample_probability(self.profile.auto_inc_prob) {
+            if columns[pk].ty.is_integral() && self.choices.probability("schema.auto_inc", self.profile.auto_inc_prob) {
                 SequencePlan::new(pk, columns[pk].ty).into_iter().collect()
             } else {
                 vec![]
@@ -411,12 +422,12 @@ impl SchemaGenerator {
             indexes,
             unique_constraints,
             sequences,
-            is_public: !self.rng.sample_probability(self.profile.private_prob),
+            is_public: !self.choices.probability("schema.private", self.profile.private_prob),
         }
     }
 
-    pub fn gen_schema(&self) -> SchemaPlan {
-        let table_count = self.range(self.profile.table_count);
+    pub fn gen_schema(&mut self) -> SchemaPlan {
+        let table_count = self.range("schema.tables", self.profile.table_count);
         let tables = (0..table_count).map(|i| self.gen_table(i)).collect();
         SchemaPlan { tables }
     }

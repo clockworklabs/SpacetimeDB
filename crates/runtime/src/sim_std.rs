@@ -9,6 +9,7 @@
 
 use core::{cell::Cell, future::Future};
 use std::boxed::Box;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use crate::sim;
@@ -137,12 +138,18 @@ unsafe extern "C" fn pthread_attr_init(attr: *mut libc::pthread_attr_t) -> libc:
 //
 // This crate no longer tries to make host randomness deterministic. Any such
 // request is surfaced with a warning and then delegated to the host OS.
+//
+// The backtrace is printed once per process: symbolizing it costs ~25ms, and a
+// long DST campaign reopens the database thousands of times.
 #[unsafe(no_mangle)]
 #[inline(never)]
 unsafe extern "C" fn getrandom(buf: *mut u8, buflen: usize, flags: u32) -> isize {
+    static BACKTRACE_PRINTED: AtomicBool = AtomicBool::new(false);
     if in_simulation() {
         eprintln!("warning: randomness requested; delegating to host OS");
-        eprintln!("{}", std::backtrace::Backtrace::force_capture());
+        if !BACKTRACE_PRINTED.swap(true, Ordering::Relaxed) {
+            eprintln!("{}", std::backtrace::Backtrace::force_capture());
+        }
     }
     unsafe { real_getrandom()(buf, buflen, flags) }
 }

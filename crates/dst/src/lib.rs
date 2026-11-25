@@ -1,6 +1,4 @@
-pub mod engine;
+pub mod datastore;
+pub mod harness;
 pub mod schema;
 pub mod sim;
-pub mod traits;
-
-pub use traits::{Properties, TargetDriver, TestSuite, TestSuiteParts};
