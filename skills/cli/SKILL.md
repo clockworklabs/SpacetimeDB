@@ -75,7 +75,9 @@ Use `spacetime init --lang csharp --dotnet-version 10 my-project` to select
 
 Do not make the project permanently WASM-only to fix a managed build: keep LLVM
 package references and WASM settings conditional on the RID. Let dotnet restore
-when changing build modes. Managed builds alone do not enable C# module unit tests.
+when changing build modes. Managed builds alone do not enable C# module unit tests:
+use a separate .NET 10 test project with the matching `SpacetimeDB.Testing`
+package and a supported native platform, as described in the C# server skill.
 
 .NET 8 retains WASM/JIT by default and requires `--native-aot` to select NativeAOT
 where supported. The CLI manages `SPACETIMEDB_WASM_AOT` and its legacy alias

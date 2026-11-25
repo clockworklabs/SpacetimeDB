@@ -13,6 +13,10 @@ metadata:
 
 # SpacetimeDB TypeScript SDK Reference
 
+## Runtime Memory
+
+V8's module memory limit includes `ArrayBuffer` allocations (and typed-array backing buffers), not just ordinary JavaScript objects. Limit peak buffer allocations and copies. This is separate from the storage engine's resident-memory budget; changing table cache policies does not increase the V8 limit.
+
 ## Module Structure
 
 Tables are built with `table()`, bound with `schema()`, and exported as default. Reducers and lifecycle hooks are `export const`:

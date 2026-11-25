@@ -327,6 +327,8 @@ The rest of this guide shows fragments rather than whole files. Code marked `// 
 
 Use .NET 10 and a separate test project referencing `SpacetimeDB.Testing`, at exactly the same version as your module's `SpacetimeDB.Runtime` package. These examples use xUnit. No server, Rust compiler, or WASI workload is needed.
 
+The testing package includes native datastore libraries for Linux x64/ARM64 (glibc 2.35 or later) and Windows x64. macOS is not supported; run C# module tests in a supported Linux environment or Windows. Use a release that publishes matching Testing and Runtime packages.
+
 Keep tests in a sibling project, outside the module directory, so the module's default compile glob does not include test code:
 
 ```text

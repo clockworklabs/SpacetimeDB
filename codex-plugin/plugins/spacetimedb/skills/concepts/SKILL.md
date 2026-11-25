@@ -169,11 +169,13 @@ Database environment values are read-only strings, including secrets, supplied a
 
 Views can accept arguments in 2.13+ (Rust, TypeScript, C#), queried as `SELECT * FROM view_name(42)`. Use explicit queries instead of subscribe-all on that connection; subscribe-all skips these views. See server skills for definition restrictions and client skills for query/cache rules.
 
-Rust and TypeScript provide in-memory module unit-test harnesses in 2.12+: run native `cargo test` or Vitest with the module-test plugin. These use the real datastore but do not simulate clients, subscriptions, RLS enforcement, lifecycle events, or timer execution. Test those host behaviors against a running database.
+Rust and TypeScript provide in-memory module unit-test harnesses in 2.12+: run native `cargo test` or Vitest with the module-test plugin. C# also provides a managed .NET 10 harness via the separate `SpacetimeDB.Testing` package; see the C# server skill for platform and package requirements. These use the real datastore but do not simulate clients, subscriptions, RLS enforcement, lifecycle events, or timer execution. Test those host behaviors against a running database.
 
 ## Inter-Database Communication
 
 Reducers can't make network requests, but a reducer can call a reducer in another database on the same server through an **outbox table** (async IDC). The reducer inserts a row, and after its transaction commits, the row is delivered as a reducer call to the target database exactly once, in order with other calls through the same outbox to the same database. The sending reducer doesn't wait, and the two databases don't commit together: the receiving reducer runs later in its own transaction and can fail. An optional `on_result` reducer in the sending database receives the result, so it can undo or record the work.
+
+Deliveries can be pipelined. Receiving calls and `on_result` callbacks each retain stream order, but a later receiving call need not wait for an earlier callback in the sending database. Do not use callbacks as barriers for subsequent receiving calls.
 
 Use it to split an application into databases that scale and deploy independently, such as a lobby that sends players to separate game world databases. Only Rust and TypeScript modules can declare outbox tables. See the language-specific server skills for syntax.
 

@@ -51,12 +51,18 @@ For more information on how to use Docusaurus, see the
 
 #### Installation
 
-1. Make sure you have [Node.js](https://nodejs.org/) installed
-   (version 22 or higher is recommended).
-2. Clone the repository and navigate to the `docs` directory.
-3. Install the dependencies: `pnpm install`
-4. Run the development server: `pnpm dev`, which will start a local server and open a browser window.
-   All changes you make to the markdown files will be reflected live in the browser.
+1. Install [Node.js](https://nodejs.org/) matching the repository's engines:
+   `^22.23.4 || ^24.22.1 || >=26.12.1`, and pnpm 10.16.0 (the version pinned in the root `package.json`).
+2. Clone the repository and navigate to its root, `SpacetimeDB/`.
+3. Install the docs dependencies using the root workspace lockfile:
+   `pnpm --filter docs... install --frozen-lockfile`.
+4. Run `pnpm --filter docs dev`, which starts a local server and opens a browser window.
+   Markdown edits appear live in the browser.
+5. Before opening a PR, run `pnpm --filter docs typecheck` and `pnpm --filter docs build`.
+
+Repository JavaScript packages use pnpm. Do not create or commit `package-lock.json`;
+`cargo ci lockfile-policy` rejects npm lockfiles. This policy applies to this
+repository, not to applications consuming the published SDK.
 
 ### Cutting Docs Versions
 

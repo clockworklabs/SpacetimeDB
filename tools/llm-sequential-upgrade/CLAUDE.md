@@ -41,6 +41,8 @@ POSIX: `mkdir -p` not `New-Item`, `sleep` not `Start-Sleep`, `2>/dev/null` not `
 Do NOT read any files under:
 - `../llm-oneshot/apps/chat-app/typescript/` (reference implementations)
 - `../llm-oneshot/apps/chat-app/staging/`
+- Published reference apps in the `spacetimedb-llm-oneshot-results` and
+  `spacetimedb-llm-sequential-upgrade-results` checkouts, wherever they are located
 - Any other AI-generated app code in this workspace
 
 Only read files you created, the backend instructions, and the feature prompts.

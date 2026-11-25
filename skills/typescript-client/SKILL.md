@@ -17,6 +17,8 @@ Generated bindings convert snake_case names to camelCase, including row fields: 
 
 The examples below use bundler-style extensionless imports. For NodeNext or direct-TypeScript execution, choose the matching binding import extension and use explicit file imports in your application; see https://spacetimedb.com/docs/clients/typescript#import-extensions.
 
+`withUri` takes the server base URI, not a subscription endpoint. It preserves a path prefix: `wss://example.com/stdb` (or `/stdb/`) uses `/stdb/v1/database/<database>/subscribe` and the HTTPS token-exchange endpoint `/stdb/v1/identity/websocket-token`. A reverse proxy must forward both endpoints, stripping its prefix when forwarding to a root-mounted server.
+
 ## React: main.tsx
 
 ```typescript

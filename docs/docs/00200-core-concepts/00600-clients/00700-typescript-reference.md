@@ -152,6 +152,8 @@ class DbConnectionBuilder {
 
 Configure the URI of the SpacetimeDB instance or cluster which hosts the remote database.
 
+The SDK preserves a path prefix, with or without a trailing slash. For example, `wss://example.com/stdb` connects to `/stdb/v1/database/<database>/subscribe` and exchanges authentication tokens at `https://example.com/stdb/v1/identity/websocket-token`. Configure your reverse proxy to forward both endpoints to SpacetimeDB, stripping the `/stdb` prefix if the server is mounted at `/`. Supply only the server base URI, not the database subscription endpoint.
+
 #### Method `withDatabaseName`
 
 ```typescript
