@@ -1,7 +1,7 @@
 {
   "name": "@spacetimedb/auth",
   "description": "Password, OAuth, session, JWT, and profile primitives for SpacetimeDB TypeScript modules.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./src/index.ts",

@@ -43,3 +43,9 @@ test-results/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Generated apps are published in clockworklabs/spacetimedb-llm-oneshot-results,
+# not committed here. Only prompts and the test harness are tracked under apps/.
+apps/*/*/
+!apps/*/prompts/
+!apps/*/test-harness/

@@ -19,7 +19,7 @@ They share the same model. Server functions live in your repository, writes run 
 
 ## "Your data has to fit in memory."
 
-A Spacetime database is not limited by the memory of one machine. Tiered storage treats memory as a cache in front of local disk, the way a CPU cache sits in front of main memory. Hot data stays in memory, so transactions on it run at in-memory speed, while colder data lives on disk. On Maincloud, tables can also be backed by object storage, so a single database can store an effectively unbounded amount of data. See [How does Spacetime scale?](https://spacetimedb.com/blog/how-does-spacetime-scale)
+A Spacetime database is not limited by the memory of one machine. [Tiered storage](../../00200-core-concepts/00300-tables/00700-storage-and-cache-policies.md) treats memory as a cache in front of local disk, the way a CPU cache sits in front of main memory. Hot data stays in memory, so transactions on it run at in-memory speed, while colder data lives on disk. On Maincloud, tables can also be backed by object storage, so a single database can store an effectively unbounded amount of data. See [How does Spacetime scale?](https://spacetimedb.com/blog/how-does-spacetime-scale)
 
 ## "A database can only scale up, on one machine."
 

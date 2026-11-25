@@ -8,7 +8,7 @@ How to set up, run, and interpret the LLM cost-to-done benchmark.
 
 Measures the **total token cost to reach a fully working chat app** by alternating between two agents:
 
-1. **Code Agent** (headless, `run.sh`) — generates code, fixes bugs, deploys. Token-tracked via OpenTelemetry.
+1. **Code Agent** (headless, `cargo llm-apps sequential generate`/`upgrade`/`fix`) — generates code, fixes bugs, deploys. Token-tracked via OpenTelemetry.
 2. **Grade Agent** (interactive Claude Code) — tests in Chrome via MCP, writes bug reports. NOT token-tracked.
 
 Only the Code Agent's tokens count toward the benchmark. Grading cost is the same for both SpacetimeDB and PostgreSQL, so it's excluded.
@@ -16,11 +16,11 @@ Only the Code Agent's tokens count toward the benchmark. Grading cost is the sam
 ### The Loop
 
 ```
-run.sh --level 1          → Code Agent generates & deploys app (tokens tracked)
+generate --level 1        → Code Agent generates & deploys app (tokens tracked)
   ↓
 You (in Claude Code)      → Grade Agent tests in Chrome, writes BUG_REPORT.md
   ↓
-run.sh --fix <app-dir>    → Code Agent reads bugs, fixes code, redeploys (tokens tracked)
+fix <app-dir>             → Code Agent reads bugs, fixes code, redeploys (tokens tracked)
   ↓
 You (in Claude Code)      → Grade Agent retests, writes updated BUG_REPORT.md or GRADING_RESULTS.md
   ↓
@@ -40,7 +40,7 @@ spacetime start
 ### 2. Docker (for OpenTelemetry Collector)
 
 ```bash
-cd tools/llm-oneshot/llm-sequential-upgrade
+cd tools/llm-sequential-upgrade
 docker compose -f docker-compose.otel.yaml up -d
 ```
 
@@ -54,7 +54,11 @@ Required for the grading agent (interactive session). Chrome must be open with t
 
 ### 5. Node.js
 
-Required for SpacetimeDB TypeScript backend, Vite dev server, and `parse-telemetry.mjs`.
+Required for SpacetimeDB TypeScript backend and Vite dev server.
+
+### 6. Rust
+
+The tooling is the `tools/llm-apps` crate, run as `cargo llm-apps sequential <command>` from anywhere in the repository. `cargo llm-apps sequential --help` lists the commands.
 
 ---
 
@@ -63,8 +67,7 @@ Required for SpacetimeDB TypeScript backend, Vite dev server, and `parse-telemet
 ### Step 1: Generate & Deploy (headless, token-tracked)
 
 ```bash
-cd tools/llm-oneshot/llm-sequential-upgrade
-./run.sh --level 1 --backend spacetime
+cargo llm-apps sequential generate --level 1 --backend spacetime
 ```
 
 This:
@@ -82,9 +85,9 @@ In this Claude Code session (or a new interactive one), say:
 Grade the app at sequential-upgrade/sequential-upgrade-YYYYMMDD/spacetime/results/chat-app-<timestamp>
 ```
 
-Or use the helper script:
+Or start a grading session directly:
 ```bash
-./grade.sh sequential-upgrade/sequential-upgrade-YYYYMMDD/spacetime/results/chat-app-<timestamp>
+cargo llm-apps sequential grade tools/llm-sequential-upgrade/sequential-upgrade/sequential-upgrade-YYYYMMDD/spacetime/results/chat-app-<timestamp>
 ```
 
 The grading agent will:
@@ -99,7 +102,7 @@ The grading agent will:
 If bugs were found:
 
 ```bash
-./run.sh --fix sequential-upgrade/sequential-upgrade-YYYYMMDD/spacetime/results/chat-app-<timestamp>
+cargo llm-apps sequential fix tools/llm-sequential-upgrade/sequential-upgrade/sequential-upgrade-YYYYMMDD/spacetime/results/chat-app-<timestamp>
 ```
 
 This:
@@ -233,15 +236,15 @@ spacetime start  # if not running
 
 ```bash
 # Generate level 1, then upgrade through each level
-./run.sh --level 1 --backend spacetime
+cargo llm-apps sequential generate --level 1 --backend spacetime
 # (grade, fix loop...)
-./run.sh --upgrade <app-dir> --level 2
+cargo llm-apps sequential upgrade <app-dir> --level 2
 # ... continue through level 12
 
 # Same for PostgreSQL
-./run.sh --level 1 --backend postgres
+cargo llm-apps sequential generate --level 1 --backend postgres
 # (grade, fix loop...)
-./run.sh --upgrade <app-dir> --level 2
+cargo llm-apps sequential upgrade <app-dir> --level 2
 # ... continue through level 12
 ```
 
@@ -249,8 +252,8 @@ spacetime start  # if not running
 
 ```bash
 # Generate all 15 features in a single prompt
-./run.sh --variant one-shot --backend spacetime
-./run.sh --variant one-shot --backend postgres
+cargo llm-apps sequential generate --variant one-shot --backend spacetime
+cargo llm-apps sequential generate --variant one-shot --backend postgres
 ```
 
 ---
@@ -258,15 +261,13 @@ spacetime start  # if not running
 ## File Structure
 
 ```
+llm-apps/                          # `cargo llm-apps`: every command below
 llm-sequential-upgrade/
   CLAUDE.md                        # Instructions for the Code Agent
   DEVELOP.md                       # This file (for humans)
-  run.sh                           # Code Agent launcher (generate/fix/upgrade)
-  grade.sh                         # Grade Agent launcher (interactive Chrome MCP)
   templates/                       # BUG_REPORT.md / ITERATION_LOG.md formats
   docker-compose.otel.yaml         # OTel Collector container
   otel-collector-config.yaml       # Collector config (OTLP → JSON files)
-  parse-telemetry.mjs              # Telemetry → COST_REPORT.md
   backends/
     spacetime.md                   # SpacetimeDB-specific phases
     spacetime-templates.md         # Code templates
@@ -292,7 +293,7 @@ llm-sequential-upgrade/
                     TOKEN-TRACKED                      NOT TRACKED
                ┌─────────────────────┐          ┌─────────────────────┐
                │                     │          │                     │
-   run.sh ────▶│  Code Agent         │          │  Grade Agent        │◀──── You
+llm-apps ─────▶│  Code Agent         │          │  Grade Agent        │◀──── You
                │  (claude --print)   │          │  (interactive CC)   │      (in Claude Code)
                │                     │          │                     │
                │  • Generate code    │          │  • Chrome MCP       │

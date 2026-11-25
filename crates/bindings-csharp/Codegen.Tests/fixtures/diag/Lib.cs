@@ -700,3 +700,218 @@ public partial class Module
         return null;
     }
 }
+
+namespace OutboxDiag
+{
+    public readonly record struct Identity(global::SpacetimeDB.Identity Value)
+    {
+        public readonly struct BSATN : global::SpacetimeDB.BSATN.IReadWrite<Identity>
+        {
+            public Identity Read(global::System.IO.BinaryReader reader) =>
+                new(new global::SpacetimeDB.Identity.BSATN().Read(reader));
+
+            public void Write(global::System.IO.BinaryWriter writer, Identity value) =>
+                new global::SpacetimeDB.Identity.BSATN().Write(writer, value.Value);
+
+            public global::SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(
+                global::SpacetimeDB.BSATN.ITypeRegistrar registrar
+            ) => new global::SpacetimeDB.Identity.BSATN().GetAlgebraicType(registrar);
+        }
+    }
+
+    public abstract class NotAReducer { }
+
+    public static partial class Reducers
+    {
+        public abstract class Remote : global::SpacetimeDB.Internal.IOutboxReceiver
+        {
+            public const string ReducerName = "remote";
+            public const string SignatureHash =
+                "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+
+            public string @name = default!;
+            public int @count = default!;
+            public string? @label = default!;
+        }
+
+        public abstract class TakesTarget : global::SpacetimeDB.Internal.IOutboxReceiver
+        {
+            public const string ReducerName = "takes_target";
+            public const string SignatureHash =
+                "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+
+            public string @target = default!;
+        }
+
+        public abstract class TakesEquals : global::SpacetimeDB.Internal.IOutboxReceiver
+        {
+            public const string ReducerName = "takes_equals";
+            public const string SignatureHash =
+                "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+
+            public string @equals = default!;
+        }
+    }
+}
+
+// `target` would need a second Target column.
+[SpacetimeDB.Outbox(typeof(OutboxDiag.Reducers.TakesTarget), Accessor = "OutboxTargetParam")]
+public partial struct TestOutboxTargetParam { }
+
+// `equals` would clash with the generated Equals method.
+[SpacetimeDB.Outbox(typeof(OutboxDiag.Reducers.TakesEquals), Accessor = "OutboxEqualsParam")]
+public partial struct TestOutboxEqualsParam { }
+
+[SpacetimeDB.Outbox(typeof(OutboxDiag.Reducers.Remote), Accessor = "OutboxWithFields")]
+public partial struct TestOutboxWithFields
+{
+    public string Name;
+}
+
+[SpacetimeDB.Outbox(typeof(OutboxDiag.Reducers.Remote), Accessor = "OutboxAndTable")]
+[SpacetimeDB.Table(Accessor = "TableAndOutbox")]
+public partial struct TestOutboxAndTable { }
+
+[SpacetimeDB.Table(Accessor = "OutboxNotAReducer", Outbox = typeof(OutboxDiag.NotAReducer))]
+public partial struct TestOutboxBadReceiver
+{
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc]
+    public ulong MsgId;
+
+    [SpacetimeDB.Target]
+    public OutboxDiag.Identity Target;
+}
+
+[SpacetimeDB.Table(
+    Accessor = "OutboxEventAndScheduled",
+    Event = true,
+    Scheduled = "DummyScheduledReducer",
+    ScheduledAt = nameof(At),
+    Outbox = typeof(OutboxDiag.Reducers.Remote)
+)]
+public partial struct TestOutboxEventAndScheduled
+{
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc]
+    public ulong MsgId;
+
+    [SpacetimeDB.Target]
+    public OutboxDiag.Identity Target;
+
+    public ScheduleAt At;
+    public string Name;
+    public int Count;
+    public string? Label;
+}
+
+[SpacetimeDB.Table(Accessor = "OutboxNoAutoInc", Outbox = typeof(OutboxDiag.Reducers.Remote))]
+[SpacetimeDB.Table(Accessor = "OutboxNoTarget", Outbox = typeof(OutboxDiag.Reducers.Remote))]
+[SpacetimeDB.Table(Accessor = "OutboxWrongTargetType", Outbox = typeof(OutboxDiag.Reducers.Remote))]
+public partial struct TestOutboxKeyAndTargetIssues
+{
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc(Table = "OutboxNoTarget")]
+    [SpacetimeDB.AutoInc(Table = "OutboxWrongTargetType")]
+    public ulong MsgId;
+
+    [SpacetimeDB.Target(Table = "OutboxNoAutoInc")]
+    public OutboxDiag.Identity Target;
+
+    [SpacetimeDB.Target(Table = "OutboxWrongTargetType")]
+    public Identity WrongTarget;
+
+    public string Name;
+    public int Count;
+    public string? Label;
+}
+
+[SpacetimeDB.Table(Accessor = "OutboxParamIssues", Outbox = typeof(OutboxDiag.Reducers.Remote))]
+public partial struct TestOutboxParamIssues
+{
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc]
+    public ulong MsgId;
+
+    [SpacetimeDB.Target]
+    public OutboxDiag.Identity Target;
+
+    // Two columns for `name`.
+    public string Name;
+
+    [SpacetimeDB.Param("name")]
+    public string Nickname;
+
+    // `count` is an int.
+    public uint Count;
+
+    // No column for `label`, no parameter named `unknown`, and two [Param]s.
+    [SpacetimeDB.Param("unknown")]
+    [SpacetimeDB.Param("other")]
+    public string? Extra;
+}
+
+[SpacetimeDB.Table]
+public partial struct TestOutboxAttributesWithoutOutbox
+{
+    [SpacetimeDB.Target]
+    public Identity Target;
+
+    [SpacetimeDB.Param("name")]
+    public string Name;
+}
+
+public static partial class OnResultIssues
+{
+    [SpacetimeDB.Reducer]
+    [SpacetimeDB.OnResult(typeof(TestOutboxParamIssues))]
+    public static void WrongSignature(ReducerContext ctx, TestOutboxParamIssues row) { }
+
+    [SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
+    [SpacetimeDB.OnResult(typeof(TestOutboxEventAndScheduled))]
+    public static void LifecycleResult(
+        ReducerContext ctx,
+        TestOutboxEventAndScheduled row,
+        Result<Unit, string> result
+    ) { }
+
+    [SpacetimeDB.OnResult(typeof(TestOutboxBadReceiver))]
+    public static void NotAReducer(
+        ReducerContext ctx,
+        TestOutboxBadReceiver row,
+        Result<Unit, string> result
+    ) { }
+
+    [SpacetimeDB.Reducer]
+    [SpacetimeDB.OnResult(typeof(TestOutboxBadReceiver), Table = "Missing")]
+    public static void UnknownTable(
+        ReducerContext ctx,
+        TestOutboxBadReceiver row,
+        Result<Unit, string> result
+    ) { }
+
+    // TestOutboxKeyAndTargetIssues has three outbox tables.
+    [SpacetimeDB.Reducer]
+    [SpacetimeDB.OnResult(typeof(TestOutboxKeyAndTargetIssues))]
+    public static void AmbiguousOutbox(
+        ReducerContext ctx,
+        TestOutboxKeyAndTargetIssues row,
+        Result<Unit, string> result
+    ) { }
+
+    [SpacetimeDB.Reducer]
+    [SpacetimeDB.OnResult(typeof(TestOutboxBadReceiver))]
+    public static void FirstResult(
+        ReducerContext ctx,
+        TestOutboxBadReceiver row,
+        Result<Unit, string> result
+    ) { }
+
+    [SpacetimeDB.Reducer]
+    [SpacetimeDB.OnResult(typeof(TestOutboxBadReceiver))]
+    public static void SecondResult(
+        ReducerContext ctx,
+        TestOutboxBadReceiver row,
+        Result<Unit, string> result
+    ) { }
+}

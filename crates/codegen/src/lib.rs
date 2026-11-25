@@ -49,10 +49,11 @@ pub fn generate_receiver_bindings(
     match lang {
         ReceiverLanguage::Rust => Ok(rust::generate_rust_module_bindings(module, dependency_name)),
         ReceiverLanguage::TypeScript => Ok(typescript::generate_module_bindings(module, dependency_name)),
-        ReceiverLanguage::Csharp { .. } => {
-            // TODO(idc-csharp): Generate C# receiver types and reducer handles in the configured namespace.
-            anyhow::bail!("C# receiver binding generation is not implemented yet")
-        }
+        ReceiverLanguage::Csharp { namespace } => Ok(csharp::generate_csharp_module_bindings(
+            module,
+            namespace,
+            dependency_name,
+        )),
         ReceiverLanguage::Cpp => {
             // TODO(idc-cpp): Generate C++ receiver types and reducer handles with the required headers.
             anyhow::bail!("C++ receiver binding generation is not implemented yet")
