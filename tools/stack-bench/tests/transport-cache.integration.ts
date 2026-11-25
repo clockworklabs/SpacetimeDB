@@ -174,13 +174,16 @@ test('privacy verdict drains an in-flight body and keeps a stalled response inco
 // before navigation without its headers arriving until after the reload begins.
 // Both methods must capture leaks and keep stalled responses inconclusive.
 test('privacy reload preserves preceding read and write responses', async t => {
-  let leak = false, delayedHeaders = false, stalled = false, capturedLeak = false, eventSource = false, eventLeak = false, method = 'PUT';
+  let leak = false, delayedHeaders = false, stalled = false, capturedLeak = false, eventSource = false, ndjson = false, eventLeak = false, method = 'PUT';
   let pageLoads = 0;
   const server = createServer((req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     if (req.url === '/events') {
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
       res.write(`data: ${eventLeak ? 'private-save-canary' : 'public'}\n\n`);
+    } else if (req.url === '/stream') {
+      res.writeHead(200, { 'Content-Type': 'application/x-ndjson' });
+      res.write(JSON.stringify({ value: eventLeak ? 'private-save-canary' : 'public' }) + '\n');
     } else if (req.url === '/api/profile?token=private-query') {
       const start = () => {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -190,7 +193,7 @@ test('privacy reload preserves preceding read and write responses', async t => {
       if (delayedHeaders) setTimeout(start, 150); else start();
     } else {
       res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(`${capturedLeak && pageLoads++ === 0 ? 'private-save-canary' : ''}${eventSource ? "<script>new EventSource('/events')</script>" : ''}<button id="profile-save" onclick="fetch('/api/profile?token=private-query', {method:'${method}',headers:{'X-Private':'private-header'}${method === 'PUT' ? ",body:'private-request-body'" : ''}}).then(r=>r.json())">Save</button>`);
+      res.end(`${capturedLeak && pageLoads++ === 0 ? 'private-save-canary' : ''}${eventSource ? "<script>new EventSource('/events')</script>" : ''}${ndjson ? "<script>fetch('/stream').then(r => { const reader = r.body.getReader(); const pump = () => reader.read().then(x => { if (!x.done) pump(); }); pump(); })</script>" : ''}<button id="profile-save" onclick="fetch('/api/profile?token=private-query', {method:'${method}',headers:{'X-Private':'private-header'}${method === 'PUT' ? ",body:'private-request-body'" : ''}}).then(r=>r.json())">Save</button>`);
     }
   }).listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -204,13 +207,14 @@ test('privacy reload preserves preceding read and write responses', async t => {
       JSON.stringify({ browser: browser.version(), evidence }, null, 2));
   });
   // A captured disclosure is a failure even if another request never finishes.
-  for (const requestMethod of ['PUT', 'GET']) for (const mode of ['clean', 'leak', 'late-clean', 'late-leak', 'stalled', 'captured-stalled', 'eventsource-clean', 'eventsource-leak']) {
+  for (const requestMethod of ['PUT', 'GET']) for (const mode of ['clean', 'leak', 'late-clean', 'late-leak', 'stalled', 'captured-stalled', 'eventsource-clean', 'eventsource-leak', 'ndjson-clean', 'ndjson-leak']) {
     await t.test(`${requestMethod} ${mode}`, async () => {
       const stderr = t.mock.method(process.stderr, 'write');
       method = requestMethod;
       pageLoads = 0;
-      eventSource = mode.startsWith('eventsource'); eventLeak = mode === 'eventsource-leak';
-      leak = !eventSource && mode.endsWith('leak'); delayedHeaders = mode.startsWith('late'); stalled = mode.endsWith('stalled'); capturedLeak = mode === 'captured-stalled';
+      eventSource = mode.startsWith('eventsource'); ndjson = mode.startsWith('ndjson');
+      eventLeak = (eventSource || ndjson) && mode.endsWith('leak');
+      leak = !eventSource && !ndjson && mode.endsWith('leak'); delayedHeaders = mode.startsWith('late'); stalled = mode.endsWith('stalled'); capturedLeak = mode === 'captured-stalled';
       const feature = compileScenarioDefinition({ schemaVersion: 1, track: 'ecommerce', level: 1, features: [{
         id: 1, name: 'save then reload', actors: ['reader'], setup: [],
         criteria: [{ id: 'capture', desc: 'the save response is captured before controlled reload', points: 1, steps: [

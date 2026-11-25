@@ -149,9 +149,9 @@ export function startNetworkProxy(reply: (value: object) => void, exit: (code: n
             status: answer.statusCode ?? 502, contentType: answer.headers['content-type'] ?? '',
             body: '', complete: false, encoding: (answer.headers['content-encoding'] ?? '').trim().toLowerCase(),
             chunks: [] as Buffer[] | null, bytes: 0 };
-          // Native EventSource is observed without waiting for stream closure.
+          // A stream is observed as its bytes pass, without waiting for it to close.
           // The browser observer separately rejects fetch-based SSE capture.
-          if (/text\/event-stream/i.test(record.contentType)) pendingHttp.delete(res);
+          if (/text\/event-stream|application\/x-ndjson/i.test(record.contentType)) pendingHttp.delete(res);
           metadataBytes += Buffer.byteLength(JSON.stringify({ ...record, chunks: undefined }));
           // Overwrite any application-supplied receipt. An unretained ID cannot
           // be matched to a successful snapshot by the observer.
