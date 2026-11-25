@@ -21,17 +21,16 @@
     "typecheck": "tsc"
   },
   "dependencies": {
-    "@docusaurus/core": "3.9.2",
-    "@docusaurus/plugin-client-redirects": "^3.9.2",
-    "@docusaurus/plugin-content-docs": "3.9.2",
-    "@docusaurus/preset-classic": "3.9.2",
-    "@docusaurus/theme-common": "3.9.2",
+    "@docusaurus/core": "3.10.2",
+    "@docusaurus/plugin-client-redirects": "3.10.2",
+    "@docusaurus/plugin-content-docs": "3.10.2",
+    "@docusaurus/preset-classic": "3.10.2",
+    "@docusaurus/theme-common": "3.10.2",
     "@easyops-cn/docusaurus-search-local": "^0.49.2",
     "@fontsource-variable/inter": "^5.2.8",
     "@fontsource-variable/source-code-pro": "^5.2.7",
     "@inkeep/cxkit-docusaurus": "^0.5.98",
     "@inkeep/cxkit-react": "^0.5.101",
-    "@inkeep/widgets": "^0.2.292",
     "@mdx-js/react": "^3.0.0",
     "@shikijs/rehype": "^3.3.0",
     "clsx": "^2.0.0",
@@ -41,9 +40,9 @@
     "shiki": "^3.3.0"
   },
   "devDependencies": {
-    "@docusaurus/module-type-aliases": "3.9.2",
-    "@docusaurus/tsconfig": "3.9.2",
-    "@docusaurus/types": "3.9.2",
+    "@docusaurus/module-type-aliases": "3.10.2",
+    "@docusaurus/tsconfig": "3.10.2",
+    "@docusaurus/types": "3.10.2",
     "@signalwire/docusaurus-plugin-llms-txt": "^1.2.2",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.3.0",
@@ -51,7 +50,7 @@
   },
   "pnpm": {
     "overrides": {
-      "@docusaurus/*": "3.9.2",
+      "@docusaurus/*": "3.10.2",
       "react": "18.3.1",
       "react-dom": "18.3.1"
     }
