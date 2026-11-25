@@ -154,6 +154,8 @@ export const doReset = spacetimedb.reducer((ctx) => { ... });
 
 Reducer args accept any column type, including arrays of custom types: `{ splits: t.array(Split) }`. Do not pass JSON strings for structured data.
 
+A reducer's arguments are written to the commit log with its caller and timestamp, and stay in the database's history.
+
 ## DB Operations
 
 ```typescript
@@ -505,6 +507,8 @@ TypeScript outbound HTTP uses `ctx.http.fetch(url, options)`, including for non-
 `t.array(t.u8())` values are `number[]`. Convert one to `new Uint8Array(value)` before using it as a binary request body.
 
 Procedures and handlers open short database transactions with `ctx.withTx(tx => ...)`. Perform network I/O before opening the transaction; only database work belongs inside its callback.
+
+A procedure's arguments are not written to the commit log. Rows it writes with `ctx.withTx` are.
 
 Scheduled procedures use the same `onSchedule` binding as scheduled reducers. The procedure must be exported, return `t.unit()`, and accept the scheduled row as its argument.
 
