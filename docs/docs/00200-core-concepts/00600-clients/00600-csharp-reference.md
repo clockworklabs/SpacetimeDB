@@ -80,6 +80,8 @@ spacetime generate --lang csharp --out-dir module_bindings --module-path PATH-TO
 
 Replace `PATH-TO-MODULE-DIRECTORY` with the path to your SpacetimeDB module.
 
+The CLI writes C# module declarations in `module_bindings/schema`. The source generator included in the C# client SDK builds the typed connection, tables, and reducer and procedure calls from those declarations. Upgrade the client SDK to 2.17.0 or later before regenerating. Existing client calls and project settings continue to work, and you can upgrade the SDK while still using older bindings.
+
 ## Type `DbConnection`
 
 A connection to a remote database is represented by the `DbConnection` class. This class is generated per module and contains information about the types, tables, and reducers defined by your module.

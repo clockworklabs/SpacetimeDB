@@ -415,7 +415,7 @@ public class SnapshotTests : IDisposable
         // We use reflection to seed the internal correlation state for deterministic reducer-result coverage.
         static void PrimePendingReducerCall(DbConnection client, uint requestId, Reducer reducer)
         {
-            var baseType = client.GetType().BaseType ?? throw new InvalidOperationException("DbConnection has no base type.");
+            var baseType = typeof(DbConnectionBase<DbConnection, RemoteTables, Reducer>);
             var pendingCallsField = baseType.GetField("pendingReducerCalls", BindingFlags.Instance | BindingFlags.NonPublic)
                 ?? throw new InvalidOperationException("Failed to find pendingReducerCalls field.");
             var pendingCallsObj = pendingCallsField.GetValue(client)
@@ -439,7 +439,7 @@ public class SnapshotTests : IDisposable
         // entries so SubscribeApplied/UnsubscribeApplied routes through the typed subscription path.
         static void PrimeSubscription(DbConnection client, uint querySetId)
         {
-            var baseType = client.GetType().BaseType ?? throw new InvalidOperationException("DbConnection has no base type.");
+            var baseType = typeof(DbConnectionBase<DbConnection, RemoteTables, Reducer>);
             var subscriptionsField = baseType.GetField("subscriptions", BindingFlags.Instance | BindingFlags.NonPublic)
                 ?? throw new InvalidOperationException("Failed to find subscriptions field.");
             var subscriptionsObj = subscriptionsField.GetValue(client)

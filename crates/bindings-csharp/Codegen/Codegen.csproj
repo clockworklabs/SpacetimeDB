@@ -38,6 +38,7 @@
   <ItemGroup>
     <!-- reuse attribute and adjacent types from the runtime -->
     <Compile Include="../Runtime/Attrs.cs" />
+    <Compile Include="../BSATN.Runtime/ModuleAttributes.cs" />
     <Compile Include="../Runtime/Internal/Autogen/TableCachePolicy.g.cs" />
   </ItemGroup>
 

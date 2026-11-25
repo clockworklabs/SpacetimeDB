@@ -6,10 +6,14 @@ use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
 use std::sync::OnceLock;
 
+fn module_artifact() -> &'static CompiledModule {
+    static ARTIFACT: OnceLock<CompiledModule> = OnceLock::new();
+    ARTIFACT.get_or_init(|| CompiledModule::compile("module-test", CompilationMode::Debug))
+}
+
 fn compiled_module() -> &'static ModuleDef {
     static COMPILED_MODULE: OnceLock<ModuleDef> = OnceLock::new();
-    COMPILED_MODULE
-        .get_or_init(|| CompiledModule::compile("module-test", CompilationMode::Debug).extract_schema_blocking())
+    COMPILED_MODULE.get_or_init(|| module_artifact().extract_schema_blocking())
 }
 
 fn compiled_typescript_module() -> &'static ModuleDef {
@@ -341,116 +345,8 @@ fn submodule_names_use_canonical_wire_names_and_accessor_paths() {
     );
 }
 
-#[test]
-fn csharp_client_for_typescript_submodule_compiles_and_runs() {
-    let typescript = compiled_typescript_module();
-    compile_csharp_client(
-        generate(
-            typescript,
-            &Csharp {
-                namespace: "SpacetimeDB",
-            },
-            &CodegenOptions::default(),
-        ),
-        r#"class Program { static void Main() {
-            var conn = new SpacetimeDB.DbConnection();
-            try {
-                if (conn.Db.myLib.LibData.RemoteTableName != "my_lib.libData") throw new System.Exception(conn.Db.myLib.LibData.RemoteTableName);
-                if (((SpacetimeDB.IReducerArgs)new SpacetimeDB.myLib.Reducer.LibInsert("value")).ReducerName != "my_lib.lib_insert") throw new System.Exception("wrong reducer name");
-                if (((SpacetimeDB.IProcedureArgs)new SpacetimeDB.myLib.Procedure.LibCountArgs()).ProcedureName != "my_lib.lib_count") throw new System.Exception("wrong procedure name");
-                var sql = new SpacetimeDB.QueryBuilder().From.myLib.LibData().ToSql();
-                if (!sql.Contains("\"my_lib\".\"libData\"") || sql.Contains("myLib")) throw new System.Exception(sql);
-                if (!System.Linq.Enumerable.Contains(SpacetimeDB.QueryBuilder.AllTablesSqlQueries(), sql)) throw new System.Exception("missing namespace subscription");
-            } finally { conn.Disconnect(); }
-        } }"#,
-    );
-}
-
-fn compile_csharp_client(files: Vec<spacetimedb_codegen::OutputFile>, program: &str) {
-    let project = tempfile::tempdir().unwrap();
-    for file in files {
-        let path = project.path().join(file.filename);
-        fs_err::create_dir_all(path.parent().unwrap()).unwrap();
-        fs_err::write(path, file.code).unwrap();
-    }
-    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .unwrap();
-    // `canonicalize` returns a verbatim `\\?\` path on Windows, which MSBuild
-    // percent-escapes, breaking its `*.props` wildcard imports (MSB4019).
-    let repo = match repo.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
-        Some(stripped) => std::path::PathBuf::from(stripped),
-        None => repo,
-    };
-    // Use the local runtime, never a published package or an old NuGet cache entry.
-    let config = project.path().join("NuGet.Config");
-    fs_err::write(
-        &config,
-        format!(
-            r#"<configuration>
-  <packageSources>
-    <clear />
-    <add key="local" value="{}/crates/bindings-csharp/BSATN.Runtime/bin/Release" />
-    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
-  </packageSources>
-  <packageSourceMapping>
-    <packageSource key="local"><package pattern="SpacetimeDB.BSATN.Runtime" /></packageSource>
-    <packageSource key="nuget.org"><package pattern="*" /></packageSource>
-  </packageSourceMapping>
-</configuration>"#,
-            repo.display()
-        ),
-    )
-    .unwrap();
-    {
-        let result = std::process::Command::new("dotnet")
-            .arg("pack")
-            .arg(repo.join("crates/bindings-csharp/BSATN.Runtime"))
-            .args(["-c", "Release"])
-            .arg(format!("-p:RestoreConfigFile={}", config.display()))
-            .output()
-            .expect("dotnet SDK is required for generated C# compilation");
-        assert!(
-            result.status.success(),
-            "local BSATN pack failed:\n{}\n{}",
-            String::from_utf8_lossy(&result.stdout),
-            String::from_utf8_lossy(&result.stderr)
-        );
-    }
-    fs_err::write(project.path().join("Program.cs"), program).unwrap();
-    fs_err::write(
-        project.path().join("client.csproj"),
-        format!(
-            r#"<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <LangVersion>9</LangVersion>
-    <OutputType>Exe</OutputType>
-    <Nullable>enable</Nullable>
-    <AssemblyName>SpacetimeDB.Tests</AssemblyName>
-  </PropertyGroup>
-  <ItemGroup><ProjectReference Include="{}/sdks/csharp/SpacetimeDB.ClientSDK.csproj" /></ItemGroup>
-</Project>"#,
-            repo.display()
-        ),
-    )
-    .unwrap();
-    let result = std::process::Command::new("dotnet")
-        .args(["run", "--project"])
-        .arg(project.path().join("client.csproj"))
-        .arg("-p:TreatWarningsAsErrors=true")
-        .arg(format!("-p:RestorePackagesPath={}/packages", project.path().display()))
-        .arg(format!("-p:RestoreConfigFile={}", config.display()))
-        .output()
-        .expect("dotnet SDK is required for generated C# compilation");
-    assert!(
-        result.status.success(),
-        "generated client failed:\n{}\n{}",
-        String::from_utf8_lossy(&result.stdout),
-        String::from_utf8_lossy(&result.stderr)
-    );
-}
+#[path = "csharp/packaged_sdk.rs"]
+mod csharp;
 
 /// The relative module specifiers in `import … from "./…"` and `"../…"` lines.
 fn relative_imports(code: &str) -> Vec<&str> {

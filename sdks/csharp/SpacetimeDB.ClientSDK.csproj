@@ -25,7 +25,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SpacetimeDB.BSATN.Runtime" Version="2.16.*" />
+    <!-- Consumers compile module bindings with the analyzer shipped in BSATN.Runtime. -->
+    <PackageReference Include="SpacetimeDB.BSATN.Runtime" Version="$(Version)" PrivateAssets="contentFiles;build" />
 
     <InternalsVisibleTo Include="SpacetimeDB.Tests" />
   </ItemGroup>

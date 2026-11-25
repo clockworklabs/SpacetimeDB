@@ -16,6 +16,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="../Runtime/Internal/Autogen/TableCachePolicy.g.cs" />
     <!-- We want to build BSATN.Codegen both to include it in our NuGet package but also we want it to transform [SpacetimeDB.Type] usages in BSATN.Runtime code itself. -->
     <ProjectReference
       Include="../BSATN.Codegen/BSATN.Codegen.csproj"

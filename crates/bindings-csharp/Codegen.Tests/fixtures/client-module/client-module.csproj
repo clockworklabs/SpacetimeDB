@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../../../../sdks/csharp/src/**/*.cs" />
+    <ProjectReference Include="../../../BSATN.Runtime/BSATN.Runtime.csproj" />
+  </ItemGroup>
+</Project>
