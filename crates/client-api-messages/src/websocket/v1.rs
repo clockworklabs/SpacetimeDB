@@ -687,13 +687,13 @@ pub struct ProcedureResult<F: WebsocketFormat> {
     ///
     /// Contains the return value if successful, or the error message if not.
     pub status: ProcedureStatus<F>,
-    /// The time when the reducer started.
+    /// The time when the procedure started.
     ///
     /// Note that [`Timestamp`] serializes as `i64` nanoseconds since the Unix epoch.
     pub timestamp: Timestamp,
     /// The time the procedure took to run.
     pub total_host_execution_duration: TimeDuration,
-    /// The same same client-provided identifier as in the original [`ProcedureCall`] request.
+    /// The same client-provided identifier as in the original [`CallProcedure`] request.
     ///
     /// Clients use this to correlate the response with the original request.
     pub request_id: u32,

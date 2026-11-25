@@ -2273,7 +2273,8 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Verify global.json files are symlinks
-    # This builds a small CI helper and checks symlink policy without building SpacetimeDB.
+    # This builds small CI helpers and checks the global.json symlink policy and that no npm
+    # lockfiles are committed, without building SpacetimeDB.
     runs-on: spacetimedb-linux-small
     permissions:
       contents: read
@@ -2285,10 +2286,12 @@ jobs:
 
       - name: Find Git ref
         env:
-          PR_NUMBER: ${{ github.event.inputs.pr_number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
-          if [ -n "$PR_NUMBER" ]; then
-            GIT_REF="refs/pull/$PR_NUMBER/merge"
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
           else
             GIT_REF="${{ github.ref }}"
           fi
@@ -2305,6 +2308,9 @@ jobs:
 
       - name: Check global.json policy
         run: cargo ci global-json-policy
+
+      - name: Check that no npm lockfiles are committed
+        run: cargo ci lockfile-policy
 
       - name: Upload timing reports
         if: always()

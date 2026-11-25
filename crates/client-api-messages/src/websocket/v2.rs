@@ -134,7 +134,7 @@ pub struct SubscribeSet {
 ///
 /// Unlike subscriptions registered by [`Subscribe`], this query will not receive real-time updates.
 ///
-/// The server will respond with a [`OneOffQueryResponse`] message containing the same `request_id`
+/// The server will respond with a [`OneOffQueryResult`] message containing the same `request_id`
 /// and the status of the query, either the matching rows or an error message.
 #[derive(SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
@@ -148,7 +148,7 @@ pub struct OneOffQuery {
 
 /// Sent by the client to invoke a reducer, a transactional non-side-effecting database function.
 ///
-/// After the reducer runs, the server will respond with a [`CallReducerResult`] message containing the same `request_id`
+/// After the reducer runs, the server will respond with a [`ReducerResult`] message containing the same `request_id`
 /// and the status of the run, either the return value and [`TransactionUpdate`] or an error.
 #[derive(SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
@@ -164,7 +164,7 @@ pub struct CallReducer {
 
     /// The arguments to the reducer.
     ///
-    /// A BSATN-encoded [`ProductValue`] which meets the reducer's argument schema.
+    /// A BSATN-encoded [`ProductValue`](spacetimedb_sats::ProductValue) which meets the reducer's argument schema.
     pub args: Bytes,
 }
 
@@ -183,7 +183,7 @@ impl_deserialize!([] CallReducerFlags, de => match de.deserialize_u8()? {
 
 /// Sent by the client to invoke a procedure, a non-transactional side-effecting database function.
 ///
-/// After the procedure runs, the server will respond with a [`CallProcedureResult`] message containing the same `request_id`
+/// After the procedure runs, the server will respond with a [`ProcedureResult`] message containing the same `request_id`
 /// and the status of the run, either the return value or an error.
 #[derive(SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
@@ -199,7 +199,7 @@ pub struct CallProcedure {
 
     /// The arguments to the procedure.
     ///
-    /// A BSATN-encoded [`ProductValue`] which meets the procedure's argument schema.
+    /// A BSATN-encoded [`ProductValue`](spacetimedb_sats::ProductValue) which meets the procedure's argument schema.
     pub args: Bytes,
 }
 
@@ -268,7 +268,7 @@ pub struct QueryRows {
 
 /// Matching rows resident in a table at the time a query ran,
 /// used in contexts where we're not sending insert/delete deltas,
-/// like the [`QueryRows`] of a [`SubscribeApplied`], and [`OneOffQueryResponse`].
+/// like the [`QueryRows`] of a [`SubscribeApplied`], and [`OneOffQueryResult`].
 #[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct SingleTableRows {
@@ -436,7 +436,7 @@ pub struct EventTableRows {
 #[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct OneOffQueryResult {
-    /// The request_id of the corresponding `SubscribeSingle` message.
+    /// The request_id of the corresponding [`OneOffQuery`] message.
     pub request_id: u32,
     /// The matching rows for this query, or an error message if computation failed.
     ///
@@ -449,7 +449,7 @@ pub struct OneOffQueryResult {
 #[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct ReducerResult {
-    /// The request_id of the corresponding `SubscribeSingle` message.
+    /// The request_id of the corresponding [`CallReducer`] message.
     pub request_id: u32,
     /// The time when the reducer started.
     ///
@@ -503,13 +503,13 @@ pub struct ProcedureResult {
     ///
     /// Contains the return value if successful, or the error message if not.
     pub status: ProcedureStatus,
-    /// The time when the reducer started.
+    /// The time when the procedure started.
     ///
     /// Note that [`Timestamp`] serializes as `i64` nanoseconds since the Unix epoch.
     pub timestamp: Timestamp,
     /// The time the procedure took to run.
     pub total_host_execution_duration: TimeDuration,
-    /// The same same client-provided identifier as in the original [`ProcedureCall`] request.
+    /// The same client-provided identifier as in the original [`CallProcedure`] request.
     ///
     /// Clients use this to correlate the response with the original request.
     pub request_id: u32,
