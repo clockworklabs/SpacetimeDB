@@ -1478,9 +1478,9 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         var vis = SyntaxFacts.GetText(Visibility);
         var readOnly = $"global::{ViewHandlesNamespace}.{tableAccessor.Identifier}ReadOnly";
         yield return managedAccess ? $"private {readOnly} __ReadOnly => new(__access);"
-            : sharedContexts
-                ? $"private {readOnly} __ReadOnly => __state.__readOnly ??= new(__state.InstanceId);"
-            : $"private static {readOnly}? __readOnly;\nprivate {readOnly} __ReadOnly => __readOnly ??= new();";
+        : sharedContexts
+            ? $"private {readOnly} __ReadOnly => __state.__readOnly ??= new(__state.InstanceId);"
+        : $"private static {readOnly}? __readOnly;\nprivate {readOnly} __ReadOnly => __readOnly ??= new();";
         foreach (
             var identifier in GetUniqueIndexes(tableAccessor)
                 .Where(u => u.Constraint.Col.IsEquatable)
