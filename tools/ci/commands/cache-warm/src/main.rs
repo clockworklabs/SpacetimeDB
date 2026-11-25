@@ -361,6 +361,7 @@ fn warm_ci_tools(runner: &mut WarmRunner) {
         "ci-update-flow",
         "ci-cli-docs",
         "ci-global-json-policy",
+        "ci-lockfile-policy",
         "ci-publish-checks",
         "ci-typescript-test",
         "ci-version-upgrade-check",

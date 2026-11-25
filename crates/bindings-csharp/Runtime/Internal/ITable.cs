@@ -80,6 +80,8 @@ public interface ITableView<View, T>
 
     static abstract RawScheduleDefV10? MakeScheduleDesc();
 
+    static virtual TableCachePolicy CachePolicy => TableCachePolicy.RequiredInMemory;
+
     static abstract T ReadGenFields(BinaryReader reader, T row);
 
     static virtual string LookupName => tableName;
@@ -128,6 +130,28 @@ public interface ITableView<View, T>
         FFI.datastore_table_row_count(tableId, out var count);
         return count;
     }
+
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    protected static ulong DoCount(TableAccessor accessor) => accessor.Count();
+
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    protected static IEnumerable<T> DoIter(TableAccessor accessor) => accessor.Iter<T>();
+
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    protected static T DoInsert(TableAccessor accessor, T row)
+    {
+        var generated = accessor.Insert(IStructuralReadWrite.ToBytes(row));
+        return IntegrateGeneratedColumns(row, generated, generated.Length);
+    }
+
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    protected static bool DoDelete(TableAccessor accessor, T row) =>
+        accessor.Delete(IStructuralReadWrite.ToBytes(row));
+
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    protected static ulong DoClear(TableAccessor accessor) => accessor.Clear();
+#endif
 
     protected static IEnumerable<T> DoIter() => new RawTableIter(tableId);
 

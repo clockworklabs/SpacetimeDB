@@ -2,7 +2,7 @@ use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_lib::db::raw_def::v10::MethodOrAny;
 use spacetimedb_lib::db::raw_def::v9::{Lifecycle, RawScopedTypeNameV9};
 use spacetimedb_lib::http::ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION;
-use spacetimedb_lib::{ProductType, SumType};
+use spacetimedb_lib::{Hash, ProductType, SumType};
 use spacetimedb_primitives::{ColId, ColList, ColSet};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::{bsatn::DecodeError, raw_identifier::RawIdentifier, AlgebraicType, AlgebraicTypeRef};
@@ -150,6 +150,10 @@ pub enum ValidationError {
     MultipleColumnDefaultValues { table: RawIdentifier, col_id: ColId },
     #[error("Table {table} not found")]
     TableNotFound { table: RawIdentifier },
+    #[error("table {table} has more than one cache policy")]
+    DuplicateTableCachePolicy { table: Identifier },
+    #[error("index {index} on table {table} must use btree for a disk or object cache policy")]
+    CachePolicyRequiresBTree { table: Identifier, index: RawIdentifier },
     #[error("table {table} is assigned in multiple outboxes")]
     DuplicateOutbox { table: Identifier },
     #[error("outbox table {} not found", table_name)]
@@ -242,6 +246,8 @@ pub enum ValidationError {
     Environment(#[from] spacetimedb_lib::environment::EnvironmentSchemaError),
     #[error("submodule {namespace:?} cannot declare environment variables")]
     EnvironmentInSubmodule { namespace: String },
+    #[error("submodule def for migration from schema with hash {schema_hash} contains disallowed sections")]
+    InvalidMigrationSubmodule { schema_hash: Hash },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.

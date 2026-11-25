@@ -15,6 +15,16 @@ metadata:
 
 ## Build Configuration (.NET 10)
 
+Module unit tests use a sibling .NET 10 test project with an ordinary module
+`ProjectReference` and the separate `SpacetimeDB.Testing` NuGet package, at exactly
+the module's Runtime version. Run with `dotnet test`; no server or Rust compiler
+is required. Keep Testing out of module dependencies and test sources outside
+the module directory. Use `using var test = ModuleTestContext.Create(typeof(Module).Assembly)`
+and `test.WithReducerTx(TestAuth.Internal(), ctx => Module.Reducer(ctx))`.
+Callbacks are synchronous; one fixture supports one execution flow, while separate
+fixtures may run in parallel. The chat-console-cs template includes tests for
+.NET 10 only. See `/how-to/unit-testing` for setup and release availability.
+
 New .NET 10 modules build as managed libraries by default. Use the CLI for WASM
 builds, or select the runtime identifier explicitly when invoking dotnet:
 
@@ -398,7 +408,7 @@ var result = ctx.Http.Send(new HttpRequest
 
 Scheduled procedures use the ordinary scheduled-table shape. Its `Scheduled` name refers to a `[SpacetimeDB.Procedure]` method taking `ProcedureContext` plus the scheduled row, and database access inside that procedure goes through `ctx.WithTx`.
 
-Inbound HTTP uses handler attributes and one router. Handler database access also goes through `ctx.WithTx`:
+Inbound HTTP uses handler attributes and one router. Handlers are unstable too, so files that define them need `#pragma warning disable STDB_UNSTABLE`. Handler database access also goes through `ctx.WithTx`:
 
 ```csharp
 [SpacetimeDB.HttpHandler]

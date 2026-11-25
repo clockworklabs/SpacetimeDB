@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <AssemblyName>SpacetimeDB.BSATN.Codegen</AssemblyName>
-    <Version>2.16.0</Version>
+    <Version>2.16.3</Version>
     <Title>SpacetimeDB BSATN Codegen</Title>
     <Description>The SpacetimeDB BSATN Codegen implements the Roslyn incremental generators for BSATN serialization/deserialization in C#.</Description>
   </PropertyGroup>
@@ -27,6 +27,11 @@
   <ItemGroup>
     <!-- dev-dependency to add internal C# classes and attributes not included in .NET Standard -->
     <PackageReference Include="PolySharp" Version="1.14.1" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The runtime's snake_case conversion, so generated and runtime names always agree. -->
+    <Compile Include="../Runtime/Internal/CanonicalName.SnakeCase.cs" />
   </ItemGroup>
 
 </Project>

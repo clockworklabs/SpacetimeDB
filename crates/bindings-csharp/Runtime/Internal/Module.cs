@@ -155,7 +155,10 @@ public static class Module
         //
         // The factory callback will be called with the allocated type reference that can be used for
         // e.g. self-recursion even before the algebraic type itself is constructed.
-        public AlgebraicType.Ref RegisterType<T>(Func<AlgebraicType.Ref, AlgebraicType> makeType)
+        public AlgebraicType.Ref RegisterType<T>(
+            Func<AlgebraicType.Ref, AlgebraicType> makeType,
+            string? sourceName = null
+        )
         {
             if (types.TryGetValue(typeof(T), out var existingTypeRef))
             {
@@ -163,7 +166,7 @@ public static class Module
             }
 
             // Passes types down to register the type reference in the dictionary so that we can resolve it later and to avoid infinite recursion inside `makeType`.
-            return target.RegisterType<T>(types, makeType);
+            return target.RegisterType<T>(types, makeType, sourceName);
         }
     }
 
@@ -461,9 +464,9 @@ public static class Module
     }
 
 #if NET10_0_OR_GREATER
-    public static int GetInstanceId(Local db) => db.InstanceId;
+    public static int GetInstanceId(Local? db) => db?.InstanceId ?? 0;
 
-    public static int GetInstanceId(LocalReadOnly db) => db.InstanceId;
+    public static int GetInstanceId(LocalReadOnly? db) => db?.InstanceId ?? 0;
 
     public static int GetInstanceId(QueryBuilder from) => from.InstanceId;
 
@@ -557,6 +560,13 @@ public partial class Local
 #if NET10_0_OR_GREATER
     internal int InstanceId { get; init; }
 #endif
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    internal DatabaseAccess? Access { get; init; }
+
+    public Local() { }
+
+    internal Local(DatabaseAccess access) => Access = access;
+#endif
 }
 
 /// <summary>
@@ -575,5 +585,12 @@ public sealed partial class LocalReadOnly
 
     internal static LocalReadOnly ForInstance(int instanceId) =>
         instanceId == 0 ? Root : Instances[instanceId] ??= new() { InstanceId = instanceId };
+#endif
+#if NET10_0_OR_GREATER && !SPACETIMEDB_WASM_RUNTIME
+    internal DatabaseAccess? Access { get; init; }
+
+    public LocalReadOnly() { }
+
+    internal LocalReadOnly(DatabaseAccess access) => Access = access;
 #endif
 }

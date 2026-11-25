@@ -17,7 +17,7 @@ benchmark of *the apps the LLM built on each stack*, run as-is.
 ## Setup
 
 ```bash
-npm install
+pnpm install
 
 # Generate SpacetimeDB bindings against the target Level 12 app's backend.
 # Re-run this if you change which app you're benchmarking.
@@ -38,15 +38,15 @@ The target apps must already be running:
 
 ```bash
 # PG stress, 30s, 20 writers
-npm run run -- --backend pg --scenario stress --writers 20 --duration 30
+pnpm run run --backend pg --scenario stress --writers 20 --duration 30
 
 # STDB stress, 30s, 50 writers
-npm run run -- --backend stdb --scenario stress --writers 50 --duration 30 \
+pnpm run run --backend stdb --scenario stress --writers 50 --duration 30 \
   --module chat-app-20260406-153727
 
 # Both throughput scenarios for one backend
-npm run run -- --backend pg --scenario all
-npm run run -- --backend stdb --scenario all --module chat-app-20260406-153727
+pnpm run run --backend pg --scenario all
+pnpm run run --backend stdb --scenario all --module chat-app-20260406-153727
 ```
 
 Results land in `results/<timestamp>/<backend>-<scenario>.json`.

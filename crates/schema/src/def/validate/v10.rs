@@ -303,6 +303,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 attach_schedules_to_tables(&mut tables, schedules)?;
 
                 attach_outboxes_to_tables(&mut tables, &mut reducers, raw_outboxes, &mut validator.core)?;
+                attach_cache_policies_to_tables(&mut tables, def.table_cache_policies())?;
 
                 check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
                 change_scheduled_functions_and_lifetimes_visibility(&tables, &mut reducers, &mut procedures)?;
@@ -338,6 +339,44 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
 
     let typespace_for_generate = typespace_for_generate.finish();
 
+    let migrations = def
+        .migrations()
+        .into_iter()
+        .flatten()
+        .cloned()
+        .map(|migration| {
+            let RawMigrationDefV10 {
+                schema_hash,
+                name,
+                dropped,
+            } = migration;
+            let submodule_validation = dropped
+                .sections
+                .iter()
+                .all(|section| {
+                    matches!(
+                        section,
+                        RawModuleDefV10Section::Tables(_)
+                            | RawModuleDefV10Section::Types(_)
+                            | RawModuleDefV10Section::Typespace(_)
+                            | RawModuleDefV10Section::ExplicitNames(_)
+                            | RawModuleDefV10Section::CaseConversionPolicy(_)
+                            | RawModuleDefV10Section::TableCachePolicies(_)
+                    )
+                })
+                .then_some(())
+                .ok_or_else(|| ValidationError::InvalidMigrationSubmodule { schema_hash }.into());
+            let name = identifier(name);
+            let (name, (), dropped) = (name, submodule_validation, validate(dropped)).combine_errors()?;
+            let migration_def = MigrationDef {
+                name,
+                namespace: NamespacePath::root(),
+                dropped,
+            };
+            Ok((schema_hash, migration_def))
+        })
+        .collect_all_errors()?;
+
     let mut module_def = ModuleDef {
         // Set by `apply_namespace` below.
         path: NamespacePath::root(),
@@ -358,6 +397,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         raw_module_def_version: RawModuleDefVersion::V10,
         submodules,
         environment,
+        migrations,
     };
 
     // Submodules were validated in isolation, so their defs carry root-relative names.
@@ -416,7 +456,7 @@ fn validate_submodules(
     let mut accessors = std::collections::HashSet::with_capacity(submodules.len());
 
     for submodule in submodules {
-        let source = RawIdentifier::from(submodule.namespace.clone());
+        let source = RawIdentifier::new(&submodule.namespace);
         let accessor = match Identifier::new(source.clone()) {
             Ok(accessor) => accessor,
             Err(error) => {
@@ -463,14 +503,14 @@ fn validate_submodules(
                 Ok(mut def) => {
                     if !def.environment().is_empty() {
                         errors.push(ValidationError::EnvironmentInSubmodule {
-                            namespace: submodule.namespace.clone(),
+                            namespace: namespace.to_string(),
                         });
                     }
                     for (lifecycle, opt_id) in def.lifecycle_reducers_map() {
                         if opt_id.is_some() {
                             errors.push(ValidationError::LifecycleInSubmodule {
                                 lifecycle,
-                                namespace: submodule.namespace.clone(),
+                                namespace: namespace.to_string(),
                             });
                         }
                     }
@@ -820,6 +860,7 @@ impl<'a> ModuleValidatorV10<'a> {
             is_event,
             accessor_name: identifier(raw_table_name)?,
             outbox: None,
+            cache_policy: Default::default(),
         })
     }
 
@@ -1203,6 +1244,41 @@ fn attach_schedules_to_tables(
     Ok(())
 }
 
+fn attach_cache_policies_to_tables<'a>(
+    tables: &mut HashMap<Identifier, TableDef>,
+    policies: impl Iterator<Item = &'a RawTableCachePolicyV10>,
+) -> Result<()> {
+    let mut seen = spacetimedb_data_structures::map::HashSet::default();
+    for entry in policies {
+        let table = tables
+            .values_mut()
+            .find(|table| table.accessor_name.as_raw() == &entry.table_name)
+            .ok_or_else(|| ValidationError::TableNotFound {
+                table: entry.table_name.clone(),
+            })?;
+        if !seen.insert(table.name.clone()) {
+            return Err(ValidationError::DuplicateTableCachePolicy {
+                table: table.name.clone(),
+            }
+            .into());
+        }
+        if entry.policy != TableCachePolicy::RequiredInMemory
+            && let Some(index) = table
+                .indexes
+                .values()
+                .find(|index| !matches!(index.algorithm, IndexAlgorithm::BTree(_)))
+        {
+            return Err(ValidationError::CachePolicyRequiresBTree {
+                table: table.name.clone(),
+                index: index.name.clone(),
+            }
+            .into());
+        }
+        table.cache_policy = entry.policy;
+    }
+    Ok(())
+}
+
 fn attach_outboxes_to_tables(
     tables: &mut HashMap<Identifier, TableDef>,
     reducers: &mut IndexMap<Identifier, ReducerDef>,
@@ -1490,8 +1566,8 @@ mod tests {
     use itertools::Itertools;
     use spacetimedb_data_structures::expect_error_matching;
     use spacetimedb_lib::db::raw_def::v10::{
-        CaseConversionPolicy, ExplicitNames, MethodOrAny, RawModuleDefV10, RawModuleDefV10Builder,
-        RawModuleDefV10Section, RawSubmoduleV10,
+        CaseConversionPolicy, ExplicitNames, MethodOrAny, RawMigrationDefV10, RawModuleDefV10, RawModuleDefV10Builder,
+        RawModuleDefV10Section, RawSubmoduleV10, TableCachePolicy,
     };
     use spacetimedb_lib::db::raw_def::v9::{btree, direct, hash};
     use spacetimedb_lib::db::raw_def::*;
@@ -2295,6 +2371,64 @@ mod tests {
             def.submodules()["PinnedLib"].mount_accessor_name().map(|n| &**n),
             Some("pinned")
         );
+    }
+
+    /// A migration's `dropped` def declares its tables like the module does, cache policy included.
+    #[test]
+    fn migration_dropped_def_may_declare_cache_policies() {
+        let tables = || {
+            let mut builder = RawModuleDefV10Builder::new();
+            builder
+                .build_table_with_new_type("t", ProductType::from([("id", AlgebraicType::U64)]), true)
+                .finish();
+            builder.add_table_cache_policy("t", TableCachePolicy::RequiredOnDisk);
+            builder
+        };
+        let mut builder = tables();
+        builder.add_migration(RawMigrationDefV10 {
+            schema_hash: hash_bytes(b"old schema"),
+            name: "migrate".into(),
+            dropped: tables().finish(),
+        });
+        let def: ModuleDef = builder.finish().try_into().expect("migration should validate");
+        assert_eq!(def.migrations_map().len(), 1);
+    }
+
+    /// Converting a module back to its raw def gives each migration's `dropped` def
+    /// a case conversion policy section, which must still validate.
+    #[test]
+    fn migration_round_trips_through_raw_def() {
+        fn tables() -> RawModuleDefV10Builder {
+            let mut builder = RawModuleDefV10Builder::new();
+            builder
+                .build_table_with_new_type("t", ProductType::from([("id", AlgebraicType::U64)]), true)
+                .finish();
+            builder
+        }
+        let mut builder = tables();
+        builder.add_migration(RawMigrationDefV10 {
+            schema_hash: hash_bytes(b"old schema"),
+            name: "migrate".into(),
+            dropped: tables().finish(),
+        });
+        let def: ModuleDef = builder.finish().try_into().expect("migration should validate");
+
+        let raw: RawModuleDefV10 = def.into();
+        let migrations = raw
+            .sections
+            .iter()
+            .find_map(|section| match section {
+                RawModuleDefV10Section::Migrations(migrations) => Some(migrations),
+                _ => None,
+            })
+            .expect("raw def should have the migration");
+        assert!(migrations[0]
+            .dropped
+            .sections
+            .iter()
+            .any(|section| matches!(section, RawModuleDefV10Section::CaseConversionPolicy(_))));
+        let def: ModuleDef = raw.try_into().expect("round-tripped migration should validate");
+        assert_eq!(def.migrations_map().len(), 1);
     }
 
     #[test]
@@ -3789,5 +3923,98 @@ mod environment_tests {
         };
         assert!(validate(empty).is_ok());
         assert!(validate(declared("INVALID-NAME")).is_err());
+    }
+}
+
+#[cfg(test)]
+mod cache_policy_tests {
+    use crate::def::ModuleDef;
+    use crate::error::ValidationError;
+    use crate::schema::{Schema, TableSchema};
+    use spacetimedb_data_structures::expect_error_matching;
+    use spacetimedb_lib::db::raw_def::v10::*;
+    use spacetimedb_lib::db::raw_def::v9::hash;
+    use spacetimedb_lib::{AlgebraicType, ProductType};
+    use spacetimedb_primitives::TableId;
+
+    fn table(policy: TableCachePolicy) -> RawModuleDefV10 {
+        let mut builder = RawModuleDefV10Builder::new();
+        builder
+            .build_table_with_new_type("items", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .finish();
+        builder.add_table_cache_policy("items", policy);
+        builder.finish()
+    }
+
+    #[test]
+    fn cache_policy_flows_to_schema_and_survives_round_trip() {
+        for policy in [
+            TableCachePolicy::RequiredInMemory,
+            TableCachePolicy::RequiredOnDisk,
+            TableCachePolicy::NoRequirement,
+        ] {
+            let raw = table(policy);
+            assert_eq!(
+                raw.clone().table_cache_policies().count(),
+                usize::from(policy != TableCachePolicy::RequiredInMemory)
+            );
+            let def: ModuleDef = raw.try_into().unwrap();
+            let schema = TableSchema::from_module_def(&def, def.table("items").unwrap(), (), TableId::SENTINEL);
+            assert_eq!(schema.cache_policy, policy);
+            let raw: RawModuleDefV10 = def.into();
+            let def: ModuleDef = raw.try_into().unwrap();
+            assert_eq!(def.table("items").unwrap().cache_policy, policy);
+        }
+    }
+
+    #[test]
+    fn cache_policy_uses_source_name_inside_submodules() {
+        let mut child = table(TableCachePolicy::RequiredOnDisk);
+        let mut names = ExplicitNames::default();
+        names.insert_table("items", "canonical_items");
+        child.sections.push(RawModuleDefV10Section::ExplicitNames(names));
+        let mut parent = RawModuleDefV10Builder::new();
+        parent.add_submodule("auth", child);
+        let def: ModuleDef = parent.finish().try_into().unwrap();
+        let raw: RawModuleDefV10 = def.into();
+        let def: ModuleDef = raw.try_into().unwrap();
+        let (_, _, table) = def.all_tables_with_prefix().into_iter().next().unwrap();
+        assert_eq!(table.cache_policy, TableCachePolicy::RequiredOnDisk);
+    }
+
+    #[test]
+    fn disk_and_object_tables_reject_non_btree_indexes() {
+        for policy in [TableCachePolicy::RequiredOnDisk, TableCachePolicy::NoRequirement] {
+            let mut builder = RawModuleDefV10Builder::new();
+            builder
+                .build_table_with_new_type("items", ProductType::from([("id", AlgebraicType::U64)]), true)
+                .with_index_no_accessor_name(hash(0), "items_id_hash")
+                .finish();
+            builder.add_table_cache_policy("items", policy);
+            let result = ModuleDef::try_from(builder.finish());
+            expect_error_matching!(result, ValidationError::CachePolicyRequiresBTree { .. });
+        }
+    }
+
+    #[test]
+    fn existing_table_cache_policy_changes_are_planned() {
+        let policies = [
+            TableCachePolicy::RequiredInMemory,
+            TableCachePolicy::RequiredOnDisk,
+            TableCachePolicy::NoRequirement,
+        ];
+        for old_policy in policies {
+            let old: ModuleDef = table(old_policy).try_into().unwrap();
+            for new_policy in policies {
+                let new: ModuleDef = table(new_policy).try_into().unwrap();
+                let plan = crate::auto_migrate::ponder_auto_migrate(&old, &new).unwrap();
+                assert_eq!(
+                    plan.steps
+                        .iter()
+                        .any(|step| matches!(step, crate::auto_migrate::AutoMigrateStep::ChangeCachePolicy(_))),
+                    old_policy != new_policy
+                );
+            }
+        }
     }
 }

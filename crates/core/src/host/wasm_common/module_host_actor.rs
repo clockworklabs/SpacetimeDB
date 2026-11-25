@@ -4,7 +4,7 @@ use crate::client::ClientActorId;
 use crate::database_logger;
 use crate::db::sql::ast::SchemaViewer;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
-use crate::error::DBError;
+use crate::error::{memory_budget_error_message, DBError};
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::host_controller::ReducerCallResultWithTxOffset;
 use crate::host::instance_env::{InstanceEnv, TxSlot};
@@ -693,13 +693,13 @@ struct UpdateEffects {
 }
 
 impl UpdateEffects {
-    fn after_migration(result: crate::db::update::UpdateResult, tx: &MutTxId) -> Self {
+    fn after_migration(result: crate::db::update::UpdateResult, tx: &MutTxId) -> Result<Self, DatastoreError> {
         use crate::db::update::UpdateResult;
-        Self {
+        Ok(Self {
             refresh_views: matches!(result, UpdateResult::EvaluateSubscribedViews)
-                || tx.views_for_refresh().next().is_some(),
+                || tx.views_for_refresh()?.next().is_some(),
             disconnect_clients: matches!(result, UpdateResult::RequiresClientDisconnect),
-        }
+        })
     }
 
     fn committed(
@@ -783,9 +783,10 @@ impl InstanceCommon {
             let row = tx
                 .iter(ST_MODULE_ID)?
                 .next()
-                .context("database program is not initialized")?;
+                .context("database program is not initialized")?
+                .context("failed to load database program")?;
             let current_hash =
-                spacetimedb_datastore::system_tables::read_hash_from_col(row, StModuleFields::ProgramHash)?;
+                spacetimedb_datastore::system_tables::read_hash_from_col(&row, StModuleFields::ProgramHash)?;
             anyhow::ensure!(
                 current_hash == old_module_info.module_hash,
                 "database program changed before publication"
@@ -809,14 +810,11 @@ impl InstanceCommon {
                 Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
             }
             Ok(res) => {
-                system_logger.info("Database updated");
-                log::info!("Database updated, {} host-type={}", stdb.database_identity(), host_type);
-
                 let succeed = |info: Arc<ModuleInfo>,
                                execution_budget_used: FunctionBudget,
                                host_execution_duration: Duration,
                                tx: MutTxId|
-                 -> TransactionOffset {
+                 -> Result<TransactionOffset, DBError> {
                     let event = ModuleEvent {
                         timestamp: Timestamp::now(),
                         caller_identity: info.owner_identity,
@@ -830,17 +828,34 @@ impl InstanceCommon {
                         timer: None,
                     };
                     let CommitAndBroadcastEventSuccess { tx_offset, .. } =
-                        commit_and_broadcast_event(&info.subscriptions, None, event, tx);
+                        commit_and_broadcast_event(&info.subscriptions, None, event, tx)?;
 
-                    tx_offset
+                    system_logger.info("Database updated");
+                    log::info!("Database updated, {} host-type={}", stdb.database_identity(), host_type);
+                    Ok(tx_offset)
                 };
                 let durable_offset = stdb.durable_tx_offset();
 
-                let effects = UpdateEffects::after_migration(res, &tx);
+                let effects = match UpdateEffects::after_migration(res, &tx) {
+                    Ok(effects) => effects,
+                    Err(e) => {
+                        let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
+                        stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
+                        return Ok(UpdateDatabaseResult::ErrorExecutingMigration(e.into()));
+                    }
+                };
                 let res = if effects.refresh_views {
                     // Resolve surviving materializations through the new module,
                     // even when this migration also requires client disconnection.
-                    let (out, _, trapped) = self.evaluate_subscribed_views(tx, inst)?;
+                    let view_calls = match self.subscribed_view_calls(&tx) {
+                        Ok(view_calls) => view_calls,
+                        Err(e) => {
+                            let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
+                            stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
+                            return Ok(UpdateDatabaseResult::ErrorExecutingMigration(e));
+                        }
+                    };
+                    let (out, _, trapped) = self.execute_view_calls(tx, view_calls, inst);
                     tx = out.tx;
                     if trapped || out.outcome != ViewOutcome::Success {
                         let msg = match trapped {
@@ -855,11 +870,11 @@ impl InstanceCommon {
                         stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
                         UpdateDatabaseResult::ErrorExecutingMigration(anyhow::anyhow!(msg))
                     } else {
-                        let tx_offset = succeed(self.info.clone(), out.execution_budget_used, out.total_duration, tx);
+                        let tx_offset = succeed(self.info.clone(), out.execution_budget_used, out.total_duration, tx)?;
                         effects.committed(tx_offset, durable_offset)
                     }
                 } else {
-                    let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO, Duration::ZERO, tx);
+                    let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO, Duration::ZERO, tx)?;
                     effects.committed(tx_offset, durable_offset)
                 };
 
@@ -883,15 +898,24 @@ impl InstanceCommon {
             let row = tx
                 .iter(ST_MODULE_ID)?
                 .next()
-                .context("database program is not initialized")?;
+                .context("database program is not initialized")?
+                .context("failed to load database program")?;
             anyhow::ensure!(
-                read_hash_from_col(row, StModuleFields::ProgramHash)? == self.info.module_hash,
+                read_hash_from_col(&row, StModuleFields::ProgramHash)? == self.info.module_hash,
                 "database program changed before publication"
             );
             crate::db::environment::replace(db, tx, self.info.module_def.environment(), &environment)?;
             Ok(())
         })?;
-        let (out, _, trapped) = self.evaluate_subscribed_views(tx, inst)?;
+        let view_calls = match self.subscribed_view_calls(&tx) {
+            Ok(view_calls) => view_calls,
+            Err(e) => {
+                let (_, tx_metrics, reducer) = db.rollback_mut_tx(tx);
+                db.report_mut_tx_metrics(reducer, tx_metrics, None);
+                return Ok(UpdateEnvironmentResult::ErrorExecutingMigration(e));
+            }
+        };
+        let (out, _, trapped) = self.execute_view_calls(tx, view_calls, inst);
         if trapped || out.outcome != ViewOutcome::Success {
             let (_, metrics, reducer) = db.rollback_mut_tx(out.tx);
             db.report_mut_tx_metrics(reducer, metrics, None);
@@ -913,21 +937,16 @@ impl InstanceCommon {
         };
         let durable_offset = db.durable_tx_offset();
         let CommitAndBroadcastEventSuccess { tx_offset, .. } =
-            commit_and_broadcast_event(&self.info.subscriptions, None, event, out.tx);
+            commit_and_broadcast_event(&self.info.subscriptions, None, event, out.tx)?;
         Ok(UpdateEnvironmentResult::UpdatePerformed {
             tx_offset,
             durable_offset,
         })
     }
 
-    /// Re-evaluates all materialized view instances tracked in view lifecycle state.
-    fn evaluate_subscribed_views<I: WasmInstance>(
-        &mut self,
-        tx: MutTxId,
-        inst: &mut I,
-    ) -> Result<(ViewCallResult, u32, bool), anyhow::Error> {
-        let view_calls = collect_subscribed_view_calls(&tx, &self.info.module_def, self.info.owner_identity)?;
-        Ok(self.execute_view_calls(tx, view_calls, inst))
+    /// Collect the materialized view instance tracked in view lifecycle state.
+    fn subscribed_view_calls(&self, tx: &MutTxId) -> anyhow::Result<Vec<CallViewParams>> {
+        collect_subscribed_view_calls(tx, &self.info.module_def, self.info.owner_identity)
     }
 
     pub(crate) async fn call_procedure<I: WasmInstance>(
@@ -1242,7 +1261,10 @@ impl InstanceCommon {
             Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)) => {
                 inst.log_traceback("reducer", reducer_name, &err);
 
-                (self.handle_outer_error(&result.stats.energy, reducer_name), None)
+                (
+                    self.handle_outer_error(inst.replica_ctx(), &result.stats, reducer_name, &err),
+                    None,
+                )
             }
             Err(ExecutionError::User(err)) => {
                 log_reducer_error(
@@ -1331,11 +1353,26 @@ impl InstanceCommon {
             request_id,
             timer,
         };
-        let CommitAndBroadcastEventSuccess { event, tx_offset, .. } =
-            commit_and_broadcast_event(&info.subscriptions, client, event, out.tx);
+        let (outcome, tx_offset) = match commit_and_broadcast_event(&info.subscriptions, client, event, out.tx) {
+            Ok(committed) => (ReducerOutcome::from(&committed.event.status), committed.tx_offset),
+            Err(error) => {
+                // Failed commits have no offset, but the result type requires a receiver.
+                // Dropping the sender closes the channel. Failed calls skip the durability wait.
+                // TODO: Make ReducerCallResultWithTxOffset::tx_offset optional so failed
+                // commits can return None instead of creating a closed channel.
+                let (sender, receiver) = tokio::sync::oneshot::channel();
+                drop(sender);
+                (
+                    ReducerOutcome::from(&EventStatus::FailedInternal(
+                        memory_budget_error_message(&error).unwrap_or_else(|| error.to_string()),
+                    )),
+                    receiver,
+                )
+            }
+        };
 
         let res = ReducerCallResult {
-            outcome: ReducerOutcome::from(&event.status),
+            outcome,
             execution_budget_used,
             execution_duration: total_duration,
         };
@@ -1343,16 +1380,35 @@ impl InstanceCommon {
         (ReducerCallResultWithTxOffset { result: res, tx_offset }, trapped)
     }
 
-    fn handle_outer_error(&mut self, energy: &EnergyStats, reducer_name: &str) -> EventStatus {
+    fn handle_outer_error(
+        &mut self,
+        replica_ctx: &ReplicaContext,
+        stats: &ExecutionStats,
+        function_name: &str,
+        error: &anyhow::Error,
+    ) -> EventStatus {
         WORKER_METRICS
             .wasm_instance_errors
-            .with_label_values(&self.info.database_identity, &self.info.module_hash, reducer_name)
+            .with_label_values(&self.info.database_identity, &self.info.module_hash, function_name)
             .inc();
 
-        if energy.remaining.get() == 0 {
+        if stats.energy.remaining.get() == 0 {
+            let message = format!(
+                "aborted after {:.2?}: reached the maximum CPU usage allowed per call",
+                stats.timings.total_duration
+            );
+            let record = database_logger::Record {
+                ts: InstanceEnv::now_for_logging(),
+                function: Some(function_name),
+                ..database_logger::Record::injected(&message)
+            };
+            replica_ctx.logger.write(database_logger::LogLevel::Error, &record, &());
             EventStatus::OutOfEnergy
         } else {
-            EventStatus::FailedInternal("The instance encountered a fatal error.".into())
+            EventStatus::FailedInternal(
+                memory_budget_error_message(error.as_ref())
+                    .unwrap_or_else(|| "The instance encountered a fatal error.".into()),
+            )
         }
     }
 
@@ -1602,12 +1658,15 @@ impl InstanceCommon {
         let outcome: ViewOutcome = match (result.call_result, sender) {
             (Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)), _) => {
                 inst.log_traceback("view", &view_name, &err);
-                self.handle_outer_error(&result.stats.energy, &view_name).into()
+                self.handle_outer_error(inst.replica_ctx(), &result.stats, &view_name, &err)
+                    .into()
             }
             // TODO: maybe do something else with user errors?
             (Err(ExecutionError::User(err)), _) => {
-                inst.log_traceback("view", &view_name, &anyhow::anyhow!(err));
-                self.handle_outer_error(&result.stats.energy, &view_name).into()
+                let err = anyhow::anyhow!(err);
+                inst.log_traceback("view", &view_name, &err);
+                self.handle_outer_error(inst.replica_ctx(), &result.stats, &view_name, &err)
+                    .into()
             }
             (Ok(raw), _) => {
                 // This is wrapped in a closure to simplify error handling.
@@ -2437,8 +2496,8 @@ mod tests {
         );
         let result = update::update_database(&db, &mut tx, AuthCtx::for_testing(), plan, &TestLogger)?;
         assert!(matches!(result, update::UpdateResult::RequiresClientDisconnect));
-        assert!(tx.views_for_refresh().any(|dirty| *dirty == call));
-        let effects = UpdateEffects::after_migration(result, &tx);
+        assert!(tx.views_for_refresh()?.any(|dirty| *dirty == call));
+        let effects = UpdateEffects::after_migration(result, &tx)?;
         assert!(effects.refresh_views);
         assert!(effects.disconnect_clients);
         let calls = collect_subscribed_view_calls(&tx, &new, Identity::ZERO)?;

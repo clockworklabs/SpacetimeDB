@@ -1,8 +1,0 @@
-{
-  "name": "paint-app-backend",
-  "type": "module",
-  "version": "1.0.0",
-  "dependencies": {
-    "spacetimedb": "^1.11.0"
-  }
-}

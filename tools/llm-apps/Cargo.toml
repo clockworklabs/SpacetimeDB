@@ -1,0 +1,21 @@
+[package]
+name = "llm-apps"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+description = "Runs the LLM app-building benchmarks in tools/llm-oneshot and tools/llm-sequential-upgrade"
+
+[dependencies]
+anyhow.workspace = true
+chrono = { workspace = true, features = ["clock", "std"] }
+clap = { workspace = true, features = ["env"] }
+regex.workspace = true
+serde = { workspace = true }
+serde_json.workspace = true
+uuid = { workspace = true, features = ["v4"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

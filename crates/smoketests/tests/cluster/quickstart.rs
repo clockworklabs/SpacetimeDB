@@ -738,7 +738,16 @@ log = "0.4"
                     "bin~/Release",
                 )?;
 
-                run_cmd(&["dotnet", "add", "package", "SpacetimeDB.ClientSDK"], client_path)?;
+                // When `dotnet add package` gets no version, it first looks up the newest version on every
+                // configured source, including nuget.org, and source mapping doesn't apply to that lookup. If
+                // nuget.org has a newer release than this checkout, restore then fails, because source mapping
+                // limits SpacetimeDB.ClientSDK to the local build. Passing any `--version` skips that lookup.
+                // With `*`, the version is picked during restore, which does follow source mapping, so it can
+                // only pick the local package.
+                run_cmd(
+                    &["dotnet", "add", "package", "SpacetimeDB.ClientSDK", "--version", "*"],
+                    client_path,
+                )?;
             }
             _ => {}
         }

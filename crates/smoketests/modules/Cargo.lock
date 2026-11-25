@@ -291,9 +291,9 @@ checksum = "92ecc6618181def0457392ccd0ee51198e065e016d1d527a7ac1b6dc7c1f09d2"
 
 [[package]]
 name = "keccak"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ecc2af9a1119c51f12a14607e783cb977bde58bc069ff0c3da1095e635d70654"
+checksum = "cb26cec98cce3a3d96cbb7bced3c4b16e3d13f27ec56dbd62cbc8f39cfb9d653"
 dependencies = [
  "cpufeatures",
 ]
@@ -383,9 +383,9 @@ checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
 
 [[package]]
 name = "rand"
-version = "0.8.5"
+version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34af8d1a0e25924bc5b7c43c079c942339d8f0a8b57c39049bef581b46327404"
+checksum = "e058c7de0b26af77780c769414d6257830bb240f3c38477dbc2c16e5f54d6d4c"
 dependencies = [
  "libc",
  "rand_chacha 0.3.1",
@@ -394,9 +394,9 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.9.2"
+version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6db2770f06117d490610c7488547d543617b21bfa07796d7a12f6f1bd53850d1"
+checksum = "b9ef1d0d795eb7d84685bca4f72f3649f064e6641543d3a8c415898726a57b41"
 dependencies = [
  "rand_chacha 0.9.0",
  "rand_core 0.9.5",
@@ -1052,6 +1052,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-tiered-storage"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-upload-module-2"
 version = "0.1.0"
 dependencies = [
@@ -1197,7 +1204,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb"
-version = "2.16.0"
+version = "2.16.3"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -1205,7 +1212,7 @@ dependencies = [
  "getrandom 0.2.17",
  "http",
  "log",
- "rand 0.8.5",
+ "rand 0.8.8",
  "serde_json",
  "spacetimedb-bindings-macro",
  "spacetimedb-bindings-sys",
@@ -1216,7 +1223,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "2.16.0"
+version = "2.16.3"
 dependencies = [
  "heck 0.4.1",
  "humantime",
@@ -1227,14 +1234,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-sys"
-version = "2.16.0"
+version = "2.16.3"
 dependencies = [
  "spacetimedb-primitives",
 ]
 
 [[package]]
 name = "spacetimedb-lib"
-version = "2.16.0"
+version = "2.16.3"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1247,7 +1254,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-primitives"
-version = "2.16.0"
+version = "2.16.3"
 dependencies = [
  "bitflags",
  "either",
@@ -1258,14 +1265,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-query-builder"
-version = "2.16.0"
+version = "2.16.3"
 dependencies = [
  "spacetimedb-lib",
 ]
 
 [[package]]
 name = "spacetimedb-sats"
-version = "2.16.0"
+version = "2.16.3"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -1279,7 +1286,7 @@ dependencies = [
  "hex",
  "itertools",
  "lean_string",
- "rand 0.9.2",
+ "rand 0.9.5",
  "second-stack",
  "sha3",
  "smallvec",

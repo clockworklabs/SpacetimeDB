@@ -13,6 +13,7 @@ use super::formatter::{
     RlsInfo, ScheduleInfo, SequenceInfo, TableInfo,
 };
 use crate::identifier::NamespacedIdentifier;
+use crate::schema::TableCachePolicy;
 
 const MIGRATION_INDENT_WIDTH: usize = 4;
 
@@ -247,6 +248,24 @@ impl MigrationFormatter for TermColorFormatter {
         self.out
             .write_colored(direction, Some(self.out.colors().access), false)?;
         self.out.write_plain(")\n")
+    }
+
+    fn format_change_cache_policy(
+        &mut self,
+        table_name: &NamespacedIdentifier,
+        old: TableCachePolicy,
+        new: TableCachePolicy,
+    ) -> io::Result<()> {
+        let name = |policy| match policy {
+            TableCachePolicy::RequiredInMemory => "memory",
+            TableCachePolicy::RequiredOnDisk => "disk",
+            TableCachePolicy::NoRequirement => "none",
+        };
+        self.write_action_prefix(&Action::Changed)?;
+        self.out.write_plain(" cache policy for table ")?;
+        self.out
+            .write_colored(table_name, Some(self.out.colors().table_name), true)?;
+        self.out.write_plain(&format!(" ({} → {})\n", name(old), name(new)))
     }
 
     fn format_change_primary_key(

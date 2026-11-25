@@ -8,7 +8,6 @@ use crate::database_logger::{DatabaseLogger, LogLevel, Record};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::db::sql::ast::SchemaViewer;
 use crate::error::DBError;
-use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::hash::Hash;
 use crate::host::host_controller::{CallProcedureReturn, ProcedureCallResult};
 use crate::host::scheduler::{CallScheduledFunctionError, CallScheduledFunctionResult, ScheduledFunctionParams};
@@ -65,6 +64,7 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{bsatn, ConnectionId, TimeDuration, Timestamp};
 use spacetimedb_primitives::{HttpHandlerId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_query::compile_subscription;
+use spacetimedb_query::estimation::{check_row_limit, estimate_rows_scanned};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue, Typespace};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
@@ -83,6 +83,11 @@ use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 
 /// Maximum duration of a transaction durability confirmation wait.
 pub const TRANSACTION_CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How long an early IDC delivery waits for earlier messages in its stream.
+/// Senders pipeline deliveries, which can arrive out of order. This must stay
+/// well below the sender's request timeout.
+const IDC_HOLD_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
@@ -233,6 +238,8 @@ pub struct ModuleInfo {
     /// Signature hashes computed on first IDC use, keyed by fully qualified reducer name.
     /// A new module gets a fresh cache on update or restart.
     reducer_signature_hashes: FxHashMap<ReducerName, OnceLock<Hash>>,
+    /// Wakes early IDC deliveries after any inbound IDC outcome is recorded.
+    idc_outcome_recorded: tokio::sync::Notify,
     /// The identity of the module.
     pub owner_identity: Identity,
     /// The identity of the database.
@@ -367,6 +374,7 @@ impl ModuleInfo {
         Arc::new(ModuleInfo {
             module_def: Arc::new(module_def),
             reducer_signature_hashes,
+            idc_outcome_recorded: tokio::sync::Notify::new(),
             owner_identity,
             database_identity,
             module_hash,
@@ -1821,6 +1829,18 @@ impl ViewCallResult {
             tx,
         }
     }
+
+    fn into_materialized_tx(self, db: &RelationalDB) -> Result<MutTxId, ViewCallError> {
+        let error = match self.outcome {
+            ViewOutcome::Success => return Ok(self.tx),
+            ViewOutcome::Failed(error) => error,
+            ViewOutcome::BudgetExceeded => "View execution exceeded its budget".into(),
+        };
+        // Materialization may have inserted some backing rows before failing.
+        // Roll back before callers can commit or mark the view materialized.
+        ModuleSubscriptions::rollback_mut_tx(db, self.tx);
+        Err(ViewCallError::InternalError(error))
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -2950,11 +2970,55 @@ impl ModuleHost {
     ///
     /// # Caller Requirements
     ///
-    /// The caller handles authentication and the connection lifecycle. Send messages
-    /// in sequence order. Overlapping retries are safe, but out-of-order deliveries
-    /// are rejected rather than buffered for pipelining. Before replying, the caller
-    /// must wait for the returned transaction offset to become durable, including for replays.
+    /// The caller handles authentication and the connection lifecycle. Overlapping
+    /// retries are safe. A delivery that arrives before earlier messages in its stream
+    /// waits up to [`IDC_HOLD_TIMEOUT`] for them, then returns
+    /// [`IdcDeliveryFailure::OutOfOrder`]. Before replying, the caller must wait for
+    /// the returned transaction offset to become durable, including for replays.
     pub async fn call_idc_reducer(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: ConnectionId,
+        reducer_name: &str,
+        args: FunctionArgs,
+        stream_id: u64,
+        seq: u64,
+        ack_prefix: u64,
+        expected_signature_hash: Hash,
+    ) -> Result<IdcReducerCallOutcome, IdcDeliveryFailure> {
+        let deadline = tokio::time::Instant::now() + IDC_HOLD_TIMEOUT;
+        loop {
+            // Register before trying so an outcome recorded in between still wakes us.
+            let recorded = self.info.idc_outcome_recorded.notified();
+            tokio::pin!(recorded);
+            recorded.as_mut().enable();
+            let result = self
+                .try_call_idc_reducer(
+                    caller_identity,
+                    caller_connection_id,
+                    reducer_name,
+                    args.clone(),
+                    stream_id,
+                    seq,
+                    ack_prefix,
+                    expected_signature_hash,
+                )
+                .await;
+            match result {
+                // Try again after the next recorded outcome, which may be the one this delivery needs.
+                Err(IdcDeliveryFailure::OutOfOrder { .. })
+                    if tokio::time::timeout_at(deadline, recorded).await.is_ok() => {}
+                Ok(IdcReducerCallOutcome::Recorded(_)) => {
+                    self.info.idc_outcome_recorded.notify_waiters();
+                    return result;
+                }
+                _ => return result,
+            }
+        }
+    }
+
+    /// Process the delivery once. See [`Self::call_idc_reducer`].
+    async fn try_call_idc_reducer(
         &self,
         caller_identity: Identity,
         caller_connection_id: ConnectionId,
@@ -3568,10 +3632,10 @@ impl ModuleHost {
                     caller,
                     sender,
                 )?;
-                tx = res.tx;
                 if trapped {
-                    return Ok((tx, true));
+                    return Ok((res.tx, true));
                 }
+                tx = res.into_materialized_tx(instance.instance.replica_ctx().relational_db())?;
             }
             // If this is a sql call, we only update this view's "last called" timestamp
             if let Workload::Sql = workload {
@@ -3617,7 +3681,14 @@ impl ModuleHost {
         let mut abi_duration = Duration::ZERO;
         let mut trapped = false;
         let mut num_views_evaluated = 0;
-        for view_call in tx.views_for_refresh().cloned().collect::<Vec<_>>() {
+        let views_for_refresh = match tx.views_for_refresh() {
+            Ok(views) => views.cloned().collect::<Vec<_>>(),
+            Err(error) => {
+                outcome = ViewOutcome::Failed(format!("failed to find views for refresh: {error}"));
+                Vec::new()
+            }
+        };
+        for view_call in views_for_refresh {
             let resolved = match resolve_view_for_refresh(&tx, module_def, &view_call) {
                 Ok(resolved) => resolved,
                 Err(err) => {
@@ -4314,6 +4385,43 @@ mod tests {
     use spacetimedb_lib::{AlgebraicType, Identity};
     use spacetimedb_sats::product;
     use std::sync::Arc;
+
+    #[test]
+    fn failed_view_materialization_rolls_back_partial_rows() -> anyhow::Result<()> {
+        use super::{ViewCallError, ViewCallResult, ViewOutcome};
+        use crate::db::relational_db::tests_utils::{begin_mut_tx, create_view_for_test, insert_into_view};
+        use spacetimedb_datastore::locking_tx_datastore::{ViewCallInfo, ViewInstanceArgs};
+        use spacetimedb_sats::ProductValue;
+
+        let db = TestDB::in_memory()?;
+        let (view_id, table_id) = create_view_for_test(&db, "test_view", &[("value", AlgebraicType::U8)], true)?;
+        let args = ViewInstanceArgs::Anonymous {
+            args: ProductValue::default(),
+        };
+        let call = ViewCallInfo::from_args(view_id, &args);
+        for outcome in [
+            ViewOutcome::Failed("storage failure".into()),
+            ViewOutcome::BudgetExceeded,
+        ] {
+            let mut tx = begin_mut_tx(&db);
+            insert_into_view(&db, &mut tx, table_id, None, product![1u8])?;
+            tx.update_view_timestamp(call.clone(), args.clone())?;
+            let result = ViewCallResult {
+                outcome,
+                ..ViewCallResult::default(tx)
+            };
+            assert!(matches!(
+                result.into_materialized_tx(&db),
+                Err(ViewCallError::InternalError(_))
+            ));
+
+            let tx = begin_mut_tx(&db);
+            assert_eq!(db.iter_mut(&tx, table_id)?.count(), 0);
+            assert!(!tx.is_view_materialized(&call)?);
+            ModuleSubscriptions::rollback_mut_tx(&db, tx);
+        }
+        Ok(())
+    }
 
     #[tokio::test]
     async fn idc_failure_recording_preserves_a_concurrent_outcome() -> anyhow::Result<()> {

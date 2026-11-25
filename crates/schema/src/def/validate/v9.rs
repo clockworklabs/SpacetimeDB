@@ -173,6 +173,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         raw_module_def_version: RawModuleDefVersion::V9OrEarlier,
         submodules: IndexMap::new(),
         environment: None,
+        migrations: Default::default(),
     };
 
     // Records each def's namespace. V9 has no submodules, so this just resolves everything at
@@ -343,6 +344,7 @@ impl ModuleValidatorV9<'_> {
             table_type,
             table_access,
             is_event: false, // V9 does not support event tables
+            cache_policy: Default::default(),
             accessor_name: name,
             outbox: None,
         })
@@ -1688,6 +1690,7 @@ mod tests {
     };
     use crate::error::*;
     use crate::identifier::NamespacePath;
+    use crate::schema::TableCachePolicy;
     use crate::type_for_generate::ClientCodegenError;
 
     use itertools::Itertools;
@@ -1796,6 +1799,7 @@ mod tests {
         assert_eq!(def.tables.len(), 3);
 
         let apples_def = &def.tables[&apples];
+        assert_eq!(apples_def.cache_policy, TableCachePolicy::RequiredInMemory);
 
         assert_eq!(apples_def.name, apples);
         assert_eq!(apples_def.table_type, TableType::User);

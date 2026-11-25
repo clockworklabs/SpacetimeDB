@@ -54,10 +54,8 @@ fn main() -> anyhow::Result<()> {
             return Ok(());
         }
 
-        // CaseConversionPolicy is part of the public API — move it to
-        // the SpacetimeDB namespace so users don't have to write
-        // SpacetimeDB.Internal.CaseConversionPolicy.
-        let code = if filename == "CaseConversionPolicy.g.cs" {
+        // Keep module-author options in the public SpacetimeDB namespace.
+        let code = if filename == "CaseConversionPolicy.g.cs" || filename == "TableCachePolicy.g.cs" {
             regex_replace!(&code, r"namespace SpacetimeDB\.Internal", "namespace SpacetimeDB")
         } else {
             // In other autogen files, qualify the type name in type position
@@ -71,6 +69,15 @@ fn main() -> anyhow::Result<()> {
             )
         };
 
+        // The analyzer shares this enum but does not reference the BSATN runtime.
+        let code = if filename == "TableCachePolicy.g.cs" {
+            code.replace(
+                "    [SpacetimeDB.Type]",
+                "#if !SPACETIMEDB_CODEGEN\n    [SpacetimeDB.Type]\n#endif",
+            )
+        } else {
+            code.into_owned()
+        };
         let code = regex_replace!(&code, r"\bAlgebraicType\b", "SpacetimeDB.BSATN.$0");
         let code = regex_replace!(
             &code,

@@ -397,6 +397,8 @@ Invoke a reducer or procedure in a database.
 | ---- | ----- |
 | `confirmed` | Optional boolean, default `true`. Wait for durability before returning success. For procedure calls, also wait after each successful `withTx`, before procedure code continues. Set to `false` to allow results from state that has committed in memory but may be lost after a crash.
 
+The HTTP durability-confirmation wait has a five-second timeout. If it expires, the response is `504 Gateway Timeout` with an unknown outcome: the operation may already have committed. Do not retry a non-idempotent call without deduplication. This deadline bounds confirmation, not the total execution time of the reducer or procedure.
+
 #### Path parameters
 
 | Name       | Value                                 |
