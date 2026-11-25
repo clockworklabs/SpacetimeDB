@@ -1,0 +1,26 @@
+diff --git a/lib/transformation/plugins/rehype-links.js b/lib/transformation/plugins/rehype-links.js
+index 4b9338fd8392b1cedbd60faf3c4782e175817f75..e93eb762383262d9033f21dc9c6c923295ffb906 100644
+--- a/lib/transformation/plugins/rehype-links.js
++++ b/lib/transformation/plugins/rehype-links.js
+@@ -127,7 +127,20 @@ function transformInternalLink(href, options) {
+         pathname = pathname.slice(0, -1);
+     }
+     // If we have a route lookup table, resolve the pathname to its actual route
+-    const resolvedPathname = resolvePathname(pathname, options.routeLookup);
++    let resolvedPathname = resolvePathname(pathname, options.routeLookup);
++    // Route paths include the site's baseUrl, and so does `baseUrl` here (it is the
++    // site URL). Strip it so formatUrl does not emit it twice (`/docs/docs/...`).
++    if (!relativePaths && baseUrl) {
++        const basePath = new URL(baseUrl).pathname.replace(/\/$/, '');
++        if (basePath && (resolvedPathname === basePath || resolvedPathname.startsWith(`${basePath}/`))) {
++            resolvedPathname = resolvedPathname.slice(basePath.length) || '/';
++        }
++    }
++    // Index routes resolve with a trailing slash, but their markdown file is
++    // `<dir>.md`, not `<dir>/.md`.
++    if (resolvedPathname !== '/' && resolvedPathname.endsWith('/')) {
++        resolvedPathname = resolvedPathname.slice(0, -1);
++    }
+     // Use our URL formatting utility for the pathname
+     const transformedPathname = formatUrl(resolvedPathname, { relativePaths, enableMarkdownFiles }, baseUrl);
+     // Reconstruct the URL with query params and hash if they exist
