@@ -824,6 +824,7 @@ pub fn register_reftype<T: SpacetimeType>() {
 pub fn register_table<T: Table>() {
     register_describer(|module| {
         let product_type_ref = *T::Row::make_type(&mut module.inner).as_ref().unwrap();
+        module.inner.add_table_cache_policy(T::TABLE_NAME, T::CACHE_POLICY);
         if let Some(schedule) = T::SCHEDULE {
             module.inner.add_schedule(
                 T::TABLE_NAME,

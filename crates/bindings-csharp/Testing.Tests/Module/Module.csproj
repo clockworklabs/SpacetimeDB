@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>TestingModule</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="SelectionChild/**/*.cs;SelectionLeaf/**/*.cs" />
+    <!-- Receiver bindings for OutboxModule.cs. -->
+    <Compile Include="../../../../modules/module-test-cs/Receiver/Identity.g.cs;../../../../modules/module-test-cs/Receiver/Reducers/ReceivePing.g.cs" />
+    <ProjectReference Include="SelectionChild/SelectionChild.csproj" />
+    <ProjectReference Include="../../Runtime/Runtime.csproj" />
+    <ProjectReference Include="../../Codegen/Codegen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

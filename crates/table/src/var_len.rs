@@ -145,11 +145,8 @@ impl VarLenGranuleHeader {
     /// However, a granule can never store more than [`VarLenGranule::DATA_SIZE`] (`62`),
     /// which is `2` less than `2^6`.
     ///
-    /// We will also never allocate a `VarLenGranule` with len 0.
-    ///
-    /// This means that the `len` field of a `VarLenGranule` has two dead states,
-    /// 0 and 63. We could use these as sentinels,
-    /// but currently have no use for them.
+    /// Completed granules have a nonzero length. A reserved blob-hash granule
+    /// has length 0 until the hash is written; length 63 remains unused.
     const LEN_BITMASK: u16 = (1 << Self::LEN_BITS) - 1;
 
     /// The [`LEN_BITMASK`] will preserve all granule lengths possible.

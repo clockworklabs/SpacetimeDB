@@ -8,7 +8,7 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../lib/type_builders';
+} from '../../lib/type_builders.ts';
 
 // The tagged union or sum type for the algebraic type `AlgebraicType`.
 export const AlgebraicType: __TypeBuilder<
@@ -336,6 +336,15 @@ export type RawLifeCycleReducerDefV10 = __Infer<
   typeof RawLifeCycleReducerDefV10
 >;
 
+export const RawMigrationDefV10 = __t.object('RawMigrationDefV10', {
+  schemaHash: __t.u256(),
+  name: __t.string(),
+  get dropped(): any {
+    return RawModuleDefV10;
+  },
+});
+export type RawMigrationDefV10 = __Infer<typeof RawMigrationDefV10>;
+
 // The tagged union or sum type for the algebraic type `RawMiscModuleExportV9`.
 export const RawMiscModuleExportV9 = __t.enum('RawMiscModuleExportV9', {
   get ColumnDefaultValue() {
@@ -423,6 +432,12 @@ export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
   },
   get Outboxes() {
     return __t.array(RawOutboxDefV10);
+  },
+  get TableCachePolicies() {
+    return __t.array(RawTableCachePolicyV10);
+  },
+  get Migrations() {
+    return __t.array(RawMigrationDefV10);
   },
 });
 export type RawModuleDefV10Section = __Infer<typeof RawModuleDefV10Section>;
@@ -599,6 +614,14 @@ export const RawSubmoduleV10 = __t.object('RawSubmoduleV10', {
 });
 export type RawSubmoduleV10 = __Infer<typeof RawSubmoduleV10>;
 
+export const RawTableCachePolicyV10 = __t.object('RawTableCachePolicyV10', {
+  tableName: __t.string(),
+  get policy() {
+    return TableCachePolicy;
+  },
+});
+export type RawTableCachePolicyV10 = __Infer<typeof RawTableCachePolicyV10>;
+
 export const RawTableDefV10 = __t.object('RawTableDefV10', {
   sourceName: __t.string(),
   productTypeRef: __t.u32(),
@@ -761,6 +784,14 @@ export const TableAccess = __t.enum('TableAccess', {
   Private: __t.unit(),
 });
 export type TableAccess = __Infer<typeof TableAccess>;
+
+// The tagged union or sum type for the algebraic type `TableCachePolicy`.
+export const TableCachePolicy = __t.enum('TableCachePolicy', {
+  RequiredInMemory: __t.unit(),
+  RequiredOnDisk: __t.unit(),
+  NoRequirement: __t.unit(),
+});
+export type TableCachePolicy = __Infer<typeof TableCachePolicy>;
 
 export const TableDesc = __t.object('TableDesc', {
   get schema() {

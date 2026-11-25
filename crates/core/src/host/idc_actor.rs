@@ -1,7 +1,7 @@
 use crate::auth::idc::IdcTokenSigner;
 use crate::client::{MeteredUnboundedReceiver, MeteredUnboundedSender};
 use crate::db::relational_db::{RelationalDB, Tx};
-use crate::host::idc::{DeliveryStreams, StreamId};
+use crate::host::idc::{DeliveryStreams, StreamId, StreamWork};
 use crate::host::module_host::WeakModuleHost;
 use crate::host::module_host::{CallReducerParams, ModuleInfo, TRANSACTION_CONFIRMATION_TIMEOUT};
 use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
@@ -35,6 +35,18 @@ const NOTIFICATION_BATCH_SIZE: usize = 16;
 /// Maximum messages per actor in delivery, callback execution, or cleanup.
 /// Pending messages stay in the database until a slot is available.
 pub const MAX_IN_FLIGHT_MESSAGES: usize = 64;
+
+/// Messages per stream that may be in delivery or waiting for cleanup.
+const PIPELINE_DEPTH: usize = 16;
+
+/// The part of a message's processing that one in-flight future runs.
+#[derive(Clone, Copy, Debug)]
+enum Step {
+    /// Send the message and store its result.
+    Deliver,
+    /// Run `on_result` and clean up. Messages in a stream retire in sequence order.
+    Retire,
+}
 
 #[derive(Clone)]
 pub struct IdcActorSender {
@@ -143,7 +155,7 @@ impl IdcActorStarter {
         config: IdcConfig,
         module_host: WeakModuleHost,
     ) -> anyhow::Result<IdcActor> {
-        let mut streams = DeliveryStreams::default();
+        let mut streams = DeliveryStreams::new(PIPELINE_DEPTH);
         let metrics = IdcMetrics::new(&database_identity);
         restore_pending_streams(&db, &mut streams).inspect_err(|_| metrics.actor_errors.inc())?;
         let task = tokio::spawn(async move {
@@ -241,20 +253,21 @@ impl LoadedMessage {
     }
 }
 
-/// Process one message at a time per stream. Other streams can run at the same time.
+/// Pipeline up to [`PIPELINE_DEPTH`] messages per stream. Streams run independently.
 ///
 /// For each message:
-/// 1. Send it using its stored stream ID and sequence. If the reply is lost, retry
-///    with those same IDs. The receiver returns the saved result instead of
+/// 1. Send it using its stored stream ID and sequence, without waiting for earlier
+///    messages. If the reply is lost, retry with those same IDs. The receiver
+///    applies messages in sequence order and returns the saved result instead of
 ///    executing the reducer again.
 /// 2. Save the reply locally before calling `on_result`. If a retry or restart
 ///    finds a saved reply, skip the HTTP request and use that reply.
-/// 3. Run `on_result`, if configured and the outbox row still matches. Commit its
-///    changes, delete the message, and advance `ack_prefix` in one transaction.
-///    If the callback fails, roll back its changes and clean up separately.
-/// 4. Move to the next message after cleanup commits. If no result was received,
-///    wait and retry the same sequence. A reducer or callback failure does not
-///    require sending the message again.
+/// 3. Once every earlier message has retired, run `on_result`, if configured and
+///    the outbox row still matches. Commit its changes, delete the message, and
+///    advance `ack_prefix` in one transaction. If the callback fails, roll back
+///    its changes and clean up separately.
+/// 4. If no result was received, wait and send the same sequence again. A reducer
+///    or callback failure does not require sending the message again.
 ///
 /// Load pending streams at startup. After that, new inserts, completed attempts,
 /// and retry timers wake the loop. Read each stream's next message from the database.
@@ -283,9 +296,9 @@ async fn run_idc_loop(
                 break Ok(());
             }
 
-            // Start ready messages. Each future includes delivery, callback, and cleanup.
+            // Start ready steps. Deliveries overlap within a stream; retirements do not.
             while in_flight.len() < MAX_IN_FLIGHT_MESSAGES {
-                let Some(msg) = take_ready_message(&db, &mut streams)? else {
+                let Some((step, msg)) = take_ready_step(&db, &mut streams)? else {
                     break;
                 };
                 let stream_id = msg.message().stream_id;
@@ -295,8 +308,11 @@ async fn run_idc_loop(
                 let active = metrics.in_flight_messages.inc_scope();
                 in_flight.push(async move {
                     let _active = active;
-                    let result = handle_message(db, client, database_identity, config, module_host, msg, metrics).await;
-                    (stream_id, seq, table_name, result)
+                    let result = match step {
+                        Step::Deliver => deliver(db, client, database_identity, config, msg, metrics).await,
+                        Step::Retire => retire(module_host, msg, metrics).await,
+                    };
+                    (step, stream_id, seq, table_name, result)
                 });
             }
 
@@ -312,17 +328,22 @@ async fn run_idc_loop(
             tokio::select! {
                 Some(()) = shutdown.recv() => break Ok(()),
 
-                // Start the next message after cleanup succeeds. Retry failed attempts after backoff.
-                Some((stream_id, seq, table_name, result)) = in_flight.next(), if !in_flight.is_empty() => {
+                // Record finished steps. Retry failed ones after backoff.
+                Some((step, stream_id, seq, table_name, result)) = in_flight.next(), if !in_flight.is_empty() => {
                     match result {
-                        Ok(()) => {
-                            streams.finish(stream_id, seq);
-                        }
+                        Ok(()) => match step {
+                            Step::Deliver => streams.delivered(stream_id, seq),
+                            Step::Retire => streams.retired(stream_id, seq),
+                        },
                         Err(error) => {
-                            let delay = streams.fail(stream_id, seq);
+                            let delay = match step {
+                                Step::Deliver => streams.send_failed(stream_id, seq),
+                                // The result stays stored, so the retry skips the HTTP request.
+                                Step::Retire => streams.retire_failed(stream_id, seq),
+                            };
                             metrics.for_table(&table_name).retries.inc();
                             log::warn!(
-                                "idc_actor: sender_identity={} stream_id={stream_id} sequence={seq}: retrying after {delay:?}: {error:#}",
+                                "idc_actor: sender_identity={} stream_id={stream_id} sequence={seq}: retrying {step:?} after {delay:?}: {error:#}",
                                 database_identity.to_hex(),
                             );
                         }
@@ -360,7 +381,7 @@ async fn run_idc_loop(
     // Submitted callbacks continue on the module executor even if their futures
     // are dropped. Drain them before the caller can shut down the database.
     // Failed attempts remain pending; shutdown must not schedule another retry.
-    while let Some((stream_id, seq, _table, result)) = in_flight.next().await {
+    while let Some((_step, stream_id, seq, _table, result)) = in_flight.next().await {
         if let Err(error) = result {
             log::warn!("idc_actor: stream_id={stream_id} sequence={seq}: left pending during shutdown: {error:#}");
         }
@@ -371,55 +392,66 @@ async fn run_idc_loop(
     result
 }
 
-/// Keep the stream active through delivery, callback, and cleanup.
-/// Errors leave the message pending for retry. A saved result skips the HTTP request.
-async fn handle_message(
+/// Send the message and store its result. A message loaded with a stored result
+/// has nothing to send.
+async fn deliver(
     db: &RelationalDB,
     client: &reqwest::Client,
     database_identity: Identity,
     config: &IdcConfig,
-    module_host: &WeakModuleHost,
     msg: LoadedMessage,
     metrics: &IdcMetrics,
 ) -> anyhow::Result<()> {
-    let message = msg.message();
-    let bytes = (message.outbox_row.heap_usage() + message.reducer_args.len()) as i64;
-    metrics.in_flight_bytes.add(bytes);
-    let mut bytes = scopeguard::guard(bytes, |bytes| metrics.in_flight_bytes.sub(bytes));
-    let delivered = match msg {
-        LoadedMessage::Pending(msg) => {
-            deliver_message_and_record_result(db, client, database_identity, config, msg, metrics).await?
-        }
-        LoadedMessage::Delivered(msg) => Some(msg),
-    };
-    let Some(delivered) = delivered else {
-        // A late reply arrived after the message was already cleaned up.
+    let LoadedMessage::Pending(msg) = msg else {
         return Ok(());
     };
+    let _bytes = track_in_flight_bytes(metrics, msg.outbox_row.heap_usage() + msg.reducer_args.len());
+    // The stream never sends a retired sequence, so the reply always carries a new result.
+    deliver_message_and_record_result(db, client, database_identity, config, msg, metrics).await?;
+    Ok(())
+}
 
-    let result_bytes = delivered.result.payload.len() as i64;
-    metrics.in_flight_bytes.add(result_bytes);
-    *bytes += result_bytes;
+/// Run `on_result` and clean up the message. Errors leave the stored result for retry.
+async fn retire(module_host: &WeakModuleHost, msg: LoadedMessage, metrics: &IdcMetrics) -> anyhow::Result<()> {
+    let LoadedMessage::Delivered(msg) = msg else {
+        unreachable!("only messages with a stored result retire")
+    };
+    let _bytes = track_in_flight_bytes(metrics, msg.message.outbox_row.heap_usage() + msg.result.payload.len());
     let host = module_host
         .upgrade()
         .context("IDC module host is no longer available")?;
-    host.run_idc_callback_and_cleanup(delivered).await
+    host.run_idc_callback_and_cleanup(msg).await
 }
 
-/// Take the next ready message and mark its stream as active until processing finishes.
-fn take_ready_message(db: &RelationalDB, streams: &mut DeliveryStreams) -> anyhow::Result<Option<LoadedMessage>> {
-    while let Some(stream_id) = streams.pop_ready() {
-        // With 1 inflight msg per stream, ack_prefix + 1 selects the next message or retry.
-        match read_next_message(db, stream_id, None)
-            .with_context(|| format!("failed to read next message for stream {stream_id}"))?
-        {
-            Some(msg) => {
-                streams.start(stream_id, msg.message().sequence);
-                return Ok(Some(msg));
-            }
-            None => {
+/// Count `bytes` as in flight until the returned guard drops.
+fn track_in_flight_bytes(metrics: &IdcMetrics, bytes: usize) -> impl Sized + '_ {
+    let bytes = bytes as i64;
+    metrics.in_flight_bytes.add(bytes);
+    scopeguard::guard((), move |()| metrics.in_flight_bytes.sub(bytes))
+}
+
+/// Take the next ready step and record it in its stream's window.
+fn take_ready_step(db: &RelationalDB, streams: &mut DeliveryStreams) -> anyhow::Result<Option<(Step, LoadedMessage)>> {
+    while let Some((stream_id, work)) = streams.pop_ready() {
+        match work {
+            StreamWork::Send { seq } => match read_next_message(db, stream_id, seq)
+                .with_context(|| format!("failed to read next message for stream {stream_id}"))?
+            {
+                Some(msg) => {
+                    streams.start(stream_id, msg.message().sequence);
+                    return Ok(Some((Step::Deliver, msg)));
+                }
                 // There is no work left. A later insert adds the stream back.
-                streams.remove_idle(stream_id);
+                None => streams.drain(stream_id),
+            },
+            StreamWork::Retire { seq } => {
+                let msg = read_next_message(db, stream_id, Some(seq))
+                    .with_context(|| format!("failed to read message {seq} to retire in stream {stream_id}"))?;
+                anyhow::ensure!(
+                    matches!(msg, Some(LoadedMessage::Delivered(_))),
+                    "IDC stream {stream_id} sequence {seq} has no stored result to retire"
+                );
+                return Ok(msg.map(|msg| (Step::Retire, msg)));
             }
         }
     }
@@ -447,26 +479,29 @@ fn read_pending_streams(db: &RelationalDB) -> anyhow::Result<Vec<StreamId>> {
     Ok(pending)
 }
 
-/// Read the message after `after_seq`, or resume from the acknowledgment prefix when absent.
+/// Read message `seq`, or resume after the acknowledgment prefix when absent.
 fn read_next_message(
     db: &RelationalDB,
     stream_id: StreamId,
-    after_seq: Option<u64>,
+    seq: Option<u64>,
 ) -> anyhow::Result<Option<LoadedMessage>> {
     let tx = db.begin_tx(Workload::Idc);
     // An insert may have rolled back or cleanup may have finished before we read its notification.
     let Some(stream) = db.st_outbound_stream_by_id(&tx, stream_id.0)? else {
         return Ok(None);
     };
-    let after_seq = after_seq.unwrap_or(stream.ack_prefix);
+    let seq = match seq {
+        Some(seq) => seq,
+        None => stream
+            .ack_prefix
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("IDC stream {stream_id} sequence overflow"))?,
+    };
     anyhow::ensure!(
-        after_seq >= stream.ack_prefix,
-        "IDC stream {stream_id} cursor {after_seq} is behind acknowledgment {}",
+        seq > stream.ack_prefix,
+        "IDC stream {stream_id} cursor {seq} is at or behind acknowledgment {}",
         stream.ack_prefix
     );
-    let seq = after_seq
-        .checked_add(1)
-        .ok_or_else(|| anyhow::anyhow!("IDC stream {stream_id} sequence overflow"))?;
     if seq == stream.next_seq {
         // No new row
         return Ok(None);
@@ -890,23 +925,22 @@ mod tests {
     use spacetimedb_schema::reducer_name::ReducerName;
     use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, OutboxSchema, TableSchema};
     use spacetimedb_schema::table_name::TableName;
-    use spacetimedb_table::page_pool::PagePool;
+    use spacetimedb_table::tiered::TieredStorageConfig;
     use std::collections::HashMap;
     use std::sync::atomic::Ordering;
     use tokio::net::TcpListener;
 
     fn open_test_db() -> Arc<RelationalDB> {
-        open_test_db_with_persistence(None)
+        open_test_db_with_persistence(Persistence::ephemeral(TieredStorageConfig::new_for_test()))
     }
 
-    fn open_test_db_with_persistence(persistence: Option<Persistence>) -> Arc<RelationalDB> {
+    fn open_test_db_with_persistence(persistence: Persistence) -> Arc<RelationalDB> {
         let (db, _) = RelationalDB::open(
             Identity::ZERO,
             Identity::ZERO,
             spacetimedb_durability::EmptyHistory::new(),
             persistence,
             None,
-            PagePool::new_for_test(),
         )
         .expect("failed to open test database");
         Arc::new(db)
@@ -930,13 +964,14 @@ mod tests {
 
     fn open_pending_db() -> (Arc<RelationalDB>, tokio::sync::watch::Sender<Option<TxOffset>>) {
         let (durable, rx) = tokio::sync::watch::channel(None);
-        let persistence = Persistence::new(
-            PendingDurability(rx),
-            || Ok(Default::default()),
+        let persistence = Persistence::persistent(
+            Arc::new(PendingDurability(rx)),
+            Arc::new(|| Ok(Default::default())),
             None,
+            TieredStorageConfig::new_for_test(),
             spacetimedb_runtime::Handle::tokio(tokio::runtime::Handle::current()),
         );
-        (open_test_db_with_persistence(Some(persistence)), durable)
+        (open_test_db_with_persistence(persistence), durable)
     }
 
     fn outbox_schema() -> TableSchema {
@@ -1205,24 +1240,24 @@ mod tests {
             Some(LoadedMessage::Delivered(_))
         ));
         // A caller can load the next message while the first awaits cleanup.
-        let second = read_next_message(&db, stream_id, Some(first.message.sequence))?.unwrap();
+        let second = read_next_message(&db, stream_id, Some(first.message.sequence + 1))?.unwrap();
         assert!(matches!(second, LoadedMessage::Pending(_)));
         assert_eq!(second.message().sequence, 2);
         assert_eq!(second.message().ack_prefix, 0);
-        assert!(read_next_message(&db, stream_id, Some(2))?.is_none());
+        assert!(read_next_message(&db, stream_id, Some(3))?.is_none());
         assert!(read_next_message(&db, stream_id, Some(u64::MAX)).is_err());
 
         cleanup_without_module(&db, first)?;
-        for cursor in [None, Some(1)] {
+        for cursor in [None, Some(2)] {
             assert_eq!(
                 read_next_message(&db, stream_id, cursor)?.unwrap().message().sequence,
                 2
             );
         }
-        let error = read_next_message(&db, stream_id, Some(0))
+        let error = read_next_message(&db, stream_id, Some(1))
             .err()
-            .expect("a cursor behind acknowledgment must fail");
-        assert!(error.to_string().contains("cursor 0 is behind acknowledgment 1"));
+            .expect("a cursor at or behind acknowledgment must fail");
+        assert!(error.to_string().contains("cursor 1 is at or behind acknowledgment 1"));
         Ok(())
     }
 
@@ -1299,7 +1334,10 @@ mod tests {
         cleanup_message(&db, &mut tx, &msg)?;
         cleanup_message(&db, &mut tx, &msg)?;
         assert!(!message_exists(&db, &tx, &msg.message)?);
-        assert_eq!(db.iter_mut(&tx, table)?.next().unwrap().to_product_value(), replacement);
+        assert_eq!(
+            db.iter_mut(&tx, table)?.next().unwrap().unwrap().to_product_value(),
+            replacement
+        );
         db.commit_tx(tx)?;
 
         // Neither a missing user row nor a missing pending row permits skipping a sequence.
@@ -1320,9 +1358,9 @@ mod tests {
                 db.delete_by_rel(&mut tx, table, [first.outbox_row]);
             }
             db.commit_tx(tx)?;
-            let mut streams = DeliveryStreams::default();
+            let mut streams = DeliveryStreams::new(PIPELINE_DEPTH);
             streams.wake(stream_id);
-            assert!(take_ready_message(&db, &mut streams).is_err());
+            assert!(take_ready_step(&db, &mut streams).is_err());
             assert_eq!(streams.next_retry_delay(), None);
             let tx = db.begin_tx(Workload::Internal);
             assert_eq!(db.st_outbound_stream_by_id(&tx, stream_id.0)?.unwrap().ack_prefix, 0);
@@ -1440,7 +1478,7 @@ mod tests {
                 .err()
                 .expect("response must leave the message pending");
             let tx = db.begin_tx(Workload::Internal);
-            let row = StOutboundMsgRow::try_from(db.iter(&tx, ST_OUTBOUND_MSG_ID)?.next().unwrap())?;
+            let row = StOutboundMsgRow::try_from(db.iter(&tx, ST_OUTBOUND_MSG_ID)?.next().unwrap().unwrap())?;
             assert!(row.result_status.is_none(), "HTTP {status}");
             assert_eq!(row.retry_count, 1);
             let diagnostic = row.last_transport_error.unwrap();
@@ -1451,7 +1489,7 @@ mod tests {
                 assert!(diagnostic.contains(&format!("HTTP {status}")), "{diagnostic}");
                 assert!(diagnostic.contains("receiver detail"), "{diagnostic}");
             }
-            let stream = StOutboundStreamRow::try_from(db.iter(&tx, ST_OUTBOUND_STREAM_ID)?.next().unwrap())?;
+            let stream = StOutboundStreamRow::try_from(db.iter(&tx, ST_OUTBOUND_STREAM_ID)?.next().unwrap().unwrap())?;
             assert_eq!(stream.ack_prefix, 0);
             let _ = db.release_tx(tx);
         }
@@ -1471,7 +1509,7 @@ mod tests {
         {
             let tx = db.begin_tx(Workload::Internal);
             assert_eq!(db.iter(&tx, table)?.count(), 1);
-            let row = StOutboundMsgRow::try_from(db.iter(&tx, ST_OUTBOUND_MSG_ID)?.next().unwrap())?;
+            let row = StOutboundMsgRow::try_from(db.iter(&tx, ST_OUTBOUND_MSG_ID)?.next().unwrap().unwrap())?;
             assert_eq!(row.retry_count, 0);
             assert!(row.result_status.is_none());
         }
@@ -1506,10 +1544,10 @@ mod tests {
                     .is_err()
             );
             let tx = db.begin_tx(Workload::Internal);
-            let row = StOutboundMsgRow::try_from(db.iter(&tx, ST_OUTBOUND_MSG_ID)?.next().unwrap())?;
+            let row = StOutboundMsgRow::try_from(db.iter(&tx, ST_OUTBOUND_MSG_ID)?.next().unwrap().unwrap())?;
             assert!(row.result_status.is_none());
             assert!(row.last_transport_error.unwrap().contains("failed to read response"));
-            let stream = StOutboundStreamRow::try_from(db.iter(&tx, ST_OUTBOUND_STREAM_ID)?.next().unwrap())?;
+            let stream = StOutboundStreamRow::try_from(db.iter(&tx, ST_OUTBOUND_STREAM_ID)?.next().unwrap().unwrap())?;
             assert_eq!(stream.ack_prefix, 0);
             let _ = db.release_tx(tx);
             server.await??;

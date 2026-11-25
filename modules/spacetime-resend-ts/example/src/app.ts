@@ -7,6 +7,8 @@ import {
 } from './module_bindings';
 import type { Timestamp } from 'spacetimedb';
 import { messageHtml } from '../spacetimedb/src/message';
+import { mountFooter } from '@spacetimedb/example-ui';
+import '@spacetimedb/example-ui/footer.css';
 
 type TableAccessor<T> = {
   iter(): Iterable<T>;
@@ -666,6 +668,8 @@ async function main() {
   registerRowCallbacks();
   subscribeToTables(conn);
 }
+
+mountFooter(document.querySelector<HTMLElement>('.shell')!);
 
 main().catch(err => {
   console.error(err);

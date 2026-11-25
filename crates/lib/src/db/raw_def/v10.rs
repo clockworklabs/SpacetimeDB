@@ -108,6 +108,35 @@ pub enum RawModuleDefV10Section {
 
     /// Outbox table definitions.
     Outboxes(Vec<RawOutboxDefV10>),
+
+    /// Residency requirements for tables that opt out of the in-memory default.
+    TableCachePolicies(Vec<RawTableCachePolicyV10>),
+
+    /// Migrations from old schema versions, keyed by that schema version's hash.
+    Migrations(Vec<RawMigrationDefV10>),
+}
+
+/// The furthest storage tier a table's pages and blobs may reside in.
+/// Variant order is also used by `st_table_cache_policy`; append new variants.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, SpacetimeType)]
+#[sats(crate = crate)]
+pub enum TableCachePolicy {
+    /// Keep pages and blobs resident in memory.
+    #[default]
+    RequiredInMemory,
+    /// Allow eviction to local disk, but not to remote storage alone.
+    RequiredOnDisk,
+    /// Allow any storage tier, including remote object storage.
+    NoRequirement,
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawTableCachePolicyV10 {
+    /// The `source_name` of the table in this module.
+    pub table_name: RawIdentifier,
+    pub policy: TableCachePolicy,
 }
 
 #[derive(Debug, Clone, SpacetimeType)]
@@ -726,6 +755,16 @@ impl RawModuleDefV10 {
         })
     }
 
+    pub fn table_cache_policies(&self) -> impl Iterator<Item = &RawTableCachePolicyV10> {
+        self.sections
+            .iter()
+            .filter_map(|section| match section {
+                RawModuleDefV10Section::TableCachePolicies(policies) => Some(policies),
+                _ => None,
+            })
+            .flatten()
+    }
+
     // Get the row-level security section, if present.
     pub fn row_level_security(&self) -> Option<&Vec<RawRowLevelSecurityDefV10>> {
         self.sections.iter().find_map(|s| match s {
@@ -761,6 +800,13 @@ impl RawModuleDefV10 {
     pub fn http_routes(&self) -> Option<&Vec<RawHttpRouteDefV10>> {
         self.sections.iter().find_map(|s| match s {
             RawModuleDefV10Section::HttpRoutes(routes) => Some(routes),
+            _ => None,
+        })
+    }
+
+    pub fn migrations(&self) -> Option<&Vec<RawMigrationDefV10>> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::Migrations(migrations) => Some(migrations),
             _ => None,
         })
     }
@@ -1341,6 +1387,27 @@ impl RawModuleDefV10Builder {
         self.explicit_names_mut().merge(names);
     }
 
+    /// Record a table's residency requirement. Defaults need no new ABI section.
+    pub fn add_table_cache_policy(&mut self, table_name: impl Into<RawIdentifier>, policy: TableCachePolicy) {
+        if policy == TableCachePolicy::RequiredInMemory {
+            return;
+        }
+        let entry = RawTableCachePolicyV10 {
+            table_name: table_name.into(),
+            policy,
+        };
+        if let Some(policies) = self.module.sections.iter_mut().find_map(|section| match section {
+            RawModuleDefV10Section::TableCachePolicies(policies) => Some(policies),
+            _ => None,
+        }) {
+            policies.push(entry);
+        } else {
+            self.module
+                .sections
+                .push(RawModuleDefV10Section::TableCachePolicies(vec![entry]));
+        }
+    }
+
     /// Register an IDC outbox table.
     pub fn add_outbox(
         &mut self,
@@ -1399,6 +1466,30 @@ impl RawModuleDefV10Builder {
                 .sections
                 .push(RawModuleDefV10Section::Submodules(vec![submodule])),
         }
+    }
+
+    /// Get mutable access to the migrations section, creating it if missing.
+    fn migrations_mut(&mut self) -> &mut Vec<RawMigrationDefV10> {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::Migrations(_)))
+            .unwrap_or_else(|| {
+                self.module
+                    .sections
+                    .push(RawModuleDefV10Section::Migrations(Vec::new()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::Migrations(x) => x,
+            _ => unreachable!("Just ensured Migrations section exists"),
+        }
+    }
+
+    pub fn add_migration(&mut self, migration: RawMigrationDefV10) {
+        self.migrations_mut().push(migration);
     }
 
     /// Set the case conversion policy for this module.
@@ -1653,4 +1744,13 @@ impl RawTableDefBuilderV10<'_> {
             .position(|x| x.has_name(column.as_ref()))
             .map(|i| ColId(i as u16))
     }
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawMigrationDefV10 {
+    pub schema_hash: Hash,
+    pub name: RawIdentifier,
+    pub dropped: RawModuleDefV10,
 }

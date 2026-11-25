@@ -5,7 +5,7 @@ slug: /reference/internals/commitlog
 
 # Commitlog
 
-The commitlog is the write-ahead log (WAL) used by SpacetimeDB to persist all committed transactions. As an in-memory database, SpacetimeDB relies entirely on this log for durability. Every committed transaction is written to the commitlog before it is considered durable, and the full state of any database can be reconstructed by replaying the log from the beginning.
+The commitlog is the write-ahead log (WAL) used by SpacetimeDB to persist all committed transactions. Every committed transaction is written to the commitlog before it is considered durable, and the full state of any database can be reconstructed by replaying the log from the beginning.
 
 This page describes the on-disk format, integrity model, and indexing strategy of the commitlog.
 

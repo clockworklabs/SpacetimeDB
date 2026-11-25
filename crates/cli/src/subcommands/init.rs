@@ -46,6 +46,18 @@ struct TemplatesList {
     templates: Vec<TemplateDefinition>,
 }
 
+#[derive(Default, Deserialize)]
+struct TemplateFileMetadata {
+    // Paths are relative to this template and include all descendants of a directory.
+    #[serde(default)]
+    file_requirements: HashMap<String, TemplateFileRequirements>,
+}
+
+#[derive(Deserialize)]
+struct TemplateFileRequirements {
+    min_dotnet_version: u8,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TemplateType {
     Builtin,
@@ -1397,6 +1409,8 @@ fn init_builtin(
         .ok_or_else(|| anyhow::anyhow!("Template definition missing"))?;
 
     let template_files = embedded::get_template_files();
+    let dotnet_major = (config.server_lang == Some(ServerLanguage::Csharp))
+        .then(|| dotnet_major.unwrap_or_else(resolve_default_dotnet_major));
 
     if !is_server_only {
         println!(
@@ -1405,7 +1419,7 @@ fn init_builtin(
         );
         let client_source = &template_def.client_source;
         if let Some(files) = template_files.get(client_source.as_str()) {
-            copy_embedded_files(files, project_path)?;
+            copy_embedded_files(files, project_path, dotnet_major)?;
         } else {
             anyhow::bail!("Client template not found: {}", client_source);
         }
@@ -1437,7 +1451,7 @@ fn init_builtin(
     let server_dir = project_path.join("spacetimedb");
     let server_source = &template_def.server_source;
     if let Some(files) = template_files.get(server_source.as_str()) {
-        copy_embedded_files(files, &server_dir)?;
+        copy_embedded_files(files, &server_dir, dotnet_major)?;
     } else {
         anyhow::bail!("Server template not found: {}", server_source);
     }
@@ -1466,10 +1480,22 @@ fn init_builtin(
     Ok(())
 }
 
-fn copy_embedded_files(files: &HashMap<&str, &str>, target_dir: &Path) -> anyhow::Result<()> {
+fn copy_embedded_files(files: &HashMap<&str, &str>, target_dir: &Path, dotnet_major: Option<u8>) -> anyhow::Result<()> {
+    let metadata: TemplateFileMetadata = files
+        .get(".template.json")
+        .map(|content| serde_json::from_str(content))
+        .transpose()
+        .context("Invalid template file requirements")?
+        .unwrap_or_default();
     for (file_path, content) in files {
         // Skip .template.json files - they're only for template metadata
         if file_path.ends_with(".template.json") {
+            continue;
+        }
+        if metadata.file_requirements.iter().any(|(path, requirements)| {
+            Path::new(file_path).starts_with(path)
+                && !dotnet_major.is_some_and(|major| major >= requirements.min_dotnet_version)
+        }) {
             continue;
         }
 
@@ -1477,7 +1503,20 @@ fn copy_embedded_files(files: &HashMap<&str, &str>, target_dir: &Path) -> anyhow
         if let Some(parent) = full_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&full_path, content)?;
+        if full_path.extension().is_some_and(|extension| extension == "csproj")
+            && csproj_has_package_reference(content, "SpacetimeDB.Testing", None)
+        {
+            fs::write(
+                &full_path,
+                upsert_package_reference_text(
+                    content,
+                    "SpacetimeDB.Testing",
+                    &get_spacetimedb_csharp_runtime_version(),
+                ),
+            )?;
+        } else {
+            fs::write(&full_path, content)?;
+        }
     }
     Ok(())
 }
@@ -1917,11 +1956,11 @@ fn configure_csharp_project_files(project_path: &Path, dotnet_major: u8) -> anyh
     Ok(())
 }
 
-fn csproj_has_package_reference(content: &str, include: &str, version: &str) -> bool {
-    fn element_has_package_reference(element: &xmltree::Element, include: &str, version: &str) -> bool {
+fn csproj_has_package_reference(content: &str, include: &str, version: Option<&str>) -> bool {
+    fn element_has_package_reference(element: &xmltree::Element, include: &str, version: Option<&str>) -> bool {
         if element.name == "PackageReference"
             && element.attributes.get("Include").map(String::as_str) == Some(include)
-            && element.attributes.get("Version").map(String::as_str) == Some(version)
+            && version.is_none_or(|version| element.attributes.get("Version").map(String::as_str) == Some(version))
         {
             return true;
         }
@@ -1944,11 +1983,10 @@ fn csproj_has_package_reference(content: &str, include: &str, version: &str) -> 
 /// The configuration differs depending on the target .NET version:
 ///
 /// **.NET 8 AOT** (`--native-aot`): Keeps `net8.0` TFM and adds explicit ILCompiler.LLVM 8.0.0-*
-/// package references, gated on `EXPERIMENTAL_WASM_AOT=1`.
+/// package references, gated on `SPACETIMEDB_WASM_AOT=1`.
 ///
-/// **.NET 10 AOT**: Replaces the TFM with `net10.0` directly (no conditional needed since the
-/// project is definitively targeting .NET 10). ILCompiler.LLVM refs are provided transitively
-/// by the SpacetimeDB.Runtime NuGet package.
+/// **.NET 10 AOT**: The templates already reference ILCompiler.LLVM conditionally on
+/// `RuntimeIdentifier=wasi-wasm`, so the project needs no further changes.
 ///
 /// Both paths need a NuGet.Config with the dotnet-experimental feed for ILCompiler.LLVM resolution.
 fn add_native_aot_packages_to_csproj(project_path: &Path, dotnet_major: Option<u8>) -> anyhow::Result<()> {
@@ -1961,11 +1999,11 @@ fn add_native_aot_packages_to_csproj(project_path: &Path, dotnet_major: Option<u
 
     let new_content = if dotnet_major == Some(8) {
         let has_net8_native_aot_refs =
-            csproj_has_package_reference(&content, "Microsoft.DotNet.ILCompiler.LLVM", "8.0.0-*")
+            csproj_has_package_reference(&content, "Microsoft.DotNet.ILCompiler.LLVM", Some("8.0.0-*"))
                 && csproj_has_package_reference(
                     &content,
                     "runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM",
-                    "8.0.0-*",
+                    Some("8.0.0-*"),
                 );
 
         if has_net8_native_aot_refs {
@@ -1973,7 +2011,7 @@ fn add_native_aot_packages_to_csproj(project_path: &Path, dotnet_major: Option<u
         } else {
             // .NET 8 AOT: keep net8.0 TFM, add explicit ILCompiler.LLVM package references.
             let native_aot_config = r#"
-  <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
+  <ItemGroup Condition="'$(SPACETIMEDB_WASM_AOT)' == '1'">
     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
     <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
   </ItemGroup>
@@ -1986,12 +2024,7 @@ fn add_native_aot_packages_to_csproj(project_path: &Path, dotnet_major: Option<u
             }
         }
     } else {
-        // .NET 10 AOT: directly set TFM to net10.0 (no conditional needed).
-        // ILCompiler.LLVM comes transitively via the SpacetimeDB.Runtime NuGet package.
-        content.replace(
-            "<TargetFramework>net8.0</TargetFramework>",
-            "<TargetFramework>net10.0</TargetFramework>",
-        )
+        content
     };
 
     std::fs::write(&csproj_path, new_content)?;
@@ -2488,7 +2521,7 @@ bytes.workspace = true
         std::fs::write(
             &csproj,
             r#"<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup Condition="$(TargetFramework.StartsWith('net10.')) Or '$(EXPERIMENTAL_WASM_AOT)' == '1'">
+  <PropertyGroup Condition="$(TargetFramework.StartsWith('net10.')) Or '$(SPACETIMEDB_WASM_AOT)' == '1'">
     <PublishTrimmed>true</PublishTrimmed>
   </PropertyGroup>
   <ItemGroup>
@@ -2504,7 +2537,7 @@ bytes.workspace = true
 
         let content = std::fs::read_to_string(csproj).unwrap();
         assert!(content
-            .contains("Condition=\"$(TargetFramework.StartsWith('net10.')) Or '$(EXPERIMENTAL_WASM_AOT)' == '1'\""));
+            .contains("Condition=\"$(TargetFramework.StartsWith('net10.')) Or '$(SPACETIMEDB_WASM_AOT)' == '1'\""));
         assert!(!content.contains("&apos;"));
         let root = xmltree::Element::parse(content.as_bytes()).unwrap();
         let runtime_version = root.children.iter().find_map(|node| {
@@ -2587,30 +2620,67 @@ bytes.workspace = true
     }
 
     #[test]
+    fn test_chat_csharp_tests_only_for_net10() {
+        let templates: TemplatesList = serde_json::from_str(embedded::get_templates_json()).unwrap();
+        for major in [8, 10] {
+            let temp = tempfile::TempDir::new().unwrap();
+            let config = create_template_config_from_template_str(
+                "chat".to_string(),
+                temp.path().to_path_buf(),
+                "chat-console-cs",
+                &templates.templates,
+            )
+            .unwrap();
+            init_builtin(&config, temp.path(), false, "chat", Some(major)).unwrap();
+            let tests = temp.path().join("tests/Module.Tests.csproj");
+            assert_eq!(tests.exists(), major == 10);
+            if major == 10 {
+                let project = fs::read_to_string(tests).unwrap();
+                assert!(csproj_has_package_reference(
+                    &project,
+                    "SpacetimeDB.Testing",
+                    Some(&get_spacetimedb_csharp_runtime_version()),
+                ));
+                assert!(project.contains("<ProjectReference Include=\"../spacetimedb/StdbModule.csproj\""));
+            }
+        }
+    }
+
+    #[test]
+    fn test_template_file_requirements_apply_to_path_components() {
+        let files = HashMap::from_iter([
+            (
+                ".template.json",
+                r#"{"file_requirements":{"optional":{"min_dotnet_version":10}}}"#,
+            ),
+            ("optional/nested/example.txt", "conditional"),
+            ("optional-other/example.txt", "unconditional"),
+        ]);
+        for (major, included) in [(None, false), (Some(11), true)] {
+            let temp = tempfile::TempDir::new().unwrap();
+            copy_embedded_files(&files, temp.path(), major).unwrap();
+            assert_eq!(temp.path().join("optional/nested/example.txt").exists(), included);
+            assert!(temp.path().join("optional-other/example.txt").exists());
+        }
+    }
+
+    #[test]
     fn test_add_native_aot_packages_does_not_duplicate_template_refs() {
-        let temp = tempfile::TempDir::new().unwrap();
-        let csproj = temp.path().join("StdbModule.csproj");
-        let template = include_str!("../../../../templates/basic-cs/spacetimedb/StdbModule.csproj");
-        let net8 = csharp_csproj_for_target(template, 8).unwrap();
-        std::fs::write(&csproj, net8).unwrap();
+        for template in [
+            include_str!("../../../../templates/basic-cs/spacetimedb/StdbModule.csproj"),
+            include_str!("../../../../templates/chat-console-cs/spacetimedb/StdbModule.csproj"),
+        ] {
+            for dotnet_major in [8, 10] {
+                let temp = tempfile::TempDir::new().unwrap();
+                let csproj = temp.path().join("StdbModule.csproj");
+                let expected = csharp_csproj_for_target(template, dotnet_major).unwrap();
+                std::fs::write(&csproj, &expected).unwrap();
 
-        add_native_aot_packages_to_csproj(temp.path(), Some(8)).unwrap();
+                add_native_aot_packages_to_csproj(temp.path(), Some(dotnet_major)).unwrap();
 
-        let content = std::fs::read_to_string(csproj).unwrap();
-        assert_eq!(
-            content
-                .matches(r#"PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*""#)
-                .count(),
-            1
-        );
-        assert_eq!(
-            content
-                .matches(
-                    r#"PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*""#
-                )
-                .count(),
-            1
-        );
+                assert_eq!(std::fs::read_to_string(csproj).unwrap(), expected);
+            }
+        }
     }
 
     #[test]

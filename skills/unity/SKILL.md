@@ -122,7 +122,7 @@ public class SpacetimeManager : MonoBehaviour
 
 ## Automatic Reconnect
 
-Add `.WithAutomaticReconnect()` to the builder to recover an established connection after an outage. In the singleton above, create subscriptions only on the first `OnConnected`, or move them after `Build()`: `OnConnected` runs again after each successful reconnect. Keep calling `FrameTick()` during outages, or use `SpacetimeDBNetworkManager`, which also ticks reconnecting connections. Do not gate ticking on `IsActive`.
+Add `.WithAutomaticReconnect()` to the builder to recover an established connection after an outage. In the singleton above, create subscriptions in `OnConnected` or move them after `Build()`: `OnConnected` runs only on the first successful connection. Successful automatic reconnects invoke `OnAutomaticReconnect` before subscription replay; use it for recovery-specific work such as saving a refreshed token. Keep calling `FrameTick()` during outages, or use `SpacetimeDBNetworkManager`, which also ticks reconnecting connections. Do not gate ticking on `IsActive`.
 
 The SDK retains the identity, table handles, callbacks, and subscriptions, and replays subscriptions in one batch. Cached rows stay readable during an outage; row callbacks report net changes after recovery. `OnApplied` runs again, so separate one-time object setup from marking data ready. Each reconnect attempt has a fresh `ConnectionId`.
 
@@ -131,6 +131,8 @@ The SDK retains the identity, table handles, callbacks, and subscriptions, and r
 Calls made while disconnected fail immediately. Pending reducer calls may report `Status.UnknownResult`, meaning the server may have executed them; they are not replayed. Pending procedures and one-off queries fail with `UnknownResultException`. Regenerate bindings when upgrading to include unknown-outcome handling.
 
 ---
+
+For views with arguments (2.13+), use only raw SQL `SELECT * FROM view_name(literal_args)`. Use explicit queries for every table on that connection, not subscribe-all. All argument values share one cache table; unsubscribe from obsolete arguments to avoid combining their rows. Validate/encode dynamic values as SQL literals rather than concatenating untrusted input.
 
 ## Row Callbacks for Game State
 
@@ -232,6 +234,6 @@ The SpacetimeDB SDK uses code generation. If you encounter issues with IL2CPP bu
 ### Token Persistence
 Token save/load via `PlayerPrefs` is demonstrated in the SpacetimeManager singleton above. Persisting the server-issued token and passing it back on reconnect keeps the same identity; without a saved token the server issues a new identity in the `OnConnect` callback. This token does not expire and a lost one can't be recovered, so self-issued identities are for development. For production, authenticate with an OIDC provider such as SpacetimeAuth, which handles token lifecycle.
 
-With automatic reconnect enabled, the SDK retains the authentication token and passes it to `OnConnect`, including on WebGL. Without automatic reconnect, a WebGL connection using a saved token may return a short-lived WebSocket token instead; in that case, keep the original saved token rather than overwriting it in the callback above.
+With automatic reconnect enabled, the SDK retains the authentication token and passes it to `OnConnect` on the initial connection, including on WebGL. Successful recovery passes the retained or refreshed token to `OnAutomaticReconnect`. Without automatic reconnect, a WebGL connection using a saved token may return a short-lived WebSocket token instead; in that case, keep the original saved token rather than overwriting it in the callback above.
 
 For expiring credentials, configure `.WithToken(initialToken)`, `.WithAutomaticReconnect()`, and `.WithTokenProvider(() => RefreshTokenAsync())`. The provider returns `Task<string>` for the same identity. It is used before reconnect attempts when expiry is unreadable, remaining validity is at most 30 seconds or 5% of the original lifetime, or a reused token is rejected. It is not called for the initial connection or periodically while connected. Provider failures retry; rejection of a freshly provided token stops recovery. `Disconnect()` ignores a pending provider result without canceling the provider's own asynchronous work.

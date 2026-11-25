@@ -54,9 +54,9 @@ Automatic reconnect is opt-in: add `.WithAutomaticReconnect()` to the builder. I
 
 Keep calling `FrameTick()` while `IsActive` is false. `IsReconnecting` is true while recovering before the next handshake. Use `.OnDisconnect((conn, error, next) => ...)` and `.OnConnectError((error, next) => ...)` to inspect `NextReconnect?`: a non-null value provides `Attempt` and `Delay`; null means no retry is scheduled. Existing callback overloads still work.
 
-`OnConnect` runs on every successful reconnect, so create the subscription in the example above only on the first connection, or move it after `Build()`. Register row callbacks once as well. The same connection, identity, table handles, and subscriptions survive; each attempt gets a fresh `ConnectionId`. Cached rows stay readable but stale during outages. The SDK replays subscriptions in one batch and emits only net row changes. Subscription `OnApplied` runs again after replay; use it to mark data ready, not for repeated one-time setup.
+`OnConnect` runs once per `DbConnection`, on the first successful connection. Successful automatic reconnects invoke `OnAutomaticReconnect` before subscription replay instead. Register subscriptions and row callbacks once, either in `OnConnect` or after `Build()`, and use `OnAutomaticReconnect` for recovery-specific work such as saving a refreshed token. The same connection, identity, table handles, and subscriptions survive; each attempt gets a fresh `ConnectionId`. Cached rows stay readable but stale during outages. The SDK replays subscriptions in one batch and emits only net row changes. Subscription `OnApplied` runs again after replay; use it to mark data ready, not for repeated one-time setup.
 
-For expiring credentials, combine `.WithToken(initialToken)` with `.WithTokenProvider(() => RefreshTokenAsync())`, where your provider returns `Task<string>` for the same identity. The provider is not called for the initial connection. Before retries, it is called when remaining validity is at most 30 seconds or 5% of the token lifetime, whichever is greater, when expiry cannot be read, or after a reused token is rejected. Provider failures retry; rejection of a freshly provided token is terminal. No periodic refresh runs while connected. Disconnecting ignores a pending provider result but does not cancel the provider's own work.
+For expiring credentials, combine `.WithToken(initialToken)` with `.WithTokenProvider(() => RefreshTokenAsync())`, where your provider returns `Task<string>` for the same identity. The provider is not called for the initial connection. Before retries, it is called when remaining validity is at most 30 seconds or 5% of the token lifetime, whichever is greater, when expiry cannot be read, or after a reused token is rejected. Provider failures retry; rejection of a freshly provided token is terminal. No periodic refresh runs while connected. After recovery, persist the token passed to `OnAutomaticReconnect` if the application stores tokens. Disconnecting ignores a pending provider result but does not cancel the provider's own work.
 
 Calls made while disconnected fail immediately. Pending reducer calls receive `Status.UnknownResult`; pending procedures and one-off queries fail with `UnknownResultException`. These calls may already have executed and are never replayed. Regenerate bindings so unhandled unknown reducer outcomes reach `OnUnhandledReducerError`.
 
@@ -98,6 +98,29 @@ conn.SubscriptionBuilder()
         "SELECT * FROM game_state"
     });
 ```
+
+## Submodule Accessors and View Arguments
+
+A namespace accessor `MyAuth` is nested in the generated table, reducer, and procedure APIs:
+
+```csharp
+conn.SubscriptionBuilder()
+    .AddQuery(q => q.From.MyAuth.User())
+    .Subscribe();
+// Rows: conn.Db.MyAuth.User
+// Reducers: conn.Reducers.MyAuth.Add(10)
+// Procedures: conn.Procedures.MyAuth.CountUsers((ctx, result) => { ... })
+```
+
+The query builder and calls encode canonical names automatically. Raw SQL/HTTP/CLI calls use canonical qualified names, such as `auth_data.<table>` for a namespace explicitly named `auth_data`. All namespaces share the connection and cache.
+
+For views with arguments (2.13+), use raw SQL; C# has no typed argument-bearing view query builder yet:
+
+```csharp
+conn.SubscriptionBuilder().Subscribe(new[] { "SELECT * FROM by_id(42)" });
+```
+
+Use explicit queries for every table on that connection, not subscribe-all, which skips views with arguments. Only `SELECT * FROM view_name(literal_args)` is supported. All argument values share one cache table; unsubscribe from obsolete arguments to avoid combining their rows. Validate/encode dynamic values as SQL literals rather than concatenating untrusted input. Keep calling `FrameTick()` to process subscription updates.
 
 ## Row Callbacks
 

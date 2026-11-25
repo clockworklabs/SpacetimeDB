@@ -10,8 +10,8 @@
   },
   "scripts": {
     "build": "spacetime build",
-    "publish": "./publish.sh",
-    "spacetime:generate": "./generate.sh",
+    "publish": "spacetime publish --delete-data -y",
+    "spacetime:generate": "spacetime generate",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -19,6 +19,8 @@
   --radius-lg: 18px;
   --radius-md: 12px;
   --radius-sm: 8px;
+  --example-footer-border: var(--line);
+  --example-footer-label: var(--muted);
   font-family:
     Inter,
     ui-sans-serif,
@@ -822,38 +824,6 @@ a {
 
 .form-status[data-tone='error'] {
   color: var(--red);
-}
-
-.footer {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 28px 0 2px;
-  color: var(--muted);
-  font-size: 0.68rem;
-}
-
-.footer img {
-  width: 18px;
-  height: 16px;
-}
-
-.footer a {
-  color: var(--muted-bright);
-  font-weight: 650;
-  text-decoration: none;
-}
-
-.footer a:hover {
-  color: var(--text);
-}
-
-.footer-divider {
-  width: 1px;
-  height: 14px;
-  margin: 0 3px;
-  background: var(--line-strong);
 }
 
 :focus-visible {

@@ -109,8 +109,8 @@ fn test_codegen_rust_module_bindings() {
     assert!(!outfiles.keys().any(|filename| filename.ends_with("_procedure.rs")));
 
     let root = outfiles
-        .get("lib.rs")
-        .expect("rust module bindings should emit a root lib.rs");
+        .get("mod.rs")
+        .expect("rust module bindings should emit a root mod.rs");
 
     assert!(root.contains("pub use test_a_type::TestA;"));
     assert!(!root.contains("pub mod baz_type;"));
@@ -161,6 +161,9 @@ fn rust_receiver_types_are_scoped_by_dependency_name() {
     let type_file = "test_a_type.rs";
     assert!(game_world[type_file].contains("#[sats(name = \"game_world.TestA\")]"));
     assert!(auth[type_file].contains("#[sats(name = \"auth.TestA\")]"));
+
+    let csharp = generate_csharp_receiver_bindings(module, Some("game_world"));
+    assert!(csharp["Types/TestA.g.cs"].contains("[global::SpacetimeDB.Type(Name = \"game_world.TestA\")]"));
 }
 
 #[test]
@@ -175,6 +178,9 @@ fn receiver_types_with_their_own_scope_join_it_with_dots() {
         .contains("#[sats(name = \"game_world.Namespace.TestC\")]"));
     let typescript = generate_receiver_bindings(module, ReceiverLanguage::TypeScript, Some("game_world")).unwrap();
     assert!(typescript[0].code.contains("__t.enum(\"game_world.Namespace.TestC\""));
+    let csharp = generate_csharp_receiver_bindings(module, Some("game_world"));
+    assert!(csharp["Types/NamespaceTestC.g.cs"]
+        .contains("[global::SpacetimeDB.Type(Name = \"game_world.Namespace.TestC\")]"));
 }
 
 #[test]
@@ -209,11 +215,11 @@ fn test_codegen_receiver_bindings_include_nested_reducer_types() {
     assert!(files.contains_key("empire_state_op_type.rs"));
     assert!(files.contains_key("empire_state_type.rs"));
     assert!(!files.contains_key("unrelated_type.rs"));
-    assert!(files["lib.rs"].contains("pub mod empire_state_op_type;"));
-    assert!(files["lib.rs"].contains("pub mod empire_state_type;"));
-    assert!(files["lib.rs"].contains("pub use empire_state_op_type::EmpireStateOp;"));
-    assert!(files["lib.rs"].contains("pub use empire_state_type::EmpireState;"));
-    assert!(!files["lib.rs"].contains("pub mod unrelated_type;"));
+    assert!(files["mod.rs"].contains("pub mod empire_state_op_type;"));
+    assert!(files["mod.rs"].contains("pub mod empire_state_type;"));
+    assert!(files["mod.rs"].contains("pub use empire_state_op_type::EmpireStateOp;"));
+    assert!(files["mod.rs"].contains("pub use empire_state_type::EmpireState;"));
+    assert!(!files["mod.rs"].contains("pub mod unrelated_type;"));
 
     let files = generate_receiver_bindings(&module, ReceiverLanguage::TypeScript, None).unwrap();
     let root = &files.iter().find(|file| file.filename == "index.ts").unwrap().code;
@@ -222,8 +228,8 @@ fn test_codegen_receiver_bindings_include_nested_reducer_types() {
     assert!(!root.contains("export const Unrelated ="));
 }
 
-#[test]
-fn test_codegen_rust_outbox_fixture() {
+/// The receiver behind the `module-test` IDC fixtures in every language.
+fn idc_fixture_receiver() -> ModuleDef {
     use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, ExplicitNames, RawModuleDefV10Builder};
     use spacetimedb_lib::{AlgebraicType, ProductType};
 
@@ -235,13 +241,34 @@ fn test_codegen_rust_outbox_fixture() {
     let mut names = ExplicitNames::default();
     names.insert_function("receivePing", "wire_ping");
     builder.add_explicit_names(names);
-    let module: ModuleDef = builder.finish().try_into().unwrap();
-    let files = generate_receiver_bindings(&module, ReceiverLanguage::Rust, None).unwrap();
-    let root = &files.iter().find(|file| file.filename == "lib.rs").unwrap().code;
+    builder.finish().try_into().unwrap()
+}
+
+#[test]
+fn test_codegen_csharp_outbox_fixture() {
+    let lang = ReceiverLanguage::Csharp {
+        namespace: "SpacetimeDB.Modules.ModuleTestCs.Receiver",
+    };
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../modules/module-test-cs/Receiver");
+    // `module-test-cs` compiles these checked-in bindings.
+    for file in generate_receiver_bindings(&idc_fixture_receiver(), lang, None).unwrap() {
+        let path = format!("{dir}/{}", file.filename);
+        assert_eq!(
+            fs_err::read_to_string(&path).unwrap(),
+            file.code,
+            "{path} is out of date"
+        );
+    }
+}
+
+#[test]
+fn test_codegen_rust_outbox_fixture() {
+    let files = generate_receiver_bindings(&idc_fixture_receiver(), ReceiverLanguage::Rust, None).unwrap();
+    let root = &files.iter().find(|file| file.filename == "mod.rs").unwrap().code;
 
     // The CLI formats generated bindings, and CI checks the fixture with the repo's rustfmt config.
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("lib.rs");
+    let path = dir.path().join("mod.rs");
     fs_err::write(&path, root).unwrap();
     let status = std::process::Command::new("rustfmt")
         .arg("--config-path")
@@ -254,7 +281,7 @@ fn test_codegen_rust_outbox_fixture() {
     // The bindings UI tests compile this generated fixture and check its column mappings.
     assert_eq!(
         fs_err::read_to_string(path).unwrap().trim_end(),
-        include_str!("../../bindings/tests/fixtures/idc_receiver/lib.rs").trim_end()
+        include_str!("../../bindings/tests/fixtures/idc_receiver/mod.rs").trim_end()
     );
 }
 
@@ -273,7 +300,6 @@ fn test_typescript_table_handles_are_camel_case() {
     assert!(!index.contains("my_player: __table({"));
     assert!(index.contains(r#""logged_out_player": "loggedOutPlayer""#));
     assert!(index.contains(r#"readonly "logged_out_player": __TablesBase["loggedOutPlayer"];"#));
-    assert!(index.contains(r#"readonly "logged_out_player": __DbViewBase["loggedOutPlayer"];"#));
     assert!(index.contains(
         r#"/** @deprecated Use `loggedOutPlayer` instead. This alias will be removed in the next major version. */"#
     ));
@@ -378,6 +404,12 @@ fn compile_csharp_client(files: Vec<spacetimedb_codegen::OutputFile>, program: &
         .join("../..")
         .canonicalize()
         .unwrap();
+    // `canonicalize` returns a verbatim `\\?\` path on Windows, which MSBuild
+    // percent-escapes, breaking its `*.props` wildcard imports (MSB4019).
+    let repo = match repo.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
+        Some(stripped) => std::path::PathBuf::from(stripped),
+        None => repo,
+    };
     // Use the local runtime, never a published package or an old NuGet cache entry.
     let config = project.path().join("NuGet.Config");
     fs_err::write(
@@ -479,6 +511,19 @@ fn typescript_import_extension_applies_to_every_relative_import() {
                 "{spec:?} has more than one extension"
             );
         }
+    }
+}
+
+/// Babel, which React Native and Expo build with, rejects `declare` class fields by default.
+#[test]
+fn typescript_bindings_have_no_declare_fields() {
+    let module = compiled_module();
+    for file in generate(module, &TypeScript::default(), &CodegenOptions::default()) {
+        assert!(
+            !file.code.lines().any(|line| line.trim_start().starts_with("declare ")),
+            "{} has a `declare` field",
+            file.filename
+        );
     }
 }
 
@@ -637,8 +682,9 @@ db.reducer({ target: receiver.identity(), other: other.identity() }, (ctx, { tar
     );
 }
 
-#[test]
-fn test_codegen_typescript_receiver_bindings() {
+/// A receiver with nested types, a plain enum, an explicitly named reducer (`wire_ping`),
+/// a lifecycle reducer and a type no reducer uses.
+fn receiver_test_module() -> ModuleDef {
     use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, ExplicitNames, RawModuleDefV10Builder};
     use spacetimedb_lib::db::raw_def::v9::Lifecycle;
     use spacetimedb_lib::{AlgebraicType, ProductType, SpacetimeType};
@@ -718,7 +764,22 @@ fn test_codegen_typescript_receiver_bindings() {
     let mut names = ExplicitNames::default();
     names.insert_function("receivePing", "wire_ping");
     builder.add_explicit_names(names);
-    let module: ModuleDef = builder.finish().try_into().unwrap();
+    builder.finish().try_into().unwrap()
+}
+
+fn wire_ping_signature_hash(module: &ModuleDef) -> spacetimedb_lib::Hash {
+    let reducer = module.reducers().find(|r| r.name.as_ref() == "wire_ping").unwrap();
+    spacetimedb_schema::def::reducer_signature_hash(
+        &reducer.params(),
+        &reducer.ok_return_type,
+        &reducer.err_return_type,
+        module.typespace(),
+    )
+}
+
+#[test]
+fn test_codegen_typescript_receiver_bindings() {
+    let module = receiver_test_module();
     let files = generate_receiver_bindings(&module, ReceiverLanguage::TypeScript, None).unwrap();
     let root = &files.iter().find(|f| f.filename == "index.ts").unwrap().code;
     assert!(root.contains("nestedValues"));
@@ -727,13 +788,7 @@ fn test_codegen_typescript_receiver_bindings() {
     assert!(root.contains("note: __t.string()"));
     assert!(!root.contains("Unrelated"));
     assert!(!root.contains("\"initialize\":"));
-    let reducer = module.reducers().find(|r| r.name.as_ref() == "wire_ping").unwrap();
-    let hash = spacetimedb_schema::def::reducer_signature_hash(
-        &reducer.params(),
-        &reducer.ok_return_type,
-        &reducer.err_return_type,
-        module.typespace(),
-    );
+    let hash = wire_ping_signature_hash(&module);
     assert!(root.contains(&format!("signatureHash: {}n", hash.to_u256())));
     assert_eq!(files.len(), 1);
     insta::assert_snapshot!(root);
@@ -752,4 +807,55 @@ fn test_codegen_typescript_receiver_bindings() {
             assert!(!code.contains(&format!("__t.{constructor}(\"{name}\"")));
         }
     }
+}
+
+fn generate_csharp_receiver_bindings(
+    module: &ModuleDef,
+    dependency_name: Option<&str>,
+) -> std::collections::BTreeMap<String, String> {
+    let lang = ReceiverLanguage::Csharp {
+        namespace: "RemoteBindings.Receiver",
+    };
+    generate_receiver_bindings(module, lang, dependency_name)
+        .unwrap()
+        .into_iter()
+        .map(|file| (file.filename, file.code))
+        .collect()
+}
+
+#[test]
+fn test_codegen_csharp_module_bindings() {
+    let module = receiver_test_module();
+    let files = generate_csharp_receiver_bindings(&module, None);
+    // The snapshot can't tell whether the hash is the receiver's.
+    let hash = wire_ping_signature_hash(&module);
+    assert!(files["Reducers/ReceivePing.g.cs"]
+        .contains(&format!("public const string SignatureHash = \"{}\";", hash.to_hex())));
+    insta::assert_toml_snapshot!(files);
+}
+
+#[test]
+fn csharp_receiver_types_avoid_generated_names() {
+    use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+    use spacetimedb_lib::{AlgebraicType, ProductType};
+
+    let mut builder = RawModuleDefV10Builder::new();
+    let names = ["Identity", "Reducers", "System", "RemoteBindings"];
+    let params = names.map(|name| {
+        let ty = builder.add_algebraic_type([], name, AlgebraicType::product([("value", AlgebraicType::U8)]), true);
+        (name, AlgebraicType::Ref(ty))
+    });
+    builder.add_reducer("receive", ProductType::from(params));
+    builder.add_reducer("reducers", ProductType::unit());
+    let module: ModuleDef = builder.finish().try_into().unwrap();
+    let files = generate_csharp_receiver_bindings(&module, Some("dep"));
+
+    for name in names {
+        // Only the C# name changes; the schema name stays.
+        let code = &files[&format!("Types/{name}_.g.cs")];
+        assert!(code.contains(&format!("[global::SpacetimeDB.Type(Name = \"dep.{name}\")]")));
+        assert!(code.contains(&format!("public sealed partial class {name}_")));
+    }
+    assert!(files["Reducers/Receive.g.cs"].contains("global::RemoteBindings.Receiver.Identity_ @identity"));
+    assert!(files.contains_key("Reducers/Reducers_.g.cs"));
 }

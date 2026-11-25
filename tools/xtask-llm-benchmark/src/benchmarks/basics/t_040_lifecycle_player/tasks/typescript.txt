@@ -7,5 +7,5 @@ TABLE
     - connectedAt: timestamp
 
 REDUCERS
-- clientConnected: lifecycle reducer (spacetimedb.clientConnected) that inserts an online_player row using ctx.sender as the identity and ctx.timestamp as connectedAt
-- clientDisconnected: lifecycle reducer (spacetimedb.clientDisconnected) that deletes the online_player row for ctx.sender
+- clientConnected: lifecycle reducer that inserts an online_player row with the caller's identity and the current time as connectedAt
+- clientDisconnected: lifecycle reducer that deletes the online_player row for the caller's identity

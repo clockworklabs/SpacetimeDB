@@ -117,7 +117,7 @@ fn view_backing_table_id(tx: &mut TxId, full_name: &NamespacedIdentifier) -> any
         return Ok(None);
     };
 
-    Ok(StViewRow::try_from(row)?.table_id)
+    Ok(StViewRow::try_from(row?)?.table_id)
 }
 
 fn view_backing_row_layout_changed(actual: &TableSchema, expected: &TableSchema) -> bool {
@@ -596,6 +596,20 @@ fn auto_migrate_database(
                 log!(logger, "Changing primary key for table `{table_name}`");
                 stdb.alter_table_primary_key(tx, &table_name, table_def.primary_key)?;
             }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeCachePolicy(table_name_key) => {
+                let (namespace, local) = table_name_key;
+                let table_name = joined(namespace, local);
+                let (_, table_def) = plan.new.find_table(table_name_key).ok_or_else(|| {
+                    anyhow::anyhow!("ChangeCachePolicy: table `{table_name}` not found in new module def")
+                })?;
+                let table_id = stdb.table_id_from_name_mut(tx, &table_name)?.unwrap();
+                log!(
+                    logger,
+                    "Changing cache policy for table `{table_name}` to {:?}",
+                    table_def.cache_policy
+                );
+                stdb.alter_table_cache_policy(tx, table_id, table_def.cache_policy)?;
+            }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeOutbox(table_name_key) => {
                 let (namespace, local) = table_name_key;
                 let table_name = joined(namespace, local);
@@ -690,7 +704,7 @@ fn rewrite_outbound_stream_outbox_table_id(
             StOutboundStreamFields::OutboxTableId,
             &old_table_id.into(),
         )?
-        .map(StOutboundStreamRow::try_from)
+        .map(|row| row.and_then(StOutboundStreamRow::try_from))
         .collect::<Result<Vec<_>, _>>()?;
 
     for mut stream in streams {
@@ -835,7 +849,7 @@ mod test {
 
         let rows = stdb
             .iter_mut(&tx, ST_OUTBOUND_STREAM_ID)?
-            .map(StOutboundStreamRow::try_from)
+            .map(|row| row.and_then(StOutboundStreamRow::try_from))
             .collect::<Result<Vec<_>, _>>()?;
         assert_eq!(
             rows,
@@ -914,10 +928,11 @@ mod test {
         let idx_b_id = stdb
             .index_id_from_name(&tx, "t_b_idx_btree")?
             .expect("there should be an index named `idx_b`");
-        assert_eq!(
+        assert!(matches!(
             tx.pending_schema_changes(),
-            [PendingSchemaChange::IndexAdded(t_id, idx_b_id, None)]
-        );
+            [PendingSchemaChange::IndexAdded(tid, iid, None)]
+                if *tid == t_id && *iid == idx_b_id
+        ));
 
         Ok(())
     }
@@ -1898,7 +1913,7 @@ mod test {
 
             let mut ids = stdb
                 .iter_mut(&tx, table_id)?
-                .map(|r| r.read_col::<i64>(0))
+                .map(|r| r.unwrap().read_col::<i64>(0))
                 .collect::<Result<Vec<_>, _>>()?;
 
             ids.sort();

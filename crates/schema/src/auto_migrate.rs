@@ -304,6 +304,8 @@ pub enum AutoMigrateStep<'def> {
     ChangeTableAccessorName(<TableDef as ModuleDefLookup>::Key<'def>),
     /// Change IDC outbox metadata on an existing table.
     ChangeOutbox(<TableDef as ModuleDefLookup>::Key<'def>),
+    /// Change residency after the transaction's row and schema changes are prepared.
+    ChangeCachePolicy(<TableDef as ModuleDefLookup>::Key<'def>),
     /// Change the accessor name alias of an existing column.
     ChangeColumnAccessorName(<TableDef as ModuleDefLookup>::Key<'def>, &'def Identifier),
 
@@ -359,7 +361,6 @@ pub enum AutoMigrateError {
 
     #[error("Reordering table {table} requires a manual migration")]
     ReorderTable { table: Identifier },
-
     #[error(
         "Changing the type of column {} in table {} from {:?} to {:?} requires a manual migration",
         .0.column, .0.table, .0.type1, .0.type2
@@ -776,6 +777,9 @@ fn auto_migrate_table<'def>(
         }
         .into())
     };
+    if old.cache_policy != new.cache_policy {
+        plan.steps.push(AutoMigrateStep::ChangeCachePolicy(key));
+    }
     let event_ok: Result<()> = if old.is_event == new.is_event {
         Ok(())
     } else {

@@ -29,7 +29,7 @@ describe('Random', () => {
 
     for (const array of arrays) {
       random.fill(array);
-      expect(Array.from(array).some(isNonZero)).toBe(true);
+      expect(array.some(isNonZero)).toBe(true);
     }
   });
 
@@ -104,6 +104,42 @@ describe('Random', () => {
     expect(first).not.toEqual(second);
     expect(new Set(first)).toEqual(new Set(values));
     expect(first).toHaveLength(values.length);
+  });
+
+  test('first draw is uniform across sequential timestamp seeds (#6247)', () => {
+    const N = 5000;
+    const base = 1_791_964_800_000_000n;
+    let belowOneTenthPercent = 0;
+    let belowOnePercent = 0;
+    let belowHalf = 0;
+
+    for (let i = 0; i < N; i++) {
+      const seed = base + BigInt(i) * 7919n;
+      const random = makeRandom(new Timestamp(seed));
+      const draw = random();
+
+      if (draw < 0.001) belowOneTenthPercent++;
+      if (draw < 0.01) belowOnePercent++;
+      if (draw < 0.5) belowHalf++;
+    }
+
+    // Prior to the signed-shift fix, about 28% of first draws were below 0.001.
+    // Fixed seeds keep this distribution regression test repeatable.
+    expect(belowOneTenthPercent / N).toBeLessThan(0.005);
+    expect(belowOnePercent / N).toBeGreaterThan(0.005);
+    expect(belowOnePercent / N).toBeLessThan(0.02);
+    expect(belowHalf / N).toBeGreaterThan(0.45);
+    expect(belowHalf / N).toBeLessThan(0.55);
+  });
+
+  test('distinct timestamps start distinct streams', () => {
+    const start = 1_791_964_800_000_000n;
+    const seen = new Set<string>();
+    for (let i = 0n; i < 100_000n; i++) {
+      const random = makeRandom(new Timestamp(start + i));
+      seen.add(random.fill(new Uint8Array(16)).join(','));
+    }
+    expect(seen.size).toBe(100_000);
   });
 });
 

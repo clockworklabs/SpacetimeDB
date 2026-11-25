@@ -25,6 +25,16 @@ The following changes are always allowed and will not break existing clients:
 - **Adding new reducers.**
 - **Removing `Unique` constraints.**
 
+## Changing a table's cache policy
+
+To change which storage tiers an existing table can use, update its [cache policy](../../00300-tables/00700-storage-and-cache-policies.md) in your module and republish. For a database named `my-database` on Maincloud, use:
+
+```bash
+spacetime publish my-database --server maincloud --delete-data=never
+```
+
+Once the new policy allows paging, SpacetimeDB can evict the table's pages and blobs from memory as it needs room. Changing back to the in-memory policy requires enough room to load and keep the table's data in memory. If there isn't enough room, the migration fails and the existing policy stays in effect.
+
 ## ⚠️ Potentially Breaking Changes
 
 These changes are allowed by automatic migration, but may cause runtime errors for clients that haven't been updated:

@@ -2,7 +2,8 @@ namespace SpacetimeDB.Internal;
 
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
-#if EXPERIMENTAL_WASM_AOT && NET10_0_OR_GREATER
+// .NET 8 has no WasmImportLinkageAttribute, so declare a stand-in there.
+#if NET10_0_OR_GREATER
 using WasmImportLinkageAttribute = System.Runtime.InteropServices.WasmImportLinkageAttribute;
 #else
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
@@ -62,7 +63,7 @@ internal static partial class FFI
     // In the future C# will allow to specify Wasm import namespace in
     // `LibraryImport` directly.
     const string StdbNamespace10_0 =
-#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+#if NET10_0_OR_GREATER
         "spacetime_10.0"
 #else
         "bindings"
@@ -70,7 +71,7 @@ internal static partial class FFI
     ;
 
     const string StdbNamespace10_1 =
-#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+#if NET10_0_OR_GREATER
         "spacetime_10.1"
 #else
         "bindings"
@@ -78,7 +79,7 @@ internal static partial class FFI
     ;
 
     const string StdbNamespace10_2 =
-#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+#if NET10_0_OR_GREATER
         "spacetime_10.2"
 #else
         "bindings"
@@ -86,7 +87,7 @@ internal static partial class FFI
     ;
 
     const string StdbNamespace10_3 =
-#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+#if NET10_0_OR_GREATER
         "spacetime_10.3"
 #else
         "bindings"
@@ -94,7 +95,7 @@ internal static partial class FFI
     ;
 
     const string StdbNamespace10_4 =
-#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+#if NET10_0_OR_GREATER
         "spacetime_10.4"
 #else
         "bindings"
@@ -102,7 +103,7 @@ internal static partial class FFI
     ;
 
     const string StdbNamespace10_5 =
-#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+#if NET10_0_OR_GREATER
         "spacetime_10.5"
 #else
         "bindings"
@@ -110,7 +111,7 @@ internal static partial class FFI
     ;
 
     const string StdbNamespace10_6 =
-#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
+#if NET10_0_OR_GREATER
         "spacetime_10.6"
 #else
         "bindings"

@@ -34,16 +34,17 @@ members = [
   "crates/sats",
   "crates/schema",
   "crates/smoketests",
+  "crates/tiered-storage",
   "sdks/csharp/test-harness~",
   "sdks/rust",
   "sdks/unreal",
   "crates/snapshot",
-  "crates/sqltest",
   "crates/sql-parser",
   "crates/standalone",
   "crates/subscription",
   "crates/table",
   "crates/test-datastore",
+  "crates/test-datastore-ffi",
   "crates/testing",
   "crates/update",
   "modules/benchmarks",
@@ -76,6 +77,7 @@ members = [
   "sdks/rust/tests/event-table-client",
   "tools/ci",
   "tools/ci/commands/test",
+  "tools/ci/commands/test-csharp-build",
   "tools/ci/commands/lint",
   "tools/ci/commands/module-latest-deps",
   "tools/ci/commands/smoketests",
@@ -85,6 +87,7 @@ members = [
   "tools/ci/commands/update-flow",
   "tools/ci/commands/cli-docs",
   "tools/ci/commands/global-json-policy",
+  "tools/ci/commands/lockfile-policy",
   "tools/ci/commands/check-style",
   "tools/ci/commands/portable-datastore",
   "tools/ci/commands/publish-checks",
@@ -102,6 +105,7 @@ members = [
   "tools/ci/commands/check-release-deps",
   "tools/ci/commands/llm-benchmark-summary",
   "tools/ci/commands/cache-warm",
+  "tools/ci/commands/csharp-testing-packages",
   "tools/ci/common",
   "tools/keynote-bench-harness",
   "tools/license-check",
@@ -111,6 +115,7 @@ members = [
   "tools/release",
   "tools/rollback-coordination",
   "tools/regen",
+  "tools/llm-apps",
   "tools/xtask-llm-benchmark",
   "crates/bindings-typescript/test-app/server",
   "crates/bindings-typescript/test-react-router-app/server",
@@ -155,50 +160,51 @@ inherits = "release"
 debug = true
 
 [workspace.package]
-version = "2.14.1"
+version = "2.16.3"
 edition = "2024"
 # update rust-toolchain.toml too!
 rust-version = "1.97"
 
 [workspace.dependencies]
-spacetimedb = { path = "crates/bindings", version = "=2.14.1" }
-spacetimedb-auth = { path = "crates/auth", version = "=2.14.1" }
-spacetimedb-bindings-macro = { path = "crates/bindings-macro", version = "=2.14.1" }
-spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "=2.14.1" }
-spacetimedb-cli = { path = "crates/cli", version = "=2.14.1" }
-spacetimedb-client-api = { path = "crates/client-api", version = "=2.14.1" }
-spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "=2.14.1" }
-spacetimedb-codegen = { path = "crates/codegen", version = "=2.14.1" }
-spacetimedb-commitlog = { path = "crates/commitlog", version = "=2.14.1" }
-spacetimedb-core = { path = "crates/core", version = "=2.14.1" }
-spacetimedb-data-structures = { path = "crates/data-structures", version = "=2.14.1" }
-spacetimedb-datastore = { path = "crates/datastore", version = "=2.14.1" }
-spacetimedb-durability = { path = "crates/durability", version = "=2.14.1" }
-spacetimedb-engine = { path = "crates/engine", version = "=2.14.1" }
-spacetimedb-execution = { path = "crates/execution", version = "=2.14.1" }
-spacetimedb-expr = { path = "crates/expr", version = "=2.14.1" }
-spacetimedb-fs-utils = { path = "crates/fs-utils", version = "=2.14.1" }
-spacetimedb-guard = { path = "crates/guard", version = "=2.14.1" }
-spacetimedb-lib = { path = "crates/lib", default-features = false, version = "=2.14.1" }
-spacetimedb-memory-usage = { path = "crates/memory-usage", version = "=2.14.1", default-features = false }
-spacetimedb-metrics = { path = "crates/metrics", version = "=2.14.1" }
-spacetimedb-paths = { path = "crates/paths", version = "=2.14.1" }
-spacetimedb-pg = { path = "crates/pg", version = "=2.14.1" }
-spacetimedb-physical-plan = { path = "crates/physical-plan", version = "=2.14.1" }
-spacetimedb-portable-datastore = { path = "crates/portable-datastore", version = "=2.14.1" }
-spacetimedb-primitives = { path = "crates/primitives", version = "=2.14.1" }
-spacetimedb-query = { path = "crates/query", version = "=2.14.1" }
-spacetimedb-query-builder = { path = "crates/query-builder", version = "=2.14.1" }
-spacetimedb-runtime = { path = "crates/runtime", version = "=2.14.1" }
-spacetimedb-runtime-core = { path = "crates/runtime-core", version = "=2.14.1" }
-spacetimedb-sats = { path = "crates/sats", version = "=2.14.1" }
-spacetimedb-schema = { path = "crates/schema", version = "=2.14.1" }
-spacetimedb-snapshot = { path = "crates/snapshot", version = "=2.14.1" }
-spacetimedb-standalone = { path = "crates/standalone", version = "=2.14.1" }
-spacetimedb-subscription = { path = "crates/subscription", version = "=2.14.1" }
-spacetimedb-sql-parser = { path = "crates/sql-parser", version = "=2.14.1" }
-spacetimedb-table = { path = "crates/table", version = "=2.14.1" }
-spacetimedb-test-datastore = { path = "crates/test-datastore", version = "=2.14.1" }
+spacetimedb = { path = "crates/bindings", version = "=2.16.3" }
+spacetimedb-auth = { path = "crates/auth", version = "=2.16.3" }
+spacetimedb-bindings-macro = { path = "crates/bindings-macro", version = "=2.16.3" }
+spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "=2.16.3" }
+spacetimedb-cli = { path = "crates/cli", version = "=2.16.3" }
+spacetimedb-client-api = { path = "crates/client-api", version = "=2.16.3" }
+spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "=2.16.3" }
+spacetimedb-codegen = { path = "crates/codegen", version = "=2.16.3" }
+spacetimedb-commitlog = { path = "crates/commitlog", version = "=2.16.3" }
+spacetimedb-core = { path = "crates/core", version = "=2.16.3" }
+spacetimedb-data-structures = { path = "crates/data-structures", version = "=2.16.3" }
+spacetimedb-datastore = { path = "crates/datastore", version = "=2.16.3" }
+spacetimedb-durability = { path = "crates/durability", version = "=2.16.3" }
+spacetimedb-engine = { path = "crates/engine", version = "=2.16.3" }
+spacetimedb-execution = { path = "crates/execution", version = "=2.16.3" }
+spacetimedb-expr = { path = "crates/expr", version = "=2.16.3" }
+spacetimedb-fs-utils = { path = "crates/fs-utils", version = "=2.16.3" }
+spacetimedb-guard = { path = "crates/guard", version = "=2.16.3" }
+spacetimedb-lib = { path = "crates/lib", default-features = false, version = "=2.16.3" }
+spacetimedb-memory-usage = { path = "crates/memory-usage", version = "=2.16.3", default-features = false }
+spacetimedb-metrics = { path = "crates/metrics", version = "=2.16.3" }
+spacetimedb-paths = { path = "crates/paths", version = "=2.16.3" }
+spacetimedb-pg = { path = "crates/pg", version = "=2.16.3" }
+spacetimedb-physical-plan = { path = "crates/physical-plan", version = "=2.16.3" }
+spacetimedb-portable-datastore = { path = "crates/portable-datastore", version = "=2.16.3" }
+spacetimedb-primitives = { path = "crates/primitives", version = "=2.16.3" }
+spacetimedb-query = { path = "crates/query", version = "=2.16.3" }
+spacetimedb-query-builder = { path = "crates/query-builder", version = "=2.16.3" }
+spacetimedb-runtime = { path = "crates/runtime", version = "=2.16.3" }
+spacetimedb-runtime-core = { path = "crates/runtime-core", version = "=2.16.3" }
+spacetimedb-sats = { path = "crates/sats", version = "=2.16.3" }
+spacetimedb-schema = { path = "crates/schema", version = "=2.16.3" }
+spacetimedb-snapshot = { path = "crates/snapshot", version = "=2.16.3" }
+spacetimedb-standalone = { path = "crates/standalone", version = "=2.16.3" }
+spacetimedb-subscription = { path = "crates/subscription", version = "=2.16.3" }
+spacetimedb-sql-parser = { path = "crates/sql-parser", version = "=2.16.3" }
+spacetimedb-table = { path = "crates/table", version = "=2.16.3" }
+spacetimedb-test-datastore = { path = "crates/test-datastore", version = "=2.16.3" }
+spacetimedb-tiered-storage = { path = "crates/tiered-storage", version = "=2.16.3" }
 
 # Prevent `ahash` from pulling in `getrandom` by disabling default features.
 # Modules use `getrandom02` and we need to prevent an incompatible version
@@ -215,16 +221,19 @@ base64 = "0.21.2"
 bigdecimal = "0.4.7"
 bitflags = "2.3.3"
 blake3 = "1.5.1"
-brotli = "3.5"
+# `ffi-api` (on by default) exports `Brotli*` C symbols from any `cdylib` that
+# links this crate, which clashes with host processes that also load libcrypto.
+# Only the Rust API is used, so keep the defaults off. See #6430.
+brotli = { version = "3.5", default-features = false, features = ["std"] }
 bytemuck = { version = "1.16.2", features = ["must_cast"] }
 bytes = "1.10.1"
+bytesize = "2.0.1"
 bytestring = { version = "1.2.0", features = ["serde"] }
 cargo_metadata = "0.17.0"
 chrono = { version = "0.4.24", default-features = false }
 clap = { version = "4.2.4", features = ["derive", "wrap_help"] }
 clap-markdown = "0.1.4"
 colored = "2.0.0"
-console = { version = "0.15.6" }
 convert_case = "0.6.0"
 crc32c = "0.6.4"
 criterion = { version = "0.5.1", features = ["async", "async_tokio", "html_reports"] }
@@ -288,13 +297,11 @@ percent-encoding = "2.3"
 petgraph = { version = "0.6.5", default-features = false }
 pin-project-lite = "0.2.9"
 pgwire = { version = "0.37", default-features = false, features = ["server-api", "pg-ext-types"] }
-postgres-types = "0.2.5"
 pretty_assertions = { version = "1.4", features = ["unstable"] }
 proc-macro2 = "1.0"
 prometheus = "0.14.0"
 proptest = "1.4"
 proptest-derive = "0.5"
-quick-junit = { version = "0.3.2" }
 quote = "1.0.8"
 rand08 = { package = "rand", version = "0.8" }
 rand = "0.9"
@@ -310,7 +317,6 @@ rolldown_error = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0
 rolldown_utils = { git = "https://github.com/rolldown/rolldown.git", tag = "v1.0.0-rc.3" }
 ron = "0.8"
 rusqlite = { version = "0.29.0", features = ["bundled", "column_decltype"] }
-rust_decimal = { version = "1.29.1", features = ["db-tokio-postgres"] }
 rustc-demangle = "0.1.21"
 rustc-hash = "2"
 rustyline = { version = "12.0.0", features = [] }
@@ -329,7 +335,6 @@ sled = "0.34.7"
 smallvec = { version = "1.11", features = ["union", "const_generics"] }
 socket2 = "0.5"
 sourcemap = "9.3.1"
-sqllogictest = "0.17"
 sqlparser = "0.38.0"
 strum = { version = "0.25.0", features = ["derive"] }
 syn = { version = "2", features = ["full", "extra-traits"] }
@@ -367,10 +372,10 @@ uuid = { version = "1.18.1", default-features = false }
 # See librusty_v8.nix for more details.
 # When updating the V8 crate, either update the version and hashes in that file,
 # or ping phoebe @gefjon to do so.
-v8 = "=145.0.0"
+v8 = "=152.2.0"
 # This version is kept in sync with the version of ICU required by v8.
 # When that changes, the `v8::icu::set_common_data_XX()` function is renamed.
-deno_core_icudata = "0.77"
+deno_core_icudata = "0.78"
 
 walkdir = "2.2.5"
 wasmbin = "0.6"
@@ -385,7 +390,7 @@ zstd-framed = { version = "0.1.1", features = ["tokio"] }
 
 # Vendor the openssl we rely on, rather than depend on a
 # potentially very old system version.
-openssl = { version = "0.10", features = ["vendored"] }
+openssl = { version = "0.10.78", features = ["vendored"] }
 
 [workspace.dependencies.wasmtime]
 version = "39"

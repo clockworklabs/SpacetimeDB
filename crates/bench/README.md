@@ -19,12 +19,12 @@ RUN_ONE_MILLION=true cargo bench --bench generic --bench special
 ```
 
 To run the callgrind benchmarks, you need valgrind installed.
-The easiest way to get it is to use the docker image in this folder. 
-There's a handy bash script:
+The easiest way to get it is to use the docker image in this folder.
+From this directory, build the image and run the callgrind benchmarks inside it:
 ```bash
-bash callgrind-docker.sh 
+docker build . --tag rust-iai-callgrind:latest
+docker run --privileged -v "$(realpath ../..):/projects/SpacetimeDB" -w /projects/SpacetimeDB/crates/bench rust-iai-callgrind:latest cargo bench --bench callgrind
 ```
-Which will build the docker image and run the callgrind benchmarks inside of it.
 
 You can also comment "benchmarks please" or "callgrind please" on a pull request in the SpacetimeDB repository to run the criterion/callgrind benchmarks on that PR. The results will be posted in a comment on the PR.
 
@@ -218,8 +218,8 @@ brew install cargo-instruments
 ```
 
 ```bash
-# ./instruments.sh TEMPLATE BENCHMARK BENCHMARK_FILTER
-./instruments.sh time generic stdb_raw/mem/insert_bulk/location/multi_index/load=0/count=100
+# cargo instruments -t TEMPLATE --bench BENCHMARK -- BENCHMARK_FILTER --profile-time 10
+cargo instruments -t time --bench generic -- stdb_raw/mem/insert_bulk/location/multi_index/load=0/count=100 --profile-time 10
 ```
 
 Where `TEMPLATE` is one from 
@@ -237,9 +237,9 @@ cargo instruments --list-templates
 cargo install flamegraph
 ```
 
-You can generate flamegraphs using `flamegraph.sh` script:
+You can generate flamegraphs with `cargo flamegraph`:
 
 ```bash
-# ./flamegraph.sh BENCH_EXECUTABLE FILTER SVG_PATH
-./flamegraph.sh generic stdb_raw/mem/insert_bulk/location/multi_index/load=0/count=100 result.svg"
+# cargo flamegraph --bench BENCHMARK --deterministic -o SVG_PATH -- BENCHMARK_FILTER --profile-time 10
+cargo flamegraph --bench generic --deterministic -o result.svg -- stdb_raw/mem/insert_bulk/location/multi_index/load=0/count=100 --profile-time 10
 ```

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Private file uploads to Amazon S3 with metadata in SpacetimeDB, powered by @spacetimedb/s3."
+    />
+    <title>SpacetimeDB S3</title>
+    <link rel="icon" href="/assets/logo.svg" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <main class="shell" id="shell">
+      <header class="topbar">
+        <a
+          class="brand"
+          href="https://spacetimedb.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="SpacetimeDB home"
+        >
+          <img src="/assets/logo.svg" alt="" />
+          <span class="brand-name">SpacetimeDB</span>
+          <span class="brand-product">S3</span>
+        </a>
+        <div class="topbar-actions">
+          <p class="status" id="status" role="status"></p>
+          <button class="button" id="upload" type="button" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 5v14"></path>
+              <path d="M5 12h14"></path>
+            </svg>
+            Upload
+          </button>
+          <input id="file-input" type="file" hidden />
+        </div>
+      </header>
+
+      <section class="files" aria-labelledby="files-title">
+        <h2 id="files-title">
+          Your files
+          <span class="count" id="file-count"></span>
+        </h2>
+        <p class="sr-only" id="announce" role="status"></p>
+        <div class="empty-state" id="files-empty" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"
+            ></path>
+            <path d="M14 3v5h5"></path>
+          </svg>
+          No files
+        </div>
+        <ul class="file-list" id="files" hidden></ul>
+      </section>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

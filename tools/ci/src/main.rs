@@ -17,6 +17,10 @@ const COMMANDS: &[Command] = &[
         package: "ci-test",
     },
     Command {
+        path: &["test-csharp-build"],
+        package: "ci-test-csharp-build",
+    },
+    Command {
         path: &["lint"],
         package: "ci-lint",
     },
@@ -55,6 +59,10 @@ const COMMANDS: &[Command] = &[
     Command {
         path: &["global-json-policy"],
         package: "ci-global-json-policy",
+    },
+    Command {
+        path: &["lockfile-policy"],
+        package: "ci-lockfile-policy",
     },
     Command {
         path: &["check-style"],
@@ -115,6 +123,10 @@ const COMMANDS: &[Command] = &[
     Command {
         path: &["other-workflows", "cache-warm"],
         package: "ci-cache-warm",
+    },
+    Command {
+        path: &["other-workflows", "csharp-testing-packages"],
+        package: "ci-csharp-testing-packages",
     },
 ];
 

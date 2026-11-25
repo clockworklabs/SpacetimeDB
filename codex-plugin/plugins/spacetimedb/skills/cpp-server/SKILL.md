@@ -167,6 +167,55 @@ ctx.rng()              // Deterministic RNG
 ctx.sender_auth()      // AuthCtx with JWT claims
 ```
 
+## HTTP Handlers
+
+HTTP handlers are unstable. Define `SPACETIMEDB_UNSTABLE_FEATURES` for both the module and the bindings, as the commented lines in the template's `CMakeLists.txt` do:
+
+```cmake
+target_compile_definitions(lib PRIVATE SPACETIMEDB_UNSTABLE_FEATURES)
+target_compile_definitions(spacetimedb_cpp_library PUBLIC SPACETIMEDB_UNSTABLE_FEATURES)
+```
+
+A handler takes `HandlerContext` and `HttpRequest` by value and returns `HttpResponse`. One router per module binds handlers to paths:
+
+```cpp
+SPACETIMEDB_HTTP_HANDLER(health, HandlerContext ctx, HttpRequest request) {
+    return HttpResponse{
+        200,
+        HttpVersion::Http11,
+        { HttpHeader{"content-type", "text/plain; charset=utf-8"} },
+        HttpBody::from_string("ok"),
+    };
+}
+
+SPACETIMEDB_HTTP_ROUTER(router) {
+    return Router().get("/health", health);
+}
+```
+
+`HandlerContext` has no `db`; open a transaction with `ctx.with_tx([&](TxContext& tx) { ... })` and use `tx.db[table]` inside it. `HttpRequest` exposes `uri`, `method`, `headers` and `body`. Routers support `get`, `head`, `options`, `put`, `delete_`, `post`, `patch`, `any`, `nest` and `merge`.
+
+## Environment Variables
+
+Declare the environment in a dedicated `environment.h`:
+
+```cpp
+#pragma once
+#include <spacetimedb/environment_declaration.h>
+
+SPACETIMEDB_ENV(
+    (API_KEY, std::string),
+    (MODE, std::string, ("development", "production")),
+    (LOG_LEVEL, std::optional<std::string>)
+)
+// In a root entry point: ctx.env.API_KEY(), ctx.env.LOG_LEVEL()
+// String-key lookup: ctx.env.get("LOG_LEVEL")
+```
+
+Set `SPACETIMEDB_ENV_HEADER` to this header's full path in CMake **before** adding the SpacetimeDB module library directory, so the library and module see the same context declaration. Including it manually in only one source file is insufficient. `std::string` is required; `std::optional<std::string>` permits absence. The optional third tuple element restricts allowed strings.
+
+See the concepts skill for shared environment and secret-handling rules.
+
 ## Scheduled Tables
 
 ```cpp

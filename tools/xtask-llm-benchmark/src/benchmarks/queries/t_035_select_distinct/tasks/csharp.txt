@@ -16,5 +16,5 @@ TABLES
 REDUCERS
 - CollectDistinctCategories(ctx)
   - Iterate all orders
-  - Collect unique Category values (use a HashSet)
+  - Collect unique Category values
   - Insert each unique category into DistinctCategory

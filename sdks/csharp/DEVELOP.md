@@ -9,13 +9,13 @@ First, see the [user-facing docs](https://spacetimedb.com/docs/clients/c-sharp).
 ## Developing against a local clone of SpacetimeDB
 When developing against a local clone of SpacetimeDB, you'll need to ensure that the packages here can find an up-to-date version of the BSATN.Codegen and BSATN.Runtime packages from SpacetimeDB.
 
-To develop against a local clone of SpacetimeDB at `../SpacetimeDB`, run the following command:
+To develop against the C# bindings in this repository, run the following command from the repository root:
 
 ```sh
-dotnet pack ../SpacetimeDB/crates/bindings-csharp/BSATN.Runtime && ./tools~/write-nuget-config.sh ../SpacetimeDB
+dotnet pack crates/bindings-csharp/BSATN.Runtime && cargo regen csharp nuget-config
 ```
 
-This will create a (`.gitignore`d) `nuget.config` file that uses the local build of the package, instead of the package on NuGet.
+This will create (`.gitignore`d) `NuGet.Config` files that use the local build of the package, instead of the package on NuGet.
 
 You'll need to rerun this command whenever you update `BSATN.Codegen` or `BSATN.Runtime`.
 

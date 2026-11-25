@@ -30,7 +30,8 @@ public class SpacetimeDbSdk : ModuleRules
 				"CoreUObject",
 				"Engine",
 				"JsonUtilities", // Required for JSON serialization/deserialization
-				"Json" // Required for JSON handling
+				"Json", // Required for JSON handling
+				"HTTP" // Credential validation across WebSocket backends
 			}
 			);
 		

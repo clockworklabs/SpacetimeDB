@@ -1,4 +1,4 @@
-import { defaultWasmTestRuntime } from './default_wasm_runtime';
+import { defaultWasmTestRuntime } from './default_wasm_runtime.ts';
 
 export interface TestRuntime {
   createContext(

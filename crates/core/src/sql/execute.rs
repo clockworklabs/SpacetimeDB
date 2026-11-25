@@ -4,7 +4,6 @@ use std::time::Duration;
 use crate::db::sql::ast::SchemaViewer;
 use crate::energy::FunctionBudget;
 use crate::error::DBError;
-use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::host::module_host::{
     DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, RefInstance, ViewCallResult, ViewOutcome,
     WasmInstance,
@@ -22,6 +21,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductValue};
+use spacetimedb_query::estimation::{check_row_limit, estimate_rows_scanned};
 use spacetimedb_query::{compile_sql_stmt, execute_dml_stmt, execute_select_stmt};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use tokio::sync::oneshot;
@@ -101,7 +101,7 @@ fn run_inner<I: WasmInstance>(
                 None => (tx, false),
             };
 
-            let (tx_data, tx_metrics_mut, tx) = db.commit_tx_downgrade(tx, Workload::Sql);
+            let (tx_data, tx_metrics_mut, tx) = db.commit_tx_downgrade(tx, Workload::Sql)?;
 
             let (tx_offset_send, tx_offset) = oneshot::channel();
             // Release the tx on drop, so that we record metrics
@@ -212,7 +212,7 @@ fn run_inner<I: WasmInstance>(
                 request_id: None,
                 timer: None,
             };
-            let res = commit_and_broadcast_event(&subs.unwrap(), None, event, tx);
+            let res = commit_and_broadcast_event(&subs.unwrap(), None, event, tx)?;
             Ok((
                 SqlResult {
                     tx_offset: res.tx_offset,
@@ -1278,6 +1278,23 @@ pub(crate) mod tests {
         let row = product![1u64];
 
         assert_eq!(result, vec![row], "Inventory");
+        Ok(())
+    }
+
+    #[test]
+    fn test_not_equal() -> ResultTest<()> {
+        let (db, _) = create_data(3)?;
+
+        for op in ["<>", "!="] {
+            let mut result = run_for_testing(
+                &db,
+                &format!("SELECT inventory_id FROM inventory WHERE inventory_id {op} 2"),
+            )?;
+
+            result.sort();
+
+            assert_eq!(result, vec![product![1u64], product![3u64]], "Inventory with {op}");
+        }
         Ok(())
     }
 

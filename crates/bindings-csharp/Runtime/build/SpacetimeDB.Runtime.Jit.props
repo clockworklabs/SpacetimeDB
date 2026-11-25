@@ -1,0 +1,12 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(_SpacetimeBeforeTargetFrameworkInferenceTargets)"
+          Condition="'$(_SpacetimeBeforeTargetFrameworkInferenceTargets)' != ''" />
+
+  <PropertyGroup Condition="$(TargetFramework.StartsWith('net8.')) And '$(SPACETIMEDB_WASM_AOT)' != '1'">
+    <!-- Required before the WASI SDK decides whether to generate an app bundle. -->
+    <OutputType>Exe</OutputType>
+    <WasmSingleFileBundle>true</WasmSingleFileBundle>
+    <!-- conditional due to https://github.com/dotnet/runtime/issues/86186 which is not fixed in NAOT-LLVM -->
+    <DebuggerSupport>false</DebuggerSupport>
+  </PropertyGroup>
+</Project>

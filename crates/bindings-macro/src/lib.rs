@@ -62,6 +62,18 @@ mod table;
 
 #[proc_macro_attribute]
 pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    expand_table(args, item, false)
+}
+
+/// Expands an outbox table emitted by generated receiver bindings. A custom
+/// accessor comes from a `macro_rules!` metavariable, so its span must be reset
+/// before table codegen to keep generated method bindings hygienic.
+#[proc_macro_attribute]
+pub fn generated_outbox_table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    expand_table(args, item, true)
+}
+
+fn expand_table(args: StdTokenStream, item: StdTokenStream, reset_accessor_span: bool) -> StdTokenStream {
     // put this on the struct so we don't get unknown attribute errors
     let derive_table_helper: syn::Attribute = derive_table_helper_attr();
 
@@ -90,7 +102,10 @@ pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
             derive_input.attrs.push(derive_table_helper);
         }
 
-        let args = table::TableArgs::parse(args.into(), &derive_input.ident)?;
+        let mut args = table::TableArgs::parse(args.into(), &derive_input.ident)?;
+        if reset_accessor_span {
+            args.use_call_site_accessor_span();
+        }
         let generated = table::table_impl(args, &derive_input)?;
         Ok(TokenStream::from_iter([quote!(#derive_input), generated]))
     })
@@ -143,6 +158,7 @@ mod sym {
     symbol!(at);
     symbol!(auto_inc);
     symbol!(btree);
+    symbol!(cache_policy);
     symbol!(client_connected);
     symbol!(client_disconnected);
     symbol!(column);
@@ -153,10 +169,13 @@ mod sym {
     symbol!(index);
     symbol!(init);
     symbol!(name);
+    symbol!(no_requirement);
     symbol!(primary_key);
     symbol!(private);
     symbol!(public);
     symbol!(repr);
+    symbol!(required_in_memory);
+    symbol!(required_on_disk);
     symbol!(sats);
     symbol!(scheduled);
     symbol!(outbox);

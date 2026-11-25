@@ -1,6 +1,7 @@
 //! Various utility functions that the generate modules have in common.
 
 use std::{
+    collections::BTreeSet,
     fmt::{Display, Formatter, Result},
     ops::Deref,
 };
@@ -20,7 +21,7 @@ use spacetimedb_schema::{
 };
 use spacetimedb_schema::{
     def::{IndexDef, TableDef, TypeDef},
-    type_for_generate::TypespaceForGenerate,
+    type_for_generate::{AlgebraicTypeDef, TypespaceForGenerate},
 };
 use spacetimedb_schema::{
     def::{ModuleDef, ReducerDef, ScopedTypeName},
@@ -89,6 +90,49 @@ pub(super) fn type_ref_name(module: &ModuleDef, typeref: AlgebraicTypeRef) -> St
 /// while `ScopedTypeName`'s `Display` joins them with `::`.
 pub(super) fn dependency_scoped_type_name(dependency: &str, name: &ScopedTypeName) -> String {
     format!("{dependency}.{}", name.name_segments().join("."))
+}
+
+/// The types reachable from the parameters of the module's public reducers,
+/// which receiver bindings must declare.
+pub(super) fn module_binding_reducer_type_refs(module: &ModuleDef) -> BTreeSet<AlgebraicTypeRef> {
+    let mut pending = Vec::new();
+    for reducer in iter_reducers(module, CodegenVisibility::OnlyPublic) {
+        for (_, ty) in &reducer.params_for_generate.elements {
+            ty.for_each_ref(|reference| pending.push(reference));
+        }
+    }
+    let mut type_refs = BTreeSet::new();
+    while let Some(reference) = pending.pop() {
+        if !type_refs.insert(reference) {
+            continue;
+        }
+        match &module.typespace_for_generate()[reference] {
+            AlgebraicTypeDef::Product(product) => {
+                for (_, ty) in &product.elements {
+                    ty.for_each_ref(|nested| pending.push(nested));
+                }
+            }
+            AlgebraicTypeDef::Sum(sum) => {
+                for (_, ty) in &sum.variants {
+                    ty.for_each_ref(|nested| pending.push(nested));
+                }
+            }
+            AlgebraicTypeDef::PlainEnum(_) => {}
+        }
+    }
+    type_refs
+}
+
+/// The reducer's signature hash as hex, which receiver bindings embed.
+pub(super) fn reducer_signature_hash(module: &ModuleDef, reducer: &ReducerDef) -> String {
+    spacetimedb_schema::def::reducer_signature_hash(
+        &reducer.params(),
+        &reducer.ok_return_type,
+        &reducer.err_return_type,
+        module.typespace(),
+    )
+    .to_hex()
+    .to_string()
 }
 
 pub(super) fn is_type_filterable(typespace: &TypespaceForGenerate, ty: &AlgebraicTypeUse) -> bool {

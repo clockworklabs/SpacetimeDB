@@ -1,5 +1,5 @@
-import { remoteModule, schema, table, t } from './index';
-import type { OutboxTableOpts } from '../lib/table';
+import { remoteModule, schema, table, t } from './index.ts';
+import type { OutboxTableOpts } from '../lib/table.ts';
 
 const gwModule: unique symbol = Symbol();
 const authModule: unique symbol = Symbol();

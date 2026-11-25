@@ -203,7 +203,7 @@ export const onConnect = spacetimedb.clientConnected((ctx) => {
 
 ```csharp
 [SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
-public static void OnConnect(ReducerContext ctx)
+public static void ClientConnected(ReducerContext ctx)
 {
     Log.Info($"Client connected: {ctx.Sender}");
     
@@ -318,7 +318,7 @@ export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
 
 ```csharp
 [SpacetimeDB.Reducer(ReducerKind.ClientDisconnected)]
-public static void OnDisconnect(ReducerContext ctx)
+public static void ClientDisconnected(ReducerContext ctx)
 {
     Log.Info($"Client disconnected: {ctx.Sender}");
     

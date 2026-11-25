@@ -1,6 +1,6 @@
-import { schema, table, t, type DbView, type TableSchema } from './index';
-import type { Table, TableOpts, UntypedTableDef } from '../lib/table';
-import type { TableToSchema, UntypedSchemaDef } from '../lib/schema';
+import { schema, table, t, type DbView, type TableSchema } from './index.ts';
+import type { Table, TableOpts, UntypedTableDef } from '../lib/table.ts';
+import type { TableToSchema, UntypedSchemaDef } from '../lib/schema.ts';
 
 // Erasing a legacy schema's concrete table types must not remove mutations.
 export function clearErasedDb(view: DbView<UntypedSchemaDef>) {

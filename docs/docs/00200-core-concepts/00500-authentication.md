@@ -6,10 +6,51 @@ them. Therefore, authentication is a critical part of using SpacetimeDB securely
 SpacetimeDB uses OpenID Connect (OIDC) identity tokens for authentication, making
 it compatible with most OIDC providers (e.g., Auth0, Firebase, Clerk, Google,
 GitHub, Facebook, and many more). You can choose any OIDC provider that fits your
-needs, or even implement your own.
+needs, or even [run your own](#running-your-own-provider).
 
 If you're new to OIDC, check out our [blog post about OIDC](https://spacetimedb.com/blog/who-are-you)
 to learn more about how OIDC works and why it's a great choice for authentication.
+
+## How SpacetimeDB verifies a token
+
+![How SpacetimeDB verifies an OIDC token](/images/authentication/oidc-flow.svg)
+
+1. The user signs in with your OIDC provider, which may be SpacetimeAuth, a
+   third-party service, or a server you run yourself.
+2. Optionally, the provider sends the user through another login, such as Google.
+   SpacetimeDB never sees this step.
+3. The provider signs a JWT and returns it to your client. The token names the
+   provider that issued it (`iss`), the user (`sub`), and the application it was
+   issued for (`aud`).
+4. Your client connects to SpacetimeDB with the token.
+5. SpacetimeDB fetches `{iss}/.well-known/openid-configuration` from the URL in
+   the token's `iss` claim, then fetches the provider's public keys from the
+   `jwks_uri` listed there. It caches the keys and refreshes them every few
+   minutes.
+6. SpacetimeDB checks the token's signature and expiry, computes the user's
+   `Identity` from `iss` and `sub`, and runs your module's `client_connected`
+   reducer, where you decide whether to accept the connection.
+
+SpacetimeDB accepts a token from any provider that follows these steps, and it
+does not check `aud`, so your module should check `iss` and `aud` itself, as
+shown in [Using Auth Claims](./00500-authentication/00500-usage.md#example-restricting-auth-providers).
+
+### Running your own provider
+
+To issue tokens from your own server, serve the discovery document and a
+[JSON Web Key Set](https://datatracker.ietf.org/doc/html/rfc7517) at publicly
+reachable URLs, as in step 5, and sign tokens that meet these rules:
+
+- Sign with `ES256` or `RS256`. SpacetimeDB rejects tokens signed with a shared
+  secret, such as `HS256`.
+- Include `iss`, `sub` and `iat`. `iss` and `sub` must be non-empty and at most
+  128 bytes, and `iss` must be the URL your discovery document is served under.
+- Include a short `exp`. SpacetimeDB checks expiry only when a token is presented,
+  so a connection that is already open stays open after its token expires.
+- Keep `sub` stable for each user, and don't change your issuer URL, because the
+  user's `Identity` is computed from the exact `iss` and `sub` strings.
+- When you rotate signing keys, publish the new public key well before you start
+  signing with it, because SpacetimeDB may still be using its cached keys.
 
 ## Server-issued tokens and reconnects
 

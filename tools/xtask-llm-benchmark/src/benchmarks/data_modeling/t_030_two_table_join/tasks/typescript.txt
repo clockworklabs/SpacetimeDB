@@ -3,19 +3,19 @@ Write a SpacetimeDB backend module in TypeScript that defines a customer table, 
 TABLES
 - customer (private)
   - Fields:
-    - id: number (u64, primary key, autoInc)
+    - id: bigint (u64, primary key, autoInc)
     - name: string
 
 - order (private)
   - Fields:
-    - id: number (u64, primary key, autoInc)
-    - customerId: number (u64, index btree)
+    - id: bigint (u64, primary key, autoInc)
+    - customerId: bigint (u64, index btree)
     - product: string
     - amount: number (u32)
 
 - order_detail (private)
   - Fields:
-    - orderId: number (u64, primary key)
+    - orderId: bigint (u64, primary key)
     - customerName: string
     - product: string
     - amount: number (u32)

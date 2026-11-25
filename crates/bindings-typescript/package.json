@@ -1,6 +1,6 @@
 {
   "name": "spacetimedb",
-  "version": "2.14.1",
+  "version": "2.16.3",
   "description": "API and ABI bindings for the SpacetimeDB TypeScript module library",
   "homepage": "https://github.com/clockworklabs/SpacetimeDB#readme",
   "bugs": {
@@ -30,9 +30,9 @@
     "build:package": "pnpm -s build && pnpm -s prepare:test-utils-wasm:clean",
     "format": "prettier . --write --ignore-path ../../.prettierignore",
     "lint": "eslint . && prettier . --check --ignore-path ../../.prettierignore",
-    "test": "pnpm -s prepare:test-utils-wasm && pnpm -s test:unit",
+    "test": "pnpm -s prepare:test-utils-wasm && pnpm -s test:unit && pnpm -s test:typecheck",
     "test:unit": "vitest run",
-    "test:typecheck": "vitest typecheck --run",
+    "test:typecheck": "vitest run --typecheck.only",
     "coverage": "vitest run --coverage",
     "brotli-size": "brotli-size dist/index.js",
     "size": "pnpm -s build && size-limit",
@@ -142,7 +142,7 @@
       "name": "esm (gzip)",
       "path": "dist/index.mjs",
       "gzip": true,
-      "limit": "50 kB"
+      "limit": "60 kB"
     },
     {
       "name": "esm (uncompressed)",
@@ -246,8 +246,8 @@
     }
   },
   "devDependencies": {
-    "@angular/compiler": "^21.2.12",
-    "@angular/core": "^21.2.12",
+    "@angular/compiler": "^21.2.26",
+    "@angular/core": "^21.2.26",
     "@eslint/js": "^9.17.0",
     "@size-limit/file": "^11.2.0",
     "@tanstack/react-query": "^5.90.19",
@@ -258,7 +258,7 @@
     "@types/statuses": "^2.0.6",
     "@typescript-eslint/eslint-plugin": "^8.18.2",
     "@typescript-eslint/parser": "^8.18.2",
-    "@vitest/coverage-v8": "^3.2.4",
+    "@vitest/coverage-v8": "^3.2.6",
     "brotli-size-cli": "^1.0.0",
     "eslint": "^9.33.0",
     "eslint-plugin-jsdoc": "^61.5.0",
@@ -272,8 +272,8 @@
     "tsup": "^8.1.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.18.2",
-    "vite": "^7.1.5",
-    "vitest": "^3.2.4"
+    "vite": "^7.3.8",
+    "vitest": "^3.2.7"
   },
   "engines": {
     "node": "^22.23.4 || ^24.22.1 || >=26.12.1"

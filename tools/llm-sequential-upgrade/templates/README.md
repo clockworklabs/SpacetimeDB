@@ -2,7 +2,7 @@
 
 Canonical formats for the two grading artifacts produced during a sequential
 upgrade run. They match the published results in
-[`spacetimedb-ai-test-results`](https://github.com/clockworklabs/spacetimedb-ai-test-results)
+[`spacetimedb-llm-sequential-upgrade-results`](https://github.com/clockworklabs/spacetimedb-llm-sequential-upgrade-results)
 so every backend (spacetime / postgres / mongodb) files identically-structured
 artifacts — which is what keeps the runs comparable.
 
@@ -15,7 +15,7 @@ artifacts — which is what keeps the runs comparable.
 
 When grading an app and finding bugs, copy `BUG_REPORT.template.md` into the app
 directory as `BUG_REPORT.md`, fill it in from observed browser behavior, then run
-`./run.sh --fix <app-dir>`. Delete `BUG_REPORT.md` when all features pass — the
+`cargo llm-apps sequential fix <app-dir>`. Delete `BUG_REPORT.md` when all features pass — the
 harness keys `--fix` on its existence.
 
 `ITERATION_LOG.md` is append-only; one `## Iteration N` block per fix cycle. Its

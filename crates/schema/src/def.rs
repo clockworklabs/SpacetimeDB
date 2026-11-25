@@ -22,7 +22,7 @@ use std::hash::Hash;
 use crate::error::{IdentifierError, ValidationErrors};
 use crate::identifier::{Identifier, NamespacePath, NamespacedIdentifier};
 use crate::reducer_name::ReducerName;
-use crate::schema::{Schema, TableSchema};
+use crate::schema::{Schema, TableCachePolicy, TableSchema};
 use crate::type_for_generate::{AlgebraicTypeUse, ProductTypeDef, TypespaceForGenerate};
 use deserialize::ArgsSeed;
 use enum_map::EnumMap;
@@ -33,10 +33,10 @@ use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v10::{
     ExplicitNames, MethodOrAny, RawColumnDefaultValueV10, RawConstraintDefV10, RawHttpHandlerDefV10,
-    RawHttpRouteDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section,
-    RawOutboxDefV10, RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10,
-    RawScopedTypeNameV10, RawSequenceDefV10, RawSubmoduleV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10,
-    RawViewPrimaryKeyDefV10,
+    RawHttpRouteDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawMigrationDefV10, RawModuleDefV10,
+    RawModuleDefV10Section, RawOutboxDefV10, RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10,
+    RawScheduleDefV10, RawScopedTypeNameV10, RawSequenceDefV10, RawSubmoduleV10, RawTableCachePolicyV10,
+    RawTableDefV10, RawTypeDefV10, RawViewDefV10, RawViewPrimaryKeyDefV10,
 };
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
@@ -185,8 +185,10 @@ pub struct ModuleDef {
     /// Submodules, keyed by the canonical namespace they are registered under.
     submodules: IndexMap<Identifier, ModuleDef>,
 
-    /// `None` means undeclared; an explicitly empty declaration is `Some(empty)`.
     environment: Option<EnvironmentSchema>,
+
+    /// Migrations, keyed by the schema hash of the old module.
+    migrations: IndexMap<spacetimedb_lib::Hash, MigrationDef>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -338,6 +340,9 @@ impl ModuleDef {
         for reducer in self.reducers.values_mut() {
             reducer.name = ReducerName::new(path.join(reducer.name.local().clone()));
         }
+        for migration in self.migrations.values_mut() {
+            migration.namespace = path.clone();
+        }
         for (namespace, submodule) in &mut self.submodules {
             let accessor = submodule
                 .mount_accessor_name()
@@ -381,17 +386,17 @@ impl ModuleDef {
         Some(owning)
     }
 
-    /// Look up a table by its [`ModuleDefLookup`] key, also returning the module that owns it.
+    /// Look up a table by its [`ModuleItemKey`], also returning the module that owns it.
     ///
     /// The owning module is needed to resolve the table's type refs, which point into that
     /// module's typespace rather than the root's.
-    pub fn find_table(&self, key: <TableDef as ModuleDefLookup>::Key<'_>) -> Option<(&ModuleDef, &TableDef)> {
+    pub fn find_table(&self, key: ModuleItemKey<'_, TableDef>) -> Option<(&ModuleDef, &TableDef)> {
         let owning = self.resolve_path(key.0)?;
         Some((owning, owning.tables.get(key.1)?))
     }
 
-    /// Look up a view by its [`ModuleDefLookup`] key, also returning the module that owns it.
-    pub fn find_view(&self, key: <ViewDef as ModuleDefLookup>::Key<'_>) -> Option<(&ModuleDef, &ViewDef)> {
+    /// Look up a view by its [`ModuleItemKey`], also returning the module that owns it.
+    pub fn find_view(&self, key: ModuleItemKey<'_, ViewDef>) -> Option<(&ModuleDef, &ViewDef)> {
         let owning = self.resolve_path(key.0)?;
         Some((owning, owning.views.get(key.1)?))
     }
@@ -949,6 +954,10 @@ impl ModuleDef {
         &self.lifecycle_reducers
     }
 
+    pub fn migrations_map(&self) -> &IndexMap<spacetimedb_lib::Hash, MigrationDef> {
+        &self.migrations
+    }
+
     /// Returns a `DeserializeSeed` that can pull data from a `Deserializer` for `def`.
     pub fn arg_seed_for<'a, T>(&'a self, def: &'a T) -> ArgsSeed<'a, T> {
         ArgsSeed(self.typespace.with_type(def))
@@ -1051,6 +1060,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
             submodules: _,
             accessor_path: _,
             environment: _,
+            migrations: _,
         } = val;
 
         // Extract column defaults from tables before consuming tables
@@ -1113,6 +1123,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
             submodules,
             accessor_path: _,
             environment,
+            migrations,
         } = val;
 
         // Names are already canonicalized. Disable further case conversion so revalidation
@@ -1151,9 +1162,16 @@ impl From<ModuleDef> for RawModuleDefV10 {
         // Also collect ExplicitNames for tables: accessor_name → source_name, name → canonical_name.
         let mut schedules = Vec::new();
         let mut outboxes = Vec::new();
+        let mut cache_policies = Vec::new();
         let raw_tables: Vec<RawTableDefV10> = tables
             .into_values()
             .map(|td| {
+                if td.cache_policy != TableCachePolicy::RequiredInMemory {
+                    cache_policies.push(RawTableCachePolicyV10 {
+                        table_name: td.accessor_name.clone().into(),
+                        policy: td.cache_policy,
+                    });
+                }
                 // Always emit name as ExplicitNames canonical_name.
                 explicit_names.insert_table(
                     RawIdentifier::from(td.accessor_name.clone()),
@@ -1184,6 +1202,9 @@ impl From<ModuleDef> for RawModuleDefV10 {
             .collect();
         if !raw_tables.is_empty() {
             sections.push(RawModuleDefV10Section::Tables(raw_tables));
+        }
+        if !cache_policies.is_empty() {
+            sections.push(RawModuleDefV10Section::TableCachePolicies(cache_policies));
         }
 
         // Collect ExplicitNames for reducers: accessor_name → source_name, name → canonical_name.
@@ -1315,6 +1336,18 @@ impl From<ModuleDef> for RawModuleDefV10 {
             sections.push(RawModuleDefV10Section::Submodules(submodules));
         }
 
+        if !migrations.is_empty() {
+            let migrations = migrations
+                .into_iter()
+                .map(|(schema_hash, MigrationDef { name, dropped, .. })| RawMigrationDefV10 {
+                    schema_hash,
+                    name: name.into(),
+                    dropped: dropped.into(),
+                })
+                .collect();
+            sections.push(RawModuleDefV10Section::Migrations(migrations))
+        }
+
         // Always emit ExplicitNames so canonical names survive the round-trip.
         sections.push(RawModuleDefV10Section::ExplicitNames(explicit_names));
 
@@ -1335,6 +1368,9 @@ pub trait ModuleDefLookup: Sized + Debug + 'static {
     /// Look up this entity in the module def.
     fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self>;
 }
+
+pub type ModuleItemKey<'def, T> = <T as ModuleDefLookup>::Key<'def>;
+
 /// A data structure representing the validated definition of a database table.
 ///
 /// Cannot be created directly. Construct a [`ModuleDef`] by validating a [`RawModuleDef`] instead,
@@ -1407,6 +1443,9 @@ pub struct TableDef {
 
     /// Whether this table is public or private.
     pub table_access: TableAccess,
+
+    /// Residency requirement for this table's pages and blobs.
+    pub cache_policy: TableCachePolicy,
 
     /// Whether this is an event table.
     ///
@@ -1490,7 +1529,8 @@ impl From<TableDef> for RawTableDefV10 {
             table_access,
             is_event,
             accessor_name,
-            outbox: _, // V10 stores outboxes in a separate section; handled in From<ModuleDef>.
+            outbox: _,       // V10 stores outboxes in a separate section; handled in From<ModuleDef>.
+            cache_policy: _, // Stored in the optional TableCachePolicies section.
         } = val;
 
         RawTableDefV10 {
@@ -1541,6 +1581,7 @@ impl From<ViewDef> for TableDef {
             schedule: None,
             table_type: TableType::User,
             table_access: if is_public { Public } else { Private },
+            cache_policy: TableCachePolicy::RequiredInMemory,
             is_event: false,
             accessor_name,
             outbox: None,
@@ -2666,6 +2707,13 @@ impl From<ProcedureDef> for RawMiscModuleExportV9 {
     fn from(def: ProcedureDef) -> Self {
         Self::Procedure(def.into())
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct MigrationDef {
+    pub name: Identifier,
+    pub namespace: NamespacePath,
+    pub dropped: ModuleDef,
 }
 
 impl ModuleDefLookup for TableDef {

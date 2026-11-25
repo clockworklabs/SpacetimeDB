@@ -2,3 +2,6 @@ packages:
   - '.'
 
 minimumReleaseAge: 1440
+
+overrides:
+  tinypool@1: ^2.1.2

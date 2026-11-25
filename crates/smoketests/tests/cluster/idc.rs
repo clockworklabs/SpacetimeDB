@@ -8,6 +8,8 @@ use spacetimedb_smoketests::{
 struct IdcTest {
     test: Smoketest,
     receiver: String,
+    /// The receiver of the sender's `auth` dependency; usually the same as `receiver`.
+    auth_receiver: String,
     sender: String,
 }
 
@@ -58,7 +60,12 @@ impl IdcTest {
         let receiver = resolve_identity(&receiver_db);
         let sender = resolve_identity(&sender_db);
         test.database_identity = Some(sender.clone());
-        Self { test, receiver, sender }
+        Self {
+            test,
+            auth_receiver: receiver.clone(),
+            receiver,
+            sender,
+        }
     }
 
     fn publish(&self, module: &str, database: &str) -> String {
@@ -430,6 +437,7 @@ fn idc_outbox_uses_regenerated_bindings_after_argument_reordering() {
 
 #[test]
 fn idc_generated_receiver_types_are_scoped_by_dependency() {
+    // The world outbox uses the Rust shortcut; the auth outbox uses a manual table.
     let mut test = Smoketest::builder().autopublish(false).build();
     let world_db = format!("idc-world-{}", random_string());
     let auth_db = format!("idc-auth-{}", random_string());
@@ -520,7 +528,7 @@ fn idc_generated_receiver_types_are_scoped_by_dependency() {
     loop {
         let world_messages = rows(&world_db, "SELECT body FROM detailed_ping_log");
         let auth_messages = rows(&auth_db, "SELECT body FROM detailed_ping_log");
-        let world_pending = rows(&sender_db, "SELECT id FROM world_outbox");
+        let world_pending = rows(&sender_db, "SELECT msg_id FROM world_wire_outbox");
         let auth_pending = rows(&sender_db, "SELECT id FROM auth_outbox");
         if world_messages == vec![serde_json::json!(["world"])]
             && auth_messages == vec![serde_json::json!(["auth"])]
@@ -537,22 +545,48 @@ fn idc_generated_receiver_types_are_scoped_by_dependency() {
     }
 }
 impl IdcTest {
-    fn new_with_typescript(receiver_fixture: &str, sender_fixture: &str) -> Self {
+    /// Publishes a receiver and a sender fixture. The suffix picks the language: `-ts` for
+    /// TypeScript, `-cs` for C#, none for Rust.
+    fn new_with_fixtures(receiver_fixture: &str, sender_fixture: &str) -> Self {
+        Self::new_with_receivers(receiver_fixture, None, sender_fixture)
+    }
+
+    /// Like `new_with_fixtures`, but `auth_fixture` publishes a separate receiver for the
+    /// sender's `auth` dependency. Without it, both dependencies name the same receiver.
+    fn new_with_receivers(receiver_fixture: &str, auth_fixture: Option<&str>, sender_fixture: &str) -> Self {
         use spacetimedb_smoketests::{build_typescript_sdk, pnpm, workspace_root};
 
-        build_typescript_sdk().expect("failed to build TypeScript SDK");
+        let mut fixtures = vec![("receiver", receiver_fixture), ("sender", sender_fixture)];
+        fixtures.extend(auth_fixture.map(|fixture| ("auth", fixture)));
+        if fixtures.iter().any(|(_, fixture)| fixture.ends_with("-ts")) {
+            build_typescript_sdk().expect("failed to build TypeScript SDK");
+        }
         let mut test = Smoketest::builder().autopublish(false).build();
         let receiver_db = format!("idc-ts-receiver-{}", random_string());
+        let auth_db = auth_fixture.map(|_| format!("idc-ts-auth-{}", random_string()));
         let sender_db = format!("idc-ts-sender-{}", random_string());
-        let project = test.project_dir.path();
-        for (name, fixture_name) in [("receiver", receiver_fixture), ("sender", sender_fixture)] {
+        let project = test.project_dir.path().to_path_buf();
+        // `spacetime init` puts a C# module in a `spacetimedb` subdirectory.
+        let module_path = |name: &str, fixture: &str| {
+            if fixture.ends_with("-cs") {
+                format!("./{name}/spacetimedb")
+            } else {
+                format!("./{name}")
+            }
+        };
+        for &(name, fixture_name) in &fixtures {
             let dir = project.join(name);
+            let fixture = workspace_root().join("crates/smoketests/modules").join(fixture_name);
+            if fixture_name.ends_with("-cs") {
+                let source = std::fs::read_to_string(fixture.join("Lib.cs")).unwrap();
+                test.prepare_csharp_module_source(name, name, &source).unwrap();
+                continue;
+            }
             if !fixture_name.ends_with("-ts") {
                 copy_module_fixture(fixture_name, &dir).unwrap();
                 patch_module_cargo_to_local_bindings(&dir).unwrap();
                 continue;
             }
-            let fixture = workspace_root().join("crates/smoketests/modules").join(fixture_name);
             std::fs::create_dir_all(dir.join("src")).unwrap();
             std::fs::copy(fixture.join("src/index.ts"), dir.join("src/index.ts")).unwrap();
             std::fs::copy(fixture.join("tsconfig.json"), dir.join("tsconfig.json")).unwrap();
@@ -561,28 +595,35 @@ impl IdcTest {
             package["dependencies"]["spacetimedb"] =
                 format!("file:{}", workspace_root().join("crates/bindings-typescript").display()).into();
             std::fs::write(dir.join("package.json"), serde_json::to_vec_pretty(&package).unwrap()).unwrap();
+            // The sender is installed once its bindings are generated.
+            if name != "sender" {
+                pnpm(&["install"], &dir).unwrap();
+            }
         }
-        if receiver_fixture.ends_with("-ts") {
-            pnpm(&["install"], &project.join("receiver")).unwrap();
+        let mut children = Vec::new();
+        if let (Some(database), Some(fixture)) = (&auth_db, auth_fixture) {
+            children.push(serde_json::json!({ "database": database, "module-path": module_path("auth", fixture) }));
         }
+        children.push(serde_json::json!({
+            "database": sender_db,
+            "module-path": module_path("sender", sender_fixture),
+            // The TypeScript and C# senders also use a second dependency.
+            "dependencies": if sender_fixture != "idc-sender" {
+                serde_json::json!([
+                    { "name": "game_world", "database": receiver_db },
+                    { "name": "auth", "database": auth_db.as_ref().unwrap_or(&receiver_db) }
+                ])
+            } else {
+                serde_json::json!([{ "name": "game_world", "database": receiver_db }])
+            }
+        }));
         std::fs::write(
             project.join("spacetime.json"),
             serde_json::to_vec_pretty(&serde_json::json!({
                 "server": test.server_url,
                 "database": receiver_db,
-                "module-path": "./receiver",
-                "children": [{
-                    "database": sender_db,
-                    "module-path": "./sender",
-                    "dependencies": if sender_fixture.ends_with("-ts") {
-                        serde_json::json!([
-                            { "name": "game_world", "database": receiver_db },
-                            { "name": "auth", "database": receiver_db }
-                        ])
-                    } else {
-                        serde_json::json!([{ "name": "game_world", "database": receiver_db }])
-                    }
-                }]
+                "module-path": module_path("receiver", receiver_fixture),
+                "children": children
             }))
             .unwrap(),
         )
@@ -592,7 +633,7 @@ impl IdcTest {
         if sender_fixture.ends_with("-ts") {
             pnpm(&["install"], &project.join("sender")).unwrap();
         }
-        for (name, fixture) in [("receiver", receiver_fixture), ("sender", sender_fixture)] {
+        for &(name, fixture) in &fixtures {
             if fixture.ends_with("-ts") {
                 pnpm(&["exec", "tsc", "--noEmit"], &project.join(name)).expect("TypeScript IDC fixture must typecheck");
             }
@@ -605,9 +646,84 @@ impl IdcTest {
             response.text().unwrap()
         };
         let receiver = identity(&receiver_db);
+        let auth_receiver = auth_db.as_deref().map_or_else(|| receiver.clone(), identity);
         let sender = identity(&sender_db);
         test.database_identity = Some(sender.clone());
-        Self { test, receiver, sender }
+        Self {
+            test,
+            receiver,
+            auth_receiver,
+            sender,
+        }
+    }
+
+    /// Sends `reject`, which the TypeScript and C# receivers reject, and checks `on_result` gets the error.
+    fn send_rejected_ping(&self) {
+        self.test
+            .call(
+                "enqueue_ping",
+                &[&serde_json::to_string(&self.receiver).unwrap(), "\"reject\""],
+            )
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            let callbacks = self.rows(
+                &self.sender,
+                "SELECT succeeded, error FROM ping_result WHERE body = 'reject'",
+            );
+            if !callbacks.is_empty() && self.rows(&self.sender, "SELECT * FROM outbound_ping").is_empty() {
+                assert_eq!(callbacks, vec![serde_json::json!([false, [0, "rejected"]])]);
+                assert!(self
+                    .rows(&self.receiver, "SELECT id FROM ping_log WHERE body = 'reject'")
+                    .is_empty());
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "failed IDC callback did not complete: {callbacks:?}"
+            );
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+
+    /// Sends a detailed ping through each dependency.
+    fn send_to_two_dependencies(&self) {
+        self.test
+            .call(
+                "enqueue_two_dependencies",
+                &[
+                    &serde_json::to_string(&self.receiver).unwrap(),
+                    &serde_json::to_string(&self.auth_receiver).unwrap(),
+                ],
+            )
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            let world = self.rows(
+                &self.receiver,
+                "SELECT body FROM detailed_ping_log WHERE body = 'world-dependency'",
+            );
+            let auth = self.rows(
+                &self.auth_receiver,
+                "SELECT body FROM detailed_ping_log WHERE body = 'auth-dependency'",
+            );
+            let world_pending = self.rows(&self.sender, "SELECT msg_id FROM outbound_detailed_ping");
+            let auth_pending = self.rows(&self.sender, "SELECT msg_id FROM outbound_auth_details");
+            if !world.is_empty() && !auth.is_empty() && world_pending.is_empty() && auth_pending.is_empty() {
+                assert_eq!(world, vec![serde_json::json!(["world-dependency"])]);
+                assert_eq!(auth, vec![serde_json::json!(["auth-dependency"])]);
+                assert_eq!(
+                    self.rows(&self.sender, "SELECT details FROM sender_details"),
+                    vec![serde_json::json!([["sender"]])]
+                );
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "two-dependency delivery did not complete: world={world:?}, auth={auth:?}"
+            );
+            std::thread::sleep(Duration::from_millis(100));
+        }
     }
 }
 
@@ -615,87 +731,25 @@ impl IdcTest {
 fn idc_outbox_delivers_between_typescript_modules() {
     spacetimedb_smoketests::require_pnpm!();
     // The sender's ping outbox uses generated sugar; detailed pings use a manual declaration.
-    let suite = IdcTest::new_with_typescript("idc-receiver-ts", "idc-sender-ts");
+    let suite = IdcTest::new_with_fixtures("idc-receiver-ts", "idc-sender-ts");
     let bodies: Vec<_> = (0..20).map(|i| format!("typescript-{i}")).collect();
     suite.enqueue(&bodies);
     suite.wait_for_messages(&bodies.into_iter().map(|body| (body, 1)).collect::<Vec<_>>());
     suite.send_detailed_ping("nested-typescript");
-
-    suite
-        .test
-        .call(
-            "enqueue_ping",
-            &[&serde_json::to_string(&suite.receiver).unwrap(), "\"reject\""],
-        )
-        .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(20);
-    loop {
-        let callbacks = suite.rows(
-            &suite.sender,
-            "SELECT succeeded, error FROM ping_result WHERE body = 'reject'",
-        );
-        if !callbacks.is_empty() && suite.rows(&suite.sender, "SELECT * FROM outbound_ping").is_empty() {
-            assert_eq!(callbacks, vec![serde_json::json!([false, [0, "rejected"]])]);
-            assert!(suite
-                .rows(&suite.receiver, "SELECT id FROM ping_log WHERE body = 'reject'")
-                .is_empty());
-            break;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "failed IDC callback did not complete: {callbacks:?}"
-        );
-        std::thread::sleep(Duration::from_millis(100));
-    }
+    suite.send_rejected_ping();
 }
 
 #[test]
 fn idc_typescript_generated_types_are_scoped_by_dependency() {
     spacetimedb_smoketests::require_pnpm!();
-    let suite = IdcTest::new_with_typescript("idc-receiver-ts", "idc-sender-ts");
-    suite
-        .test
-        .call(
-            "enqueue_two_dependencies",
-            &[
-                &serde_json::to_string(&suite.receiver).unwrap(),
-                &serde_json::to_string(&suite.receiver).unwrap(),
-            ],
-        )
-        .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(20);
-    loop {
-        let world = suite.rows(
-            &suite.receiver,
-            "SELECT body FROM detailed_ping_log WHERE body = 'world-dependency'",
-        );
-        let auth = suite.rows(
-            &suite.receiver,
-            "SELECT body FROM detailed_ping_log WHERE body = 'auth-dependency'",
-        );
-        let world_pending = suite.rows(&suite.sender, "SELECT msg_id FROM outbound_detailed_ping");
-        let auth_pending = suite.rows(&suite.sender, "SELECT msg_id FROM outbound_auth_details");
-        if !world.is_empty() && !auth.is_empty() && world_pending.is_empty() && auth_pending.is_empty() {
-            assert_eq!(world, vec![serde_json::json!(["world-dependency"])]);
-            assert_eq!(auth, vec![serde_json::json!(["auth-dependency"])]);
-            assert_eq!(
-                suite.rows(&suite.sender, "SELECT details FROM sender_details"),
-                vec![serde_json::json!([["sender"]])]
-            );
-            break;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "two-dependency delivery did not complete: world={world:?}, auth={auth:?}"
-        );
-        std::thread::sleep(Duration::from_millis(100));
-    }
+    let suite = IdcTest::new_with_fixtures("idc-receiver-ts", "idc-sender-ts");
+    suite.send_to_two_dependencies();
 }
 
 #[test]
 fn idc_typescript_uses_regenerated_bindings_after_argument_reordering() {
     spacetimedb_smoketests::require_pnpm!();
-    let suite = IdcTest::new_with_typescript("idc-receiver-ts", "idc-sender-ts");
+    let suite = IdcTest::new_with_fixtures("idc-receiver-ts", "idc-sender-ts");
     suite.send_detailed_ping("before-reorder");
     suite.edit_module(
         "receiver",
@@ -714,7 +768,7 @@ fn idc_typescript_uses_regenerated_bindings_after_argument_reordering() {
 #[test]
 fn idc_typescript_sender_calls_rust_receiver() {
     spacetimedb_smoketests::require_pnpm!();
-    let suite = IdcTest::new_with_typescript("idc-receiver", "idc-sender-ts");
+    let suite = IdcTest::new_with_fixtures("idc-receiver", "idc-sender-ts");
     suite.send_ping_to(&suite.receiver, "typescript-to-rust");
     suite.send_detailed_ping("nested-rust");
 }
@@ -722,7 +776,7 @@ fn idc_typescript_sender_calls_rust_receiver() {
 #[test]
 fn idc_typescript_preserves_canonical_name_case_after_accessor_rename() {
     spacetimedb_smoketests::require_pnpm!();
-    let suite = IdcTest::new_with_typescript("idc-receiver-ts", "idc-sender-ts");
+    let suite = IdcTest::new_with_fixtures("idc-receiver-ts", "idc-sender-ts");
     // Receive_Ping and receive_ping have identical signatures but different behavior.
     // The generated receivePing accessor must retain the exact canonical name.
     suite.send_ping_to(&suite.receiver, "before-rename");
@@ -738,9 +792,44 @@ fn idc_typescript_preserves_canonical_name_case_after_accessor_rename() {
 #[test]
 fn idc_rust_sender_calls_typescript_receiver() {
     spacetimedb_smoketests::require_pnpm!();
-    let suite = IdcTest::new_with_typescript("idc-receiver-ts", "idc-sender");
+    let suite = IdcTest::new_with_fixtures("idc-receiver-ts", "idc-sender");
     // Rust's receive_ping / receive_detailed_ping handles must dispatch to
     // Receive_Ping / Receive_DetailedPing, preserving canonical-name casing.
     suite.send_ping_to(&suite.receiver, "rust-to-typescript");
     suite.send_detailed_ping("nested-typescript-from-rust");
+}
+
+#[test]
+fn idc_csharp_sender_calls_csharp_and_rust_receivers() {
+    spacetimedb_smoketests::require_dotnet!();
+    // Each C# publish is a NativeAOT build, so one sender calls both receiver languages:
+    // `game_world` is the C# receiver, and `auth` the Rust one.
+    let suite = IdcTest::new_with_receivers("idc-receiver-cs", Some("idc-receiver"), "idc-sender-cs");
+    // The C# receiver also has a `receive_ping`, which would log `wrong-case:` bodies,
+    // so this also checks the C# bindings call `Receive_Ping`.
+    let bodies: Vec<_> = (0..20).map(|i| format!("csharp-{i}")).collect();
+    suite.enqueue(&bodies);
+    suite.wait_for_messages(&bodies.into_iter().map(|body| (body, 1)).collect::<Vec<_>>());
+    suite.send_detailed_ping("nested-csharp");
+    suite.send_rejected_ping();
+    suite.send_to_two_dependencies();
+
+    // Both dependencies' plain `PingPriority` enum: publishing only works if their scoped
+    // names survive NativeAOT, and delivery checks their encoding.
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let world = suite.rows(&suite.receiver, "SELECT priority FROM priority_log");
+        let auth = suite.rows(&suite.auth_receiver, "SELECT priority FROM priority_log");
+        if !world.is_empty() && !auth.is_empty() {
+            // High through game_world, Low through auth.
+            assert_eq!(world, vec![serde_json::json!([[1, []]])]);
+            assert_eq!(auth, vec![serde_json::json!([[0, []]])]);
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "priorities were not delivered: world={world:?}, auth={auth:?}"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }

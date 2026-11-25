@@ -1,7 +1,0 @@
-feature: F051-01
-id: f051_01_01_01
-sql: CREATE TABLE TABLE_F051_01_01_011 ( A DATE )
----
-feature: F051-01
-id: f051_01_02_01
-sql: SELECT DATE '2016-03-26'
