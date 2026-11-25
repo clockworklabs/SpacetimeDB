@@ -114,6 +114,7 @@ members = [
   "tools/release",
   "tools/rollback-coordination",
   "tools/regen",
+  "tools/llm-apps",
   "tools/xtask-llm-benchmark",
   "crates/bindings-typescript/test-app/server",
   "crates/bindings-typescript/test-react-router-app/server",
