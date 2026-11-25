@@ -25,7 +25,8 @@ export function convexAuthReadEndpoints(lease: BackendLease): readonly string[] 
 export function convexAuthRequestPatch(lease: BackendLease): PlatformAuthPatch {
   const origin = new URL(convexAuthReadEndpoints(lease)[0]!).origin;
   return (url, body, patch) => {
-    if (url !== `${origin}/api/action` || Object.hasOwn(patch, 'password')) return undefined;
+    // A custom provider's refresh can run as a mutation through ConvexHttpClient.
+    if (![`${origin}/api/action`, `${origin}/api/mutation`].includes(url) || Object.hasOwn(patch, 'password')) return undefined;
     const envelope = record.safeParse(body);
     if (!envelope.success || envelope.data.format !== 'convex_encoded_json'
       || typeof envelope.data.path !== 'string' || !envelope.data.path

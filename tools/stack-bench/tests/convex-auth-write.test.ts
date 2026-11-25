@@ -8,9 +8,10 @@ import { ActionInconclusive } from '../src/actions/action-contract.js';
 import { createBackendLease } from '../src/runtime/backend-lease.js';
 import { convexAdapter } from '../src/stacks/backends/convex-adapter.js';
 
-// The SDK refreshes a token after signup. Both native actions must be probed;
+// The SDK refreshes a token after signup. Both native writes must be probed;
 // the second has no typed username or password to locate its argument object.
-test('leased Convex signup and refresh actions each receive one authority probe', async () => {
+// Convex Auth refreshes through an action; a custom provider may refresh through a mutation.
+for (const refreshRoute of ['action', 'mutation']) test(`leased Convex signup and ${refreshRoute} refresh each receive one authority probe`, async () => {
   let vulnerable = false, stock = 0;
   const accounts = new Map<string, string>();
   const calls: { outerRole: unknown; paramsRole: unknown; argsRole: unknown }[] = [];
@@ -41,13 +42,14 @@ test('leased Convex signup and refresh actions each receive one authority probe'
   const browser = await chromium.launch({ headless: true });
   const fresh = async () => { const context = await browser.newContext(); const page = await context.newPage();
     await page.goto(origin(app)); return page; };
-  const submit = (page: Page, user: string, url = `${origin(backend)}/api/action`) => page.evaluate(async ({ user, url }) => {
-    const post = async (args: unknown) => { const response = await fetch(url, { method: 'POST',
+  const submit = (page: Page, user: string, url = `${origin(backend)}/api/action`,
+    refreshUrl = `${origin(backend)}/api/${refreshRoute}`) => page.evaluate(async ({ user, url, refreshUrl }) => {
+    const post = async (args: unknown, to = url) => { const response = await fetch(to, { method: 'POST',
       headers: { 'content-type': 'application/json' }, body: JSON.stringify({ path: 'auth:signIn',
         format: 'convex_encoded_json', args: [args] }) }); await response.text(); };
     await post({ provider: 'password', params: { username: user, password: 'fixture-password', flow: 'signUp' } });
-    await post({ refreshToken: user });
-  }, { user, url });
+    await post({ refreshToken: user }, refreshUrl);
+  }, { user, url, refreshUrl });
   try {
     const baselinePage = await fresh();
     const baseline = await withAuthWriteInventory(baselinePage, () => submit(baselinePage, 'ordinary'));
@@ -74,13 +76,13 @@ test('leased Convex signup and refresh actions each receive one authority probe'
       await page.context().close();
     }
     // An app route or look-alike URL cannot inherit the leased native envelope.
-    for (const url of [`${origin(app)}/api/action`, `${origin(backend)}/api/action?proxy=1`,
-      `${origin(backend)}/nested/api/action`]) {
+    for (const url of [`${origin(app)}/api/${refreshRoute}`, `${origin(backend)}/api/${refreshRoute}?proxy=1`,
+      `${origin(backend)}/nested/api/${refreshRoute}`]) {
       const page = await fresh();
-      const baseline = await withAuthWriteInventory(page, () => submit(page, 'ordinary-proxy', url));
+      const baseline = await withAuthWriteInventory(page, () => submit(page, 'ordinary-proxy', url, url));
       assert.equal(baseline.writes.length, 2);
       await assert.rejects(() => withAuthRequestPatch(page, 'proxy', 'fixture-password', { fields: { role: 'admin' } },
-        () => submit(page, 'proxy', url), patch, 'signup', { writes: baseline.writes, index: 1 }), ActionInconclusive);
+        () => submit(page, 'proxy', url, url), patch, 'signup', { writes: baseline.writes, index: 1 }), ActionInconclusive);
       await page.context().close();
     }
   } finally {
