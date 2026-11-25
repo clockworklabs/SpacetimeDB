@@ -26,6 +26,7 @@
     "mongodb": [],
     "postgres": [],
     "spacetime": [
+      "concepts",
       "typescript-server",
       "typescript-client",
       "cli",

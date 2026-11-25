@@ -36,14 +36,14 @@ test('the prompt names the installed skills and the disclosure check covers all 
     '--level', '1', '--app', '/app', '--guidance', 'neutral']);
   const render = (provider: typeof args.provider, skillIds: string[], requirementText: string) => buildPrompt(
     { ...args, provider }, portsFor(track, 'spacetime', 0), track, { skillIds, requirementText, contractText: '' });
-  const ids = ['typescript-server', 'typescript-client', 'cli', 'spacetime-dev'];
+  const ids = ['concepts', 'typescript-server', 'typescript-client', 'cli', 'spacetime-dev'];
   for (const [provider, directory] of [['anthropic', '/home/developer/.claude/skills'],
     ['openai', '/home/developer/.codex/skills'], ['xai', '/home/developer/.grok/skills'],
     ['google', '/home/developer/.gemini/config/skills']] as const) {
     const prompt = render(provider, ids, 'Build the requested store.');
     // StackBench's own workflow page is part of the prompt; only the product skills are installed.
     assert.equal(prompt.split(`This stack's agent skills are installed in ${directory}: `
-      + 'typescript-server, typescript-client, cli.').length, 2);
+      + 'concepts, typescript-server, typescript-client, cli.').length, 2);
     assert.equal(prompt.split(readAgentSkillDocuments(STACK_BENCH_ROOT, ['spacetime-dev'])).length, 2);
     assert.doesNotMatch(prompt, /## Selected API reference|subscriptionBuilder/);
   }
@@ -75,8 +75,8 @@ test('SDK skills and dev guidance vary independently without changing product re
     for (const stack of ['mongodb', 'postgres', 'convex', 'supabase']) assert.deepEqual(profile.skills[stack], standard.skills[stack]);
   }
   assert.deepEqual(profiles.map(p => p.skills.spacetime!.ids), [
-    ['typescript-server', 'typescript-client', 'cli'], [],
-    ['typescript-server', 'typescript-client', 'cli', 'spacetime-dev'], ['spacetime-dev'],
+    ['concepts', 'typescript-server', 'typescript-client', 'cli'], [],
+    ['concepts', 'typescript-server', 'typescript-client', 'cli', 'spacetime-dev'], ['spacetime-dev'],
   ]);
   const track = loadTrack('ecommerce');
   const catalog = resolveFeatureCatalog('progression/ecommerce.json', track);
@@ -162,7 +162,7 @@ test('neutral dependency prompts include only selected product and stack contrac
   const guidance = resolveGuidanceProfile('neutral', STACKS);
   const spacetimeReference = readAgentSkillDocuments(
     STACK_BENCH_ROOT, guidance.skills.spacetime?.ids ?? []);
-  assert.deepEqual(guidance.skills.spacetime?.ids, ['typescript-server', 'typescript-client', 'cli']);
+  assert.deepEqual(guidance.skills.spacetime?.ids, ['concepts', 'typescript-server', 'typescript-client', 'cli']);
   assert.match(spacetimeReference, /spacetime publish/);
   assert.match(spacetimeReference, /withToken/);
   assert.match(spacetimeReference, /ctx\.sender/);
@@ -241,7 +241,7 @@ test('neutral dependency prompts include only selected product and stack contrac
         ? /\b(?:GET|POST|PATCH|DELETE|PUT) \// : /\breducer(?:s)?\b/i);
       if (stack === 'convex' || stack === 'supabase') {
         assert.doesNotMatch(repairInterface, /\b(?:GET|POST|PATCH|DELETE|PUT) \//);
-        assert.doesNotMatch(prompt, /<CONVEX|<EXPRESS_PORT>|<VITE_PORT>/);
+        assert.doesNotMatch(prompt, /<CONVEX|<EXPRESS_PORT>|<APP_PORT>/);
       }
       assert.doesNotMatch(prompt.replace(spacetimeReference, ''),
         new RegExp(`${EVALUATION_LANGUAGE.source}|Branding & Styling|App title:|<!-- /?interface`, 'i'));
@@ -320,6 +320,8 @@ test('direct neutral guidance uses the current stack access documents', () => {
       resolveGuidanceProfile(guidance, STACKS).skills[stack]?.ids ?? []);
     assert.doesNotMatch(prompt.replace(skills, ''), EVALUATION_LANGUAGE);
     assert.match(prompt, /store-admin-2026/);
+    // A stack setup says what reaches what. It names no web client wiring and no frontend tool's variables.
+    if (guidance === 'neutral') assert.doesNotMatch(prompt, /web client uses|VITE_/);
     if (stack !== 'spacetime') {
       assert.match(prompt, /service is already running/);
       assert.match(prompt, /Do not\s+start another .* server/);
@@ -328,9 +330,8 @@ test('direct neutral guidance uses the current stack access documents', () => {
     } else {
       const ids = resolveGuidanceProfile(guidance, STACKS).skills.spacetime!.ids;
       assert(ids.length > 0);
-      // Convex and Supabase say what their web client connects with and where; Spacetime says the same.
       if (guidance === 'neutral') {
-        assert.match(prompt, /The browser and this environment both reach the server at `(http:\/\/[^`]+)`\. The web\s+client uses `\1` and the module name `[^`]+`\./);
+        assert.match(prompt, /The browser and this environment both reach the server at `http:\/\/[^`]+`\./);
       }
       assert(prompt.includes(`This stack's agent skills are installed in /home/developer/.claude/skills: ${ids.join(', ')}.`));
     }

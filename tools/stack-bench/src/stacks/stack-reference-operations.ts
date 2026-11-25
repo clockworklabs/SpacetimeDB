@@ -14,6 +14,7 @@ import type { Track, TrackDefinition } from '../composition/tracks.js';
 import type { ReferenceInstallMetadata } from '../references/reference-install.js';
 import type { BackendLease } from '../runtime/backend-lease.js';
 import { convexApplicationEnvironment } from './backends/convex-operations.js';
+import { applicationPortEnvironment } from './application-environment.js';
 
 // What deploying a reference application needs from its caller. The reference
 // runner owns the container and the waiting; these operations own the shape of
@@ -125,7 +126,7 @@ interface StartScriptReferenceMetadata {
 export async function deployStartScriptReference({ metadata: rawMetadata, container, ports, helpers }: ReferenceDeployInput,
   platformEnvironment: Record<string, string>, label: string): Promise<void> {
   const metadata = rawMetadata as StartScriptReferenceMetadata;
-  const environment: Record<string, string> = { ...platformEnvironment, VITE_PORT: String(ports.vite) };
+  const environment: Record<string, string> = { ...platformEnvironment, ...applicationPortEnvironment(ports.vite) };
   for (const directory of metadata.installDirectories) {
     helpers.phase(`installing ${directory}`);
     helpers.docker(container, `${CODING_CONTAINER_APP_ROOT}/${directory}`,
@@ -262,7 +263,7 @@ export async function deploySpacetimeReference({ args, metadata: rawMetadata, le
   helpers.startDetached(container, `${CODING_CONTAINER_APP_ROOT}/${metadata.client.directory}`,
     'reference-client', {
     VITE_MODULE_NAME: module, VITE_SPACETIMEDB_URI: serverUri,
-    VITE_PORT: String(ports.vite),
+    APP_PORT: String(ports.vite),
   }, { networkVisible: true, port: ports.vite });
   await helpers.waitFor(`http://127.0.0.1:${ports.vite}`, 180_000, 'Spacetime client',
     () => helpers.containerLogs(container, 'reference-client'));

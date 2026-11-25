@@ -92,6 +92,6 @@ test('the MongoDB progression reference binds named actions and its runtime', ()
   assert.equal(serverPackage.scripts.test, 'tsx --test src/*.test.ts');
   assert.equal(clientPackage.scripts.build, 'vite build');
   assert.match(viteConfig, /Number\(process\.env\.API_PORT\) \|\| 6401/);
-  assert.match(viteConfig, /Number\(process\.env\.VITE_PORT\) \|\| 6723/);
+  assert.match(viteConfig, /Number\(process\.env\.APP_PORT\) \|\| 6723/);
   assert.match(viteConfig, /host: "0\.0\.0\.0"/);
 });

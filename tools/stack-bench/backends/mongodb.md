@@ -14,7 +14,7 @@ and a React client.
     src/index.ts          Express routes, Socket.io handlers
   client/
     package.json          react, react-dom, vite, socket.io-client
-    vite.config.ts        server.port <VITE_PORT>, proxy /api and /socket.io to <EXPRESS_PORT>
+    vite.config.ts        server.port <APP_PORT>, proxy /api and /socket.io to <EXPRESS_PORT>
     index.html
     src/main.tsx
     src/App.tsx
@@ -24,7 +24,7 @@ and a React client.
 
 ```bash
 cd server && npm install && npm run dev    # on <EXPRESS_PORT>
-cd client && npm install && npm run dev    # on <VITE_PORT>
+cd client && npm install && npm run dev    # on <APP_PORT>
 ```
 
 Mongoose creates collections on first write; there is no migration step.
@@ -41,7 +41,7 @@ collections during upgrades or repairs.
 |---|---|
 | `DATABASE_URL` | `<DATABASE_URL>` |
 | API server port | `<EXPRESS_PORT>` |
-| Client dev server | `<VITE_PORT>` |
+| Client dev server | `<APP_PORT>` |
 
 Use this exact `DATABASE_URL`. Do not point at another MongoDB instance.
 Read `DATABASE_URL` from the process environment at startup. It can change between

@@ -13,6 +13,7 @@ import { inspectCampaign } from './campaign-runner.js';
 import { addCampaignExtensions, initializeCampaignDirectory, writeCampaignState }
   from './campaign-scheduler.js';
 import type { CampaignExtensionSeed } from './campaign-scheduler.js';
+import { recordedApplicationEnvironmentRule } from '../stacks/application-environment.js';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -117,6 +118,7 @@ export function prepareCampaignExtension(targetCampaignFile: string, parentDirec
         source,
         sourceSha256: copied.sha256,
         sourceFiles: copied.files.length,
+        applicationEnvironment: recordedApplicationEnvironmentRule(object(item.runArtifact.payload, 'parent run').setup),
         parent: {
           campaignId: parent.plan.id,
           campaignSha256: parent.plan.contentSha256,

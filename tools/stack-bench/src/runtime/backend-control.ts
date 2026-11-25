@@ -13,6 +13,7 @@ import type { BackendLease } from './backend-lease.js';
 import { assertLeasedContainer, requireLeasedDatabase } from '../stacks/backend-reset-guard.js';
 import { execFileSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
+import { applicationPortEnvironment } from '../stacks/application-environment.js';
 
 export type { RuntimeControlMode } from '../stacks/stack-adapter-contract.js';
 
@@ -218,7 +219,7 @@ export async function controlAppServer(
     // Telling an app it starts warm when its dependencies were just removed made a script
     // that installs only on a cold start fail: all 15 Gemini 3.1 Pro runs on 2026-10-11.
     ...(cleanSource ? {} : { APP_WARM_START: '1' }),
-    VITE_PORT: String(spec.port),
+    ...applicationPortEnvironment(spec.port),
   };
   await controlHostedAppServer({
     ...spec,

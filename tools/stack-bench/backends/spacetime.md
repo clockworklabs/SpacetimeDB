@@ -16,7 +16,7 @@ tables and calls reducers over a live connection.
     src/index.ts          reducers and lifecycle hooks
   client/
     package.json          react, react-dom, vite, and "spacetimedb": "<STDB_PACKAGE>"
-    vite.config.ts        server.port must be <VITE_PORT>
+    vite.config.ts        server.port must be <APP_PORT>
     index.html
     src/config.ts         MODULE_NAME and SPACETIMEDB_URI
     src/main.tsx          React entry
@@ -73,7 +73,7 @@ To inspect stored data while debugging:
 |---|---|
 | Server URI | `<STDB_URI>` |
 | Module name | `<MODULE_NAME>` |
-| Client dev server | `<VITE_PORT>` |
+| Client dev server | `<APP_PORT>` |
 
 The SDK reference for writing modules and clients is in the skill documents
 included with these instructions. Follow them for API specifics: import paths,

@@ -9,6 +9,7 @@ import { stockInterfaceError, stockQuantity } from '../stock-interface.js';
 import type { NamedAction } from '../../composition/tracks.js';
 import { convexFunctionRequest, classifyConvexFunctionResponse } from './convex-protocol.js';
 import type { PlatformAuthPatch } from '../../actions/auth-request-patch.js';
+import { selectApplicationEnvironment } from '../application-environment.js';
 
 const TIMEOUT = 30_000;
 const record = z.record(z.string(), z.unknown());
@@ -64,8 +65,9 @@ export function convexApplicationEnvironment(lease: BackendLease): Record<string
   if (!lease.resources.serverUri) throw new Error('Convex application requires a leased native URL');
   const sitePort = portsFor(loadTrack(lease.track), 'convex', lease.runIndex).express;
   if (!sitePort) throw new Error('Convex application requires a leased HTTP action port');
-  return { CONVEX_SITE_URL: `http://127.0.0.1:${sitePort}`, CONVEX_SELF_HOSTED_URL: lease.resources.serverUri,
-    CONVEX_SELF_HOSTED_ADMIN_KEY: convexAdminKey(lease), VITE_CONVEX_URL: lease.resources.serverUri };
+  const neutral = { CONVEX_SITE_URL: `http://127.0.0.1:${sitePort}`, CONVEX_SELF_HOSTED_URL: lease.resources.serverUri,
+    CONVEX_SELF_HOSTED_ADMIN_KEY: convexAdminKey(lease) };
+  return selectApplicationEnvironment({ neutral, 'vite-names': { ...neutral, VITE_CONVEX_URL: lease.resources.serverUri } });
 }
 
 // Vendor native administrative APIs, pinned with the backend image. This never

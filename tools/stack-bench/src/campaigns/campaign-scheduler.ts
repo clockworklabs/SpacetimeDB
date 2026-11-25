@@ -12,6 +12,7 @@ import { canonicalDefinitionJson } from '../composition/definition-plan.js';
 import { RUN_INDEX_CAP } from '../composition/tracks.js';
 import { formatZodError } from '../zod-error.js';
 import { CAMPAIGN_FILE, campaignChildPath } from './campaign-path.js';
+import type { ApplicationEnvironmentRule } from '../stacks/application-environment.js';
 export type TimeGrantReceipt = z.infer<typeof timeGrantReceiptSchema>;
 export interface CampaignTimeBudget {
   originalMinutes: number; effectiveMinutes: number; consumedMs: number;
@@ -91,6 +92,8 @@ export interface CampaignExtensionSeed {
   source: string;
   sourceSha256: string;
   sourceFiles: number;
+  // The variable names the parent run gave its store; absent in seeds written before the rule.
+  applicationEnvironment?: ApplicationEnvironmentRule;
   parent: {
     campaignId: string;
     campaignSha256: string;
@@ -230,6 +233,7 @@ const extensionSeedSchema = z.strictObject({
   source: z.string().min(1),
   sourceSha256: z.string().regex(HASH),
   sourceFiles: z.number().int().nonnegative(),
+  applicationEnvironment: z.enum(['neutral', 'vite-names']).optional(),
   parent: z.strictObject({
     campaignId: z.string().min(1),
     campaignSha256: z.string().regex(HASH),

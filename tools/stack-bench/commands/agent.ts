@@ -54,6 +54,7 @@ import { PRICING_UNIT, validatePricingAuthority }
 import type { PricingAuthority } from '../src/evidence/pricing-authority.js';
 
 import { STACK_BENCH_ROOT as ROOT, compiledEntrypoint } from '../src/package-root.js';
+import { applicationEnvironmentRule } from '../src/stacks/application-environment.js';
 const REPO = resolve(ROOT, '..', '..');
 const CONTROL_COMMAND_TIMEOUT_MS = 120_000;
 const DEFAULT_CODING_INTERRUPTION_RETRIES = 2;
@@ -508,7 +509,7 @@ function backendDoc(args: AgentArgs, p: StackRunPorts, track: Track): string {
   defaultPath ??= join('backends', `${args.backend}.md`);
   const raw = readBackendGuidanceDocument(args.guidanceDocument, defaultPath);
   return raw
-    .replaceAll('<VITE_PORT>', String(p.vite))
+    .replaceAll('<APP_PORT>', String(p.vite))
     .replaceAll('<EXPRESS_PORT>', String(p.express ?? ''))
     .replaceAll('<APP_NOUN>', track.title)
     .replaceAll('<MODULE_NAME>', moduleName(track, args.runIndex))
@@ -949,6 +950,7 @@ async function main() {
       effort: EFFORT,
       tools: TOOLS,
       skills: selectedSkills,
+      applicationEnvironment: applicationEnvironmentRule(),
       ...(selectedSkills.some(id => !isWorkflowSkill(id)) ? { skillsDirectory: CODING_PROVIDERS[args.provider].skillsDirectory } : {}),
       cacheTier: args.provider === 'anthropic' ? '5m' : 'provider-managed',
       autoUpdater: 'disabled',

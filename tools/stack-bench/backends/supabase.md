@@ -10,8 +10,8 @@ functions for the visible controls. Put any Edge Functions in
 
 The local Supabase service is already running with Auth, the data API (`/rest/v1`),
 Realtime, Storage, and Edge Functions. The environment supplies `SUPABASE_URL`,
-`SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL`,
-`VITE_SUPABASE_URL`, and `VITE_SUPABASE_ANON_KEY`. Use these exact values at startup.
+`SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_DB_URL`. Use these
+exact values at startup.
 Do not embed or save them in source or connect to a hosted project. The web client,
 this environment, and Edge Functions all reach it at `SUPABASE_URL`.
 Keep `SUPABASE_SERVICE_ROLE_KEY` and `SUPABASE_DB_URL` out of the web client and user
@@ -30,7 +30,7 @@ and `jsr:` imports, and receive `SUPABASE_URL`, `SUPABASE_ANON_KEY`,
 `SUPABASE_DB_URL`, which connects as the `postgres` role.
 
 Create `/app/start.sh`. From a clean source checkout, it must install dependencies,
-apply the migrations, build the web application, and start it on `<VITE_PORT>` without
+apply the migrations, build the web application, and start it on `<APP_PORT>` without
 changing source files. Apply migrations and initialize empty data on every start, even
 with `APP_WARM_START=1`, so they must be safe to run again; reuse current dependencies
 when possible. Keep existing data and accounts during subsequent starts, upgrades, and

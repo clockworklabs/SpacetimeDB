@@ -47,6 +47,7 @@ import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.js';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.js';
 import { SUPERVISOR_STATE_VERSION, writeRecoveryArtifact } from '../src/runtime/recovery.js';
 import { applyAgentCredential } from '../src/agents/agent-credentials.js';
+import { adoptRecordedApplicationEnvironment } from '../src/stacks/application-environment.js';
 import { adoptRecordedSourceIdentity, assertPlainAppSourceTree, hashAppSource, matchRecordedSourceIdentity,
   resetAppToSource, seedAppSource, snapshotAppSource } from '../src/runtime/source-snapshot.js';
 import { finalPackageEvidenceRequired, preserveFinalPackageEvidence, preserveLevelCheckpoint,
@@ -821,6 +822,8 @@ export function inspectGradeSource(directory: string,
   const runPath = join(root, ARTIFACT_FILE.run);
   const parent = readArtifact<BenchmarkRunRecord>(runPath, { expectedKind: 'benchmark_run' });
   const run = parent.payload;
+  // The saved store starts with the variable names its run was built with.
+  adoptRecordedApplicationEnvironment(run.setup);
   if (!object(run.mode)
     || !['sequential', 'dependency'].includes(String(run.mode.id)) || run.contaminated) {
     throw new Error('--grade-from requires an uncontaminated sequential or dependency run');
@@ -1466,6 +1469,7 @@ async function main() {
     if (!existsSync(from)) { console.error(`--seed-from path does not exist: ${from}`); process.exit(2); }
     seedAppSource(from, appDir);
     if (args.progressionSeed) {
+      adoptRecordedApplicationEnvironment({ applicationEnvironment: args.progressionSeed.applicationEnvironment });
       const seeded = adoptRecordedSourceIdentity(appDir,
         { sha256: args.progressionSeed.sourceSha256, files: args.progressionSeed.sourceFiles });
       if (seeded.sha256 !== args.progressionSeed.sourceSha256
@@ -1583,6 +1587,8 @@ async function main() {
       fromDepth: args.progressionSeed.fromDepth,
       sourceSha256: args.progressionSeed.sourceSha256,
       sourceFiles: args.progressionSeed.sourceFiles,
+      ...(args.progressionSeed.applicationEnvironment
+        ? { applicationEnvironment: args.progressionSeed.applicationEnvironment } : {}),
       parent: structuredClone(args.progressionSeed.parent),
       validatedDepths: [],
     } } : {}),

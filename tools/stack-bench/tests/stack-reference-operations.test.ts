@@ -138,7 +138,7 @@ test('Spacetime reference client uses its assigned Vite port', async () => {
   assert(clientStart);
   assert(clientWait);
   assert.deepEqual(clientStart.slice(0, 3), ['build-42', '/app/client', 'reference-client']);
-  assert.equal(clientStart[3].VITE_PORT, '6475');
+  assert.equal(clientStart[3].APP_PORT, '6475');
   assert.deepEqual(clientStart[4], { networkVisible: true, port: 6475 });
   assert.equal(clientWait[0], 'http://127.0.0.1:6475');
 });

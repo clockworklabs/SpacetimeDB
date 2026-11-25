@@ -21,6 +21,7 @@ import { SUPABASE_CONTAINER_LIMITS, SUPABASE_DB_PROCESS_RECORD, SUPABASE_DB_SOCK
   readSupabasePlatformSecrets, supabaseDatabaseUrl, supabaseGatewayUrl, supabasePsqlArguments, supabaseServiceSpecs,
   supabaseSql } from './supabase-platform.js';
 import type { SupabasePlatformSecrets } from './supabase-platform.js';
+import { applicationPortEnvironment, selectApplicationEnvironment } from '../application-environment.js';
 
 type Docker = typeof attemptDocker;
 
@@ -322,14 +323,16 @@ export function resetSupabase({ lease, exec = execFileSync }: { lease: BackendLe
 export function supabaseApplicationEnvironment(lease: BackendLease): Record<string, string> {
   const secrets = readSupabasePlatformSecrets(lease);
   const url = supabaseGatewayUrl(lease);
-  return {
+  const neutral = {
     SUPABASE_URL: url,
     SUPABASE_ANON_KEY: secrets.anonKey,
     SUPABASE_SERVICE_ROLE_KEY: secrets.serviceRoleKey,
     SUPABASE_DB_URL: supabaseDatabaseUrl(secrets),
-    VITE_SUPABASE_URL: url,
-    VITE_SUPABASE_ANON_KEY: secrets.anonKey,
   };
+  return selectApplicationEnvironment({
+    neutral,
+    'vite-names': { ...neutral, VITE_SUPABASE_URL: url, VITE_SUPABASE_ANON_KEY: secrets.anonKey },
+  });
 }
 
 // Runtime control restarts the application server, as for PostgreSQL.
@@ -337,7 +340,8 @@ export function controlSupabaseApplication(input: StackLifecycleInput): Promise<
   return controlHostedAppServer({
     adapterId: input.adapterId, app: input.app, port: input.port, probe: input.probe, mode: input.mode,
     signal: input.signal, exec: input.exec, lease: input.lease,
-    environment: { ...supabaseApplicationEnvironment(input.lease), APP_WARM_START: '1', VITE_PORT: String(input.port) },
+    environment: { ...supabaseApplicationEnvironment(input.lease), APP_WARM_START: '1',
+      ...applicationPortEnvironment(input.port) },
   });
 }
 

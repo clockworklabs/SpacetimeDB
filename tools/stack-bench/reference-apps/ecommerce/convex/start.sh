@@ -6,6 +6,6 @@ cd "$(dirname "$0")"
 npm run prepare-auth
 node node_modules/convex/bin/main.js deploy --yes --typecheck disable --codegen disable
 npm run seed
-export VITE_CONVEX_URL="${VITE_CONVEX_URL:-${CONVEX_SELF_HOSTED_URL}}"
+export VITE_CONVEX_URL="$CONVEX_SELF_HOSTED_URL"
 npm --prefix client run build
-exec npm --prefix client run preview -- --host 0.0.0.0 --port "${VITE_PORT:?VITE_PORT is required}"
+exec npm --prefix client run preview -- --host 0.0.0.0 --port "${APP_PORT:?APP_PORT is required}"

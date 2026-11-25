@@ -4,6 +4,7 @@ import { controlHostedAppServer } from './hosted-lifecycle.js';
 import { attemptDatabaseUrl } from './hosted-database-identity.js';
 import type { BackendLease } from '../runtime/backend-lease.js';
 import { stackPorts } from './stack-ports.js';
+import { applicationPortEnvironment } from './application-environment.js';
 
 // Every adapter carries the contract's optional members, declared or not.
 type StackAdapter<I extends string, T> = { id: I; version: string; lifecycle: StackLifecycle;
@@ -66,7 +67,7 @@ export function controlHostedFor(adapterId: 'postgres' | 'mongodb',
       ...leasedDatabaseEnvironment(adapter, { database: resources.database,
         networkMode: resources.buildContainer?.networkMode, lease: request.lease }),
       APP_WARM_START: '1',
-      VITE_PORT: String(request.port),
+      ...applicationPortEnvironment(request.port),
     },
   });
 }

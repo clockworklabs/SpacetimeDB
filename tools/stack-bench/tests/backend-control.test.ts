@@ -151,15 +151,16 @@ test('clean-source application start uses the private attempt database URL', asy
       assert(launch);
       if (backend === 'spacetime') {
         assert(!launch.includes('DATABASE_URL'));
-        assert(launch.includes('VITE_MODULE_NAME') && launch.includes('VITE_SPACETIMEDB_URI'));
-        assert.equal(launchEnvironment?.VITE_MODULE_NAME, 'shop-run-1');
-        assert.equal(launchEnvironment?.VITE_SPACETIMEDB_URI, 'http://127.0.0.1:3310');
+        assert(launch.includes('SPACETIMEDB_MODULE') && launch.includes('SPACETIMEDB_URI'));
+        assert.equal(launchEnvironment?.SPACETIMEDB_MODULE, 'shop-run-1');
+        assert.equal(launchEnvironment?.SPACETIMEDB_URI, 'http://127.0.0.1:3310');
+        assert(!Object.keys(launchEnvironment ?? {}).some(name => name.startsWith('VITE_')));
       } else {
         assert(launch.includes('DATABASE_URL'));
         assert.equal(launchEnvironment?.DATABASE_URL, attemptDatabaseUrl({ backend, database,
           ownershipToken: lease.ownershipToken }));
       }
-      assert.equal(launchEnvironment?.VITE_PORT, '65534');
+      assert.equal(launchEnvironment?.APP_PORT, '65534');
       assert.equal(launchEnvironment?.APP_WARM_START, '1');
       assert(!launch.some(value => value.includes('local-app-password')));
       // A first start from clean source is not a warm one: the flag is absent, not empty.
@@ -173,7 +174,24 @@ test('clean-source application start uses the private attempt database URL', asy
       }), error => error === launchReached);
       assert.equal(launchEnvironment?.APP_WARM_START, undefined);
       assert(!launch.includes('APP_WARM_START'));
+      assert.equal(launchEnvironment?.APP_PORT, '65534');
+      // A saved store recorded before the neutral names starts with the names it was built with.
+      process.env.STACK_BENCH_APPLICATION_ENVIRONMENT = 'vite-names';
+      try {
+        await assert.rejects(controlAppServer({ backend, app: root, port: 65534, probe: '' }, 'start', {
+          exec: (_command, args, options) => {
+            if (args[0] === 'inspect') return id;
+            if (args[0] === 'exec' && args.includes('-d')) { launchEnvironment = options.env; throw launchReached; }
+            return '';
+          },
+        }), error => error === launchReached);
+      } finally { delete process.env.STACK_BENCH_APPLICATION_ENVIRONMENT; }
       assert.equal(launchEnvironment?.VITE_PORT, '65534');
+      assert.equal(launchEnvironment?.APP_PORT, undefined);
+      if (backend === 'spacetime') {
+        assert.equal(launchEnvironment?.VITE_MODULE_NAME, 'shop-run-1');
+        assert.equal(launchEnvironment?.SPACETIMEDB_MODULE, undefined);
+      }
     }
   } finally {
     if (priorPath === undefined) delete process.env.STACK_BENCH_LEASE;

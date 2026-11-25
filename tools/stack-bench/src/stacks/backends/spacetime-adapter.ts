@@ -18,6 +18,7 @@ import { SPACETIME_ADAPTER_VERSION } from './spacetime-identity.js';
 import { getSavedSpacetimeCheckoutState } from './spacetime-saved-checkout.js';
 import { defineStackAdapter } from '../stack-adapter-common.js';
 import { requireLeasedSpacetime } from '../backend-reset-guard.js';
+import { selectApplicationEnvironment } from '../application-environment.js';
 
 const SPACETIME_GRADING_CAPABILITIES = [
   'actors',
@@ -47,10 +48,10 @@ export const spacetimeAdapter = defineStackAdapter('spacetime', {
   },
   applicationEnvironment: lease => {
     const { resources } = requireLeasedSpacetime(lease);
-    return {
-      VITE_MODULE_NAME: resources.module,
-      VITE_SPACETIMEDB_URI: resources.serverUri,
-    };
+    return selectApplicationEnvironment({
+      neutral: { SPACETIMEDB_URI: resources.serverUri, SPACETIMEDB_MODULE: resources.module },
+      'vite-names': { VITE_MODULE_NAME: resources.module, VITE_SPACETIMEDB_URI: resources.serverUri },
+    });
   },
 }, {
   lease: stackLeaseOperations('spacetime'),
@@ -73,7 +74,7 @@ export const spacetimeAdapter = defineStackAdapter('spacetime', {
   agent: {
     connectionUrl: (_input: { dbPort: number; database: string; hostUrl(url: string): string }) => noConnectionUrl(),
     minimalGuidanceSupported: false,
-    defaultSkills: ['typescript-server', 'typescript-client', 'cli'],
+    defaultSkills: ['concepts', 'typescript-server', 'typescript-client', 'cli'],
     linuxCliRequired: true,
     setupMetadata: spacetimeSetupMetadata,
     serverDirectory: 'backend',
