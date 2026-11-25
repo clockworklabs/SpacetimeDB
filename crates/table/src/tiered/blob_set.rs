@@ -504,6 +504,9 @@ impl BlobSet {
     /// Prevent the object at `hash` from being evicted from local backing
     /// storage.
     ///
+    /// This does not fault the blob if it is already evicted, or not yet
+    /// written to local backing storage.
+    ///
     /// Must be called for every reference to the blob, without deduplication.
     pub(crate) fn pin_disk(&self, hash: BlobHashWrapper) {
         self.entries
@@ -520,6 +523,41 @@ impl BlobSet {
             .get_mut(&hash)
             .expect("blob to disk-pin must exist")
             .unpin_disk();
+    }
+
+    /// If the blob at `hash` has a backing object, ensures that the backing
+    /// object is present on disk and eviction is prevented. Otherwise, the
+    /// memory-resident blob's [BlobHandle] is retained, preventing memory
+    /// eviction.
+    pub(crate) fn ensure_disk(&self, hash: BlobHashWrapper) -> Result<DiskPinnedBlobHandle, ObjectStoreError> {
+        let mut entries = self.entries.write();
+        let Some(entry) = entries.get_mut(&hash) else {
+            return Err(ObjectStoreError::UnknownObject(hash.into()));
+        };
+        match entry {
+            BlobEntry::Resident { blob, backing, .. } => {
+                let backing = backing
+                    .clone()
+                    .map(|mut backing| -> Result<DiskObject, ObjectStoreError> {
+                        self.storage.ensure_local_tier(&mut backing)?;
+                        Ok(backing)
+                    })
+                    .transpose()?;
+
+                Ok(DiskPinnedBlobHandle {
+                    blob: backing.is_none().then(|| blob.clone()),
+                    backing,
+                })
+            }
+            BlobEntry::NonResident { backing, .. } => {
+                let mut backing = backing.clone();
+                self.storage.ensure_local_tier(&mut backing)?;
+                Ok(DiskPinnedBlobHandle {
+                    blob: None,
+                    backing: Some(backing),
+                })
+            }
+        }
     }
 
     /// Apply a fallible operation to each blob in this set.
@@ -609,6 +647,15 @@ impl MemoryUsage for BlobSet {
 
         self.entries.read().heap_usage() + scratch
     }
+}
+
+/// Created by [BlobSet::ensure_disk], ownership of this handle guarantees that
+/// a blob is either pinned to memory, or present and pinned to the local
+/// storage tier.
+#[allow(unused)]
+pub(crate) struct DiskPinnedBlobHandle {
+    blob: Option<BlobHandle>,
+    backing: Option<DiskObject>,
 }
 
 #[derive(Debug)]

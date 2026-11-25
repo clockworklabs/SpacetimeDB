@@ -15,6 +15,7 @@ mod page_ref;
 mod page_set;
 mod storage;
 
+pub(crate) use self::{blob_set::DiskPinnedBlobHandle, page_set::DiskPinnedPageHandle};
 pub use self::{
     blob_set::{BlobHandle, BlobMap, BlobReadSet, BlobSet},
     budget::{BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetConfig, ByteBudgetUsage},

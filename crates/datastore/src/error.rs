@@ -74,6 +74,7 @@ impl DatastoreError {
                         BlobError::MemoryLimitExceeded(error) => Some(error.as_ref()),
                         _ => None,
                     },
+                    table::TableError::Storage(_) => None,
                 }
             }
             _ => None,

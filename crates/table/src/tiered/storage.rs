@@ -9,7 +9,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::{Mutex, MutexGuard, RwLock};
 use spacetimedb_lib::bsatn;
 use spacetimedb_memory_usage::MemoryUsage;
 
@@ -582,40 +582,62 @@ impl TieredStorage {
         // If remote storage is configured, promote the object into the local
         // tier.
         if let Some(remote) = &self.remote {
-            let ObjectMetadata { size } = remote.object_store.stat(key)?.ok_or_else(|| not_found(key))?;
-            // Acquire the permit before locking the slot, as eviction may lock
-            // it, too.
-            let permit = self.acquire_local_permit(size)?;
-
-            let mut state = slot.state.lock();
-            let entry = state.object.as_mut().ok_or_else(|| unknown(key))?;
-            // Another reader or writer may have restored the object while we
-            // reserved space.
-            let local = self.local.object_store.read(key)?;
+            let mut promotion =
+                Promotion::prepare(key, &self.local, remote, &slot, |size| self.acquire_local_permit(size))?;
+            let local = promotion.check(|key| self.local.object_store.read(key))?;
             self.metrics()
                 .lookup(key.metric_type(), CacheTier::Disk, local.is_some());
             if let Some(object) = local {
                 *source = Some(FaultSource::Disk);
-                entry.last_access_epoch = self.access_epoch();
+                promotion.set_last_access(self.access_epoch());
+
                 return Ok(object);
             }
-
-            // Fetch the remote object and store it locally.
-            // Hold the entry lock to prevent eviction.
-            let bytes = remote.object_store.read(key)?.ok_or_else(|| not_found(key))?;
-            *source = Some(FaultSource::Remote);
-            self.local
-                .object_store
-                .write(object_from_trusted_bytes(key, bytes.clone()))?;
-            entry.last_access_epoch = self.access_epoch();
-            entry.permit = Some(permit);
-
+            let bytes = promotion.install(|| Some(self.access_epoch()))?;
             return Ok(bytes);
         }
 
         // Entry is in the catalog, but neither in local nor remote storage.
         // TODO: panic?
         Err(not_found(key))
+    }
+
+    /// Ensure that the previously stored backing `object` is present in the
+    /// local tier.
+    ///
+    /// `object` will be pinned to the local tier, so its lifetime should be
+    /// chosen accordingly -- when preparing a policy change transaction, clone
+    /// the object slot's [DiskObject], so that the pin is valid only for as
+    /// long as `object` is live.
+    ///
+    /// Once pinned, the method checks whether the object is present in local
+    /// storage. If not, the object is fetched from the remote and installed
+    /// locally.
+    ///
+    /// Returns an error if the object needs to be fetched, but remote storage
+    /// is not enabled.
+    ///
+    /// Subject to the local disk budget.
+    pub(crate) fn ensure_local_tier(&self, object: &mut DiskObject) -> Result<(), ObjectStoreError> {
+        let key = object.key;
+        let slot = self.catalog.read().get(&key).cloned().ok_or_else(|| unknown(key))?;
+        // Ensure the object can't be evicted.
+        object.pin();
+        // Object is already in the local tier.
+        if self.local.object_store.stat(key)?.is_some() {
+            return Ok(());
+        }
+
+        let Some(remote) = &self.remote else {
+            return Err(ObjectStoreError::RemoteDisabled);
+        };
+
+        let promotion = Promotion::prepare(key, &self.local, remote, &slot, |size| self.acquire_local_permit(size))?;
+        if promotion.check(|key| self.local.object_store.stat(key))?.is_some() {
+            return Ok(());
+        }
+        // Don't update last access, as we're not requesting access.
+        promotion.install(|| None).map(drop)
     }
 
     /// Trim the local storage to the configured low watermark.
@@ -825,6 +847,114 @@ fn object_from_trusted_bytes(key: ObjectKey, bytes: ObjectBytes) -> Object {
         ObjectKey::Blob(hash) => ObjectInner::Blob { hash, bytes },
     };
     Object { inner }
+}
+
+pub(crate) fn write_atomically(data: &[u8], path: &Path, fsync: Fsync) -> io::Result<()> {
+    let dir = path.parent().expect("output path must have a parent");
+
+    let mut tmp = NamedTempFile::new_in(dir)?;
+    tmp.write_all(data)?;
+    if let Fsync::Require = fsync {
+        tmp.as_file().sync_data()?;
+    }
+    tmp.persist(path)?;
+
+    if let Fsync::Require = fsync {
+        #[cfg(not(target_os = "windows"))]
+        fs::File::open(dir)?.sync_all()?;
+    }
+
+    Ok(())
+}
+
+/// Helper struct for promoting an object from remote to local storage.
+struct Promotion<'a> {
+    key: ObjectKey,
+    permit: BudgetPermit,
+    local: &'a LocalBackingStore,
+    remote: &'a RemoteBackingStore,
+    state: MutexGuard<'a, ObjectState>,
+}
+
+impl<'a> Promotion<'a> {
+    /// Prepare a promotion.
+    ///
+    /// Proceeds as follows:
+    ///
+    /// - Check that the object is present in remote storage
+    ///   and determine its size.
+    /// - Acquire a local storage permit by calling `acquire_permit`.
+    ///   This may trigger eviction.
+    /// - Lock the object slot after possible eviction.
+    ///
+    /// The slot lock is stored in `Self`.
+    fn prepare(
+        key: ObjectKey,
+        local: &'a LocalBackingStore,
+        remote: &'a RemoteBackingStore,
+        slot: &'a ObjectSlot,
+        acquire_permit: impl FnOnce(u64) -> Result<BudgetPermit, ObjectStoreError>,
+    ) -> Result<Self, ObjectStoreError> {
+        let ObjectMetadata { size } = remote.object_store.stat(key)?.ok_or_else(|| not_found(key))?;
+        let permit = acquire_permit(size)?;
+        let state = slot.state.lock();
+        if state.object.is_none() {
+            return Err(unknown(key));
+        }
+
+        Ok(Self {
+            key,
+            permit,
+            local,
+            remote,
+            state,
+        })
+    }
+
+    /// With the slot lock held, run `f`.
+    ///
+    /// To be used for checking if another writer has installed the object
+    /// already, while [Self::prepare] had not already acquired the slot lock.
+    fn check<T>(&self, f: impl FnOnce(ObjectKey) -> Result<T, ObjectStoreError>) -> Result<T, ObjectStoreError> {
+        f(self.key)
+    }
+
+    /// Update the last access of the object.
+    ///
+    /// To be called when [Self::check] is used to short-circuit the promotion,
+    /// but the object should still be marked as accessed.
+    fn set_last_access(&mut self, epoch: u64) {
+        let entry = self
+            .state
+            .object
+            .as_mut()
+            .expect("object presence checked during prepare");
+        entry.last_access_epoch = epoch;
+    }
+
+    /// Fetch the object from the remote and write it to the local storage, then
+    /// install the permit and optionally update the last access epoch.
+    fn install(mut self, access_epoch: impl FnOnce() -> Option<u64>) -> Result<ObjectBytes, ObjectStoreError> {
+        let bytes = self
+            .remote
+            .object_store
+            .read(self.key)?
+            .ok_or_else(|| not_found(self.key))?;
+        self.local
+            .object_store
+            .write(object_from_trusted_bytes(self.key, bytes.clone()))?;
+        let entry = self
+            .state
+            .object
+            .as_mut()
+            .expect("object presence checked during prepare");
+        if let Some(epoch) = access_epoch() {
+            entry.last_access_epoch = epoch;
+        }
+        entry.permit = Some(self.permit);
+
+        Ok(bytes)
+    }
 }
 
 #[cfg(test)]

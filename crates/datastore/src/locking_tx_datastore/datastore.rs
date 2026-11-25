@@ -5308,6 +5308,105 @@ pub(crate) mod tests {
         Ok(())
     }
 
+    proptest::proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_cases(32))]
+
+        #[test]
+        fn policy_blob_refs_follow_commit_row_changes(
+            old in 0usize..3,
+            step in 1usize..3,
+            removed in proptest::collection::vec(proptest::prelude::any::<bool>(), 1..6),
+            inserted_count in 0u64..6,
+            revert_policy in proptest::prelude::any::<bool>(),
+        ) {
+            let policies = [
+                TableCachePolicy::RequiredInMemory,
+                TableCachePolicy::RequiredOnDisk,
+                TableCachePolicy::NoRequirement,
+            ];
+            let config = TieredStorageConfig::new_for_test();
+            let local_budget = config.local_store.budget.clone();
+            let datastore = Locking::bootstrap(Identity::ZERO, config).unwrap();
+            let mut tx = begin_mut_tx(&datastore);
+            let mut schema = TableSchema::from_product_type([
+                AlgebraicType::U64, AlgebraicType::String, AlgebraicType::String,
+            ].into());
+            schema.cache_policy = policies[old];
+            let id = datastore.create_table_mut_tx(&mut tx, schema).unwrap();
+            let value = "shared".repeat(512);
+            let hash = BlobHash::hash_from_bytes(value.as_bytes());
+            let inserted_value = "inserted".repeat(512);
+            let inserted_hash = BlobHash::hash_from_bytes(inserted_value.as_bytes());
+            let rows: Vec<_> = removed.iter().enumerate()
+                .map(|(n, _)| product![n as u64, value.clone(), value.clone()]).collect();
+            for row in &rows {
+                insert(&datastore, &mut tx, id, row).unwrap();
+            }
+            commit(&datastore, tx).unwrap();
+
+            // Policy and row changes share one transaction; source hashes are already stored.
+            let mut tx = begin_mut_tx(&datastore);
+            tx.alter_table_cache_policy(id, policies[(old + step) % policies.len()]).unwrap();
+            if revert_policy {
+                tx.alter_table_cache_policy(id, policies[old]).unwrap();
+            }
+            let mut expected: Vec<_> = rows.iter().zip(&removed)
+                .filter_map(|(row, remove)| (!remove).then_some(row.clone())).collect();
+            for (row, remove) in rows.iter().zip(&removed) {
+                if *remove {
+                    assert!(tx.delete_by_row_value(id, row).unwrap());
+                }
+            }
+            for n in 0..inserted_count {
+                let row = product![n + removed.len() as u64, inserted_value.clone(), value.clone()];
+                insert(&datastore, &mut tx, id, &row).unwrap();
+                expected.push(row);
+            }
+            commit(&datastore, tx).unwrap();
+
+            // Every surviving field contributes a reference, even when content is shared.
+            let mut tx = begin_mut_tx(&datastore);
+            let mut actual = all_rows(&datastore, &tx, id);
+            actual.sort();
+            expected.sort();
+            proptest::prop_assert_eq!(&actual, &expected);
+            let blobs = tx.committed_state_write_lock.storage.blobs();
+            let surviving_refs = removed.iter().filter(|remove| !**remove).count() * 2;
+            proptest::prop_assert_eq!(blobs.uses(hash.into()).unwrap_or_default(), surviving_refs + inserted_count as usize);
+            proptest::prop_assert_eq!(blobs.uses(inserted_hash.into()).unwrap_or_default(), inserted_count as usize);
+
+            // Dropping the last table must release every permanent pin and backing owner.
+            tx.drop_table(id).unwrap();
+            commit(&datastore, tx).unwrap();
+            proptest::prop_assert_eq!(local_budget.usage().accounted_bytes, 0);
+        }
+    }
+
+    #[test]
+    fn policy_blob_refs_exclude_event_inserts() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+        let mut tx = begin_mut_tx(&datastore);
+        let mut schema = TableSchema::from_product_type([AlgebraicType::String].into());
+        schema.is_event = true;
+        schema.cache_policy = TableCachePolicy::NoRequirement;
+        let id = datastore.create_table_mut_tx(&mut tx, schema)?;
+        commit(&datastore, tx)?;
+
+        // Event rows are emitted in transaction data but never stored in the table.
+        let mut tx = begin_mut_tx(&datastore);
+        tx.alter_table_cache_policy(id, TableCachePolicy::RequiredOnDisk)?;
+        let value = "event".repeat(512);
+        let hash = BlobHash::hash_from_bytes(value.as_bytes());
+        insert(&datastore, &mut tx, id, &product![value])?;
+        commit(&datastore, tx)?;
+
+        let tx = begin_mut_tx(&datastore);
+        assert!(all_rows(&datastore, &tx, id).is_empty());
+        assert_eq!(tx.committed_state_write_lock.storage.blobs().uses(hash.into()), None);
+
+        Ok(())
+    }
+
     #[test]
     fn memory_disk_migrations_preserve_repeated_blob_requirements() -> ResultTest<()> {
         // Observe disk reservations independently of the table's current residency.

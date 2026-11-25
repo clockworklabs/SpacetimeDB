@@ -441,7 +441,7 @@ pub struct PageManager {
     pool: PagePool,
     resident_cache: Pool<CachedResidentPage>,
     resident: Arc<ResidentObjects>,
-    storage: Arc<TieredStorage>,
+    pub(crate) storage: Arc<TieredStorage>,
 }
 
 impl PageManager {
@@ -451,6 +451,7 @@ impl PageManager {
         &self,
         page: Option<(Box<Page>, BudgetPermit)>,
         fixed_row_size: Size,
+        eviction_policy: EvictionPolicy,
     ) -> PageSlotHandle {
         let Some((page, permit)) = page else {
             return PageSlotHandle {
@@ -461,7 +462,7 @@ impl PageManager {
         let inner = self
             .resident
             .reserve_page_with_permit(permit, PooledPage::new(page, self.pool.clone()));
-        self.redeem(ReservedPage { inner, metadata }, EvictionPolicy::Memory)
+        self.redeem(ReservedPage { inner, metadata }, eviction_policy)
     }
 
     /// Take a loaded page out of its slot so a memory table can own it directly.

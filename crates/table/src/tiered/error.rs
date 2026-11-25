@@ -116,6 +116,8 @@ pub enum ObjectStoreError {
     Io(#[from] io::Error),
     #[error("failed to deserialize stored object")]
     Serialization(#[from] spacetimedb_sats::buffer::DecodeError),
+    #[error("remote storage not enabled")]
+    RemoteDisabled,
 }
 
 impl ObjectStoreError {
@@ -124,7 +126,8 @@ impl ObjectStoreError {
             ObjectStoreError::UnknownObject(_)
             | ObjectStoreError::MissingObject(_)
             | ObjectStoreError::HashMismatch { .. }
-            | ObjectStoreError::Serialization(_) => false,
+            | ObjectStoreError::Serialization(_)
+            | ObjectStoreError::RemoteDisabled => false,
 
             ObjectStoreError::StorageLimitExceeded(_) | ObjectStoreError::Io(_) => true,
         }

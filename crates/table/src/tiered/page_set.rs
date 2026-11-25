@@ -19,7 +19,8 @@ use crate::{
         blob_set::BlobHandle,
         mem::{PageEvictionCandidate, PageId},
         page_manager::{PageHandle, PageManager, PageSlot, PageSlotHandle, ReservedPage},
-        BlobSet, BudgetPermit, EvictionPolicy, PageError, PageRead, PageRef,
+        storage::DiskObject,
+        BlobSet, BudgetPermit, EvictionPolicy, ObjectStoreError, PageError, PageRead, PageRef,
     },
     var_len::VarLenMembers,
 };
@@ -107,7 +108,12 @@ impl Drop for PageSet {
 }
 
 impl ResidentPages {
-    fn into_tiered(mut self, manager: &PageManager, fixed_row_size: Size) -> TieredPages {
+    fn into_tiered(
+        mut self,
+        manager: &Arc<PageManager>,
+        fixed_row_size: Size,
+        eviction_policy: EvictionPolicy,
+    ) -> TieredPages {
         assert_eq!(self.pages.len(), self.permits.len());
         let mut tiered = TieredPages {
             free_page_slots: std::mem::take(&mut self.pages.free_page_slots),
@@ -120,7 +126,7 @@ impl ResidentPages {
             assert_eq!(page.is_some(), permit.is_some());
             tiered
                 .slots
-                .push(manager.adopt_resident(page.zip(permit), fixed_row_size));
+                .push(manager.adopt_resident(page.zip(permit), fixed_row_size, eviction_policy));
         }
         tiered
     }
@@ -220,6 +226,31 @@ impl TieredPages {
 
     pub fn trim(&self, manager: &PageManager) -> Result<u64, PageError> {
         self.evict(manager, manager.resident_budget().low_water_bytes)
+    }
+
+    fn apply_eviction_policy(&self, policy: EvictionPolicy) {
+        assert!(matches!(policy, EvictionPolicy::Memory | EvictionPolicy::Disk));
+
+        let disk_pins = if policy == EvictionPolicy::Memory { 1 } else { 0 };
+        for slot_handle in &self.slots {
+            let mut slot = slot_handle.lock_ref();
+            match &mut *slot {
+                PageSlot::Absent => {}
+                PageSlot::Resident {
+                    backing,
+                    eviction_policy,
+                    ..
+                } => {
+                    *eviction_policy = policy;
+                    if let Some(backing) = backing {
+                        backing.set_pins(disk_pins);
+                    }
+                }
+                PageSlot::NonResident { backing, .. } => {
+                    backing.set_pins(disk_pins);
+                }
+            }
+        }
     }
 
     pub fn evict(&self, manager: &PageManager, target_usage: u64) -> Result<u64, PageError> {
@@ -347,6 +378,15 @@ impl PageInfo<'_> {
 }
 type EvictionScratch = (Box<Vec<PageEvictionCandidate>>, Box<IntMap<PageId, PageIndex>>);
 
+/// Created by [PageSet::ensure_disk], ownership of this handle guarantees that
+/// a page is either pinned to memory, or present and pinned to the local
+/// storage tier.
+#[allow(unused)]
+pub(crate) struct DiskPinnedPageHandle {
+    page: Option<PageHandle>,
+    backing: Option<DiskObject>,
+}
+
 impl PageSet {
     /// Load and pin all existing disk-table pages for a policy conversion.
     pub(crate) fn pin_all_pages(&self) -> Result<Vec<PageHandle>, PageError> {
@@ -355,6 +395,45 @@ impl PageSet {
         for index in 0..self.num_pages() {
             if let Some(PageRef::Tiered(pin)) = self.get_page(PageIndex(index as u64))? {
                 pins.push(pin);
+            }
+        }
+        assert_eq!(pins.len(), self.num_present_pages());
+        Ok(pins)
+    }
+
+    /// Load and pin all existing disk-table pages to the local storage tier.
+    pub(crate) fn ensure_disk(&self) -> Result<Vec<DiskPinnedPageHandle>, ObjectStoreError> {
+        assert!(!self.is_resident());
+        let mut pins = Vec::with_capacity(self.num_present_pages());
+        let tiered = self.storage.tiered();
+        for slot_handle in &tiered.slots {
+            let mut slot = slot_handle.lock_ref();
+            let handle = match &mut *slot {
+                PageSlot::Absent => None,
+                PageSlot::Resident { handle, backing, .. } => {
+                    let backing = backing
+                        .clone()
+                        .map(|mut backing| -> Result<DiskObject, ObjectStoreError> {
+                            self.manager.storage.ensure_local_tier(&mut backing)?;
+                            Ok(backing)
+                        })
+                        .transpose()?;
+                    Some(DiskPinnedPageHandle {
+                        page: backing.is_none().then(|| handle.clone()),
+                        backing,
+                    })
+                }
+                PageSlot::NonResident { backing, .. } => {
+                    let mut backing = backing.clone();
+                    self.manager.storage.ensure_local_tier(&mut backing)?;
+                    Some(DiskPinnedPageHandle {
+                        page: None,
+                        backing: Some(backing),
+                    })
+                }
+            };
+            if let Some(handle) = handle {
+                pins.push(handle);
             }
         }
         assert_eq!(pins.len(), self.num_present_pages());
@@ -370,12 +449,15 @@ impl PageSet {
         let old = std::mem::replace(&mut self.storage, PageStorage::Tiered(TieredPages::default()));
         self.storage = match old {
             PageStorage::Resident(resident) => {
-                assert_eq!(policy, EvictionPolicy::Memory);
-                PageStorage::Tiered(resident.into_tiered(&self.manager, self.fixed_row_size))
+                assert!(matches!(policy, EvictionPolicy::Memory | EvictionPolicy::Disk));
+                PageStorage::Tiered(resident.into_tiered(&self.manager, self.fixed_row_size, policy))
+            }
+            PageStorage::Tiered(tiered) if policy == EvictionPolicy::Never => {
+                PageStorage::Resident(tiered.into_resident(&self.manager, self.fixed_row_size))
             }
             PageStorage::Tiered(tiered) => {
-                assert_eq!(policy, EvictionPolicy::Never);
-                PageStorage::Resident(tiered.into_resident(&self.manager, self.fixed_row_size))
+                tiered.apply_eviction_policy(policy);
+                PageStorage::Tiered(tiered)
             }
         };
         self.eviction_policy = policy;

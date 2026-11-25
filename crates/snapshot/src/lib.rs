@@ -1712,7 +1712,7 @@ mod tests {
                 schema.into(),
                 SquashedOffset::COMMITTED_STATE,
                 storage.pages().clone(),
-                EvictionPolicy::Evictable,
+                EvictionPolicy::Memory,
             )
         });
         tables[0].insert(storage.blobs(), &product![11_u64])?;
