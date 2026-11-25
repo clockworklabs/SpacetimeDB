@@ -1,7 +1,7 @@
 # SpacetimeDB
 
-Use SpacetimeDB for the application data. Put the TypeScript module in the
-required directory below. Choose the schema, libraries, architecture, and the
+Use SpacetimeDB for application data, accounts, and backend functions. Put the
+TypeScript module in the required directory below. Choose the schema, libraries, architecture, and the
 rest of the project structure.
 
 ## Connection
