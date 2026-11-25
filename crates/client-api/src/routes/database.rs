@@ -2497,6 +2497,8 @@ mod tests {
         }
     }
 
+    type PublishedDatabases = std::sync::Arc<std::sync::Mutex<Vec<(Identity, Option<Identity>)>>>;
+
     #[derive(Clone)]
     struct DummyState {
         jwt: DummyJwtProvider,
@@ -2510,7 +2512,7 @@ mod tests {
         allow_publish_update: bool,
         allow_reset: bool,
         allow_create: bool,
-        published: std::sync::Arc<std::sync::Mutex<Vec<(Identity, Option<Identity>)>>>,
+        published: PublishedDatabases,
         authorized_parents: std::sync::Arc<std::sync::Mutex<Vec<Option<Identity>>>>,
         reset_calls: std::sync::Arc<AtomicUsize>,
     }
