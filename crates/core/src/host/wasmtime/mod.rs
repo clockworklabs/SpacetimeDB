@@ -96,11 +96,11 @@ fn wasmtime_config(data_dir: Option<&ServerDataDir>, async_support: bool) -> was
         .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable);
 
     if async_support {
-        // Procedure instances need async support to suspend execution when waiting for
-        // e.g. HTTP responses or the transaction lock. Main-lane instances use a
-        // separate sync engine so reducers/views do not pay Wasmtime's fiber overhead.
-        config.async_support(true);
-
+        // Procedure instances suspend while waiting for e.g. HTTP responses or the
+        // transaction lock, so they run on fibers. Wasmtime makes a store async when it is
+        // instantiated with `func_wrap_async` imports; this engine only sets up their stacks.
+        // Main-lane instances use a separate engine with sync imports only, so reducers and
+        // views do not pay Wasmtime's fiber overhead.
         #[cfg(unix)]
         config
             .async_stack_size(self::pooling_stack_creator::ASYNC_STACK_SIZE)
@@ -153,8 +153,8 @@ impl WasmtimeRuntime {
         program_bytes: &[u8],
         core: AllocatedJobCore,
     ) -> anyhow::Result<super::module_host::ModuleWithInstance> {
-        let module =
-            wasmtime::Module::new(&self.sync_engine, program_bytes).map_err(ModuleCreationError::WasmCompileError)?;
+        let module = wasmtime::Module::new(&self.sync_engine, program_bytes)
+            .map_err(|e| ModuleCreationError::WasmCompileError(e.into()))?;
 
         let func_imports = module
             .imports()
@@ -166,13 +166,13 @@ impl WasmtimeRuntime {
         let module = self
             .sync_linker
             .instantiate_pre(&module)
-            .map_err(InitializationError::Instantiation)?;
-        let procedure_module =
-            wasmtime::Module::new(&self.async_engine, program_bytes).map_err(ModuleCreationError::WasmCompileError)?;
+            .map_err(|e| InitializationError::Instantiation(e.into()))?;
+        let procedure_module = wasmtime::Module::new(&self.async_engine, program_bytes)
+            .map_err(|e| ModuleCreationError::WasmCompileError(e.into()))?;
         let procedure_module = self
             .async_linker
             .instantiate_pre(&procedure_module)
-            .map_err(InitializationError::Instantiation)?;
+            .map_err(|e| InitializationError::Instantiation(e.into()))?;
 
         let module = WasmtimeModule::new(module);
         let procedure_module = WasmtimeAsyncModule::new(procedure_module);

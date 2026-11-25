@@ -392,10 +392,11 @@ zstd-framed = { version = "0.1.1", features = ["tokio"] }
 openssl = { version = "0.10.78", features = ["vendored"] }
 
 [workspace.dependencies.wasmtime]
-version = "39"
+version = "48.0.7"
 default-features = false
 features = [
   "addr2line",
+  "anyhow",
   "async",
   "cache",
   "cranelift",
@@ -406,7 +407,7 @@ features = [
 ]
 
 [workspace.dependencies.wasmtime-internal-fiber]
-version = "39"
+version = "48.0.7"
 default-features = false
 features = ["std"]
 
