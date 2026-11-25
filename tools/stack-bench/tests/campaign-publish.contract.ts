@@ -277,7 +277,9 @@ test('retained dependency evidence exports through the CLI and sends only valida
   generateCampaignReport(campaign);
   const before = readFileSync(join(campaign, 'report/report.json'));
   const payload = createCampaignUpload(campaign, 'fixture-suite');
-  assert.equal(payload.attempts.length, 2);
+  // The invalid attempt stays out of the upload; only the completed one is sent.
+  assert.equal(payload.attempts.length, 1);
+  assert.notEqual(payload.attempts[0]!.attemptId, invalid.claim.attempt.id);
   assert.equal(payload.gradingStatus, 'pending');
   assert.deepEqual(
     [payload.attempts[0]!.featuresPassed, payload.attempts[0]!.featuresTotal],
@@ -285,20 +287,13 @@ test('retained dependency evidence exports through the CLI and sends only valida
   );
   assert.equal(payload.attempts[0]!.costUsd, null);
   assert.equal(payload.attempts[0]!.costStatus, 'unknown');
-  assert.equal(payload.attempts[1]!.featuresPassed, null);
-  assert.equal(payload.attempts[1]!.excluded, true);
-  assert.ok(payload.attempts[1]!.excludedReason);
-  // An operator exclusion keeps the attempt in the upload, marked with its reason.
+  assert.equal(payload.attempts[0]!.excluded, false);
+  assert.equal(payload.attempts[0]!.excludedReason, null);
+  // An operator exclusion leaves the attempt out too, so excluding the only counted attempt leaves nothing to send.
   const replaced = payload.attempts[0]!.attemptId;
-  const withExclusion = createCampaignUpload(campaign, 'fixture-suite',
-    new Map([[replaced, 'replaced by a later run']]));
-  assert.equal(withExclusion.attempts.length, 2);
-  assert.equal(withExclusion.attempts[0]!.excluded, true);
-  assert.equal(withExclusion.attempts[0]!.excludedReason, 'excluded by operator: replaced by a later run');
-  assert.equal(withExclusion.attempts[0]!.featuresPassed, payload.attempts[0]!.featuresPassed);
-  assert.throws(() => createCampaignUpload(campaign, 'fixture-suite', new Map([['no-such-attempt', 'x']])),
+  assert.throws(() => createCampaignUpload(campaign, 'fixture-suite', new Set([replaced])), /1 to 10,000 attempts/);
+  assert.throws(() => createCampaignUpload(campaign, 'fixture-suite', new Set(['no-such-attempt'])),
     /unknown attempt/);
-  assert.throws(() => createCampaignUpload(campaign, 'fixture-suite', new Map([[replaced, ' ']])), /reason/);
   assert.deepEqual(readFileSync(join(campaign, 'report/report.json')), before);
   const exported = join(root, 'upload.json');
   const cli = join(dirname(fileURLToPath(import.meta.url)), '../commands/campaign-cli.js');
@@ -329,7 +324,7 @@ test('retained dependency evidence exports through the CLI and sends only valida
         uploadId: 'fixture-upload',
         status: 'pending',
         duplicate: false,
-        runs: 2,
+        runs: 1,
         ignored: 'private response metadata',
       })
     );
@@ -351,7 +346,7 @@ test('retained dependency evidence exports through the CLI and sends only valida
     uploadId: 'fixture-upload',
     status: 'pending',
     duplicate: false,
-    runs: 2,
+    runs: 1,
   });
   assert.deepEqual(requests, [payload]);
   responseStatus = 409;

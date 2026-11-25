@@ -14,14 +14,14 @@ import {
   dependencyRuntimeDefinition,
 } from '../progression/progression-definition.js';
 import { readProgressionState } from '../progression/progression-state.js';
-import { redactCredentials } from '../evidence/diagnostic-sanitizer.js';
 
 const UPLOAD_VERSION = 1;
 const MAX_BYTES = 10 * 1024 * 1024;
 
-// An excluded attempt is still uploaded, with its reason, so the site can show what was left out.
+// Only attempts that count are uploaded. Invalid attempts, attempts the campaign's policy excludes and
+// attempts the operator excludes stay in the campaign's evidence.
 export function createCampaignUpload(directory: string, suite: string,
-  exclusions: ReadonlyMap<string, string> = new Map()) {
+  exclusions: ReadonlySet<string> = new Set()) {
   if (!/^[a-z0-9][a-z0-9.-]{0,99}$/.test(suite))
     throw new Error('publish requires a valid suite slug');
   if (readCampaignLock(directory))
@@ -69,12 +69,11 @@ export function createCampaignUpload(directory: string, suite: string,
   const progression = compileProgressionInput(
     dependencyRuntimeDefinition(plan.featureCatalog, plan.dependencyPolicy)
   );
-  for (const [id, reason] of exclusions) {
+  for (const id of exclusions) {
     if (!report.attempts.some(attempt => attempt.id === id)) throw new Error(`cannot exclude unknown attempt ${id}`);
-    if (!reason.trim()) throw new Error(`exclusion of ${id} needs a reason`);
   }
   const started = new Set(state.attempts.filter(attempt => !neverStarted(attempt)).map(attempt => attempt.plan.id));
-  const attempts = report.attempts.filter(attempt => started.has(attempt.id)).map(attempt => {
+  const attempts = report.attempts.filter(attempt => started.has(attempt.id)).flatMap(attempt => {
     const execution = attempt.executions.at(-1)!;
     if (
       !['completed', 'invalid'].includes(attempt.status) ||
@@ -83,65 +82,44 @@ export function createCampaignUpload(directory: string, suite: string,
       typeof execution.outcome !== 'string'
     )
       throw new Error(`attempt ${attempt.id} has incomplete evidence`);
-    const invalid = attempt.status === 'invalid';
-    let featuresPassed: number | null = null;
-    const featuresTotal = progression.definition.nodes.length;
-    if (!invalid) {
-      // The report orders attempts for reading; the run record is found by attempt id.
-      const recorded = state.attempts.find(item => item.plan.id === attempt.id);
-      if (!recorded) throw new Error(`attempt ${attempt.id} has no campaign state`);
-      const output = campaignChildPath(
-        directory,
-        recorded.executions.at(-1)!.output,
-        'campaign execution'
-      );
-      const stored = readProgressionState(join(output, ARTIFACT_FILE.progressionState), {
-        progression,
-        featureCatalogIdentity: plan.featureCatalog!.identity,
-        dependencyPolicyIdentity: plan.dependencyPolicy!.identity,
-        owner: campaignProgressionOwner(plan, attempt, { workspace: true }),
-      });
-      if (stored.state.phase !== 'terminal')
-        throw new Error(`attempt ${attempt.id} has no final feature measurement`);
-      featuresPassed = dependencyCompletionBreakdown(stored.state).featureCompletion.passed;
-    }
-    const byPolicy = invalid || plan.definition.attemptPolicy.excludeFromAnalysis.includes(execution.outcome);
-    const operatorReason = exclusions.get(attempt.id);
-    const excluded = byPolicy || operatorReason !== undefined;
-    const cost = invalid
-      ? attempt.spend
-      : {
-          status:
-            attempt.metrics?.totalCostUsd != null
-              ? 'exact'
-              : attempt.metrics?.totalCostUpperBoundUsd != null
-                ? 'upper-bound'
-                : 'unknown',
-          costUsd: attempt.metrics?.totalCostUsd ?? attempt.metrics?.totalCostUpperBoundUsd ?? null,
-        };
-    return {
+    if (attempt.status === 'invalid' || exclusions.has(attempt.id)
+      || plan.definition.attemptPolicy.excludeFromAnalysis.includes(execution.outcome)) return [];
+    // The report orders attempts for reading; the run record is found by attempt id.
+    const recorded = state.attempts.find(item => item.plan.id === attempt.id);
+    if (!recorded) throw new Error(`attempt ${attempt.id} has no campaign state`);
+    const output = campaignChildPath(
+      directory,
+      recorded.executions.at(-1)!.output,
+      'campaign execution'
+    );
+    const stored = readProgressionState(join(output, ARTIFACT_FILE.progressionState), {
+      progression,
+      featureCatalogIdentity: plan.featureCatalog!.identity,
+      dependencyPolicyIdentity: plan.dependencyPolicy!.identity,
+      owner: campaignProgressionOwner(plan, attempt, { workspace: true }),
+    });
+    if (stored.state.phase !== 'terminal')
+      throw new Error(`attempt ${attempt.id} has no final feature measurement`);
+    return [{
       attemptId: attempt.id,
       stack: attempt.stack,
       agent: attempt.agentAdapter,
       model: attempt.model,
       effort: attempt.effort ?? 'default',
       repetition: attempt.repetition,
-      status: invalid ? ('invalid' as const) : ('completed' as const),
+      status: 'completed' as const,
       outcome: execution.outcome,
-      featuresPassed,
-      featuresTotal,
-      costUsd: cost.costUsd,
-      costStatus: cost.status,
+      featuresPassed: dependencyCompletionBreakdown(stored.state).featureCompletion.passed,
+      featuresTotal: progression.definition.nodes.length,
+      costUsd: attempt.metrics?.totalCostUsd ?? attempt.metrics?.totalCostUpperBoundUsd ?? null,
+      costStatus: attempt.metrics?.totalCostUsd != null
+        ? 'exact'
+        : attempt.metrics?.totalCostUpperBoundUsd != null ? 'upper-bound' : 'unknown',
       startedAt: execution.startedAt,
       completedAt: execution.completedAt,
-      excluded,
-      excludedReason: excluded
-        ? redactCredentials(byPolicy
-            ? `${execution.outcome}: ${typeof execution.reason === 'string' ? execution.reason : 'excluded by campaign policy'}`
-            : `excluded by operator: ${operatorReason}`
-          ).slice(0, 1000)
-        : null,
-    };
+      excluded: false,
+      excludedReason: null,
+    }];
   });
   if (!attempts.length || attempts.length > 10000)
     throw new Error('publish supports 1 to 10,000 attempts per upload');
@@ -173,7 +151,7 @@ export function createCampaignUpload(directory: string, suite: string,
 
 export async function publishCampaign(
   directory: string,
-  options: { suite: string; output?: string; to?: string; exclusions?: ReadonlyMap<string, string> }
+  options: { suite: string; output?: string; to?: string; exclusions?: ReadonlySet<string> }
 ) {
   if (!!options.output === !!options.to)
     throw new Error('publish requires exactly one of --out or --to');

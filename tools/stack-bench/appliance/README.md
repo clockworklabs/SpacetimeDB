@@ -264,8 +264,9 @@ controller campaign publish campaigns/campaign-001 --suite ecommerce-1 --out upl
 docker compose --env-file operator.env -f appliance/docker-compose.yaml run --rm -e STACKBENCH_UPLOAD_KEY controller campaign publish campaigns/campaign-001 --suite ecommerce-1 --to https://stackbench.org
 ```
 
-`--exclude <attempt-id>=<reason>` marks an attempt excluded; it is still
-uploaded with the reason. The site needs a suite whose feature catalog matches
+Only attempts that count are uploaded. Invalid attempts, attempts the
+campaign policy excludes, and attempts named with `--exclude <attempt-id>`
+stay out of the upload. The site needs a suite whose feature catalog matches
 the campaign. Uploads are private until an admin publishes them. Active or
 unfinished attempts block publication, and changed evidence needs a new report.
 

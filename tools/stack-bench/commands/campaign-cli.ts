@@ -85,7 +85,7 @@ export type CampaignArgs =
   | { command: 'report'; directory: string }
   | { command: 'export'; directory: string; output: string }
   | { command: 'publish'; directory: string; suite: string; output?: string; to?: string;
-      exclusions: ReadonlyMap<string, string> }
+      exclusions: ReadonlySet<string> }
   | { command: 'stop'; directory: string }
   | { command: 'audit'; directory: string }
   | { command: 'grant-repairs'; directory: string; attemptId: string; grantId: string;
@@ -204,14 +204,12 @@ export function parseCampaignArgs(argv: string[]): CampaignArgs {
   }
   if (command === 'publish') {
     const options = new Map<string, string>();
-    const exclusions = new Map<string, string>();
+    const exclusions = new Set<string>();
     for (let i = 0; i < rest.length; i += 2) {
       const flag = rest[i]; const value = rest[i + 1];
       if (flag === '--exclude' && value && !value.startsWith('--')) {
-        // --exclude <attempt-id>=<reason>
-        const at = value.indexOf('=');
-        if (at < 1 || exclusions.has(value.slice(0, at))) throw new Error('invalid publish options');
-        exclusions.set(value.slice(0, at), value.slice(at + 1));
+        if (exclusions.has(value)) throw new Error('invalid publish options');
+        exclusions.add(value);
         continue;
       }
       if (!flag || !['--suite', '--out', '--to'].includes(flag) || !value
