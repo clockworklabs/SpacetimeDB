@@ -99,6 +99,8 @@ export interface LiveProgressionExecutionOptions {
   getRunArtifact: () => unknown;
   resumeFrom?: string | null;
   onState?: (status: LiveProgressionStatus) => void;
+  // Called before the controller reads an application that has run since its last handoff.
+  prepareAppRead?: () => void;
 }
 
 export interface LiveProgressionExecution {
@@ -273,7 +275,7 @@ export function createLiveProgressionExecution(
   const dependencyPolicyIdentity = options.dependencyPolicyIdentity;
   const owner = workspaceOwner(options.owner);
   const { statePath, runId, outputDir, appDir,
-    recipeBindings, getRunArtifact, onState } = options;
+    recipeBindings, getRunArtifact, onState, prepareAppRead = () => {} } = options;
   const resumeFrom = options.resumeFrom ?? null;
   const stateRoot = dirname(resolve(statePath));
   if (resolve(outputDir) !== stateRoot) {
@@ -298,6 +300,7 @@ export function createLiveProgressionExecution(
   const sourceBinding = ({ capture = false }: { capture?: boolean } = {}): ProgressionResumeBinding => {
     if (capture) {
       mkdirSync(appDir, { recursive: true });
+      prepareAppRead();
       snapshotAppSource(appDir, sourceDirectory);
     }
     if (!existsSync(sourceDirectory)) {
@@ -524,6 +527,7 @@ export function createLiveProgressionExecution(
         reason: 'grader produced no grade bundle',
       };
     } else {
+      prepareAppRead();
       const source = hashAppSource(appDir);
       const recipe = selected.grader.request.recipe;
       const persistedBundle = readArtifact<GradeBundlePayload>(

@@ -39,7 +39,7 @@ test('capability-dropped controller and agent retain access through source resto
       fs.chmodSync('/proof/source/src',0o555);
       seedAppSource('/proof/source','/proof/app');`]);
     const mount = ['--mount', `type=bind,source=${state}/app,target=/app`];
-    const handoff = create('handoff', [...mount, '--cap-add', 'CHOWN', '--cap-add', 'FOWNER']);
+    const handoff = create('handoff', [...mount, '--cap-add', 'CHOWN', '--cap-add', 'DAC_OVERRIDE', '--cap-add', 'FOWNER']);
     const agent = create('agent', [...mount, '--user', '10001:10001']);
     for (const operation of ['seed', 'restore', 'reset']) {
       if (operation !== 'seed') docker(['exec', controller, 'node', '--input-type=module', '-e', source
@@ -59,6 +59,20 @@ test('capability-dropped controller and agent retain access through source resto
         fs.writeFileSync('/proof/app/controller-note','controller can write');`]);
       docker(['exec', agent, 'rm', '-rf', '/app/src/build']);
     }
+    // A start script may run under a private umask or make a file private each time it starts.
+    docker(['exec', agent, 'sh', '-c', 'umask 077; mkdir -p /app/build/web/assets /app/.runtime; '
+      + 'echo built > /app/build/web/assets/app.js; echo key > /app/.runtime/key; chmod 600 /app/.runtime/key']);
+    const capture = source.replace('seedAppSource,restoreAppSource,resetAppToSource', 'snapshotAppSource')
+      + `snapshotAppSource('/proof/app','/proof/capture');`;
+    const refused = spawnSync('docker', ['exec', controller, 'node', '--input-type=module', '-e', capture],
+      { encoding: 'utf8', timeout: 30_000 });
+    assert.notEqual(refused.status, 0);
+    assert.match(refused.stderr, /EACCES/);
+    for (const command of codingContainerWorkspaceHandoffCommands(0)) docker(['exec', handoff, ...command]);
+    docker(['exec', controller, 'node', '--input-type=module', '-e', capture + `
+      const assert=(await import('node:assert/strict')).default;
+      assert.equal(fs.readFileSync('/proof/capture/build/web/assets/app.js','utf8'),'built\\n');
+      assert.equal(fs.readFileSync('/proof/capture/.runtime/key','utf8'),'key\\n');`]);
   } finally {
     for (const id of containers.reverse()) docker(['rm', '-f', '--volumes', id]);
     docker(['volume', 'rm', volume]);

@@ -25,7 +25,7 @@ import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
   GRADING_WAIT_RECEIPT_ENV, GRADING_WAIT_RECEIPT_FILE, readGradingWaits, recordedGradingWaitMs } from '../src/runtime/backend-lease.js';
 import { borrowCampaignReservation }
   from '../src/campaigns/campaign-admission.js';
-import { captureApplicationDiagnostics } from '../src/runtime/backend-control.js';
+import { captureApplicationDiagnostics, handoffAppWorkspace } from '../src/runtime/backend-control.js';
 import type { RuntimeControlSpec } from '../src/runtime/backend-control.js';
 import { releaseBackendLease } from '../src/runtime/backend-teardown.js';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.js';
@@ -1627,6 +1627,7 @@ async function main() {
         run.progressionStatus = status;
         persistRun(join(outputDir, ARTIFACT_FILE.run), run);
       },
+      prepareAppRead: () => handoffAppWorkspace(initialLease.backend),
     }) : null;
   const progressionStart = progressionExecution?.initialize() ?? null;
   if (progressionStart?.resumed) {

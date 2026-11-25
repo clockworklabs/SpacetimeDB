@@ -250,6 +250,7 @@ test('live progression binds and persists one exact accepted action', () => {
       },
     });
     const states: LiveProgressionStatus[] = [];
+    let appReads = 0;
     const execution = createLiveProgressionExecution({
       progression,
       ...split,
@@ -264,8 +265,10 @@ test('live progression binds and persists one exact accepted action', () => {
       recipeBindings: new Map([[1, binding]]),
       getRunArtifact: () => runArtifact,
       onState: status => states.push(status),
+      prepareAppRead: () => { appReads += 1; },
     });
     execution.initialize();
+    assert.equal(appReads, 1, 'the initial source capture reads the application');
     const selected = workSelection(execution.bind());
     const source = hashAppSource(appDir);
     const key = selected.grader.checkKeys[0];
@@ -303,6 +306,7 @@ test('live progression binds and persists one exact accepted action', () => {
     const next = execution.record({ selected,
       bundle: { ...grade, totals: { score: 0, max: 1, regression: null },
         outcome: { kind: 'app_failure' } }, level: 1 });
+    assert.equal(appReads, 3, 'the graded source hash and its capture each read the application');
     assert(next);
     assert.equal(next.type, 'terminal');
     assert.equal(nodeState(executionState(execution), 'accounts').status, 'passed');

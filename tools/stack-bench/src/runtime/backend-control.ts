@@ -1,7 +1,7 @@
 import { leaseFromEnv } from './backend-lease.js';
 import { leasedDatabaseEnvironment } from '../stacks/stack-adapter-common.js';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.js';
-import { controlHostedAppServer } from '../stacks/hosted-lifecycle.js';
+import { controlHostedAppServer, handoffHostedWorkspace } from '../stacks/hosted-lifecycle.js';
 import type { RuntimeControlMode } from '../stacks/stack-adapter-contract.js';
 import type { TextCommandExecutor } from './command-executor.js';
 import { prepareProcessCrash, stackDatabaseRuntime } from '../stacks/process-crash.js';
@@ -199,6 +199,15 @@ export async function controlBackendRuntime(
   }
   await adapter.lifecycle.control({ ...spec, adapterId: adapter.id, lease, mode, signal,
     ...(exec ? { exec } : {}) });
+}
+
+// The controller reads the app through its group. An app that starts under a private umask, or
+// makes a file private when it starts, keeps that file from the controller until this handoff.
+export function handoffAppWorkspace(backend: string, exec?: TextCommandExecutor): void {
+  if (!process.env.STACK_BENCH_LEASE) return;
+  const { lease } = leaseFromEnv(process.env, { backend, active: true });
+  const container = lease.resources.buildContainer;
+  if (container && !container.removedAt) handoffHostedWorkspace(lease, exec);
 }
 
 // Always control the generated app server, not the stack's backend runtime.

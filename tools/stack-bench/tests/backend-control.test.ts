@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { captureApplicationDiagnostics, controlAppServer, controlBackendRuntime, drainApplicationDatabase,
-  parseRuntimeControlSpec }
+  handoffAppWorkspace, parseRuntimeControlSpec }
   from '../src/runtime/backend-control.js';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.js';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.js';
@@ -234,6 +234,54 @@ test('restart diagnostics are copied only from the exact leased build container'
     assert.deepEqual(capture.argv.slice(0, 4), ['docker', 'exec', buildContainer.id, 'sh']);
     assert.match(capture.argv.at(-1) ?? '', /reference-application\.log/);
     assert.match(capture.argv.at(-1) ?? '', /restart-\*\.log/);
+  } finally {
+    if (priorPath === undefined) delete process.env.STACK_BENCH_LEASE;
+    else process.env.STACK_BENCH_LEASE = priorPath;
+    if (priorToken === undefined) delete process.env.STACK_BENCH_LEASE_TOKEN;
+    else process.env.STACK_BENCH_LEASE_TOKEN = priorToken;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the workspace is handed back before the controller reads an application that has run', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-app-read-'));
+  const leasePath = join(root, 'lease.json');
+  const lease = createBackendLease({ runId: 'app-read-test', backend: 'mongodb',
+    track: 'ecommerce', runIndex: 0, database: 'app_ecom_run0', container: { name: 'database', id: 'd'.repeat(64) } });
+  lease.state = 'active';
+  const priorPath = process.env.STACK_BENCH_LEASE;
+  const priorToken = process.env.STACK_BENCH_LEASE_TOKEN;
+  const calls: string[][] = [];
+  const exec = (_command: string, args: readonly string[]): string => {
+    calls.push([...args]);
+    return args[0] === 'inspect' ? `${'a'.repeat(64)}
+` : '';
+  };
+  try {
+    delete process.env.STACK_BENCH_LEASE;
+    handoffAppWorkspace('mongodb', exec);
+    assert.deepEqual(calls, [], 'an unleased run has no build container to hand back');
+    process.env.STACK_BENCH_LEASE = leasePath;
+    process.env.STACK_BENCH_LEASE_TOKEN = lease.ownershipToken;
+    writeBackendLease(leasePath, lease);
+    handoffAppWorkspace('mongodb', exec);
+    assert.deepEqual(calls, [], 'no build container exists before the first build');
+    lease.resources.buildContainer = { name: 'leased-build', id: 'a'.repeat(64),
+      running: true, owned: true, image: `sha256:${'b'.repeat(64)}`,
+      resourceLimits: { cpuCount: 2, memoryBytes: 1024, memorySwapBytes: 1024, pids: 32 } };
+    writeBackendLease(leasePath, lease);
+    handoffAppWorkspace('mongodb', exec);
+    assert.deepEqual(calls.map((args: string[]) => args.slice(0, 4).join(' ')), [
+      'inspect --format {{.Id}} leased-build',
+      `exec ${'a'.repeat(64)} chown -R`,
+      `exec ${'a'.repeat(64)} chmod -R`,
+      `exec ${'a'.repeat(64)} find /app`,
+    ]);
+    calls.length = 0;
+    lease.resources.buildContainer.removedAt = new Date().toISOString();
+    writeBackendLease(leasePath, lease);
+    handoffAppWorkspace('mongodb', exec);
+    assert.deepEqual(calls, [], 'a removed build container was handed back at teardown');
   } finally {
     if (priorPath === undefined) delete process.env.STACK_BENCH_LEASE;
     else process.env.STACK_BENCH_LEASE = priorPath;

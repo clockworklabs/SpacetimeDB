@@ -20,7 +20,7 @@ import { ActionApplicationFailure, executeAction } from '../src/actions/action-c
 import { runApplicationNavigation } from '../src/actions/browser-navigation.js';
 import { stableElementSelector } from '../src/actions/element-selector.js';
 import { dbName, loadTrack, suitesFor, DEFAULT_TRACK } from '../src/composition/tracks.js';
-import { controlAppServer, parseRuntimeControlSpec }
+import { controlAppServer, handoffAppWorkspace, parseRuntimeControlSpec }
   from '../src/runtime/backend-control.js';
 import type { RuntimeControlSpec } from '../src/runtime/backend-control.js';
 import { ARTIFACT_FILE, readArtifactPayload, recipeArtifactIdentities, writeArtifact }
@@ -806,6 +806,7 @@ async function main() {
     const lease = readBackendLease(leasePath, { token: String(process.env.STACK_BENCH_LEASE_TOKEN ?? '').trim() });
     if (lease.resources.network) setAttemptFirewallMode(leasePath, lease, 'grading');
   }
+  handoffAppWorkspace(args.backend);
   const track = loadTrack(args.track);
   const recipeBinding = resolveRecipeRelease(track, Number(args.level), args.recipeTask?.recipe ?? args.recipe);
   const selectedTask = recipeBinding
@@ -883,6 +884,7 @@ async function main() {
   const writeBundle = () => {
     const writeStarted = performance.now();
     if (args.sourceSha256) {
+      handoffAppWorkspace(args.backend);
       const current = hashAppSource(args.app);
       if (current.sha256 !== args.sourceSha256) {
         bundle.error = 'application source changed while grading was in progress';
@@ -1186,6 +1188,7 @@ async function main() {
           console.log(`  ${suite.id}: retrying this inconclusive suite once; completed suites are retained`);
           if (!(await freshen())) throw new Error(`suite recovery could not restore fresh state: ${freshenFailureMessage()}`);
           // Reset/start must not modify the source selected for either execution.
+          handoffAppWorkspace(args.backend);
           if (hashAppSource(args.app).sha256 !== args.sourceSha256) {
             throw new Error('application source changed before suite recovery');
           }
