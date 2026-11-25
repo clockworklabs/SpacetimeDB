@@ -728,6 +728,34 @@ test('a crashed page during a concurrency barrier or click remains a harness fai
   }
 });
 
+test('a concurrent click whose control a live page redraws presses the redrawn control', async () => {
+  const gib = 1024 ** 3;
+  const idle = { memTotalBytes: 32 * gib, memAvailableBytes: 20 * gib, cpuCount: 8, load: 2 };
+  const redrawn = () => new Error('locator.click: Element is not visible\nCall log:\n  - attempting click action');
+  for (const [lost, status] of [[1, 'passed'], [Infinity, 'failed']] as const) {
+    const presses = new Map<string, number>();
+    const actorNamed = (name: string) => ({ loc: () => ({
+      waitFor: async () => {},
+      isEnabled: async () => true,
+      count: async () => 1,
+      click: async (options: { trial?: boolean }) => {
+        if (options.trial) return;
+        const count = (presses.get(name) ?? 0) + 1;
+        presses.set(name, count);
+        if (count <= lost) throw redrawn();
+      },
+    }) });
+    const result = await run({ do: 'clickConcurrently', actors: ['a', 'b'], testid: 'buy', settleMs: 0, within: 300 },
+      services(new Map([['a', actorNamed('a')], ['b', actorNamed('b')]]), { concurrency: {
+        defaultWithin: 300, dispatch: async () => null, expand: (value: string | undefined) => value,
+        hostPressure: () => idle, sleep, testId: (id: string) => id,
+      } }));
+    assert.equal(result.status, status, `lost ${lost}`);
+    if (status === 'passed') assert.deepEqual([...presses.values()], [2, 2]);
+    else assert.equal(result.finding?.kind, 'clicks-failed');
+  }
+});
+
 test('concurrent click timeouts on a starved host are retryable and inconclusive', async () => {
   const gib = 1024 ** 3;
   const idle = { memTotalBytes: 32 * gib, memAvailableBytes: 20 * gib, cpuCount: 8, load: 2 };

@@ -740,6 +740,28 @@ function concurrentTimeout(value: Finding,
   throw new ActionApplicationFailure(renderFinding(value), { finding: value, observation });
 }
 
+// A live page can redraw a control between finding it and pressing it. The locator then finds the
+// redrawn control, so a press that lost its element is sent again until the time limit. A control
+// that never stays long enough to press is a failed click, like a timeout.
+const REDRAWN_CONTROL = /Element is not visible|Element is not attached|[Ee]lement (?:was|is) detached/;
+
+export async function clickThroughRedraw(
+  locator: { click(options: { timeout: number; force: boolean; noWaitAfter: boolean }): Promise<unknown> },
+  within: number,
+  { now = Date.now, pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms)) } = {},
+): Promise<void> {
+  const deadline = now() + within;
+  for (;;) {
+    try {
+      await locator.click({ timeout: Math.max(1, deadline - now()), force: true, noWaitAfter: true });
+      return;
+    } catch (error) {
+      if (!REDRAWN_CONTROL.test(String(errorShape(error).message ?? '')) || now() >= deadline) throw error;
+      await pause(50);
+    }
+  }
+}
+
 async function clickConcurrently(
   { input, capabilities, signal }: ActionArguments<ClickConcurrentlyInput>,
 ) {
@@ -773,9 +795,10 @@ async function clickConcurrently(
     concurrentTimeout(finding('control-not-ready', fields), await timeoutObservation(concurrency, resolved));
   }
   const outcomes = await settleConcurrentActions(resolved.map(({ target, locator }) =>
-    locator.click({ timeout: input.within ?? concurrency.defaultWithin, force: true, noWaitAfter: true })
+    clickThroughRedraw(locator, input.within ?? concurrency.defaultWithin)
       .then(() => null, error => {
-        if (errorShape(error).name !== 'TimeoutError') throw error;
+        if (errorShape(error).name !== 'TimeoutError' && !REDRAWN_CONTROL.test(String(errorShape(error).message ?? '')))
+          throw error;
         return `${target.actor}: ${String(errorShape(error).message ?? error).split('\n')[0]}`;
       })));
   const failed = outcomes.filter(Boolean);
