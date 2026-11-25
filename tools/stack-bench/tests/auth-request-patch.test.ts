@@ -23,11 +23,13 @@ test('UI write completion drains delayed HTTP effects, accepts no write, and rej
     if (req.method !== 'POST') { res.end('<button id="buy">Buy</button>'); return; }
     for await (const _chunk of req) { /* Consume either form or JSON input. */ }
     writes++;
-    if (req.url === '/lost') { res.writeHead(200, { 'content-type': 'application/json' }); res.write('{'); }
+    if (['/lost', '/chunked'].includes(req.url!)) { res.writeHead(200, { 'content-type': 'application/json' }); res.write('{'); }
     release = () => {
       release = undefined;
       if (req.url === '/lost') res.destroy();
       else if (req.url === '/no-content') res.writeHead(204).end();
+      else if (req.url === '/chunked') res.end('}');
+      else if (req.url === '/unread') res.writeHead(200, { 'content-type': 'application/json', 'content-length': '2', 'cache-control': 'no-store' }).end('{}');
       else res.writeHead(req.url === '/invalid-json' ? 400 : req.url === '/accepted-pending' ? 202 : 200).end('{}');
     };
     received();
@@ -39,13 +41,15 @@ test('UI write completion drains delayed HTTP effects, accepts no write, and rej
     await installAuthWebSocketCapture(page);
     await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}`);
     assert.deepEqual((await withWriteCompletion(page, async () => {})).writes, []);
-    for (const mode of ['json', 'form', 'invalid-json', 'no-content', 'accepted-pending', 'lost']) {
+    for (const mode of ['json', 'form', 'invalid-json', 'no-content', 'unread', 'chunked', 'accepted-pending', 'lost']) {
       const request = new Promise<void>(resolve => { received = resolve; });
       await page.evaluate(mode => {
         document.querySelector<HTMLButtonElement>('#buy')!.onclick = () => {
-          void fetch(['lost', 'invalid-json', 'no-content', 'accepted-pending'].includes(mode) ? '/' + mode : '/buy', { method: 'POST',
+          // Only the chunked response is read. Chromium never finishes an unread no-store body.
+          void fetch(['lost', 'invalid-json', 'no-content', 'unread', 'chunked', 'accepted-pending'].includes(mode) ? '/' + mode : '/buy', { method: 'POST',
             headers: { 'content-type': mode === 'form' ? 'application/x-www-form-urlencoded' : 'application/json' },
-            body: mode === 'form' ? 'item=keyboard' : mode === 'invalid-json' ? '{' : '{"item":"keyboard"}' }).catch(() => {});
+            body: mode === 'form' ? 'item=keyboard' : mode === 'invalid-json' ? '{' : '{"item":"keyboard"}' })
+            .then(response => mode === 'chunked' ? response.text() : undefined).catch(() => {});
         };
       }, mode);
       const completion = withWriteCompletion(page, () => page.locator('#buy').click());
@@ -65,7 +69,7 @@ test('UI write completion drains delayed HTTP effects, accepts no write, and rej
     const request = new Promise<void>(resolve => { received = resolve; });
     const later = page.evaluate(() => (window as unknown as { laterWrite(): Promise<unknown> }).laterWrite());
     await request; release!(); await later;
-    assert.equal(writes, 7);
+    assert.equal(writes, 9);
   } finally {
     release?.(); await browser.close(); server.closeAllConnections();
     await new Promise<void>(resolve => server.close(() => resolve()));

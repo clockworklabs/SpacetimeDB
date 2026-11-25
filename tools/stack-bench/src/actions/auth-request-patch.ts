@@ -506,12 +506,14 @@ async function captureAuthWrites<T>(page: Page, submit: () => Promise<T>,
       pending.push(request.response().then(async response => {
         if (!response) { fail(); return; }
         const headers = response.headers();
-        // Chromium can leave finished() pending for a zero-length response, and always does for a 204.
-        // A 204 has no body by definition, and complete headers prove any other empty body.
-        const empty = response.status() === 204 || headers['content-length'] === '0' && !headers['transfer-encoding'];
+        // Chromium leaves finished() pending for a 204, for some zero-length responses, and for a
+        // no-store body the page never reads. A server sends a fixed Content-Length only once the
+        // body is known, so those headers show the write is complete; a chunked body is awaited.
+        const fixedLength = response.status() === 204
+          || headers['content-length'] !== undefined && !headers['transfer-encoding'];
         // A redirect after a form post (post/redirect/get) is a completed write.
         const redirect = response.status() >= 300 && response.status() < 400;
-        if (!redirect && !empty && await response.finished() !== null
+        if (!redirect && !fixedLength && await response.finished() !== null
           || completionOnly && response.status() === 202) fail();
       }).catch(fail));
       return route.fallback();
