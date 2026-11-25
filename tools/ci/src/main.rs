@@ -61,6 +61,10 @@ const COMMANDS: &[Command] = &[
         package: "ci-global-json-policy",
     },
     Command {
+        path: &["lockfile-policy"],
+        package: "ci-lockfile-policy",
+    },
+    Command {
         path: &["check-style"],
         package: "ci-check-style",
     },
