@@ -25,6 +25,7 @@ use crate::util::{detect_module_language, ModuleLanguage, YesOrNo};
 use crate::Config;
 use crate::{build, common_args};
 use clap::builder::PossibleValue;
+use convert_case::{Case, Casing};
 
 use std::collections::{BTreeSet, HashMap};
 use std::io::Read;
@@ -225,6 +226,30 @@ fn validate_dependency_name(name: &str) -> anyhow::Result<()> {
         .with_context(|| format!("invalid dependency name {name:?}"))
 }
 
+/// The C# namespace when none is configured. Module bindings get one namespace per dependency,
+/// so two receivers' types never collide.
+fn default_csharp_namespace(bindings: BindingKind, dependency_name: Option<&str>) -> String {
+    match (bindings, dependency_name) {
+        (BindingKind::Client, _) => "SpacetimeDB.Types".to_owned(),
+        (BindingKind::Module, None) => "RemoteBindings".to_owned(),
+        (BindingKind::Module, Some(name)) => format!("RemoteBindings.{}", name.to_case(Case::Pascal)),
+    }
+}
+
+/// The C# source generator names `System.*` and `SpacetimeDB.*` types, and the bindings' own types,
+/// by their full names without `global::`. Inside the bindings' namespace, a later part with one of
+/// those first names would hide them, so `RemoteBindings.System` breaks the generated serializers.
+fn validate_module_bindings_namespace(namespace: &str) -> anyhow::Result<()> {
+    let mut parts = namespace.split('.');
+    let first = parts.next().unwrap_or_default();
+    if let Some(part) = parts.find(|part| ["System", "SpacetimeDB", first].contains(part)) {
+        anyhow::bail!(
+            "C# namespace `{namespace}` can't have a later part named `{part}`: it would hide the `{part}` namespace from generated code. Set another namespace with `namespace` in spacetime.json, or with `--namespace`"
+        );
+    }
+    Ok(())
+}
+
 fn dependency_generate_entry(
     dependency: &serde_json::Value,
     sender_module_path: &str,
@@ -284,6 +309,7 @@ fn dependency_generate_entry(
     ]);
     for (key, value) in [
         ("out-dir", dependency.get("out-dir")),
+        ("namespace", dependency.get("namespace")),
         ("build-options", build_options),
         ("dotnet-version", dotnet_version),
     ] {
@@ -354,9 +380,8 @@ pub fn cli() -> clap::Command {
         )
         .arg(
             Arg::new("namespace")
-                .default_value("SpacetimeDB.Types")
                 .long("namespace")
-                .help("The namespace that should be used"),
+                .help("The namespace that should be used (only used with --lang csharp). Defaults to SpacetimeDB.Types for client bindings, and for module bindings to RemoteBindings followed by the dependency name in PascalCase"),
         )
         .arg(
             Arg::new("unreal_module_name")
@@ -473,9 +498,7 @@ fn prepare_generate_run_configs<'a>(
             validate_dependency_name(name)?;
         }
         let requested_lang = command_config.get_one::<Language>("language")?;
-        let namespace = command_config
-            .get_one::<String>("namespace")?
-            .unwrap_or_else(|| "SpacetimeDB.Types".to_string());
+        let namespace = command_config.get_one::<String>("namespace")?;
         let module_name = command_config.get_one::<String>("unreal_module_name")?;
         let module_prefix = command_config.get_one::<String>("module_prefix")?;
         let build_options = command_config
@@ -539,6 +562,19 @@ fn prepare_generate_run_configs<'a>(
                 detected
             }
         };
+
+        // A `--namespace` from the command line is rejected for other languages when the run starts.
+        if let Some(name) = &dependency_name
+            && namespace.is_some()
+            && !command_config.is_from_cli("namespace")
+            && lang != Language::Csharp
+        {
+            anyhow::bail!("dependency `{name}` sets `namespace`, which only C# modules support");
+        }
+        let namespace = namespace.unwrap_or_else(|| default_csharp_namespace(bindings, dependency_name.as_deref()));
+        if lang == Language::Csharp && bindings == BindingKind::Module {
+            validate_module_bindings_namespace(&namespace)?;
+        }
 
         let out_dir = if bindings == BindingKind::Module {
             let default_dir = match lang {
@@ -1548,6 +1584,10 @@ mod tests {
                 result.unwrap();
                 assert!(out_dir.join("receiver/index.ts").exists());
                 assert!(!out_dir.join("receiver/package.json").exists());
+            } else if lang == Language::Csharp {
+                result.unwrap();
+                let identity = fs::read_to_string(out_dir.join("receiver/Identity.g.cs")).unwrap();
+                assert!(identity.contains("namespace RemoteBindings.Receiver"));
             } else {
                 assert_eq!(
                     result.unwrap_err().to_string(),
@@ -1584,6 +1624,70 @@ mod tests {
             assert_eq!(runs[0].wasm_file, Some(PathBuf::from("receiver.wasm")));
             assert_eq!(runs[0].out_dir, PathBuf::from("bindings"));
         }
+    }
+
+    #[test]
+    fn test_csharp_namespace_defaults_depend_on_bindings() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+        let namespace = |extra: &[&str]| {
+            let args = cmd.clone().get_matches_from(
+                [
+                    "generate",
+                    "--lang",
+                    "csharp",
+                    "--bin-path",
+                    "module.wasm",
+                    "--out-dir",
+                    "out",
+                ]
+                .iter()
+                .chain(extra),
+            );
+            let config = CommandConfig::new(&schema, HashMap::new(), &args).unwrap();
+            prepare_generate_run_configs(vec![config], false, None).unwrap()[0]
+                .namespace
+                .clone()
+        };
+        assert_eq!(namespace(&[]), "SpacetimeDB.Types");
+        assert_eq!(namespace(&["--bindings", "module"]), "RemoteBindings");
+    }
+
+    #[test]
+    fn test_dependency_namespace_defaults_to_dependency_name_and_can_be_overridden() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+        let matches = cmd.clone().get_matches_from(vec!["generate", "sender"]);
+        let prepare = |manifest: &str, namespace: Option<&str>| {
+            let temp = tempfile::TempDir::new().unwrap();
+            let sender = temp.path().join("sender");
+            fs::create_dir_all(&sender).unwrap();
+            fs::write(sender.join(manifest), "").unwrap();
+            let mut dependency = serde_json::json!({ "name": "game_world", "database": "receiver-db" });
+            if let Some(namespace) = namespace {
+                dependency["namespace"] = serde_json::json!(namespace);
+            }
+            let config: SpacetimeConfig = serde_json::from_value(serde_json::json!({
+                "database": "sender",
+                "module-path": "sender",
+                "dependencies": [dependency],
+                "children": [{ "database": "receiver-db", "bin-path": "receiver.wasm" }]
+            }))
+            .unwrap();
+            let configs = get_filtered_generate_configs(&config, &cmd, &schema, &matches).unwrap();
+            prepare_generate_run_configs(configs, true, Some(temp.path())).map(|runs| runs[0].namespace.clone())
+        };
+        assert_eq!(prepare("Sender.csproj", None).unwrap(), "RemoteBindings.GameWorld");
+        assert_eq!(prepare("Sender.csproj", Some("Gw.Bindings")).unwrap(), "Gw.Bindings");
+        // A dependency named `system` would default to this one.
+        assert!(prepare("Sender.csproj", Some("RemoteBindings.System"))
+            .unwrap_err()
+            .to_string()
+            .contains("can't have a later part named `System`"));
+        assert_eq!(
+            prepare("Cargo.toml", Some("Gw.Bindings")).unwrap_err().to_string(),
+            "dependency `game_world` sets `namespace`, which only C# modules support"
+        );
     }
 
     #[test]

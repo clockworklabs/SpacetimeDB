@@ -13,6 +13,7 @@ const details = t.object('PingDetails', {
   ),
   note: t.option(t.string()),
 });
+const priority = t.enum('PingPriority', { Low: t.unit(), High: t.unit() });
 const spacetimedb = schema({
   pingLog: table(
     {},
@@ -29,6 +30,13 @@ const spacetimedb = schema({
       id: t.u64().primaryKey().autoInc(),
       body: t.string(),
       details,
+    }
+  ),
+  priorityLog: table(
+    {},
+    {
+      id: t.u64().primaryKey().autoInc(),
+      priority,
     }
   ),
 });
@@ -65,5 +73,11 @@ export const receiveDetailedPing = spacetimedb.reducer(
   { body: t.string(), details },
   (ctx, args) => {
     ctx.db.detailedPingLog.insert({ id: 0n, ...args });
+  }
+);
+export const receivePriority = spacetimedb.reducer(
+  { priority },
+  (ctx, args) => {
+    ctx.db.priorityLog.insert({ id: 0n, ...args });
   }
 );
