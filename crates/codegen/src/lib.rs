@@ -3,6 +3,7 @@ use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, Typ
 use spacetimedb_schema::schema::{Schema, TableSchema};
 mod code_indenter;
 pub mod cpp;
+mod cpp_receiver;
 pub mod csharp;
 pub mod rust;
 pub mod typescript;
@@ -53,10 +54,7 @@ pub fn generate_receiver_bindings(
             // TODO(idc-csharp): Generate C# receiver types and reducer handles in the configured namespace.
             anyhow::bail!("C# receiver binding generation is not implemented yet")
         }
-        ReceiverLanguage::Cpp => {
-            // TODO(idc-cpp): Generate C++ receiver types and reducer handles with the required headers.
-            anyhow::bail!("C++ receiver binding generation is not implemented yet")
-        }
+        ReceiverLanguage::Cpp => Ok(cpp_receiver::generate_cpp_module_bindings(module, dependency_name)),
     }
 }
 

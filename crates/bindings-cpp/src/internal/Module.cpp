@@ -194,6 +194,12 @@ void __preinit__01_clear_global_state() {
 // The number 99 ensures this runs last, just before __describe_module__
 extern "C" __attribute__((export_name("__preinit__99_validate_types")))
 void __preinit__99_validate_types() {
+    // Outbox columns can only be matched once every table, field and reducer has registered.
+    // Problems are reported as constraint registration errors, which are checked below.
+    if (!g_circular_ref_error) {
+        getV10Builder().ResolveOutboxes();
+    }
+
     // fprintf(stdout, "[PREINIT_99] Starting validation\n  g_circular_ref_error = %s", 
     //     g_circular_ref_error ? "true" : "false");
     // if (g_circular_ref_error) {
