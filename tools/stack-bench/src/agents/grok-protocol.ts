@@ -28,14 +28,15 @@ export const GROK_AUDIT_TOOLS: Readonly<Record<string, { name: string; path?: st
 };
 
 // The prompt arrives on stdin. The stream is in the Anthropic Messages shape, so it
-// is also the session's audited transcript.
+// is also the session's audited transcript. The agent is asked to leave the application
+// running, so the session must not wait for its background work to end before exiting.
 export function grokArguments({ model, effort, resumeSession, tools }: {
   model: string; effort: string; resumeSession: string | null; tools: ToolPolicy;
 }): string[] {
   const web = tools.webSearch ? GROK_WEB_TOOLS : [];
   const subagents = tools.subagents ? GROK_SUBAGENT_TOOLS : [];
   return ['--prompt-file', '/dev/stdin', '--output-format', 'streaming-messages-json', '-m', model, '--effort', effort,
-    '--always-approve', ...(tools.webSearch ? [] : ['--disable-web-search']), ...(tools.subagents ? [] : ['--no-subagents']),
+    '--always-approve', '--no-wait-for-background', ...(tools.webSearch ? [] : ['--disable-web-search']), ...(tools.subagents ? [] : ['--no-subagents']),
     '--tools', [...GROK_TOOLS, ...web, ...subagents].join(','), '--disallowed-tools', GROK_REMOVED_TOOLS.join(','),
     ...(resumeSession ? ['--resume', resumeSession] : [])];
 }

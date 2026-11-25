@@ -14,8 +14,9 @@ const stream = (result: Record<string, unknown>) => [
 
 test('Grok runs headless from stdin with files and a shell only, and resumes by session', () => {
   const args = grokArguments({ model: 'grok-4.6', effort: 'medium', resumeSession: null, tools: OFF });
-  assert.deepEqual(args.slice(0, 11), ['--prompt-file', '/dev/stdin', '--output-format', 'streaming-messages-json',
-    '-m', 'grok-4.6', '--effort', 'medium', '--always-approve', '--disable-web-search', '--no-subagents']);
+  assert.deepEqual(args.slice(0, 12), ['--prompt-file', '/dev/stdin', '--output-format', 'streaming-messages-json',
+    '-m', 'grok-4.6', '--effort', 'medium', '--always-approve', '--no-wait-for-background', '--disable-web-search',
+    '--no-subagents']);
   const tools = args[args.indexOf('--tools') + 1]!.split(',');
   assert(tools.includes('run_terminal_command') && tools.includes('read_file'));
   // --no-subagents leaves the subagent tool callable; only the allowlist removes it.
