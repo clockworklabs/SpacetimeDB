@@ -46,7 +46,7 @@ This creates: `staging/typescript/opus-4-5/spacetime/chat-app-YYYYMMDD-HHMMSS/`
 
 ```bash
 cd tools/llm-oneshot
-pnpm run publish-result -- apps/<app-name>/staging/<lang>/<llm>/<backend>/<app-name>-YYYYMMDD-HHMMSS/
+cargo llm-apps oneshot publish apps/<app-name>/staging/<lang>/<llm>/<backend>/<app-name>-YYYYMMDD-HHMMSS/
 ```
 
 This checks that `GRADING_RESULTS.md` exists, then copies the app to `apps/<app-name>/<lang>/<llm>/<backend>/...` in

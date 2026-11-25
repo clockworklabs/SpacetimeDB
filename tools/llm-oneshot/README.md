@@ -123,12 +123,10 @@ Each graded app gets a `GRADING_RESULTS.md` file in its folder.
 To generate summary reports from all graded apps:
 
 ```bash
-cd tools/llm-oneshot
-pnpm install
-pnpm run summarize
+cargo llm-apps oneshot summarize
 ```
 
-This reads graded apps from the local checkout of `spacetimedb-llm-oneshot-results` (see below); pass `--results-repo <path>` if it is not next to your SpacetimeDB checkout.
+This reads graded apps from the local checkout of `spacetimedb-llm-oneshot-results` (see below); pass `--results-repo <path>` if it is not next to your SpacetimeDB checkout. `--app` and `--llm` limit the summary to one app or model. The command is built from [`tools/llm-apps`](../llm-apps), which also runs the sequential-upgrade benchmark.
 
 This outputs to `docs/llms/`:
 
@@ -145,7 +143,7 @@ Generated apps are not committed to this repository. The agent creates them unde
 
 ```bash
 cd tools/llm-oneshot
-pnpm run publish-result -- apps/<app-name>/staging/<lang>/<llm>/<backend>/<app-name>-YYYYMMDD-HHMMSS/
+cargo llm-apps oneshot publish apps/<app-name>/staging/<lang>/<llm>/<backend>/<app-name>-YYYYMMDD-HHMMSS/
 ```
 
 This checks that `GRADING_RESULTS.md` exists, then copies the app to `apps/<app-name>/<lang>/<llm>/<backend>/...` in

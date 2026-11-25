@@ -1,30 +1,13 @@
-# Node modules and build artifacts inside generated apps
-**/results/**/node_modules/
-**/results/**/dist/
-**/results/**/.vite/
-**/results/**/drizzle/
+# Run output: each variant writes <variant>/<variant>-YYYYMMDD/. Graded runs are published
+# to clockworklabs/spacetimedb-llm-sequential-upgrade-results with
+# `cargo llm-apps sequential publish`, which leaves out personal data and build output.
+/sequential-upgrade/
+/one-shot/
 
-# Local env files inside generated apps (not committed)
-**/results/**/.env
+# The OpenTelemetry collector's shared log (logs.jsonl, metrics.jsonl and rotated backups)
+/telemetry/
 
-# Telemetry backup files
-**/telemetry/*.jsonl.bak
-
-# Isolation git repos inside generated apps (created by run.sh, cleaned up after)
-**/results/**/.git/
-# OTel collector live dump - not tracked
-telemetry/logs.jsonl
-telemetry/metrics.jsonl
-
-# Raw telemetry contains PII (email, account IDs) - store privately
-**/telemetry/**/raw-telemetry.jsonl
-# Full Claude Code session transcript (large; contains absolute paths/PII) - store privately
-**/telemetry/**/session-transcript.jsonl
-# Verbose run transcripts (large, regenerable) - not tracked
-**/telemetry/**/run.log
-# Local absolute app paths (machine-specific)
-**/telemetry/**/app-dir.txt
-**/telemetry/**/metadata.json
-
-# Sequential-upgrade run output lives in the external spacetimedb-llm-sequential-upgrade-results repo
-sequential-upgrade/sequential-upgrade-*/
+# Bookkeeping for `cargo llm-apps sequential loop` and `benchmark`
+/.grade-lock/
+/benchmark-status.json
+/benchmark-run-*.log

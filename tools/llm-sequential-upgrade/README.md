@@ -20,14 +20,19 @@ Side-by-side results give a direct comparison of AI-generation cost across backe
 
 ## Directory contents
 
-- `run.sh`: orchestrates generation, upgrade, and fix sessions. Supports `--upgrade`, `--fix`, `--composed-prompt`, `--resume-session`.
-- `grade.sh`: interactive grading harness (manual, Chrome MCP)
+The tooling is the Rust crate in [`tools/llm-apps`](../llm-apps), run as `cargo llm-apps sequential <command>` from anywhere in the repository:
+
+- `generate`, `upgrade`, `fix`: headless Claude Code sessions that build, upgrade and fix an app. `upgrade` takes `--composed-prompt` and `--resume-session`.
+- `grade`: a Claude Code session that grades the deployed app in Chrome
+- `loop` / `benchmark`: drive one backend through every level, or several in parallel
+- `reset` / `cleanup`: give an app an empty database; remove an app's dependencies and build output
+- `parse-telemetry` / `report`: turn the OpenTelemetry log into per-session cost summaries, and those into a run's BENCHMARK_REPORT.md
+- `publish`: push a graded run to the results repo
+
+This directory holds what those commands read:
+
 - `templates/`: canonical `BUG_REPORT.md` / `ITERATION_LOG.md` formats for grading
-- `benchmark.sh` / `run-loop.sh`: batch runners for parallel or sequential benchmark execution
-- `cleanup.sh` / `reset-app.sh`: dev utilities
 - `benchmark-viewer.html`: local viewer for METRICS_DATA.json files (open in browser, drop JSON)
-- `generate-report.mjs`: aggregate per-session cost-summary.json into a markdown report
-- `parse-telemetry.mjs`: parse OTel log stream into per-session cost-summary.json
 - `docker-compose.otel.yaml` / `otel-collector-config.yaml`: OTel collector + PostgreSQL + MongoDB
 - `backends/`: per-backend setup / SDK reference documents given to the AI
 - `perf-benchmark/`: runtime throughput benchmark (msgs/sec) for the AI-generated apps
@@ -40,18 +45,23 @@ Side-by-side results give a direct comparison of AI-generation cost across backe
 docker compose -f docker-compose.otel.yaml up -d
 
 # Generate L1 from scratch
-./run.sh --backend spacetime --level 1
-./run.sh --backend postgres --level 1
+cargo llm-apps sequential generate --backend spacetime --level 1
+cargo llm-apps sequential generate --backend postgres --level 1
+
+# Grade, then fix the bugs grading found
+cargo llm-apps sequential grade <app-dir>
+cargo llm-apps sequential fix <app-dir> --level N
 
 # Upgrade through levels
-./run.sh --upgrade <app-dir> --level 2 --composed-prompt
+cargo llm-apps sequential upgrade <app-dir> --level 2 --composed-prompt
 # ... continue through L12
 
-# Fix bugs found during grading
-./run.sh --fix <app-dir> --level N
+# Write the run's report, then publish it
+cargo llm-apps sequential report sequential-upgrade/sequential-upgrade-<date>
+cargo llm-apps sequential publish sequential-upgrade/sequential-upgrade-<date>
 ```
 
-Generated apps and telemetry land in `sequential-upgrade/sequential-upgrade-<timestamp>/` locally. For published test data from canonical runs, see the [sequential-upgrade results repo](https://github.com/clockworklabs/spacetimedb-llm-sequential-upgrade-results).
+Generated apps and telemetry land in `sequential-upgrade/sequential-upgrade-<date>/` locally, which is gitignored. `publish` copies a graded run to the [sequential-upgrade results repo](https://github.com/clockworklabs/spacetimedb-llm-sequential-upgrade-results), leaving out dependencies, build output and telemetry that contains personal data. It expects a checkout of that repository next to your SpacetimeDB checkout and clones one if missing; pass `--results-repo <path>` or set `LLM_SEQUENTIAL_UPGRADE_RESULTS_REPO` to use another.
 
 ## Performance benchmark
 
