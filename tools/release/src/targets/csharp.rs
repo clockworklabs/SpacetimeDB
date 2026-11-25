@@ -1,6 +1,6 @@
 use crate::targets::util::print_command;
 use crate::targets::ReleaseTarget;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub struct CSharpRelease {
@@ -14,7 +14,7 @@ impl CSharpRelease {
     }
 }
 
-/// Build the NuGet packages using dotnet pack (builds DLLs)
+/// Prepare ClientSDK packages and Unity DLLs using the validated module package feed.
 fn run_cargo_ci_dlls() -> Result<(), String> {
     println!("\n=== Running `cargo ci dlls` ===");
 
@@ -30,45 +30,48 @@ fn run_cargo_ci_dlls() -> Result<(), String> {
     Ok(())
 }
 
-/// Push all NuGet packages
-fn push_nuget_packages(version: &str, dry_run: bool) -> Result<(), String> {
-    println!("\n=== Publishing NuGet Packages ===");
+fn package_version(version: &str) -> &str {
+    let version = version.strip_prefix('v').unwrap_or(version);
+    // Preserve the existing hotfix convention; other prerelease suffixes stay intact.
+    version.split_once("-hotfix").map_or(version, |(base, _)| base)
+}
 
-    // The NuGet package version comes from the csproj `<Version>`, which is not bumped
-    // for a hotfix. So `dotnet pack` produces e.g. `SpacetimeDB.Runtime.2.7.0.nupkg`
-    // even when releasing tag `v2.7.0-hotfix2`. Strip the `-hotfix<N>` suffix so we look
-    // up the packages that were actually produced.
-    let version = version.split_once("-hotfix").map_or(version, |(base, _)| base);
+fn module_packages(feed: &Path, version: &str) -> Vec<PathBuf> {
+    [
+        "SpacetimeDB.BSATN.Runtime",
+        "SpacetimeDB.Runtime",
+        "SpacetimeDB.Testing",
+    ]
+    .into_iter()
+    .map(|id| feed.join(format!("{id}.{}.nupkg", package_version(version))))
+    .collect()
+}
 
-    let packages = vec![
-        format!(
-            "crates/bindings-csharp/BSATN.Runtime/bin/Release/SpacetimeDB.BSATN.Runtime.{}.nupkg",
-            version
-        ),
-        format!(
-            "crates/bindings-csharp/Runtime/bin/Release/SpacetimeDB.Runtime.{}.nupkg",
-            version
-        ),
-        format!("sdks/csharp/bin~/Release/SpacetimeDB.ClientSDK.{}.nupkg", version),
-        format!("sdks/csharp/bin~/Release/SpacetimeDB.ClientSDK.Godot.{}.nupkg", version),
-    ];
-
-    for package in &packages {
-        if !dry_run && !Path::new(package).exists() {
-            return Err(format!("Package not found: {}. Did dotnet pack succeed?", package));
+fn require_packages(packages: &[PathBuf]) -> Result<(), String> {
+    for package in packages {
+        if !package.is_file() {
+            return Err(format!("Package not found: {}", package.display()));
         }
-        println!("Pushing package: {}", package);
+    }
+    Ok(())
+}
+
+/// Publish the validated module packages and the existing ClientSDK packages.
+fn push_nuget_packages(packages: &[PathBuf], dry_run: bool) -> Result<(), String> {
+    // Check the entire set before the first push, including in dry runs.
+    require_packages(packages)?;
+    println!("\n=== Publishing NuGet Packages ===");
+    for package in packages {
+        println!("Pushing package: {}", package.display());
         push_nuget_package(package, dry_run)?;
     }
-
-    println!("Successfully pushed all NuGet packages");
     Ok(())
 }
 
 /// Push a single NuGet package to the registry
-fn push_nuget_package(package_path: &str, dry_run: bool) -> Result<(), String> {
+fn push_nuget_package(package_path: &Path, dry_run: bool) -> Result<(), String> {
     if dry_run {
-        println!("DRY RUN: Would push package: {}", package_path);
+        println!("DRY RUN: Would push package: {}", package_path.display());
         return Ok(());
     }
 
@@ -76,9 +79,7 @@ fn push_nuget_package(package_path: &str, dry_run: bool) -> Result<(), String> {
     let api_key =
         std::env::var("NUGET_API_KEY").map_err(|_| "NUGET_API_KEY environment variable not set".to_string())?;
     let mut cmd = Command::new("nuget");
-    cmd.args([
-        "push",
-        package_path,
+    cmd.arg("push").arg(package_path).args([
         "-Source",
         "https://api.nuget.org/v3/index.json",
         "-ApiKey",
@@ -175,7 +176,7 @@ fn commit_csharp_dlls_for_unity(version: &str) -> Result<(), String> {
 }
 
 /// Fetch the release/mirror/csharp branch (or create it if it doesn't exist)
-fn fetch_mirror_branch(dry_run: bool) -> Result<(), String> {
+fn fetch_mirror_branch() -> Result<(), String> {
     println!("\n=== Publishing Unity SDK ===");
 
     // Ensure git uses SSH instead of HTTPS (in case global config doesn't apply to submodule)
@@ -212,12 +213,6 @@ fn fetch_mirror_branch(dry_run: bool) -> Result<(), String> {
 
     println!("Fetching release/mirror/csharp branch...");
 
-    if dry_run {
-        println!("DRY RUN: Would execute:");
-        println!("  git fetch origin release/mirror/csharp");
-        return Ok(());
-    }
-
     // Try to fetch the branch - it's okay if it doesn't exist yet
     let mut cmd = Command::new("git");
     cmd.args(["fetch", "origin", "release/mirror/csharp"]);
@@ -242,14 +237,8 @@ fn fetch_mirror_branch(dry_run: bool) -> Result<(), String> {
 }
 
 /// Create subtree split for the C# SDK
-fn create_subtree_split(dry_run: bool) -> Result<(), String> {
+fn create_subtree_split() -> Result<(), String> {
     println!("Creating subtree split for sdks/csharp...");
-
-    if dry_run {
-        println!("DRY RUN: Would execute:");
-        println!("  git subtree split --prefix=sdks/csharp -b release/mirror/csharp");
-        return Ok(());
-    }
 
     // Delete local branch if it exists
     let mut cmd = Command::new("git");
@@ -281,14 +270,8 @@ fn create_subtree_split(dry_run: bool) -> Result<(), String> {
 }
 
 /// Push to the Unity SDK repository as release/latest
-fn push_to_unity_repo_latest(dry_run: bool) -> Result<(), String> {
+fn push_to_unity_repo_latest() -> Result<(), String> {
     println!("Pushing to Unity SDK repository (release/latest)...");
-
-    if dry_run {
-        println!("DRY RUN: Would execute:");
-        println!("  git push -f git@github.com:clockworklabs/com.clockworklabs.spacetimedbsdk.git release/mirror/csharp:release/latest");
-        return Ok(());
-    }
 
     let mut cmd = Command::new("git");
     cmd.args([
@@ -311,15 +294,9 @@ fn push_to_unity_repo_latest(dry_run: bool) -> Result<(), String> {
 }
 
 /// Push to the Unity SDK repository as a version tag
-fn push_to_unity_repo_tag(version: &str, dry_run: bool) -> Result<(), String> {
+fn push_to_unity_repo_tag(version: &str) -> Result<(), String> {
     let tag_name = format!("v{}", version);
     println!("Pushing to Unity SDK repository (tag: {})...", tag_name);
-
-    if dry_run {
-        println!("DRY RUN: Would execute:");
-        println!("  git push git@github.com:clockworklabs/com.clockworklabs.spacetimedbsdk.git release/mirror/csharp:refs/tags/{}", tag_name);
-        return Ok(());
-    }
 
     let mut cmd = Command::new("git");
     cmd.args([
@@ -352,39 +329,95 @@ impl ReleaseTarget for CSharpRelease {
         // Strip the leading 'v' from the version string
         let version = self.version.strip_prefix('v').unwrap_or(&self.version);
 
+        let feed = std::env::var_os("CSHARP_PACKAGE_FEED")
+            .ok_or("Set CSHARP_PACKAGE_FEED to the package set validated by the C# release workflow")?;
+        let mut packages = module_packages(Path::new(&feed), version);
+        require_packages(&packages)?;
+
+        // regen uses CSHARP_PACKAGE_FEED too: it must not rebuild these module packages.
         run_cargo_ci_dlls()?;
-        push_nuget_packages(version, self.dry_run)?;
+        let package_version = package_version(version);
+        for id in ["SpacetimeDB.ClientSDK", "SpacetimeDB.ClientSDK.Godot"] {
+            packages.push(PathBuf::from(format!(
+                "sdks/csharp/bin~/Release/{id}.{package_version}.nupkg"
+            )));
+        }
+        push_nuget_packages(&packages, self.dry_run)?;
+
+        if self.dry_run {
+            println!("DRY RUN: Would commit Unity DLLs and publish release/latest and v{version}");
+            return Ok(());
+        }
 
         // TODO: It might be worth combining these 3 function calls (e.g. commit_unity_dlls)
         commit_csharp_dlls_for_unity(version)?;
-        fetch_mirror_branch(self.dry_run)?;
-        create_subtree_split(self.dry_run)?;
+        fetch_mirror_branch()?;
+        create_subtree_split()?;
 
         // Note: We skip pushing to the public repo's origin since GitHub Actions
         // doesn't have permission. We push directly to the Unity SDK repo instead.
-        push_to_unity_repo_latest(self.dry_run)?;
-        push_to_unity_repo_tag(version, self.dry_run)?;
+        push_to_unity_repo_latest()?;
+        push_to_unity_repo_tag(version)?;
 
         println!("\n=== C# SDK Release Complete ===");
-        if !self.dry_run {
-            // NuGet package versions come from the csproj `<Version>` and are not bumped
-            // for a hotfix, so report the base version here (see push_nuget_packages).
-            let package_version = version.split_once("-hotfix").map_or(version, |(base, _)| base);
-            println!("NuGet packages published:");
-            println!("  - SpacetimeDB.BSATN.Runtime.{}", package_version);
-            println!("  - SpacetimeDB.Runtime.{}", package_version);
-            println!("  - SpacetimeDB.ClientSDK.{}", package_version);
-            println!("  - SpacetimeDB.ClientSDK.Godot.{}", package_version);
-            println!("\nUnity SDK published:");
-            println!("  - Branch: release/latest");
-            println!("  - Tag: v{}", version);
-            println!("  - Repository: clockworklabs/com.clockworklabs.spacetimedbsdk");
-        }
+        println!("NuGet packages published:");
+        println!("  - SpacetimeDB.BSATN.Runtime.{}", package_version);
+        println!("  - SpacetimeDB.Runtime.{}", package_version);
+        println!("  - SpacetimeDB.Testing.{}", package_version);
+        println!("  - SpacetimeDB.ClientSDK.{}", package_version);
+        println!("  - SpacetimeDB.ClientSDK.Godot.{}", package_version);
+        println!("\nUnity SDK published:");
+        println!("  - Branch: release/latest");
+        println!("  - Tag: v{}", version);
+        println!("  - Repository: clockworklabs/com.clockworklabs.spacetimedbsdk");
 
         Ok(())
     }
 
     fn name(&self) -> &'static str {
         "csharp"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validated_package_paths_preserve_release_version_conventions() {
+        for (tag, expected) in [
+            ("v2.13.0", "2.13.0"),
+            ("2.13.0-rc.1", "2.13.0-rc.1"),
+            ("v2.13.0-hotfix2", "2.13.0"),
+        ] {
+            let packages = module_packages(Path::new("validated"), tag);
+            assert_eq!(packages.len(), 3);
+            assert_eq!(
+                packages[0],
+                Path::new("validated").join(format!("SpacetimeDB.BSATN.Runtime.{expected}.nupkg"))
+            );
+            assert_eq!(
+                packages[1],
+                Path::new("validated").join(format!("SpacetimeDB.Runtime.{expected}.nupkg"))
+            );
+            assert_eq!(
+                packages[2],
+                Path::new("validated").join(format!("SpacetimeDB.Testing.{expected}.nupkg"))
+            );
+        }
+    }
+
+    #[test]
+    fn publication_dry_run_requires_the_complete_set() {
+        let feed = tempfile::tempdir().unwrap();
+        let packages = module_packages(feed.path(), "v2.13.0");
+        for package in &packages[..2] {
+            std::fs::write(package, b"validated package").unwrap();
+        }
+        assert!(push_nuget_packages(&packages, true)
+            .unwrap_err()
+            .contains("SpacetimeDB.Testing"));
+        std::fs::write(&packages[2], b"validated package").unwrap();
+        push_nuget_packages(&packages, true).unwrap();
     }
 }

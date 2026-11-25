@@ -458,9 +458,7 @@ Run `spacetime help generate` for more detailed information.
 * `-p`, `--module-path <MODULE_PATH>` — The system path (absolute or relative) to the module project. Defaults to spacetimedb/ subdirectory, then current directory.
 * `-o`, `--out-dir <OUT_DIR>` — The system path (absolute or relative) to the generate output directory
 * `--uproject-dir <UPROJECT_DIR>` — Path to the Unreal project directory, replaces --out-dir for Unreal generation (only used with --lang unrealcpp)
-* `--namespace <NAMESPACE>` — The namespace that should be used
-
-  Default value: `SpacetimeDB.Types`
+* `--namespace <NAMESPACE>` — The namespace that should be used (only used with --lang csharp). Defaults to SpacetimeDB.Types for client bindings, and for module bindings to RemoteBindings followed by the dependency name in PascalCase
 * `--unreal-module-name <UNREAL_MODULE_NAME>` — The module name that should be used for DLL export macros (required for lang unrealcpp)
 * `--module-prefix <MODULE_PREFIX>` — The module prefix to use for generated types (only used with --lang unrealcpp)
 * `--import-extension <IMPORT_EXTENSION>` — The extension TypeScript bindings add to their imports of each other: `none` (the default) for bundlers, `js` for `moduleResolution: "nodenext"`, `ts` for runtimes that run TypeScript directly (only used with --lang typescript)

@@ -213,6 +213,7 @@ export class ModuleContext {
     },
     submodules: [],
     environment: [],
+    migrations: [],
   };
 
   get moduleDef(): ModuleDef {

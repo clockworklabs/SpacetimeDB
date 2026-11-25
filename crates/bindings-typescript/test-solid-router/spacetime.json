@@ -1,6 +1,6 @@
 {
   "dev": {
-    "run": "npm run dev"
+    "run": "pnpm run dev"
   },
   "server": "maincloud"
 }

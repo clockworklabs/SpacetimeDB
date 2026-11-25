@@ -1252,6 +1252,14 @@ jobs:
 
       - *show-sccache-stats
 
+  csharp_testing_packages:
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
+    uses: ./.github/workflows/csharp-testing.yml
+    with:
+      # The merge queue and master still cover every platform before and after landing.
+      all-platforms: ${{ github.event_name != 'pull_request' }}
+
   test:
     needs:
       [
@@ -1260,6 +1268,7 @@ jobs:
         rust_tests,
         rust_serial_tests,
         csharp_tests,
+        csharp_testing_packages,
         cpp_compile_tests,
         sdk_tests_native,
         sdk_tests_browser,
@@ -1277,6 +1286,7 @@ jobs:
           RUST_BUILD_RESULT: ${{ needs.rust_test_build.result }}
           RUST_SERIAL_RESULT: ${{ needs.rust_serial_tests.result }}
           CSHARP_RESULT: ${{ needs.csharp_tests.result }}
+          CSHARP_TESTING_PACKAGES_RESULT: ${{ needs.csharp_testing_packages.result }}
           CPP_RESULT: ${{ needs.cpp_compile_tests.result }}
           SDK_NATIVE_RESULT: ${{ needs.sdk_tests_native.result }}
           SDK_BROWSER_RESULT: ${{ needs.sdk_tests_browser.result }}
@@ -1285,6 +1295,7 @@ jobs:
           test "${RUST_RESULT}" = success
           test "${RUST_SERIAL_RESULT}" = success
           test "${CSHARP_RESULT}" = success
+          test "${CSHARP_TESTING_PACKAGES_RESULT}" = success
           test "${CPP_RESULT}" = success
           test "${SDK_NATIVE_RESULT}" = success
           test "${SDK_BROWSER_RESULT}" = success
@@ -2162,7 +2173,7 @@ jobs:
       - *show-sccache-stats
 
   csharp-testsuite:
-    needs: [merge_queue_noop, lints, upload-build-artifacts-linux]
+    needs: [merge_queue_noop, lints, upload-build-artifacts-linux, csharp_testing_packages]
     if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
     # The C# SDK build and tests saturated the small runner's CPU, so keep this on the main runner.
     runs-on: spacetimedb-linux
@@ -2238,7 +2249,16 @@ jobs:
       - name: Run C# SDK harness tests
         run: cargo test -p sdk-csharp-test-harness --test sdk_csharp
 
+      - name: Download complete C# testing packages
+        uses: actions/download-artifact@v4
+        with:
+          name: spacetimedb-testing-packages
+          path: ${{ runner.temp }}/testing-packages
+
       - name: Check C# managed and WASM build pipeline
+        env:
+          CSHARP_PACKAGE_FEED: ${{ runner.temp }}/testing-packages
+          CSHARP_PACKAGE_VERSION: ${{ needs.csharp_testing_packages.outputs.package-version }}
         run: cargo ci test-csharp-build
 
       - name: Check quickstart-chat bindings are up to date
@@ -2295,7 +2315,8 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Verify global.json files are symlinks
-    # This builds a small CI helper and checks symlink policy without building SpacetimeDB.
+    # This builds small CI helpers and checks the global.json symlink policy and that no npm
+    # lockfiles are committed, without building SpacetimeDB.
     runs-on: spacetimedb-linux-small
     permissions:
       contents: read
@@ -2307,10 +2328,12 @@ jobs:
 
       - name: Find Git ref
         env:
-          PR_NUMBER: ${{ github.event.inputs.pr_number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
-          if [ -n "$PR_NUMBER" ]; then
-            GIT_REF="refs/pull/$PR_NUMBER/merge"
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
           else
             GIT_REF="${{ github.ref }}"
           fi
@@ -2327,6 +2350,9 @@ jobs:
 
       - name: Check global.json policy
         run: cargo ci global-json-policy
+
+      - name: Check that no npm lockfiles are committed
+        run: cargo ci lockfile-policy
 
       - name: Upload timing reports
         if: always()

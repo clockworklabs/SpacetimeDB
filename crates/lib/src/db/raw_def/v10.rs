@@ -111,6 +111,9 @@ pub enum RawModuleDefV10Section {
 
     /// Residency requirements for tables that opt out of the in-memory default.
     TableCachePolicies(Vec<RawTableCachePolicyV10>),
+
+    /// Migrations from old schema versions, keyed by that schema version's hash.
+    Migrations(Vec<RawMigrationDefV10>),
 }
 
 /// The furthest storage tier a table's pages and blobs may reside in.
@@ -800,6 +803,13 @@ impl RawModuleDefV10 {
             _ => None,
         })
     }
+
+    pub fn migrations(&self) -> Option<&Vec<RawMigrationDefV10>> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::Migrations(migrations) => Some(migrations),
+            _ => None,
+        })
+    }
 }
 
 /// A builder for a [`RawModuleDefV10`].
@@ -1458,6 +1468,30 @@ impl RawModuleDefV10Builder {
         }
     }
 
+    /// Get mutable access to the migrations section, creating it if missing.
+    fn migrations_mut(&mut self) -> &mut Vec<RawMigrationDefV10> {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::Migrations(_)))
+            .unwrap_or_else(|| {
+                self.module
+                    .sections
+                    .push(RawModuleDefV10Section::Migrations(Vec::new()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::Migrations(x) => x,
+            _ => unreachable!("Just ensured Migrations section exists"),
+        }
+    }
+
+    pub fn add_migration(&mut self, migration: RawMigrationDefV10) {
+        self.migrations_mut().push(migration);
+    }
+
     /// Set the case conversion policy for this module.
     ///
     /// By default, SpacetimeDB applies `SnakeCase` conversion to table names,
@@ -1710,4 +1744,13 @@ impl RawTableDefBuilderV10<'_> {
             .position(|x| x.has_name(column.as_ref()))
             .map(|i| ColId(i as u16))
     }
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawMigrationDefV10 {
+    pub schema_hash: Hash,
+    pub name: RawIdentifier,
+    pub dropped: RawModuleDefV10,
 }

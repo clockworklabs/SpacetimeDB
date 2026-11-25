@@ -40,7 +40,26 @@ impl CratesRelease {
         // Without this, dry-run doesn't work properly: every crate will look for its deps on crates.io
         // and fail, but if they're on one invocation then they're able to resolve properly.
         let mut cmd = Command::new("cargo");
-        cmd.current_dir(workspace_root).args(["publish", "--allow-dirty"]);
+        cmd.current_dir(workspace_root)
+            // The pinned stable Cargo requires RUSTC_BOOTSTRAP=1 to accept -Zpublish-timeout.
+            .env("RUSTC_BOOTSTRAP", "1")
+            .args([
+                "publish",
+                "--allow-dirty",
+                // -Zpublish-timeout enables the publish.timeout setting. Set it to 120 seconds
+                // (default: 60) for Cargo to wait for an uploaded crate to appear in the registry
+                // index before publishing its dependents.
+                "-Zpublish-timeout",
+                "--config",
+                "publish.timeout=120",
+                // Set RUSTC_BOOTSTRAP=-1 in Cargo's child processes to enforce stable compiler
+                // feature gates during package verification. force=true makes that value override
+                // the RUSTC_BOOTSTRAP=1 they would otherwise inherit from Cargo.
+                "--config",
+                r#"env.RUSTC_BOOTSTRAP.value="-1""#,
+                "--config",
+                "env.RUSTC_BOOTSTRAP.force=true",
+            ]);
         for crate_name in crates {
             cmd.args(["-p", crate_name]);
         }

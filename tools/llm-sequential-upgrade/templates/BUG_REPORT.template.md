@@ -4,7 +4,7 @@
   Written by the GRADER (you), filed into the app directory:
     <variant>/<variant>-DATE/<backend>/results/chat-app-<ts>/BUG_REPORT.md
 
-  The fix agent reads this verbatim (run.sh --fix keys on its existence).
+  The fix agent reads this verbatim (`cargo llm-apps sequential fix` keys on its existence).
   When every feature passes, DELETE this file — its absence tells the harness
   the app is done.
 

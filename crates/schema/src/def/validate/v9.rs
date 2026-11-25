@@ -173,6 +173,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         raw_module_def_version: RawModuleDefVersion::V9OrEarlier,
         submodules: IndexMap::new(),
         environment: None,
+        migrations: Default::default(),
     };
 
     // Records each def's namespace. V9 has no submodules, so this just resolves everything at
