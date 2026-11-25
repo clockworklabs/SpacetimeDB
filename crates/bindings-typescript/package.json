@@ -17,7 +17,7 @@
     "type": "git",
     "url": "git+https://github.com/clockworklabs/SpacetimeDB.git"
   },
-  "license": "ISC",
+  "license": "Apache-2.0",
   "author": "Clockwork Labs",
   "type": "module",
   "sideEffects": [
