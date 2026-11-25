@@ -1,7 +1,8 @@
 # Supabase
 
-Use Supabase for application data, accounts, and backend functions. Choose the client
-libraries, architecture, and project structure.
+Use Supabase exclusively as the application's whole backend, including application
+data, accounts, and backend functions. Choose the client libraries, architecture,
+and project structure.
 
 ## Connection
 

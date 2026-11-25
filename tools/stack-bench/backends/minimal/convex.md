@@ -1,7 +1,8 @@
 # Convex
 
-Use Convex for application data, accounts, and backend functions. Choose the client libraries,
-architecture, and project structure.
+Use Convex exclusively as the application's whole backend, including application
+data, accounts, and backend functions. Choose the client libraries, architecture,
+and project structure.
 
 ## Connection
 
