@@ -1250,7 +1250,7 @@ fn with_dotnet_version_for_dev(
 }
 
 async fn select_database(config: &Config, server: &str, token: &str) -> Result<String, anyhow::Error> {
-    let identity = crate::util::decode_identity(&token.to_string())?;
+    let identity = crate::util::decode_identity(token)?;
 
     let spinner = ProgressBar::new_spinner();
     spinner.set_style(

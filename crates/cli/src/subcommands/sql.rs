@@ -9,6 +9,7 @@ use crate::config::Config;
 use crate::subcommands::db_arg_resolution::{
     load_config_db_targets, resolve_database_arg, resolve_optional_database_parts, ResolvedDbArgs,
 };
+use crate::subcommands::telemetry;
 use crate::util::{database_identity, get_auth_header, ResponseExt, UNSTABLE_WARNING};
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches};
@@ -190,11 +191,12 @@ fn stmt_result_to_table(client: PsqlClient, stmt_result: &SqlStmtResult) -> anyh
     Ok((stats, table))
 }
 
-pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     eprintln!("{UNSTABLE_WARNING}\n");
     let interactive = args.get_one::<bool>("interactive").unwrap_or(&false);
     let no_config = args.get_flag("no_config");
     let format = *args.get_one::<Format>("format").unwrap();
+    let server_from_cli = args.get_one::<String>("server").map(|s| s.as_ref());
     let raw_parts: Vec<String> = args
         .get_many::<String>("sql_parts")
         .map(|vals| vals.cloned().collect())
@@ -212,6 +214,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             config_targets.as_deref(),
             "spacetime sql [database] --interactive [--no-config]",
         )?;
+        telemetry::track_maincloud(&mut config, "sql", server_from_cli.or(resolved.server.as_deref()));
         let con = parse_req(config, args, &resolved.database, resolved.server.as_deref()).await?;
 
         crate::repl::exec(con, format).await?;
@@ -250,6 +253,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         let query = resolved.remaining_args.join(" ");
         let confirmed = args.get_one::<bool>("confirmed").copied();
 
+        telemetry::track_maincloud(&mut config, "sql", server_from_cli.or(resolved.server.as_deref()));
         let con = parse_req(config, args, &resolved.database, resolved.server.as_deref()).await?;
         let mut api = ClientApi::new(con).sql();
         if let Some(confirmed) = confirmed {

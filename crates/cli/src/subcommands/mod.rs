@@ -21,5 +21,6 @@ pub mod server;
 pub mod sql;
 pub mod start;
 pub mod subscribe;
+pub mod telemetry;
 pub mod unlock;
 pub mod version;

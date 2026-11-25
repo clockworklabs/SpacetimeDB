@@ -3,6 +3,7 @@ use crate::common_args;
 use crate::config::Config;
 use crate::edit_distance::{edit_distance, find_best_match_for_name};
 use crate::subcommands::db_arg_resolution::{load_config_db_targets, resolve_optional_database_parts};
+use crate::subcommands::telemetry;
 use crate::util::UNSTABLE_WARNING;
 use crate::util::{database_identity, get_auth_header};
 use anyhow::{bail, Context, Error};
@@ -84,6 +85,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
     let resolved_server = server.or(resolved.server.as_deref());
 
     let mut config = config;
+    telemetry::track_maincloud(&mut config, "call", resolved_server);
     let conn = crate::api::Connection {
         host: config.get_host_url(resolved_server)?,
         auth_header: get_auth_header(&mut config, anon_identity, resolved_server, !force).await?,

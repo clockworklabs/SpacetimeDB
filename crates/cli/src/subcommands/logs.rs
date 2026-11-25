@@ -5,6 +5,7 @@ use crate::common_args;
 use crate::common_args::Format;
 use crate::config::Config;
 use crate::subcommands::db_arg_resolution::{load_config_db_targets, resolve_database_arg};
+use crate::subcommands::telemetry;
 use crate::util::{add_auth_header_opt, database_identity, get_auth_header};
 use clap::{Arg, ArgAction, ArgMatches};
 use futures::{AsyncBufReadExt, TryStreamExt};
@@ -178,6 +179,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let min_level = args.get_one::<LogLevel>("level").copied();
     let level_exact = args.get_flag("level_exact");
 
+    telemetry::track_maincloud(&mut config, "logs", server);
     let auth_header = get_auth_header(&mut config, false, server, !force).await?;
 
     let database_identity = database_identity(&config, &resolved.database, server).await?;
