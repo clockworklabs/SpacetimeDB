@@ -22,17 +22,19 @@
           inherit system;
           overlays = [
             (import rust-overlay)
-            (final: prev: {
-              cacert = prev.cacert.override {
-                # Block both roots because the compromised eMudhra intermediate CAs
-                # can chain to either emSign's root or Comodo's AAA root.
-                blacklist = [ "emSign ECC Root CA - G3" "Comodo AAA Services root" ];
-              };
-            })
           ];
         };
 
         inherit (pkgs) lib;
+
+        # Block both roots because the compromised eMudhra intermediate CAs
+        # can chain to either emSign's root or Comodo's AAA root.
+        # Only the dev shell's CA bundle blocks them: an overlay of nixpkgs' `cacert` would change
+        # the store path of every package that depends on it, which the binary cache then lacks,
+        # so that Nix would build them all from source.
+        filteredCacert = pkgs.cacert.override {
+          blacklist = [ "emSign ECC Root CA - G3" "Comodo AAA Services root" ];
+        };
 
         # Inject git commit in an env var around the build so that we can embed it in the binary
         # without calling into `git` during our build.
@@ -193,8 +195,8 @@
             #                   from src/pac.c:1:
             CFLAGS = "-O";
             # Make development tools and Nix downloads use the filtered CA bundle.
-            SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
-            NIX_SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+            SSL_CERT_FILE = "${filteredCacert}/etc/ssl/certs/ca-bundle.crt";
+            NIX_SSL_CERT_FILE = "${filteredCacert}/etc/ssl/certs/ca-bundle.crt";
 
             packages = [
               rustStable
