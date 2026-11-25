@@ -330,7 +330,7 @@ test('direct neutral guidance uses the current stack access documents', () => {
       assert(ids.length > 0);
       // Convex and Supabase say what their web client connects with and where; Spacetime says the same.
       if (guidance === 'neutral') {
-        assert.match(prompt, /The browser and this environment both reach the server at `http:\/\/[^`]+`\. The web\s+client connects with the TypeScript SDK package at that address\./);
+        assert.match(prompt, /The browser and this environment both reach the server at `(http:\/\/[^`]+)`\. The web\s+client uses `\1` and the module name `[^`]+`\./);
       }
       assert(prompt.includes(`This stack's agent skills are installed in /home/developer/.claude/skills: ${ids.join(', ')}.`));
     }

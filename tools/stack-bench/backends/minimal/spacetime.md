@@ -18,7 +18,7 @@ Use the connection settings below.
 | Web application | `http://localhost:<VITE_PORT>` |
 
 The browser and this environment both reach the server at `<STDB_URI>`. The web
-client connects with the TypeScript SDK package at that address.
+client uses `<STDB_URI>` and the module name `<MODULE_NAME>`.
 
 Publish only the named module to the exact server URI. Local publish and
 development commands must use `--yes`. Do not pipe confirmation input, publish
