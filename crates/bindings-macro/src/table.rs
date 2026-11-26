@@ -696,9 +696,17 @@ impl ValidatedIndex<'_> {
         vis: &syn::Visibility,
         tablehandle_ident: &Ident,
         primary_key_column: Option<&Column<'_>>,
+        in_migration: bool,
     ) -> TokenStream {
         let index_ident = self.accessor_name;
         let index_name = &self.index_name;
+        // During a migration, the engine moves the old table's indexes under `dropped.`,
+        // so that they don't share names with the new table's.
+        let index_name_for_id = if in_migration {
+            format!("dropped.{index_name}")
+        } else {
+            index_name.clone()
+        };
 
         let (typeck_direct_index, is_ranged) = match &self.kind {
             ValidatedIndexType::BTree { .. } => (None, true),
@@ -739,7 +747,7 @@ impl ValidatedIndex<'_> {
                 fn index_id() -> spacetimedb::table::IndexId {
                     static INDEX_ID: std::sync::OnceLock<spacetimedb::table::IndexId> = std::sync::OnceLock::new();
                     *INDEX_ID.get_or_init(|| {
-                        spacetimedb::sys::index_id_from_name(#index_name).unwrap()
+                        spacetimedb::sys::index_id_from_name(#index_name_for_id).unwrap()
                     })
                 }
             }
@@ -1124,7 +1132,14 @@ pub(crate) fn table_impl_inner(
     });
     let index_marker_types: Vec<_> = indices
         .iter()
-        .map(|index| index.marker_type(vis, &tablehandle_ident, primary_key_column.as_ref()))
+        .map(|index| {
+            index.marker_type(
+                vis,
+                &tablehandle_ident,
+                primary_key_column.as_ref(),
+                migration.is_some(),
+            )
+        })
         .collect();
 
     // Generate `integrate_generated_columns`

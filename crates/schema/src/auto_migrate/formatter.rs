@@ -2,12 +2,12 @@
 
 use std::io;
 
-use super::AutoMigratePlan;
+use super::{ManualMigrateData, MigratePlan};
 use crate::schema::TableCachePolicy;
 use crate::{
     auto_migrate::AutoMigrateStep,
     def::{
-        ConstraintData, ConstraintDef, FunctionKind, IndexDef, ModuleDef, ModuleDefLookup, ScheduleDef, SequenceDef,
+        ConstraintData, ConstraintDef, FunctionKind, IndexDef, ModuleDef, ModuleItemKey, ScheduleDef, SequenceDef,
         TableDef, ViewDef,
     },
     identifier::{Identifier, NamespacePath, NamespacedIdentifier},
@@ -15,12 +15,18 @@ use crate::{
 use itertools::Itertools;
 use spacetimedb_lib::db::raw_def::v9::{RawRowLevelSecurityDefV9, TableAccess, TableType};
 use spacetimedb_primitives::ColId;
+use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, WithTypespace};
 use thiserror::Error;
 
-pub fn format_plan<F: MigrationFormatter>(f: &mut F, plan: &AutoMigratePlan) -> Result<(), FormattingErrors> {
+pub fn format_plan<F: MigrationFormatter>(f: &mut F, plan: &MigratePlan) -> Result<(), FormattingErrors> {
     f.format_header()?;
+
+    if let Some(manual) = &plan.manual {
+        let manual_info = extract_manual_migration_info(manual, plan)?;
+        f.format_manual_migration(&manual_info)?;
+    }
 
     for step in &plan.steps {
         format_step(f, step, plan)?;
@@ -39,7 +45,7 @@ fn joined<N: Clone + Into<Identifier>>((namespace, name): (&NamespacePath, &N)) 
 fn format_step<F: MigrationFormatter>(
     f: &mut F,
     step: &AutoMigrateStep,
-    plan: &super::AutoMigratePlan,
+    plan: &super::MigratePlan,
 ) -> Result<(), FormattingErrors> {
     match step {
         AutoMigrateStep::AddView(view) => {
@@ -222,6 +228,7 @@ pub trait MigrationFormatter {
     // TODO(format-event-table-reschema): I (pgoldman 2026-06-10) didn't have time to meaningfully format event table reschemas,
     // so for now we're just printing the table name.
     fn format_event_table_reschema(&mut self, table_name: &NamespacedIdentifier) -> io::Result<()>;
+    fn format_manual_migration(&mut self, manual_info: &ManualMigrationInfo) -> io::Result<()>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -320,11 +327,28 @@ pub enum ColumnChange {
         old_name: Identifier,
         new_name: Identifier,
     },
+    /// `name` is a column, or a path into one, like `contents.Variant.field`.
     TypeChanged {
-        name: Identifier,
+        name: String,
         old_type: AlgebraicType,
         new_type: AlgebraicType,
     },
+    Added {
+        name: String,
+        type_name: AlgebraicType,
+    },
+    Removed {
+        name: String,
+        type_name: AlgebraicType,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ManualMigrationInfo {
+    /// The hash of the old schema, which selected this migration.
+    pub schema_hash: Hash,
+    /// The tables the migration recreates, with how their columns change.
+    pub changed_tables: Vec<ColumnChanges>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -334,8 +358,8 @@ pub struct NewColumns {
 }
 
 fn extract_table_info(
-    key: <TableDef as ModuleDefLookup>::Key<'_>,
-    plan: &super::AutoMigratePlan,
+    key: ModuleItemKey<'_, TableDef>,
+    plan: &super::MigratePlan,
 ) -> Result<TableInfo, FormattingErrors> {
     let (owning_def, table_def) = plan
         .new
@@ -437,10 +461,7 @@ fn extract_table_info(
     })
 }
 
-fn extract_view_info(
-    key: <ViewDef as ModuleDefLookup>::Key<'_>,
-    module_def: &ModuleDef,
-) -> Result<ViewInfo, FormattingErrors> {
+fn extract_view_info(key: ModuleItemKey<'_, ViewDef>, module_def: &ModuleDef) -> Result<ViewInfo, FormattingErrors> {
     let (owning_def, view_def) = module_def
         .find_view(key)
         .ok_or_else(|| FormattingErrors::ViewNotFound {
@@ -486,10 +507,7 @@ fn extract_view_info(
     })
 }
 
-fn extract_index_info(
-    key: <IndexDef as ModuleDefLookup>::Key<'_>,
-    module_def: &ModuleDef,
-) -> Result<IndexInfo, FormattingErrors> {
+fn extract_index_info(key: ModuleItemKey<'_, IndexDef>, module_def: &ModuleDef) -> Result<IndexInfo, FormattingErrors> {
     let (namespace, name) = key;
     let (_, table_def) = module_def
         .find_storing_table(namespace, name)
@@ -514,7 +532,7 @@ fn extract_index_info(
 }
 
 fn extract_constraint_info(
-    key: <ConstraintDef as ModuleDefLookup>::Key<'_>,
+    key: ModuleItemKey<'_, ConstraintDef>,
     module_def: &ModuleDef,
 ) -> Result<ConstraintInfo, FormattingErrors> {
     let (namespace, name) = key;
@@ -541,7 +559,7 @@ fn extract_constraint_info(
 }
 
 fn extract_sequence_info(
-    key: <SequenceDef as ModuleDefLookup>::Key<'_>,
+    key: ModuleItemKey<'_, SequenceDef>,
     module_def: &ModuleDef,
 ) -> Result<SequenceInfo, FormattingErrors> {
     let (namespace, name) = key;
@@ -562,8 +580,8 @@ fn extract_sequence_info(
 }
 
 fn extract_access_change_info(
-    key: <TableDef as ModuleDefLookup>::Key<'_>,
-    plan: &super::AutoMigratePlan,
+    key: ModuleItemKey<'_, TableDef>,
+    plan: &super::MigratePlan,
 ) -> Result<AccessChangeInfo, FormattingErrors> {
     let (_, table_def) = plan
         .new
@@ -579,7 +597,7 @@ fn extract_access_change_info(
 }
 
 fn extract_schedule_info(
-    schedule_name: <ScheduleDef as ModuleDefLookup>::Key<'_>,
+    schedule_name: ModuleItemKey<'_, ScheduleDef>,
     module_def: &ModuleDef,
 ) -> Result<ScheduleInfo, FormattingErrors> {
     // Schedules are keyed by their own name; the table they annotate is the one that stores them.
@@ -599,8 +617,8 @@ fn extract_schedule_info(
 }
 
 fn extract_rls_info(
-    rls: <RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'_>,
-    plan: &super::AutoMigratePlan,
+    rls: ModuleItemKey<'_, RawRowLevelSecurityDefV9>,
+    plan: &super::MigratePlan,
 ) -> Result<Option<RlsInfo>, FormattingErrors> {
     let in_old = plan.old.row_level_security().any(|r| r.sql == *rls);
     let in_new = plan.new.row_level_security().any(|r| r.sql == *rls);
@@ -615,8 +633,8 @@ fn extract_rls_info(
 }
 
 fn extract_column_changes(
-    key: <TableDef as ModuleDefLookup>::Key<'_>,
-    plan: &super::AutoMigratePlan,
+    key: ModuleItemKey<'_, TableDef>,
+    plan: &super::MigratePlan,
 ) -> Result<ColumnChanges, FormattingErrors> {
     let (old_owning, old_table) = plan
         .old
@@ -650,7 +668,7 @@ fn extract_column_changes(
                     .resolve_refs()
                     .map_err(|_| FormattingErrors::TypeResolution)?;
                 changes.push(ColumnChange::TypeChanged {
-                    name: new_col.name.clone(),
+                    name: new_col.name.to_string(),
                     old_type,
                     new_type,
                 });
@@ -665,8 +683,8 @@ fn extract_column_changes(
 }
 
 fn extract_new_columns(
-    key: <TableDef as ModuleDefLookup>::Key<'_>,
-    plan: &super::AutoMigratePlan,
+    key: ModuleItemKey<'_, TableDef>,
+    plan: &super::MigratePlan,
 ) -> Result<NewColumns, FormattingErrors> {
     let (new_owning, table_def) = plan
         .new
@@ -699,4 +717,129 @@ fn extract_new_columns(
         table_name: joined(key),
         columns: new_columns,
     })
+}
+
+fn extract_manual_migration_info(
+    manual: &ManualMigrateData<'_>,
+    plan: &super::MigratePlan,
+) -> Result<ManualMigrationInfo, FormattingErrors> {
+    let changed_tables = manual
+        .changed_tables
+        .iter()
+        .map(|&table| extract_recreated_columns(table, plan))
+        .collect::<Result<Vec<_>, FormattingErrors>>()?;
+
+    Ok(ManualMigrationInfo {
+        schema_hash: manual.hash,
+        changed_tables,
+    })
+}
+
+/// Unlike `extract_column_changes`, this matches columns by name,
+/// since a recreated table may reorder, add or remove them.
+fn extract_recreated_columns(
+    key: ModuleItemKey<'_, TableDef>,
+    plan: &super::MigratePlan,
+) -> Result<ColumnChanges, FormattingErrors> {
+    let not_found = || FormattingErrors::TableNotFound {
+        table: (&*joined(key)).into(),
+    };
+    let (old_owning, old_table) = plan.old.find_table(key).ok_or_else(not_found)?;
+    let (new_owning, new_table) = plan.new.find_table(key).ok_or_else(not_found)?;
+    let resolve = |owning: &ModuleDef, ty: &AlgebraicType| {
+        WithTypespace::new(owning.typespace(), ty)
+            .resolve_refs()
+            .map_err(|_| FormattingErrors::TypeResolution)
+    };
+    let old_columns = old_table
+        .columns
+        .iter()
+        .map(|c| Ok((c.name.to_string(), resolve(old_owning, &c.ty)?)))
+        .collect::<Result<Vec<_>, FormattingErrors>>()?;
+    let new_columns = new_table
+        .columns
+        .iter()
+        .map(|c| Ok((c.name.to_string(), resolve(new_owning, &c.ty)?)))
+        .collect::<Result<Vec<_>, FormattingErrors>>()?;
+
+    let mut changes = Vec::new();
+    diff_members("", &old_columns, &new_columns, &mut changes);
+
+    Ok(ColumnChanges {
+        table_name: joined(key),
+        changes,
+    })
+}
+
+/// Pushes the changes between two lists of named members (columns, fields or variants),
+/// matching members by name.
+fn diff_members(
+    prefix: &str,
+    old: &[(String, AlgebraicType)],
+    new: &[(String, AlgebraicType)],
+    changes: &mut Vec<ColumnChange>,
+) {
+    for (name, new_ty) in new {
+        let path = format!("{prefix}{name}");
+        match old.iter().find(|(old_name, _)| old_name == name) {
+            Some((_, old_ty)) => diff_types(path, old_ty, new_ty, changes),
+            None => changes.push(ColumnChange::Added {
+                name: path,
+                type_name: new_ty.clone(),
+            }),
+        }
+    }
+    for (name, old_ty) in old {
+        if !new.iter().any(|(new_name, _)| new_name == name) {
+            changes.push(ColumnChange::Removed {
+                name: format!("{prefix}{name}"),
+                type_name: old_ty.clone(),
+            });
+        }
+    }
+}
+
+/// Pushes the innermost changes between two resolved types,
+/// so a change deep inside a large type doesn't print the whole type.
+fn diff_types(path: String, old: &AlgebraicType, new: &AlgebraicType, changes: &mut Vec<ColumnChange>) {
+    if old == new {
+        return;
+    }
+    let found = changes.len();
+    match (old, new) {
+        (AlgebraicType::Product(old_ty), AlgebraicType::Product(new_ty)) => {
+            let members = |ty: &spacetimedb_sats::ProductType| {
+                let elements = ty.elements.iter().enumerate();
+                elements
+                    .map(|(i, e)| (member_name(e.name.as_deref(), i), e.algebraic_type.clone()))
+                    .collect::<Vec<_>>()
+            };
+            diff_members(&format!("{path}."), &members(old_ty), &members(new_ty), changes);
+        }
+        (AlgebraicType::Sum(old_ty), AlgebraicType::Sum(new_ty)) => {
+            let members = |ty: &spacetimedb_sats::SumType| {
+                let variants = ty.variants.iter().enumerate();
+                variants
+                    .map(|(i, v)| (member_name(v.name.as_deref(), i), v.algebraic_type.clone()))
+                    .collect::<Vec<_>>()
+            };
+            diff_members(&format!("{path}."), &members(old_ty), &members(new_ty), changes);
+        }
+        (AlgebraicType::Array(old_ty), AlgebraicType::Array(new_ty)) => {
+            diff_types(format!("{path}[]"), &old_ty.elem_ty, &new_ty.elem_ty, changes);
+        }
+        _ => {}
+    }
+    // Nothing differed member by member, e.g. members were reordered, so report the whole type.
+    if changes.len() == found {
+        changes.push(ColumnChange::TypeChanged {
+            name: path,
+            old_type: old.clone(),
+            new_type: new.clone(),
+        });
+    }
+}
+
+fn member_name(name: Option<&str>, index: usize) -> String {
+    name.map_or_else(|| index.to_string(), str::to_owned)
 }

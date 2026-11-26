@@ -368,6 +368,23 @@ impl<W1: BufWriter, W2: BufWriter> BufWriter for TeeWriter<W1, W2> {
     }
 }
 
+/// A [`BufWriter`] backed by a [`Hasher`][std::hash::Hasher]
+#[repr(transparent)]
+pub struct HashWriter<H>(pub H);
+
+impl<H> HashWriter<H> {
+    pub fn from_mut(r: &mut H) -> &mut Self {
+        // SAFETY: HashWriter<H> is repr(transparent) over H
+        unsafe { &mut *std::ptr::from_mut(r).cast::<Self>() }
+    }
+}
+
+impl<H: std::hash::Hasher> BufWriter for HashWriter<H> {
+    fn put_slice(&mut self, slice: &[u8]) {
+        self.0.write(slice)
+    }
+}
+
 impl<'de> BufReader<'de> for &'de [u8] {
     #[inline]
     fn get_chunk(&mut self, size: usize) -> Option<&'de [u8]> {

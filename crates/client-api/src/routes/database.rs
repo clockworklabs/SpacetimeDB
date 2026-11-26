@@ -34,8 +34,8 @@ use serde::{Deserialize, Serialize};
 use spacetimedb::auth::identity::ConnectionAuthCtx;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::module_host::{
-    ClientConnectedError, DurabilityExited, DurableOffset, TransactionOffset, UpdateEnvironmentResult,
-    TRANSACTION_CONFIRMATION_TIMEOUT,
+    ClientConnectedError, DurabilityExited, DurableOffset, MigrationExecutionError, TransactionOffset,
+    UpdateEnvironmentResult, TRANSACTION_CONFIRMATION_TIMEOUT,
 };
 use spacetimedb::host::{CallResult, UpdateDatabaseResult};
 use spacetimedb::host::{FunctionArgs, MigratePlanResult};
@@ -848,8 +848,13 @@ fn publish_error(error: anyhow::Error) -> axum::response::ErrorResponse {
     environment_error_response(error, PublishResult::EnvironmentError, log_and_500)
 }
 
-fn publish_migration_error(error: anyhow::Error) -> axum::response::ErrorResponse {
-    environment_error_response(error, PublishResult::EnvironmentError, migration_error_fallback)
+fn publish_migration_error(error: MigrationExecutionError) -> axum::response::ErrorResponse {
+    match error {
+        MigrationExecutionError::User(error) => bad_request(format!("The migration failed: {error}").into()),
+        MigrationExecutionError::Other(error) => {
+            environment_error_response(error, PublishResult::EnvironmentError, migration_error_fallback)
+        }
+    }
 }
 
 pub async fn environment_metadata<S>(
@@ -2395,24 +2400,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn publish_migration_user_error_is_a_bad_request() {
+        let error = MigrationExecutionError::User("rows of `person` have not been migrated".into());
+        let response = Err::<(), _>(publish_migration_error(error)).into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+        assert_eq!(
+            std::str::from_utf8(&body).unwrap(),
+            "The migration failed: rows of `person` have not been migrated"
+        );
+    }
+
+    #[tokio::test]
     async fn publish_environment_error_identifies_only_typed_missing_required_keys() {
         use spacetimedb_lib::environment::EnvironmentSchemaError;
         let missing = || EnvironmentSchemaError::MissingRequired { key: "API_KEY".into() };
         for response in [
             publish_error(anyhow::Error::new(missing()).context("publication failed")),
-            publish_migration_error(spacetimedb::db::environment::EnvironmentError::Schema(missing()).into()),
+            publish_migration_error(MigrationExecutionError::Other(
+                spacetimedb::db::environment::EnvironmentError::Schema(missing()).into(),
+            )),
             publish_error(
                 spacetimedb::host::module_host::InitDatabaseError::Other(
                     spacetimedb::db::environment::EnvironmentError::Schema(missing()).into(),
                 )
                 .into(),
             ),
-            publish_migration_error(
+            publish_migration_error(MigrationExecutionError::Other(
                 spacetimedb::host::module_host::InitDatabaseError::Other(
                     spacetimedb::db::environment::EnvironmentError::Schema(missing()).into(),
                 )
                 .into(),
-            ),
+            )),
         ] {
             let response = Err::<(), _>(response).into_response();
             assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -2447,7 +2466,7 @@ mod tests {
             anyhow::anyhow!("environment key API_KEY: required value is missing"),
             EnvironmentSchemaError::ConstraintMismatch { key: "API_KEY".into() }.into(),
         ] {
-            let response = Err::<(), _>(publish_migration_error(error)).into_response();
+            let response = Err::<(), _>(publish_migration_error(error.into())).into_response();
             assert_eq!(response.status(), StatusCode::BAD_REQUEST);
             assert_ne!(response.headers()[http::header::CONTENT_TYPE], "application/json");
         }

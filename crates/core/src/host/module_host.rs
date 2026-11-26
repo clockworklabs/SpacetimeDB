@@ -1641,8 +1641,21 @@ pub enum UpdateDatabaseResult {
         durable_offset: Option<DurableOffset>,
     },
     AutoMigrateError(Box<ErrorStream<AutoMigrateError>>),
-    ErrorExecutingMigration(anyhow::Error),
+    ErrorExecutingMigration(MigrationExecutionError),
 }
+
+#[derive(Debug)]
+pub enum MigrationExecutionError {
+    User(Box<str>),
+    Other(anyhow::Error),
+}
+
+impl From<anyhow::Error> for MigrationExecutionError {
+    fn from(e: anyhow::Error) -> Self {
+        Self::Other(e)
+    }
+}
+
 impl UpdateDatabaseResult {
     /// Check if a database update was successful.
     pub fn was_successful(&self) -> bool {
@@ -1685,7 +1698,7 @@ impl From<UpdateEnvironmentResult> for UpdateDatabaseResult {
                 tx_offset,
                 durable_offset,
             },
-            UpdateEnvironmentResult::ErrorExecutingMigration(e) => Self::ErrorExecutingMigration(e),
+            UpdateEnvironmentResult::ErrorExecutingMigration(e) => Self::ErrorExecutingMigration(e.into()),
         }
     }
 }
