@@ -98,6 +98,8 @@ export type BrokerLedger = {
   // Web searches the provider's responses report; each is charged on top of tokens. Absent
   // from ledgers written before searches were counted.
   webSearchCalls?: number;
+  // The largest request body the broker received. Absent from ledgers written before it was recorded.
+  largestRequestBytes?: number;
   spentUsd: number;
   reservedUsd: number;
   usage: ClaudeUsage;
@@ -224,6 +226,7 @@ const brokerLedgerSchema = z.strictObject({
   unpricedByReason: z.strictObject(Object.fromEntries(UNPRICED_REASONS.map(reason =>
     [reason, nonNegativeSafeInteger])) as Record<UnpricedReason, typeof nonNegativeSafeInteger>).optional(),
   webSearchCalls: nonNegativeSafeInteger.optional(),
+  largestRequestBytes: nonNegativeSafeInteger.optional(),
   spentUsd: nonNegativeFinite,
   reservedUsd: nonNegativeFinite,
   usage: usageSchema,

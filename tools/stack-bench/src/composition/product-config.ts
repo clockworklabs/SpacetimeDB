@@ -28,7 +28,10 @@ export const SIDECAR_CONTAINER_RESOURCE_LIMITS = Object.freeze({ cpuCount: 1, me
 // The staff-role reference probe hit the former 2 GiB cap and lost renderer processes.
 export const BROWSER_CONTAINER_RESOURCE_LIMITS = Object.freeze({ ...SIDECAR_CONTAINER_RESOURCE_LIMITS,
   memoryBytes: 4 * 1024 ** 3, pids: 512 });
-export const BROKER_CONTAINER_RESOURCE_LIMITS = Object.freeze({ memoryBytes: 256 * 1024 ** 2, pids: 32 });
+// The broker holds several copies of each request body while it parses, prices and forwards it,
+// so this must cover a few concurrent requests at the broker's body limit. A cap below that
+// kills the broker mid-session, and the agent loses the model.
+export const BROKER_CONTAINER_RESOURCE_LIMITS = Object.freeze({ memoryBytes: 512 * 1024 ** 2, pids: 32 });
 
 // Planning totals for one worker. Broker CPU and shared services are not capped
 // here; the controller, package cache, and Docker also need resources.

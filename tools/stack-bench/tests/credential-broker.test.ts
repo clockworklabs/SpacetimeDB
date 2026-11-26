@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { once } from 'node:events';
+import { EventEmitter, once } from 'node:events';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { Agent as HttpAgent, request as httpRequest, createServer } from 'node:http';
 import type { IncomingHttpHeaders, OutgoingHttpHeaders, Server } from 'node:http';
@@ -20,9 +20,11 @@ import { noUnpriced, readCredentialBrokerLedger, reconcileCredentialBrokerReceip
   from '../container/credential-broker-accounting.js';
 import type { BrokerConfig, BrokerLedger, BrokerMode, UnpricedReason }
   from '../container/credential-broker-accounting.js';
-import { credentialBrokerDiagnostics, lookupCertificate, startCredentialBroker, stopCredentialBroker }
+import { brokerDeathMessage, credentialBrokerDiagnostics, lookupCertificate, startCredentialBroker, stopCredentialBroker,
+  watchCredentialBroker }
   from '../container/credential-broker-process.js';
-import type { CredentialBrokerHandle } from '../container/credential-broker-process.js';
+import type { BrokerContainerState, BrokerDeath, CredentialBroker, CredentialBrokerHandle }
+  from '../container/credential-broker-process.js';
 import type { BrokerStats } from '../container/credential-broker.js';
 import { compiledEntrypoint } from '../src/package-root.js';
 import { validateAgentCostReceipt } from '../src/agents/agent-result-contract.js';
@@ -658,6 +660,110 @@ test('credential broker limits body size without truncating authorized sessions 
     await close(upstreamServer);
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+// A 2026-11-26 Codex session's broker was killed at its 256 MiB container limit. Each request's
+// chunks stayed reachable until its reply finished streaming, so slow replies held whole bodies.
+test('the broker does not keep request bodies while replies stream, and records the largest one', async () => {
+  const { setFlagsFromString } = await import('node:v8');
+  const { runInNewContext } = await import('node:vm');
+  setFlagsFromString('--expose_gc');
+  const gc = runInNewContext('gc') as () => void;
+  // Buffer memory is returned only after collection finishes its cleanup, a turn later.
+  const settle = async (): Promise<void> => {
+    for (let round = 0; round < 3; round++) {
+      gc();
+      await new Promise(resolveWait => setImmediate(resolveWait));
+      await new Promise(resolveWait => setTimeout(resolveWait, 50));
+    }
+  };
+  const root = mkdtempSync(join(tmpdir(), 'broker-held-bodies-'));
+  const ledgerPath = join(root, 'ledger.json');
+  const held: Array<() => void> = [];
+  const upstreamServer = createServer((request, response) => {
+    request.resume();
+    request.on('end', () => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.write('{"partial":');
+      held.push(() => response.end('true}'));
+    });
+  });
+  const upstreamPort = await listen(upstreamServer);
+  const sessionToken = 'session-token-value-1234567890';
+  const { server } = createCredentialBroker({ mode: 'api-key', ledgerPath,
+    credential: 'provider-secret-value-1234567890', sessionToken,
+    model: 'test-model', maxOutputTokens: 4096 }, {
+    requestUpstream: httpRequest,
+    upstream: { protocol: 'http:', hostname: '127.0.0.1', port: upstreamPort },
+  });
+  const brokerPort = await listen(server);
+  const headers = { authorization: `Bearer ${sessionToken}` };
+  const size = 4 * 1024 * 1024;
+  const body = JSON.stringify({ model: 'test-model', max_tokens: 1, messages: [
+    { role: 'user', content: 'x'.repeat(size) }] });
+  try {
+    await settle();
+    const before = process.memoryUsage().arrayBuffers;
+    const replies = Array.from({ length: 4 }, () => send(brokerPort, { headers, body }));
+    await waitFor(() => held.length === 4, 10_000);
+    await settle();
+    const during = process.memoryUsage().arrayBuffers - before;
+    // Four bodies were held before; now the streaming replies keep far less than one body in total.
+    assert.ok(during < size, `buffers grew ${during} bytes with four ${size}-byte bodies in flight`);
+    for (const release of held) release();
+    assert.ok((await Promise.all(replies)).every(reply => reply.status === 200));
+    assert.equal(readCredentialBrokerLedger(ledgerPath).largestRequestBytes, Buffer.byteLength(body));
+  } finally {
+    for (const release of held) release();
+    await close(server);
+    await close(upstreamServer);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+function fakeBroker(container: boolean): { broker: CredentialBroker; child: EventEmitter & { exitCode: number | null;
+  signalCode: NodeJS.Signals | null } } {
+  const child = Object.assign(new EventEmitter(), { exitCode: null as number | null, signalCode: null });
+  const broker = { child, ...(container ? { container: { id: 'a'.repeat(64), name: 'sb-test-broker',
+    image: `sha256:${'b'.repeat(64)}`, owned: true, networkMode: 'none' } } : {}) } as unknown as CredentialBroker;
+  return { broker, child };
+}
+
+test('a broker that dies during the session is reported once; a live or unanswered Docker broker is not', async () => {
+  // A local broker's own exit is its death.
+  const local = fakeBroker(false);
+  const localDeaths: BrokerDeath[] = [];
+  watchCredentialBroker(local.broker, death => localDeaths.push(death));
+  local.child.exitCode = 137;
+  local.child.emit('exit', 137, null);
+  assert.deepEqual(localDeaths.map(death => death.exitCode), [137]);
+
+  // A Docker broker: its attach client ends, Docker first does not answer, then says it runs,
+  // and only then that it stopped at its memory limit.
+  const docker = fakeBroker(true);
+  const answers: Array<BrokerContainerState | Error> = [new Error('Docker did not answer'),
+    { running: true, exitCode: 0, oomKilled: false }, { running: false, exitCode: 137, oomKilled: true }];
+  const deaths: BrokerDeath[] = [];
+  watchCredentialBroker(docker.broker, death => deaths.push(death), { retryMs: 5, inspect: () => {
+    const answer = answers.shift() ?? { running: false, exitCode: 137, oomKilled: true };
+    if (answer instanceof Error) throw answer;
+    return answer;
+  } });
+  docker.child.emit('exit', 1, null);
+  await waitFor(() => deaths.length > 0);
+  await new Promise(resolveWait => setTimeout(resolveWait, 30));
+  assert.equal(deaths.length, 1);
+  assert.equal(brokerDeathMessage(deaths[0]!), 'credential broker exited during the coding session (exit 137, killed at its memory limit)');
+
+  // Disarmed first, as the harness does before stopping the broker itself.
+  const stopped = fakeBroker(true);
+  const none: BrokerDeath[] = [];
+  const unwatch = watchCredentialBroker(stopped.broker, death => none.push(death), { retryMs: 5,
+    inspect: () => ({ running: false, exitCode: 0, oomKilled: false }) });
+  unwatch();
+  stopped.child.emit('exit', 0, null);
+  await new Promise(resolveWait => setTimeout(resolveWait, 30));
+  assert.deepEqual(none, []);
 });
 
 test('credential broker enforces model, output token, and session cost limits', async () => {

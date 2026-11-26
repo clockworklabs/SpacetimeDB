@@ -100,6 +100,8 @@ export function createCredentialBroker(configInput: unknown, {
   const protocol = brokerProtocol(config);
   const destination = upstream ?? { protocol: 'https:', hostname: protocol.hostname, port: 443 };
   let acceptedRequests = 0;
+  // The largest request body received; it shows whether a memory kill followed a large request.
+  let largestRequestBytes = 0;
   // Settles each paid call still open when the broker stops.
   const inFlight = new Set<() => void>();
   let lastResponseRequest = 0;
@@ -139,6 +141,7 @@ export function createCredentialBroker(configInput: unknown, {
     unpricedBillableRequests,
     unpricedByReason,
     webSearchCalls,
+    largestRequestBytes,
     spentUsd: Number(spentUsd.toFixed(6)),
     reservedUsd: Number(reservedUsd.toFixed(6)),
     usage: usageTotals,
@@ -218,8 +221,10 @@ export function createCredentialBroker(configInput: unknown, {
     request.on('data', (chunk: Buffer) => {
       if (tooLarge) return;
       received += chunk.length;
+      largestRequestBytes = Math.max(largestRequestBytes, received);
       if (received > maxRequestBytes) {
         tooLarge = true;
+        chunks.length = 0;
         recordFailure(requestOrdinal, { category: 'request', status: 413, code: 'broker-body-limit' });
         recordLedger();
         writeHead(413, { 'content-type': 'text/plain' });
@@ -231,6 +236,8 @@ export function createCredentialBroker(configInput: unknown, {
     request.on('end', () => {
       if (tooLarge) return;
       const body = Buffer.concat(chunks);
+      // Every callback below shares this scope until the reply has streamed; keep one copy, not two.
+      chunks.length = 0;
       let payload: JsonRecord;
       try { payload = protocol.parseRequest(requestBody(body, request.headers['content-encoding'], maxRequestBytes), path); }
       catch {

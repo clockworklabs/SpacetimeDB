@@ -21,8 +21,9 @@ import { hasRequiredBuildContainerIsolation, inspectBuildContainer, parseCgroupR
   parsePublishedPorts, waitForBuildContainerReady }
   from './build-container-inspection.js';
 import { reconcileCredentialBrokerReceipt } from './credential-broker-accounting.js';
-import { credentialBrokerDiagnostics, startCredentialBroker, stopCredentialBroker }
-  from './credential-broker-process.js';
+import { brokerDeathMessage, credentialBrokerDiagnostics, startCredentialBroker, stopCredentialBroker,
+  watchCredentialBroker } from './credential-broker-process.js';
+import type { BrokerDeath } from './credential-broker-process.js';
 import { clearMissingBuildContainerLease,
   recoverStoppedBuildContainer } from './recover-build-container.js';
 import { BUILD_CONTAINER_CREATION_LABEL, buildContainerName, containerIdFromDockerOutput,
@@ -699,6 +700,14 @@ const renewal = renewAgyLogin ? setInterval(() => {
   renewAgyLogin().then(login => broker.replaceCredential(login.token))
     .catch(error => console.error(`run-build.js: ${errorMessage(error)}`));
 }, AGY_RENEWAL_INTERVAL_MS) : undefined;
+// Without its broker the agent cannot reach the model; end the session now instead of at its timeout.
+let brokerDeath: BrokerDeath | null = null;
+const unwatchBroker = watchCredentialBroker(credentialBroker, death => {
+  brokerDeath = death;
+  console.error(`run-build.js: ${brokerDeathMessage(death)}; ending the coding session`);
+  signalSession('TERM');
+  setTimeout(() => signalSession('KILL'), 5_000).unref();
+});
 try {
   res = await codingProvider.run({ command: 'docker', args, input: promptInput,
     env: dockerExecEnv, timeoutMs: CODING_SESSION_TIMEOUT_MS, terminate: terminateSession,
@@ -707,6 +716,8 @@ try {
 } catch (error) {
   sessionError = error;
 } finally {
+  // Disarmed first: the harness stopping the broker is not a broker failure.
+  unwatchBroker();
   clearInterval(renewal);
   brokerLedger = await stopCredentialBroker(credentialBroker);
   brokerDiagnostics = credentialBrokerDiagnostics(credentialBroker);
@@ -729,6 +740,14 @@ try {
   runCleanupCommand('process-record cleanup', ['rm', '-f', processRecord]);
 }
 
+if (brokerDeath) {
+  const failure = brokerDeathMessage(brokerDeath);
+  if (sessionError) sessionError = new Error(`${failure}: ${errorMessage(sessionError)}`, { cause: sessionError });
+  else if (res) {
+    res.status = res.status === 0 ? 3 : res.status ?? 3;
+    res.stderr = `${res.stderr ?? ''}${res.stderr ? '\n' : ''}run-build.js: ${failure}\n`;
+  }
+}
 if (sessionError) {
   if (cleanupErrors.length) {
     throw new AggregateError([sessionError, ...cleanupErrors.map(message => new Error(message))],

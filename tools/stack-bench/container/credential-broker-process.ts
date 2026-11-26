@@ -317,6 +317,60 @@ function brokerExited(broker: CredentialBrokerHandle | null | undefined, alive: 
   return !alive(broker?.child?.pid);
 }
 
+export type BrokerDeath = { exitCode: number | null; oomKilled: boolean | null; at: string };
+export type BrokerContainerState = { running: boolean; exitCode: number | null; oomKilled: boolean };
+
+function inspectBrokerContainer(id: string): BrokerContainerState {
+  const [running, exitCode, oomKilled] = brokerDocker(['inspect', '--format',
+    '{{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}}', id]).split(' ');
+  return { running: running === 'true', exitCode: Number.isInteger(Number(exitCode)) ? Number(exitCode) : null,
+    oomKilled: oomKilled === 'true' };
+}
+
+export function brokerDeathMessage(death: BrokerDeath): string {
+  return `credential broker exited during the coding session (exit ${death.exitCode ?? 'unknown'}`
+    + `${death.oomKilled ? ', killed at its memory limit' : ''})`;
+}
+
+/**
+ * Calls onDeath once if the broker stops while the session still needs it; the returned
+ * function disarms the watch before the harness stops the broker itself. A Docker broker's
+ * attach client can end on a Docker hiccup while the broker still serves, so its death is
+ * confirmed with Docker. While Docker does not answer, the check repeats instead of ending
+ * a paid session on a guess.
+ */
+export function watchCredentialBroker(broker: CredentialBroker, onDeath: (death: BrokerDeath) => void,
+  { inspect = inspectBrokerContainer, retryMs = 5_000 }:
+  { inspect?: (id: string) => BrokerContainerState; retryMs?: number } = {}): () => void {
+  let armed = true;
+  let timer: NodeJS.Timeout | undefined;
+  const confirm = (): void => {
+    if (!armed) return;
+    if (!broker.container) {
+      armed = false;
+      onDeath({ exitCode: broker.child.exitCode ?? null, oomKilled: null, at: new Date().toISOString() });
+      return;
+    }
+    let state: BrokerContainerState | null = null;
+    try { state = inspect(broker.container.id); } catch { /* Docker did not answer; ask again */ }
+    if (state && !state.running) {
+      armed = false;
+      onDeath({ exitCode: state.exitCode, oomKilled: state.oomKilled, at: new Date().toISOString() });
+      return;
+    }
+    // Without its attach client, only a repeated check can notice the broker stopping later.
+    timer = setTimeout(confirm, retryMs);
+    timer.unref();
+  };
+  if (broker.child.exitCode !== null || broker.child.signalCode !== null) confirm();
+  else broker.child.once('exit', confirm);
+  return () => {
+    armed = false;
+    if (timer) clearTimeout(timer);
+    broker.child.off('exit', confirm);
+  };
+}
+
 async function waitForBrokerExit(broker: CredentialBrokerHandle, timeoutMs: number,
   { sleep, now, alive }: { sleep: (ms: number) => Promise<void>; now: () => number; alive: Alive }): Promise<boolean> {
   const deadline = now() + timeoutMs;
