@@ -180,7 +180,8 @@ impl BuildableWebsocketFormat for ws_v1::BsatnFormat {
         let qu_len_would_have_been = bsatn::to_len(&qu).unwrap();
 
         match decide_compression(qu_len_would_have_been, compression) {
-            ws_v1::Compression::None => ws_v1::CompressableQueryUpdate::Uncompressed(qu),
+            // Zstd is outer-message compression only.
+            ws_v1::Compression::None | ws_v1::Compression::Zstd => ws_v1::CompressableQueryUpdate::Uncompressed(qu),
             ws_v1::Compression::Brotli => {
                 let bytes = bsatn::to_vec(&qu).unwrap();
                 let mut out = Vec::new();
@@ -229,4 +230,12 @@ pub fn gzip_compress(bytes: &[u8], out: &mut impl io::Write) {
     let mut encoder = flate2::write::GzEncoder::new(out, flate2::Compression::fast());
     encoder.write_all(bytes).unwrap();
     encoder.finish().expect("should be able to gzip compress `bytes`");
+}
+
+pub(crate) fn zstd_compress(bytes: &[u8], out: &mut impl io::Write) {
+    // Zstd fast-2, with a checksum so clients can reject damaged frames.
+    let mut encoder = zstd::stream::write::Encoder::new(out, -2).expect("valid Zstd level");
+    encoder.include_checksum(true).expect("enable Zstd checksum");
+    encoder.write_all(bytes).expect("should be able to encode Zstd");
+    encoder.finish().expect("should be able to finish Zstd frame");
 }
