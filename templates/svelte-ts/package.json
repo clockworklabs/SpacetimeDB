@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "svelte-check --tsconfig ./tsconfig.json && vite build",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
     "preview": "vite preview",
     "generate": "pnpm --dir spacetimedb install && cargo run -p gen-bindings -- --out-dir src/module_bindings --module-path spacetimedb && prettier --write src/module_bindings",
     "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb",
@@ -16,11 +17,11 @@
     "spacetimedb": "workspace:*"
   },
   "devDependencies": {
-    "@sveltejs/vite-plugin-svelte": "^5.1.1",
-    "svelte": "^5.0.0",
-    "svelte-check": "^4.0.0",
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
+    "svelte": "^5.46.4",
+    "svelte-check": "^4.7.8",
     "typescript": "~5.6.2",
-    "vite": "^6.4.6"
+    "vite": "^7.3.8"
   },
   "engines": {
     "node": "^22.23.4 || ^24.22.1 || >=26.12.1"

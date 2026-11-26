@@ -46,17 +46,19 @@ spacetime dev --template svelte-ts
     <StepText>
       Your project contains both server and client code.
 
-      Edit `spacetimedb/src/index.ts` to add tables and reducers. Edit `src/App.svelte` to build your UI.
+      Edit `spacetimedb/src/index.ts` to add tables and reducers. Edit `src/App.svelte` to build your UI. The connection to SpacetimeDB is configured in `src/Root.svelte`.
     </StepText>
     <StepCode>
 ```
 my-spacetime-app/
-├── spacetimedb/          # Your SpacetimeDB module
+├── spacetimedb/            # Your SpacetimeDB module
 │   └── src/
-│       └── index.ts      # Server-side logic
-├── src/                  # Svelte frontend
-│   ├── App.svelte
-│   └── module_bindings/  # Auto-generated types
+│       └── index.ts        # Server-side logic
+├── src/                    # Svelte frontend
+│   ├── main.ts             # Mounts Root.svelte
+│   ├── Root.svelte         # Connects to SpacetimeDB
+│   ├── App.svelte          # Your UI
+│   └── module_bindings/    # Auto-generated types
 └── package.json
 ```
     </StepCode>
@@ -99,6 +101,30 @@ export const sayHello = spacetimedb.reducer(ctx => {
     </StepCode>
   </Step>
 
+  <Step title="Use your data in Svelte">
+    <StepText>
+      `src/Root.svelte` calls `createSpacetimeDBProvider`, which shares the connection with every component below it. It has to run inside a component, because it uses Svelte context, so it can't move to `main.ts`.
+
+      `src/App.svelte` then reads that connection with the hooks from `spacetimedb/svelte`. `useSpacetimeDB` and `useTable` return Svelte stores, so read them with a `$` prefix. `useTable` subscribes to the table and keeps its rows up to date. `useReducer` returns a function that calls the reducer.
+    </StepText>
+    <StepCode>
+```svelte
+<script lang="ts">
+import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/svelte';
+import { tables, reducers } from './module_bindings';
+
+const conn = useSpacetimeDB();
+const [people] = useTable(tables.person);
+const addReducer = useReducer(reducers.add);
+</script>
+
+<p>{$conn.isActive ? 'Connected' : 'Disconnected'}</p>
+<p>{$people.length} people</p>
+<button onclick={() => addReducer({ name: 'Alice' })}>Add Alice</button>
+```
+    </StepCode>
+  </Step>
+
   <Step title="Test with the CLI">
     <StepText>
       Open a new terminal and navigate to your project directory. Then use the SpacetimeDB CLI to call reducers and query your data directly.
@@ -130,4 +156,5 @@ spacetime logs
 
 ## Next steps
 
-- Read the [TypeScript SDK Reference](../../00200-core-concepts/00600-clients/00700-typescript-reference.md) for detailed API docs
+- Read the [Svelte section of the TypeScript SDK Reference](../../00200-core-concepts/00600-clients/00700-typescript-reference.md#svelte) for the full Svelte API
+- Work through the [Chat App Tutorial](../00300-tutorials/00100-chat-app.md) to build a bigger module. Its client is written in React, but the module and the SDK calls carry over to Svelte.

@@ -5,19 +5,30 @@ import { tables, reducers } from './module_bindings';
 const conn = useSpacetimeDB();
 
 // Subscribe to all people in the database
-const [people] = useTable(tables.person);
+const [people, peopleReady] = useTable(tables.person);
+
+// Until the subscription's first results arrive, an empty list means
+// "not loaded yet", not "no people".
+const loading = $derived(!$peopleReady && $people.length === 0);
 
 const addReducer = useReducer(reducers.add);
 
 let name = $state('');
+let error = $state<string | null>(null);
 
-function addPerson(e: SubmitEvent) {
+async function addPerson(e: SubmitEvent) {
   e.preventDefault();
   if (!name.trim() || !$conn.isActive) return;
 
-  // Call the add reducer
-  addReducer({ name: name });
+  const newName = name;
   name = '';
+  error = null;
+  try {
+    // Call the add reducer. It rejects if the reducer fails on the server.
+    await addReducer({ name: newName });
+  } catch (err) {
+    error = `Couldn't add ${newName}: ${err instanceof Error ? err.message : err}`;
+  }
 }
 </script>
 
@@ -48,13 +59,21 @@ function addPerson(e: SubmitEvent) {
     </button>
   </form>
 
+  {#if error}
+    <p style="color: red;">{error}</p>
+  {/if}
+
   <div>
-    <h2>People ({$people.length})</h2>
-    {#if $people.length === 0}
+    <h2>People{loading ? '' : ` (${$people.length})`}</h2>
+    {#if loading}
+      <p>Loading…</p>
+    {:else if $people.length === 0}
       <p>No people yet. Add someone above!</p>
     {:else}
       <ul>
-        {#each $people as person}
+        <!-- `person` has no primary key, so key each row by its object.
+             The SDK keeps the same object for a row until it changes. -->
+        {#each $people as person (person)}
           <li>{person.name}</li>
         {/each}
       </ul>

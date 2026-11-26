@@ -1,5 +1,5 @@
 import { setContext, onDestroy } from 'svelte';
-import { writable, type Writable } from 'svelte/store';
+import { readonly, writable, type Readable } from 'svelte/store';
 import {
   DbConnectionBuilder,
   type DbConnectionImpl,
@@ -32,7 +32,7 @@ export function createSpacetimeDBProvider<
   DbConnection extends DbConnectionImpl<any>,
 >(
   connectionBuilder: DbConnectionBuilder<DbConnection>
-): Writable<ConnectionState> {
+): Readable<ConnectionState> {
   const key = ConnectionManager.getKey(
     connectionBuilder.getUri(),
     connectionBuilder.getModuleName()
@@ -72,6 +72,9 @@ export function createSpacetimeDBProvider<
     ConnectionManager.release(key);
   });
 
-  setContext(SPACETIMEDB_CONTEXT_KEY, store);
-  return store;
+  // Hand out a read-only view: the state is owned by the ConnectionManager, so
+  // writes from components would only be overwritten (or worse, believed).
+  const readable = readonly(store);
+  setContext(SPACETIMEDB_CONTEXT_KEY, readable);
+  return readable;
 }
