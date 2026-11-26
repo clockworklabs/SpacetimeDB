@@ -17,10 +17,10 @@ mod storage;
 
 pub(crate) use self::{blob_set::DiskPinnedBlobHandle, page_set::DiskPinnedPageHandle};
 pub use self::{
-    blob_set::{BlobHandle, BlobMap, BlobReadSet, BlobSet},
+    blob_set::{BlobHandle, BlobMap, BlobReadSet, BlobScan, BlobSet, ScannedBlob, ScannedBlobData},
     budget::{BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetConfig, ByteBudgetUsage},
     error::{BlobError, EvictionError, ObjectStoreError, PageError, TrimError},
-    map::ObjectKey,
+    map::{ObjectKey, PageHash},
     mem::ResidentObjects,
     page_manager::{PageHandle, PageManager, ReservedPage},
     page_ref::{PageBorrow, PageRead, PageRef},
