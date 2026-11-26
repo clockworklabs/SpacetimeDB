@@ -7,7 +7,7 @@ import test from 'node:test';
 import { runAuditNetworkContext } from '../commands/bench.js';
 import { createBackendLease } from '../src/runtime/backend-lease.js';
 import { loadTrack } from '../src/composition/tracks.js';
-import { auditTranscript, networkTargetsFromBash, STACKBENCH_SOURCE, stackBenchSourceReferences }
+import { auditTranscript, networkTargetsFromBash, pathsFromBash, STACKBENCH_SOURCE, stackBenchSourceReferences }
   from '../commands/leak-audit.js';
 import { archiveTranscripts, transcriptDirectories } from '../src/agents/transcript-archive.js';
 import { codexTranscriptDirectory } from '../src/agents/codex-protocol.js';
@@ -138,6 +138,39 @@ test('a completed external Bash read contaminates the transcript', () => {
       { path: '/outside/notes.md', kind: 'other' },
       { path: '/app/stack-bench/bundle.json', kind: 'GRADER / TEST SPECS' },
     ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// The 1.2 Carbon Convex run was marked contaminated for writing its own test script to the
+// agent's scratch folder; its name contains "mutation", a Convex function kind.
+test('shell writes and heredoc bodies are not reads, and every reader around them still is', () => {
+  const scratch = '/home/developer/.gemini/antigravity-cli/brain/session/scratch';
+  assert.deepEqual(pathsFromBash(`cat <<'EOF' > ${scratch}/verify_convex_mutations.mjs\n`
+    + `import assert from "node:assert/strict";\nawait fetch('/api/mutation');\ncat /etc/notes.md\nEOF`), []);
+  assert.deepEqual(pathsFromBash(`cat <<-EOF >> ${scratch}/a.txt\n\tcat /etc/x.md\n\tEOF\ncat /tools/stack-bench/grader/grade.ts`),
+    ['/tools/stack-bench/grader/grade.ts']);
+  assert.deepEqual(pathsFromBash('ls -la\ncat /tools/stack-bench/grader/grade.ts'), ['/tools/stack-bench/grader/grade.ts']);
+  assert.deepEqual(pathsFromBash('cat /x/in.md > /y/out.md 2>&1; grep -n key /z/a.json >/dev/null'),
+    ['/x/in.md', '/z/a.json']);
+  assert.deepEqual(pathsFromBash('cat < /x/in.md; cat <<< "/not/a/file"'), ['/x/in.md']);
+});
+
+test('only StackBench\'s own mutation-test files count as grader files', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-mutation-names-'));
+  const transcript = join(root, 'session.jsonl');
+  const scratch = '/home/developer/.gemini/antigravity-cli/brain/session/scratch';
+  const reads = [`${scratch}/verify_convex_mutations.mjs`, '/tmp/copy/progression.mutation.ts',
+    '/tmp/copy/commands/check-mutations.ts', '/tmp/copy/grader/mutations/convex-ecommerce.json',
+    '/tmp/copy/grader/mutation-test.ts'];
+  try {
+    const events = [{ cwd: '/app', message: { content: [{ type: 'tool_use', id: 'read-1', name: 'Bash',
+      input: { command: `cat ${reads.join(' ')}` } }] } },
+    { message: { content: [{ type: 'tool_result', tool_use_id: 'read-1', is_error: false }] } }];
+    writeFileSync(transcript, `${events.map(event => JSON.stringify(event)).join('\n')}\n`);
+    assert.deepEqual(auditTranscript(transcript, '/app').hits.map(hit => hit.kind),
+      ['other', 'GRADER / TEST SPECS', 'GRADER / TEST SPECS', 'GRADER / TEST SPECS', 'GRADER / TEST SPECS']);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -17,8 +17,12 @@ const norm = (value: unknown): string => String(value ?? '')
 // Ignore dependencies, build output, and this session's CLI task output.
 const IGNORE = /node_modules|\.git[/\\]|package-lock\.json|\/dist\/|\.map$|[/\\]temp[/\\]claude[/\\].*[/\\]tasks[/\\]/;
 
-// Commands that pull file contents into context.
-const READER = /(?:^|[;&|]\s*)(?:cat|head|tail|less|more|type|grep|rg|ack|find|ls\s+-\w*l|sed\s+-n|awk)\s+([^;&|]+)/g;
+// Commands that pull file contents into context. A line break separates commands as `;` does.
+const READER = /(?:^|[;&|\n]\s*)(?:cat|head|tail|less|more|type|grep|rg|ack|find|ls\s+-\w*l|sed\s+-n|awk)\s+([^;&|\n]+)/g;
+// `<<WORD` or `<<-WORD` opens a heredoc; `<<<` is a here-string, not a heredoc.
+const HEREDOC = /(?<!<)<<(-?)\s*(['"]?)([A-Za-z_][\w.-]*)\2/g;
+// Output redirection (`>`, `>>`, `2>`, `&>`, `>|`, `>&2`) names what a command writes.
+const OUTPUT_REDIRECT = /^(?:\d*|&)>{1,2}\|?(.*)$/;
 
 // Network targets in a shell command: any URL, and a raw socket target. A
 // A verified attempt namespace owns its loopback ports, including temporary
@@ -67,7 +71,8 @@ const networkKind = (target: NetworkTarget, ownEndpoints: ReadonlySet<string>, i
 const CLASSES: Array<readonly [RegExp, string]> = [
   [/[/\\]stack-bench(?:[/\\]|$)/, 'GRADER / TEST SPECS'],
   [/\.claude[/\\]projects.*memory|[/\\]memory[/\\].*\.md$/, 'BENCHMARK NOTES'],
-  [/scenarios[/\\].*\.json|grade\.(?:js|ts)|mutation|check-scenarios/, 'GRADER / TEST SPECS'],
+  // StackBench's mutation-test files by name; "mutation" alone is also an ordinary Convex function kind.
+  [/scenarios[/\\].*\.json|grade\.(?:js|ts)|(?:\.mutation|mutation-(?:test|analysis|checkpoint|control))\.[jt]s$|check-mutations|[/\\]mutations[/\\][\w-]+-ecommerce\.json|check-scenarios/, 'GRADER / TEST SPECS'],
   [/contracts[/\\].*\.json|appendix-\d+\.md|walk\.(?:js|ts)|lint\.(?:js|ts)/, 'CONTRACT / LINTER'],
   [/prompts[/\\]|test-plans[/\\]|GRADING|RUBRIC/, 'PROMPTS / RUBRIC'],
   [/[/\\]skills[/\\]/, 'skill docs (intended)'],
@@ -141,13 +146,38 @@ function sessionCwd(lines: string[]): string | null {
     ?? null;
 }
 
+// A heredoc body is the content of a file or of a command's input, not shell to run.
+function withoutHeredocBodies(command: string): string {
+  const kept: string[] = [];
+  const open: Array<{ word: string; tabs: boolean }> = [];
+  for (const line of command.split('\n')) {
+    const body = open[0];
+    if (body) {
+      if ((body.tabs ? line.replace(/^\t+/, '') : line) === body.word) open.shift();
+      continue;
+    }
+    kept.push(line);
+    for (const match of line.matchAll(HEREDOC)) open.push({ word: match[3]!, tabs: match[1] === '-' });
+  }
+  return kept.join('\n');
+}
+
 export function pathsFromBash(command: unknown): string[] {
   const out: string[] = [];
-  for (const match of String(command).matchAll(READER)) {
+  for (const match of withoutHeredocBodies(String(command)).matchAll(READER)) {
     const argumentsText = match[1];
     if (!argumentsText) continue;
-    for (const tokRaw of argumentsText.split(/\s+/)) {
-      const t = tokRaw.replace(/^["']|["']$/g, '');
+    const tokens = argumentsText.trim().split(/\s+/);
+    for (let index = 0; index < tokens.length; index++) {
+      const raw = tokens[index]!;
+      // A write target, a heredoc delimiter, or a here-string is not a file the command reads.
+      const written = OUTPUT_REDIRECT.exec(raw);
+      const inline = /^<<<?(.*)$/.exec(raw);
+      if (written || inline) {
+        if (!(written ?? inline)![1]) index++;
+        continue;
+      }
+      const t = raw.replace(/^</, '').replace(/^["']|["']$/g, '');
       if (!t || t.startsWith('-')) continue;
       if (/[*?]/.test(t) || /\//.test(t) || /\\/.test(t) || /\.\w+$/.test(t)) out.push(t);
     }
