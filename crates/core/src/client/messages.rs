@@ -3,7 +3,7 @@ use crate::client::consume_each_list::ConsumeEachBuffer;
 use crate::host::module_host::{EventStatus, ModuleEvent, ProcedureCallError};
 use crate::host::{ArgsTuple, ProcedureCallResult};
 use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
-use crate::subscription::websocket_building::{brotli_compress, decide_compression, gzip_compress};
+use crate::subscription::websocket_building::{decide_compression, gzip_compress};
 use bytes::{BufMut, Bytes, BytesMut};
 use bytestring::ByteString;
 use derive_more::From;
@@ -83,13 +83,13 @@ impl SerializeBuffer {
 
     /// Compress the data from a `write_with_tag` call, and change the tag.
     fn compress_with_tag(
-        self,
+        mut self,
         tag: u8,
-        write: impl FnOnce(&[u8], &mut bytes::buf::Writer<BytesMut>),
+        write: impl FnOnce(&mut BytesMut, &mut bytes::buf::Writer<BytesMut>),
     ) -> (InUseSerializeBuffer, Bytes) {
         let mut writer = self.compressed.writer();
         writer.get_mut().put_u8(tag);
-        write(&self.uncompressed[1..], &mut writer);
+        write(&mut self.uncompressed, &mut writer);
         let compressed = writer.into_inner().freeze();
         let in_use = InUseSerializeBuffer::Compressed {
             uncompressed: self.uncompressed,
@@ -111,10 +111,20 @@ fn finalize_binary_serialize_buffer(
 ) -> (InUseSerializeBuffer, Bytes) {
     match decide_compression(uncompressed_len, compression) {
         ws_v1::Compression::None => buffer.uncompressed(),
-        ws_v1::Compression::Brotli => {
-            buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_BROTLI, brotli_compress)
+        ws_v1::Compression::Brotli => buffer.compress_with_tag(
+            ws_common::SERVER_MSG_COMPRESSION_TAG_BROTLI,
+            crate::compression::brotli_compress_frame,
+        ),
+        ws_v1::Compression::Gzip => {
+            buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_GZIP, |frame, out| {
+                gzip_compress(&frame[1..], out);
+            })
         }
-        ws_v1::Compression::Gzip => buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_GZIP, gzip_compress),
+        ws_v1::Compression::Zstd => {
+            buffer.compress_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_ZSTD, |frame, out| {
+                crate::compression::zstd_compress(&frame[1..], out);
+            })
+        }
     }
 }
 

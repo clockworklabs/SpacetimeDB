@@ -7603,6 +7603,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruzstd"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7c1c839d570d835527c9a5e4db7cb2198683a988cb9d7293fc8674e6bd58fc8"
+dependencies = [
+ "twox-hash",
+]
+
+[[package]]
 name = "ryu"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8630,6 +8639,7 @@ dependencies = [
  "v8",
  "wasmtime",
  "wasmtime-internal-fiber",
+ "zstd 0.13.3",
 ]
 
 [[package]]
@@ -9109,8 +9119,10 @@ dependencies = [
  "native-tls",
  "once_cell",
  "prometheus",
+ "ruzstd",
  "shlex",
  "spacetimedb-client-api-messages",
+ "spacetimedb-core",
  "spacetimedb-data-structures",
  "spacetimedb-lib",
  "spacetimedb-metrics",
@@ -9124,6 +9136,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+ "zstd 0.13.3",
 ]
 
 [[package]]
@@ -10508,6 +10521,12 @@ dependencies = [
  "url",
  "utf-8",
 ]
+
+[[package]]
+name = "twox-hash"
+version = "2.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86a801b3cea342a06d468c8710662aa29e5e05e4f5c0d62f00bbb7f2ad7941c2"
 
 [[package]]
 name = "typed-path"

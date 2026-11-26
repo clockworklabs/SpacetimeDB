@@ -42,6 +42,8 @@ pub enum Compression {
     Brotli,
     /// Compress using gzip if a certain size threshold was met.
     Gzip,
+    /// Opt in to Zstandard compression. Requires a server and client with Zstd support.
+    Zstd,
 }
 
 /// The tag recognized by the host and SDKs to mean no compression of a `ServerMessage`.
@@ -52,6 +54,33 @@ pub const SERVER_MSG_COMPRESSION_TAG_BROTLI: u8 = 1;
 
 /// The tag recognized by the host and SDKs to mean gzip compression of a `ServerMessage`.
 pub const SERVER_MSG_COMPRESSION_TAG_GZIP: u8 = 2;
+
+/// Standard Zstandard frame, negotiated through `compression=Zstd`.
+/// Existing clients retain their selected codec and are never sent this tag.
+pub const SERVER_MSG_COMPRESSION_TAG_ZSTD: u8 = 3;
+
+#[cfg(test)]
+mod compression_tests {
+    use super::*;
+
+    #[test]
+    fn zstd_opt_in_preserves_defaults_and_existing_tags() {
+        assert_eq!(Compression::default(), Compression::Brotli);
+        assert_eq!(
+            serde_json::from_str::<Compression>("\"Zstd\"").unwrap(),
+            Compression::Zstd
+        );
+        assert_eq!(
+            [
+                SERVER_MSG_COMPRESSION_TAG_NONE,
+                SERVER_MSG_COMPRESSION_TAG_BROTLI,
+                SERVER_MSG_COMPRESSION_TAG_GZIP,
+                SERVER_MSG_COMPRESSION_TAG_ZSTD
+            ],
+            [0, 1, 2, 3]
+        );
+    }
+}
 
 /// Websocket close code sent when a connection supplies a `session_id`
 /// which another live connection of the same identity still holds.
