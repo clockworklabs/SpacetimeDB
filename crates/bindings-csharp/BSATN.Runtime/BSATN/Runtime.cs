@@ -1,5 +1,6 @@
 namespace SpacetimeDB.BSATN;
 
+using System.Reflection;
 using System.Text;
 
 /// <summary>
@@ -191,7 +192,11 @@ public readonly struct Enum<T> : IReadWrite<T>
                             .Select(name => new AggregateElement(name, AlgebraicType.Unit)),
                     ]
 #pragma warning restore CA2263
-                )
+                ),
+            // C# enums can't be partial, so the generator can't pass the name in.
+            // This runs on every call, even for an already registered type, but only while the
+            // module describes itself.
+            typeof(T).GetCustomAttribute<TypeAttribute>()?.Name
         );
 }
 

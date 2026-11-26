@@ -2,7 +2,10 @@ namespace SpacetimeDB.BSATN;
 
 public interface ITypeRegistrar
 {
-    AlgebraicType.Ref RegisterType<T>(Func<AlgebraicType.Ref, AlgebraicType> type);
+    AlgebraicType.Ref RegisterType<T>(
+        Func<AlgebraicType.Ref, AlgebraicType> type,
+        string? sourceName = null
+    );
 }
 
 [SpacetimeDB.Type]

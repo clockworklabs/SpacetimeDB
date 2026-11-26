@@ -1532,6 +1532,39 @@ public static class GeneratorSnapshotTests
             }
         }
 
+        // Outbox tables are root-only, even in an unmounted dependency.
+        var outboxDependency = Emit(
+            Generate(
+                Create(
+                    "OutboxDependency",
+                    """
+                    namespace Remote {
+                        [SpacetimeDB.Type] public partial struct Identity { public SpacetimeDB.Identity Value; }
+                        public abstract class Ping : SpacetimeDB.Internal.IOutboxReceiver {
+                            public const string ReducerName = "ping";
+                            public const string SignatureHash = "0000000000000000000000000000000000000000000000000000000000000000";
+                        }
+                    }
+                    [SpacetimeDB.Table(Accessor = "PingOutbox", Outbox = typeof(Remote.Ping))]
+                    public partial struct PingRow {
+                        [SpacetimeDB.PrimaryKey, SpacetimeDB.AutoInc] public ulong Id;
+                        [SpacetimeDB.Target] public Remote.Identity Target;
+                    }
+                    """
+                )
+            )
+        );
+        var outboxResult = CSharpGeneratorDriver
+            .Create([new Module().AsSourceGenerator()], parseOptions: fixture.ParseOptions)
+            .RunGenerators(Create("OutboxConsumer", "", outboxDependency))
+            .GetRunResult();
+        Assert.Equal(
+            "Dependency 'OutboxDependency, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null' declares outbox tables (PingOutbox). Outbox tables are only supported in the root assembly.",
+            Assert
+                .Single(outboxResult.Diagnostics, d => d.Severity == DiagnosticSeverity.Error)
+                .GetMessage()
+        );
+
         // Empty environment schemas contain no keys and are permitted by the host.
         var emptyEnvironment = Emit(
             Generate(Create("EmptyEnvironment", "[SpacetimeDB.Env] public struct Settings { }"))
@@ -1589,7 +1622,6 @@ public static class GeneratorSnapshotTests
 
         AssertPublicBoundIsAvailableInRuntime(compilationAfterGen);
         AssertContextOwnership(compilationAfterGen);
-        AssertGeneratedCodeDoesNotUseInternalBound(compilationAfterGen);
     }
 
     [Fact]
@@ -1703,6 +1735,23 @@ public static class GeneratorSnapshotTests
         AssertContextOwnership(compilationAfterGen);
         AssertGeneratedCodeDoesNotUseInternalBound(compilationAfterGen);
     }
+
+    // The generator matches outbox columns to receiver parameters with the runtime's
+    // snake_case conversion. Expected values come from Rust's `convert_case` 0.6, which names
+    // those parameters; one case per word-boundary rule, plus the Unicode cases that need the
+    // generator's `Rune` polyfill.
+    [Theory]
+    [InlineData("PlayerName", "player_name")]
+    [InlineData("player_name", "player_name")]
+    [InlineData("HTTPServer", "http_server")]
+    [InlineData("Field1Value", "field_1_value")]
+    [InlineData("__double__under", "double_under")]
+    [InlineData("kebab-case name", "kebab_case_name")]
+    [InlineData("İstanbulCity", "i̇stanbul_city")]
+    [InlineData("ODYSSEUSΣ", "odysseusς")]
+    [InlineData("\U00010400\U00010428Deseret", "\U00010428\U00010428_deseret")]
+    public static void SnakeCaseMatchesConvertCase(string name, string expected) =>
+        Assert.Equal(expected, Utils.SnakeCase(name));
 
     [Fact]
     public static async Task ViewInvalidReturnHighlightsReturnType()

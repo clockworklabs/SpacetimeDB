@@ -206,7 +206,7 @@ impl Drop for WasmMemoryBytesMetric {
 }
 
 type WasmResult<T> = Result<T, WasmError>;
-type RtResult<T> = anyhow::Result<T>;
+type RtResult<T> = wasmtime::Result<T>;
 
 /// Wraps an `InstanceEnv` with the magic necessary to push
 /// and pull bytes from webassembly memory.
@@ -233,7 +233,7 @@ impl WasmInstanceEnv {
         }
     }
 
-    fn alloc_bytes_source_id(&mut self) -> RtResult<BytesSourceId> {
+    fn alloc_bytes_source_id(&mut self) -> anyhow::Result<BytesSourceId> {
         let id = self.next_bytes_source_id;
         self.next_bytes_source_id = id
             .checked_add(1)
@@ -253,7 +253,7 @@ impl WasmInstanceEnv {
     /// Binds `bytes` to the environment and assigns it an ID.
     ///
     /// If `bytes` is empty, `BytesSourceId::INVALID` is returned.
-    fn create_bytes_source(&mut self, bytes: bytes::Bytes) -> RtResult<BytesSourceId> {
+    fn create_bytes_source(&mut self, bytes: bytes::Bytes) -> anyhow::Result<BytesSourceId> {
         // Pass an invalid source when the bytes were empty.
         // This allows the module to avoid allocating and make a system call in those cases.
         if bytes.is_empty() {
@@ -264,7 +264,7 @@ impl WasmInstanceEnv {
     }
 
     /// Allocate a valid source even for an empty value when zero means absence.
-    fn create_present_bytes_source(&mut self, bytes: bytes::Bytes) -> RtResult<BytesSourceId> {
+    fn create_present_bytes_source(&mut self, bytes: bytes::Bytes) -> anyhow::Result<BytesSourceId> {
         if bytes.len() > u32::MAX as usize {
             // There's no inherent reason we need to error here,
             // other than that it makes it impossible to report the length in `bytes_source_remaining_length`
@@ -283,7 +283,7 @@ impl WasmInstanceEnv {
         }
     }
 
-    pub fn create_extra_bytes_source(&mut self, bytes: bytes::Bytes) -> RtResult<BytesSourceId> {
+    pub fn create_extra_bytes_source(&mut self, bytes: bytes::Bytes) -> anyhow::Result<BytesSourceId> {
         self.create_bytes_source(bytes)
     }
 
@@ -452,9 +452,11 @@ impl WasmInstanceEnv {
 
     fn convert_wasm_result<T: From<u16>>(func: AbiCall, err: WasmError) -> RtResult<T> {
         match err {
-            WasmError::Db(err) => err_to_errno_and_log(func, err).map(|(code, _)| code),
+            WasmError::Db(err) => err_to_errno_and_log(func, err)
+                .map(|(code, _)| code)
+                .map_err(wasmtime::Error::from_anyhow),
             WasmError::BufferTooSmall => Ok(errno::BUFFER_TOO_SMALL.get().into()),
-            WasmError::Wasm(err) => Err(err),
+            WasmError::Wasm(err) => Err(wasmtime::Error::from_anyhow(err)),
         }
     }
 
@@ -1804,7 +1806,7 @@ impl WasmInstanceEnv {
                         caller.data_mut().instance_env.take_procedure_tx_offset();
                     }
                     // Return a host error (trap), never a retryable ABI errno.
-                    confirmed.map(|()| 0)
+                    confirmed.map(|()| 0).map_err(wasmtime::Error::from_anyhow)
                 }
                 None => result,
             };
