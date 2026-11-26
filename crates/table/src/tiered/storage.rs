@@ -9,7 +9,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::{Mutex, MutexGuard, RwLock};
 use spacetimedb_lib::bsatn;
 use spacetimedb_memory_usage::MemoryUsage;
 
@@ -18,7 +18,8 @@ use crate::{
     tiered::{
         error::ObjectStoreError,
         map::{BlobHashWrapper, ObjectKey, ObjectMap, PageHash},
-        BlobHandle, BudgetPermit, ByteBudget, PageHandle,
+        metrics::EnsureLocalOutcome,
+        BlobHandle, BudgetPermit, ByteBudget, EvictionPolicy, PageHandle,
     },
 };
 
@@ -247,36 +248,78 @@ pub type RemoteBackingStore = BackingStore<Box<dyn RemoteStorage>>;
 
 type SharedCatalogEntry = Arc<ObjectSlot>;
 
+/// Whether an owner requires the object to survive eviction to the remote tier.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiskRetention {
+    Evictable,
+    Required,
+}
+
+impl DiskRetention {
+    pub fn is_required(policy: EvictionPolicy) -> bool {
+        Self::from(policy) == Self::Required
+    }
+}
+
+impl From<EvictionPolicy> for DiskRetention {
+    fn from(policy: EvictionPolicy) -> Self {
+        match policy {
+            // Objects may have been stored on disk before changing the cache
+            // policy of a table. It is ok to evict those to the remote tier.
+            EvictionPolicy::Never => Self::Evictable,
+            // If main memory eviction is allowed, the disk copy must stay.
+            EvictionPolicy::Memory => Self::Required,
+            // Object is explicitly evictable.
+            EvictionPolicy::Disk => Self::Evictable,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 enum ObjectOwnership {
     #[default]
     Unreferenced,
     Referenced {
         /// The number of owners of this object.
+        ///
+        /// Owners may not request pinning, so this number can be greater than
+        /// `total_pins`. The owner count is tracked so that we can detect the
+        /// last owner in [Self::release].
         owners: NonZeroU64,
+        /// Sum of all live [DiskObject]s' pin counts.
+        total_pins: u64,
     },
 }
 
 impl ObjectOwnership {
-    fn retain(&mut self) {
+    fn is_pinned(&self) -> bool {
+        matches!(self, Self::Referenced { total_pins: 1.., .. })
+    }
+
+    fn retain(&mut self, pins: u64) {
         *self = match *self {
             Self::Unreferenced => Self::Referenced {
                 owners: NonZeroU64::MIN,
+                total_pins: pins,
             },
-            Self::Referenced { owners } => Self::Referenced {
+            Self::Referenced { owners, total_pins } => Self::Referenced {
                 owners: owners.checked_add(1).expect("owner count overflow"),
+                total_pins: total_pins.checked_add(pins).expect("pin count overflow"),
             },
         };
     }
 
-    fn release(&mut self) -> bool {
-        let Self::Referenced { owners } = *self else {
-            unreachable!("only a registered handle can release ownership")
+    fn release(&mut self, pins: u64) -> bool {
+        let Self::Referenced { owners, total_pins } = *self else {
+            unreachable!("only a registered handle can release pin counts")
         };
+        assert!(total_pins >= pins);
 
         match owners.get() {
             1 => {
-                // The last owner makes the object collectible.
+                // The last owner has released its pins,
+                // so the object becomes unreferenced.
+                assert_eq!(total_pins, pins);
                 *self = Self::Unreferenced;
 
                 true
@@ -284,6 +327,7 @@ impl ObjectOwnership {
             x => {
                 *self = Self::Referenced {
                     owners: NonZeroU64::new(x - 1).unwrap(),
+                    total_pins: total_pins.checked_sub(pins).expect("pin count underflow"),
                 };
 
                 false
@@ -306,12 +350,13 @@ struct ObjectState {
 
 /// Ownership of an object stored in the [LocalBackingStore].
 ///
-/// Tracks the backing lifetime across multiple owners. The final owner release
-/// makes the object eligible for reclamation.
+/// Tracks pins of multiple owners. When pins go to zero, the object can be
+/// evicted to the [RemoteBackingStore].
 #[derive(Debug)]
 pub struct DiskObject {
     key: ObjectKey,
     slot: SharedCatalogEntry,
+    pins: u64,
     // Shared with [TieredStorage], so the object can signal pending
     // reclamation.
     should_reclaim: Arc<AtomicBool>,
@@ -321,16 +366,46 @@ impl DiskObject {
     pub fn key(&self) -> ObjectKey {
         self.key
     }
+
+    pub fn pins(&self) -> u64 {
+        self.pins
+    }
+
+    /// Prevent eviction of this object's local copy.
+    ///
+    /// This only modifies the catalog entry, it is the caller's responsibility
+    /// to actually write the object.
+    pub(crate) fn pin(&mut self) {
+        let pins = self.pins.checked_add(1).expect("pin count overflow");
+        self.set_pins(pins);
+    }
+
+    /// Decrement the pin count for this object.
+    pub(crate) fn unpin(&mut self) {
+        let pins = self.pins.checked_sub(1).expect("pin count underflow");
+        self.set_pins(pins);
+    }
+
+    /// Replace the pin count contribution of this object.
+    ///
+    /// The caller must ensure that the object is live.
+    pub(crate) fn set_pins(&mut self, pins: u64) {
+        let mut state = self.slot.state.lock();
+        state.ownership.release(self.pins);
+        state.ownership.retain(pins);
+        self.pins = pins;
+    }
 }
 
 impl Clone for DiskObject {
     fn clone(&self) -> Self {
         let mut state = self.slot.state.lock();
-        state.ownership.retain();
+        state.ownership.retain(self.pins);
 
         Self {
             key: self.key,
             slot: self.slot.clone(),
+            pins: self.pins,
             should_reclaim: self.should_reclaim.clone(),
         }
     }
@@ -339,7 +414,7 @@ impl Clone for DiskObject {
 impl Drop for DiskObject {
     fn drop(&mut self) {
         let mut state = self.slot.state.lock();
-        if state.ownership.release() {
+        if state.ownership.release(self.pins) {
             self.should_reclaim.store(true, Ordering::Release);
         }
     }
@@ -394,10 +469,15 @@ impl TieredStorage {
         maybe_slot.is_some_and(|slot| slot.state.lock().object.is_some())
     }
 
-    pub fn write(&self, object: Object) -> Result<DiskObject, ObjectStoreError> {
+    pub fn write(&self, object: Object, retention: impl Into<DiskRetention>) -> Result<DiskObject, ObjectStoreError> {
         let size = object.size();
         let (key, bytes) = object.into_kv();
         assert_eq!(size, bytes.len() as u64);
+
+        let pins = match retention.into() {
+            DiskRetention::Evictable => 0,
+            DiskRetention::Required => 1,
+        };
 
         // Establish a [DiskObject] owning the object.
         //
@@ -408,7 +488,7 @@ impl TieredStorage {
         //    - increment the slot's `registering` counter (lock-free)
         //    - release the catalog lock
         // 2. Lock the entry slot and:
-        //    - establish ownership
+        //    - establish local pinning requirements
         //    - decrement the `registering` counter
         //    - release the entry slot
         // 3. Move the slot into the `DiskObject` owner
@@ -416,6 +496,8 @@ impl TieredStorage {
         // Concurrent reclamation can't proceed during (1), and will skip the
         // slot before its lock can be acquired in (2).
         // Waiting for the slot lock doesn't require holding the catalog lock.
+        // Concurrent eviction could remove the object if it gets the slot lock
+        // first, but will skip it if we installed local pins in (2).
         let owner = {
             let slot = {
                 let mut catalog = self.catalog.write();
@@ -427,7 +509,7 @@ impl TieredStorage {
             };
             {
                 let mut state = slot.state.lock();
-                state.ownership.retain();
+                state.ownership.retain(pins);
 
                 // Relaxed ordering is sufficient as we hold the slot lock.
                 let prev = slot.registering.fetch_sub(1, Ordering::Relaxed);
@@ -437,6 +519,7 @@ impl TieredStorage {
             DiskObject {
                 key,
                 slot,
+                pins,
                 should_reclaim: self.should_reclaim.clone(),
             }
         };
@@ -500,40 +583,77 @@ impl TieredStorage {
         // If remote storage is configured, promote the object into the local
         // tier.
         if let Some(remote) = &self.remote {
-            let ObjectMetadata { size } = remote.object_store.stat(key)?.ok_or_else(|| not_found(key))?;
-            // Acquire the permit before locking the slot, as eviction may lock
-            // it, too.
-            let permit = self.acquire_local_permit(size)?;
-
-            let mut state = slot.state.lock();
-            let entry = state.object.as_mut().ok_or_else(|| unknown(key))?;
-            // Another reader or writer may have restored the object while we
-            // reserved space.
-            let local = self.local.object_store.read(key)?;
+            let mut promotion =
+                Promotion::prepare(key, &self.local, remote, &slot, |size| self.acquire_local_permit(size))?;
+            let local = promotion.check(|key| self.local.object_store.read(key))?;
             self.metrics()
                 .lookup(key.metric_type(), CacheTier::Disk, local.is_some());
             if let Some(object) = local {
                 *source = Some(FaultSource::Disk);
-                entry.last_access_epoch = self.access_epoch();
+                promotion.set_last_access(self.access_epoch());
+
                 return Ok(object);
             }
-
-            // Fetch the remote object and store it locally.
-            // Hold the entry lock to prevent eviction.
-            let bytes = remote.object_store.read(key)?.ok_or_else(|| not_found(key))?;
-            *source = Some(FaultSource::Remote);
-            self.local
-                .object_store
-                .write(object_from_trusted_bytes(key, bytes.clone()))?;
-            entry.last_access_epoch = self.access_epoch();
-            entry.permit = Some(permit);
-
+            let bytes = promotion.install(|| Some(self.access_epoch()))?;
             return Ok(bytes);
         }
 
         // Entry is in the catalog, but neither in local nor remote storage.
         // TODO: panic?
         Err(not_found(key))
+    }
+
+    /// Ensure that the previously stored backing `object` is present in the
+    /// local tier.
+    ///
+    /// `object` will be pinned to the local tier, so its lifetime should be
+    /// chosen accordingly -- when preparing a policy change transaction, clone
+    /// the object slot's [DiskObject], so that the pin is valid only for as
+    /// long as `object` is live.
+    ///
+    /// Once pinned, the method checks whether the object is present in local
+    /// storage. If not, the object is fetched from the remote and installed
+    /// locally.
+    ///
+    /// Returns an error if the object needs to be fetched, but remote storage
+    /// is not enabled.
+    ///
+    /// Subject to the local disk budget.
+    pub(crate) fn ensure_local(&self, object: &mut DiskObject) -> Result<(), ObjectStoreError> {
+        let timer = self.metrics().timer();
+        let result = self.ensure_local_tier_inner(object);
+        let outcome = match &result {
+            Ok(outcome) => *outcome,
+            Err(_) => EnsureLocalOutcome::Failed,
+        };
+        self.metrics()
+            .ensure_local(object.key().metric_type(), outcome, timer.nanos());
+
+        result.map(drop)
+    }
+
+    fn ensure_local_tier_inner(&self, object: &mut DiskObject) -> Result<EnsureLocalOutcome, ObjectStoreError> {
+        let key = object.key;
+        let slot = self.catalog.read().get(&key).cloned().ok_or_else(|| unknown(key))?;
+        // Ensure the object can't be evicted.
+        object.pin();
+        // Object is already in the local tier.
+        if self.local.object_store.stat(key)?.is_some() {
+            return Ok(EnsureLocalOutcome::LocalHit);
+        }
+
+        let Some(remote) = &self.remote else {
+            return Err(ObjectStoreError::RemoteDisabled);
+        };
+
+        let promotion = Promotion::prepare(key, &self.local, remote, &slot, |size| self.acquire_local_permit(size))?;
+        if promotion.check(|key| self.local.object_store.stat(key))?.is_some() {
+            return Ok(EnsureLocalOutcome::ConcurrentHit);
+        }
+        // Don't update last access, as we're not requesting access.
+        promotion.install(|| None).map(|bytes| EnsureLocalOutcome::Promoted {
+            bytes: bytes.len() as u64,
+        })
     }
 
     /// Trim the local storage to the configured low watermark.
@@ -590,6 +710,10 @@ impl TieredStorage {
                 let last_access_epoch = {
                     // If the slot is locked, don't evict it.
                     let state = slot.state.try_lock()?;
+                    // Nor if the object is pinned.
+                    if state.ownership.is_pinned() {
+                        return None;
+                    }
                     // Filter out empty or non-resident slots.
                     let entry = state.object.as_ref()?;
                     entry.permit.as_ref()?;
@@ -606,6 +730,10 @@ impl TieredStorage {
             let Some(mut state) = slot.state.try_lock() else {
                 continue;
             };
+            // Skip if the object got pinned meanwhile.
+            if state.ownership.is_pinned() {
+                continue;
+            }
             // Stop if we already reached our target.
             if self.local.budget.usage().accounted_bytes <= target_usage {
                 break;
@@ -735,6 +863,114 @@ fn object_from_trusted_bytes(key: ObjectKey, bytes: ObjectBytes) -> Object {
         ObjectKey::Blob(hash) => ObjectInner::Blob { hash, bytes },
     };
     Object { inner }
+}
+
+pub(crate) fn write_atomically(data: &[u8], path: &Path, fsync: Fsync) -> io::Result<()> {
+    let dir = path.parent().expect("output path must have a parent");
+
+    let mut tmp = NamedTempFile::new_in(dir)?;
+    tmp.write_all(data)?;
+    if let Fsync::Require = fsync {
+        tmp.as_file().sync_data()?;
+    }
+    tmp.persist(path)?;
+
+    if let Fsync::Require = fsync {
+        #[cfg(not(target_os = "windows"))]
+        fs::File::open(dir)?.sync_all()?;
+    }
+
+    Ok(())
+}
+
+/// Helper struct for promoting an object from remote to local storage.
+struct Promotion<'a> {
+    key: ObjectKey,
+    permit: BudgetPermit,
+    local: &'a LocalBackingStore,
+    remote: &'a RemoteBackingStore,
+    state: MutexGuard<'a, ObjectState>,
+}
+
+impl<'a> Promotion<'a> {
+    /// Prepare a promotion.
+    ///
+    /// Proceeds as follows:
+    ///
+    /// - Check that the object is present in remote storage
+    ///   and determine its size.
+    /// - Acquire a local storage permit by calling `acquire_permit`.
+    ///   This may trigger eviction.
+    /// - Lock the object slot after possible eviction.
+    ///
+    /// The slot lock is stored in `Self`.
+    fn prepare(
+        key: ObjectKey,
+        local: &'a LocalBackingStore,
+        remote: &'a RemoteBackingStore,
+        slot: &'a ObjectSlot,
+        acquire_permit: impl FnOnce(u64) -> Result<BudgetPermit, ObjectStoreError>,
+    ) -> Result<Self, ObjectStoreError> {
+        let ObjectMetadata { size } = remote.object_store.stat(key)?.ok_or_else(|| not_found(key))?;
+        let permit = acquire_permit(size)?;
+        let state = slot.state.lock();
+        if state.object.is_none() {
+            return Err(unknown(key));
+        }
+
+        Ok(Self {
+            key,
+            permit,
+            local,
+            remote,
+            state,
+        })
+    }
+
+    /// With the slot lock held, run `f`.
+    ///
+    /// To be used for checking if another writer has installed the object
+    /// already, while [Self::prepare] had not already acquired the slot lock.
+    fn check<T>(&self, f: impl FnOnce(ObjectKey) -> Result<T, ObjectStoreError>) -> Result<T, ObjectStoreError> {
+        f(self.key)
+    }
+
+    /// Update the last access of the object.
+    ///
+    /// To be called when [Self::check] is used to short-circuit the promotion,
+    /// but the object should still be marked as accessed.
+    fn set_last_access(&mut self, epoch: u64) {
+        let entry = self
+            .state
+            .object
+            .as_mut()
+            .expect("object presence checked during prepare");
+        entry.last_access_epoch = epoch;
+    }
+
+    /// Fetch the object from the remote and write it to the local storage, then
+    /// install the permit and optionally update the last access epoch.
+    fn install(mut self, access_epoch: impl FnOnce() -> Option<u64>) -> Result<ObjectBytes, ObjectStoreError> {
+        let bytes = self
+            .remote
+            .object_store
+            .read(self.key)?
+            .ok_or_else(|| not_found(self.key))?;
+        self.local
+            .object_store
+            .write(object_from_trusted_bytes(self.key, bytes.clone()))?;
+        let entry = self
+            .state
+            .object
+            .as_mut()
+            .expect("object presence checked during prepare");
+        if let Some(epoch) = access_epoch() {
+            entry.last_access_epoch = epoch;
+        }
+        entry.permit = Some(self.permit);
+
+        Ok(bytes)
+    }
 }
 
 #[cfg(test)]

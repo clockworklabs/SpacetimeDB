@@ -441,7 +441,7 @@ pub struct PageManager {
     pool: PagePool,
     resident_cache: Pool<CachedResidentPage>,
     resident: Arc<ResidentObjects>,
-    storage: Arc<TieredStorage>,
+    pub(crate) storage: Arc<TieredStorage>,
 }
 
 impl PageManager {
@@ -451,6 +451,7 @@ impl PageManager {
         &self,
         page: Option<(Box<Page>, BudgetPermit)>,
         fixed_row_size: Size,
+        eviction_policy: EvictionPolicy,
     ) -> PageSlotHandle {
         let Some((page, permit)) = page else {
             return PageSlotHandle {
@@ -461,7 +462,7 @@ impl PageManager {
         let inner = self
             .resident
             .reserve_page_with_permit(permit, PooledPage::new(page, self.pool.clone()));
-        self.redeem(ReservedPage { inner, metadata }, EvictionPolicy::Evictable)
+        self.redeem(ReservedPage { inner, metadata }, eviction_policy)
     }
 
     /// Take a loaded page out of its slot so a memory table can own it directly.
@@ -611,10 +612,7 @@ impl PageManager {
                     cached_eviction_policy, &eviction_policy,
                     "eviction policy cannot be changed for resident pages"
                 );
-                // Avoid atomics contention if the page is not evictable.
-                if matches!(eviction_policy, EvictionPolicy::Evictable) {
-                    self.resident.touch_page(&handle.frame);
-                }
+                self.resident.touch_page(&handle.frame);
 
                 Ok(Some(handle.clone()))
             }
@@ -754,8 +752,12 @@ impl PageManager {
         self.resident.evict_page(victim);
     }
 
-    pub(super) fn ensure_lower_tier_stored(&self, page: &PageHandle) -> Result<DiskObject, ObjectStoreError> {
-        self.storage.write(page.into())
+    pub(super) fn ensure_lower_tier_stored(
+        &self,
+        page: &PageHandle,
+        eviction_policy: EvictionPolicy,
+    ) -> Result<DiskObject, ObjectStoreError> {
+        self.storage.write(page.into(), eviction_policy)
     }
 }
 

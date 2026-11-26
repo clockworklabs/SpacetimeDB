@@ -3,7 +3,7 @@ use spacetimedb_lib::Identity;
 use std::{fmt, sync::Arc};
 
 mod labels;
-pub use labels::{CacheTier, DiskOperation, EvictionDirection, FaultSource, ObjectType};
+pub use labels::{CacheTier, DiskOperation, EnsureLocalOutcome, EvictionDirection, FaultSource, ObjectType};
 
 #[derive(Debug)]
 pub enum OperationMetrics {
@@ -47,6 +47,11 @@ pub enum OperationMetrics {
     Reclamation {
         nanos: u64,
         success: bool,
+    },
+    EnsureLocal {
+        object: ObjectType,
+        outcome: EnsureLocalOutcome,
+        nanos: u64,
     },
 }
 
@@ -139,6 +144,10 @@ impl Metrics {
             source: None,
             success: false,
         }
+    }
+
+    pub fn ensure_local(&self, object: ObjectType, outcome: EnsureLocalOutcome, nanos: u64) {
+        self.record(OperationMetrics::EnsureLocal { object, outcome, nanos });
     }
 }
 

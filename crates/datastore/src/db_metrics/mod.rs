@@ -357,6 +357,17 @@ Each HTTP request performed by a database will be counted either here, in `space
         #[labels(database_identity: Identity, replica_id: u64, outcome: str)]
         #[buckets(0.00001, 0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 30.0)]
         pub page_cache_reclamation_time: HistogramVec,
+
+        #[name = spacetime_page_cache_ensure_local_duration_seconds]
+        #[help = "Time spent promoting objects from remote to local storage."]
+        #[labels(database_identity: Identity, replica_id: u64, object_type: str, outcome: str)]
+        #[buckets(0.00001, 0.0001, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 30.0)]
+        pub page_cache_ensure_local_time: HistogramVec,
+
+        #[name = spacetime_page_cache_ensure_local_promoted_bytes_total]
+        #[help = "Total number of bytes installed to disk from remote storage."]
+        #[labels(database_identity: Identity, replica_id: u64, object_type: str)]
+        pub page_cache_ensure_local_bytes: IntCounterVec,
     }
 );
 

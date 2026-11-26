@@ -55,6 +55,7 @@ use spacetimedb_schema::{
     table_name::TableName,
 };
 use spacetimedb_table::{
+    blob_store::BlobHash,
     indexes::{RowPointer, SquashedOffset},
     table::{self, PreparedBlobRelease, PreparedEvictionPolicy, ReadEviction, RowRef, Table, TableAndIndex},
     tiered::{BlobHandle, BlobSet, EvictionPolicy, PreparedCommit, TieredDatabaseStorage},
@@ -641,6 +642,18 @@ impl CommittedState {
             }
         }
 
+        // Collect tables for which the cache policy is about to be changed.
+        // For those, we'll need to collect blob references.
+        let policy_tables: IntSet<TableId> = tx_state
+            .pending_schema_changes
+            .iter()
+            .filter_map(|change| match change {
+                PendingSchemaChange::TableAlterCachePolicy(id, _) => Some(*id),
+                _ => None,
+            })
+            .collect();
+        let mut blob_ref_changes = BTreeMap::new();
+
         // Prepare per-table deletions and insertions.
         for TxTable {
             id: table_id,
@@ -663,20 +676,47 @@ impl CommittedState {
                 Some(tx_delete_table) => Either::Left(tx_delete_table.iter()),
                 None => Either::Right(iter::empty()),
             };
+            let should_collect_blob_refs = policy_tables.contains(&table_id)
+                // Interestingly, we allow cache policy changes on event tables,
+                // even though they have no effect because we only emit the
+                // changes. We don't need to collect blob refs, though.
+                && !commit_table.get_schema().is_event;
+            let mut inserted_refs = Vec::new();
             let inserts = match maybe_inserts {
-                Some(tx_insert_table) => Either::Left(
-                    tx_insert_table
-                        .scan_rows(&tx_state.blob_store)
-                        .map(|row| row.map(|row| commit_table.prepare_insert(row))),
-                ),
+                Some(tx_insert_table) => Either::Left(tx_insert_table.scan_rows(&tx_state.blob_store).map(|row| {
+                    row.map(|row| {
+                        if should_collect_blob_refs {
+                            row.for_each_blob_ref(|hash| inserted_refs.push(hash));
+                        }
+                        commit_table.prepare_insert(row)
+                    })
+                })),
                 None => Either::Right(iter::empty()),
             };
 
-            let commit = commit_table.prepare_commit(self.storage.blobs(), deletes, inserts)?;
+            let commit = if should_collect_blob_refs {
+                let mut deleted_refs = Vec::new();
+                let commit = commit_table.prepare_commit_with_blob_refs(
+                    self.storage.blobs(),
+                    deletes,
+                    inserts,
+                    Some(&mut deleted_refs),
+                )?;
+                blob_ref_changes.insert(
+                    table_id,
+                    BlobRefChanges {
+                        deleted: deleted_refs,
+                        inserted: inserted_refs,
+                    },
+                );
+                commit
+            } else {
+                commit_table.prepare_commit(self.storage.blobs(), deletes, inserts)?
+            };
             prepared.insert(table_id, commit);
         }
 
-        prepared.policy_changes = self.prepare_cache_policy_changes(tx_state)?;
+        prepared.policy_changes = self.prepare_cache_policy_changes(tx_state, &blob_ref_changes)?;
 
         Ok(prepared)
     }
@@ -686,7 +726,11 @@ impl CommittedState {
     /// rows have changed. Preparation leaves page ownership and blob pin counts
     /// unchanged, so failure needs no reverse conversion: dropping the plans
     /// releases their temporary pins, and rollback restores the policy metadata.
-    fn prepare_cache_policy_changes(&self, tx_state: &TxState) -> Result<BTreeMap<TableId, PreparedEvictionPolicy>> {
+    fn prepare_cache_policy_changes(
+        &self,
+        tx_state: &TxState,
+        blob_ref_changes: &BTreeMap<TableId, BlobRefChanges>,
+    ) -> Result<BTreeMap<TableId, PreparedEvictionPolicy>> {
         let mut changes = BTreeMap::new();
         for change in &tx_state.pending_schema_changes {
             let PendingSchemaChange::TableAlterCachePolicy(table_id, _) = change else {
@@ -702,7 +746,15 @@ impl CommittedState {
                 continue;
             };
             let policy = self.page_eviction_policy(table.get_schema());
-            entry.insert(table.prepare_eviction_policy(self.storage.blobs(), policy)?);
+            let delta = blob_ref_changes.get(table_id);
+            let deleted = delta.map(|delta| delta.deleted.as_slice()).unwrap_or_default();
+            let inserted = delta.map(|delta| delta.inserted.as_slice()).unwrap_or_default();
+            entry.insert(table.prepare_eviction_policy_with_blob_refs(
+                self.storage.blobs(),
+                policy,
+                deleted,
+                inserted,
+            )?);
         }
         Ok(changes)
     }
@@ -1065,9 +1117,11 @@ impl CommittedState {
     pub(super) fn page_eviction_policy(&self, schema: &TableSchema) -> EvictionPolicy {
         // Schema recovery needs system tables to stay in memory.
         if schema.table_type == StTableType::System || schema.cache_policy == TableCachePolicy::RequiredInMemory {
-            EvictionPolicy::NeverEvict
+            EvictionPolicy::Never
+        } else if schema.cache_policy == TableCachePolicy::RequiredOnDisk {
+            EvictionPolicy::Memory
         } else {
-            EvictionPolicy::Evictable
+            EvictionPolicy::Disk
         }
     }
 
@@ -1191,6 +1245,8 @@ impl CommittedState {
         Ok(())
     }
 
+    /// Evict live objects when under budget pressure, and reclaim space used by
+    /// orphaned objects.
     #[cfg(feature = "durability")]
     pub(super) fn trim(&self) -> std::result::Result<(), crate::error::TrimTableError> {
         for table in self.tables.values() {
@@ -1210,6 +1266,12 @@ impl CommittedState {
 }
 
 pub(super) type CommitTableForInsertion<'a> = (&'a Table, &'a BlobSet, &'a IndexIdMap);
+
+/// Blob reference changes collected while preparing a policy change migration.
+struct BlobRefChanges {
+    deleted: Vec<BlobHash>,
+    inserted: Vec<BlobHash>,
+}
 
 pub(super) struct PreparedMerge {
     resident: bool,
