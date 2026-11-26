@@ -38,6 +38,18 @@ function addSlot(slots: Set<string>, key: unknown, owner: unknown): void {
   if (slot) slots.add(slot);
 }
 
+/** Run slots held now, counted as an acquire counts them. A cheap file read; the locked acquire stays the authority. */
+export function heldRunSlots(root: string): number {
+  if (!existsSync(root)) return 0;
+  const slots = new Set<string>();
+  for (const name of readdirSync(root).filter(name => name.endsWith('.lock.json'))) {
+    let record: unknown;
+    try { record = JSON.parse(readFileSync(resolve(root, name), 'utf8')); } catch { continue; }
+    if (object(record)) addSlot(slots, record.key, record.ownershipMarkerSha256);
+  }
+  return slots.size;
+}
+
 export interface HostPressure {
   readonly memTotalBytes: number;
   readonly memAvailableBytes: number;

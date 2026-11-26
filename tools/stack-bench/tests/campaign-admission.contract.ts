@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -10,6 +10,8 @@ import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import type { CampaignAdmissionPreflightRequest }
   from '../src/campaigns/campaign-admission.js';
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
+import { createBackendLease } from '../src/runtime/backend-lease.js';
+import { resourceLockTransaction } from '../src/runtime/resource-lock-worker.js';
 
 const createdAt = '2026-08-27T12:00:00.000Z';
 
@@ -27,6 +29,25 @@ test('single-attempt admission rejects an impossible full campaign parallelism',
     }), /requested parallelism 2 exceeds Docker host capacity 1/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+test('a full host refuses admission before probing any port', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'campaign-full-host-'));
+  try {
+    const locks = join(root, 'locks');
+    mkdirSync(locks);
+    const holder = createBackendLease({ runId: 'holder', backend: 'stub', track: 'ecommerce', runIndex: 0 });
+    resourceLockTransaction({ root: locks, lease: holder, keys: ['slot:ecommerce:postgres:run0'],
+      operation: 'acquire', capacity: 1 });
+    const plan = compileCampaignFile(join(STACK_BENCH_ROOT, 'tests/fixtures/campaign.deterministic.json'));
+    let portProbes = 0;
+    await assert.rejects(runCampaignAdmission(plan, root, {
+      attempt: plan.attempts[0], env: { STACK_BENCH_RUNNER_CAPACITY: '1', STACK_BENCH_RESOURCE_LOCK_DIR: locks },
+      probePort: () => ({ free: ++portProbes > 0 }),
+      preflight: () => { throw new Error('must reject before preflight'); },
+    }), /host capacity unavailable: 2 reservations exceed capacity 1/);
+    assert.equal(portProbes, 0);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 const passingPreflight = (request: CampaignAdmissionPreflightRequest) => ({
   schemaVersion: 1 as const,
   generatedAt: createdAt,

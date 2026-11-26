@@ -13,6 +13,7 @@ import { claimBackendResources, createBackendLease,
   readBackendLease, writeBackendLease, releaseResourceLocks, verifyResourceLocks, resourceLockScope,
   existingResourceLockKeys, runnerCapacity } from '../runtime/backend-lease.js';
 import { selectRunResources } from '../runtime/run-resource-selection.js';
+import { heldRunSlots } from '../runtime/resource-lock-worker.js';
 import type { BackendLease, CampaignReservation, ReservationLease, DelegationLease } from '../runtime/backend-lease.js';
 export type { CampaignReservation } from '../runtime/backend-lease.js';
 import { releaseBackendLease } from '../runtime/backend-teardown.js';
@@ -268,6 +269,12 @@ async function reserveRunIndices(plan: CompiledCampaignPlan, directory: string, 
   const capacity = runnerCapacity(env);
   if (capacity !== null && requestedParallelism > capacity) {
     throw new Error(`requested parallelism ${requestedParallelism} exceeds Docker host capacity ${capacity}; choose a smaller campaign or configure STACK_BENCH_RUNNER_CAPACITY from measured resources`);
+  }
+  // Selection starts a Docker container per candidate to test its ports, and a waiting campaign retries every
+  // second. Hours of that churn can freeze Docker Desktop, so a full host is refused before any Docker work.
+  const held = capacity === null ? 0 : heldRunSlots(scope.root);
+  if (capacity !== null && held + plan.summary.parallelism > capacity) {
+    throw new CampaignResourceUnavailable(`host capacity unavailable: ${held + plan.summary.parallelism} reservations exceed capacity ${capacity}`);
   }
   const path = contained(directory, join('.private', `${id}.reservation.json`), 'campaign reservation');
   // Selection is a hint. The kernel-locked claim below admits the complete set
