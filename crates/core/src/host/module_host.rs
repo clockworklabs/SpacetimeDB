@@ -2278,14 +2278,19 @@ impl ModuleHost {
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
         log::trace!("disconnecting client {client_id}");
-        if let Err(e) = call_instance!(
+        match call_instance!(
             self,
             "disconnect_client",
             client_id,
             |client_id, inst| inst.disconnect_client(client_id),
             |client_id, inst| inst.disconnect_client(client_id).await,
         ) {
-            log::error!("Error from client_disconnected transaction: {e}");
+            // The database was deleted, replaced by a publish, or its replica was stopped.
+            // This is expected, so don't log it as an error.
+            Err(e @ NoSuchModule) => {
+                log::warn!("Error from client_disconnected transaction: {e}");
+            }
+            Ok(_) => {}
         }
     }
 
