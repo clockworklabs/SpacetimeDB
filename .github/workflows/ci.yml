@@ -1653,6 +1653,48 @@ jobs:
       - name: Skip update test
         run: echo "The update flow already ran for an equivalent commit, or the change only touches docs."
 
+  # Type-check the release binaries for the release targets that no other PR job compiles, so that
+  # target-specific errors (e.g. `static_assert_size!` mismatches) show up before a release is tagged.
+  # Keep these targets in sync with the `build-cli` matrix in `package.yml`.
+  release_target_check:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip_tests != 'true' }}
+    name: Check release targets (${{ matrix.name }})
+    permissions: read-all
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: macOS, runner: macos-latest, targets: "--target aarch64-apple-darwin --target x86_64-apple-darwin" }
+          # Release builds cross-compile this target from x86_64; a native ARM runner type-checks the same code without a cross toolchain.
+          - { name: aarch64 Linux, runner: ubuntu-24.04-arm, targets: "--target aarch64-unknown-linux-gnu" }
+    runs-on: ${{ matrix.runner }}
+    env:
+      # Make action Node runtimes use the filtered CA bundle created by the setup action.
+      NODE_OPTIONS: --use-openssl-ca
+      RUST_BACKTRACE: full
+    steps:
+      - *find-git-ref
+      - *checkout-sources
+
+      - name: Set up certificate trust
+        if: runner.environment == 'github-hosted'
+        uses: ./.github/actions/setup-certificate-trust
+
+      - name: Install Rust
+        uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Install rust targets
+        run: |
+          for target in $(echo "${{ matrix.targets }}" | sed 's/--target//g'); do
+            rustup target add "$target"
+          done
+
+      - name: Check release binaries
+        run: cargo check --release ${{ matrix.targets }} -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
+
   unreal_engine_tests:
     name: Unreal Engine Tests
     # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
