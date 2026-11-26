@@ -3,11 +3,12 @@ use crate::eval::spacetime_command;
 use anyhow::{bail, Context, Result};
 use regex::Regex;
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 static CLI_SESSION_TAG: LazyLock<String> = LazyLock::new(|| {
@@ -130,6 +131,14 @@ fn resolve_node_exe(nodejs_dir: Option<&Path>) -> Option<PathBuf> {
         })
 }
 
+// A deleted database keeps its name owner, so a republish under the same name
+// (a C# reference rebuilt for a retry) must log in as the same identity.
+static REMOVED_CLI_CONFIGS: Mutex<BTreeMap<PathBuf, String>> = Mutex::new(BTreeMap::new());
+
+fn cli_config_path(root: &Path) -> PathBuf {
+    root.join("config/cli.toml")
+}
+
 struct CliRootDir {
     path: PathBuf,
     remove_on_drop: bool,
@@ -141,6 +150,12 @@ impl CliRootDir {
     }
 
     fn remove(&self) -> Result<()> {
+        if let Ok(config) = fs::read_to_string(cli_config_path(&self.path)) {
+            REMOVED_CLI_CONFIGS
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .insert(self.path.clone(), config);
+        }
         match fs::remove_dir_all(&self.path) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -364,6 +379,15 @@ fn database_cli_root(module_name: &str, remove_on_drop: bool) -> Result<CliRootD
     let db = sanitize_db_name(module_name);
     let path = env::temp_dir().join(format!("stdb-llm-cli-{}-{db}", CLI_SESSION_TAG.as_str()));
     fs::create_dir_all(&path)?;
+    let removed_config = REMOVED_CLI_CONFIGS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .remove(&path);
+    if let Some(config) = removed_config {
+        let config_path = cli_config_path(&path);
+        fs::create_dir_all(config_path.parent().expect("config path has a parent"))?;
+        fs::write(&config_path, config)?;
+    }
     Ok(CliRootDir { path, remove_on_drop })
 }
 
@@ -475,7 +499,7 @@ fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_transient_build_error, CliRootDir};
+    use super::{cli_config_path, database_cli_root, database_owner_token, is_transient_build_error, CliRootDir};
     use std::fs;
 
     #[test]
@@ -489,6 +513,21 @@ mod tests {
         });
 
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn republish_after_removal_reuses_the_identity() {
+        let module = format!("identity-reuse-test-{}", std::process::id());
+        let root = database_cli_root(&module, true).unwrap();
+        let config = cli_config_path(root.path());
+        fs::create_dir_all(config.parent().unwrap()).unwrap();
+        fs::write(&config, "spacetimedb_token = \"owner\"\n").unwrap();
+        drop(root);
+        assert!(!config.exists());
+
+        let root = database_cli_root(&module, true).unwrap();
+        assert_eq!(database_owner_token(&module).unwrap(), "owner");
+        drop(root);
     }
 
     #[test]
