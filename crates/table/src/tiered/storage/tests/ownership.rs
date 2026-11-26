@@ -198,15 +198,15 @@ proptest! {
         proptest::prop_assert_eq!(counts(), (owners + 1, pins));
         pinned_clone.set_pins(0);
         proptest::prop_assert_eq!(counts(), (owners + 1, 0));
-        proptest::prop_assert!(!storage.should_reclaim.load(Ordering::Acquire));
+        proptest::prop_assert!(!storage.reclaim_pending());
 
         // Only the final handle release may request reclamation.
         drop(pinned_clone);
         drop(unpinned_clones);
         proptest::prop_assert_eq!(counts(), (1, 0));
-        proptest::prop_assert!(!storage.should_reclaim.load(Ordering::Acquire));
+        proptest::prop_assert!(!storage.reclaim_pending());
         drop(owner);
         proptest::prop_assert_eq!(counts(), (0, 0));
-        proptest::prop_assert!(storage.should_reclaim.load(Ordering::Acquire));
+        proptest::prop_assert!(storage.reclaim_pending());
     }
 }
