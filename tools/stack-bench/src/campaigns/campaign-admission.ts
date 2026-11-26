@@ -12,7 +12,7 @@ import { emptyArtifactIdentities, readArtifact, writeArtifact } from '../evidenc
 import { claimBackendResources, createBackendLease,
   readBackendLease, writeBackendLease, releaseResourceLocks, verifyResourceLocks, resourceLockScope,
   existingResourceLockKeys, runnerCapacity } from '../runtime/backend-lease.js';
-import { selectRunResources } from '../runtime/run-resource-selection.js';
+import { PortProbeUnavailable, selectRunResources } from '../runtime/run-resource-selection.js';
 import { heldRunSlots } from '../runtime/resource-lock-worker.js';
 import type { BackendLease, CampaignReservation, ReservationLease, DelegationLease } from '../runtime/backend-lease.js';
 export type { CampaignReservation } from '../runtime/backend-lease.js';
@@ -287,6 +287,10 @@ async function reserveRunIndices(plan: CompiledCampaignPlan, directory: string, 
         return variable ? campaignSlotEnvironment(env, backend, runIndex)[variable]! : null;
       },
       env, probePort, excludedRunIndices, signal,
+    }).catch((error: unknown) => {
+      // Nothing is reserved yet; a later admission asks Docker again.
+      if (error instanceof PortProbeUnavailable) throw new CampaignResourceUnavailable(error.message, { cause: error });
+      throw error;
     });
     if (selected.length !== plan.summary.parallelism) {
       throw new CampaignResourceUnavailable(`only ${selected.length} of ${plan.summary.parallelism} required run slots are free`);

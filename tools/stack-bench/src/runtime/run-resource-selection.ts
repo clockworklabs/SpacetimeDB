@@ -5,9 +5,12 @@ import { isExactImageReference, isImageId } from './container-image.js';
 import { existingResourceLockKeys, loopbackHttpUri, resourceLockScope,
   runResourceLockKeys } from './backend-lease.js';
 
+/** Docker did not answer a port probe in time, so whether the ports are free is unknown. Admission may retry. */
+export class PortProbeUnavailable extends Error {}
+
 // Docker Desktop publishes ports on the desktop host, which the Linux loopback
 // probe cannot see. Let Docker test the whole candidate before reserving it.
-export function dockerCanPublish(ports: Set<number>, env: NodeJS.ProcessEnv): boolean {
+export function dockerCanPublish(ports: Set<number>, env: NodeJS.ProcessEnv, timeoutMs = 30_000): boolean {
   if (env.STACK_BENCH_APPLIANCE !== '1') return true;
   const image = env.STACK_BENCH_CONTROLLER_IMAGE_ID ?? env.STACK_BENCH_CONTROLLER_IMAGE;
   if (!isImageId(image) && !isExactImageReference(image)) {
@@ -17,11 +20,18 @@ export function dockerCanPublish(ports: Set<number>, env: NodeJS.ProcessEnv): bo
     execFileSync('docker', ['run', '--rm', '--pull', 'never',
       ...[...ports].flatMap(port => ['--publish', `127.0.0.1:${port}:${port}`]),
       '--entrypoint', '/bin/true', image],
-    { encoding: 'utf8', stdio: 'pipe', timeout: 30_000, env });
+    { encoding: 'utf8', stdio: 'pipe', timeout: timeoutMs, env });
     return true;
   } catch (error) {
     const detail = error && typeof error === 'object' && 'stderr' in error ? String(error.stderr) : '';
     if (/ports are not available|port is already allocated|address already in use/i.test(detail)) return false;
+    // A busy or restarting Docker engine says nothing about these ports. Other failures,
+    // such as a missing image, stay fatal.
+    const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+    if (code === 'ETIMEDOUT' || /cannot connect to the docker daemon|error during connect/i.test(detail)) {
+      throw new PortProbeUnavailable(`Docker did not answer the port probe for ${[...ports].join(', ')}: ${
+        code === 'ETIMEDOUT' ? `no reply within ${timeoutMs / 1000} s` : detail.trim()}`, { cause: error });
+    }
     throw error;
   }
 }

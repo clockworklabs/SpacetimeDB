@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { loadTrack, portsFor } from '../src/composition/tracks.js';
 import { runResourceLockKeys } from '../src/runtime/backend-lease.js';
-import { selectRunResources } from '../src/runtime/run-resource-selection.js';
+import { dockerCanPublish, PortProbeUnavailable, selectRunResources } from '../src/runtime/run-resource-selection.js';
 
 test('resource selection skips exclusions, held locks and occupied ports across every requested stack', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-selection-'));
@@ -68,6 +68,7 @@ test('appliance admission skips ports Docker cannot publish and stops on other D
     // Docker Desktop reports host ports the Linux loopback probe cannot see.
     writeFileSync(join(bin, 'docker'), [
       '#!/bin/sh',
+      '[ -n "$DOCKER_STUB_SLEEP" ] && sleep "$DOCKER_STUB_SLEEP"',
       '[ -n "$DOCKER_STUB_ERROR" ] && { echo "$DOCKER_STUB_ERROR" >&2; exit 125; }',
       `case " $* " in *"127.0.0.1:${busy}:${busy}"*) echo "port is already allocated" >&2; exit 125;; esac`,
       'exit 0', '',
@@ -79,6 +80,12 @@ test('appliance admission skips ports Docker cannot publish and stops on other D
     assert.deepEqual((await selectRunResources({ ...input, env })).runIndices, [1]);
     await assert.rejects(selectRunResources({ ...input, env: { ...env, DOCKER_STUB_ERROR: 'Unable to find image' } }),
       /Command failed/);
+    // A Docker engine that does not answer says nothing about the ports; admission may retry.
+    await assert.rejects(selectRunResources({ ...input, env: { ...env,
+      DOCKER_STUB_ERROR: 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock' } }),
+    (error: unknown) => error instanceof PortProbeUnavailable && /did not answer the port probe/.test(error.message));
+    assert.throws(() => dockerCanPublish(new Set([busy]), { ...env, DOCKER_STUB_SLEEP: '2' }, 300),
+      (error: unknown) => error instanceof PortProbeUnavailable && /no reply within 0.3 s/.test(error.message));
   } finally {
     rmSync(root, { recursive: true, force: true });
     rmSync(bin, { recursive: true, force: true });

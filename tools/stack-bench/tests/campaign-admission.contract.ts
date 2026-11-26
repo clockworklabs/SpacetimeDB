@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { runCampaignAdmission, validateCampaignAdmission }
+import { CampaignResourceUnavailable, runCampaignAdmission, validateCampaignAdmission }
   from '../src/campaigns/campaign-admission.js';
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.js';
 import type { CampaignAdmissionPreflightRequest }
@@ -12,6 +12,7 @@ import type { CampaignAdmissionPreflightRequest }
 import { STACK_BENCH_ROOT } from '../src/package-root.js';
 import { createBackendLease } from '../src/runtime/backend-lease.js';
 import { resourceLockTransaction } from '../src/runtime/resource-lock-worker.js';
+import { PortProbeUnavailable } from '../src/runtime/run-resource-selection.js';
 
 const createdAt = '2026-08-27T12:00:00.000Z';
 
@@ -45,6 +46,18 @@ test('a full host refuses admission before probing any port', async () => {
       preflight: () => { throw new Error('must reject before preflight'); },
     }), /host capacity unavailable: 2 reservations exceed capacity 1/);
     assert.equal(portProbes, 0);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a port probe Docker does not answer leaves admission to retry, not fail the campaign', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'campaign-probe-unanswered-'));
+  try {
+    const plan = compileCampaignFile(join(STACK_BENCH_ROOT, 'tests/fixtures/campaign.deterministic.json'));
+    await assert.rejects(runCampaignAdmission(plan, root, {
+      attempt: plan.attempts[0], env: { STACK_BENCH_RUNNER_CAPACITY: '4', STACK_BENCH_RESOURCE_LOCK_DIR: join(root, 'locks') },
+      probePort: () => { throw new PortProbeUnavailable('Docker did not answer the port probe for 6100: no reply within 30 s'); },
+      preflight: () => { throw new Error('must not reach preflight'); },
+    }), (error: unknown) => error instanceof CampaignResourceUnavailable && /no reply within 30 s/.test(error.message));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
