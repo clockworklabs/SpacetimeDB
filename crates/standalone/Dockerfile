@@ -2,7 +2,7 @@ ARG CARGO_PROFILE=release
 
 
 # !rust-toolchain-sync
-FROM rust:1.97.1 AS chef
+FROM rust:1.98.1 AS chef
 # Refresh OS certificate roots to distrust the compromised eMudhra CAs.
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 # rustup has its own CA bundle; 1.29.2+ distrusts the compromised eMudhra CAs.
