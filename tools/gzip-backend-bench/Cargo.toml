@@ -1,0 +1,24 @@
+[package]
+name = "gzip-backend-bench"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.97"
+publish = false
+
+# Deliberately independent: workspace feature unification would contaminate
+# backend comparisons (especially the zlib-rs and zlib-ng priority rules).
+[workspace]
+
+[features]
+default = ["miniz"]
+miniz = ["flate2/rust_backend"]
+zlib-rs = ["flate2/zlib-rs"]
+zlib-ng = ["flate2/zlib-ng"]
+
+[dependencies]
+flate2 = { version = "=1.1.4", default-features = false }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16
