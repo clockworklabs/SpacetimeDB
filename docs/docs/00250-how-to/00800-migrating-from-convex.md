@@ -75,6 +75,7 @@ Convex [components](https://www.convex.dev/components) package reusable backend 
 | `@convex-dev/crons`          | `@spacetimedb/cron`       | Calendar and interval schedules stored in your database, with time zones. |
 | `@convex-dev/rate-limiter`   | `@spacetimedb/rate-limit` | Fixed-window rate limiting.                                               |
 | `@convex-dev/action-retrier` | `@spacetimedb/retry`      | Typed retries with exponential backoff and attempt history.               |
+| `@convex-dev/workflow`       | `@spacetimedb/workflow`   | Durable multi-step functions with retries, sleep, and events.             |
 | `@convex-dev/resend`         | `@spacetimedb/resend`     | Resend email delivery, webhook verification, and event storage.           |
 | None                         | `@spacetimedb/crypto`     | Deterministic hashing, encoding, and webhook-signature helpers.           |
 
