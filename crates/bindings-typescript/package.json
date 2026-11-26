@@ -41,7 +41,7 @@
     "generate:test-utils-wasm": "node scripts/generate-test-utils-wasm.mjs",
     "prepare:test-utils-wasm": "pnpm -s generate:test-utils-wasm && node scripts/copy-test-utils-wasm.mjs",
     "prepare:test-utils-wasm:clean": "pnpm -s generate:test-utils-wasm --clean && node scripts/copy-test-utils-wasm.mjs",
-    "check:package": "node scripts/check-package-test-utils-wasm.mjs",
+    "check:package": "node scripts/check-package-test-utils-wasm.mjs && node scripts/check-package-shared-server-runtime.mjs",
     "generate:test-app": "pnpm --filter @clockworklabs/test-app generate",
     "generate:examples:chat-react-ts": "pnpm --filter @clockworklabs/chat-react-ts generate",
     "generate:examples:react-ts": "pnpm --filter @clockworklabs/react-ts generate",

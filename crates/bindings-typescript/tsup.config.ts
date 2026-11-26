@@ -236,13 +236,25 @@ export default defineConfig([
     esbuildOptions: commonEsbuildTweaks(),
   },
 
-  // Server subpath (SSR / node-friendly): dist/server/index.mjs
+  // Server subpath (SSR / node-friendly): dist/server/index.mjs, together with
+  // the module unit-test helpers in dist/server/test-utils.
+  //
+  // These are one build with code splitting so that they share one copy of the
+  // runtime. A module under unit test imports `spacetimedb/server` and is run
+  // by the harness in `spacetimedb/server/test-utils`; built separately, each
+  // had its own `Range`, `Timestamp` and so on, and the harness's `instanceof`
+  // checks did not recognise values the module had built.
   {
-    entry: { index: 'src/server/index.ts' },
+    entry: {
+      index: 'src/server/index.ts',
+      'test-utils/index': 'src/server/test-utils/index.ts',
+      'test-utils/wasm': 'src/server/test-utils/wasm.ts',
+    },
     format: 'esm',
     target: 'esnext',
     outDir: 'dist/server',
     dts: false,
+    splitting: true,
     sourcemap: true,
     clean: true,
     platform: 'neutral', // flip to 'node' if you actually rely on Node builtins
@@ -266,12 +278,12 @@ export default defineConfig([
     },
   },
 
-  // Node module unit-test helpers.
+  // The Vitest plugin for module unit tests. It runs in the Vitest config
+  // process and shares no code with the server runtime, so it stays out of the
+  // build above and does not get that build's banner.
   {
     entry: {
-      index: 'src/server/test-utils/index.ts',
       vitest: 'src/server/test-utils/vitest.ts',
-      wasm: 'src/server/test-utils/wasm.ts',
     },
     format: 'esm',
     target: 'es2022',
