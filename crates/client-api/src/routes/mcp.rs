@@ -6,19 +6,18 @@ use axum::{Extension, Json};
 use http::StatusCode;
 use serde_json::{json, Value};
 use spacetimedb::auth::identity::ConnectionAuthCtx;
-use spacetimedb::host::{FunctionArgs, ReducerOutcome};
+use spacetimedb::host::{FunctionArgs, ModuleHost, ProcedureCallError, ReducerCallError, ReducerOutcome};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::Database;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
-use spacetimedb_lib::sats;
+use spacetimedb_lib::{sats, AlgebraicValue, ConnectionId};
 
 use super::database::{
-    client_connected_error_to_response, client_disconnected_error_to_response, count_response_egress,
-    find_database_leader, find_database_module, find_database_or_404, map_reducer_error, sql_direct, ResolvedDatabase,
+    confirm_call_offset, confirm_reducer_call, count_response_egress, find_database_leader, find_database_module,
+    find_database_or_404, map_procedure_error, map_reducer_error, sql_direct, with_connection, ResolvedDatabase,
     SqlQueryParams,
 };
 use crate::auth::SpacetimeAuth;
-use crate::routes::subscribe::generate_random_connection_id;
 use crate::util::NameOrIdentity;
 use crate::{log_and_500, Authorization, ControlStateDelegate, NodeDelegate};
 
@@ -119,14 +118,14 @@ fn initialize_result(host_wide: bool) -> Value {
     let instructions = if host_wide {
         "Tools for the SpacetimeDB databases you can reach on this host. Every data tool takes a \
          `database` argument, either a name or an identity. Use list_databases to see the ones you \
-         own, get_schema to see a database's tables and reducers, sql to query data, and call to \
-         invoke a reducer. Reducers are the usual way to write, and SQL writes require ownership. \
-         Everything runs with your identity, exactly as over the HTTP API."
+         own, get_schema to see a database's tables, reducers, and procedures, sql to query data, \
+         and call to invoke a reducer or procedure. Reducers are the usual way to write, and SQL \
+         writes require ownership. Everything runs with your identity, exactly as over the HTTP API."
     } else {
         "Tools for the addressed SpacetimeDB database: ping, get_schema, sql, and call. \
-         Use get_schema to see its tables and reducers, sql to query data, and call to \
-         invoke a reducer. Reducers are the usual way to write, and SQL writes require \
-         ownership. Everything runs with your identity, exactly as over the HTTP API."
+         Use get_schema to see its tables, reducers, and procedures, sql to query data, and call \
+         to invoke a reducer or procedure. Reducers are the usual way to write, and SQL writes \
+         require ownership. Everything runs with your identity, exactly as over the HTTP API."
     };
     json!({
         "protocolVersion": PROTOCOL_VERSION,
@@ -155,8 +154,9 @@ fn tools_list(host_wide: bool) -> Value {
         "confirmed": { "type": "boolean", "description": "Wait for the read to be durably confirmed." }
     });
     let mut call_properties = json!({
-        "reducer": { "type": "string", "description": "The name of the reducer to invoke." },
-        "args": { "type": "array", "description": "A JSON array of arguments to the reducer, in order. Omit or pass [] for none." }
+        "reducer": { "type": "string", "description": "The name of the reducer or procedure to invoke." },
+        "args": { "type": "array", "description": "A JSON array of arguments to the function, in order. Omit or pass [] for none." },
+        "confirmed": { "type": "boolean", "description": "Wait for the call's transactions to be durably confirmed before returning. Defaults to true." }
     });
     let mut get_schema_required = vec![];
     let mut sql_required = vec!["sql"];
@@ -188,7 +188,8 @@ fn tools_list(host_wide: bool) -> Value {
     }));
     tools.push(json!({
         "name": "get_schema",
-        "description": "Get the schema for the database as JSON, including its typespace, tables, and reducers.",
+        "description": "Get the schema for the database as JSON, including its typespace, tables, reducers, \
+                        and procedures. Procedures are listed under misc_exports.",
         "inputSchema": input_schema(get_schema_properties, get_schema_required),
         "annotations": { "title": "Get schema", "readOnlyHint": true, "destructiveHint": false, "openWorldHint": false }
     }));
@@ -201,10 +202,11 @@ fn tools_list(host_wide: bool) -> Value {
     }));
     tools.push(json!({
         "name": "call",
-        "description": "Invoke a reducer with positional JSON arguments, for example [\"alice\"] or [42]. \
-                        The reducer runs with your identity and is the standard way to write.",
+        "description": "Invoke a reducer or procedure with positional JSON arguments, for example [\"alice\"] or [42]. \
+                        Both run with your identity. A reducer is the standard way to write and reports whether it \
+                        committed. A procedure returns its return value as JSON.",
         "inputSchema": input_schema(call_properties, call_required),
-        "annotations": { "title": "Call reducer", "readOnlyHint": false, "destructiveHint": true, "openWorldHint": false }
+        "annotations": { "title": "Call reducer or procedure", "readOnlyHint": false, "destructiveHint": true, "openWorldHint": false }
     }));
 
     json!({ "tools": tools })
@@ -250,7 +252,8 @@ where
                 return Err((INVALID_PARAMS, "reducer argument must be a string".to_owned()));
             };
             let args_json = reducer_args_json(arguments)?;
-            tool_call_reducer(ctx, target, auth, reducer.to_owned(), args_json, addressed).await
+            let confirmed = arguments.and_then(|a| a.get("confirmed")).and_then(Value::as_bool);
+            tool_call(ctx, target, auth, reducer.to_owned(), args_json, confirmed, addressed).await
         }
         other => return Err((INVALID_PARAMS, format!("unknown tool: {other}"))),
     };
@@ -382,12 +385,14 @@ where
     Ok(json)
 }
 
-async fn tool_call_reducer<S>(
+/// reducer first then procedure, same order as http call route
+async fn tool_call<S>(
     ctx: &S,
     target: Target,
     auth: SpacetimeAuth,
     reducer: String,
     args_json: String,
+    confirmed: Option<bool>,
     addressed: &mut Option<Identity>,
 ) -> axum::response::Result<String>
 where
@@ -397,30 +402,57 @@ where
     let caller_auth: ConnectionAuthCtx = auth.into();
     let database = target.resolve(ctx, addressed).await?;
     let module = find_database_module(ctx, &database).await?;
+    let confirmed = confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS);
 
-    let connection_id = generate_random_connection_id();
-    module
-        .call_identity_connected(caller_auth, connection_id)
-        .await
-        .map_err(client_connected_error_to_response)?;
-    let outcome = module
-        .call_reducer(
-            caller_identity,
-            Some(connection_id),
-            None,
-            None,
-            None,
-            &reducer,
-            FunctionArgs::Json(args_json.into()),
-        )
-        .await;
-    module
-        .call_identity_disconnected(caller_identity, connection_id)
-        .await
-        .map_err(client_disconnected_error_to_response)?;
+    let call = async move |module: ModuleHost, caller_identity: Identity, connection_id: ConnectionId| {
+        let args = FunctionArgs::Json(args_json.into());
+        let outcome = module
+            .call_reducer_with_offset(
+                caller_identity,
+                Some(connection_id),
+                None,
+                None,
+                None,
+                &reducer,
+                args.clone(),
+            )
+            .await;
 
-    let result = outcome.map_err(|e| map_reducer_error(e, &reducer))?;
-    reducer_outcome_text(&reducer, result.outcome)
+        match outcome {
+            Ok(res) => {
+                let result = confirm_reducer_call(res, confirmed, module.durable_tx_offset()).await?;
+                reducer_outcome_text(&reducer, result.outcome)
+            }
+            Err(ReducerCallError::NoSuchReducer | ReducerCallError::ScheduleReducerNotFound) => {
+                let ret = module
+                    .call_procedure(caller_identity, Some(connection_id), None, &reducer, args, confirmed)
+                    .await;
+                let result = ret.result.map_err(|e| procedure_error(e, &reducer))?;
+
+                if confirmed {
+                    confirm_call_offset(ret.tx_offset, module.durable_tx_offset()).await?;
+                }
+
+                procedure_return_json(result.return_val)
+            }
+            Err(e) => Err(map_reducer_error(e, &reducer).into()),
+        }
+    };
+
+    with_connection(module, caller_auth, caller_identity, call).await
+}
+
+fn procedure_error(e: ProcedureCallError, name: &str) -> ErrorResponse {
+    match e {
+        ProcedureCallError::NoSuchProcedure => {
+            (StatusCode::NOT_FOUND, format!("no such reducer or procedure: {name}")).into()
+        }
+        e => map_procedure_error(e, name).into(),
+    }
+}
+
+fn procedure_return_json(return_val: AlgebraicValue) -> axum::response::Result<String> {
+    serde_json::to_string(&sats::serde::SerdeWrapper(return_val)).map_err(log_and_500)
 }
 
 fn reducer_outcome_text(reducer: &str, outcome: ReducerOutcome) -> axum::response::Result<String> {
@@ -481,6 +513,12 @@ mod tests {
             .find(|tool| tool["name"] == "call")
             .unwrap();
         assert_eq!(call_tool["inputSchema"]["required"], json!(["reducer"]));
+        assert_eq!(call_tool["inputSchema"]["properties"]["confirmed"]["type"], "boolean");
+        assert!(call_tool["description"].as_str().unwrap().contains("procedure"));
+        assert!(call_tool["annotations"]["title"]
+            .as_str()
+            .unwrap()
+            .contains("procedure"));
 
         assert_eq!(sql_tool["annotations"]["readOnlyHint"], false);
         assert_eq!(call_tool["annotations"]["readOnlyHint"], false);
@@ -614,6 +652,44 @@ mod tests {
 
         let committed = reducer_outcome_text("add", ReducerOutcome::Committed).unwrap();
         assert!(committed.contains("add") && committed.contains("committed"));
+    }
+
+    #[test]
+    fn procedure_return_values_serialize_as_json() {
+        use spacetimedb_lib::ProductValue;
+
+        assert_eq!(procedure_return_json(AlgebraicValue::U32(3)).unwrap(), "3");
+        assert_eq!(
+            procedure_return_json(AlgebraicValue::String("x".into())).unwrap(),
+            "\"x\""
+        );
+        assert_eq!(procedure_return_json(AlgebraicValue::Bool(true)).unwrap(), "true");
+
+        let product = AlgebraicValue::Product(ProductValue::from([
+            AlgebraicValue::U32(1),
+            AlgebraicValue::String("x".into()),
+        ]));
+        let parsed: Value = serde_json::from_str(&procedure_return_json(product).unwrap()).unwrap();
+        assert_eq!(parsed, json!([1, "x"]));
+
+        let unit = AlgebraicValue::Product(ProductValue::from([]));
+        assert_eq!(procedure_return_json(unit).unwrap(), "[]");
+    }
+
+    #[tokio::test]
+    async fn an_unknown_function_names_both_kinds() {
+        let err = procedure_error(ProcedureCallError::NoSuchProcedure, "nope");
+        let result = execution_error_to_tool_result(err).await;
+        assert_eq!(result["isError"], true);
+        let text = result["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("reducer or procedure"), "{text}");
+        assert!(text.contains("nope"), "{text}");
+
+        // other failures keep the route's wording
+        let err = procedure_error(ProcedureCallError::OutOfEnergy, "nope");
+        let result = execution_error_to_tool_result(err).await;
+        assert_eq!(result["isError"], true);
+        assert!(result["content"][0]["text"].as_str().unwrap().contains("budget"));
     }
 
     #[tokio::test]
