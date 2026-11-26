@@ -1,5 +1,5 @@
 use crate::Config;
-use crate::{logout::ensure_logged_out, util::decode_identity};
+use crate::{logout::ensure_logged_out, telemetry, util::decode_identity};
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command};
 use reqwest::Url;
 use serde::Deserialize;
@@ -72,6 +72,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             Ok(identity) => println!("Logged in with identity {identity}"),
             Err(_) => println!("Token saved."),
         }
+        if let Some(event) = telemetry::track(&mut config, "login") {
+            let _ = event.await;
+        }
         return Ok(());
     }
 
@@ -132,6 +135,11 @@ pub async fn spacetimedb_login_and_save(
 
     let identity = decode_identity(&token)?;
     println!("Logged in with identity {identity}");
+
+    // also reports logins started by `publish`, `init` and other commands
+    if let Some(event) = telemetry::track(config, "login") {
+        let _ = event.await;
+    }
 
     Ok(token)
 }

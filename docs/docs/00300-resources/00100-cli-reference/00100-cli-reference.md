@@ -56,6 +56,9 @@ This document contains the help content for the `spacetime` command-line program
     * [`spacetime auth client delete`↴](#spacetime-auth-client-delete)
     * [`spacetime auth client get`↴](#spacetime-auth-client-get)
     * [`spacetime auth client set`↴](#spacetime-auth-client-set)
+* [`spacetime telemetry`↴](#spacetime-telemetry)
+  * [`spacetime telemetry enable`↴](#spacetime-telemetry-enable)
+  * [`spacetime telemetry disable`↴](#spacetime-telemetry-disable)
 * [`spacetime version`↴](#spacetime-version)
 
 ## `spacetime`
@@ -86,6 +89,7 @@ This document contains the help content for the `spacetime` command-line program
 * `lock` — Lock a database to prevent accidental deletion
 * `unlock` — Unlock a database to allow deletion
 * `auth` — Manage SpacetimeAuth for a database
+* `telemetry` — Show, enable or disable the usage telemetry the CLI sends
 * `version` — Manage installed spacetime versions
 
 ###### **Options:**
@@ -1031,6 +1035,39 @@ Set a configuration value for an OAuth client
 * `--name <NAME>` — The client name
 
   Default value: `Default Client`
+
+
+
+## `spacetime telemetry`
+
+Show, enable or disable the usage telemetry the CLI sends.
+
+When you are logged in with spacetimedb.com, `spacetime publish`, `login`, `call`, `logs` and `sql` report the command, the CLI version, your OS and CPU architecture, linked to your account. `publish`, `call`, `logs` and `sql` only report when they target Maincloud.
+
+To opt out, run `spacetime telemetry disable` or set SPACETIME_TELEMETRY_DISABLED=1. Set SPACETIME_TELEMETRY_DEBUG=1 to print the events instead of sending them.
+
+**Usage:** `spacetime telemetry [COMMAND]`
+
+###### **Subcommands:**
+
+* `enable` — Send usage telemetry
+* `disable` — Stop sending usage telemetry
+
+
+
+### `spacetime telemetry enable`
+
+Send usage telemetry
+
+**Usage:** `spacetime telemetry enable`
+
+
+
+### `spacetime telemetry disable`
+
+Stop sending usage telemetry
+
+**Usage:** `spacetime telemetry disable`
 
 
 

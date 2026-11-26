@@ -107,6 +107,8 @@ jobs:
           SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
 
       - name: Compile
+        env:
+          SPACETIME_AMPLITUDE_API_KEY: ${{ startsWith(github.ref, 'refs/tags/') && secrets.SPACETIME_AMPLITUDE_API_KEY || '' }}
         run: |
           cargo build --release --target ${{ matrix.target }} -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
 

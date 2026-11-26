@@ -388,7 +388,13 @@ impl YesOrNo {
     }
 }
 
-pub fn decode_identity(token: &String) -> anyhow::Result<String> {
+pub fn decode_identity(token: &str) -> anyhow::Result<String> {
+    let claims_data: SpacetimeIdentityClaims = decode_claims(token)?.try_into()?;
+
+    Ok(claims_data.identity.to_string())
+}
+
+pub fn decode_claims(token: &str) -> anyhow::Result<IncomingClaims> {
     // Here, we manually extract and decode the claims from the json web token.
     // We do this without using the `jsonwebtoken` crate because it doesn't seem to have a way to skip signature verification.
     // But signature verification would require getting the public key from a server, and we don't necessarily want to do that.
@@ -399,10 +405,7 @@ pub fn decode_identity(token: &String) -> anyhow::Result<String> {
     let decoded_bytes = BASE_64_STD_NO_PAD.decode(token_parts[1])?;
     let decoded_string = String::from_utf8(decoded_bytes)?;
 
-    let claims_data: IncomingClaims = serde_json::from_str(decoded_string.as_str())?;
-    let claims_data: SpacetimeIdentityClaims = claims_data.try_into()?;
-
-    Ok(claims_data.identity.to_string())
+    Ok(serde_json::from_str(decoded_string.as_str())?)
 }
 
 pub async fn get_login_token_or_log_in(

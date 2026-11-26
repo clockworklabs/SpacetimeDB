@@ -25,7 +25,7 @@ use crate::spacetime_config::{
 };
 use crate::util::{add_auth_header_opt, get_auth_header, strip_verbatim_prefix, AuthHeader, ResponseExt};
 use crate::util::{decode_identity, YesOrNo};
-use crate::{build, common_args};
+use crate::{build, common_args, telemetry};
 
 /// Individual prompts that `--yes` can suppress. `All` is a shorthand for every category below.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -518,6 +518,14 @@ pub async fn exec_with_options(
     let yes = yes_flags_from_args(args);
     let environment_options = EnvironmentOptions::from_args(args)?;
     let config_dir = loaded_config_ref.map(|lc| lc.config_dir.as_path());
+
+    // one event per publish
+    for command_config in &publish_configs {
+        let server = command_config.get_one::<String>("server").ok().flatten();
+        if telemetry::track_maincloud(&mut config, "publish", server.as_deref()) {
+            break;
+        }
+    }
 
     execute_publish_configs(
         &mut config,

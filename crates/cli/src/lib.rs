@@ -44,6 +44,7 @@ pub fn get_subcommands() -> Vec<Command> {
         lock::cli(),
         unlock::cli(),
         auth::cli(),
+        telemetry::cli(),
         subcommands::version::cli(),
     ]
 }
@@ -55,7 +56,7 @@ pub async fn exec_subcommand(
     cmd: &str,
     args: &ArgMatches,
 ) -> anyhow::Result<ExitCode> {
-    match cmd {
+    let result = match cmd {
         "call" => call::exec(config, args).await,
         "describe" => describe::exec(config, args).await,
         "dev" => dev::exec(config, args).await,
@@ -78,10 +79,15 @@ pub async fn exec_subcommand(
         "lock" => lock::exec(config, args).await,
         "unlock" => unlock::exec(config, args).await,
         "auth" => auth::exec(config, args).await,
+        "telemetry" => telemetry::exec(config, args).await,
         "version" => return subcommands::version::exec(paths, root_dir, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {unknown}")),
     }
-    .map(|()| ExitCode::SUCCESS)
+    .map(|()| ExitCode::SUCCESS);
+
+    telemetry::flush().await;
+
+    result
 }
 
 /// An error type indicating that the process should exit silently with the

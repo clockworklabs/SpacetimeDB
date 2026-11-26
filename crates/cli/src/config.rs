@@ -13,6 +13,7 @@ const DEFAULT_SERVER_KEY: &str = "default_server";
 const WEB_SESSION_TOKEN_KEY: &str = "web_session_token";
 const SPACETIMEDB_TOKEN_KEY: &str = "spacetimedb_token";
 const LISTEN_ADDR_KEY: &str = "listen_addr";
+const TELEMETRY_KEY: &str = "telemetry";
 const SERVER_CONFIGS_KEY: &str = "server_configs";
 const NICKNAME_KEY: &str = "nickname";
 const HOST_KEY: &str = "host";
@@ -94,6 +95,22 @@ fn read_opt_str(table: &toml_edit::Table, key: &str) -> Result<Option<String>, C
     }
 }
 
+fn read_opt_bool(table: &toml_edit::Table, key: &str) -> Result<Option<bool>, CliError> {
+    if let Some(value) = table.get(key) {
+        if value.is_bool() {
+            Ok(value.as_bool())
+        } else {
+            Err(CliError::ConfigType {
+                key: key.to_string(),
+                kind: "boolean",
+                found: Box::new(value.clone()),
+            })
+        }
+    } else {
+        Ok(None)
+    }
+}
+
 fn read_str(table: &toml_edit::Table, key: &str) -> Result<String, CliError> {
     read_opt_str(table, key)?.ok_or_else(|| CliError::Config { key: key.to_string() })
 }
@@ -126,6 +143,8 @@ pub struct RawConfig {
     web_session_token: Option<String>,
     spacetimedb_token: Option<String>,
     listen_addr: Option<String>,
+    /// Unset until the telemetry notice has been shown, `false` once the user opts out.
+    telemetry: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -176,6 +195,7 @@ impl RawConfig {
             web_session_token: None,
             spacetimedb_token: None,
             listen_addr: None,
+            telemetry: None,
         }
     }
 
@@ -465,6 +485,7 @@ impl TryFrom<&toml_edit::DocumentMut> for RawConfig {
         let web_session_token = read_opt_str(value, WEB_SESSION_TOKEN_KEY)?;
         let spacetimedb_token = read_opt_str(value, SPACETIMEDB_TOKEN_KEY)?;
         let listen_addr = read_opt_str(value, LISTEN_ADDR_KEY)?;
+        let telemetry = read_opt_bool(value, TELEMETRY_KEY)?;
 
         let mut server_configs = Vec::new();
         if let Some(arr) = read_table(value, SERVER_CONFIGS_KEY)? {
@@ -479,6 +500,7 @@ impl TryFrom<&toml_edit::DocumentMut> for RawConfig {
             web_session_token,
             spacetimedb_token,
             listen_addr,
+            telemetry,
         })
     }
 }
@@ -664,12 +686,14 @@ impl Config {
             web_session_token,
             spacetimedb_token,
             listen_addr,
+            telemetry,
         } = &self.home;
 
         set_value(DEFAULT_SERVER_KEY, default_server.as_deref());
         set_value(WEB_SESSION_TOKEN_KEY, web_session_token.as_deref());
         set_value(SPACETIMEDB_TOKEN_KEY, spacetimedb_token.as_deref());
         set_value(LISTEN_ADDR_KEY, listen_addr.as_deref());
+        set_opt_value(&mut doc, TELEMETRY_KEY, *telemetry);
 
         // Short-circuit if there are no servers.
         if old_server_configs.is_empty() {
@@ -721,7 +745,7 @@ impl Config {
         doc
     }
 
-    pub fn save(&self) {
+    pub fn save(&self) -> bool {
         let home_path = &self.home_path;
         // If the `home_path` is in a directory, ensure it exists.
         home_path.create_parent().unwrap();
@@ -740,8 +764,20 @@ impl Config {
         // We should address this issue, but we currently don't expect it to arise very frequently
         // (see https://github.com/clockworklabs/SpacetimeDB/pull/1341#issuecomment-2150857432).
         if let Err(e) = atomic_write(&home_path.0, config) {
-            eprintln!("Could not save config file: {e}")
+            eprintln!("Could not save config file: {e}");
+            return false;
         }
+        true
+    }
+
+    pub fn can_save(&self) -> bool {
+        let path = &self.home_path.0;
+        let file_writable = match std::fs::OpenOptions::new().write(true).open(path) {
+            Ok(_) => true,
+            Err(e) => e.kind() == io::ErrorKind::NotFound,
+        };
+        let dir = path.parent().filter(|dir| !dir.as_os_str().is_empty());
+        file_writable && tempfile::tempfile_in(dir.unwrap_or(Path::new("."))).is_ok()
     }
 
     pub fn server_decoding_key(&self, server: Option<&str>) -> anyhow::Result<DecodingKey> {
@@ -830,6 +866,14 @@ Update the server's fingerprint with:
     pub fn spacetimedb_token(&self) -> Option<&String> {
         self.home.spacetimedb_token.as_ref()
     }
+
+    pub fn telemetry(&self) -> Option<bool> {
+        self.home.telemetry
+    }
+
+    pub fn set_telemetry(&mut self, enabled: bool) {
+        self.home.telemetry = Some(enabled);
+    }
 }
 
 /// Update the value of a key in a `TOML` document, preserving the formatting and comments of the original value.
@@ -841,24 +885,23 @@ Update the server's fingerprint with:
 /// old = "value" # Comment
 /// new = "new_value" # Comment
 /// ```
-fn copy_value_with_decor(old_value: Option<&toml_edit::Item>, new_value: &str) -> toml_edit::Item {
-    match old_value {
-        Some(toml_edit::Item::Value(toml_edit::Value::String(old_value))) => {
-            // Creates a new `toml_edit::Value` with the same formatting as the old value.
-            let mut new = toml_edit::Value::String(toml_edit::Formatted::new(new_value.to_string()));
-            let decor = new.decor_mut();
-            // Copy the comments and formatting from the old value.
-            *decor = old_value.decor().clone();
-            new.into()
-        }
-        _ => new_value.into(),
+fn copy_value_with_decor(
+    old_value: Option<&toml_edit::Item>,
+    new_value: impl Into<toml_edit::Value>,
+) -> toml_edit::Item {
+    // Creates a new `toml_edit::Value` with the same formatting as the old value.
+    let mut new = new_value.into();
+    if let Some(toml_edit::Item::Value(old_value)) = old_value {
+        // Copy the comments and formatting from the old value.
+        *new.decor_mut() = old_value.decor().clone();
     }
+    new.into()
 }
 
 /// Set the value of a key in a `TOML` document, removing the key if the value is `None`.
 ///
 /// **NOTE**: This function will preserve the formatting and comments of the original value.
-pub fn set_opt_value(doc: &mut toml_edit::DocumentMut, key: &str, value: Option<&str>) {
+pub fn set_opt_value(doc: &mut toml_edit::DocumentMut, key: &str, value: Option<impl Into<toml_edit::Value>>) {
     let old_value = doc.get(key);
     if let Some(new) = value {
         doc[key] = copy_value_with_decor(old_value, new);
@@ -945,6 +988,14 @@ protocol = "https"
 
 # Comment end
 "#;
+    const CONFIG_TELEMETRY: &str = r#"telemetry = false
+
+# Comment end
+"#;
+    const CONFIG_TELEMETRY_COMMENT: &str = r#"telemetry = false # set by spacetime telemetry
+"#;
+    const CONFIG_TELEMETRY_COMMENT_ENABLED: &str = r#"telemetry = true # set by spacetime telemetry
+"#;
     const CONFIG_INVALID_START: &str = r#"
 this="not a valid key"
 "#;
@@ -1009,6 +1060,16 @@ default_server = "local"
         check_config(CONFIG_EMPTY, CONFIG_EMPTY, |_| Ok(()))?;
         check_config(CONFIG_EMPTY, CONFIG_LISTEN_ADDR, |config| {
             config.home.listen_addr = Some("0.0.0.0:4000".to_string());
+            Ok(())
+        })?;
+        check_config(CONFIG_EMPTY, CONFIG_TELEMETRY, |config| {
+            config.set_telemetry(false);
+            Ok(())
+        })?;
+        check_config(CONFIG_TELEMETRY_COMMENT, CONFIG_TELEMETRY_COMMENT, |_| Ok(()))?;
+        check_config(CONFIG_TELEMETRY_COMMENT, CONFIG_TELEMETRY_COMMENT_ENABLED, |config| {
+            assert_eq!(config.telemetry(), Some(false));
+            config.set_telemetry(true);
             Ok(())
         })?;
 
@@ -1082,6 +1143,14 @@ default_server = "local"
                 key: "listen_addr".to_string(),
                 kind: "string",
                 found: Box::new(toml_edit::value(1)),
+            },
+        )?;
+        check_invalid(
+            r#"telemetry ="no""#,
+            CliError::ConfigType {
+                key: "telemetry".to_string(),
+                kind: "boolean",
+                found: Box::new(toml_edit::value("no")),
             },
         )?;
         check_invalid(
