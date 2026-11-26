@@ -201,6 +201,8 @@ const legacyRedirects: Redirect[] = [
     from: '/spacetimeauth/testing',
     to: '/core-concepts/authentication/spacetimeauth/testing',
   },
+  // The Remix template moved to React Router 7+, which is what Remix 2 became.
+  { from: '/quickstarts/remix', to: '/quickstarts/react-router' },
 ];
 
 function markdownFiles(dir: string): string[] {

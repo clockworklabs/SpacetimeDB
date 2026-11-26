@@ -1,10 +1,10 @@
 {
-  "description": "Remix with TypeScript server",
-  "client_framework": "Remix",
+  "description": "React Router with TypeScript server",
+  "client_framework": "React Router",
   "client_lang": "typescript",
   "server_lang": "typescript",
   "builtWith": [
-    "remix-run",
+    "react-router",
     "isbot",
     "react",
     "react-dom",

@@ -392,6 +392,12 @@ fn create_template_config_from_template_str(
             use_local: true,
             native_aot: false,
         })
+    } else if !template_str.contains('/') {
+        // Every GitHub repository or git URL contains a slash, so this is most likely a template
+        // ID that doesn't exist, for example one that was renamed or removed.
+        anyhow::bail!(
+            "`{template_str}` is not a built-in template or a GitHub repository. Run `spacetime init --template` without a name to list the templates, or use `owner/repo` or a git URL."
+        )
     } else {
         // GitHub template
         Ok(TemplateConfig {
@@ -2755,6 +2761,34 @@ bytes.workspace = true
 
         let db = get_local_database_name(&options, "my-project", false).unwrap();
         assert_eq!(db, "my-explicit-db");
+    }
+
+    #[test]
+    fn test_unknown_template_id_is_rejected() {
+        let templates: TemplatesList = serde_json::from_str(embedded::get_templates_json()).unwrap();
+        let template_str = |template: &str| {
+            create_template_config_from_template_str(
+                "my-app".to_string(),
+                PathBuf::from("my-app"),
+                template,
+                &templates.templates,
+            )
+        };
+
+        let Err(error) = template_str("remix-ts") else {
+            panic!("`remix-ts` should not resolve to a template");
+        };
+        let error = error.to_string();
+        assert!(error.contains("`remix-ts` is not a built-in template"), "{error}");
+
+        assert!(matches!(
+            template_str("react-router-ts").unwrap().template_type,
+            TemplateType::Builtin
+        ));
+        assert!(matches!(
+            template_str("owner/repo").unwrap().template_type,
+            TemplateType::GitHub
+        ));
     }
 
     #[test]

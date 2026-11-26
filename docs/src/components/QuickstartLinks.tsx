@@ -9,7 +9,7 @@ import NuxtLogo from '@site/static/images/logos/nuxt-logo.svg';
 import SvelteLogo from '@site/static/images/logos/svelte-logo.svg';
 import AngularLogo from '@site/static/images/logos/angular-logo.svg';
 import TanStackLogo from '@site/static/images/logos/tanstack-logo.svg';
-import RemixLogo from '@site/static/images/logos/remix-logo.svg';
+import ReactRouterLogo from '@site/static/images/logos/react-router-logo.svg';
 import Html5Logo from '@site/static/images/logos/html5-logo.svg';
 import BunLogo from '@site/static/images/logos/bun-logo.svg';
 import DenoLogo from '@site/static/images/logos/deno-logo.svg';
@@ -63,10 +63,10 @@ const ALL_ITEMS: Item[] = [
     label: 'TanStack Start',
   },
   {
-    icon: <RemixLogo height={40} />,
-    href: 'quickstarts/remix',
-    docId: 'intro/quickstarts/remix',
-    label: 'Remix',
+    icon: <ReactRouterLogo height={40} />,
+    href: 'quickstarts/react-router',
+    docId: 'intro/quickstarts/react-router',
+    label: 'React Router',
   },
   {
     icon: <Html5Logo height={40} />,
@@ -122,7 +122,7 @@ export function QuickstartLinks() {
   const version = useDocsVersion();
   const items = useMemo(() => {
     const docIds = new Set(Object.keys(version.docs));
-    return ALL_ITEMS.filter((item) => !item.docId || docIds.has(item.docId));
+    return ALL_ITEMS.filter(item => !item.docId || docIds.has(item.docId));
   }, [version]);
 
   return <CardLinkGrid items={items} />;

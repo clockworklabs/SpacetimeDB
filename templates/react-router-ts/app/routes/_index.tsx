@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react';
-import type { MetaFunction } from '@remix-run/node';
-import { useLoaderData } from '@remix-run/react';
+import type { Route } from './+types/_index';
 import { tables, reducers } from '../../src/module_bindings';
 import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
 import { fetchPeople, type PersonData } from '../lib/spacetimedb.server';
 
-export const meta: MetaFunction = () => {
+export function meta(_args: Route.MetaArgs) {
   return [
-    { title: 'SpacetimeDB Remix App' },
-    { name: 'description', content: 'A Remix app powered by SpacetimeDB' },
+    { title: 'SpacetimeDB React Router App' },
+    {
+      name: 'description',
+      content: 'A React Router app powered by SpacetimeDB',
+    },
   ];
-};
+}
 
 export async function loader() {
   try {
@@ -97,8 +99,8 @@ function PersonList({ initialPeople }: { initialPeople: PersonData[] }) {
   );
 }
 
-export default function Index() {
-  const { initialPeople } = useLoaderData<typeof loader>();
+export default function Index({ loaderData }: Route.ComponentProps) {
+  const { initialPeople } = loaderData;
   const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
@@ -107,7 +109,7 @@ export default function Index() {
 
   return (
     <main style={{ padding: '2rem', fontFamily: 'system-ui, sans-serif' }}>
-      <h1>SpacetimeDB Remix App</h1>
+      <h1>SpacetimeDB React Router App</h1>
 
       {isClient ? (
         <PersonList initialPeople={initialPeople} />

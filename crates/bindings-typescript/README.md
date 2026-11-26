@@ -12,7 +12,7 @@ The SDK is an NPM package, thus you can use your package manager of choice like 
 npm add spacetimedb
 ```
 
-You can use the package in the browser, using a bundler like vite/parcel/rsbuild, in server-side applications like NodeJS, Deno, Bun, NextJS, Remix, and in Cloudflare Workers.
+You can use the package in the browser, using a bundler like vite/parcel/rsbuild, in server-side applications like NodeJS, Deno, Bun, NextJS, React Router, and in Cloudflare Workers.
 
 > Use a recent version of Node.js 22, 24, or 26 or later.
 

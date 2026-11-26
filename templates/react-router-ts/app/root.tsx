@@ -1,19 +1,13 @@
 import { useMemo, useState, useEffect } from 'react';
-import {
-  Links,
-  Meta,
-  Outlet,
-  Scripts,
-  ScrollRestoration,
-} from '@remix-run/react';
-import type { LinksFunction } from '@remix-run/node';
+import { Links, Meta, Outlet, Scripts, ScrollRestoration } from 'react-router';
+import type { Route } from './+types/root';
 import { SpacetimeDBProvider } from 'spacetimedb/react';
 import { DbConnection, ErrorContext } from '../src/module_bindings';
 import { Identity } from 'spacetimedb';
 
 const HOST =
   import.meta.env.VITE_SPACETIMEDB_HOST ?? 'wss://maincloud.spacetimedb.com';
-const DB_NAME = import.meta.env.VITE_SPACETIMEDB_DB_NAME ?? 'remix-ts';
+const DB_NAME = import.meta.env.VITE_SPACETIMEDB_DB_NAME ?? 'react-router-ts';
 const TOKEN_KEY = `${HOST}/${DB_NAME}/auth_token`;
 
 const onConnect = (_conn: DbConnection, identity: Identity, token: string) => {
@@ -34,7 +28,7 @@ const onConnectError = (_ctx: ErrorContext, err: Error) => {
   console.log('Error connecting to SpacetimeDB:', err);
 };
 
-export const links: LinksFunction = () => [];
+export const links: Route.LinksFunction = () => [];
 
 function Providers({ children }: { children: React.ReactNode }) {
   const [isClient, setIsClient] = useState(false);
