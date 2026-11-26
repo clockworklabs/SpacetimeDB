@@ -539,7 +539,7 @@ impl BlobSet {
                 let backing = backing
                     .clone()
                     .map(|mut backing| -> Result<DiskObject, ObjectStoreError> {
-                        self.storage.ensure_local_tier(&mut backing)?;
+                        self.storage.ensure_local(&mut backing)?;
                         Ok(backing)
                     })
                     .transpose()?;
@@ -551,7 +551,7 @@ impl BlobSet {
             }
             BlobEntry::NonResident { backing, .. } => {
                 let mut backing = backing.clone();
-                self.storage.ensure_local_tier(&mut backing)?;
+                self.storage.ensure_local(&mut backing)?;
                 Ok(DiskPinnedBlobHandle {
                     blob: None,
                     backing: Some(backing),

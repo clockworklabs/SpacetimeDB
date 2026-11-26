@@ -74,3 +74,22 @@ impl DiskOperation {
         }
     }
 }
+
+#[derive(Clone, Copy, Debug)]
+pub enum EnsureLocalOutcome {
+    LocalHit,
+    ConcurrentHit,
+    Promoted { bytes: u64 },
+    Failed,
+}
+
+impl EnsureLocalOutcome {
+    pub fn as_str(&self) -> &str {
+        match self {
+            EnsureLocalOutcome::LocalHit => "local_hit",
+            EnsureLocalOutcome::ConcurrentHit => "concurrent_hit",
+            EnsureLocalOutcome::Promoted { .. } => "promoted",
+            EnsureLocalOutcome::Failed => "failed",
+        }
+    }
+}

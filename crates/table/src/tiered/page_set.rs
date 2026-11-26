@@ -414,7 +414,7 @@ impl PageSet {
                     let backing = backing
                         .clone()
                         .map(|mut backing| -> Result<DiskObject, ObjectStoreError> {
-                            self.manager.storage.ensure_local_tier(&mut backing)?;
+                            self.manager.storage.ensure_local(&mut backing)?;
                             Ok(backing)
                         })
                         .transpose()?;
@@ -425,7 +425,7 @@ impl PageSet {
                 }
                 PageSlot::NonResident { backing, .. } => {
                     let mut backing = backing.clone();
-                    self.manager.storage.ensure_local_tier(&mut backing)?;
+                    self.manager.storage.ensure_local(&mut backing)?;
                     Some(DiskPinnedPageHandle {
                         page: None,
                         backing: Some(backing),

@@ -18,6 +18,7 @@ use crate::{
     tiered::{
         error::ObjectStoreError,
         map::{BlobHashWrapper, ObjectKey, ObjectMap, PageHash},
+        metrics::EnsureLocalOutcome,
         BlobHandle, BudgetPermit, ByteBudget, EvictionPolicy, PageHandle,
     },
 };
@@ -618,14 +619,27 @@ impl TieredStorage {
     /// is not enabled.
     ///
     /// Subject to the local disk budget.
-    pub(crate) fn ensure_local_tier(&self, object: &mut DiskObject) -> Result<(), ObjectStoreError> {
+    pub(crate) fn ensure_local(&self, object: &mut DiskObject) -> Result<(), ObjectStoreError> {
+        let timer = self.metrics().timer();
+        let result = self.ensure_local_tier_inner(object);
+        let outcome = match &result {
+            Ok(outcome) => *outcome,
+            Err(_) => EnsureLocalOutcome::Failed,
+        };
+        self.metrics()
+            .ensure_local(object.key().metric_type(), outcome, timer.nanos());
+
+        result.map(drop)
+    }
+
+    fn ensure_local_tier_inner(&self, object: &mut DiskObject) -> Result<EnsureLocalOutcome, ObjectStoreError> {
         let key = object.key;
         let slot = self.catalog.read().get(&key).cloned().ok_or_else(|| unknown(key))?;
         // Ensure the object can't be evicted.
         object.pin();
         // Object is already in the local tier.
         if self.local.object_store.stat(key)?.is_some() {
-            return Ok(());
+            return Ok(EnsureLocalOutcome::LocalHit);
         }
 
         let Some(remote) = &self.remote else {
@@ -634,10 +648,12 @@ impl TieredStorage {
 
         let promotion = Promotion::prepare(key, &self.local, remote, &slot, |size| self.acquire_local_permit(size))?;
         if promotion.check(|key| self.local.object_store.stat(key))?.is_some() {
-            return Ok(());
+            return Ok(EnsureLocalOutcome::ConcurrentHit);
         }
         // Don't update last access, as we're not requesting access.
-        promotion.install(|| None).map(drop)
+        promotion.install(|| None).map(|bytes| EnsureLocalOutcome::Promoted {
+            bytes: bytes.len() as u64,
+        })
     }
 
     /// Trim the local storage to the configured low watermark.

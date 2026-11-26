@@ -3,7 +3,8 @@ use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_lib::Identity;
 use spacetimedb_table::tiered::{
     metrics::{
-        CacheTier, DiskOperation, EvictionDirection, FaultSource, Metrics, ObjectType, OperationMetrics, StorageMetrics,
+        CacheTier, DiskOperation, EnsureLocalOutcome, EvictionDirection, FaultSource, Metrics, ObjectType,
+        OperationMetrics, StorageMetrics,
     },
     TieredDatabaseStorage,
 };
@@ -27,6 +28,7 @@ struct ObjectCacheMetrics {
     memory_to_disk: EvictionCounters,
     disk_to_remote: EvictionCounters,
     reclaimed: OnceLock<ReclaimedCounters>,
+    ensure_local: EnsureLocalMetrics,
 }
 
 #[derive(Debug, Default)]
@@ -94,6 +96,49 @@ struct LookupCounters {
 struct EvictionCounters {
     objects: OnceLock<IntCounter>,
     bytes: OnceLock<IntCounter>,
+}
+
+#[derive(Debug, Default)]
+struct EnsureLocalMetrics {
+    local_hit: OnceLock<Histogram>,
+    concurrent_hit: OnceLock<Histogram>,
+    promoted: OnceLock<Histogram>,
+    failed: OnceLock<Histogram>,
+    promoted_bytes: OnceLock<IntCounter>,
+}
+
+impl EnsureLocalMetrics {
+    fn record(&self, metrics: &StorageMetrics, object: ObjectType, outcome: EnsureLocalOutcome, nanos: u64) {
+        let duration = match &outcome {
+            EnsureLocalOutcome::LocalHit => &self.local_hit,
+            EnsureLocalOutcome::ConcurrentHit => &self.concurrent_hit,
+            EnsureLocalOutcome::Promoted { .. } => &self.promoted,
+            EnsureLocalOutcome::Failed => &self.failed,
+        };
+
+        duration
+            .get_or_init(|| {
+                DB_METRICS.page_cache_ensure_local_time.with_label_values(
+                    &metrics.database,
+                    &metrics.replica,
+                    object.as_str(),
+                    outcome.as_str(),
+                )
+            })
+            .observe(nanos as f64 / 1e9);
+
+        if let EnsureLocalOutcome::Promoted { bytes } = outcome {
+            self.promoted_bytes
+                .get_or_init(|| {
+                    DB_METRICS.page_cache_ensure_local_bytes.with_label_values(
+                        &metrics.database,
+                        &metrics.replica,
+                        object.as_str(),
+                    )
+                })
+                .inc_by(bytes);
+        }
+    }
 }
 
 impl PageCacheMetrics {
@@ -177,6 +222,10 @@ impl PageCacheMetrics {
             OperationMetrics::Reclamation { nanos, success } => {
                 self.reclamation.record(stats, nanos, success);
             }
+            OperationMetrics::EnsureLocal { object, outcome, nanos } => self
+                .object_metrics(object)
+                .ensure_local
+                .record(stats, object, outcome, nanos),
         }
     }
 }
