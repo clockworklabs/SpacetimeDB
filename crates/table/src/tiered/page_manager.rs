@@ -1,7 +1,7 @@
-use super::metrics::{with_fault, CacheTier, Fault, Metrics, ObjectType};
+use super::metrics::{with_fault, CacheTier, EvictionDirection, Fault, Metrics, ObjectType};
 use std::{
     ops::{Deref, DerefMut},
-    sync::Arc,
+    sync::{Arc, Weak},
 };
 
 use parking_lot::{
@@ -13,7 +13,7 @@ use spacetimedb_memory_usage::MemoryUsage;
 use spacetimedb_sats::layout::Size;
 
 use crate::{
-    indexes::{max_rows_in_page, PAGE_SIZE},
+    indexes::{max_rows_in_page, SquashedOffset, PAGE_SIZE},
     page::{Page, PageMetadata},
     page_pool::PagePool,
     tiered::{
@@ -21,8 +21,7 @@ use crate::{
         map::PageHash,
         mem::{self, PageEvictionCandidate, PageFrame, PageId, PooledPage},
         storage::{DiskObject, TieredStorage},
-        BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetConfig, ByteBudgetUsage, EvictionPolicy, ObjectStoreError,
-        ResidentObjects,
+        BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetConfig, ByteBudgetUsage, EvictionPolicy, ResidentObjects,
     },
 };
 
@@ -118,6 +117,8 @@ pub struct PageSlotHandle {
     slot: Arc<Mutex<PageSlot>>,
 }
 
+pub(super) type WeakPageSlot = Weak<Mutex<PageSlot>>;
+
 impl PageSlotHandle {
     pub fn is_resident(&self) -> bool {
         self.slot.lock().is_resident()
@@ -149,10 +150,6 @@ impl PageSlotHandle {
 
     pub fn page(&self) -> Option<PageHandle> {
         self.slot.lock().page().cloned()
-    }
-
-    pub fn page_id(&self) -> Option<PageId> {
-        self.slot.lock().page_id()
     }
 
     pub(super) fn lock_ref(&self) -> MutexGuard<'_, PageSlot> {
@@ -216,6 +213,7 @@ pub enum PageSlot {
     NonResident {
         metadata: PageMetadata,
         backing: DiskObject,
+        squashed_offset: SquashedOffset,
     },
 }
 
@@ -268,13 +266,6 @@ impl PageSlot {
         match self {
             Self::Absent => None,
             Self::Resident { metadata, .. } | Self::NonResident { metadata, .. } => Some(*metadata),
-        }
-    }
-
-    pub fn page_id(&self) -> Option<PageId> {
-        match self {
-            Self::Resident { handle, .. } => Some(handle.page_id()),
-            Self::NonResident { .. } | Self::Absent => None,
         }
     }
 
@@ -442,6 +433,7 @@ pub struct PageManager {
     resident_cache: Pool<CachedResidentPage>,
     resident: Arc<ResidentObjects>,
     storage: Arc<TieredStorage>,
+    eviction_candidates: Mutex<Vec<PageEvictionCandidate>>,
 }
 
 impl PageManager {
@@ -451,6 +443,7 @@ impl PageManager {
         &self,
         page: Option<(Box<Page>, BudgetPermit)>,
         fixed_row_size: Size,
+        squashed_offset: SquashedOffset,
     ) -> PageSlotHandle {
         let Some((page, permit)) = page else {
             return PageSlotHandle {
@@ -461,7 +454,14 @@ impl PageManager {
         let inner = self
             .resident
             .reserve_page_with_permit(permit, PooledPage::new(page, self.pool.clone()));
-        self.redeem(ReservedPage { inner, metadata }, EvictionPolicy::Evictable)
+        // The caller holds the eviction lock until the slot is installed.
+        // Return the slot and drop the extra pin from `redeem_pinned`.
+        self.redeem_pinned(
+            ReservedPage { inner, metadata },
+            EvictionPolicy::Evictable,
+            squashed_offset,
+        )
+        .0
     }
 
     /// Take a loaded page out of its slot so a memory table can own it directly.
@@ -520,6 +520,7 @@ impl PageManager {
         self.resident.restored_page_permit()
     }
 
+    /// Create the database's sole page manager for this resident cache.
     pub fn new(resident: Arc<ResidentObjects>, pool: PagePool, storage: Arc<TieredStorage>) -> Self {
         // Bound this cache by the configured page-pool capacity.
         let resident_cache =
@@ -529,6 +530,7 @@ impl PageManager {
             resident_cache,
             resident,
             storage,
+            eviction_candidates: Mutex::new(Vec::new()),
         }
     }
 
@@ -557,7 +559,7 @@ impl PageManager {
         eviction_policy: EvictionPolicy,
         fault: &mut Option<Fault<'a>>,
     ) -> Result<Option<PageHandle>, PageError> {
-        self.may_fault(&mut slot.lock_ref(), eviction_policy, fault)
+        self.may_fault(slot, &mut slot.lock_ref(), eviction_policy, fault)
     }
 
     /// Get a [PageFrameWriteGuard] for the page at the given `slot`.
@@ -586,7 +588,7 @@ impl PageManager {
     ) -> Result<PageFrameWriteGuard, PageError> {
         let mut slot_guard = slot.lock_owned();
         let handle = self
-            .may_fault(&mut slot_guard, eviction_policy, fault)?
+            .may_fault(slot, &mut slot_guard, eviction_policy, fault)?
             .expect("page requested for mutation to be present");
         // SAFETY: We just faulted the page, so the handle contains the resident
         // frame we want to lock.
@@ -595,6 +597,7 @@ impl PageManager {
 
     fn may_fault<'a>(
         &'a self,
+        slot: &PageSlotHandle,
         slot_guard: &mut PageSlot,
         eviction_policy: EvictionPolicy,
         fault: &mut Option<Fault<'a>>,
@@ -618,7 +621,11 @@ impl PageManager {
 
                 Ok(Some(handle.clone()))
             }
-            PageSlot::NonResident { metadata, backing } => {
+            PageSlot::NonResident {
+                metadata,
+                backing,
+                squashed_offset,
+            } => {
                 self.metrics().lookup(ObjectType::Page, CacheTier::Memory, false);
                 let fault = fault.get_or_insert_with(|| self.metrics().fault(ObjectType::Page));
                 let reservation = self.resident.reserve_page(false, || {
@@ -630,7 +637,9 @@ impl PageManager {
 
                     Ok::<_, PageError>(page)
                 })?;
-                let frame = self.resident.redeem_page(reservation);
+                let frame = self
+                    .resident
+                    .redeem_page(reservation, Arc::downgrade(&slot.slot), *squashed_offset);
                 let handle = PageHandle { frame };
                 *slot_guard = PageSlot::Resident {
                     handle: handle.clone(),
@@ -685,24 +694,38 @@ impl PageManager {
     ///
     /// The page must have been created by [Self::reserve()] on the same page
     /// manager instance.
-    pub fn redeem(
+    pub fn redeem(&self, reservation: ReservedPage, eviction_policy: EvictionPolicy) -> PageSlotHandle {
+        // Return only the slot and drop the extra pin. A later `get` can
+        // reload the page if it has been evicted.
+        self.redeem_pinned(reservation, eviction_policy, SquashedOffset::COMMITTED_STATE)
+            .0
+    }
+
+    /// Register the page and return its slot and an allocation pin. The page
+    /// is visible to eviction as soon as it is registered. The caller holds
+    /// the pin while installing the slot and drops it once the write guard
+    /// has its own pin.
+    pub(super) fn redeem_pinned(
         &self,
         ReservedPage { inner, metadata }: ReservedPage,
         eviction_policy: EvictionPolicy,
-    ) -> PageSlotHandle {
+        squashed_offset: SquashedOffset,
+    ) -> (PageSlotHandle, PageHandle) {
         let slot = Arc::new(Mutex::new(PageSlot::Absent));
-        {
+        let handle = {
             let mut slot_guard = slot.lock();
-            let frame = self.resident.redeem_page(inner);
+            let frame = self.resident.redeem_page(inner, Arc::downgrade(&slot), squashed_offset);
+            let handle = PageHandle { frame };
             *slot_guard = PageSlot::Resident {
-                handle: PageHandle { frame },
+                handle: handle.clone(),
                 metadata,
                 backing: None,
                 eviction_policy,
             };
-        }
+            handle
+        };
 
-        PageSlotHandle { slot }
+        (PageSlotHandle { slot }, handle)
     }
 
     pub fn resident_usage(&self) -> ByteBudgetUsage {
@@ -722,6 +745,7 @@ impl PageManager {
         &self,
         eviction_policy: EvictionPolicy,
         fixed_row_size: Size,
+        squashed_offset: SquashedOffset,
         pages: impl IntoIterator<Item = Option<Box<Page>>>,
         slots: &mut Vec<PageSlotHandle>,
     ) {
@@ -730,8 +754,13 @@ impl PageManager {
 
             if let Some(page) = page {
                 let metadata = page.metadata(fixed_row_size);
-                let frame = self.resident.register_page_unchecked(self.pool.clone(), page);
                 let mut slot_guard = slot.lock();
+                let frame = self.resident.register_page_unchecked(
+                    self.pool.clone(),
+                    page,
+                    Arc::downgrade(&slot),
+                    squashed_offset,
+                );
                 *slot_guard = PageSlot::Resident {
                     handle: PageHandle { frame },
                     metadata,
@@ -746,16 +775,85 @@ impl PageManager {
         }
     }
 
-    pub(super) fn evictable(&self, candidates: &mut Vec<PageEvictionCandidate>) {
-        self.resident.evictable_pages(candidates);
+    /// Evict pages across the database down to the memory budget's low watermark.
+    pub(super) fn trim(&self) -> Result<u64, PageError> {
+        self.evict(self.resident_budget().low_water_bytes, None)
     }
 
-    pub(super) fn evicted(&self, victim: PageEvictionCandidate) {
-        self.resident.evict_page(victim);
+    /// Evict committed pages down to the memory budget's low watermark.
+    pub fn trim_committed(&self) -> Result<u64, PageError> {
+        self.evict(
+            self.resident_budget().low_water_bytes,
+            Some(SquashedOffset::COMMITTED_STATE),
+        )
     }
 
-    pub(super) fn ensure_lower_tier_stored(&self, page: &PageHandle) -> Result<DiskObject, ObjectStoreError> {
-        self.storage.write(page.into())
+    pub(super) fn evict(&self, target_usage: u64, scope: Option<SquashedOffset>) -> Result<u64, PageError> {
+        let timer = self.metrics().timer();
+        let result = self.evict_inner(target_usage, scope);
+        self.metrics().eviction(EvictionDirection::MemoryToDisk, timer.nanos());
+        result
+    }
+
+    fn evict_inner(&self, target_usage: u64, scope: Option<SquashedOffset>) -> Result<u64, PageError> {
+        let mut bytes_freed = 0;
+
+        if self.resident_usage().accounted_bytes() <= target_usage {
+            return Ok(bytes_freed);
+        }
+
+        let mut candidates = self.eviction_candidates.lock();
+        if self.resident_usage().accounted_bytes() <= target_usage {
+            return Ok(bytes_freed);
+        }
+        // Faults register frames under the slot lock, so release the registry
+        // before locking any candidate slot.
+        self.resident.evictable_pages(&mut candidates, scope);
+        for candidate in candidates.drain(..) {
+            let Some(slot) = candidate.slot.upgrade() else {
+                continue;
+            };
+            // A caller can request eviction while working on another page.
+            let Some(mut slot) = slot.try_lock() else {
+                continue;
+            };
+            let PageSlot::Resident {
+                handle: page_handle,
+                metadata,
+                backing,
+                eviction_policy: EvictionPolicy::Evictable,
+            } = &*slot
+            else {
+                continue;
+            };
+
+            // The candidate may have been pinned or replaced since discovery.
+            if page_handle.page_id() != candidate.id || page_handle.is_pinned() {
+                continue;
+            }
+
+            let backing = match backing {
+                Some(disk_object) => disk_object.clone(),
+                // TODO: Consider releasing the slot lock when performing I/O.
+                // Elevates the chances of creating garbage.
+                None => self.storage.write(page_handle.into())?,
+            };
+            *slot = PageSlot::NonResident {
+                metadata: *metadata,
+                backing,
+                squashed_offset: candidate.squashed_offset,
+            };
+            self.resident.evict_page(candidate.id);
+            self.metrics()
+                .evicted(ObjectType::Page, EvictionDirection::MemoryToDisk, PAGE_SIZE as u64);
+            bytes_freed += PAGE_SIZE as u64;
+
+            if self.resident_usage().accounted_bytes() <= target_usage {
+                break;
+            }
+        }
+
+        Ok(bytes_freed)
     }
 }
 

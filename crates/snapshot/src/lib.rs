@@ -477,19 +477,14 @@ impl Snapshot {
         prev_snapshot: Option<&DirTrie>,
         counter: &mut CountCreated,
     ) -> Result<(), SnapshotError> {
-        let mut tables = tables.collect::<Vec<_>>();
-        for index in 0..tables.len() as u64 {
-            match self.write_table(object_repo, tables[index as usize], prev_snapshot, counter) {
+        for table in tables {
+            match self.write_table(object_repo, table, prev_snapshot, counter) {
                 Err(SnapshotError::Page(PageError::MemoryLimitExceeded(_))) => {
-                    // The failed page fault could only evict from its own table.
-                    // Its guards are gone, so other tables and blobs can now make room.
-                    for table in &tables {
-                        table.trim()?;
-                    }
+                    // The page fault already tried evicting pages across the database.
                     blobs.trim()?;
                     // write_table adds metadata only on success. Files already written
                     // by this attempt are reused rather than written again.
-                    self.write_table(object_repo, tables[index as usize], prev_snapshot, counter)?;
+                    self.write_table(object_repo, table, prev_snapshot, counter)?;
                 }
                 result => result?,
             }
@@ -1716,7 +1711,7 @@ mod tests {
             )
         });
         tables[0].insert(storage.blobs(), &product![11_u64])?;
-        assert_eq!(tables[0].trim()?, size_of::<Page>() as u64);
+        assert_eq!(storage.pages().trim_committed()?, size_of::<Page>() as u64);
         // The second table occupies the whole cache. Loading the first table
         // for the snapshot must evict from the second one.
         tables[1].insert(storage.blobs(), &product![22_u64])?;
