@@ -86,7 +86,7 @@ fn connect_then(
             callback(ctx);
             connected_result(Ok(()));
         })
-        .on_connect_error(|_ctx, error| panic!("Connect errored: {error:?}"))
+        .on_connect_error(|_ctx, error, _next| panic!("Connect errored: {error:?}"))
         .build()
         .unwrap();
     conn.run_threaded();
@@ -104,7 +104,7 @@ fn exec_insert_player() {
     connect_then(&test_counter, move |ctx| {
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
-            .on_applied(move |ctx| {
+            .on_applied(test_counter::once::<SubscriptionEventContext, _>(move |ctx| {
                 ctx.db.player_1().on_insert(move |_ctx, row| {
                     let check = || {
                         // Verify field names with digit boundaries are correctly case-converted
@@ -123,7 +123,7 @@ fn exec_insert_player() {
                         reducer_callback_assert_committed("create_player_1"),
                     )
                     .unwrap();
-            })
+            }))
             // Query builder: subscribe to player_1 table (canonical: Player1Canonical)
             .add_query(|q| q.from.player_1().build())
             .subscribe();
@@ -143,7 +143,7 @@ fn exec_insert_person() {
     connect_then(&test_counter, move |ctx| {
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
-            .on_applied(move |ctx| {
+            .on_applied(test_counter::once::<SubscriptionEventContext, _>(move |ctx| {
                 ctx.db.person_2().on_insert(move |_ctx, person| {
                     let check = || {
                         assert_eq_or_bail!("Bob".to_string(), person.first_name);
@@ -174,7 +174,7 @@ fn exec_insert_person() {
                         Err(e) => panic!("create_player_1 panicked: {e:?}"),
                     })
                     .unwrap();
-            })
+            }))
             // Query builder: subscribe to both tables
             .add_query(|q| q.from.player_1().build())
             .add_query(|q| q.from.person_2().build())
@@ -194,7 +194,7 @@ fn exec_ban_player() {
     connect_then(&test_counter, move |ctx| {
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
-            .on_applied(move |ctx| {
+            .on_applied(test_counter::once::<SubscriptionEventContext, _>(move |ctx| {
                 ctx.db.player_1().on_update(move |_ctx, _old, new| {
                     let check = || {
                         assert_eq_or_bail!(Player2Status::BannedUntil(9999), new.status_3_field);
@@ -220,7 +220,7 @@ fn exec_ban_player() {
                         Err(e) => panic!("create_player_1 panicked: {e:?}"),
                     })
                     .unwrap();
-            })
+            }))
             // Query builder: subscribe to player_1 table
             .add_query(|q| q.from.player_1().build())
             .subscribe();
@@ -239,7 +239,7 @@ fn exec_query_builder_filter() {
     connect_then(&test_counter, move |ctx| {
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
-            .on_applied(move |ctx| {
+            .on_applied(test_counter::once::<SubscriptionEventContext, _>(move |ctx| {
                 ctx.db.player_1().on_insert(move |_ctx, row| {
                     let check = || {
                         // Only level-5 players should come through the filter
@@ -267,7 +267,7 @@ fn exec_query_builder_filter() {
                         reducer_callback_assert_committed("create_player_1"),
                     )
                     .unwrap();
-            })
+            }))
             // Query builder: filter on digit-boundary column current_level_2
             .add_query(|q| q.from.player_1().filter(|p| p.current_level_2.eq(5)).build())
             .subscribe();
@@ -290,7 +290,7 @@ fn exec_query_builder_join() {
     connect_then(&test_counter, move |ctx| {
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
-            .on_applied(move |ctx| {
+            .on_applied(test_counter::once::<SubscriptionEventContext, _>(move |ctx| {
                 // Listen for person_2 inserts that come through the join.
                 // The join is: player_1 RIGHT SEMIJOIN person_2 ON player_1.player_1_id = person_2.player_ref
                 // This means we see person_2 rows that have a matching player_1 row.
@@ -335,7 +335,7 @@ fn exec_query_builder_join() {
                         }
                     })
                     .unwrap();
-            })
+            }))
             // Query builder: JOIN player_1 with person_2 on player_1_id = player_ref
             // player_1 RIGHT SEMIJOIN person_2 means: show person_2 rows that have a matching player_1
             .add_query(|q| {
@@ -362,7 +362,7 @@ fn exec_view() {
     connect_then(&test_counter, move |ctx| {
         ctx.subscription_builder()
             .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
-            .on_applied(move |ctx| {
+            .on_applied(test_counter::once::<SubscriptionEventContext, _>(move |ctx| {
                 ctx.db.person_at_level_2().on_insert(move |_ctx, row| {
                     let check = || {
                         assert_eq_or_bail!("ViewPerson".to_string(), row.first_name);
@@ -392,7 +392,7 @@ fn exec_view() {
                         reducer_callback_assert_committed("add_person_2"),
                     )
                     .unwrap();
-            })
+            }))
             // Subscribe to the view which selects people at level 2
             .add_query(|q| q.from.person_at_level_2().build())
             .subscribe();
