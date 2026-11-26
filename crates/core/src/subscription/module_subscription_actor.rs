@@ -3626,6 +3626,100 @@ mod tests {
         Ok(())
     }
 
+    /// Regression test for #6129:
+    /// `doc` is gated by a join on `member`, and `member` has its own RLS rule.
+    /// Each client must only receive the docs of the scopes it belongs to,
+    /// including when a membership row arrives after the doc it gates.
+    #[tokio::test]
+    async fn test_rls_subscription_join_on_table_with_rls() -> anyhow::Result<()> {
+        let db = relational_db()?;
+
+        let client_id_for_a = client_id_from_u8(1);
+        let client_id_for_b = client_id_from_u8(2);
+
+        let id_for_a = client_id_for_a.identity;
+        let id_for_b = client_id_for_b.identity;
+
+        let (tx_for_a, mut rx_for_a) = client_connection(client_id_for_a, &db);
+        let (tx_for_b, mut rx_for_b) = client_connection(client_id_for_b, &db);
+
+        let auth_for_a = AuthCtx::new(db.owner_identity(), id_for_a);
+        let auth_for_b = AuthCtx::new(db.owner_identity(), id_for_b);
+
+        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
+
+        let doc_schema = [("id", AlgebraicType::U64), ("scope", AlgebraicType::U64)];
+        let member_schema = [("scope", AlgebraicType::U64), ("identity", AlgebraicType::identity())];
+
+        let doc_id = db.create_table_for_test("doc", &doc_schema, &[0.into(), 1.into()])?;
+        let member_id = db.create_table_for_test("member", &member_schema, &[0.into(), 1.into()])?;
+
+        insert_rls_rules(
+            &db,
+            [doc_id, member_id],
+            [
+                "select doc.* from doc join member on doc.scope = member.scope where member.identity = :sender",
+                "select * from member where identity = :sender",
+            ],
+        )?;
+
+        let mut query_ids = 0;
+
+        subscribe_multi(&subs, auth_for_a, &["select * from doc"], tx_for_a, &mut query_ids).await?;
+        subscribe_multi(&subs, auth_for_b, &["select * from doc"], tx_for_b, &mut query_ids).await?;
+
+        // Both subscriptions are accepted rather than rejected with
+        // "Subscriptions require indexes on join columns".
+        for rx in [&mut rx_for_a, &mut rx_for_b] {
+            match rx.recv().await {
+                Some(OutboundMessage::V1(SerializableMessage::Subscription(SubscriptionMessage {
+                    result: SubscriptionResult::SubscribeMulti(_),
+                    ..
+                }))) => {}
+                msg => panic!("expected the subscription to be applied, but got: {msg:?}"),
+            }
+        }
+
+        let schema = ProductType::from([AlgebraicType::U64, AlgebraicType::U64]);
+
+        // "a" belongs to scope 1 and "b" to scope 2.
+        let mut tx = begin_mut_tx(&db);
+        db.insert(&mut tx, member_id, &bsatn::to_vec(&product![1u64, id_for_a])?)?;
+        db.insert(&mut tx, member_id, &bsatn::to_vec(&product![2u64, id_for_b])?)?;
+        db.insert(&mut tx, doc_id, &bsatn::to_vec(&product![1u64, 1u64])?)?;
+        db.insert(&mut tx, doc_id, &bsatn::to_vec(&product![2u64, 2u64])?)?;
+        assert!(matches!(
+            subs.commit_and_broadcast_event(None, module_event(), tx),
+            Ok(Ok(_))
+        ));
+
+        assert_tx_update_for_table(rx_for_a.recv(), doc_id, &schema, [product![1u64, 1u64]], []).await;
+        assert_tx_update_for_table(rx_for_b.recv(), doc_id, &schema, [product![2u64, 2u64]], []).await;
+
+        // "a" joins scope 2, so it now receives scope 2's existing doc. "b" receives nothing.
+        let mut tx = begin_mut_tx(&db);
+        db.insert(&mut tx, member_id, &bsatn::to_vec(&product![2u64, id_for_a])?)?;
+        assert!(matches!(
+            subs.commit_and_broadcast_event(None, module_event(), tx),
+            Ok(Ok(_))
+        ));
+
+        assert_tx_update_for_table(rx_for_a.recv(), doc_id, &schema, [product![2u64, 2u64]], []).await;
+
+        // A new doc in scope 2 reaches both members of scope 2.
+        // This is also the next message "b" receives, so "b" received nothing above.
+        let mut tx = begin_mut_tx(&db);
+        db.insert(&mut tx, doc_id, &bsatn::to_vec(&product![3u64, 2u64])?)?;
+        assert!(matches!(
+            subs.commit_and_broadcast_event(None, module_event(), tx),
+            Ok(Ok(_))
+        ));
+
+        assert_tx_update_for_table(rx_for_a.recv(), doc_id, &schema, [product![3u64, 2u64]], []).await;
+        assert_tx_update_for_table(rx_for_b.recv(), doc_id, &schema, [product![3u64, 2u64]], []).await;
+        Ok(())
+    }
+
     /// Test that a client and the database owner can subscribe to the same query
     #[tokio::test]
     async fn test_rls_for_owner() -> anyhow::Result<()> {

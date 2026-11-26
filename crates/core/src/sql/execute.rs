@@ -1018,6 +1018,85 @@ pub(crate) mod tests {
         Ok(())
     }
 
+    /// Regression test for #6129:
+    /// a join on a table that has its own RLS rule returns only the rows that rule allows,
+    /// whether the join comes from another table's RLS rule or from the query itself.
+    #[tokio::test]
+    async fn test_rls_join_on_table_with_rls() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+
+        let id_for_a = identity_from_u8(1);
+        let id_for_b = identity_from_u8(2);
+
+        let doc_schema = [("id", AlgebraicType::U64), ("scope", AlgebraicType::U64)];
+        let member_schema = [("scope", AlgebraicType::U64), ("identity", AlgebraicType::identity())];
+
+        let doc_id = db.create_table_for_test("doc", &doc_schema, &[0.into(), 1.into()])?;
+        let member_id = db.create_table_for_test("member", &member_schema, &[0.into(), 1.into()])?;
+
+        insert_rows(
+            &db,
+            doc_id,
+            [product![1u64, 1u64], product![2u64, 2u64], product![3u64, 2u64]],
+        )?;
+        insert_rows(
+            &db,
+            member_id,
+            [
+                product![1u64, id_for_a],
+                product![2u64, id_for_a],
+                product![2u64, id_for_b],
+            ],
+        )?;
+
+        insert_rls_rules(
+            &db,
+            [doc_id, member_id],
+            [
+                "select doc.* from doc join member on doc.scope = member.scope where member.identity = :sender",
+                "select * from member where identity = :sender",
+            ],
+        )?;
+
+        let auth_for_a = AuthCtx::new(Identity::ZERO, id_for_a);
+        let auth_for_b = AuthCtx::new(Identity::ZERO, id_for_b);
+
+        assert_query_results(
+            db.clone(),
+            "select * from doc",
+            auth_for_a.clone(),
+            // Identity "a" belongs to scopes 1 and 2
+            [product![1u64, 1u64], product![2u64, 2u64], product![3u64, 2u64]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            "select * from doc",
+            auth_for_b.clone(),
+            // Identity "b" belongs to scope 2 only
+            [product![2u64, 2u64], product![3u64, 2u64]],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            "select * from doc where id = 1",
+            auth_for_b.clone(),
+            // Doc 1 is in a scope "b" does not belong to
+            [],
+        )
+        .await;
+        assert_query_results(
+            db.clone(),
+            "select member.* from doc join member on doc.scope = member.scope where doc.id = 2",
+            auth_for_b.clone(),
+            // "b" sees its own membership of scope 2, and not "a"'s
+            [product![2u64, id_for_b]],
+        )
+        .await;
+
+        Ok(())
+    }
+
     /// Test projecting columns from both tables in join
     #[tokio::test]
     async fn test_project_join() -> anyhow::Result<()> {
