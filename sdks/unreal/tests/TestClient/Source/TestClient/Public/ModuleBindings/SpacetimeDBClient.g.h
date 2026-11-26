@@ -24130,6 +24130,8 @@ public:
     UDbConnectionBuilder* WithTokenProvider(FTokenProviderDelegate Provider);
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
     UDbConnectionBuilder* OnAutomaticReconnect(FOnConnectDelegate Callback);
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
+    UDbConnectionBuilder* WithPingInterval(FTimespan Interval);
 
 private:
 

@@ -15,7 +15,7 @@ struct SPACETIMEDBSDK_API FSpacetimeDbSdkOptionalUInt32
     bool bHasValue = false;
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 Value;
+    uint32 Value = {};
 
     FSpacetimeDbSdkOptionalUInt32() = default;
 

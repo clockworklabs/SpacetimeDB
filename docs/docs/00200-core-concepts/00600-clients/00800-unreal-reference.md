@@ -196,6 +196,18 @@ Chain a call to `.OnDisconnect(callback)` to your builder to register a callback
 
 With automatic reconnect, use `.OnDisconnectWithReconnect(callback)` to also learn whether recovery is scheduled. Its parameters are `UDbConnection* Connection`, `const FString& Error`, `bool bWillReconnect`, `int32 NextReconnectAttempt`, and `float NextReconnectDelaySeconds`. Retry attempts start at one; when no retry is scheduled, the last three arguments are `false`, `0`, and `0`. You can register both callbacks.
 
+#### Method `WithPingInterval`
+
+```cpp
+class UDbConnectionBuilder
+{
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
+    UDbConnectionBuilder* WithPingInterval(FTimespan Interval);
+};
+```
+
+Set how often the connection pings the server to measure its [connection metrics](./00300-connection.md#connection-metrics). The default is one second, and the first ping is sent as soon as the connection is established. `FTimespan::Zero()` disables periodic pinging, so `TryGetNetworkStats` returns false unless a `Ping` is answered. Regenerate module bindings to get this builder method.
+
 #### Method `Build`
 
 ```cpp
@@ -254,6 +266,68 @@ class UDbConnection
 ```
 
 Enable or disable the SDK's automatic ticker. When enabled, the connection registers with Unreal's core ticker and calls `FrameTick()` for you.
+
+### Measure the connection
+
+The connection pings the server as it ticks, to measure round-trip time and estimate the server's clock. See [Connection Metrics](./00300-connection.md#connection-metrics) for what each value means.
+
+#### Method `TryGetNetworkStats`
+
+```cpp
+class UDbConnection
+{
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB")
+    bool TryGetNetworkStats(FSpacetimeDBNetworkStats& OutStats) const;
+
+    TOptional<FSpacetimeDBNetworkStats> GetNetworkStats() const;
+};
+```
+
+Get a fresh snapshot of the connection's network statistics. Returns false (or an unset `TOptional`) until the first ping of the current connection is answered, including after a reconnect. Each call returns a new snapshot, so call it again whenever you want current values.
+
+```cpp
+USTRUCT(BlueprintType)
+struct FSpacetimeDBNetworkStats
+{
+    FTimespan Rtt;                          // Smoothed round-trip time (RFC 6298 SRTT)
+    FTimespan RttLatest;                    // The most recent sample
+    FTimespan RttMin;                       // The lowest over the last 10 samples
+    FTimespan Jitter;                       // RFC 6298 RTTVAR
+    FSpacetimeDBTimestamp ServerNow;        // Estimated server time; never goes backwards
+    FSpacetimeDBTimestamp ServerTimeLatest; // When the server received the latest ping
+    FTimespan PongWait;                     // Age of the oldest unanswered ping, or zero
+};
+```
+
+Round-trip times are measured from when the engine's WebSocket module hands a message to the SDK, so they can include up to a frame of the engine's own queueing. `RttMin` is the best guide to the underlying network.
+
+#### Method `Ping`
+
+```cpp
+class UDbConnection
+{
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
+    void Ping(const FOnPingCompleteDelegate& Callback);
+};
+
+DECLARE_DYNAMIC_DELEGATE_ThreeParams(FOnPingCompleteDelegate,
+    bool, bSuccess, const FSpacetimeDBPingResult&, Result, const FString&, Error);
+```
+
+Send a ping now, and call `Callback` with its timings when the reply arrives. The sample also feeds `TryGetNetworkStats`, and this works with periodic pinging disabled. The callback runs from `FrameTick()`. It is called with `bSuccess` false straight away if the connection isn't established, or later if the connection closes before the reply arrives.
+
+```cpp
+USTRUCT(BlueprintType)
+struct FSpacetimeDBPingResult
+{
+    FTimespan Rtt;                           // RoundTrip - ServerHold, floored at zero
+    FTimespan RoundTrip;                     // From sending the ping to its reply arriving
+    FTimespan ServerHold;                    // How long the server held the ping
+    FSpacetimeDBTimestamp ServerReceiveTime; // When the server received the ping
+    double SentAt;                           // FPlatformTime::Seconds() when sent
+    double ReceivedAt;                       // FPlatformTime::Seconds() when the reply arrived
+};
+```
 
 ### Access tables and reducers
 

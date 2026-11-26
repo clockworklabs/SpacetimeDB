@@ -58,6 +58,22 @@ pub async fn dispatch(db_name: &str) {
 
     connect_test_counter.wait_for_all().await;
 
+    // An on-demand Ping resolves from its own Pong, and its sample feeds the network stats.
+    let ping = connection
+        .ping()
+        .await
+        .expect("`ping` failed on an established connection");
+    assert!(
+        ping.rtt <= ping.round_trip,
+        "rtt {:?} > round trip {:?}",
+        ping.rtt,
+        ping.round_trip
+    );
+    assert!(
+        connection.network_stats().is_some(),
+        "`network_stats` is `None` after a Pong arrived"
+    );
+
     connection.disconnect().unwrap();
     // Yield once so the queued disconnect mutation is processed by the background task
     // before the wasm test function returns to Node.

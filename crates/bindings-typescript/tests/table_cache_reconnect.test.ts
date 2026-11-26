@@ -28,6 +28,8 @@ describe('reconciliation without primary keys', () => {
       createWSFn: new WebsocketTestAdapterFactory().openWebSocket,
       compression: 'none',
       lightMode: false,
+      pingIntervalMs: 0,
+      pingTimeoutMs: 0,
     });
     const cache = new TableCacheImpl<typeof remoteModule, 'item'>(
       schema.tables.item

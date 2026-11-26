@@ -16,7 +16,7 @@ struct SPACETIMEDBSDK_API FSpacetimeDbSdkOptionalQueryRows
     bool bHasValue = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB", meta = (EditCondition = "bHasValue"))
-    FQueryRowsType Value;
+    FQueryRowsType Value = {};
 
     FSpacetimeDbSdkOptionalQueryRows() = default;
 

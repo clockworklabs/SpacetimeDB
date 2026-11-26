@@ -104,6 +104,8 @@ public partial class ReconnectTests
     {
         internal bool Open;
         internal readonly ConcurrentQueue<ClientMessage> Sent = new();
+        // Pings are kept apart from Sent, so tests of other traffic needn't account for them.
+        internal readonly ConcurrentQueue<Ping> Pings = new();
         internal string? Token;
         internal ConnectionId? Session;
         internal ConnectionId Id;
@@ -119,14 +121,24 @@ public partial class ReconnectTests
             Started = true;
             return Task.CompletedTask;
         }
-        public override void Send(ClientMessage message) => Sent.Enqueue(message);
+        public override void Send(ClientMessage message)
+        {
+            if (message is ClientMessage.Ping(var ping))
+            {
+                Pings.Enqueue(ping);
+            }
+            else
+            {
+                Sent.Enqueue(message);
+            }
+        }
         public override void Abort() => Open = false;
         private T Handler<T>(string name) where T : Delegate =>
             (T)typeof(SpacetimeDB.WebSocket).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(this)!;
-        internal void Receive(ServerMessage message)
+        internal void Receive(ServerMessage message, long? receivedAt = null)
         {
             var bytes = IStructuralReadWrite.ToBytes(new ServerMessage.BSATN(), message);
-            Handler<MessageEventHandler>("OnMessage")([0, .. bytes], DateTime.UtcNow);
+            Handler<MessageEventHandler>("OnMessage")([0, .. bytes], DateTime.UtcNow, receivedAt ?? Stopwatch.GetTimestamp());
         }
         internal void Lose(Exception? error = null)
         {

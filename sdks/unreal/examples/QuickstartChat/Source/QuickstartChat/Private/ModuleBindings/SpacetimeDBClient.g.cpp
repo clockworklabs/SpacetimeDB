@@ -467,6 +467,11 @@ UDbConnectionBuilder* UDbConnectionBuilder::OnAutomaticReconnect(FOnConnectDeleg
 	OnAutomaticReconnectDelegateInternal = Callback;
 	return this;
 }
+UDbConnectionBuilder* UDbConnectionBuilder::WithPingInterval(FTimespan Interval)
+{
+	WithPingIntervalBase(Interval);
+	return this;
+}
 void UDbConnection::ForwardOnConnect(UDbConnectionBase* BaseConnection, FSpacetimeDBIdentity InIdentity, const FString& InToken)
 {
 	if (OnConnectDelegate.IsBound())

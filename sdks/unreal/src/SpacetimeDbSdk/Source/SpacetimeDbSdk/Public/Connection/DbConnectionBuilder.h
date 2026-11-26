@@ -29,6 +29,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
 	UDbConnectionBuilderBase* OnAutomaticReconnectBase(FOnConnectBaseDelegate Callback);
 
+	/**
+	 * Set how often the connection pings the server to measure its network stats (default 1 second).
+	 *
+	 * The first Ping is sent as soon as the connection is established, then one every Interval,
+	 * from FrameTick. Zero disables periodic pinging, so the stats stay unavailable unless a
+	 * Ping sent with UDbConnectionBase::Ping is answered.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
+	UDbConnectionBuilderBase* WithPingIntervalBase(FTimespan Interval);
+
 	/** Provide an specific compresstion method. Brotli not implemented, will default to Gzip */
 	UDbConnectionBuilderBase* WithCompressionBase(const ESpacetimeDBCompression& InCompression);
 
@@ -56,6 +66,7 @@ public:
 private:
 	bool bAutomaticReconnect = false;
 	FAutomaticReconnectOptions ReconnectOptions;
+	FTimespan PingInterval = FTimespan::FromSeconds(1.0);
 	UPROPERTY()
 	FTokenProviderDelegate TokenProvider;
 	UPROPERTY()
