@@ -40,6 +40,7 @@ export function createSpacetimeDBProvider<
 
   const fallback: ManagerConnectionState = {
     isActive: false,
+    isReconnecting: false,
     identity: undefined,
     token: undefined,
     connectionId: ConnectionId.random(),
