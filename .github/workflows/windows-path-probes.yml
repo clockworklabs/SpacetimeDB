@@ -1,0 +1,61 @@
+name: "EXPERIMENT - Windows canonical path probes (DO NOT MERGE)"
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - .github/workflows/windows-path-probes.yml
+      - tools/windows-path-probes/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probes:
+    name: Path probes (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dsherret/rust-toolchain-file@v1
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+      - uses: pnpm/action-setup@v4
+      - name: Install the repository's TypeScript compiler version
+        run: npm install --global typescript@5.6.3
+      - name: Record tool versions
+        shell: pwsh
+        run: |
+          rustc --version
+          cargo --version
+          dotnet --info
+          pnpm --version
+          tsc --version
+      - name: Compile standalone probes
+        shell: pwsh
+        run: rustc --edition=2021 --test tools/windows-path-probes/probes.rs -o path-probes.exe
+      - name: Run all probes, including cases after a failure
+        shell: pwsh
+        run: |
+          & ./path-probes.exe --nocapture --test-threads=1 2>&1 | Tee-Object -FilePath path-probes.log
+          exit $LASTEXITCODE
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: path-probes-${{ matrix.os }}
+          path: path-probes.log
