@@ -1,5 +1,9 @@
 use spacetimedb_lib::db::raw_def::v9::TableAccess;
+use spacetimedb_lib::sats::raw_identifier::RawIdentifier;
+use spacetimedb_lib::Hash;
+use spacetimedb_schema::auto_migrate::ponder_manual_migrate;
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, TypeDef, ViewDef};
+use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 mod code_indenter;
 pub mod cpp;
@@ -169,4 +173,113 @@ pub trait Lang {
         file.filename = format!("{}/{}", ns_path, file.filename);
         file
     }
+
+    /// Generate the skeleton of a manual migration, to be added to the module's source.
+    fn generate_migration(&self, dropped: &DroppedSchema) -> anyhow::Result<OutputFile> {
+        let _ = dropped;
+        anyhow::bail!("generating migrations is not supported for this language")
+    }
+}
+
+/// The part of an old schema that a manual migration reads from.
+pub struct DroppedSchema<'a> {
+    /// The old module definition, i.e. the schema of the database being migrated.
+    pub old: &'a ModuleDef,
+    /// The hash of `old`, which the server uses to pick the migration to run.
+    pub hash: Hash,
+    /// The tables that the migration sees under the `dropped` namespace:
+    /// those that the new schema removes or changes incompatibly.
+    /// They're the tables of `old`, with the automatic migration steps that precede
+    /// the manual migration applied, e.g. indexes the new schema removes are gone.
+    /// Their row types are still described by `old`'s typespace.
+    /// Their rows are deleted once the migration finishes.
+    pub tables: Vec<TableDef>,
+    /// The names of the `tables` that the new schema removes, rather than changes.
+    pub removed: Vec<Identifier>,
+    /// Sequences of changed tables whose state the migration loses,
+    /// because the new version of the table has no sequence with the same name
+    /// for the server to continue them in.
+    pub lost_sequences: Vec<LostSequence>,
+}
+
+/// A sequence whose allocation state a manual migration doesn't carry over to the new schema.
+pub struct LostSequence {
+    /// The accessor name of the table the sequence belongs to.
+    pub table: Identifier,
+    /// The accessor name of the column the sequence generates values for.
+    pub column: Identifier,
+    /// The name of the sequence.
+    pub sequence: RawIdentifier,
+}
+
+impl<'a> DroppedSchema<'a> {
+    /// Determine what a manual migration from `old` to `new` needs to declare.
+    ///
+    /// Only tables in the root namespace are included;
+    /// tables dropped from submodules are migrated by those submodules.
+    pub fn new(old: &'a ModuleDef, new: &ModuleDef) -> anyhow::Result<Self> {
+        let plan = ponder_manual_migrate(old, new)?;
+        let manual = plan
+            .manual
+            .as_ref()
+            .expect("ponder_manual_migrate always plans a manual migration");
+        let hash = manual.hash;
+        let removed = manual
+            .removed_tables
+            .iter()
+            .filter(|(namespace, _)| namespace.is_empty())
+            .map(|&(_, name)| name.clone())
+            .collect();
+        let mut tables: Vec<TableDef> = plan
+            .dropped_tables()
+            .into_iter()
+            .filter(|((namespace, _), _)| namespace.is_empty())
+            .map(|(_, table)| table)
+            .collect();
+        tables.sort_by(|a, b| a.accessor_name.cmp(&b.accessor_name));
+
+        // After the automatic steps, the server creates each changed table anew and continues
+        // only the sequences of the old table that the new table has a sequence of the same name for.
+        let mut lost_sequences = Vec::new();
+        for &key in manual
+            .changed_tables
+            .iter()
+            .filter(|(namespace, _)| namespace.is_empty())
+        {
+            let (Some((_, old_table)), Some((_, new_table))) = (old.find_table(key), new.find_table(key)) else {
+                continue;
+            };
+            for sequence in old_table.sequences.values() {
+                if new_table
+                    .sequences
+                    .values()
+                    .any(|new_seq| new_seq.name == sequence.name)
+                {
+                    continue;
+                }
+                let Some(column) = old_table.get_column(sequence.column) else {
+                    continue;
+                };
+                lost_sequences.push(LostSequence {
+                    table: old_table.accessor_name.clone(),
+                    column: column.accessor_name.clone(),
+                    sequence: sequence.name.clone(),
+                });
+            }
+        }
+        lost_sequences.sort_by(|a, b| (&a.table, &a.sequence).cmp(&(&b.table, &b.sequence)));
+
+        Ok(Self {
+            old,
+            hash,
+            tables,
+            removed,
+            lost_sequences,
+        })
+    }
+}
+
+/// Generate the skeleton of a manual migration from the schema `old` to the schema `new`.
+pub fn generate_migration(old: &ModuleDef, new: &ModuleDef, lang: &dyn Lang) -> anyhow::Result<OutputFile> {
+    lang.generate_migration(&DroppedSchema::new(old, new)?)
 }

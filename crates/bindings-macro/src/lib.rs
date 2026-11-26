@@ -11,20 +11,15 @@
 mod environment;
 mod http;
 mod migration;
-mod procedure;
-mod reducer;
-mod sats;
-mod table;
-mod util;
-mod view;
 
-use self::util::{cvt_attr, cvt_attr_mut, ok_or_compile_error};
-use proc_macro::TokenStream as StdTokenStream;
-use proc_macro2::TokenStream;
-use quote::quote;
-use std::time::Duration;
-use syn::{parse::ParseStream, Attribute};
-use syn::{ItemConst, ItemFn};
+#[proc_macro_attribute]
+pub fn migration(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    cvt_attr_mut::<syn::ItemMod>(args, item, |args, mod_| {
+        let args = migration::MigrationArgs::parse(args)?;
+        migration::migration_impl(args, mod_)
+    })
+}
+mod procedure;
 
 #[proc_macro_attribute]
 pub fn procedure(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
@@ -33,6 +28,7 @@ pub fn procedure(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
         procedure::procedure_impl(args, original_function)
     })
 }
+mod reducer;
 
 #[proc_macro_attribute]
 pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
@@ -41,11 +37,15 @@ pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
         reducer::reducer_impl(args, original_function)
     })
 }
+mod sats;
+mod table;
 
 #[proc_macro_attribute]
 pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     expand_table(args, item, false)
 }
+mod util;
+mod view;
 
 #[proc_macro_attribute]
 pub fn view(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
@@ -63,6 +63,14 @@ pub fn view(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
         Err(e) => TokenStream::from_iter([item_ts, e.into_compile_error()]).into(),
     }
 }
+
+use self::util::{cvt_attr, cvt_attr_mut, ok_or_compile_error};
+use proc_macro::TokenStream as StdTokenStream;
+use proc_macro2::TokenStream;
+use quote::quote;
+use std::time::Duration;
+use syn::{parse::ParseStream, Attribute};
+use syn::{ItemConst, ItemFn};
 
 #[proc_macro_attribute]
 pub fn http_handler(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
@@ -125,14 +133,6 @@ fn expand_table(args: StdTokenStream, item: StdTokenStream, reset_accessor_span:
         }
         let generated = table::table_impl(args, &derive_input)?;
         Ok(TokenStream::from_iter([quote!(#derive_input), generated]))
-    })
-}
-
-#[proc_macro_attribute]
-pub fn migration(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
-    cvt_attr_mut::<syn::ItemMod>(args, item, |args, mod_| {
-        let args = migration::MigrationArgs::parse(args)?;
-        migration::migration_impl(args, mod_)
     })
 }
 
@@ -251,6 +251,27 @@ fn derive_table_helper_attr() -> Attribute {
 )]
 pub fn table_helper(input: StdTokenStream) -> StdTokenStream {
     schema_type(input)
+}
+
+/// Alias for `derive(SpacetimeType)` used on the items of a `#[spacetimedb::migration]` module.
+///
+/// Unlike `SpacetimeType`, this does not register the type with the module,
+/// since the types in a migration's `dropped` module belong to the old schema
+/// and are only added to the migration's own typespace, via its tables.
+/// Also provides the helper attributes for tables, like [`table_helper`].
+#[doc(hidden)]
+#[proc_macro_derive(
+    __MigrationTypeHelper,
+    attributes(sats, unique, auto_inc, primary_key, index, default)
+)]
+pub fn migration_type_helper(input: StdTokenStream) -> StdTokenStream {
+    sats_derive(input, true, |ty| {
+        TokenStream::from_iter([
+            sats::derive_satstype(ty),
+            sats::derive_deserialize(ty),
+            sats::derive_serialize(ty),
+        ])
+    })
 }
 
 #[proc_macro]

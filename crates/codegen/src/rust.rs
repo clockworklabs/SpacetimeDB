@@ -10,6 +10,7 @@ use crate::util::{
     CodegenVisibility,
 };
 use crate::CodegenOptions;
+use crate::DroppedSchema;
 use crate::OutputFile;
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
@@ -22,6 +23,8 @@ use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse};
 use std::collections::BTreeSet;
 use std::fmt::{self, Write};
 use std::ops::Deref;
+
+mod migration;
 
 /// Pairs of (module_name, TypeName).
 type Imports = BTreeSet<AlgebraicTypeRef>;
@@ -768,6 +771,10 @@ impl {func_name} for super::RemoteProcedures {{
             code: output.into_inner(),
         }]
     }
+
+    fn generate_migration(&self, dropped: &DroppedSchema) -> anyhow::Result<OutputFile> {
+        Ok(migration::generate_migration(dropped))
+    }
 }
 
 /// Implements `HasCols` for the given `AlgebraicTypeRef` struct type.
@@ -1003,8 +1010,11 @@ fn implement_query_view_call_accessor(
 #[derive(Clone, Copy)]
 enum TypeContext {
     Client,
-    Receiver,
+    /// Receiver bindings, which define their own `Identity`.
+    Module,
     OutboxMacro,
+    /// A generated migration, which the user adds to their module's own crate.
+    Migration,
 }
 
 pub fn write_type<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicTypeUse) -> fmt::Result {
@@ -1019,14 +1029,16 @@ fn write_type_in_context<W: Write>(
 ) -> fmt::Result {
     let (sdk_path, sats_path, identity_type, type_prefix) = match context {
         TypeContext::Client => ("__sdk", "__sats", "__sdk::Identity", ""),
-        TypeContext::Receiver => ("::spacetimedb", "::spacetimedb::sats", "Identity", ""),
+        TypeContext::Module => ("::spacetimedb", "::spacetimedb::sats", "Identity", ""),
         TypeContext::OutboxMacro => ("::spacetimedb", "::spacetimedb::sats", "$module::Identity", "$module::"),
+        TypeContext::Migration => ("spacetimedb", "spacetimedb::sats", "spacetimedb::Identity", ""),
     };
     // Receiver-defined types can shadow builtins inside the bindings, and macros
     // resolve types in the caller's scope. Preserve the established client spelling.
     let qualify_builtins = match context {
-        TypeContext::Client => false,
-        TypeContext::Receiver | TypeContext::OutboxMacro => true,
+        // A migration is meant to be read and edited, so keep its types short.
+        TypeContext::Client | TypeContext::Migration => false,
+        TypeContext::Module | TypeContext::OutboxMacro => true,
     };
     let write_builtin = |out: &mut W, path: &str, name: &str| -> fmt::Result {
         if qualify_builtins {
@@ -1352,10 +1364,10 @@ fn generate_module_binding_type_file(module: &ModuleDef, typ: &TypeDef, dependen
         "{",
         |out| {
             if matches!(def, AlgebraicTypeDef::Product(_)) {
-                write_arglist_no_delimiters(module, out, members, Some("pub"), TypeContext::Receiver).unwrap();
+                write_arglist_no_delimiters(module, out, members, Some("pub"), TypeContext::Module).unwrap();
             } else {
                 for (ident, ty) in members {
-                    write_enum_variant(module, out, ident, ty, TypeContext::Receiver);
+                    write_enum_variant(module, out, ident, ty, TypeContext::Module);
                 }
             }
         },
@@ -1468,7 +1480,7 @@ fn print_module_binding_reducer_handle(module: &ModuleDef, out: &mut Indenter, r
         args_type,
         &reducer.params_for_generate.elements,
         "pub",
-        TypeContext::Receiver,
+        TypeContext::Module,
     );
     out.newline();
     let signature_hash = rust_string_literal(&reducer_signature_hash(module, reducer));
@@ -2692,7 +2704,7 @@ mod tests {
                 ],
             ),
             (
-                TypeContext::Receiver,
+                TypeContext::Module,
                 [
                     "::core::option::Option::<::std::vec::Vec::<::core::result::Result::<Payload, Identity>>>",
                     "::core::result::Result::<::spacetimedb::sats::i256, ::spacetimedb::sats::u256>",
@@ -2709,6 +2721,16 @@ mod tests {
                     "::core::option::Option::<::std::vec::Vec::<::spacetimedb::Timestamp>>",
                     "::core::result::Result::<::spacetimedb::ConnectionId, ::spacetimedb::TimeDuration>",
                     "::core::result::Result::<::spacetimedb::Uuid, ::spacetimedb::ScheduleAt>",
+                ],
+            ),
+            (
+                TypeContext::Migration,
+                [
+                    "Option::<Vec::<Result::<Payload, spacetimedb::Identity>>>",
+                    "Result::<spacetimedb::sats::i256, spacetimedb::sats::u256>",
+                    "Option::<Vec::<spacetimedb::Timestamp>>",
+                    "Result::<spacetimedb::ConnectionId, spacetimedb::TimeDuration>",
+                    "Result::<spacetimedb::Uuid, spacetimedb::ScheduleAt>",
                 ],
             ),
         ];
