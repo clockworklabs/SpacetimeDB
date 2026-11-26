@@ -1,6 +1,6 @@
 ---
 name: rust-server
-description: SpacetimeDB Rust server module SDK reference. Use when writing tables, reducers, or module logic in Rust.
+description: SpacetimeDB Rust server module SDK reference. Use when writing or unit-testing tables, reducers, or module logic in Rust.
 license: Apache-2.0
 metadata:
   author: clockworklabs
@@ -412,6 +412,53 @@ pub enum Status { Online, Away, Offline }
 pub struct Point { x: f32, y: f32 }
 ```
 
+## Testing
+
+Unit-test reducers, procedures and views in-process with the module test harness (`spacetimedb` 2.12+). It runs the module against the real datastore, in memory, so constraints and rollback behave as in production, with no server and no publish. Full guide: https://spacetimedb.com/docs/how-to/unit-testing
+
+Add a dev-dependency with the `test-utils` feature, at the same version as the normal dependency, and run tests natively with `cargo test` (not for a WebAssembly target):
+
+```toml
+[dev-dependencies]
+spacetimedb = { version = "2.12.0", features = ["test-utils"] }
+icu_calendar = ">=2.1, <2.2"  # until #6317 is fixed: the test datastore needs 2.1.x
+```
+
+`TestContext::new()` discovers the module's tables and functions and creates a fresh database. Call reducers as ordinary functions inside `with_reducer_tx`:
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spacetimedb::test_utils::{TestAuth, TestContext};
+    use spacetimedb::ConnectionId;
+
+    fn alice() -> TestAuth {
+        TestAuth::from_jwt_payload(r#"{"iss":"test-issuer","sub":"alice"}"#, ConnectionId::from_u128(1))
+            .expect("valid test claims")
+    }
+
+    #[test]
+    fn creates_an_entity() {
+        let test = TestContext::new().expect("test database");
+        test.with_reducer_tx(alice(), |ctx| {
+            create_entity(ctx, "Alice".to_string());
+            Ok::<(), String>(())
+        })
+        .expect("reducer succeeds");
+        assert_eq!(test.db.entity().count(), 1);
+    }
+}
+```
+
+- `with_reducer_tx(auth, body)` commits when `body` returns `Ok`, and rolls back on `Err` or panic. For a reducer returning `()`, call it and then return `Ok::<(), String>(())`; for one returning `Result`, propagate its error with `?`.
+- Create a new `TestContext` for each test: clones share the same database and environment.
+- `TestAuth::from_jwt_payload(claims_json, connection_id)` calls as a client; the same `iss` and `sub` always give the same `ctx.sender()`. `TestAuth::internal()` calls as the database itself, as scheduled reducers are.
+- `test.clock` controls `ctx.timestamp`; `test.rng` controls `ctx.random()` and `ctx.rng()`.
+- In 2.13+, `ProcedureContext::with_tx` and environment reads work in tests; set module-declared keys with `test.set_env` / `test.unset_env`.
+- The harness does not run lifecycle reducers, schedules or RLS; call lifecycle and scheduled reducers explicitly.
+- Subscriptions, client connections and deployment still need a running server (`spacetime start`).
+
 ## Complete Example
 
 ```rust
@@ -471,42 +518,3 @@ pub fn add_record(ctx: &ReducerContext, value: u32) {
     });
 }
 ```
-
-## Module Unit Tests
-
-The native in-memory harness is available in 2.12+. Keep the same `spacetimedb` version in normal and dev dependencies, enabling `test-utils` only for tests:
-
-```toml
-[dependencies]
-spacetimedb = { version = "2.13.0", features = ["unstable"] }
-
-[dev-dependencies]
-spacetimedb = { version = "2.13.0", features = ["test-utils"] }
-icu_calendar = ">=2.1, <2.2" # temporal_rs requires icu_calendar 2.1.x
-```
-
-Run `cargo test` natively, not with a WebAssembly target. For the `create_entity` reducer above:
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use spacetimedb::test_utils::{TestAuth, TestContext};
-
-    #[test]
-    fn inserts_entity() {
-        let test = TestContext::new().expect("test database");
-        test.with_reducer_tx(TestAuth::internal(), |ctx| {
-            create_entity(ctx, "Alice".to_owned());
-            Ok::<(), String>(())
-        }).expect("transaction");
-        assert_eq!(test.db.entity().count(), 1);
-    }
-}
-```
-
-`with_reducer_tx` commits on `Ok` and rolls back on `Err` or panic unwinding; propagate reducer errors with `?` when the reducer returns `Result`. Create a new `TestContext` for each test: cloning shares the database. Use `TestAuth::from_jwt_payload(payload, connection_id)?` for client calls and `TestAuth::internal()` for the database itself. The harness exposes `clock`, `rng`, procedure/view contexts, and query execution. It does not simulate subscriptions, RLS, lifecycle calls, or timers. Invoke lifecycle/scheduled reducers explicitly and retain integration tests for host behavior.
-
-In SDK 2.13+, native tests support `ProcedureContext::with_tx` and environment reads. Use `TestContext::set_env` / `unset_env` for module-declared environment keys; undeclared keys and disallowed values are rejected. Clones share the same test environment. The `with_tx` panic workaround applies only to SDK 2.12.
-
-See https://spacetimedb.com/docs/how-to/unit-testing for test setup, HTTP mocking, and current limitations.

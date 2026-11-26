@@ -11,3 +11,10 @@ crate-type = ["cdylib"]
 [dependencies]
 spacetimedb = { path = "../../../crates/bindings" }
 log = "0.4"
+
+[dev-dependencies]
+# Unit tests run the module against an in-memory database with `cargo test`.
+# See https://spacetimedb.com/docs/how-to/unit-testing
+spacetimedb = { path = "../../../crates/bindings", features = ["test-utils"] }
+# The test datastore needs icu_calendar 2.1.x until #6317 is fixed.
+icu_calendar = { version = ">=2.1, <2.2", default-features = false }

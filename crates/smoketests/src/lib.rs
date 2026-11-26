@@ -385,6 +385,11 @@ fn run_cmd_inner(args: &[&str], cwd: &Path, stdin_input: Option<&str>) -> Result
 
 /// Runs a `pnpm` command and returns stdout as a string.
 pub fn pnpm(args: &[&str], cwd: &Path) -> Result<String> {
+    pnpm_with_env(args, cwd, &[])
+}
+
+/// Runs a `pnpm` command with extra environment variables and returns stdout as a string.
+pub fn pnpm_with_env(args: &[&str], cwd: &Path, env: &[(&str, &str)]) -> Result<String> {
     let pnpm_path = pnpm_path().context("Could not locate pnpm")?;
     let minimum_release_age = pnpm_minimum_release_age()?;
 
@@ -395,6 +400,7 @@ pub fn pnpm(args: &[&str], cwd: &Path) -> Result<String> {
         .args(args)
         .current_dir(cwd)
         .env("npm_config_minimum_release_age", minimum_release_age)
+        .envs(env.iter().copied())
         .output()
         .with_context(|| format!("Failed to spawn pnpm {}", args.join(" ")))?;
 
@@ -410,12 +416,52 @@ pub fn pnpm(args: &[&str], cwd: &Path) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-/// Builds the local TypeScript bindings package.
+/// Builds the local TypeScript bindings package, once per test run.
+///
+/// Tests run in parallel, and nextest runs each one in its own process. A build
+/// wipes `dist/` first, which would pull the SDK out from under a test that is
+/// using it, so builds take a file lock, and a stamp file records the run that
+/// last built the SDK so later tests in the same run skip it.
 pub fn build_typescript_sdk() -> Result<()> {
-    let workspace = workspace_root();
-    let ts_bindings = workspace.join("crates/bindings-typescript");
-    pnpm(&["--filter", "spacetimedb", "install"], &ts_bindings)?;
-    pnpm(&["build"], &ts_bindings)?;
+    let ts_bindings = workspace_root().join("crates/bindings-typescript");
+    once_per_test_run("typescript-sdk", || {
+        pnpm(&["--filter", "spacetimedb", "install"], &ts_bindings)?;
+        pnpm(&["build"], &ts_bindings)?;
+        Ok(())
+    })
+}
+
+/// Builds the local TypeScript bindings package with the test datastore that
+/// modules' tests load, once per test run.
+///
+/// `pnpm build` doesn't produce the datastore, and generating it needs
+/// wasm-bindgen, so only tests that run module tests should call this.
+pub fn build_typescript_sdk_test_utils() -> Result<()> {
+    build_typescript_sdk()?;
+    let ts_bindings = workspace_root().join("crates/bindings-typescript");
+    once_per_test_run("typescript-sdk-test-utils", || {
+        pnpm(&["prepare:test-utils-wasm"], &ts_bindings)?;
+        Ok(())
+    })
+}
+
+/// Runs `step` at most once per test run, across all of its test processes.
+///
+/// Runs hold a lock on `<name>.lock` in the shared target dir while they check
+/// and run the step, and `<name>.stamp` records the run that last completed it.
+fn once_per_test_run(name: &str, step: impl FnOnce() -> Result<()>) -> Result<()> {
+    let stamp_path = shared_target_dir().join(format!("{name}.stamp"));
+    let lock = fs::File::create(shared_target_dir().join(format!("{name}.lock")))?;
+    lock.lock().with_context(|| format!("Failed to lock {name}"))?;
+
+    // nextest gives every test process the same run ID; `cargo test` runs tests as threads of one process.
+    let run_id = std::env::var("NEXTEST_RUN_ID").unwrap_or_else(|_| std::process::id().to_string());
+    if fs::read_to_string(&stamp_path).is_ok_and(|built| built == run_id) {
+        return Ok(());
+    }
+
+    step()?;
+    fs::write(&stamp_path, run_id)?;
     Ok(())
 }
 
@@ -1294,6 +1340,9 @@ impl Smoketest {
 
         let module_path = module_root.join("spacetimedb");
         fs::write(module_path.join("src/index.ts"), module_source).context("Failed to write TypeScript module code")?;
+        // The scaffold's test exercises the sample module we just replaced, and publish type-checks it.
+        fs::remove_file(module_path.join("src/index.test.ts"))
+            .context("Failed to remove the scaffold's module test")?;
 
         build_typescript_sdk()?;
         let _ = pnpm(&["uninstall", "spacetimedb"], &module_path);
