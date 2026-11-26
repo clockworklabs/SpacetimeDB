@@ -176,6 +176,34 @@ test('only StackBench\'s own mutation-test files count as grader files', () => {
   }
 });
 
+test('StackBench files are known by their layout, and ordinary apps\' files with similar names are not', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-layout-names-'));
+  const transcript = join(root, 'session.jsonl');
+  const reads: Array<[string, string]> = [
+    ['/tmp/copy/tracks/ecommerce/scenarios/01-buying.json', 'GRADER / TEST SPECS'],
+    ['/tmp/copy/grader/grade.ts', 'GRADER / TEST SPECS'],
+    ['/tmp/copy/tracks/ecommerce/contracts/catalog-items.md', 'CONTRACT / LINTER'],
+    ['/tmp/copy/tracks/ecommerce/walk.ts', 'CONTRACT / LINTER'],
+    ['/tmp/copy/linter/lint.ts', 'CONTRACT / LINTER'],
+    ['/tmp/copy/tracks/ecommerce/prompts/modular/l1-hooks.md', 'PROMPTS / RUBRIC'],
+    ['/srv/tool/scripts/upgrade.ts', 'other'],
+    ['/opt/eslint/lib/lint.js', 'other'],
+    ['/srv/walk.ts', 'other'],
+    ['/home/dev/project/prompts/system.md', 'other'],
+    ['/srv/contracts/token.json', 'other'],
+    ['/srv/load/scenarios/peak.json', 'other'],
+  ];
+  try {
+    const events = [{ cwd: '/app', message: { content: [{ type: 'tool_use', id: 'read-1', name: 'Bash',
+      input: { command: `cat ${reads.map(([path]) => path).join(' ')}` } }] } },
+    { message: { content: [{ type: 'tool_result', tool_use_id: 'read-1', is_error: false }] } }];
+    writeFileSync(transcript, `${events.map(event => JSON.stringify(event)).join('\n')}\n`);
+    assert.deepEqual(auditTranscript(transcript, '/app').hits.map(hit => [hit.path, hit.kind]), reads);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('network targets come from URLs and raw sockets in a shell command', () => {
   assert.deepEqual(networkTargetsFromBash(
     'curl -s http://127.0.0.1:7331/api/overview && wget https://registry.npmjs.org/react; '

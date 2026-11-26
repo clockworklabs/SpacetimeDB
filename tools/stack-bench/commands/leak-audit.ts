@@ -71,10 +71,11 @@ const networkKind = (target: NetworkTarget, ownEndpoints: ReadonlySet<string>, i
 const CLASSES: Array<readonly [RegExp, string]> = [
   [/[/\\]stack-bench(?:[/\\]|$)/, 'GRADER / TEST SPECS'],
   [/\.claude[/\\]projects.*memory|[/\\]memory[/\\].*\.md$/, 'BENCHMARK NOTES'],
-  // StackBench's mutation-test files by name; "mutation" alone is also an ordinary Convex function kind.
-  [/scenarios[/\\].*\.json|grade\.(?:js|ts)|(?:\.mutation|mutation-(?:test|analysis|checkpoint|control))\.[jt]s$|check-mutations|[/\\]mutations[/\\][\w-]+-ecommerce\.json|check-scenarios/, 'GRADER / TEST SPECS'],
-  [/contracts[/\\].*\.json|appendix-\d+\.md|walk\.(?:js|ts)|lint\.(?:js|ts)/, 'CONTRACT / LINTER'],
-  [/prompts[/\\]|test-plans[/\\]|GRADING|RUBRIC/, 'PROMPTS / RUBRIC'],
+  // A copy of StackBench's files keeps their repository layout and names. Generic names such as
+  // "mutation" (a Convex function kind), lint.js, or a prompts folder belong to ordinary apps too.
+  [/tracks[/\\][\w-]+[/\\]scenarios[/\\]|grader[/\\](?:grade\.[jt]s$|mutation-test\.[jt]s$|mutations[/\\])|(?:\.mutation|mutation-(?:analysis|checkpoint|control))\.[jt]s$|check-(?:mutations|scenarios)\.[jt]s$/, 'GRADER / TEST SPECS'],
+  [/tracks[/\\][\w-]+[/\\](?:contracts[/\\]|walk\.[jt]s$)|linter[/\\]lint\.[jt]s$/, 'CONTRACT / LINTER'],
+  [/tracks[/\\][\w-]+[/\\]prompts[/\\]/, 'PROMPTS / RUBRIC'],
   [/[/\\]skills[/\\]/, 'skill docs (intended)'],
   [/backends[/\\].*\.md|CLAUDE\.md|README/, 'setup docs (intended)'],
 ];
