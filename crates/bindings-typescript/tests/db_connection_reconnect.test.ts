@@ -612,22 +612,25 @@ describe('calls while reconnecting', () => {
     await expect(pending).rejects.toBeInstanceOf(UnknownCallResultError);
   });
 
-  test('calls are not rejected without automatic reconnection', async () => {
+  test('calls settle when the connection drops without automatic reconnection', async () => {
     const harness = build({ automaticReconnect: false });
     await establish(harness);
+    const pending = harness.connection.reducers.createPlayer({
+      name: 'Alice',
+      location: { x: 1, y: 2 },
+    });
     harness.factory.current.close();
     await Promise.resolve();
 
-    // Legacy behavior: the call queues on the dead socket rather than failing.
-    let settled = false;
-    void harness.connection.reducers
-      .createPlayer({ name: 'Alice', location: { x: 1, y: 2 } })
-      .then(
-        () => (settled = true),
-        () => (settled = true)
-      );
-    await Promise.resolve();
-    expect(settled).toBe(false);
+    await expect(pending).rejects.toBeInstanceOf(UnknownCallResultError);
+    const sent = harness.factory.current.outgoingMessages.length;
+    await expect(
+      harness.connection.reducers.createPlayer({
+        name: 'Alice',
+        location: { x: 1, y: 2 },
+      })
+    ).rejects.toBeInstanceOf(DisconnectedError);
+    expect(harness.factory.current.outgoingMessages).toHaveLength(sent);
   });
 });
 
