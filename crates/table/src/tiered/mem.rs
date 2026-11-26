@@ -5,11 +5,11 @@ use std::{
     ops::{Deref, DerefMut},
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc, Mutex, Weak,
+        Arc, Weak,
     },
 };
 
-use parking_lot::{ArcRwLockReadGuard, ArcRwLockWriteGuard, RawRwLock, RwLock, RwLockWriteGuard};
+use parking_lot::{ArcRwLockReadGuard, ArcRwLockWriteGuard, Mutex, RawRwLock, RwLock, RwLockWriteGuard};
 use spacetimedb_data_structures::map::{hash_map, IntMap, ValidAsIdentityHash};
 use spacetimedb_memory_usage::MemoryUsage;
 
@@ -18,7 +18,15 @@ use crate::{
     indexes::PAGE_SIZE,
     page::Page,
     page_pool::PagePool,
-    tiered::{map::BlobHashWrapper, BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetUsage},
+    tiered::{
+        blob_set::BlobSetInner,
+        budget::ByteBudgetStateView,
+        error::EvictionError,
+        map::BlobHashWrapper,
+        metrics::EvictionDirection,
+        page_manager::{PageEviction, WeakPageSlotHandle},
+        BudgetExceeded, BudgetPermit, ByteBudget, ByteBudgetUsage,
+    },
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -168,8 +176,9 @@ pub struct ResidentObjects {
     budget: ByteBudget,
     access_epoch: AtomicU64,
     page_id: AtomicU64,
-    pages: Mutex<IntMap<PageId, Weak<PageFrame>>>,
+    pages: Mutex<IntMap<PageId, RegisteredPage>>,
     blobs: Mutex<IntMap<BlobHashWrapper, Weak<BlobFrame>>>,
+    eviction: Arc<Eviction>,
 }
 
 impl ResidentObjects {
@@ -198,12 +207,17 @@ impl ResidentObjects {
     }
 
     pub fn new(budget: ByteBudget) -> Self {
+        let eviction = Eviction {
+            usage: budget.budget_view(),
+            sources: <_>::default(),
+        };
         Self {
             budget,
             access_epoch: AtomicU64::new(1),
             page_id: <_>::default(),
             pages: <_>::default(),
             blobs: <_>::default(),
+            eviction: Arc::new(eviction),
         }
     }
 
@@ -216,7 +230,7 @@ impl ResidentObjects {
     ) -> Result<ReservedBlob, BudgetExceeded> {
         // Transaction and committed blob set share this registry.
         // Hand out an existing frame if there is one.
-        if let Some(frame) = self.blobs.lock().unwrap().get(&hash).and_then(Weak::upgrade) {
+        if let Some(frame) = self.blobs.lock().get(&hash).and_then(Weak::upgrade) {
             return Ok(ReservedBlob { frame });
         }
         let permit = self.acquire(size, memory_limit_exempt)?;
@@ -237,7 +251,7 @@ impl ResidentObjects {
 
     pub(super) fn redeem_blob(&self, ReservedBlob { frame }: ReservedBlob) -> Arc<BlobFrame> {
         let key = frame.hash;
-        let mut blobs = self.blobs.lock().unwrap();
+        let mut blobs = self.blobs.lock();
         // Transaction and committed blob sets share this registry. Reuse live
         // frames and replace stale weak entries when a hash becomes resident again.
         if let Some(existing) = blobs.get(&key).and_then(Weak::upgrade) {
@@ -256,7 +270,7 @@ impl ResidentObjects {
             // - one ref is held by a blob set
             const EVICTABLE_REFCOUNT: usize = 2;
 
-            let mut blobs = self.blobs.lock().unwrap();
+            let mut blobs = self.blobs.lock();
             blobs.retain(|&key, weak| {
                 let Some(frame) = weak.upgrade() else {
                     return false;
@@ -276,7 +290,7 @@ impl ResidentObjects {
     }
 
     pub(super) fn evict_blob(&self, victim: BlobEvictionCandidate) {
-        let mut blobs = self.blobs.lock().unwrap();
+        let mut blobs = self.blobs.lock();
         if let hash_map::Entry::Occupied(entry) = blobs.entry(victim.key)
             && entry.get().strong_count() == 0
         {
@@ -298,23 +312,33 @@ impl ResidentObjects {
         Ok(self.reserve_page_with_permit(permit, page))
     }
 
-    pub(super) fn redeem_page(&self, ReservedPage { id, frame }: ReservedPage) -> Arc<PageFrame> {
+    pub(super) fn redeem_page(
+        &self,
+        ReservedPage { id, frame }: ReservedPage,
+        slot: WeakPageSlotHandle,
+    ) -> Arc<PageFrame> {
         let frame = Arc::new(frame);
-        assert!(self.pages.lock().unwrap().insert(id, Arc::downgrade(&frame)).is_none());
+        let entry = RegisteredPage {
+            frame: Arc::downgrade(&frame),
+            slot,
+        };
+        assert!(self.pages.lock().insert(id, entry).is_none());
+
         frame
     }
 
     pub(super) fn evictable_pages(&self, candidates: &mut Vec<PageEvictionCandidate>) {
         {
-            let mut pages = self.pages.lock().unwrap();
-            pages.retain(|&id, weak| {
-                let Some(frame) = weak.upgrade() else {
+            let mut pages = self.pages.lock();
+            pages.retain(|&id, entry| {
+                let Some(frame) = entry.frame.upgrade() else {
                     return false;
                 };
 
                 if Arc::strong_count(&frame) <= 2 {
                     candidates.push(PageEvictionCandidate {
                         id,
+                        slot: entry.slot.clone(),
                         access: frame.access(),
                     });
                 }
@@ -327,9 +351,9 @@ impl ResidentObjects {
     }
 
     pub(super) fn evict_page(&self, victim: PageEvictionCandidate) {
-        let mut pages = self.pages.lock().unwrap();
+        let mut pages = self.pages.lock();
         if let hash_map::Entry::Occupied(entry) = pages.entry(victim.id)
-            && entry.get().strong_count() == 0
+            && entry.get().frame.strong_count() == 0
         {
             entry.remove();
         }
@@ -343,16 +367,21 @@ impl ResidentObjects {
         self.budget.usage()
     }
 
-    pub(super) fn register_page_unchecked(&self, pool: PagePool, page: Box<Page>) -> Arc<PageFrame> {
+    pub(super) fn register_page_unchecked(
+        &self,
+        pool: PagePool,
+        page: Box<Page>,
+        slot: WeakPageSlotHandle,
+    ) -> Arc<PageFrame> {
         let permit = self.restored_page_permit();
         let reservation = self.reserve_page_with_permit(permit, PooledPage::new(page, pool));
-        self.redeem_page(reservation)
+        self.redeem_page(reservation, slot)
     }
 
     pub(super) fn detach_page(&self, frame: Arc<PageFrame>) -> (Box<Page>, BudgetPermit) {
         // The memory table will own the page directly. Remove the frame from
         // eviction tracking, but keep its allocation and memory charge alive.
-        assert!(self.pages.lock().unwrap().remove(&frame.id).is_some());
+        assert!(self.pages.lock().remove(&frame.id).is_some());
         Arc::try_unwrap(frame)
             .expect("page ownership transfer requires all eviction pins to be dropped")
             .into_owned()
@@ -388,15 +417,36 @@ impl ResidentObjects {
 
         ReservedBlob { frame }
     }
+
+    pub(super) fn trim(&self) -> Result<u64, EvictionError> {
+        self.evict(self.budget.config().low_water_bytes)
+    }
+
+    pub(super) fn evict(&self, target_usage: u64) -> Result<u64, EvictionError> {
+        let timer = self.metrics().timer();
+        let result = self.eviction.evict(target_usage);
+        self.metrics().eviction(EvictionDirection::MemoryToDisk, timer.nanos());
+        result
+    }
+
+    pub(super) fn register_eviction_source(&self, source: EvictionSource) {
+        self.eviction.register(source);
+    }
 }
 
 impl MemoryUsage for ResidentObjects {
     fn heap_usage(&self) -> usize {
-        // `pages` and `blobs` contain weak references, count just the container
-        // allocations.
-        self.budget.heap_usage()
-            + self.pages.lock().unwrap().allocation_size()
-            + self.blobs.lock().unwrap().allocation_size()
+        let Self {
+            budget,
+            access_epoch: _,
+            page_id: _,
+            pages,
+            blobs,
+            eviction,
+        } = self;
+        // `pages` and `blobs` contain only weak references, so report only the
+        // size of the map allocations.
+        pages.lock().allocation_size() + blobs.lock().allocation_size() + budget.heap_usage() + eviction.heap_usage()
     }
 }
 
@@ -407,8 +457,15 @@ pub struct BlobEvictionCandidate {
 }
 
 #[derive(Debug)]
+struct RegisteredPage {
+    frame: Weak<PageFrame>,
+    slot: WeakPageSlotHandle,
+}
+
+#[derive(Debug)]
 pub struct PageEvictionCandidate {
     pub id: PageId,
+    pub(super) slot: WeakPageSlotHandle,
     access: AccessSnapshot,
 }
 
@@ -532,5 +589,73 @@ impl DerefMut for PooledPage {
 impl fmt::Debug for PooledPage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PooledPage").field("page", &self.page).finish()
+    }
+}
+
+/// [Eviction] coordinates eviction across eviction sources.
+///
+/// Each page and blob set is registered with [Eviction] as a source. Eviction
+/// sources are [Weak] references, so de-registration is not necessary (e.g. on
+/// transaction commit / abort).
+#[derive(Clone, Debug)]
+pub(super) enum EvictionSource {
+    Pages(Weak<PageEviction>),
+    Blobs(Weak<BlobSetInner>),
+}
+
+impl EvictionSource {
+    fn is_alive(&self) -> bool {
+        match self {
+            Self::Pages(source) => source.strong_count() > 0,
+            Self::Blobs(source) => source.strong_count() > 0,
+        }
+    }
+
+    fn evict(&self, target: u64) -> Result<u64, EvictionError> {
+        // Upgrade outside the registry lock. A source dropped since discovery
+        // has no remaining catalog for the coordinator to evict.
+        match self {
+            Self::Pages(source) => source.upgrade().map_or(Ok(0), |source| source.evict(target)),
+            Self::Blobs(source) => source.upgrade().map_or(Ok(0), |source| source.evict(target)),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Eviction {
+    usage: ByteBudgetStateView,
+    sources: Mutex<Vec<EvictionSource>>,
+}
+
+impl Eviction {
+    fn register(&self, source: EvictionSource) {
+        self.sources.lock().push(source)
+    }
+
+    fn evict(&self, target: u64) -> Result<u64, EvictionError> {
+        let mut bytes_freed = 0;
+        let sources = {
+            let mut sources = self.sources.lock();
+            sources.retain(EvictionSource::is_alive);
+            sources.clone()
+        };
+
+        for source in sources {
+            if self.usage.usage().accounted_bytes <= target {
+                break;
+            }
+
+            bytes_freed += source.evict(target)?;
+        }
+
+        Ok(bytes_freed)
+    }
+}
+
+impl MemoryUsage for Eviction {
+    fn heap_usage(&self) -> usize {
+        // Don't count the budget, as it is already accounted for by
+        // [ResidentObjects].
+        self.sources.lock().capacity() * size_of::<EvictionSource>()
     }
 }

@@ -865,24 +865,6 @@ fn object_from_trusted_bytes(key: ObjectKey, bytes: ObjectBytes) -> Object {
     Object { inner }
 }
 
-pub(crate) fn write_atomically(data: &[u8], path: &Path, fsync: Fsync) -> io::Result<()> {
-    let dir = path.parent().expect("output path must have a parent");
-
-    let mut tmp = NamedTempFile::new_in(dir)?;
-    tmp.write_all(data)?;
-    if let Fsync::Require = fsync {
-        tmp.as_file().sync_data()?;
-    }
-    tmp.persist(path)?;
-
-    if let Fsync::Require = fsync {
-        #[cfg(not(target_os = "windows"))]
-        fs::File::open(dir)?.sync_all()?;
-    }
-
-    Ok(())
-}
-
 /// Helper struct for promoting an object from remote to local storage.
 struct Promotion<'a> {
     key: ObjectKey,

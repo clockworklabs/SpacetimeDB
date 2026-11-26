@@ -25,6 +25,8 @@ pub enum PageError {
     Deserialize(#[from] Box<DecodeError>),
     #[error(transparent)]
     Storage(#[from] Box<ObjectStoreError>),
+    #[error("failed to evict objects")]
+    Eviction(#[from] Box<EvictionError>),
 }
 
 impl From<BudgetExceeded> for PageError {
@@ -45,6 +47,12 @@ impl From<ObjectStoreError> for PageError {
     }
 }
 
+impl From<EvictionError> for PageError {
+    fn from(error: EvictionError) -> Self {
+        Self::Eviction(Box::new(error))
+    }
+}
+
 impl PageError {
     pub fn is_transient(&self) -> bool {
         match self {
@@ -57,6 +65,7 @@ impl PageError {
             | PageError::Deserialize(_) => false,
 
             PageError::Storage(storage) => storage.is_transient(),
+            PageError::Eviction(eviction) => eviction.is_transient(),
         }
     }
 }
@@ -69,6 +78,8 @@ pub enum BlobError {
     MissingBlob(Box<BlobHash>),
     #[error(transparent)]
     Storage(#[from] Box<ObjectStoreError>),
+    #[error("failed to evict objects")]
+    Eviction(#[from] Box<EvictionError>),
 }
 
 impl From<BudgetExceeded> for BlobError {
@@ -83,11 +94,18 @@ impl From<ObjectStoreError> for BlobError {
     }
 }
 
+impl From<EvictionError> for BlobError {
+    fn from(error: EvictionError) -> Self {
+        Self::Eviction(Box::new(error))
+    }
+}
+
 impl BlobError {
     pub fn is_transient(&self) -> bool {
         match self {
             BlobError::MemoryLimitExceeded(_) | BlobError::MissingBlob(_) => false,
             BlobError::Storage(storage) => storage.is_transient(),
+            BlobError::Eviction(inner) => inner.is_transient(),
         }
     }
 }
@@ -137,7 +155,27 @@ impl ObjectStoreError {
 #[derive(Debug, thiserror::Error)]
 pub enum TrimError {
     #[error(transparent)]
-    Blob(#[from] BlobError),
+    Eviction(#[from] EvictionError),
     #[error(transparent)]
     Store(#[from] ObjectStoreError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum EvictionError {
+    #[error("failed to evict pages")]
+    Page(#[from] Box<PageError>),
+    #[error("failed to evict blobs")]
+    Blob(#[from] Box<BlobError>),
+    #[error("failed to demote to lower tier")]
+    Storage(#[from] Box<ObjectStoreError>),
+}
+
+impl EvictionError {
+    pub fn is_transient(&self) -> bool {
+        match self {
+            Self::Page(e) => e.is_transient(),
+            Self::Blob(e) => e.is_transient(),
+            Self::Storage(e) => e.is_transient(),
+        }
+    }
 }

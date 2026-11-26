@@ -1,26 +1,24 @@
-use super::metrics::{with_fault, CacheTier, EvictionDirection, Fault, ObjectType};
+use super::metrics::{CacheTier, ObjectType};
 use std::{
     collections::{btree_map, BTreeMap, BTreeSet},
     convert::Infallible,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
-use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::ProductValue;
 use spacetimedb_memory_usage::MemoryUsage;
 use spacetimedb_sats::layout::Size;
 
 use crate::{
-    indexes::{PageIndex, RowPointer, PAGE_SIZE},
+    indexes::{PageIndex, RowPointer},
     page::{Page, PageCapacity},
     pages::Pages,
     table::{BlobNumBytes, PreparedInsert, Table, TableError},
     tiered::{
         blob_set::BlobHandle,
-        mem::{PageEvictionCandidate, PageId},
-        page_manager::{PageHandle, PageManager, PageSlot, PageSlotHandle, ReservedPage},
+        page_manager::{PageFrameWriteGuard, PageHandle, PageManager, PageSlot, PageSlotHandle, ReservedPage},
         storage::DiskObject,
-        BlobSet, BudgetPermit, EvictionPolicy, ObjectStoreError, PageError, PageRead, PageRef,
+        BlobSet, BudgetPermit, EvictionError, EvictionPolicy, ObjectStoreError, PageError, PageRead, PageRef,
     },
     var_len::VarLenMembers,
 };
@@ -55,7 +53,6 @@ struct TieredPages {
     slots: Vec<PageSlotHandle>,
     free_page_slots: BTreeSet<PageIndex>,
     non_full_pages: BTreeSet<(usize, PageIndex)>,
-    evictable: Mutex<EvictionScratch>,
 }
 
 impl PageStorage {
@@ -187,8 +184,9 @@ impl ResidentPages {
 
 impl TieredPages {
     fn into_resident(self, manager: &PageManager, fixed_row_size: Size) -> ResidentPages {
-        let mut pages = Vec::with_capacity(self.slots.len());
-        let mut permits = smallvec::SmallVec::with_capacity(self.slots.len());
+        let slot_count = self.slots.len();
+        let mut pages = Vec::with_capacity(slot_count);
+        let mut permits = smallvec::SmallVec::with_capacity(slot_count);
         for slot in self.slots {
             let (page, permit) = manager.detach_resident(slot).unzip();
             pages.push(page);
@@ -200,32 +198,6 @@ impl TieredPages {
             pages: resident,
             permits,
         }
-    }
-
-    fn with_page_retry<'a, T>(
-        &self,
-        manager: &'a PageManager,
-        mut f: impl FnMut(&mut Option<Fault<'a>>) -> Result<T, PageError>,
-    ) -> Result<T, PageError> {
-        with_fault(|fault| self.with_eviction_retry(manager, || f(fault)))
-    }
-
-    fn with_eviction_retry<T>(
-        &self,
-        manager: &PageManager,
-        mut f: impl FnMut() -> Result<T, PageError>,
-    ) -> Result<T, PageError> {
-        match f() {
-            Err(PageError::MemoryLimitExceeded(_)) if !self.slots.is_empty() => {
-                self.trim(manager)?;
-                f()
-            }
-            res => res,
-        }
-    }
-
-    pub fn trim(&self, manager: &PageManager) -> Result<u64, PageError> {
-        self.evict(manager, manager.resident_budget().low_water_bytes)
     }
 
     fn apply_eviction_policy(&self, policy: EvictionPolicy) {
@@ -251,80 +223,6 @@ impl TieredPages {
                 }
             }
         }
-    }
-
-    pub fn evict(&self, manager: &PageManager, target_usage: u64) -> Result<u64, PageError> {
-        let timer = manager.metrics().timer();
-        let result = self.evict_inner(manager, target_usage);
-        manager
-            .metrics()
-            .eviction(EvictionDirection::MemoryToDisk, timer.nanos());
-        result
-    }
-
-    fn evict_inner(&self, manager: &PageManager, target_usage: u64) -> Result<u64, PageError> {
-        let mut bytes_freed = 0;
-
-        if manager.resident_usage().accounted_bytes() <= target_usage {
-            return Ok(bytes_freed);
-        }
-
-        let mut guard = self.evictable.lock().unwrap();
-        let (candidates, slots) = &mut *guard;
-
-        manager.evictable(candidates);
-        if candidates.is_empty() {
-            return Ok(bytes_freed);
-        }
-
-        slots.clear();
-        slots.extend(self.slots.iter().enumerate().filter_map(|(idx, slot_handle)| {
-            let page_id = slot_handle.page_id()?;
-            Some((page_id, PageIndex(idx as _)))
-        }));
-
-        for candidate in candidates.drain(..) {
-            let Some(page_index) = slots.remove(&candidate.id) else {
-                continue;
-            };
-            let mut slot = self.slots[page_index.idx()].lock_ref();
-            let PageSlot::Resident {
-                handle: page_handle,
-                metadata,
-                backing,
-                eviction_policy,
-            } = &*slot
-            else {
-                continue;
-            };
-
-            // The candidate may have been pinned or replaced since discovery.
-            if page_handle.page_id() != candidate.id || page_handle.is_pinned() {
-                continue;
-            }
-
-            let backing = match backing {
-                Some(disk_object) => disk_object.clone(),
-                // TODO: Consider releasing the slot lock when performing I/O.
-                // Elevates the chances of creating garbage.
-                None => manager.ensure_lower_tier_stored(page_handle, *eviction_policy)?,
-            };
-            *slot = PageSlot::NonResident {
-                metadata: *metadata,
-                backing,
-            };
-            manager.evicted(candidate);
-            manager
-                .metrics()
-                .evicted(ObjectType::Page, EvictionDirection::MemoryToDisk, PAGE_SIZE as u64);
-            bytes_freed += PAGE_SIZE as u64;
-
-            if manager.resident_usage().accounted_bytes() <= target_usage {
-                break;
-            }
-        }
-
-        Ok(bytes_freed)
     }
 }
 
@@ -376,7 +274,6 @@ impl PageInfo<'_> {
         }
     }
 }
-type EvictionScratch = (Box<Vec<PageEvictionCandidate>>, Box<IntMap<PageId, PageIndex>>);
 
 /// Created by [PageSet::ensure_disk], ownership of this handle guarantees that
 /// a page is either pinned to memory, or present and pinned to the local
@@ -441,6 +338,7 @@ impl PageSet {
     }
 
     /// Change who owns the existing page allocations, without copying their contents.
+    /// The caller must hold the database write lock to exclude concurrent eviction.
     /// All page handles must be released first. Disk-table pages must already be loaded.
     pub(crate) fn apply_eviction_policy(&mut self, policy: EvictionPolicy) {
         if policy == self.eviction_policy {
@@ -544,6 +442,7 @@ impl PageSet {
             pages,
             &mut self.storage.tiered_mut().slots,
         );
+
         self.storage.tiered_mut().non_full_pages = self
             .storage
             .tiered()
@@ -589,10 +488,8 @@ impl PageSet {
         let Some(slot) = tiered.slots.get(index.idx()) else {
             return Ok(None);
         };
-        tiered
-            .with_page_retry(&self.manager, |fault| {
-                self.manager.get_with_fault(slot, self.eviction_policy, fault)
-            })
+        self.manager
+            .with_page_retry(|fault| self.manager.get_with_fault(slot, self.eviction_policy, fault))
             .map(|page| page.map(PageRef::Tiered))
     }
 
@@ -626,7 +523,7 @@ impl PageSet {
                 if slot.is_absent() {
                     Ok(None)
                 } else {
-                    let mut page = tiered.with_page_retry(&self.manager, |fault| {
+                    let mut page = self.manager.with_page_retry(|fault| {
                         self.manager
                             .get_mut_with_fault(slot, self.eviction_policy, self.fixed_row_size, fault)
                     })?;
@@ -658,12 +555,23 @@ impl PageSet {
             return Ok(resident.pages.with_page_mut(index, fixed_row_size, f));
         }
 
+        self.with_tiered_page_mut(index, fixed_row_size, f)
+            .map(|(result, _)| result)
+    }
+
+    // Retain the write guard so inserts can transfer its pin before unlocking.
+    fn with_tiered_page_mut<T>(
+        &mut self,
+        index: PageIndex,
+        fixed_row_size: Size,
+        f: impl FnOnce(&mut Page) -> T,
+    ) -> Result<(T, PageFrameWriteGuard), PageError> {
         let mut page = {
             let tiered = self.storage.tiered();
             let Some(slot) = tiered.slots.get(index.idx()) else {
                 return Err(PageError::MissingPage(index));
             };
-            tiered.with_page_retry(&self.manager, |fault| {
+            self.manager.with_page_retry(|fault| {
                 self.manager
                     .get_mut_with_fault(slot, self.eviction_policy, self.fixed_row_size, fault)
             })?
@@ -680,7 +588,8 @@ impl PageSet {
                 .non_full_pages
                 .insert((page.available_var_len_granules(), index));
         }
-        Ok(ret)
+
+        Ok((ret, page))
     }
 
     /// Run a closure over a mutable [Page].
@@ -695,7 +604,8 @@ impl PageSet {
     /// [PageSet], and the closure is run against exactly this page.
     ///
     /// The fullness status of the page is updated, but the page is not freed if
-    /// it ends up being empty after `f` returns.
+    /// it ends up being empty after `f` returns. Keep the returned pin until the
+    /// inserted row has acquired its own page handle.
     #[inline(always)]
     pub fn with_page_to_insert_row<T>(
         &mut self,
@@ -703,16 +613,18 @@ impl PageSet {
         num_var_len_granules: usize,
         reservation: Option<(PageIndex, ReservedPage)>,
         f: impl FnOnce(&mut Page) -> T,
-    ) -> Result<(PageIndex, T), PageError> {
+    ) -> Result<(PageIndex, T, Option<PageHandle>), PageError> {
         if let Some(resident) = self.storage.resident_mut() {
-            return resident.with_page_to_insert_row(
+            let (index, result) = resident.with_page_to_insert_row(
                 &self.manager,
                 fixed_row_size,
                 self.memory_limit_exempt,
                 num_var_len_granules,
                 reservation,
                 f,
-            );
+            )?;
+
+            return Ok((index, result, None));
         }
         self.with_tiered_page_to_insert_row(fixed_row_size, num_var_len_granules, reservation, f)
     }
@@ -723,15 +635,17 @@ impl PageSet {
         num_var_len_granules: usize,
         reservation: Option<(PageIndex, ReservedPage)>,
         f: impl FnOnce(&mut Page) -> T,
-    ) -> Result<(PageIndex, T), PageError> {
-        let index = match reservation {
+    ) -> Result<(PageIndex, T, Option<PageHandle>), PageError> {
+        // Keep a newly published reservation pinned through the mutation. Blob
+        // allocations inside `f` can trigger the shared eviction coordinator.
+        let (index, _allocation_pin) = match reservation {
             None => self.find_page_with_space_for_row(fixed_row_size, num_var_len_granules)?,
-            Some((index, page)) => {
-                self.register(index, page);
-                index
-            }
+            Some((index, page)) => (index, Some(self.register(index, page))),
         };
-        self.with_page_mut(index, fixed_row_size, f).map(|res| (index, res))
+        let (result, page) = self.with_tiered_page_mut(index, fixed_row_size, f)?;
+        // Transfer the write guard's pin before releasing either write lock.
+
+        Ok((index, result, Some(page.into_page_handle())))
     }
 
     /// Free the row that is pointed to by `row_ptr`,
@@ -807,7 +721,7 @@ impl PageSet {
         &mut self,
         fixed_row_size: Size,
         num_var_len_granules: usize,
-    ) -> Result<PageIndex, PageError> {
+    ) -> Result<(PageIndex, Option<PageHandle>), PageError> {
         if let Some((_, page_idx)) = self
             .storage
             .tiered()
@@ -820,10 +734,11 @@ impl PageSet {
                     .expect("page in `self.storage.tiered().non_full_pages` to be present in `self.pages`")
             })
         {
-            return Ok(page_idx);
+            return Ok((page_idx, None));
         }
 
-        self.allocate_new_page(fixed_row_size)
+        self.allocate_new_page_pinned(fixed_row_size)
+            .map(|(index, pin)| (index, Some(pin)))
     }
 
     /// Allocates one additional page,
@@ -834,13 +749,15 @@ impl PageSet {
     ///
     /// The new page is initially empty, but is not added to the non-full set.
     /// Callers should call [`Pages::record_page_non_full`] after operating on the new page.
-    fn allocate_new_page(&mut self, fixed_row_size: Size) -> Result<PageIndex, PageError> {
+    fn allocate_new_page_pinned(&mut self, fixed_row_size: Size) -> Result<(PageIndex, PageHandle), PageError> {
         let free_page = self.storage.tiered_mut().free_page_slots.pop_first();
         let page_index = free_page.map(Ok).unwrap_or_else(|| self.can_allocate_new_page())?;
-        let allocation = self.storage.tiered().with_eviction_retry(&self.manager, || {
-            self.manager.allocate(fixed_row_size, self.eviction_policy)
+        let allocation = self.manager.with_eviction_retry(|| {
+            let reservation = self.manager.reserve(fixed_row_size)?;
+
+            Ok(self.manager.redeem_pinned(reservation, self.eviction_policy))
         });
-        let slot = allocation.inspect_err(|_| {
+        let (slot, pin) = allocation.inspect_err(|_| {
             if free_page.is_some() {
                 self.storage.tiered_mut().free_page_slots.insert(page_index);
             }
@@ -848,35 +765,40 @@ impl PageSet {
 
         // SAFETY: The page is resident and the index is from free slots or
         // fresh.
-        unsafe { self.install_page_slot(page_index, slot) };
+        let pin = unsafe { self.install_page_slot(page_index, slot, pin) };
 
-        Ok(page_index)
+        Ok((page_index, pin))
+    }
+
+    #[cfg(test)]
+    fn allocate_new_page(&mut self, fixed_row_size: Size) -> Result<PageIndex, PageError> {
+        self.allocate_new_page_pinned(fixed_row_size).map(|(index, _)| index)
     }
 
     /// Register a [ReservedPage] with this [PageSet].
     ///
     /// Pages are reserved during [Self::prepare_commit].
-    fn register(&mut self, index: PageIndex, reservation: ReservedPage) {
-        let slot = self.manager.redeem(reservation, self.eviction_policy);
+    fn register(&mut self, index: PageIndex, reservation: ReservedPage) -> PageHandle {
+        let (slot, pin) = self.manager.redeem_pinned(reservation, self.eviction_policy);
         // SAFETY: The page is resident. The index was obtained during commit
         // planning.
-        unsafe { self.install_page_slot(index, slot) };
+        unsafe { self.install_page_slot(index, slot, pin) }
     }
 
     /// SAFETY:
-    /// - The [PageSlotHandle] must contain a resident page.
+    /// - The [PageSlotHandle] must contain the resident page held by `page`.
     /// - If there already exists an entry at `index`, the existing slot must be
     ///   absent.
-    unsafe fn install_page_slot(&mut self, index: PageIndex, slot: PageSlotHandle) -> PageHandle {
-        let page = slot.page().expect("page must be resident");
-
+    unsafe fn install_page_slot(&mut self, index: PageIndex, slot: PageSlotHandle, page: PageHandle) -> PageHandle {
+        assert_eq!(slot.page_id(), Some(page.page_id()));
+        let storage = self.storage.tiered_mut();
         let idx = index.idx();
-        if idx == self.storage.tiered().slots.len() {
-            self.storage.tiered_mut().slots.push(slot);
+        if idx == storage.slots.len() {
+            storage.slots.push(slot);
         } else {
-            assert!(self.storage.tiered().slots[idx].is_absent());
-            self.storage.tiered_mut().free_page_slots.remove(&index);
-            self.storage.tiered_mut().slots[idx] = slot;
+            assert!(storage.slots[idx].is_absent());
+            storage.free_page_slots.remove(&index);
+            storage.slots[idx] = slot;
         }
 
         self.storage
@@ -1110,33 +1032,16 @@ impl PageSet {
         })
     }
 
-    /// Attempt to evict pages from this page set until the budget's low
-    /// watermark is met.
-    ///
-    /// Eviction will stop once the usage is at or below the low watermark.
-    /// The method may not free any pages, so the budget usage may be the same
-    /// as before when it returns.
-    ///
-    /// Returns the number of bytes freed, as a multiple of [PAGE_SIZE].
-    pub fn trim(&self) -> Result<u64, PageError> {
-        match &self.storage {
-            PageStorage::Resident(_) => Ok(0),
-            PageStorage::Tiered(tiered) => tiered.trim(&self.manager),
-        }
+    /// Evict pages and blobs sharing this manager until the budget's low watermark
+    /// is met, or no eligible objects remain. Returns the total number of bytes freed.
+    pub fn trim(&self) -> Result<u64, EvictionError> {
+        self.manager.trim_all()
     }
 
-    /// Attempt to evict pages from this page set until `target_usage` is met.
-    ///
-    /// Eviction will stop once the usage is at or below the low watermark.
-    /// The method may not free any pages, so the budget usage may be the same
-    /// as before when it returns.
-    ///
-    /// Returns the number of bytes freed, as a multiple of [PAGE_SIZE].
-    pub fn evict(&self, target_usage: u64) -> Result<u64, PageError> {
-        match &self.storage {
-            PageStorage::Resident(_) => Ok(0),
-            PageStorage::Tiered(tiered) => tiered.evict(&self.manager, target_usage),
-        }
+    /// Evict pages and blobs sharing this manager until `target_usage` is met,
+    /// or no eligible objects remain. Returns the total number of bytes freed.
+    pub fn evict(&self, target_usage: u64) -> Result<u64, EvictionError> {
+        self.manager.evict_all(target_usage)
     }
 
     fn reserve_page(&self, fixed_row_size: Size) -> Result<ReservedPage, PageError> {
@@ -1147,7 +1052,7 @@ impl PageSet {
         };
         match &self.storage {
             PageStorage::Resident(_) => reserve(),
-            PageStorage::Tiered(tiered) => tiered.with_eviction_retry(&self.manager, reserve),
+            PageStorage::Tiered(_) => self.manager.with_eviction_retry(reserve),
         }
     }
 }
@@ -1294,16 +1199,19 @@ impl PreparedCommit {
                 // and the commitlog.
                 if !schema.is_event {
                     let reservation = self.reserved.remove(&page_index).map(|page| (page_index, page));
+                    let allocated = reservation.is_some();
                     let row_ref = table
                         .insert_prepared(blobs, &row, reservation)
                         .map(|(_, row_ref)| row_ref)
                         .expect("failed to insert during transaction commit");
                     let (page, _) = row_ref.page_and_offset();
                     let inserted_index = row_ref.pointer().page_index();
-                    if let btree_map::Entry::Vacant(entry) = pinned.entry(inserted_index)
+                    // A deleted page's index can now name a different frame.
+                    // Replace its old pin so subsequent inserts cannot evict the new page.
+                    if (allocated || !pinned.contains_key(&inserted_index))
                         && let Some(pin) = page.pin()
                     {
-                        entry.insert(pin);
+                        pinned.insert(inserted_index, pin);
                     }
                     assert_eq!(inserted_index, page_index, "planned and actual placement differ");
 
@@ -1539,10 +1447,369 @@ impl<'a> PageAllocator<'a> {
 mod tests {
     use super::*;
     use crate::{
-        indexes::PAGE_SIZE,
+        indexes::{PageOffset, PAGE_SIZE},
         page_pool::PagePool,
-        tiered::{metrics::CacheTier, ByteBudget, ByteBudgetConfig, ResidentObjects, TieredStorage},
+        tiered::{metrics::CacheTier, BlobError, ByteBudget, ByteBudgetConfig, ResidentObjects, TieredStorage},
+        var_len::NullVarLenVisitor,
     };
+
+    fn shared_page_and_blob_cache(page_count: u64) -> (Arc<PageManager>, BlobSet) {
+        // Bound the shared resident cache while leaving backing storage unlimited.
+        let limit = page_count * PAGE_SIZE as u64;
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
+            low_water_bytes: 0,
+            soft_limit_bytes: limit,
+            hard_limit_bytes: limit,
+        })
+        .unwrap();
+        let resident = Arc::new(ResidentObjects::new(budget));
+        let storage = Arc::new(TieredStorage::new_for_test());
+        let blobs = BlobSet::new(resident.clone(), storage.clone());
+        let manager = Arc::new(PageManager::new(resident, PagePool::new_for_test(), storage));
+
+        (manager, blobs)
+    }
+
+    fn write_fixed_row(pages: &mut PageSet, blobs: &mut BlobSet, index: PageIndex, value: u64) -> PageOffset {
+        pages
+            .with_page_mut(index, Size(8), |page| {
+                // SAFETY: These pages contain only eight-byte integers, with no
+                // variable-length fields for the visitor to inspect.
+                unsafe {
+                    page.insert_row(
+                        &value.to_le_bytes(),
+                        &[] as &[&[u8]],
+                        &NullVarLenVisitor,
+                        blobs,
+                        EvictionPolicy::Memory,
+                    )
+                }
+                .unwrap()
+            })
+            .unwrap()
+    }
+
+    fn assert_fixed_row(pages: &PageSet, index: PageIndex, offset: PageOffset, value: u64) {
+        let pin = pages.get_page(index).unwrap().unwrap();
+        assert_eq!(pin.read().get_row_data(offset, Size(8)), &value.to_le_bytes());
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_cases(64))]
+
+        #[test]
+        fn global_page_eviction_matches_lru_two_across_tables(
+            accesses in proptest::collection::vec(0u8..4, 0..48),
+            restored in proptest::prelude::any::<bool>(),
+            disk_policy in proptest::prelude::any::<bool>(),
+            empty_slots in 0u8..3,
+        ) {
+            let (manager, _blobs) = shared_page_and_blob_cache(4);
+            let policy = if disk_policy { EvictionPolicy::Disk } else { EvictionPolicy::Memory };
+            let mut tables = Vec::new();
+            let mut history = [(0u64, 0u64); 4];
+
+            // Allocation and snapshot recovery must both publish owning slots.
+            // Holes in restored tables must not affect victim lookup.
+            for table_index in 0u8..4 {
+                let mut pages = PageSet::new(manager.clone(), policy, Size(8));
+                let index = if restored {
+                    pages.set_contents(
+                        (0..empty_slots).map(|_| None).chain([Some(Page::new(Size(8)))]),
+                        Size(8),
+                    );
+                    PageIndex(u64::from(empty_slots))
+                } else {
+                    pages.allocate_new_page(Size(8)).unwrap()
+                };
+                history[usize::from(table_index)].1 = u64::from(table_index) + 1;
+                tables.push((pages, index));
+            }
+
+            // Model access history independently of the resident registry.
+            let mut epoch = 5u64;
+            for table_index in accesses {
+                let index = usize::from(table_index);
+                let (pages, page_index) = &tables[index];
+                drop(pages.get_page(*page_index).unwrap().unwrap());
+                history[index] = (history[index].1, epoch);
+                epoch += 1;
+            }
+            let victim = (0u8..4).min_by_key(|&index| {
+                let (previous, last) = history[usize::from(index)];
+                (previous != 0, if previous == 0 { last } else { previous }, last)
+            }).unwrap();
+
+            // The coordinator must choose one global victim, regardless of
+            // the order in which tables would have registered their sources.
+            let freed = manager.evict_all(3 * PAGE_SIZE as u64).unwrap();
+            proptest::prop_assert_eq!(freed, PAGE_SIZE as u64);
+            for (index, (pages, page_index)) in tables.iter().enumerate() {
+                proptest::prop_assert_eq!(
+                    pages.storage.tiered().slots[page_index.idx()].is_resident(),
+                    index != usize::from(victim),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn allocation_evicts_the_colder_page_from_a_later_table() {
+        let limit = 2 * PAGE_SIZE as u64;
+        let budget = ByteBudget::new(ByteBudgetConfig {
+            tier: CacheTier::Memory,
+            low_water_bytes: PAGE_SIZE as u64,
+            soft_limit_bytes: limit,
+            hard_limit_bytes: limit,
+        })
+        .unwrap();
+        let manager = Arc::new(PageManager::new(
+            Arc::new(ResidentObjects::new(budget)),
+            PagePool::new_for_test(),
+            Arc::new(TieredStorage::new_for_test()),
+        ));
+        let mut hot = PageSet::new(manager.clone(), EvictionPolicy::Memory, Size(8));
+        let mut cold = PageSet::new(manager.clone(), EvictionPolicy::Memory, Size(8));
+        let mut writer = PageSet::new(manager, EvictionPolicy::Memory, Size(8));
+        let hot_index = hot.allocate_new_page(Size(8)).unwrap();
+        let cold_index = cold.allocate_new_page(Size(8)).unwrap();
+
+        // The earlier table has the hotter page. A table-ordered sweep would
+        // reclaim it before considering the unread page in the later table.
+        drop(hot.get_page(hot_index).unwrap().unwrap());
+        let writer_index = writer.allocate_new_page(Size(8)).unwrap();
+        assert!(hot.storage.tiered().slots[hot_index.idx()].is_resident());
+        assert!(!cold.storage.tiered().slots[cold_index.idx()].is_resident());
+        assert!(writer.storage.tiered().slots[writer_index.idx()].is_resident());
+    }
+
+    #[test]
+    fn insertion_pin_protects_the_row_after_releasing_the_write_lock() {
+        for reserved in [false, true] {
+            let (manager, mut blobs) = shared_page_and_blob_cache(1);
+            let mut pages = PageSet::new(manager.clone(), EvictionPolicy::Memory, Size(8));
+            let reservation = reserved.then(|| (PageIndex(0), manager.reserve(Size(8)).unwrap()));
+            let (index, offset, pin) = pages
+                .with_page_to_insert_row(Size(8), 0, reservation, |page| {
+                    // SAFETY: This page and visitor both describe eight-byte integers.
+                    unsafe {
+                        page.insert_row(
+                            &73u64.to_le_bytes(),
+                            &[] as &[&[u8]],
+                            &NullVarLenVisitor,
+                            &mut blobs,
+                            EvictionPolicy::Memory,
+                        )
+                    }
+                    .unwrap()
+                })
+                .unwrap();
+
+            // Simulate another set trimming between the write and creation of
+            // the RowRef. The returned pin must bridge that unlocked interval.
+            assert!(pin.is_some());
+            assert_eq!(manager.evict_all(0).unwrap(), 0);
+            let row_pin = pages.get_page(index).unwrap().unwrap();
+            drop(pin);
+            assert_eq!(manager.evict_all(0).unwrap(), 0);
+            drop(row_pin);
+
+            assert_eq!(manager.evict_all(0).unwrap(), PAGE_SIZE as u64);
+            assert_fixed_row(&pages, index, offset, 73);
+        }
+    }
+
+    #[test]
+    fn allocation_pin_protects_a_page_before_its_slot_is_installed() {
+        let (manager, _blobs) = shared_page_and_blob_cache(1);
+        let mut pages = PageSet::new(manager.clone(), EvictionPolicy::Memory, Size(8));
+        let reservation = manager.reserve(Size(8)).unwrap();
+        let (slot, pin) = manager.redeem_pinned(reservation, EvictionPolicy::Memory);
+
+        // Simulate another set requesting eviction after publication but before
+        // installation. The allocation pin must keep the page resident.
+        assert_eq!(manager.evict_all(0).unwrap(), 0);
+        assert!(slot.is_resident());
+        // SAFETY: The pin identifies this slot's resident frame, and the index is fresh.
+        let pin = unsafe { pages.install_page_slot(PageIndex(0), slot, pin) };
+        assert_eq!(manager.evict_all(0).unwrap(), 0);
+
+        // Installation must not leave behind permanent protection.
+        drop(pin);
+        assert_eq!(manager.evict_all(0).unwrap(), PAGE_SIZE as u64);
+        assert!(!pages.storage.tiered().slots[0].is_resident());
+        assert!(pages.get_page(PageIndex(0)).unwrap().is_some());
+    }
+
+    #[test]
+    fn global_eviction_reclaims_pages_from_another_page_set() {
+        let (manager, mut blobs) = shared_page_and_blob_cache(1);
+        let mut committed = PageSet::new(manager.clone(), EvictionPolicy::Memory, Size(8));
+        let mut transaction = PageSet::new(manager, EvictionPolicy::Memory, Size(8));
+        let first = committed.allocate_new_page(Size(8)).unwrap();
+        let first_offset = write_fixed_row(&mut committed, &mut blobs, first, 17);
+
+        // Distinct sets share a manager but own their slots independently. An
+        // empty transaction must be able to evict a committed set's page.
+        let second = transaction.allocate_new_page(Size(8)).unwrap();
+        let second_offset = write_fixed_row(&mut transaction, &mut blobs, second, 29);
+        assert!(!committed.storage.tiered().slots[first.idx()].is_resident());
+        assert!(transaction.storage.tiered().slots[second.idx()].is_resident());
+
+        // Read faults must reclaim the other set too, preserving both rows and
+        // each set's page indices across repeated changes of residency.
+        assert_fixed_row(&committed, first, first_offset, 17);
+        assert!(!transaction.storage.tiered().slots[second.idx()].is_resident());
+        assert_fixed_row(&transaction, second, second_offset, 29);
+        assert!(!committed.storage.tiered().slots[first.idx()].is_resident());
+
+        drop(transaction);
+        assert_fixed_row(&committed, first, first_offset, 17);
+    }
+
+    #[test]
+    fn global_eviction_allows_pages_and_blobs_to_reclaim_each_other() {
+        let (manager, blobs) = shared_page_and_blob_cache(1);
+        let mut pages = PageSet::new(manager, EvictionPolicy::Memory, Size(8));
+        let bytes = vec![b'x'; PAGE_SIZE];
+        let hash = blobs.insert(EvictionPolicy::Memory, &bytes).unwrap().hash();
+
+        // The blob fills the entire budget. Allocating a page can only succeed
+        // by evicting that blob, even though the requesting page set is empty.
+        let index = pages.allocate_new_page(Size(8)).unwrap();
+        assert_eq!(blobs.resident_bytes_used_by_blobs(), 0);
+        assert!(pages.storage.tiered().slots[index.idx()].is_resident());
+
+        // Faulting the blob back in must perform the opposite eviction. Then
+        // fault the page again to cover both allocation and read-fault retries.
+        assert_eq!(&*blobs.get(hash).unwrap(), bytes.as_slice());
+        assert!(!pages.storage.tiered().slots[index.idx()].is_resident());
+        drop(pages.get_page(index).unwrap().unwrap());
+        assert!(pages.storage.tiered().slots[index.idx()].is_resident());
+        assert_eq!(blobs.resident_bytes_used_by_blobs(), 0);
+        assert_eq!(blobs.resident_usage().accounted_bytes(), PAGE_SIZE as u64);
+    }
+
+    #[test]
+    fn global_eviction_preserves_a_pinned_page_when_a_blob_cannot_fit() {
+        let (manager, blobs) = shared_page_and_blob_cache(1);
+        let mut pages = PageSet::new(manager, EvictionPolicy::Memory, Size(8));
+        let index = pages.allocate_new_page(Size(8)).unwrap();
+        let pin = pages.get_page(index).unwrap().unwrap();
+
+        // A live page handle must block eviction triggered by a different type
+        // of object. Failed allocation must not publish a blob catalog entry.
+        assert!(matches!(
+            blobs.insert(EvictionPolicy::Memory, b"new blob"),
+            Err(BlobError::MemoryLimitExceeded(_))
+        ));
+        assert_eq!(blobs.num_blobs(), 0);
+        assert!(pages.storage.tiered().slots[index.idx()].is_resident());
+        assert_eq!(blobs.resident_usage().accounted_bytes(), PAGE_SIZE as u64);
+
+        drop(pin);
+        drop(blobs.insert(EvictionPolicy::Memory, b"new blob").unwrap());
+        assert!(!pages.storage.tiered().slots[index.idx()].is_resident());
+    }
+
+    #[test]
+    fn global_eviction_registers_pages_created_by_policy_conversion() {
+        let (manager, blobs) = shared_page_and_blob_cache(1);
+        let mut pages = PageSet::new(manager, EvictionPolicy::Never, Size(8));
+        pages.set_contents([Some(Page::new(Size(8)))], Size(8));
+
+        // Never pages cannot spill. Conversion must register their slots even
+        // though the page set was originally created with directly owned pages.
+        assert!(matches!(
+            blobs.insert(EvictionPolicy::Memory, b"new blob"),
+            Err(BlobError::MemoryLimitExceeded(_))
+        ));
+        pages.apply_eviction_policy(EvictionPolicy::Memory);
+        drop(blobs.insert(EvictionPolicy::Memory, b"new blob").unwrap());
+        assert!(!pages.storage.tiered().slots[0].is_resident());
+
+        drop(pages.get_page(PageIndex(0)).unwrap().unwrap());
+        assert!(pages.storage.tiered().slots[0].is_resident());
+        assert_eq!(blobs.resident_bytes_used_by_blobs(), 0);
+    }
+
+    #[test]
+    fn global_eviction_registers_restored_pages_without_changing_their_indices() {
+        let (manager, blobs) = shared_page_and_blob_cache(1);
+        let mut pages = PageSet::new(manager, EvictionPolicy::Memory, Size(8));
+
+        // Restore bypasses ordinary allocation and can contain absent slots.
+        // Its eviction registry must include the live page at its original index.
+        pages.set_contents([None, Some(Page::new(Size(8)))], Size(8));
+        let bytes = vec![b'x'; PAGE_SIZE];
+        drop(blobs.insert(EvictionPolicy::Memory, &bytes).unwrap());
+        assert!(!pages.storage.tiered().slots[1].is_resident());
+        assert!(pages.get_page(PageIndex(0)).unwrap().is_none());
+
+        drop(pages.get_page(PageIndex(1)).unwrap().unwrap());
+        assert!(pages.storage.tiered().slots[1].is_resident());
+        assert_eq!(blobs.resident_bytes_used_by_blobs(), 0);
+        assert!(pages.get_page(PageIndex(0)).unwrap().is_none());
+    }
+
+    #[test]
+    fn global_eviction_skips_a_write_locked_page_during_blob_allocation() {
+        use std::{sync::mpsc, thread, time::Duration};
+
+        // Run the allocation on a worker so regressing to a blocking slot lock
+        // fails with a timeout instead of hanging the whole test suite.
+        let (completed, completion) = mpsc::sync_channel(1);
+        let worker = thread::spawn(move || {
+            let (manager, blobs) = shared_page_and_blob_cache(2);
+            let mut pages = PageSet::new(manager, EvictionPolicy::Memory, Size(8));
+            let locked = pages.allocate_new_page(Size(8)).unwrap();
+            let victim = pages.allocate_new_page(Size(8)).unwrap();
+
+            // Blob writes normally happen while mutating a page. The sweep must
+            // skip that locked slot, find the other page, and make forward progress.
+            pages
+                .with_page_mut(locked, Size(8), |_| {
+                    drop(blobs.insert(EvictionPolicy::Memory, b"new blob").unwrap());
+                })
+                .unwrap();
+            assert!(pages.storage.tiered().slots[locked.idx()].is_resident());
+            assert!(!pages.storage.tiered().slots[victim.idx()].is_resident());
+            completed.send(()).unwrap();
+        });
+
+        completion
+            .recv_timeout(Duration::from_secs(10))
+            .expect("global eviction blocked on the allocating thread's page lock");
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn global_eviction_does_not_keep_dropped_page_sets_alive() {
+        let (manager, blobs) = shared_page_and_blob_cache(1);
+        let weak_manager = Arc::downgrade(&manager);
+
+        // Repeatedly discard transaction-like sets. Their weak registrations
+        // must not retain resident allocations or prevent subsequent eviction.
+        for _ in 0..3 {
+            let mut temporary = PageSet::new(manager.clone(), EvictionPolicy::Memory, Size(8));
+            temporary.allocate_new_page(Size(8)).unwrap();
+            drop(temporary);
+            assert_eq!(blobs.resident_usage().accounted_bytes(), 0);
+        }
+        let mut live = PageSet::new(manager.clone(), EvictionPolicy::Memory, Size(8));
+        let index = live.allocate_new_page(Size(8)).unwrap();
+        drop(blobs.insert(EvictionPolicy::Memory, b"new blob").unwrap());
+        assert!(!live.storage.tiered().slots[index.idx()].is_resident());
+
+        drop(live);
+        drop(manager);
+        drop(blobs);
+        assert!(
+            weak_manager.upgrade().is_none(),
+            "eviction sources formed an ownership cycle"
+        );
+    }
 
     fn bounded_page_set() -> PageSet {
         let budget = ByteBudget::new(ByteBudgetConfig {

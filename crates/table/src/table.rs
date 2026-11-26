@@ -3,9 +3,9 @@ use crate::{
     blob_store::BlobHash,
     page,
     tiered::{
-        BlobError, BlobHandle, BlobReadSet, BlobSet, DiskPinnedBlobHandle, DiskPinnedPageHandle, EvictionPolicy,
-        ObjectStoreError, PageBorrow, PageError, PageHandle, PageManager, PageRef, PageSet, PreparedCommit,
-        ReservedPage,
+        BlobError, BlobHandle, BlobReadSet, BlobSet, DiskPinnedBlobHandle, DiskPinnedPageHandle, EvictionError,
+        EvictionPolicy, ObjectStoreError, PageBorrow, PageError, PageHandle, PageManager, PageRef, PageSet,
+        PreparedCommit, ReservedPage,
     },
     var_len::VarLenMembers as _,
 };
@@ -105,37 +105,6 @@ impl From<BlobError> for TableError {
     fn from(error: BlobError) -> Self {
         Self::Blob(Box::new(error))
     }
-}
-
-/// Allows a read to request eviction from its enclosing datastore.
-pub trait ReadEviction: Send + Sync {
-    fn evict_for_read(&self) -> Result<(), TableError>;
-}
-
-fn retry_read<T>(
-    result: Result<T, TableError>,
-    eviction: Option<&dyn ReadEviction>,
-    retry: impl FnOnce() -> Result<T, TableError>,
-) -> Result<T, TableError> {
-    let Err(error) = result else {
-        return result;
-    };
-    let Some(eviction) = eviction else {
-        return Err(error);
-    };
-    let memory_limit = match &error {
-        TableError::Page(error) => matches!(error.as_ref(), PageError::MemoryLimitExceeded(_)),
-        TableError::Blob(error) => matches!(error.as_ref(), BlobError::MemoryLimitExceeded(_)),
-        TableError::Storage(error) => {
-            matches!(error.as_ref(), ObjectStoreError::StorageLimitExceeded(_))
-        }
-    };
-    if !memory_limit {
-        return Err(error);
-    }
-    // The failed access has returned and released its temporary locks.
-    eviction.evict_for_read()?;
-    retry()
 }
 
 impl From<ObjectStoreError> for TableError {
@@ -334,12 +303,12 @@ impl TableInner {
         Ok(self.try_page_and_offset(ptr)?.unwrap())
     }
 
-    fn trim(&self) -> Result<u64, PageError> {
+    fn trim(&self) -> Result<u64, EvictionError> {
         self.pages.trim()
     }
 }
 
-static_assert_size!(Table, 336);
+static_assert_size!(Table, 328);
 
 impl MemoryUsage for Table {
     fn heap_usage(&self) -> usize {
@@ -867,7 +836,7 @@ impl Table {
         let source_page = source_page.read();
         let source = source_page.get_row_data(source_offset, fixed_row_size);
         let squashed_offset = self.squashed_offset;
-        let (page_index, fixed_offset) =
+        let (page_index, fixed_offset, page_pin) =
             self.inner
                 .pages
                 .with_page_to_insert_row(fixed_row_size, 0, reservation, |page| {
@@ -883,6 +852,7 @@ impl Table {
 
         // SAFETY: We just inserted `ptr`, so it must be present.
         let row_ref = unsafe { self.inner.get_row_ref_unchecked(blobs, squashed_offset, ptr) }?;
+        drop(page_pin);
 
         Ok((row_ref, BlobNumBytes::default()))
     }
@@ -900,7 +870,7 @@ impl Table {
     ) -> Result<(RowRef<'a>, BlobNumBytes), Error> {
         // SAFETY: `self.pages` is known to be specialized for `self.row_layout`,
         // as `self.pages` was constructed from `self.row_layout` in `Table::new`.
-        let (ptr, blob_bytes) = unsafe {
+        let (ptr, blob_bytes, page_pin) = unsafe {
             write_row_to_pages(
                 &mut self.inner.pages,
                 reservation,
@@ -913,7 +883,7 @@ impl Table {
             )
         }?;
 
-        self.finish_physical_insert(blobs, ptr, blob_bytes)
+        self.finish_physical_insert(blobs, ptr, blob_bytes, page_pin)
     }
 
     /// Physically insert a `row`, encoded in BSATN, into this table,
@@ -936,7 +906,8 @@ impl Table {
         row: &[u8],
     ) -> Result<(RowRef<'a>, BlobNumBytes), Error> {
         // Got a static layout? => Use fast-path insertion.
-        let (ptr, blob_bytes) = if let Some((static_layout, static_validator)) = self.inner.static_layout.as_ref() {
+        let static_layout = self.inner.static_layout.as_ref();
+        let (ptr, blob_bytes, page_pin) = if let Some((static_layout, static_validator)) = static_layout {
             // Before inserting, validate the row, ensuring type safety.
             // SAFETY: The `static_validator` was derived from the same row layout as the static layout.
             unsafe { validate_bsatn(static_validator, static_layout, row) }.map_err(Error::Decode)?;
@@ -960,8 +931,12 @@ impl Table {
                 })
                 .map_err(Error::Pages)?;
             match res {
-                (page, Ok(offset)) => (RowPointer::new(false, page, offset, squashed_offset), 0usize.into()),
-                (_, Err(e)) => return Err(e),
+                (page, Ok(offset), pin) => (
+                    RowPointer::new(false, page, offset, squashed_offset),
+                    0usize.into(),
+                    pin,
+                ),
+                (_, Err(e), _) => return Err(e),
             }
         } else {
             // SAFETY: `self.pages` is known to be specialized for `self.row_layout`,
@@ -979,7 +954,7 @@ impl Table {
             }?
         };
 
-        self.finish_physical_insert(blobs, ptr, blob_bytes)
+        self.finish_physical_insert(blobs, ptr, blob_bytes, page_pin)
     }
 
     /// Finish a physical insertion without leaving an untracked row if pinning
@@ -992,6 +967,7 @@ impl Table {
         blobs: &BlobSet,
         ptr: RowPointer,
         blob_bytes: BlobNumBytes,
+        page_pin: Option<PageHandle>,
     ) -> Result<(RowRef<'a>, BlobNumBytes), Error> {
         let page = self
             .inner
@@ -999,6 +975,8 @@ impl Table {
             .get_page(ptr.page_index())
             .expect("just written page is resident")
             .expect("just written page exists");
+        // The page reference now owns the pin that protects subsequent blob faults.
+        drop(page_pin);
         let row_blobs = if self.inner.row_layout.layout().fixed {
             Ok(BlobReadSet::empty())
         } else {
@@ -1796,7 +1774,7 @@ impl Table {
         // fail after serialization succeeds, and that must also run cleanup.
         //
         // SAFETY: The page set, visitor, and row layout belong to this table.
-        let (temp_ptr, _) = unsafe {
+        let (temp_ptr, _, page_pin) = unsafe {
             write_row_to_pages(
                 &mut self.inner.pages,
                 None,
@@ -1822,6 +1800,7 @@ impl Table {
             PageRef::Tiered(page_handle) => Some(page_handle),
         };
         let temp_pin = PinnedRow::new(temp_ptr, temp_page, BlobReadSet::empty());
+        drop(page_pin);
 
         // SAFETY: The temporary row is live and its page is pinned.
         // Keep blob-pinning errors in `result` so they also run cleanup below.
@@ -2217,7 +2196,6 @@ impl Table {
             current_page_idx: PageIndex(0),
             table: self,
             blobs,
-            read_eviction: None,
         }
     }
 
@@ -2252,7 +2230,6 @@ impl Table {
             table: self,
             blobs,
             index: self.get_index_by_id(index_id)?,
-            read_eviction: None,
         })
     }
 
@@ -2268,7 +2245,6 @@ impl Table {
             table: self,
             blobs,
             index,
-            read_eviction: None,
         })
     }
 
@@ -2607,7 +2583,7 @@ impl Table {
         }
     }
 
-    pub fn trim(&self) -> Result<u64, PageError> {
+    pub fn trim(&self) -> Result<u64, EvictionError> {
         self.inner.trim()
     }
 }
@@ -3054,14 +3030,6 @@ pub struct TableScanIter<'table> {
     pub(crate) table: &'table Table,
     /// The [`BlobSet`] that row references may refer into.
     pub(crate) blobs: &'table BlobSet,
-    read_eviction: Option<&'table dyn ReadEviction>,
-}
-
-impl<'table> TableScanIter<'table> {
-    pub fn with_read_eviction(mut self, eviction: &'table dyn ReadEviction) -> Self {
-        self.read_eviction = Some(eviction);
-        self
-    }
 }
 
 enum CurrentPage<'a> {
@@ -3132,12 +3100,7 @@ impl<'a> Iterator for TableScanIter<'a> {
                                 page_handle,
                             )
                         };
-                        // This offset was consumed; retry the same row if loading its blobs failed.
-                        return Some(retry_read(row_ref.map_err(Into::into), self.read_eviction, || {
-                            self.table
-                                .get_row_ref(self.blobs, ptr)
-                                .map(|row| row.expect("row being scanned remains present"))
-                        }));
+                        return Some(row_ref.map_err(Into::into));
                     } else {
                         // We've finished visiting that page, so set `current_page` to `None`,
                         // increment `self.current_page_idx` to the index of the next page,
@@ -3161,8 +3124,7 @@ impl<'a> Iterator for TableScanIter<'a> {
                             // We're past the end of the pages.
                             return None;
                         }
-                        let read_page = || self.table.pages().get_page(self.current_page_idx).map_err(Into::into);
-                        match retry_read(read_page(), self.read_eviction, read_page) {
+                        match self.table.pages().get_page(self.current_page_idx) {
                             Ok(Some(next_page)) => {
                                 self.current_page = Some(CurrentPage::new(next_page, self.table.row_size()));
 
@@ -3173,7 +3135,7 @@ impl<'a> Iterator for TableScanIter<'a> {
                                 // so continue past it to the next page slot.
                                 self.current_page_idx.0 += 1;
                             }
-                            Err(e) => return Some(Err(e)),
+                            Err(e) => return Some(Err(e.into())),
                         }
                     }
                 }
@@ -3189,15 +3151,9 @@ pub struct TableAndIndex<'a> {
     table: &'a Table,
     blobs: &'a BlobSet,
     index: &'a TableIndex,
-    read_eviction: Option<&'a dyn ReadEviction>,
 }
 
 impl<'a> TableAndIndex<'a> {
-    pub fn with_read_eviction(mut self, eviction: &'a dyn ReadEviction) -> Self {
-        self.read_eviction = Some(eviction);
-        self
-    }
-
     pub fn table(&self) -> &'a Table {
         self.table
     }
@@ -3224,7 +3180,6 @@ impl<'a> TableAndIndex<'a> {
             table: self.table,
             blobs: self.blobs,
             btree_index_iter: self.index.seek_point(key),
-            read_eviction: self.read_eviction,
         }
     }
 
@@ -3240,7 +3195,6 @@ impl<'a> TableAndIndex<'a> {
             table: self.table,
             blobs: self.blobs,
             btree_index_iter: self.index.seek_range(range)?,
-            read_eviction: self.read_eviction,
         })
     }
 
@@ -3268,7 +3222,6 @@ impl<'a> TableAndIndex<'a> {
             table: self.table,
             blobs: self.blobs,
             btree_index_iter,
-            read_eviction: self.read_eviction,
         })
     }
 }
@@ -3284,7 +3237,6 @@ pub struct IndexScanPointIter<'a> {
     blobs: &'a BlobSet,
     /// The iterator performing the index scan yielding row pointers.
     btree_index_iter: TableIndexPointIter<'a>,
-    read_eviction: Option<&'a dyn ReadEviction>,
 }
 
 impl<'a> IndexScanPointIter<'a> {
@@ -3301,13 +3253,7 @@ impl<'a> Iterator for IndexScanPointIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.btree_index_iter.next().map(|ptr| {
             // SAFETY: `ptr` came from the index, which always holds pointers to valid rows for its table.
-            let row = unsafe { self.table.get_row_ref_unchecked(self.blobs, ptr) };
-            // Retry this pointer; advancing the index again would skip a row.
-            retry_read(row, self.read_eviction, || {
-                self.table
-                    .get_row_ref(self.blobs, ptr)
-                    .map(|row| row.expect("row from index remains present"))
-            })
+            unsafe { self.table.get_row_ref_unchecked(self.blobs, ptr) }
         })
     }
 }
@@ -3323,7 +3269,6 @@ pub struct IndexScanRangeIter<'a> {
     blobs: &'a BlobSet,
     /// The iterator performing the index scan yielding row pointers.
     btree_index_iter: TableIndexRangeIter<'a>,
-    read_eviction: Option<&'a dyn ReadEviction>,
 }
 
 impl<'a> Iterator for IndexScanRangeIter<'a> {
@@ -3333,13 +3278,7 @@ impl<'a> Iterator for IndexScanRangeIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.btree_index_iter.next().map(|ptr| {
             // SAFETY: `ptr` came from the index, which always holds pointers to valid rows for its table.
-            let row = unsafe { self.table.get_row_ref_unchecked(self.blobs, ptr) };
-            // Retry this pointer; advancing the index again would skip a row.
-            retry_read(row, self.read_eviction, || {
-                self.table
-                    .get_row_ref(self.blobs, ptr)
-                    .map(|row| row.expect("row from index remains present"))
-            })
+            unsafe { self.table.get_row_ref_unchecked(self.blobs, ptr) }
         })
     }
 }
@@ -3597,6 +3536,8 @@ impl PreparedEvictionPolicy {
         }
     }
 
+    /// Apply a prepared cache-policy change while holding the database write lock.
+    /// Other users of the shared storage must not request eviction concurrently.
     pub fn apply(self, table: &mut Table, blobs: &BlobSet) {
         assert_eq!(table.eviction_policy, self.old_policy);
         if self.policy == self.old_policy {
@@ -3626,9 +3567,10 @@ impl PreparedEvictionPolicy {
             }
         }
 
-        // Release memory pins before conversion unwraps shared frames. Keep
-        // disk preparation protection until permanent backing pins are
-        // installed.
+        // The caller holds the database write lock, excluding other transactions
+        // and trimming. Conversion performs no faults or allocations that request
+        // eviction, so preparation pins can be released before unwrapping frames.
+        // Keep disk preparation protection until permanent backing pins are installed.
         let disk_pins = self
             .pins
             .filter(|pins| matches!(pins, PreparedEvictionPolicyPins::Disk { .. }));

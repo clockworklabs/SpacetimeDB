@@ -10,7 +10,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_schema::def::error::LibError;
 #[cfg(feature = "durability")]
 use spacetimedb_snapshot::SnapshotError;
-use spacetimedb_table::tiered;
+use spacetimedb_table::tiered::{self, EvictionError};
 use spacetimedb_table::{
     bflatn_to, read_column,
     table::{self, ReadViaBsatnError, UniqueConstraintViolation},
@@ -52,10 +52,6 @@ pub enum DatastoreError {
 }
 
 impl DatastoreError {
-    pub(crate) fn is_resident_memory_limit(&self) -> bool {
-        self.resident_memory_limit().is_some()
-    }
-
     pub fn resident_memory_limit(&self) -> Option<&tiered::BudgetExceeded> {
         match self {
             Self::Page(PageError::MemoryLimitExceeded(error))
@@ -138,9 +134,9 @@ pub enum TableError {
 #[derive(Error, Debug)]
 pub enum TrimTableError {
     #[error(transparent)]
-    Pages(#[from] PageError),
-    #[error(transparent)]
     Storage(#[from] tiered::TrimError),
+    #[error(transparent)]
+    Eviction(#[from] EvictionError),
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]
